@@ -184,6 +184,9 @@ func AheadWords(current, tag string) string {
 // SetAsideWords say why a port's newest release is uncertain: what was set
 // aside, and whose commit it predates.
 func SetAsideWords(aside []SetAside) string {
+	if aside[0].Why != "" {
+		return aside[0].Why
+	}
 	if len(aside) == 1 {
 		return fmt.Sprintf("%s compares newer, but its commit is older than %s's", aside[0].Tag, aside[0].Predates)
 	}

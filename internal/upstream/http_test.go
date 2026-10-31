@@ -164,3 +164,28 @@ func TestHTTPDiscoveryFollowsADerivedVersionSpelling(t *testing.T) {
 	require.Equal(t, "1.7049", result.Release.SourceVersion, "beside the spelling the listing was compared against")
 	require.NoError(t, service.Check(t.Context(), port, *result.Release))
 }
+
+// A candidate newer only by a component written with a leading zero the
+// port's version hasn't is uncertain: aften's listing kept 0.07, an older
+// scheme than 0.0.8 that compares newer, and outdated said it was ready to
+// ship (field testing's outdated-ports session).
+func TestAnOlderSchemesCandidateIsUncertain(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `>aften-0.0.8< >aften-0.07<`)
+	}))
+	defer server.Close()
+	service := automaticService(t, &catalog{})
+	service.HTTP = server.Client()
+	port := macports.PortInfo{Name: "aften", Version: "0.0.8", Options: map[string]string{
+		"livecheck.type": "regex", "livecheck.url": server.URL, "livecheck.regex": `{>aften-([0-9.]+)<}`, "livecheck.version": "0.0.8",
+		"livecheck.ignore_sslcert": "no", "livecheck.compression": "yes", "livecheck.curloptions": "", "dockhand.livecheck_standard": "1",
+	}}
+	result, err := service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.Uncertain, result.Assessment, result.Detail)
+	require.Equal(t, "0.07", result.CandidateVersion)
+	require.Equal(t, "0.07 may be an older scheme than 0.0.8", result.SetAside[0].Why)
+	_, err = service.Resolve(t.Context(), port, "")
+	require.ErrorContains(t, err, "can't tell whether aften is current: 0.07 may be an older scheme than 0.0.8; name the version to update to")
+}
