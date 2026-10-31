@@ -89,6 +89,7 @@ From the 2026-09 plan's questions for the person. D15, D19's taking, and D3 are 
 
 Declined, with the reason. Each reopens only on the condition given, or on new evidence a person brings.
 
+- **An unchanged port's evaluation reused across looks** (2026-10-31, prioritization, on implementation's measure of `eval.Memo`, parked on `claude/project-thread-9pew0q` at 885d14b1, with architecture's six adjustments): a warm `outdated --mine` over 1,115 ports, old and new runs alternating, took 149–150 s with every port evaluated and 148–150 s with all 1,115 reused, user CPU 243 s against 209 s and system CPU 97 s against 98 s. The faster look's first two steps had already taken evaluation off the look's critical path, so its wall waits on the upstream lookups, and a cache of evaluations, recording on in every look, and host programs re-asked once a look, keyed by their answer (refusing them left 257 ports unkept), buy about 14% of user CPU and no wall time. Reopens where a measure shows evaluation the look's wait again, as a cold look or a loaded Mac might; the branch keeps the build.
 - **Campaigns and reproducibility investigations** (2026-10-02): named groups of branches, and rebuilding to compare outputs, answer questions nobody's workflow asks; grouping in `status` covers several branches.
 - **Exporting state to Git notes, or rebuilding the database from Git metadata.**
 - **A full-screen terminal interface** (2026-10-02): `watch` and `status` keep their line output. bubbletea comes back only if `watch`'s panes are built.
