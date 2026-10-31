@@ -94,7 +94,6 @@ func TestStatusSaysTheNetworkHoldsTheLastPlanFound(t *testing.T) {
 	statuses, err := e.Status(t.Context())
 	require.NoError(t, err)
 	require.Contains(t, HoldLines(statuses[0].Held), "#34620 is open for the same port: jq: update to 1.8.0")
-	require.False(t, statuses[0].NetworkHeldAt.IsZero())
 
 	fake.Others = nil
 	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
@@ -102,7 +101,6 @@ func TestStatusSaysTheNetworkHoldsTheLastPlanFound(t *testing.T) {
 	statuses, err = e.Status(t.Context())
 	require.NoError(t, err)
 	require.NotContains(t, HoldLines(statuses[0].Held), "#34620 is open for the same port: jq: update to 1.8.0")
-	require.False(t, statuses[0].NetworkHeldAt.IsZero(), "none found is known")
 }
 
 // A failed CI job that wasn't a fetch's quotes its log's first error line,

@@ -271,7 +271,7 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 	}
 	result.ObservedAt = time.Now().UTC().Truncate(time.Millisecond)
 	catalog := catalogWords(spec.Catalog)
-	release := model.Release{ReleaseSelection: model.ReleaseSelection{CurrentVersion: port.Version, NoUpdate: comparison <= 0}, Version: candidates[index].Version, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit, ObservedAt: result.ObservedAt,
+	release := model.Release{ReleaseSelection: model.ReleaseSelection{CurrentVersion: port.Version, NoUpdate: comparison <= 0}, Version: candidates[index].Version, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit,
 		// The release's page and the current version's tag, where the
 		// listing has them, for the update's commit to link (the docs
 		// dig's I11).

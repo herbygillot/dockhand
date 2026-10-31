@@ -30,8 +30,6 @@ type FetchFailure struct {
 	// "The requested URL returned error: 403"; 0 where it answered none,
 	// as a timeout.
 	Status int
-	// Number is the Error line's, counting from 1.
-	Number int
 }
 
 var (
@@ -47,7 +45,7 @@ var (
 func FetchFailed(log io.Reader) (FetchFailure, bool) {
 	lines := bufio.NewReaderSize(log, maxLine)
 	sites := map[string]string{}
-	for number := 1; ; number++ {
+	for {
 		line, err := lines.ReadSlice('\n')
 		long := false
 		for errors.Is(err, bufio.ErrBufferFull) {
@@ -64,7 +62,7 @@ func FetchFailed(log io.Reader) (FetchFailure, bool) {
 			}
 		}
 		if m := fetchFailed.FindStringSubmatch(text); !long && m != nil && m[2] != "Failed to fetch distfiles" {
-			failure := FetchFailure{File: m[1], Reason: m[2], URL: sites[m[1]], Number: number}
+			failure := FetchFailure{File: m[1], Reason: m[2], URL: sites[m[1]]}
 			if s := httpStatus.FindStringSubmatch(m[2]); s != nil {
 				failure.Status, _ = strconv.Atoi(s[1])
 			}

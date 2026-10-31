@@ -1165,7 +1165,7 @@ type OpenWork struct {
 // openBranch is an open branch as OpenWork read it.
 type openBranch struct {
 	branch      model.Branch
-	head, tree  string
+	tree        string
 	worktree    *git.Repository
 	edited      bool
 	directories []string
@@ -1209,7 +1209,7 @@ func (e *Engine) OpenWork(ctx context.Context) (*OpenWork, error) {
 		if !ref.Exists {
 			continue
 		}
-		found := openBranch{branch: branch, head: ref.Object, tree: trees[ref.Object]}
+		found := openBranch{branch: branch, tree: trees[ref.Object]}
 		if found.tree == "" || trees[string(branch.Base)] == "" {
 			return nil, fmt.Errorf("%s's head or base couldn't be read as a commit", branch.ShortName())
 		}

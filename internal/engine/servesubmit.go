@@ -33,14 +33,11 @@ type ServeCandidate struct {
 }
 
 // Passing is the open branches with checked work not yet on a pull
-// request, sorted by whether it may be submitted as passing.
+// request that may be submitted as passing.
 type Passing struct {
 	// Ready are those whose latest check passed for exactly their
 	// committed files, with nothing edited since.
 	Ready []BranchStatus
-	// Others counts those whose latest check didn't pass, or whose files
-	// have changed since it ran.
-	Others int
 }
 
 // PassingBranches are the branches that passed and are ready to submit,
@@ -67,11 +64,8 @@ func (e *Engine) PassingBranches(ctx context.Context) (Passing, error) {
 	}
 	var passing Passing
 	for _, status := range statuses {
-		switch branchstate.SubmitReadiness(status.Facts()) {
-		case branchstate.SubmitReady:
+		if branchstate.SubmitReadiness(status.Facts()) == branchstate.SubmitReady {
 			passing.Ready = append(passing.Ready, status)
-		case branchstate.NotReady:
-			passing.Others++
 		}
 	}
 	return passing, nil

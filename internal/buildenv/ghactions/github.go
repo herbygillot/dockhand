@@ -142,7 +142,7 @@ func (g GitHub) Jobs(ctx context.Context, repository string, id int64, attempt i
 			return nil, githubapi.RateLimitError(err)
 		}
 		for _, j := range page.Jobs {
-			jobs = append(jobs, RunnerJob{ID: j.GetID(), Name: j.GetName(), Status: j.GetStatus(), Conclusion: j.GetConclusion(), Labels: j.Labels, RunnerName: j.GetRunnerName(),
+			jobs = append(jobs, RunnerJob{ID: j.GetID(), Name: j.GetName(), Conclusion: j.GetConclusion(), Labels: j.Labels, RunnerName: j.GetRunnerName(),
 				Started: j.GetStartedAt().Time, Completed: j.GetCompletedAt().Time})
 		}
 		if response.NextPage == 0 {

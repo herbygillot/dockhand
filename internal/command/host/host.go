@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/buildenv/local"
 	"github.com/herbygillot/dockhand/internal/buildenv/tart"
 	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/credential/keychain"
@@ -49,6 +50,9 @@ type Host struct {
 	TartImages TartImages
 	// TartSupported is whether this Mac takes Tart (tart.Supported).
 	TartSupported func() bool
+	// LocalSupported is whether this machine builds in a MacPorts prefix,
+	// a Mac's (local.Supported).
+	LocalSupported func() bool
 	// The login's parts: its device flow, where it's kept, the client
 	// reading it, and the browser its page opens in.
 	AuthFlow    credential.DeviceFlow
@@ -121,14 +125,15 @@ func MachineHost(look func(name string) string) *Host {
 			}
 			return macos.Notify(context.Background(), title, text)
 		},
-		OS:            runtime.GOOS,
-		StartCleanup:  startCleanup,
-		StartDrain:    startDrain,
-		TartSupported: tart.Supported,
-		AuthFlow:      &github.DeviceFlow{},
-		AuthStore:     keychain.Store{Executable: look("security")},
-		AuthAPI:       github.SystemClient,
-		OpenBrowser:   macos.Opener{Path: look("open")}.Open,
+		OS:             runtime.GOOS,
+		StartCleanup:   startCleanup,
+		StartDrain:     startDrain,
+		TartSupported:  tart.Supported,
+		LocalSupported: local.Supported,
+		AuthFlow:       &github.DeviceFlow{},
+		AuthStore:      keychain.Store{Executable: look("security")},
+		AuthAPI:        github.SystemClient,
+		OpenBrowser:    macos.Opener{Path: look("open")}.Open,
 	}
 }
 

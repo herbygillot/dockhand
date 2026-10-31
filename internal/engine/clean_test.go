@@ -248,7 +248,7 @@ func TestStatusDoesntCheckOutAgainWhatCleanRemoved(t *testing.T) {
 	branch := committedUpdate(t, e)
 	archived, err := e.Archive(t.Context(), branch, false)
 	require.NoError(t, err)
-	plans, err := e.PlanClean(t.Context(), model.BranchArchived)
+	plans, err := e.PlanCleanBranches(t.Context(), []model.Branch{archived})
 	require.NoError(t, err)
 	_, err = e.ApplyClean(t.Context(), plans)
 	require.NoError(t, err)
@@ -287,11 +287,13 @@ func TestAnArchivedBranchWithNothingMasterLacksGoesWithItsWorktree(t *testing.T)
 	require.NoError(t, err)
 	write(t, working.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 	commitAs(t, working.Worktree, "Ada ada@example.org", "jq: update to 1.8.1")
+	var named []model.Branch
 	for _, branch := range []model.Branch{empty, working} {
-		_, err = e.Archive(t.Context(), branch, false)
+		archived, err := e.Archive(t.Context(), branch, false)
 		require.NoError(t, err)
+		named = append(named, archived)
 	}
-	plans, err := e.PlanClean(t.Context(), model.BranchArchived)
+	plans, err := e.PlanCleanBranches(t.Context(), named)
 	require.NoError(t, err)
 	require.Len(t, plans, 2)
 	steps := map[string][]CleanStep{}
@@ -310,7 +312,7 @@ func TestAnArchivedBranchWithNothingMasterLacksGoesWithItsWorktree(t *testing.T)
 	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.2")
 	_, err = e.fetchMaster(t.Context())
 	require.NoError(t, err)
-	plans, err = e.PlanClean(t.Context(), model.BranchArchived)
+	plans, err = e.PlanCleanBranches(t.Context(), named)
 	require.NoError(t, err)
 	for _, plan := range plans {
 		if plan.Branch.Name == "dockhand/jq-update" {
@@ -334,7 +336,7 @@ func TestAnArchivedBranchWithNothingMasterLacksGoesWithItsWorktree(t *testing.T)
 	require.NoError(t, err)
 	adopted.Managed, adopted.Worktree = false, ""
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(adopted) }))
-	plans, err = e.PlanClean(t.Context(), model.BranchArchived)
+	plans, err = e.PlanCleanBranches(t.Context(), []model.Branch{adopted})
 	require.NoError(t, err)
 	require.Len(t, plans, 1)
 	require.Equal(t, "dockhand/jq-update", plans[0].Branch.Name)

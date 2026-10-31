@@ -69,7 +69,6 @@ func TestANarrowedCheckNeverShrinksWhatSubmitRequires(t *testing.T) {
 	passing, err := e.PassingBranches(t.Context())
 	require.NoError(t, err)
 	require.Empty(t, passing.Ready, "ship --passing and serve don't count it as passing")
-	require.Equal(t, 1, passing.Others)
 
 	full := checkHead(t, e, branch)
 	again := checkHead(t, e, branch, "jq")

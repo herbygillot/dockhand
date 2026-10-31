@@ -37,7 +37,6 @@ type fakeActions struct {
 	runs       []*fakeRun
 	// starting is a push found once, whose run GitHub hasn't started.
 	starting bool
-	looks    int
 	reruns   int
 	canceled int
 	// hold keeps a run in progress, calling hold at each look, until it
@@ -123,7 +122,6 @@ func (f *fakeActions) find(id int64) *fakeRun {
 }
 
 func (f *fakeActions) Run(_ context.Context, _ string, id int64) (ghactions.Run, error) {
-	f.looks++
 	run := f.find(id)
 	switch run.Status {
 	case "queued":
@@ -165,10 +163,10 @@ func (f *fakeActions) Jobs(_ context.Context, _ string, id int64, attempt int) (
 			// Each job ran on a runner of the label its name gives.
 			label := strings.TrimSuffix(strings.TrimPrefix(name, "build ("), ")")
 			if f.untaken[name] && f.logs[attempt-1][name] == "" {
-				jobs = append(jobs, ghactions.RunnerJob{ID: int64(attempt*10 + i), Name: name, Status: "completed", Conclusion: "cancelled", Labels: []string{label}})
+				jobs = append(jobs, ghactions.RunnerJob{ID: int64(attempt*10 + i), Name: name, Conclusion: "cancelled", Labels: []string{label}})
 				continue
 			}
-			jobs = append(jobs, ghactions.RunnerJob{ID: int64(attempt*10 + i), Name: name, Status: "completed", Labels: []string{label}, RunnerName: fmt.Sprint("GitHub Actions ", 1000+i)})
+			jobs = append(jobs, ghactions.RunnerJob{ID: int64(attempt*10 + i), Name: name, Labels: []string{label}, RunnerName: fmt.Sprint("GitHub Actions ", 1000+i)})
 		}
 	}
 	// GitHub doesn't say in what order it lists them.
@@ -419,18 +417,17 @@ func TestRetryingAGitHubCheckRunsTheWorkflowAgain(t *testing.T) {
 	logs, _, err = cmdtest.Dockhand(t, "logs", "check-1")
 	require.NoError(t, err)
 	require.Contains(t, logs, "\n    https://github.com/ada/macports-ports/actions/runs/7\n")
-	logged, _, err := cmdtest.Dockhand(t, "logs", "check-1", "--port", "jq")
+	logged, _, err := cmdtest.Dockhand(t, "logs", "check-1", "jq")
 	require.NoError(t, err)
 	require.Contains(t, logged, "##[group]Installing jq")
 	// From the port's own install, by the workflow's headings (D20).
 	require.Contains(t, logged, "  dependencies  line 4\n  install       line 6\n  test          line 8\n")
 	require.Contains(t, logged, "Showing from line 6, where the build for jq begins")
 	require.NotContains(t, logged, "Installing dependencies for jq", "before it")
-	// The port named after the check is the one -p names (field testing,
-	// 2026-10-02).
-	named, _, err := cmdtest.Dockhand(t, "logs", "check-1", "jq")
-	require.NoError(t, err)
-	require.Equal(t, logged, named)
+	// The port is named after the check (field testing, 2026-10-02); -p
+	// chooses a branch, which a check named beside it isn't.
+	_, _, err = cmdtest.Dockhand(t, "logs", "check-1", "--port", "jq")
+	require.EqualError(t, err, "-p chooses a branch, not a check's port; for check-1's log of jq: dockhand logs check-1 jq")
 	_, _, err = cmdtest.Dockhand(t, "logs", "check-1", "jq", "--port", "fd")
 	require.EqualError(t, err, "name a check or a branch, not both")
 }

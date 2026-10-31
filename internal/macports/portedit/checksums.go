@@ -32,10 +32,10 @@ import (
 func (s *Service) prepareChecksums(ctx context.Context, request Request, input *sourceInput) (Result, error) {
 	plan, err := vendoredSources(input)
 	if err != nil {
-		return Result{Base: request.Source, Target: input.target}, err
+		return Result{Target: input.target}, err
 	}
 	if err := staleVendored(request, input, plan); err != nil {
-		return Result{Base: request.Source, Target: input.target}, err
+		return Result{Target: input.target}, err
 	}
 	var result Result
 	if plan != nil {
@@ -91,11 +91,11 @@ func vendoredSources(input *sourceInput) (*depblock.Plan, error) {
 func (s *Service) refreshVendoredChecksums(ctx context.Context, request Request, input *sourceInput, plan *depblock.Plan) (Result, error) {
 	stripped, err := plan.Strip(input.data)
 	if err != nil {
-		return Result{Base: request.Source, Target: input.target}, err
+		return Result{Target: input.target}, err
 	}
 	evaluated, err := s.evaluateEdit(ctx, input, stripped)
 	if err != nil {
-		return Result{Base: request.Source, Target: input.target}, err
+		return Result{Target: input.target}, err
 	}
 	base := input.derive(stripped, evaluated.after)
 	// An empty block is written from the source, which is kept to read
@@ -104,7 +104,7 @@ func (s *Service) refreshVendoredChecksums(ctx context.Context, request Request,
 	if plan.Empty() {
 		directory, err := scratch.Dir("vendors-")
 		if err != nil {
-			return Result{Base: request.Source, Target: input.target}, err
+			return Result{Target: input.target}, err
 		}
 		defer os.RemoveAll(directory)
 		store = s.Archives.Store(directory)
@@ -166,7 +166,7 @@ func (s *Service) refreshChecksums(ctx context.Context, request Request, input *
 // Strict fidelity holds the edit to the subport's checksums; where the
 // subport has no block to write in, the refusal stands.
 func (s *Service) declareSubportChecksums(ctx context.Context, request Request, input *sourceInput, undeclared *distfiles.Undeclared) (Result, error) {
-	result := Result{Base: request.Source, Target: input.target}
+	result := Result{Target: input.target}
 	name := input.target.Name
 	placeholders, ok := portfile.DeclareSubportChecksums(input.data, name, undeclared.Names)
 	if !ok {
@@ -212,7 +212,7 @@ func (s *Service) declareSubportChecksums(ctx context.Context, request Request, 
 // refreshChecksumsInto is refreshChecksums, with the archives fetched
 // into a store of the caller's.
 func (s *Service) refreshChecksumsInto(ctx context.Context, request Request, input *sourceInput, store *distfetch.Store) (Result, error) {
-	result := Result{Base: request.Source, Target: input.target}
+	result := Result{Target: input.target}
 	observed, err := s.planObservedChecksums(ctx, request, input)
 	var unlocated *distfiles.Unlocated
 	if errors.As(err, &unlocated) {
@@ -355,7 +355,7 @@ func (s *Service) underPortsDeclaration(ctx context.Context, input *sourceInput,
 		if place == portfile.PlaceAfterBlock {
 			return ErrUnsupported.Because("%s reads %s's checksums, declared after its block and so read over any of its own; move %s's checksums line above the subport %s block, then dockhand checksums %s writes its own", subport, port, port, subport, subport)
 		}
-		undeclared := &distfiles.Undeclared{Name: artifact.Name, Err: ErrUnsupported.Because("%s reads %s's checksums, which are for %s's archive", subport, port, port)}
+		undeclared := &distfiles.Undeclared{Err: ErrUnsupported.Because("%s reads %s's checksums, which are for %s's archive", subport, port, port)}
 		for _, fetched := range binding.Artifacts {
 			undeclared.Names = append(undeclared.Names, fetched.Name)
 		}
@@ -524,7 +524,7 @@ func (s *Service) fillEmptyBlock(ctx context.Context, request Request, input, ba
 	if err != nil {
 		return result, err
 	}
-	values, crates, err := s.gitCrateChecksums(ctx, request, input, plan, refreshed, generated)
+	values, err := s.gitCrateChecksums(ctx, request, input, plan, refreshed, generated)
 	if err != nil {
 		return result, err
 	}
@@ -554,6 +554,6 @@ func (s *Service) fillEmptyBlock(ctx context.Context, request Request, input, ba
 	if err := result.commitEdit(input, request, final.edit, report, "refresh checksums"); err != nil {
 		return result, err
 	}
-	result.Regenerated, result.Crates = regenerated, crates
+	result.Regenerated = regenerated
 	return result, nil
 }

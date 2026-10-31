@@ -310,7 +310,6 @@ func TestPassingIsOneDefinitionForShipAndServe(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, passing.Ready, 1)
 	require.Equal(t, branch.ID, passing.Ready[0].Branch.ID)
-	require.Zero(t, passing.Others)
 
 	portfile := filepath.Join(branch.Worktree, "textproc", "jq", "Portfile")
 	data, err := os.ReadFile(portfile)
@@ -318,8 +317,7 @@ func TestPassingIsOneDefinitionForShipAndServe(t *testing.T) {
 	require.NoError(t, os.WriteFile(portfile, append(data, "# edited after the check\n"...), 0o644))
 	passing, err = e.PassingBranches(t.Context())
 	require.NoError(t, err)
-	require.Empty(t, passing.Ready)
-	require.Equal(t, 1, passing.Others, "its check no longer covers its files")
+	require.Empty(t, passing.Ready, "its check no longer covers its files")
 	candidates, _, err := e.serveCandidates(t.Context())
 	require.NoError(t, err)
 	require.Empty(t, candidates, "and serve submits it no more than ship --passing would")

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macos"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/installation"
 	"github.com/herbygillot/dockhand/internal/tart/host"
 )
@@ -42,7 +43,7 @@ func validate(ctx context.Context, target macos.Command, config Config) (validat
 	if len(foreign) > 0 {
 		return validation{}, fmt.Errorf("foreign package manager found: %s", strings.Join(foreign, ", "))
 	}
-	facts, err := installation.Inspect(ctx, target, config.GuestPrefix)
+	facts, err := installation.Inspect(ctx, target, macports.DefaultPrefix)
 	if err != nil {
 		return validation{}, err
 	}
@@ -52,7 +53,7 @@ func validate(ctx context.Context, target macos.Command, config Config) (validat
 	if len(facts.ActivePorts) > 0 {
 		return validation{}, fmt.Errorf("prepared image has active ports: %s", strings.Join(facts.ActivePorts, ", "))
 	}
-	if err := installation.CheckTclPackages(ctx, target, config.GuestPrefix); err != nil {
+	if err := installation.CheckTclPackages(ctx, target, macports.DefaultPrefix); err != nil {
 		return validation{}, err
 	}
 	if err := macos.CheckCompiler(ctx, target); err != nil {

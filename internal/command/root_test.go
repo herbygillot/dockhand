@@ -31,13 +31,6 @@ func TestVersionNamesTheBuild(t *testing.T) {
 	require.True(t, strings.HasPrefix(out.String(), "dockhand "), out.String())
 }
 
-func TestAnUnknownCommandIsRefused(t *testing.T) {
-	t.Parallel()
-	var out bytes.Buffer
-	err := cmdtest.RunFor(t, t.Context(), []string{"bump", "jq"}, term.Streams{In: strings.NewReader(""), Out: &out, Err: &out})
-	require.Error(t, err)
-}
-
 // The main help opens with dockhand's logo, as earlier generations' did,
 // and the build's version on the line under it.
 func TestTheHelpOpensWithTheLogoAndTheVersion(t *testing.T) {

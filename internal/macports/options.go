@@ -4,7 +4,8 @@ package macports
 // one place: the evaluator is given ReadOptions, so the Tcl side never
 // restates the list; the fidelity check, discovery, and source
 // interpretation take their lists from here; and a test holds each subset
-// to the options that are actually read.
+// to the options that are actually read, mportinfo's keys and the
+// evaluator's computed options among them.
 
 // ReadOptions are the options the evaluator reads from a port beyond what
 // mportinfo reports (name, version, revision, epoch, homepage, description,
@@ -24,14 +25,6 @@ var ReadOptions = []string{
 	"use_xcode", "replaced_by", "known_fail", "supported_archs", "use_configure", "configure.cmd", "macosx_deployment_target",
 	"compiler.cxx_standard", "build.args", "conflicts", "use_parallel_build", "python.pep517",
 }
-
-// InfoOptions are the mportinfo keys dockhand's rules name; the evaluator
-// reports them without being asked.
-var InfoOptions = []string{"name", "version", "revision", "epoch", "homepage"}
-
-// ComputedOptions are the options the evaluator computes itself, with the
-// dockhand prefix or from Base's fetch machinery.
-var ComputedOptions = []string{"fetch.has_credentials", "fetch.archive_compatible", "dockhand.livecheck_standard", "dockhand.metadata_only", "dockhand.base_version", "dockhand.livecheck_declared", "livecheck.name", "dockhand.test_run", "dockhand.portgroups", "dockhand.known_fail", "dockhand.platforms_compatible", "dockhand.minimum_xcode", "dockhand.xcode", "dockhand.python_default", "dockhand.python_group_default", "dockhand.code"}
 
 // LivecheckOptions are the livecheck options a forge source's discovery
 // reads; LivecheckListingOptions are those an archive source's listing

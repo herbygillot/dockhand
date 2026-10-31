@@ -138,11 +138,11 @@ copies it as it grows, as Tart's does.`,
 			streams.Unwrapped()
 			// A port named as an argument (field testing, 2026-10-02: logs
 			// semgrep, and logs check-76 semgrep); with a branch named, the
-			// one argument is the port, and -p's port is the default.
-			// logs check-42 -p jq is check-42's jq log, as it always was:
-			// a check named, -p names only the port.
-			if where.Port != "" && len(args) == 1 && checkOrRunName(cmd.Context(), s, args[0]) {
-				port, where = where.Port, branchflags.BranchFlags{}
+			// one argument is the port, and -p's port is the default. -p
+			// chooses a branch, as it does everywhere else, so a check named
+			// beside it is refused with the command that names its port.
+			if where.Port != "" && len(args) == 1 && engine.IsCheckName(args[0]) {
+				return fmt.Errorf("-p chooses a branch, not a check's port; for %s's log of %s: dockhand logs %s %s", args[0], where.Port, args[0], where.Port)
 			}
 			if where.Explicit() {
 				if len(args) == 2 {
@@ -395,20 +395,6 @@ func latestLogging(ctx context.Context, e *engine.Engine, port string) (run mode
 	}
 	_, _, ok = logs.ForPort(port)
 	return run, ok, ""
-}
-
-// checkOrRunName reports whether name is a check's or a provider run's.
-func checkOrRunName(ctx context.Context, s *settings.Settings, name string) bool {
-	if engine.IsCheckName(name) {
-		return true
-	}
-	e, err := s.Open(ctx)
-	if err != nil {
-		return false
-	}
-	defer e.Close()
-	_, _, err = e.RunOrExecution(ctx, name)
-	return err == nil
 }
 
 // stoppedRun reports whether a run recorded as running stopped when the

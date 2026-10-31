@@ -232,7 +232,7 @@ func TestAFetchFailureNamesItsArchiveAndSite(t *testing.T) {
 	failure, ok := FetchFailed(strings.NewReader(garageFetch))
 	require.True(t, ok)
 	require.Equal(t, FetchFailure{File: "jni-sys-macros-0.4.1.crate", Reason: "The requested URL returned error: 403",
-		URL: "https://mirror.sjtu.edu.cn/macports/distfiles/garage/jni-sys-macros-0.4.1.crate", Status: 403, Number: 7}, failure)
+		URL: "https://mirror.sjtu.edu.cn/macports/distfiles/garage/jni-sys-macros-0.4.1.crate", Status: 403}, failure)
 	require.Equal(t, "fetching jni-sys-macros-0.4.1.crate (mirror.sjtu.edu.cn answered 403)", failure.Words())
 
 	timedOut := FetchFailure{File: "a.crate", Reason: "Timeout was reached", URL: "https://static.crates.io/a.crate"}

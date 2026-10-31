@@ -364,12 +364,6 @@ const (
 	// its subject the dependency, and its evidence the dependency's
 	// version on the image (EnvironmentEvidence).
 	FindingEnvironmentFailure FindingKind = "environment-failure"
-	// FindingUndeclaredLink is a port's build linking a library from a
-	// port it doesn't declare in depends_lib (v0.5.0 part 6), its subject
-	// "<port> links <port>" (evidence.LinkFinding.Subject). A notice: it
-	// holds nothing, and a decision may say why it's fine, as a bundled
-	// copy.
-	FindingUndeclaredLink FindingKind = "undeclared-link"
 	// FindingHandEdit is an update dockhand refused, whose best attempt it
 	// wrote for the person to finish (update --hand-edit, Then's item 3):
 	// its subject the port's directory, its evidence the digest of the

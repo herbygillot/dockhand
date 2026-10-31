@@ -58,6 +58,28 @@ jobs:
       - name: Build
         run: make build
 
+  # The suite on Linux, where dockhand is built and its tests run though
+  # it checks on Macs: what a Linux host runs differently, GNU patch and
+  # stat among them, is said there, not first by someone building it
+  # (the test analysis's step b). Tests that need a Mac skip themselves;
+  # the runner isn't root, so the root case is a skip too.
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Test
+        run: go test -mod=vendor ./...
+
   # The corpus (tools/corpus): MacPorts' own version bumps replayed
   # through this build's update, against the PortGroups of a pinned slice
   # of macports-ports, so a PortGroup's model in a unit test can't stand

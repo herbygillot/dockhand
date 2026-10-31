@@ -28,7 +28,6 @@ func TestEnvironmentsAreTheProvidersOnNames(t *testing.T) {
 	for on, refusal := range map[string]string{
 		"tart:sonoma": "Tart isn't installed here",
 		"local":       "the local provider builds in a MacPorts prefix on a Mac, and this isn't one",
-		"prefix":      `no provider "prefix" is set up`,
 		"nosuch":      `no provider "nosuch" is set up`,
 		"command:15":  "the command provider builds wherever its script does",
 	} {

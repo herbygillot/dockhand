@@ -213,14 +213,13 @@ func (d Dependencies) LookTart() (string, error) {
 	return exec.LookPath("tart")
 }
 
-// Assembly is what a command works with: the engine, opened, the
-// configuration it was opened with, and where that's read from.
+// Assembly is what a command works with: the engine, opened, and the
+// configuration it was opened with.
 type Assembly struct {
 	Engine *engine.Engine
 	File   config.File
 	// Options are the engine's options, as it was opened with them.
-	Options    engine.Options
-	ConfigPath string
+	Options engine.Options
 }
 
 // PullRequestsVariable names the sandbox pull requests go to instead of
@@ -445,7 +444,7 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	if dependencies.HTTPS != nil {
 		e.HTTPS = dependencies.HTTPS
 	}
-	return Assembly{Engine: e, File: file, Options: engineOptions, ConfigPath: configPath}, nil
+	return Assembly{Engine: e, File: file, Options: engineOptions}, nil
 }
 
 // registeredCheckout is the one ports checkout the database registered,

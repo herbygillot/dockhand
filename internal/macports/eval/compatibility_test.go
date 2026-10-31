@@ -16,12 +16,10 @@ func TestRuntimeInspectionAndVersionEvidence(t *testing.T) {
 	require.NotEmpty(t, runtime.BaseVersion)
 	require.NotEmpty(t, runtime.TclVersion)
 	require.NotEmpty(t, runtime.Platform.Architecture)
-	t.Logf("Observed Base %s, Tcl %s, %s/%s/%s; source reviewed: %v", runtime.BaseVersion, runtime.TclVersion, runtime.Platform.OS, runtime.Platform.Version, runtime.Platform.Architecture, runtime.SourceReviewed)
-	for _, version := range []string{"2.8.1", "2.11.6", "2.12.6", "99.0", "unknown"} {
-		decoded, err := decodeRuntime("platform {darwin 25 arm64} tcl_version 8.6.16 base_version " + version)
-		require.NoError(t, err)
-		require.Equal(t, version != "99.0" && version != "unknown", decoded.SourceReviewed)
-	}
+	t.Logf("Observed Base %s, Tcl %s, %s/%s/%s", runtime.BaseVersion, runtime.TclVersion, runtime.Platform.OS, runtime.Platform.Version, runtime.Platform.Architecture)
+	decoded, err := decodeRuntime("platform {darwin 25 arm64} tcl_version 8.6.16 base_version 2.12.6")
+	require.NoError(t, err)
+	require.Equal(t, "2.12.6", decoded.BaseVersion)
 	_, err = decodeRuntime("platform {darwin 25 arm64}")
 	require.ErrorIs(t, err, macports.ErrStartup)
 }

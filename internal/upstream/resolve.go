@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -71,7 +70,7 @@ func (s *Service) resolve(ctx context.Context, port macports.PortInfo, requested
 		if version == "" || version == port.Version {
 			return model.Release{}, fmt.Errorf("upstream: explicit archive version must select a different evaluated version")
 		}
-		release := model.Release{ReleaseSelection: model.ReleaseSelection{Requested: requested, CurrentVersion: port.Version}, Archive: true, Version: version, ObservedAt: time.Now().UTC()}
+		release := model.Release{ReleaseSelection: model.ReleaseSelection{Requested: requested, CurrentVersion: port.Version}, Archive: true, Version: version}
 		if version != requested {
 			release.SourceVersion = requested
 		}
@@ -129,7 +128,7 @@ func (s *Service) resolve(ctx context.Context, port macports.PortInfo, requested
 	if version == port.Version {
 		return model.Release{}, fmt.Errorf("upstream: %s is already at version %s", port.Name, port.Version)
 	}
-	return s.ordered(ctx, classified(model.Release{ReleaseSelection: model.ReleaseSelection{Requested: requested, CurrentVersion: port.Version}, Version: version, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: selection.Candidate.Tag, Commit: commits[selection.Candidate.Tag], ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}, port.Version))
+	return s.ordered(ctx, classified(model.Release{ReleaseSelection: model.ReleaseSelection{Requested: requested, CurrentVersion: port.Version}, Version: version, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: selection.Candidate.Tag, Commit: commits[selection.Candidate.Tag]}, port.Version))
 }
 
 // ordered marks a version the person named that vercmp orders below the

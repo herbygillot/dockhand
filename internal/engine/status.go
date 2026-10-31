@@ -39,9 +39,6 @@ type BranchStatus struct {
 	// CI are its pull request's failed CI jobs at the head last observed,
 	// as each was classified (classifyCI).
 	CI []model.CIFailure
-	// NetworkHeldAt is when the last submission plan of its files found
-	// what in Held took the network to find; zero where none did.
-	NetworkHeldAt time.Time
 	// HandEdits are the branch's hand edits as its working files have
 	// them (update --hand-edit), by directory.
 	HandEdits []HandEdit
@@ -758,8 +755,8 @@ func (e *Engine) readOpen(ctx context.Context, status *BranchStatus, worktree *g
 	// the network, another pull request or a moved source, as it found
 	// them (C2's rest), since status reads no network itself.
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		network, at, err := r.NetworkHolds(status.Branch.ID, model.ObjectID(status.Tree))
-		status.Held, status.NetworkHeldAt = append(status.Held, holding(network, e.allowedFor)...), at
+		network, _, err := r.NetworkHolds(status.Branch.ID, model.ObjectID(status.Tree))
+		status.Held = append(status.Held, holding(network, e.allowedFor)...)
 		return err
 	}); err != nil {
 		return err

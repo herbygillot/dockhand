@@ -61,7 +61,7 @@ type ImageManifest struct {
 // it; a newer source or new tools don't. Empty when the source's digest
 // isn't known, as for an image made before digests were recorded.
 func (m ImageManifest) Origin() string {
-	if m.SourceDigest == "" || m.SetupProtocol == 0 {
+	if m.SourceDigest == "" {
 		return ""
 	}
 	parts := []string{"source " + m.SourceDigest, fmt.Sprintf("setup %d", m.SetupProtocol), "macports " + m.MacPortsVersion}

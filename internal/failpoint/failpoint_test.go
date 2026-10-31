@@ -10,19 +10,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/herbygillot/dockhand/internal/failpoint"
 )
 
-// A normal build has no failpoints: Hit does nothing, and the release
-// binary doesn't name the variable that would set one.
+// A normal build has no failpoints: the release binary doesn't name the
+// variable that would set one.
 func TestANormalBuildHasNoFailpoints(t *testing.T) {
-	require.False(t, failpoint.Enabled)
-	t.Setenv("DOCKHAND_FAILPOINT", "tidy.prepared:kill")
-	failpoint.Hit("tidy.prepared")
-	t.Setenv("DOCKHAND_FAILPOINT", "tart.results:fault")
-	require.Empty(t, failpoint.Fails("tart.results"))
-
 	binary := filepath.Join(t.TempDir(), "dockhand")
 	build := exec.Command("go", "build", "-o", binary, "github.com/herbygillot/dockhand/cmd/dockhand")
 	build.Env = append(os.Environ(), "GOFLAGS=-mod=vendor")

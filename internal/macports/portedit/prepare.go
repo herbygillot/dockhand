@@ -108,7 +108,6 @@ type Result struct {
 	Versioned []byte                 `json:"-"`
 	Scope     *macports.ReleaseScope `json:",omitempty"`
 	Coverage  []ContextCoverage      `json:",omitempty"`
-	Base      model.Source
 	Target    model.Target
 	Files     []portfile.Edit
 	Commits   []CommitIntent
@@ -128,10 +127,6 @@ type Result struct {
 	// MirrorConflicts are archives MacPorts' mirror holds another file of,
 	// under a dist_subdir other ports share.
 	MirrorConflicts []MirrorConflict `json:",omitempty"`
-	// Crates are the archives of the Git-pinned crates a Cargo update
-	// fetched for their checksums: dependencies, not the port's source, so
-	// no pair is theirs to compare.
-	Crates []distfetch.Download `json:",omitempty"`
 	// Regenerated are the dependency blocks the update wrote again, each
 	// with how many entries it has, and how many aren't as they were.
 	Regenerated []Regenerated `json:",omitempty"`
@@ -335,7 +330,7 @@ func (s *Service) prepare(ctx context.Context, request Request, input *sourceInp
 	if err != nil {
 		return Result{}, err
 	}
-	result := Result{Base: request.Source, Target: input.target}
+	result := Result{Target: input.target}
 	family, err := input.familySnapshot(ctx, s.Ports)
 	if err != nil {
 		return Result{}, err

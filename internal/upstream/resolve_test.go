@@ -61,7 +61,6 @@ func TestResolveUsesObservedTagsAndChecksRecordedCommit(t *testing.T) {
 			require.Equal(t, "v2.0", release.Tag)
 			require.Equal(t, request, release.Requested)
 			require.Equal(t, commit, release.Commit)
-			require.False(t, release.ObservedAt.IsZero())
 			if request == "2.0" {
 				require.Equal(t, []string{"2.0", "v2.0"}, calls)
 			} else {

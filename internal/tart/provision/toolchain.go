@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/herbygillot/dockhand/internal/macos"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/installation"
 	"github.com/herbygillot/dockhand/internal/tart"
 )
@@ -106,5 +107,5 @@ func (n *native) InstallMacPorts(ctx context.Context, name string, config Config
 	if err := installation.Install(ctx, n.target(name), config.MacPortsVersion, release); err != nil {
 		return err
 	}
-	return installation.KeepArchives(ctx, n.target(name), config.GuestPrefix)
+	return installation.KeepArchives(ctx, n.target(name), macports.DefaultPrefix)
 }
