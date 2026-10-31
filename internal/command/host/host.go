@@ -4,10 +4,10 @@ import (
 	"context"
 	"io"
 	"os"
-	"os/exec"
 	"runtime"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/buildenv/local"
 	"github.com/herbygillot/dockhand/internal/buildenv/tart"
 	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/credential/keychain"
@@ -42,12 +42,17 @@ type Host struct {
 	// leading, returning its process's ID.
 	StartCleanup func(engine.Options) error
 	StartDrain   func(engine.Options) (int, error)
-	// LookTart finds Tart, for setup's report and the engine's provider.
-	LookTart func(string) (string, error)
+	// Look finds a program by name in place of compose's own lookup
+	// (compose.Dependencies.Look); nil, as the Mac's host has it, for the
+	// command line's PATH.
+	Look func(string) (string, error)
 	// TartImages, when set, stands in for dockhand's Tart images.
 	TartImages TartImages
 	// TartSupported is whether this Mac takes Tart (tart.Supported).
 	TartSupported func() bool
+	// LocalSupported is whether this machine builds in a MacPorts prefix,
+	// a Mac's (local.Supported).
+	LocalSupported func() bool
 	// The login's parts: its device flow, where it's kept, the client
 	// reading it, and the browser its page opens in.
 	AuthFlow    credential.DeviceFlow
@@ -59,34 +64,32 @@ type Host struct {
 // Timings are how often the long-running commands look again.
 type Timings struct {
 	// ServePoll is how often serve looks for work and a standby for the
-	// leader; serveRefresh how often it reads your pull requests from
-	// GitHub; serveGrace how long its executable may be missing before
-	// serve takes dockhand as uninstalled; serveCleanup how often it runs
-	// automatic cleanup (decision 36); serveIdentity how often it reads
-	// who its login acts as.
-	ServePoll, ServeRefresh, ServeGrace, ServeCleanup, ServeIdentity time.Duration
-	// WatchPoll is how often status --watch looks at the journal;
-	// watchRedraw how often the live view is redrawn with nothing new, so
-	// its ages stay true, and watchProgress how often at most for a
-	// check's progress alone, which the list of checks shows.
-	WatchPoll, WatchRedraw, WatchProgress time.Duration
+	// leader; serveGrace how long its executable may be missing before
+	// serve takes dockhand as uninstalled; serveIdentity how often it
+	// reads who its login acts as. How often it reads your pull requests
+	// and runs automatic cleanup are the engine's (ServeOptions).
+	ServePoll, ServeGrace, ServeIdentity time.Duration
+	// WatchPoll is how often status --watch looks at the journal.
+	WatchPoll time.Duration
 	// FollowPoll is how often logs --follow reads the log again.
 	FollowPoll time.Duration
+	// MigrationPoll is how often a serve waiting on a person's answer to
+	// its database's migration tries the database again.
+	MigrationPoll time.Duration
 }
 
-// MachineHost is the Mac's own host.
-func MachineHost() *Host {
+// MachineHost is the Mac's own host, with the programs its login's keeping
+// and the browser run where look finds them on the command line's PATH
+// (compose.Options.LookPath).
+func MachineHost(look func(name string) string) *Host {
 	return &Host{
 		Timings: Timings{
 			ServePoll:     2 * time.Second,
-			ServeRefresh:  engine.PullRequestRefresh,
 			ServeGrace:    time.Minute,
-			ServeCleanup:  24 * time.Hour,
 			ServeIdentity: time.Minute,
 			WatchPoll:     time.Second,
-			WatchRedraw:   30 * time.Second,
-			WatchProgress: 5 * time.Second,
 			FollowPoll:    time.Second,
+			MigrationPoll: time.Minute,
 		},
 		Now: time.Now,
 		// From the engine's own runtime, so a renewal its store didn't
@@ -114,15 +117,15 @@ func MachineHost() *Host {
 			}
 			return macos.Notify(context.Background(), title, text)
 		},
-		OS:            runtime.GOOS,
-		StartCleanup:  startCleanup,
-		StartDrain:    startDrain,
-		LookTart:      exec.LookPath,
-		TartSupported: tart.Supported,
-		AuthFlow:      &github.DeviceFlow{},
-		AuthStore:     keychain.Store{},
-		AuthAPI:       github.SystemClient,
-		OpenBrowser:   macos.Open,
+		OS:             runtime.GOOS,
+		StartCleanup:   startCleanup,
+		StartDrain:     startDrain,
+		TartSupported:  tart.Supported,
+		LocalSupported: local.Supported,
+		AuthFlow:       &github.DeviceFlow{},
+		AuthStore:      keychain.Store{Executable: look("security")},
+		AuthAPI:        github.SystemClient,
+		OpenBrowser:    macos.Opener{Path: look("open")}.Open,
 	}
 }
 

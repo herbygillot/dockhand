@@ -14,6 +14,8 @@ const (
 	DefaultPrefix = "/opt/local"
 	// TclShell is the MacPorts Tcl interpreter under the prefix.
 	TclShell = "port-tclsh"
+	// PortIndexer is MacPorts' indexer under the prefix.
+	PortIndexer = "portindex"
 )
 
 // FindTclsh is this Mac's MacPorts Tcl interpreter: port-tclsh where look
@@ -22,7 +24,20 @@ const (
 // evaluator, setup's report, and the comparison of an image's MacPorts
 // with this Mac's all read Portfiles with it.
 func FindTclsh(look func(name string) (string, error)) string {
-	for _, name := range []string{TclShell, filepath.Join(DefaultPrefix, "bin", TclShell)} {
+	return findTool(look, TclShell)
+}
+
+// FindPortindex is this Mac's portindex, found as FindTclsh finds
+// port-tclsh: where look finds it on a PATH, else under the default
+// prefix; empty where there's neither.
+func FindPortindex(look func(name string) (string, error)) string {
+	return findTool(look, PortIndexer)
+}
+
+// findTool is one of MacPorts' programs, by name, where look finds it, else
+// under the default prefix.
+func findTool(look func(name string) (string, error), tool string) string {
+	for _, name := range []string{tool, filepath.Join(DefaultPrefix, "bin", tool)} {
 		if path, err := look(name); err == nil {
 			return path
 		}

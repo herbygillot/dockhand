@@ -19,16 +19,14 @@ import (
 
 type Config struct {
 	Executable string
-	// Home is dockhand's Tart home, Personal the person's, which setup
-	// reads only, and Keys the folder of the SSH keys guests are reached
-	// with, as compose places them.
-	Home, Personal, Keys string
+	// Home is dockhand's Tart home, and Keys the folder of the SSH keys
+	// guests are reached with, as compose places them.
+	Home, Keys string
 	// Env is the environment Tart and ssh run in, which compose gives.
 	Env             []string
 	Image           string
 	Source          string
 	MacPortsVersion string
-	GuestPrefix     string
 	Platform        model.Platform
 	// Xcode is an Xcode archive, or a folder of them, for an Xcode image.
 	Xcode        string
@@ -74,14 +72,8 @@ type validation struct {
 type machine interface {
 	LockSetup(context.Context, string) (io.Closer, error)
 	Images(context.Context) (map[string]image, error)
-	// PersonalImages are the local images in the person's own Tart home,
-	// where an earlier dockhand made its images.
-	PersonalImages(context.Context) (map[string]image, error)
 	Pull(context.Context, string) error
 	Clone(context.Context, string, string) error
-	// Import copies an image of the person's home into dockhand's under
-	// another name, with Tart's export and import.
-	Import(context.Context, string, string) error
 	DiskFormat(context.Context, string) (string, error)
 	// ASIFReady refuses a Tart too old to list its VMs while an ASIF VM
 	// runs.
@@ -224,30 +216,12 @@ func (p *Provisioner) Run(ctx context.Context, options Options) (Result, error) 
 				return Result{}, fmt.Errorf("setup: image %s predates dockhand's SSH key; run dockhand setup tart without --check to give it the key", config.Image)
 			}
 			p.say("Giving %s dockhand's SSH key...", config.Image)
-			return p.upgrade(ctx, machine, config, release, golden, false, true)
+			return p.upgrade(ctx, machine, config, release, golden)
 		}
 		return p.check(ctx, machine, config, golden, true)
 	}
 	if options.Check {
 		return Result{}, fmt.Errorf("setup: verification image %s does not exist", config.Image)
-	}
-	// An image an earlier dockhand made in the person's own Tart home is
-	// copied into dockhand's rather than provisioned again, when it still
-	// validates; one that does not, such as a Tahoe image with the macOS
-	// 27 tools, is provisioned afresh.
-	if !options.Rebuild && images[config.Image].Name == "" {
-		personal, err := machine.PersonalImages(ctx)
-		if err != nil {
-			return Result{}, err
-		}
-		if found := personal[config.Image]; found.Name != "" && !found.Running {
-			p.say("Copying %s from your Tart home...", config.Image)
-			result, err := p.upgrade(ctx, machine, config, release, golden, true, false)
-			if !errors.Is(err, errUnsuitable) {
-				return result, err
-			}
-			p.say("The copy of %s cannot be used: %v; provisioning a new one.", config.Image, err)
-		}
 	}
 	return p.provision(ctx, machine, config, release, golden, images[config.Image].Name != "")
 }
@@ -291,14 +265,8 @@ func normalize(config Config) (Config, macos.Release, error) {
 	if config.MacPortsVersion == "" {
 		config.MacPortsVersion = macports.DefaultBaseVersion
 	}
-	if config.GuestPrefix == "" {
-		config.GuestPrefix = macports.DefaultPrefix
-	}
 	if !safeName(config.Image) || strings.TrimSpace(config.Source) != config.Source || strings.ContainsAny(config.Source, "\x00\r\n\t ") || !versionPattern.MatchString(config.MacPortsVersion) {
 		return config, release, fmt.Errorf("setup: invalid image, source, or MacPorts version")
-	}
-	if config.GuestPrefix != macports.DefaultPrefix {
-		return config, release, fmt.Errorf("setup: the MacPorts package installer requires guest prefix /opt/local")
 	}
 	// An image under one of dockhand's names holds what that name says.
 	if named, ok := tart.ParsePrepared(config.Image); ok && named.Profile != prepared.Profile {
@@ -468,11 +436,11 @@ func (p *Provisioner) provision(ctx context.Context, machine machine, config Con
 }
 
 // upgrade gives an existing image what an image made today has, dockhand's
-// SSH key and recorded host keys, in a candidate adopted as a rebuild's is:
-// an image of dockhand's own home made before the key (replacing it), or
-// one copied from the person's home. A candidate that does not validate
-// against the profile is errUnsuitable, and nothing is adopted.
-func (p *Provisioner) upgrade(ctx context.Context, machine machine, config Config, release macos.Release, golden string, imported, replacing bool) (result Result, err error) {
+// SSH key and recorded host keys, in a candidate adopted as a rebuild's is,
+// replacing an image of dockhand's own home made before the key. A
+// candidate that does not validate against the profile is errUnsuitable,
+// and nothing is adopted.
+func (p *Provisioner) upgrade(ctx context.Context, machine machine, config Config, release macos.Release, golden string) (result Result, err error) {
 	next, goldenNext := config.Image+"-next", golden+"-next"
 	if err := discard(ctx, machine, next); err != nil {
 		return Result{}, err
@@ -480,11 +448,7 @@ func (p *Provisioner) upgrade(ctx context.Context, machine machine, config Confi
 	if err := discard(ctx, machine, goldenNext); err != nil {
 		return Result{}, err
 	}
-	if imported {
-		if err := machine.Import(ctx, config.Image, next); err != nil {
-			return Result{}, err
-		}
-	} else if err := machine.Clone(ctx, config.Image, next); err != nil {
+	if err := machine.Clone(ctx, config.Image, next); err != nil {
 		return Result{}, err
 	}
 	keepNext := false
@@ -520,7 +484,7 @@ func (p *Provisioner) upgrade(ctx context.Context, machine machine, config Confi
 	if err := toolsGeneration(checked, release); err != nil {
 		return Result{}, fmt.Errorf("%w: it %w", errUnsuitable, err)
 	}
-	return p.finish(ctx, machine, config, golden, next, "", checked, replacing, &keepNext)
+	return p.finish(ctx, machine, config, golden, next, "", checked, true, &keepNext)
 }
 
 // finish records a validated candidate's manifest, keeps a golden copy,
@@ -535,7 +499,7 @@ func (p *Provisioner) finish(ctx context.Context, machine machine, config Config
 	goldenNext := golden + "-next"
 	declared := tart.ImageManifest{
 		Protocol: tart.ImageManifestProtocol, Source: config.Source, SourceDigest: digest, Platform: config.Platform,
-		MacPortsPrefix: config.GuestPrefix, MacPortsVersion: config.MacPortsVersion,
+		MacPortsPrefix: macports.DefaultPrefix, MacPortsVersion: config.MacPortsVersion,
 		GuestAgentVersion: checked.GuestAgentVersion, XcodeVersion: checked.XcodeVersion,
 		CommandLineTools: checked.CommandLineTools, SetupProtocol: tart.SetupProtocol,
 	}

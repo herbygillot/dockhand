@@ -46,7 +46,6 @@ func TestLookupRepairsStaleQuickIndex(t *testing.T) {
 	}
 	index, err := portindex.Open(writeIndex(t, records, map[string]int64{"alpha": 0, "beta": 0}))
 	require.NoError(t, err)
-	require.Equal(t, 2, index.Len())
 
 	entry, err := index.Lookup("BETA")
 	require.NoError(t, err)
@@ -88,7 +87,6 @@ func TestReverseDependencies(t *testing.T) {
 	require.Empty(t, reverse.Unread)
 	require.Equal(t, "consumer", reverse.ByPort["core"][0].Name)
 	require.Equal(t, []string{portindex.DependsLib}, reverse.ByPort["core"][0].Fields)
-	require.Equal(t, []string{"core"}, reverse.ByPort["core"][0].Requires)
 	require.Equal(t, "builder", reverse.ByPort["tool"][0].Name)
 	require.Equal(t, []string{portindex.DependsBuild}, reverse.ByPort["tool"][0].Fields)
 	require.Equal(t, "core", reverse.ByPort["runtime"][0].Name)

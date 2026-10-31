@@ -33,7 +33,7 @@ func TestUncoveredCIIsWhatNoEnvironmentBuiltOn(t *testing.T) {
 func TestCIIsTheReleasesMastersWorkflowNames(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
-	write(t, f.upstream, map[string]string{".github/workflows/main.yml": "jobs:\n  build:\n    strategy:\n      matrix:\n        os: [macos-14, macos-15, macos-26]\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{".github/workflows/main.yml": "jobs:\n  build:\n    strategy:\n      matrix:\n        os: [macos-14, macos-15, macos-26]\n"})
 	testsupport.Git(t, f.upstream, "add", ".")
 	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "CI")
 	e := f.open(t)

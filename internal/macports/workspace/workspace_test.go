@@ -311,9 +311,8 @@ func TestRegistrySharesOneWorkspacePerSource(t *testing.T) {
 	require.DirExists(t, first.Root(), "a holder remains")
 	require.NoError(t, releaseSecond())
 	require.NoDirExists(t, first.Root(), "the last release closes it")
-	require.NoError(t, registry.Close())
-	require.NoDirExists(t, other.Root(), "closing the registry closes what is still held")
-	require.NoError(t, releaseOther(), "a release after the registry closed is a no-op")
+	require.NoError(t, releaseOther())
+	require.NoDirExists(t, other.Root())
 
 	var none *workspace.Registry
 	alone, release, err := none.Acquire(t.Context(), f.repo, f.source())

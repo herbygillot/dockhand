@@ -4,13 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/store"
 )
 
 // A port that may have a newer release is named once for what was set
@@ -168,4 +172,41 @@ func TestServeSaysAWorkersProblemOnceWhileItStands(t *testing.T) {
 	other := s.problems.pass("look")
 	other.say(ctx, "serve: cleanup: disk full")
 	require.Len(t, said, 3, "each worker's own")
+}
+
+// A leader whose lease another serve took, as a standby that judged it
+// dead does, stops rather than drive work twice, where no test reached it
+// (the test analysis's step b).
+func TestALeaderThatLostItsLeaseStops(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	other := session(t, e)
+	leading := make(chan struct{})
+	var once sync.Once
+	done := make(chan error, 1)
+	go func() {
+		done <- e.Serve(t.Context(), session(t, e), ServeOptions{Poll: 10 * time.Millisecond, Say: func(line string) {
+			if strings.HasPrefix(line, "serve: leading") {
+				once.Do(func() { close(leading) })
+			}
+		}})
+	}()
+	select {
+	case <-leading:
+	case err := <-done:
+		t.Fatalf("serve ended before it led: %v", err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("serve never led")
+	}
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		_, err := tx.AcquireLease(coord.LeaderResource, other.ID())
+		return err
+	}))
+	select {
+	case err := <-done:
+		require.EqualError(t, err, "serve: another serve took over the lead; stopping")
+	case <-time.After(30 * time.Second):
+		t.Fatal("the leader that lost its lease kept serving")
+	}
 }

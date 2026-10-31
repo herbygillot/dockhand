@@ -30,7 +30,7 @@ func (c *Client) Inspect(ctx context.Context, ref forge.PullRequestRef) (forge.P
 	if row.GetNumber() != ref.Number || row.Head == nil || row.Head.GetSHA() == "" {
 		return forge.PullRequestStatus{}, fmt.Errorf("github: response identifies another pull request")
 	}
-	status := forge.PullRequestStatus{Draft: row.GetDraft(), Mergeable: "unknown", MergeableDetail: row.GetMergeableState(), Review: "none", ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}
+	status := forge.PullRequestStatus{Draft: row.GetDraft(), Mergeable: "unknown", MergeableDetail: row.GetMergeableState(), Review: "none"}
 	if row.Mergeable != nil {
 		status.Mergeable = map[bool]string{true: "yes", false: "no"}[*row.Mergeable]
 	}

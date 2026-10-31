@@ -91,7 +91,7 @@ func (s *Service) resolvePin(ctx context.Context, port macports.PortInfo, spec p
 		return model.Release{}, fmt.Errorf("upstream: %s is already at version %s", port.Name, port.Version)
 	}
 	return model.Release{ReleaseSelection: model.ReleaseSelection{Requested: requested, CurrentVersion: port.Version}, Version: version, SourceVersion: commit, Pinned: true,
-		Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: commit, Commit: commit, ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}, nil
+		Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: commit, Commit: commit}, nil
 }
 
 // checkPin checks a pinned release against the Portfile and the forge: a

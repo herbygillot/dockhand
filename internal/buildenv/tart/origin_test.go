@@ -174,11 +174,7 @@ func TestAChangedIdentitySaysWhatChanged(t *testing.T) {
 	t.Parallel()
 	p := &Provider{}
 	image := "source sha256:eeec; setup 3; macports 2.12.6; tools 26.6"
-	require.Equal(t, "dockhand has begun to build each target from its source, never from a published archive, and from clean work",
-		p.IdentityChange(model.Environment{}, image+"; verifier 1", image+"; verifier 2"))
-	require.Equal(t, "dockhand has begun to build each target with its own dependencies alone active, deactivating what a dependency built from source needed to build",
-		p.IdentityChange(model.Environment{}, image+"; verifier 2", image+"; verifier 3"))
-	require.Equal(t, "dockhand has begun to build otherwise", p.IdentityChange(model.Environment{}, image+"; verifier 2", image+"; verifier 9"))
+	require.Equal(t, "dockhand has begun to build otherwise", p.IdentityChange(model.Environment{}, image+"; verifier 3", image+"; verifier 4"))
 	require.Empty(t, p.IdentityChange(model.Environment{}, image+"; verifier 1", "source sha256:ffff; setup 3; macports 2.12.6; tools 26.6; verifier 2"), "another image")
 	require.Empty(t, p.IdentityChange(model.Environment{}, image+"; verifier 2", image+"; verifier 2"))
 	require.Empty(t, p.IdentityChange(model.Environment{}, "", image+"; verifier 2"))

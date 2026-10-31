@@ -17,7 +17,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/pypi"
 	"github.com/herbygillot/dockhand/internal/refusal"
 )
 
@@ -88,11 +87,7 @@ type Fidelity = fidelity.Report
 type ContextCoverage struct {
 	Fetch    *macports.FetchSemantics `json:",omitempty"`
 	Platform model.Platform
-	// Variant is the variant asked for in a variant's context, one whose
-	// body declares archives of its own.
-	Variant  string `json:",omitempty"`
 	Modeled  bool
-	Affected bool
 	// FetchesNothing is a context where the port has no archive to
 	// download, as a metaport or a _select port has.
 	FetchesNothing bool `json:",omitempty"`
@@ -107,8 +102,6 @@ type Result struct {
 	// start from (HandAttempt).
 	Versioned []byte                 `json:"-"`
 	Scope     *macports.ReleaseScope `json:",omitempty"`
-	Coverage  []ContextCoverage      `json:",omitempty"`
-	Base      model.Source
 	Target    model.Target
 	Files     []portfile.Edit
 	Commits   []CommitIntent
@@ -128,10 +121,6 @@ type Result struct {
 	// MirrorConflicts are archives MacPorts' mirror holds another file of,
 	// under a dist_subdir other ports share.
 	MirrorConflicts []MirrorConflict `json:",omitempty"`
-	// Crates are the archives of the Git-pinned crates a Cargo update
-	// fetched for their checksums: dependencies, not the port's source, so
-	// no pair is theirs to compare.
-	Crates []distfetch.Download `json:",omitempty"`
 	// Regenerated are the dependency blocks the update wrote again, each
 	// with how many entries it has, and how many aren't as they were.
 	Regenerated []Regenerated `json:",omitempty"`
@@ -279,7 +268,9 @@ func (r *Result) report(report Fidelity) {
 
 type Service struct {
 	DependencyTools depblock.Tools
-	Ports           macports.Evaluator
+	// PatchTools are the diff and patch a port's patches are checked with.
+	PatchTools patchcheck.Tools
+	Ports      macports.Evaluator
 	// Archives fetches source archives; its zero value downloads with the
 	// default client and limits.
 	Archives distfetch.Client
@@ -287,9 +278,6 @@ type Service struct {
 	// a git-fetched port that downloads no archive to read it from; nil
 	// leaves such a port's toolchain minimum as declared.
 	Manifests ManifestSource
-	// PyPI says which files a PyPI release publishes, where its source
-	// archive can't be had; its zero value asks PyPI.
-	PyPI pypi.Client
 }
 
 // ManifestSource reads one file of a port's source repository at the
@@ -333,7 +321,7 @@ func (s *Service) prepare(ctx context.Context, request Request, input *sourceInp
 	if err != nil {
 		return Result{}, err
 	}
-	result := Result{Base: request.Source, Target: input.target}
+	result := Result{Target: input.target}
 	family, err := input.familySnapshot(ctx, s.Ports)
 	if err != nil {
 		return Result{}, err

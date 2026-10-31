@@ -56,9 +56,9 @@ type Run struct {
 
 // RunnerJob is one job of a run: one runner of the workflow's matrix.
 type RunnerJob struct {
-	ID                 int64
-	Name               string
-	Status, Conclusion string
+	ID         int64
+	Name       string
+	Conclusion string
 	// Labels are the labels the job asked its runner for, its runs-on,
 	// macos-15; RunnerName names the runner that took it, and is empty
 	// for a job no runner took.
@@ -159,15 +159,19 @@ type Provider struct {
 	// Fork finds your fork and the remote that pushes to it.
 	Fork func(ctx context.Context) (buildenv.Fork, error)
 	API  API
-	// Poll is how often it asks after the run; Appear, how long it waits
-	// for GitHub to start one. Zero means 30 seconds and 10 minutes.
-	Poll, Appear time.Duration
 	// Sleep, when set, stands in for waiting.
 	Sleep func(ctx context.Context, d time.Duration) error
 	// BuildTimeout is how long a run may build before dockhand cancels it,
 	// JobCap when zero, past which GitHub ends each job itself (D16).
 	BuildTimeout time.Duration
 }
+
+// poll is how often the provider asks after a run, and appear how long
+// it waits for GitHub to start one.
+const (
+	poll   = 30 * time.Second
+	appear = 10 * time.Minute
+)
 
 func (p *Provider) Name() string { return buildenv.GitHub }
 
@@ -194,13 +198,6 @@ func (p *Provider) sleep(ctx context.Context, d time.Duration) error {
 func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv.Build) error {
 	if err := os.MkdirAll(job.Directory, 0o755); err != nil {
 		return err
-	}
-	poll, appear := p.Poll, p.Appear
-	if poll == 0 {
-		poll = 30 * time.Second
-	}
-	if appear == 0 {
-		appear = 10 * time.Minute
 	}
 	fork, err := p.Fork(ctx)
 	if err != nil {

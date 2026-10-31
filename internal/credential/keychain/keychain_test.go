@@ -96,3 +96,36 @@ func lastLine(value string) string {
 	}
 	return string(lines)
 }
+
+// Put refuses what would change the command security -i reads, a key
+// outside the names security's line takes or a secret with a line break,
+// before security runs: a new line would end the command and start
+// another, where no test reached them (the test analysis's step b).
+func TestPutRefusesWhatWouldInjectACommand(t *testing.T) {
+	t.Parallel()
+	ran := filepath.Join(t.TempDir(), "ran")
+	executable := filepath.Join(t.TempDir(), "security")
+	testsupport.WriteExecutable(t, executable, "#!/bin/sh\n: > "+ran+"\n")
+	store := keychain.Store{Executable: executable}
+	for _, key := range []credential.Key{
+		{Service: "fixture.service", Account: ""},
+		{Service: "", Account: "github.com"},
+		{Service: "fixture service", Account: "github.com"},
+		{Service: "fixture.service", Account: "github.com\nadd-generic-password"},
+		{Service: "fixture;rm", Account: "github.com"},
+	} {
+		require.EqualError(t, store.Put(t.Context(), key, "secret"), "keychain: service and account are required", "%+v", key)
+	}
+	key := credential.Key{Service: "fixture.service", Account: "github.com"}
+	for _, secret := range []string{"", "secret\nadd-generic-password -a x -s y -w z", "secret\r"} {
+		require.EqualError(t, store.Put(t.Context(), key, secret), "keychain: credential is empty or malformed", "%q", secret)
+	}
+	require.NoFileExists(t, ran, "security never ran")
+}
+
+// A store given no security tool says it isn't on the PATH, which compose
+// searched.
+func TestAStoreWithoutTheSecurityToolSaysWhere(t *testing.T) {
+	_, err := (keychain.Store{}).Get(t.Context(), credential.Key{Service: "fixture", Account: "github.com"})
+	require.EqualError(t, err, "keychain: macOS security tool is unavailable: it isn't on the PATH dockhand was run with")
+}

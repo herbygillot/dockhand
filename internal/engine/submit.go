@@ -531,7 +531,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	}
 	e.title(&plan)
 	plan.UnfoundBuilds, plan.BuildsProblem = e.unfoundBuilds(ctx, plan.Commits)
-	if plan.Upstream, err = e.revisionComparisons(ctx, branch, model.ObjectID(plan.Tree), true); err != nil {
+	if plan.Upstream, err = e.revisionComparisons(ctx, branch, model.ObjectID(plan.Tree)); err != nil {
 		return plan, err
 	}
 	e.searchOthers(ctx, &plan)

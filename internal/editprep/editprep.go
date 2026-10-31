@@ -55,7 +55,6 @@ const (
 
 var ErrUnsupported = portedit.ErrUnsupported
 var ErrFidelity = portedit.ErrFidelity
-var ErrNotImplemented = portedit.ErrNotImplemented
 
 // Result is the editor's result, carried whole, with its files as Git
 // edits of the source tree and the tree they make. Prepared is bound to
@@ -115,7 +114,9 @@ type Service struct {
 	Ports           macports.Evaluator
 	Upstream        *upstream.Service
 	DependencyTools depblock.Tools
-	HTTP            *http.Client
+	// PatchTools are the diff and patch a port's patches are checked with.
+	PatchTools patchcheck.Tools
+	HTTP       *http.Client
 	// Mirror is where an archive upstream no longer serves as its Portfile
 	// declares it is fetched from, archives.MacPortsMirror in use; none
 	// when empty.
@@ -126,7 +127,7 @@ type Service struct {
 }
 
 func (s *Service) editor() *portedit.Service {
-	editor := &portedit.Service{Ports: s.Ports, DependencyTools: s.DependencyTools, Archives: distfetch.Client{HTTP: s.HTTP, Mirror: s.Mirror}}
+	editor := &portedit.Service{Ports: s.Ports, DependencyTools: s.DependencyTools, PatchTools: s.PatchTools, Archives: distfetch.Client{HTTP: s.HTTP, Mirror: s.Mirror}}
 	if s.Upstream != nil {
 		editor.Manifests = s.Upstream
 	}
@@ -163,9 +164,6 @@ func (s *Service) ResolveRelease(ctx context.Context, request Request) (_ model.
 	}
 	defer func() { err = errors.Join(err, done()) }()
 	request.Workspace = files
-	if request.Action != model.EditUpdate {
-		return model.Release{}, fmt.Errorf("%w: release resolution requires a bump action", ErrNotImplemented)
-	}
 	probe, err := s.editor().Probe(ctx, probeSource(request))
 	if err != nil {
 		return model.Release{}, err

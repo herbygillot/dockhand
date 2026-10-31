@@ -5,54 +5,44 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/herbygillot/dockhand/internal/evidence"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
-// contractCases are the facts and actions the Next contract is held to,
-// one for each refusal Evaluate makes; each step of part 4 adds those its
-// judgment brings.
-var contractCases = func() []struct {
-	name   string
-	facts  Facts
-	action Action
-	mode   Mode
-} {
-	open := model.Branch{Name: "dockhand/jq-1.8.2", State: model.BranchOpen}
-	passed := &model.Run{Number: 3, State: model.RunPassed}
-	failed := &model.Run{Number: 3, State: model.RunFailed}
-	branch := func(commits int, edited ...string) Branch {
-		return Branch{Record: open, Commits: commits, Edited: edited}
-	}
-	stands := &evidence.Evidence{}
-	type c = struct {
-		name   string
-		facts  Facts
-		action Action
-		mode   Mode
-	}
-	return []c{
-		{"submit, gone", Facts{Branch: Branch{Record: open, Missing: true, Commits: 1}, Check: Check{Latest: passed, Current: true}}, ActionSubmit, Mode{Answered: model.AnsweredAsked}},
-		{"submit, pushed", Facts{Branch: Branch{Record: open, Commits: 1, Pushed: true}, Check: Check{Latest: passed, Current: true}}, ActionSubmit, Mode{Answered: model.AnsweredAsked}},
-		{"submit, nothing committed", Facts{Branch: branch(0, "Portfile"), Check: Check{Latest: passed, Current: true}}, ActionSubmit, Mode{Answered: model.AnsweredAsked}},
-		{"submit, edited", Facts{Branch: branch(1, "Portfile"), Check: Check{Latest: passed, Current: true, Evidence: stands}}, ActionSubmit, Mode{Answered: model.AnsweredAsked}},
-		{"submit, checking", Facts{Branch: branch(1), Check: Check{Latest: passed, Active: []model.Run{{Number: 4, State: model.RunRunning}}}}, ActionSubmit, Mode{Answered: model.AnsweredNobody}},
-		{"submit, stopped", Facts{Branch: branch(1), Check: Check{Latest: passed, Stopped: &model.Run{Number: 4}}}, ActionSubmit, Mode{Answered: model.AnsweredNobody}},
-		{"submit, failed", Facts{Branch: branch(1), Check: Check{Latest: failed, Current: true}}, ActionSubmit, Mode{Answered: model.AnsweredAsked}},
-		{"submit, other files", Facts{Branch: branch(1), Check: Check{Latest: passed}}, ActionSubmit, Mode{Answered: model.AnsweredAsked}},
-	}
-}()
-
 // A refusal's Next moves the branch on: another verb, or the same once
 // something named has changed, never the refused action asked again with
-// nothing to wait for (architecture, 2026-10-22).
+// nothing to wait for (architecture, 2026-10-22). Publish's refusals of
+// what blocks a submission, of a branch that moved while it was checked,
+// whose way on is a check of where it moved, and of what holds it where
+// nobody looks are each held to it, and so is the commit plan's gate on the way to a
+// submission, whose way on is tidy.
 func TestARefusalsNextAdvances(t *testing.T) {
-	for _, c := range contractCases {
-		verdict := Evaluate(c.facts, c.action, c.mode)
-		require.True(t, verdict.Refused, "%s: each case is a refusal", c.name)
-		require.NotNil(t, verdict.Next, "%s: a refusal says what moves it on", c.name)
-		require.True(t, verdict.Next.Advances(string(c.action)), "%s: %+v asks %s again with nothing to wait for", c.name, *verdict.Next, c.action)
+	held := model.Concern{Origin: model.FromUpstream, Port: "jq", Rule: "license-changed", Detail: "upstream's COPYING changed"}
+	commit := model.ObjectID("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	asked, nobody := Mode{Answered: model.AnsweredAsked}, Mode{Answered: model.AnsweredNobody}
+	cases := []struct {
+		name        string
+		publication Publication
+		mode        Mode
+	}{
+		{"blocked", Publication{Branch: "jq-1.8.2", Blocks: []Block{{Kind: BlockNoTitle}}, Commit: commit}, asked},
+		{"moved", Publication{Branch: "jq-1.8.2", Commit: commit, Bound: model.ObjectID("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")}, asked},
+		{"held", Publication{Branch: "jq-1.8.2", Holds: []model.Concern{held}, Commit: commit}, nobody},
 	}
+	for _, c := range cases {
+		refused := Publish(c.publication, c.mode, words{})
+		require.NotNil(t, refused, "%s: each case is a refusal", c.name)
+		require.NotEmpty(t, refused.Next, "%s: a refusal says what moves it on", c.name)
+		require.True(t, refused.Advances(string(VerbSubmit)), "%s: %+v asks submit again with nothing to wait for", c.name, refused.Next)
+		require.True(t, refused.Advances(string(VerbTidy)), "%s: %+v", c.name, refused.Next)
+	}
+
+	// The commit plan's gate says its way on in words, tidy, where it
+	// isn't dockhand's own edits and nobody looks.
+	plan := Plan{Branch: "jq-1.8.2", Groups: []Group{{Directory: "textproc/jq", FromEdits: true, Notes: []string{"a hand edit"}}}}
+	require.ErrorContains(t, plan.CommitUnasked(nobody), "run dockhand tidy --branch jq-1.8.2")
+	plan.Groups[0].Notes = nil
+	require.NoError(t, plan.CommitUnasked(nobody), "dockhand's own edits are committed unasked")
+
 	require.True(t, Next{Verb: "check"}.Advances("submit"))
 	require.True(t, Next{Verb: "submit", After: AfterLook}.Advances("submit"))
 	require.False(t, Next{Verb: "submit"}.Advances("submit"))

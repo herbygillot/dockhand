@@ -39,6 +39,19 @@ namespace eval ::dockhand {
                         if {[dict get $toolchain darwin] < 13} { return "" }
                         return [expr {$tools || [dict get $toolchain xcode] ? "file" : "absent"}]
                     }
+                    if {$path eq "/usr/include/sys/cdefs.h"} {
+                        # Base's portconfigure asks whether the system has
+                        # headers in /usr/include: the tools put them there
+                        # through macOS 10.13, the headers package on 10.14
+                        # alone, the host's to say, and 10.15's read-only
+                        # system volume has none (Apple's 10.14 and 10.15
+                        # notes). Before 10.9 an Xcode put them there too, or
+                        # not, by version, which the table doesn't say.
+                        set darwin [dict get $toolchain darwin]
+                        if {$darwin >= 19} { return absent }
+                        if {$darwin >= 13 && $darwin < 18} { return [expr {$tools ? "file" : "absent"}] }
+                        return ""
+                    }
                     if {$path ne $clt && [string first "$clt/" $path] != 0} { return "" }
                     if {!$tools} { return absent }
                     set rest [string range $path [string length $clt]+1 end]

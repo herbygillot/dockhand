@@ -53,7 +53,7 @@ func TestStatusOfAllRunsAFewGitProcessesWhateverItsBranches(t *testing.T) {
 			branch, err := e.Start(t.Context(), StartRequest{Name: fmt.Sprintf("b%d", i)})
 			require.NoError(t, err)
 			// Each changes a port, as a branch does.
-			write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": fmt.Sprintf("name libharbor\nversion 2\nrevision %d\n", i+1)})
+			testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": fmt.Sprintf("name libharbor\nversion 2\nrevision %d\n", i+1)})
 			testsupport.Git(t, branch.Worktree, "add", "--sparse", "devel/libharbor/Portfile")
 			testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "libharbor: a change")
 			if i%2 == 1 {

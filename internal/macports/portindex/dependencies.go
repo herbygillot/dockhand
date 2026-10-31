@@ -17,10 +17,9 @@ var reverseDependencyFields = []string{DependsLib, DependsBuild, DependsRun}
 
 // Dependent describes one reverse dependency edge from an indexed port.
 type Dependent struct {
-	Name     string
-	Portdir  string
-	Fields   []string
-	Requires []string
+	Name    string
+	Portdir string
+	Fields  []string
 }
 
 // Unread identifies an indexed dependency field that could not be parsed.
@@ -80,13 +79,8 @@ func (i *Index) ReverseDependencies() (Reverse, error) {
 		if len(edges) == 0 {
 			return true
 		}
-		requires := make([]string, 0, len(edges))
-		for name := range edges {
-			requires = append(requires, name)
-		}
-		sort.Strings(requires)
 		for name, fields := range edges {
-			result.ByPort[name] = append(result.ByPort[name], Dependent{Name: entry.Name, Portdir: entry.Portdir, Fields: fields, Requires: requires})
+			result.ByPort[name] = append(result.ByPort[name], Dependent{Name: entry.Name, Portdir: entry.Portdir, Fields: fields})
 		}
 		return true
 	})

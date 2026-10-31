@@ -26,7 +26,7 @@ func (s *Service) HandAttempt(ctx context.Context, request Request, refused Resu
 		return Result{}, err
 	}
 	defer func() { err = errors.Join(err, input.Close()) }()
-	result := Result{Base: request.Source, Target: input.target, Release: request.Release}
+	result := Result{Target: input.target, Release: request.Release}
 	var contents []byte
 	for _, file := range refused.Files {
 		if file.Path == input.target.Portfile && !file.Delete {

@@ -106,7 +106,6 @@ func (e *Engine) identityNow(ctx context.Context, environment model.Environment)
 func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []model.Run) (Evidence, error) {
 	var own model.Plan
 	var others []model.Plan
-	ids := []model.RunID{primary.ID}
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
 		if own, err = r.Plan(primary.Plan); err != nil {
@@ -121,7 +120,6 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 				return err
 			}
 			others = append(others, earlier)
-			ids = append(ids, run.ID)
 		}
 		return nil
 	}); err != nil {
@@ -131,7 +129,7 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 	// narrowed with --only adds its results but sets none, so exiv2's
 	// check --on tart:13,14 --only ufraw doesn't make 13 and 14 the
 	// branch's requirement (D17).
-	ask := evidence.AskOf(ids, append([]model.Plan{own}, others...))
+	ask := evidence.AskOf(append([]model.Plan{own}, others...))
 	required, problem := e.requiredFor(ctx, ask)
 	plan := evidence.Plan(own, others, required)
 	now := e.identitiesNow(ctx, plan.Environments)

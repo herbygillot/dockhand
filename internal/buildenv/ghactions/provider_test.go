@@ -150,9 +150,9 @@ type matrixAPI struct{ API }
 
 func (matrixAPI) Jobs(context.Context, string, int64, int) ([]RunnerJob, error) {
 	return []RunnerJob{
-		{ID: 1, Name: "build (macos-15)", Status: "completed", Conclusion: "success", RunnerName: "runner-1", Labels: []string{"macos-15"}},
-		{ID: 2, Name: "build (macos-26)", Status: "completed", Conclusion: "cancelled", Labels: []string{"macos-26"}},
-		{ID: 3, Name: "build (macos-14)", Status: "completed", Conclusion: "skipped", Labels: []string{"macos-14"}},
+		{ID: 1, Name: "build (macos-15)", Conclusion: "success", RunnerName: "runner-1", Labels: []string{"macos-15"}},
+		{ID: 2, Name: "build (macos-26)", Conclusion: "cancelled", Labels: []string{"macos-26"}},
+		{ID: 3, Name: "build (macos-14)", Conclusion: "skipped", Labels: []string{"macos-14"}},
 	}, nil
 }
 
@@ -172,8 +172,8 @@ type untakenAPI struct{ matrixAPI }
 
 func (untakenAPI) Jobs(context.Context, string, int64, int) ([]RunnerJob, error) {
 	return []RunnerJob{
-		{ID: 1, Name: "build (macos-15)", Status: "completed", Conclusion: "cancelled", Labels: []string{"macos-15"}},
-		{ID: 2, Name: "build (macos-26)", Status: "completed", Conclusion: "cancelled", Labels: []string{"macos-26"}},
+		{ID: 1, Name: "build (macos-15)", Conclusion: "cancelled", Labels: []string{"macos-15"}},
+		{ID: 2, Name: "build (macos-26)", Conclusion: "cancelled", Labels: []string{"macos-26"}},
 	}, nil
 }
 

@@ -315,7 +315,7 @@ func (p *Provider) Setup(ctx context.Context, options SetupOptions, progress io.
 // chooses. A base image has no Xcode.
 func (p *Provider) provisionConfig(release macos.Release, options SetupOptions) (provision.Config, error) {
 	config := provision.Config{
-		Executable: p.Tart.Executable, Home: p.Tart.Home, Personal: p.Personal, Keys: p.Keys, Env: p.Tart.Env, MacPortsVersion: options.MacPortsVersion, Xcode: options.Xcode,
+		Executable: p.Tart.Executable, Home: p.Tart.Home, Keys: p.Keys, Env: p.Tart.Env, MacPortsVersion: options.MacPortsVersion, Xcode: options.Xcode,
 		Platform: model.Platform{OS: "darwin", Version: strconv.Itoa(release.Darwin), Architecture: "arm64"},
 	}
 	if options.Xcode == "" {
@@ -330,17 +330,14 @@ func (p *Provider) provisionConfig(release macos.Release, options SetupOptions) 
 // wasn't given.
 type MissingXcode = macos.MissingXcode
 
-// Xcodes is where the xcodes command is, when it's installed: it downloads
+// Xcodes is where the xcodes command is, when it's installed
+// (XcodesExecutable): it downloads
 // Xcode from Apple with the person's Apple ID, which dockhand never sees.
 // It signs in through Apple's own sign-in, which Apple doesn't document
 // for other programs: an exception to depending only on documented
 // interfaces, which the person chose (docs/roadmap.md).
 func (p *Provider) Xcodes() (string, bool) {
-	if p.xcodes != "" {
-		return p.xcodes, true
-	}
-	path, err := exec.LookPath("xcodes")
-	return path, err == nil
+	return p.XcodesExecutable, p.XcodesExecutable != ""
 }
 
 // ErrXcodes is xcodes failing to download an Xcode, which says why in its

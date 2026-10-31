@@ -23,7 +23,7 @@ func TestAPlanReadsEachReleaseInItsOwnContext(t *testing.T) {
 	e := f.open(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "xdemo", Here: true})
 	require.NoError(t, err)
-	write(t, branch.Worktree, map[string]string{"devel/xdemo/Portfile": `PortSystem 1.0
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/xdemo/Portfile": `PortSystem 1.0
 name xdemo
 version 1
 categories devel
@@ -49,7 +49,7 @@ if {${xcodeversion} eq "none"} {
 }
 `})
 	testsupport.Git(t, branch.Worktree, "add", "-A")
-	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 	require.NoError(t, err)
 	monterey := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}}
 	sequoia := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}

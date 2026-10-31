@@ -24,7 +24,7 @@ import (
 // whatever is active, put back after.
 func asIs(local guest.Local) guest.Input {
 	local.Note = "dockhand check-1 attempt 1"
-	return guest.Input{Run: "check-1", Attempt: 1, Tests: "declared", Local: &local, Targets: []guest.Target{
+	return guest.Input{Tests: "declared", Local: &local, Targets: []guest.Target{
 		{ID: "libharbor", Name: "libharbor", Portfile: "devel/libharbor/Portfile", Log: buildenv.LogName("libharbor")},
 		{ID: "harbor-cli", Name: "harbor-cli", Portfile: "devel/harbor-cli/Portfile", DependsOn: []string{"libharbor"}, Log: buildenv.LogName("harbor-cli")},
 	}}
@@ -335,6 +335,9 @@ func TestAPrefixPutBackByHandIsForgotten(t *testing.T) {
 // line (the person's sitting on rc8, 2026-10-29).
 func TestRootStepsRunThePrefixsPortTclsh(t *testing.T) {
 	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("root writes a registry whatever its mode, so no step asks sudo")
+	}
 	prefix := t.TempDir()
 	registry := filepath.Join(prefix, "var", "macports", "registry")
 	require.NoError(t, os.MkdirAll(registry, 0o755))

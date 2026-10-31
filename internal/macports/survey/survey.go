@@ -60,7 +60,6 @@ type Port struct {
 // Projection for their candidates and never write into it.
 type Workspace struct {
 	Source   model.Source
-	Root     string
 	Ports    []Port
 	Problems []portindex.SelectionProblem
 	// Projection is the workspace the tree is materialized in.
@@ -127,7 +126,7 @@ func OpenAt(ctx context.Context, repo *git.Repository, revision string, workspac
 	if err := files.EnsurePorts(ctx, targets...); err != nil {
 		return nil, err
 	}
-	return &Workspace{Source: source, Root: files.Root(), Ports: ports, Problems: problems, Projection: files, release: release}, nil
+	return &Workspace{Source: source, Ports: ports, Problems: problems, Projection: files, release: release}, nil
 }
 
 func selectPorts(ctx context.Context, source portindex.Source, into macports.Tree, selection Selection) ([]Port, []portindex.SelectionProblem, error) {

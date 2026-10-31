@@ -27,11 +27,10 @@ type archiveContext struct {
 	profile model.Platform
 	// variant is the variant asked for in a variant's context, observed
 	// with session; empty for a profile's, observed as the input's.
-	variant       string
-	session       *observe.Session
-	before, after macports.Snapshot
-	binding       distfiles.Binding
-	affected      bool
+	variant string
+	session *observe.Session
+	after   macports.Snapshot
+	binding distfiles.Binding
 }
 type plannedArchive struct {
 	artifact distfiles.Artifact
@@ -229,7 +228,7 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 				plan.pairs = append(plan.pairs, archivePair{previous: previous, info: old, port: next, next: artifact.Name})
 			}
 		}
-		plan.contexts = append(plan.contexts, archiveContext{port: member.target.Name, profile: profile, variant: variant, session: session, before: before.Snapshot, after: after.Snapshot, binding: binding, affected: affected})
+		plan.contexts = append(plan.contexts, archiveContext{port: member.target.Name, profile: profile, variant: variant, session: session, after: after.Snapshot, binding: binding})
 		return nil
 	}
 	for i, profile := range profiles {

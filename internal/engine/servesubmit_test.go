@@ -310,7 +310,6 @@ func TestPassingIsOneDefinitionForShipAndServe(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, passing.Ready, 1)
 	require.Equal(t, branch.ID, passing.Ready[0].Branch.ID)
-	require.Zero(t, passing.Others)
 
 	portfile := filepath.Join(branch.Worktree, "textproc", "jq", "Portfile")
 	data, err := os.ReadFile(portfile)
@@ -318,8 +317,7 @@ func TestPassingIsOneDefinitionForShipAndServe(t *testing.T) {
 	require.NoError(t, os.WriteFile(portfile, append(data, "# edited after the check\n"...), 0o644))
 	passing, err = e.PassingBranches(t.Context())
 	require.NoError(t, err)
-	require.Empty(t, passing.Ready)
-	require.Equal(t, 1, passing.Others, "its check no longer covers its files")
+	require.Empty(t, passing.Ready, "its check no longer covers its files")
 	candidates, _, err := e.serveCandidates(t.Context())
 	require.NoError(t, err)
 	require.Empty(t, candidates, "and serve submits it no more than ship --passing would")
@@ -448,7 +446,7 @@ func TestServeHoldsAnUpdateWhoseTagMovedBeforeItsCheck(t *testing.T) {
 
 	// Files changed since the check aren't what it planned for: the
 	// question waits for a check of them.
-	write(t, candidates[0].Branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# edited\n"})
+	testsupport.WriteFiles(t, candidates[0].Branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# edited\n"})
 	status, err = e.BranchStatus(t.Context(), candidates[0].Branch)
 	require.NoError(t, err)
 	require.False(t, status.Current)
@@ -777,7 +775,7 @@ func TestADecisionOnAConcernCarriesThePersonsReason(t *testing.T) {
 	require.Equal(t, []string{"jq license-changed: acceptable because the new license is still free, and the Portfile says GPL-3"}, []string{DecisionWords(status.Decided[0])})
 
 	// A change to the port's own files lapses it.
-	write(t, branch.Worktree, map[string]string{"textproc/jq/files/patch-x.diff": "--- a\n+++ b\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/files/patch-x.diff": "--- a\n+++ b\n"})
 	testsupport.Git(t, branch.Worktree, "add", "-A")
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "jq: add a patch")
 	status, err = e.BranchStatus(t.Context(), branch)

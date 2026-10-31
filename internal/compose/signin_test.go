@@ -1,6 +1,7 @@
 package compose
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/macports/depblock"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -38,7 +40,7 @@ func TestSigninIsTheCommandLinesOwn(t *testing.T) {
 func TestRelativePathsAreTheCommandLinesDirectorys(t *testing.T) {
 	t.Parallel()
 	home, dir := t.TempDir(), t.TempDir()
-	options, _, _, err := Settings(t.Context(), Options{Database: ".dockhand/dockhand.db", Tree: "ports", Dir: dir, Env: []string{"HOME=" + home}})
+	options, _, _, err := Settings(t.Context(), Options{Database: ".dockhand/dockhand.db", Tree: "ports", Dir: dir, Env: []string{"HOME=" + home}}, Dependencies{})
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(dir, ".dockhand", "dockhand.db"), options.Database)
 	require.Equal(t, filepath.Join(dir, "ports"), options.Tree)
@@ -52,7 +54,7 @@ func TestTheHoldListNamesRulesDockhandRaises(t *testing.T) {
 	path := filepath.Join(dir, "config.toml")
 	settings := func(allow string) (engine.Options, error) {
 		require.NoError(t, os.WriteFile(path, []byte("[holds]\nallow = ["+allow+"]\n"), 0o644))
-		options, _, _, err := Settings(t.Context(), Options{Dir: dir, Env: []string{"HOME=" + home, "DOCKHAND_CONFIG=" + path}})
+		options, _, _, err := Settings(t.Context(), Options{Dir: dir, Env: []string{"HOME=" + home, "DOCKHAND_CONFIG=" + path}}, Dependencies{})
 		return options, err
 	}
 	options, err := settings(`"open", "build-file-changed"`)
@@ -70,7 +72,7 @@ func TestAPortsOwnHoldsReachTheEngine(t *testing.T) {
 	path := filepath.Join(dir, "config.toml")
 	settings := func(holds string) (engine.Options, error) {
 		require.NoError(t, os.WriteFile(path, []byte(holds), 0o644))
-		options, _, _, err := Settings(t.Context(), Options{Dir: dir, Env: []string{"HOME=" + home, "DOCKHAND_CONFIG=" + path}})
+		options, _, _, err := Settings(t.Context(), Options{Dir: dir, Env: []string{"HOME=" + home, "DOCKHAND_CONFIG=" + path}}, Dependencies{})
 		return options, err
 	}
 	options, err := settings("[holds.ports.\"harfbuzz\"]\nmajors = \"allow\"\nmoves = \"follow\"\nafter = [\"harfbuzz-devel\"]\nallow = [\"open\"]\n")
@@ -78,4 +80,36 @@ func TestAPortsOwnHoldsReachTheEngine(t *testing.T) {
 	require.Equal(t, map[string]engine.PortHolds{"harfbuzz": {AllowMajors: new(true), Allow: []string{"open"}, FollowMoves: true, After: []string{"harfbuzz-devel"}}}, options.PortHolds)
 	_, err = settings("[holds.ports.\"harfbuzz\"]\nallow = [\"licence-changed\"]\n")
 	require.ErrorContains(t, err, `holds.ports."harfbuzz".allow: "licence-changed" is not a hold dockhand raises or lets go`)
+}
+
+// The programs the engine runs are found on the command line's PATH, not
+// the process's, portindex as port-tclsh is; one that isn't there is
+// empty. A stand-in Look finds them in its place.
+func TestTheEnginesProgramsAreFoundOnTheCommandLinesPath(t *testing.T) {
+	t.Parallel()
+	home, dir, bin := t.TempDir(), t.TempDir(), t.TempDir()
+	for _, name := range []string{"diff", "patch", "go2port", "portindex"} {
+		testsupport.WriteExecutable(t, filepath.Join(bin, name), "#!/bin/sh\n")
+	}
+	options, _, _, err := Settings(t.Context(), Options{Dir: dir, Env: []string{"HOME=" + home, "PATH=/nowhere:" + bin}}, Dependencies{})
+	require.NoError(t, err)
+	programs := options.Programs
+	require.Equal(t, filepath.Join(bin, "diff"), programs.Patches.Diff)
+	require.Equal(t, filepath.Join(bin, "patch"), programs.Patches.Patch)
+	require.Equal(t, filepath.Join(bin, "go2port"), programs.Vendoring.Go2Port)
+	require.Empty(t, programs.Vendoring.Cargo2Port)
+	require.Equal(t, filepath.Join(bin, "portindex"), programs.Portindex)
+	_, err = programs.Vendoring.Resolve(depblock.Cargo)
+	require.ErrorContains(t, err, "missing executable cargo2port; install it, as sudo port install cargo2port")
+
+	var looked []string
+	look := func(name string) (string, error) {
+		looked = append(looked, name)
+		return "", errors.New("not here")
+	}
+	options, _, _, err = Settings(t.Context(), Options{Dir: dir, Env: []string{"HOME=" + home, "PATH=" + bin}}, Dependencies{Look: look})
+	require.NoError(t, err)
+	require.Empty(t, options.Programs.Patches.Patch)
+	require.Empty(t, options.Tclsh)
+	require.Subset(t, looked, []string{"port-tclsh", "portindex", "/opt/local/bin/portindex", "diff", "patch", "go2port", "cargo2port"})
 }

@@ -1324,7 +1324,7 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 	if err != nil {
 		return TidyResult{}, err
 	}
-	if plan.Index != "" && index != plan.Index {
+	if index != plan.Index {
 		return TidyResult{}, fmt.Errorf("%w: something was staged since the plan was made; run dockhand tidy again", ErrStalePlan)
 	}
 	committer, err := worktree.Author(ctx)

@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -89,6 +90,7 @@ func TestCommandsRefuseADirectoryThatIsNotAPortsTree(t *testing.T) {
 func TestSetupRefusesAnOldGit(t *testing.T) {
 	t.Parallel()
 	w := cmdtest.NewWorld(t)
+	require.NoError(t, os.Remove(filepath.Join(w.Home, ".dockhand", "dockhand.db")), "with no database, a record would make one")
 	old := filepath.Join(w.Home, "bin", "git")
 	require.NoError(t, os.MkdirAll(filepath.Dir(old), 0o755))
 	testsupport.WriteExecutable(t, old, "#!/bin/sh\necho 'git version 2.39.5 (Apple Git-154)'\n")
@@ -130,7 +132,12 @@ func TestTartIsRegisteredWhereItIsFound(t *testing.T) {
 	require.NotContains(t, e.Providers, "tart")
 	e.Close()
 
-	cmdtest.Stands(t).LookTart = func(string) (string, error) { return "/opt/homebrew/bin/tart", nil }
+	cmdtest.Stands(t).Look = func(name string) (string, error) {
+		if name == "tart" {
+			return "/opt/homebrew/bin/tart", nil
+		}
+		return subprocess.LookPath(name, os.Environ())
+	}
 	s = *cmdtest.TestSettings(t)
 	e, err = s.Open(t.Context())
 	require.NoError(t, err)

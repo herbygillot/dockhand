@@ -4,7 +4,6 @@ import (
 	"context"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/store/sqlite"
+	"github.com/herbygillot/dockhand/internal/store/sqlite/sqlitetest"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -62,7 +62,7 @@ type fixture struct {
 
 func setup(t *testing.T) fixture {
 	t.Helper()
-	s, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "dockhand.db"), sqlite.Options{})
+	s, err := sqlite.Open(t.Context(), sqlitetest.Fresh(t, filepath.Join(t.TempDir(), "dockhand.db")), sqlite.Options{})
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	repo, err := s.Register(t.Context(), "/src/macports-ports/.git")
@@ -324,9 +324,6 @@ func TestAnEndedSessionStopsBeatingQuietly(t *testing.T) {
 }
 
 func TestSystemLivenessKnowsAReplacedOrExitedProcess(t *testing.T) {
-	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
-		t.Skip("process start times are read on Linux and macOS")
-	}
 	self, err := Self()
 	require.NoError(t, err)
 	alive, err := System{}.Alive(self)

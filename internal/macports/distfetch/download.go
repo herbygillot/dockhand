@@ -29,7 +29,7 @@ import (
 // archive's name, and the path of the kept bytes when the store kept them.
 type Download struct {
 	// Path is the kept file, empty when only the hashes were wanted.
-	Path string `json:"-"`
+	Path string
 	URL  string
 	portfile.Checksum
 }

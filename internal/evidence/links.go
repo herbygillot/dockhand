@@ -9,11 +9,11 @@ import (
 )
 
 // LinkFinding is a target's build linking a library from a port it doesn't
-// declare in depends_lib (model.FindingUndeclaredLink, v0.5.0 part 6), or,
-// where Unread, a build whose links couldn't be read, so nothing is said of
-// them: never that it links nothing; or, where Clean, a target whose links
-// were read and each declared, so the scan is seen to have run (field
-// testing's crystal 1.22.1, after rc3). A notice; it holds nothing.
+// declare in depends_lib (v0.5.0 part 6), or, where Unread, a build whose
+// links couldn't be read, so nothing is said of them: never that it links
+// nothing; or, where Clean, a target whose links were read and each
+// declared, so the scan is seen to have run (field testing's crystal
+// 1.22.1, after rc3). A notice; it holds nothing.
 type LinkFinding struct {
 	Target model.TargetID
 	// Port is the port the target links and doesn't declare; Library and

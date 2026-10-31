@@ -42,5 +42,4 @@ func TestBucketOf(t *testing.T) {
 	require.Equal(t, BucketDone, BucketOf(merged))
 	archived := Facts{Branch: Branch{Record: model.Branch{Name: "dockhand/old", State: model.BranchArchived}}}
 	require.Equal(t, BucketDone, BucketOf(archived))
-	require.Equal(t, "waiting", BucketWaiting.String())
 }

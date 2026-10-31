@@ -95,14 +95,8 @@ func ReadRequirements(data []byte) Requirements {
 type Pyproject struct {
 	// Project is nil where the file has no [project] table.
 	Project *PythonProject
-	// BuildRequires and BuildBackend are the build system's: what building
-	// requires, and the backend that builds.
-	BuildRequires []Declaration
-	BuildBackend  string
-	// Unparsed are the entries of the build system's requirements and the
-	// optional groups that aren't requirements, which the reading keeps
-	// rather than fails on, as it does for the project's own.
-	Unparsed []string
+	// BuildBackend is the build system's backend, which builds.
+	BuildBackend string
 	// Poetry are Poetry's dependencies, by name as Python compares names,
 	// each with its constraint as Poetry writes it, a version, "git <url>",
 	// or "path <dir>"; not python, which is RequiresPython's kin.
@@ -116,8 +110,6 @@ type PythonProject struct {
 	// PEP 621 license table isn't.
 	License, Description string
 	Dependencies         []Declaration
-	// Optional are the optional dependencies, by their group.
-	Optional map[string][]Declaration
 	// RequiresPython is the Python versions the project supports, as a
 	// PEP 440 specifier.
 	RequiresPython string
@@ -128,8 +120,8 @@ type PythonProject struct {
 
 // ReadPyproject reads a pyproject.toml. One of the project's own
 // requirements that isn't one, or a Poetry dependency it can't read, fails
-// the reading; one of the build system's or an optional group's is kept
-// as unparsed.
+// the reading. The build system's requirements and the optional groups
+// are decoded only so that a file where either is malformed fails it too.
 func ReadPyproject(data []byte) (Pyproject, error) {
 	var manifest struct {
 		Project *struct {
@@ -166,17 +158,6 @@ func ReadPyproject(data []byte) (Pyproject, error) {
 		return declarations, nil
 	}
 	found := Pyproject{BuildBackend: manifest.BuildSystem.BuildBackend}
-	lenient := func(entries []string) []Declaration {
-		var declarations []Declaration
-		for _, entry := range entries {
-			if declaration, ok := ParseRequirement(entry); ok {
-				declarations = append(declarations, declaration)
-			} else {
-				found.Unparsed = append(found.Unparsed, entry)
-			}
-		}
-		return declarations
-	}
 	if project := manifest.Project; project != nil {
 		found.Project = &PythonProject{Name: project.Name, RequiresPython: project.RequiresPython, Dynamic: project.Dynamic}
 		found.Project.License, _ = project.License.(string)
@@ -185,14 +166,7 @@ func ReadPyproject(data []byte) (Pyproject, error) {
 		if found.Project.Dependencies, err = declare(project.Dependencies); err != nil {
 			return Pyproject{}, err
 		}
-		for _, group := range slices.Sorted(maps.Keys(project.OptionalDependencies)) {
-			if found.Project.Optional == nil {
-				found.Project.Optional = map[string][]Declaration{}
-			}
-			found.Project.Optional[group] = lenient(project.OptionalDependencies[group])
-		}
 	}
-	found.BuildRequires = lenient(manifest.BuildSystem.Requires)
 	for _, name := range slices.Sorted(maps.Keys(manifest.Tool.Poetry.Dependencies)) {
 		if name == "python" {
 			continue

@@ -7,14 +7,14 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 func TestDiffDirectoriesComparesAWithB(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	for name, data := range map[string]string{"a/src/x.c": "a\nb\n", "b/src/x.c": "a\nc\n", "b/NEWS": "y\n", "a/same": "s\n", "b/same": "s\n"} {
-		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(root, name)), 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(root, name), []byte(data), 0o644))
-	}
+	testsupport.WriteFiles(t, root, map[string]string{"a/src/x.c": "a\nb\n", "b/src/x.c": "a\nc\n", "b/NEWS": "y\n", "a/same": "s\n", "b/same": "s\n"})
 	repo := &Repository{Root: root}
 	patch, err := repo.DiffDirectories(t.Context(), root)
 	require.NoError(t, err)

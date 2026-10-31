@@ -29,7 +29,7 @@ func TestRenamingAPort(t *testing.T) {
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-rename", Ports: []string{"jq"}})
 	require.NoError(t, err)
 	testsupport.Git(t, branch.Worktree, "sparse-checkout", "add", "textproc/jq", "devel/libharbor")
-	write(t, branch.Worktree, map[string]string{"textproc/jq/files/patch-a.diff": "--- a\n+++ b\n", "textproc/jq/Portfile": "name jq\nversion 1.7.1\ncategories textproc\nlivecheck.url https://jq.example/jq\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/files/patch-a.diff": "--- a\n+++ b\n", "textproc/jq/Portfile": "name jq\nversion 1.7.1\ncategories textproc\nlivecheck.url https://jq.example/jq\n"})
 	testsupport.Git(t, branch.Worktree, "add", "-A")
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "jq: a patch")
 	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{
@@ -66,7 +66,7 @@ func TestRenamingAPort(t *testing.T) {
 
 	// A move keeps the name, and names the category first where the old
 	// was.
-	write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 2\ncategories devel net\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 2\ncategories devel net\n"})
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "libharbor: categories")
 	_, err = e.RenamePort(t.Context(), PortRenameRequest{Branch: branch, Port: "libharbor", Category: "devel"})
 	require.ErrorContains(t, err, "libharbor is in devel already")
@@ -112,7 +112,7 @@ func TestARenameIsCheckedTidiedAndSubmittedAsOne(t *testing.T) {
 		require.NoError(t, err)
 		subject := "jq2: rename from jq"
 		if update {
-			write(t, branch.Worktree, map[string]string{"textproc/jq2/Portfile": "name jq2\nversion 1.8.1\n"})
+			testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq2/Portfile": "name jq2\nversion 1.8.1\n"})
 			testsupport.Git(t, branch.Worktree, "add", "textproc/jq2/Portfile")
 			subject = "jq2: rename from jq, update to 1.8.1"
 		}

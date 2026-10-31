@@ -627,7 +627,7 @@ func (e *Engine) Resolve(ctx context.Context, selector string) (model.Branch, er
 	// it's said from the record, not as a name nothing has (the rc8 full
 	// stage's B6, the rc10 full stage's C7).
 	if merged, merr := e.named(ctx, selector, store.Reader.MergedBranchNamed); merr == nil {
-		return branch, fmt.Errorf("%w named %s: %w", ErrNoBranch, selector, &MergedError{Branch: merged, words: e.mergedWords(ctx, merged)})
+		return branch, fmt.Errorf("%w named %s: %w", ErrNoBranch, selector, &MergedError{words: e.mergedWords(ctx, merged)})
 	}
 	return branch, err
 }
@@ -635,8 +635,7 @@ func (e *Engine) Resolve(ctx context.Context, selector string) (model.Branch, er
 // MergedError is a name an open branch hasn't, which a merged one's record
 // keeps: what became of it, said from the record.
 type MergedError struct {
-	Branch model.Branch
-	words  string
+	words string
 }
 
 func (m *MergedError) Error() string { return m.words }
@@ -1165,7 +1164,7 @@ type OpenWork struct {
 // openBranch is an open branch as OpenWork read it.
 type openBranch struct {
 	branch      model.Branch
-	head, tree  string
+	tree        string
 	worktree    *git.Repository
 	edited      bool
 	directories []string
@@ -1209,7 +1208,7 @@ func (e *Engine) OpenWork(ctx context.Context) (*OpenWork, error) {
 		if !ref.Exists {
 			continue
 		}
-		found := openBranch{branch: branch, head: ref.Object, tree: trees[ref.Object]}
+		found := openBranch{branch: branch, tree: trees[ref.Object]}
 		if found.tree == "" || trees[string(branch.Base)] == "" {
 			return nil, fmt.Errorf("%s's head or base couldn't be read as a commit", branch.ShortName())
 		}

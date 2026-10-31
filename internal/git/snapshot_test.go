@@ -3,22 +3,21 @@ package git_test
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
 func snapshotRepo(t *testing.T) *git.Repository {
 	t.Helper()
 	root := t.TempDir()
-	output, err := exec.CommandContext(t.Context(), "git", "init", "--quiet", root).CombinedOutput()
-	require.NoError(t, err, "%s", output)
-	repo, err := git.Open(t.Context(), root, git.Program{Env: os.Environ()})
+	testsupport.Git(t, root, "init", "--quiet")
+	repo, err := git.Open(t.Context(), root, git.Program{Env: testsupport.GitEnv(t)})
 	require.NoError(t, err)
 	return repo
 }

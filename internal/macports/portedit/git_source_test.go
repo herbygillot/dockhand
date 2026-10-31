@@ -37,7 +37,6 @@ git.branch v${version}
 	require.Contains(t, after, "git.branch v${version}")
 	require.Equal(t, "v1.2.4", result.Fidelity[len(result.Fidelity)-1].After.Ports["fixture"].Options["git.branch"])
 	require.Contains(t, result.Fidelity[0].ExpectedChanges, "fixture.git.branch -> v1.2.4")
-	require.Len(t, result.Coverage, 1)
 }
 
 // A literal commit pin moves to the resolved commit; a pin carried any

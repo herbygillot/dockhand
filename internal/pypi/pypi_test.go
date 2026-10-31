@@ -23,7 +23,7 @@ func TestAReleasesFilesAreRead(t *testing.T) {
 	client := Client{HTTP: server.Client(), Base: server.URL}
 	files, err := client.Files(t.Context(), "flatbuffers", "25.12.19")
 	require.NoError(t, err)
-	require.Equal(t, []File{{Filename: "flatbuffers-25.12.19-py2.py3-none-any.whl", PackageType: "bdist_wheel"}}, files)
+	require.Equal(t, []File{{PackageType: "bdist_wheel"}}, files)
 	_, err = client.Files(t.Context(), "flatbuffers", "0.0")
 	require.ErrorContains(t, err, "HTTP 404")
 }

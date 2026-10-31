@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/store/sqlite"
+	"github.com/herbygillot/dockhand/internal/store/sqlite/sqlitetest"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -27,6 +28,9 @@ type world struct {
 	transitions *history.Transitions
 	branch      model.Branch
 	base, head  string
+	// tree is both commits' tree, which a tidy's checkpoint records as
+	// the index it replaced.
+	tree string
 }
 
 func newWorld(t *testing.T) world {
@@ -43,9 +47,10 @@ func newWorld(t *testing.T) world {
 	testsupport.Git(t, root, "switch", "-q", "-c", "dockhand/jq")
 	testsupport.Git(t, root, "commit", "-q", "--allow-empty", "-m", "jq: one")
 	head := testsupport.Git(t, root, "rev-parse", "HEAD")
+	tree := testsupport.Git(t, root, "rev-parse", "HEAD^{tree}")
 	repo, err := git.Open(t.Context(), root, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
-	s, err := sqlite.Open(t.Context(), filepath.Join(filepath.Dir(root), "dockhand.db"), sqlite.Options{})
+	s, err := sqlite.Open(t.Context(), sqlitetest.Fresh(t, filepath.Join(filepath.Dir(root), "dockhand.db")), sqlite.Options{})
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	repository, err := s.Register(t.Context(), repo.CommonDir)
@@ -54,7 +59,7 @@ func newWorld(t *testing.T) world {
 	require.NoError(t, s.Update(t.Context(), repository, func(tx store.Tx) error { return tx.AddBranch(branch) }))
 	transitions := &history.Transitions{Repo: repo, Store: s, Repository: repository, Now: func() time.Time { return at },
 		Worktree: func(context.Context, model.Branch) (*git.Repository, error) { return repo, nil }}
-	return world{root: root, transitions: transitions, branch: branch, base: base, head: head}
+	return world{root: root, transitions: transitions, branch: branch, base: base, head: head, tree: tree}
 }
 
 // prepared records a tidy's checkpoint as prepared, from head to a new
@@ -63,7 +68,7 @@ func newWorld(t *testing.T) world {
 func (w world) prepared(t *testing.T) model.Checkpoint {
 	t.Helper()
 	after := testsupport.Git(t, w.root, "commit-tree", w.base+"^{tree}", "-p", w.base, "-m", "jq: tidied")
-	checkpoint := model.Checkpoint{Kind: model.CheckpointTidy, Branch: w.branch.ID, Before: model.ObjectID(w.head), After: model.ObjectID(after),
+	checkpoint := model.Checkpoint{Kind: model.CheckpointTidy, Branch: w.branch.ID, Index: model.ObjectID(w.tree), Before: model.ObjectID(w.head), After: model.ObjectID(after),
 		BaseBefore: w.branch.Base, BaseAfter: w.branch.Base, At: at}
 	require.NoError(t, w.transitions.Prepare(t.Context(), &checkpoint))
 	return checkpoint
@@ -120,7 +125,7 @@ func TestMakeKeepsAChangeInACheckpoint(t *testing.T) {
 		require.True(t, ok)
 		return checkpoint
 	}
-	checkpoint := model.Checkpoint{Kind: model.CheckpointTidy, Branch: w.branch.ID, Before: model.ObjectID(w.head), After: model.ObjectID(w.base),
+	checkpoint := model.Checkpoint{Kind: model.CheckpointTidy, Branch: w.branch.ID, Index: model.ObjectID(w.tree), Before: model.ObjectID(w.head), After: model.ObjectID(w.base),
 		BaseBefore: model.ObjectID(w.base), BaseAfter: model.ObjectID(w.base), At: at}
 	moved := errors.New("the refs moved meanwhile")
 	err := w.transitions.Make(t.Context(), &checkpoint, history.Change{Move: func(context.Context) error { return moved }})
@@ -128,7 +133,7 @@ func TestMakeKeepsAChangeInACheckpoint(t *testing.T) {
 	require.Equal(t, model.CheckpointAbandoned, read(checkpoint.Number).State)
 	require.NotEqual(t, model.CheckpointApplied, checkpoint.State)
 
-	again := model.Checkpoint{Kind: model.CheckpointTidy, Branch: w.branch.ID, Before: model.ObjectID(w.head), After: model.ObjectID(w.head),
+	again := model.Checkpoint{Kind: model.CheckpointTidy, Branch: w.branch.ID, Index: model.ObjectID(w.tree), Before: model.ObjectID(w.head), After: model.ObjectID(w.head),
 		BaseBefore: model.ObjectID(w.base), BaseAfter: model.ObjectID(w.base), At: at}
 	require.NoError(t, w.transitions.Make(t.Context(), &again, history.Change{Move: func(context.Context) error { return nil },
 		After: func(context.Context) (string, error) { return "tidied 1 commit into 1 commit", nil }}))
@@ -136,7 +141,7 @@ func TestMakeKeepsAChangeInACheckpoint(t *testing.T) {
 	require.Equal(t, model.CheckpointApplied, read(again.Number).State)
 	require.Greater(t, again.Number, checkpoint.Number)
 
-	third := model.Checkpoint{Kind: model.CheckpointTidy, Branch: w.branch.ID, Before: model.ObjectID(w.base), After: model.ObjectID(w.head),
+	third := model.Checkpoint{Kind: model.CheckpointTidy, Branch: w.branch.ID, Index: model.ObjectID(w.tree), Before: model.ObjectID(w.base), After: model.ObjectID(w.head),
 		BaseBefore: model.ObjectID(w.base), BaseAfter: model.ObjectID(w.base), At: at}
 	stuck := errors.New("the staging area couldn't be reset")
 	err = w.transitions.Make(t.Context(), &third, history.Change{Move: func(context.Context) error { return nil },

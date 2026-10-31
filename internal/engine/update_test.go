@@ -295,7 +295,7 @@ func TestUpdateStartsFromTheWorkingFilesAsTheyAre(t *testing.T) {
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Here: true})
 	require.NoError(t, err)
 	portfile := filepath.Join(branch.Worktree, "textproc/jq/Portfile")
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\n# my note\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\n# my note\n"})
 
 	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq", Version: "1.8.0"})
 	require.NoError(t, err)
@@ -336,7 +336,7 @@ func TestAnUpdateWritesNothingOverAFileThatChanged(t *testing.T) {
 	require.NoError(t, err)
 	portfile := filepath.Join(branch.Worktree, "textproc/jq/Portfile")
 	p.during = func() {
-		write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.2\n"})
+		testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.2\n"})
 	}
 
 	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
@@ -756,7 +756,7 @@ func TestAnOptionThePortfileNamesHolds(t *testing.T) {
 	})}
 	held := func(portfile string) bool {
 		t.Helper()
-		write(t, f.clone, map[string]string{"sysutils/fluent-bit/Portfile": portfile})
+		testsupport.WriteFiles(t, f.clone, map[string]string{"sysutils/fluent-bit/Portfile": portfile})
 		testsupport.Git(t, f.clone, "add", "sysutils/fluent-bit/Portfile")
 		testsupport.Git(t, f.clone, "commit", "-q", "-m", "fluent-bit")
 		tree := strings.TrimSpace(testsupport.Git(t, f.clone, "rev-parse", "HEAD^{tree}"))
@@ -1027,7 +1027,7 @@ func TestAnUpdateSaysItsRepositoryWasRenamed(t *testing.T) {
 func TestAnObsoleteStubMovesWithItsReplacementWhenAsked(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
-	write(t, f.upstream, map[string]string{"textproc/jq-old/Portfile": "name jq-old\nversion 1.7.1\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq-old/Portfile": "name jq-old\nversion 1.7.1\n"})
 	testsupport.Git(t, f.upstream, "add", "-A")
 	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "jq-old: obsolete")
 	e, p := f.withPreparer(t)
@@ -1095,7 +1095,7 @@ func TestAnUpdatesRecordKeepsTheSubportsItCantSee(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	legacy := "subport jq-legacy {\n    version 0.9\n}\n"
-	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\n" + legacy})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\n" + legacy})
 	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "jq: add jq-legacy")
 	e, p := f.withPreparer(t)
 	f.withFork(t, e)

@@ -22,7 +22,6 @@ const API = "https://pypi.org/pypi/"
 // File is one file a release publishes, and whether it's a source archive
 // ("sdist") or a wheel ("bdist_wheel").
 type File struct {
-	Filename    string `json:"filename"`
 	PackageType string `json:"packagetype"`
 }
 

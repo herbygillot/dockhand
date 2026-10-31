@@ -57,7 +57,7 @@ func (s *Service) checkPatches(ctx context.Context, input *sourceInput, result *
 		}
 		patches = append(patches, patchcheck.Patch{Name: name, Data: data})
 	}
-	results, err := patchcheck.Port(ctx, info, archives, patches, attended)
+	results, err := patchcheck.Port(ctx, s.PatchTools, info, archives, patches, attended)
 	if err != nil {
 		return err
 	}

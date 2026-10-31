@@ -45,7 +45,7 @@ func TestAnUpdateClosesTheTicketItNames(t *testing.T) {
 func TestAPortfilesInstructionIsQuotedWithItsPlace(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	write(t, root, map[string]string{"sysutils/osxfuse/Portfile": "name osxfuse\n# Do not update past 3.8.3.\nversion 3.8.3\n"})
+	testsupport.WriteFiles(t, root, map[string]string{"sysutils/osxfuse/Portfile": "name osxfuse\n# Do not update past 3.8.3.\nversion 3.8.3\n"})
 	require.Equal(t, []string{"sysutils/osxfuse/Portfile:2: Do not update past 3.8.3."}, instructionLines(root, "sysutils/osxfuse", "osxfuse"))
 	require.Empty(t, instructionLines(root, "sysutils/gone", "gone"))
 }

@@ -142,7 +142,7 @@ echo "asked for $2" >&2
 : > "$4/Xcode-$2.0+15F31d.xip"
 `)
 	p := testProvider(newMac())
-	p.xcodes = xcodes
+	p.XcodesExecutable = xcodes
 	sonoma, err := macos.ParseRelease("sonoma")
 	require.NoError(t, err)
 	_, _, err = macos.SelectXcode(folder, sonoma, "15.4")
@@ -157,7 +157,7 @@ echo "asked for $2" >&2
 
 	failing := filepath.Join(t.TempDir(), "xcodes")
 	testsupport.WriteExecutable(t, failing, "#!/bin/sh\necho 'Apple ID: Missing username or a password. Please try again.'\nexit 1\n")
-	p.xcodes = failing
+	p.XcodesExecutable = failing
 	errs.Reset()
 	_, err = p.DownloadXcode(t.Context(), missing, strings.NewReader(""), &errs, &errs)
 	require.ErrorIs(t, err, ErrXcodes)

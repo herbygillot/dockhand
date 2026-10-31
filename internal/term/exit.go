@@ -12,13 +12,9 @@ import (
 const (
 	// ExitFailure is an error, a refusal among them.
 	ExitFailure = 1
-	// ExitCheckFailed is a check that failed.
-	ExitCheckFailed = 2
 	// ExitAttention is an outcome that needs a person's look: a hold, a
 	// look left incomplete, or archives that don't match.
 	ExitAttention = 3
-	// ExitInterrupted is an interrupt.
-	ExitInterrupted = 130
 )
 
 // ExitError carries the exit code a command's outcome calls for.

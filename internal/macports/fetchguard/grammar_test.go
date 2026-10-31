@@ -283,9 +283,9 @@ func TestEffectRuleJudgesCommandsByWhatTheyDoToTheFetch(t *testing.T) {
 		"java.home":               {kind: "option", option: "java.home"},
 		"distfiles-append":        {kind: "option", option: "distfiles"},
 		"registry_active":         {kind: "command"},
-		"active_variants":         {kind: "proc", args: "name variant", body: "set installed [registry_active $name]\nreturn [string match \"*$variant*\" $installed]\n"},
-		"mpi_active_variant_name": {kind: "proc", args: "portname", body: "if {[active_variants $portname mpich]} { return mpich }\nreturn \"\"\n"},
-		"mpi.action_enforce_variants": {kind: "proc", args: "ports", body: `global name
+		"active_variants":         {kind: "proc", body: "set installed [registry_active $name]\nreturn [string match \"*$variant*\" $installed]\n"},
+		"mpi_active_variant_name": {kind: "proc", body: "if {[active_variants $portname mpich]} { return mpich }\nreturn \"\"\n"},
+		"mpi.action_enforce_variants": {kind: "proc", body: `global name
 ui_debug "mpi.enforce_variant list: ${ports}"
 foreach depspec $ports {
     set portname [_get_dep_port $depspec]
@@ -304,17 +304,17 @@ foreach depspec $ports {
     }
 }
 `},
-		"java::java_set_env":   {kind: "proc", args: "", body: "set java_home [java::find_java_home]\nconfigure.env-append JAVA_HOME=${java_home}\njava.home ${java_home}\n"},
-		"java::find_java_home": {kind: "proc", args: "", body: "if {[catch {exec /usr/libexec/java_home -V} result]} { return \"\" }\nreturn $result\n"},
-		"helper_writes":        {kind: "proc", args: "", body: "distfiles-append extra.tar.gz\n"},
-		"helper_runs":          {kind: "proc", args: "", body: "exec /usr/bin/touch marker\n"},
-		"deep1":                {kind: "proc", args: "", body: "deep2\n"},
-		"deep2":                {kind: "proc", args: "", body: "deep3\n"},
-		"deep3":                {kind: "proc", args: "", body: "deep4\n"},
-		"deep4":                {kind: "proc", args: "", body: "deep5\n"},
-		"deep5":                {kind: "proc", args: "", body: "deep6\n"},
-		"deep6":                {kind: "proc", args: "", body: "ui_msg deep\n"},
-		"_get_dep_port":        {kind: "proc", args: "depspec", body: "set speclist [split $depspec :]\nset portname [lindex $speclist end]\nset res [_portnameactive $portname]\nif {$res != 0} { return $portname }\nset depfile \"\"\nswitch [lindex $speclist 0] {\n    bin { set depfile [_mportsearchpath $portname /usr/bin 1 1] }\n    path { set depfile [_mportsearchpath $portname /opt 0 1] }\n}\nif {$depfile eq \"\"} { return $portname } else { return [registry_file_registered $depfile] }\n"},
+		"java::java_set_env":   {kind: "proc", body: "set java_home [java::find_java_home]\nconfigure.env-append JAVA_HOME=${java_home}\njava.home ${java_home}\n"},
+		"java::find_java_home": {kind: "proc", body: "if {[catch {exec /usr/libexec/java_home -V} result]} { return \"\" }\nreturn $result\n"},
+		"helper_writes":        {kind: "proc", body: "distfiles-append extra.tar.gz\n"},
+		"helper_runs":          {kind: "proc", body: "exec /usr/bin/touch marker\n"},
+		"deep1":                {kind: "proc", body: "deep2\n"},
+		"deep2":                {kind: "proc", body: "deep3\n"},
+		"deep3":                {kind: "proc", body: "deep4\n"},
+		"deep4":                {kind: "proc", body: "deep5\n"},
+		"deep5":                {kind: "proc", body: "deep6\n"},
+		"deep6":                {kind: "proc", body: "ui_msg deep\n"},
+		"_get_dep_port":        {kind: "proc", body: "set speclist [split $depspec :]\nset portname [lindex $speclist end]\nset res [_portnameactive $portname]\nif {$res != 0} { return $portname }\nset depfile \"\"\nswitch [lindex $speclist 0] {\n    bin { set depfile [_mportsearchpath $portname /usr/bin 1 1] }\n    path { set depfile [_mportsearchpath $portname /opt 0 1] }\n}\nif {$depfile eq \"\"} { return $portname } else { return [registry_file_registered $depfile] }\n"},
 	}
 	assess := func(hook string) macports.FetchSemantics {
 		return Assess(plain, "portfetch::fetch_main", "{"+wrapper+hook+"}", "", nil, defs)
@@ -367,7 +367,7 @@ func TestParseDefinitionsReadsTheWorkersList(t *testing.T) {
 	defs := ParseDefinitions("{configure.env-append option configure.env} {helper proc {{a b} {ui_msg $a}}} {registry_active command {}} {broken proc {onlyone}} {odd kind x}")
 	require.Equal(t, Definitions{
 		"configure.env-append": {kind: "option", option: "configure.env"},
-		"helper":               {kind: "proc", args: "a b", body: "ui_msg $a"},
+		"helper":               {kind: "proc", body: "ui_msg $a"},
 		"registry_active":      {kind: "command"},
 	}, defs)
 	require.Nil(t, ParseDefinitions("{unbalanced"))

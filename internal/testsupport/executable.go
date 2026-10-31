@@ -2,6 +2,7 @@ package testsupport
 
 import (
 	"os"
+	"os/exec"
 	"syscall"
 	"testing"
 
@@ -22,4 +23,14 @@ func WriteExecutable(t testing.TB, path, program string) {
 	err := os.WriteFile(path, []byte(program), 0700)
 	syscall.ForkLock.RUnlock()
 	require.NoError(t, err)
+}
+
+// Program is where the test's PATH has the program named, as compose finds
+// one on the command line's, for a test to give where compose would; the
+// test fails where it hasn't one.
+func Program(t testing.TB, name string) string {
+	t.Helper()
+	path, err := exec.LookPath(name)
+	require.NoError(t, err)
+	return path
 }

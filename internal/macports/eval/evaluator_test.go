@@ -679,10 +679,10 @@ default_variants +python313
 	variants, err := snapshot.Ports["harbor"].Variants()
 	require.NoError(t, err)
 	require.Equal(t, []macports.Variant{
-		{Name: "tests", Description: "Build and run the tests"},
-		{Name: "docs", Requires: []string{"tests"}, Description: "Documentation"},
-		{Name: "python312", Conflicts: []string{"python313"}, Description: "Python 3.12"},
-		{Name: "python313", Default: true, Conflicts: []string{"python312"}, Description: "Python 3.13"},
+		{Name: "tests"},
+		{Name: "docs", Requires: []string{"tests"}},
+		{Name: "python312", Conflicts: []string{"python313"}},
+		{Name: "python313", Default: true, Conflicts: []string{"python312"}},
 		{Name: "universal"}, // Base's own, for a port it can build for several architectures
 	}, variants)
 }

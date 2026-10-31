@@ -22,16 +22,6 @@ import (
 // fails as ssh does, with status 255.
 func fakeGuest(t *testing.T) *Guest {
 	t.Helper()
-	// The guest's scripts are a Mac's, with BSD stat's -f %z, which
-	// GNU stat on Linux reads otherwise.
-	if runtime.GOOS != "darwin" {
-		t.Skip("the guest's scripts run against a Mac's tools")
-	}
-	for _, tool := range []string{"/usr/bin/openssl", "/usr/bin/stat", "/usr/bin/cut", "/usr/bin/head", "/usr/bin/tail"} {
-		if _, err := os.Stat(tool); err != nil {
-			t.Skipf("%s is required", tool)
-		}
-	}
 	directory := t.TempDir()
 	ssh := filepath.Join(directory, "ssh")
 	testsupport.WriteExecutable(t, ssh, `#!/bin/sh
@@ -59,6 +49,21 @@ exec /bin/sh -c "$command"
 	return &Guest{Env: os.Environ(), Address: "guest", Image: "dockhand-base-fixture", Keys: Keys{Directory: filepath.Join(directory, "keys")}, Executable: ssh}
 }
 
+// macTools skips a test whose guest scripts are a Mac's, with BSD stat's
+// -f %z, which GNU stat on Linux reads otherwise; a command's quoting
+// needs none of them and runs anywhere.
+func macTools(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "darwin" {
+		t.Skip("the guest's scripts run against a Mac's tools")
+	}
+	for _, tool := range []string{"/usr/bin/openssl", "/usr/bin/stat", "/usr/bin/cut", "/usr/bin/head", "/usr/bin/tail"} {
+		if _, err := os.Stat(tool); err != nil {
+			t.Skipf("%s is required", tool)
+		}
+	}
+}
+
 func TestCommandsQuoteTheirArgumentsForTheGuestShell(t *testing.T) {
 	g := fakeGuest(t)
 	for _, arg := range []string{"plain", "two words", "it's", `$HOME`, "`date`", "a\nb", ""} {
@@ -75,6 +80,7 @@ func TestCommandsQuoteTheirArgumentsForTheGuestShell(t *testing.T) {
 }
 
 func TestTransfersArriveWholeAndAreChecked(t *testing.T) {
+	macTools(t)
 	g := fakeGuest(t)
 	root := t.TempDir()
 	local := filepath.Join(root, "local.bin")
@@ -99,6 +105,7 @@ func TestTransfersArriveWholeAndAreChecked(t *testing.T) {
 // A read damaged in transit is tried again, and one that keeps arriving
 // damaged is reported rather than kept.
 func TestDamagedReadsAreRetriedThenRefused(t *testing.T) {
+	macTools(t)
 	g := fakeGuest(t)
 	root := t.TempDir()
 	remote := filepath.Join(root, "guest.txt")
@@ -121,6 +128,7 @@ func TestDamagedReadsAreRetriedThenRefused(t *testing.T) {
 }
 
 func TestMissingFilesAndLostConnectionsAreNamed(t *testing.T) {
+	macTools(t)
 	g := fakeGuest(t)
 	missing := filepath.Join(t.TempDir(), "absent")
 	_, err := g.Read(t.Context(), missing, false)

@@ -36,7 +36,9 @@ func Publish(p Publication, mode Mode, v Vocabulary) *refusal.Refusal {
 		next.After = AfterEdit
 		return refusal.New(refusal.Failed, "can't submit yet: %s", strings.Join(words, "; ")).Then(next)
 	case p.Bound != "" && p.Commit != p.Bound:
-		return refusal.New(refusal.Failed, "%s moved to %s while it was being checked. Nothing was submitted: ship was working on %s", p.Branch, p.Commit.Short(), p.Bound.Short()).Then(next)
+		// The commit it moved to is the one to check: no check of it runs,
+		// so submit asked again would meet this again.
+		return refusal.New(refusal.Failed, "%s moved to %s while it was being checked. Nothing was submitted: ship was working on %s", p.Branch, p.Commit.Short(), p.Bound.Short()).Then(Next{Verb: VerbCheck, Branch: p.Branch})
 	case mode.Unattended() && len(p.Holds) > 0:
 		next.After = AfterLook
 		return refusal.New(refusal.Attention, "%s needs review before submission: %s", p.Branch, strings.Join(v.Holds(p.Holds), "; ")).Then(next)

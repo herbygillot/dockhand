@@ -304,7 +304,7 @@ func (e *Engine) outdatedReader() (OutdatedReader, error) {
 		if e.Discovery == nil {
 			return nil, errors.New("no upstream discovery is set up")
 		}
-		return &surveyedPorts{service: &outdated.Service{Repo: e.Repo, Ports: ports, Upstream: e.Discovery, Index: ports.Index, Workspaces: &workspace.Registry{}}}, nil
+		return &surveyedPorts{service: &outdated.Service{Repo: e.Repo, Ports: ports, Upstream: e.Discovery, Index: ports.Index, PatchTools: e.options.Programs.Patches, Workspaces: &workspace.Registry{}}}, nil
 	})
 }
 

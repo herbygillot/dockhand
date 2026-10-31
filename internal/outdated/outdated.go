@@ -13,6 +13,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/survey"
@@ -22,10 +23,9 @@ import (
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
-// Result retains the frozen source and independent observations for selected ports.
+// Result retains the independent observations for selected ports.
 type Result struct {
-	Source model.Source
-	Ports  []Port
+	Ports []Port
 }
 
 // Port associates a selector with its upstream observation or an unknown result.
@@ -48,6 +48,8 @@ type Service struct {
 	Ports    macports.NativeEvaluator
 	Upstream *upstream.Service
 	Index    portindex.Source
+	// PatchTools are the diff and patch a port's patches are checked with.
+	PatchTools patchcheck.Tools
 	// Workspaces hands out the tree; nil materializes one for this survey.
 	Workspaces *workspace.Registry
 	// Commit is the revision surveyed; HEAD when empty.
@@ -90,8 +92,8 @@ func (s *Service) Observe(ctx context.Context, selection Selection) (_ Result, e
 		return Result{}, err
 	}
 	defer func() { err = errors.Join(err, files.Close()) }()
-	editor := &portedit.Service{Ports: ports}
-	result := Result{Source: files.Source}
+	editor := &portedit.Service{Ports: ports, PatchTools: s.PatchTools}
+	result := Result{}
 	for _, problem := range files.Problems {
 		result.Ports = append(result.Ports, Port{Selector: problem.Port, Result: upstream.Result{Assessment: upstream.Unknown, ObservedAt: time.Now().UTC(), Detail: problem.Detail}})
 	}

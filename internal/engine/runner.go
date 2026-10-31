@@ -1587,7 +1587,6 @@ func runResources(runs []model.Run) []string {
 // CheckSummary is a check with what it checks: its branch, revision,
 // and plan, and what its dependencies' kept archives said, gone or altered.
 type CheckSummary struct {
-	Run      model.Run
 	Branch   model.Branch
 	Revision model.Revision
 	Plan     model.Plan
@@ -1597,7 +1596,7 @@ type CheckSummary struct {
 // CheckSummary reads a check's summary in one transaction, where its four
 // reads were each a View and could see four states (SQL-O3).
 func (e *Engine) CheckSummary(ctx context.Context, run model.Run) (CheckSummary, error) {
-	summary := CheckSummary{Run: run}
+	var summary CheckSummary
 	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
 		if summary.Branch, err = r.Branch(run.Branch); err != nil {

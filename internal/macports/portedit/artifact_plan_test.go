@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -160,7 +159,7 @@ checksums sha256 aaaa size 2
 	require.Contains(t, string(original), "version 1.2.3")
 }
 
-func TestPreparePreservesRejectedPlatformGuardWithoutClaimingBuildCoverage(t *testing.T) {
+func TestPreparePreservesARejectedPlatformGuard(t *testing.T) {
 	t.Parallel()
 	guard := `if {${os.major} < 23 && ${build_arch} eq "arm64"} {
  known_fail yes
@@ -174,15 +173,6 @@ func TestPreparePreservesRejectedPlatformGuardWithoutClaimingBuildCoverage(t *te
 	require.NoError(t, err)
 	require.Contains(t, string(result.Files[0].After), guard)
 	require.Len(t, *requests, 1)
-	guarded := false
-	for _, profile := range result.Coverage {
-		if profile.Platform.Version == "22" && profile.Platform.Architecture == "arm64" {
-			guarded = true
-			require.NotNil(t, profile.Fetch)
-			require.True(t, profile.Fetch.Rejected)
-		}
-	}
-	require.True(t, guarded)
 }
 
 // A Portfile that derives its version from the source's spelling, as the
@@ -325,8 +315,6 @@ variant quiet description {Nothing to fetch} {}
 	extra := "archive bytes for /1.2.4/fixture-extra-1.2.4.tar.gz"
 	require.Contains(t, string(result.Files[0].After), fmt.Sprintf("checksums-append    fixture-extra-${version}.tar.gz sha256 %x size %d\n", sha256.Sum256([]byte(extra)), len(extra)))
 	require.NotContains(t, string(result.Files[0].After), "bbbb")
-	require.True(t, slices.ContainsFunc(result.Coverage, func(c ContextCoverage) bool { return c.Variant == "extra" && c.Affected && !c.Modeled }), "the variant's context is named")
-	require.False(t, slices.ContainsFunc(result.Coverage, func(c ContextCoverage) bool { return c.Variant == "quiet" }), "one fetching nothing of its own isn't asked about")
 }
 
 // A checksum refresh that can't find a declaration to edit returns the

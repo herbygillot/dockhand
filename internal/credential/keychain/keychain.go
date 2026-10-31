@@ -37,6 +37,9 @@ func isLocked(err error) bool {
 	return errors.As(err, &exit) && exit.ExitCode() == interactionNotAllowed
 }
 
+// Store keeps credentials in the login keychain with macOS's security
+// tool, at Executable, which compose finds on the PATH dockhand was run
+// with.
 type Store struct {
 	Executable string
 }
@@ -108,14 +111,10 @@ func (s Store) Put(ctx context.Context, key credential.Key, secret string) error
 }
 
 func (s Store) executable() (string, error) {
-	if s.Executable != "" {
-		return s.Executable, nil
+	if s.Executable == "" {
+		return "", errors.New("keychain: macOS security tool is unavailable: it isn't on the PATH dockhand was run with")
 	}
-	path, err := exec.LookPath("security")
-	if err != nil {
-		return "", fmt.Errorf("keychain: macOS security tool is unavailable: %w", err)
-	}
-	return path, nil
+	return s.Executable, nil
 }
 
 func validKey(key credential.Key) error {

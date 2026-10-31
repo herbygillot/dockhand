@@ -41,7 +41,6 @@ func TestInspectSummarizesMergeabilityReviewsAndChecks(t *testing.T) {
 	require.Equal(t, "approved", status.Review, "the latest review per reviewer counts, and dismissed reviews do not")
 	require.Equal(t, 1, status.Approvals)
 	require.Equal(t, forge.CheckSummary{Total: 4, Passed: 1, Failed: 2, Pending: 1, Failing: []string{"Build ports (macos-14)", "buildbot/ports-13"}}, status.Checks)
-	require.Equal(t, "mergeable: no (dirty); review: approved; checks: 1 passed, 2 failed, 1 pending of 4 (failing: Build ports (macos-14), buildbot/ports-13)", status.Summary())
 	_, err = client.Inspect(t.Context(), forge.PullRequestRef{Forge: "gitlab", Repository: "x/y", Number: 1})
 	require.Error(t, err)
 }

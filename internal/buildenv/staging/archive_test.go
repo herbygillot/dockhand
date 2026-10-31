@@ -10,8 +10,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -80,4 +82,29 @@ func TestTheArchiveHoldsTheIndexStagedForItsRelease(t *testing.T) {
 	require.NotContains(t, packed, "ports/.PortIndex.123")
 	require.Contains(t, packed, "ports/devel/working/Portfile")
 	require.Contains(t, packed, "input.json")
+}
+
+// Staging refuses what it can't stage as asked, the existing archive left
+// as it was: no repository, and a commit whose tree isn't the one the
+// request names, where no test reached them (the test analysis's step b).
+func TestStagingRefusesASourceThatDisagreesWithItself(t *testing.T) {
+	t.Parallel()
+	destination := filepath.Join(t.TempDir(), "input.tar")
+	require.NoError(t, os.WriteFile(destination, []byte("previous archive"), 0o600))
+	require.EqualError(t, Archive(t.Context(), nil, nil, Request{}, destination, nil, nil), "staging: source repository is required")
+
+	dir := t.TempDir()
+	testsupport.Git(t, dir, "init", "-q")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "README"), []byte("ports\n"), 0o644))
+	testsupport.Git(t, dir, "add", "README")
+	testsupport.Git(t, dir, "-c", "user.name=T", "-c", "user.email=t@example.org", "commit", "-q", "-m", "one")
+	repo, err := git.Open(t.Context(), dir, git.Program{Env: os.Environ()})
+	require.NoError(t, err)
+	commit := testsupport.Git(t, dir, "rev-parse", "HEAD")
+	other := testsupport.Git(t, dir, "mktree", "--missing")
+	err = Archive(t.Context(), repo, nil, Request{Source: model.Source{Commit: model.ObjectID(commit), Tree: model.ObjectID(other)}}, destination, nil, nil)
+	require.EqualError(t, err, "staging: source commit and tree disagree")
+	data, err := os.ReadFile(destination)
+	require.NoError(t, err)
+	require.Equal(t, "previous archive", string(data))
 }

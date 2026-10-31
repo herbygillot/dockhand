@@ -45,6 +45,7 @@ var engineImports = map[string]string{
 	"internal/sourcecompare":          "what upstream's source changed, for update",
 	"internal/macports/assess":        "what upstream's change means for the port, for update",
 	"internal/macports/depblock":      "go2port and cargo2port, found as the edits find them, for setup's report",
+	"internal/macports/patchcheck":    "diff and patch, as compose found them, for the comparison and outdated's edits",
 	"internal/macports/cilog":         "what MacPorts' workflow's job log says of each port and its first error, for a pull request's CI",
 	"internal/macports/binaryarchive": "master's binary archive's name, files, and install names, an install finding's earlier reading",
 	"internal/macports/fidelity":      "which subports a revision changed, for its change record",

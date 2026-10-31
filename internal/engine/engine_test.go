@@ -16,36 +16,26 @@ import (
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/store/sqlite/sqlitetest"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 func TestMain(m *testing.M) {
 	// Keep the tests' transient directories out of the user's own.
-	temp, err := os.MkdirTemp("", "dockhand-test-")
-	if err != nil {
-		panic(err)
-	}
-	os.Setenv("TMPDIR", temp)
+	cleanup := testsupport.IsolateTemp()
 	// Commits tidy writes need an identity, whatever the machine has.
-	identity := filepath.Join(temp, "gitconfig")
+	identity := filepath.Join(os.TempDir(), "gitconfig")
 	if err := os.WriteFile(identity, []byte("[user]\n\tname = Test\n\temail = test@example.org\n"), 0o644); err != nil {
 		panic(err)
 	}
 	os.Setenv("GIT_CONFIG_GLOBAL", identity)
 	code := m.Run()
-	os.RemoveAll(temp)
+	cleanup()
 	os.Exit(code)
 }
 
 var at = time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
-
-func write(t *testing.T, root string, files map[string]string) {
-	t.Helper()
-	for name, content := range files {
-		require.NoError(t, os.MkdirAll(filepath.Join(root, filepath.Dir(name)), 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(root, name), []byte(content), 0o644))
-	}
-}
 
 type fixture struct {
 	upstream string // stands in for macports/macports-ports
@@ -64,7 +54,7 @@ func setup(t *testing.T) fixture {
 	f := fixture{upstream: filepath.Join(root, "upstream"), clone: filepath.Join(root, "src", "macports-ports")}
 	require.NoError(t, os.MkdirAll(f.upstream, 0o755))
 	testsupport.Git(t, f.upstream, "init", "-q")
-	write(t, f.upstream, map[string]string{
+	testsupport.WriteFiles(t, f.upstream, map[string]string{
 		"_resources/port1.0/group/github-1.0.tcl": "# group\n",
 		"textproc/jq/Portfile":                    "name jq\nversion 1.7.1\n",
 		"devel/libharbor/Portfile":                "name libharbor\n",
@@ -72,12 +62,14 @@ func setup(t *testing.T) fixture {
 	testsupport.Git(t, f.upstream, "add", "-A")
 	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "init")
 	testsupport.Git(t, root, "clone", "-q", f.upstream, f.clone)
-	write(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 2\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 2\n"})
 	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 2")
 	// The worktrees are the fixture's own, never the person's
 	// ~/Source/macports-branches, which the default is.
-	f.options = Options{Env: os.Environ(), Tree: f.clone, Database: filepath.Join(root, "home", ".dockhand", "dockhand.db"), Upstream: f.upstream, Now: func() time.Time { return at },
-		Worktrees: filepath.Join(root, "src", "macports-branches"), Indexes: filepath.Join(root, "cache", "indexes"), Home: filepath.Join(root, "home")}
+	// The database is a copy of one the test binary migrated once.
+	f.options = Options{Env: os.Environ(), Tree: f.clone, Database: sqlitetest.Fresh(t, filepath.Join(root, "home", ".dockhand", "dockhand.db")), Upstream: f.upstream, Now: func() time.Time { return at },
+		Worktrees: filepath.Join(root, "src", "macports-branches"), Indexes: filepath.Join(root, "cache", "indexes"), Home: filepath.Join(root, "home"),
+		Programs: FindPrograms(func(name string) (string, error) { return subprocess.LookPath(name, os.Environ()) })}
 	return f
 }
 
@@ -124,7 +116,7 @@ func TestOpenRefusesADirectoryThatIsNotAPortsTree(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	testsupport.Git(t, root, "init", "-q")
-	write(t, root, map[string]string{"README.md": "dockhand\n", "internal/cli/main.go": "package cli\n"})
+	testsupport.WriteFiles(t, root, map[string]string{"README.md": "dockhand\n", "internal/cli/main.go": "package cli\n"})
 	testsupport.Git(t, root, "add", "-A")
 	testsupport.Git(t, root, "commit", "-q", "-m", "init")
 	database := filepath.Join(t.TempDir(), "dockhand.db")
@@ -208,13 +200,13 @@ func TestStartHereUsesThePersonsCheckoutOnlyWhenNothingWouldBeDisplaced(t *testi
 	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
-	write(t, f.clone, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+	testsupport.WriteFiles(t, f.clone, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 	_, err := e.Start(t.Context(), StartRequest{Name: "jq-here", Here: true})
 	require.ErrorContains(t, err, "uncommitted changes to textproc/jq/Portfile")
 	require.Empty(t, testsupport.Git(t, f.clone, "branch", "--list", "dockhand/jq-here"))
 
 	testsupport.Git(t, f.clone, "checkout", "-q", "--", ".")
-	write(t, f.clone, map[string]string{"notes.txt": "untracked work is not displaced\n"})
+	testsupport.WriteFiles(t, f.clone, map[string]string{"notes.txt": "untracked work is not displaced\n"})
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-here", Here: true})
 	require.NoError(t, err)
 	require.False(t, branch.Managed)
@@ -227,9 +219,9 @@ func TestAdoptTracksABranchAsItStands(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	testsupport.Git(t, f.clone, "switch", "-q", "-c", "update-jq")
-	write(t, f.clone, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+	testsupport.WriteFiles(t, f.clone, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 	testsupport.Git(t, f.clone, "commit", "-q", "-am", "Update jq")
-	write(t, f.clone, map[string]string{"textproc/jq/files/patch-fix.diff": "--- a\n", "_resources/port1.0/group/github-1.0.tcl": "# group, fixed\n"})
+	testsupport.WriteFiles(t, f.clone, map[string]string{"textproc/jq/files/patch-fix.diff": "--- a\n", "_resources/port1.0/group/github-1.0.tcl": "# group, fixed\n"})
 	testsupport.Git(t, f.clone, "add", "-A")
 	testsupport.Git(t, f.clone, "commit", "-q", "-m", "oops")
 	head := testsupport.Git(t, f.clone, "rev-parse", "HEAD")

@@ -18,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
@@ -128,15 +129,16 @@ func Hosted(t testing.TB) *host.Host {
 }
 
 // testHost is a host that keeps a test out of the Mac running it: it finds
-// no Tart, though every test's Mac takes it, but where it says it's an
-// Intel Mac's (onIntel); its login is no one's, in its keeping or read
+// no Tart (hostFor), though every test's Mac takes it, but where it says
+// it's an Intel Mac's (onIntel); it opens no browser and reaches no
+// keychain, finding neither open nor security; its login is no one's, in its keeping or read
 // afresh by serve's identity check, unless the test gives it one
 // (withAuth); and it starts no cleanup, the executable being the test
 // binary, which isn't dockhand.
 func testHost() *host.Host {
-	h := host.MachineHost()
-	h.LookTart = func(string) (string, error) { return "", exec.ErrNotFound }
+	h := host.MachineHost(func(string) string { return "" })
 	h.TartSupported = func() bool { return true }
+	h.LocalSupported = func() bool { return true }
 	h.Identity = func(*github.Runtime) func(context.Context) (string, error) { return nil }
 	h.AuthStore = memoryStore{}
 	h.AuthAPI = func(github.Signin) *github.Client {
@@ -145,6 +147,22 @@ func testHost() *host.Host {
 	h.StartCleanup = func(engine.Options) error { return nil }
 	h.StartDrain = func(engine.Options) (int, error) { return 0, errors.New("no drain starts in a test") }
 	return h
+}
+
+// hostFor is the test's host for a command line run with env: it finds
+// programs on env's PATH, as compose does, but never Tart, unless the
+// test gives its own lookup.
+func hostFor(found *standing, env []string) *host.Host {
+	h := *found.Host
+	if h.Look == nil {
+		h.Look = func(name string) (string, error) {
+			if name == "tart" {
+				return "", exec.ErrNotFound
+			}
+			return subprocess.LookPath(name, env)
+		}
+	}
+	return &h
 }
 
 // standsFor are the stand-ins a command run in the test is given: its
@@ -167,12 +185,13 @@ func standsFor(t testing.TB) *standing {
 func RunFor(t testing.TB, ctx context.Context, args []string, streams term.Streams) error {
 	t.Helper()
 	found := standsFor(t)
+	line := invocationFor(t, args)
 	if !saidOnceChecked(args, streams) || streams.Out == nil {
-		return runner(ctx, invocationFor(t, args), streams, found.Deps, found.Host)
+		return runner(ctx, line, streams, found.Deps, hostFor(found, line.Env))
 	}
 	out := &saidOnceOut{to: streams.Out}
 	streams.Out = out
-	err := runner(ctx, invocationFor(t, args), streams, found.Deps, found.Host)
+	err := runner(ctx, line, streams, found.Deps, hostFor(found, line.Env))
 	checkSaidOnce(t, args, out)
 	return err
 }
@@ -182,7 +201,7 @@ func TestSettings(t testing.TB) *settings.Settings {
 	t.Helper()
 	found := standsFor(t)
 	line := invocationFor(t, nil)
-	return &settings.Settings{Deps: found.Deps, Host: found.Host, Env: line.Env, Dir: line.Dir}
+	return &settings.Settings{Deps: found.Deps, Host: hostFor(found, line.Env), Env: line.Env, Dir: line.Dir}
 }
 
 // TestPlaces are the test's home and working directory, as a command run

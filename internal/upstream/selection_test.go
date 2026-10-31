@@ -18,10 +18,8 @@ func TestRequestedVersionUsesConfirmedTagConvention(t *testing.T) {
 		for _, requested := range []string{"1.8.1", tag} {
 			selected, err := upstream.MatchRelease(requested, &pattern, observed)
 			require.NoError(t, err)
-			require.Equal(t, requested, selected.Requested)
 			require.Equal(t, "1.8.1", selected.Candidate.Version)
 			require.Equal(t, tag, selected.Candidate.Tag)
-			require.Equal(t, requested != tag, selected.Inferred)
 			require.Empty(t, observed[0].Version, "evidence must not be mutated")
 		}
 	}

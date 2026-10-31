@@ -138,12 +138,17 @@ copies it as it grows, as Tart's does.`,
 			streams.Unwrapped()
 			// A port named as an argument (field testing, 2026-10-02: logs
 			// semgrep, and logs check-76 semgrep); with a branch named, the
-			// one argument is the port, and -p's port is the default.
-			// logs check-42 -p jq is check-42's jq log, as it always was:
-			// a check named, -p names only the port.
-			if where.Port != "" && len(args) == 1 && checkOrRunName(cmd.Context(), s, args[0]) {
-				port, where = where.Port, branchflags.BranchFlags{}
+			// one argument is the port, and -p's port is the default. -p
+			// chooses a branch, as it does everywhere else, so a check named
+			// beside it is refused with the command that names its port.
+			if where.Port != "" && len(args) == 1 && engine.IsCheckName(args[0]) {
+				return fmt.Errorf("-p chooses a branch, not a check's port; for %s's log of %s: dockhand logs %s %s", args[0], where.Port, args[0], where.Port)
 			}
+			// The one argument beside -p, where it names no port the branch
+			// changes, is a provider run's ID, or a mistyped port: refused
+			// once the branch's check is read, with the command that names
+			// the port.
+			named := ""
 			if where.Explicit() {
 				if len(args) == 2 {
 					return errors.New("name a check or a branch, not both")
@@ -151,6 +156,9 @@ copies it as it grows, as Tart's does.`,
 				port = where.Port
 				if len(args) == 1 {
 					port, args = args[0], nil
+					if where.Port != "" {
+						named = port
+					}
 				}
 			}
 			if len(args) == 2 {
@@ -191,6 +199,13 @@ copies it as it grows, as Tart's does.`,
 			}
 			if err != nil {
 				return err
+			}
+			if named != "" && !changesPort(ctx, e, run, named) {
+				branch := where.Port
+				if record, err := e.Branch(ctx, run.Branch); err == nil {
+					branch = record.ShortName()
+				}
+				return fmt.Errorf("%s changes no port named %s; for a check's or a provider run's log of %s: dockhand logs %s %s", branch, named, where.Port, named, where.Port)
 			}
 			if follow {
 				if port == "" {
@@ -397,20 +412,6 @@ func latestLogging(ctx context.Context, e *engine.Engine, port string) (run mode
 	return run, ok, ""
 }
 
-// checkOrRunName reports whether name is a check's or a provider run's.
-func checkOrRunName(ctx context.Context, s *settings.Settings, name string) bool {
-	if engine.IsCheckName(name) {
-		return true
-	}
-	e, err := s.Open(ctx)
-	if err != nil {
-		return false
-	}
-	defer e.Close()
-	_, _, err = e.RunOrExecution(ctx, name)
-	return err == nil
-}
-
 // stoppedRun reports whether a run recorded as running stopped when the
 // process running it ended, which dockhand wait resumes.
 func stoppedRun(ctx context.Context, e *engine.Engine, run model.Run) bool {
@@ -424,4 +425,20 @@ func stoppedRun(ctx context.Context, e *engine.Engine, run model.Run) bool {
 	defer end()
 	stopped, err := engine.Stopped(ctx, session, run)
 	return err == nil && stopped
+}
+
+// changesPort reports whether the check's plan has port among the ports
+// its branch changes; true where the plan can't be read, so a failure to
+// read it isn't said as a wrong argument.
+func changesPort(ctx context.Context, e *engine.Engine, run model.Run, port string) bool {
+	plan, err := e.Plan(ctx, run.Plan)
+	if err != nil {
+		return true
+	}
+	for _, target := range plan.Targets {
+		if target.Role == model.Changed && target.Target.Name == port {
+			return true
+		}
+	}
+	return false
 }

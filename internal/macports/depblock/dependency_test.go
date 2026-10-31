@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
@@ -293,6 +294,19 @@ func TestToolsDistinguishMissingFailureAndCancellation(t *testing.T) {
 	require.ErrorContains(t, err, "missing executable go2port")
 	_, err = tools.Resolve(Cargo)
 	require.NoError(t, err)
+	// By name, a tool is where Look finds it, as compose's lookup finds
+	// it on the PATH dockhand was run with; where Look is nil, a name
+	// isn't looked for.
+	bin := t.TempDir()
+	testsupport.WriteExecutable(t, filepath.Join(bin, "go2port"), "#!/bin/sh\n")
+	look := func(name string) (string, error) { return subprocess.LookPath(name, []string{"PATH=" + bin}) }
+	found, err := Tools{Look: look}.Resolve(Go)
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(bin, "go2port"), found)
+	_, err = Tools{Look: look}.Resolve(Cargo)
+	require.ErrorContains(t, err, "missing executable cargo2port; install it, as sudo port install cargo2port, so it's on PATH")
+	_, err = Tools{}.Resolve(Go)
+	require.ErrorIs(t, err, ErrToolUnavailable)
 	file := helper(t, "echo 'generator failed' >&2\nexit 7")
 	_, err = run(t.Context(), file, t.TempDir())
 	require.ErrorContains(t, err, "generator failed")

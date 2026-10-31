@@ -1144,19 +1144,17 @@ func (e Evidence) VariantsBuilt() (port string, builds []string, passed bool) {
 // required and made the branch serve's to submit (Codex's review of
 // 275125ff, finding 1).
 type Ask struct {
-	Run          model.RunID
-	Plan         model.PlanID
 	Asked        bool
 	Profile      string
 	Environments []model.Environment
 }
 
-// AskOf is the governing ask among a tree's checks' plans, newest first,
-// each with its check; nil where every one was narrowed.
-func AskOf(runs []model.RunID, plans []model.Plan) *Ask {
-	for i, plan := range plans {
+// AskOf is the governing ask among a tree's checks' plans, newest first;
+// nil where every one was narrowed.
+func AskOf(plans []model.Plan) *Ask {
+	for _, plan := range plans {
 		if len(plan.Omitted) == 0 {
-			return &Ask{Run: runs[i], Plan: plan.ID, Asked: plan.Asked, Profile: plan.Profile, Environments: slices.Clone(plan.Environments)}
+			return &Ask{Asked: plan.Asked, Profile: plan.Profile, Environments: slices.Clone(plan.Environments)}
 		}
 	}
 	return nil

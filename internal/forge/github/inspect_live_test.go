@@ -28,5 +28,5 @@ func TestInspectLivePullRequest(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, []string{"yes", "no", "unknown"}, status.Mergeable)
 	require.Contains(t, []string{"approved", "changes-requested", "none"}, status.Review)
-	t.Logf("%s: %s", selector, status.Summary())
+	t.Logf("%s: %+v", selector, status)
 }
