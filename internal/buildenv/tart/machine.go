@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	guestprogram "github.com/herbygillot/dockhand/internal/buildenv/guest"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
@@ -40,6 +41,11 @@ type machine interface {
 	Reach(ctx context.Context, vm, image string) (guest, error)
 	// Version is Tart's, as `tart --version` prints it.
 	Version(ctx context.Context) (string, error)
+	// VirtualMachines are the processes of the VMs running on the Mac, by
+	// PID, and Released waits until those given have exited, as macOS lets
+	// their VMs go (host.VirtualMachines).
+	VirtualMachines(ctx context.Context) ([]int, error)
+	Released(ctx context.Context, pids []int, within time.Duration)
 }
 
 // run is a VM this process started, and guest a running clone, reached
@@ -112,6 +118,14 @@ func (n *native) Whose(ctx context.Context) ([]string, int, error) {
 		return nil, 0, fmt.Errorf("counting the VMs running in %s: %w", personal, err)
 	}
 	return own, len(names), nil
+}
+
+func (n *native) VirtualMachines(ctx context.Context) ([]int, error) {
+	return n.Machine.VirtualMachines(ctx)
+}
+
+func (n *native) Released(ctx context.Context, pids []int, within time.Duration) {
+	host.Released(ctx, pids, within)
 }
 
 func (n *native) Start(vm string) (run, error) {
