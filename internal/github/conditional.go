@@ -119,7 +119,7 @@ type conditional struct {
 
 func (t conditional) RoundTrip(req *http.Request) (*http.Response, error) {
 	response, hit, err := t.roundTrip(req)
-	if err == nil && !hit && !freeOfTheAllowance(req) {
+	if err == nil && !hit && !freeOfTheAllowance(req) && !graphQL(req) {
 		recordCharged(req, response.StatusCode)
 	}
 	return response, err

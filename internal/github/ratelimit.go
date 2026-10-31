@@ -200,17 +200,37 @@ var apiUsed atomic.Int64
 // Used is the last X-RateLimit-Used GitHub answered this process with.
 func Used() int64 { return apiUsed.Load() }
 
+// graphQLPoints counts the points this process's GraphQL queries cost, as
+// each query's rateLimit { cost } says it: GraphQL has an allowance of its
+// own, 5,000 points an hour, counted in points rather than requests, so
+// its queries are counted here and not as requests.
+var graphQLPoints atomic.Int64
+
+// SpendPoints counts what a GraphQL query cost, as its answer's
+// rateLimit { cost } gives it.
+func SpendPoints(cost int) {
+	if cost > 0 {
+		graphQLPoints.Add(int64(cost))
+	}
+}
+
 // Spend counts the requests a span of this process sends GitHub's API: a
 // command's, for its -v line and its envelope (the M1's run at 10aac0c3).
 type Spend struct {
-	start, answered int64
-	charged         int
+	start, answered, points int64
+	charged                 int
 }
 
 // StartSpend starts counting.
 func StartSpend() Spend {
 	charged, _ := chargedSince(0)
-	return Spend{start: apiRequests.Load(), answered: conditionalHits.Load(), charged: charged}
+	return Spend{start: apiRequests.Load(), answered: conditionalHits.Load(), points: graphQLPoints.Load(), charged: charged}
+}
+
+// Points is how many of GraphQL's points the queries sent since
+// StartSpend cost.
+func (s Spend) Points() int64 {
+	return graphQLPoints.Load() - s.points
 }
 
 // Requests is how many requests sent since StartSpend counted against the
@@ -264,8 +284,9 @@ func (t rateLimited) RoundTrip(req *http.Request) (*http.Response, error) {
 		// GitHub's rate_limit endpoint costs nothing of the allowance, as
 		// its documentation says, and isn't counted: outdated's look asks
 		// it each time, and D-N6's second look, every other read answered
-		// on a 304, counted that one (rc2's quick stage).
-		if !freeOfTheAllowance(req) {
+		// on a 304, counted that one (rc2's quick stage). A GraphQL query
+		// is counted in GraphQL's points instead (SpendPoints).
+		if !freeOfTheAllowance(req) && !graphQL(req) {
 			apiRequests.Add(1)
 		}
 		response, err := t.next.RoundTrip(req)
@@ -426,4 +447,10 @@ func duration(d time.Duration) string {
 // allowance: GitHub's rate_limit endpoint, which says what's left of it.
 func freeOfTheAllowance(req *http.Request) bool {
 	return req.Method == http.MethodGet && strings.HasSuffix(strings.TrimSuffix(req.URL.Path, "/"), "/rate_limit")
+}
+
+// graphQL says whether a request is a GraphQL query, which GraphQL's own
+// allowance counts in points rather than the hour's requests.
+func graphQL(req *http.Request) bool {
+	return req.Method == http.MethodPost && strings.HasSuffix(strings.TrimSuffix(req.URL.Path, "/"), "/graphql")
 }

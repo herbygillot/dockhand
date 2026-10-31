@@ -89,39 +89,29 @@ func (c *Client) ReadPullRequests(ctx context.Context, refs []forge.PullRequestR
 	var readings []forge.PullRequestReading
 	for chunk := range slices.Chunk(refs, readingChunk) {
 		var query strings.Builder
-		query.WriteString("query {\n")
+		query.WriteString("query {\nrateLimit { cost }\n")
 		for i, ref := range chunk {
 			owner, name, _ := strings.Cut(ref.Repository, "/")
 			fmt.Fprintf(&query, "p%d: repository(owner: %q, name: %q) { pullRequest(number: %d) { ...fields } }\n", i, owner, name, ref.Number)
 		}
 		query.WriteString("}\nfragment fields on PullRequest { " + pullRequestFields + " }")
-		request, err := client.NewRequest(ctx, "POST", "graphql", map[string]any{"query": query.String()})
+		var data map[string]*struct {
+			PullRequest *graphPullRequest `json:"pullRequest"`
+		}
+		errs, err := githubapi.GraphQL(ctx, client, query.String(), nil, &data)
 		if err != nil {
 			return nil, err
 		}
-		var result struct {
-			Data map[string]*struct {
-				PullRequest *graphPullRequest `json:"pullRequest"`
-			} `json:"data"`
-			Errors []struct {
-				Type    string   `json:"type"`
-				Path    []string `json:"path"`
-				Message string   `json:"message"`
-			} `json:"errors"`
-		}
-		if _, err := client.Do(request, &result); err != nil {
-			return nil, githubapi.RateLimitError(err)
-		}
 		// A pull request GitHub hasn't is an error at its path, and null;
 		// any other error is the read's.
-		for _, e := range result.Errors {
+		for _, e := range errs {
 			if e.Type != "NOT_FOUND" {
 				return nil, fmt.Errorf("github: reading pull requests: %s", e.Message)
 			}
 		}
 		for i, ref := range chunk {
 			reading := forge.PullRequestReading{Ref: ref}
-			if found := result.Data[fmt.Sprintf("p%d", i)]; found != nil && found.PullRequest != nil {
+			if found := data[fmt.Sprintf("p%d", i)]; found != nil && found.PullRequest != nil {
 				if reading, err = readingOf(ref, *found.PullRequest); err != nil {
 					return nil, err
 				}

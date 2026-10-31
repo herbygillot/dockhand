@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	gh "github.com/google/go-github/v93/github"
@@ -94,6 +95,13 @@ func (r *repository) readTag(ctx context.Context, name, refName string) (forge.T
 }
 
 func (r *repository) ListTags(ctx context.Context) ([]forge.Tag, error) {
+	// The tags read ahead of a look, where they were read whole
+	// (PrefetchListings), are listed without a request.
+	if listed, ok := r.client.listing(ctx, r.name); ok && listed.whole {
+		r.answerAs(listed.name)
+		r.remember(listed.tags...)
+		return slices.Clone(listed.tags), nil
+	}
 	client, err := r.client.API(ctx)
 	if err != nil {
 		return r.gitTags(ctx, githubapi.RateLimitError(err))

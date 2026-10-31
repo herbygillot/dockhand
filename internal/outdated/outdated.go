@@ -15,7 +15,9 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
+	"github.com/herbygillot/dockhand/internal/macports/portsource"
 	"github.com/herbygillot/dockhand/internal/macports/survey"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -106,6 +108,10 @@ func (s *Service) Observe(ctx context.Context, selection Selection) (_ Result, e
 			return result, err
 		}
 	}
+	// The GitHub repositories the Portfiles name are read ahead, many a
+	// query, for their lookups to list from (upstream's Prefetch), where
+	// each lookup asked GitHub about its own once its port was evaluated.
+	defer s.Upstream.Prefetch(ctx, portsource.GitHub, portsource.GitHubInstance, gitHubSetups(ctx, s.Repo, files))()
 	// Ports are looked up concurrently, and the results keep the
 	// selection's order. Each has its own probe and interpreters, and
 	// evaluates candidate versions in overlays of the shared projection,
@@ -158,6 +164,42 @@ func (s *Service) Observe(ctx context.Context, selection Selection) (_ Result, e
 	}
 	result.Ports = WithSiblings(result.Ports)
 	return result, failed
+}
+
+// gitHubSetups are the GitHub repositories the selected Portfiles'
+// github.setup lines name in literal words, each once, in the selection's
+// order, which the lookups go in. They're read from the text ahead of
+// each port's evaluation, which decides the repository its lookup reads:
+// one named otherwise isn't read ahead, and one named here that the
+// lookup doesn't read costs a share of a query.
+func gitHubSetups(ctx context.Context, repo *git.Repository, files *survey.Workspace) []string {
+	var paths []string
+	read := map[string]bool{}
+	for _, port := range files.Ports {
+		if read[port.Portfile] || !macports.ValidPortfilePath(port.Portfile) {
+			continue
+		}
+		read[port.Portfile] = true
+		paths = append(paths, port.Portfile)
+	}
+	// From the tree, in one read: a sparse workspace holds a port's
+	// directory only once its lookup asks for it, so a hint read there
+	// found almost none.
+	texts, err := repo.ReadFiles(ctx, string(files.Source.Tree), paths)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	named := map[string]bool{}
+	for _, path := range paths {
+		for _, name := range portfile.GitHubSetups(texts[path]) {
+			if !named[name] {
+				named[name] = true
+				names = append(names, name)
+			}
+		}
+	}
+	return names
 }
 
 // WithSiblings gives a subport whose source convention discovery doesn't

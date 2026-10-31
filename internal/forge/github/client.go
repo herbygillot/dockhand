@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -13,6 +14,11 @@ type Client struct {
 	*githubapi.Client
 	// Git reads tags with plain git when the API cannot.
 	Git git.Program
+
+	// listings are the tags and releases read ahead of a look's
+	// repositories (PrefetchListings), by owner/name in lower case.
+	listingsMu sync.Mutex
+	listings   map[string]*listing
 }
 
 // Login is who the client acts as, asked of GitHub, and where its token

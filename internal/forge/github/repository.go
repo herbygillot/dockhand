@@ -26,7 +26,7 @@ type repository struct {
 	mu   sync.Mutex
 	tags map[string]forge.Tag
 	// answered is the name GitHub answered a listing as, from the URLs it
-	// gave (AnswersAs).
+	// gave, or the nameWithOwner GraphQL gave (AnswersAs).
 	answered string
 }
 
@@ -53,13 +53,22 @@ func (r *repository) answer(url string) {
 		}
 	}
 	parts := strings.SplitN(rest, "/", 3)
-	if len(parts) < 2 || !githubapi.ValidRepositoryName(parts[0]+"/"+parts[1]) {
+	if len(parts) < 2 {
+		return
+	}
+	r.answerAs(parts[0] + "/" + parts[1])
+}
+
+// answerAs notes the owner/name GitHub answered as, the first time: a
+// listing's URLs name it, or GraphQL's nameWithOwner does.
+func (r *repository) answerAs(name string) {
+	if !githubapi.ValidRepositoryName(name) {
 		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.answered == "" {
-		r.answered = parts[0] + "/" + parts[1]
+		r.answered = name
 	}
 }
 

@@ -27,6 +27,10 @@ const (
 	GitLab Forge = forge.GitLab
 )
 
+// GitHubInstance is the instance every github PortGroup port's source is
+// on: github.setup names no other.
+const GitHubInstance = "https://github.com"
+
 type Catalog string
 
 const (
@@ -105,7 +109,7 @@ func Interpret(port macports.PortInfo, purpose Purpose) (Spec, error) {
 	var spec Spec
 	var err error
 	if github {
-		spec, err = interpret(port, GitHub, "github", "https://github.com")
+		spec, err = interpret(port, GitHub, "github", GitHubInstance)
 	} else {
 		spec, err = interpret(port, GitLab, "gitlab", port.Options["gitlab.instance"])
 	}

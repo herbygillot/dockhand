@@ -69,6 +69,17 @@ type ReleaseRepository interface {
 	Releases(context.Context) ([]Release, error)
 }
 
+// ListingPrefetcher reads ahead what many repositories of an instance list,
+// their tags or their releases, at once, for the repositories it binds later to list from
+// what it read rather than asking each: a look over many ports names its
+// repositories before their lookups start. A repository it couldn't read,
+// or read only part of, lists as it would have. done ends the reading
+// ahead and forgets what it read; calling it once the look is over is the
+// caller's.
+type ListingPrefetcher interface {
+	PrefetchListings(ctx context.Context, instance string, names []string) (done func())
+}
+
 // Documents is a forge client that fetches a livecheck document from the
 // forge it serves through its own client, so the user's credentials and the
 // forge's rate-limit handling apply, sending the given request headers in

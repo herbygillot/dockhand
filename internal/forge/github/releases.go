@@ -14,6 +14,12 @@ import (
 )
 
 func (r *repository) Releases(ctx context.Context) ([]forge.Release, error) {
+	// The tags read ahead of a look, where they were read whole
+	// (PrefetchListings), are remembered, so the commit of the release
+	// chosen is read without a request.
+	if listed, ok := r.client.listing(ctx, r.name); ok && listed.whole {
+		r.remember(listed.tags...)
+	}
 	client, err := r.client.API(ctx)
 	if err != nil {
 		return nil, githubapi.RateLimitError(err)

@@ -113,11 +113,22 @@ func RunWith(ctx context.Context, line settings.Invocation, streams term.Streams
 	// What the command spent of GitHub's hourly allowance, said with -v,
 	// in the envelope, and in the spend log.
 	requests := spend.Requests()
-	if verbosity, _ := root.PersistentFlags().GetCount("verbose"); verbosity > 0 && requests > 0 {
-		streams.Say(fmt.Sprintf("GitHub's API: %s", prose.Plural(int(requests), "request")))
+	if verbosity, _ := root.PersistentFlags().GetCount("verbose"); verbosity > 0 && (requests > 0 || spend.Points() > 0) {
+		streams.Say(spendWords(requests, spend.Points()))
 	}
 	spend.Log(shared.ComposeOptions().SpendLog(), args)
 	return streams.Finish(args, requests, err)
+}
+
+// spendWords say what a command spent of GitHub's API: its requests, and
+// its GraphQL queries' points, which GraphQL's own allowance counts, beside
+// them, as "GitHub's API: 3 requests, and 12 points of GraphQL's".
+func spendWords(requests, points int64) string {
+	words := fmt.Sprintf("GitHub's API: %s", prose.Plural(int(requests), "request"))
+	if points > 0 {
+		words += fmt.Sprintf(", and %s of GraphQL's", prose.Plural(int(points), "point"))
+	}
+	return words
 }
 
 // newRoot is dockhand's command tree, which Run executes and the

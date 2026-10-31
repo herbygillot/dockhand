@@ -2,6 +2,7 @@ package outdated_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,9 +10,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
+	"github.com/herbygillot/dockhand/internal/macports/portsource"
 	"github.com/herbygillot/dockhand/internal/outdated"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/herbygillot/dockhand/internal/upstream"
@@ -170,4 +173,56 @@ func TestObserveRejectsInvalidSelectionAndCanceledWorkBeforeDependencies(t *test
 	require.ErrorIs(t, err, context.Canceled)
 	_, err = service.Observe(t.Context(), outdated.Selection{Ports: []string{"fixture"}})
 	require.ErrorContains(t, err, "required")
+}
+
+// readAhead is a GitHub catalog that hears what a look reads ahead.
+type readAhead struct {
+	instance string
+	names    []string
+	done     bool
+}
+
+func (r *readAhead) Repository(string, string) (forge.Repository, error) {
+	return nil, errors.New("no repository is bound here")
+}
+
+func (r *readAhead) PrefetchListings(_ context.Context, instance string, names []string) func() {
+	r.instance, r.names = instance, names
+	return func() { r.done = true }
+}
+
+// The GitHub repositories the selected Portfiles' github.setup lines name
+// are read ahead of the lookups, each once, in the selection's order, and
+// the reading ahead ends with the look.
+func TestObserveReadsGitHubRepositoriesAhead(t *testing.T) {
+	executable := testsupport.MacPortsTclsh(t)
+	root := t.TempDir()
+	for name, setups := range map[string]string{
+		"alpha": "if {0} {\n github.setup owner alpha 1.0 v\n}\n",
+		"beta":  "if {0} {\n github.setup owner beta 1.0\n github.setup owner alpha 1.0 v\n github.setup ${author} gamma 1.0\n}\n",
+	} {
+		path := filepath.Join(root, "devel", name, "Portfile")
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0700))
+		require.NoError(t, os.WriteFile(path, []byte("PortSystem 1.0\nname "+name+"\nversion 1.0\ncategories devel\nmaintainers {example.org:ada @ada}\nlivecheck.type none\n"+setups), 0600))
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"add", "."}, {"-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture"}} {
+		command := exec.CommandContext(t.Context(), "git", args...)
+		command.Dir = root
+		output, err := command.CombinedOutput()
+		require.NoError(t, err, "%s", output)
+	}
+	repo, err := git.Open(t.Context(), root, git.Program{Env: os.Environ()})
+	require.NoError(t, err)
+	t.Setenv("TMPDIR", t.TempDir())
+	ports := &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
+	index := &portindex.Stager{Repo: repo, Config: portindex.Config{Env: os.Environ(), Executable: testsupport.MacPortsTool(t, "portindex"), CacheDirectory: t.TempDir()}, NativePlatform: ports.NativePlatform}
+	catalog := &readAhead{}
+	service := outdated.Service{Repo: repo, Ports: ports, Index: index,
+		Upstream: &upstream.Service{Versions: ports, Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: catalog}}}
+	result, err := service.Observe(t.Context(), outdated.Selection{Maintainers: []string{"ada@example.org"}})
+	require.NoError(t, err)
+	require.Len(t, result.Ports, 2)
+	require.Equal(t, "https://github.com", catalog.instance)
+	require.Equal(t, []string{"owner/alpha", "owner/beta"}, catalog.names)
+	require.True(t, catalog.done, "the reading ahead ends with the look")
 }

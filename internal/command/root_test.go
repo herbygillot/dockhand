@@ -54,3 +54,12 @@ func TestARemovedFlagSaysWhatReplacedIt(t *testing.T) {
 	_, _, err := cmdtest.Dockhand(t, "update", "--no-such-flag")
 	require.EqualError(t, err, "unknown flag: --no-such-flag")
 }
+
+// The spend line says GraphQL's points beside the requests, where a
+// command's queries cost any.
+func TestSpendWordsSayGraphQLPointsBesideRequests(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "GitHub's API: 3 requests", spendWords(3, 0))
+	require.Equal(t, "GitHub's API: 40 requests, and 12 points of GraphQL's", spendWords(40, 12))
+	require.Equal(t, "GitHub's API: 0 requests, and 1 point of GraphQL's", spendWords(0, 1))
+}

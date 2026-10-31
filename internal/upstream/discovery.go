@@ -182,6 +182,22 @@ func (s *Service) repository(port macports.PortInfo, automatic bool) (portsource
 	return spec, repository, nil
 }
 
+// Prefetch has the catalog of a forge read ahead what the repositories
+// named list, their tags or their releases, on one of its instances, where it can
+// (forge.ListingPrefetcher), for the discoveries that follow to list from;
+// done ends it, once they're over. A catalog that can't, and a repository
+// it couldn't read, list as they would have.
+func (s *Service) Prefetch(ctx context.Context, source portsource.Forge, instance string, names []string) (done func()) {
+	if s == nil || len(names) == 0 {
+		return func() {}
+	}
+	prefetcher, ok := s.Catalogs[source].(forge.ListingPrefetcher)
+	if !ok {
+		return func() {}
+	}
+	return prefetcher.PrefetchListings(ctx, instance, names)
+}
+
 // retryAt is when a rate limit that stopped a discovery lifts, for serve's
 // daily look to try again then (the rc6 full stage, D-N4); zero for any
 // other error.

@@ -84,6 +84,19 @@ func (c *Client) API(ctx context.Context) (*gh.Client, error) {
 	return c.sdk, c.initErr
 }
 
+// SignedInAPI is the client API reads with, where it carries a login, and
+// false where API reads without one, as GraphQL, which takes only a
+// signed-in request, can't: it asks for credentials no more than API does.
+func (c *Client) SignedInAPI(ctx context.Context) (*gh.Client, bool) {
+	api, err := c.API(ctx)
+	if err != nil {
+		return nil, false
+	}
+	c.authMu.Lock()
+	defer c.authMu.Unlock()
+	return api, api == c.authSDK
+}
+
 // AuthenticatedAPI shares one initialized credential and SDK client between adapters.
 func (c *Client) AuthenticatedAPI(ctx context.Context) (*gh.Client, error) {
 	if c == nil {

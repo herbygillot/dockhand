@@ -217,21 +217,15 @@ func (c *Client) setDraft(ctx context.Context, ref forge.PullRequestRef, draft b
 		if draft {
 			mutation = draftMutation
 		}
-		request, err := client.NewRequest(ctx, "POST", "graphql", map[string]any{"query": mutation, "variables": map[string]any{"id": row.GetNodeID()}})
+		errs, err := githubapi.GraphQL(ctx, client, mutation, map[string]any{"id": row.GetNodeID()}, nil)
 		if err != nil {
 			return forge.PullRequestObservation{}, err
 		}
-		var result struct {
-			Errors []struct{ Message string }
-		}
-		if _, err := client.Do(request, &result); err != nil {
-			return forge.PullRequestObservation{}, githubapi.RateLimitError(err)
-		}
-		if len(result.Errors) > 0 {
-			refused := fmt.Errorf("github: %s", result.Errors[0].Message)
+		if len(errs) > 0 {
+			refused := fmt.Errorf("github: %s", errs[0].Message)
 			// GitHub says it in words alone, as the macports organization's
 			// refusal did (the hugo exercise's sshuttle run, finding 2).
-			if strings.Contains(result.Errors[0].Message, "OAuth App access restrictions") {
+			if strings.Contains(errs[0].Message, "OAuth App access restrictions") {
 				return forge.PullRequestObservation{}, appRestricted{refused}
 			}
 			return forge.PullRequestObservation{}, refused
