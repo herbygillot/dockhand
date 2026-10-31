@@ -62,8 +62,10 @@ var generated = []string{"configure", "Makefile.in", "aclocal.m4", "config.h.in"
 
 var (
 	// patch names the file it's patching, quoted where its name came
-	// after a comment: "Patching file 'dir/a.txt' using Plan A...".
-	patchingFile = regexp.MustCompile(`^(?i)Patching file '?(.+?)'? using Plan`)
+	// after a comment: BSD patch's "Patching file 'dir/a.txt' using Plan
+	// A...", and GNU patch's "patching file dir/a.txt", which a Linux
+	// host runs, where refresh read no file and re-emitted nothing.
+	patchingFile = regexp.MustCompile(`^(?i)Patching file '?(.+?)'?(?: using Plan.*)?\r?\n?$`)
 	hunkIgnored  = regexp.MustCompile(`(?i)previously applied|Reversed \(or previously applied\)`)
 	hunkFailed   = regexp.MustCompile(`(?i)hunk #\d+ failed|hunks? failed|No file to patch|can't find file|malformed`)
 )
