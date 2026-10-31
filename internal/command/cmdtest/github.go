@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/engine"
@@ -35,4 +36,20 @@ func AsMaintainer(t *testing.T, w World) {
 	}
 	require.NoError(t, os.MkdirAll(filepath.Dir(config), 0o755))
 	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"@ada\"\n"), data...), 0o644))
+}
+
+// RefusingSSH points the fork's push URL at GitHub over SSH and has ssh
+// refuse this Mac's key, in ssh's own words, as a fork that refuses the
+// key does.
+func RefusingSSH(t *testing.T, w World, g *forgetest.GitHub) {
+	t.Helper()
+	for _, name := range strings.Fields(testsupport.Git(t, w.Clone, "remote")) {
+		if strings.TrimSpace(testsupport.Git(t, w.Clone, "remote", "get-url", "--push", name)) == g.Fork {
+			testsupport.Git(t, w.Clone, "remote", "set-url", "--push", name, "ssh://git@github.com/ada/macports-ports.git")
+			g.Fork = "ssh://git@github.com/ada/macports-ports.git"
+		}
+	}
+	refusing := filepath.Join(t.TempDir(), "ssh")
+	testsupport.WriteExecutable(t, refusing, "#!/bin/sh\necho 'git@github.com: Permission denied (publickey).' >&2\nexit 255\n")
+	Setenv(t, "GIT_SSH_COMMAND", refusing)
 }

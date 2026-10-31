@@ -180,6 +180,7 @@ func TestServeSaysAGoToolchainMinimumItNeedNotHold(t *testing.T) {
 			"upstream: go.mod requires Go 1.26.8, which go.toolchain_min 1.26 already gates on"},
 	} {
 		t.Run(string(test.toolchain.Outcome), func(t *testing.T) {
+			t.Parallel()
 			f := setup(t)
 			e, p := f.withPreparer(t)
 			fake := f.withFork(t, e)
@@ -573,6 +574,7 @@ func TestANarrowedCheckLeavesAPersonsBranchToThem(t *testing.T) {
 // line read "…follow; upstream's setup.py changed; …follow" (field testing
 // at f41fbad6). Concerns stay one a port, each with its key.
 func TestAHoldSharedByPortsIsSaidOnce(t *testing.T) {
+	t.Parallel()
 	changed := model.UpstreamComparison{Changes: []model.UpstreamChange{{Kind: "build", Rule: "build-file", Path: "setup.py", Hold: true, Message: "upstream's setup.py changed; the build may need the Portfile to follow"}}}
 	plan := SubmitPlan{Upstream: []PortComparison{{Port: "py312-kubernetes", Comparison: changed}, {Port: "py313-kubernetes", Comparison: changed}}}
 	held := plan.Held()

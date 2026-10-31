@@ -202,7 +202,6 @@ const testDigest = "sha256:eeec54bfe1f076e27786c5d92b89187a05b1d109b5071eb2dcdf0
 // of the test's own, so setup's record of an image lands there.
 func testProvisioner(t *testing.T, machine *fakeMachine) *Provisioner {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
 	home := filepath.Join(t.TempDir(), "tart")
 	require.NoError(t, os.MkdirAll(home, 0o700))
 	return &Provisioner{Config: Config{Env: os.Environ(), Platform: testPlatform, Home: home}, backend: machine,
@@ -211,6 +210,7 @@ func testProvisioner(t *testing.T, machine *fakeMachine) *Provisioner {
 }
 
 func TestExistingDefaultImageIsValidatedInDisposableClone(t *testing.T) {
+	t.Parallel()
 	machine := newFakeMachine("dockhand-base-tahoe")
 	result, err := testProvisioner(t, machine).Run(t.Context(), Options{})
 	require.NoError(t, err)
@@ -222,6 +222,7 @@ func TestExistingDefaultImageIsValidatedInDisposableClone(t *testing.T) {
 }
 
 func TestMissingImageIsProvisionedAndAdoptedAfterValidation(t *testing.T) {
+	t.Parallel()
 	machine := newFakeMachine()
 	result, err := testProvisioner(t, machine).Run(t.Context(), Options{})
 	require.NoError(t, err)
@@ -239,6 +240,7 @@ func TestMissingImageIsProvisionedAndAdoptedAfterValidation(t *testing.T) {
 }
 
 func TestManifestRecordsObservedGuestAgentVersion(t *testing.T) {
+	t.Parallel()
 	machine := newFakeMachine()
 	machine.validation.GuestAgentVersion = tart.GuestAgentRelease + "-cb39b12"
 	result, err := testProvisioner(t, machine).Run(t.Context(), Options{})
@@ -255,6 +257,7 @@ func TestManifestRecordsObservedGuestAgentVersion(t *testing.T) {
 // that doesn't shut down in time, as MacPorts' configuration and the
 // manifest were from every image setup protocol 2 made.
 func TestTheGuestIsFlushedBeforeItIsStopped(t *testing.T) {
+	t.Parallel()
 	machine := newFakeMachine()
 	_, err := testProvisioner(t, machine).Run(t.Context(), Options{})
 	require.NoError(t, err)
@@ -264,6 +267,7 @@ func TestTheGuestIsFlushedBeforeItIsStopped(t *testing.T) {
 }
 
 func TestXcodeProfileInstallsXcodeBeforeMacPorts(t *testing.T) {
+	t.Parallel()
 	directory := t.TempDir()
 	archive := directory + "/Xcode_26.6_Apple_silicon.xip"
 	require.NoError(t, os.WriteFile(archive, nil, 0o600))
@@ -284,6 +288,7 @@ func TestXcodeProfileInstallsXcodeBeforeMacPorts(t *testing.T) {
 // configuration over the Tahoe builder's 26.6, and the image records what
 // it reports.
 func TestAnXcodeNamedForItsMajorVersionIsTheOneInstalled(t *testing.T) {
+	t.Parallel()
 	directory := t.TempDir()
 	require.NoError(t, os.WriteFile(directory+"/Xcode_27.xip", nil, 0o600))
 	machine := newFakeMachine()
@@ -303,6 +308,7 @@ func TestAnXcodeNamedForItsMajorVersionIsTheOneInstalled(t *testing.T) {
 }
 
 func TestConventionalImageNamesRequireTheirMatchingProfile(t *testing.T) {
+	t.Parallel()
 	directory := t.TempDir()
 	archive := directory + "/Xcode_26.6.xip"
 	require.NoError(t, os.WriteFile(archive, nil, 0o600))
@@ -313,6 +319,7 @@ func TestConventionalImageNamesRequireTheirMatchingProfile(t *testing.T) {
 }
 
 func TestFailedRebuildPreservesExistingImages(t *testing.T) {
+	t.Parallel()
 	machine := newFakeMachine("dockhand-base-tahoe", "dockhand-golden-tahoe")
 	machine.fail = "macports"
 	_, err := testProvisioner(t, machine).Run(t.Context(), Options{Rebuild: true})
@@ -323,6 +330,7 @@ func TestFailedRebuildPreservesExistingImages(t *testing.T) {
 }
 
 func TestFailedAdoptionRetainsProvenCandidate(t *testing.T) {
+	t.Parallel()
 	machine := newFakeMachine("dockhand-base-tahoe", "dockhand-golden-tahoe")
 	machine.fail = "adopt:dockhand-base-tahoe-next:dockhand-base-tahoe"
 	_, err := testProvisioner(t, machine).Run(t.Context(), Options{Rebuild: true})
@@ -332,6 +340,7 @@ func TestFailedAdoptionRetainsProvenCandidate(t *testing.T) {
 }
 
 func TestCheckRefusesMissingImage(t *testing.T) {
+	t.Parallel()
 	machine := newFakeMachine()
 	_, err := testProvisioner(t, machine).Run(t.Context(), Options{Check: true})
 	require.ErrorContains(t, err, "does not exist")
@@ -348,6 +357,7 @@ func index(values []string, value string) int {
 }
 
 func TestAgentBootstrapPinsAndChecksTheReleaseAsset(t *testing.T) {
+	t.Parallel()
 	script := agentInstallScript()
 	require.Contains(t, script, "/v"+tart.GuestAgentRelease+"/")
 	require.Contains(t, script, tart.GuestAgentDigest)
@@ -362,6 +372,7 @@ func TestAgentBootstrapPinsAndChecksTheReleaseAsset(t *testing.T) {
 }
 
 func TestInterruptedAdoptionDoesNotHidePreviousImageWithGoldenRestore(t *testing.T) {
+	t.Parallel()
 	machine := newFakeMachine("dockhand-base-tahoe-previous", "dockhand-golden-tahoe")
 	_, err := testProvisioner(t, machine).Run(t.Context(), Options{})
 	require.ErrorContains(t, err, "previous image is preserved")
@@ -375,6 +386,7 @@ func TestInterruptedAdoptionDoesNotHidePreviousImageWithGoldenRestore(t *testing
 // keeps that Tart from listing any VM (openai/tart#1344), and the clone is
 // cleaned up.
 func TestAnASIFSourceNeedsATartThatHandlesIt(t *testing.T) {
+	t.Parallel()
 	machine := newFakeMachine()
 	machine.format = "asif"
 	machine.oldTart = true
@@ -398,6 +410,7 @@ func TestAnASIFSourceNeedsATartThatHandlesIt(t *testing.T) {
 // A failed setup's cleanup deletes its guest even when stopping it failed,
 // and says what went wrong with either.
 func TestCleanupReportsItsErrorsAndStillDeletes(t *testing.T) {
+	t.Parallel()
 	machine := newFakeMachine()
 	machine.fail = "macports"
 	machine.failures = map[string]error{"stop:dockhand-base-tahoe-next": errors.New("fixture stop failure")}
@@ -419,6 +432,7 @@ func TestCleanupReportsItsErrorsAndStillDeletes(t *testing.T) {
 // release's, as both Tahoe images carried the macOS 27 tools, is reported
 // by --check and refused by a build (decision 13).
 func TestToolsOfAnotherGenerationAreReportedAndRefused(t *testing.T) {
+	t.Parallel()
 	machine := newFakeMachine("dockhand-base-tahoe")
 	machine.validation.CommandLineTools = "27.0"
 	_, err := testProvisioner(t, machine).Run(t.Context(), Options{Check: true})
@@ -440,6 +454,7 @@ func TestToolsOfAnotherGenerationAreReportedAndRefused(t *testing.T) {
 // the host keys its candidate presented are recorded under the image and
 // its golden copy, not the candidate's temporary name.
 func TestProvisionRecordsHostKeysUnderTheImage(t *testing.T) {
+	t.Parallel()
 	machine := newFakeMachine()
 	_, err := testProvisioner(t, machine).Run(t.Context(), Options{})
 	require.NoError(t, err)
@@ -454,6 +469,7 @@ func TestProvisionRecordsHostKeysUnderTheImage(t *testing.T) {
 // An existing image checks the way verification reaches a clone, by its
 // recorded host keys and dockhand's key.
 func TestCheckReachesTheCloneByTheImagesKeys(t *testing.T) {
+	t.Parallel()
 	machine := newFakeMachine("dockhand-base-tahoe")
 	_, err := testProvisioner(t, machine).Run(t.Context(), Options{Check: true})
 	require.NoError(t, err)
@@ -464,6 +480,7 @@ func TestCheckReachesTheCloneByTheImagesKeys(t *testing.T) {
 // on its next setup, in a candidate adopted like a rebuild, without
 // installing anything again; --check says to run setup instead.
 func TestAnImageWithoutTheKeyIsGivenIt(t *testing.T) {
+	t.Parallel()
 	machine := newFakeMachine("dockhand-base-tahoe", "dockhand-golden-tahoe")
 	machine.hostKeys = map[string]bool{}
 	_, err := testProvisioner(t, machine).Run(t.Context(), Options{Check: true})
@@ -485,6 +502,7 @@ func TestAnImageWithoutTheKeyIsGivenIt(t *testing.T) {
 // copied into dockhand's when it still validates, and provisioned afresh
 // when it does not, as a Tahoe image with the macOS 27 tools does.
 func TestAnImageInThePersonsHomeIsImportedWhenItValidates(t *testing.T) {
+	t.Parallel()
 	machine := newFakeMachine()
 	machine.personal = map[string]image{"dockhand-base-tahoe": {Name: "dockhand-base-tahoe"}}
 	result, err := testProvisioner(t, machine).Run(t.Context(), Options{})
@@ -520,6 +538,7 @@ func TestAnImageInThePersonsHomeIsImportedWhenItValidates(t *testing.T) {
 // With a Tart that handles it, a copy from the person's home with an ASIF
 // disk is used, as a raw one is, and nothing is pulled.
 func TestAnImportedASIFImageIsUsedOnACurrentTart(t *testing.T) {
+	t.Parallel()
 	machine := newFakeMachine()
 	machine.personal = map[string]image{"dockhand-base-tahoe": {Name: "dockhand-base-tahoe"}}
 	machine.imported = "asif"
@@ -534,6 +553,7 @@ func TestAnImportedASIFImageIsUsedOnACurrentTart(t *testing.T) {
 // runs when Tart is too old for it, as a source is, and the image is
 // provisioned afresh.
 func TestAnImportedASIFImageIsDeclinedBeforeItRunsOnAnOldTart(t *testing.T) {
+	t.Parallel()
 	machine := newFakeMachine()
 	machine.personal = map[string]image{"dockhand-base-tahoe": {Name: "dockhand-base-tahoe"}}
 	machine.imported = "asif"
@@ -558,6 +578,7 @@ func TestAnImportedASIFImageIsDeclinedBeforeItRunsOnAnOldTart(t *testing.T) {
 // engine reads the image's origin. A tag that moved during the pull is
 // refused; one the registry won't name leaves the origin unknown.
 func TestSetupRecordsTheImagesOrigin(t *testing.T) {
+	t.Parallel()
 	machine := newFakeMachine()
 	provisioner := testProvisioner(t, machine)
 	result, err := provisioner.Run(t.Context(), Options{})
@@ -605,6 +626,7 @@ func TestSetupRecordsTheImagesOrigin(t *testing.T) {
 // made: a base image has no Xcode, and validating one as if it had failed
 // every base image setup protocol 3's first build made.
 func TestABaseImageIsNeverAskedForXcode(t *testing.T) {
+	t.Parallel()
 	machine := newFakeMachine()
 	provisioner := testProvisioner(t, machine)
 	provisioner.Config.XcodeVersion = "26.6"
@@ -616,6 +638,7 @@ func TestABaseImageIsNeverAskedForXcode(t *testing.T) {
 // An Xcode archive that isn't Apple's is refused before anything is made:
 // the guest's xip --expand doesn't check signatures.
 func TestAnXcodeArchiveMustBeApples(t *testing.T) {
+	t.Parallel()
 	directory := t.TempDir()
 	require.NoError(t, os.WriteFile(directory+"/Xcode_26.6_Apple_silicon.xip", nil, 0o600))
 	machine := newFakeMachine()
@@ -638,6 +661,7 @@ func TestAnXcodeArchiveMustBeApples(t *testing.T) {
 // v0.3.1 quick stage, 2026-10-15). A newer base is taken, made or found;
 // an older one isn't.
 func TestAGuestMacPortsNewerThanAskedIsTaken(t *testing.T) {
+	t.Parallel()
 	machine := newFakeMachine()
 	machine.validation.MacPortsVersion = "2.12.99"
 	result, err := testProvisioner(t, machine).Run(t.Context(), Options{})

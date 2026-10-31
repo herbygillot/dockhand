@@ -59,6 +59,7 @@ func TestAPlanNamesTheChangedSubportAndItsSiblings(t *testing.T) {
 // A link finding is a notice, its mark !, and one that couldn't be read
 // says nothing of them, unmarked, as one whose links are each declared.
 func TestWriteLinks(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	WriteLinks(&out, []engine.LinkFinding{
 		{Target: "harbor", Port: "oniguruma", Library: "/opt/local/lib/libonig.5.dylib", Binary: "/opt/local/bin/harbor", Libraries: 2},
@@ -200,6 +201,7 @@ func TestTheReportSaysHowLongEachPartTook(t *testing.T) {
 // a notice, and a new port lint didn't nitpick says so (the docs dig's
 // I13).
 func TestWriteLint(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
 	WriteLint(&out, []engine.LintFinding{

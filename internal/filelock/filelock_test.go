@@ -12,6 +12,7 @@ import (
 )
 
 func TestLockIsHeldBySurvivingChild(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "operation.lock")
 	file, err := Acquire(t.Context(), path, Exclusive)
 	require.NoError(t, err)
@@ -34,6 +35,7 @@ func TestLockIsHeldBySurvivingChild(t *testing.T) {
 }
 
 func TestAcquireRejectsUnknownModeBeforeCreatingPath(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "missing", "operation.lock")
 	_, err := Acquire(t.Context(), path, Mode(99))
 	require.ErrorContains(t, err, "invalid mode")
@@ -42,6 +44,7 @@ func TestAcquireRejectsUnknownModeBeforeCreatingPath(t *testing.T) {
 }
 
 func TestTryExistingDoesNotCreatePathsAndSkipsBusyLocks(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "new", "lock")
 	_, err := TryExisting(t.Context(), path, Exclusive)
 	require.ErrorIs(t, err, os.ErrNotExist)

@@ -105,6 +105,7 @@ func (f fixture) run(t *testing.T, b model.Branch, r model.Revision, p model.Pla
 // on an older build went on with its own code against the newer schema
 // (the person's question, 2026-10-06).
 func TestANewerSchemaIsRefusedWhileOpen(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	db, err := sql.Open("sqlite", f.path)
 	require.NoError(t, err)
@@ -117,6 +118,7 @@ func TestANewerSchemaIsRefusedWhileOpen(t *testing.T) {
 }
 
 func TestOpenCreatesReopensAndRefusesOtherDatabases(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	again, err := f.store.Register(t.Context(), "/src/macports-ports/.git")
 	require.NoError(t, err)
@@ -156,6 +158,7 @@ func TestOpenCreatesReopensAndRefusesOtherDatabases(t *testing.T) {
 }
 
 func TestTransactionsAreScopedAndNotNested(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	other, err := f.store.Register(t.Context(), "/src/second-clone/.git")
 	require.NoError(t, err)
@@ -194,6 +197,7 @@ func TestTransactionsAreScopedAndNotNested(t *testing.T) {
 }
 
 func TestBranchesKeepTheirRules(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	b, _, _ := f.seed(t)
 	require.ErrorIs(t, f.update(t, func(tx store.Tx) error { return tx.AddBranch(f.branch("br_2", b.Name)) }), store.ErrConflict, "one open branch per name")
@@ -244,6 +248,7 @@ func TestBranchesKeepTheirRules(t *testing.T) {
 }
 
 func TestSnapshotsAreNumberedInOrder(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	b, first, _ := f.seed(t)
 	snapshot := func(n int) model.Revision {
@@ -267,6 +272,7 @@ func TestSnapshotsAreNumberedInOrder(t *testing.T) {
 }
 
 func TestPlansRoundTrip(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	_, revision, p := f.seed(t)
 	// A target built with variants keeps them, and is known by them.
@@ -290,6 +296,7 @@ func TestPlansRoundTrip(t *testing.T) {
 // A plan recorded before each environment had its own is refused by name,
 // not read as one with nothing to build.
 func TestAPlanRecordedBeforeEnvironmentPlansIsRefused(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	_, r, _ := f.seed(t)
 	arm, _ := json.Marshal(tahoe)
@@ -311,6 +318,7 @@ func TestAPlanRecordedBeforeEnvironmentPlansIsRefused(t *testing.T) {
 }
 
 func TestRunsAreNumberedImmutableAndMoveForward(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	b, r, p := f.seed(t)
 	first := f.run(t, b, r, p)
@@ -356,6 +364,7 @@ func TestRunsAreNumberedImmutableAndMoveForward(t *testing.T) {
 }
 
 func TestExecutionsAndCheckpoints(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	b, r, p := f.seed(t)
 	run := f.run(t, b, r, p)
@@ -423,6 +432,7 @@ func TestExecutionsAndCheckpoints(t *testing.T) {
 // A result names what its build read by key, and the record is kept once
 // for every build that read the same (decision 28).
 func TestAResultKeepsWhatItsBuildRead(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	b, r, p := f.seed(t)
 	run := f.run(t, b, r, p)
@@ -478,6 +488,7 @@ func TestAResultKeepsWhatItsBuildRead(t *testing.T) {
 // that built it; a failure, a reuse, and a build that read nobody knows
 // what are not (decision 28).
 func TestReusableResultsComeWithTheirBuilds(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	b, r, p := f.seed(t)
 	first, second := f.run(t, b, r, p), f.run(t, b, r, p)
@@ -547,6 +558,7 @@ func TestReusableResultsComeWithTheirBuilds(t *testing.T) {
 // one platform with the Command Line Tools alone is not its attempt there
 // with Xcode.
 func TestAnExecutionsEnvironmentIncludesItsDeveloperTools(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	tools, xcode := tahoe, tahoe
 	tools.DeveloperTools, xcode.DeveloperTools = model.DeveloperToolsCommandLine, model.DeveloperToolsXcode
@@ -573,6 +585,7 @@ func TestAnExecutionsEnvironmentIncludesItsDeveloperTools(t *testing.T) {
 // builds in two prefixes on this Mac, each its own attempt, and reuse
 // reads a prefix's builds alone.
 func TestAnExecutionsEnvironmentIncludesItsPrefix(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	local := model.Environment{Provider: "local", Platform: tahoe.Platform, Prefix: "/opt/local"}
 	test := local
@@ -642,6 +655,7 @@ INSERT INTO results(repository_id, execution_id, target_id, outcome, phase, test
 // Schema 24 rebuilds executions and results; what they held comes
 // through, in the order it was made, with the rules the tables kept.
 func TestExecutionsAndResultsSurviveTheirRebuild(t *testing.T) {
+	t.Parallel()
 	s, err := Open(t.Context(), schemaAt(t, 23, schema23Records), Options{})
 	require.NoError(t, err)
 	defer s.Close()
@@ -675,6 +689,7 @@ func TestExecutionsAndResultsSurviveTheirRebuild(t *testing.T) {
 // refuses a result whose execution is gone, which foreign keys, off when
 // this one was written, would have refused before it.
 func TestAFailedMigrationChangesNothing(t *testing.T) {
+	t.Parallel()
 	path := schemaAt(t, 23, schema23Records+"INSERT INTO results(repository_id, execution_id, target_id, outcome, phase, tests, log, inputs, recorded_at) VALUES('repo_1','ex_gone','jq','passed','','none','','',8);")
 	_, err := Open(t.Context(), path, Options{})
 	require.ErrorContains(t, err, "schema 24")
@@ -691,6 +706,7 @@ func TestAFailedMigrationChangesNothing(t *testing.T) {
 // MacPorts gives it; one that can't be named as a file, or has no digest,
 // isn't recorded (decision 28).
 func TestAnArchiveIsRecordedOnceByDigest(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	f.seed(t)
 	archive := model.Archive{Digest: "sha256:55", Name: "libharbor-4_0.darwin_25.arm64.tbz2", Size: 1024, KeptAt: at}
@@ -714,6 +730,7 @@ func TestAnArchiveIsRecordedOnceByDigest(t *testing.T) {
 // newest two of each first, and go with their archives when pruning
 // forgets them (batch 90).
 func TestADependencysArchivesAreFoundByPortAndGoWithTheirArchives(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	f.seed(t)
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsCommandLine}
@@ -775,6 +792,7 @@ func TestADependencysArchivesAreFoundByPortAndGoWithTheirArchives(t *testing.T) 
 // whatever its branch; an older build's goes, however recent. One kept
 // since the cutoff stays however it is named (decisions 36 and 44).
 func TestArchivesGoWhenNoLiveResultNamesThem(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	b, r, p := f.seed(t)
 	run := f.run(t, b, r, p)
@@ -844,6 +862,7 @@ func TestArchivesGoWhenNoLiveResultNamesThem(t *testing.T) {
 // A branch records when it leaves open, and forgets it when it opens
 // again; a time given is kept (D6).
 func TestABranchRecordsWhenItEnded(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	b, _, _ := f.seed(t)
 	read := func() model.Branch {
@@ -875,6 +894,7 @@ func TestABranchRecordsWhenItEnded(t *testing.T) {
 // and so does an execution a remaining result reused. An open branch's
 // records, and a branch ended since the cutoff, are untouched.
 func TestAnEndedBranchsHistoryGoesButWhatReuseNeeds(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	b, r, p := f.seed(t)
 	old, reusedFrom, newest := f.run(t, b, r, p), f.run(t, b, r, p), f.run(t, b, r, p)
@@ -941,6 +961,7 @@ func TestAnEndedBranchsHistoryGoesButWhatReuseNeeds(t *testing.T) {
 // saying the last branch it took for the next, and "" once none is left,
 // when the inputs no result names go too (the SQL study's SQL-S2).
 func TestHistoryIsPrunedAChunkAtATime(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	first, r, p := f.seed(t)
 	second := f.branch("br_2", "dockhand/jq-2")
@@ -974,6 +995,7 @@ func TestHistoryIsPrunedAChunkAtATime(t *testing.T) {
 // history and passed the prune's timeout at a year's scale (the SQL
 // study's SQL-S1).
 func TestHistoryIsPrunedWithoutCorrelatedScans(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	branches := []string{"br_1", "br_2"}
 	steps := pruneBranchSteps(len(branches))
@@ -1020,6 +1042,7 @@ func (f fixture) correlatedScans(t *testing.T, query string, args ...any) []stri
 // An open branch's assessments of a tree it moved past go once its newer
 // revision is older than the cutoff; those of its newest tree stay (D6).
 func TestAssessmentsOfATreeMovedPastGo(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	b, _, _ := f.seed(t)
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
@@ -1056,6 +1079,7 @@ func session(f fixture, id model.SessionID, kind model.SessionKind) model.Sessio
 }
 
 func TestLeasesAreFenced(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
 		if err := tx.AddSession(session(f, "ses_a", model.SessionServe)); err != nil {
@@ -1121,6 +1145,7 @@ func TestLeasesAreFenced(t *testing.T) {
 }
 
 func TestEventsAreAJournal(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	var sequences []int64
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
@@ -1182,6 +1207,7 @@ func TestEventsAreAJournal(t *testing.T) {
 }
 
 func TestConcurrentWritersQueueRatherThanCollide(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	b, r, p := f.seed(t)
 	const writers = 8
@@ -1232,6 +1258,7 @@ func (f fixture) planOf(t *testing.T, query string, args ...any) string {
 // review.md). A change to a query's wording that loses its index fails
 // here, not a year of history later.
 func TestHistoryIsReadThroughIndexes(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	reusable := []any{f.repo, "libharbor", "tart", "darwin", "25", "arm64", "", "", 5}
 	revisionAssessments, revision := assessmentsQuery(f.repo, store.AssessmentFilter{Branch: "br_1", Tree: "tree", Base: "base"})
@@ -1258,6 +1285,7 @@ func TestHistoryIsReadThroughIndexes(t *testing.T) {
 // Every connection syncs through to the disk, and bounds the WAL file a
 // checkpoint leaves.
 func TestEveryConnectionSyncsToTheDisk(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	var conns []*sql.Conn
 	for range 4 {
@@ -1282,6 +1310,7 @@ func TestEveryConnectionSyncsToTheDisk(t *testing.T) {
 // a sort over a few. It needs the sampled values, which show queued runs
 // are few; averages alone left it reading every run.
 func TestOpeningKeepsThePlannersStatistics(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	b, r, p := f.seed(t)
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
@@ -1322,6 +1351,7 @@ func TestOpeningKeepsThePlannersStatistics(t *testing.T) {
 // old copy goes once it's old, the one just made staying (the certigo
 // run: its first run migrated the database silently).
 func TestAMigrationKeepsTheDatabaseAsItWas(t *testing.T) {
+	t.Parallel()
 	path := schemaAt(t, schemaVersion-1, schema23Records)
 	stale := path + ".schema-2"
 	require.NoError(t, os.WriteFile(stale, []byte("an old copy"), 0o600))
@@ -1352,6 +1382,7 @@ func TestAMigrationKeepsTheDatabaseAsItWas(t *testing.T) {
 // timeout or the process's end would. A copy a process left partway is
 // never taken for the kept one, and goes once it's old.
 func TestACopyCutShortNeverStandsAsTheKeptOne(t *testing.T) {
+	t.Parallel()
 	path := schemaAt(t, schemaVersion-1, schema23Records+
 		"CREATE TABLE filler(x); WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<200) INSERT INTO filler SELECT randomblob(1000) FROM n;")
 	copy := path + fmt.Sprintf(".schema-%d", schemaVersion-1)
@@ -1396,6 +1427,7 @@ func TestACopyCutShortNeverStandsAsTheKeptOne(t *testing.T) {
 // refuses once it holds a database, failing a later open (the SQL review's
 // rescan). A copy finished once another's is in place leaves that one.
 func TestOpensAtOnceAllMigrate(t *testing.T) {
+	t.Parallel()
 	path := schemaAt(t, schemaVersion-1, schema23Records)
 	copy := path + fmt.Sprintf(".schema-%d", schemaVersion-1)
 	opened := make(chan error)
@@ -1459,6 +1491,7 @@ func requireWholeCopy(t *testing.T, copy string) {
 // transactions on every connection the pool holds, each of which must
 // begin.
 func TestACanceledBeginLeavesNoTransactionOpen(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	for i := range 3000 {
 		ctx, cancel := context.WithCancel(t.Context())
@@ -1494,6 +1527,7 @@ func TestACanceledBeginLeavesNoTransactionOpen(t *testing.T) {
 // that dockhand left it as it is, and what to do, never to delete it (the
 // rc6 full stage, D-T5).
 func TestADamagedDatabaseIsSaidPlainly(t *testing.T) {
+	t.Parallel()
 	for name, content := range map[string][]byte{
 		"not a database": []byte(strings.Repeat("not a database at all\n", 400)),
 		"truncated":      append([]byte("SQLite format 3\x00"), make([]byte, 84)...),
@@ -1517,6 +1551,7 @@ func TestADamagedDatabaseIsSaidPlainly(t *testing.T) {
 // heartbeat gone stale doesn't hold it, and a person's answer migrates
 // anyway (the v0.3.1 port update, 2026-10-15).
 func TestAMigrationWaitsForTheProcessesOnTheOlderSchema(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UnixMilli()
 	sessions := fmt.Sprintf(`
 INSERT INTO sessions(repository_id, id, kind, pid, process_start, version, started_at, heartbeat_at, ended_at) VALUES('repo_1','ses_check','foreground',101,'p','v0.3.1',%[1]d,%[1]d,NULL);
@@ -1556,6 +1591,7 @@ INSERT INTO leases(repository_id, resource, holder, generation, acquired_at) VAL
 // (2026-10-29). Where a heartbeat is given, a migration counts only the
 // processes whose heartbeat moves in this file while it waits three beats.
 func TestAMigrationCountsOnlyTheProcessesWorkingOnThisFile(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UnixMilli()
 	sessions := fmt.Sprintf(`
 INSERT INTO sessions(repository_id, id, kind, pid, process_start, version, started_at, heartbeat_at, ended_at) VALUES('repo_1','ses_here','foreground',101,'p','v0.3.1',%[1]d,%[1]d,NULL);
@@ -1602,6 +1638,7 @@ INSERT INTO leases(repository_id, resource, holder, generation, acquired_at) VAL
 // and each one's results, with each reused result's origin and the
 // inputs its results name (the SQL study's O2).
 func TestACheckIsReadWhole(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	b, r, p := f.seed(t)
 	earlier, run := f.run(t, b, r, p), f.run(t, b, r, p)
@@ -1643,6 +1680,7 @@ func TestACheckIsReadWhole(t *testing.T) {
 // SQL: "runs of a tree" read every revision and run of the branch to join
 // them in Go (SQL-O1).
 func TestRunsOfATreeAndWithoutBaselines(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	b, r, p := f.seed(t)
 	other := model.Revision{ID: "rev_2", Branch: b.ID, Kind: model.RevisionSnapshot, Snapshot: 2, Source: model.Source{Tree: "tree2", Base: "base"}, Head: "head", CreatedAt: at}
@@ -1684,6 +1722,7 @@ func runIDs(runs []model.Run) []model.RunID {
 // branch's result names, hides it from every list of branches, frees its
 // name, and leaves no foreign key dangling (roadmap item 8).
 func TestAForgottenBranchKeepsOnlyWhatOthersName(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	a, r, p := f.seed(t)
 	other := f.branch("br_2", "dockhand/harbor-2")

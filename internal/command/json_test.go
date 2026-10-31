@@ -378,6 +378,7 @@ func TestAPlansJSONSaysWhatWasAskedAndLeftOut(t *testing.T) {
 // decision's reason among it, where it gave the row alone (Codex's review
 // of 8e314b96, finding 9).
 func TestStatusJSONCarriesWhatItsTextDetails(t *testing.T) {
+	t.Parallel()
 	cmdtest.CheckedBranch(t)
 	_, _, err := cmdtest.Dockhand(t, "decide", "license-changed", "--because", "license was reviewed and remains acceptable")
 	require.NoError(t, err)
@@ -394,6 +395,7 @@ func TestStatusJSONCarriesWhatItsTextDetails(t *testing.T) {
 // check's result replaced the review's, its number and findings lost
 // (Codex's review of 8e314b96, finding 9).
 func TestReviewCheckJSONKeepsTheReview(t *testing.T) {
+	t.Parallel()
 	w := cmdtest.NewWorld(t)
 	cmdtest.WithScript(t, w, "passed")
 	g := cmdtest.WithGitHub(t, w)

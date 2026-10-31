@@ -58,6 +58,7 @@ func TestABranchWhoseChangesLandedIsOnMaster(t *testing.T) {
 // Tart provider words it; logs says so for a target with no log yet (the
 // gnome-voice session's notes, 2026-10-20).
 func TestARunningRunSaysWhatItsBuilding(t *testing.T) {
+	t.Parallel()
 	logs := RunLogs{Run: model.Run{State: model.RunRunning}, Progress: "macOS 26 (Tahoe) arm64: building gnome-voice (2 of 3): configure; rust: no archive for macOS 26 arm64; building from source"}
 	phase, ok := logs.Building("gnome-voice")
 	require.True(t, ok)

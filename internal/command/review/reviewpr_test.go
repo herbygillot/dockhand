@@ -133,6 +133,7 @@ func TestReviewCheckAdoptsAndChecks(t *testing.T) {
 // its check name one commit, where they named B and A (Codex's review of
 // 2ad896d2, W2, its probe inverted).
 func TestReviewCheckChecksTheCommitItReviewed(t *testing.T) {
+	t.Parallel()
 	w := cmdtest.NewWorld(t)
 	cmdtest.WithScript(t, w, "passed")
 	g := cmdtest.WithGitHub(t, w)

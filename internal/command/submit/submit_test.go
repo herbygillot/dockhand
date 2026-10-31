@@ -151,15 +151,7 @@ func TestThePreviewShowsAForkThatRefusesTheKeyAsAHold(t *testing.T) {
 	cmdtest.Versioned(t, w)
 	cmdtest.WithBumper(t)
 	g := cmdtest.WithGitHub(t, w)
-	for _, name := range strings.Fields(testsupport.Git(t, w.Clone, "remote")) {
-		if strings.TrimSpace(testsupport.Git(t, w.Clone, "remote", "get-url", "--push", name)) == g.Fork {
-			testsupport.Git(t, w.Clone, "remote", "set-url", "--push", name, "ssh://git@github.com/ada/macports-ports.git")
-			g.Fork = "ssh://git@github.com/ada/macports-ports.git"
-		}
-	}
-	refusing := filepath.Join(t.TempDir(), "ssh")
-	require.NoError(t, os.WriteFile(refusing, []byte("#!/bin/sh\necho 'git@github.com: Permission denied (publickey).' >&2\nexit 255\n"), 0o755))
-	cmdtest.Setenv(t, "GIT_SSH_COMMAND", refusing)
+	cmdtest.RefusingSSH(t, w, g)
 	_, _, err := cmdtest.Dockhand(t, "update", "jq", "--new=jq-update")
 	require.NoError(t, err)
 	_, _, err = cmdtest.Dockhand(t, "tidy", "-b", "jq-update")

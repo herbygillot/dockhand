@@ -1,16 +1,17 @@
 package engine
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 func TestSetupPutsWorktreesWhereThePersonSaid(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	unconfigured := f.options
 	unconfigured.Worktrees = ""
@@ -47,6 +48,7 @@ func TestSetupPutsWorktreesWhereThePersonSaid(t *testing.T) {
 }
 
 func TestSetupRefusesAGitThatCantRunBeforeOpening(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	options := f.options
 	options.Git = filepath.Join(t.TempDir(), "no-git")
@@ -62,7 +64,7 @@ func TestSetupRefusesAGitThatCantRunBeforeOpening(t *testing.T) {
 func TestSetupSaysWhetherTheVendoringToolsAreThere(t *testing.T) {
 	t.Parallel()
 	helper := filepath.Join(t.TempDir(), "go2port")
-	require.NoError(t, os.WriteFile(helper, []byte("#!/bin/sh\n"), 0o755))
+	testsupport.WriteExecutable(t, helper, "#!/bin/sh\n")
 	found := vendoringTools(depblock.Tools{Go2Port: helper, Cargo2Port: filepath.Join(t.TempDir(), "cargo2port")})
 	require.Equal(t, []SetupTool{{Name: "go2port", Path: helper, For: "Go ports' go.vendors"}, {Name: "cargo2port", For: "Rust ports' cargo.crates"}}, found)
 }

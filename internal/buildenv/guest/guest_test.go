@@ -67,7 +67,7 @@ func guestCommand(t *testing.T, root string, input Input, env ...string) *exec.C
 	prefix := filepath.Join(root, "prefix")
 	require.NoError(t, os.MkdirAll(filepath.Join(prefix, "bin"), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(prefix, "etc", "macports"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(prefix, "bin", "port"), []byte(guesttest.FakePort), 0o755))
+	testsupport.WriteExecutable(t, filepath.Join(prefix, "bin", "port"), guesttest.FakePort)
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "ports"), 0o755))
 	if !strings.Contains(strings.Join(env, " "), "NO_INDEX=1") {
 		require.NoError(t, os.WriteFile(filepath.Join(root, "ports", "PortIndex"), nil, 0o644))
@@ -102,7 +102,7 @@ set foreignManagers [expr {[info exists ::env(FOREIGN)] ? $::env(FOREIGN) : {}}]
 	command := exec.CommandContext(t.Context(), executable, script)
 	portLog := filepath.Join(root, "port.log")
 	otool := filepath.Join(root, "otool")
-	require.NoError(t, os.WriteFile(otool, []byte(guesttest.FakeOtool), 0o755))
+	testsupport.WriteExecutable(t, otool, guesttest.FakeOtool)
 	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "DOCKHAND_GUEST_OTOOL="+otool, "CONTENTS=", "PROVIDES=", "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "CONFIGURESAYS=", "QUIET=", "HANG=", "NOARCHIVE=", "DEPFAILS=", "ACTIVEFILE=", "INSTALLED=", "DEPVERSION=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
 	return command
 }
@@ -648,7 +648,7 @@ func TestTheGuestSaysWhatAPassedTargetsBinariesLink(t *testing.T) {
 	for _, file := range []string{harbor, own, onig, z} {
 		require.NoError(t, os.WriteFile(file, macho, 0o755))
 	}
-	require.NoError(t, os.WriteFile(script, []byte("#!/bin/sh\n"), 0o755))
+	testsupport.WriteExecutable(t, script, "#!/bin/sh\n")
 	require.NoError(t, os.WriteFile(harbor+".links", []byte(harbor+":\n\t@rpath/libonig.5.dylib (compatibility version 6.0.0, current version 6.9.0)\n\t"+own+" (compatibility version 1.0.0, current version 1.0.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1351.0.0)\n"), 0o644))
 	require.NoError(t, os.WriteFile(harbor+".loads", []byte("Load command 12\n          cmd LC_RPATH\n      cmdsize 32\n         path @loader_path/../lib (offset 12)\n"), 0o644))
 	require.NoError(t, os.WriteFile(own+".links", []byte(own+":\n\t"+own+" (compatibility version 1.0.0, current version 1.0.0)\n\t"+z+" (compatibility version 1.0.0, current version 1.3.1)\n"), 0o644))

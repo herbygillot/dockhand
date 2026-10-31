@@ -15,6 +15,7 @@ import (
 )
 
 func TestASchemaOneDatabaseIsUpgraded(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "dockhand.db")
 	db, err := sql.Open("sqlite", "file:"+path)
 	require.NoError(t, err)
@@ -44,6 +45,7 @@ func TestASchemaOneDatabaseIsUpgraded(t *testing.T) {
 }
 
 func TestEditsCheckpointsAndDecisions(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	b := f.branch("br_1", "dockhand/jq-4k2p")
 	b.PullRequest = &model.PullRequest{Repository: "macports/macports-ports", Number: 34901, Head: "ada/macports-ports:dockhand/jq-4k2p", Pushed: "abc", Body: "body", Draft: true,
@@ -152,6 +154,7 @@ func TestEditsCheckpointsAndDecisions(t *testing.T) {
 }
 
 func TestUpgradingKeepsRecordedEdits(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "dockhand.db")
 	db, err := sql.Open("sqlite", "file:"+path)
 	require.NoError(t, err)
@@ -186,6 +189,7 @@ func TestUpgradingKeepsRecordedEdits(t *testing.T) {
 // Schema 35 moves each acceptance into the decision record unchanged in
 // meaning: a port's failure accepted at a commit.
 func TestUpgradingKeepsAcceptancesAsDecisions(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "dockhand.db")
 	db, err := sql.Open("sqlite", "file:"+path)
 	require.NoError(t, err)
@@ -225,6 +229,7 @@ func TestUpgradingKeepsAcceptancesAsDecisions(t *testing.T) {
 }
 
 func TestReviewsAreKeptNewestFirst(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	first := model.Review{Repository: "macports/macports-ports", Number: 34905, Head: "h1", At: at,
 		Findings: []model.ReviewFinding{{Code: "follow-up", Severity: "error", Message: "squash it"}}, Posted: "request-changes"}
@@ -253,6 +258,7 @@ func TestReviewsAreKeptNewestFirst(t *testing.T) {
 }
 
 func TestAnEditKeepsItsUpstreamComparisonAndABranchItsOrigin(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	b := f.branch("br_1", "dockhand/croc-7hq2")
 	b.Origin = model.OriginServe
@@ -286,6 +292,7 @@ func TestAnEditKeepsItsUpstreamComparisonAndABranchItsOrigin(t *testing.T) {
 // A revision's assessment of a port is kept by its tree, base, and port,
 // newest first; recording one again for the same replaces it.
 func TestAnAssessmentIsTheRevisions(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	b := f.branch("br_1", "dockhand/croc-7hq2")
 	found := model.UpstreamComparison{Changes: []model.UpstreamChange{{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed", Hold: true, Rule: "license-changed", Class: model.Introduced}},
@@ -322,6 +329,7 @@ func TestAnAssessmentIsTheRevisions(t *testing.T) {
 // A change record is the revision's, by its tree, base, and directory:
 // recorded again it replaces what was, and it reads back as it was kept.
 func TestAChangeRecordIsTheRevisions(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	b := f.branch("br_1", "dockhand/terraform-1.17-7hq2")
 	first := model.ChangeRecord{Branch: b.ID, Tree: "t1", Base: "b1", Directory: "sysutils/terraform", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"},
@@ -363,6 +371,7 @@ func TestAChangeRecordIsTheRevisions(t *testing.T) {
 // newest first: every check read and decoded all its branch had ever
 // recorded, to keep its revision's (the SQL review's rescan).
 func TestARevisionsAssessmentsAreReadByItsKey(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	b, other := f.branch("br_1", "dockhand/croc-7hq2"), f.branch("br_2", "dockhand/croc-m4ve")
 	croc := model.Assessment{Branch: b.ID, Tree: "t1", Base: "b1", Port: "croc", Directory: "net/croc", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{}}, Policy: 1, At: at}
@@ -397,6 +406,7 @@ func TestARevisionsAssessmentsAreReadByItsKey(t *testing.T) {
 // A pull request's failed CI job is kept classified, once a job's attempt,
 // by the head it ran at; another head's are its own (schema 37).
 func TestCIFailuresAreKeptByHead(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	b := f.branch("br_1", "dockhand/garage-4k2p")
 	fetch := model.CIFailure{Branch: b.ID, Head: "abc", Run: 37127451783, Attempt: 1, Job: 111215552774, Check: "macos-15", Cause: model.CIFetch,
@@ -432,6 +442,7 @@ func TestCIFailuresAreKeptByHead(t *testing.T) {
 // A submission plan's network holds are kept by tree, a later plan of the
 // tree replacing them, one that found none known as none (schema 38).
 func TestNetworkHoldsAreKeptByTree(t *testing.T) {
+	t.Parallel()
 	f := open(t)
 	b := f.branch("br_1", "dockhand/jq-4k2p")
 	other := model.Concern{Origin: model.FromOtherPullRequests, Rule: "open", Subject: "34620", Detail: "#34620 is open for the same port: jq: update to 1.8.0"}

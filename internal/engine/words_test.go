@@ -68,6 +68,7 @@ func TestARepeatedItemIsNamedOnce(t *testing.T) {
 // A comparison's lines say whether each holds as a field, the same finding
 // of two ports once with both named, and what was read.
 func TestComparisonLinesSayHoldsAsAField(t *testing.T) {
+	t.Parallel()
 	license := model.UpstreamChange{Kind: "license", Path: "LICENSE", Hold: true, Message: "upstream's LICENSE changed"}
 	lines := ComparisonLines([]PortComparison{
 		{Port: "alpha", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{license}}},

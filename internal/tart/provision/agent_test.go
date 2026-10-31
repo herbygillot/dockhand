@@ -13,6 +13,7 @@ import (
 )
 
 func TestAgentRegistrationRequiresObservedService(t *testing.T) {
+	t.Parallel()
 	// The script runs in the macOS guest under zsh, as provisioning runs it.
 	if _, err := os.Stat("/bin/zsh"); err != nil {
 		t.Skip("/bin/zsh is required")
@@ -65,6 +66,7 @@ touch "$FIXTURE/loaded-${key}_${label}"
 }
 
 func TestLiveAgentRegistration(t *testing.T) {
+	t.Parallel()
 	name := os.Getenv("DOCKHAND_TEST_BOOTSTRAP_VM")
 	if name == "" {
 		t.Skip("set DOCKHAND_TEST_BOOTSTRAP_VM to an owned running disposable VM")

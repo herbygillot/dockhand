@@ -14,6 +14,7 @@ import (
 )
 
 func TestAPFSSpaceChecksCapacityAndPreservesResizeErrors(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, initial, after        string
 		fail, wantError, wantResize bool
@@ -24,6 +25,7 @@ func TestAPFSSpaceChecksCapacityAndPreservesResizeErrors(t *testing.T) {
 		{"capacity sufficient despite resize error", "20", "80", true, false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			root := t.TempDir()
 			state := filepath.Join(root, "space")
 			calls := filepath.Join(root, "calls")
@@ -43,6 +45,9 @@ fi
 				script := strings.ReplaceAll(args[2], "/bin/df", `"$TEST_DF"`)
 				script = strings.ReplaceAll(script, "/usr/sbin/diskutil", `"$TEST_DISK"`)
 				script = strings.ReplaceAll(script, "sudo -n ", "")
+				// The retries' five-second waits are the script's, not
+				// what's tested.
+				script = strings.ReplaceAll(script, "/bin/sleep 5", ":")
 				commandArgs := append([]string{"-c", script}, args[3:]...)
 				command := exec.CommandContext(ctx, "/bin/sh", commandArgs...)
 				fail := "no"

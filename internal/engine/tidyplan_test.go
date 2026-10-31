@@ -204,6 +204,7 @@ func TestASubjectSaysWhoseCommitItCameFrom(t *testing.T) {
 // that (the command package review's 2a: editSubjects dropped every
 // blocking line containing "needs a subject").
 func TestSetSubjectSettlesTheMissingSubject(t *testing.T) {
+	t.Parallel()
 	group := TidyGroup{Message: "\n\nBody kept.\n", FromEdits: true}
 	group.needsSubject("commit 1 needs a subject")
 	group.Blocking = append(group.Blocking, "commit 1 needs an author with a name and an email")
@@ -221,6 +222,7 @@ func TestSetSubjectSettlesTheMissingSubject(t *testing.T) {
 // there to ask, or the person answered for it, and never while something
 // blocks it (ship's "commit if unambiguous").
 func TestAPlanAppliesUnasked(t *testing.T) {
+	t.Parallel()
 	own := TidyPlan{Groups: []TidyGroup{{Directory: "textproc/jq", FromEdits: true, Message: "jq: update to 1.8.1\n"}}}
 	require.NoError(t, own.Gate().AppliesUnasked(branchstate.Mode{Answered: model.AnsweredNobody}, false))
 	hand := TidyPlan{Groups: []TidyGroup{{Directory: "textproc/jq", Message: "jq: fix\n"}}}

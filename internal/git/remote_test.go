@@ -74,7 +74,7 @@ func TestAnSSHRefusalIsSaidPlainly(t *testing.T) {
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	ssh := filepath.Join(t.TempDir(), "ssh")
-	require.NoError(t, os.WriteFile(ssh, []byte("#!/bin/sh\necho 'git@github.com: Permission denied (publickey).' >&2\nexit 255\n"), 0o755))
+	testsupport.WriteExecutable(t, ssh, "#!/bin/sh\necho 'git@github.com: Permission denied (publickey).' >&2\nexit 255\n")
 	t.Setenv("GIT_SSH_COMMAND", ssh)
 	repo := snapshotRepo(t)
 	_, err := repo.RemoteHead(t.Context(), "git@github.com:someone/macports-ports.git", "candidate")
@@ -113,7 +113,7 @@ func TestUnattendedSSHNeverAsks(t *testing.T) {
 	ssh := filepath.Join(dir, "ssh")
 	// Asked in batch mode, it refuses as ssh does a key it can't unlock;
 	// otherwise it waits for a passphrase nobody types.
-	require.NoError(t, os.WriteFile(ssh, []byte("#!/bin/sh\ncase \"$*\" in *BatchMode=yes*) echo 'git@github.com: Permission denied (publickey).' >&2; exit 255;; esac\necho asked > "+filepath.Join(dir, "asked")+"\nsleep 30\n"), 0o755))
+	testsupport.WriteExecutable(t, ssh, "#!/bin/sh\ncase \"$*\" in *BatchMode=yes*) echo 'git@github.com: Permission denied (publickey).' >&2; exit 255;; esac\necho asked > "+filepath.Join(dir, "asked")+"\nsleep 30\n")
 	t.Setenv("GIT_SSH_COMMAND", ssh)
 	repo := snapshotRepo(t)
 

@@ -19,7 +19,7 @@ ifneq ($(strip $(VERSION)),)
 GO_LDFLAGS += -X github.com/herbygillot/dockhand/internal/buildinfo.Version=$(strip $(VERSION))
 endif
 
-.PHONY: build test test-race vet lint fmt-check path-check deadcode mutate vendor vendor-check acceptance acceptance-selftest test-corpus gate clean
+.PHONY: build test test-race lint fmt-check path-check deadcode mutate vendor vendor-check acceptance acceptance-selftest test-corpus gate clean
 
 build:
 	$(GO) build $(if $(strip $(GO_LDFLAGS)),-ldflags "$(GO_LDFLAGS)") -o "$(BINARY)" ./cmd/dockhand
@@ -37,6 +37,9 @@ TEST_TIMEOUT ?= 40m
 # where command ran alone at the end (19.8 to 13.1 minutes; CI runs 993 and
 # 997, 2026-10-16). It was one for each three: six on three cores ran
 # serve's 5-second waits out, which 8d2cb046 fixed with a 2-minute settle.
+# Re-measured once bumpserve's cases ran in parallel (2026-10-31, 18
+# cores): 50 s in one process, 29 s in six shards, the serial tests being
+# those that call t.Setenv, so the shards stay.
 COMMAND_PACKAGE := github.com/herbygillot/dockhand/internal/command
 COMMAND_SHARDS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null | awk '{ n = int($$1 / 2); print (n < 1 ? 1 : (n > 6 ? 6 : n)) }')
 
@@ -51,9 +54,6 @@ test-race:
 	@$(GO) test -race -timeout $(TEST_TIMEOUT) $$($(GO) list ./... | grep -vxF $(COMMAND_PACKAGE)) & others=$$!; \
 	GO="$(GO)" tools/shard-test.sh $(COMMAND_PACKAGE) $(COMMAND_SHARDS) $(TEST_TIMEOUT) -race; command=$$?; \
 	wait $$others; others=$$?; [ $$others = 0 ] && [ $$command = 0 ]
-
-vet:
-	$(GO) vet ./...
 
 # golangci-lint, pinned, with .golangci.yml. Run by version like deadcode, and
 # built with this module's Go (GOTOOLCHAIN), which it must be at least as new
@@ -131,14 +131,17 @@ test-corpus:
 	$(GO) build -o "$$tmp/dockhand" ./cmd/dockhand && $(GO) build -o "$$tmp/corpus" ./tools/corpus && \
 	env -u MACPORTS_TREE "$$tmp/corpus" replay -dockhand "$$tmp/dockhand"'
 
-# The checks a commit passes before it lands, in CI's order, as one turn
-# at the Mac's heavy work (tools/heavy). The tests use MacPorts' own
-# port-tclsh, as CI does, where DOCKHAND_TEST_MACPORTS_TCLSH doesn't name
-# another.
+# The checks a commit passes before it lands, CI's, as one turn at the
+# Mac's heavy work (tools/heavy). The tests use MacPorts' own port-tclsh,
+# as CI does, where DOCKHAND_TEST_MACPORTS_TCLSH doesn't name another, and
+# take CI's bound and its failpoint build, so the gate can't pass where CI
+# fails; the harness's self-test runs beside them. golangci-lint's govet
+# runs go vet's analyzers, so vet isn't run twice.
 gate:
 	@tools/heavy sh -c '$(MAKE) fmt-check && $(MAKE) lint && $(MAKE) vendor-check && $(MAKE) deadcode && $(MAKE) path-check && \
-	$(GO) vet ./... && DOCKHAND_TEST_MACPORTS_TCLSH=$${DOCKHAND_TEST_MACPORTS_TCLSH:-/opt/local/bin/port-tclsh} $(GO) test ./... && \
-	$(MAKE) acceptance-selftest'
+	{ $(MAKE) acceptance-selftest & selftest=$$!; \
+	DOCKHAND_TEST_MACPORTS_TCLSH=$${DOCKHAND_TEST_MACPORTS_TCLSH:-/opt/local/bin/port-tclsh} $(GO) test -timeout $(TEST_TIMEOUT) ./... && \
+	$(GO) test -tags acceptance ./internal/failpoint/; tests=$$?; wait $$selftest; selftest=$$?; [ $$tests = 0 ] && [ $$selftest = 0 ]; }'
 
 clean:
 	rm -f -- "$(BINARY)"

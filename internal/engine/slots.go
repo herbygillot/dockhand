@@ -15,8 +15,9 @@ import (
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
-// slotPoll is how often a check waiting for a provider's slot looks again.
-const slotPoll = 2 * time.Second
+// slotPoll is how often a check waiting for a provider's slot looks again:
+// two of the engine's polls, 2 seconds unless a test sets them.
+func (e *Engine) slotPoll() time.Duration { return 2 * e.pollInterval() }
 
 // capacity is how many checks a provider takes at once, its
 // providers.<name>.capacity (Capacity), 1 where it's unset.
@@ -54,7 +55,7 @@ func (e *Engine) awaitSlot(ctx context.Context, session *coord.Session, id model
 		select {
 		case <-ctx.Done():
 			return model.Lease{}, ctx.Err()
-		case <-time.After(slotPoll):
+		case <-time.After(e.slotPoll()):
 		}
 	}
 }

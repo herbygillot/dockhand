@@ -80,6 +80,7 @@ func pause(t *testing.T, ctx context.Context, run *Foreground, name string) {
 // (openai/tart#1345). Run with DOCKHAND_TEST_TART_IMAGE naming a stopped,
 // raw-disk image, e.g. dockhand-base-monterey.
 func TestLiveTartContracts(t *testing.T) {
+	t.Parallel()
 	m, image := liveMachine(t, "DOCKHAND_TEST_TART_IMAGE")
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
 	defer cancel()
@@ -128,6 +129,7 @@ func TestLiveTartContracts(t *testing.T) {
 // start. Run with DOCKHAND_TEST_TART_ASIF_SOURCE naming an ASIF image, e.g.
 // ghcr.io/cirruslabs/macos-golden-gate-vanilla:latest once pulled.
 func TestLiveTartListsWhileAnASIFVMRuns(t *testing.T) {
+	t.Parallel()
 	m, source := liveMachine(t, "DOCKHAND_TEST_TART_ASIF_SOURCE")
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
 	defer cancel()

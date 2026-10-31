@@ -31,6 +31,7 @@ const setupPin = "31cf7aabccb0b97a517e6c5231e628a6c163295864baf70fb994cdf7ddece1
 // the change alters what an image holds, which ends reuse of evidence from
 // images made before; or, for a change of wording only, update the pin.
 func TestTheSetupProtocolCoversTheProvisioningCode(t *testing.T) {
+	t.Parallel()
 	var names []string
 	for _, directory := range []string{".", "../../macports/installation"} {
 		entries, err := os.ReadDir(directory)
