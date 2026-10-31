@@ -859,26 +859,49 @@ func (e *Engine) mayPushTheirs(ctx context.Context, plan *SubmitPlan, login stri
 
 // commitsAreOwn refuses a branch whose commits since its base include
 // commits master has: its history moved past the base this database
-// keeps, as another database on the same checkout can move it, and a pull
-// request from it would carry master's commits, and a title from master's
-// subject (rc2's full stage, 2026-10-31: submit titled dhtest's pull
-// request "lang/sbcl: update to sbcl-2.6.10"); tidy would have folded
-// them into the branch's own. Master is the one dockhand last fetched;
-// where none was, there's nothing to compare. undone is what wasn't done.
+// keeps, by a person's own git rebase onto master, or by another
+// database's dockhand on the same checkout, and a pull request from it
+// would carry master's commits, and a title from master's subject (rc2's
+// full stage, 2026-10-31: submit titled dhtest's pull request
+// "lang/sbcl: update to sbcl-2.6.10"); tidy would have folded them into
+// the branch's own. Master is any the checkout has: the one dockhand last
+// fetched, the local branch, and each remote's, since a person rebases
+// onto the one they fetched. undone is what wasn't done.
 func (e *Engine) commitsAreOwn(ctx context.Context, worktree *git.Repository, branch model.Branch, base, head string, commits int, undone string) error {
-	master, ok := e.lastMaster(ctx)
-	if !ok {
-		return nil
+	masters, err := e.masters(ctx)
+	if err != nil || len(masters) == 0 {
+		return err
 	}
-	own, err := worktree.CountCommits(ctx, string(master), head)
+	own, err := worktree.CountCommitsNotIn(ctx, base, head, masters)
 	if err != nil {
 		return err
 	}
 	if own >= commits {
 		return nil
 	}
-	return refusal.New(refusal.Attention, "%s's history has %s master already has, past the base %s this database records for it, so nothing was %s: its Git branch was moved elsewhere, as by dockhand on another database", branch.ShortName(), prose.Plural(commits-own, "commit"), model.ObjectID(base).Short(), undone).
+	return refusal.New(refusal.Attention, "%s's history has %s master already has, past the base %s this database records for it, so nothing was %s: its Git branch was moved onto a newer master without dockhand, by git rebase or by dockhand on another database", branch.ShortName(), prose.Plural(commits-own, "commit"), model.ObjectID(base).Short(), undone).
 		Then(refusal.Next{Verb: refusal.VerbRebase, Branch: branch.ShortName()})
+}
+
+// masters are the commits each master the checkout has points at: the
+// one dockhand last fetched, the local branch, and each remote's.
+func (e *Engine) masters(ctx context.Context) ([]string, error) {
+	var masters []string
+	if master, ok := e.lastMaster(ctx); ok {
+		masters = append(masters, string(master))
+	}
+	for _, pattern := range []string{"refs/heads/" + UpstreamBranch, "refs/remotes/*/" + UpstreamBranch} {
+		refs, err := e.Repo.ReadRefsMatching(ctx, pattern)
+		if err != nil {
+			return nil, err
+		}
+		for _, ref := range refs {
+			if !slices.Contains(masters, ref.Object) {
+				masters = append(masters, ref.Object)
+			}
+		}
+	}
+	return masters, nil
 }
 
 // title keeps a title given at any step; otherwise a single commit's

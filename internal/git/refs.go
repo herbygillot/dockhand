@@ -88,6 +88,15 @@ func (r *Repository) ReadRefs(ctx context.Context, prefix string) (map[string]Re
 	return r.readRefs(ctx, prefix)
 }
 
+// ReadRefsMatching reads the refs a for-each-ref pattern matches, a
+// glob such as refs/remotes/*/master, which a prefix can't say.
+func (r *Repository) ReadRefsMatching(ctx context.Context, pattern string) (map[string]RefValue, error) {
+	if !strings.HasPrefix(pattern, "refs/") || !validRefName(strings.ReplaceAll(pattern, "*", "entry")) {
+		return nil, fmt.Errorf("git: invalid ref pattern %q", pattern)
+	}
+	return r.readRefs(ctx, pattern)
+}
+
 func (r *Repository) readRefs(ctx context.Context, pattern string) (map[string]RefValue, error) {
 	out, err := r.output(ctx, "for-each-ref", "--format=%(refname)%00%(objectname)%00%(symref)", pattern)
 	if err != nil {
