@@ -27,9 +27,11 @@ import (
 // lint-shaped notices, license-spdx, noarch-platforms, commented-code,
 // and unreferenced-file, each match printed, so
 // a person reads them (the roadmap's measure; no snapshot is kept). It runs
-// only where MACPORTS_TREE names a ports tree, a Git checkout:
+// only where DOCKHAND_MEASURE_TREE names a ports tree, a Git checkout, not
+// on MACPORTS_TREE, which sessions on the main Mac set, so the gate ran
+// this two-hour measurement under the heavy lock:
 //
-//	MACPORTS_TREE=~/Source/macports-ports go test ./tools/survey -run TestTheNoticesOverATree -v -timeout 2h
+//	DOCKHAND_MEASURE_TREE=~/Source/macports-ports go test ./tools/survey -run TestTheNoticesOverATree -v -timeout 2h
 //
 // Every Portfile is read as a new port's, every line one its change adds,
 // the most a rule could say of it. restated evaluates, with MacPorts'
@@ -40,9 +42,9 @@ import (
 // port; ticket-trailer reads the tree's last DOCKHAND_MEASURE_COMMITS
 // commits (20,000 unless given).
 func TestTheNoticesOverATree(t *testing.T) {
-	root := os.Getenv("MACPORTS_TREE")
+	root := os.Getenv("DOCKHAND_MEASURE_TREE")
 	if root == "" {
-		t.Skip("set MACPORTS_TREE to a ports tree to measure the notices over it")
+		t.Skip("set DOCKHAND_MEASURE_TREE to a ports tree to measure the notices over it")
 	}
 	root, err := filepath.Abs(root)
 	require.NoError(t, err)
