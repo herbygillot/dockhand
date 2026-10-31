@@ -130,6 +130,10 @@ rc3's acceptance reruns what rc3 changes, upstream discovery and the patch check
 
 Not dockhand's, from the same batch: qemu 11.1.3 fails on macOS 12, its hvf.c using macOS 13's `hv_vm_config_*`, as master does, and was submitted with `--accept`; the port's platforms are the person's call.
 
+Found since rc3 was tagged, one harm, each riding rc4, which is tagged when the M1 is free after rc3's overnight rows, with whatever else is found by then (the person's process list, item 2):
+
+- **A branch Git moved past its recorded base isn't tidied or submitted with master's commits** (rc2's full stage, A4, the Prime-time session, judged by implementation and sent here by the coordinator on 2026-10-31 at 08:46Z; harm, and in v0.6.0 too). Tidy and submit read a branch's commits as its recorded base to its head (engine/submit.go `PlanSubmit`, `worktree.History(branch.Base, head)`; tidy's plan alike), so a branch moved without dockhand knowing, by a person's own `git rebase` or another database's `dockhand rebase`, holds master's commits there: submit titles and sends them as the branch's, and tidy folds them into the port's own commit, which a submit then proposes as this port's change. Tidy's plan, its `--apply`, and submit's plan count master to head against the recorded base to head, and where master already has some of the branch's commits refuse, exit 3, naming `dockhand rebase -b <branch>`, which puts the branch on master and records its base anew (engine/verbs.go, an up-to-date branch's base set to master); written and tested, landing on main once the gate and the corpus pass. rc4's acceptance: A7, rc3 to rc4 under serve, the person's sudo step; A4; the quick stage's rows that tidy, submit, or rebase, B2, C8, C15, D-I3, D-S4, G6, and G7; and the full stage's that submit, as Prime-time picks them from rc3's, the rest of rc3's standing for rc4.
+
 What it carries, each said in full in its notes:
 
 - **Updates.**
