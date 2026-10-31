@@ -297,6 +297,12 @@ func (s *Session) Acquire(ctx context.Context, resource string) (model.Lease, er
 	return lease, err
 }
 
+// AcquireIn is Acquire in the caller's transaction, so taking a lease and
+// what decides it are one: a check's slot (the engine's reserve).
+func (s *Session) AcquireIn(tx store.Tx, resource string) (model.Lease, error) {
+	return s.acquire(tx, resource)
+}
+
 func (s *Session) acquire(tx store.Tx, resource string) (model.Lease, error) {
 	current, err := tx.Lease(resource)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {

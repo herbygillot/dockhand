@@ -253,6 +253,12 @@ func (e *Engine) drive(ctx context.Context, session *coord.Session, id model.Run
 	if err != nil {
 		return model.Run{}, err
 	}
+	return e.driveLeased(ctx, session, lease, id, resumable)
+}
+
+// driveLeased drives a run whose lease the session took, as its slots
+// (reserve), and releases it when the run's driving ends.
+func (e *Engine) driveLeased(ctx context.Context, session *coord.Session, lease model.Lease, id model.RunID, resumable bool) (model.Run, error) {
 	defer session.Release(context.WithoutCancel(ctx), lease)
 	d := &driver{e: e, session: session, lease: lease, resumable: resumable}
 	return d.drive(ctx, id)

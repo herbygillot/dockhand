@@ -371,11 +371,11 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 
 	// Runs are driven concurrently, each provider up to its capacity. A
 	// run takes a slot on every provider its plan builds on, for as long
-	// as it runs; one that can't have them all waits, and the runs after
-	// it that can go ahead.
+	// as it runs, as every driver takes them (reserve), so a batch's
+	// checks and foreground ones count; one that can't have them all
+	// waits, and the runs after it that can go ahead.
 	running, stop := context.WithCancel(ctx)
 	defer stop()
-	inUse := map[string]int{}
 	inFlight := map[model.RunID]model.Run{}
 	// unfinished are the runs said unfinished as serve's stop began, before
 	// it waited for them: a Tart check stops its VM for up to a minute, and
@@ -386,10 +386,9 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	// once (sayHeldInServe).
 	heldSaid := map[model.RunID]bool{}
 	type finished struct {
-		run       model.Run
-		branch    model.Branch
-		providers []string
-		err       error
+		run    model.Run
+		branch model.Branch
+		err    error
 	}
 	done := make(chan finished)
 	// ended are the runs whose end serve said, each said once: field
@@ -397,29 +396,23 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	// found (the ninth report).
 	ended := map[model.RunID]bool{}
 	var failure error
-	launch := func(run model.Run, branch model.Branch, needs []string) {
+	launch := func(run model.Run, branch model.Branch, needs []string, lease model.Lease) {
 		inFlight[run.ID] = run
-		for _, name := range needs {
-			inUse[name]++
-		}
 		verb := "running"
 		if run.State == model.RunRunning {
 			verb = "resuming"
 		}
 		s.say("%s %s: %s", run.Name(), branch.ShortName(), verb)
 		go func() {
-			result, err := e.Resume(running, session, run.ID)
+			result, err := e.driveLeased(running, session, lease, run.ID, true)
 			if result.ID == "" {
 				result = run
 			}
-			done <- finished{run: result, branch: branch, providers: needs, err: err}
+			done <- finished{run: result, branch: branch, err: err}
 		}()
 	}
 	settle := func(f finished) {
 		delete(inFlight, f.run.ID)
-		for _, name := range f.providers {
-			inUse[name]--
-		}
 		if held := new(coord.HeldError); errors.As(f.err, &held) {
 			return
 		}
@@ -522,16 +515,6 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 				failure = err
 				break
 			}
-			if full := slices.DeleteFunc(slices.Clone(needs), func(name string) bool { return inUse[name] < max(capacity[name], 1) }); len(full) > 0 {
-				waiting = true
-				if !heldSaid[run.ID] {
-					heldSaid[run.ID] = true
-					if err := e.sayHeldInServe(running, session, run, full, inFlight); err != nil {
-						s.say("serve: saying what %s waits behind: %v", run.Name(), err)
-					}
-				}
-				continue
-			}
 			// A check on GitHub pushes as the login: none starts while it
 			// isn't the account serve started as.
 			if slices.Contains(needs, buildenv.GitHub) && !login.writes() {
@@ -543,7 +526,25 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 				failure = err
 				break
 			}
-			launch(run, branch, needs)
+			lease, full, err := e.reserve(running, session, run, needs)
+			if held := new(coord.HeldError); errors.As(err, &held) {
+				continue
+			}
+			if err != nil {
+				failure = err
+				break
+			}
+			if len(full) > 0 {
+				waiting = true
+				if !heldSaid[run.ID] {
+					heldSaid[run.ID] = true
+					if err := e.sayHeld(running, session, run, full); err != nil {
+						s.say("serve: saying what %s waits behind: %v", run.Name(), err)
+					}
+				}
+				continue
+			}
+			launch(run, branch, needs, lease)
 		}
 		if failure != nil {
 			break

@@ -24,43 +24,62 @@ func (e *Engine) capacity(provider string) int {
 	return max(e.Capacity[provider], 1)
 }
 
-// awaitSlot waits, before a check runs here, until each provider it builds
-// on has a slot under its capacity, as serve keeps to it: a check another
-// live process runs counts, so foreground checks keep to a provider's
-// capacity as serve's do (the command UX review's §9: the capacity
-// governed serve alone). Where it waits, the
-// run's journal says so, once.
-func (e *Engine) awaitSlot(ctx context.Context, session *coord.Session, id model.RunID) error {
+// awaitSlot waits, before a check runs here, until reserve takes its
+// slots, and returns the run's lease, which its driver holds: foreground
+// checks keep to a provider's capacity as serve's do (the command UX
+// review's §9: the capacity governed serve alone). Where it waits, the
+// run's journal says so, once, with what fills each provider. A live
+// process that took the run meanwhile is a coord.HeldError.
+func (e *Engine) awaitSlot(ctx context.Context, session *coord.Session, id model.RunID) (model.Lease, error) {
 	run, err := e.Run(ctx, id)
 	if err != nil {
-		return err
+		return model.Lease{}, err
 	}
 	needs, err := e.RunProviders(ctx, run)
 	if err != nil {
-		return err
+		return model.Lease{}, err
 	}
 	said := false
 	for {
-		full, err := e.fullProviders(ctx, session, id, needs)
+		lease, full, err := e.reserve(ctx, session, run, needs)
 		if err != nil || len(full) == 0 {
-			return err
+			return lease, err
 		}
 		if !said {
 			said = true
-			words := fmt.Sprintf("%s waits for a slot on %s: %s", run.Name(), prose.And(slices.Sorted(maps.Keys(full))), strings.Join(slotWords(full, e), "; "))
-			if err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-				_, err := session.Emit(tx, model.Event{Branch: run.Branch, Run: run.ID, Kind: model.EventWaiting, Level: model.LevelInfo, Message: words})
-				return err
-			}); err != nil {
-				return err
+			if err := e.sayHeld(ctx, session, run, full); err != nil {
+				return model.Lease{}, err
 			}
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return model.Lease{}, ctx.Err()
 		case <-time.After(slotPoll):
 		}
 	}
+}
+
+// reserve takes a run's slots, the lease its driver holds, where each
+// provider its plan builds on has fewer checks than its capacity held by
+// live processes, serve's and this one's among them, deciding and taking
+// in one transaction: the one capacity every driver keeps to, where a
+// batch reserved its own slots, serve counted its own runs, and a
+// foreground check counted other processes' alone, so a batch's checks
+// didn't count serve's, nor serve's a batch's (Codex's review of
+// 275125ff, finding 4). Where one is full, nothing is taken, and full
+// says what fills each.
+func (e *Engine) reserve(ctx context.Context, session *coord.Session, run model.Run, needs []string) (model.Lease, map[string][]slotHolder, error) {
+	var lease model.Lease
+	var full map[string][]slotHolder
+	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		var err error
+		if full, err = e.fullProviders(tx, session, run.ID, needs); err != nil || len(full) > 0 {
+			return err
+		}
+		lease, err = session.AcquireIn(tx, RunResource(run.ID))
+		return err
+	})
+	return lease, full, err
 }
 
 // slotHolder is a check filling a provider's capacity, and the process
@@ -70,43 +89,41 @@ type slotHolder struct {
 	process *model.Session
 }
 
-// fullProviders are the providers among needs whose capacity checks live
-// processes other than this one are running fill, with those checks.
-func (e *Engine) fullProviders(ctx context.Context, session *coord.Session, id model.RunID, needs []string) (map[string][]slotHolder, error) {
+// fullProviders are the providers among needs whose capacity the checks
+// live processes hold fill, queued or running, with those checks; the run
+// itself doesn't count.
+func (e *Engine) fullProviders(r store.Reader, session *coord.Session, id model.RunID, needs []string) (map[string][]slotHolder, error) {
+	runs, err := r.Runs(store.RunFilter{States: []model.RunState{model.RunQueued, model.RunRunning}})
+	if err != nil {
+		return nil, err
+	}
+	holders, err := session.Holders(r, runResources(runs)...)
+	if err != nil {
+		return nil, err
+	}
+	using := map[string][]slotHolder{}
+	for _, other := range runs {
+		holder := holders[RunResource(other.ID)]
+		if other.ID == id || holder == nil {
+			continue
+		}
+		plan, err := r.Plan(other.Plan)
+		if err != nil {
+			return nil, err
+		}
+		for _, provider := range needs {
+			if slices.ContainsFunc(plan.Environments, func(environment model.Environment) bool { return environment.Provider == provider }) {
+				using[provider] = append(using[provider], slotHolder{run: other, process: holder})
+			}
+		}
+	}
 	full := map[string][]slotHolder{}
-	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		runs, err := r.Runs(store.RunFilter{States: []model.RunState{model.RunRunning}})
-		if err != nil {
-			return err
+	for provider, others := range using {
+		if len(others) >= e.capacity(provider) {
+			full[provider] = others
 		}
-		holders, err := session.Holders(r, runResources(runs)...)
-		if err != nil {
-			return err
-		}
-		using := map[string][]slotHolder{}
-		for _, other := range runs {
-			holder := holders[RunResource(other.ID)]
-			if other.ID == id || holder == nil || holder.ID == session.ID() {
-				continue
-			}
-			plan, err := r.Plan(other.Plan)
-			if err != nil {
-				return err
-			}
-			for _, provider := range needs {
-				if slices.ContainsFunc(plan.Environments, func(environment model.Environment) bool { return environment.Provider == provider }) {
-					using[provider] = append(using[provider], slotHolder{run: other, process: holder})
-				}
-			}
-		}
-		for provider, others := range using {
-			if len(others) >= e.capacity(provider) {
-				full[provider] = others
-			}
-		}
-		return nil
-	})
-	return full, err
+	}
+	return full, nil
 }
 
 // slotWords say what fills each full provider, with the process that
@@ -140,39 +157,33 @@ func slotWords(full map[string][]slotHolder, e *Engine) []string {
 	return words
 }
 
-// sayHeldInServe says once, in a run's journal, that serve's queue holds
-// it for a provider its own checks fill, which the person following it
-// reads: a check handed to serve said nothing while it waited, where local's
-// own waiting words come only once a check runs (rc1's full stage, G14). A
-// local prefix another check builds in is said as local says it, "waiting
-// for /opt/local, held by check-786"; any other provider as awaitSlot says
-// it.
-func (e *Engine) sayHeldInServe(ctx context.Context, session *coord.Session, run model.Run, full []string, inFlight map[model.RunID]model.Run) error {
+// sayHeld says, in a run's journal, what holds the slots it waits for,
+// which the person following it reads, wherever it waits: a check handed
+// to serve said nothing while it waited, where local's own waiting words
+// come only once a check runs (rc1's full stage, G14). A local prefix
+// another check builds in is said as local says it, "waiting for
+// /opt/local, held by check-786"; any other provider as "check-820 waits
+// for a slot on tart: …", with each holder's process.
+func (e *Engine) sayHeld(ctx context.Context, session *coord.Session, run model.Run, full map[string][]slotHolder) error {
 	return e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		own, err := tx.Plan(run.Plan)
 		if err != nil {
 			return err
 		}
-		holders := map[string][]slotHolder{}
 		var words []string
-		for _, id := range slices.Sorted(maps.Keys(inFlight)) {
-			other := inFlight[id]
-			plan, err := tx.Plan(other.Plan)
+		for _, held := range full[buildenv.Local] {
+			plan, err := tx.Plan(held.run.Plan)
 			if err != nil {
 				return err
 			}
 			for _, environment := range plan.Environments {
-				if !slices.Contains(full, environment.Provider) || slices.ContainsFunc(holders[environment.Provider], func(h slotHolder) bool { return h.run.ID == other.ID }) {
-					continue
-				}
-				holders[environment.Provider] = append(holders[environment.Provider], slotHolder{run: other})
 				if environment.Provider == buildenv.Local && slices.ContainsFunc(own.Environments, func(mine model.Environment) bool { return mine.Prefix == environment.Prefix }) {
-					words = append(words, fmt.Sprintf("waiting for %s, held by %s", environment.Prefix, other.Name()))
+					words = append(words, fmt.Sprintf("waiting for %s, held by %s", environment.Prefix, held.run.Name()))
 				}
 			}
 		}
 		if len(words) == 0 {
-			words = []string{fmt.Sprintf("waits for a slot on %s: %s", prose.And(slices.Sorted(maps.Keys(holders))), strings.Join(slotWords(holders, e), "; "))}
+			words = []string{fmt.Sprintf("waits for a slot on %s: %s", prose.And(slices.Sorted(maps.Keys(full))), strings.Join(slotWords(full, e), "; "))}
 		}
 		_, err = session.Emit(tx, model.Event{Branch: run.Branch, Run: run.ID, Kind: model.EventWaiting, Level: model.LevelInfo, Message: run.Name() + " " + strings.Join(words, "; ")})
 		return err

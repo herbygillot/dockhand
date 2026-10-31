@@ -136,5 +136,60 @@ func TestABatchKeepsToAProvidersCapacity(t *testing.T) {
 	require.Equal(t, 3, n)
 	require.LessOrEqual(t, provider.most, 2, "never more than its capacity at once")
 	require.Len(t, waits, 1)
-	require.Regexp(t, `^check-\d+ waits for a slot on command, which the batch's other checks are using \(capacity 2\)$`, waits[0])
+	require.Regexp(t, `^check-\d+ waits for a slot on command: providers\.command\.capacity is 2, and check-\d+ \(a foreground dockhand, pid \d+, [^)]+\) and check-\d+ \(a foreground dockhand, pid \d+, [^)]+\) are using it$`, waits[0])
+}
+
+// One capacity holds across drivers: a batch's check waits while another
+// process, serve or a foreground check, holds the provider's one slot,
+// says what holds it, and takes the slot once it's let go, where a batch
+// counted only its own checks (Codex's review of 275125ff, finding 4).
+func TestABatchCountsAnotherProcesssChecks(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}})
+	provider := &pacedProvider{pause: map[model.RunID]time.Duration{}}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	var ids []model.RunID
+	for _, name := range []string{"jq-a", "jq-b"} {
+		update, err := e.Update(t.Context(), UpdateRequest{Start: &StartRequest{Name: name}, Action: model.EditUpdate, Port: "jq"})
+		require.NoError(t, err)
+		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: update.Branch})
+		require.NoError(t, err)
+		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
+		require.NoError(t, err)
+		run, err := e.Enqueue(t.Context(), update.Branch, plan, model.OriginPerson)
+		require.NoError(t, err)
+		ids = append(ids, run.ID)
+	}
+	e.Capacity = map[string]int{"command": 1}
+	// Another process takes the first check's slot, as serve does.
+	other := session(t, e)
+	held, err := e.Run(t.Context(), ids[0])
+	require.NoError(t, err)
+	lease, full, err := e.reserve(t.Context(), other, held, []string{"command"})
+	require.NoError(t, err)
+	require.Empty(t, full)
+
+	waits := make(chan string, 4)
+	done := make(chan model.Run, 1)
+	go e.SeeAllThrough(t.Context(), ids[1:], func(_ model.Run, message string) { waits <- message }, func(run model.Run, err error) {
+		require.NoError(t, err)
+		done <- run
+	})
+	select {
+	case message := <-waits:
+		require.Contains(t, message, "waits for a slot on command: providers.command.capacity is 1, and "+held.Name())
+	case run := <-done:
+		t.Fatalf("%s ran while another process held the provider's one slot", run.Name())
+	case <-time.After(30 * time.Second):
+		t.Fatal("the batch's check never said what it waits for")
+	}
+	require.NoError(t, other.Release(t.Context(), lease))
+	select {
+	case run := <-done:
+		require.Equal(t, model.RunPassed, run.State, run.Detail)
+	case <-time.After(30 * time.Second):
+		t.Fatal("the batch's check never took the slot let go")
+	}
 }
