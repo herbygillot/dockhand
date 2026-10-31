@@ -1,19 +1,19 @@
 -- Q7: do the registry's answers reach the fields an update edits? Each
 -- port that asked, in each context that asked, whose fields differ
 -- between the fresh installation (current) and the installed one.
-WITH asked AS (
-    SELECT DISTINCT e.port_id, e.platform_os, e.platform_version, e.platform_arch, e.developer_tools
-    FROM registry g JOIN evaluation e ON e.id = g.evaluation_id JOIN run ON run.id = e.run_id AND run.mode = 'current'
-),
-fields AS (
-    SELECT run.mode, e.port_id, e.platform_os, e.platform_version, e.platform_arch, e.developer_tools, f.name, f.value
-    FROM field f JOIN evaluation e ON e.id = f.evaluation_id JOIN run ON run.id = e.run_id
-    WHERE f.name IN ('version', 'revision', 'distfiles', 'master_sites', 'checksums', 'go.vendors', 'cargo.crates')
+WITH pairs AS (
+    SELECT DISTINCT c.id AS fresh, i.id AS installed, c.port_id, c.platform_version, c.platform_arch
+    FROM registry g
+    JOIN evaluation c ON c.id = g.evaluation_id JOIN run cr ON cr.id = c.run_id AND cr.mode = 'current'
+    JOIN evaluation i ON i.port_id = c.port_id AND i.platform_os = c.platform_os AND i.platform_version = c.platform_version
+        AND i.platform_arch = c.platform_arch AND i.developer_tools = c.developer_tools
+    JOIN run ir ON ir.id = i.run_id AND ir.mode = 'installed'
 )
-SELECT p.name, a.platform_version, a.platform_arch, c.name AS field, c.value AS fresh, i.value AS installed
-FROM asked a
-JOIN port p ON p.id = a.port_id
-JOIN fields c ON c.mode = 'current' AND c.port_id = a.port_id AND c.platform_version = a.platform_version AND c.platform_arch = a.platform_arch AND c.developer_tools = a.developer_tools
-JOIN fields i ON i.mode = 'installed' AND i.port_id = a.port_id AND i.platform_version = a.platform_version AND i.platform_arch = a.platform_arch AND i.developer_tools = a.developer_tools AND i.name = c.name
-WHERE c.value IS NOT i.value
+SELECT p.name, pairs.platform_version, pairs.platform_arch, cf.name AS field, cf.value AS fresh, inf.value AS installed
+FROM pairs
+JOIN port p ON p.id = pairs.port_id
+JOIN field cf ON cf.evaluation_id = pairs.fresh
+LEFT JOIN field inf ON inf.evaluation_id = pairs.installed AND inf.name = cf.name
+WHERE cf.name IN ('version', 'revision', 'distfiles', 'master_sites', 'checksums', 'go.vendors', 'cargo.crates')
+  AND cf.value IS NOT inf.value
 ORDER BY p.name, field;
