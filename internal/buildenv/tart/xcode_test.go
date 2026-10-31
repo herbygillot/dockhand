@@ -24,7 +24,7 @@ func TestTheEnvironmentsToolsChooseTheImage(t *testing.T) {
 		job.Environment.DeveloperTools = tools
 		require.NoError(t, testProvider(mac).Execute(t.Context(), job, &fakeBuild{}))
 		vm := "dockhand-check-run-7-tahoe-1"
-		require.Equal(t, []string{"clone " + want + " " + vm, "start " + vm, "reach " + vm + " as " + want, "delete " + vm}, mac.events, tools)
+		require.Equal(t, []string{"clone " + want + " " + vm, "start " + vm, "reach " + vm + " as " + want, "released [1000]", "delete " + vm}, mac.events, tools)
 	}
 }
 

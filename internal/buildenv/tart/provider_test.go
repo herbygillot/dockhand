@@ -60,6 +60,8 @@ type fakeMac struct {
 	run        *fakeRun
 	// version is Tart's; 2.40.1 when empty.
 	version string
+	// processes are the VMs' processes running, as VirtualMachines says.
+	processes []int
 }
 
 func (m *fakeMac) log(event string) {
@@ -67,6 +69,19 @@ func (m *fakeMac) log(event string) {
 	defer m.mu.Unlock()
 	m.events = append(m.events, event)
 }
+
+// VirtualMachines are the VM processes the fake's runs left, one for each
+// clone started, which Released waits on.
+func (m *fakeMac) VirtualMachines(context.Context) ([]int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.processes), nil
+}
+
+func (m *fakeMac) Released(_ context.Context, pids []int, _ time.Duration) {
+	m.log(fmt.Sprintf("released %v", pids))
+}
+
 func (m *fakeMac) Version(context.Context) (string, error) {
 	if m.version == "" {
 		return "2.40.1", nil
@@ -116,6 +131,9 @@ func (m *fakeMac) Clone(_ context.Context, image, vm string) error {
 }
 func (m *fakeMac) Start(vm string) (run, error) {
 	m.log("start " + vm)
+	m.mu.Lock()
+	m.processes = append(m.processes, 1000+len(m.processes))
+	m.mu.Unlock()
 	if m.live {
 		m.mu.Lock()
 		defer m.mu.Unlock()
@@ -460,7 +478,9 @@ func TestTheProviderRecordsEachTargetAsTheGuestFinishesIt(t *testing.T) {
 	require.Equal(t, []string{"rust"}, build.dependencies, "a target active as another built is kept as a target, not a dependency")
 
 	vm := "dockhand-check-run-7-tahoe-1"
-	require.Equal(t, []string{"clone dockhand-base-tahoe " + vm, "start " + vm, "reach " + vm + " as dockhand-base-tahoe", "delete " + vm}, mac.events)
+	// The check ends once macOS has let its VM go, its process exited,
+	// before the clone is deleted (rc2's staging, check-827).
+	require.Equal(t, []string{"clone dockhand-base-tahoe " + vm, "start " + vm, "reach " + vm + " as dockhand-base-tahoe", "released [1000]", "delete " + vm}, mac.events)
 	require.Equal(t, []string{vm}, build.refs, "the clone is the provider's own name for the run")
 	require.True(t, mac.run.stopped)
 	require.Equal(t, "harbor-cli", mac.guest.input.Targets[1].Name, "a subport is built by its own name")

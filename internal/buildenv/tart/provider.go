@@ -632,7 +632,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		return fmt.Errorf("staging the revision: %w", err)
 	}
 
-	cloned, started, err := p.start(ctx, m, build, image, vm)
+	cloned, started, vms, err := p.start(ctx, m, build, image, vm)
 	if cloned {
 		defer func() {
 			// A check asked to keep its clone keeps it, stopped, where the
@@ -653,7 +653,14 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	if err != nil {
 		return err
 	}
-	defer func() { _ = started.Stop(cleanup, time.Minute) }()
+	// The VM's place frees only once macOS lets it go, after tart run
+	// ends: the check ends after that, so its slot and Tart's running
+	// count free with it (rc2's staging, check-827's start 0.7 s after
+	// check-826 ended failed).
+	defer func() {
+		_ = started.Stop(cleanup, time.Minute)
+		m.Released(cleanup, vms, releaseWait)
+	}()
 	// A VM whose tart run ended takes no address: waiting out tart ip's
 	// five minutes for one only delayed saying so (the rc5 full stage).
 	reaching, stopReaching := context.WithCancel(ctx)
@@ -761,24 +768,27 @@ func (p *Provider) sweep(ctx context.Context, m machine, prefix string, attempt 
 // listed as running: releases checked together would otherwise each see a
 // slot free before either's VM runs. It says whether it cloned, for the
 // caller to delete what it made.
-func (p *Provider) start(ctx context.Context, m machine, build buildenv.Build, image, vm string) (cloned bool, started run, err error) {
+func (p *Provider) start(ctx context.Context, m machine, build buildenv.Build, image, vm string) (cloned bool, started run, vms []int, err error) {
 	p.starting.Lock()
 	defer p.starting.Unlock()
 	before, err := p.slot(ctx, m, build)
 	if err != nil {
-		return false, nil, err
+		return false, nil, nil, err
 	}
+	// The VM's process is the one that appears with it, which teardown
+	// waits for (releaseWait); one start at a time in this process.
+	earlier, _ := m.VirtualMachines(ctx)
 	build.Progress("starting " + vm + " from " + image)
 	// The clone is named on the execution before it exists, so one this
 	// process leaves when it dies is always a known check's (Leftovers).
 	if err := build.Refer(vm); err != nil {
-		return false, nil, err
+		return false, nil, nil, err
 	}
 	if err := m.Clone(ctx, image, vm); err != nil {
-		return false, nil, buildenv.Infrastructure("cloning %s: %w", image, err)
+		return false, nil, nil, buildenv.Infrastructure("cloning %s: %w", image, err)
 	}
 	if started, err = m.Start(vm); err != nil {
-		return true, nil, buildenv.Infrastructure("starting %s: %w", vm, err)
+		return true, nil, nil, buildenv.Infrastructure("starting %s: %w", vm, err)
 	}
 	// The next start counts this VM once Tart lists it, which takes a
 	// moment; it waits that long at most.
@@ -788,12 +798,22 @@ func (p *Provider) start(ctx context.Context, m machine, build buildenv.Build, i
 		}
 		select {
 		case <-ctx.Done():
-			return true, started, nil
+			return true, started, nil, nil
 		case <-time.After(min(p.poll(), time.Second)):
 		}
 	}
-	return true, started, nil
+	later, _ := m.VirtualMachines(ctx)
+	for _, pid := range later {
+		if !slices.Contains(earlier, pid) {
+			vms = append(vms, pid)
+		}
+	}
+	return true, started, vms, nil
 }
+
+// releaseWait bounds how long a check's end waits for macOS to let its VM
+// go, its process exiting.
+const releaseWait = 30 * time.Second
 
 // Parallel is how many releases one check builds at once: the Mac runs two
 // VMs at most (buildenv.ParallelProvider). One that finds the other slot
