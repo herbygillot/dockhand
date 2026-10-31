@@ -241,7 +241,10 @@ that ended branch; an open branch must first be finished or archived. Use
 explicit step that forgets an ended branch; its preview matters because unmerged
 commits can go with it. A worktree with uncommitted edits or untracked files is
 never removed: `clean --delete` refuses, exit 3, naming them, until you commit or
-remove them. In a nonterminal invocation, clean requires `--yes` to apply its
+remove them. Nor is a checkout dockhand didn't make, such as the one a `--here`
+branch started in, which the preview lists as kept; and while the branch is
+checked out in any checkout `clean --delete` doesn't remove, it refuses, exit
+3, naming that checkout, until you `git switch` there. In a nonterminal invocation, clean requires `--yes` to apply its
 plan.
 
 If you committed more work after a pull request merged, keep it as a follow-up
