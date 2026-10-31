@@ -32,7 +32,7 @@ go test -v ./internal/buildenv/tart -run '^TestLiveCheckInATahoeGuest$' -timeout
 
 ## Heavy work on a shared Mac
 
-Sessions that share one Mac take turns at its heavy work: `make gate`, the checks a commit passes, in CI's order, and `make test-corpus` each run under `tools/heavy`, a lock on `~/.dockhand-heavy.lock` (`DOCKHAND_HEAVY_LOCK` names another), and so does any other long run, a Tart check or a whole-tree survey: `tools/heavy <command>`. A run that finds the lock held says by whom and waits; a command run under it that runs `tools/heavy` again doesn't wait on itself. Each session also keeps its own `DOCKHAND_DB` copy, its archives cloned beside it, as scratch runs below say, so turns are about cores and memory, never one database.
+Sessions that share one Mac take turns at its heavy work: `make gate`, the checks a commit passes, in CI's order, and `make test-corpus` each run under `tools/heavy`, a lock on `~/.dockhand-heavy.lock` (`DOCKHAND_HEAVY_LOCK` names another), and so does any other long run, a Tart check or a whole-tree survey: `tools/heavy <command>`. A run that finds the lock held says by whom and waits; a command run under it that runs `tools/heavy` again doesn't wait on itself. Each session also keeps its own `DOCKHAND_DB` copy, its archives cloned beside it, on a ports clone and worktrees of its own, as scratch runs below say: two databases on one checkout number their checkpoints apart and move each other's branches, so turns are about cores and memory, never one database or one checkout.
 
 ## Scratch runs
 

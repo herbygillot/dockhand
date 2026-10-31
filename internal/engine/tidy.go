@@ -218,6 +218,9 @@ func (e *Engine) planTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 	if err != nil {
 		return TidyPlan{}, err
 	}
+	if err := e.commitsAreOwn(ctx, worktree, branch, base, head, len(history), "tidied"); err != nil {
+		return TidyPlan{}, err
+	}
 	for _, commit := range history {
 		if commit.Merge() {
 			return TidyPlan{}, fmt.Errorf("%s has a merge commit, %s; tidy never flattens a merge by itself. Rebase onto master (git rebase %s), then tidy", branch.Name, model.ObjectID(commit.ID).Short(), branch.Base.Short())
