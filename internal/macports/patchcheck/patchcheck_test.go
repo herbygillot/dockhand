@@ -33,6 +33,7 @@ func sourceArchive(t *testing.T, files map[string]string) string {
 }
 
 const good = "--- dir/a.txt\n+++ dir/a.txt\n@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three\n"
+const onGood = "--- dir/a.txt\n+++ dir/a.txt\n@@ -1,3 +1,3 @@\n one\n TWO\n-three\n+THREE\n"
 const stale = "--- dir/a.txt\n+++ dir/a.txt\n@@ -1,3 +1,3 @@\n uno\n-dos\n+DOS\n tres\n"
 const missing = "--- dir/gone.txt\n+++ dir/gone.txt\n@@ -1,1 +1,1 @@\n-x\n+y\n"
 
@@ -43,7 +44,8 @@ func TestCheckReportsEachPatch(t *testing.T) {
 	archive := sourceArchive(t, map[string]string{"project-2.0/dir/a.txt": "one\ntwo\nthree\n", "project-2.0/README": "unrelated\n"})
 	var gzipped bytes.Buffer
 	gz := gzip.NewWriter(&gzipped)
-	_, _ = gz.Write([]byte(good))
+	// It builds on good.diff, which is applied before it is checked.
+	_, _ = gz.Write([]byte(onGood))
 	require.NoError(t, gz.Close())
 	results, err := Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-t", "-N", "-p0"}, Patches: []Patch{
 		{Name: "good.diff", Data: []byte(good)}, {Name: "stale.diff", Data: []byte(stale)}, {Name: "missing.diff", Data: []byte(missing)},
@@ -57,8 +59,8 @@ func TestCheckReportsEachPatch(t *testing.T) {
 	// Apple's patch says "hunks failed" and GNU patch "hunk FAILED".
 	require.Regexp(t, staleHunk, results[1].Detail)
 	require.False(t, results[2].Applies)
-	require.Equal(t, "the source has no dir/gone.txt, which it patches", results[2].Detail, "the file named, where patch said none")
-	require.True(t, results[3].Applies, "gzip-compressed patches are decompressed")
+	require.Equal(t, "the source has no dir/gone.txt, which it patches; checked after stale.diff, which didn't apply", results[2].Detail, "the file named, where patch said none")
+	require.True(t, results[3].Applies, "gzip-compressed patches are decompressed, checked on good.diff's output")
 	require.False(t, results[4].Checked)
 	require.Contains(t, results[4].Detail, "xz compression is not modeled")
 	require.Len(t, Rejected(results), 2)
@@ -233,15 +235,18 @@ func TestFuzzIsToldFromAnOffset(t *testing.T) {
 	archive := sourceArchive(t, map[string]string{"project-2.0/dir/a.txt": "x\ny\nz\none\ntwo\nthree\nfour\nfive\n"})
 	offset := "--- dir/a.txt\n+++ dir/a.txt\n@@ -1,5 +1,5 @@\n one\n two\n-three\n+THREE\n four\n five\n"
 	fuzz := "--- dir/a.txt\n+++ dir/a.txt\n@@ -4,5 +4,5 @@\n ONE\n two\n-three\n+THREE\n four\n FIVE\n"
-	results, err := Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{{Name: "offset.diff", Data: []byte(offset)}, {Name: "fuzz.diff", Data: []byte(fuzz)}}})
+	// Each alone, since both change the same line.
+	results, err := Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{{Name: "offset.diff", Data: []byte(offset)}}})
 	require.NoError(t, err)
 	require.True(t, results[0].Applies)
 	require.False(t, results[0].Fuzzed())
 	require.Equal(t, []Hunk{{Number: 1, Line: 4, Offset: 3}}, results[0].Hunks)
 	require.Equal(t, "applies, hunk 1 at an offset of 3 lines", results[0].Detail)
-	require.True(t, results[1].Applies)
-	require.True(t, results[1].Fuzzed())
-	require.Equal(t, "applies only with fuzz: hunk 1 with fuzz 1", results[1].Detail)
+	results, err = Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{{Name: "fuzz.diff", Data: []byte(fuzz)}}})
+	require.NoError(t, err)
+	require.True(t, results[0].Applies)
+	require.True(t, results[0].Fuzzed())
+	require.Equal(t, "applies only with fuzz: hunk 1 with fuzz 1", results[0].Detail)
 }
 
 // A patch that applies at an offset is re-emitted to apply as written,
@@ -313,4 +318,19 @@ func TestAnArchiveUnpackedInItsSourceDirectoryIsReadThere(t *testing.T) {
 	results, err = Port(t.Context(), info, []string{archive}, []Patch{{Name: "good.diff", Data: []byte(good)}}, false)
 	require.NoError(t, err)
 	require.False(t, results[0].Applies, "unpacked as MacPorts would without it, the source directory holds none of them")
+}
+
+// Patches are checked in patchfiles order, each on the source the ones
+// before it left: advancemame's cxxflags.diff patches what
+// Makefile.in.diff made, and was said not to apply when every patch was
+// tried on the pristine source (field testing's outdated-ports session).
+func TestPatchesAreCheckedInOrderOnWhatTheEarlierOnesLeft(t *testing.T) {
+	archive := sourceArchive(t, map[string]string{"project-2.0/dir/a.txt": "one\ntwo\nthree\n"})
+	results, err := Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{
+		{Name: "first.diff", Data: []byte(good)}, {Name: "second.diff", Data: []byte(onGood)},
+	}})
+	require.NoError(t, err)
+	require.True(t, results[0].Applies, results[0].Detail)
+	require.True(t, results[1].Applies, "the second's context is the first's output: %s", results[1].Detail)
+	require.Empty(t, Rejected(results))
 }

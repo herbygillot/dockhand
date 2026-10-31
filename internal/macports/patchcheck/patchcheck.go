@@ -247,6 +247,26 @@ func Check(ctx context.Context, request Request) ([]Result, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
+	// Each patch is checked on the source the ones before it left, as
+	// MacPorts applies them in patchfiles order: each that applies is
+	// applied for real before the next is checked, where every one was
+	// dry-run on the pristine source and one building on another failed,
+	// advancemame's cxxflags.diff on Makefile.in.diff's output (field
+	// testing's outdated-ports session). One after a patch that didn't
+	// apply is checked on the source as it stands, and says so.
+	failed := ""
+	defer func() {
+		if failed == "" {
+			return
+		}
+		after := false
+		for i := range results {
+			if after && results[i].Checked {
+				results[i].Detail += "; checked after " + failed + ", which didn't apply"
+			}
+			after = after || results[i].Name == failed
+		}
+	}()
 	for i := range request.Patches {
 		if contents[i] == nil {
 			continue
@@ -278,6 +298,13 @@ func Check(ctx context.Context, request Request) ([]Result, error) {
 				if results[i].Refresh, err = refresh(ctx, command, apply, dir, contents[i], strip, request.Fuzz); err != nil {
 					return nil, err
 				}
+			}
+			// Applied for real, for the next to be checked on.
+			if _, err := subprocess.Run(ctx, subprocess.Spec{Tool: "patch", Path: command, Args: apply, Dir: dir, Stdin: bytes.NewReader(contents[i]), Combined: true, Limit: 1 << 20, Drain: true}); err != nil {
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				return nil, fmt.Errorf("patchcheck: applying %s, which its check applied: %w", results[i].Name, err)
 			}
 			continue
 		}
@@ -313,6 +340,10 @@ func Check(ctx context.Context, request Request) ([]Result, error) {
 		} else if results[i].Refresh, err = refresh(ctx, command, apply, dir, contents[i], strip, false); err != nil {
 			// One with some hunks the source carries applies without them.
 			return nil, err
+		}
+		// One the source already holds leaves it as applying it would.
+		if !results[i].Merged && failed == "" {
+			failed = results[i].Name
 		}
 	}
 	return results, nil
