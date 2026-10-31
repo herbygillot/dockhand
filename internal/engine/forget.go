@@ -19,8 +19,12 @@ import (
 type ForgetPlan struct {
 	Branch   model.Branch
 	Worktree string
-	Head     string
-	Unmerged []git.CherryCommit
+	// KeptWorktree is the branch's checkout that stays, one dockhand
+	// didn't make: the person's own, as an adopted or --here branch
+	// records, which archive leaves too.
+	KeptWorktree string
+	Head         string
+	Unmerged     []git.CherryCommit
 	// Fork is what the branch left on your fork, as clean offers it
 	// (planCleanFork): removed before the record, whose checks name the
 	// check branches, is forgotten; a step kept is said and left.
@@ -37,10 +41,17 @@ func (e *Engine) PlanForget(ctx context.Context, branch model.Branch) (ForgetPla
 		return plan, fmt.Errorf("%s is open; clean --delete forgets a merged, closed, or archived branch, and dockhand archive sets an open one aside", branch.ShortName())
 	}
 	if branch.Worktree != "" && exists(branch.Worktree) {
-		plan.Worktree = branch.Worktree
-		if err := e.refuseDirty(ctx, branch, plan.Worktree); err != nil {
-			return plan, err
+		if !branch.Managed {
+			plan.KeptWorktree = branch.Worktree
+		} else {
+			plan.Worktree = branch.Worktree
+			if err := e.refuseDirty(ctx, branch, plan.Worktree); err != nil {
+				return plan, err
+			}
 		}
+	}
+	if err := e.refuseCheckedOut(ctx, plan); err != nil {
+		return plan, err
 	}
 	var err error
 	if plan.Fork, err = e.planCleanFork(ctx, branch, pushedHead(branch), "it has moved since dockhand pushed it"); err != nil {
@@ -82,6 +93,9 @@ func (e *Engine) Forget(ctx context.Context, plan *ForgetPlan) (store.Pruned, er
 			return store.Pruned{}, err
 		}
 	}
+	if err := e.refuseCheckedOut(ctx, *plan); err != nil {
+		return store.Pruned{}, err
+	}
 	if len(plan.Fork) > 0 {
 		cleaned, err := e.ApplyClean(ctx, []CleanBranch{{Branch: plan.Branch, Steps: plan.Fork}})
 		if err != nil {
@@ -117,4 +131,22 @@ func (e *Engine) refuseDirty(ctx context.Context, branch model.Branch, worktree 
 		return err
 	}
 	return refusal.New(refusal.Attention, "%s's worktree %s is kept: %s, which forgetting it would lose; commit them or remove them, then run clean --delete again", branch.ShortName(), worktree, dirty)
+}
+
+// refuseCheckedOut refuses to forget a branch whose Git branch is checked
+// out in a checkout the forgetting doesn't remove, as git branch -d
+// refuses it: deleting the branch would leave that checkout on a branch
+// that's gone, which update-ref, unlike git branch, doesn't check.
+func (e *Engine) refuseCheckedOut(ctx context.Context, plan ForgetPlan) error {
+	checkouts, err := e.Repo.AllCheckouts(ctx)
+	if err != nil {
+		return err
+	}
+	for _, checkout := range checkouts[plan.Branch.Name] {
+		if plan.Worktree != "" && samePath(checkout, plan.Worktree) {
+			continue
+		}
+		return refusal.New(refusal.Attention, "%s is checked out in %s, which clean --delete doesn't remove, so it isn't forgotten; git switch to another branch there, then run clean --delete again", plan.Branch.Name, checkout)
+	}
+	return nil
 }

@@ -413,6 +413,9 @@ func forgetBranches(ctx context.Context, e *engine.Engine, streams term.Streams,
 		if plan.Worktree != "" {
 			fmt.Fprintf(out, "  worktree %s\n", plan.Worktree)
 		}
+		if plan.KeptWorktree != "" {
+			fmt.Fprintf(out, "  keep worktree %s: dockhand didn't make it\n", plan.KeptWorktree)
+		}
 		if plan.Head != "" {
 			fmt.Fprintf(out, "  branch %s at %s\n", plan.Branch.Name, model.ObjectID(plan.Head).Short())
 		}

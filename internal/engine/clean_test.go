@@ -495,3 +495,50 @@ func TestForgetKeepsABranchMovedSinceThePlan(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, merged, 1, "its record isn't forgotten")
 }
+
+// clean --delete removes only a worktree dockhand made: a --here branch's
+// checkout, the person's own, stays, said in the plan, and while the
+// branch is checked out there, or in any checkout clean --delete doesn't
+// remove, nothing is forgotten, the refusal naming it and git switch,
+// where the branch was deleted from under it.
+func TestForgetKeepsACheckoutDockhandDidntMake(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-here", Here: true})
+	require.NoError(t, err)
+	branch, err = e.Archive(t.Context(), branch, false)
+	require.NoError(t, err)
+	_, err = e.PlanForget(t.Context(), branch)
+	require.ErrorContains(t, err, "dockhand/jq-here is checked out in ")
+	require.ErrorContains(t, err, "git switch to another branch there")
+	require.Equal(t, 3, refusal.Of(err).Kind().Exit())
+
+	testsupport.Git(t, e.Repo.Root, "switch", "-q", "master")
+	plan, err := e.PlanForget(t.Context(), branch)
+	require.NoError(t, err)
+	require.Empty(t, plan.Worktree)
+	require.Equal(t, branch.Worktree, plan.KeptWorktree)
+	_, err = e.Forget(t.Context(), &plan)
+	require.NoError(t, err)
+	require.DirExists(t, e.Repo.Root, "the person's checkout stays")
+	require.Empty(t, testsupport.Git(t, e.Repo.Root, "branch", "--list", "dockhand/jq-here"))
+}
+
+// A branch the person checked out in a checkout of their own, after
+// archive removed dockhand's, isn't deleted from under it.
+func TestForgetKeepsABranchCheckedOutElsewhere(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch := committedUpdate(t, e)
+	archived, err := e.ArchiveBranch(t.Context(), ArchiveRequest{Branch: branch})
+	require.NoError(t, err)
+	require.NotEmpty(t, archived.Removed)
+	own := filepath.Join(t.TempDir(), "mine")
+	testsupport.Git(t, e.Repo.Root, "worktree", "add", "-q", own, branch.Name)
+	_, err = e.PlanForget(t.Context(), archived.Branch)
+	require.ErrorContains(t, err, branch.Name+" is checked out in ")
+	require.ErrorContains(t, err, "mine, which clean --delete doesn't remove")
+	require.NotEmpty(t, testsupport.Git(t, own, "rev-parse", "HEAD"))
+}
