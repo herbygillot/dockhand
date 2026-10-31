@@ -42,6 +42,13 @@ type catalog struct {
 	// answers is the name the forge answered its listing as, where it
 	// isn't the name asked.
 	answers string
+	// commits are the commits the repository has, where it says; it has
+	// every one where it's nil.
+	commits map[string]bool
+}
+
+func (c *catalog) HasCommit(_ context.Context, commit string) (bool, error) {
+	return c.commits == nil || c.commits[commit], nil
 }
 
 func (c *catalog) AnswersAs() string { return c.answers }

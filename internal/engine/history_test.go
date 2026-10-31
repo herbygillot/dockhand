@@ -175,10 +175,11 @@ type uncertainStore struct {
 // whether it added a branch.
 type watchedTx struct {
 	store.Tx
-	added   bool
-	settled model.CheckpointState
-	branch  bool
-	edit    bool
+	added    bool
+	settled  model.CheckpointState
+	branch   bool
+	edit     bool
+	restored bool
 }
 
 func (t *watchedTx) AddEdit(edit model.Edit) error {
@@ -422,4 +423,73 @@ func TestACheckpointNameTakenInBetweenIsSaid(t *testing.T) {
 	result, err := e.ApplyTidy(t.Context(), plan)
 	require.NoError(t, err)
 	require.Equal(t, "tidy-2", result.Checkpoint.Name())
+}
+
+// failingStore fails the transaction when says, rolled back.
+type failingStore struct {
+	store.Store
+	when func(*watchedTx) bool
+}
+
+var errDiskFull = errors.New("the disk is full")
+
+func (s *failingStore) Update(ctx context.Context, repository model.RepositoryID, fn func(store.Tx) error) error {
+	return s.Store.Update(ctx, repository, func(tx store.Tx) error {
+		watched := &watchedTx{Tx: tx}
+		if err := fn(watched); err != nil {
+			return err
+		}
+		if s.when(watched) {
+			return errDiskFull
+		}
+		return nil
+	})
+}
+
+func (t *watchedTx) MarkRestored(c model.Checkpoint) error {
+	t.restored = true
+	return t.Tx.MarkRestored(c)
+}
+
+// A restore whose record fails after its Git change says the history is
+// restored and what finishes the record, and the next restore of the
+// branch records it, where nothing tested the failure.
+func TestARestoreWhoseRecordFailsSaysSo(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, plan := updated(t, e)
+	_, err := e.ApplyTidy(t.Context(), plan)
+	require.NoError(t, err)
+	stored := e.Store
+	e.Store = &failingStore{Store: stored, when: func(tx *watchedTx) bool { return tx.restored }}
+	_, _, err = e.Restore(t.Context(), "tidy-1")
+	require.ErrorIs(t, err, errDiskFull)
+	require.ErrorContains(t, err, "the history is restored, but recording it failed")
+	require.ErrorContains(t, err, "the next dockhand tidy, rebase, or undo of this branch finishes the record")
+	require.Equal(t, string(branch.Base), testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"), "the history is back")
+	require.Nil(t, checkpointNumbered(t, e, 1).RestoredAt, "not recorded")
+
+	e.Store = stored
+	_, _, err = e.Restore(t.Context(), "tidy-1")
+	require.ErrorContains(t, err, "tidy-1 was already restored", "the next restore finished the record first")
+	require.NotNil(t, checkpointNumbered(t, e, 1).RestoredAt)
+}
+
+// A checkpoint left prepared on a branch whose Git branch is gone can't be
+// settled, since nothing says whether its change was made, and restore
+// says so rather than guess.
+func TestARestoreOfAnUnresolvedCheckpointIsRefused(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, plan := updated(t, e)
+	e.stopAt = stopAt("prepared")
+	_, err := e.ApplyTidy(t.Context(), plan)
+	require.ErrorIs(t, err, errStopped)
+	testsupport.Git(t, branch.Worktree, "update-ref", "-d", "refs/heads/"+branch.Name)
+	e.stopAt = nil
+	_, _, err = e.Restore(t.Context(), "tidy-1")
+	require.ErrorContains(t, err, "tidy-1 has an unresolved state: "+branch.Name+" is not checked out, so dockhand cannot determine whether the operation was applied")
+	require.Equal(t, model.CheckpointPrepared, checkpointNumbered(t, e, 1).State)
 }
