@@ -116,6 +116,17 @@ func decodeObservation(value string) (macports.PortObservation, error) {
 	return out, nil
 }
 
+// decodeRecorded reads what a recording native evaluation read and ran,
+// its reads and execs as decodeRecord takes them.
+func decodeRecorded(value string) (macports.PortObservation, error) {
+	var out macports.PortObservation
+	fields, errs := syntax.ListValues(value)
+	if len(errs) > 0 || len(fields) != 2 {
+		return out, fmt.Errorf("macports: invalid record")
+	}
+	return out, decodeRecord(&out, fields[0], fields[1], "")
+}
+
 // decodeRecord reads what a recording evaluation read, ran, and declared:
 // reads and execs are dictionaries of counts, keyed by a read's command,
 // subcommand, kind, source, and path, and by a command line and its

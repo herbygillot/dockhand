@@ -168,7 +168,7 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 	bound := primary
 	var before macports.Snapshot
 	if selected.Subport == "" {
-		before, err = input.native(ctx, s.Ports).Evaluate(ctx, bound)
+		before, err = input.baseline(ctx, s.Ports).Evaluate(ctx, bound)
 		if err != nil {
 			return nil, err
 		}
@@ -176,14 +176,14 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 		if bound, err = tree.Select(selected); err != nil {
 			return nil, err
 		}
-		before, err = input.native(ctx, s.Ports).EvaluateSelected(ctx, bound)
+		before, err = input.baseline(ctx, s.Ports).EvaluateSelected(ctx, bound)
 		if err != nil {
 			return nil, err
 		}
 		if request.Stub != "" {
 			// The recorded stub is the main port: its entry is checked
 			// below and lends its livecheck to the carrier.
-			owner, err := input.native(ctx, s.Ports).EvaluateSelected(ctx, primary)
+			owner, err := input.baseline(ctx, s.Ports).EvaluateSelected(ctx, primary)
 			if err != nil {
 				return nil, err
 			}
@@ -282,6 +282,17 @@ func (s *session) native(ctx context.Context, ports macports.Evaluator) snapshot
 		return batch
 	}
 	return ports
+}
+
+// baseline is what evaluates the port as the workspace holds it: the
+// session's memo, where its interpreter keeps one, which no overlay goes
+// through, since an overlay of the same Portfile would take its slot.
+func (s *session) baseline(ctx context.Context, ports macports.Evaluator) snapshotEvaluator {
+	native := s.native(ctx, ports)
+	if memo, ok := native.(macports.MemoBatch); ok {
+		return memo.Memoized()
+	}
+	return native
 }
 
 // opened is the session's native interpreter, opened now where it isn't

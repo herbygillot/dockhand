@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"path/filepath"
 
 	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/fetch"
@@ -66,7 +67,10 @@ func (e *Engine) selectionReader() (*selection.Reader, error) {
 		if err != nil {
 			return nil, err
 		}
-		native := &eval.Evaluator{Executable: e.Tclsh(), Env: e.options.Env}
+		// A port's baseline read unchanged since a look's last is answered
+		// from what that evaluation kept, beside the index generations,
+		// whose collection leaves it alone (eval.Memo).
+		native := &eval.Evaluator{Executable: e.Tclsh(), Env: e.options.Env, Memo: &eval.Memo{Directory: filepath.Join(index.CacheDirectory, "evaluations")}}
 		return &selection.Reader{Evaluator: native, Index: &portindex.Stager{Repo: e.Repo, Config: index, NativePlatform: native.NativePlatform, WithoutBase: true}}, nil
 	})
 }

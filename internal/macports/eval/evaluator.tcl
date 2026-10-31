@@ -496,7 +496,13 @@ namespace eval ::dockhand {
                 dict set out dockhand.code $code
             }
             dict set out option_errors $failures
-            if {$::dockhand::observing} { dict set out dockhand.observation [observation_details $worker] }
+            if {$::dockhand::observing} {
+                dict set out dockhand.observation [observation_details $worker]
+            } elseif {$::dockhand::recording_paths && [$worker eval {info exists ::dockhand_dispatcher::reads}]} {
+                # A native evaluation that records keeps only what it read
+                # and ran, which an evaluation memo is keyed by (Memo).
+                dict set out dockhand.recorded [$worker eval {list $::dockhand_dispatcher::reads $::dockhand_dispatcher::execs}]
+            }
             if {[llength $refusals]} { return [dict create dockhand.refused $refusals] }
             return $out
         } finally {

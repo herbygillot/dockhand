@@ -48,6 +48,19 @@ type BatchReader interface {
 	OpenBatch(context.Context, Tree) (Batch, error)
 }
 
+// SnapshotEvaluator evaluates a port whole or its selected port alone.
+type SnapshotEvaluator interface {
+	Evaluate(context.Context, Context) (Snapshot, error)
+	EvaluateSelected(context.Context, Context) (Snapshot, error)
+}
+
+// MemoBatch is a batch that answers a port's baseline evaluation from an
+// earlier one's where all it read is as it was (eval.Memo); an overlay's
+// evaluation never goes through it.
+type MemoBatch interface {
+	Memoized() SnapshotEvaluator
+}
+
 // Batch evaluates within one interpreter until closed.
 type Batch interface {
 	Evaluate(context.Context, Context) (Snapshot, error)

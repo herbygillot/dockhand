@@ -57,6 +57,10 @@ type Evaluator struct {
 	// Bootstrap, when set with Recording, receives the first session's
 	// record of what mportinit read; it is the same for every session.
 	Bootstrap func(Bootstrap)
+	// Memo, when set, keeps a session's native evaluations and answers one
+	// again while all it read is as it was; its sessions record what they
+	// read, as Recording does, to know.
+	Memo *Memo
 
 	bootstrapped atomic.Bool
 }
@@ -123,7 +127,7 @@ func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session
 	}
 	tables := "namespace eval ::dockhand {}\nset ::dockhand::read_options [list " + strings.Join(macports.ReadOptions, " ") + "]\n" +
 		"set ::dockhand::host_programs [list " + macports.TclHostPrograms(macports.HostPrograms) + "]\n" +
-		"set ::dockhand::recording_paths " + strconv.FormatBool(e.Recording) + "\n" +
+		"set ::dockhand::recording_paths " + strconv.FormatBool(e.Recording || e.Memo != nil) + "\n" +
 		"set ::dockhand::installation " + string(installation) + "\n"
 	if _, err := session.Call(ctx, "eval", tables+compatibilityScript+"\n"+fetchCredentialsScript+"\n"+platformScript+"\n"+dispatcherScript+"\n"+installationScript+"\n"+toolchainScript+"\n"+observationScript+"\n"+evaluatorScript+"\n"+versionScript); err != nil {
 		return fail(fmt.Errorf("%w: %w", macports.ErrStartup, err))
@@ -231,7 +235,7 @@ func (e *Evaluator) evaluate(ctx context.Context, source macports.Context, reque
 			return macports.Observation{}, err
 		}
 	}
-	observation, err := evaluateIn(ctx, session, runtime, checked, source, request, selectedOnly)
+	observation, err := evaluateIn(ctx, session, runtime, checked, source, request, selectedOnly, false)
 	if err == nil && e.Recording && e.Bootstrap != nil && e.bootstrapped.CompareAndSwap(false, true) {
 		reply, err := session.Call(ctx, "bootstrap_record")
 		if err != nil {
@@ -263,6 +267,10 @@ type Session struct {
 	tree    macports.Tree
 	session *rpc.Session
 	runtime macports.Runtime
+	// memo is the evaluator's, and bootstrap what this session's mportinit
+	// read, its entries' configuration, read once it's asked.
+	memo      *Memo
+	bootstrap string
 }
 
 // Open starts an interpreter bound to the tree for Session evaluations.
@@ -271,7 +279,7 @@ func (e *Evaluator) Open(ctx context.Context, tree macports.Tree) (*Session, err
 	if err != nil {
 		return nil, err
 	}
-	return &Session{tree: tree, session: session, runtime: runtime}, nil
+	return &Session{tree: tree, session: session, runtime: runtime, memo: e.Memo}, nil
 }
 
 // Resolve resolves a selection in the session's interpreter, as
@@ -319,25 +327,35 @@ func (s *Session) EvaluateSelected(ctx context.Context, source macports.Context)
 }
 
 func (s *Session) evaluate(ctx context.Context, source macports.Context, selectedOnly bool) (macports.Observation, error) {
-	if s == nil || s.session == nil {
-		return macports.Observation{}, fmt.Errorf("%w: session is closed", macports.ErrStartup)
-	}
-	checked, err := source.Tree.Select(source.Target())
+	checked, err := s.bound(source)
 	if err != nil {
 		return macports.Observation{}, err
 	}
-	// An overlay of the session's root evaluates in the session: MacPorts
-	// resolves _resources from the port directory upward and loads
-	// PortGroups per worker interpreter, so the overlay's files are what
-	// it reads, and the session's sources setting names the base the
-	// overlay is a copy of.
-	if checked.Tree.Base() != s.tree.Base() {
-		return macports.Observation{}, fmt.Errorf("%w: session is bound to %s, not %s", macports.ErrTarget, s.tree.Base(), checked.Tree.Base())
-	}
-	return evaluateIn(ctx, s.session, s.runtime, checked, source, nil, selectedOnly)
+	return evaluateIn(ctx, s.session, s.runtime, checked, source, nil, selectedOnly, false)
 }
 
-func evaluateIn(ctx context.Context, session *rpc.Session, runtime macports.Runtime, checked, source macports.Context, request *macports.ObservationRequest, selectedOnly bool) (macports.Observation, error) {
+// bound is source's target in the session's tree, which an overlay of the
+// session's root evaluates in: MacPorts resolves _resources from the port
+// directory upward and loads PortGroups per worker interpreter, so the
+// overlay's files are what it reads, and the session's sources setting
+// names the base the overlay is a copy of.
+func (s *Session) bound(source macports.Context) (macports.Context, error) {
+	if s == nil || s.session == nil {
+		return macports.Context{}, fmt.Errorf("%w: session is closed", macports.ErrStartup)
+	}
+	checked, err := source.Tree.Select(source.Target())
+	if err != nil {
+		return macports.Context{}, err
+	}
+	if checked.Tree.Base() != s.tree.Base() {
+		return macports.Context{}, fmt.Errorf("%w: session is bound to %s, not %s", macports.ErrTarget, s.tree.Base(), checked.Tree.Base())
+	}
+	return checked, nil
+}
+
+// evaluateIn evaluates the port in the session; recorded decodes what each
+// port's evaluation read for a native one too, as an observation does.
+func evaluateIn(ctx context.Context, session *rpc.Session, runtime macports.Runtime, checked, source macports.Context, request *macports.ObservationRequest, selectedOnly, recorded bool) (macports.Observation, error) {
 	if request != nil {
 		for _, operand := range request.Operands {
 			if !operandName.MatchString(operand) {
@@ -390,7 +408,14 @@ func evaluateIn(ctx context.Context, session *rpc.Session, runtime macports.Runt
 			return macports.Observation{}, err
 		}
 	}
+	if request == nil && recorded {
+		observations[top.Name], err = decodeRecorded(top.Options["dockhand.recorded"])
+		if err != nil {
+			return macports.Observation{}, err
+		}
+	}
 	delete(top.Options, "dockhand.observation")
+	delete(top.Options, "dockhand.recorded")
 	ports := map[string]macports.PortInfo{top.Name: top}
 	if !selectedOnly && checked.Target().Subport == "" {
 		for _, sub := range subs {
@@ -410,7 +435,14 @@ func evaluateIn(ctx context.Context, session *rpc.Session, runtime macports.Runt
 					return macports.Observation{}, err
 				}
 			}
+			if request == nil && recorded {
+				observations[sub], err = decodeRecorded(value.Options["dockhand.recorded"])
+				if err != nil {
+					return macports.Observation{}, err
+				}
+			}
 			delete(value.Options, "dockhand.observation")
+			delete(value.Options, "dockhand.recorded")
 			ports[sub] = value
 		}
 	}

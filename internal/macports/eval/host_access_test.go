@@ -197,7 +197,7 @@ func TestEachContextGetsItsOwnCompilerList(t *testing.T) {
 	defer func() { require.NoError(t, session.Close()) }()
 	for _, platform := range platforms {
 		request := macports.ObservationRequest{Platform: platform, Declarations: true}
-		got, err := evaluateIn(t.Context(), session, runtime, checked, bound, &request, false)
+		got, err := evaluateIn(t.Context(), session, runtime, checked, bound, &request, false, false)
 		require.NoError(t, err)
 		require.Equal(t, alone[platform], got.Snapshot.Ports["host"].Options["distfiles"], "%+v, observed second in one process", platform)
 	}

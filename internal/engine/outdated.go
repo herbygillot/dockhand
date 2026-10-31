@@ -16,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/outdated"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/upstream"
@@ -275,8 +276,20 @@ func (e *Engine) Outdated(ctx context.Context, request OutdatedRequest) (Outdate
 		return OutdatedReport{}, err
 	}
 	ports, err := reader.Outdated(ctx, master, request)
+	e.sayMemo(ctx)
 	slices.SortFunc(ports, func(a, b OutdatedPort) int { return macports.ComparePortNames(a.Port, b.Port) })
 	return OutdatedReport{Master: master, Ports: ports}, err
+}
+
+// sayMemo says, with --debug, how many ports' evaluations the look took
+// from what an earlier one kept (eval.Memo), so a measure of the look says
+// its hit rate beside its time.
+func (e *Engine) sayMemo(ctx context.Context) {
+	if e.ports == nil || e.ports.Evaluator == nil || e.ports.Evaluator.Memo == nil {
+		return
+	}
+	counts := e.ports.Evaluator.Memo.Counts()
+	progress.DebugReport(ctx, "Evaluations kept from an earlier look: %d answered, %d evaluated and kept, %d evaluated and not kept", counts.Hits, counts.Misses, counts.Unkept)
 }
 
 // outdatedReader is the engine's OutdatedReader: the one it was given, or

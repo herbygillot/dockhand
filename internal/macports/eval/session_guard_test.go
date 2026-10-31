@@ -16,7 +16,8 @@ import (
 // A shared interpreter session must evaluate exactly what a fresh
 // interpreter evaluates, port after port: the guard for reusing one session
 // across a preparation's native evaluations, and a port's resolution and
-// version comparisons with them, in either order. The fixture tree always
+// version comparisons with them, in either order, and for answering a
+// port's evaluation from the memo. The fixture tree always
 // runs; DOCKHAND_GUARD_TREE names a ports tree whose Portfiles are sampled
 // too.
 func TestSharedSessionEvaluatesLikeFreshInterpreters(t *testing.T) {
@@ -52,6 +53,37 @@ func compareSessions(t *testing.T, evaluator *Evaluator, tree macports.Tree, sel
 	t.Helper()
 	compareSessionsInOrder(t, evaluator, tree, slices.All(selections))
 	compareSessionsInOrder(t, evaluator, tree, slices.Backward(selections))
+	compareMemo(t, evaluator, tree, selections)
+}
+
+// compareMemo is the guard for the evaluation memo: each port evaluated
+// through a warm memo, its slot kept by an earlier session, gives what a
+// fresh interpreter gives.
+func compareMemo(t *testing.T, evaluator *Evaluator, tree macports.Tree, selections []macports.Selection) {
+	t.Helper()
+	memoized := &Evaluator{Executable: evaluator.Executable, Adapter: evaluator.Adapter, Memo: &Memo{Directory: t.TempDir()}}
+	for range 2 {
+		session, err := memoized.Open(t.Context(), tree)
+		require.NoError(t, err)
+		for _, selection := range selections {
+			targets, err := evaluator.Resolve(t.Context(), tree, selection)
+			if err != nil || len(targets) != 1 {
+				continue
+			}
+			source, err := tree.Select(targets[0])
+			require.NoError(t, err)
+			fresh, freshErr := evaluator.Evaluate(t.Context(), source)
+			kept, keptErr := session.Memoized().Evaluate(t.Context(), source)
+			require.Equal(t, freshErr == nil, keptErr == nil, "%s: fresh %v, memo %v", selection.Selector, freshErr, keptErr)
+			if freshErr == nil {
+				require.Equal(t, fresh.Ports, kept.Ports, selection.Selector)
+			}
+		}
+		require.NoError(t, session.Close())
+	}
+	counts := memoized.Memo.Counts()
+	t.Logf("memo over %d selections, two sessions: %+v", len(selections), counts)
+	require.Positive(t, counts.Hits, "the second session answered from the memo: %+v", counts)
 }
 
 func compareSessionsInOrder(t *testing.T, evaluator *Evaluator, tree macports.Tree, selections iter.Seq2[int, macports.Selection]) {
