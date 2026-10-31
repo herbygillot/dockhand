@@ -335,6 +335,9 @@ func TestAPrefixPutBackByHandIsForgotten(t *testing.T) {
 // line (the person's sitting on rc8, 2026-10-29).
 func TestRootStepsRunThePrefixsPortTclsh(t *testing.T) {
 	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("root writes a registry whatever its mode, so no step asks sudo")
+	}
 	prefix := t.TempDir()
 	registry := filepath.Join(prefix, "var", "macports", "registry")
 	require.NoError(t, os.MkdirAll(registry, 0o755))

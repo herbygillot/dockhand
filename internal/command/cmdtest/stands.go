@@ -138,6 +138,7 @@ func Hosted(t testing.TB) *host.Host {
 func testHost() *host.Host {
 	h := host.MachineHost(func(string) string { return "" })
 	h.TartSupported = func() bool { return true }
+	h.LocalSupported = func() bool { return true }
 	h.Identity = func(*github.Runtime) func(context.Context) (string, error) { return nil }
 	h.AuthStore = memoryStore{}
 	h.AuthAPI = func(github.Signin) *github.Client {
