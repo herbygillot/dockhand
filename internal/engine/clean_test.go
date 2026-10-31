@@ -428,3 +428,25 @@ func TestCleanupKeepsAnEndedBranchsNewestCheck(t *testing.T) {
 	_, err = e.RunNamed(t.Context(), "check-99")
 	require.ErrorContains(t, err, "there is no run check-99")
 }
+
+// Clean drops a merged branch's checkpoint refs only where they hold what
+// its checkpoints kept: a ref of the same name another database on this
+// checkout gave its own checkpoint stays (rc2's full stage).
+func TestCleanLeavesAnotherDatabasesCheckpoints(t *testing.T) {
+	t.Parallel()
+	_, e, _, branch := mergedBranch(t)
+	refs := strings.Fields(testsupport.Git(t, e.Repo.Root, "for-each-ref", "--format=%(refname)", "refs/dockhand/checkpoints/"))
+	require.NotEmpty(t, refs)
+	others := map[string]string{}
+	for _, ref := range refs {
+		others[ref] = anotherDatabasesCheckpoint(t, branch.Worktree, strings.TrimPrefix(ref, "refs/dockhand/checkpoints/"))
+	}
+	plans, err := e.PlanClean(t.Context())
+	require.NoError(t, err)
+	_, err = e.ApplyClean(t.Context(), plans)
+	require.NoError(t, err)
+	require.NoDirExists(t, branch.Worktree)
+	for ref, commit := range others {
+		require.Equal(t, commit, testsupport.Git(t, e.Repo.Root, "rev-parse", ref), "%s, another database's, stays", ref)
+	}
+}

@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/history"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -651,16 +652,15 @@ func (e *Engine) keepCleanWords(ctx context.Context, plan *CleanBranch) error {
 }
 
 // dropRefs removes the refs dockhand kept for a merged branch: its
-// checkpoints, with the indexes they kept, and its snapshots' commits.
+// checkpoints, with the indexes they kept, where they hold what each
+// kept, and its snapshots' commits.
 func (e *Engine) dropRefs(ctx context.Context, branch model.Branch) error {
 	var names []string
+	var checkpoints []model.Checkpoint
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		checkpoints, err := r.Checkpoints(branch.ID)
-		if err != nil {
+		var err error
+		if checkpoints, err = r.Checkpoints(branch.ID); err != nil {
 			return err
-		}
-		for _, checkpoint := range checkpoints {
-			names = append(names, checkpoint.Ref(), checkpoint.IndexRef())
 		}
 		revisions, err := r.Revisions(branch.ID)
 		for _, revision := range revisions {
@@ -671,6 +671,13 @@ func (e *Engine) dropRefs(ctx context.Context, branch model.Branch) error {
 		return err
 	}
 	var changes []git.RefChange
+	for _, checkpoint := range checkpoints {
+		kept, err := history.KeptRefs(ctx, e.Repo, checkpoint)
+		if err != nil {
+			return err
+		}
+		changes = append(changes, kept...)
+	}
 	for _, name := range names {
 		value, err := e.Repo.ReadRef(ctx, name)
 		if err != nil {

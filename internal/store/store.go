@@ -322,8 +322,9 @@ type Tx interface {
 	// RecordChange records what a revision changed in a port directory,
 	// replacing one recorded for the same revision, base, and directory.
 	RecordChange(record model.ChangeRecord) error
-	// AddCheckpoint records a checkpoint; its Number must be
-	// NextCheckpointNumber's.
+	// AddCheckpoint records a checkpoint; its Number is at least
+	// NextCheckpointNumber's, higher where the checkout has the names
+	// between from another database.
 	AddCheckpoint(checkpoint model.Checkpoint) error
 	NextCheckpointNumber() (int, error)
 	// SettleCheckpoint records a prepared checkpoint as applied or

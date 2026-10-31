@@ -20,6 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/failpoint"
@@ -117,12 +119,19 @@ func (h *Transitions) Make(ctx context.Context, checkpoint *model.Checkpoint, ch
 // keeps is made, and gives it its number.
 func (h *Transitions) Prepare(ctx context.Context, checkpoint *model.Checkpoint) error {
 	checkpoint.State = model.CheckpointPrepared
-	err := store.Recorded(ctx, h.Store, h.Repository, func(tx store.Tx) error {
+	// A name another database gave on this checkout is skipped, so the
+	// name people type stays tidy-N (rc2's full stage, a copy run on its
+	// original's checkout).
+	taken, err := takenNumber(ctx, h.Repo)
+	if err != nil {
+		return fmt.Errorf("reading the checkout's checkpoints failed, so nothing was changed: %w", err)
+	}
+	err = store.Recorded(ctx, h.Store, h.Repository, func(tx store.Tx) error {
 		number, err := tx.NextCheckpointNumber()
 		if err != nil {
 			return err
 		}
-		checkpoint.Number = number
+		checkpoint.Number = max(number, taken+1)
 		return tx.AddCheckpoint(*checkpoint)
 	}, checkpointRecorded(&checkpoint.Number, func(recorded model.Checkpoint) bool {
 		return recorded.Branch == checkpoint.Branch && recorded.Before == checkpoint.Before && recorded.After == checkpoint.After
@@ -327,20 +336,72 @@ func (h *Transitions) finishIndex(ctx context.Context, branch model.Branch, chec
 // dropCheckpointRefs removes the refs a checkpoint whose change wasn't
 // made may have left, where they are still as it made them.
 func (h *Transitions) dropCheckpointRefs(ctx context.Context, checkpoint model.Checkpoint) error {
-	var changes []git.RefChange
-	for _, name := range []string{checkpoint.Ref(), checkpoint.IndexRef()} {
-		value, err := h.Repo.ReadRef(ctx, name)
-		if err != nil {
-			return err
-		}
-		if value.Exists && (name == checkpoint.IndexRef() || value.Object == string(checkpoint.Before)) {
-			changes = append(changes, git.RefChange{Name: name, Expected: value})
-		}
-	}
-	if len(changes) == 0 {
-		return nil
+	changes, err := KeptRefs(ctx, h.Repo, checkpoint)
+	if err != nil {
+		return err
 	}
 	return h.Repo.UpdateRefs(ctx, changes)
+}
+
+// KeptRefs are the deletions of a checkpoint's refs that hold what it
+// kept: its ref at Before, and its index ref at a commit on Before. A
+// ref of the checkpoint's name that holds anything else is another
+// database's on this checkout (a copy run on its original's checkout,
+// rc2's full stage), and stays.
+func KeptRefs(ctx context.Context, repo *git.Repository, checkpoint model.Checkpoint) ([]git.RefChange, error) {
+	var changes []git.RefChange
+	value, err := repo.ReadRef(ctx, checkpoint.Ref())
+	if err != nil {
+		return nil, err
+	}
+	if value.Exists && value.Object == string(checkpoint.Before) {
+		changes = append(changes, git.RefChange{Name: checkpoint.Ref(), Expected: value})
+	}
+	index, err := repo.ReadRef(ctx, checkpoint.IndexRef())
+	if err != nil || !index.Exists {
+		return changes, err
+	}
+	parents, err := repo.Parents(ctx, index.Object)
+	if err != nil {
+		return nil, err
+	}
+	if len(parents) == 1 && parents[0] == string(checkpoint.Before) {
+		changes = append(changes, git.RefChange{Name: checkpoint.IndexRef(), Expected: index})
+	}
+	return changes, nil
+}
+
+// TakenName says a change's checkpoint couldn't take its name, which
+// another process gave a checkpoint of its own on this checkout after
+// Prepare read the names taken: nothing moved, and running again takes
+// the next. It's nil where err is no such refusal.
+func TakenName(checkpoint model.Checkpoint, err error) error {
+	var conflict *git.RefConflict
+	if errors.As(err, &conflict) && (conflict.Name == checkpoint.Ref() || conflict.Name == checkpoint.IndexRef()) {
+		return fmt.Errorf("%s is another dockhand's checkpoint on this checkout, so nothing was changed; run again: %w", checkpoint.Name(), err)
+	}
+	return nil
+}
+
+// takenNumber is the highest checkpoint number named under
+// refs/dockhand/checkpoints/ in the checkout, whichever database named it.
+func takenNumber(ctx context.Context, repo *git.Repository) (int, error) {
+	refs, err := repo.ReadRefs(ctx, "refs/dockhand/checkpoints/")
+	if err != nil {
+		return 0, err
+	}
+	highest := 0
+	for name := range refs {
+		name = strings.TrimSuffix(strings.TrimPrefix(name, "refs/dockhand/checkpoints/"), "-index")
+		for _, kind := range []model.CheckpointKind{model.CheckpointTidy, model.CheckpointRebase} {
+			if number, ok := strings.CutPrefix(name, string(kind)+"-"); ok {
+				if n, err := strconv.Atoi(number); err == nil {
+					highest = max(highest, n)
+				}
+			}
+		}
+	}
+	return highest, nil
 }
 
 // Unfinished says how a history change ended when its Git change was made

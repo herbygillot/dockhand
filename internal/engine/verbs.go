@@ -248,6 +248,9 @@ func (e *Engine) rebase(ctx context.Context, branch model.Branch) (Rebased, erro
 		Move: func(ctx context.Context) error {
 			kept := git.RefChange{Name: checkpoint.Ref(), Desired: git.RefValue{Exists: true, Object: head}}
 			if err := worktree.UpdateRefs(ctx, []git.RefChange{kept}); err != nil {
+				if taken := history.TakenName(checkpoint, err); taken != nil {
+					return taken
+				}
 				return err
 			}
 			if err := worktree.MoveCheckout(ctx, head, rebased); err != nil {

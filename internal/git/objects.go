@@ -411,3 +411,21 @@ func (r *Repository) GrepTree(ctx context.Context, tree, pattern string, pathspe
 	}
 	return paths, nil
 }
+
+// Parents are a commit's parents, in order.
+func (r *Repository) Parents(ctx context.Context, commit string) ([]string, error) {
+	if !ValidObjectID(commit) {
+		return nil, fmt.Errorf("git: literal commit objects are required")
+	}
+	out, err := r.output(ctx, "show", "-s", "--format=%P", commit, "--")
+	if err != nil {
+		return nil, err
+	}
+	parents := strings.Fields(string(out))
+	for _, parent := range parents {
+		if !ValidObjectID(parent) {
+			return nil, fmt.Errorf("git: invalid parent of %s", commit)
+		}
+	}
+	return parents, nil
+}
