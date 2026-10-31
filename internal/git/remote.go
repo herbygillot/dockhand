@@ -223,6 +223,22 @@ func (r *Repository) CountCommits(ctx context.Context, base, head string) (int, 
 	return strconv.Atoi(strings.TrimSpace(string(out)))
 }
 
+// CountCommitsNotIn counts the commits reachable from head that base does
+// not reach, and none of others does either.
+func (r *Repository) CountCommitsNotIn(ctx context.Context, base, head string, others []string) (int, error) {
+	args := []string{"rev-list", "--count", head, "--not", base}
+	for _, commit := range append([]string{base, head}, others...) {
+		if !ValidObjectID(commit) {
+			return 0, fmt.Errorf("git: literal commit objects are required")
+		}
+	}
+	out, err := r.output(ctx, append(append(args, others...), "--")...)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(string(out)))
+}
+
 // CherryCommit is one of a branch's commits that upstream lacks, and
 // whether upstream has its change all the same, by patch-id.
 type CherryCommit struct {

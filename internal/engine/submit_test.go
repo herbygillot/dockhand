@@ -1150,13 +1150,13 @@ func TestABranchCarryingMastersCommitsIsntSubmitted(t *testing.T) {
 	write(t, f.upstream, map[string]string{"lang/sbcl/Portfile": "name sbcl\nversion 2.6.10\n"})
 	testsupport.Git(t, f.upstream, "add", ".")
 	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "lang/sbcl: update to sbcl-2.6.10")
-	master, err := e.fetchMaster(t.Context())
-	require.NoError(t, err)
-	// Another database's rebase moves the Git branch; this one's record
-	// keeps the old base.
-	testsupport.Git(t, branch.Worktree, "rebase", "-q", string(master))
+	// The person fetches master and rebases onto it with Git, as another
+	// database's dockhand could; this database's record keeps the old
+	// base, and its own master is the one it fetched before.
+	testsupport.Git(t, branch.Worktree, "fetch", "-q", "origin")
+	testsupport.Git(t, branch.Worktree, "rebase", "-q", "origin/master")
 
-	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch})
+	_, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch})
 	require.ErrorContains(t, err, "jq-update's history has 1 commit master already has, past the base "+branch.Base.Short()+" this database records for it, so nothing was submitted")
 	require.Equal(t, []refusal.Next{{Verb: refusal.VerbRebase, Branch: "jq-update"}}, refusal.Of(err).Next)
 	// tidy would have folded master's commit into the branch's own.
