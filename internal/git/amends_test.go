@@ -36,7 +36,7 @@ func TestAmendsIsTheirCommitAmended(t *testing.T) {
 	carried := commit("README", "theirs\n", "carried")
 	testsupport.Git(t, root, "reset", "-q", "--hard", base)
 	other := commit("Portfile", "version 4\n", "other")
-	repo, err := git.Open(t.Context(), root, git.Program{Env: os.Environ()})
+	repo, err := git.Open(t.Context(), root, git.Program{Env: testsupport.GitEnv(t)})
 	require.NoError(t, err)
 	for _, c := range []struct {
 		commit, of string

@@ -22,9 +22,9 @@ func TestAFollowUpStartsFromTheCommitsPastAMerge(t *testing.T) {
 
 	// Master has the merge, as GitHub made it.
 	portfile := read(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile"))
-	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": portfile})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": portfile})
 	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.1")
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": portfile + "revision 1\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": portfile + "revision 1\n"})
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: a fix after the merge")
 	status, err := e.BranchStatus(t.Context(), branch)
 	require.NoError(t, err)

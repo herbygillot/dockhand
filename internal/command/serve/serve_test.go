@@ -558,7 +558,7 @@ func TestServeWaitsForTheAnswerToItsDatabasesMigration(t *testing.T) {
 	cmdtest.Versioned(t, w)
 	cmdtest.Hosted(t).Timings.MigrationPoll = 20 * time.Millisecond
 	path := filepath.Join(w.Home, ".dockhand", "dockhand.db")
-	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+	require.NoError(t, os.Remove(path), "the world's fresh database gives way to the older one")
 	require.NoError(t, sqlite.CreateAt(path, 32, "INSERT INTO repositories VALUES('repo_1', '/src/macports-ports/.git', 0);\n"+
 		"INSERT INTO sessions(repository_id, id, kind, pid, process_start, version, started_at, heartbeat_at, ended_at) VALUES('repo_1','ses_1','foreground',101,'p','v0.4.0 (5897a828e1c2)',1,1,2);"))
 

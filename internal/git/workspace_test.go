@@ -17,20 +17,16 @@ import (
 func portsCheckout(t *testing.T) (*git.Repository, string) {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), "macports-ports")
-	files := map[string]string{
+	testsupport.WriteFiles(t, root, map[string]string{
 		"_resources/port1.0/group/github-1.0.tcl": "# group\n",
 		"textproc/jq/Portfile":                    "name jq\n",
 		"devel/libharbor/Portfile":                "name libharbor\n",
 		"README.md":                               "ports\n",
-	}
-	for name, content := range files {
-		require.NoError(t, os.MkdirAll(filepath.Join(root, filepath.Dir(name)), 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(root, name), []byte(content), 0o644))
-	}
+	})
 	testsupport.Git(t, root, "init", "-q", "-b", "master")
 	testsupport.Git(t, root, "add", "-A")
 	testsupport.Git(t, root, "commit", "-q", "-m", "init")
-	repo, err := git.Open(t.Context(), root, git.Program{Env: os.Environ()})
+	repo, err := git.Open(t.Context(), root, git.Program{Env: testsupport.GitEnv(t)})
 	require.NoError(t, err)
 	head, err := repo.Resolve(t.Context(), "HEAD")
 	require.NoError(t, err)
@@ -63,6 +59,7 @@ func files(t *testing.T, root string) []string {
 }
 
 func TestCreateBranchRefusesToMoveOne(t *testing.T) {
+	t.Parallel()
 	repo, head := portsCheckout(t)
 	require.NoError(t, repo.CreateBranch(t.Context(), "dockhand/jq-update", head))
 	require.ErrorIs(t, repo.CreateBranch(t.Context(), "dockhand/jq-update", head), git.ErrBranchExists)
@@ -77,13 +74,14 @@ func TestCreateBranchRefusesToMoveOne(t *testing.T) {
 }
 
 func TestSparseWorktreeHoldsOnlyItsConeAndLeavesTheCheckoutWhole(t *testing.T) {
+	t.Parallel()
 	repo, head := portsCheckout(t)
 	require.NoError(t, repo.CreateBranch(t.Context(), "dockhand/jq-update", head))
 	dir := filepath.Join(t.TempDir(), "branches", "jq-update")
 	require.NoError(t, repo.AddSparseWorktree(t.Context(), dir, "dockhand/jq-update", []string{"_resources"}))
 	require.Equal(t, []string{"README.md", "_resources/port1.0/group/github-1.0.tcl"}, files(t, dir))
 
-	worktree, err := git.Open(t.Context(), dir, git.Program{Env: os.Environ()})
+	worktree, err := git.Open(t.Context(), dir, git.Program{Env: testsupport.GitEnv(t)})
 	require.NoError(t, err)
 	require.Equal(t, repo.CommonDir, worktree.CommonDir, "one repository, two checkouts")
 	branch, err := worktree.CurrentBranch(t.Context())
@@ -111,6 +109,7 @@ func TestSparseWorktreeHoldsOnlyItsConeAndLeavesTheCheckoutWhole(t *testing.T) {
 }
 
 func TestAFailedWorktreeIsRemoved(t *testing.T) {
+	t.Parallel()
 	repo, _ := portsCheckout(t)
 	dir := filepath.Join(t.TempDir(), "missing-branch")
 	require.Error(t, repo.AddSparseWorktree(t.Context(), dir, "dockhand/nowhere", []string{"_resources"}))
@@ -120,6 +119,7 @@ func TestAFailedWorktreeIsRemoved(t *testing.T) {
 }
 
 func TestTrackedChangesAndSwitch(t *testing.T) {
+	t.Parallel()
 	repo, head := portsCheckout(t)
 	require.NoError(t, repo.CreateBranch(t.Context(), "dockhand/here", head))
 	require.NoError(t, os.WriteFile(filepath.Join(repo.Root, "untracked.txt"), []byte("x"), 0o644))
@@ -142,6 +142,7 @@ func TestTrackedChangesAndSwitch(t *testing.T) {
 }
 
 func TestWorkingTreeCapturesTrackedFilesAsTheyAreOnDisk(t *testing.T) {
+	t.Parallel()
 	repo, head := portsCheckout(t)
 	portfile := filepath.Join(repo.Root, "textproc/jq/Portfile")
 	require.NoError(t, os.WriteFile(portfile, []byte("name jq\nversion 2\n"), 0o644))
@@ -169,6 +170,7 @@ func TestWorkingTreeCapturesTrackedFilesAsTheyAreOnDisk(t *testing.T) {
 // from: the working tree captures no change, and an edit prepared against
 // the blob applies (the M1's rerun, F4).
 func TestCRLFCheckoutsAreTheirLFBlobs(t *testing.T) {
+	t.Parallel()
 	repo, head := portsCheckout(t)
 	testsupport.Git(t, repo.Root, "config", "core.autocrlf", "true")
 	portfile := filepath.Join(repo.Root, "textproc/jq/Portfile")
@@ -192,6 +194,7 @@ func TestCRLFCheckoutsAreTheirLFBlobs(t *testing.T) {
 }
 
 func TestApplyToWorkingFilesChecksEveryFileFirst(t *testing.T) {
+	t.Parallel()
 	repo, _ := portsCheckout(t)
 	_, tree, err := repo.WorkingTree(t.Context())
 	require.NoError(t, err)
@@ -223,6 +226,7 @@ func TestApplyToWorkingFilesChecksEveryFileFirst(t *testing.T) {
 // A directory is named by its tree, as a file is by its blob; a path the
 // tree lacks, or holds as the other kind, is absent.
 func TestDirectoriesNameTheirTrees(t *testing.T) {
+	t.Parallel()
 	repo, head := portsCheckout(t)
 	tree := testsupport.Git(t, repo.Root, "rev-parse", head+"^{tree}")
 	directories, err := repo.Directories(t.Context(), tree, []string{"_resources", "devel/libharbor", "textproc/missing", "README.md"})
@@ -239,6 +243,7 @@ func TestDirectoriesNameTheirTrees(t *testing.T) {
 // An unchanged worktree, sparse as dockhand makes them, is removed without
 // forcing; one holding an untracked file is refused and keeps it.
 func TestAnUnchangedWorktreeIsRemovedAndAChangedOneRefused(t *testing.T) {
+	t.Parallel()
 	repo, head := portsCheckout(t)
 	require.NoError(t, repo.CreateBranch(t.Context(), "dockhand/jq-update", head))
 	dir := filepath.Join(t.TempDir(), "branches", "jq-update")

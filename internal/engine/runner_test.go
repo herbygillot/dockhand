@@ -891,7 +891,7 @@ func TestAnUnchangedBuildIsReused(t *testing.T) {
 
 	// What every port may source, _resources, is read by every build:
 	// changed, each builds again, and is reused in its turn.
-	write(t, branch.Worktree, map[string]string{"_resources/port1.0/group/harbor-1.0.tcl": "# changed\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"_resources/port1.0/group/harbor-1.0.tcl": "# changed\n"})
 	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 	require.NoError(t, err)
 	revision = capture.Revision
@@ -1016,7 +1016,7 @@ func TestTheTargetsThatChangedBuildAndTheRestAreReused(t *testing.T) {
 	}
 	change := func(files map[string]string) {
 		t.Helper()
-		write(t, branch.Worktree, files)
+		testsupport.WriteFiles(t, branch.Worktree, files)
 		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 		require.NoError(t, err)
 		revision = capture.Revision
@@ -1111,7 +1111,7 @@ func TestAGuestIsGivenTheDependencyArchivesAnEarlierGuestInstalled(t *testing.T)
 	require.Len(t, kept, 1, "libharbor, a target, isn't kept as a dependency")
 	require.Equal(t, "rust", kept[0].Port)
 
-	write(t, branch.Worktree, map[string]string{"graphics/harbor-viewer/Portfile": "name harbor-viewer\nrevision 2\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"graphics/harbor-viewer/Portfile": "name harbor-viewer\nrevision 2\n"})
 	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 	require.NoError(t, err)
 	revision = capture.Revision
@@ -1133,7 +1133,7 @@ func TestAGuestIsGivenTheDependencyArchivesAnEarlierGuestInstalled(t *testing.T)
 	// and is said, and set aside, where it was skipped in silence (the
 	// rc8 full stage's D-T1).
 	require.NoError(t, os.WriteFile(given[0].Path, []byte("Rust's archive"), 0o600))
-	write(t, branch.Worktree, map[string]string{"graphics/harbor-viewer/Portfile": "name harbor-viewer\nrevision 3\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"graphics/harbor-viewer/Portfile": "name harbor-viewer\nrevision 3\n"})
 	capture, err = e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 	require.NoError(t, err)
 	revision = capture.Revision
@@ -1164,7 +1164,7 @@ func TestAGuestIsGivenTheDependencyArchivesAnEarlierGuestInstalled(t *testing.T)
 	// One whose file is gone is said, and its record dropped, where each
 	// check skipped it again in silence (Codex's gcc15 group update).
 	require.NoError(t, os.Remove(given[0].Path))
-	write(t, branch.Worktree, map[string]string{"graphics/harbor-viewer/Portfile": "name harbor-viewer\nrevision 4\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"graphics/harbor-viewer/Portfile": "name harbor-viewer\nrevision 4\n"})
 	capture, err = e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 	require.NoError(t, err)
 	revision = capture.Revision
@@ -1239,7 +1239,7 @@ func TestAGuestIsOfferedTheKeptArchivesOfWhatTheRevisionNeeds(t *testing.T) {
 		return err
 	}))
 
-	write(t, branch.Worktree, map[string]string{"graphics/harbor-viewer/Portfile": "name harbor-viewer\nrevision 2\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"graphics/harbor-viewer/Portfile": "name harbor-viewer\nrevision 2\n"})
 	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 	require.NoError(t, err)
 	revision = capture.Revision
@@ -1320,7 +1320,7 @@ func TestTheGuestInstallsWhatABuildNeedsFromItsKeptArchive(t *testing.T) {
 	require.Len(t, provider.jobs, 1)
 	require.Empty(t, provider.jobs[0].Installs, "everything builds, nothing is installed")
 
-	write(t, branch.Worktree, map[string]string{"devel/harbor-cli/Portfile": "name harbor-cli\nrevision 2\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/harbor-cli/Portfile": "name harbor-cli\nrevision 2\n"})
 	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 	require.NoError(t, err)
 	revision = capture.Revision
@@ -1339,7 +1339,7 @@ func TestTheGuestInstallsWhatABuildNeedsFromItsKeptArchive(t *testing.T) {
 	// A build that shows libharbor active from another archive: MacPorts
 	// gave it another.
 	provider.consumes["harbor-cli"] = []model.ActivePort{{Name: "libharbor", Spec: "@4_0", Directory: "devel/libharbor", Archive: "sha256:upstream"}}
-	write(t, branch.Worktree, map[string]string{"devel/harbor-cli/Portfile": "name harbor-cli\nrevision 3\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/harbor-cli/Portfile": "name harbor-cli\nrevision 3\n"})
 	capture, err = e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 	require.NoError(t, err)
 	revision = capture.Revision
@@ -1353,7 +1353,7 @@ func TestTheGuestInstallsWhatABuildNeedsFromItsKeptArchive(t *testing.T) {
 	altered[0] = 'L'
 	require.NoError(t, os.WriteFile(installed.Path, altered, 0o600))
 	provider.consumes["harbor-cli"] = []model.ActivePort{lib}
-	write(t, branch.Worktree, map[string]string{"devel/harbor-cli/Portfile": "name harbor-cli\nrevision 4\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/harbor-cli/Portfile": "name harbor-cli\nrevision 4\n"})
 	capture, err = e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 	require.NoError(t, err)
 	revision = capture.Revision
@@ -1458,7 +1458,7 @@ func TestABranchHasOneCheckAtATime(t *testing.T) {
 	require.True(t, active.SameRevision)
 	require.EqualError(t, err, "check-1 is already queued for these files; dockhand wait check-1 follows it")
 
-	write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 5\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 5\n"})
 	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 	require.NoError(t, err)
 	edited, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
@@ -1683,11 +1683,11 @@ func TestABaselineNeedsNothingOfTheBranchsWorktree(t *testing.T) {
 	e.Providers = map[string]buildenv.Provider{"command": provider}
 	branch, err := e.Start(t.Context(), StartRequest{Name: "libharbor-2"})
 	require.NoError(t, err)
-	write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n", "devel/harbor-cli/Portfile": "name harbor-cli\nrevision 0\n", "graphics/harbor-viewer/Portfile": "name harbor-viewer\n", "graphics/harbor-viewer/files/a.patch": "a\n", "graphics/harbor-tools/Portfile": "name harbor-tools\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n", "devel/harbor-cli/Portfile": "name harbor-cli\nrevision 0\n", "graphics/harbor-viewer/Portfile": "name harbor-viewer\n", "graphics/harbor-viewer/files/a.patch": "a\n", "graphics/harbor-tools/Portfile": "name harbor-tools\n"})
 	testsupport.Git(t, branch.Worktree, "add", "--sparse", "-A")
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "base")
 	base := testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")
-	write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 4\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 4\n"})
 	branch.Base = model.ObjectID(base)
 	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 	require.NoError(t, err)

@@ -23,7 +23,7 @@ func TestAPlanReadsEachReleaseInItsOwnContext(t *testing.T) {
 	e := f.open(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "xdemo", Here: true})
 	require.NoError(t, err)
-	write(t, branch.Worktree, map[string]string{"devel/xdemo/Portfile": `PortSystem 1.0
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/xdemo/Portfile": `PortSystem 1.0
 name xdemo
 version 1
 categories devel

@@ -25,9 +25,9 @@ import (
 func contribution(t *testing.T, f fixture, fake *forgetest.GitHub) {
 	t.Helper()
 	testsupport.Git(t, f.upstream, "switch", "-q", "-c", "contrib")
-	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 1\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 1\n"})
 	commitAs(t, f.upstream, "New newcontrib@example.org", "Update jq")
-	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 1\n# docs\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 1\n# docs\n"})
 	commitAs(t, f.upstream, "New newcontrib@example.org", "jq: fix typo")
 	testsupport.Git(t, f.upstream, "update-ref", "refs/pull/34905/head", "contrib")
 	testsupport.Git(t, f.upstream, "switch", "-q", "master")
@@ -67,7 +67,7 @@ func TestReviewAppliesTheRulesAndRemembersWhatItFound(t *testing.T) {
 
 	// The contributor squashes and fixes the revision.
 	testsupport.Git(t, f.upstream, "switch", "-q", "-c", "contrib-2", "master")
-	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 0\n# docs\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 0\n# docs\n"})
 	commitAs(t, f.upstream, "New newcontrib@example.org", "jq: update to 1.8.1")
 	testsupport.Git(t, f.upstream, "update-ref", "refs/pull/34905/head", "contrib-2")
 	testsupport.Git(t, f.upstream, "switch", "-q", "master")
@@ -92,11 +92,11 @@ func TestReviewStartsAtThePullRequestsOwnBase(t *testing.T) {
 	e := f.open(t)
 	fake := f.withFork(t, e)
 	testsupport.Git(t, f.upstream, "switch", "-q", "-c", "ahead")
-	write(t, f.upstream, map[string]string{"lang/php/Portfile": "name php\nversion 8.5.1\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"lang/php/Portfile": "name php\nversion 8.5.1\n"})
 	testsupport.Git(t, f.upstream, "add", "lang/php/Portfile")
 	commitAs(t, f.upstream, "Someone someone@example.org", "php: new port")
 	testsupport.Git(t, f.upstream, "switch", "-q", "-c", "contrib")
-	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n", "sysutils/jqx/Portfile": "name jqx\nversion 1\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n", "sysutils/jqx/Portfile": "name jqx\nversion 1\n"})
 	testsupport.Git(t, f.upstream, "add", "sysutils/jqx/Portfile")
 	commitAs(t, f.upstream, "New newcontrib@example.org", "jq: update to 1.8.1")
 	testsupport.Git(t, f.upstream, "update-ref", "refs/pull/34905/head", "contrib")
@@ -152,7 +152,7 @@ func TestAdoptSomeonesPullRequestAndPushOnlyWhereGitHubAllows(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, again.Already)
 
-	write(t, adopted.Branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 0\n# docs\n"})
+	testsupport.WriteFiles(t, adopted.Branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 0\n# docs\n"})
 	testsupport.Git(t, adopted.Branch.Worktree, "commit", "-q", "-am", "jq: reset revision")
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: adopted.Branch, NoCheck: true})
 	require.NoError(t, err)
@@ -309,7 +309,7 @@ func TestAPullRequestIsAdoptedAtTheCommitReviewed(t *testing.T) {
 
 	// The author pushes again after the review.
 	testsupport.Git(t, f.upstream, "switch", "-q", "contrib")
-	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 1\n# docs, again\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 1\n# docs, again\n"})
 	commitAs(t, f.upstream, "New newcontrib@example.org", "jq: more docs")
 	testsupport.Git(t, f.upstream, "update-ref", "refs/pull/34905/head", "contrib")
 	testsupport.Git(t, f.upstream, "switch", "-q", "master")
@@ -337,7 +337,7 @@ func TestAnUntouchedAdoptedBranchIsRefreshed(t *testing.T) {
 	old := adopted.Head
 
 	testsupport.Git(t, f.upstream, "switch", "-q", "contrib")
-	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\nrevision 0\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\nrevision 0\n"})
 	commitAs(t, f.upstream, "New newcontrib@example.org", "jq: update to 1.8.2")
 	testsupport.Git(t, f.upstream, "update-ref", "refs/pull/34905/head", "contrib")
 	testsupport.Git(t, f.upstream, "switch", "-q", "master")
@@ -347,7 +347,7 @@ func TestAnUntouchedAdoptedBranchIsRefreshed(t *testing.T) {
 	require.NotEqual(t, old, head)
 
 	// An edit of the person's own holds it where it is.
-	write(t, adopted.Branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 1\n# mine\n"})
+	testsupport.WriteFiles(t, adopted.Branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 1\n# mine\n"})
 	_, err = e.RefreshAdopted(t.Context(), adopted.Branch, head)
 	require.ErrorContains(t, err, "pr-34905 has edits of its own beyond #34905's head "+old.Short())
 	require.ErrorContains(t, err, "dockhand check -b pr-34905 checks the branch as it is")
@@ -360,7 +360,7 @@ func TestAnUntouchedAdoptedBranchIsRefreshed(t *testing.T) {
 	require.Contains(t, testsupport.Git(t, adopted.Branch.Worktree, "show", "HEAD:textproc/jq/Portfile"), "version 1.8.2")
 
 	// A commit of the person's own holds it too.
-	write(t, adopted.Branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\nrevision 0\n# mine\n"})
+	testsupport.WriteFiles(t, adopted.Branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\nrevision 0\n# mine\n"})
 	testsupport.Git(t, adopted.Branch.Worktree, "commit", "-q", "-am", "jq: a note of mine")
 	_, err = e.RefreshAdopted(t.Context(), moved, model.ObjectID(old))
 	require.ErrorContains(t, err, "pr-34905 has commits of its own beyond #34905's head "+head.Short())

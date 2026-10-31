@@ -69,7 +69,7 @@ func TestABaselineUsesTheCheckedBase(t *testing.T) {
 	checkHead(t, e, branch)
 	checked, err := e.Branch(t.Context(), branch.ID)
 	require.NoError(t, err)
-	write(t, f.upstream, map[string]string{"devel/other/Portfile": "name other\nversion 1\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"devel/other/Portfile": "name other\nversion 1\n"})
 	testsupport.Git(t, f.upstream, "add", "devel/other/Portfile")
 	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "other: new port")
 	_, err = e.Rebase(t.Context(), checked)
@@ -114,7 +114,7 @@ func TestABaselineOfANamedCheck(t *testing.T) {
 	first := checkHead(t, e, branch)
 	checked, err := e.Branch(t.Context(), branch.ID)
 	require.NoError(t, err)
-	write(t, f.upstream, map[string]string{"devel/other/Portfile": "name other\nversion 1\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"devel/other/Portfile": "name other\nversion 1\n"})
 	testsupport.Git(t, f.upstream, "add", "devel/other/Portfile")
 	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "other: new port")
 	_, err = e.Rebase(t.Context(), checked)
@@ -379,7 +379,7 @@ func TestABaselineIsOfferedOnlyWhereTheBuildReadsTheBranch(t *testing.T) {
 	require.Equal(t, []string{"jq", "harbor-cli", "gnome-voice"}, kept)
 
 	// Where _resources changes, every port's build reads it.
-	write(t, branch.Worktree, map[string]string{"_resources/port1.0/group/harbor-1.0.tcl": "# harbor\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"_resources/port1.0/group/harbor-1.0.tcl": "# harbor\n"})
 	testsupport.Git(t, branch.Worktree, "add", "_resources/port1.0/group/harbor-1.0.tcl")
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "harbor 1.0: new PortGroup")
 	capture, err = e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
@@ -400,7 +400,7 @@ func TestABaselineLeavesOutWhatMastersBuildReadsTheSame(t *testing.T) {
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "libharbor-only", Here: true})
 	require.NoError(t, err)
-	write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
 	testsupport.Git(t, branch.Worktree, "add", "devel/libharbor/Portfile")
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "libharbor: update to 3")
 	usePorts(e, namedGraph{

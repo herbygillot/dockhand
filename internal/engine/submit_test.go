@@ -145,7 +145,7 @@ func TestABranchThatUpdatesAPortIsAnEnhancement(t *testing.T) {
 	// moves jq's version.
 	hand, err := e.Start(t.Context(), StartRequest{Name: "jq-by-hand"})
 	require.NoError(t, err)
-	write(t, hand.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.9\n"})
+	testsupport.WriteFiles(t, hand.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.9\n"})
 	testsupport.Git(t, hand.Worktree, "add", "--sparse", "textproc/jq/Portfile")
 	testsupport.Git(t, hand.Worktree, "commit", "-q", "-m", "jq: update to 1.9")
 	tree := model.ObjectID(strings.TrimSpace(testsupport.Git(t, hand.Worktree, "rev-parse", "HEAD^{tree}")))
@@ -184,7 +184,7 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	require.NoError(t, err)
 
 	// Review asks for a change; it is edited in and tidied into the commit.
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# reviewed\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# reviewed\n"})
 	tidy, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
 	require.NoError(t, err)
 	_, err = e.ApplyTidy(t.Context(), tidy)
@@ -218,7 +218,7 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 
 	// Someone edits the description on GitHub; dockhand leaves it be.
 	fake.PRs[first.PullRequest.Ref.Number].Body = "My own words.\n"
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# reviewed twice\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# reviewed twice\n"})
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: note the second review")
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
@@ -229,7 +229,7 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	// And someone else pushes to the branch before this submit runs.
 	other := filepath.Join(t.TempDir(), "other")
 	testsupport.Git(t, t.TempDir(), "clone", "-q", "-b", "dockhand/jq-update", fake.Fork, other)
-	write(t, other, map[string]string{"README": "theirs\n"})
+	testsupport.WriteFiles(t, other, map[string]string{"README": "theirs\n"})
 	testsupport.Git(t, other, "add", "README")
 	testsupport.Git(t, other, "commit", "-q", "-m", "their change")
 	testsupport.Git(t, other, "push", "-q", "origin", "dockhand/jq-update")
@@ -246,7 +246,7 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	theirs := strings.TrimSpace(testsupport.Git(t, other, "rev-parse", "HEAD"))
 	testsupport.Git(t, branch.Worktree, "fetch", "-q", fake.Fork, "dockhand/jq-update")
 	testsupport.Git(t, branch.Worktree, "reset", "-q", "--hard", theirs)
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# on theirs\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# on theirs\n"})
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: on their change")
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
@@ -261,13 +261,13 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	// MacPorts' one commit a change asks for, it goes too: the branch was
 	// at their commit (#35220, the Vx language port session at a0470412).
 	testsupport.Git(t, other, "pull", "-q", "--rebase=false", "origin", "dockhand/jq-update")
-	write(t, other, map[string]string{"README": "theirs, again\n"})
+	testsupport.WriteFiles(t, other, map[string]string{"README": "theirs, again\n"})
 	testsupport.Git(t, other, "commit", "-q", "-am", "their second change")
 	testsupport.Git(t, other, "push", "-q", "origin", "dockhand/jq-update")
 	again := strings.TrimSpace(testsupport.Git(t, other, "rev-parse", "HEAD"))
 	testsupport.Git(t, branch.Worktree, "fetch", "-q", fake.Fork, "dockhand/jq-update")
 	testsupport.Git(t, branch.Worktree, "reset", "-q", "--hard", again)
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# amended over theirs\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# amended over theirs\n"})
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-a", "--amend", "-m", "jq: amended from theirs")
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
@@ -284,14 +284,14 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	// D-S1, herbyg-test/macports-ports#84).
 	ours := strings.TrimSpace(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"))
 	testsupport.Git(t, other, "pull", "-q", "--rebase=false", "origin", "dockhand/jq-update")
-	write(t, other, map[string]string{"README": "theirs, a third time\n"})
+	testsupport.WriteFiles(t, other, map[string]string{"README": "theirs, a third time\n"})
 	testsupport.Git(t, other, "commit", "-q", "-am", "their third change")
 	testsupport.Git(t, other, "push", "-q", "origin", "dockhand/jq-update")
 	third := strings.TrimSpace(testsupport.Git(t, other, "rev-parse", "HEAD"))
 	testsupport.Git(t, branch.Worktree, "fetch", "-q", fake.Fork, "dockhand/jq-update")
 	testsupport.Git(t, branch.Worktree, "reset", "-q", "--hard", third)
 	testsupport.Git(t, branch.Worktree, "reset", "-q", "--hard", ours)
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# amended over ours\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# amended over ours\n"})
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-a", "--amend", "-m", "jq: amended from ours")
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
@@ -752,7 +752,7 @@ func TestSubmitSaysTheNewPortsTheBranchAdds(t *testing.T) {
 	e, _ := f.withPreparer(t)
 	f.withFork(t, e)
 	branch := committedUpdate(t, e)
-	write(t, branch.Worktree, map[string]string{"devel/harbor/Portfile": "name harbor\nversion 1.0\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/harbor/Portfile": "name harbor\nversion 1.0\n"})
 	testsupport.Git(t, branch.Worktree, "add", "--sparse", "devel/harbor/Portfile")
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "harbor: new port, version 1.0")
 	harbor := macports.PortInfo{Name: "harbor", Version: "1.0", Options: map[string]string{"description": "{Harbor tools for the command line}", "homepage": "https://harbor.example/", "license": "{MIT Apache-2}"}}
@@ -890,7 +890,7 @@ func TestSubmitSaysACheckWouldReuseTheEarlierOne(t *testing.T) {
 	branch := committedUpdate(t, e)
 	checked(t, e, branch, model.OutcomePassed, model.OutcomePassed)
 	portfile := filepath.Join(branch.Worktree, "textproc/jq/Portfile")
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": read(t, portfile) + "# a later commit\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": read(t, portfile) + "# a later commit\n"})
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: a later commit")
 
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch})
@@ -908,7 +908,7 @@ func TestSubmitHoldsWhatsMarkedUnconfirmed(t *testing.T) {
 	f.withFork(t, e)
 	branch := committedUpdate(t, e)
 	portfile := filepath.Join(branch.Worktree, "textproc/jq/Portfile")
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": read(t, portfile) + "# dockhand: unconfirmed, from the forge's license detection\nlicense MIT\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": read(t, portfile) + "# dockhand: unconfirmed, from the forge's license detection\nlicense MIT\n"})
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: license")
 
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
@@ -1074,7 +1074,7 @@ func TestADraftSubmissionReturnsAReadyPullRequestToDraft(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, recordedPullRequest(t, e, branch).Draft)
 
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\n"})
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: update to 1.8.2")
 	checked(t, e, branch, model.OutcomeFailed, model.OutcomePassed)
 	draft, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Draft: true})
@@ -1148,7 +1148,7 @@ func TestABranchCarryingMastersCommitsIsntSubmitted(t *testing.T) {
 	e, _ := f.withPreparer(t)
 	f.withFork(t, e)
 	branch := committedUpdate(t, e)
-	write(t, f.upstream, map[string]string{"lang/sbcl/Portfile": "name sbcl\nversion 2.6.10\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"lang/sbcl/Portfile": "name sbcl\nversion 2.6.10\n"})
 	testsupport.Git(t, f.upstream, "add", ".")
 	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "lang/sbcl: update to sbcl-2.6.10")
 	// The person fetches master and rebases onto it with Git, as another

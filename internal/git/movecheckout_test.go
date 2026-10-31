@@ -15,6 +15,7 @@ import (
 // an earlier commit, leaving the paths outside it outside, and refuses,
 // changing nothing, where a local change would be overwritten.
 func TestMoveCheckoutTakesASparseCheckoutBack(t *testing.T) {
+	t.Parallel()
 	root := filepath.Join(t.TempDir(), "ports")
 	for name, text := range map[string]string{"a/Portfile": "a\n", "b/Portfile": "b\n", "c/Portfile": "c\n"} {
 		require.NoError(t, os.MkdirAll(filepath.Join(root, filepath.Dir(name)), 0o755))
@@ -34,7 +35,7 @@ func TestMoveCheckoutTakesASparseCheckoutBack(t *testing.T) {
 	testsupport.Git(t, worktree, "rebase", "-q", "master")
 	after := testsupport.Git(t, worktree, "rev-parse", "HEAD")
 	require.NoFileExists(t, filepath.Join(worktree, "b/Portfile"))
-	repo, err := git.Open(t.Context(), worktree, git.Program{Env: os.Environ()})
+	repo, err := git.Open(t.Context(), worktree, git.Program{Env: testsupport.GitEnv(t)})
 	require.NoError(t, err)
 
 	require.NoError(t, os.WriteFile(filepath.Join(worktree, "a/Portfile"), []byte("mine\n"), 0o644))

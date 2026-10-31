@@ -31,12 +31,12 @@ func TestABranchWhoseChangesLandedIsOnMaster(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, status.OnMaster, "it changes nothing")
 
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\nconfigure.cxx_standard 2014\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\nconfigure.cxx_standard 2014\n"})
 	status, err = e.BranchStatus(t.Context(), branch)
 	require.NoError(t, err)
 	require.Empty(t, status.OnMaster, "master doesn't have it")
 
-	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\nconfigure.cxx_standard 2014\n", "devel/other/Portfile": "name other\n"})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\nconfigure.cxx_standard 2014\n", "devel/other/Portfile": "name other\n"})
 	testsupport.Git(t, f.upstream, "add", "-A")
 	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "jq: fix build on macOS 12 and older")
 	status, err = e.BranchStatus(t.Context(), branch)
@@ -48,7 +48,7 @@ func TestABranchWhoseChangesLandedIsOnMaster(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, master, status.OnMaster)
 
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\nconfigure.cxx_standard 2017\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\nconfigure.cxx_standard 2017\n"})
 	status, err = e.BranchStatus(t.Context(), branch)
 	require.NoError(t, err)
 	require.Empty(t, status.OnMaster, "master has another change")
@@ -177,7 +177,7 @@ func TestAPassingHostCheckNamesTheWiderCheck(t *testing.T) {
 	raised.Evidence.Plan.Profile = "host"
 
 	portfile := read(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile"))
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": portfile + "\nvariant docs description {Docs} {\n    patchfiles-append docs.patch\n}\n", "textproc/jq/files/docs.patch": "--- a\n+++ b\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": portfile + "\nvariant docs description {Docs} {\n    patchfiles-append docs.patch\n}\n", "textproc/jq/files/docs.patch": "--- a\n+++ b\n"})
 	testsupport.Git(t, branch.Worktree, "add", "-A")
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "jq: update to 1.8.1, with docs")
 	status, err = e.BranchStatus(t.Context(), branch)

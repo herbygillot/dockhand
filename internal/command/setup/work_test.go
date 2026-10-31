@@ -90,6 +90,7 @@ func TestCommandsRefuseADirectoryThatIsNotAPortsTree(t *testing.T) {
 func TestSetupRefusesAnOldGit(t *testing.T) {
 	t.Parallel()
 	w := cmdtest.NewWorld(t)
+	require.NoError(t, os.Remove(filepath.Join(w.Home, ".dockhand", "dockhand.db")), "with no database, a record would make one")
 	old := filepath.Join(w.Home, "bin", "git")
 	require.NoError(t, os.MkdirAll(filepath.Dir(old), 0o755))
 	testsupport.WriteExecutable(t, old, "#!/bin/sh\necho 'git version 2.39.5 (Apple Git-154)'\n")

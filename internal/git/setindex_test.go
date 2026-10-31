@@ -16,6 +16,7 @@ import (
 // are, and in a sparse checkout the paths outside it keep their
 // skip-worktree bits instead of reading as deleted.
 func TestSetIndexRestoresARecordedIndexInASparseCheckout(t *testing.T) {
+	t.Parallel()
 	root := filepath.Join(t.TempDir(), "ports")
 	for name, text := range map[string]string{"a/Portfile": "a\n", "a/gone": "gone\n", "b/Portfile": "b\n"} {
 		require.NoError(t, os.MkdirAll(filepath.Join(root, filepath.Dir(name)), 0o755))
@@ -32,7 +33,7 @@ func TestSetIndexRestoresARecordedIndexInASparseCheckout(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(worktree, "a/Portfile"), []byte("staged\n"), 0o644))
 	testsupport.Git(t, worktree, "add", "a/Portfile")
 	testsupport.Git(t, worktree, "rm", "-q", "--cached", "a/gone")
-	repo, err := git.Open(t.Context(), worktree, git.Program{Env: os.Environ()})
+	repo, err := git.Open(t.Context(), worktree, git.Program{Env: testsupport.GitEnv(t)})
 	require.NoError(t, err)
 	recorded, err := repo.IndexTree(t.Context())
 	require.NoError(t, err)

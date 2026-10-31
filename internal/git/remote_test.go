@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,12 +14,11 @@ import (
 )
 
 func TestPushUsesExplicitExpectedHeadAndNeverPushesTags(t *testing.T) {
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Parallel()
 	repo := snapshotRepo(t)
-	remote := filepath.Join(t.TempDir(), "remote.git")
-	out, err := exec.CommandContext(t.Context(), "git", "init", "--bare", "-q", remote).CombinedOutput()
-	require.NoError(t, err, "%s", out)
+	parent := t.TempDir()
+	remote := filepath.Join(parent, "remote.git")
+	testsupport.Git(t, parent, "init", "--bare", "-q", remote)
 	a := snapshotCommit(t, repo, snapshotTree(t, repo, snapshotBlob(t, repo, "file", "one", 0100644)))
 	b := snapshotCommit(t, repo, snapshotTree(t, repo, snapshotBlob(t, repo, "file", "two", 0100644)))
 	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/tags/unrelated", Desired: git.RefValue{Exists: true, Object: a}}}))
@@ -32,15 +30,14 @@ func TestPushUsesExplicitExpectedHeadAndNeverPushesTags(t *testing.T) {
 	head, err := repo.RemoteHead(t.Context(), remote, "candidate")
 	require.NoError(t, err)
 	require.Equal(t, b, head.Object)
-	out, err = exec.CommandContext(t.Context(), "git", "--git-dir", remote, "for-each-ref", "--format=%(refname)").CombinedOutput()
-	require.NoError(t, err)
-	require.Equal(t, "refs/heads/candidate\n", string(out))
+	require.Equal(t, "refs/heads/candidate", testsupport.Git(t, remote, "for-each-ref", "--format=%(refname)"))
 }
 
 // A branch's commits are listed with whether master has their change, by
 // patch-id, as git cherry reads them: one picked onto master under
 // another commit is master's, and one it lacks is the branch's own.
 func TestCherryCountsWhatMasterHasOfABranch(t *testing.T) {
+	t.Parallel()
 	repo, _ := portsCheckout(t)
 	dir := repo.Root
 	testsupport.Git(t, dir, "switch", "-q", "-c", "dockhand/bump/jq-4f2a")
@@ -71,12 +68,11 @@ func TestCherryCountsWhatMasterHasOfABranch(t *testing.T) {
 // and ssh's own words kept after it (the Vx port's field testing,
 // 2026-10-04).
 func TestAnSSHRefusalIsSaidPlainly(t *testing.T) {
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Parallel()
 	ssh := filepath.Join(t.TempDir(), "ssh")
 	testsupport.WriteExecutable(t, ssh, "#!/bin/sh\necho 'git@github.com: Permission denied (publickey).' >&2\nexit 255\n")
-	t.Setenv("GIT_SSH_COMMAND", ssh)
 	repo := snapshotRepo(t)
+	repo.Env = append(repo.Env, "GIT_SSH_COMMAND="+ssh)
 	_, err := repo.RemoteHead(t.Context(), "git@github.com:someone/macports-ports.git", "candidate")
 	require.ErrorIs(t, err, git.ErrSSHRefused)
 	require.ErrorContains(t, err, "is your key loaded? ssh-add -l")
@@ -87,8 +83,7 @@ func TestAnSSHRefusalIsSaidPlainly(t *testing.T) {
 // a terminal, is said plainly, with what to do, and git's own words kept
 // after it (the rc6 full stage, D-C6).
 func TestMissingHTTPSCredentialsAreSaidPlainly(t *testing.T) {
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
 		w.WriteHeader(http.StatusUnauthorized)
@@ -107,15 +102,14 @@ func TestMissingHTTPSCredentialsAreSaidPlainly(t *testing.T) {
 // kept, the option added, and with an answer at hand it asks as ever (the
 // docs dig's I46).
 func TestUnattendedSSHNeverAsks(t *testing.T) {
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Parallel()
 	dir := t.TempDir()
 	ssh := filepath.Join(dir, "ssh")
 	// Asked in batch mode, it refuses as ssh does a key it can't unlock;
 	// otherwise it waits for a passphrase nobody types.
 	testsupport.WriteExecutable(t, ssh, "#!/bin/sh\ncase \"$*\" in *BatchMode=yes*) echo 'git@github.com: Permission denied (publickey).' >&2; exit 255;; esac\necho asked > "+filepath.Join(dir, "asked")+"\nsleep 30\n")
-	t.Setenv("GIT_SSH_COMMAND", ssh)
 	repo := snapshotRepo(t)
+	repo.Env = append(repo.Env, "GIT_SSH_COMMAND="+ssh)
 
 	unattended := *repo
 	unattended.Env = git.Unattended(t.Context(), repo.Program, repo.Root)
@@ -125,12 +119,11 @@ func TestUnattendedSSHNeverAsks(t *testing.T) {
 	require.ErrorContains(t, err, "git@github.com: Permission denied (publickey)")
 	require.NoFileExists(t, filepath.Join(dir, "asked"))
 
-	t.Setenv("GIT_SSH_COMMAND", "")
 	configured := snapshotRepo(t)
 	testsupport.Git(t, configured.Root, "config", "core.sshCommand", ssh+" -i key")
-	env := git.Unattended(t.Context(), git.Program{Env: os.Environ()}, configured.Root)
+	env := git.Unattended(t.Context(), configured.Program, configured.Root)
 	require.Contains(t, env, "GIT_SSH_COMMAND="+ssh+" -i key -o BatchMode=yes", "core.sshCommand is kept")
 
-	t.Setenv("GIT_SSH", ssh)
-	require.NotContains(t, strings.Join(git.Unattended(t.Context(), git.Program{Env: os.Environ()}, configured.Root), "\n"), "BatchMode", "GIT_SSH's program is the person's")
+	withSSH := git.Program{Env: append(testsupport.GitEnv(t), "GIT_SSH="+ssh)}
+	require.NotContains(t, strings.Join(git.Unattended(t.Context(), withSSH, configured.Root), "\n"), "BatchMode", "GIT_SSH's program is the person's")
 }

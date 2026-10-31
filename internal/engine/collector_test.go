@@ -19,7 +19,7 @@ func TestAnUpdatesAssessmentChecksItsPatches(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	patch := "--- src/main.c\n+++ src/main.c\n@@ -1 +1 @@\n-int main;\n+int main(void);\n"
-	write(t, f.upstream, map[string]string{"textproc/jq/files/patch-main.diff": patch})
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/files/patch-main.diff": patch})
 	testsupport.Git(t, f.upstream, "add", "-A")
 	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "add patch")
 	f.options.Readings = t.TempDir()

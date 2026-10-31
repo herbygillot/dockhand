@@ -36,7 +36,7 @@ func TestARenamedBranchKeepsItsRecordAndItsPullRequest(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, again.Already)
 
-	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nchecksums sha256 0000\n# docs\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nchecksums sha256 0000\n# docs\n"})
 	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: add a note")
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: adoption.Branch, NoCheck: true})
 	require.NoError(t, err)

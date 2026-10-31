@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/store/sqlite"
+	"github.com/herbygillot/dockhand/internal/store/sqlite/sqlitetest"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -49,7 +50,7 @@ func newWorld(t *testing.T) world {
 	tree := testsupport.Git(t, root, "rev-parse", "HEAD^{tree}")
 	repo, err := git.Open(t.Context(), root, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
-	s, err := sqlite.Open(t.Context(), filepath.Join(filepath.Dir(root), "dockhand.db"), sqlite.Options{})
+	s, err := sqlite.Open(t.Context(), sqlitetest.Fresh(t, filepath.Join(filepath.Dir(root), "dockhand.db")), sqlite.Options{})
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	repository, err := s.Register(t.Context(), repo.CommonDir)
