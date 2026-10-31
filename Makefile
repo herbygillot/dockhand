@@ -19,7 +19,7 @@ ifneq ($(strip $(VERSION)),)
 GO_LDFLAGS += -X github.com/herbygillot/dockhand/internal/buildinfo.Version=$(strip $(VERSION))
 endif
 
-.PHONY: build test test-race vet lint fmt-check path-check deadcode mutate vendor vendor-check acceptance acceptance-selftest test-corpus clean
+.PHONY: build test test-race vet lint fmt-check path-check deadcode mutate vendor vendor-check acceptance acceptance-selftest test-corpus gate clean
 
 build:
 	$(GO) build $(if $(strip $(GO_LDFLAGS)),-ldflags "$(GO_LDFLAGS)") -o "$(BINARY)" ./cmd/dockhand
@@ -124,11 +124,21 @@ acceptance-selftest:
 	tools/acceptance/selftest.sh
 
 # Replay the corpus's version bumps through this build's update, against
-# MacPorts' own PortGroups (tools/corpus). It needs the network.
+# MacPorts' own PortGroups (tools/corpus). It needs the network. It takes
+# its turn at the Mac's heavy work (tools/heavy).
 test-corpus:
-	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+	@tools/heavy sh -c 'tmp=$$(mktemp -d) && trap "rm -rf \"$$tmp\"" EXIT && \
 	$(GO) build -o "$$tmp/dockhand" ./cmd/dockhand && $(GO) build -o "$$tmp/corpus" ./tools/corpus && \
-	env -u MACPORTS_TREE "$$tmp/corpus" replay -dockhand "$$tmp/dockhand"
+	env -u MACPORTS_TREE "$$tmp/corpus" replay -dockhand "$$tmp/dockhand"'
+
+# The checks a commit passes before it lands, in CI's order, as one turn
+# at the Mac's heavy work (tools/heavy). The tests use MacPorts' own
+# port-tclsh, as CI does, where DOCKHAND_TEST_MACPORTS_TCLSH doesn't name
+# another.
+gate:
+	@tools/heavy sh -c '$(MAKE) fmt-check && $(MAKE) lint && $(MAKE) vendor-check && $(MAKE) deadcode && $(MAKE) path-check && \
+	$(GO) vet ./... && DOCKHAND_TEST_MACPORTS_TCLSH=$${DOCKHAND_TEST_MACPORTS_TCLSH:-/opt/local/bin/port-tclsh} $(GO) test ./... && \
+	$(MAKE) acceptance-selftest'
 
 clean:
 	rm -f -- "$(BINARY)"
