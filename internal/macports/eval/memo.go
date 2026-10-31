@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -231,7 +230,7 @@ func (s *Session) remembered(ctx context.Context, source macports.Context, selec
 	ports, why := s.memo.lookup(path, checked, s.runtime, s.bootstrap)
 	if why == "" {
 		s.memo.hits.Add(1)
-		return macports.Snapshot{Source: source.Source(), Target: source.Target(), Platform: s.runtime.Platform, Runtime: s.runtime, Ports: ports, Root: source.Root(), ObservedAt: time.Now().UTC()}, nil
+		return macports.Snapshot{Source: source.Source(), Target: source.Target(), Platform: s.runtime.Platform, Runtime: s.runtime, Ports: ports, Root: source.Root()}, nil
 	}
 	progress.DebugReport(ctx, "Evaluating %s afresh: %s", source.Target().Portfile, why)
 	observation, err := evaluateIn(ctx, s.session, s.runtime, checked, source, nil, selectedOnly, true)
