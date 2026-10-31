@@ -360,3 +360,65 @@ func TestAnUncertainEditRecordIsReadBack(t *testing.T) {
 		require.Empty(t, recorded)
 	}
 }
+
+// anotherDatabasesCheckpoint names a checkpoint ref as a copy of the
+// database run on this checkout would, holding a commit of its own.
+func anotherDatabasesCheckpoint(t *testing.T, worktree, name string) string {
+	t.Helper()
+	commit := testsupport.Git(t, worktree, "commit-tree", "HEAD^{tree}", "-m", "another database's")
+	testsupport.Git(t, worktree, "update-ref", "refs/dockhand/checkpoints/"+name, commit)
+	return commit
+}
+
+// A checkpoint skips a name another database gave on this checkout, and
+// recovery drops only the refs that hold what its own checkpoint kept,
+// where a copy of the database handed out its original's names again and
+// tidy failed with "reference already exists" (rc2's full stage).
+func TestACheckpointSkipsANameAnotherDatabaseGave(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, plan := updated(t, e)
+	e.stopAt = stopAt("prepared")
+	_, err := e.ApplyTidy(t.Context(), plan)
+	require.ErrorIs(t, err, errStopped)
+	require.Equal(t, model.CheckpointPrepared, checkpointNumbered(t, e, 1).State)
+	// Another database names tidy-1, and its index, and rebase-2.
+	others := map[string]string{}
+	for _, name := range []string{"tidy-1", "tidy-1-index", "rebase-2"} {
+		others[name] = anotherDatabasesCheckpoint(t, branch.Worktree, name)
+	}
+
+	restarted, _ := f.withPreparer(t)
+	result, err := restarted.ApplyTidy(t.Context(), plan)
+	require.NoError(t, err)
+	require.Equal(t, "tidy-3", result.Checkpoint.Name(), "the names the checkout has are skipped")
+	require.Equal(t, model.CheckpointAbandoned, checkpointNumbered(t, restarted, 1).State)
+	for name, commit := range others {
+		require.Equal(t, commit, testsupport.Git(t, branch.Worktree, "rev-parse", "refs/dockhand/checkpoints/"+name), "%s, another database's, stays", name)
+	}
+}
+
+// A name another process takes between a checkpoint's recording and its
+// change is said as another's, nothing having moved.
+func TestACheckpointNameTakenInBetweenIsSaid(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, plan := updated(t, e)
+	e.stopAt = func(step string) error {
+		if step == "prepared" {
+			anotherDatabasesCheckpoint(t, branch.Worktree, "tidy-1")
+		}
+		return nil
+	}
+	_, err := e.ApplyTidy(t.Context(), plan)
+	require.ErrorContains(t, err, "tidy-1 is another dockhand's checkpoint on this checkout, so nothing was changed; run again")
+	require.Equal(t, string(branch.Base), testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"), "nothing moved")
+	require.Equal(t, model.CheckpointAbandoned, checkpointNumbered(t, e, 1).State)
+
+	e.stopAt = nil
+	result, err := e.ApplyTidy(t.Context(), plan)
+	require.NoError(t, err)
+	require.Equal(t, "tidy-2", result.Checkpoint.Name())
+}

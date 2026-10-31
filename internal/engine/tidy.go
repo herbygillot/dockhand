@@ -1384,6 +1384,9 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 				{Name: checkpoint.IndexRef(), Desired: git.RefValue{Exists: true, Object: keptIndex}},
 				{Name: "refs/heads/" + plan.Branch.Name, Expected: git.RefValue{Exists: true, Object: plan.Head}, Desired: git.RefValue{Exists: true, Object: parent}},
 			}); err != nil {
+				if taken := history.TakenName(checkpoint, err); taken != nil {
+					return taken
+				}
 				return fmt.Errorf("%w; nothing was changed: %w", ErrStalePlan, err)
 			}
 			return nil

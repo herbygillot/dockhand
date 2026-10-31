@@ -143,8 +143,8 @@ func (t *tx) AddCheckpoint(c model.Checkpoint) error {
 	if err != nil {
 		return err
 	}
-	if c.Number != next {
-		return fmt.Errorf("%w: checkpoint %d is not the next, %d", store.ErrConflict, c.Number, next)
+	if c.Number < next {
+		return fmt.Errorf("%w: checkpoint %d is below the next, %d", store.ErrConflict, c.Number, next)
 	}
 	_, err = t.exec("INSERT INTO checkpoints(repository_id, "+checkpointColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
 		t.repo, c.Number, c.Kind, c.State, c.Branch, c.Before, c.After, c.BaseBefore, c.BaseAfter, c.Index, millis(c.At), nullableMillis(c.RestoredAt))
