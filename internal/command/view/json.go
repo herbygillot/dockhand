@@ -364,15 +364,17 @@ type pullRequestJSON struct {
 // mergeJSON is a pull request's merge fitness (macports.MergeFitness):
 // its ports' maintainers and how each stands, the ports whose maintainers
 // aren't read yet, when it was opened, whom its description mentions, who
-// approved it, and when the maintainer timeout ends, with whether it has.
+// approved it, whether it's a draft, and when the maintainer timeout ends,
+// with whether it has.
 type mergeJSON struct {
 	Ports         []portMergeJSON `json:"ports"`
 	Unread        []string        `json:"maintainers_unread,omitempty"`
 	OpenedAt      *time.Time      `json:"opened_at,omitempty"`
-	Notified      []string        `json:"notified"`
+	Mentioned     []string        `json:"mentioned"`
 	ApprovedBy    []string        `json:"approved_by"`
 	Waiting       []string        `json:"waiting"`
 	TimeoutEndsAt *time.Time      `json:"timeout_ends_at,omitempty"`
+	Draft         bool            `json:"draft"`
 	TimeoutPassed bool            `json:"timeout_passed"`
 	TimeoutLeft   int64           `json:"timeout_left_seconds,omitempty"`
 }
@@ -394,7 +396,7 @@ func mergeView(s engine.BranchStatus) *mergeJSON {
 	if merge == nil {
 		return nil
 	}
-	viewed := &mergeJSON{Ports: []portMergeJSON{}, Unread: s.MaintainersUnread, Notified: NonNil(merge.Notified), ApprovedBy: NonNil(merge.Approvers), Waiting: NonNil(merge.Waiting()), TimeoutPassed: merge.Passed(), TimeoutLeft: int64(merge.Left.Seconds())}
+	viewed := &mergeJSON{Ports: []portMergeJSON{}, Unread: s.MaintainersUnread, Mentioned: NonNil(merge.Mentioned), Draft: merge.Draft, ApprovedBy: NonNil(merge.Approvers), Waiting: NonNil(merge.Waiting()), TimeoutPassed: merge.Passed(), TimeoutLeft: int64(merge.Left.Seconds())}
 	if !merge.Opened.IsZero() {
 		opened := merge.Opened
 		viewed.OpenedAt = &opened

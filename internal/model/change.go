@@ -92,7 +92,7 @@ type SubportChange struct {
 	// not to be dropped silently.
 	Unstable []FieldChange `json:",omitempty"`
 	// Maintainers is its maintainers option as evaluated, a Tcl list, at
-	// the revision, or the base for a subport removed; empty for a record
+	// the base, or the revision for a subport added; empty for a record
 	// made before it was kept.
 	Maintainers string `json:",omitempty"`
 }

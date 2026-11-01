@@ -596,7 +596,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 
 	input := guestprogram.Input{Protocol: guestprogram.Protocol, Prefix: macports.DefaultPrefix,
 		Platform: job.Environment.Platform, Tests: string(job.Plan.Tests), TestTimeout: int(p.testTimeout() / time.Second),
-		BuildTimeout: int(p.buildTimeout() / time.Second), LintTimeout: int(guestprogram.LintTimeout / time.Second)}
+		BuildTimeout: int(p.buildTimeout() / time.Second), LintTimeout: int(guestprogram.LintTimeout / time.Second), Settings: "providers.tart"}
 	if input.Tests == "" {
 		input.Tests = string(model.TestsDeclared)
 	}

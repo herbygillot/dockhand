@@ -11,12 +11,17 @@ import (
 )
 
 // mergeRowWords are what a branch's row says of its pull request's merge,
-// after its review and CI: when MacPorts' maintainer timeout ends, or that
-// it has, where a port waits on it; nothing otherwise.
+// after its review and CI: that it's a draft, which no one merges; else
+// when MacPorts' maintainer timeout ends, or that it has, where a port
+// waits on it; nothing otherwise.
 func mergeRowWords(s engine.BranchStatus) string {
 	merge := s.Merge
 	switch {
-	case merge == nil || merge.Until.IsZero():
+	case merge == nil:
+		return ""
+	case merge.Draft:
+		return ", draft"
+	case merge.Until.IsZero():
 		return ""
 	case merge.Passed():
 		return ", maintainer timeout passed"
@@ -35,8 +40,11 @@ func leftWords(left time.Duration) string {
 
 // MergeLines are what status details of an open pull request's merge,
 // a line each: each port's maintainers and how it stands, whom the
-// description notified, who approved it, and when MacPorts' 72-hour
-// maintainer timeout ends; none where there's no open pull request.
+// description mentions, who approved it, and when MacPorts' 72-hour
+// maintainer timeout ends, or that it's a draft; none where there's no
+// open pull request. Who was notified is said as what was read, the
+// description's mentions, never that a maintainer wasn't: MacPorts' bot
+// notifies them as it opens, in a comment that isn't read.
 func MergeLines(s engine.BranchStatus) []string {
 	merge := s.Merge
 	if merge == nil {
@@ -47,17 +55,21 @@ func MergeLines(s engine.BranchStatus) []string {
 		lines = append(lines, port.Port+": "+portMergeWords(port))
 	}
 	if len(s.MaintainersUnread) > 0 {
-		lines = append(lines, prose.And(s.MaintainersUnread)+": maintainers not read yet; dockhand check --plan reads them")
+		lines = append(lines, unreadWords(s))
 	}
-	if len(merge.Notified) > 0 {
-		lines = append(lines, "Notified "+prose.And(handles(merge.Notified))+", in the description")
+	if len(merge.Mentioned) > 0 {
+		lines = append(lines, "Mentioned in the description: "+prose.And(handles(merge.Mentioned)))
 	} else {
-		lines = append(lines, "The description mentions no one")
+		lines = append(lines, "No one is mentioned in the description")
 	}
 	if len(merge.Approvers) > 0 {
 		lines = append(lines, "Approved by "+prose.And(handles(merge.Approvers)))
 	}
 	switch {
+	case merge.Draft && len(merge.Waiting()) > 0:
+		lines = append(lines, fmt.Sprintf("A draft, so no one merges it yet; once it's ready, MacPorts' %d-hour maintainer timeout is counted from its opening", hours()))
+	case merge.Draft:
+		lines = append(lines, "A draft, so no one merges it yet")
 	case !merge.Until.IsZero() && merge.Passed():
 		lines = append(lines, fmt.Sprintf("MacPorts' %d-hour maintainer timeout ended %s, so another committer may merge it", hours(), timeWords(merge.Until)))
 	case !merge.Until.IsZero():
@@ -68,6 +80,20 @@ func MergeLines(s engine.BranchStatus) []string {
 		lines = append(lines, "No port waits on MacPorts' maintainer timeout")
 	}
 	return lines
+}
+
+// unreadWords say the ports whose maintainers aren't read: neither a
+// change record nor master's cached port index has them, as a new port's
+// aren't until its record is made. For the person's own branch the line
+// names what reads them; an adopted branch's Portfiles are another's,
+// which nothing evaluates unattended (engine.OthersPortfiles), so there
+// it names nothing.
+func unreadWords(s engine.BranchStatus) string {
+	words := prose.And(s.MaintainersUnread) + ": maintainers not read yet"
+	if _, others := engine.OthersPortfiles(s.Branch); others {
+		return words
+	}
+	return words + "; dockhand check --plan reads them"
 }
 
 // portMergeWords are a port's maintainers and how it stands for the merge:

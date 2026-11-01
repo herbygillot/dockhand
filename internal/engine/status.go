@@ -135,9 +135,10 @@ type BranchStatus struct {
 	OnMaster model.ObjectID
 	// Merge is an open pull request's fitness to be merged by MacPorts'
 	// maintainer policy, as of the status, over the ports whose
-	// maintainers its change records keep; MaintainersUnread are the
-	// ports changed whose maintainers no record keeps (readMerge). Nil
-	// where there's no open pull request.
+	// maintainers its change records keep, or master's cached port index;
+	// MaintainersUnread are the ports changed whose maintainers neither
+	// has, a new port's until its record is made (readMerge). Nil where
+	// there's no open pull request.
 	Merge             *macports.Merge
 	MaintainersUnread []string
 }
@@ -240,6 +241,9 @@ type statusReads struct {
 	// tree changes from master's, by the tree, read for landedOnMaster.
 	master     model.ObjectID
 	fromMaster map[string][]string
+	// indexed are ports' maintainers as master's cached port index has
+	// them, read once a status (indexedMaintainers).
+	indexed *masterIndex
 }
 
 // readBranches reads what status reads of the branches' Git branches.
@@ -601,7 +605,7 @@ func (e *Engine) branchStatus(ctx context.Context, branch model.Branch, noFork b
 	if err != nil || status.Missing {
 		return status, err
 	}
-	e.readMerge(&status)
+	e.readMerge(ctx, &status, reads)
 	if branch.State == model.BranchMerged {
 		past, err := e.PastMerge(ctx, branch, status.Head)
 		if err != nil {

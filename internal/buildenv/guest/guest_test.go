@@ -540,6 +540,18 @@ func TestABuildPastItsBoundIsEnded(t *testing.T) {
 	results, _ = guestRun(t, input, "TESTED=libharbor", "HANG=test:libharbor")
 	require.Equal(t, "timed-out", results.Targets[0].Tests)
 	require.Equal(t, "the tests ran past their 1s bound (providers.tart.test_timeout), so they were ended", results.Targets[0].Detail)
+
+	// Each names the key of the provider that set the bound: a local
+	// check's is providers.local's, which a Tart key would send the person
+	// past.
+	input = twoTargets("advisory")
+	input.BuildTimeout, input.Settings = 1, "providers.local"
+	results, _ = guestRun(t, input, "HANG=install:libharbor")
+	require.Equal(t, "the build ran past its 1s bound (providers.local.build_timeout), so it was ended", results.Targets[0].Detail)
+	input = twoTargets("declared")
+	input.TestTimeout, input.Settings = 1, "providers.local"
+	results, _ = guestRun(t, input, "TESTED=libharbor", "HANG=test:libharbor")
+	require.Equal(t, "the tests ran past their 1s bound (providers.local.test_timeout), so they were ended", results.Targets[0].Detail)
 }
 
 // The guest says which target it is building as it begins it, beside the

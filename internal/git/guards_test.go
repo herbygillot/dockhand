@@ -155,3 +155,27 @@ func TestCommitBeforeAndCommitTime(t *testing.T) {
 	_, err = repo.CommitTime(t.Context(), "HEAD")
 	require.ErrorContains(t, err, "literal commit objects are required")
 }
+
+// FirstParentTrees are start's tree and its first-parent ancestors',
+// newest first, as many as asked for.
+func TestFirstParentTrees(t *testing.T) {
+	t.Parallel()
+	repo, _ := portsCheckout(t)
+	first := testsupport.Git(t, repo.Root, "rev-parse", "HEAD")
+	require.NoError(t, os.WriteFile(filepath.Join(repo.Root, "added"), []byte("x\n"), 0o644))
+	testsupport.Git(t, repo.Root, "add", "added")
+	testsupport.Git(t, repo.Root, "commit", "-q", "-m", "second")
+	second := testsupport.Git(t, repo.Root, "rev-parse", "HEAD")
+	trees, err := repo.CommitTrees(t.Context(), []string{first, second})
+	require.NoError(t, err)
+
+	found, err := repo.FirstParentTrees(t.Context(), second, 10)
+	require.NoError(t, err)
+	require.Equal(t, trees[second], found[0])
+	require.Contains(t, found, trees[first])
+	found, err = repo.FirstParentTrees(t.Context(), second, 1)
+	require.NoError(t, err)
+	require.Equal(t, []string{trees[second]}, found)
+	_, err = repo.FirstParentTrees(t.Context(), "HEAD", 1)
+	require.ErrorContains(t, err, "literal commit objects are required")
+}

@@ -50,8 +50,8 @@ type PullRequest struct {
 	MaintainerCanModify bool   `json:",omitempty"`
 	// CreatedAt is when it was opened, which MacPorts' maintainer timeout
 	// counts from, and Mentions the logins its description mentions, as
-	// the forge reads a mention, each once in the order written: who was
-	// notified of it (macports.MergeFitness).
+	// the forge reads a mention, each once in the order written, which is
+	// what's read of who was notified of it (macports.MergeFitness).
 	CreatedAt time.Time `json:",omitzero"`
 	Mentions  []string  `json:",omitempty"`
 }

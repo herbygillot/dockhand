@@ -174,6 +174,13 @@ proc signal_tree {pid signal} {
     catch {exec /bin/kill -$signal $pid}
 }
 # bound_words says a bound in seconds as a person would: 6h, 10m, 90s.
+# settings is the configuration table the bounds were set under, as
+# providers.local, providers.tart where the input names none.
+proc settings {input} {
+    if {[dict exists $input settings] && [dict get $input settings] ne ""} { return [dict get $input settings] }
+    return providers.tart
+}
+
 proc bound_words {seconds} {
     if {$seconds % 3600 == 0} { return "[expr {$seconds / 3600}]h" }
     if {$seconds % 60 == 0} { return "[expr {$seconds / 60}]m" }
@@ -797,7 +804,7 @@ proc build {index target} {
     set buildBound [dict get $input build_timeout]
     set deadline [expr {[clock seconds] + $buildBound}]
     set left [list apply {{deadline} { expr {max(1, $deadline - [clock seconds])} }} $deadline]
-    set over "the build ran past its [bound_words $buildBound] bound (providers.tart.build_timeout), so it was ended"
+    set over "the build ran past its [bound_words $buildBound] bound ([settings $input].build_timeout), so it was ended"
     # A port the branch adds is linted with --nitpick, as MacPorts asks
     # of a new port, and every target's warnings are kept: lint fails on
     # errors alone, and warns and goes on (the docs dig's I13).
@@ -975,7 +982,7 @@ proc build {index target} {
             # 1,734 s of its 30 minutes and read only "Aborted: SIGTERM
             # received", the end's own words (field testing, the
             # outdated-ports session's note 22).
-            set detail "the tests ran past their [bound_words $testBound] bound (providers.tart.test_timeout), so they were ended"
+            set detail "the tests ran past their [bound_words $testBound] bound ([settings $input].test_timeout), so they were ended"
             if {[set said [why $log $message]] ne $message} { append detail "; $said" }
             dict set result detail $detail
         } elseif {$message ne ""} {

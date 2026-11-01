@@ -260,20 +260,24 @@ func TestSubportChangesSayWhatMovedInEach(t *testing.T) {
 	}, SubportChanges("devel/main", &before, &after, renamed))
 }
 
-// Each subport keeps its maintainers as evaluated, the revision's, or the
-// base's for one removed, which status reads for a pull request's merge
-// fitness without evaluating; a change of them is a field that moved.
+// Each subport keeps its maintainers as evaluated, the base's where the
+// base has it, even where the revision changes them, and the revision's
+// for one it adds, which status reads for a pull request's merge fitness
+// without evaluating, the timeout waiting on the maintainers MacPorts
+// has; a change of them is a field that moved.
 func TestSubportChangesKeepTheirMaintainers(t *testing.T) {
 	before := snapshot(map[string]macports.PortInfo{
 		"main":     {Name: "main", Version: "1", Options: map[string]string{"maintainers": "@ryandesign openmaintainer"}},
 		"main-old": {Name: "main-old", Version: "1", Options: map[string]string{"maintainers": "nomaintainer"}},
 	})
 	after := snapshot(map[string]macports.PortInfo{
-		"main": {Name: "main", Version: "1", Options: map[string]string{"maintainers": "{@herbygillot gmail.com:herby.gillot} openmaintainer"}},
+		"main":     {Name: "main", Version: "1", Options: map[string]string{"maintainers": "{@herbygillot gmail.com:herby.gillot} openmaintainer"}},
+		"main-new": {Name: "main-new", Version: "1", Options: map[string]string{"maintainers": "@jmroot"}},
 	})
 	require.Equal(t, []model.SubportChange{
 		{Port: "main", Kind: model.SubportChanged, Fields: []model.FieldChange{{Field: "maintainers", From: "@ryandesign openmaintainer", To: "{@herbygillot gmail.com:herby.gillot} openmaintainer"}},
-			Maintainers: "{@herbygillot gmail.com:herby.gillot} openmaintainer"},
+			Maintainers: "@ryandesign openmaintainer"},
+		{Port: "main-new", Kind: model.SubportAdded, Maintainers: "@jmroot"},
 		{Port: "main-old", Kind: model.SubportRemoved, Maintainers: "nomaintainer"},
 	}, SubportChanges("devel/main", &before, &after, nil))
 }
