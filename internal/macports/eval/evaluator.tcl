@@ -397,14 +397,38 @@ namespace eval ::dockhand {
             } else {
                 dict set out fetch_details $fetch
             }
+            # Whether Base's livecheck runs as declared: its own procedure,
+            # no post hooks, and no pre hook but a known one. The php 1.1
+            # PortGroup's pre-livecheck turns livecheck off for a subport
+            # that keeps the first version its Portfile set, and leaves the
+            # port, and a subport whose version was changed, alone; a
+            # subport it turns off is reported with the livecheck type
+            # Base would run, none, so discovery reads the port's own, as
+            # it does a python stub's. Its body is matched whole,
+            # whitespace aside, so an edited hook is an unknown one. Under
+            # apply, so the probe's variables are its own.
             if {[catch {$worker eval {
-                set target ${org.macports.livecheck}
-                expr {[ditem_key $target procedure] eq "portlivecheck::livecheck_main" &&
-                      [llength [ditem_key $target pre]] == 0 && [llength [ditem_key $target post]] == 0}
+                apply {{} {
+                    set target ${::org.macports.livecheck}
+                    if {[ditem_key $target procedure] ne "portlivecheck::livecheck_main" || [llength [ditem_key $target post]]} { return {0 0} }
+                    set php {global {*}[info globals] global name subport version php._first_version if {${name} ne ${subport} && ${name} ne "php" && ${version} eq ${php._first_version}} { livecheck.type none }}
+                    set off 0
+                    foreach hook [ditem_key $target pre] {
+                        if {![llength [info procs user${hook}]] || ![info exists ::php._first_version]} { return {0 0} }
+                        if {[string trim [regsub -all {\s+} [info body user${hook}] " "]] ne $php} { return {0 0} }
+                        if {$::name ne $::subport && $::name ne "php" && $::version eq ${::php._first_version}} { set off 1 }
+                    }
+                    list 1 $off
+                }}
             }} standard]} {
                 dict set failures dockhand.livecheck_standard "cannot inspect livecheck target"
             } else {
+                lassign $standard standard off
                 dict set out dockhand.livecheck_standard $standard
+                if {$off} {
+                    dict set out livecheck.type none
+                    dict unset failures livecheck.type
+                }
             }
             dict set out dockhand.base_version [base_version]
             # Whether the port is known to fail here, as MacPorts tests it,

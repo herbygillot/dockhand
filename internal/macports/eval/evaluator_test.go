@@ -311,6 +311,76 @@ if {${livecheck.regex} eq ""} {
 	require.Contains(t, port.Options["livecheck.regex"], "tilde-")
 }
 
+// The php 1.1 PortGroup's pre-livecheck is a hook read as known: it turns
+// livecheck off for a subport that keeps the first version its Portfile
+// set, which reads as livecheck type none, and changes nothing for the
+// port or a subport with a version of its own, whose livecheck runs as
+// declared. An edited hook is unknown (the PECL extensions, the survey's
+// insight 5). The PortGroups are stand-ins with the hook as MacPorts'
+// php-1.1.tcl has it.
+func TestThePHPPortGroupsLivecheckHookIsReadAsKnown(t *testing.T) {
+	t.Parallel()
+	evaluator := liveEvaluator(t)
+	tree := fixtureTree(t)
+	group := func(condition string) string {
+		return `global php._first_version
+option_proc version php._set_version
+proc php._set_version {option action args} {
+    if {"set" ne ${action}} {
+        return
+    }
+    global php._first_version
+    if {![info exists php._first_version]} {
+        set php._first_version [option ${option}]
+    }
+}
+
+# If a subport has not changed the version, disable livecheck.
+
+pre-livecheck {
+    global name subport version php._first_version
+    if {` + condition + `} {
+        livecheck.type          none
+    }
+}
+`
+	}
+	putFile(t, tree.Root(), "_resources/port1.0/group/php-1.1.tcl", group(`${name} ne ${subport} && ${name} ne "php" && ${version} eq ${php._first_version}`))
+	putFile(t, tree.Root(), "_resources/port1.0/group/phpedited-1.1.tcl", group(`${name} ne ${subport}`))
+	portfile := func(group, name string) string {
+		return "PortSystem 1.0\nPortGroup " + group + " 1.1\nname " + name + "\nversion 2.0\ncategories php\n" +
+			"livecheck.type regexm\nlivecheck.url https://pecl.example.org/package/fix\nlivecheck.regex {fix-(\\d+(?:\\.\\d+)*)}\n" +
+			"subport php83-" + strings.TrimPrefix(name, "php-") + " {}\nsubport php56-" + strings.TrimPrefix(name, "php-") + " { version 1.0 }\n"
+	}
+	putFile(t, tree.Root(), "php/php-fix/Portfile", portfile("php", "php-fix"))
+	putFile(t, tree.Root(), "php/php-edited/Portfile", portfile("phpedited", "php-edited"))
+	evaluate := func(name string) macports.Snapshot {
+		targets, err := evaluator.Resolve(t.Context(), tree, macports.Selection{Selector: "php/" + name})
+		require.NoError(t, err)
+		source, err := tree.Select(targets[0])
+		require.NoError(t, err)
+		snapshot, err := evaluator.Evaluate(t.Context(), source)
+		require.NoError(t, err)
+		return snapshot
+	}
+	known := evaluate("php-fix")
+	for name, want := range map[string]string{"php-fix": "regexm", "php83-fix": "none", "php56-fix": "regexm"} {
+		port := known.Ports[name]
+		standard, err := port.LivecheckStandard()
+		require.NoError(t, err, name)
+		require.True(t, standard, name)
+		require.Equal(t, want, port.Options["livecheck.type"], name)
+	}
+	edited := evaluate("php-edited")
+	for _, name := range []string{"php-edited", "php83-edited", "php56-edited"} {
+		port := edited.Ports[name]
+		standard, err := port.LivecheckStandard()
+		require.NoError(t, err, name)
+		require.False(t, standard, "%s: an edited hook is not known", name)
+		require.Equal(t, "regexm", port.Options["livecheck.type"], name)
+	}
+}
+
 // A livecheck type such as pypi is resolved through the tree's own checker
 // definitions, exactly as port livecheck does, so dockhand sees the regex
 // livecheck it stands for rather than a type it would have to understand.
