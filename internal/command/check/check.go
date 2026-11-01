@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/checkrun"
 	"github.com/herbygillot/dockhand/internal/command/settings"
@@ -154,7 +155,7 @@ check.baseline = true, it runs that baseline automatically.`,
 			view.WritePushes(out, proposed)
 			revision, planned := view.RevisionView(capture.Revision), view.PlanView(proposed)
 			streams.Emit(view.CheckJSON{Branch: branch.ShortName(), Revision: &revision, Plan: &planned, Targets: []view.TargetJSON{}})
-			if err := engine.Runnable(proposed); err != nil {
+			if err := checks.Runnable(proposed); err != nil {
 				return fmt.Errorf("nothing was checked: %w", err)
 			}
 			if plan {
@@ -171,11 +172,11 @@ check.baseline = true, it runs that baseline automatically.`,
 			if err := confirmVariantBuilds(streams, proposed, yes); err != nil {
 				return err
 			}
-			beside := engine.BesideFollow
+			beside := checks.BesideFollow
 			if replace {
-				beside = engine.BesideReplace
+				beside = checks.BesideReplace
 			}
-			queued, err := e.QueueCheck(ctx, engine.QueueRequest{Branch: branch, Revision: capture.Revision, Plan: proposed, Origin: model.OriginPerson, Beside: beside,
+			queued, err := e.QueueCheck(ctx, checks.QueueRequest{Branch: branch, Revision: capture.Revision, Plan: proposed, Origin: model.OriginPerson, Beside: beside,
 				// A script that asked for a new check replaces a running one;
 				// a person is asked.
 				Stop: func(run model.Run) (bool, error) {
@@ -356,11 +357,11 @@ func writeBaselineHeader(out io.Writer, branch model.Branch, baseline engine.Bas
 }
 
 // besideWords says how to go on from a check refused beside the branch's
-// one queued or running (engine.BesideRefuse), or of its files without
-// covering this one (engine.BesideFollow): wait resumes one stopped, and
+// one queued or running (checks.BesideRefuse), or of its files without
+// covering this one (checks.BesideFollow): wait resumes one stopped, and
 // --replace checks again, keeping what it finished.
 func besideWords(err error, revision model.Revision) error {
-	active := new(engine.ActiveRunError)
+	active := new(checks.ActiveRunError)
 	if !errors.As(err, &active) {
 		return err
 	}
@@ -380,7 +381,7 @@ func besideWords(err error, revision model.Revision) error {
 
 // replacedWords say each run a new check stopped, and how: "check-1,
 // canceled before it started".
-func replacedWords(queued engine.Queued) []string {
+func replacedWords(queued checks.Queued) []string {
 	var stopped []string
 	for i, run := range queued.Replaced {
 		switch {

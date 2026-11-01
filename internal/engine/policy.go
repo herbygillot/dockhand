@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -121,7 +122,7 @@ func (e *Engine) tagMovedNotes(ctx context.Context, plan model.Plan) []string {
 				if then.Commit != "" && then.Commit != now.Commit {
 					said[id] = true
 					target, _ := plan.Target(id)
-					notes = append(notes, fmt.Sprintf("%s builds again: %s", id, tagMovedWords(then, now, built, target.Target.Name)))
+					notes = append(notes, fmt.Sprintf("%s builds again: %s", id, checks.TagMovedWords(then, now, built, target.Target.Name)))
 				}
 			}
 		}

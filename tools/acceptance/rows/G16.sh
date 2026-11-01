@@ -24,5 +24,9 @@ assert() {
 	estimate=$(sed -n '/^\$ dockhand check .*--plan/,/^\[exit/p' "$ROW_DIR/out.log" | grep -E '^Installs +about [0-9]+ dependenc(y|ies) to install, [0-9]+ with no archive on packages\.macports\.org for this release, by the port index; the clone decides$' | head -1)
 	[ -n "$estimate" ] || { row_fail "check --plan said no estimate with its archives: $(grep -E '^Installs' "$ROW_DIR/out.log" | head -2 | tr '\n' ' ')"; return; }
 	installed=$(grep -cE 'Installing [a-z]' "$ROW_DIR/port.log" 2>/dev/null || echo 0)
-	judged "the plan's estimate, \"${estimate#Installs    }\", is close to what the guest installed, as $(port)'s log in $ROW_DIR/port.log says ($installed Installing lines)"
+	# The port's log never shows what came from archives earlier checks
+	# kept, which dockhand's own output says (the M1's rc6 full stage).
+	local kept
+	kept=$(sed -n '/^\$ dockhand check .* -v/,/^\[exit/p' "$ROW_DIR/out.log" | grep -oE 'installed [0-9]+ dependenc(y|ies) from archives earlier checks kept' | grep -oE '[0-9]+' | paste -sd+ - | bc 2>/dev/null)
+	judged "the plan's estimate, \"${estimate#Installs    }\", is close to what the guest installed: $installed Installing lines in $(port)'s log, $ROW_DIR/port.log, and ${kept:-0} from archives earlier checks kept, as dockhand said"
 }

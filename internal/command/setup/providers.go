@@ -32,12 +32,12 @@ func imagesOf(s *settings.Settings) host.TartImages {
 	if s.Host.TartImages != nil {
 		return s.Host.TartImages
 	}
-	dependencies := s.Dependencies()
-	if _, err := dependencies.LookTart(); err != nil {
+	options := s.ComposeOptions()
+	look := s.Dependencies().Lookup(options)
+	if _, err := look("tart"); err != nil {
 		return nil
 	}
-	options := s.ComposeOptions()
-	return options.TartProvider(dependencies.Lookup(options))
+	return options.TartProvider(look)
 }
 
 // installTart installs Tart from MacPorts.

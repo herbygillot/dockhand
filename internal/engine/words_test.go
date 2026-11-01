@@ -45,19 +45,6 @@ func TestTargetWordsAreDesignV3s(t *testing.T) {
 	require.Equal(t, "! not built: "+UnmetWords(unmet.Unmet), targetWords(model.Plan{}, unmet, "", AcceptedFailure{}))
 }
 
-// An unmet minimum Xcode says what the environment has, where the plan
-// kept it: "needs Xcode 26.0, which Tart macOS 15 hasn't" left the person
-// to find 16.4 (batch 28's leftover).
-func TestAnUnmetMinimumSaysWhatTheEnvironmentHas(t *testing.T) {
-	t.Parallel()
-	unmet := model.Unmet{Target: "sand-runner", Needs: model.RequiresXcodeVersion("26.0"), Has: "16.4"}
-	require.Equal(t, "needs Xcode 26.0 (Xcode 16.4 there)", UnmetWords(unmet))
-	unmet.Has, unmet.Through = "none", "sand-runner"
-	require.Equal(t, "needs Xcode 26.0 (only the Command Line Tools there), through sand-runner", UnmetWords(unmet))
-	unmet.Has = ""
-	require.Equal(t, "needs Xcode 26.0, through sand-runner", UnmetWords(unmet), "a plan made before it was kept")
-}
-
 // A coverage item named more than once is named once, with how many
 // (the rc6 full stage, B8).
 func TestARepeatedItemIsNamedOnce(t *testing.T) {

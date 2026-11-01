@@ -43,7 +43,7 @@ linters:
       - path: (_test\.go|internal/command/cmdtest/)
         linters:
           - errcheck
-      - path-except: ^internal/(engine|command)/
+      - path-except: ^internal/(engine|command|checks)/
         linters:
           - paralleltest
           - tparallel

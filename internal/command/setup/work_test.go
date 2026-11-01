@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
-	"github.com/herbygillot/dockhand/internal/subprocess"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -132,12 +131,11 @@ func TestTartIsRegisteredWhereItIsFound(t *testing.T) {
 	require.NotContains(t, e.Providers, "tart")
 	e.Close()
 
-	cmdtest.Stands(t).Look = func(name string) (string, error) {
-		if name == "tart" {
-			return "/opt/homebrew/bin/tart", nil
-		}
-		return subprocess.LookPath(name, os.Environ())
-	}
+	// A Tart stand-in on the run's PATH is found as compose finds every
+	// program, on the command line's PATH.
+	bin := t.TempDir()
+	testsupport.WriteExecutable(t, filepath.Join(bin, "tart"), "#!/bin/sh\nexit 0\n")
+	cmdtest.Setenv(t, "PATH", bin+string(filepath.ListSeparator)+os.Getenv("PATH"))
 	s = *cmdtest.TestSettings(t)
 	e, err = s.Open(t.Context())
 	require.NoError(t, err)

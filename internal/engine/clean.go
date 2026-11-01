@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/history"
@@ -751,6 +752,31 @@ func (e *Engine) PutBack(ctx context.Context, run model.Run, progress func(strin
 	return places, nil
 }
 
+// forgetKept removes the clones the branch's checks kept for dockhand
+// shell (model.Plan.Keep).
+func (e *Engine) forgetKept(ctx context.Context, branch model.BranchID) error {
+	if !slices.ContainsFunc(slices.Collect(maps.Values(e.Providers)), func(provider buildenv.Provider) bool {
+		_, ok := provider.(buildenv.LeftoverProvider)
+		return ok
+	}) {
+		return nil
+	}
+	session, err := e.Session(ctx, model.SessionForeground)
+	if err != nil {
+		return err
+	}
+	defer session.End(context.WithoutCancel(ctx))
+	leftovers, err := e.PlanLeftovers(ctx, session)
+	if err != nil {
+		return err
+	}
+	leftovers = slices.DeleteFunc(leftovers, func(leftover Leftover) bool {
+		return leftover.KeptAt.IsZero() || leftover.Run == nil || leftover.Run.Branch != branch
+	})
+	_, err = e.RemoveLeftovers(ctx, session, leftovers)
+	return err
+}
+
 // PlanLeftovers finds what providers left of checks, and which clean may
 // remove. A provider removes its environment when the attempt using it
 // ends, and a run's next attempt removes an earlier one's, so what is left
@@ -812,7 +838,7 @@ func (e *Engine) judgeLeftover(ctx context.Context, session *coord.Session, left
 		leftover.Kept = "no check of this checkout made it"
 		return nil
 	}
-	holder, err := session.Holder(ctx, RunResource(leftover.Run.ID))
+	holder, err := session.Holder(ctx, checks.RunResource(leftover.Run.ID))
 	if holder != nil {
 		leftover.Kept = leftover.Run.Name() + " is running"
 	}
@@ -830,7 +856,7 @@ func (e *Engine) RemoveLeftovers(ctx context.Context, session *coord.Session, le
 		if leftover.Kept != "" || leftover.Run == nil || !ok {
 			continue
 		}
-		lease, holder, err := session.TakeIfUnattended(ctx, RunResource(leftover.Run.ID))
+		lease, holder, err := session.TakeIfUnattended(ctx, checks.RunResource(leftover.Run.ID))
 		if err != nil {
 			problems = append(problems, err)
 			continue

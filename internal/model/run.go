@@ -70,6 +70,10 @@ type Run struct {
 	State     RunState
 	Detail    string
 	CreatedAt time.Time
+	// StartedAt is when the run took its slot, the lease its driver holds,
+	// which it waited for from CreatedAt; nil for one queued still, and for
+	// runs recorded before admission kept it (schema 53).
+	StartedAt *time.Time
 	// FinishedAt is set when the run reaches a terminal state.
 	FinishedAt *time.Time
 	// CancelRequested is when someone asked for the run to stop; whoever
@@ -86,6 +90,15 @@ type Run struct {
 // a run asked to stop is on its way out, so neither is. The queue, the
 // check a new one would replace, and the branch's standing all read it.
 func (r Run) BranchCheck() bool { return r.BaselineOf == "" && r.CancelRequested == nil }
+
+// Waited is how long the run waited for its slot, from being queued to
+// taking it; false where no start is recorded.
+func (r Run) Waited() (time.Duration, bool) {
+	if r.StartedAt == nil {
+		return 0, false
+	}
+	return max(r.StartedAt.Sub(r.CreatedAt), 0), true
+}
 
 // Name is how people refer to a run.
 func (r Run) Name() string { return fmt.Sprintf("check-%d", r.Number) }

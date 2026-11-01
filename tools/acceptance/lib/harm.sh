@@ -437,10 +437,13 @@ EOT
 # jlv-renamed (for a new release), then dockhand check" broke after its
 # second "then", so H6 ran "update jlv-renamed (for a new release), then"
 # and lost the check; every rename's and move's Next: line, and A10's
-# longer ones, blocked so (rc1's quick stage).
+# longer ones, blocked so (rc1's quick stage). A line two spaces in that
+# begins a message of its own, a batch's progress for a run or port, as
+# "  check-881: tart macOS 27 … reusing results …", isn't one, and was
+# glued on, so H6 ran an explain that exited 1 (the M1's rc6 S2 run).
 harm_next_lines() {
 	awk '
-	/^  [^ ]/ && joining { sub(/^  /, ""); lines[n] = lines[n] " " $0; next }
+	/^  [^ ]/ && joining && !/^  [^ ]+: / { sub(/^  /, ""); lines[n] = lines[n] " " $0; next }
 	{ joining = /^Next: / }
 	/^# Next: lines above were superseded/ { n = 0; next }
 	/^# Next: lines naming [^ ]+ above were superseded/ {

@@ -107,11 +107,12 @@ func TestNothingBelowComposeReadsTheEnvironment(t *testing.T) {
 }
 
 // lookPathCallers are the packages that may find a program on the
-// process's PATH with exec.LookPath, and how many times: compose's Tart
-// lookup, until the check-execution service's construction reads the
-// command line's (docs/roadmap.md). subprocess finds programs on a PATH
-// it's given, and so may, as may testsupport, which only tests import.
-var lookPathCallers = map[string]int{"compose": 1}
+// process's PATH with exec.LookPath, and how many times: none, Tart found
+// on the command line's PATH as every other program is since the
+// check-execution service's first step (docs/roadmap.md). subprocess
+// finds programs on a PATH it's given, and so may, as may testsupport,
+// which only tests import.
+var lookPathCallers = map[string]int{}
 
 // compose finds each program once, on the command line's PATH, and hands
 // it down resolved: nothing else in internal finds one on the process's

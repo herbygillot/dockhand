@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -91,7 +92,7 @@ func TestLeftoversGoOnlyWhenNoProcessDrivesTheirCheck(t *testing.T) {
 
 	// A process takes the check up between the plan and the removal.
 	driver := session(t, e)
-	lease, err := driver.Acquire(t.Context(), RunResource(run.ID))
+	lease, err := driver.Acquire(t.Context(), checks.RunResource(run.ID))
 	require.NoError(t, err)
 	done, err := e.RemoveLeftovers(t.Context(), cleaner, plan)
 	require.NoError(t, err)

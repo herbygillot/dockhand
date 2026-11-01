@@ -1,15 +1,17 @@
 package engine
 
+import "github.com/herbygillot/dockhand/internal/checks"
+
 // usePorts gives the engine reader as its port reader, with each
 // capability the reader has, leaving any other given apart: a test's fake
 // says by its methods what it reads, where the engine found that by type
 // assertion before C3.
-func usePorts(e *Engine, reader PortReader) {
+func usePorts(e *Engine, reader checks.PortReader) {
 	e.Ports.Reader = reader
 	if families, ok := reader.(FamilyReader); ok {
 		e.Ports.Families = families
 	}
-	if graphs, ok := reader.(DependencyGraphReader); ok {
+	if graphs, ok := reader.(checks.DependencyGraphReader); ok {
 		e.Ports.Graphs = graphs
 	}
 	if planner, ok := reader.(ArchivePlanner); ok {

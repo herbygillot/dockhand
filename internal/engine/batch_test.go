@@ -167,7 +167,7 @@ func TestABatchCountsAnotherProcesssChecks(t *testing.T) {
 	other := session(t, e)
 	held, err := e.Run(t.Context(), ids[0])
 	require.NoError(t, err)
-	lease, full, err := e.reserve(t.Context(), other, held, []string{"command"})
+	lease, full, err := e.checks().Reserve(t.Context(), other, held, []string{"command"})
 	require.NoError(t, err)
 	require.Empty(t, full)
 
@@ -185,10 +185,20 @@ func TestABatchCountsAnotherProcesssChecks(t *testing.T) {
 	case <-time.After(30 * time.Second):
 		t.Fatal("the batch's check never said what it waits for")
 	}
+	// Admission records a run's start as it takes its slot: the held
+	// check's when the other process took it, and none for the waiting
+	// one yet.
+	taken, err := e.Run(t.Context(), ids[0])
+	require.NoError(t, err)
+	require.NotNil(t, taken.StartedAt, "its slot taken")
+	waiting, err := e.Run(t.Context(), ids[1])
+	require.NoError(t, err)
+	require.Nil(t, waiting.StartedAt, "still waiting for its slot")
 	require.NoError(t, other.Release(t.Context(), lease))
 	select {
 	case run := <-done:
 		require.Equal(t, model.RunPassed, run.State, run.Detail)
+		require.NotNil(t, run.StartedAt, "started once it took the slot let go")
 	case <-time.After(30 * time.Second):
 		t.Fatal("the batch's check never took the slot let go")
 	}

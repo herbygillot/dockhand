@@ -1,0 +1,214 @@
+package checks
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/herbygillot/dockhand/internal/atomicfile"
+	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
+)
+
+// Archives are a checkout's kept archives (decision 28): each file in
+// Directory named by the hex of its sha256, and its record in Store, under
+// Repository, kept at Now. A check's passed target keeps its archive, a
+// dependency's is kept as a guest installed it, a later guest installs
+// from them, and cleanup prunes what no live result names.
+type Archives struct {
+	Directory  string
+	Store      store.Store
+	Repository model.RepositoryID
+	Now        func() time.Time
+}
+
+// Path is where a kept archive's file is.
+func (a *Archives) Path(digest string) string {
+	return filepath.Join(a.Directory, strings.TrimPrefix(digest, "sha256:"))
+}
+
+// Kept is an archive kept by its digest, and whether it is: its
+// record and its whole file both there.
+func (a *Archives) Kept(ctx context.Context, digest string) (model.Archive, bool, error) {
+	var archive model.Archive
+	err := a.Store.View(ctx, a.Repository, func(r store.Reader) error {
+		var err error
+		archive, err = r.Archive(digest)
+		return err
+	})
+	if errors.Is(err, store.ErrNotFound) {
+		return archive, false, nil
+	}
+	if err != nil {
+		return archive, false, err
+	}
+	info, err := os.Stat(a.Path(digest))
+	return archive, err == nil && info.Size() == archive.Size, nil
+}
+
+// Keep keeps an archive its build reported by digest: fetch writes
+// it into the store, where it is checked against the digest, made durable,
+// and only then recorded, which makes it ready for dependents (decision
+// 44). One kept already isn't fetched again. also, where given, records
+// what keeping it is for in the same transaction: a dependency's two
+// records were two commits (the SQL study's SQL-S4).
+func (a *Archives) Keep(ctx context.Context, archive model.Archive, fetch func(path string) error, also func(store.Tx) error) error {
+	if !strings.HasPrefix(archive.Digest, "sha256:") || !model.ValidArchiveName(archive.Name) {
+		return fmt.Errorf("an archive named %q with digest %q can't be kept", archive.Name, archive.Digest)
+	}
+	if _, kept, err := a.Kept(ctx, archive.Digest); err != nil {
+		return err
+	} else if kept {
+		// One altered since it was kept is replaced by this build's.
+		if _, digest, err := sha256File(a.Path(archive.Digest)); err == nil && digest == archive.Digest {
+			if also == nil {
+				return nil
+			}
+			return a.Store.Update(ctx, a.Repository, also)
+		}
+	}
+	directory := a.Directory
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		return err
+	}
+	incoming, err := os.MkdirTemp(directory, ".incoming-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(incoming)
+	fetched := filepath.Join(incoming, archive.Name)
+	if err := fetch(fetched); err != nil {
+		return fmt.Errorf("fetching %s: %w", archive.Name, err)
+	}
+	size, digest, err := sha256File(fetched)
+	if err != nil {
+		return err
+	}
+	if digest != archive.Digest {
+		return fmt.Errorf("%s arrived as %s, not the %s its build reported", archive.Name, digest, archive.Digest)
+	}
+	if err := atomicfile.Place(fetched, a.Path(archive.Digest)); err != nil {
+		return err
+	}
+	archive.Size, archive.KeptAt = size, a.Now()
+	return a.Store.Update(ctx, a.Repository, func(tx store.Tx) error {
+		if err := tx.KeepArchive(archive); err != nil || also == nil {
+			return err
+		}
+		return also(tx)
+	})
+}
+
+// Prune forgets the archives kept before a time that no live
+// result names (store.Tx.PruneArchives), and removes their files, then
+// what no record names that is older than it: a fetch that didn't
+// finish, or a file whose record never followed. It returns what it
+// forgot, and what stays kept.
+func (a *Archives) Prune(ctx context.Context, before, dependenciesSince time.Time) (removed, kept []model.Archive, err error) {
+	if err := a.Store.Update(ctx, a.Repository, func(tx store.Tx) error {
+		var err error
+		if removed, err = tx.PruneArchives(before, dependenciesSince); err != nil {
+			return err
+		}
+		kept, err = tx.Archives()
+		return err
+	}); err != nil {
+		return nil, nil, err
+	}
+	var errs []error
+	for _, archive := range removed {
+		// The archive goes with what was kept beside it: its signatures,
+		// named as it is and a dot more (binaryarchive.Sign).
+		path := a.Path(archive.Digest)
+		beside, _ := filepath.Glob(path + ".*")
+		for _, file := range append([]string{path}, beside...) {
+			if err := os.Remove(file); err != nil && !errors.Is(err, os.ErrNotExist) {
+				errs = append(errs, err)
+			}
+		}
+	}
+	directory := a.Directory
+	entries, err := os.ReadDir(directory)
+	if errors.Is(err, os.ErrNotExist) {
+		return removed, kept, errors.Join(errs...)
+	}
+	if err != nil {
+		return removed, kept, errors.Join(append(errs, err)...)
+	}
+	named := map[string]bool{}
+	for _, archive := range kept {
+		named[strings.TrimPrefix(archive.Digest, "sha256:")] = true
+	}
+	for _, entry := range entries {
+		info, err := entry.Info()
+		owner, _, _ := strings.Cut(entry.Name(), ".")
+		if err != nil || named[owner] || !info.ModTime().Before(before) {
+			continue
+		}
+		errs = append(errs, os.RemoveAll(filepath.Join(directory, entry.Name())))
+	}
+	return removed, kept, errors.Join(errs...)
+}
+
+// sha256File is a file's size and digest, sha256:<hex>.
+func sha256File(path string) (int64, string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, "", err
+	}
+	defer file.Close()
+	hash := sha256.New()
+	size, err := io.Copy(hash, file)
+	if err != nil {
+		return 0, "", err
+	}
+	return size, "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+// Keep keeps a target's archive, by the digest its passed result reported
+// (buildenv.Build).
+func (b *build) Keep(target model.TargetID, name string, fetch func(path string) error) error {
+	result, ok := b.results[target]
+	if !ok || result.Outcome != model.OutcomePassed || result.Archive == "" {
+		return fmt.Errorf("%s has no passed result naming an archive to keep", target)
+	}
+	return b.d.c.Archives.Keep(b.ctx, model.Archive{Digest: result.Archive, Name: name}, fetch, nil)
+}
+
+// KeepDependency keeps the archive a dependency of a target was installed
+// from in the guest, by the digest Consumed reported of it, for a later
+// guest in the environment (buildenv.Build). A port the plan builds is the
+// branch's, whose archive isn't master's build of it, and isn't kept so.
+func (b *build) KeepDependency(port model.ActivePort, name string, fetch func(path string) error) error {
+	if port.Name == "" || !strings.HasPrefix(port.Archive, "sha256:") {
+		return fmt.Errorf("%s was active from no archive to keep", port.Name)
+	}
+	for _, target := range b.d.plan.Targets {
+		if strings.EqualFold(target.Target.Name, port.Name) || strings.EqualFold(target.Target.Subport, port.Name) {
+			return fmt.Errorf("%s is a target of the check, whose archive is its result's", port.Name)
+		}
+	}
+	if !b.consumed(port) {
+		return fmt.Errorf("%s wasn't reported active from %s", port.Name, port.Archive)
+	}
+	archive := model.DependencyArchive{Archive: model.Archive{Digest: port.Archive, Name: name, KeptAt: b.d.c.Now()}, Port: port.Name, Environment: b.execution.Environment}
+	return b.d.c.Archives.Keep(b.ctx, model.Archive{Digest: port.Archive, Name: name}, fetch, func(tx store.Tx) error { return tx.KeepDependencyArchive(archive) })
+}
+
+// consumed reports whether a port was reported active from an archive as
+// one of the execution's targets built.
+func (b *build) consumed(port model.ActivePort) bool {
+	for _, active := range b.active {
+		if active.Name == port.Name && active.Archive == port.Archive {
+			return true
+		}
+	}
+	return false
+}

@@ -204,7 +204,7 @@ func (e *Engine) cleanup(ctx context.Context, session *coord.Session, after time
 	// an open branch's newest passed result of each, which its evidence
 	// may name (decisions 36 and 44, D6). One kept within archiveGrace
 	// stays, as a build's that has just kept it. What stays is said.
-	removedArchives, keptArchives, err := e.pruneArchives(ctx, e.now().Add(-archiveGrace), e.now().Add(-after))
+	removedArchives, keptArchives, err := e.archives().Prune(ctx, e.now().Add(-archiveGrace), e.now().Add(-after))
 	report.Archives = removedArchives
 	if err != nil {
 		return report, fmt.Errorf("cleaning kept archives: %w", err)

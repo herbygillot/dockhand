@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/comparison"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -88,98 +89,6 @@ func targetWords(plan model.Plan, result Cell, reading string, accepted Accepted
 	}
 	if accepted.Kind != "" {
 		words += ", accepted: " + accepted.Words()
-	}
-	return words
-}
-
-// refWords names a Git source's ref as a Portfile gives it: "git.branch
-// v1.2", or its repository's default branch where it names none.
-func refWords(ref string) string {
-	if ref == "" {
-		return "the default branch"
-	}
-	return "git.branch " + ref
-}
-
-// expectedWords names what a Git source's build is expected to fetch: a
-// commit, shortened, or the abbreviation it begins with.
-func expectedWords(source model.GitSource) string {
-	if source.Commit != "" {
-		return source.Commit.Short()
-	}
-	return source.Abbreviation
-}
-
-// GitSourceWords say what a Git-fetched target's build is expected to
-// fetch, as a check is planned: "git.branch v1.2 names 1a2b3c4 now, which
-// its build must fetch", or why that isn't known.
-func GitSourceWords(source model.GitSource) string {
-	return sourceWords(source, "which its build must fetch", "its build records what it fetches, and stands for no later check")
-}
-
-// LeftOutSourceWords say what a Git-fetched target --only left out is
-// expected to have fetched: the check doesn't build it, but an earlier
-// check's result of it stands only where its build fetched the commit its
-// git.branch names as the check is planned (Counts). "git.branch v1.2
-// names 1a2b3c4 now, which an earlier check's build of it must have
-// fetched to stand", or why that isn't known.
-func LeftOutSourceWords(source model.GitSource) string {
-	return sourceWords(source, "which an earlier check's build of it must have fetched to stand", "no earlier check's result of it stands")
-}
-
-// sourceWords say what a Git source names as a check is planned, and what
-// that asks (fetch), or why it isn't known, and what that means (unknown).
-func sourceWords(source model.GitSource, fetch, unknown string) string {
-	switch {
-	case source.Commit != "" && strings.EqualFold(source.Ref, string(source.Commit)):
-		return fmt.Sprintf("git.branch is commit %s, %s", source.Commit.Short(), fetch)
-	case source.Commit != "":
-		return fmt.Sprintf("%s names %s now, %s", refWords(source.Ref), source.Commit.Short(), fetch)
-	case source.Abbreviation != "":
-		return fmt.Sprintf("git.branch abbreviates a commit, %s, %s", source.Abbreviation, fetch)
-	}
-	return fmt.Sprintf("which commit %s names isn't known (%s); %s", refWords(source.Ref), source.Unresolved, unknown)
-}
-
-// movedWords say why a build that fetched another commit than its plan
-// expected failed at fetch.
-func movedWords(source model.GitSource, fetched model.ObjectID) string {
-	return fmt.Sprintf("the source moved: %s named %s when the check was planned, and the build fetched %s; a new check builds what it names now", refWords(source.Ref), expectedWords(source), fetched.Short())
-}
-
-// FetchedWords say what a Git-fetched target's build fetched, for its
-// evidence: the commit it was expected to, another, or, where its provider
-// couldn't say, that it isn't known.
-func FetchedWords(source model.GitSource, fetched model.ObjectID) string {
-	switch {
-	case fetched == "" && source.Expected() == "":
-		return fmt.Sprintf("which commit of %s it fetched isn't known, nor which one was expected", refWords(source.Ref))
-	case fetched == "":
-		return fmt.Sprintf("which commit of %s it fetched isn't known: its provider didn't say; %s was expected", refWords(source.Ref), expectedWords(source))
-	case source.BuiltBy(fetched):
-		return fmt.Sprintf("fetched %s, the commit %s named when the check was planned", fetched.Short(), refWords(source.Ref))
-	case source.Moved(fetched):
-		return fmt.Sprintf("fetched %s, not %s, which %s named when the check was planned", fetched.Short(), expectedWords(source), refWords(source.Ref))
-	}
-	return fmt.Sprintf("fetched %s of %s, which couldn't be resolved when the check was planned", fetched.Short(), refWords(source.Ref))
-}
-
-// UnmetWords say what an unmet target needs: "needs Xcode", or "needs
-// Xcode, through libharbor" when a prerequisite is what needs it. A newer
-// Xcode than the environment has says what it has, "needs Xcode 26.0
-// (Xcode 16.4 there)", where "needs Xcode 26.0, which Tart macOS 15
-// hasn't" left the person to find it.
-func UnmetWords(unmet model.Unmet) string {
-	words := "needs " + string(unmet.Needs)
-	switch unmet.Has {
-	case "":
-	case "none":
-		words += " (only the Command Line Tools there)"
-	default:
-		words += " (Xcode " + unmet.Has + " there)"
-	}
-	if unmet.Through != "" {
-		words += ", through " + string(unmet.Through)
 	}
 	return words
 }
@@ -352,17 +261,6 @@ func Ago(at time.Time) string {
 	return fmt.Sprintf("%dd ago", int(elapsed.Hours()/24))
 }
 
-// AgeWords says an age as a person would: 15 days, 36 hours, 90 minutes.
-func AgeWords(age time.Duration) string {
-	switch {
-	case age >= 24*time.Hour && age%(24*time.Hour) == 0:
-		return prose.Plural(int(age/(24*time.Hour)), "day")
-	case age >= time.Hour && age%time.Hour == 0:
-		return prose.Plural(int(age/time.Hour), "hour")
-	}
-	return prose.Plural(int(age.Round(time.Minute)/time.Minute), "minute")
-}
-
 // Grouped are comparisons that say the same thing, one for each set of
 // ports, named together in the order given: a new python port's subports
 // each repeated its stub's block (field testing, 2026-10-02: py-mlx-vlm).
@@ -402,20 +300,6 @@ func UnderUpstream(change model.UpstreamChange) model.UpstreamChange {
 	return change
 }
 
-// DescribeEnvironment words where a check builds for a person: the provider,
-// and the release it builds on by its macOS name, "tart macOS 26 (Tahoe)
-// arm64", or its raw platform where the release is unknown, with its
-// developer tools where the provider states them.
-func DescribeEnvironment(environment model.Environment) string {
-	switch environment.DeveloperTools {
-	case model.DeveloperToolsXcode:
-		return describePlace(environment) + " with Xcode"
-	case model.DeveloperToolsCommandLine:
-		return describePlace(environment) + " with the Command Line Tools"
-	}
-	return describePlace(environment)
-}
-
 // EnvironmentHeading is an environment's short name, for a column heading
 // where its full words are shown elsewhere: its release alone, macOS 26,
 // with its architecture where another environment of all shares the
@@ -436,23 +320,13 @@ func EnvironmentHeading(environment model.Environment, all []model.Environment) 
 		}
 	}
 	if len(providers) > 1 || environment.Prefix != "" {
-		parts = append(parts, providerPlace(environment))
+		parts = append(parts, checks.ProviderPlace(environment))
 	}
 	parts = append(parts, macos.ReleaseName(platform))
 	if shared > 1 && platform.Architecture != "" {
 		parts = append(parts, platform.Architecture)
 	}
 	return strings.Join(parts, " ")
-}
-
-// describePlace is an environment's provider and its platform's words
-// (macos.Describe), or its provider alone where it has no platform.
-func describePlace(environment model.Environment) string {
-	platform := environment.Platform
-	if platform.Version == "" && platform.Architecture == "" {
-		return providerPlace(environment)
-	}
-	return providerPlace(environment) + " " + macos.Describe(platform)
 }
 
 // PrefixNote is what a plan says of a local check's prefix other than
@@ -464,15 +338,6 @@ func PrefixNote(environment model.Environment) string {
 		return ""
 	}
 	return environment.Prefix + ": MacPorts' binary archives are built for " + macports.DefaultPrefix + " alone, so its dependencies build from source"
-}
-
-// providerPlace is an environment's provider, with the prefix a local
-// check builds in, local:/opt/macports-test, as --on names it.
-func providerPlace(environment model.Environment) string {
-	if environment.Prefix != "" {
-		return environment.Provider + ":" + environment.Prefix
-	}
-	return environment.Provider
 }
 
 // providerWords says how a provider built, as a pull request's Tested on
@@ -550,4 +415,33 @@ func RemakeWords(release macos.Release, xcode bool) string {
 		remedy += " --xcode <folder> (Xcode " + release.Xcode + "'s .xip, or a folder xcodes downloads it into)"
 	}
 	return remedy
+}
+
+// AgeWords says an age as a person would (prose.Age).
+func AgeWords(age time.Duration) string { return prose.Age(age) }
+
+// DescribeEnvironment words where a check builds for a person
+// (checks.DescribeEnvironment).
+func DescribeEnvironment(environment model.Environment) string {
+	return checks.DescribeEnvironment(environment)
+}
+
+// Describe names the revision for people (checks.Describe).
+func Describe(revision model.Revision) string { return checks.Describe(revision) }
+
+// UnmetWords say what an unmet target needs (checks.UnmetWords).
+func UnmetWords(unmet model.Unmet) string { return checks.UnmetWords(unmet) }
+
+// GitSourceWords say what a Git-fetched target's build is expected to
+// fetch, as a check is planned (checks.GitSourceWords).
+func GitSourceWords(source model.GitSource) string { return checks.GitSourceWords(source) }
+
+// LeftOutSourceWords say what a Git-fetched target --only left out is
+// expected to have fetched (checks.LeftOutSourceWords).
+func LeftOutSourceWords(source model.GitSource) string { return checks.LeftOutSourceWords(source) }
+
+// FetchedWords say what a Git-fetched target's build fetched, for its
+// evidence (checks.FetchedWords).
+func FetchedWords(source model.GitSource, fetched model.ObjectID) string {
+	return checks.FetchedWords(source, fetched)
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -27,7 +28,7 @@ func TestACheckIsQueuedOneWay(t *testing.T) {
 		require.NoError(t, err)
 		return plan
 	}
-	request := QueueRequest{Branch: branch, Revision: capture.Revision, Plan: planned(), Origin: model.OriginPerson}
+	request := checks.QueueRequest{Branch: branch, Revision: capture.Revision, Plan: planned(), Origin: model.OriginPerson}
 
 	covered := request
 	covered.Covered = true
@@ -41,20 +42,20 @@ func TestACheckIsQueuedOneWay(t *testing.T) {
 	require.NotEmpty(t, first.Run.ID)
 
 	_, err = e.QueueCheck(t.Context(), request)
-	active := new(ActiveRunError)
+	active := new(checks.ActiveRunError)
 	require.ErrorAs(t, err, &active)
 	require.True(t, active.SameRevision)
 	require.Equal(t, first.Run.ID, active.Run.ID)
 
 	follow := request
-	follow.Beside = BesideFollow
+	follow.Beside = checks.BesideFollow
 	followed, err := e.QueueCheck(t.Context(), follow)
 	require.NoError(t, err)
 	require.True(t, followed.Followed)
 	require.Equal(t, first.Run.ID, followed.Run.ID)
 
 	replace := request
-	replace.Beside, replace.Plan = BesideReplace, planned()
+	replace.Beside, replace.Plan = checks.BesideReplace, planned()
 	replaced, err := e.QueueCheck(t.Context(), replace)
 	require.NoError(t, err)
 	require.Len(t, replaced.Replaced, 1)
@@ -65,7 +66,7 @@ func TestACheckIsQueuedOneWay(t *testing.T) {
 	nothing := request
 	nothing.Plan.Builds = nil
 	_, err = e.QueueCheck(t.Context(), nothing)
-	unrunnable := new(UnrunnableError)
+	unrunnable := new(checks.UnrunnableError)
 	require.ErrorAs(t, err, &unrunnable)
 }
 

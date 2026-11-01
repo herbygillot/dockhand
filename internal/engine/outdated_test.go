@@ -2,10 +2,11 @@ package engine
 
 import (
 	"context"
-	"github.com/herbygillot/dockhand/internal/branchstate"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/herbygillot/dockhand/internal/branchstate"
 
 	"github.com/stretchr/testify/require"
 
@@ -142,10 +143,6 @@ func TestDiscoveryBecomesOutdatedsPort(t *testing.T) {
 	require.Equal(t, OutdatedUnpublished, unready.Class(), "newer, but not ready")
 	require.Equal(t, "no forge could be found for it", of(upstream.Result{Assessment: upstream.Unknown, Detail: "no forge could be found for it"}).Problem)
 	require.Equal(t, "its newest release could not be found", of(upstream.Result{Assessment: upstream.Unknown}).Problem)
-
-	require.Equal(t, "it builds nothing", unresolvedWords(model.Plan{}))
-	require.Equal(t, "jq: no Portfile; fd: excluded on arm64", unresolvedWords(model.Plan{Unresolved: []model.Unresolved{
-		{Target: model.Target{Name: "jq"}, Reason: "no Portfile"}, {Target: model.Target{Name: "fd"}, Reason: "excluded on arm64"}}}))
 }
 
 // What couldn't be checked is counted and said with the first one's why,

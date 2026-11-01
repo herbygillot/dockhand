@@ -15,6 +15,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildlog"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/checkrun"
 	"github.com/herbygillot/dockhand/internal/command/settings"
@@ -423,7 +424,7 @@ func stoppedRun(ctx context.Context, e *engine.Engine, run model.Run) bool {
 		return false
 	}
 	defer end()
-	stopped, err := engine.Stopped(ctx, session, run)
+	stopped, err := checks.Stopped(ctx, session, run)
 	return err == nil && stopped
 }
 

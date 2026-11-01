@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/checks"
+	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
@@ -124,7 +126,7 @@ func TestUnreadLinksAreOneLineAReason(t *testing.T) {
 func TestTheQueueNamesARunningChecksVMsWithTheirTartHome(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
-	WriteQueue(&out, []engine.QueuedCheck{
+	WriteQueue(&out, []checks.QueuedCheck{
 		{Run: model.Run{ID: "r1", Number: 616, State: model.RunRunning}, VMs: []string{"dockhand-check-run-9-tahoe-1"}, TartHome: "~/.dockhand/tart"},
 		{Run: model.Run{ID: "r2", Number: 617, State: model.RunQueued}},
 	}, true)
@@ -133,12 +135,44 @@ func TestTheQueueNamesARunningChecksVMsWithTheirTartHome(t *testing.T) {
 	require.NotContains(t, out.String(), "nothing is running the queue", "serve leads")
 }
 
+// A check that took its slot says, under the queue, when it was queued and
+// how long it waited, and logs says it with its finish, where check-822's
+// wait for a Tart slot was read from its finish less its took (rc1's
+// G13); one queued still, or recorded before admission kept a start, says
+// nothing of it.
+func TestAChecksWaitForItsSlotIsSaid(t *testing.T) {
+	t.Parallel()
+	queued := time.Date(2026, 10, 31, 14, 2, 11, 0, time.Local)
+	started, finished := queued.Add(3*time.Minute+31*time.Second), queued.Add(18*time.Minute)
+	running := model.Run{ID: "r1", Number: 822, State: model.RunRunning, CreatedAt: queued, StartedAt: &started}
+	var out bytes.Buffer
+	WriteQueue(&out, []checks.QueuedCheck{{Run: running}, {Run: model.Run{ID: "r2", Number: 823, State: model.RunQueued, CreatedAt: queued}}}, true)
+	require.Contains(t, out.String(), "\n  check-822 queued 2026-10-31 14:02:11, waited 3m 31s for its slot\n")
+	require.NotContains(t, out.String(), "check-823 queued")
+
+	passed := running
+	passed.State, passed.FinishedAt = model.RunPassed, &finished
+	out.Reset()
+	require.NoError(t, WriteLogs(&out, config.Places{}, engine.RunLogs{Run: passed}, false))
+	require.Contains(t, out.String(), "check-822 · passed\n  Queued 2026-10-31 14:02:11, waited 3m 31s for its slot, finished 2026-10-31 14:20:11.\n")
+	viewed := RunView(passed)
+	require.Equal(t, int64(211), *viewed.WaitedSeconds)
+	require.Equal(t, started, *viewed.StartedAt)
+
+	old := passed
+	old.StartedAt = nil
+	out.Reset()
+	require.NoError(t, WriteLogs(&out, config.Places{}, engine.RunLogs{Run: old}, false))
+	require.NotContains(t, out.String(), "waited")
+	require.Nil(t, RunView(old).WaitedSeconds)
+}
+
 // A queued check nothing leads says so, and how to run it, where it said
 // its state alone (field testing's outdated-ports session's check-660).
 func TestAQueuedCheckNothingRunsSaysSo(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
-	WriteQueue(&out, []engine.QueuedCheck{{Run: model.Run{ID: "r1", Number: 660, State: model.RunQueued}}}, false)
+	WriteQueue(&out, []checks.QueuedCheck{{Run: model.Run{ID: "r1", Number: 660, State: model.RunQueued}}}, false)
 	require.Contains(t, out.String(), "nothing is running the queue; dockhand wait check-660 runs it here, dockhand serve --drain runs the queue, cancel ends it")
 }
 

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/command/host"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/compose"
@@ -129,7 +130,7 @@ func Hosted(t testing.TB) *host.Host {
 }
 
 // testHost is a host that keeps a test out of the Mac running it: it finds
-// no Tart (hostFor), though every test's Mac takes it, but where it says
+// no Tart but a test's stand-in (hostFor), though every test's Mac takes it, but where it says
 // it's an Intel Mac's (onIntel); it opens no browser and reaches no
 // keychain, finding neither open nor security; its login is no one's, in its keeping or read
 // afresh by serve's identity check, unless the test gives it one
@@ -150,13 +151,16 @@ func testHost() *host.Host {
 }
 
 // hostFor is the test's host for a command line run with env: it finds
-// programs on env's PATH, as compose does, but never Tart, unless the
-// test gives its own lookup.
+// programs on env's PATH, as compose does, Tart among them, but only
+// where the test put a stand-in on the run's PATH (Setenv), never the Mac
+// running it, which every test's would otherwise find; a test may give
+// its own lookup instead.
 func hostFor(found *standing, env []string) *host.Host {
 	h := *found.Host
 	if h.Look == nil {
+		_, ownPath := found.Env["PATH"]
 		h.Look = func(name string) (string, error) {
-			if name == "tart" {
+			if name == "tart" && !ownPath {
 				return "", exec.ErrNotFound
 			}
 			return subprocess.LookPath(name, env)
@@ -214,12 +218,12 @@ func TestPlaces(t testing.TB) config.Places {
 // UsePorts gives a command run in the test reader as its port reader,
 // with each capability the reader has, leaving any other given apart, as
 // engine's usePorts does.
-func UsePorts(d *compose.Dependencies, reader engine.PortReader) {
+func UsePorts(d *compose.Dependencies, reader checks.PortReader) {
 	d.Ports.Reader = reader
 	if families, ok := reader.(engine.FamilyReader); ok {
 		d.Ports.Families = families
 	}
-	if graphs, ok := reader.(engine.DependencyGraphReader); ok {
+	if graphs, ok := reader.(checks.DependencyGraphReader); ok {
 		d.Ports.Graphs = graphs
 	}
 	if planner, ok := reader.(engine.ArchivePlanner); ok {

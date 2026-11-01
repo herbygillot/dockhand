@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 )
@@ -13,12 +14,12 @@ import (
 // needed, or is an error.
 type Ports struct {
 	// Reader reads ports for plans.
-	Reader PortReader
+	Reader checks.PortReader
 	// Families make change records.
 	Families FamilyReader
 	// Graphs order a plan's builds through ports it doesn't build, and
 	// find a baseline's and reuse's dependencies on.
-	Graphs DependencyGraphReader
+	Graphs checks.DependencyGraphReader
 	// Archives say what a port fetches, for its assessment.
 	Archives ArchivePlanner
 	// Fetcher fetches the archives a Portfile declares, for diff
@@ -85,7 +86,7 @@ func (e *Engine) capabilities() (Ports, error) {
 }
 
 // portReader is the engine's port reader (Ports.Reader).
-func (e *Engine) portReader() (PortReader, error) {
+func (e *Engine) portReader() (checks.PortReader, error) {
 	ports, err := e.capabilities()
 	return ports.Reader, err
 }

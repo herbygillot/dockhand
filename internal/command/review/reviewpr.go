@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/command/checkrun"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
@@ -171,12 +172,12 @@ func checkPullRequest(ctx context.Context, e *engine.Engine, s *settings.Setting
 		return fmt.Errorf("%s moved to %s while review --check ran; nothing was checked", branch.ShortName(), captured.Short())
 	}
 	view.WritePlan(streams.Out, proposal.Plan, e.PlanNotes(ctx, proposal.Plan), e.PlanSiblings(ctx, proposal.Plan), e.Remedy, view.ListShown(streams))
-	if err := engine.Runnable(proposal.Plan); err != nil {
+	if err := checks.Runnable(proposal.Plan); err != nil {
 		return fmt.Errorf("nothing was checked: %w", err)
 	}
 	// A check running that covers this one, by the engine's rule
 	// (PlanCovers), is followed.
-	queued, err := e.QueueCheck(ctx, engine.QueueRequest{Branch: branch, Revision: proposal.Capture.Revision, Plan: proposal.Plan, Origin: model.OriginPerson, Beside: engine.BesideFollow})
+	queued, err := e.QueueCheck(ctx, checks.QueueRequest{Branch: branch, Revision: proposal.Capture.Revision, Plan: proposal.Plan, Origin: model.OriginPerson, Beside: checks.BesideFollow})
 	if err != nil {
 		return err
 	}

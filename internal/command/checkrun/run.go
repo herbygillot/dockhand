@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildlog"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/coord"
@@ -59,7 +60,7 @@ func RunQueued(ctx context.Context, e *engine.Engine, run model.Run, streams ter
 		fmt.Fprintf(streams.Out, "%s is queued; serve (PID %d) will run it. Follow it with dockhand wait %s.\n", run.Name(), leader.PID, run.Name())
 		return nil
 	}
-	return Follow(ctx, e, session, run, streams, places, true, func(lead engine.Lead) {
+	return Follow(ctx, e, session, run, streams, places, true, func(lead checks.Lead) {
 		if quiet(streams) {
 			// The notice is the redrawn line's, and -v's line (part 5,
 			// item 4); off a terminal, the line, naming -d, since two
@@ -103,7 +104,7 @@ func Wait(ctx context.Context, e *engine.Engine, run model.Run, streams term.Str
 		return err
 	}
 	defer session.End(context.WithoutCancel(ctx))
-	return Follow(ctx, e, session, run, streams, places, false, func(lead engine.Lead) {
+	return Follow(ctx, e, session, run, streams, places, false, func(lead checks.Lead) {
 		if lead.Here() {
 			fmt.Fprintf(streams.Err, "No dockhand serve is running, so %s will run here. Press Ctrl-C to stop it; completed results will be saved.\n", run.Name())
 			return
@@ -112,7 +113,7 @@ func Wait(ctx context.Context, e *engine.Engine, run model.Run, streams term.Str
 	})
 }
 
-func Follow(ctx context.Context, e *engine.Engine, session *coord.Session, run model.Run, streams term.Streams, places config.Places, named bool, before func(engine.Lead)) error {
+func Follow(ctx context.Context, e *engine.Engine, session *coord.Session, run model.Run, streams term.Streams, places config.Places, named bool, before func(checks.Lead)) error {
 	journal := &journal{e: e, run: run.ID, out: streams.Err}
 	if quiet(streams) {
 		journal.held, journal.live = true, streams.ErrTerminal()

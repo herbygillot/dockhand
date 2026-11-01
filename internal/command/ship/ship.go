@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/command/author"
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/checkrun"
@@ -876,7 +877,7 @@ func queueHead(ctx context.Context, s *settings.Settings, e *engine.Engine, stre
 	// minmax didn't stand for --build all, nor declared tests for --tests
 	// required (Codex's review of 832f059e, medium 4). A check of these
 	// files still to finish is followed where it would stand for this one.
-	queued, err := e.QueueCheck(ctx, engine.QueueRequest{Branch: branch, Revision: proposal.Capture.Revision, Plan: proposal.Plan, Origin: model.OriginPerson, Covered: true, Beside: engine.BesideFollow})
+	queued, err := e.QueueCheck(ctx, checks.QueueRequest{Branch: branch, Revision: proposal.Capture.Revision, Plan: proposal.Plan, Origin: model.OriginPerson, Covered: true, Beside: checks.BesideFollow})
 	if queued.Passed != nil {
 		fmt.Fprintf(streams.Out, "%s: %s passed for this commit already; nothing to check.\n", branch.ShortName(), queued.Passed.Name())
 		return nil, nil
@@ -884,7 +885,7 @@ func queueHead(ctx context.Context, s *settings.Settings, e *engine.Engine, stre
 	fmt.Fprintf(streams.Out, "\n%s · checking %s%s\n", branch.ShortName(), engine.Describe(proposal.Capture.Revision), then)
 	view.WritePlan(streams.Out, proposal.Plan, e.PlanNotes(ctx, proposal.Plan), e.PlanSiblings(ctx, proposal.Plan), e.Remedy, view.ListShown(streams))
 	view.WritePushes(streams.Out, proposal.Plan)
-	if unrunnable := new(engine.UnrunnableError); errors.As(err, &unrunnable) {
+	if unrunnable := new(checks.UnrunnableError); errors.As(err, &unrunnable) {
 		return nil, fmt.Errorf("nothing was checked: %w", err)
 	}
 	if err != nil {

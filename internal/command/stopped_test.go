@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
-	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -30,7 +30,7 @@ func TestAKilledCheckReadsAsStopped(t *testing.T) {
 	require.NoError(t, err)
 	killed, err := e.Session(ctx, model.SessionForeground)
 	require.NoError(t, err)
-	lease, err := killed.Acquire(ctx, engine.RunResource(run.ID))
+	lease, err := killed.Acquire(ctx, checks.RunResource(run.ID))
 	require.NoError(t, err)
 	require.NoError(t, killed.Fenced(ctx, lease, func(tx store.Tx) error {
 		run.State = model.RunRunning

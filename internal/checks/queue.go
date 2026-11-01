@@ -1,9 +1,8 @@
-package engine
+package checks
 
 import (
 	"context"
 	"fmt"
-	"maps"
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
@@ -71,7 +70,7 @@ type UnrunnableError struct {
 
 func (u *UnrunnableError) Error() string {
 	if len(u.Plan.Unresolved) > 0 {
-		return unresolvedWords(u.Plan)
+		return UnresolvedWords(u.Plan)
 	}
 	return "none of the planned ports can build in the selected environments; see Not built"
 }
@@ -88,14 +87,14 @@ func Runnable(plan model.Plan) error {
 // Portfiles would run as root unasked: a pull request someone else wrote,
 // which the person adopted (the trust rule, ahead of Then's item 12), and
 // serve's checks, unless [providers.local] serve says they may.
-func (e *Engine) localAllowed(request QueueRequest) error {
+func (c *Service) localAllowed(request QueueRequest) error {
 	if !slices.ContainsFunc(request.Plan.Environments, func(environment model.Environment) bool { return environment.Provider == buildenv.Local }) {
 		return nil
 	}
 	if pr := request.Branch.PullRequest; pr != nil && pr.Adopted {
 		return refusal.New(refusal.Failed, "%s is a pull request you adopted, whose Portfiles someone else wrote. A local check would run them as root on this Mac; check it with --on tart or --on github instead", request.Branch.ShortName())
 	}
-	if request.Origin == model.OriginServe && !e.LocalServe {
+	if request.Origin == model.OriginServe && !c.LocalServe {
 		return refusal.New(refusal.Environment, "serve does not run checks in a local MacPorts prefix unless [providers.local] serve = true. Portfiles run as root there under a passwordless sudo rule")
 	}
 	return nil
@@ -106,9 +105,9 @@ func (e *Engine) localAllowed(request QueueRequest) error {
 // check that stands for it, where request.Covered takes one; a plan nothing
 // can be built from refused; and one already queued or running for the
 // branch met as request.Beside says.
-func (e *Engine) QueueCheck(ctx context.Context, request QueueRequest) (Queued, error) {
+func (c *Service) QueueCheck(ctx context.Context, request QueueRequest) (Queued, error) {
 	if request.Covered {
-		passed, ok, err := e.Covered(ctx, request.Branch.ID, request.Revision.Source.Tree, request.Plan)
+		passed, ok, err := c.Admission.Covered(ctx, request.Branch.ID, request.Revision.Source.Tree, request.Plan)
 		if err != nil {
 			return Queued{}, err
 		}
@@ -119,48 +118,23 @@ func (e *Engine) QueueCheck(ctx context.Context, request QueueRequest) (Queued, 
 	if err := Runnable(request.Plan); err != nil {
 		return Queued{}, err
 	}
-	if err := e.localAllowed(request); err != nil {
+	if err := c.localAllowed(request); err != nil {
 		return Queued{}, err
 	}
-	queued, err := e.beside(ctx, request)
+	queued, err := c.beside(ctx, request)
 	if err != nil || queued.Followed {
 		return queued, err
 	}
-	queued.Run, err = e.Enqueue(ctx, request.Branch, request.Plan, request.Origin)
+	queued.Run, err = c.Enqueue(ctx, request.Branch, request.Plan, request.Origin)
 	if err != nil {
 		return queued, err
 	}
 	// The branch's new check replaces the clones its earlier ones kept for
 	// dockhand shell; one that can't be removed is clean's to find.
-	if err := e.forgetKept(ctx, request.Branch.ID); err != nil {
+	if err := c.Admission.ForgetKept(ctx, request.Branch.ID); err != nil {
 		progress.Report(ctx, "removing the clones %s's earlier checks kept: %v", request.Branch.ShortName(), err)
 	}
 	return queued, nil
-}
-
-// forgetKept removes the clones the branch's checks kept for dockhand
-// shell (model.Plan.Keep).
-func (e *Engine) forgetKept(ctx context.Context, branch model.BranchID) error {
-	if !slices.ContainsFunc(slices.Collect(maps.Values(e.Providers)), func(provider buildenv.Provider) bool {
-		_, ok := provider.(buildenv.LeftoverProvider)
-		return ok
-	}) {
-		return nil
-	}
-	session, err := e.Session(ctx, model.SessionForeground)
-	if err != nil {
-		return err
-	}
-	defer session.End(context.WithoutCancel(ctx))
-	leftovers, err := e.PlanLeftovers(ctx, session)
-	if err != nil {
-		return err
-	}
-	leftovers = slices.DeleteFunc(leftovers, func(leftover Leftover) bool {
-		return leftover.KeptAt.IsZero() || leftover.Run == nil || leftover.Run.Branch != branch
-	})
-	_, err = e.RemoveLeftovers(ctx, session, leftovers)
-	return err
 }
 
 // beside meets the check queued or running for the branch, where there's
@@ -168,12 +142,12 @@ func (e *Engine) forgetKept(ctx context.Context, branch model.BranchID) error {
 // stopped or not; followed, where it's of the same files and its plan
 // covers this one; or stopped, keeping what it finished, a queued one
 // canceled at once and a running one asked to stop where Stop agrees.
-func (e *Engine) beside(ctx context.Context, request QueueRequest) (Queued, error) {
-	judging, observer, end, err := e.Observing(ctx)
+func (c *Service) beside(ctx context.Context, request QueueRequest) (Queued, error) {
+	judging, observer, end, err := c.Sessions.Observing(ctx)
 	if err != nil {
 		return Queued{}, err
 	}
-	active, runs, err := e.ActiveCheck(judging, observer, request.Branch, request.Revision)
+	active, runs, err := c.ActiveCheck(judging, observer, request.Branch, request.Revision)
 	end()
 	if err != nil || active == nil {
 		return Queued{}, err
@@ -187,7 +161,7 @@ func (e *Engine) beside(ctx context.Context, request QueueRequest) (Queued, erro
 		if !active.SameRevision || active.Stopped {
 			return Queued{}, active
 		}
-		running, err := e.Plan(ctx, active.Run.Plan)
+		running, err := c.plan(ctx, active.Run.Plan)
 		if err != nil {
 			return Queued{}, err
 		}
@@ -209,11 +183,11 @@ func (e *Engine) beside(ctx context.Context, request QueueRequest) (Queued, erro
 			return Queued{}, fmt.Errorf("%s keeps running; nothing new was queued", run.Name())
 		}
 	}
-	session, err := e.Session(ctx, model.SessionForeground)
+	session, err := c.Sessions.Session(ctx, model.SessionForeground)
 	if err != nil {
 		return Queued{}, err
 	}
 	defer session.End(context.WithoutCancel(ctx))
-	replaced, err := e.Replace(ctx, session, runs)
+	replaced, err := c.Replace(ctx, session, runs)
 	return Queued{Replaced: replaced, Was: runs[:len(replaced)]}, err
 }

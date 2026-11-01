@@ -10,16 +10,22 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 type runJSON struct {
-	Name       string     `json:"name"`
-	ID         string     `json:"id"`
-	State      string     `json:"state"`
-	Detail     string     `json:"detail,omitempty"`
-	Origin     string     `json:"origin"`
-	CreatedAt  time.Time  `json:"created_at"`
-	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	Name      string    `json:"name"`
+	ID        string    `json:"id"`
+	State     string    `json:"state"`
+	Detail    string    `json:"detail,omitempty"`
+	Origin    string    `json:"origin"`
+	CreatedAt time.Time `json:"created_at"`
+	// StartedAt is when the run took its slot, and WaitedSeconds how long
+	// it waited for it from created_at; both absent for a run queued
+	// still, and for one recorded before admission kept its start.
+	StartedAt     *time.Time `json:"started_at,omitempty"`
+	WaitedSeconds *int64     `json:"waited_seconds,omitempty"`
+	FinishedAt    *time.Time `json:"finished_at,omitempty"`
 	// Stopped is true for a run recorded as running that no live process
 	// drives; the state says running, as the record does.
 	Stopped bool `json:"stopped,omitempty"`
@@ -29,8 +35,30 @@ type runJSON struct {
 }
 
 func RunView(run model.Run) runJSON {
-	return runJSON{Name: run.Name(), ID: string(run.ID), State: string(run.State), Detail: run.Detail, Origin: string(run.Origin), CreatedAt: run.CreatedAt, FinishedAt: run.FinishedAt,
+	viewed := runJSON{Name: run.Name(), ID: string(run.ID), State: string(run.State), Detail: run.Detail, Origin: string(run.Origin), CreatedAt: run.CreatedAt, FinishedAt: run.FinishedAt,
 		BaselineOf: string(run.BaselineOf)}
+	if waited, ok := run.Waited(); ok {
+		viewed.StartedAt, viewed.WaitedSeconds = run.StartedAt, new(int64(waited.Round(time.Second)/time.Second))
+	}
+	return viewed
+}
+
+// WaitWords say when a run was queued, how long it waited for its slot,
+// and when it finished, where it has: "queued 2026-10-31 14:02:11, waited
+// 3m 31s for its slot, finished 2026-10-31 14:20:40". Empty for a run
+// with no start recorded, queued still or recorded before admission kept
+// one, where its wait could only be read from its finish less its took
+// (rc1's G13).
+func WaitWords(run model.Run) string {
+	waited, ok := run.Waited()
+	if !ok {
+		return ""
+	}
+	words := fmt.Sprintf("queued %s, waited %s for its slot", run.CreatedAt.Local().Format(time.DateTime), prose.Took(waited))
+	if run.FinishedAt != nil {
+		words += ", finished " + run.FinishedAt.Local().Format(time.DateTime)
+	}
+	return words
 }
 
 type revisionJSON struct {
