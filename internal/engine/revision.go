@@ -99,7 +99,7 @@ func placedScope(ctx context.Context, repo *git.Repository, before, after string
 			added = true
 		}
 	}
-	replacedBy := map[string]string{}
+	replacedBy := map[string]macports.Replacement{}
 	if added && len(kept) > 0 {
 		now, err := repo.ReadFiles(ctx, after, kept)
 		if err != nil {
@@ -110,9 +110,9 @@ func placedScope(ctx context.Context, repo *git.Repository, before, after string
 			return macports.Scope{}, err
 		}
 		for _, file := range kept {
-			name, stub := portfile.ReplacedBy(now[file])
+			replacement, stub := portfile.ReplacedBy(now[file])
 			if _, already := portfile.ReplacedBy(was[file]); stub && !already {
-				replacedBy[strings.TrimSuffix(file, "/Portfile")] = name
+				replacedBy[strings.TrimSuffix(file, "/Portfile")] = replacement
 			}
 		}
 	}

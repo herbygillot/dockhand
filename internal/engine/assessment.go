@@ -218,12 +218,25 @@ func (e *Engine) makeAssessments(ctx context.Context, branch model.BranchID, bas
 				Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{}, Problem: "its ports couldn't be read: " + err.Error()}})
 			continue
 		}
+		// The base's ports name each port's predecessor: its own name, a
+		// renamed port's old one (macports.PortTransition), or a new
+		// subport's sibling. Where they can't be read, each port is taken
+		// for the base's of its own name, and evaluated by it, as before.
 		var basePorts []macports.PortInfo
-		if exists[0] {
-			// Read only to find a new subport's sibling; where it can't
-			// be, each subport is evaluated by its own name, as before.
-			basePorts, _ = reader.Ports(ctx, sources[0], directories[0], model.Environment{}, nil)
+		var before, after []string
+		for _, port := range ports {
+			after = append(after, port.Name)
 		}
+		if exists[0] {
+			var err error
+			if basePorts, err = reader.Ports(ctx, sources[0], directories[0], model.Environment{}, nil); err != nil {
+				before = after
+			}
+			for _, port := range basePorts {
+				before = append(before, port.Name)
+			}
+		}
+		transitions := analysis.Scope.Transitions(sources, directory, before, after)
 		for _, port := range ports {
 			// A subport the revision's record says it didn't change is no
 			// part of what upstream's change means: terraform-1.16's
@@ -243,8 +256,16 @@ func (e *Engine) makeAssessments(ctx context.Context, branch model.BranchID, bas
 				found = append(found, a)
 				continue
 			}
+			// jq renamed to jq2 is compared with jq, where the base was
+			// asked for jq2, found none, and read a new port (the roadmap's
+			// "A port's identity across a move or rename"); a new subport
+			// with a sibling in the base is compared with it.
+			transition, _ := macports.TransitionOf(transitions, port.Name)
+			if transition.Kind == macports.TransitionAdded && exists[0] {
+				transition.Before.Name = macports.CounterpartIn(basePorts, port.Name)
+			}
 			made = append(made, model.Assessment{Branch: branch, Tree: tree, Base: base, Port: port.Name, Directory: directory, Policy: assess.Policy, Build: assessmentBuild(), At: e.now(),
-				Comparison: e.collector(planner).Revision(ctx, sources, directories, [2]string{macports.CounterpartIn(basePorts, port.Name), port.Name}, exists[0], portfileText)})
+				Comparison: e.collector(planner).Revision(ctx, transition, portfileText)})
 		}
 	}
 	return found, made, nil

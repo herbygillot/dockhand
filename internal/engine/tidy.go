@@ -46,9 +46,13 @@ type TidyGroup struct {
 	// MovedFrom is the base's directory of a port the commit moves to
 	// Directory, whose removal the commit carries too.
 	MovedFrom string
-	Ports     []string
-	Paths     []string
-	Message   string
+	// RenamedFrom is the old name of the port the commit renames, its
+	// first: as its change record says (macports.PortTransition), or else
+	// the name of the directory it moves from, where that differs.
+	RenamedFrom string
+	Ports       []string
+	Paths       []string
+	Message     string
 	// Combines are the branch's existing commits it takes changes from.
 	Combines []git.HistoryCommit
 	// Working is true when it includes edits not yet committed.
@@ -366,6 +370,7 @@ func (e *Engine) planTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 		}
 		if directory != "" {
 			group.Ports, _ = recordedPorts([]string{directory}, records)
+			group.RenamedFrom = renamedFrom(group, records[directory])
 		}
 		for _, commit := range history {
 			if slices.ContainsFunc(commit.Paths, func(p string) bool { return slices.Contains(paths, p) }) {
@@ -556,6 +561,23 @@ func squash(groups []TidyGroup, changed []string, history []git.HistoryCommit, m
 	return group
 }
 
+// renamedFrom is the old name of the port a group renames, its first: as
+// the directory's change record says, which knows a port renamed in its
+// own directory and one whose directory isn't named for it; else the name
+// of the directory the group moves from, where it isn't the directory's
+// now; else none.
+func renamedFrom(group TidyGroup, record model.ChangeRecord) string {
+	if len(group.Ports) > 0 {
+		if from, ok := record.RenamedFrom(group.Ports[0]); ok {
+			return from
+		}
+	}
+	if group.MovedFrom != "" && path.Base(group.MovedFrom) != path.Base(group.Directory) {
+		return path.Base(group.MovedFrom)
+	}
+	return ""
+}
+
 // derivedSubject is the subject §8 gives a port's change that its files
 // show plainly: a new Portfile is a new port, and a changed version an
 // update to it. Anything else has none.
@@ -590,21 +612,29 @@ func derivedSubject(ctx context.Context, repo *git.Repository, before, after str
 	if group.MovedFrom != "" {
 		move = "move to " + strings.SplitN(group.Directory, "/", 2)[0]
 	}
-	renamed := group.MovedFrom != "" && path.Base(group.MovedFrom) != path.Base(group.Directory)
+	renamed := group.RenamedFrom != ""
 	// The version the port declares, as its Portfile proves it: the
 	// group's first port, which is the directory's own or one of its
-	// subports.
-	subport := ""
+	// subports, read in the base under its old name where it's renamed.
+	// A renamed directory's own port is still its own, renamed where it
+	// is too.
+	subport, oldSubport := "", ""
 	if group.Ports[0] != path.Base(group.Directory) {
 		subport = group.Ports[0]
 	}
-	from, known := portfile.DeclaredVersion(oldText, subport)
+	if oldName := cmp.Or(group.RenamedFrom, group.Ports[0]); oldName != path.Base(cmp.Or(group.MovedFrom, group.Directory)) {
+		oldSubport = oldName
+	}
+	if renamed && oldSubport == "" {
+		subport = ""
+	}
+	from, known := portfile.DeclaredVersion(oldText, oldSubport)
 	to, ok := portfile.DeclaredVersion(text, subport)
 	switch {
 	case renamed && ok && (!known || from != to):
-		return group.Ports[0] + ": rename from " + path.Base(group.MovedFrom) + ", update to " + to, nil
+		return group.Ports[0] + ": rename from " + group.RenamedFrom + ", update to " + to, nil
 	case renamed:
-		return group.Ports[0] + ": rename from " + path.Base(group.MovedFrom), nil
+		return group.Ports[0] + ": rename from " + group.RenamedFrom, nil
 	case ok && (!known || from != to) && move != "":
 		return group.Ports[0] + ": update to " + to + ", " + move, nil
 	case ok && (!known || from != to):

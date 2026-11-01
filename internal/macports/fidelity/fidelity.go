@@ -595,8 +595,21 @@ func ScopedChecksumsOf(scope *macports.ReleaseScope, before, after macports.Snap
 // its evaluation at a base and at a revision, each side normalized by its
 // own root: the main port first, the one the directory is named for, then
 // the rest in MacPorts' order. A nil side is a directory the base or the
-// revision doesn't have, whose subports are all added or all removed.
-func SubportChanges(directory string, base, revision *macports.Snapshot) []model.SubportChange {
+// revision doesn't have, whose subports are all added or all removed. A
+// subport transitions say is renamed is compared with the base's port of
+// its old name, its name a field that moved, where it read as added beside
+// that port removed (the roadmap's "A port's identity across a move or
+// rename").
+func SubportChanges(directory string, base, revision *macports.Snapshot, transitions []macports.PortTransition) []model.SubportChange {
+	// renamed is the base's name of each subport renamed, and carried the
+	// base's names a rename carries on, which are no subports of their own.
+	renamed, carried := map[string]string{}, map[string]bool{}
+	for _, transition := range transitions {
+		if transition.Kind == macports.TransitionRenamed {
+			renamed[transition.After.Name] = transition.Before.Name
+			carried[transition.Before.Name] = true
+		}
+	}
 	var names []string
 	main := path.Base(directory)
 	for _, side := range []*macports.Snapshot{revision, base} {
@@ -604,7 +617,7 @@ func SubportChanges(directory string, base, revision *macports.Snapshot) []model
 			continue
 		}
 		for name := range side.Ports {
-			if !slices.Contains(names, name) {
+			if !slices.Contains(names, name) && (side != base || !carried[name]) {
 				names = append(names, name)
 			}
 		}
@@ -622,8 +635,12 @@ func SubportChanges(directory string, base, revision *macports.Snapshot) []model
 	for _, name := range names {
 		var old, next macports.PortInfo
 		had, has := false, false
+		was, isRenamed := renamed[name]
+		if !isRenamed {
+			was = name
+		}
 		if base != nil {
-			old, had = base.Ports[name]
+			old, had = base.Ports[was]
 		}
 		if revision != nil {
 			next, has = revision.Ports[name]

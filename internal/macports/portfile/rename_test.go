@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/macports"
 )
 
 // A rename sets the name on the Portfile's name line, or, where the name
@@ -48,7 +50,10 @@ func TestARenamedPortsStub(t *testing.T) {
 	stub := Stub{Name: "goplus", ReplacedBy: "xgo", Version: "1.7.5", Revision: 1, Categories: []string{"lang", "devel"}}
 	replaced, ok := ReplacedBy(stub.Text())
 	require.True(t, ok)
-	require.Equal(t, "xgo", replaced)
+	require.Equal(t, macports.Replacement{Port: "goplus", By: "xgo"}, replaced, "the old name it keeps, and its replacement")
+	replaced, ok = ReplacedBy([]byte("PortSystem 1.0\nPortGroup obsolete 1.0\nname ${old}\nreplaced_by jq2\n"))
+	require.True(t, ok)
+	require.Equal(t, macports.Replacement{By: "jq2"}, replaced, "a name not said literally is none")
 	_, ok = ReplacedBy([]byte("PortSystem 1.0\nname jq\nreplaced_by jq2\n"))
 	require.False(t, ok, "no obsolete PortGroup")
 	require.Equal(t, Modeline+`

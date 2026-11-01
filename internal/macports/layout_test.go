@@ -125,8 +125,8 @@ func TestAScopePlacesRemovedAndMovedPorts(t *testing.T) {
 	// is that port renamed, the stub with it (dockhand rename).
 	renamed := macports.ScopeOf([]string{"lang/goplus/Portfile", "lang/xgo/Portfile", "textproc/jq/Portfile"}).Placed(
 		map[string]bool{"lang/goplus": true, "textproc/jq": true}, map[string]bool{"lang/goplus": true, "lang/xgo": true, "textproc/jq": true},
-		map[string]string{"lang/goplus": "xgo", "textproc/jq": "jq3"})
-	require.Equal(t, []macports.Move{{From: "lang/goplus", To: "lang/xgo", Stub: true}}, renamed.Moved)
+		map[string]macports.Replacement{"lang/goplus": {Port: "goplus", By: "xgo"}, "textproc/jq": {Port: "jq", By: "jq3"}})
+	require.Equal(t, []macports.Move{{From: "lang/goplus", To: "lang/xgo", Stub: true, Port: "goplus"}}, renamed.Moved)
 	require.Equal(t, []string{"lang/xgo", "textproc/jq"}, renamed.Ports, "jq's replacement isn't the change's")
 	require.Equal(t, "lang/goplus", renamed.MovedFrom("lang/xgo"))
 }

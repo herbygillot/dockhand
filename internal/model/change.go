@@ -144,6 +144,23 @@ func (r ChangeRecord) MovedVersion(port string) (string, bool) {
 	return "", false
 }
 
+// RenamedFrom is the old name of a subport the record says the revision
+// renamed, compared with the base's port of that name, and false for any
+// other.
+func (r ChangeRecord) RenamedFrom(port string) (string, bool) {
+	for _, p := range r.Ports {
+		if p.Port != port || p.Kind != SubportChanged {
+			continue
+		}
+		for _, field := range p.Fields {
+			if field.Field == "name" && field.From != "" && field.To == port {
+				return field.From, true
+			}
+		}
+	}
+	return "", false
+}
+
 // Validate checks the rules every recorded change keeps.
 func (r ChangeRecord) Validate() error {
 	switch {

@@ -100,7 +100,7 @@ func (e *Engine) restyleEvaluates(ctx context.Context, families FamilyReader, wo
 	if err != nil {
 		return "it couldn't be evaluated restyled: " + err.Error()
 	}
-	for _, change := range fidelity.SubportChanges(directory, &before, &after) {
+	for _, change := range fidelity.SubportChanges(directory, &before, &after, nil) {
 		if change.Kind != model.SubportUnchanged {
 			return fmt.Sprintf("restyled, %s evaluates otherwise", change.Port)
 		}

@@ -809,7 +809,7 @@ func (e *Engine) editFindings(ctx context.Context, worktree *git.Repository, bra
 		// producer, the Portfile's texts with it, so what the edit changed
 		// in a block this Mac doesn't evaluate is said as a record made
 		// from the base says it (batch 76; the architecture re-synthesis,
-		// L2c).
+		// L2c). An update renames no port, on a branch still at its base.
 		name := edit.Directory + "/Portfile"
 		baseFile, baseText, baseErr := worktree.File(ctx, trees[string(base)], name)
 		appliedFile, appliedText, appliedErr := worktree.File(ctx, applied, name)
@@ -821,7 +821,7 @@ func (e *Engine) editFindings(ctx context.Context, worktree *git.Repository, bra
 				appliedText = nil
 			}
 			made := changeRecord(model.ChangeRecord{Branch: branch.ID, Tree: model.ObjectID(applied), Base: base, Directory: edit.Directory, At: edit.At},
-				[2]*macports.Snapshot{&before, &after}, [2][]byte{baseText, appliedText}, "")
+				[2]*macports.Snapshot{&before, &after}, [2][]byte{baseText, appliedText}, "", nil)
 			record = &made
 		}
 	}

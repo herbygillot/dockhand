@@ -240,9 +240,24 @@ func TestSubportChangesSayWhatMovedInEach(t *testing.T) {
 		}},
 		{Port: "main-new", Kind: model.SubportAdded},
 		{Port: "main-old", Kind: model.SubportRemoved},
-	}, SubportChanges("devel/main", &before, &after))
+	}, SubportChanges("devel/main", &before, &after, nil))
 	require.Equal(t, []model.SubportChange{{Port: "main", Kind: model.SubportAdded}, {Port: "main-devel", Kind: model.SubportAdded}, {Port: "main-new", Kind: model.SubportAdded}},
-		SubportChanges("devel/main", nil, &after), "a directory new at the revision")
+		SubportChanges("devel/main", nil, &after, nil), "a directory new at the revision")
+
+	// A subport renamed is compared with its old name's port, its name a
+	// field that moved, where it read as added beside main-old removed.
+	renamed := []macports.PortTransition{{Before: macports.PortSide{Name: "main-old"}, After: macports.PortSide{Name: "main-new"}, Kind: macports.TransitionRenamed}}
+	require.Equal(t, []model.SubportChange{
+		{Port: "main", Kind: model.SubportUnchanged},
+		{Port: "main-devel", Kind: model.SubportChanged, Fields: []model.FieldChange{
+			{Field: "revision", From: "0", To: "1"},
+			{Field: "dependencies", From: "lib:port:zlib", To: "lib:port:zstd"},
+		}},
+		{Port: "main-new", Kind: model.SubportChanged, Fields: []model.FieldChange{
+			{Field: "name", From: "main-old", To: "main-new"},
+			{Field: "version", From: "0.9", To: "3"},
+		}},
+	}, SubportChanges("devel/main", &before, &after, renamed))
 }
 
 // A port's code is compared part by part: a hook whose body moved is said
@@ -257,10 +272,10 @@ func TestAPortsCodeIsComparedPartByPart(t *testing.T) {
 	require.Equal(t, []model.SubportChange{{Port: "main", Kind: model.SubportChanged,
 		Fields:   []model.FieldChange{{Field: "code userproc-post-org.macports.destroot-destroot-0", From: "11", To: "22"}},
 		Unstable: []model.FieldChange{{Field: "code unstable:source_date_epoch", From: "1", To: "2"}},
-	}}, SubportChanges("devel/main", &before, &after))
+	}}, SubportChanges("devel/main", &before, &after, nil))
 	moved := snapshot(map[string]macports.PortInfo{"main": code("11", "2")})
 	require.Equal(t, []model.SubportChange{{Port: "main", Kind: model.SubportUnchanged,
 		Unstable: []model.FieldChange{{Field: "code unstable:source_date_epoch", From: "1", To: "2"}},
-	}}, SubportChanges("devel/main", &before, &moved), "a part that moves without an edit is no change")
+	}}, SubportChanges("devel/main", &before, &moved, nil), "a part that moves without an edit is no change")
 	require.NoError(t, Equivalent(before, after), "an edit's fidelity doesn't read the port's code")
 }
