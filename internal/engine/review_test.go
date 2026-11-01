@@ -9,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -16,6 +18,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -178,6 +182,26 @@ func TestAdoptSomeonesPullRequestAndPushOnlyWhereGitHubAllows(t *testing.T) {
 	require.Equal(t, testsupport.Git(t, adopted.Branch.Worktree, "rev-parse", "HEAD"), testsupport.Git(t, theirs, "rev-parse", "patch-1"), "pushed to their branch")
 	require.Empty(t, fake.Updated, "their title and description are theirs")
 	require.Empty(t, fake.Created)
+
+	// Submitted to, it stays theirs: adopted, its author kept, so the
+	// whose notice is still said and a local check of it still refused
+	// (the rc6 full stage's G22).
+	submitted, err := e.Branch(t.Context(), adopted.Branch.ID)
+	require.NoError(t, err)
+	require.True(t, submitted.PullRequest.Adopted)
+	require.Equal(t, "newcontrib", submitted.PullRequest.Author)
+	whose, others := OthersPortfiles(submitted)
+	require.True(t, others)
+	require.Equal(t, "@newcontrib's", whose)
+	var said []string
+	ctx := progress.WithReporter(t.Context(), func(update progress.Update) { said = append(said, update.Message) })
+	_, err = e.PlanSubmit(ctx, SubmitRequest{Branch: submitted, NoCheck: true})
+	require.NoError(t, err)
+	require.Contains(t, said, "Evaluating @newcontrib's Portfiles on this Mac, for pr-34905")
+	local := model.Environment{Provider: buildenv.Local, Prefix: "/opt/local"}
+	_, err = e.QueueCheck(t.Context(), checks.QueueRequest{Branch: submitted, Plan: model.Plan{Environments: []model.Environment{local},
+		Builds: []model.EnvironmentPlan{{Environment: local, Order: []model.TargetID{"jq"}}}}, Origin: model.OriginPerson})
+	require.ErrorContains(t, err, "pr-34905 is a pull request you adopted, whose Portfiles someone else wrote")
 }
 
 // A review says what update would of someone's pull request: what
@@ -395,4 +419,114 @@ func TestAdoptRefusesWhatItCantTake(t *testing.T) {
 	_, err = e.AdoptPullRequest(t.Context(), 34905, "")
 	require.ErrorIs(t, err, git.ErrBranchExists)
 	require.ErrorContains(t, err, "pr-34905; remove it or rename it, then adopt again")
+}
+
+// A sandbox's pull request is fetched from the sandbox, never from
+// master's upstream, whose #34905 is another pull request, and is kept
+// under a ref naming its repository, beside MacPorts' #34905's; the ref of
+// the number alone, which builds before kept, is left as it is (the rc6
+// full stage's G22).
+func TestASandboxsPullRequestIsFetchedFromTheSandbox(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	fake := f.withFork(t, e)
+	contribution(t, f, fake)
+	macports := testsupport.Git(t, f.upstream, "rev-parse", "refs/pull/34905/head")
+	sandbox := filepath.Join(filepath.Dir(f.upstream), "sandbox")
+	testsupport.Git(t, filepath.Dir(f.upstream), "clone", "-q", f.upstream, sandbox)
+	testsupport.Git(t, sandbox, "switch", "-q", "-c", "theirs", "origin/master")
+	testsupport.WriteFiles(t, sandbox, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.9.0\nrevision 0\n"})
+	commitAs(t, sandbox, "Ada ada@example.org", "jq: update to 1.9.0")
+	testsupport.Git(t, sandbox, "update-ref", "refs/pull/34905/head", "theirs")
+	sandboxed := testsupport.Git(t, sandbox, "rev-parse", "theirs")
+	testsupport.Git(t, f.clone, "update-ref", "refs/dockhand/reviews/34905", "HEAD")
+
+	e.options.PullRequests, e.options.PullRequestsURL = "ada/macports-ports", sandbox
+	report, err := e.Review(t.Context(), 34905)
+	require.NoError(t, err)
+	require.Equal(t, sandboxed, report.Head, "the sandbox's #34905")
+	require.Len(t, report.Commits, 1)
+	require.Equal(t, sandboxed, testsupport.Git(t, f.clone, "rev-parse", "refs/dockhand/reviews/ada/macports-ports/34905"))
+	require.Equal(t, testsupport.Git(t, f.clone, "rev-parse", "HEAD"), testsupport.Git(t, f.clone, "rev-parse", "refs/dockhand/reviews/34905"), "the ref of the number alone is neither read nor moved")
+
+	e.options.PullRequests = ""
+	report, err = e.Review(t.Context(), 34905)
+	require.NoError(t, err)
+	require.Equal(t, macports, report.Head, "MacPorts' #34905, from master's upstream")
+	require.Equal(t, macports, testsupport.Git(t, f.clone, "rev-parse", "refs/dockhand/reviews/macports/macports-ports/34905"))
+	require.Equal(t, sandboxed, testsupport.Git(t, f.clone, "rev-parse", "refs/dockhand/reviews/ada/macports-ports/34905"), "the two never share a ref")
+
+	e.options.PullRequests = "ada/macports-ports"
+	adopted, err := e.AdoptPullRequest(t.Context(), 34905, "")
+	require.NoError(t, err)
+	require.Equal(t, model.ObjectID(sandboxed), adopted.Head, "adopted from the sandbox")
+	require.Equal(t, "ada/macports-ports", adopted.Branch.PullRequest.Repository)
+}
+
+// A branch recorded for another repository's pull request than the one
+// pull requests go to is refused by submit, its preview, adopt and review
+// --check finding it by number, and the refresh, before anything is
+// fetched, pushed, or recorded, naming the setting that reaches its own:
+// a MacPorts branch under a sandbox, and a sandbox's branch without one
+// (the rc6 full stage's G22).
+func TestABranchOfAnotherRepositorysPullRequestIsRefused(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name               string
+		adoptedIn, working string
+		says               string
+	}{
+		{"a MacPorts branch under a sandbox", "", "herbyg-test/macports-ports",
+			"pr-34905 is macports/macports-ports#34905, and DOCKHAND_PULL_REQUESTS names herbyg-test/macports-ports; unset it to work on pr-34905"},
+		{"a sandbox's branch without one", "herbyg-test/macports-ports", "",
+			"pr-34905 is herbyg-test/macports-ports#34905, and pull requests go to macports/macports-ports, DOCKHAND_PULL_REQUESTS being unset; set DOCKHAND_PULL_REQUESTS=herbyg-test/macports-ports to work on pr-34905"},
+		{"another sandbox's branch", "ada/macports-ports", "herbyg-test/macports-ports",
+			"pr-34905 is ada/macports-ports#34905, and DOCKHAND_PULL_REQUESTS names herbyg-test/macports-ports; set it to ada/macports-ports to work on pr-34905"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			f := setup(t)
+			e, _ := f.withPreparer(t)
+			fake := f.withFork(t, e)
+			contribution(t, f, fake)
+			e.options.PullRequests, e.options.PullRequestsURL = c.adoptedIn, f.upstream
+			adopted, err := e.AdoptPullRequest(t.Context(), 34905, "")
+			require.NoError(t, err)
+			head := adopted.Head
+			testsupport.WriteFiles(t, adopted.Branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 0\n# docs\n"})
+			testsupport.Git(t, adopted.Branch.Worktree, "commit", "-q", "-am", "jq: reset revision")
+			refs := testsupport.Git(t, f.clone, "for-each-ref", "refs/dockhand/reviews")
+
+			e.options.PullRequests = c.working
+			refused := func(err error) {
+				t.Helper()
+				require.ErrorContains(t, err, c.says)
+				require.ErrorContains(t, err, "Kept: nothing was fetched, pushed, or recorded.")
+				require.Equal(t, refusal.Failed, refusal.KindOf(err))
+			}
+			_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: adopted.Branch, NoCheck: true})
+			refused(err)
+			_, err = e.ApplySubmit(t.Context(), SubmitPlan{Branch: adopted.Branch, Repository: e.PullRequestRepository()}, model.AnsweredAsked)
+			refused(err)
+			observed := fake.Observed
+			_, err = e.AdoptPullRequest(t.Context(), 34905, "")
+			refused(err)
+			require.Equal(t, observed, fake.Observed, "nothing was read of the pull request")
+			refused(e.TrackedElsewhere(t.Context(), 34905))
+			_, err = e.RefreshAdopted(t.Context(), adopted.Branch, head)
+			refused(err)
+			require.Equal(t, refs, testsupport.Git(t, f.clone, "for-each-ref", "refs/dockhand/reviews"), "nothing was fetched")
+			require.Empty(t, fake.Created)
+			require.Empty(t, fake.Updated)
+			recorded, err := e.Branch(t.Context(), adopted.Branch.ID)
+			require.NoError(t, err)
+			require.Equal(t, adopted.Branch.PullRequest, recorded.PullRequest, "nothing was recorded")
+
+			// Under its own repository it goes on.
+			e.options.PullRequests = c.adoptedIn
+			require.NoError(t, e.TrackedElsewhere(t.Context(), 34905))
+			require.NoError(t, e.pullRequestHere(adopted.Branch))
+		})
+	}
 }

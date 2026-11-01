@@ -7,7 +7,10 @@
 # checks that; after a local commit on the branch and another push, it's
 # refused, naming the commit beyond the head it was adopted at and dockhand
 # check -b, which checks the branch as it is. Without the pull request, the
-# row isn't run.
+# row isn't run. Its heads are fetched from the sandbox, and a pr-<N> this
+# database tracks for MacPorts' #N is refused, naming DOCKHAND_PULL_REQUESTS,
+# rather than taken as the sandbox's (rc6's full stage, where pr-145 was);
+# clean that branch before the row.
 pr() { printf '%s' "${ACCEPT_SANDBOX_PR:-}"; }
 
 act() {
@@ -36,8 +39,11 @@ act() {
 
 assert() {
 	[ -f "$ROW_DIR/result" ] && return 0
+	local first second third
+	first=$(awk '/^\$ dockhand review/{n++} n==1' "$ROW_DIR/out.log")
+	printf '%s\n' "$first" | matches -F "to work on pr-$(pr)" &&
+		{ row_fail "pr-$(pr) is tracked for another repository's #$(pr) than the sandbox's, which review --check refused; clean it, then run the row again"; return; }
 	[ -n "${G22_HEAD:-}" ] || return 0
-	local second third
 	second=$(awk '/^\$ dockhand review/{n++} n==2' "$ROW_DIR/out.log")
 	third=$(awk '/^\$ dockhand review/{n++} n==3' "$ROW_DIR/out.log")
 	printf '%s\n' "$second" | matches -F "[exit 0]" || { row_fail "review --check after the author's push failed: $(printf '%s\n' "$second" | tail -3 | tr '\n' ' ')"; return; }
