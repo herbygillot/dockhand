@@ -297,10 +297,24 @@ type RemoteTag struct{ Name, Object string }
 // any checkout, so no repository's configuration applies, and never
 // prompts for credentials.
 func ListRemoteTags(ctx context.Context, program Program, url string, names ...string) ([]RemoteTag, error) {
+	return listRemoteTags(ctx, program, nil, url, names...)
+}
+
+// ListPublicTags reads a public repository's tags as ListRemoteTags does,
+// as anyone would: no credential helper is asked, so a repository that's
+// gone or private, which a forge answers by asking for credentials, fails
+// rather than reaching the person's Keychain, and a redirect isn't
+// followed, so a repository that moved fails too, for its caller to read
+// the move where it can be said (a forge's API).
+func ListPublicTags(ctx context.Context, program Program, url string) ([]RemoteTag, error) {
+	return listRemoteTags(ctx, program, []string{"-c", "credential.helper=", "-c", "http.followRedirects=false"}, url)
+}
+
+func listRemoteTags(ctx context.Context, program Program, config []string, url string, names ...string) ([]RemoteTag, error) {
 	if !validRemoteURL(url) {
 		return nil, fmt.Errorf("git: invalid remote")
 	}
-	args := []string{"ls-remote", "--tags", "--", url}
+	args := append(append([]string{}, config...), "ls-remote", "--tags", "--", url)
 	wanted := map[string]bool{}
 	for _, name := range names {
 		if !ValidRefName("refs/tags/" + name) {

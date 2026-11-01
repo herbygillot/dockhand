@@ -94,6 +94,20 @@ func (r *repository) readTag(ctx context.Context, name, refName string) (forge.T
 }
 
 func (r *repository) ListTags(ctx context.Context) ([]forge.Tag, error) {
+	// The repository's git service lists every tag, peeled, in one round
+	// trip outside the API's limits and its pacer, where the API pages them
+	// a hundred at a time, 80 ms apart: teleport's 7,117 tags were 72
+	// requests (the upstream-wait measure, 2026-10-31: a look's 801
+	// repositories listed in 21 s, 8 at once). A repository git can't
+	// list as anyone would, gone or private, goes to the API, as an
+	// enterprise server's, or a test's, does.
+	if r.client.Client != nil && r.client.Config.BaseURL == "" && r.client.Config.CloneURL == "" {
+		tags, err := r.publicTags(ctx)
+		if err == nil {
+			return tags, nil
+		}
+		progress.DebugReport(ctx, "Listing the tags of %s with git failed (%v); asking the API", r.name, err)
+	}
 	client, err := r.client.API(ctx)
 	if err != nil {
 		return r.gitTags(ctx, githubapi.RateLimitError(err))
@@ -123,6 +137,25 @@ func (r *repository) ListTags(ctx context.Context) ([]forge.Tag, error) {
 	// The API names each tag's commit, peeled, as Tag would read it. Git's
 	// listing above can't tell a commit from a blob, so it isn't kept.
 	r.remember(tags...)
+	return tags, nil
+}
+
+// publicTags lists the repository's tags from its git service, anonymously
+// (git.ListPublicTags), each peeled to the commit it finally names, as the
+// API's listing names it, and remembers them for Tag.
+func (r *repository) publicTags(ctx context.Context) ([]forge.Tag, error) {
+	listed, err := git.ListPublicTags(ctx, r.client.Git, r.cloneURL())
+	if err != nil {
+		return nil, err
+	}
+	tags := make([]forge.Tag, 0, len(listed))
+	for _, tag := range listed {
+		tags = append(tags, forge.Tag{Name: tag.Name, Commit: tag.Object})
+	}
+	r.remember(tags...)
+	r.mu.Lock()
+	r.unread = true
+	r.mu.Unlock()
 	return tags, nil
 }
 

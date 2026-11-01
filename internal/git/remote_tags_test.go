@@ -102,3 +102,19 @@ func TestARemoteIsReadOutsideAnyRepository(t *testing.T) {
 	require.NoError(t, err, "%s", out)
 	require.Contains(t, string(out), "outside: not read", "the enclosing repository's configuration doesn't apply")
 }
+
+// ListPublicTags lists a repository's tags as anyone would, the same tags
+// ListRemoteTags reads, and fails, rather than asking, for one that isn't
+// there (the GitHub tag listing's way to the API).
+func TestListPublicTagsListsAsAnyoneWould(t *testing.T) {
+	t.Parallel()
+	remote, _ := tagged(t)
+	program := git.Program{Env: testsupport.GitEnv(t)}
+	public, err := git.ListPublicTags(t.Context(), program, remote)
+	require.NoError(t, err)
+	listed, err := git.ListRemoteTags(t.Context(), program, remote)
+	require.NoError(t, err)
+	require.ElementsMatch(t, listed, public)
+	_, err = git.ListPublicTags(t.Context(), program, filepath.Join(t.TempDir(), "gone.git"))
+	require.Error(t, err)
+}

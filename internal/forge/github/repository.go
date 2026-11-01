@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -26,8 +27,36 @@ type repository struct {
 	mu   sync.Mutex
 	tags map[string]forge.Tag
 	// answered is the name GitHub answered a listing as, from the URLs it
-	// gave (AnswersAs).
+	// gave (AnswersAs); unread is true where its tags came from its git
+	// service, which answers a moved repository without saying so, and
+	// no listing of the API's has named it since (ConfirmName).
 	answered string
+	unread   bool
+}
+
+// ConfirmName reads the name GitHub answers the repository by, one request
+// of the API's, where its tags came from git, which serves a moved
+// repository under its old name: acorn-io/acorn listed obot-platform/obot's
+// tags over git with no word of the move. A listing of the API's has said
+// it already otherwise.
+func (r *repository) ConfirmName(ctx context.Context) error {
+	r.mu.Lock()
+	unread := r.unread && r.answered == ""
+	r.mu.Unlock()
+	if !unread {
+		return nil
+	}
+	described, err := r.Describe(ctx)
+	if err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.unread = false
+	if r.answered == "" && githubapi.ValidRepositoryName(described.Name) {
+		r.answered = described.Name
+	}
+	return nil
 }
 
 // AnswersAs is the owner/name GitHub answered the repository's tags or
