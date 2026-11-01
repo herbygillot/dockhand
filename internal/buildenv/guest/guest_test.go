@@ -19,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildenv/guest/guesttest"
 	"github.com/herbygillot/dockhand/internal/evidence"
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -95,6 +96,14 @@ proc mportinit {} {}
 proc declares_tests {portdir name variants} { return [expr {$name in $::env(TESTED)}] }
 proc checkout {portdir name variants} { return [file join $::env(CHECKOUTS) $name] }
 proc work_dir {portdir name variants} { return [file join $::env(CHECKOUTS) $name-work] }
+proc portgroups {portdir name variants} {
+    set files {}
+    foreach entry [split $::env(PORTGROUPS)] {
+        lassign [split $entry =] port file
+        if {$port eq $name} { lappend files [file join $::env(DOCKHAND_GUEST_ROOT) ports $file] }
+    }
+    return $files
+}
 set foreignManagers [expr {[info exists ::env(FOREIGN)] ? $::env(FOREIGN) : {}}]
 `
 	script := filepath.Join(root, "guest.tcl")
@@ -103,7 +112,7 @@ set foreignManagers [expr {[info exists ::env(FOREIGN)] ? $::env(FOREIGN) : {}}]
 	portLog := filepath.Join(root, "port.log")
 	otool := filepath.Join(root, "otool")
 	testsupport.WriteExecutable(t, otool, guesttest.FakeOtool)
-	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "DOCKHAND_GUEST_OTOOL="+otool, "CONTENTS=", "PROVIDES=", "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "CONFIGURESAYS=", "QUIET=", "HANG=", "NOARCHIVE=", "DEPFAILS=", "ACTIVEFILE=", "INSTALLED=", "DEPVERSION=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
+	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "DOCKHAND_GUEST_OTOOL="+otool, "CONTENTS=", "PROVIDES=", "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "CONFIGURESAYS=", "QUIET=", "HANG=", "NOARCHIVE=", "DEPFAILS=", "ACTIVEFILE=", "INSTALLED=", "DEPVERSION=", "PORTGROUPS=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
 	return command
 }
 
@@ -127,8 +136,8 @@ func TestTheGuestBuildsEachTargetInCIsOrder(t *testing.T) {
 	require.Equal(t, "finished", results.State, results.Detail)
 	steps := []Step{{"clean", 1}, {"lint", 2}, {"dependencies", 3}, {"fetch", 4}, {"checksum", 5}, {"install", 6}}
 	require.Equal(t, []Result{
-		{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "libharbor.log", Active: []Port{}, Configure: []string{}, Lint: []string{}, Steps: append(slices.Clone(steps), Step{"test", 7})},
-		{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "harbor-cli.log", Active: []Port{}, Configure: []string{}, Lint: []string{}, Steps: steps},
+		{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "libharbor.log", Active: []Port{}, Sourced: []Sourced{}, Configure: []string{}, Lint: []string{}, Steps: append(slices.Clone(steps), Step{"test", 7})},
+		{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "harbor-cli.log", Active: []Port{}, Sourced: []Sourced{}, Configure: []string{}, Lint: []string{}, Steps: steps},
 	}, results.Targets)
 	// The guest says what uname -m says, here the Mac running the test's.
 	require.Equal(t, map[string]string{"arm64": "arm64", "amd64": "x86_64"}[runtime.GOARCH], results.Environment["architecture"])
@@ -224,6 +233,40 @@ func TestAVerdictRecordsThePortsActiveAsItBuilt(t *testing.T) {
 	require.Equal(t, "finished", results.State, results.Detail)
 	require.Equal(t, "passed", results.Targets[0].Outcome, "the verdict stands")
 	require.Nil(t, results.Targets[0].Active, "absent, its inputs unknown")
+}
+
+// Each verdict comes with the PortGroup files its build loaded, as MacPorts
+// opened the port in the guest, each by its path in the ports tree and its
+// blob ID, as Git names it: the guest's own record, so its result lasts
+// until one of them changes, not until any of _resources does (the oracle
+// survey's Q2). A port that loads none says none; a file outside the
+// staged tree leaves them unrecorded, and the verdict stands.
+func TestAVerdictRecordsThePortGroupsItsBuildLoaded(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	group := filepath.Join(root, "ports", "_resources", "port1.0", "group")
+	require.NoError(t, os.MkdirAll(group, 0o755))
+	cmake := []byte("# PortGroup cmake 1.1\nproc cmake.build_dir {} {}\n")
+	require.NoError(t, os.WriteFile(filepath.Join(group, "cmake-1.1.tcl"), cmake, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(group, "compilers-1.0.tcl"), []byte("caf\xc3\xa9\x00\n"), 0o644))
+	results, _ := guestRunIn(t, root, twoTargets("skip"), "PORTGROUPS=libharbor=_resources/port1.0/group/cmake-1.1.tcl libharbor=_resources/port1.0/group/compilers-1.0.tcl")
+	require.Equal(t, "finished", results.State, results.Detail)
+	require.Equal(t, []Sourced{
+		{Path: "_resources/port1.0/group/cmake-1.1.tcl", Blob: git.SHA1BlobID(cmake)},
+		{Path: "_resources/port1.0/group/compilers-1.0.tcl", Blob: git.SHA1BlobID([]byte("caf\xc3\xa9\x00\n"))},
+	}, results.Targets[0].Sourced, "a file's blob is its bytes', whatever they are")
+	require.Equal(t, []Sourced{}, results.Targets[1].Sourced, "a port that loads no PortGroup")
+
+	outside := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "elsewhere-1.0.tcl"), cmake, 0o644))
+	results, _ = guestRunIn(t, outside, twoTargets("skip"), "PORTGROUPS=libharbor=../elsewhere-1.0.tcl")
+	require.Equal(t, "finished", results.State, results.Detail)
+	require.Equal(t, "passed", results.Targets[0].Outcome, "the verdict stands")
+	require.Nil(t, results.Targets[0].Sourced, "absent, so the host takes all of _resources as read")
+	log, err := os.ReadFile(filepath.Join(outside, results.Targets[0].Log))
+	require.NoError(t, err)
+	require.Contains(t, string(log), "dockhand: which PortGroups this build loaded wasn't recorded: the PortGroup file")
+	require.Contains(t, string(log), "elsewhere-1.0.tcl is outside the ports tree")
 }
 
 // A target that fails stops at its phase, and a target that needs it is

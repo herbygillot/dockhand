@@ -200,6 +200,13 @@ type TargetReport struct {
 	// (decision 28). Nil where the provider couldn't see them, and the
 	// result's inputs are then unknown; empty where there were none.
 	Active []model.ActivePort
+	// Sourced are the PortGroup files the target's build loaded, as the
+	// environment itself recorded them, each by its blob ID, by its path
+	// in the ports tree: its inputs then name those, and what every port
+	// reads of _resources, in place of all of _resources (reuse.Inputs).
+	// Nil where the provider couldn't see them, and empty where it loaded
+	// none.
+	Sourced map[string]model.ObjectID
 	// Links are what a passed target's installed Mach-O files link under
 	// the prefix (model.TargetResult.Links): an observation, not an input,
 	// so an unknown stops no reuse. Nil where the provider couldn't read

@@ -224,9 +224,13 @@ words: MacPorts' last errors, or the changed dependency that didn't pass.
 
 Each target's result keeps what its build read: the ports active as it
 built, each with its version, variants, directory, and archive's digest,
-and the digest of the archive the build made. The guest asks `port` for
-them once per target, after its verdict. They are what a later check will
-compare to reuse the result (decision 28).
+the digest of the archive the build made, and the PortGroup files it
+loaded, each with its Git blob ID. The guest asks `port` for the ports
+once per target, after its verdict, and has MacPorts open the port under
+its variants for the PortGroups, as the build opened it. They are what a
+later check will compare to reuse the result (decision 28): with the
+PortGroups named, a change to one the port didn't load leaves the result
+standing, where any change to `_resources` voided it.
 
 A port MacPorts fetches with Git (`fetch.type git`) names its source by
 `git.branch`, usually a tag, which binds nothing as an archive's checksums

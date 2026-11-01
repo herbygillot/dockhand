@@ -48,6 +48,9 @@ type scriptedProvider struct {
 	// consumes as one target's, in its place.
 	active   []model.ActivePort
 	consumes map[model.TargetID][]model.ActivePort
+	// sourced are reported as the PortGroup files each target's build
+	// loaded, as Tart's guest records them.
+	sourced map[string]model.ObjectID
 	// keep makes each passed target's archive "<target>'s archive", kept.
 	keep bool
 	// keepDependencies keeps each active port's archive whose digest is
@@ -165,6 +168,7 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 		if commit, ok := p.fetches[target.ID]; ok {
 			report.Fetched = commit
 		}
+		report.Sourced = p.sourced
 		report.Result, report.Links = result, p.links[target.ID]
 		if err := build.Record(report); err != nil {
 			return err
@@ -888,6 +892,63 @@ func TestAnUnchangedBuildIsReused(t *testing.T) {
 	require.Len(t, provider.jobs, 4, "_resources changed")
 	again(false)
 	require.Len(t, provider.jobs, 4, "and the new build is reused in its turn")
+}
+
+// A build whose provider said which PortGroups it loaded is reused across
+// a change to another PortGroup, and builds again for a change to one it
+// loaded, or to a file every port reads (the oracle survey's Q2), where any
+// change to _resources built every port again.
+func TestABuildIsReusedAcrossPortGroupsItDidntLoad(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	tools := model.ActivePort{Name: "harbor-tools", Spec: "@1_0", Directory: "graphics/harbor-tools", Archive: "sha256:aa"}
+	github := "_resources/port1.0/group/github-1.0.tcl"
+	loaded := func(content string) map[string]model.ObjectID {
+		return map[string]model.ObjectID{github: model.ObjectID(git.SHA1BlobID([]byte(content)))}
+	}
+	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{tools}, sourced: loaded("# group\n")}, identity: "origin a"}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	first, err := e.Drive(t.Context(), session(t, e), queuedHarborRun(t, e, tahoeArm).ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, first.State, first.Detail)
+	require.Len(t, provider.jobs, 1)
+	var branch model.Branch
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		branch, err = r.Branch(first.Branch)
+		return err
+	}))
+	// changed checks the branch's files with files written over them.
+	changed := func(files map[string]string) {
+		t.Helper()
+		testsupport.WriteFiles(t, branch.Worktree, files)
+		for path := range files {
+			testsupport.Git(t, branch.Worktree, "add", path)
+		}
+		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
+		require.NoError(t, err)
+		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
+		require.NoError(t, err)
+		queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+		require.NoError(t, err)
+		run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+		require.NoError(t, err)
+		require.Equal(t, model.RunPassed, run.State, run.Detail)
+	}
+
+	// A branch that changes _resources plans the ports that read it, so
+	// the targets are the same from here on.
+	changed(map[string]string{"_resources/port1.0/group/harbor-1.0.tcl": "# first\n"})
+	built := len(provider.jobs)
+	changed(map[string]string{"_resources/port1.0/group/harbor-1.0.tcl": "# another\n"})
+	require.Len(t, provider.jobs, built, "a PortGroup no build loaded changed")
+	provider.sourced = loaded("# group, changed\n")
+	changed(map[string]string{github: "# group, changed\n"})
+	require.Len(t, provider.jobs, built+1, "the PortGroup they loaded changed")
+	changed(map[string]string{"_resources/port1.0/group/harbor-1.0.tcl": "# another, again\n"})
+	require.Len(t, provider.jobs, built+1, "and the new build is reused in its turn")
+	changed(map[string]string{"_resources/port1.0/compilers/gcc_compilers.tcl": "set gcc_compilers {}\n"})
+	require.Len(t, provider.jobs, built+2, "a file every port reads changed")
 }
 
 // A passed build whose inputs couldn't be recorded is reused by no later

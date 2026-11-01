@@ -151,7 +151,14 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // run under sudo on this Mac gives what it wrote there to the person who
 // ran sudo as it exits: ownership of its own records, so the protocol
 // stays 3.
-const guestPin = "11973e39a5ace8a98a3b636f23a625a48d1097d7a0cee261b50b07bb4b5289d0"
+//
+// Since the roadmap's item on results reused across _resources changes,
+// each verdict also says which PortGroup files its build loaded, as
+// MacPorts opens the port under its variants, each with its blob ID, for
+// reuse to key on in place of all of _resources. That reports more, and
+// builds and judges nothing otherwise, so the protocol stays 3: what was
+// recorded before names the whole tree, a stricter key, and stands.
+const guestPin = "f5212c04bf4b332debc25724f4a9e89d7fafa43d88c9ea79115e9a38babf997f"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

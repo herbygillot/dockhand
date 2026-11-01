@@ -1049,6 +1049,9 @@ type build struct {
 	// fetched are the commits Git-fetched targets' builds checked out, as
 	// the provider reported them (TargetReport.Fetched), until each result is recorded.
 	fetched map[model.TargetID]model.ObjectID
+	// sourced are the PortGroup files each target's build loaded, as the
+	// provider reported them (TargetReport.Sourced), for its inputs.
+	sourced map[model.TargetID]map[string]model.ObjectID
 	// installs are the kept archives the guest installs targets from.
 	installs []buildenv.Archive
 	// active are the ports the provider reported active as targets
@@ -1078,6 +1081,12 @@ func (b *build) Record(report buildenv.TargetReport) error {
 	target := report.Result.Target
 	if report.Fetched != "" {
 		b.fetchedBy(target, report.Fetched)
+	}
+	if report.Sourced != nil {
+		if b.sourced == nil {
+			b.sourced = map[model.TargetID]map[string]model.ObjectID{}
+		}
+		b.sourced[target] = report.Sourced
 	}
 	if report.Active != nil {
 		b.activeIn(target, report.Active)
@@ -1131,10 +1140,11 @@ func (b *build) activeIn(target model.TargetID, active []model.ActivePort) {
 }
 
 // read is what a target's build read of the revision, with the ports its
-// provider saw active: nil where it couldn't say (reuse.Inputs). Inputs
-// that can't be read are left unknown, and said to be.
+// provider saw active, nil where it couldn't say, and the PortGroups it
+// loaded, where it said (reuse.Inputs). Inputs that can't be read are
+// left unknown, and said to be.
 func (b *build) read(planned model.PlanTarget, active []model.ActivePort) (model.TargetInputs, bool) {
-	inputs, err := reuse.Inputs(b.ctx, b.d.c.Checkout, b.tree, b.execution.Identity, planned, active)
+	inputs, err := reuse.Inputs(b.ctx, b.d.c.Checkout, b.tree, b.execution.Identity, planned, active, b.sourced[planned.ID])
 	if err != nil {
 		reason := fmt.Sprintf("what its build read wasn't recorded: %v", err)
 		b.Progress(fmt.Sprintf("%s: %s", planned.ID, reason))

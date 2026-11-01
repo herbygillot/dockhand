@@ -107,3 +107,59 @@ func TestASubportsResultStandsAcrossAnotherSubportsEdit(t *testing.T) {
 	}
 	require.False(t, Current(recorded, "origin a", sibling, nil, now, selectChanged), "an active port's own block changed")
 }
+
+// A result whose build named what it read of _resources stands across a
+// change to a PortGroup it didn't load, and not across one to a PortGroup
+// it did, or to a file every port reads, or an entry added beside them
+// (the oracle survey's Q2): each of _resources' commits voided every kept
+// result, where 175 of 191 in a year changed only the ports loading the
+// PortGroup they changed. ResourcesChanged says what changed.
+func TestAResultLastsUntilWhatItReadOfResourcesChanges(t *testing.T) {
+	target := model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}, Directory: "sysutils/jq"}
+	recorded, err := Inputs(t.Context(), resources("t1", cmakeBlob, golangBlob, "c1"), "t1", "origin", target, []model.ActivePort{},
+		map[string]model.ObjectID{"_resources/port1.0/group/cmake-1.1.tcl": model.ObjectID(cmakeBlob)})
+	require.NoError(t, err)
+	now := func(revision trees, tree string) map[string]model.ObjectID {
+		objects, err := Objects(t.Context(), revision, model.ObjectID(tree), Paths(recorded))
+		require.NoError(t, err)
+		return objects
+	}
+	require.True(t, Current(recorded, "origin", target, nil, now(resources("t1", cmakeBlob, golangBlob, "c1"), "t1"), nil))
+
+	golang := now(resources("t2", cmakeBlob, strings.Repeat("f", 40), "c1"), "t2")
+	require.True(t, Current(recorded, "origin", target, nil, golang, nil), "a PortGroup it didn't load changed")
+	require.Empty(t, ResourcesChanged(recorded, golang))
+
+	cmake := now(resources("t3", cmakeEdited, golangBlob, "c1"), "t3")
+	require.False(t, Current(recorded, "origin", target, nil, cmake, nil), "a PortGroup it loaded changed")
+	require.Equal(t, "the cmake 1.1 PortGroup", ResourcesChanged(recorded, cmake))
+
+	compilers := now(resources("t4", cmakeBlob, golangBlob, "c2"), "t4")
+	require.False(t, Current(recorded, "origin", target, nil, compilers, nil), "the compiler lists every port reads changed")
+	require.Equal(t, "_resources/port1.0/compilers", ResourcesChanged(recorded, compilers))
+
+	added := resources("t5", cmakeBlob, golangBlob, "c1")
+	added["ls:t5p"] += " sdk tree s1"
+	require.Equal(t, "_resources/port1.0/sdk", ResourcesChanged(recorded, now(added, "t5")), "an entry beside the PortGroups added")
+	gone := resources("t6", cmakeBlob, golangBlob, "c1")
+	gone["ls:t6g"] = "golang-1.0.tcl blob " + golangBlob
+	require.Equal(t, "the cmake 1.1 PortGroup", ResourcesChanged(recorded, now(gone, "t6")), "a PortGroup it loaded gone")
+
+	unread := map[string]model.ObjectID{"sysutils/jq": "11", "_resources": "t1r"}
+	require.False(t, Current(recorded, "origin", target, nil, unread, nil), "_resources' tree alone says nothing of its parts")
+}
+
+// Inputs recorded under _resources' whole tree, as every build was before
+// a provider said what PortGroups it loaded, still stand, as a stricter
+// key: for the same tree, and for no other, however little changed.
+func TestAWholeTreeInputMatchesOnlyItsTree(t *testing.T) {
+	target := model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}, Directory: "sysutils/jq"}
+	recorded := model.NewTargetInputs("origin", "sysutils/jq", "11", "t1r", nil, []model.ActivePort{})
+	same, err := Objects(t.Context(), resources("t1", cmakeBlob, golangBlob, "c1"), "t1", Paths(recorded))
+	require.NoError(t, err)
+	require.True(t, Current(recorded, "origin", target, nil, same, nil))
+	golang, err := Objects(t.Context(), resources("t2", cmakeBlob, strings.Repeat("f", 40), "c1"), "t2", Paths(recorded))
+	require.NoError(t, err)
+	require.False(t, Current(recorded, "origin", target, nil, golang, nil), "a PortGroup changed, which it may have read")
+	require.Equal(t, "_resources", ResourcesChanged(recorded, golang))
+}
