@@ -908,8 +908,9 @@ func (e *Engine) masters(ctx context.Context) ([]string, error) {
 }
 
 // title keeps a title given at any step; otherwise a single commit's
-// subject, or the subject of the only port's first commit. Dockhand never
-// composes one, and an existing pull request keeps its own.
+// subject, the only port's (portTitle), an update's beside its rebuilds,
+// or updates' to one version joined. Dockhand writes no words of its own,
+// and an existing pull request keeps its own.
 func (e *Engine) title(plan *SubmitPlan) {
 	switch {
 	case plan.Request.Title != "":
@@ -923,7 +924,7 @@ func (e *Engine) title(plan *SubmitPlan) {
 	case len(plan.Ports) == 1:
 		plan.Title = portTitle(plan.Ports[0], plan.moved[plan.Ports[0]], plan.Commits)
 	default:
-		plan.Title = updateWithRebuilds(plan.Commits)
+		plan.Title = cmp.Or(updateWithRebuilds(plan.Commits), updatesToOneVersion(plan.Commits))
 	}
 	if plan.Title == "" {
 		plan.block(branchstate.Block{Kind: branchstate.BlockNoTitle})
@@ -993,6 +994,29 @@ func updateWithRebuilds(commits []git.HistoryCommit) string {
 		}
 	}
 	return update
+}
+
+// updatesToOneVersion joins the subjects of a branch whose commits each
+// update one port to one version, the same for all, as "ace, tao: update
+// to 8.0.8" from "ace: update to 8.0.8" and "tao: update to 8.0.8": the
+// commits' own words, their ports in MacPorts' order. It's empty for any
+// other branch, which still asks for a title (field testing's ace+tao
+// branch, 2026-10-31).
+func updatesToOneVersion(commits []git.HistoryCommit) string {
+	var ports []string
+	var to string
+	for _, commit := range commits {
+		port, version, ok := commitmsg.UpdateTo(commit.Subject())
+		if !ok || slices.Contains(ports, port) || (to != "" && version != to) {
+			return ""
+		}
+		ports, to = append(ports, port), version
+	}
+	if len(ports) < 2 {
+		return ""
+	}
+	slices.SortFunc(ports, macports.ComparePortNames)
+	return strings.Join(ports, ", ") + ": update to " + to
 }
 
 // searchOthers looks for other open pull requests for the same ports.

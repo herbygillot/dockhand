@@ -151,6 +151,18 @@ func RebuildFor(subject string) (string, bool) {
 	return port, port != ""
 }
 
+// UpdateTo is the port and version of an update's subject as update
+// writes it, "tao: update to 8.0.8": one port, one version, nothing after.
+// False for any other subject, as "tao: update to 8.0.8, fix build" or
+// "ace, tao: update to 8.0.8".
+func UpdateTo(subject string) (port, version string, ok bool) {
+	port, version, ok = strings.Cut(subject, ": update to ")
+	if !ok || port == "" || version == "" || strings.ContainsAny(port, ", ") || strings.ContainsAny(version, ", ") {
+		return "", "", false
+	}
+	return port, version, true
+}
+
 // TitlePorts are the ports a pull request's title names as a subject does
 // (SubjectPorts), after any bracketed tags before it, as "[WIP] jq: update
 // to 1.8.1" or the acceptance stage's "[testing] …".
