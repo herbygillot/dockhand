@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"unicode"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -40,6 +41,14 @@ func (s Selection) Validate() error {
 	for _, port := range s.Ports {
 		if strings.TrimSpace(port) == "" {
 			return fmt.Errorf("port must not be empty")
+		}
+		// No port's name holds whitespace, so one that does is several
+		// names in one argument, refused before it's looked up:
+		// outdated "airspy airspyhf … apache-ant-1.9" read "no port named
+		// airspy airspyhf …" three times (field testing, the
+		// outdated-ports session's note 18).
+		if strings.ContainsFunc(port, unicode.IsSpace) {
+			return fmt.Errorf("%q: this looks like several port names in one argument; give each as its own", port)
 		}
 	}
 	return nil

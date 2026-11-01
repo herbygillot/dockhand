@@ -283,6 +283,11 @@ func (e *Engine) Outdated(ctx context.Context, request OutdatedRequest) (Outdate
 	if len(request.Ports) == 0 && len(request.Maintainers)+len(request.Categories) == 0 {
 		return OutdatedReport{}, fmt.Errorf("name ports, or ask for yours with --mine")
 	}
+	// A selection that can't be looked up is refused before master is
+	// fetched, and said once.
+	if err := (outdated.Selection{Ports: request.Ports, Maintainers: request.Maintainers, Categories: request.Categories, NotMaintainers: request.NotMaintainers}).Validate(); err != nil {
+		return OutdatedReport{}, err
+	}
 	master, err := e.fetchMaster(ctx)
 	if err != nil {
 		return OutdatedReport{}, err

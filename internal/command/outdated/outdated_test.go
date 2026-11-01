@@ -349,3 +349,18 @@ func TestALookPastTheAllowanceAsksFirst(t *testing.T) {
 	no := term.Streams{In: strings.NewReader("\n"), Out: &bytes.Buffer{}, Err: &bytes.Buffer{}}.AsTerminal()
 	require.EqualError(t, allowLook(left(1000), no, false)(t.Context(), 2133), "nothing was looked up")
 }
+
+// An argument holding spaces is several port names, refused before it's
+// looked up and said once: outdated "airspy airspyhf … apache-ant-1.9"
+// read "no port named airspy airspyhf …" three times (field testing, the
+// outdated-ports session's note 18).
+func TestAnArgumentOfSeveralNamesIsRefusedOnce(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	reader := cmdtest.WithOutdated(t)
+	out, _, err := cmdtest.Dockhand(t, "outdated", "airspy airspyhf")
+	require.EqualError(t, err, `"airspy airspyhf": this looks like several port names in one argument; give each as its own`)
+	require.Empty(t, out)
+	require.Empty(t, reader.Asked, "nothing was looked up")
+}
