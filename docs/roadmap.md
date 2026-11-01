@@ -297,6 +297,12 @@ These need MacPorts Base, whole-tree surveys, or VMs, so they run as the Mac all
 
 Decided questions, with the rule each settled, are in [decisions](decisions.md).
 
+Open (2026-11-01):
+
+- **The GitHub source choice's three defaults** (prioritization's card in its thread): built on the recommended ones, `tarball` and submodule-Git ports moved to a release's source tarball by default, `archive` ports only on `--source releases`, no Portfile comment; Git ports notice-only, a comment like #35195's, or the item held to the next release, schema 55 and its notes with it, are the others, each one place in internal/macports/portedit/source_choice.go.
+- **A fixture repository with a release asset under the test account**, for G35's full-stage case and a Tart check of a moved port: a GitHub write, the person's to make or to word, before v0.8.0's full stage.
+- **The rc stop rule** (proposed 2026-10-31): only harm found in a candidate's pass, or a regression since the last release, makes another candidate.
+
 ## Later
 
 From Codex's workflow review of 2ad896d2 (2026-10-28, beside the fixes placed before v0.7.0 rc1):
