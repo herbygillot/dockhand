@@ -229,13 +229,24 @@ var (
 	sourceTarball = map[string]string{"fixture-1.2.4/CMakeLists.txt": "project(fixture)\n", "fixture-1.2.4/src/a.c": "", "fixture-1.2.4/.gitmodules": ""}
 )
 
-// A tarball port goes to its release's source archive where one is the
-// source, fetched once, and to GitHub's archive where it isn't, said.
+// By default a tarball port goes to GitHub's archive, as before, and the
+// update says where its release's own archive is the source, a notice;
+// choose takes that archive, fetched once, and GitHub's archive where it
+// isn't the source, said.
 func TestATarballPortGoesToItsReleasesSourceElseTheArchive(t *testing.T) {
 	t.Parallel()
 	release := fakeRelease{tag: tarGz(t, tagArchive), assets: map[string][]byte{"fixture-1.2.4.tar.gz": tarGz(t, sourceTarball), "fixture-1.2.4-darwin-arm64.tar.gz": []byte("binary")}}
 	s, r, requested := githubFixture(t, tarballPort, release)
 	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Equal(t, &MovedSource{From: "tarball", To: "archive"}, result.SourceMoved)
+	require.Equal(t, "release v1.2.4's fixture-1.2.4.tar.gz carries the source; update --source releases fetches it", result.SourceNotice)
+	require.Contains(t, string(result.Files[0].After), "github.tarball_from archive")
+	require.NotContains(t, strings.Join(requested(), "\n"), "darwin-arm64", "the binary bundle is never fetched")
+
+	s, r, requested = githubFixture(t, tarballPort, release)
+	r.SourceMode = SourceChoose
+	result, err = s.Prepare(t.Context(), r)
 	require.NoError(t, err)
 	require.Equal(t, &MovedSource{From: "tarball", To: "releases", Release: "v1.2.4", Asset: "fixture-1.2.4.tar.gz", Lines: []string{"github.tarball_from releases"}}, result.SourceMoved)
 	after := string(result.Files[0].After)
@@ -246,11 +257,17 @@ func TestATarballPortGoesToItsReleasesSourceElseTheArchive(t *testing.T) {
 
 	release.assets["fixture-1.2.4.tar.gz"] = tarGz(t, map[string]string{"fixture-1.2.4/src/a.c": ""})
 	s, r, _ = githubFixture(t, tarballPort, release)
+	r.SourceMode = SourceChoose
 	result, err = s.Prepare(t.Context(), r)
 	require.NoError(t, err)
 	require.Equal(t, &MovedSource{From: "tarball", To: "archive"}, result.SourceMoved)
 	require.Equal(t, "release v1.2.4 carries fixture-1.2.4.tar.gz, which lacks CMakeLists.txt, so the port fetches GitHub's archive of the tag", result.SourceNotice)
 	require.Contains(t, string(result.Files[0].After), "github.tarball_from archive")
+
+	// --source releases, where the asset isn't the source, is refused.
+	r.SourceMode = SourceReleases
+	_, err = s.Prepare(t.Context(), r)
+	require.ErrorIs(t, err, ErrUnsupported)
 }
 
 // --source keep moves nothing: the port stays on GitHub's tarball.
@@ -262,20 +279,43 @@ func TestSourceKeepMovesNothing(t *testing.T) {
 	result, err := s.Prepare(t.Context(), r)
 	require.NoError(t, err)
 	require.Nil(t, result.SourceMoved)
+	require.Empty(t, result.SourceNotice)
 	require.Contains(t, string(result.Files[0].After), "github.tarball_from tarball")
 }
 
-// A port cloned for its submodules goes to a release asset holding each,
-// its distname, suffix, and directory written and its checksums filled,
-// and stays where the asset lacks one, said.
+// By default a port cloned for its submodules stays on its clone, the
+// update saying where a release asset holds each, a notice. Choose, or
+// --source releases, moves it there, its distname, suffix, and directory
+// written and its checksums filled; it stays where the asset lacks one,
+// said.
 func TestAGitPortGoesToAReleaseAssetHoldingItsSubmodules(t *testing.T) {
 	t.Parallel()
 	asset := tarGz(t, map[string]string{"ci_fixture_1.2.4/CMakeLists.txt": "", "ci_fixture_1.2.4/src/a.c": "", "ci_fixture_1.2.4/deps/lib/lib.c": ""})
 	release := fakeRelease{tag: tarGz(t, tagArchive), assets: map[string][]byte{"fixture_1.2.4_tarball.tgz": asset, "fixture-1.2.4.tar.gz": tarGz(t, sourceTarball)}}
+	s, r, _ := githubFixture(t, gitPort, release)
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Nil(t, result.SourceMoved)
+	require.Equal(t, "release v1.2.4's fixture_1.2.4_tarball.tgz carries the source and deps/lib; update --source releases fetches it", result.SourceNotice)
+	require.Contains(t, string(result.Files[0].After), "fetch.type          git")
+	require.Contains(t, string(result.Files[0].After), "post-fetch")
+	require.Empty(t, result.Downloads)
+
+	for _, mode := range []SourceMode{SourceChoose, SourceReleases} {
+		s, r, _ := githubFixture(t, gitPort, release)
+		r.SourceMode = mode
+		result, err := s.Prepare(t.Context(), r)
+		require.NoError(t, err, mode)
+		require.NotNil(t, result.SourceMoved, mode)
+		require.Equal(t, "fixture_1.2.4_tarball.tgz", result.SourceMoved.Asset, mode)
+		require.Empty(t, result.SourceNotice, mode)
+	}
+
 	s, r, requested := githubFixture(t, gitPort, release)
+	r.SourceMode = SourceChoose
 	var said []string
 	ctx := progress.WithReporter(t.Context(), func(update progress.Update) { said = append(said, update.Message) })
-	result, err := s.Prepare(ctx, r)
+	result, err = s.Prepare(ctx, r)
 	require.NoError(t, err)
 	require.Equal(t, &MovedSource{From: "git", To: "releases", Release: "v1.2.4", Asset: "fixture_1.2.4_tarball.tgz", Submodules: []string{"deps/lib"},
 		Lines: []string{"distname ${name}_${version}_tarball", "extract.suffix .tgz", "worksrcdir ci_${name}_${version}"}}, result.SourceMoved)

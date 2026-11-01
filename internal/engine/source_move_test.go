@@ -26,14 +26,20 @@ func TestAMovedSourceIsSaidInTheFixedLineAndTheCommitBody(t *testing.T) {
 	require.Equal(t, "fixture", sourceMoves(append(edits, model.Edit{Directory: "devel/fixture", Port: "fixture", Source: &model.SourceMove{From: "tarball", To: "archive"}}))[1].Port)
 }
 
-// Where the source could move and didn't, the update's notice takes the
-// place of the comparison's own, a notice holding nothing.
+// The update's source notice, the default's that a release asset is the
+// source or why the source could move and didn't, takes the place of the
+// comparison's own, a notice holding nothing.
 func TestASourceNoticeReplacesTheTarballNotice(t *testing.T) {
 	t.Parallel()
-	changes := []model.UpstreamChange{{Kind: "source", Rule: assess.SourceChoice, Message: "the port fetches GitHub's tarball"}, {Kind: "license", Rule: assess.LicenseChanged}}
-	got := withSourceNotice(changes, "release 2.5.0 carries mindforger-2.5.0.tar.gz, which lacks deps/cmark-gfm, so the port stays on its clone")
-	require.Len(t, got, 2)
-	require.Equal(t, "release 2.5.0 carries mindforger-2.5.0.tar.gz, which lacks deps/cmark-gfm, so the port stays on its clone", got[0].Message)
-	require.False(t, got[0].Hold)
+	for _, notice := range []string{
+		"release 2.5.0's mindforger_2.5.0_tarball.tgz carries the source, doc, and deps/cmark-gfm; update --source releases fetches it",
+		"release 2.5.0 carries mindforger-2.5.0.tar.gz, which lacks deps/cmark-gfm, so the port stays on its clone",
+	} {
+		changes := []model.UpstreamChange{{Kind: "source", Rule: assess.SourceChoice, Message: "the port fetches GitHub's tarball"}, {Kind: "license", Rule: assess.LicenseChanged}}
+		got := withSourceNotice(changes, notice)
+		require.Len(t, got, 2)
+		require.Equal(t, notice, got[0].Message)
+		require.False(t, got[0].Hold)
+	}
 	require.Len(t, withSourceNotice(nil, "x"), 1)
 }

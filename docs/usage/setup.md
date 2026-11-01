@@ -160,16 +160,20 @@ dockhand submit --plan
 dockhand submit
 ```
 
-For a port on the github PortGroup, the update also chooses its source: a
-release's own source archive where the release carries one that holds what the
+For a port on the github PortGroup, the update leaves its source as it is,
+except that a port on GitHub's tarball moves to GitHub's archive of the tag.
+Where the release carries its own source archive, one that holds what the
 repository has at the tag (its build files, the paths the Portfile names, and
-for a port cloned with Git, every submodule), else GitHub's archive of the tag
-for a port on GitHub's tarball. A port cloned for its submodules stays on its
-clone unless an archive holds them all. The update says the move, and the
-commit's body and the pull request say it too; where a source could have moved
-and didn't, it says why. `--source keep` moves nothing, and `--source releases`
-or `--source archive` asks for that source, refusing where it doesn't qualify;
-`[update] source` sets it for every update.
+for a port cloned with Git, every submodule), the update says so, a notice
+that holds nothing: "release 2.5.0's mindforger_2.5.0_tarball.tgz carries the
+source, doc, and deps/cmark-gfm; update --source releases fetches it".
+`--source releases` makes that move, refusing where the release's archive
+doesn't qualify, and `--source choose` takes it where it qualifies, else
+GitHub's archive for a port on GitHub's tarball, a port cloned for its
+submodules staying on its clone. The update says a move, and the commit's
+body and the pull request say it too. `--source keep` moves nothing, and
+`--source archive` asks for GitHub's archive; `[update] source` sets any of
+these for every update.
 
 `diff` shows the change; `impact` shows the changed ports and dependents worth
 checking. `tidy` makes the commits. `check --head` checks those committed files.
