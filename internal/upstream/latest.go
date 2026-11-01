@@ -285,6 +285,12 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 	// obot-platform/obot, whose 0.27.0 read "Ready to ship" over acorn's
 	// 0.10.1 (field testing's outdated-ports session). Its release is
 	// uncertain; one moved by owner or name alone is said beside it.
+	// Where its tags came from git, which serves a moved repository under
+	// its old name, the name is read once a release would be shipped; a
+	// read that fails leaves the release as it was found.
+	if confirming, ok := repository.(forge.NameConfirmer); ok && result.Assessment == UpdateAvailable {
+		_ = confirming.ConfirmName(ctx)
+	}
 	if answering, ok := repository.(forge.AnsweringRepository); ok && answering.AnswersAs() != "" {
 		moved := answering.AnswersAs()
 		fromOwner, fromName, _ := strings.Cut(repository.Name(), "/")

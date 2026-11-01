@@ -106,6 +106,13 @@ type AnsweringRepository interface {
 	AnswersAs() string
 }
 
+// NameConfirmer is a repository that reads the name its forge answers by
+// when nothing it listed said, as one whose tags came from git: asked
+// before AnswersAs where a release would be shipped.
+type NameConfirmer interface {
+	ConfirmName(ctx context.Context) error
+}
+
 type DatedRepository interface {
 	CommitTime(ctx context.Context, commit string) (time.Time, error)
 }
