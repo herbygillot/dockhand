@@ -928,6 +928,9 @@ type PullRequestAdoption struct {
 // already, as Review's fetch left it.
 func (e *Engine) AdoptPullRequest(ctx context.Context, number int, at model.ObjectID) (PullRequestAdoption, error) {
 	var adoption PullRequestAdoption
+	if err := e.TrackedElsewhere(ctx, number); err != nil {
+		return adoption, err
+	}
 	ref := pullRequestRef(e.PullRequestRepository(), number)
 	observed, err := e.forge().Observe(ctx, ref)
 	if err != nil {
@@ -969,7 +972,7 @@ func (e *Engine) AdoptPullRequest(ctx context.Context, number int, at model.Obje
 		if head, err = e.Repo.Resolve(ctx, string(at)+"^{commit}"); err != nil || head != string(at) {
 			return adoption, fmt.Errorf("#%d's reviewed commit %s isn't in the repository; review it again", number, at.Short())
 		}
-	} else if head, err = e.Repo.FetchPullRequest(ctx, e.Upstream(), number); err != nil {
+	} else if head, err = e.Repo.FetchPullRequest(ctx, e.pullRequestRemote(), e.PullRequestRepository(), number); err != nil {
 		return adoption, fmt.Errorf("fetching #%d: %w", number, err)
 	}
 	adoption.Head = model.ObjectID(head)
@@ -1027,6 +1030,9 @@ func (e *Engine) RefreshAdopted(ctx context.Context, branch model.Branch, to mod
 	pr := branch.PullRequest
 	if pr == nil || !pr.Adopted {
 		return branch, fmt.Errorf("%s isn't an adopted pull request's branch", branch.ShortName())
+	}
+	if err := e.pullRequestHere(branch); err != nil {
+		return branch, err
 	}
 	head, _, err := e.Repo.Branch(ctx, branch.Name)
 	if err != nil {

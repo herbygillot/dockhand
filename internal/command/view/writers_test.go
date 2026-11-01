@@ -223,7 +223,7 @@ func TestTheReportSaysHowLongEachPartTook(t *testing.T) {
 	WriteResults(&out, "  ", evidence, false)
 	require.Regexp(t, `oniguruma +\S.*\(4m 12s\) +\S.*\(3m 0s\)`, out.String())
 	require.Regexp(t, `jq +\S.*\(7m 48s\) +\S.*\(6m 0s\)`, out.String(), "from the result before it")
-	require.Contains(t, out.String(), "\n  Took 13m 0s on "+engine.DescribeEnvironment(sonoma)+"; 9m 41s on "+engine.DescribeEnvironment(tahoe)+".\n")
+	require.Contains(t, out.String(), "\n  Took 13m 0s on "+checks.DescribeEnvironment(sonoma)+"; 9m 41s on "+checks.DescribeEnvironment(tahoe)+".\n")
 
 	evidence.Targets[1].Outcomes[1].ReusedFrom = "x0"
 	out.Reset()
@@ -243,9 +243,9 @@ func TestWriteLint(t *testing.T) {
 		{Target: "jq", Port: "jq", Environment: tahoe, Lines: []string{"no license set"}},
 		{Target: "harbor-cli", Port: "harbor-cli", Environment: model.Environment{Provider: "github"}, Lines: []string{}, NotNitpicked: true},
 	})
-	on := engine.DescribeEnvironment(tahoe)
+	on := checks.DescribeEnvironment(tahoe)
 	require.Equal(t, "Lint\n  ✗ harbor: Line 3 has trailing whitespace on "+on+"\n  ! jq: no license set on "+on+"\n"+
-		"    harbor-cli: a new port, linted without --nitpick on "+engine.DescribeEnvironment(model.Environment{Provider: "github"})+", so its nitpicks weren't read\n", out.String())
+		"    harbor-cli: a new port, linted without --nitpick on "+checks.DescribeEnvironment(model.Environment{Provider: "github"})+", so its nitpicks weren't read\n", out.String())
 	out.Reset()
 	WriteLint(&out, nil)
 	require.Empty(t, out.String())

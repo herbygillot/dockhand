@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -22,12 +23,12 @@ func TestCaptureNumbersSnapshotsAndReusesUnchangedOnes(t *testing.T) {
 	clean, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 	require.NoError(t, err)
 	require.Equal(t, model.RevisionCommit, clean.Revision.Kind, "files exactly at the commit are the commit")
-	require.Equal(t, "commit "+branch.Base.Short(), Describe(clean.Revision))
+	require.Equal(t, "commit "+branch.Base.Short(), checks.Describe(clean.Revision))
 
 	testsupport.WriteFiles(t, dir, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n", "notes.txt": "mine\n"})
 	first, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 	require.NoError(t, err)
-	require.Equal(t, "snapshot 1", Describe(first.Revision))
+	require.Equal(t, "snapshot 1", checks.Describe(first.Revision))
 	require.Equal(t, []string{"notes.txt"}, first.Untracked, "untracked files are listed and left out")
 	require.Empty(t, first.NewPorts)
 	again, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
@@ -44,7 +45,7 @@ func TestCaptureNumbersSnapshotsAndReusesUnchangedOnes(t *testing.T) {
 
 	included, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking, Include: []string{"notes.txt"}})
 	require.NoError(t, err)
-	require.Equal(t, "snapshot 2", Describe(included.Revision))
+	require.Equal(t, "snapshot 2", checks.Describe(included.Revision))
 	blobs, err := e.Repo.FileBlobs(t.Context(), string(included.Revision.Source.Tree), []string{"notes.txt"})
 	require.NoError(t, err)
 	require.Contains(t, blobs, "notes.txt")

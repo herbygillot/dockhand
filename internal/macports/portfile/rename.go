@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/textedit"
 )
@@ -105,15 +106,17 @@ func SetPrimaryCategory(src []byte, from, category string) ([]byte, bool, error)
 	return src, false, nil
 }
 
-// ReplacedBy is the port an obsolete stub's Portfile names: one that loads
-// PortGroup obsolete and declares replaced_by as a literal, at its top;
-// false for any other.
-func ReplacedBy(src []byte) (string, bool) {
+// ReplacedBy is the rename an obsolete stub's Portfile says: one that
+// loads PortGroup obsolete and declares replaced_by as a literal, at its
+// top, the port it's replaced by, with the old name its name line keeps
+// where that's a literal too; false for any other.
+func ReplacedBy(src []byte) (macports.Replacement, bool) {
 	script, errs := syntax.Parse(src)
 	if len(errs) > 0 {
-		return "", false
+		return macports.Replacement{}, false
 	}
-	obsolete, replaced := false, ""
+	obsolete := false
+	var replacement macports.Replacement
 	for _, item := range script.Items {
 		cmd, ok := item.(syntax.Command)
 		if !ok || len(cmd.Words) < 2 {
@@ -125,10 +128,15 @@ func ReplacedBy(src []byte) (string, bool) {
 		case command == "PortGroup" && literal && value == "obsolete":
 			obsolete = true
 		case command == "replaced_by" && literal && len(cmd.Words) == 2:
-			replaced = value
+			replacement.By = value
+		case command == "name" && len(cmd.Words) == 2:
+			replacement.Port = ""
+			if literal && Literal(value) {
+				replacement.Port = value
+			}
 		}
 	}
-	return replaced, obsolete && replaced != ""
+	return replacement, obsolete && replacement.By != ""
 }
 
 // Stub is the Portfile a renamed port leaves at its old name: PortGroup

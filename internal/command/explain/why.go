@@ -8,6 +8,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/buildlog"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -32,7 +33,7 @@ func explainCheck(ctx context.Context, e *engine.Engine, out io.Writer, run mode
 	}
 	// The check is named where it's asked about, so the heading names its
 	// branch, and the commands below name the check.
-	heading := fmt.Sprintf("%s's check, of %s", branch.ShortName(), engine.Describe(revision))
+	heading := fmt.Sprintf("%s's check, of %s", branch.ShortName(), checks.Describe(revision))
 	if run.BaselineOf != "" {
 		heading = fmt.Sprintf("%s's baseline, at master", branch.ShortName())
 	}
@@ -68,7 +69,7 @@ func explainCheck(ctx context.Context, e *engine.Engine, out io.Writer, run mode
 			if cell.Outcome != model.OutcomeFailed {
 				continue
 			}
-			fmt.Fprintf(out, "  %s %s on %s: failed at %s%s\n", view.Broken, port, engine.DescribeEnvironment(evidence.Plan.Environments[i]), cell.Phase, detail(cell.Detail))
+			fmt.Fprintf(out, "  %s %s on %s: failed at %s%s\n", view.Broken, port, checks.DescribeEnvironment(evidence.Plan.Environments[i]), cell.Phase, detail(cell.Detail))
 		}
 		next = fmt.Sprintf("dockhand logs %s %s", run.Name(), port)
 		writeStep(out, logs, run, port)
@@ -134,7 +135,7 @@ func writeAdvisory(out io.Writer, evidence engine.Evidence) {
 		}
 		for i, cell := range target.Outcomes {
 			if cell.Outcome == model.OutcomePassed && cell.Tests.Failed() {
-				fmt.Fprintf(out, "  %s %s on %s: built; tests failed, but the advisory test policy allows the check to pass\n", view.Look, target.Target.Target.Name, engine.DescribeEnvironment(evidence.Plan.Environments[i]))
+				fmt.Fprintf(out, "  %s %s on %s: built; tests failed, but the advisory test policy allows the check to pass\n", view.Look, target.Target.Target.Name, checks.DescribeEnvironment(evidence.Plan.Environments[i]))
 			}
 		}
 	}

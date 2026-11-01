@@ -7,6 +7,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildlog"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -71,7 +72,7 @@ type revisionJSON struct {
 }
 
 func RevisionView(revision model.Revision) revisionJSON {
-	return revisionJSON{ID: string(revision.ID), Kind: string(revision.Kind), Description: engine.Describe(revision), Tree: string(revision.Source.Tree), Base: string(revision.Source.Base), Commit: string(revision.Source.Commit)}
+	return revisionJSON{ID: string(revision.ID), Kind: string(revision.Kind), Description: checks.Describe(revision), Tree: string(revision.Source.Tree), Base: string(revision.Source.Base), Commit: string(revision.Source.Commit)}
 }
 
 type environmentJSON struct {

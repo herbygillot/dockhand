@@ -106,7 +106,7 @@ func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings map[mode
 	}
 	var on []string
 	for _, environment := range plan.Environments {
-		on = append(on, engine.DescribeEnvironment(environment))
+		on = append(on, checks.DescribeEnvironment(environment))
 	}
 	profile := ""
 	// The command profile is its provider, said already.
@@ -158,7 +158,7 @@ func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings map[mode
 	// Each environment's remedy follows its last target it can't build.
 	for _, planned := range plan.Builds {
 		for i, unmet := range planned.Unmet {
-			fmt.Fprintf(out, "Not built   %s on %s: %s\n", unmet.Target, engine.DescribeEnvironment(unmet.Environment), engine.UnmetWords(unmet))
+			fmt.Fprintf(out, "Not built   %s on %s: %s\n", unmet.Target, checks.DescribeEnvironment(unmet.Environment), checks.UnmetWords(unmet))
 			if i == len(planned.Unmet)-1 && remedy != nil {
 				if words := remedy(unmet); words != "" {
 					fmt.Fprintf(out, "            %s\n", words)
@@ -187,14 +187,14 @@ func writeGitSources(out io.Writer, plan model.Plan) {
 	for _, planned := range plan.Builds {
 		for _, id := range planned.Order {
 			if source, ok := planned.Git[id]; ok {
-				add(fmt.Sprintf("%s: %s", id, engine.GitSourceWords(source)))
+				add(fmt.Sprintf("%s: %s", id, checks.GitSourceWords(source)))
 			}
 		}
 	}
 	for _, planned := range plan.Builds {
 		for _, target := range plan.Omitted {
 			if source, ok := planned.Git[target.ID]; ok {
-				add(fmt.Sprintf("%s (left out): %s", target.ID, engine.LeftOutSourceWords(source)))
+				add(fmt.Sprintf("%s (left out): %s", target.ID, checks.LeftOutSourceWords(source)))
 			}
 		}
 	}
@@ -248,7 +248,7 @@ func writeOrder(out io.Writer, plan model.Plan, shown int) {
 		if i > 0 {
 			label = "           "
 		}
-		fmt.Fprintf(out, "%s on %s: %s\n", label, engine.DescribeEnvironment(planned.Environment), names(planned.Order))
+		fmt.Fprintf(out, "%s on %s: %s\n", label, checks.DescribeEnvironment(planned.Environment), names(planned.Order))
 	}
 }
 
@@ -268,7 +268,7 @@ func writeExclusions(out io.Writer, plan model.Plan, shown int) {
 		}
 		var where []string
 		for _, environment := range x.Environments {
-			where = append(where, engine.DescribeEnvironment(environment))
+			where = append(where, checks.DescribeEnvironment(environment))
 		}
 		fmt.Fprintf(out, "Excluded    %s on %s: %s\n", named, strings.Join(where, "; "), x.Reason)
 	}
@@ -299,7 +299,7 @@ func WriteResults(out io.Writer, indent string, evidence engine.Evidence, where 
 			for _, i := range shown {
 				cell := resultWords(evidence, target, i) + targetTook(evidence, target, i)
 				if where {
-					cell = engine.DescribeEnvironment(environments[i]) + " " + cell
+					cell = checks.DescribeEnvironment(environments[i]) + " " + cell
 				}
 				cells = append(cells, cell)
 			}
@@ -350,7 +350,7 @@ func writeTook(out io.Writer, indent string, evidence engine.Evidence) {
 		if !ok || took < saysTook {
 			continue
 		}
-		parts = append(parts, prose.Took(took)+" on "+engine.DescribeEnvironment(environments[i]))
+		parts = append(parts, prose.Took(took)+" on "+checks.DescribeEnvironment(environments[i]))
 	}
 	if len(parts) > 0 {
 		fmt.Fprintf(out, "%sTook %s.\n", indent, strings.Join(parts, "; "))
@@ -432,7 +432,7 @@ func WriteQueue(out io.Writer, queue []checks.QueuedCheck, led bool) {
 		run := queued.Run
 		var on []string
 		for _, environment := range queued.Plan.Environments {
-			on = append(on, engine.DescribeEnvironment(environment))
+			on = append(on, checks.DescribeEnvironment(environment))
 		}
 		state, detail := string(run.State), run.Detail
 		if run.Origin == model.OriginServe && detail == "" {
@@ -451,7 +451,7 @@ func WriteQueue(out io.Writer, queue []checks.QueuedCheck, led bool) {
 		if run.State == model.RunQueued && !queued.Stopped && !led {
 			detail = "nothing is running the queue; dockhand wait " + run.Name() + " runs it here, dockhand serve --drain runs the queue, cancel ends it"
 		}
-		fmt.Fprintf(table, "  %s\t%s\t%s\t%s\t%s\t%s\n", run.Name(), queued.Branch.ShortName(), engine.Describe(queued.Revision), strings.Join(on, ", "), state, detail)
+		fmt.Fprintf(table, "  %s\t%s\t%s\t%s\t%s\t%s\n", run.Name(), queued.Branch.ShortName(), checks.Describe(queued.Revision), strings.Join(on, ", "), state, detail)
 	}
 	_ = table.Flush()
 	// How long each check that took its slot waited for it, which was
@@ -479,7 +479,7 @@ func WriteQueue(out io.Writer, queue []checks.QueuedCheck, led bool) {
 func QueueView(queue []checks.QueuedCheck) *[]queuedRunJSON {
 	rows := []queuedRunJSON{}
 	for _, queued := range queue {
-		row := queuedRunJSON{runJSON: RunView(queued.Run), Branch: queued.Branch.ShortName(), Revision: engine.Describe(queued.Revision), Environments: []environmentJSON{}}
+		row := queuedRunJSON{runJSON: RunView(queued.Run), Branch: queued.Branch.ShortName(), Revision: checks.Describe(queued.Revision), Environments: []environmentJSON{}}
 		row.Stopped, row.Progress = queued.Stopped, queued.Progress
 		if len(queued.VMs) > 0 {
 			row.VMs, row.TartHome = queued.VMs, queued.TartHome

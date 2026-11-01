@@ -8,6 +8,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/herbygillot/dockhand/internal/buildlog"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -108,7 +109,7 @@ func WriteLogs(out io.Writer, places config.Places, logs engine.RunLogs, stopped
 	}
 	for _, execution := range logs.Executions {
 		x := execution.Execution
-		fmt.Fprintf(out, "  %s, attempt %d, run %s: %s", engine.DescribeEnvironment(x.Environment), x.Attempt, x.ID, x.State)
+		fmt.Fprintf(out, "  %s, attempt %d, run %s: %s", checks.DescribeEnvironment(x.Environment), x.Attempt, x.ID, x.State)
 		if x.Detail != "" {
 			fmt.Fprintf(out, " (%s)", x.Detail)
 		}
@@ -139,7 +140,7 @@ func WriteLogs(out io.Writer, places config.Places, logs engine.RunLogs, stopped
 			// A Git-fetched target's build says what it fetched, or that
 			// its provider couldn't say.
 			if fetch, ok := execution.Git[result.Target]; ok {
-				fmt.Fprintf(out, "      %s\n", engine.FetchedWords(fetch.Expected, fetch.Fetched))
+				fmt.Fprintf(out, "      %s\n", checks.FetchedWords(fetch.Expected, fetch.Fetched))
 			}
 			// A result with several builders shows each one's part.
 			for _, part := range result.Builders {

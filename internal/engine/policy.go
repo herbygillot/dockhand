@@ -54,7 +54,7 @@ func (e *Engine) macPortsNotes(ctx context.Context, plan model.Plan) []string {
 		if version == "" {
 			continue
 		}
-		behind = append(behind, MacPortsBehind{Name: DescribeEnvironment(environment), Image: version, Host: host, Remedy: remakeWords(environment)})
+		behind = append(behind, MacPortsBehind{Name: checks.DescribeEnvironment(environment), Image: version, Host: host, Remedy: remakeWords(environment)})
 	}
 	return OlderMacPorts(behind, true)
 }

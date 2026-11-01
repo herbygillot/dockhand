@@ -121,6 +121,17 @@ type Scope struct {
 type Move struct {
 	From, To string
 	Stub     bool
+	// Port is the old name a rename's stub keeps, the base's port the
+	// rename carries to To; empty for a move, and for a stub whose name
+	// line doesn't say it literally.
+	Port string
+}
+
+// Replacement is what an obsolete stub's Portfile says of a rename: Port,
+// the old name it keeps, where its name line says it literally, and By,
+// the port it's replaced_by.
+type Replacement struct {
+	Port, By string
 }
 
 // Placed is the scope with each changed directory placed by its Portfile
@@ -135,7 +146,7 @@ type Move struct {
 // a port at a directory the change adds, by that name (replacedBy), is
 // that port renamed, the stub at From with it (dockhand rename,
 // 2026-10-29).
-func (s Scope) Placed(inBase, inHead map[string]bool, replacedBy map[string]string) Scope {
+func (s Scope) Placed(inBase, inHead map[string]bool, replacedBy map[string]Replacement) Scope {
 	var removed, added []string
 	for _, directory := range s.Ports {
 		switch {
@@ -164,16 +175,16 @@ func (s Scope) Placed(inBase, inHead map[string]bool, replacedBy map[string]stri
 		placed.Moved = append(placed.Moved, Move{From: from, To: to[0]})
 	}
 	for _, from := range s.Ports {
-		name, ok := replacedBy[from]
+		replacement, ok := replacedBy[from]
 		if !ok || !inBase[from] || !inHead[from] || moved[from] {
 			continue
 		}
-		i := slices.IndexFunc(added, func(candidate string) bool { return path.Base(candidate) == name && !moved[candidate] })
+		i := slices.IndexFunc(added, func(candidate string) bool { return path.Base(candidate) == replacement.By && !moved[candidate] })
 		if i < 0 {
 			continue
 		}
 		moved[from], moved[added[i]] = true, true
-		placed.Moved = append(placed.Moved, Move{From: from, To: added[i], Stub: true})
+		placed.Moved = append(placed.Moved, Move{From: from, To: added[i], Stub: true, Port: replacement.Port})
 	}
 	for _, directory := range s.Ports {
 		if !slices.Contains(placed.Removed, directory) && !slices.ContainsFunc(placed.Moved, func(m Move) bool { return m.From == directory }) {

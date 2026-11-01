@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -37,7 +38,7 @@ func TestOnLocalNamesAPrefix(t *testing.T) {
 	values, ok := OnValues(environments)
 	require.True(t, ok)
 	require.Equal(t, []string{"local:/opt/local", "local:/opt/macports-test"}, values)
-	require.Equal(t, "local:/opt/macports-test macOS 26 (Tahoe) arm64", DescribeEnvironment(environments[1]))
+	require.Equal(t, "local:/opt/macports-test macOS 26 (Tahoe) arm64", checks.DescribeEnvironment(environments[1]))
 	require.Equal(t, "/opt/macports-test: MacPorts' binary archives are built for /opt/local alone, so its dependencies build from source", PrefixNote(environments[1]))
 	require.Empty(t, PrefixNote(environments[0]))
 }

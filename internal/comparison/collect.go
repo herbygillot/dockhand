@@ -33,14 +33,18 @@ import (
 const binaryPackage = "binary package: "
 
 // Revision assesses one port of a directory at the revision against the
-// base, as this Mac's context fetches it: directories are the port's in
-// the base and in the revision, which differ for a moved port; names are
-// the port in the base, its own or a sibling's (macports.CounterpartIn),
-// and in the revision. A port new to the directory has
-// no base, and its candidate is assessed alone, with nothing said of a
-// missing old archive; a port that fetches no upstream source has nothing
-// to compare, and says so.
-func (c Collector) Revision(ctx context.Context, sources [2]model.Source, directories [2]string, names [2]string, hadBase bool, portfile []byte) model.UpstreamComparison {
+// base, as this Mac's context fetches it: transition is the port's before
+// and after (macports.PortTransition), whose sources, directories, and
+// names differ for a moved or renamed port, and whose before may name a
+// sibling it's compared with (macports.CounterpartIn). A port with no
+// before has no base, and its candidate is assessed alone, with nothing
+// said of a missing old archive; a port that fetches no upstream source
+// has nothing to compare, and says so.
+func (c Collector) Revision(ctx context.Context, transition macports.PortTransition, portfile []byte) model.UpstreamComparison {
+	sources := [2]model.Source{transition.Before.Source, transition.After.Source}
+	directories := [2]string{transition.Before.Directory, transition.After.Directory}
+	names := [2]string{transition.Before.Name, transition.After.Name}
+	hadBase := names[0] != ""
 	name, directory := names[1], directories[1]
 	var infos [2]macports.PortInfo
 	var plans [2][]macports.Distfile

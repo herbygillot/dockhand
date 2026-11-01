@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -45,14 +46,19 @@ func (r *Repository) FetchBranch(ctx context.Context, remote, branch string) (co
 	return value.Object, trees[value.Object], nil
 }
 
-// FetchPullRequest fetches a GitHub pull request's head from remote into
-// refs/dockhand/reviews/<number>, where it stays for the next review, and
-// returns its commit.
-func (r *Repository) FetchPullRequest(ctx context.Context, remote string, number int) (string, error) {
-	if !validRemoteURL(remote) || number <= 0 {
+// FetchPullRequest fetches a GitHub pull request's head from remote, the
+// repository (owner/name) it was opened in, into
+// refs/dockhand/reviews/<owner>/<name>/<number>, where it stays for the
+// next review, and returns its commit. The ref names the repository, so a
+// sandbox's #145 and MacPorts' never share one (the rc6 full stage's G22).
+// The ref of the number alone, refs/dockhand/reviews/<number>, which
+// builds before kept, is never read, and is left as it is.
+func (r *Repository) FetchPullRequest(ctx context.Context, remote, repository string, number int) (string, error) {
+	owner, name, found := strings.Cut(strings.ToLower(repository), "/")
+	if !validRemoteURL(remote) || number <= 0 || !found || strings.Contains(name, "/") || !ValidBranchName(owner) || !ValidBranchName(name) {
 		return "", fmt.Errorf("git: invalid fetch source")
 	}
-	ref := fmt.Sprintf("refs/dockhand/reviews/%d", number)
+	ref := fmt.Sprintf("refs/dockhand/reviews/%s/%s/%d", owner, name, number)
 	if _, err := r.output(ctx, "fetch", "--no-tags", "--no-write-fetch-head", "--no-auto-maintenance", "--recurse-submodules=no", "--refmap=", "--", remote, fmt.Sprintf("+refs/pull/%d/head:%s", number, ref)); err != nil {
 		return "", err
 	}

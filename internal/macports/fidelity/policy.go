@@ -8,4 +8,7 @@ package fidelity
 // without Unseen, which no later read made again (the architecture
 // re-synthesis, L2c): those are made again now. Policy 5 compares
 // macosx_deployment_target too, which a raised one holds for a look.
-const ChangePolicy = 5
+// Policy 6 compares a renamed subport with its old name's port
+// (macports.PortTransition), where it read as added beside that port
+// removed.
+const ChangePolicy = 6

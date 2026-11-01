@@ -22,6 +22,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/binaryarchive"
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
@@ -30,6 +31,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/store/sqlite"
 	"github.com/herbygillot/dockhand/internal/upstream"
@@ -67,6 +69,10 @@ type Options struct {
 	// sandbox, a fork of MacPorts' repository that takes pull requests
 	// within itself, so its repeatable rows open nothing at MacPorts.
 	PullRequests string
+	// PullRequestsURL is where a sandbox's pull requests' heads are
+	// fetched from: its address on github.com when empty, as compose
+	// leaves it; a test's stand-in, as Upstream is master's.
+	PullRequestsURL string
 	// Tclsh is MacPorts' port-tclsh, which evaluates Portfiles: this
 	// Mac's, which compose finds (macports.FindTclsh), and none where it's
 	// empty.
@@ -101,18 +107,10 @@ type Options struct {
 	// Readings is where readings of upstream's archives are kept
 	// (ReadingCache); none are kept when empty.
 	Readings string
-	// Archives is where packages.macports.org's listings of ports'
-	// archives are kept a day, for a check's install estimate; kept for
-	// the run alone when empty.
-	Archives string
 	// Indexes is where port indexes are cached, which staging an index
 	// needs; IndexMirror is the directory a cache with no generation near
 	// enough is seeded from, MacPorts' own when empty.
 	Indexes, IndexMirror string
-	// Packages is the site master's binary archives are read from, for an
-	// install finding's earlier reading (masterArchive);
-	// packages.macports.org where empty.
-	Packages string
 	// AllowMajors lets an update nobody looks over move a port's major
 	// version without a look; holds.majors = "allow". Held otherwise.
 	AllowMajors bool
@@ -233,6 +231,11 @@ type Engine struct {
 	// HTTPS says whether a URL answers over HTTPS, for a port's plain-HTTP
 	// URLs; a request of the URL when nil.
 	HTTPS HTTPSProbe
+	// Catalog is what packages.macports.org serves of ports' archives,
+	// kept as compose places it: the listings a check's install estimate
+	// counts archives by, and master's archive's reading, an install
+	// finding's earlier one. Neither is had where it's nil.
+	Catalog *binaryarchive.Catalog
 	// Providers are where checks build, by name.
 	Providers map[string]buildenv.Provider
 	ports     *selection.Reader
@@ -260,13 +263,8 @@ type Engine struct {
 	// required is build.default's environments as last resolved, kept for
 	// requiredWait (requiredEnvironments).
 	required requiredRead
-	// ArchiveSite is where ports' archives are listed, a test's stand-in
-	// for packages.macports.org where set (InstallEstimates).
-	ArchiveSite string
 	// unreachedRemotes are the remotes this run found refusing this Mac.
 	unreachedRemotes unreachedRemotes
-	// listings are packages.macports.org's listings this run has had.
-	listings listingCache
 	// others are the run's searches for ports' open pull requests, which
 	// start, update, bump, ship, serve, and submit share (othersCache).
 	others othersCache
@@ -424,6 +422,72 @@ func (e *Engine) PullRequestRepository() string {
 // Sandboxed says whether pull requests go to a sandbox, not MacPorts.
 func (e *Engine) Sandboxed() bool {
 	return !strings.EqualFold(e.PullRequestRepository(), UpstreamRepository)
+}
+
+// pullRequestsVariable is the setting that names the repository pull
+// requests go to (Options.PullRequests), as refusals name it.
+const pullRequestsVariable = "DOCKHAND_PULL_REQUESTS"
+
+// pullRequestRemote is where the heads of PullRequestRepository's pull
+// requests are fetched from: a sandbox's own repository on GitHub, never
+// master's Upstream, whose #n is another pull request; unsandboxed,
+// Upstream, a mirror's or a test's where DOCKHAND_UPSTREAM names one (the
+// rc6 full stage's G22).
+func (e *Engine) pullRequestRemote() string {
+	if !e.Sandboxed() {
+		return e.Upstream()
+	}
+	if e.options.PullRequestsURL != "" {
+		return e.options.PullRequestsURL
+	}
+	return github.Remote(e.PullRequestRepository(), false)
+}
+
+// pullRequestHere refuses a branch whose recorded pull request is in a
+// repository other than the one pull requests go to, before anything is
+// fetched, pushed, or recorded for it: its number there is another pull
+// request, and a record written beside the configured repository would
+// rename it (the rc6 full stage's G22). The words name the setting that
+// reaches the branch's own. A record naming no repository is let be.
+func (e *Engine) pullRequestHere(branch model.Branch) error {
+	pr := branch.PullRequest
+	configured := e.PullRequestRepository()
+	if pr == nil || pr.Repository == "" || strings.EqualFold(pr.Repository, configured) {
+		return nil
+	}
+	setting, remedy := fmt.Sprintf("%s names %s", pullRequestsVariable, configured), "set it to "+pr.Repository
+	switch {
+	case !e.Sandboxed():
+		setting, remedy = fmt.Sprintf("pull requests go to %s, %s being unset", configured, pullRequestsVariable), fmt.Sprintf("set %s=%s", pullRequestsVariable, pr.Repository)
+	case strings.EqualFold(pr.Repository, UpstreamRepository):
+		remedy = "unset it"
+	}
+	return refusal.New(refusal.Failed, "%s is %s#%d, and %s; %s to work on %s", branch.ShortName(), pr.Repository, pr.Number, setting, remedy, branch.ShortName()).
+		With("nothing was fetched, pushed, or recorded")
+}
+
+// TrackedElsewhere refuses pull request number where an open branch
+// tracks a pull request of that number in a repository other than the one
+// pull requests go to (pullRequestHere): adopt's and review --check's
+// refusal of the branch they'd find by number, before either fetches
+// anything.
+func (e *Engine) TrackedElsewhere(ctx context.Context, number int) error {
+	var open []model.Branch
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		open, err = r.Branches(store.BranchFilter{States: []model.BranchState{model.BranchOpen}})
+		return err
+	}); err != nil {
+		return err
+	}
+	for _, branch := range open {
+		if branch.PullRequest != nil && branch.PullRequest.Number == number {
+			if err := e.pullRequestHere(branch); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // storeOptions are what the store opens with: the person's answers to a

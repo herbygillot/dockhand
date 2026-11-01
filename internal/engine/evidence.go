@@ -43,9 +43,9 @@ func RemadeWords(target TargetEvidence) string {
 			continue
 		}
 		if c.Change != "" {
-			return "on " + DescribeEnvironment(c.Environment) + ", " + c.Change
+			return "on " + checks.DescribeEnvironment(c.Environment) + ", " + c.Change
 		}
-		return DescribeEnvironment(c.Environment) + " was made again, from another source or with other tools"
+		return checks.DescribeEnvironment(c.Environment) + " was made again, from another source or with other tools"
 	}
 	return ""
 }

@@ -264,7 +264,7 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 		// instant pass isn't a surprise (the Vx port's field testing).
 		// What passed is named where the command didn't name it before
 		// the check, as wait doesn't (part 5, item 3).
-		passed := "Passed for " + engine.Describe(revision)
+		passed := "Passed for " + checks.Describe(revision)
 		if named {
 			passed = "Passed"
 		}
@@ -292,7 +292,7 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 		if err := hintBaseline(ctx, e, out, run); err != nil {
 			fmt.Fprintf(streams.Err, "baseline: %v\n", err)
 		}
-		return refusal.New(refusal.CheckFailed, "%s failed for %s: %s", run.Name(), engine.Describe(revision), run.Detail).
+		return refusal.New(refusal.CheckFailed, "%s failed for %s: %s", run.Name(), checks.Describe(revision), run.Detail).
 			// explain says where, the step's last lines, and whether a
 			// baseline can say more (the command UX review's §7).
 			Then(refusal.Next{Verb: refusal.VerbExplain, Args: []string{run.Name()}})
@@ -314,7 +314,7 @@ func writeFailureLines(out io.Writer, evidence engine.Evidence) {
 			// A dependency's failure is said with MacPorts' line naming the
 			// dependency, which the log's last lines may not hold.
 			if cell := target.Outcomes[i]; cell.Kind == engine.CellRecorded && cell.Outcome == model.OutcomeFailed && cell.Phase == model.PhaseDependencies {
-				fmt.Fprintf(out, "%s: a dependency failed on %s: %s\n\n", target.Target.ID, engine.DescribeEnvironment(evidence.Plan.Environments[i]), cell.Detail)
+				fmt.Fprintf(out, "%s: a dependency failed on %s: %s\n\n", target.Target.ID, checks.DescribeEnvironment(evidence.Plan.Environments[i]), cell.Detail)
 				continue
 			}
 			lines := engine.FailureLines(evidence, target, i, failureLines)
@@ -326,7 +326,7 @@ func writeFailureLines(out io.Writer, evidence engine.Evidence) {
 				where = " at " + string(phase)
 			}
 			if len(evidence.Plan.Environments) > 1 {
-				where += " on " + engine.DescribeEnvironment(evidence.Plan.Environments[i])
+				where += " on " + checks.DescribeEnvironment(evidence.Plan.Environments[i])
 			}
 			fmt.Fprintf(out, "%s failed%s. Last output:\n", target.Target.ID, where)
 			for _, line := range lines {
@@ -368,7 +368,7 @@ func writeFailureLogs(out io.Writer, places config.Places, logs engine.RunLogs) 
 	var lines []string
 	for _, execution := range logs.Executions {
 		x := execution.Execution
-		where := fmt.Sprintf("%s, attempt %d", engine.DescribeEnvironment(x.Environment), x.Attempt)
+		where := fmt.Sprintf("%s, attempt %d", checks.DescribeEnvironment(x.Environment), x.Attempt)
 		if x.State == model.ExecutionInfrastructure && x.Detail != "" {
 			lines = append(lines, fmt.Sprintf("  %s was tried again: %s", where, x.Detail))
 		}
@@ -474,7 +474,7 @@ func reportBaseline(ctx context.Context, e *engine.Engine, run model.Run, stream
 // port only where it failed, so elsewhere there is nothing to set beside.
 func WriteBaselineResults(out io.Writer, base, branch engine.Evidence) {
 	for _, row := range engine.BaselineComparison(base, branch) {
-		fmt.Fprintf(out, "%s · %s\n", row.Target, engine.DescribeEnvironment(row.Environment))
+		fmt.Fprintf(out, "%s · %s\n", row.Target, checks.DescribeEnvironment(row.Environment))
 		if row.Excluded != "" {
 			fmt.Fprintf(out, "    not built at the base: %s\n", row.Excluded)
 			continue

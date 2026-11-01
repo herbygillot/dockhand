@@ -16,6 +16,13 @@ func (e *Engine) ArchiveDirectory() string {
 	return filepath.Join(filepath.Dir(e.options.Database), "archives", string(e.Repository))
 }
 
+// MasterReadings is the directory the readings of master's archives are
+// kept in, beside the kept archives: what a first check compares against
+// (binaryarchive.Catalog's Readings).
+func (e *Engine) MasterReadings() string {
+	return filepath.Join(e.ArchiveDirectory(), "master")
+}
+
 // archiveBytes words the size of archives: 820 MB, 1.4 GB.
 func archiveBytes(archives []model.Archive) string {
 	var n int64

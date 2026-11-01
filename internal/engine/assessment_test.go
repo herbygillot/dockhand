@@ -120,7 +120,9 @@ func TestARevisionIsAssessedByItsNetChange(t *testing.T) {
 	// (Then's item 15).
 	_, portfile, err := e.Repo.File(t.Context(), string(tree), "textproc/jq/Portfile")
 	require.NoError(t, err)
-	collected := e.collector(p).Revision(t.Context(), [2]model.Source{{Commit: branch.Base, Tree: base, Base: branch.Base}, {Tree: tree, Base: branch.Base}}, [2]string{"textproc/jq", "textproc/jq"}, [2]string{"jq", "jq"}, true, portfile)
+	collected := e.collector(p).Revision(t.Context(), macports.PortTransition{Kind: macports.TransitionKept,
+		Before: macports.PortSide{Source: model.Source{Commit: branch.Base, Tree: base, Base: branch.Base}, Directory: "textproc/jq", Name: "jq"},
+		After:  macports.PortSide{Source: model.Source{Tree: tree, Base: branch.Base}, Directory: "textproc/jq", Name: "jq"}}, portfile)
 	require.Equal(t, collected, assessments[0].Comparison)
 
 	held, _, state, err = e.assessedHolds(t.Context(), branch, tree, []string{"textproc/jq"})
@@ -144,6 +146,60 @@ func messagesOf(comparison model.UpstreamComparison) []string {
 		all = append(all, change.Message)
 	}
 	return all
+}
+
+// A port renamed or moved by dockhand rename and move is compared with
+// its predecessor upstream: jq renamed to jq2, a stub left replaced_by it,
+// is compared with jq, where the base was asked for jq2, found none, and
+// the comparison was a new port's; jq moved to devel keeps its comparison
+// as well (the roadmap's "A port's identity across a move or rename").
+func TestARenamedOrMovedPortIsComparedWithItsPredecessor(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name               string
+		request            PortRenameRequest
+		directory, renamed string
+	}{
+		{name: "rename", request: PortRenameRequest{Port: "jq", Name: "jq2"}, directory: "textproc/jq2", renamed: "jq2"},
+		{name: "move", request: PortRenameRequest{Port: "jq", Category: "devel"}, directory: "devel/jq", renamed: "jq"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			f := setup(t)
+			f.options.Readings = t.TempDir()
+			e := f.open(t)
+			branch, err := e.Start(t.Context(), StartRequest{Name: "jq-" + test.name})
+			require.NoError(t, err)
+			testsupport.Git(t, branch.Worktree, "sparse-checkout", "add", "textproc/jq")
+			jq := macports.PortInfo{Name: "jq", Version: "1.7.1", Options: map[string]string{"categories": "textproc"}}
+			usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {jq}, test.directory: {{Name: test.renamed, Version: "1.7.1"}}}})
+			p := newPlanner(t)
+			e.Ports.Archives = p
+			request := test.request
+			request.Branch = branch
+			_, err = e.RenamePort(t.Context(), request)
+			require.NoError(t, err)
+			worktree, err := e.worktree(t.Context(), branch)
+			require.NoError(t, err)
+			_, tree, err := worktree.WorkingTree(t.Context())
+			require.NoError(t, err)
+			trees, err := e.Repo.CommitTrees(t.Context(), []string{string(branch.Base)})
+			require.NoError(t, err)
+			p.Add(model.ObjectID(trees[string(branch.Base)]), plannedPort{Info: jq, Archives: map[string]map[string]string{"jq-1.7.1.tar.gz": {"LICENSE": "MIT\n"}}})
+			p.Add(model.ObjectID(tree), plannedPort{Info: macports.PortInfo{Name: test.renamed, Version: "1.8.1"},
+				Archives: map[string]map[string]string{"jq-1.8.1.tar.gz": {"LICENSE": "MIT\n", "meson.build": "project('jq')\n"}}})
+
+			assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, model.ObjectID(tree), true)
+			require.NoError(t, err)
+			require.Len(t, assessments, 1, "the stub is the rename's")
+			require.Equal(t, test.renamed, assessments[0].Port)
+			require.Equal(t, test.directory, assessments[0].Directory)
+			require.Empty(t, assessments[0].Comparison.Problem)
+			require.Equal(t, []string{"upstream's meson.build is new; the build may need the Portfile to follow"}, messagesOf(assessments[0].Comparison),
+				"compared with jq's archive, the license MIT at both ends")
+			require.EqualValues(t, 2, p.Fetches.Load(), "the base's archive was read")
+		})
+	}
 }
 
 // A new port has no base: its candidate is assessed alone, license and all,
@@ -680,7 +736,9 @@ func TestAnArchiveNoLongerFetchedIsSaid(t *testing.T) {
 	e := &Engine{}
 	e.options.Readings = t.TempDir()
 	e.SourceArchiver = stubArchiver{}
-	result := e.collector(p).Revision(t.Context(), [2]model.Source{{Tree: "base"}, {Tree: "candidate"}}, [2]string{"devel/demo", "devel/demo"}, [2]string{"demo", "demo"}, true, nil)
+	result := e.collector(p).Revision(t.Context(), macports.PortTransition{Kind: macports.TransitionKept,
+		Before: macports.PortSide{Source: model.Source{Tree: "base"}, Directory: "devel/demo", Name: "demo"},
+		After:  macports.PortSide{Source: model.Source{Tree: "candidate"}, Directory: "devel/demo", Name: "demo"}}, nil)
 	require.Empty(t, result.Problem)
 	require.True(t, result.Held(), "an archive no longer fetched holds for a look (L2a)")
 	require.Contains(t, result.Changes, model.UpstreamChange{Kind: "source", Path: "extra-1.0.tar.gz", Message: "upstream: extra-1.0.tar.gz is no longer fetched; look at what the port used of it, and at its checksum lines in the Portfile",

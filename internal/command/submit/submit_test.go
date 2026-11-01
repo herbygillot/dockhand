@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
@@ -1005,19 +1006,19 @@ func TestSubmitsCheckLineNamesOnlyWhereItBuilt(t *testing.T) {
 		Targets:    []engine.TargetEvidence{{Target: target, Passed: true, Outcomes: cmdtest.Cells([]model.TargetResult{{Outcome: model.OutcomeNotRun}, {Execution: "tart_b", Outcome: model.OutcomePassed}})}},
 		Executions: map[model.ExecutionID]model.GuestExecution{"tart_b": {ID: "tart_b", Run: "run_21"}},
 	}
-	require.Equal(t, "passed on "+engine.DescribeEnvironment(tahoe)+" for this commit's files (check-21); nothing built on "+engine.DescribeEnvironment(monterey)+", where every port's Portfile excludes it",
+	require.Equal(t, "passed on "+checks.DescribeEnvironment(tahoe)+" for this commit's files (check-21); nothing built on "+checks.DescribeEnvironment(monterey)+", where every port's Portfile excludes it",
 		view.CheckWords(engine.SubmitPlan{Evidence: evidence}))
 	sequoia := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
 	evidence.Plan.Environments = append(evidence.Plan.Environments, sequoia)
 	evidence.Plan.Builds = append(evidence.Plan.Builds, model.EnvironmentPlan{Environment: sequoia, Exclusions: []model.Exclusion{{Target: target.Target, Reason: "minmax builds each port on its oldest and newest releases", Span: true}}})
 	evidence.Targets[0].Outcomes = append(evidence.Targets[0].Outcomes, evidence.Targets[0].Outcomes[0])
-	require.NotContains(t, view.CheckWords(engine.SubmitPlan{Evidence: evidence}), engine.DescribeEnvironment(sequoia), "minmax's choice isn't the ports' exclusion")
+	require.NotContains(t, view.CheckWords(engine.SubmitPlan{Evidence: evidence}), checks.DescribeEnvironment(sequoia), "minmax's choice isn't the ports' exclusion")
 
 	// An accepted failure says so, and why (field testing, #35662).
 	failed := &engine.Evidence{Run: model.Run{ID: "run_21", Number: 21}, Plan: model.Plan{Environments: []model.Environment{tahoe}},
 		Targets: []engine.TargetEvidence{{Target: target, Outcomes: cmdtest.Cells([]model.TargetResult{{Execution: "tart_b", Outcome: model.OutcomeFailed, Phase: model.PhaseInstall}})}}}
 	failed.Targets[0].Outcomes[0].Environment = tahoe
-	require.Equal(t, "check-21: beekeeper-studio did not pass on "+engine.DescribeEnvironment(tahoe)+", accepted: fails at the base too (check-22)",
+	require.Equal(t, "check-21: beekeeper-studio did not pass on "+checks.DescribeEnvironment(tahoe)+", accepted: fails at the base too (check-22)",
 		view.CheckWords(engine.SubmitPlan{Evidence: failed, Accepted: map[string]engine.AcceptedFailure{"beekeeper-studio": {Kind: engine.AcceptedAtBase, Baselines: []string{"check-22"}}}}))
 }
 
@@ -1139,7 +1140,7 @@ func TestCheckWordsSayWhatWasntBuilt(t *testing.T) {
 		},
 	}}}
 	said := view.CheckWords(engine.SubmitPlan{Evidence: &evidence})
-	require.Equal(t, "check-323: grafana isn't built for these files on "+engine.DescribeEnvironment(tahoe), said)
+	require.Equal(t, "check-323: grafana isn't built for these files on "+checks.DescribeEnvironment(tahoe), said)
 }
 
 // A submission that pushes to a fork its login doesn't own, as a sandbox

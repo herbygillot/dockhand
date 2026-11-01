@@ -253,6 +253,54 @@ func TestTidyNamesTheSubportAHandEditChanges(t *testing.T) {
 	require.Equal(t, "zdemo-devel: update to 2.1", plan.Groups[0].Subject())
 }
 
+// A port renamed where it is, its directory's one port given a new name,
+// is recorded as that port changed, its name with its version, where it
+// read as a new port beside the old one removed; tidy names the rename,
+// "zsolo2: rename from zsolo, update to 1.1", where it said "zsolo:
+// update to 1.1" of the old name (the roadmap's "A port's identity across
+// a move or rename").
+func TestARenameInPlaceIsRecordedAndTidiedAsOne(t *testing.T) {
+	t.Parallel()
+	solo := func(name, version string) string {
+		return "PortSystem 1.0\nname " + name + "\nversion " + version + "\ncategories devel\nlicense MIT\nmaintainers nomaintainer\n" +
+			"homepage https://example.invalid\ndescription demo\nlong_description demo\nmaster_sites https://example.invalid/releases\n" +
+			"checksums sha256 " + strings.Repeat("a", 64) + " size 10\n"
+	}
+	f := setup(t)
+	f.options.Tclsh = testsupport.MacPortsTclsh(t)
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"devel/zsolo/Portfile": solo("zsolo", "1.0")})
+	testsupport.Git(t, f.upstream, "add", ".")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "zsolo: new port")
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "zsolo2"})
+	require.NoError(t, err)
+	_, err = e.Edit(t.Context(), branch, "zsolo")
+	require.NoError(t, err)
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/zsolo/Portfile": solo("zsolo2", "1.1")})
+
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Len(t, plan.Groups, 1)
+	require.Equal(t, []string{"zsolo2"}, plan.Groups[0].Ports)
+	require.Equal(t, "zsolo", plan.Groups[0].RenamedFrom)
+	require.Equal(t, "zsolo2: rename from zsolo, update to 1.1", plan.Groups[0].Subject())
+
+	worktree, err := e.worktree(t.Context(), branch)
+	require.NoError(t, err)
+	_, tree, err := worktree.WorkingTree(t.Context())
+	require.NoError(t, err)
+	records, err := e.revisionChanges(t.Context(), branch.ID, branch.Base, model.ObjectID(tree), false)
+	require.NoError(t, err)
+	record := records["devel/zsolo"]
+	require.Equal(t, []string{"zsolo2"}, record.Changed(), "no zsolo removed beside it")
+	from, ok := record.RenamedFrom("zsolo2")
+	require.True(t, ok)
+	require.Equal(t, "zsolo", from)
+	version, ok := record.MovedVersion("zsolo2")
+	require.True(t, ok)
+	require.Equal(t, "1.1", version)
+}
+
 // An adopted pull request's Portfile isn't the person's (the trust rule's
 // attended half, Then's item 12 as the person reshaped it, 2026-10-27):
 // its records are made, and the command says once whose Portfiles it

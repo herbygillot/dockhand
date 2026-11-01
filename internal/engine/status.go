@@ -497,13 +497,13 @@ func (e *Engine) floorsRaised(ctx context.Context, status BranchStatus) []string
 type Vocabulary struct{}
 
 func (Vocabulary) Environment(environment model.Environment) string {
-	return DescribeEnvironment(environment)
+	return checks.DescribeEnvironment(environment)
 }
-func (Vocabulary) Revision(revision model.Revision) string   { return Describe(revision) }
+func (Vocabulary) Revision(revision model.Revision) string   { return checks.Describe(revision) }
 func (Vocabulary) Ago(at time.Time) string                   { return Ago(at) }
 func (Vocabulary) Remade(target TargetEvidence) string       { return RemadeWords(target) }
 func (Vocabulary) Holds(concerns []model.Concern) []string   { return HoldLines(concerns) }
-func (Vocabulary) Unmet(unmet model.Unmet) string            { return UnmetWords(unmet) }
+func (Vocabulary) Unmet(unmet model.Unmet) string            { return checks.UnmetWords(unmet) }
 func (Vocabulary) CIFailure(failure model.CIFailure) string  { return CIFailureWords(failure) }
 func (Vocabulary) CIPorts(failures []model.CIFailure) string { return CIPortWords(failures) }
 

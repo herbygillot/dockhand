@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -78,7 +79,7 @@ func CheckWords(plan engine.SubmitPlan) string {
 	}
 	var environments, tested, excluded []string
 	for i, environment := range evidence.Plan.Environments {
-		words := engine.DescribeEnvironment(environment)
+		words := checks.DescribeEnvironment(environment)
 		environments = append(environments, words)
 		switch {
 		case evidence.Tested(i):
@@ -115,9 +116,9 @@ func CheckWords(plan engine.SubmitPlan) string {
 		for _, cell := range target.Outcomes {
 			switch {
 			case cell.Unbuilt():
-				unbuiltOn = append(unbuiltOn, engine.DescribeEnvironment(cell.Environment))
+				unbuiltOn = append(unbuiltOn, checks.DescribeEnvironment(cell.Environment))
 			case cell.Kind == engine.CellRecorded && cell.Outcome != model.OutcomePassed:
-				failedOn = append(failedOn, engine.DescribeEnvironment(cell.Environment))
+				failedOn = append(failedOn, checks.DescribeEnvironment(cell.Environment))
 			}
 		}
 		name := target.Target.Target.Name

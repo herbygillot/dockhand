@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/planning"
@@ -728,7 +729,7 @@ func (e *Engine) standingBaseline(ctx context.Context, branch model.BranchID, ba
 			}
 		}
 		if read == "its own directory" && trees[recorded.Directory] == recorded.Tree {
-			return "", fmt.Sprintf("%s's baseline of %s doesn't stand: %s isn't what built it, or what it read wasn't recorded", run.Name(), target.Target.Name, DescribeEnvironment(environment))
+			return "", fmt.Sprintf("%s's baseline of %s doesn't stand: %s isn't what built it, or what it read wasn't recorded", run.Name(), target.Target.Name, checks.DescribeEnvironment(environment))
 		}
 		return "", fmt.Sprintf("master's build of %s reads %s, changed since %s's baseline", target.Target.Name, read, run.Name())
 	}

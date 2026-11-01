@@ -663,11 +663,11 @@ func TestWhatTheWorkReportsIsTheRunsProgress(t *testing.T) {
 			kept = append(kept, event.Message)
 		}
 	}
-	require.Equal(t, []string{DescribeEnvironment(tahoeArm) + ": " + says}, kept, "what's behind the scenes isn't kept")
+	require.Equal(t, []string{checks.DescribeEnvironment(tahoeArm) + ": " + says}, kept, "what's behind the scenes isn't kept")
 	// The command shows what the run keeps through the run, and -v the
 	// rest, each saying which environment it's about, since two stage at
 	// once (the hugo exercise's check-64).
-	about := DescribeEnvironment(tahoeArm)
+	about := checks.DescribeEnvironment(tahoeArm)
 	require.Contains(t, shown, progress.Update{Level: progress.Debug, Message: about + ": " + says, About: about})
 	require.Contains(t, shown, progress.Update{Level: progress.Verbose, Message: about + ": behind the scenes of " + says, About: about})
 }
@@ -1505,7 +1505,7 @@ func TestAnEnvironmentThatCantReuseSaysSo(t *testing.T) {
 	require.Equal(t, model.RunPassed, run.State, run.Detail)
 	messages := said(t, e)
 	require.Len(t, messages, 1)
-	require.Equal(t, run.Name()+": "+DescribeEnvironment(github)+": builds every target, since its provider doesn't say what the environment is, so no earlier result can be reused there", messages[0])
+	require.Equal(t, run.Name()+": "+checks.DescribeEnvironment(github)+": builds every target, since its provider doesn't say what the environment is, so no earlier result can be reused there", messages[0])
 
 	f = setup(t)
 	e = f.open(t)

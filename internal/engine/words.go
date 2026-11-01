@@ -43,7 +43,7 @@ func targetWords(plan model.Plan, result Cell, reading string, accepted Accepted
 		}
 		return "— excluded"
 	case CellUnmet:
-		return "! not built: " + UnmetWords(result.Unmet)
+		return "! not built: " + checks.UnmetWords(result.Unmet)
 	}
 	var words string
 	switch result.Outcome {
@@ -415,33 +415,4 @@ func RemakeWords(release macos.Release, xcode bool) string {
 		remedy += " --xcode <folder> (Xcode " + release.Xcode + "'s .xip, or a folder xcodes downloads it into)"
 	}
 	return remedy
-}
-
-// AgeWords says an age as a person would (prose.Age).
-func AgeWords(age time.Duration) string { return prose.Age(age) }
-
-// DescribeEnvironment words where a check builds for a person
-// (checks.DescribeEnvironment).
-func DescribeEnvironment(environment model.Environment) string {
-	return checks.DescribeEnvironment(environment)
-}
-
-// Describe names the revision for people (checks.Describe).
-func Describe(revision model.Revision) string { return checks.Describe(revision) }
-
-// UnmetWords say what an unmet target needs (checks.UnmetWords).
-func UnmetWords(unmet model.Unmet) string { return checks.UnmetWords(unmet) }
-
-// GitSourceWords say what a Git-fetched target's build is expected to
-// fetch, as a check is planned (checks.GitSourceWords).
-func GitSourceWords(source model.GitSource) string { return checks.GitSourceWords(source) }
-
-// LeftOutSourceWords say what a Git-fetched target --only left out is
-// expected to have fetched (checks.LeftOutSourceWords).
-func LeftOutSourceWords(source model.GitSource) string { return checks.LeftOutSourceWords(source) }
-
-// FetchedWords say what a Git-fetched target's build fetched, for its
-// evidence (checks.FetchedWords).
-func FetchedWords(source model.GitSource, fetched model.ObjectID) string {
-	return checks.FetchedWords(source, fetched)
 }

@@ -164,3 +164,33 @@ func TestReviewCheckChecksTheCommitItReviewed(t *testing.T) {
 	require.Equal(t, b, cmdtest.Dig(t, result.Result, "check", "revision", "commit"), "the check is of the commit reviewed")
 	require.Equal(t, "passed", cmdtest.Dig(t, result.Result, "check", "run", "state"))
 }
+
+// review --check refuses, before it reviews or fetches anything, a pull
+// request whose number an open branch tracks in another repository than
+// the one DOCKHAND_PULL_REQUESTS names: pr-34905, adopted from MacPorts,
+// under a sandbox (the rc6 full stage's G22).
+func TestReviewCheckRefusesABranchOfAnotherRepository(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.WithScript(t, w, "passed")
+	g := cmdtest.WithGitHub(t, w)
+	testsupport.Git(t, w.Upstream, "switch", "-q", "-c", "contrib")
+	require.NoError(t, os.WriteFile(filepath.Join(w.Upstream, "textproc/jq/Portfile"), []byte("name jq\n# docs\n"), 0o644))
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-am", "jq: document the options")
+	testsupport.Git(t, w.Upstream, "update-ref", "refs/pull/34905/head", "contrib")
+	testsupport.Git(t, w.Upstream, "switch", "-q", "master")
+	g.Theirs = map[int]forge.PullRequest{34905: {Ref: forge.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 34905},
+		HeadRepository: "newcontrib/macports-ports", HeadBranch: "patch-1", Title: "jq: document the options", State: forge.PullRequestOpen, Author: "newcontrib", MaintainerCanModify: true}}
+	_, said, err := cmdtest.Dockhand(t, "adopt", "--pr", "34905")
+	require.NoError(t, err, said)
+	refs := testsupport.Git(t, w.Clone, "for-each-ref", "refs/dockhand/reviews")
+
+	cmdtest.Setenv(t, "DOCKHAND_PULL_REQUESTS", "herbyg-test/macports-ports")
+	out, _, err := cmdtest.Dockhand(t, "review", "34905", "--check", "--on", "command")
+	require.ErrorContains(t, err, "pr-34905 is macports/macports-ports#34905, and DOCKHAND_PULL_REQUESTS names herbyg-test/macports-ports; unset it to work on pr-34905")
+	require.NotContains(t, out, "review of #34905", "nothing was reviewed")
+	require.Equal(t, refs, testsupport.Git(t, w.Clone, "for-each-ref", "refs/dockhand/reviews"), "nothing was fetched")
+	_, _, err = cmdtest.Dockhand(t, "adopt", "--pr", "34905")
+	require.ErrorContains(t, err, "unset it to work on pr-34905")
+	cmdtest.Setenv(t, "DOCKHAND_PULL_REQUESTS", "")
+}

@@ -55,6 +55,13 @@ MacPorts on this Mac, which it says; the builds run in the guests.`,
 				return err
 			}
 			defer e.Close()
+			// A branch --check would find by number, tracking another
+			// repository's #number, is refused before the review fetches.
+			if check {
+				if err := e.TrackedElsewhere(ctx, number); err != nil {
+					return err
+				}
+			}
 			report, err := e.Review(ctx, number)
 			if err != nil {
 				return err

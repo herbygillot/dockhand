@@ -2,19 +2,13 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/herbygillot/dockhand/internal/atomicfile"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/evidence"
-	"github.com/herbygillot/dockhand/internal/fetch"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/binaryarchive"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
@@ -199,12 +193,11 @@ func (e *Engine) InstallChanges(ctx context.Context, run model.Run, fetch bool) 
 
 // masterArchive is the earlier reading of a target never checked in an
 // environment: the archive packages.macports.org serves for master's
-// version, revision, and default variants on that release and arch, read
-// on the host (binaryarchive.Contents), its files under the
-// environment's prefix. It's fetched once and kept by its name, an
-// archive not served marked so, for a license MacPorts doesn't
-// distribute or a release its buildbots don't build; false there, which
-// says nothing.
+// version, revision, and default variants on that release and arch, as
+// the archive catalog reads it (binaryarchive.Catalog.Reading), its files
+// under the environment's prefix; fetch false reads only what the catalog
+// keeps. False where the archive isn't served, or its reading can't be
+// had, which says nothing.
 func (e *Engine) masterArchive(ctx context.Context, target model.PlanTarget, environment model.Environment, fetch bool) (model.TargetResult, string, bool) {
 	darwin, err := strconv.Atoi(environment.Platform.Version)
 	arch := environment.Platform.Architecture
@@ -241,10 +234,11 @@ func (e *Engine) masterArchive(ctx context.Context, target model.PlanTarget, env
 	if !binaryarchive.Installable(info.Name, name) {
 		return model.TargetResult{}, "", false
 	}
-	files, libraries, ok := e.masterReading(ctx, info.Name, name, fetch)
-	if !ok {
+	reading, availability := e.Catalog.Reading(ctx, info.Name, name, fetch)
+	if availability != binaryarchive.Available {
 		return model.TargetResult{}, "", false
 	}
+	files, libraries := reading.Installed, reading.Libraries
 	// The archive's prefix is the buildbots', /opt/local; a check in a
 	// prefix of the person's has its own.
 	if prefix := environment.Prefix; prefix != "" && prefix != macports.DefaultPrefix {
@@ -262,76 +256,6 @@ func (e *Engine) masterArchive(ctx context.Context, target model.PlanTarget, env
 		}
 	}
 	return model.TargetResult{Target: target.ID, Installed: files, Libraries: libraries}, name, true
-}
-
-// archiveReading is what an archive installs, as Contents read it, kept
-// in place of the archive.
-type archiveReading struct {
-	Installed []string        `json:"installed"`
-	Libraries []model.Library `json:"libraries"`
-}
-
-// notServedFor is how long an archive the site didn't serve is taken as
-// not served: the buildbots build a version some hours after it lands on
-// master, so one asked for early is asked again a day on.
-const notServedFor = 24 * time.Hour
-
-// masterReading is what master's archive installs, read as it downloads,
-// bzip2 over the response's body and each library's header from its tar
-// entry, and only the reading kept, by the archive's name under the
-// archive directory's master/, where a large port's archive kept whole
-// stayed as long as anything was added beside it. One the site doesn't
-// serve is marked, name.none, and asked again once the mark is a day old.
-// mayFetch false reads only a reading kept.
-func (e *Engine) masterReading(ctx context.Context, port, name string, mayFetch bool) ([]string, []model.Library, bool) {
-	path := filepath.Join(e.ArchiveDirectory(), "master", name+".json")
-	if data, err := os.ReadFile(path); err == nil {
-		var reading archiveReading
-		if json.Unmarshal(data, &reading) == nil && reading.Installed != nil {
-			return reading.Installed, reading.Libraries, true
-		}
-	}
-	if info, err := os.Stat(path + ".none"); err == nil && e.now().Sub(info.ModTime()) < notServedFor {
-		return nil, nil, false
-	}
-	if !mayFetch {
-		return nil, nil, false
-	}
-	url := binaryarchive.URL(port, name)
-	if base := e.options.Packages; base != "" {
-		url = base + strings.TrimPrefix(url, binaryarchive.Packages)
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, nil, false
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, nil, false
-	}
-	response, err := fetch.Client.Do(request)
-	if err != nil {
-		return nil, nil, false
-	}
-	defer response.Body.Close()
-	if response.StatusCode == http.StatusNotFound {
-		_ = os.WriteFile(path+".none", nil, 0o644)
-		now := e.now()
-		_ = os.Chtimes(path+".none", now, now)
-		return nil, nil, false
-	}
-	if response.StatusCode != http.StatusOK {
-		return nil, nil, false
-	}
-	files, libraries, err := binaryarchive.Contents(response.Body)
-	if err != nil {
-		return nil, nil, false
-	}
-	if data, err := json.Marshal(archiveReading{Installed: files, Libraries: libraries}); err == nil {
-		if atomicfile.Write(path, data, 0o644) == nil {
-			_ = os.Remove(path + ".none")
-		}
-	}
-	return files, libraries, true
 }
 
 // installedLines are the install findings of the check a submission
@@ -382,7 +306,7 @@ func (f InstallFinding) Lines(bumped []string) []InstallLine {
 	if f.Version != "" {
 		against += fmt.Sprintf(" (%s, older than master's %s)", f.Version, f.Master)
 	}
-	where := DescribeEnvironment(f.Environment)
+	where := checks.DescribeEnvironment(f.Environment)
 	for _, library := range f.Libraries {
 		words := fmt.Sprintf("%s: %s on %s%s", f.Target, library.Words(), where, against)
 		switch {

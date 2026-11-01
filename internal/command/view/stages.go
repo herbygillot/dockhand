@@ -6,6 +6,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -83,7 +84,7 @@ func LinkWords(finding engine.LinkFinding) string {
 	if len(finding.Environments) > 0 {
 		var on []string
 		for _, environment := range finding.Environments {
-			on = append(on, engine.DescribeEnvironment(environment))
+			on = append(on, checks.DescribeEnvironment(environment))
 		}
 		where = " on " + prose.And(on)
 	}
@@ -183,7 +184,7 @@ func InstalledLines(findings []engine.InstallFinding) []LinkLine {
 func LintLines(findings []engine.LintFinding) []LinkLine {
 	var lines []LinkLine
 	for _, finding := range findings {
-		on := engine.DescribeEnvironment(finding.Environment)
+		on := checks.DescribeEnvironment(finding.Environment)
 		mark := Look
 		if finding.Holds {
 			mark = Broken

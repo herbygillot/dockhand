@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -89,14 +90,14 @@ func CheckState(s engine.BranchStatus) string {
 		// Untracked files a check took in with --include are compared as
 		// it had them, and said: they're in no commit yet.
 		if len(s.Included) > 0 {
-			return fmt.Sprintf("passed for %s, including untracked %s", engine.Describe(*s.LatestRevision), prose.And(s.Included))
+			return fmt.Sprintf("passed for %s, including untracked %s", checks.Describe(*s.LatestRevision), prose.And(s.Included))
 		}
 		// A check of the working files that tidy then committed unchanged
 		// checked the commit's files, as submit credits it.
 		if s.LatestRevision.Kind == model.RevisionCommit || s.Commits > 0 && len(s.Edited) == 0 {
 			return "passed for this commit"
 		}
-		return "passed for " + engine.Describe(*s.LatestRevision)
+		return "passed for " + checks.Describe(*s.LatestRevision)
 	case branchstate.CheckFailed:
 		if s.Evidence == nil {
 			return fmt.Sprintf("failed (%s)", s.Latest.Name())

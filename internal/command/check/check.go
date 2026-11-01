@@ -115,11 +115,11 @@ check.baseline = true, it runs that baseline automatically.`,
 			}
 			capture, proposed := proposal.Capture, proposal.Plan
 			out := streams.Out
-			what := "checking " + engine.Describe(capture.Revision)
+			what := "checking " + checks.Describe(capture.Revision)
 			if capture.Revision.Kind == model.RevisionSnapshot && !capture.Reused {
-				what = "captured working files as " + engine.Describe(capture.Revision)
+				what = "captured working files as " + checks.Describe(capture.Revision)
 				if plan {
-					what = "would capture the working files as " + engine.Describe(capture.Revision)
+					what = "would capture the working files as " + checks.Describe(capture.Revision)
 				}
 			}
 			fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), what)
@@ -376,7 +376,7 @@ func besideWords(err error, revision model.Revision) error {
 	case active.SameRevision:
 		return active
 	}
-	return fmt.Errorf("%s is %s for %s; --replace stops it, keeping what it finished, and checks %s instead", active.Run.Name(), active.Run.State, engine.Describe(active.Checking), engine.Describe(revision))
+	return fmt.Errorf("%s is %s for %s; --replace stops it, keeping what it finished, and checks %s instead", active.Run.Name(), active.Run.State, checks.Describe(active.Checking), checks.Describe(revision))
 }
 
 // replacedWords say each run a new check stopped, and how: "check-1,

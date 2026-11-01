@@ -145,7 +145,19 @@ func (e *Engine) makeChanges(ctx context.Context, branch model.Branch, base, tre
 			}
 			sides[i] = &snapshot
 		}
-		record := changeRecord(model.ChangeRecord{Branch: id, Tree: tree, Base: base, Directory: directory, At: e.now()}, sides, texts, problem)
+		// A renamed port's record compares it with its old name's
+		// (macports.PortTransition).
+		var transitions []macports.PortTransition
+		if problem == "" {
+			var names [2][]string
+			for i, side := range sides {
+				if side != nil {
+					names[i] = slices.Sorted(maps.Keys(side.Ports))
+				}
+			}
+			transitions = analysis.Scope.Transitions(sources, directory, names[0], names[1])
+		}
+		record := changeRecord(model.ChangeRecord{Branch: id, Tree: tree, Base: base, Directory: directory, At: e.now()}, sides, texts, problem, transitions)
 		made = append(made, record)
 		records[directory] = record
 	}
@@ -219,11 +231,12 @@ func recordedPorts(directories []string, records map[string]model.ChangeRecord) 
 // changeRecord is the one way a change record is made (L2's one-producer
 // half): record's branch, files, base, directory, and time, with what the
 // two sides' evaluations and Portfile texts say, base first, a side the
-// revision hasn't nil; the family evaluation's, or an update's own. A
-// problem that kept a side from being evaluated is the record's, which
-// then says nothing of its subports, and its readers take the directory's
-// text scope.
-func changeRecord(record model.ChangeRecord, sides [2]*macports.Snapshot, texts [2][]byte, problem string) model.ChangeRecord {
+// revision hasn't nil; the family evaluation's, or an update's own; and
+// how the change carries each port, a renamed one compared with its old
+// name's. A problem that kept a side from being evaluated is the record's,
+// which then says nothing of its subports, and its readers take the
+// directory's text scope.
+func changeRecord(record model.ChangeRecord, sides [2]*macports.Snapshot, texts [2][]byte, problem string, transitions []macports.PortTransition) model.ChangeRecord {
 	record.Policy, record.Problem = fidelity.ChangePolicy, problem
 	for _, side := range sides {
 		if side != nil {
@@ -233,7 +246,7 @@ func changeRecord(record model.ChangeRecord, sides [2]*macports.Snapshot, texts 
 	if problem != "" {
 		return record
 	}
-	record.Ports = fidelity.SubportChanges(record.Directory, sides[0], sides[1])
+	record.Ports = fidelity.SubportChanges(record.Directory, sides[0], sides[1], transitions)
 	record.Unseen, record.AllUnseen = portfile.UnseenChanges(texts[0], texts[1])
 	return record
 }
