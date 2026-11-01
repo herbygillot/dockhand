@@ -955,3 +955,35 @@ func TestANewerTagUnderAnotherPrefixIsSaid(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, result.OtherPrefix)
 }
+
+// Under the github PortGroup's default livecheck regex, ([^"]+), an empty
+// tag prefix takes v0.12 too, as the version "v0.12", which compares
+// older than 0.11: the tag the port's own spelling took is still said
+// under another prefix (acceptance row G25, alot). The port's own
+// spelling still decides what's offered.
+func TestANewerTagUnderAnotherPrefixIsSaidUnderTheDefaultRegex(t *testing.T) {
+	t.Parallel()
+	c := &catalog{releases: []forge.Release{{Tag: "0.10"}, {Tag: "0.11"}, {Tag: "v0.12"}, {Tag: "v0.9"}}}
+	service := automaticService(t, c)
+	port := automaticPort()
+	port.Version, port.Options["github.version"], port.Options["livecheck.version"], port.Options["git.branch"] = "0.10", "0.10", "0.10", "0.10"
+	port.Options["github.tag_prefix"], port.Options["livecheck.regex"] = "", `{archive/refs/tags/([^"]+)\.tar\.gz}`
+	result, err := service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.UpdateAvailable, result.Assessment, result.Detail)
+	require.Equal(t, "0.11", result.CandidateVersion, "the port's own spelling decides")
+	require.Equal(t, &upstream.OtherPrefix{Tag: "v0.12", Setup: "github.setup"}, result.OtherPrefix)
+
+	// A port current under its own spelling says it too.
+	c.releases = []forge.Release{{Tag: "0.10"}, {Tag: "v0.12"}}
+	result, err = service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.Current, result.Assessment, result.Detail)
+	require.Equal(t, &upstream.OtherPrefix{Tag: "v0.12", Setup: "github.setup"}, result.OtherPrefix)
+
+	// One older than what the prefix takes says nothing.
+	c.releases = []forge.Release{{Tag: "0.10"}, {Tag: "0.11"}, {Tag: "v0.9"}}
+	result, err = service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Nil(t, result.OtherPrefix, result.Detail)
+}

@@ -348,7 +348,7 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 	if result.NewerSeries = s.newerSeries(ctx, spec.Livecheck.Regex, candidates[index].Version, beyond); result.NewerSeries != "" {
 		result.Detail += "; " + SeriesWords(result.NewerSeries, port.Name)
 	}
-	if result.OtherPrefix = s.otherPrefix(ctx, port.Version, spec, listedTags, eligibleTags, candidates[index].CaptureVersion); result.OtherPrefix != nil {
+	if result.OtherPrefix = s.otherPrefix(ctx, port.Version, spec, listedTags, append(slices.Clone(asideTags), tags[index]), candidates[index].CaptureVersion); result.OtherPrefix != nil {
 		result.Detail += "; " + result.OtherPrefix.Words()
 	}
 	return result, nil
@@ -368,13 +368,19 @@ func (o OtherPrefix) Words() string {
 	return fmt.Sprintf("upstream's newest tag, %s, doesn't match %s's tag prefix", o.Tag, o.Setup)
 }
 
-// otherPrefix is the newest of the listed tags the port's own spelling
-// left out that, read with a "v" added to the tag prefix or taken away,
-// is a version a look would take and compares newer than the one taken;
-// nil where none is. It reads the tags already listed, and asks nothing
-// more of the forge: the port's own spelling still decides what's
-// offered, and this is said beside it.
-func (s *Service) otherPrefix(ctx context.Context, current string, spec portsource.Spec, listed, taken []string, selected string) *OtherPrefix {
+// otherPrefix is the newest of the listed tags that, read with a "v"
+// added to the tag prefix or taken away, is a version a look would take
+// and compares newer than the one taken; nil where none is. It reads the
+// tags already listed, and asks nothing more of the forge: the port's own
+// spelling still decides what's offered, and this is said beside it.
+//
+// A tag the port's own spelling took counts too: under alot's empty
+// prefix, the github PortGroup's default livecheck regex, ([^"]+), takes
+// v0.12 as the version "v0.12", which compares older than 0.11, and read
+// with a "v" added to the prefix it is 0.12 (acceptance row G25). Only
+// the tag selected and those set aside, as predating the port's own, are
+// passed over (excluded).
+func (s *Service) otherPrefix(ctx context.Context, current string, spec portsource.Spec, listed, excluded []string, selected string) *OtherPrefix {
 	if selected == "" {
 		return nil
 	}
@@ -385,7 +391,7 @@ func (s *Service) otherPrefix(ctx context.Context, current string, spec portsour
 	}
 	newest, newestVersion := "", selected
 	for _, tag := range listed {
-		if slices.Contains(taken, tag) {
+		if slices.Contains(excluded, tag) {
 			continue
 		}
 		for _, pattern := range alternatives {
