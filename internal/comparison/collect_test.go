@@ -133,3 +133,13 @@ func TestABinaryDistfileIsSaidByItsName(t *testing.T) {
 	err := fmt.Errorf("reading: %w", &archivefile.BinaryError{File: "op_apple_universal_v2.31.0.pkg", Kind: "a macOS installer package"})
 	require.Equal(t, "1password-cli ships a macOS installer package (op_apple_universal_v2.31.0.pkg), with no source to compare", binaryReason("1password-cli", err))
 }
+
+// The submodules a port moved off its clone carries in its release asset
+// are left out of the asset's reading, said once by its coverage.
+func TestASubmoduleAddedWithTheMoveIsLeftOutOfTheReading(t *testing.T) {
+	reading := project.Reading{Files: map[string]project.File{"CMakeLists.txt": {}, "deps/lib/COPYING": {}, "deps/libfoo/x": {}}, Directories: []string{"deps", "deps/lib", "deps/lib/src", "src"}}
+	got := withoutPaths(reading, []string{"deps/lib"})
+	require.Equal(t, map[string]project.File{"CMakeLists.txt": {}, "deps/libfoo/x": {}}, got.Files)
+	require.Equal(t, []string{"deps", "src"}, got.Directories)
+	require.Len(t, reading.Files, 3, "the reading given is left as it was")
+}

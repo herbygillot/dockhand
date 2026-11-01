@@ -69,6 +69,9 @@ type Facts struct {
 	// Description says beside the hand edits where it doesn't give the one
 	// commit's body that says so.
 	HTTPS []HTTPSSwitch
+	// Sources are each port's move of its GitHub source, the line tidy's
+	// commit body gives (model.SourceMove.Words), said as HTTPS is.
+	Sources []HTTPSSwitch
 	// CommitsLeftOut is how many commits' rows the commits' table leaves
 	// out to keep the description within GitHub's limit (Compose).
 	CommitsLeftOut int
@@ -135,11 +138,12 @@ type HTTPSSwitch struct {
 	Port, Line string
 }
 
-// httpsLines are the HTTPS switches the Description says, each a line
-// naming its port: those the one commit's body, which it gives, doesn't.
+// httpsLines are the source moves and HTTPS switches the Description
+// says, each a line naming its port: those the one commit's body, which
+// it gives, doesn't.
 func (facts Facts) httpsLines() []string {
 	var lines []string
-	for _, switched := range facts.HTTPS {
+	for _, switched := range append(slices.Clone(facts.Sources), facts.HTTPS...) {
 		if len(facts.Commits) == 1 && strings.Contains(commitBody(facts.Commits[0].Message), switched.Line) {
 			continue
 		}

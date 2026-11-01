@@ -143,10 +143,28 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 				return fmt.Errorf("protected context %+v: %w", profile, err)
 			}
 		} else {
-			report := fidelity.ScopedVersion(request.SharedRelease, before.Snapshot, after.Snapshot, member.target.Name, *request.Release, next.Options["checksums"])
+			report := scopedVersion(request, input, before.Snapshot, after.Snapshot, member.target.Name, next.Options["checksums"])
 			if len(report.UnexpectedChanges) > 0 {
 				return ErrFidelity.Because("context %+v: %s", profile, strings.Join(report.UnexpectedChanges, "; "))
 			}
+		}
+		// A port cloned with Git and moved to a release's file fetched
+		// nothing before: each archive it fetches now is downloaded, and
+		// its checksums, the placeholders the move wrote, are filled.
+		if member == input && input.sourceMoved != nil && input.sourceMoved.From == "git" {
+			binding, err := s.bindArchives(ctx, member, contents, after)
+			if err != nil {
+				return fmt.Errorf("candidate %+v: %w", profile, err)
+			}
+			fetches = true
+			coverage.declare(next, binding.Groups)
+			for _, artifact := range binding.Artifacts {
+				coverage.cover(artifact)
+				changed[artifact.Group.ID()] = true
+				coverage.download(artifact, next)
+			}
+			plan.contexts = append(plan.contexts, archiveContext{port: member.target.Name, profile: profile, variant: variant, session: session, after: after.Snapshot, binding: binding})
+			return nil
 		}
 		// A context where the port fetches nothing, before and after,
 		// adds no archive to plan.

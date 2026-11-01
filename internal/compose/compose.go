@@ -63,6 +63,8 @@ type Options struct {
 	// KeepHTTP is --keep-http, over [update] keep_http
 	// (engine.Options.KeepHTTP).
 	KeepHTTP bool
+	// Source is --source, over [update] source (engine.Options.Source).
+	Source string
 	// Env is the command line's environment, as os.Environ gives one, and
 	// Dir its working directory, which compose reads in place of the
 	// process's.
@@ -225,6 +227,9 @@ const PullRequestsVariable = "DOCKHAND_PULL_REQUESTS"
 // programs the engine runs found as dependencies find them (Lookup).
 func Settings(ctx context.Context, options Options, dependencies Dependencies) (engine.Options, config.File, string, error) {
 	look := dependencies.Lookup(options)
+	if options.Source != "" && !slices.Contains(config.UpdateSources, options.Source) {
+		return engine.Options{}, config.File{}, "", fmt.Errorf("--source: %q is not choose, keep, releases, or archive", options.Source)
+	}
 	places := options.Places()
 	configPath, err := places.ConfigPath(options.Getenv(config.PathVariable))
 	if err != nil {
@@ -319,6 +324,7 @@ func Settings(ctx context.Context, options Options, dependencies Dependencies) (
 		MigrateRelease:   options.MigrateRelease,
 		NamedDatabase:    !standard,
 		KeepHTTP:         options.KeepHTTP || file.Update.KeepHTTP,
+		Source:           cmp.Or(options.Source, file.Update.Source),
 	}, file, configPath, nil
 }
 

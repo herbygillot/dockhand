@@ -51,6 +51,13 @@ The old and new versions' archives are compared, and a changed license
 file, a changed build file, or a new declared dependency is reported: what a
 reviewer would ask about, and what a passing build can't catch.
 
+A port on the github PortGroup has its source chosen with the version: a
+release's own source archive where one holds what the repository has at the
+tag, else GitHub's archive for a port on GitHub's tarball; a port cloned with
+Git for its submodules moves only to an archive holding every one. --source
+keep moves nothing; --source releases or archive asks for that source, and
+refuses where it doesn't qualify. [update] source sets it for every update.
+
 Several ports are updated in the one branch, each to its newest release:
 "update kubectl-1.34 kubectl-1.35 --new" starts one branch, named for the
 ports' directory where they share a Portfile, and tidy makes a commit for
@@ -100,6 +107,7 @@ master's index instead, or beside --mine, as outdated does.`,
 	settings.SupportsJSON(cmd)
 	settings.KeepModelineFlag(cmd, s)
 	settings.KeepHTTPFlag(cmd, s)
+	settings.SourceFlag(cmd, s)
 	return cmd
 }
 

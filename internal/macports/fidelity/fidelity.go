@@ -531,6 +531,22 @@ func followsObsolete(name, selected string, old, next, oldRoot, nextRoot macport
 // Without shared authorization the members are the selected port and its
 // obsolete followers.
 func ScopedVersion(shared bool, before, after macports.Snapshot, selected string, release model.Release, checksums string) Report {
+	return scopedVersion(shared, before, after, selected, release, checksums, false)
+}
+
+// ScopedSourceMove is ScopedVersion for an update that also moved the
+// selected port's source (portfile.MoveSource): its own options moving
+// with the version, as ScopedVersion has them, and its fetch and extract
+// dependencies too, as a clone's git and a compressor's xz come and go
+// with the fetch. Anything else moving is still unexpected.
+func ScopedSourceMove(shared bool, before, after macports.Snapshot, selected string, release model.Release, checksums string) Report {
+	return scopedVersion(shared, before, after, selected, release, checksums, true)
+}
+
+// sourcePhases are the dependency phases a source move changes.
+var sourcePhases = []string{"fetch", "extract"}
+
+func scopedVersion(shared bool, before, after macports.Snapshot, selected string, release model.Release, checksums string, sourceMoved bool) Report {
 	scope, err := ReleaseScope(before, after, selected, shared)
 	if err != nil {
 		return Report{Before: before, After: after, UnexpectedChanges: []string{refusal.WordsOf(err)}}
@@ -556,7 +572,17 @@ func ScopedVersion(shared bool, before, after macports.Snapshot, selected string
 		} else {
 			prediction.Expected = append(prediction.Expected, name+" moves with "+selected)
 		}
-		next.Revision, next.Dependencies = 0, prediction.Ports[name].Dependencies
+		dependencies := prediction.Ports[name].Dependencies
+		if sourceMoved && name == selected {
+			prediction.Expected = append(prediction.Expected, selected+".source moves, with its fetch and extract dependencies")
+			others := func(all []macports.Dependency) []macports.Dependency {
+				return slices.DeleteFunc(slices.Clone(all), func(d macports.Dependency) bool { return slices.Contains(sourcePhases, d.Phase) })
+			}
+			if slices.Equal(others(dependencies), others(next.Dependencies)) {
+				dependencies = next.Dependencies
+			}
+		}
+		next.Revision, next.Dependencies = 0, dependencies
 		prediction.Ports[name] = next
 	}
 	report := prediction.Observe(before, after)

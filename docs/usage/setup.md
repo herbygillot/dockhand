@@ -160,6 +160,17 @@ dockhand submit --plan
 dockhand submit
 ```
 
+For a port on the github PortGroup, the update also chooses its source: a
+release's own source archive where the release carries one that holds what the
+repository has at the tag (its build files, the paths the Portfile names, and
+for a port cloned with Git, every submodule), else GitHub's archive of the tag
+for a port on GitHub's tarball. A port cloned for its submodules stays on its
+clone unless an archive holds them all. The update says the move, and the
+commit's body and the pull request say it too; where a source could have moved
+and didn't, it says why. `--source keep` moves nothing, and `--source releases`
+or `--source archive` asks for that source, refusing where it doesn't qualify;
+`[update] source` sets it for every update.
+
 `diff` shows the change; `impact` shows the changed ports and dependents worth
 checking. `tidy` makes the commits. `check --head` checks those committed files.
 `submit --plan` now previews the actual submission, including the check evidence

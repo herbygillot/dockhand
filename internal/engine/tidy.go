@@ -862,10 +862,28 @@ func chainBody(edits []model.Edit, directory string) string {
 			break
 		}
 	}
+	if line := sourceLine(edits, directory); line != "" {
+		lines = append(lines, line)
+	}
 	if line := httpsLine(edits, directory); line != "" {
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// sourceLine says the move of a GitHub port's source a directory's newest
+// update made, in place of a Portfile comment (the roadmap's D3):
+// "Fetches release 2.5.0's mindforger_2.5.0_tarball.tgz, which carries
+// the repository's Git submodules (deps/cmark-gfm), instead of a Git
+// checkout."; empty where it made none. A later update, which finds the
+// source moved already, makes none, so the first one's is said.
+func sourceLine(edits []model.Edit, directory string) string {
+	for _, edit := range slices.Backward(edits) {
+		if edit.Directory == directory && edit.Source != nil {
+			return edit.Source.Words()
+		}
+	}
+	return ""
 }
 
 // httpsLine says the options whose plain-HTTP links a directory's edits

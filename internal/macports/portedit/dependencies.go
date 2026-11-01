@@ -533,7 +533,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	result.report(final)
 	result.Regenerated = regenerated
 	result.ManifestHook = hookUnchecked
-	result.TarballMoved = archivePlan.result.TarballMoved
+	result.SourceMoved, result.SourceNotice = archivePlan.result.SourceMoved, archivePlan.result.SourceNotice
 	switch {
 	case kept && previousProblem != nil:
 		result.previousFailed(previousProblem)

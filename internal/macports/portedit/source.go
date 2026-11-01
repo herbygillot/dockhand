@@ -46,6 +46,9 @@ type session struct {
 	// twice.
 	overlays   []*workspace.Workspace
 	byContents map[[32]byte]*workspace.Workspace
+	// scratch are directories the session's source choice downloaded
+	// into, removed when it closes (scratchDir).
+	scratch []string
 }
 
 // sourceInput is one baseline of an editing session: the evaluated
@@ -78,6 +81,8 @@ type sourceInput struct {
 	// tarballMoved is true where the version's edit moved
 	// github.tarball_from tarball to archive (probeVersion).
 	tarballMoved bool
+	// sourceMoved is the move chooseSource made, where it made one.
+	sourceMoved *MovedSource
 }
 
 // derive is the baseline of the same session with other contents: the
@@ -316,6 +321,10 @@ func (s *session) Close() error {
 	for _, overlay := range overlays {
 		err = errors.Join(err, overlay.Close())
 	}
+	for _, directory := range s.scratch {
+		err = errors.Join(err, os.RemoveAll(directory))
+	}
+	s.scratch = nil
 	return err
 }
 
