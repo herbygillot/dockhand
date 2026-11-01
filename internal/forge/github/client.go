@@ -13,6 +13,9 @@ type Client struct {
 	*githubapi.Client
 	// Git reads tags with plain git when the API cannot.
 	Git git.Program
+	// Moves reads where a repository whose tags came from git moved, from
+	// GitHub's web page for it; none are read where nil.
+	Moves *Moves
 }
 
 // Login is who the client acts as, asked of GitHub, and where its token

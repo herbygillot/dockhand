@@ -107,10 +107,10 @@ func TestJSONEnvelopes(t *testing.T) {
 	require.Equal(t, "failed", cmdtest.Dig(t, failed.Result, "targets", 0, "results", 0, "outcome"))
 	require.Equal(t, "install", cmdtest.Dig(t, failed.Result, "targets", 0, "results", 0, "phase"))
 
-	refused, err := cmdtest.JSONOf(t, "status", "--watch")
+	refused, err := cmdtest.JSONOf(t, "console")
 	require.Error(t, err)
 	require.Equal(t, 1, refused.ExitCode)
-	require.Equal(t, "--watch shows all current status and cannot be combined with a branch selector, --attention, --all, or --json", *refused.Error)
+	require.Equal(t, "--json isn't available for dockhand console yet; its output is text only", *refused.Error)
 	require.Nil(t, refused.Result)
 
 	unknown, err := cmdtest.JSONOf(t, "status", "--no-such-flag")

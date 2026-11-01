@@ -145,7 +145,7 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "queue")
 	require.EqualError(t, err, "queue is part of status now: dockhand status lists the checks queued and running")
 	_, _, err = cmdtest.Dockhand(t, "watch")
-	require.EqualError(t, err, "watch is part of status now: dockhand status --watch keeps it current")
+	require.EqualError(t, err, "watch is dockhand console now: it keeps the branches current")
 	out, _, err = cmdtest.Dockhand(t, "check", "-d", "--replace")
 	require.NoError(t, err)
 	require.Contains(t, out, "Replaced check-1, canceled before it started.\ncheck-2 was queued", "it was only queued (the hugo exercise's certigo run, finding 5)")

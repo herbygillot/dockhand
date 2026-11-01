@@ -184,6 +184,10 @@ type Engine struct {
 	// GitHubCLI marks a draft ready where an organization refuses the
 	// forge's app; none when nil.
 	GitHubCLI GitHubCLI
+	// GitHubMoves reads where a repository moved from GitHub's web pages,
+	// for the engine's forge client to note beside a current port; none
+	// are read where nil.
+	GitHubMoves *forgegithub.Moves
 	// Builds are where checks build: build.default's profile, which a
 	// branch's evidence always requires (D17), build.unattended's, and the
 	// person's own profiles.

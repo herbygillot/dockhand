@@ -32,6 +32,9 @@ type repository struct {
 	// no listing of the API's has named it since (ConfirmName).
 	answered string
 	unread   bool
+	// move is the read of the repository's web page that publicTags
+	// began, for FindMove; nil where none was.
+	move *moveRead
 }
 
 // ConfirmName reads the name GitHub answers the repository by, one request
@@ -57,6 +60,29 @@ func (r *repository) ConfirmName(ctx context.Context) error {
 		r.answered = described.Name
 	}
 	return nil
+}
+
+// FindMove notes the name GitHub's web page for the repository redirects
+// to (Moves), where its tags came from git and nothing the API listed has
+// named it: the read publicTags began, waited for here, has overlapped the
+// rest of the repository's look. A page that didn't answer leaves the name
+// unsaid.
+func (r *repository) FindMove(ctx context.Context) {
+	r.mu.Lock()
+	move, unread := r.move, r.unread && r.answered == ""
+	r.mu.Unlock()
+	if move == nil || !unread {
+		return
+	}
+	moved, ok := move.wait(ctx)
+	if !ok || !githubapi.ValidRepositoryName(moved) {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.answered == "" {
+		r.answered = moved
+	}
 }
 
 // AnswersAs is the owner/name GitHub answered the repository's tags or

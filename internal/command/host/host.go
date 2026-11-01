@@ -69,7 +69,7 @@ type Timings struct {
 	// reads who its login acts as. How often it reads your pull requests
 	// and runs automatic cleanup are the engine's (ServeOptions).
 	ServePoll, ServeGrace, ServeIdentity time.Duration
-	// WatchPoll is how often status --watch looks at the journal.
+	// WatchPoll is how often dockhand console looks at the journal.
 	WatchPoll time.Duration
 	// FollowPoll is how often logs --follow reads the log again.
 	FollowPoll time.Duration

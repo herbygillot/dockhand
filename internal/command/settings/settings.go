@@ -46,8 +46,8 @@ type Settings struct {
 	// (engine.Options.KeepHTTP).
 	KeepHTTP bool
 	// Command runs a command line in this one's invocation, its
-	// environment, directory, and tree, database, and Git, for one typed at
-	// status --watch's prompt.
+	// environment, directory, and tree, database, and Git, for one
+	// dockhand console runs.
 	Command func(context.Context, []string, term.Streams) error
 	// Deps are the stand-ins for what compose makes, which a test gives;
 	// the real ones where they're empty.

@@ -25,7 +25,7 @@ import (
 )
 
 func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
-	var attentionOnly, all, refresh, watch, plain bool
+	var attentionOnly, all, refresh bool
 	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "status [branch]",
@@ -43,27 +43,14 @@ to be stopped, for dockhand wait to resume.
 3 when anything does. -b and --pr name a branch, shown in detail; -p finds
 the branches touching a port, shown in detail where one does and listed
 where several do. --all
-includes merged and archived branches.
+includes merged and archived branches. dockhand console keeps the
+branches current as serve works.
 
---watch keeps status current as serve works, redrawn whenever what it
-shows changes, as a check ends or a pull request is reviewed; it only
-observes. On a terminal, a line of input runs a command on a branch, with
-that command's own confirmations, then returns to the view:
-  c <branch>  check       l <branch>  logs of its latest check
-  t <branch>  tidy        s <branch>  submit
-Enter redraws, and q quits; inside a branch's worktree the branch may be
-left out. --plain, and any output that isn't a terminal, prints status once
-and then each event as a line, for scrollback, SSH, and screen readers. Your pull requests' state, reviews,
-and CI are read from GitHub first where what's recorded is older than serve
-reads them, every five minutes; --refresh reads them whatever their age.`,
+Your pull requests' state, reviews, and CI are read from GitHub first where
+what's recorded is older than serve reads them, every five minutes;
+--refresh reads them whatever their age.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if plain && !watch {
-				return errors.New("--plain requires --watch")
-			}
-			if watch && (len(args) > 0 || attentionOnly || all || where.Explicit() || streams.JSON()) {
-				return errors.New("--watch shows all current status and cannot be combined with a branch selector, --attention, --all, or --json")
-			}
 			if len(args) > 0 && where.Explicit() {
 				return errors.New("name the branch once: as the argument, or with -b, -p, or --pr")
 			}
@@ -72,9 +59,6 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 				return err
 			}
 			defer e.Close()
-			if watch {
-				return statusWatch(cmd.Context(), e, streams, plain, s.Host.Timings, s.Places(), s.Command)
-			}
 			if refresh {
 				// A read GitHub refused, as with a revoked login, is the
 				// command's error: status is still shown, from what's
@@ -102,8 +86,6 @@ reads them, every five minutes; --refresh reads them whatever their age.`,
 	cmd.Flags().BoolVar(&all, "all", false, "include merged, closed, and archived branches")
 	where.Register(cmd, s, "show")
 	cmd.Flags().Lookup("port").Usage = "show the branches touching this port: the one in detail, or several listed"
-	cmd.Flags().BoolVar(&watch, "watch", false, "keep status current as serve works, until q or Ctrl-C")
-	cmd.Flags().BoolVar(&plain, "plain", false, "with --watch, print events as lines, not a view that redraws")
 	settings.SupportsJSON(cmd)
 	return cmd
 }
@@ -276,11 +258,8 @@ func writeOverview(out io.Writer, streams term.Streams, statuses []engine.Branch
 		group("Working", len(working))
 		table := rowsWriter(out)
 		for _, status := range working {
-			next := ""
-			if step, ok := branchstate.Working(status.Facts()); ok {
-				next = view.RenderNext(step, "")
-			}
-			fmt.Fprintf(table, "  %s %s\t%s\t%s\n", view.Working, status.Branch.ShortName(), doingWords(status), next)
+			row := view.BranchRow(status)
+			fmt.Fprintf(table, "  %s %s\t%s\t%s\n", row.Mark, row.Branch, row.State, row.Next)
 		}
 		table.Flush()
 	}
@@ -302,12 +281,9 @@ func writeOverview(out io.Writer, streams term.Streams, statuses []engine.Branch
 		group("Merged, closed, and archived", len(done))
 		table := rowsWriter(out)
 		for _, status := range done {
-			// An archived branch is said, as clean says it.
-			name := status.Branch.ShortName()
-			if status.Branch.State == model.BranchArchived {
-				name += " (archived)"
-			}
-			fmt.Fprintf(table, "  %s %s\t%s\t%s\n", view.Unmarked, name, workWords(status), prWords(status))
+			// An archived branch is said, as clean says it (view.BranchRow).
+			row := view.BranchRow(status)
+			fmt.Fprintf(table, "  %s %s\t%s\t%s\n", row.Mark, row.Branch, row.Work, row.PR)
 		}
 		table.Flush()
 	}
@@ -342,16 +318,6 @@ func (t *trimmedTable) Flush() {
 		fmt.Fprintln(t.out, strings.TrimRight(line, " "))
 	}
 	t.buf.Reset()
-}
-
-// doingWords is what a branch under way is doing: its work, and its check
-// where it has one.
-func doingWords(status engine.BranchStatus) string {
-	words := workWords(status)
-	if check := view.CheckState(status); check != "—" {
-		words += " · " + check
-	}
-	return words
 }
 
 // ciTally counts the waiting pull requests by their CI: "CI passed 134,
@@ -401,11 +367,8 @@ func writeBranches(out io.Writer, statuses []engine.BranchStatus) {
 		}
 		// An archived branch is said, as clean says it; its row
 		// read as an open one's (the dogfood run with bf711891).
-		name := status.Branch.ShortName()
-		if status.Branch.State == model.BranchArchived {
-			name += " (archived)"
-		}
-		fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\n", name, ports, workWords(status), view.CheckState(status), prWords(status))
+		row := view.BranchRow(status)
+		fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\n", row.Branch, ports, row.Work, row.Check, row.PR)
 	}
 	table.Flush()
 }
@@ -467,61 +430,6 @@ func writeAttention(out io.Writer, rows []view.Attention, width int) {
 	}
 }
 
-func workWords(s engine.BranchStatus) string {
-	switch {
-	case s.Cleaned() && s.Branch.CleanKept != "":
-		return "cleaned, " + s.Branch.CleanKept
-	case s.Cleaned():
-		return "cleaned"
-	// A merged or closed branch clean kept is kept, and why, never
-	// cleaned.
-	case s.Branch.State != model.BranchOpen && s.Branch.CleanKept != "":
-		return s.Branch.CleanKept
-	case s.Missing:
-		return "branch gone"
-	case s.Commits == 0 && len(s.Edited) == 0:
-		return "nothing yet"
-	case s.Commits == 0:
-		return "edits, uncommitted"
-	case len(s.Edited) > 0:
-		return prose.Plural(s.Commits, "commit") + " + edits"
-	}
-	return prose.Plural(s.Commits, "commit")
-}
-
-func prWords(s engine.BranchStatus) string {
-	pr := s.Branch.PullRequest
-	if pr == nil {
-		return "—"
-	}
-	words := fmt.Sprintf("#%d", pr.Number)
-	if pr.Draft {
-		words += " draft"
-	}
-	if observed := pr.Observed; observed != nil {
-		switch {
-		case observed.State != model.PullRequestOpen:
-			words += " " + string(observed.State)
-		case observed.Review == model.ReviewChangesRequested:
-			words += " changes requested"
-		case observed.Review == model.ReviewApproved:
-			words += " approved"
-		}
-		switch observed.Checks {
-		case model.ChecksPassing:
-			words += ", CI ✓"
-		case model.ChecksFailing:
-			words += ", CI ✗"
-		case model.ChecksPending:
-			words += ", CI …"
-		}
-	}
-	if !s.Missing && !s.Pushed() {
-		words += ", not pushed"
-	}
-	return words
-}
-
 // showBranch writes one branch's status in detail, its latest check's
 // links from what the report gathered.
 func showBranch(out io.Writer, places config.Places, status engine.BranchStatus, report engine.StatusReport) {
@@ -550,7 +458,7 @@ func showBranch(out io.Writer, places config.Places, status engine.BranchStatus,
 			ports = "none yet"
 		}
 		fmt.Fprintf(out, "  Ports    %s\n", ports)
-		fmt.Fprintf(out, "  Work     %s above master %s\n", workWords(status), branch.Base.Short())
+		fmt.Fprintf(out, "  Work     %s above master %s\n", view.BranchRow(status).Work, branch.Base.Short())
 		writeReleases(out, status)
 		if len(status.Edited) > 0 {
 			fmt.Fprintf(out, "  Edited   %s\n", strings.Join(status.Edited, ", "))
@@ -633,7 +541,7 @@ func showBranch(out io.Writer, places config.Places, status engine.BranchStatus,
 			}
 		}
 	}
-	pr := prWords(status)
+	pr := view.BranchRow(status).PR
 	if opened := status.Branch.PullRequest; opened != nil && opened.Observed == nil {
 		// Nothing has read it from GitHub since it was opened: say how.
 		pr += " · CI not read yet (dockhand status --refresh)"

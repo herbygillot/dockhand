@@ -18,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/check"
 	"github.com/herbygillot/dockhand/internal/command/clean"
 	"github.com/herbygillot/dockhand/internal/command/config"
+	"github.com/herbygillot/dockhand/internal/command/console"
 	"github.com/herbygillot/dockhand/internal/command/create"
 	"github.com/herbygillot/dockhand/internal/command/decide"
 	"github.com/herbygillot/dockhand/internal/command/explain"
@@ -84,7 +85,7 @@ func RunWith(ctx context.Context, line settings.Invocation, streams term.Streams
 	args := line.Args
 	var shared settings.Settings
 	var root *cobra.Command
-	// A command typed at status --watch runs in this invocation, its
+	// A command run from dockhand console runs in this invocation, its
 	// environment, directory, stand-ins, and host, with the tree, database,
 	// and Git this line chose, where it ran in the process's (Codex's
 	// review of 8c007979, C8-1).
@@ -224,6 +225,7 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 	root.AddGroup(&cobra.Group{ID: "understand", Title: "Understand:"})
 	for _, command := range []*cobra.Command{
 		status.Command(shared, streams),
+		console.Command(shared, streams),
 		understand.DiffCommand(shared, streams),
 		understand.OpenCommand(shared, streams),
 		understand.ImpactCommand(shared, streams),
@@ -280,11 +282,11 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 // unknownCommand refuses a word that names no command, as cobra.NoArgs
 // does, with cobra's own suggestions, which NoArgs leaves out: v0.3.0's
 // init, auth, providers, and restore point at what replaced them.
-// foldedCommands are the commands folded into another, and what does
-// their work now.
+// foldedCommands are the commands folded into another, each with where
+// it went and what does its work now.
 var foldedCommands = map[string]string{
-	"queue": "dockhand status lists the checks queued and running",
-	"watch": "dockhand status --watch keeps it current",
+	"queue": "queue is part of status now: dockhand status lists the checks queued and running",
+	"watch": "watch is dockhand console now: it keeps the branches current",
 }
 
 func unknownCommand(cmd *cobra.Command, args []string) error {
@@ -294,7 +296,7 @@ func unknownCommand(cmd *cobra.Command, args []string) error {
 	// A command folded into another says where it went (the second
 	// look's §6).
 	if moved, ok := foldedCommands[args[0]]; ok && !cmd.HasParent() {
-		return fmt.Errorf("%s is part of status now: %s", args[0], moved)
+		return errors.New(moved)
 	}
 	message := fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath())
 	if suggestions := cmd.SuggestionsFor(args[0]); len(suggestions) > 0 {

@@ -137,6 +137,29 @@ type Result struct {
 	// release of a newer series than its own, which is a new subport's,
 	// the maintainer's to add, and never its update; "" where none is.
 	NewerSeries string
+	// Move is where the forge answers the port's repository now, where
+	// that isn't the one it names and the release stands; nil where
+	// nothing said.
+	Move *RepositoryMove
+}
+
+// RepositoryMove is a repository the forge answers by another name: From
+// is the owner/name the port names, and To the one GitHub answers as.
+type RepositoryMove struct{ From, To string }
+
+// Words say what GitHub answers: "GitHub answers extrawurst/gitui as
+// gitui-org/gitui now, which github.setup could name". Where the name
+// changed, not the owner alone, the new name may be another project's,
+// so they say "if that's the same project": cloudflare/wrangler answers
+// as cloudflare/wrangler-legacy, the old project's archive (the web
+// redirect's look, 2026-11-01).
+func (m RepositoryMove) Words() string {
+	_, fromName, _ := strings.Cut(m.From, "/")
+	_, toName, _ := strings.Cut(m.To, "/")
+	if strings.EqualFold(fromName, toName) {
+		return fmt.Sprintf("GitHub answers %s as %s now, which github.setup could name", m.From, m.To)
+	}
+	return fmt.Sprintf("GitHub answers %s as %s now; if that's the same project, github.setup could name it", m.From, m.To)
 }
 
 type Service struct {

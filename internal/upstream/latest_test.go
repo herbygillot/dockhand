@@ -45,6 +45,17 @@ type catalog struct {
 	// commits are the commits the repository has, where it says; it has
 	// every one where it's nil.
 	commits map[string]bool
+	// found is the name the forge's web page redirects to, which FindMove
+	// notes; finds counts its asks.
+	found string
+	finds int
+}
+
+func (c *catalog) FindMove(context.Context) {
+	c.finds++
+	if c.found != "" {
+		c.answers = c.found
+	}
 }
 
 func (c *catalog) HasCommit(_ context.Context, commit string) (bool, error) {
@@ -261,6 +272,53 @@ func TestAnotherProjectsAnswerIsUncertain(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, upstream.UpdateAvailable, result.Assessment, "an owner's move alone stays outdated")
 	require.Contains(t, result.Detail, "GitHub answers owner/project as neworg/project now, which github.setup could name")
+}
+
+// A current port's repository is asked where it moved, beside its look,
+// and its note says what GitHub answers: where the name changed, not the
+// owner alone, "if that's the same project", since cloudflare/wrangler
+// answers as cloudflare/wrangler-legacy, the old project's archive (the
+// web redirect's look, 2026-11-01). A release that would ship isn't asked
+// here; ConfirmName reads its name from the API.
+func TestACurrentPortSaysWhereGitHubAnswersItsRepository(t *testing.T) {
+	t.Parallel()
+	c := &catalog{releases: []forge.Release{{Tag: "v1.0"}}, found: "neworg/project"}
+	service := automaticService(t, c)
+	port := automaticPort()
+	result, err := service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.Current, result.Assessment, result.Detail)
+	require.Equal(t, 1, c.finds)
+	require.Equal(t, &upstream.RepositoryMove{From: "owner/project", To: "neworg/project"}, result.Move)
+	require.Contains(t, result.Detail, "; GitHub answers owner/project as neworg/project now, which github.setup could name")
+
+	c.answers, c.found = "", "owner/project-legacy"
+	result, err = service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.Current, result.Assessment, "a current port is never uncertain for a move")
+	require.Contains(t, result.Detail, "; GitHub answers owner/project as owner/project-legacy now; if that's the same project, github.setup could name it")
+
+	c.answers, c.found = "", ""
+	result, err = service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Nil(t, result.Move, "a repository where it was says nothing")
+
+	c.releases, c.finds = []forge.Release{{Tag: "v1.0"}, {Tag: "v2.0"}}, 0
+	result, err = service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.UpdateAvailable, result.Assessment)
+	require.Zero(t, c.finds, "a release that would ship is confirmed with the API's read, not the web page's")
+}
+
+// The note's two wordings: an owner's move alone, and a new name.
+func TestARepositoryMoveSaysWhatGitHubAnswers(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "GitHub answers extrawurst/gitui as gitui-org/gitui now, which github.setup could name",
+		upstream.RepositoryMove{From: "extrawurst/gitui", To: "gitui-org/gitui"}.Words())
+	require.Equal(t, "GitHub answers cloudflare/wrangler as cloudflare/wrangler-legacy now; if that's the same project, github.setup could name it",
+		upstream.RepositoryMove{From: "cloudflare/wrangler", To: "cloudflare/wrangler-legacy"}.Words())
+	require.Equal(t, "GitHub answers httpie/httpie as httpie/cli now; if that's the same project, github.setup could name it",
+		upstream.RepositoryMove{From: "httpie/httpie", To: "httpie/cli"}.Words())
 }
 
 func TestAutomaticUnknownIsNeverReportedCurrent(t *testing.T) {

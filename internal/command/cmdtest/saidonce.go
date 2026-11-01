@@ -90,16 +90,16 @@ func Overwidth(out string) []string {
 // level's, which "said once" holds of: not -v's, --json's, or a preview's,
 // which is meant to be read in full, nor help's; nor a question's on a
 // terminal, which says the report it asks about; nor serve's log, or
-// status --watch's redrawn view, which name what each line is about; nor
+// console's, which name what each line is about; nor
 // review --markdown's, a comment's text for pasting; nor logs' or diff's,
 // a log's lines and a diff's, which are written as they are.
 func saidOnceChecked(args []string, streams term.Streams) bool {
-	if streams.Terminal() || len(args) > 0 && slices.Contains([]string{"serve", "logs", "diff"}, args[0]) {
+	if streams.Terminal() || len(args) > 0 && slices.Contains([]string{"serve", "console", "logs", "diff"}, args[0]) {
 		return false
 	}
 	for _, arg := range args {
 		switch {
-		case arg == "--watch", arg == "--markdown":
+		case arg == "--markdown":
 			return false
 		case arg == "--json", arg == "--plan", arg == "--help", arg == "-h", arg == "help":
 			return false

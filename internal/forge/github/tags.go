@@ -142,7 +142,8 @@ func (r *repository) ListTags(ctx context.Context) ([]forge.Tag, error) {
 
 // publicTags lists the repository's tags from its git service, anonymously
 // (git.ListPublicTags), each peeled to the commit it finally names, as the
-// API's listing names it, and remembers them for Tag.
+// API's listing names it, and remembers them for Tag. It begins the read of
+// the repository's web page that FindMove waits for.
 func (r *repository) publicTags(ctx context.Context) ([]forge.Tag, error) {
 	listed, err := git.ListPublicTags(ctx, r.client.Git, r.cloneURL())
 	if err != nil {
@@ -153,8 +154,17 @@ func (r *repository) publicTags(ctx context.Context) ([]forge.Tag, error) {
 		tags = append(tags, forge.Tag{Name: tag.Name, Commit: tag.Object})
 	}
 	r.remember(tags...)
+	// GitHub's git said nothing of a move, so its web page is asked, from
+	// now, beside the rest of the look (FindMove).
+	var move *moveRead
+	if r.client.Moves != nil {
+		move = r.client.Moves.start(ctx, r.name)
+	}
 	r.mu.Lock()
 	r.unread = true
+	if r.move == nil {
+		r.move = move
+	}
 	r.mu.Unlock()
 	return tags, nil
 }

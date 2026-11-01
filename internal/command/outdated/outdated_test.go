@@ -78,6 +78,13 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 		{Port: "py-flatbuffers", Current: "25.9.23", Newest: "25.9.23"}, follow("py313-flatbuffers"), follow("py314-flatbuffers")}}, true))
 	require.Equal(t, "Current (1)\n  py-flatbuffers  25.9.23 → 25.9.23  it is current (2 subports with it)\nNone of 3 ports has a newer release, at master 1bb30d5\n", folded.String())
 
+	// A current port whose repository GitHub answers by another name says
+	// so, as GitHub answers it (the web redirect, 2026-11-01).
+	var moved bytes.Buffer
+	require.NoError(t, writeOutdated(t.Context(), nil, &moved, engine.OutdatedReport{Master: "1bb30d5aaaaa", Ports: []engine.OutdatedPort{
+		{Port: "gitui", Current: "0.27.0", Newest: "0.27.0", RepositoryMove: &engine.RepositoryMove{From: "extrawurst/gitui", To: "gitui-org/gitui"}}}}, true))
+	require.Equal(t, "Current (1)\n  gitui  0.27.0 → 0.27.0  it is current; GitHub answers extrawurst/gitui as gitui-org/gitui now, which github.setup could name\ngitui has no newer release, at master 1bb30d5\n", moved.String())
+
 	// A port with no release to look for, as a _select port, is covered,
 	// not a port that couldn't be checked (batch 37).
 	own := func(name string) engine.OutdatedPort {

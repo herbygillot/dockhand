@@ -10,9 +10,9 @@ import (
 // removedFlags are the flags dockhand has removed, by command, each with
 // what replaced it, or that nothing did: a removed flag, like a removed
 // setting, says so rather than "unknown flag" (the person's word on the
-// docs re-review, 2026-10-27; nothing is aliased). v0.4.0 removed these
-// when ship took update's and submit's later stages, and they stay here
-// for good, as the settings' words do.
+// docs re-review, 2026-10-27; nothing is aliased). v0.4.0 removed most
+// of these when ship took update's and submit's later stages, and they
+// stay here for good, as the settings' words do.
 var removedFlags = map[string]map[string]string{
 	"update": {
 		"submit":            "update --submit is gone: ship <port> updates, checks, and submits it",
@@ -38,6 +38,11 @@ var removedFlags = map[string]map[string]string{
 	"logs":     {"all": "logs --all is gone: logs --full shows the whole log"},
 	"outdated": {"all": "outdated --all is gone: outdated --current lists the ports with no newer release too"},
 	"diff":     {"archive": "diff --archive is gone: diff --source compares the source archives"},
+	// v0.8.0's console took the live view's place.
+	"status": {
+		"watch": "status --watch is now dockhand console",
+		"plain": "status --plain is now dockhand console --plain",
+	},
 }
 
 // removedFlag says what replaced a removed flag a command was given, as
