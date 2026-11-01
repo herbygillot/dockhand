@@ -84,6 +84,10 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 	require.NoError(t, writeOutdated(t.Context(), nil, &moved, engine.OutdatedReport{Master: "1bb30d5aaaaa", Ports: []engine.OutdatedPort{
 		{Port: "gitui", Current: "0.27.0", Newest: "0.27.0", RepositoryMove: &engine.RepositoryMove{From: "extrawurst/gitui", To: "gitui-org/gitui"}}}}, true))
 	require.Equal(t, "Current (1)\n  gitui  0.27.0 → 0.27.0  it is current; GitHub answers extrawurst/gitui as gitui-org/gitui now, which github.setup could name\ngitui has no newer release, at master 1bb30d5\n", moved.String())
+	// Without --current, the one port's line says it (prioritization's,
+	// 2026-11-01).
+	require.Equal(t, "httpie has no newer release, at master 1bb30d5; GitHub answers httpie/httpie as httpie/cli now; if that's the same project, github.setup could name it\n",
+		said(engine.OutdatedPort{Port: "httpie", Current: "3.2.4", Newest: "3.2.4", RepositoryMove: &engine.RepositoryMove{From: "httpie/httpie", To: "httpie/cli"}}))
 
 	// A port with no release to look for, as a _select port, is covered,
 	// not a port that couldn't be checked (batch 37).

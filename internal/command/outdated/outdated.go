@@ -251,6 +251,10 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 		line = fmt.Sprintf("%s has no release to look for, at master %s: it fetches nothing here, and no livecheck reads its version", report.Ports[0].Port, master)
 	case alone && uncertain == 0:
 		line = fmt.Sprintf("%s has no newer release, at master %s", report.Ports[0].Port, master)
+		// --current says it on the port's row.
+		if move := report.Ports[0].RepositoryMove; move != nil && !all {
+			line += "; " + move.Words()
+		}
 	case alone:
 		line = fmt.Sprintf("%s may have a newer release, at master %s", report.Ports[0].Port, master)
 	case newer == 0:

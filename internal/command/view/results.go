@@ -708,6 +708,10 @@ type outdatedPortJSON struct {
 	// Moved is, for a port that tracks a branch, the branch and the newer
 	// commit it names than the one the port pins.
 	Moved *movedJSON `json:"moved,omitempty"`
+	// RepositoryMove is, for a port whose GitHub repository GitHub answers
+	// by another name now, the repository github.setup names, the name
+	// GitHub answers it as, and the note outdated says of it.
+	RepositoryMove *repositoryMoveJSON `json:"repository_move,omitempty"`
 	// Class is what the look found of it: newer, current, uncertain,
 	// unpublished, moved, own-version, or unchecked; Unpublished, for an
 	// unpublished one, why its newer release isn't ready.
@@ -740,6 +744,20 @@ func setAsideView(aside []engine.SetAside) []setAsideJSON {
 	return views
 }
 
+// repositoryMoveJSON is a repository GitHub answers by another name.
+type repositoryMoveJSON struct {
+	Repository string `json:"repository"`
+	AnsweredAs string `json:"answered_as"`
+	Words      string `json:"words"`
+}
+
+func repositoryMoveView(move *engine.RepositoryMove) *repositoryMoveJSON {
+	if move == nil {
+		return nil
+	}
+	return &repositoryMoveJSON{Repository: move.From, AnsweredAs: move.To, Words: move.Words()}
+}
+
 func movedView(head *engine.Head) *movedJSON {
 	if head == nil {
 		return nil
@@ -751,7 +769,7 @@ func OutdatedView(report engine.OutdatedReport) map[string]any {
 	ports := []outdatedPortJSON{}
 	for _, port := range report.Ports {
 		ports = append(ports, outdatedPortJSON{Port: port.Port, Current: port.Current, Newest: port.Newest, Outdated: port.Outdated, Uncertain: setAsideView(port.Uncertain), Ahead: port.Ahead, Problem: port.Problem, OwnVersion: port.OwnVersion, With: port.With, Moved: movedView(port.Moved),
-			Class: string(port.Class()), Unpublished: port.Unpublished})
+			RepositoryMove: repositoryMoveView(port.RepositoryMove), Class: string(port.Class()), Unpublished: port.Unpublished})
 	}
 	viewed := map[string]any{"master": report.Master, "ports": ports}
 	// How many couldn't be checked, and why, for a script, which the exit
