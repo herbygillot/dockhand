@@ -802,6 +802,67 @@ func TestADependencysArchivesAreFoundByPortAndGoWithTheirArchives(t *testing.T) 
 	require.Equal(t, []string{"rust-1.91.0_1.darwin_25.arm64.tbz2"}, names(tahoe, "rust", "cargo"), "pruned with their archives once past cleanup.after")
 }
 
+// A dependency's kept archive says the PortGroups the guest built it
+// with, where it built it from source, and none where it was installed
+// from MacPorts' own (schema 54). Kept again by a guest that installed it,
+// and so built nothing, it keeps what it was built with.
+func TestADependencysArchiveKeepsThePortGroupsItWasBuiltWith(t *testing.T) {
+	t.Parallel()
+	f := open(t)
+	f.seed(t)
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsCommandLine}
+	cargo := map[string]model.ObjectID{"_resources/port1.0/group/cargo-1.0.tcl": "4c18e512dba79e4c8300dd08aeb37f8e728b8dad"}
+	keep := func(digest, port string, groups map[string]model.ObjectID, kept time.Time) {
+		t.Helper()
+		archive := model.Archive{Digest: digest, Name: port + "-1_0.darwin_25.arm64.tbz2", Size: 10, KeptAt: kept}
+		require.NoError(t, f.update(t, func(tx store.Tx) error {
+			if err := tx.KeepArchive(archive); err != nil {
+				return err
+			}
+			return tx.KeepDependencyArchive(model.DependencyArchive{Archive: archive, Port: port, Environment: tahoe, PortGroups: groups})
+		}))
+	}
+	groups := func() map[string]map[string]model.ObjectID {
+		t.Helper()
+		found := map[string]map[string]model.ObjectID{}
+		require.NoError(t, f.store.View(t.Context(), f.repo, func(rd store.Reader) error {
+			archives, err := rd.DependencyArchives(tahoe, []string{"rust", "zlib"})
+			for _, archive := range archives {
+				found[archive.Port] = archive.PortGroups
+			}
+			return err
+		}))
+		return found
+	}
+	keep("sha256:r1", "rust", cargo, at)
+	keep("sha256:z1", "zlib", nil, at)
+	require.Equal(t, map[string]map[string]model.ObjectID{"rust": cargo, "zlib": nil}, groups())
+	keep("sha256:r1", "rust", nil, at.Add(time.Hour))
+	require.Equal(t, cargo, groups()["rust"], "kept again by a guest that installed it")
+}
+
+// A dependency's archive kept before schema 54 says no PortGroups, and is
+// offered as it was.
+func TestADependencysArchiveBeforeSchema54SaysNoPortGroups(t *testing.T) {
+	t.Parallel()
+	s, err := Open(t.Context(), schemaAt(t, 53, schema23Records+`
+INSERT INTO archives(repository_id, digest, name, size, kept_at) VALUES('repo_1','sha256:r1','rust-1_0.darwin_25.arm64.tbz2',10,1);
+INSERT INTO dependency_archives(repository_id, digest, port, provider, platform_os, platform_version, platform_architecture, developer_tools, kept_at)
+ VALUES('repo_1','sha256:r1','rust','tart','darwin','25','arm64','xcode',1);
+`), Options{})
+	require.NoError(t, err)
+	defer s.Close()
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
+	require.NoError(t, s.View(t.Context(), "repo_1", func(r store.Reader) error {
+		archives, err := r.DependencyArchives(tahoe, []string{"rust"})
+		require.NoError(t, err)
+		require.Len(t, archives, 1)
+		require.Equal(t, "sha256:r1", archives[0].Digest)
+		require.Nil(t, archives[0].PortGroups)
+		return nil
+	}))
+}
+
 // An archive is forgotten once no live result names it (D6): an open
 // branch's newest passed result of each target in each environment keeps
 // its own, and the newest passed build reuse may choose keeps its own

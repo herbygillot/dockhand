@@ -150,3 +150,25 @@ func TestAnUpdateWithItsRebuildsIsTitledByTheUpdate(t *testing.T) {
 	require.Empty(t, updateWithRebuilds(commits("libunibreak: update to 8.0", "taisei: rebuild for libfoo 2")))
 	require.Empty(t, updateWithRebuilds(commits("taisei: rebuild for libunibreak 8.0")))
 }
+
+// A branch whose commits each update one port to one version, the same
+// for all, is titled by their subjects joined; a branch of several ports
+// otherwise still asks for one (field testing's ace+tao branch,
+// 2026-10-31).
+func TestUpdatesToOneVersionAreTitledByTheirJoinedSubjects(t *testing.T) {
+	t.Parallel()
+	commits := func(subjects ...string) []git.HistoryCommit {
+		var all []git.HistoryCommit
+		for _, subject := range subjects {
+			all = append(all, git.HistoryCommit{Message: subject + "\n"})
+		}
+		return all
+	}
+	require.Equal(t, "ace, tao: update to 8.0.8", updatesToOneVersion(commits("tao: update to 8.0.8", "ace: update to 8.0.8")))
+	require.Equal(t, "py39-foo, py310-foo, py313-foo: update to 2.1", updatesToOneVersion(commits("py313-foo: update to 2.1", "py39-foo: update to 2.1", "py310-foo: update to 2.1")), "MacPorts' order of names")
+	require.Empty(t, updatesToOneVersion(commits("jq: update to 1.8.1", "libharbor: update to 2.0")), "two versions")
+	require.Empty(t, updatesToOneVersion(commits("ace: update to 8.0.8", "tao: update to 8.0.8, fix build")), "a subject with more")
+	require.Empty(t, updatesToOneVersion(commits("ace: update to 8.0.8", "tao: fix build")), "a commit that isn't an update")
+	require.Empty(t, updatesToOneVersion(commits("tao: update to 8.0.8", "tao: update to 8.0.8")), "one port twice")
+	require.Empty(t, updatesToOneVersion(commits("tao: update to 8.0.8")), "one commit is titled by itself")
+}

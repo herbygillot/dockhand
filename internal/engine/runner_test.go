@@ -951,6 +951,72 @@ func TestABuildIsReusedAcrossPortGroupsItDidntLoad(t *testing.T) {
 	require.Len(t, provider.jobs, built+2, "a file every port reads changed")
 }
 
+// A build is keyed by the PortGroups loaded by an active port its
+// environment built from source for it, as well as its own: a change to
+// one of those builds it again, where a change to a PortGroup of a port
+// installed from its archive leaves it reused (prioritization's ruling,
+// 2026-11-01).
+func TestABuildIsReusedUntilAPortGroupOfAPortBuiltWithItChanges(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	github := "_resources/port1.0/group/github-1.0.tcl"
+	golang := "_resources/port1.0/group/golang-1.0.tcl"
+	loaded := func(content string) map[string]model.ObjectID {
+		return map[string]model.ObjectID{github: model.ObjectID(git.SHA1BlobID([]byte(content)))}
+	}
+	// harbor-tools was built from source with each target, and loaded the
+	// github PortGroup; jq was installed from its archive. Each is a
+	// directory of the tree, as an active port must be for its build's
+	// inputs to be complete.
+	active := func(groups map[string]model.ObjectID) []model.ActivePort {
+		return []model.ActivePort{
+			{Name: "harbor-tools", Spec: "@1_0", Directory: "graphics/harbor-tools", Archive: "sha256:aa", PortGroups: groups},
+			{Name: "jq", Spec: "@1.7.1_0", Directory: "textproc/jq", Archive: "sha256:bb"},
+		}
+	}
+	provider := &identified{scriptedProvider: scriptedProvider{active: active(loaded("# group\n")), sourced: map[string]model.ObjectID{}}, identity: "origin a"}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	first, err := e.Drive(t.Context(), session(t, e), queuedHarborRun(t, e, tahoeArm).ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, first.State, first.Detail)
+	var branch model.Branch
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		branch, err = r.Branch(first.Branch)
+		return err
+	}))
+	// changed checks the branch's files with files written over them.
+	changed := func(files map[string]string) model.Run {
+		t.Helper()
+		testsupport.WriteFiles(t, branch.Worktree, files)
+		for path := range files {
+			testsupport.Git(t, branch.Worktree, "add", path)
+		}
+		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
+		require.NoError(t, err)
+		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
+		require.NoError(t, err)
+		queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+		require.NoError(t, err)
+		run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+		require.NoError(t, err)
+		require.Equal(t, model.RunPassed, run.State, run.Detail)
+		return run
+	}
+
+	// A branch that changes _resources plans the ports that read it, so
+	// the targets are the same from here on.
+	changed(map[string]string{golang: "# first\n"})
+	built := len(provider.jobs)
+	changed(map[string]string{golang: "# another\n"})
+	require.Len(t, provider.jobs, built, "a PortGroup of a port installed from its archive changed")
+	provider.active = active(loaded("# group, changed\n"))
+	changed(map[string]string{github: "# group, changed\n"})
+	require.Len(t, provider.jobs, built+1, "a PortGroup of the port built with them changed")
+	changed(map[string]string{golang: "# another, again\n"})
+	require.Len(t, provider.jobs, built+1, "and the new build is reused in its turn")
+}
+
 // A passed build whose inputs couldn't be recorded is reused by no later
 // check, which says why as it builds again, and its result says it too,
 // where an hour's rebuild was silent (the architecture review's L3a).
@@ -1314,6 +1380,114 @@ func TestAGuestIsOfferedTheKeptArchivesOfWhatTheRevisionNeeds(t *testing.T) {
 	}))
 	require.Contains(t, strings.Join(said, "\n"), "the guest may install up to 2 dependencies from archives earlier checks kept")
 	require.Contains(t, strings.Join(said, "\n"), "harbor-viewer: installed 2 dependencies from archives earlier checks kept: cargo, rust")
+}
+
+// A dependency's kept archive that a guest built from source is offered
+// while the check's revision holds the PortGroups its build loaded, and
+// not once one of them changed: it is the build of what the ports tree no
+// longer says, which a target voided by that change would be built again
+// against (prioritization's ruling, 2026-11-01). That's said once, and
+// the guest builds it again, so the next record keys its PortGroups as
+// they are now. One kept from MacPorts' own archive is offered as before.
+func TestAKeptArchiveIsntOfferedOnceAPortGroupItsBuildLoadedChanged(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	github := "_resources/port1.0/group/github-1.0.tcl"
+	loaded := func(content string) map[string]model.ObjectID {
+		return map[string]model.ObjectID{github: model.ObjectID(git.SHA1BlobID([]byte(content)))}
+	}
+	// cargo was built from source, and loaded the github PortGroup; rust
+	// was installed from MacPorts' archive.
+	active := func(groups map[string]model.ObjectID) []model.ActivePort {
+		var ports []model.ActivePort
+		for _, name := range []string{"cargo", "rust"} {
+			_, _, digest := scriptedArchive(model.TargetID(name))
+			ports = append(ports, model.ActivePort{Name: name, Spec: "@1_0", Directory: "lang/" + name, Archive: digest})
+		}
+		ports[0].PortGroups = groups
+		return ports
+	}
+	provider := &identified{scriptedProvider: scriptedProvider{keep: true, keepDependencies: true, active: []model.ActivePort{}, sourced: map[string]model.ObjectID{},
+		consumes: map[model.TargetID][]model.ActivePort{"harbor-viewer": active(loaded("# group\n"))}}, identity: "origin a"}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	revision := harborBranch(t, e)
+	var branch model.Branch
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		var err error
+		branch, err = r.Branch(revision.Branch)
+		return err
+	}))
+	branch.Base = revision.Source.Base
+	usePorts(e, graphPorts{fakePorts: fakePorts{directories: map[string][]macports.PortInfo{
+		"devel/libharbor":        {port("libharbor")},
+		"devel/harbor-cli":       {port("harbor-cli", "libharbor")},
+		"graphics/harbor-viewer": {port("harbor-viewer", "cargo", "rust")},
+	}}, graph: map[string][]string{"harbor-viewer": {"cargo", "rust"}}})
+	// check checks the branch with files written over it, and says which
+	// kept archives its guest was given, and what the run said.
+	check := func(files map[string]string) (model.Run, []string, string) {
+		t.Helper()
+		testsupport.WriteFiles(t, branch.Worktree, files)
+		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
+		require.NoError(t, err)
+		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
+		require.NoError(t, err)
+		queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+		require.NoError(t, err)
+		run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+		require.NoError(t, err)
+		require.Equal(t, model.RunPassed, run.State, run.Detail)
+		var given []string
+		for _, archive := range provider.jobs[len(provider.jobs)-1].Installs {
+			if archive.Target == "" {
+				given = append(given, archive.Port)
+			}
+		}
+		var said []string
+		require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+			events, err := r.RunEvents(run.ID, 0, 1000)
+			for _, event := range events {
+				said = append(said, event.Message)
+			}
+			return err
+		}))
+		return run, given, strings.Join(said, "\n")
+	}
+	check(map[string]string{"graphics/harbor-viewer/Portfile": "name harbor-viewer\nrevision 1\n"})
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		kept, err := r.DependencyArchives(tahoeArm, []string{"cargo", "rust"})
+		require.Len(t, kept, 2)
+		require.Equal(t, loaded("# group\n"), kept[0].PortGroups, "cargo's, built from source")
+		require.Nil(t, kept[1].PortGroups, "rust's, from MacPorts' archive")
+		return err
+	}))
+	_, given, _ := check(map[string]string{"graphics/harbor-viewer/Portfile": "name harbor-viewer\nrevision 2\n"})
+	require.ElementsMatch(t, []string{"cargo", "rust"}, given, "the PortGroups cargo loaded are the revision's still")
+
+	// The guest builds cargo again, with the PortGroup as it is now.
+	provider.consumes["harbor-viewer"] = active(loaded("# group, changed\n"))
+	run, given, said := check(map[string]string{"graphics/harbor-viewer/Portfile": "name harbor-viewer\nrevision 3\n", github: "# group, changed\n"})
+	require.Equal(t, []string{"rust"}, given, "cargo's archive was built before the github PortGroup changed")
+	require.Contains(t, said, run.Name()+": the saved archive for cargo was built before the github 1.0 PortGroup changed, so the build environment will use a MacPorts archive or build it from source")
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		executions, err := r.Executions(run.ID)
+		require.NoError(t, err)
+		results, err := r.Results(executions[0].ID)
+		require.NoError(t, err)
+		for _, result := range results {
+			if result.Target != "harbor-viewer" {
+				continue
+			}
+			inputs, err := r.Inputs(result.Inputs)
+			require.NoError(t, err)
+			require.Equal(t, "cargo", inputs.Active[0].Name)
+			require.Equal(t, loaded("# group, changed\n"), inputs.Active[0].PortGroups, "the record keys cargo's PortGroups as they are now")
+			require.Nil(t, inputs.Active[1].PortGroups)
+			return nil
+		}
+		return errors.New("harbor-viewer has no result")
+	}))
 }
 
 func TestTheGuestInstallsWhatABuildNeedsFromItsKeptArchive(t *testing.T) {

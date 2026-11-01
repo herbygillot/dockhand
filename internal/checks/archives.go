@@ -184,8 +184,10 @@ func (b *build) Keep(target model.TargetID, name string, fetch func(path string)
 
 // KeepDependency keeps the archive a dependency of a target was installed
 // from in the guest, by the digest Consumed reported of it, for a later
-// guest in the environment (buildenv.Build). A port the plan builds is the
-// branch's, whose archive isn't master's build of it, and isn't kept so.
+// guest in the environment (buildenv.Build), with the PortGroups its build
+// loaded where the guest built it from source. A port the plan builds is
+// the branch's, whose archive isn't master's build of it, and isn't kept
+// so.
 func (b *build) KeepDependency(port model.ActivePort, name string, fetch func(path string) error) error {
 	if port.Name == "" || !strings.HasPrefix(port.Archive, "sha256:") {
 		return fmt.Errorf("%s was active from no archive to keep", port.Name)
@@ -198,7 +200,9 @@ func (b *build) KeepDependency(port model.ActivePort, name string, fetch func(pa
 	if !b.consumed(port) {
 		return fmt.Errorf("%s wasn't reported active from %s", port.Name, port.Archive)
 	}
-	archive := model.DependencyArchive{Archive: model.Archive{Digest: port.Archive, Name: name, KeptAt: b.d.c.Now()}, Port: port.Name, Environment: b.execution.Environment}
+	// The PortGroups the guest built it with, where it built it, go with
+	// it, so it's offered only while a check's revision holds the same.
+	archive := model.DependencyArchive{Archive: model.Archive{Digest: port.Archive, Name: name, KeptAt: b.d.c.Now()}, Port: port.Name, Environment: b.execution.Environment, PortGroups: port.PortGroups}
 	return b.d.c.Archives.Keep(b.ctx, model.Archive{Digest: port.Archive, Name: name}, fetch, func(tx store.Tx) error { return tx.KeepDependencyArchive(archive) })
 }
 

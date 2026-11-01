@@ -108,6 +108,13 @@ func TestSubjectPorts(t *testing.T) {
 	require.Equal(t, "libunibreak", rebuilt)
 	_, ok = commitmsg.RebuildFor("libunibreak: update to 8.0")
 	require.False(t, ok)
+	port, version, ok := commitmsg.UpdateTo("tao: update to 8.0.8")
+	require.True(t, ok)
+	require.Equal(t, []string{"tao", "8.0.8"}, []string{port, version})
+	for _, other := range []string{"tao: update to 8.0.8, fix build", "ace, tao: update to 8.0.8", "tao: rebuild for ace 8.0.8", "Update tao to 8.0.8"} {
+		_, _, ok = commitmsg.UpdateTo(other)
+		require.False(t, ok, other)
+	}
 }
 
 // A combined commit's message is its subject, its body, and the trailers

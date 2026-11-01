@@ -158,7 +158,16 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // reuse to key on in place of all of _resources. That reports more, and
 // builds and judges nothing otherwise, so the protocol stays 3: what was
 // recorded before names the whole tree, a stricter key, and stands.
-const guestPin = "f5212c04bf4b332debc25724f4a9e89d7fafa43d88c9ea79115e9a38babf997f"
+//
+// Since prioritization's ruling on dependencies' PortGroups, each port
+// active for a verdict that the guest built from source, an earlier
+// target, a dependency it found no archive of, or one a target's variants
+// brought, which a listing of the active ports before and after a
+// target's install with variants tells, also says which PortGroup files
+// its build loaded. That reports more, and builds and judges nothing
+// otherwise, so the protocol stays 3: what was recorded before names no
+// PortGroup of its ports, and keeps its key.
+const guestPin = "6eb4e94646c32c760207224e52b055a8b020fb591555148f8a7d58c3698863c0"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

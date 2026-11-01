@@ -112,7 +112,7 @@ set foreignManagers [expr {[info exists ::env(FOREIGN)] ? $::env(FOREIGN) : {}}]
 	portLog := filepath.Join(root, "port.log")
 	otool := filepath.Join(root, "otool")
 	testsupport.WriteExecutable(t, otool, guesttest.FakeOtool)
-	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "DOCKHAND_GUEST_OTOOL="+otool, "CONTENTS=", "PROVIDES=", "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "CONFIGURESAYS=", "QUIET=", "HANG=", "NOARCHIVE=", "DEPFAILS=", "ACTIVEFILE=", "INSTALLED=", "DEPVERSION=", "PORTGROUPS=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
+	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "DOCKHAND_GUEST_OTOOL="+otool, "CONTENTS=", "PROVIDES=", "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "CONFIGURESAYS=", "QUIET=", "HANG=", "NOARCHIVE=", "DEPFAILS=", "ACTIVEFILE=", "INSTALLED=", "DEPVERSION=", "PORTGROUPS=", "BRINGS=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
 	return command
 }
 
@@ -267,6 +267,74 @@ func TestAVerdictRecordsThePortGroupsItsBuildLoaded(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(log), "dockhand: which PortGroups this build loaded wasn't recorded: the PortGroup file")
 	require.Contains(t, string(log), "elsewhere-1.0.tcl is outside the ports tree")
+}
+
+// portGroupFiles writes PortGroup files under root's ports tree, each
+// named, holding its own name, and returns how the guest records each.
+func portGroupFiles(t *testing.T, root string, names ...string) map[string]Sourced {
+	t.Helper()
+	group := filepath.Join(root, "ports", "_resources", "port1.0", "group")
+	require.NoError(t, os.MkdirAll(group, 0o755))
+	files := map[string]Sourced{}
+	for _, name := range names {
+		content := []byte("# PortGroup " + name + "\n")
+		require.NoError(t, os.WriteFile(filepath.Join(group, name), content, 0o644))
+		files[name] = Sourced{Path: "_resources/port1.0/group/" + name, Blob: git.SHA1BlobID(content)}
+	}
+	return files
+}
+
+// Each port active for a verdict that the guest built from source comes
+// with the PortGroup files its build loaded, as the target's own do: a
+// dependency with no binary archive, and an earlier target. This guest
+// sourced them for the check, so the result lasts until one of them
+// changes too (prioritization's ruling, 2026-11-01). A dependency
+// installed from its archive loaded nothing here, and comes with none. A
+// port built here that resolves nowhere leaves the target's own
+// unrecorded, so the host takes all of _resources as read, and the verdict
+// stands.
+func TestAPortBuiltHereComesWithThePortGroupsItLoaded(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	files := portGroupFiles(t, root, "cmake-1.1.tcl", "muniversal-1.0.tcl", "golang-1.0.tcl")
+	env := []string{
+		"DEPS=libharbor=zlib,gettext harbor-cli=libharbor", "NOARCHIVE=gettext",
+		"ACTIVE=  zlib @1.3.1_0 (active)\\n  gettext @0.22.5_0+nls (active)\\n  libharbor @3_0 (active)\\n",
+		"PORTGROUPS=libharbor=_resources/port1.0/group/cmake-1.1.tcl gettext=_resources/port1.0/group/muniversal-1.0.tcl zlib=_resources/port1.0/group/golang-1.0.tcl",
+	}
+	results, _ := guestRunIn(t, root, twoTargets("skip"), env...)
+	require.Equal(t, "finished", results.State, results.Detail)
+	zlib := Port{Name: "zlib", Spec: "@1.3.1_0", Directory: "devel/zlib"}
+	gettext := Port{Name: "gettext", Spec: "@0.22.5_0+nls", Directory: "devel/gettext", PortGroups: []Sourced{files["muniversal-1.0.tcl"]}}
+	require.Equal(t, []Sourced{files["cmake-1.1.tcl"]}, results.Targets[0].Sourced, "its own")
+	require.Equal(t, []Port{zlib, gettext}, results.Targets[0].Active, "gettext, built from source, with its PortGroups, and zlib, installed from its archive, with none")
+	require.Equal(t, []Port{zlib, gettext, {Name: "libharbor", Spec: "@3_0", Directory: "devel/libharbor", PortGroups: []Sourced{files["cmake-1.1.tcl"]}}}, results.Targets[1].Active,
+		"gettext, built for the target before it, and that target")
+
+	unresolved := t.TempDir()
+	portGroupFiles(t, unresolved, "cmake-1.1.tcl", "muniversal-1.0.tcl", "golang-1.0.tcl")
+	results, _ = guestRunIn(t, unresolved, twoTargets("skip"), append(env, "UNRESOLVED=gettext")...)
+	require.Equal(t, "finished", results.State, results.Detail)
+	require.Equal(t, "passed", results.Targets[0].Outcome, "the verdict stands")
+	require.Nil(t, results.Targets[0].Sourced, "absent, so the host takes all of _resources as read")
+	log, err := os.ReadFile(filepath.Join(unresolved, results.Targets[0].Log))
+	require.NoError(t, err)
+	require.Contains(t, string(log), "dockhand: which PortGroups the ports built here loaded wasn't recorded: gettext, built here, resolves nowhere in the ports tree")
+}
+
+// What a target's variants add to its dependencies, its install builds
+// from source, as -s asks of every port it installs, so each comes with
+// its PortGroups.
+func TestAPortATargetsVariantsBroughtComesWithItsPortGroups(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	files := portGroupFiles(t, root, "cmake-1.1.tcl")
+	_, active := registry(t)
+	input := Input{Tests: "skip", Targets: []Target{{ID: "libharbor+tests", Name: "libharbor", Portfile: "devel/libharbor/Portfile", Variants: map[string]bool{"tests": true}, Log: buildenv.LogName("libharbor+tests")}}}
+	results, _ := guestRunIn(t, root, input, active, "BRINGS=libharbor=gtest", "PORTGROUPS=gtest=_resources/port1.0/group/cmake-1.1.tcl")
+	require.Equal(t, "finished", results.State, results.Detail)
+	require.Equal(t, []Port{{Name: "gtest", Spec: "@1_0", Directory: "devel/gtest", PortGroups: []Sourced{files["cmake-1.1.tcl"]}}}, results.Targets[0].Active, "gtest, which its variant brought")
+	require.Equal(t, []Sourced{}, results.Targets[0].Sourced)
 }
 
 // A target that fails stops at its phase, and a target that needs it is

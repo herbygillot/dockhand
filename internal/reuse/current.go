@@ -110,10 +110,14 @@ type Blocks func(directory string, then, now model.ObjectID) (subports []string,
 // load another PortGroup now does so by a change to its Portfile, or to a
 // PortGroup it loaded, so that is a change already.
 //
-// What its dependencies loaded isn't among what it read: a dependency's
-// build is named by its directory's tree, as before, and installs from
-// MacPorts' archive of that version, or the archive dockhand kept of it,
-// whichever PortGroup changed since.
+// What an active port the environment built from source for the check
+// loaded is among what it read (model.ActivePort.PortGroups), so a change
+// to one of those is a change too: "the golang 1.0 PortGroup, which
+// gopls, built from source, loaded". A port installed from an archive,
+// MacPorts' or the one dockhand kept, is named by its directory's tree and
+// its archive alone, whichever PortGroup changed since: the archive is
+// what the build read, and only a revision bump, a change to its
+// directory, replaces it.
 func ResourcesChanged(recorded model.TargetInputs, trees map[string]model.ObjectID) string {
 	read := recorded.ResourcesRead
 	if read == nil {
@@ -122,13 +126,12 @@ func ResourcesChanged(recorded model.TargetInputs, trees map[string]model.Object
 		}
 		return ""
 	}
-	files := slices.Sorted(maps.Keys(read.PortGroups))
-	for _, file := range files {
-		if now, ok := trees[file]; !ok || now != read.PortGroups[file] {
-			if group, ok := macports.PortGroupAt(file); ok {
-				return fmt.Sprintf("the %s %s PortGroup", group.Name, group.Version)
-			}
-			return file
+	if changed := PortGroupChanged(read.PortGroups, trees); changed != "" {
+		return changed
+	}
+	for _, port := range recorded.Active {
+		if changed := PortGroupChanged(port.PortGroups, trees); changed != "" {
+			return fmt.Sprintf("%s, which %s, built from source, loaded", changed, port.Name)
 		}
 	}
 	now := shared(trees)
@@ -142,6 +145,22 @@ func ResourcesChanged(recorded model.TargetInputs, trees map[string]model.Object
 	for _, path := range paths {
 		if then, ok := read.Shared[path]; !ok || now[path] != then {
 			return path
+		}
+	}
+	return ""
+}
+
+// PortGroupChanged says the first of the PortGroup files, each by its blob
+// by its path, that the revision now holds otherwise or not at all (trees,
+// from Objects), "the cmake 1.1 PortGroup", or nothing where none does: of
+// a build's, or of a kept archive's (model.DependencyArchive).
+func PortGroupChanged(files map[string]model.ObjectID, trees map[string]model.ObjectID) string {
+	for _, file := range slices.Sorted(maps.Keys(files)) {
+		if now, ok := trees[file]; !ok || now != files[file] {
+			if group, ok := macports.PortGroupAt(file); ok {
+				return fmt.Sprintf("the %s %s PortGroup", group.Name, group.Version)
+			}
+			return file
 		}
 	}
 	return ""

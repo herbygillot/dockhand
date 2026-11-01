@@ -34,7 +34,9 @@ esac
 // listing the active ports fails. With ACTIVEFILE set, it's a registry
 // of its own, as a prefix of the person's is: the active ports are that
 // file's lines, which deactivating, activating, and installing change, a
-// target's install activating it at NEWVERSION. INSTALLED lists the
+// target's install activating it at NEWVERSION, with the ports BRINGS
+// names for it ("name=dep,dep ..."), as its variants' dependencies would
+// be. INSTALLED lists the
 // installed images of a port, as "-q installed <name>" does, and
 // REQUESTED those requested, as "-q installed requested and <name>". Its port
 // snapshot keeps the note it's made with, which --list says as ID 7.
@@ -59,7 +61,12 @@ if [ -n "$ACTIVEFILE" ]; then
     "-N -f deactivate "*) shift 3; drop "$@" ;;
     "-N activate "*) drop "$3"; echo "  $3 $4 (active)" >> "$ACTIVEFILE"; echo "port $*"; exit 0 ;;
     *"install --unrequested "*"subport="*)
-      all="$*"; name=${all##*subport=}; name=${name%% *}; drop "$name"; echo "  $name @${NEWVERSION:-9.9_0} (active)" >> "$ACTIVEFILE" ;;
+      all="$*"; name=${all##*subport=}; name=${name%% *}; drop "$name"; echo "  $name @${NEWVERSION:-9.9_0} (active)" >> "$ACTIVEFILE"
+      for entry in $BRINGS; do
+        if [ "${entry%%=*}" = "$name" ]; then
+          for dep in $(echo "${entry#*=}" | tr ',' ' '); do grep -q "^  $dep @" "$ACTIVEFILE" || echo "  $dep @1_0 (active)" >> "$ACTIVEFILE"; done
+        fi
+      done ;;
     "-N install --unrequested "*|"-N -d install --unrequested "*)
       for dep in $*; do case "$dep" in -*|install) ;; *) grep -q "^  $dep @" "$ACTIVEFILE" || echo "  $dep @1_0 (active)" >> "$ACTIVEFILE" ;; esac; done ;;
   esac

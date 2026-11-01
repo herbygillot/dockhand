@@ -230,7 +230,14 @@ once per target, after its verdict, and has MacPorts open the port under
 its variants for the PortGroups, as the build opened it. They are what a
 later check will compare to reuse the result (decision 28): with the
 PortGroups named, a change to one the port didn't load leaves the result
-standing, where any change to `_resources` voided it.
+standing, where any change to `_resources` voided it. An active port the
+guest built from source for the check, an earlier target, a dependency it
+found no archive of, or one a target's variants brought, comes with the
+PortGroup files its own build loaded, so a change to one of those voids
+the result too; a port installed from an archive, MacPorts' or one
+dockhand kept, is named by its archive. A dependency's archive dockhand
+keeps carries the PortGroups it was built with, and isn't offered to a
+later guest once the revision holds one of them otherwise.
 
 A port MacPorts fetches with Git (`fetch.type git`) names its source by
 `git.branch`, usually a tag, which binds nothing as an archive's checksums

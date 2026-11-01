@@ -283,6 +283,22 @@ type Port struct {
 	// ArchiveFile is where its archive is in the guest; absent where the
 	// guest kept none.
 	ArchiveFile string `json:"archive_file,omitempty"`
+	// PortGroups are the PortGroup files its build loaded, each with its
+	// blob ID, where the guest built it from source; absent where it was
+	// installed from an archive.
+	PortGroups []Sourced `json:"portgroups,omitempty"`
+}
+
+// activePort is a port active as a target built, as dockhand names it.
+func (p Port) activePort() model.ActivePort {
+	active := model.ActivePort{Name: p.Name, Spec: p.Spec, Directory: p.Directory, Archive: p.Archive}
+	if p.PortGroups != nil {
+		active.PortGroups = make(map[string]model.ObjectID, len(p.PortGroups))
+		for _, file := range p.PortGroups {
+			active.PortGroups[file.Path] = model.ObjectID(file.Blob)
+		}
+	}
+	return active
 }
 
 // Targets are the job's targets as the guest program reads them, each
@@ -612,7 +628,7 @@ func (f *Follower) record(ctx context.Context, g Guest, job buildenv.Job, build 
 	if got.Active != nil {
 		report.Active = make([]model.ActivePort, len(got.Active))
 		for i, port := range got.Active {
-			report.Active[i] = model.ActivePort{Name: port.Name, Spec: port.Spec, Directory: port.Directory, Archive: port.Archive}
+			report.Active[i] = port.activePort()
 		}
 	}
 	if got.Sourced != nil {
@@ -667,8 +683,7 @@ func (f *Follower) record(ctx context.Context, g Guest, job buildenv.Job, build 
 		if !f.KeepDependencies || port.Archive == "" || port.ArchiveFile == "" || isTarget(job, port.Name) {
 			continue
 		}
-		active := model.ActivePort{Name: port.Name, Spec: port.Spec, Directory: port.Directory, Archive: port.Archive}
-		if err := f.keepDependency(ctx, g, build, active, port.ArchiveFile); err != nil {
+		if err := f.keepDependency(ctx, g, build, port.activePort(), port.ArchiveFile); err != nil {
 			build.Progress(fmt.Sprintf("%s: the archive of its dependency %s wasn't kept: %v", got.ID, port.Name, err))
 		}
 	}

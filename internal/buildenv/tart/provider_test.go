@@ -310,6 +310,9 @@ type fakeBuild struct {
 	blocked  map[model.TargetID]bool
 	consumed map[model.TargetID][]model.ActivePort
 	sourced  map[model.TargetID]map[string]model.ObjectID
+	// keptWith are the PortGroups each dependency's kept archive was
+	// built with, where the guest built it.
+	keptWith map[string]map[string]model.ObjectID
 	fetched  map[model.TargetID]string
 	results  []model.TargetResult
 	progress []string
@@ -365,6 +368,12 @@ func (b *fakeBuild) KeepDependency(port model.ActivePort, name string, fetch fun
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.dependencies = append(b.dependencies, port.Name)
+	if port.PortGroups != nil {
+		if b.keptWith == nil {
+			b.keptWith = map[string]map[string]model.ObjectID{}
+		}
+		b.keptWith[port.Name] = port.PortGroups
+	}
 	return nil
 }
 
@@ -455,7 +464,8 @@ func TestTheProviderRecordsEachTargetAsTheGuestFinishesIt(t *testing.T) {
 		ArchiveFile: "/opt/local/var/macports/software/libharbor/libharbor-3_0.darwin_25.arm64.tbz2"}
 	cli := guestprogram.Result{ID: "harbor-cli", Outcome: "failed", Phase: "install", Log: "target-2.log", Detail: "Failed to install harbor-cli",
 		Active: []guestprogram.Port{{Name: "libharbor", Spec: "@3_0", Directory: "devel/libharbor", Archive: "sha256:11", ArchiveFile: "/opt/local/var/macports/software/libharbor/libharbor-3_0.darwin_25.arm64.tbz2"},
-			{Name: "rust", Spec: "@1.91.0_0", Directory: "lang/rust", Archive: "sha256:22", ArchiveFile: "/opt/local/var/macports/software/rust/rust-1.91.0_0.darwin_25.arm64.tbz2"}},
+			{Name: "rust", Spec: "@1.91.0_0", Directory: "lang/rust", Archive: "sha256:22", ArchiveFile: "/opt/local/var/macports/software/rust/rust-1.91.0_0.darwin_25.arm64.tbz2",
+				PortGroups: []guestprogram.Sourced{{Path: "_resources/port1.0/group/cargo-1.0.tcl", Blob: "4c18e512dba79e4c8300dd08aeb37f8e728b8dad"}}}},
 		Steps: []guestprogram.Step{{Name: "lint", Line: 1}, {Name: "dependencies", Line: 3}, {Name: "fetch", Line: 900}, {Name: "checksum", Line: 902}, {Name: "install", Line: 903}}}
 	mac := newMac(
 		guestprogram.Results{State: "running"},
@@ -478,14 +488,17 @@ func TestTheProviderRecordsEachTargetAsTheGuestFinishesIt(t *testing.T) {
 	require.Equal(t, "built libharbor", string(log))
 	require.Contains(t, build.progress, "harbor-cli: Failed to install harbor-cli")
 	require.Equal(t, map[model.TargetID][]model.ActivePort{
-		"libharbor":  {},
-		"harbor-cli": {{Name: "libharbor", Spec: "@3_0", Directory: "devel/libharbor", Archive: "sha256:11"}, {Name: "rust", Spec: "@1.91.0_0", Directory: "lang/rust", Archive: "sha256:22"}},
-	}, build.consumed, "what each build read, the guest's none included")
+		"libharbor": {},
+		"harbor-cli": {{Name: "libharbor", Spec: "@3_0", Directory: "devel/libharbor", Archive: "sha256:11"},
+			{Name: "rust", Spec: "@1.91.0_0", Directory: "lang/rust", Archive: "sha256:22", PortGroups: map[string]model.ObjectID{"_resources/port1.0/group/cargo-1.0.tcl": "4c18e512dba79e4c8300dd08aeb37f8e728b8dad"}}},
+	}, build.consumed, "what each build read, the guest's none included, and what a port it built from source loaded")
 	require.Equal(t, map[model.TargetID]map[string]model.ObjectID{"libharbor": {"_resources/port1.0/group/cmake-1.1.tcl": "3b18e512dba79e4c8300dd08aeb37f8e728b8dad"}}, build.sourced,
 		"the PortGroups a build loaded, by path, each by its blob; none where the guest didn't say")
 	require.Equal(t, map[string][]byte{"libharbor-3_0.darwin_25.arm64.tbz2": []byte("libharbor's archive"), "rust-1.91.0_0.darwin_25.arm64.tbz2": []byte("rust's archive")}, build.kept,
 		"a passed target's archive is kept, by MacPorts' name for it, and a dependency's (batch 90)")
 	require.Equal(t, []string{"rust"}, build.dependencies, "a target active as another built is kept as a target, not a dependency")
+	require.Equal(t, map[string]map[string]model.ObjectID{"rust": {"_resources/port1.0/group/cargo-1.0.tcl": "4c18e512dba79e4c8300dd08aeb37f8e728b8dad"}}, build.keptWith,
+		"a dependency built from source is kept with the PortGroups it was built with")
 
 	vm := "dockhand-check-run-7-tahoe-1"
 	// The check ends once macOS has let its VM go, its process exited,
