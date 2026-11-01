@@ -225,6 +225,19 @@ func TestMaintainerAndSubmitSettings(t *testing.T) {
 	require.ErrorContains(t, err, "submit.rerequest_review")
 }
 
+// [update] source takes each of its values, suggest the default, and
+// refuses another, naming all five.
+func TestUpdateSourceSettings(t *testing.T) {
+	require.Equal(t, "suggest", Defaults()["update.source"])
+	for _, value := range UpdateSources {
+		f, err := parse("config.toml", "[update]\nsource = \""+value+"\"\n")
+		require.NoError(t, err, value)
+		require.Equal(t, value, f.Update.Source)
+	}
+	_, err := parse("config.toml", "[update]\nsource = \"tarball\"\n")
+	require.EqualError(t, err, `config.toml: update.source: "tarball" is not suggest, choose, keep, releases, or archive`)
+}
+
 func TestMaintainersAreTheIdentitiesNamed(t *testing.T) {
 	f, err := parse("config.toml", "maintainer = \"{@ada example.org:ada} openmaintainer\"\n")
 	require.NoError(t, err)

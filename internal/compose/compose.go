@@ -228,7 +228,7 @@ const PullRequestsVariable = "DOCKHAND_PULL_REQUESTS"
 func Settings(ctx context.Context, options Options, dependencies Dependencies) (engine.Options, config.File, string, error) {
 	look := dependencies.Lookup(options)
 	if options.Source != "" && !slices.Contains(config.UpdateSources, options.Source) {
-		return engine.Options{}, config.File{}, "", fmt.Errorf("--source: %q is not choose, keep, releases, or archive", options.Source)
+		return engine.Options{}, config.File{}, "", fmt.Errorf("--source: %q is not suggest, choose, keep, releases, or archive", options.Source)
 	}
 	places := options.Places()
 	configPath, err := places.ConfigPath(options.Getenv(config.PathVariable))

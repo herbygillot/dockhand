@@ -27,21 +27,24 @@ import (
 
 // SourceMode is what a version update does about a GitHub port's source
 // (update --source, [update] source, whose values config.UpdateSources
-// lists): choose a release's own file where
-// one is the source, keep the source as it is, or ask for a release's
-// file or GitHub's archive of the tag, refused where it doesn't qualify.
+// lists): suggest, the default, leaves it as it is, but for a tarball
+// port's move to GitHub's archive, and says where a release's own file is
+// the source; choose moves to a release's own file where one is the
+// source; keep leaves the source as it is; or ask for a release's file or
+// GitHub's archive of the tag, refused where it doesn't qualify.
 type SourceMode string
 
 const (
+	SourceSuggest  SourceMode = "suggest"
 	SourceChoose   SourceMode = "choose"
 	SourceKeep     SourceMode = "keep"
 	SourceReleases SourceMode = "releases"
 	SourceArchive  SourceMode = "archive"
 )
 
-// ChooseMovesGitPorts is the roadmap's D2: whether choose, the default,
-// moves a port fetched with Git for its submodules to a release asset
-// holding every one. It does, the recommended option, pending the
+// ChooseMovesGitPorts is the roadmap's D2: whether choose moves a port
+// fetched with Git for its submodules to a release asset holding every
+// one. It does, the recommended option, pending the
 // person's pick; false leaves such a port on its clone unless
 // --source releases asks.
 const ChooseMovesGitPorts = true
@@ -373,13 +376,15 @@ func sourceKind(info macports.PortInfo) string {
 // port goes to a release asset that is the source, else GitHub's archive,
 // as the version's edit moved it already; a port cloned for its
 // submodules goes to an asset that is the source and holds each, else
-// stays; an archive port stays unless --source releases asks. Nothing
-// chosen leaves the edit as it was, said as a notice; a mode asked for
-// that doesn't qualify is refused, naming the test it failed.
+// stays; an archive port stays unless --source releases asks. Suggest,
+// the default, tests as choose does and moves nothing, saying where an
+// asset is the source (sourceSuggestion). Nothing chosen leaves the edit
+// as it was, said as a notice; a mode asked for that doesn't qualify is
+// refused, naming the test it failed.
 func (s *Service) chooseSource(ctx context.Context, request Request, input *sourceInput, contents []byte, versioned macports.Snapshot) (chosenSource, error) {
 	mode := request.SourceMode
 	if mode == "" {
-		mode = SourceChoose
+		mode = SourceSuggest
 	}
 	kept := chosenSource{contents: contents, after: versioned}
 	if request.downloadsNothing {
@@ -403,7 +408,7 @@ func (s *Service) chooseSource(ctx context.Context, request Request, input *sour
 	case from == "git" && mode == SourceArchive:
 		return kept, ErrUnsupported.Because("--source archive: GitHub's archive of the tag leaves out the Git submodules %s clones", input.target.Name)
 	case from == "git":
-		wantRelease = mode == SourceReleases || ChooseMovesGitPorts
+		wantRelease = mode == SourceReleases || mode == SourceSuggest || ChooseMovesGitPorts
 	case from == "tarball":
 		wantRelease = mode != SourceArchive
 	case from == "archive":
@@ -512,11 +517,24 @@ func (s *Service) chooseSource(ctx context.Context, request Request, input *sour
 	if why := movedAsWritten(evaluated.after.Ports[input.target.Name], *chosen); why != "" {
 		return refuse(fmt.Sprintf("release %s carries %s, but the Portfile moved to it %s", release.Tag, chosen.name, why))
 	}
+	if mode == SourceSuggest {
+		kept.notice = sourceSuggestion(*moved)
+		return kept, nil
+	}
 	for _, line := range portfile.AddedLines(contents, edited) {
 		moved.Lines = append(moved.Lines, line.Text)
 	}
 	progress.Report(ctx, "%s", moved.Words())
 	return chosenSource{moved: moved, contents: edited, after: evaluated.after, fetched: []distfetch.Download{chosen.download}}, nil
+}
+
+// sourceSuggestion is suggest's notice of a release asset that is the
+// source, where the update left the source as it was: "release 2.5.0's
+// mindforger_2.5.0_tarball.tgz carries the source, doc, and
+// deps/cmark-gfm; update --source releases fetches it".
+func sourceSuggestion(moved MovedSource) string {
+	carried := append([]string{"the source"}, moved.Submodules...)
+	return fmt.Sprintf("release %s's %s carries %s; update --source releases fetches it", moved.Release, moved.Asset, prose.And(carried))
 }
 
 // gitMoveBlocked says why a port cloned with Git doesn't qualify for a

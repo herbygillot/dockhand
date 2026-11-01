@@ -94,8 +94,8 @@ type Options struct {
 	// "keep_http", 2026-10-29).
 	KeepHTTP bool
 	// Source is --source, or [update] source: what every version update
-	// does about a GitHub port's source, choose, keep, releases, or
-	// archive (editprep.SourceMode); empty chooses.
+	// does about a GitHub port's source, suggest, choose, keep, releases,
+	// or archive (editprep.SourceMode); empty suggests.
 	Source string
 	// NamedDatabase is a Database named, with --db or DOCKHAND_DB, other
 	// than the default one a release opens: a copy the person made to try

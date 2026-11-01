@@ -94,7 +94,7 @@ func KeepHTTPFlag(cmd *cobra.Command, s *Settings) {
 // SourceFlag registers --source on a command that updates a port's
 // version.
 func SourceFlag(cmd *cobra.Command, s *Settings) {
-	cmd.Flags().StringVar(&s.Source, "source", "", "for a port on the github PortGroup: choose takes a release's own source archive where one is the source, else GitHub's archive of the tag for a tarball port, and leaves a port cloned with Git as it is; keep moves nothing; releases or archive asks for that source (default [update] source, else choose)")
+	cmd.Flags().StringVar(&s.Source, "source", "", "for a port on the github PortGroup: suggest leaves the source as it is, but for a tarball port's move to GitHub's archive of the tag, and says where a release's own archive is the source; choose takes a release's own source archive where one is the source, else GitHub's archive of the tag for a tarball port, and leaves a port cloned with Git as it is; keep moves nothing; releases or archive asks for that source (default [update] source, else suggest)")
 }
 
 func (s *Settings) Flags(root *cobra.Command) {
