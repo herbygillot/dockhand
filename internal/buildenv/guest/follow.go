@@ -202,6 +202,10 @@ type Result struct {
 	// Active are the ports that were active as the target built; absent
 	// where the guest didn't record them, and empty where there were none.
 	Active []Port `json:"active"`
+	// Sourced are the PortGroup files the target's build loaded, as
+	// MacPorts opened it in the guest, each with its blob ID; absent where
+	// the guest didn't record them, and empty where it loaded none.
+	Sourced []Sourced `json:"sourced"`
 	// Archive is the digest of the target's own archive, and ArchiveFile
 	// where it is in the guest.
 	Archive     string `json:"archive"`
@@ -261,6 +265,13 @@ type Link struct {
 type Step struct {
 	Name string `json:"name"`
 	Line int    `json:"line"`
+}
+
+// Sourced is a file of the ports tree a target's build loaded: its path in
+// the tree, and its blob ID, as Git names its content.
+type Sourced struct {
+	Path string `json:"path"`
+	Blob string `json:"blob"`
 }
 
 // Port is a port active as a target built, as the guest saw it.
@@ -602,6 +613,12 @@ func (f *Follower) record(ctx context.Context, g Guest, job buildenv.Job, build 
 		report.Active = make([]model.ActivePort, len(got.Active))
 		for i, port := range got.Active {
 			report.Active[i] = model.ActivePort{Name: port.Name, Spec: port.Spec, Directory: port.Directory, Archive: port.Archive}
+		}
+	}
+	if got.Sourced != nil {
+		report.Sourced = make(map[string]model.ObjectID, len(got.Sourced))
+		for _, file := range got.Sourced {
+			report.Sourced[file.Path] = model.ObjectID(file.Blob)
 		}
 	}
 	if got.Links != nil {

@@ -26,16 +26,27 @@ type ActivePort struct {
 
 // TargetInputs are what a target's build read, as far as dockhand can name
 // them (decision 28): the environment by its identity; the target's own
-// directory and _resources, each by its tree; the variants it was asked
-// for; the ports active as it built; and for a port fetched with Git, the
-// commit it fetched. Until evaluation records what it sources, all of
-// _resources counts as read.
+// directory by its tree; _resources, by its tree or by what of it the
+// build read (ResourcesRead); the variants it was asked for; the ports
+// active as it built; and for a port fetched with Git, the commit it
+// fetched.
 type TargetInputs struct {
 	Environment string
 	Directory   string
 	Tree        ObjectID
-	Resources   ObjectID
-	Variants    map[string]bool `json:",omitempty"`
+	// Resources is _resources' tree, where the build is taken to have read
+	// all of it: its provider didn't say which PortGroups it loaded, or it
+	// was recorded before any provider said. Empty where ResourcesRead
+	// names what it read instead.
+	Resources ObjectID
+	// ResourcesRead is what of _resources the build read, where its
+	// provider said which PortGroups it loaded: a result then lasts until
+	// one of those or a file every port reads changes, where a change to
+	// any PortGroup voided it (the oracle survey's Q2). Left out when nil,
+	// so a key recorded before it is the same key still, and holds as a
+	// stricter one.
+	ResourcesRead *ResourcesRead  `json:",omitempty"`
+	Variants      map[string]bool `json:",omitempty"`
 	// Active are in name order: empty for a build that read no other
 	// port, and nil where its provider couldn't say, as one that reports
 	// only what a Git fetch checked out can't.
@@ -52,6 +63,21 @@ type TargetInputs struct {
 	// again can say why, where it rebuilt for an hour in silence (the
 	// architecture review's L3a). Left out when empty.
 	NotReusable string `json:",omitempty"`
+}
+
+// ResourcesRead is what of _resources a build read: what every port's
+// build may read there, and the PortGroups it loaded, each by its object
+// in the revision it read, by its path in the ports tree.
+type ResourcesRead struct {
+	// Shared are the entries of _resources beside the PortGroups, each a
+	// tree or a file: the compiler lists, the fetch and livecheck
+	// definitions, the SDK lists, the variant descriptions, which MacPorts
+	// itself reads for any port. An entry added or gone since is a change.
+	Shared map[string]ObjectID
+	// PortGroups are the PortGroup files the build loaded, as the guest
+	// that built it recorded them, not as the host's evaluation did, each
+	// by its blob; empty where it loaded none.
+	PortGroups map[string]ObjectID
 }
 
 // NewTargetInputs gathers a build's inputs, the active ports in name
@@ -76,7 +102,10 @@ func (i TargetInputs) Key() string {
 // port's directory and archive, which are known. Only complete inputs can
 // stand for another build's.
 func (i TargetInputs) Complete() bool {
-	if i.Environment == "" || i.Tree == "" || i.Resources == "" || i.Active == nil {
+	if i.Environment == "" || i.Tree == "" || i.Active == nil {
+		return false
+	}
+	if i.ResourcesRead == nil && i.Resources == "" || i.ResourcesRead != nil && (i.ResourcesRead.Shared == nil || i.ResourcesRead.PortGroups == nil) {
 		return false
 	}
 	for _, port := range i.Active {

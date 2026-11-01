@@ -18,6 +18,7 @@
 # is asked to keep what it built active.
 package require json
 package require json::write
+package require sha1
 json::write indented false
 
 set root /var/tmp/dockhand-check
@@ -84,7 +85,7 @@ proc save {state {detail ""}} {
         dict for {key value} $result {
             if {$key in {installed configure lint}} {
                 lappend fields $key [json::write array {*}[lmap file $value { json::write string $file }]]
-            } elseif {$key in {active links libraries}} {
+            } elseif {$key in {active sourced links libraries}} {
                 set ports {}
                 foreach entry $value {
                     set object {}
@@ -220,6 +221,23 @@ if {[llength [info procs work_dir]] == 0} {
         set path [$worker eval {option workpath}]
         mportclose $handle
         return $path
+    }
+}
+# portgroups are the files of the PortGroups a port loads, under its
+# variants, as MacPorts opens it here: each PortGroup command records its
+# group, version, and the file it sourced in PortInfo's portgroups
+# (portutil.tcl's PortGroup, alike in 2.11 and 2.12), which mportinfo
+# gives. Global variants are merged as port(1) merges them for the build.
+if {[llength [info procs portgroups]] == 0} {
+    proc portgroups {portdir name variants} {
+        set handle [mportopen "file://$portdir" [list subport $name] [dict merge [array get ::macports::global_variations] $variants]]
+        set info [mportinfo $handle]
+        mportclose $handle
+        set files {}
+        if {[dict exists $info portgroups]} {
+            foreach group [dict get $info portgroups] { lappend files [lindex $group 2] }
+        }
+        return $files
     }
 }
 # test_logs appends to a target's log the last lines of the test logs its
@@ -488,6 +506,31 @@ proc consumed {name} {
     }
     dict set inputs active $active
     return $inputs
+}
+
+# sourced are the PortGroup files a target's build loaded (decision 28),
+# its own record, not the host's evaluation: each by its path in the ports
+# tree and its blob ID, as Git names a file's content, so its result lasts
+# until one of them changes, not until any of _resources does. A file
+# outside the staged tree is an error, which leaves them unrecorded, and
+# the host takes all of _resources as read.
+proc sourced {portdir name variants} {
+    global root
+    set trees [list $root/ports/ [file normalize $root/ports]/]
+    set files {}
+    foreach file [portgroups $portdir $name $variants] {
+        set file [file normalize $file]
+        set relative ""
+        foreach tree $trees {
+            if {[string first $tree $file] == 0} { set relative [string range $file [string length $tree] end] }
+        }
+        if {$relative eq ""} { error "the PortGroup file $file is outside the ports tree" }
+        set fd [open $file rb]
+        set data [read $fd]
+        close $fd
+        lappend files [dict create path $relative blob [sha1::sha1 -hex -- "blob [string length $data]\0$data"]]
+    }
+    return $files
 }
 
 # links are what a passed target's installed Mach-O files link under the
@@ -1145,6 +1188,18 @@ foreach target [dict get $input targets] {
             close $log
         } else {
             set result [dict merge $result $inputs]
+        }
+        set portdir [file dirname [file join $root ports [dict get $target portfile]]]
+        set variants {}
+        if {[dict exists $target variants]} {
+            dict for {variant enabled} [dict get $target variants] { lappend variants $variant [expr {$enabled ? "+" : "-"}] }
+        }
+        if {[catch {sourced $portdir [dict get $target name] $variants} files]} {
+            set log [open $root/[dict get $result log] a]
+            puts $log "dockhand: which PortGroups this build loaded wasn't recorded: $files"
+            close $log
+        } else {
+            dict set result sourced $files
         }
     }
     # What a passed build's binaries link is an observation beside its

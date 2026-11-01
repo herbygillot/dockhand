@@ -696,20 +696,9 @@ func (e *Engine) standingBaseline(ctx context.Context, branch model.BranchID, ba
 		}); err != nil {
 			continue
 		}
-		paths := []string{recorded.Directory, macports.ResourcesDirectory}
-		for _, port := range recorded.Active {
-			if port.Directory != "" {
-				paths = append(paths, port.Directory)
-			}
-		}
-		slices.Sort(paths)
-		objects, err := e.Repo.Directories(ctx, string(base), slices.Compact(paths))
+		trees, err := reuse.Objects(ctx, e.Repo, base, reuse.Paths(recorded))
 		if err != nil {
 			continue
-		}
-		trees := map[string]model.ObjectID{}
-		for path, object := range objects {
-			trees[path] = model.ObjectID(object)
 		}
 		target := evidence.Targets[i].Target
 		if reuse.Current(recorded, identity, model.PlanTarget{ID: target.ID, Target: target.Target, Directory: recorded.Directory}, nil, trees, nil) {
@@ -718,8 +707,8 @@ func (e *Engine) standingBaseline(ctx context.Context, branch model.BranchID, ba
 		read := "its own directory"
 		switch {
 		case trees[recorded.Directory] != recorded.Tree:
-		case trees[macports.ResourcesDirectory] != recorded.Resources:
-			read = "_resources"
+		case reuse.ResourcesChanged(recorded, trees) != "":
+			read = reuse.ResourcesChanged(recorded, trees)
 		default:
 			for _, port := range recorded.Active {
 				if port.Directory != "" && trees[port.Directory] != port.Tree {

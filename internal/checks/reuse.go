@@ -137,14 +137,9 @@ func (d *driver) reusable(ctx context.Context, identity string, targets []reuse.
 	if d.plan.Fresh || identity == "" || len(paths) == 0 {
 		return reuse.Choice{}, nil
 	}
-	slices.Sort(paths)
-	objects, err := d.c.Checkout.Directories(ctx, string(tree), slices.Compact(paths))
+	trees, err := reuse.Objects(ctx, d.c.Checkout, tree, paths)
 	if err != nil {
 		return reuse.Choice{}, err
-	}
-	trees := map[string]model.ObjectID{}
-	for path, object := range objects {
-		trees[path] = model.ObjectID(object)
 	}
 	available := func(c reuse.Candidate) bool {
 		_, kept, err := d.c.Archives.Kept(ctx, c.Result.Archive)

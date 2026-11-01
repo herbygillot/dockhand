@@ -49,8 +49,8 @@ type Choice struct {
 }
 
 // Choose decides which of an environment's targets reuse an earlier build
-// (decision 28), given the environment's identity now and the revision's
-// trees by path (Paths). A target reuses its newest earlier build whose
+// (decision 28), given the environment's identity now and what the
+// revision holds by path (Objects of Paths). A target reuses its newest earlier build whose
 // result stands, by the check's test policy (stands), and whose inputs are
 // what it would read now (Current), and whose GitHub tag hasn't moved
 // since (TagMoved). The rest build.

@@ -1,6 +1,7 @@
 package reuse
 
 import (
+	"fmt"
 	"maps"
 	"slices"
 
@@ -10,8 +11,9 @@ import (
 
 // Paths are the directories whose trees say whether recorded inputs are
 // what a build would read now: the target's own, _resources, and each
-// active port's that has one. A port the guest couldn't place in the tree
-// has none, and leaves the inputs incomplete (Current).
+// active port's that has one, read with Objects. A port the guest
+// couldn't place in the tree has none, and leaves the inputs incomplete
+// (Current).
 func Paths(recorded model.TargetInputs) []string {
 	if recorded.NotReusable != "" {
 		return nil
@@ -28,9 +30,10 @@ func Paths(recorded model.TargetInputs) []string {
 // Current reports whether a build's recorded inputs are what the target's
 // build would read now (decision 28): complete, recorded in an environment
 // of the identity the environment has now, for the same variants, with
-// the target's directory, _resources, and every active port's directory
-// holding the same trees in the revision now (trees, by path, from
-// Paths). Identical reads mean the same build, so its result stands.
+// the target's directory and every active port's directory holding the
+// same trees in the revision now, and what it read of _resources the same
+// (ResourcesChanged; trees, by path, from Objects of Paths). Identical
+// reads mean the same build, so its result stands.
 //
 // An active port's archive isn't known before a build runs, so it isn't
 // compared here: the same directory at the same tree is the same port and
@@ -78,7 +81,7 @@ func Current(recorded model.TargetInputs, identity string, target model.PlanTarg
 		subports, ok := blocks(directory, then, now)
 		return ok && !slices.Contains(subports, port)
 	}
-	if !same(recorded.Directory, recorded.Tree, target.Target.Name) || trees[macports.ResourcesDirectory] != recorded.Resources {
+	if !same(recorded.Directory, recorded.Tree, target.Target.Name) || ResourcesChanged(recorded, trees) != "" {
 		return false
 	}
 	for _, port := range recorded.Active {
@@ -95,3 +98,51 @@ func Current(recorded model.TargetInputs, identity string, target model.PlanTarg
 // both versions parse, every change is inside some subport's block, and
 // the earlier tree is still held.
 type Blocks func(directory string, then, now model.ObjectID) (subports []string, ok bool)
+
+// ResourcesChanged says what a build read of _resources that the revision
+// now holds otherwise (trees, by path, from Objects), or nothing where it
+// is all the same. Inputs that name _resources by its tree read all of
+// it, so any change to it is one: "_resources". Those that name what of
+// it the build read (model.ResourcesRead) changed only where a PortGroup
+// the build loaded did, "the cmake 1.1 PortGroup", or an entry every port
+// reads, or one was added or went, "_resources/port1.0/compilers": a
+// PortGroup the build didn't load changes nothing of it. A port that would
+// load another PortGroup now does so by a change to its Portfile, or to a
+// PortGroup it loaded, so that is a change already.
+//
+// What its dependencies loaded isn't among what it read: a dependency's
+// build is named by its directory's tree, as before, and installs from
+// MacPorts' archive of that version, or the archive dockhand kept of it,
+// whichever PortGroup changed since.
+func ResourcesChanged(recorded model.TargetInputs, trees map[string]model.ObjectID) string {
+	read := recorded.ResourcesRead
+	if read == nil {
+		if now, ok := trees[macports.ResourcesDirectory]; !ok || now != recorded.Resources {
+			return macports.ResourcesDirectory
+		}
+		return ""
+	}
+	files := slices.Sorted(maps.Keys(read.PortGroups))
+	for _, file := range files {
+		if now, ok := trees[file]; !ok || now != read.PortGroups[file] {
+			if group, ok := macports.PortGroupAt(file); ok {
+				return fmt.Sprintf("the %s %s PortGroup", group.Name, group.Version)
+			}
+			return file
+		}
+	}
+	now := shared(trees)
+	paths := slices.Sorted(maps.Keys(now))
+	for path := range read.Shared {
+		if !slices.Contains(paths, path) {
+			paths = append(paths, path)
+		}
+	}
+	slices.Sort(paths)
+	for _, path := range paths {
+		if then, ok := read.Shared[path]; !ok || now[path] != then {
+			return path
+		}
+	}
+	return ""
+}

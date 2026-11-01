@@ -309,6 +309,7 @@ type fakeBuild struct {
 	mu       sync.Mutex
 	blocked  map[model.TargetID]bool
 	consumed map[model.TargetID][]model.ActivePort
+	sourced  map[model.TargetID]map[string]model.ObjectID
 	fetched  map[model.TargetID]string
 	results  []model.TargetResult
 	progress []string
@@ -380,6 +381,12 @@ func (b *fakeBuild) Record(report buildenv.TargetReport) error {
 		}
 		b.consumed[target] = report.Active
 	}
+	if report.Sourced != nil {
+		if b.sourced == nil {
+			b.sourced = map[model.TargetID]map[string]model.ObjectID{}
+		}
+		b.sourced[target] = report.Sourced
+	}
 	if report.Fetched != "" {
 		if b.fetched == nil {
 			b.fetched = map[model.TargetID]string{}
@@ -444,6 +451,7 @@ func newMac(results ...guestprogram.Results) *fakeMac {
 func TestTheProviderRecordsEachTargetAsTheGuestFinishesIt(t *testing.T) {
 	t.Parallel()
 	libharbor := guestprogram.Result{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "target-1.log", Active: []guestprogram.Port{}, Archive: "sha256:11",
+		Sourced:     []guestprogram.Sourced{{Path: "_resources/port1.0/group/cmake-1.1.tcl", Blob: "3b18e512dba79e4c8300dd08aeb37f8e728b8dad"}},
 		ArchiveFile: "/opt/local/var/macports/software/libharbor/libharbor-3_0.darwin_25.arm64.tbz2"}
 	cli := guestprogram.Result{ID: "harbor-cli", Outcome: "failed", Phase: "install", Log: "target-2.log", Detail: "Failed to install harbor-cli",
 		Active: []guestprogram.Port{{Name: "libharbor", Spec: "@3_0", Directory: "devel/libharbor", Archive: "sha256:11", ArchiveFile: "/opt/local/var/macports/software/libharbor/libharbor-3_0.darwin_25.arm64.tbz2"},
@@ -473,6 +481,8 @@ func TestTheProviderRecordsEachTargetAsTheGuestFinishesIt(t *testing.T) {
 		"libharbor":  {},
 		"harbor-cli": {{Name: "libharbor", Spec: "@3_0", Directory: "devel/libharbor", Archive: "sha256:11"}, {Name: "rust", Spec: "@1.91.0_0", Directory: "lang/rust", Archive: "sha256:22"}},
 	}, build.consumed, "what each build read, the guest's none included")
+	require.Equal(t, map[model.TargetID]map[string]model.ObjectID{"libharbor": {"_resources/port1.0/group/cmake-1.1.tcl": "3b18e512dba79e4c8300dd08aeb37f8e728b8dad"}}, build.sourced,
+		"the PortGroups a build loaded, by path, each by its blob; none where the guest didn't say")
 	require.Equal(t, map[string][]byte{"libharbor-3_0.darwin_25.arm64.tbz2": []byte("libharbor's archive"), "rust-1.91.0_0.darwin_25.arm64.tbz2": []byte("rust's archive")}, build.kept,
 		"a passed target's archive is kept, by MacPorts' name for it, and a dependency's (batch 90)")
 	require.Equal(t, []string{"rust"}, build.dependencies, "a target active as another built is kept as a target, not a dependency")
