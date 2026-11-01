@@ -79,7 +79,15 @@ type OutdatedPort struct {
 	// newer series than its own (upstream.Result.NewerSeries): said, a new
 	// subport being the maintainer's, and never planned.
 	NewerSeries string
+	// RepositoryMove is where GitHub answers the port's repository now,
+	// where that isn't the one github.setup names (upstream.Result.Move);
+	// nil where nothing said.
+	RepositoryMove *RepositoryMove
 }
+
+// RepositoryMove is a repository GitHub answers by another name, and its
+// Words say so.
+type RepositoryMove = upstream.RepositoryMove
 
 // OutdatedClass is what a look found of a port, one of the classes below,
 // which plain outdated counts and lists by (Summary).
@@ -313,7 +321,7 @@ func (s *surveyedPorts) Outdated(ctx context.Context, commit model.ObjectID, req
 
 // outdatedPort is a port as upstream discovery assessed it.
 func outdatedPort(port outdated.Port) OutdatedPort {
-	entry := OutdatedPort{Port: port.Selector, Current: port.CurrentVersion, Newest: port.CandidateVersion, Release: port.Release, With: port.With, NewerSeries: port.NewerSeries}
+	entry := OutdatedPort{Port: port.Selector, Current: port.CurrentVersion, Newest: port.CandidateVersion, Release: port.Release, With: port.With, NewerSeries: port.NewerSeries, RepositoryMove: port.Move}
 	switch port.Assessment {
 	case upstream.UpdateAvailable:
 		entry.Outdated = true

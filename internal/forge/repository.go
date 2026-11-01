@@ -113,6 +113,15 @@ type NameConfirmer interface {
 	ConfirmName(ctx context.Context) error
 }
 
+// MoveFinder is a repository that learns the name its forge answers by,
+// where nothing it listed said, outside the forge's API, as GitHub's web
+// page redirects a moved repository's: asked before AnswersAs where no
+// release would be shipped. It never fails; what it can't learn stays
+// unsaid.
+type MoveFinder interface {
+	FindMove(ctx context.Context)
+}
+
 type DatedRepository interface {
 	CommitTime(ctx context.Context, commit string) (time.Time, error)
 }

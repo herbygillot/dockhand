@@ -42,7 +42,7 @@ func (e *Engine) github() *forgegithub.Client {
 		if e.GitHub == nil {
 			e.GitHub = github.NewRuntime(github.Signin{})
 		}
-		e.githubClient = &forgegithub.Client{Client: e.GitHub.Client, Git: e.options.git()}
+		e.githubClient = &forgegithub.Client{Client: e.GitHub.Client, Git: e.options.git(), Moves: e.GitHubMoves}
 	})
 	return e.githubClient
 }

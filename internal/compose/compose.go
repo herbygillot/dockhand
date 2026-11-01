@@ -28,6 +28,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/fetch"
+	forgegithub "github.com/herbygillot/dockhand/internal/forge/github"
 	forgegitlab "github.com/herbygillot/dockhand/internal/forge/gitlab"
 	gitprogram "github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
@@ -375,6 +376,14 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	// (Then's item 5); where no cache directory can be had, in this one.
 	conditionalCache, _ := options.cacheDirectory("DOCKHAND_GITHUB_CACHE", "github")
 	e.GitHub.Client.Conditional = github.NewConditionalCache(conditionalCache)
+	// Where a repository moved is read from GitHub's web pages, each kept
+	// seven days beside those answers, or for the process where they're
+	// kept in none.
+	movesFile := ""
+	if conditionalCache != "" {
+		movesFile = filepath.Join(conditionalCache, "moves.json")
+	}
+	e.GitHubMoves = forgegithub.NewMoves(movesFile)
 	remote := file.Providers.GitHub.Remote
 	actions := &ghactions.Provider{Repo: e.Repo, Fork: func(ctx context.Context) (buildenv.Fork, error) { return e.Fork(ctx, remote) },
 		API: ghactions.GitHub{Client: e.GitHub.Client}, BuildTimeout: file.Providers.GitHub.BuildBound()}

@@ -288,8 +288,14 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 	// Where its tags came from git, which serves a moved repository under
 	// its old name, the name is read once a release would be shipped; a
 	// read that fails leaves the release as it was found.
+	// Where none would be, its web page is asked instead, GitHub's, the
+	// read begun when its tags were listed, so a current port's note of a
+	// move is said (the web redirect, 2026-11-01).
 	if confirming, ok := repository.(forge.NameConfirmer); ok && result.Assessment == UpdateAvailable {
 		_ = confirming.ConfirmName(ctx)
+	}
+	if finding, ok := repository.(forge.MoveFinder); ok && result.Assessment != UpdateAvailable {
+		finding.FindMove(ctx)
 	}
 	if answering, ok := repository.(forge.AnsweringRepository); ok && answering.AnswersAs() != "" {
 		moved := answering.AnswersAs()
@@ -303,7 +309,8 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 			result.Detail = fmt.Sprintf("Cannot determine whether %s is current: %s", port.Version, why)
 			return result, nil
 		default:
-			result.Detail += fmt.Sprintf("; GitHub answers %s as %s now, which github.setup could name", repository.Name(), moved)
+			result.Move = &RepositoryMove{From: repository.Name(), To: moved}
+			result.Detail += "; " + result.Move.Words()
 		}
 	}
 	if len(setAside) > 0 {

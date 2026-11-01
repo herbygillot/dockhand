@@ -209,6 +209,11 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 			current = append(current, row)
 		default:
 			row.note = "it is current" + with(port.Port) + seriesNote(port)
+			// A repository GitHub answers by another name is said, as
+			// GitHub answers it.
+			if port.RepositoryMove != nil {
+				row.note += "; " + port.RepositoryMove.Words()
+			}
 			current = append(current, row)
 		}
 	}
