@@ -346,7 +346,14 @@ func (f *Follower) Follow(ctx context.Context, g Guest, started Run, job builden
 				// is read, as when it stopped below.
 				return f.ended(ctx, g, job, build, take, building, lost)
 			}
-			return interrupted(job, build, building, buildenv.Infrastructure("the VM stopped: %v", started.Err()), nil)
+			// A VM that ended without an error says it stopped alone,
+			// where "the VM stopped: <nil>" was printed (field testing,
+			// the outdated-ports session's note 22).
+			stopped := buildenv.Infrastructure("the VM stopped")
+			if err := started.Err(); err != nil {
+				stopped = buildenv.Infrastructure("the VM stopped: %v", err)
+			}
+			return interrupted(job, build, building, stopped, nil)
 		case <-time.After(f.poll()):
 		}
 		results, err := f.Read(ctx, g)

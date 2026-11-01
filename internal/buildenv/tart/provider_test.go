@@ -648,6 +648,7 @@ func TestGuestTroubleIsInfrastructure(t *testing.T) {
 	err := testProvider(mac).Execute(t.Context(), tartJob(t, 1), &fakeBuild{})
 	require.Equal(t, refusal.Infrastructure, refusal.KindOf(err))
 	require.ErrorContains(t, err, "the VM stopped")
+	require.NotContains(t, err.Error(), "<nil>", "a VM that ended without an error says it stopped alone")
 
 	// A VM whose tart run ends before it takes an address is said at
 	// once, not after tart ip's five minutes (the rc5 full stage).

@@ -962,14 +962,26 @@ proc build {index target} {
         dict set result tests skipped
     } elseif {[declares_tests $portdir $name $variants]} {
         mark result $log test
-        set message [timed $log [concat $here -d test $selection] [dict get $input test_timeout]]
+        set testBound [dict get $input test_timeout]
+        set message [timed $log [concat $here -d test $selection] $testBound]
         switch -- $message {
             "" { dict set result tests passed }
             "timed out" { dict set result tests timed-out }
             default { dict set result tests failed }
         }
-        if {$message ne ""} {
+        if {$message eq "timed out"} {
+            # Ended at their bound, the tests say so, as a build does,
+            # with what the log said last after it: alglib's test_x ran
+            # 1,734 s of its 30 minutes and read only "Aborted: SIGTERM
+            # received", the end's own words (field testing, the
+            # outdated-ports session's note 22).
+            set detail "the tests ran past their [bound_words $testBound] bound (providers.tart.test_timeout), so they were ended"
+            if {[set said [why $log $message]] ne $message} { append detail "; $said" }
+            dict set result detail $detail
+        } elseif {$message ne ""} {
             dict set result detail "tests: [why $log $message]"
+        }
+        if {$message ne ""} {
             if {$tests eq "required"} { dict set result outcome failed; dict set result phase test }
             # What the tests said comes back, from the logs they left.
             catch { test_logs $log [work_dir $portdir $name $variants] }
