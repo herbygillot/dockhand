@@ -189,3 +189,34 @@ func TestAnOlderSchemesCandidateIsUncertain(t *testing.T) {
 	_, err = service.Resolve(t.Context(), port, "")
 	require.ErrorContains(t, err, "can't tell whether aften is current: 0.07 may be an older scheme than 0.0.8; name the version to update to")
 }
+
+// A version a livecheck captured from the start of a prerelease's name is
+// that prerelease: ap-utils's regex stopped before "pre1" and took 1.4.2
+// from 1.4.2pre1, its newest stable 1.4.1, so a port on a stable release
+// passes it over, and one on a prerelease keeps the name it was read from
+// (field testing, the outdated-ports session's note 19).
+func TestAVersionCapturedFromAPrereleasesNameIsOne(t *testing.T) {
+	t.Parallel()
+	page := `<link>https://sourceforge.net/projects/ap-utils/files/ap-utils/1.4.2pre1/ap-utils-1.4.2pre1.tar.bz2</link> <link>https://sourceforge.net/projects/ap-utils/files/ap-utils/1.4.1/ap-utils-1.4.1.tar.bz2</link>`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, page)
+	}))
+	defer server.Close()
+	service := automaticService(t, &catalog{})
+	service.HTTP = server.Client()
+	port := listingPort(server.URL)
+	port.Name, port.Version = "ap-utils", "1.4.1"
+	port.Options["livecheck.regex"], port.Options["livecheck.version"] = `{/ap-utils-([0-9]+(?:\.[0-9]+)*)}`, "1.4.1"
+	result, err := service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.Current, result.Assessment, result.Detail)
+
+	port.Version, port.Options["livecheck.version"] = "1.4.1rc1", "1.4.1rc1"
+	service.EvaluateVersion = func(_ context.Context, version string) (string, error) { return version, nil }
+	result, err = service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.UpdateAvailable, result.Assessment, result.Detail)
+	require.Equal(t, "1.4.2", result.Release.Version)
+	require.Equal(t, "1.4.2pre1", result.Release.CapturedFrom)
+	require.Equal(t, "1.4.2 was read from 1.4.2pre1, a prerelease's name, by the port's livecheck", result.Release.CapturedWords())
+}

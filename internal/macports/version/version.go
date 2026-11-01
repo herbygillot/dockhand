@@ -94,6 +94,52 @@ func LeavesStable(from, to string) bool {
 	return Classify(from) == Stable && Classify(to) == Prerelease
 }
 
+// prereleaseTail is what goes on after a captured version where it was
+// read from a prerelease's name: a prerelease word and its number, as
+// 1.4.2pre1, 2.0-rc1, or 3.1.dev2 spell it.
+var prereleaseTail = regexp.MustCompile(`^[-._]?(?i:pre|rc|alpha|beta|dev)[-._]?[0-9]+`)
+
+// CapturedPrerelease is the prerelease's name a captured version was read
+// from, where the text has the capture only so: each time the capture
+// stands in the text whole, not inside a longer number, it goes on, before
+// an extension or the text's end, with a prerelease word and a number.
+// ap-utils's livecheck captured 1.4.2 from ap-utils-1.4.2pre1.tar.bz2,
+// its regex stopping before "pre1", and 1.4.2 read as a stable release
+// newer than 1.4.1 (field testing, the outdated-ports session's note 19).
+// ok is false where the capture stands alone anywhere, or nowhere.
+func CapturedPrerelease(text, capture string) (name string, ok bool) {
+	if capture == "" {
+		return "", false
+	}
+	for from := 0; ; {
+		at := strings.Index(text[from:], capture)
+		if at < 0 {
+			return name, name != ""
+		}
+		start, end := from+at, from+at+len(capture)
+		from = start + 1
+		// Inside a longer number, 11.4.2 or 1.4.23, it isn't this capture.
+		if start > 0 && (isDigit(text[start-1]) || text[start-1] == '.') {
+			continue
+		}
+		rest := text[end:]
+		if rest != "" && (isDigit(rest[0]) || len(rest) > 1 && rest[0] == '.' && isDigit(rest[1])) {
+			continue
+		}
+		tail := prereleaseTail.FindString(rest)
+		if after := rest[len(tail):]; tail == "" || after != "" && isAlphanumeric(after[0]) {
+			return "", false
+		}
+		if name == "" {
+			name = capture + tail
+		}
+	}
+}
+
+func isDigit(b byte) bool { return '0' <= b && b <= '9' }
+
+func isAlphanumeric(b byte) bool { return isDigit(b) || 'a' <= b && b <= 'z' || 'A' <= b && b <= 'Z' }
+
 // leading is a version's first numeric component, without a leading v.
 var leading = regexp.MustCompile(`^v?([0-9]+)`)
 

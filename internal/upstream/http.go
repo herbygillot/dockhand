@@ -40,12 +40,7 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 	if err != nil {
 		return result, err
 	}
-	var candidates []macports.VersionCandidate
-	for _, version := range versions {
-		if admits(current, version) {
-			candidates = append(candidates, macports.VersionCandidate{Version: version, MatchText: version})
-		}
-	}
+	candidates, from := listed(current, string(page), versions)
 	index, comparison, err := s.newest(ctx, current, `^(.*)$`, candidates, "livecheck", "a version")
 	if err != nil {
 		return result, err
@@ -72,6 +67,7 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 	if version != evaluated {
 		release.SourceVersion = version
 	}
+	release.CapturedFrom = from[version]
 	result.finish(release, port.Version, "Selected "+version+" from livecheck", "")
 	return result, nil
 }

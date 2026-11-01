@@ -229,6 +229,14 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 		}
 	}
 	edited, err := s.editor().Prepare(ctx, request)
+	// A distfile not found for a version read from the start of a
+	// prerelease's name says the name, which is likely why (the
+	// outdated-ports session's note 19).
+	if err != nil && refusal.KindOf(err) == refusal.UpstreamMissing && request.Release != nil {
+		if words := request.Release.CapturedWords(); words != "" {
+			err = fmt.Errorf("%w; %s", err, words)
+		}
+	}
 	// An edit dockhand doesn't make, asked to be attempted, is written as
 	// well as it can be for the person to finish, as theirs (update
 	// --hand-edit, Then's item 3); one it couldn't attempt is refused as it

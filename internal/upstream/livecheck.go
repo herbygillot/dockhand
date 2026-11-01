@@ -42,12 +42,7 @@ func (s *Service) discoverOverridden(ctx context.Context, port macports.PortInfo
 	if err != nil {
 		return result, err
 	}
-	var candidates []macports.VersionCandidate
-	for _, version := range versions {
-		if admits(current, version) {
-			candidates = append(candidates, macports.VersionCandidate{Version: version, MatchText: version})
-		}
-	}
+	candidates, from := listed(current, string(page), versions)
 	index, comparison, err := s.newest(ctx, current, `^(.*)$`, candidates, "the port's livecheck", "a version")
 	if err != nil {
 		return result, err
@@ -94,7 +89,7 @@ func (s *Service) discoverOverridden(ctx context.Context, port macports.PortInfo
 		}
 	}
 	result.ObservedAt = time.Now().UTC().Truncate(time.Millisecond)
-	release := model.Release{ReleaseSelection: model.ReleaseSelection{CurrentVersion: port.Version, NoUpdate: comparison <= 0}, Version: evaluated, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit}
+	release := model.Release{ReleaseSelection: model.ReleaseSelection{CurrentVersion: port.Version, NoUpdate: comparison <= 0}, Version: evaluated, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit, CapturedFrom: from[version]}
 	result.finish(release, port.Version, "Selected "+tag.Name+" from the port's livecheck", " by the port's livecheck")
 	return result, nil
 }
