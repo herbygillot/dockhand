@@ -205,6 +205,10 @@ type Impact struct {
 	// Unread says why dependents could not be read, when they couldn't.
 	Unread string
 	Shared []SharedFile
+	// Builds are what MacPorts' builders made of each port the branch
+	// changes and master has, by ports.macports.org; a port the site gave
+	// no answer for is left out.
+	Builds []PortBuilds
 }
 
 // dependentKinds are the ways a port depends on another, in the order a
@@ -298,6 +302,16 @@ func (e *Engine) Impact(ctx context.Context, branch model.Branch, ports []string
 		}
 		impact.Shared = append(impact.Shared, shared)
 	}
+	// Whether each changed port built on each release on MacPorts'
+	// builders before, to choose between a patch and known_fail; a new
+	// port has no history there.
+	var changed []string
+	for _, port := range diff.Ports {
+		if !port.Added && !port.Deleted {
+			changed = append(changed, directoryName(port.Directory))
+		}
+	}
+	impact.Builds = e.builderHistories(ctx, changed)
 	return impact, nil
 }
 

@@ -22,9 +22,11 @@ type World struct{ Home, Upstream, Clone string }
 func NewWorld(t *testing.T) World {
 	t.Helper()
 	// What would ask GitHub, such as an update looking for other open pull
-	// requests, asks a fake that knows of none, unless a test gives its own.
+	// requests, asks a fake that knows of none, unless a test gives its own;
+	// so does ports.macports.org's build history.
 	Stands(t).Forge = func(*engine.Engine) engine.Forge { return forgetest.New("", "") }
 	Stands(t).HTTPS = testsupport.HTTPSAnswers{}
+	Stands(t).Builders = BuildHistories{}
 	// Git reports resolved paths; on macOS the temporary directory is
 	// reached through /var, a link to /private/var.
 	root, err := filepath.EvalSymlinks(t.TempDir())

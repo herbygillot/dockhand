@@ -76,6 +76,9 @@ func explainCheck(ctx context.Context, e *engine.Engine, out io.Writer, run mode
 	}
 	writeAdvisory(out, evidence)
 	if offer, err := e.BaselineCandidates(ctx, run); err == nil && len(offer.Ports) > 0 {
+		for _, words := range e.BuildersBeside(ctx, run, offer.Ports) {
+			fmt.Fprintln(out, words+".")
+		}
 		fmt.Fprintf(out, "To check whether %s also %s on master %s, run: dockhand check --baseline --branch %s\n", prose.And(offer.Ports), map[bool]string{true: "fails", false: "fail"}[len(offer.Ports) == 1], offer.Base.Short(), branch.ShortName())
 	}
 	fmt.Fprintf(out, "Next: %s\n", next)
