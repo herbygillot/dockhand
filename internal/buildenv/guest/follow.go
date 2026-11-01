@@ -105,9 +105,13 @@ type Input struct {
 	Tests       string         `json:"tests"`
 	TestTimeout int            `json:"test_timeout"`
 	// BuildTimeout and LintTimeout are seconds, as TestTimeout is.
-	BuildTimeout int      `json:"build_timeout"`
-	LintTimeout  int      `json:"lint_timeout"`
-	Targets      []Target `json:"targets"`
+	BuildTimeout int `json:"build_timeout"`
+	LintTimeout  int `json:"lint_timeout"`
+	// Settings is the configuration table the provider's bounds are set
+	// under, as providers.local, so a bound passed names the person's own
+	// key; the guest says providers.tart where it's empty.
+	Settings string   `json:"settings,omitempty"`
+	Targets  []Target `json:"targets"`
 	// Archives are the kept archives the guest installs targets from
 	// rather than build them: in ArchiveSite, each in its port's
 	// directory beside its signatures, which the keys at ArchiveKeys

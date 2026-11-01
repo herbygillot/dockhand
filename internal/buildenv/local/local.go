@@ -194,7 +194,7 @@ func (l *Local) Execute(ctx context.Context, job buildenv.Job, build buildenv.Bu
 	input := guest.Input{Protocol: guest.Protocol, Prefix: prefix,
 		Platform: job.Environment.Platform, Tests: cmp.Or(string(job.Plan.Tests), string(model.TestsDeclared)),
 		TestTimeout: int(cmp.Or(l.TestTimeout, buildenv.DefaultTestTimeout) / time.Second), BuildTimeout: int(cmp.Or(l.BuildTimeout, buildenv.DefaultBuildTimeout) / time.Second),
-		LintTimeout: int(guest.LintTimeout / time.Second), Targets: guest.Targets(job, build),
+		LintTimeout: int(guest.LintTimeout / time.Second), Settings: "providers.local", Targets: guest.Targets(job, build),
 		Local: &guest.Local{Clean: slices.Contains(l.Clean, prefix), Keep: keep, Note: fmt.Sprintf("dockhand %s attempt %d", job.Run.Name(), job.Execution.Attempt)}}
 	if !slices.ContainsFunc(input.Targets, func(t guest.Target) bool { return !t.Blocked }) {
 		return nil
