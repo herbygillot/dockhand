@@ -1,6 +1,9 @@
 # stages: quick full
 # C8: tidy -y and saved plans. -y applies a plan of dockhand's own edits;
-# on a branch with a hand edit, without a terminal, it refuses; and a plan
+# on a branch with a hand edit, without a terminal and without -y, it
+# refuses, naming --yes, which applies a plan as shown whosever its edits
+# (9175fb5f, docs/usage/publishing.md: the row once asked -y to refuse,
+# and passed only while that plan lacked a subject); and a plan
 # saved with --plan --out applies when sound, on a branch that takes an
 # untracked patch its patchfiles names and has a line with trailing spaces
 # (rc6 refused one as stale until a8a40367), and is refused when its
@@ -16,7 +19,7 @@ act() {
 	portfile=$(find "$dir" -path "*/${ACCEPT_GO_PORT}/Portfile" | head -1)
 	printf '# a hand edit\n' >>"$portfile"
 	allow_change "$portfile"
-	dh_json tidy -b $(run_name c8-hand) -y </dev/null || :
+	dh_json tidy -b $(run_name c8-hand) </dev/null || :
 	dh_setup start $(run_name c8-sound) --port "${ACCEPT_GO_PORT:?}" || return 0
 	local sound soundfile
 	sound=$("$DH_BIN" path $(run_name c8-sound))
@@ -35,7 +38,8 @@ act() {
 
 assert() {
 	[ "$(cat "$ROW_DIR/json/1.json.exit" 2>/dev/null)" = 0 ] || { row_fail "tidy -y on dockhand's own edits exited $(cat "$ROW_DIR/json/1.json.exit" 2>/dev/null)"; return; }
-	[ "$(cat "$ROW_DIR/json/2.json.exit" 2>/dev/null)" != 0 ] || { row_fail "tidy -y applied a plan with a hand edit, without a terminal"; return; }
+	[ "$(cat "$ROW_DIR/json/2.json.exit" 2>/dev/null)" != 0 ] || { row_fail "tidy applied a plan with a hand edit, without a terminal or --yes"; return; }
+	jq -r '.error // ""' "$ROW_DIR/json/2.json" | matches -e '--yes' || { row_fail "tidy's refusal of the hand edit didn't name --yes: $(jq -r '.error // ""' "$ROW_DIR/json/2.json")"; return; }
 	[ -s "$ROW_DIR/c8-sound.plan" ] || { row_fail "tidy --plan --out saved no plan of the branch taking a patch"; return; }
 	[ "$(cat "$ROW_DIR/json/3.json.exit" 2>/dev/null)" = 0 ] || { row_fail "a sound saved plan, taking an untracked patch and a lint fix, didn't apply: $(jq -r '.error // ""' "$ROW_DIR/json/3.json")"; return; }
 	[ -s "$ROW_DIR/c8.plan" ] || { row_fail "tidy --plan --out saved no plan"; return; }
