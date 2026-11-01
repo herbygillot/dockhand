@@ -300,7 +300,7 @@ Decided questions, with the rule each settled, are in [decisions](decisions.md).
 
 Open (2026-11-01):
 
-- **A fixture repository with a release asset under the test account**, for G35's full-stage case and a Tart check of a moved port: a GitHub write, the person's to make or to word, before v0.8.0's full stage.
+- **A fixture repository with a release asset under the test account**, for G35's full-stage case and a Tart check of a moved port: a GitHub write, the person's to make or to word, before v0.8.0's full stage. The person's "You can create the test repository" (2026-11-01 13:28Z): on main, in the commit after edda4b92, host/make-source-fixture.sh (edda4b92) makes it under herbyg-test unless named, idempotent, and G36, full stage, reads it: by default the update to 1.1.0 leaves the clone and says the release's .tgz carries deps/sub, `--source releases` moves it there, and a Tart check of the moved port passes; it waits on the script's run on the M1 as the test account and ACCEPT_SOURCE_FIXTURE.
 - **The rc stop rule** (proposed 2026-10-31): only harm found in a candidate's pass, or a regression since the last release, makes another candidate.
 
 ## Later
