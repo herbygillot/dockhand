@@ -930,3 +930,28 @@ func TestAPortsComparisonsShareOneInterpreter(t *testing.T) {
 	require.GreaterOrEqual(t, counted.shared, 2, "several comparisons, in the one interpreter")
 	require.Zero(t, counted.alone, "none started one of its own")
 }
+
+// A newer tag under another prefix is said, from the tags already listed:
+// alot's tags moved to v0.12 where github.setup names no prefix, and
+// outdated offered 0.11 (field testing, the outdated-ports session's note
+// 17). The port's own spelling still decides what's offered.
+func TestANewerTagUnderAnotherPrefixIsSaid(t *testing.T) {
+	t.Parallel()
+	c := &catalog{releases: []forge.Release{{Tag: "0.10"}, {Tag: "0.11"}, {Tag: "v0.12"}, {Tag: "v0.9"}}}
+	service := automaticService(t, c)
+	port := automaticPort()
+	port.Version, port.Options["github.version"], port.Options["livecheck.version"], port.Options["git.branch"] = "0.10", "0.10", "0.10", "0.10"
+	port.Options["github.tag_prefix"], port.Options["livecheck.regex"] = "", `{archive/refs/tags/([0-9.]+)\.tar\.gz}`
+	result, err := service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.UpdateAvailable, result.Assessment, result.Detail)
+	require.Equal(t, "0.11", result.CandidateVersion, "the port's own spelling decides")
+	require.Equal(t, &upstream.OtherPrefix{Tag: "v0.12", Setup: "github.setup"}, result.OtherPrefix)
+	require.Equal(t, "upstream's newest tag, v0.12, doesn't match github.setup's tag prefix", result.OtherPrefix.Words())
+
+	// One older than what the prefix takes says nothing.
+	c.releases = []forge.Release{{Tag: "0.10"}, {Tag: "0.11"}, {Tag: "v0.9"}}
+	result, err = service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Nil(t, result.OtherPrefix)
+}

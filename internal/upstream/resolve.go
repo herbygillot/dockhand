@@ -25,6 +25,12 @@ func (s *Service) Resolve(ctx context.Context, port macports.PortInfo, requested
 }
 
 func (s *Service) resolve(ctx context.Context, port macports.PortInfo, requested string) (model.Release, error) {
+	// An obsolete stub follows the port that replaced it, whose update
+	// moves it where it moves at all (update --with-obsolete).
+	var stub *ReplacedError
+	if errors.As(replaced(port), &stub) {
+		return model.Release{}, fmt.Errorf("upstream: %s is an obsolete stub, %s, so it has no release of its own; dockhand update %s updates the port that replaced it", stub.Port, stub, stub.By)
+	}
 	if spec, ok := pinned(port); ok {
 		return s.resolvePin(ctx, port, spec, requested)
 	}

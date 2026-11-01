@@ -108,6 +108,8 @@ build_timeout = "6h"
 ```
 
 These bound tests and build work per target. Lint has its own 10-minute bound.
+A target ended at a bound says which, as "the tests ran past their 30m bound
+(providers.tart.test_timeout), so they were ended", with its log's last lines.
 `providers.tart.xcode.<release>` can select another Xcode version for a release;
 otherwise setup matches MacPorts' arm64 builder. Changing that setting describes
 a future image setup, not an in-place tool replacement in every existing image.

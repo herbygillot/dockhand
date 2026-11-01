@@ -216,6 +216,10 @@ type Update struct {
 	PatchProblems    []string
 	PatchesUnchecked []string
 	PatchesApplied   int
+	// MissingWorksrcdir is the worksrcdir the new source doesn't hold, said
+	// before the patches, whose results follow from it; empty where it
+	// holds it.
+	MissingWorksrcdir string
 	// Instructions are the Portfile's comments that read as a maintainer's
 	// instruction about updating it (portfile.Instructions), each with its
 	// line: quoted, never read for intent (the docs dig's I7).
@@ -956,7 +960,7 @@ func changedSinceBase(ctx context.Context, worktree *git.Repository, captured st
 // describe reads what the preparation found.
 func describe(branch model.Branch, selector string, result editprep.Result) Update {
 	update := Update{Branch: branch, Port: result.Target.Name, Release: result.Release, PatchProblems: result.PatchProblems(), PatchesUnchecked: result.UncheckedPatches(), PatchesApplied: result.PatchesApplied(),
-		Distfiles: len(result.Downloads), Regenerated: result.Regenerated, PatchesDropped: result.Dropped}
+		MissingWorksrcdir: result.MissingWorksrcdir(), Distfiles: len(result.Downloads), Regenerated: result.Regenerated, PatchesDropped: result.Dropped}
 	for _, refreshed := range result.Refreshed {
 		update.PatchesRefreshed = append(update.PatchesRefreshed, refreshed.Name+": "+refreshed.Words)
 	}

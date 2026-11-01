@@ -111,7 +111,7 @@ func (e *Engine) PlanClean(ctx context.Context, states ...model.BranchState) ([]
 func (e *Engine) PlanCleanBranches(ctx context.Context, branches []model.Branch) ([]CleanBranch, error) {
 	for _, branch := range branches {
 		if branch.State == model.BranchOpen {
-			return nil, fmt.Errorf("%s is open, so there's nothing to clean; clean takes a merged, closed, or archived branch, and dockhand archive sets one aside", branch.ShortName())
+			return nil, fmt.Errorf("%s is open, so there's nothing to clean; clean takes a merged, closed, or archived branch, and dockhand archive sets one aside; %s", branch.ShortName(), ForgetWords(branch))
 		}
 	}
 	var plans []CleanBranch
@@ -129,6 +129,42 @@ func (e *Engine) PlanCleanBranches(ctx context.Context, branches []model.Branch)
 		}
 	}
 	return plans, nil
+}
+
+// ForgetWords say how a branch set aside is thrown away, where archive
+// keeps its Git branch for --undo: "dockhand clean --delete am-utils-6.2
+// then forgets it for good". clean refused the open branch, archive kept
+// the Git branch, and a clean then said "Nothing to remove" with
+// dockhand/am-utils-6.2 still there (field testing, the outdated-ports
+// session's note 24); archive's undo and delete's forgetting stay two
+// steps.
+func ForgetWords(branch model.Branch) string {
+	return fmt.Sprintf("dockhand clean --delete %s then forgets it for good", branch.ShortName())
+}
+
+// ArchivedKept are the archived branches whose Git branch is still there,
+// as archive keeps it for --undo: a clean removes none of it, and clean
+// --delete forgets each.
+func (e *Engine) ArchivedKept(ctx context.Context) ([]model.Branch, error) {
+	var archived []model.Branch
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		archived, err = r.Branches(store.BranchFilter{States: []model.BranchState{model.BranchArchived}})
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	var kept []model.Branch
+	for _, branch := range archived {
+		ref, err := e.Repo.ReadRef(ctx, "refs/heads/"+branch.Name)
+		if err != nil {
+			return nil, err
+		}
+		if ref.Exists {
+			kept = append(kept, branch)
+		}
+	}
+	return kept, nil
 }
 
 // changesOnMaster reports whether every path a branch's commits change, from

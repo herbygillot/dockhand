@@ -531,6 +531,15 @@ func TestABuildPastItsBoundIsEnded(t *testing.T) {
 	results, _ = guestRun(t, input, "HANG=lint:libharbor")
 	require.Equal(t, "lint", results.Targets[0].Phase)
 	require.Equal(t, "lint ran past its 1s bound, so it was ended", results.Targets[0].Detail)
+
+	// Tests past their bound say so, as a build does, where the log's
+	// last lines stood alone (field testing, the outdated-ports session's
+	// note 22).
+	input = twoTargets("declared")
+	input.TestTimeout = 1
+	results, _ = guestRun(t, input, "TESTED=libharbor", "HANG=test:libharbor")
+	require.Equal(t, "timed-out", results.Targets[0].Tests)
+	require.Equal(t, "the tests ran past their 1s bound (providers.tart.test_timeout), so they were ended", results.Targets[0].Detail)
 }
 
 // The guest says which target it is building as it begins it, beside the

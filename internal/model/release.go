@@ -1,6 +1,8 @@
 package model
 
 import (
+	"cmp"
+	"fmt"
 	"net/url"
 	"strings"
 )
@@ -73,6 +75,22 @@ type Release struct {
 	// listing names it: what an update's commit body links (CommitBody).
 	Page    string `json:",omitempty"`
 	FromTag string `json:",omitempty"`
+	// CapturedFrom is the prerelease's name a livecheck read the version
+	// from, where it read it from the start of one, ap-utils's 1.4.2 from
+	// 1.4.2pre1, which only a port on a prerelease takes: a distfile not
+	// found for it says so. Empty for any other release.
+	CapturedFrom string `json:",omitempty"`
+}
+
+// CapturedWords say where a version read from the start of a prerelease's
+// name came from, for a distfile not found for it: "1.4.2 was read from
+// 1.4.2pre1, a prerelease's name, by the port's livecheck"; empty for any
+// other release.
+func (r Release) CapturedWords() string {
+	if r.CapturedFrom == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s was read from %s, a prerelease's name, by the port's livecheck", cmp.Or(r.SourceVersion, r.Version), r.CapturedFrom)
 }
 
 // CommitBody is what an update's commit says of its release beyond its

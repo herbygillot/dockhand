@@ -681,3 +681,13 @@ type versioned struct{ cmdtest.OnePort }
 func (versioned) Ports(_ context.Context, _ model.Source, directory string, _ model.Environment, _ map[string]bool) ([]macports.PortInfo, error) {
 	return []macports.PortInfo{{Name: filepath.Base(directory), Version: "1.7.1", Options: map[string]string{"categories": "textproc"}}}, nil
 }
+
+// A worksrcdir the new source lacks is said before the patches, whose
+// results follow from it (field testing, the outdated-ports session's note
+// 20: angelscript 2.38.0).
+func TestAMissingWorksrcdirIsSaidBeforeThePatches(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	writePatches(&out, engine.Update{Release: &model.Release{Version: "2.38.0"}, MissingWorksrcdir: "sdk/angelscript/projects/gnuc macosx", PatchProblems: []string{"patch-makefile.diff: No file to patch"}})
+	require.Equal(t, "! worksrcdir sdk/angelscript/projects/gnuc macosx isn't in 2.38.0's source\n! patch patch-makefile.diff: No file to patch\n", out.String())
+}

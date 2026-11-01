@@ -51,6 +51,9 @@ type updateJSON struct {
 	Distfiles int      `json:"distfiles"`
 	Subject   string   `json:"subject"`
 	Patches   []string `json:"patch_problems"`
+	// MissingWorksrcdir is the worksrcdir the new source doesn't hold,
+	// which the patches were checked without.
+	MissingWorksrcdir string `json:"missing_worksrcdir,omitempty"`
 	// PatchesDropped are the patches the update took out, with their
 	// files, since the new source already holds them.
 	PatchesDropped []string `json:"patches_dropped,omitempty"`
@@ -206,7 +209,7 @@ func UpdateView(branch model.Branch, started bool, update engine.Update, plan bo
 	viewed := updateJSON{Branch: BranchRef(branch), Started: started, Port: update.Port, CrossesMajor: update.CrossesMajor, LeavesStable: update.LeavesStable, Renamed: update.Renamed, Followed: update.Followed,
 		Before: versionJSON{update.Before.Version, update.Before.Revision}, After: versionJSON{update.After.Version, update.After.Revision},
 		Current: update.Current, Applied: update.Applied, Files: NonNil(update.Files), Distfiles: update.Distfiles, Subject: update.Subject, Patches: NonNil(update.PatchProblems), PatchesDropped: update.PatchesDropped, PatchesApplied: update.PatchesApplied,
-		Unchecked: NonNil(update.PatchesUnchecked)}
+		MissingWorksrcdir: update.MissingWorksrcdir, Unchecked: NonNil(update.PatchesUnchecked)}
 	if plan {
 		viewed.Diff = update.Diff
 	}
@@ -712,6 +715,10 @@ type outdatedPortJSON struct {
 	// by another name now, the repository github.setup names, the name
 	// GitHub answers it as, and the note outdated says of it.
 	RepositoryMove *repositoryMoveJSON `json:"repository_move,omitempty"`
+	// OtherPrefix is the newest tag upstream lists that the port's tag
+	// prefix leaves out, which a "v" added or taken away would take, and
+	// the note outdated says of it.
+	OtherPrefix *otherPrefixJSON `json:"other_prefix,omitempty"`
 	// Class is what the look found of it: newer, current, uncertain,
 	// unpublished, moved, own-version, or unchecked; Unpublished, for an
 	// unpublished one, why its newer release isn't ready.
@@ -744,6 +751,19 @@ func setAsideView(aside []engine.SetAside) []setAsideJSON {
 	return views
 }
 
+// otherPrefixJSON is a newer tag under another prefix than the port's.
+type otherPrefixJSON struct {
+	Tag   string `json:"tag"`
+	Words string `json:"words"`
+}
+
+func otherPrefixView(other *engine.OtherPrefix) *otherPrefixJSON {
+	if other == nil {
+		return nil
+	}
+	return &otherPrefixJSON{Tag: other.Tag, Words: other.Words()}
+}
+
 // repositoryMoveJSON is a repository GitHub answers by another name.
 type repositoryMoveJSON struct {
 	Repository string `json:"repository"`
@@ -769,7 +789,7 @@ func OutdatedView(report engine.OutdatedReport) map[string]any {
 	ports := []outdatedPortJSON{}
 	for _, port := range report.Ports {
 		ports = append(ports, outdatedPortJSON{Port: port.Port, Current: port.Current, Newest: port.Newest, Outdated: port.Outdated, Uncertain: setAsideView(port.Uncertain), Ahead: port.Ahead, Problem: port.Problem, OwnVersion: port.OwnVersion, With: port.With, Moved: movedView(port.Moved),
-			RepositoryMove: repositoryMoveView(port.RepositoryMove), Class: string(port.Class()), Unpublished: port.Unpublished})
+			RepositoryMove: repositoryMoveView(port.RepositoryMove), OtherPrefix: otherPrefixView(port.OtherPrefix), Class: string(port.Class()), Unpublished: port.Unpublished})
 	}
 	viewed := map[string]any{"master": report.Master, "ports": ports}
 	// How many couldn't be checked, and why, for a script, which the exit

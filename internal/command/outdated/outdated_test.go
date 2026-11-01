@@ -89,6 +89,17 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 	require.Equal(t, "httpie has no newer release, at master 1bb30d5; GitHub answers httpie/httpie as httpie/cli now; if that's the same project, github.setup could name it\n",
 		said(engine.OutdatedPort{Port: "httpie", Current: "3.2.4", Newest: "3.2.4", RepositoryMove: &engine.RepositoryMove{From: "httpie/httpie", To: "httpie/cli"}}))
 
+	// A newer tag under another prefix than the port's is said on its row,
+	// an update's as a current one's, and, without --current, on the one
+	// port's line (the outdated-ports
+	// session's note 17).
+	other := &engine.OtherPrefix{Tag: "v0.12", Setup: "github.setup"}
+	var prefixed bytes.Buffer
+	require.NoError(t, writeOutdated(t.Context(), nil, &prefixed, engine.OutdatedReport{Master: "1bb30d5aaaaa", Ports: []engine.OutdatedPort{{Port: "alot", Current: "0.11", Newest: "0.11", OtherPrefix: other}}}, true))
+	require.Equal(t, "Current (1)\n  alot  0.11 → 0.11  it is current; upstream's newest tag, v0.12, doesn't match github.setup's tag prefix\nalot has no newer release, at master 1bb30d5\n", prefixed.String())
+	require.Equal(t, "alot has no newer release, at master 1bb30d5; upstream's newest tag, v0.12, doesn't match github.setup's tag prefix\n",
+		said(engine.OutdatedPort{Port: "alot", Current: "0.11", Newest: "0.11", OtherPrefix: other}))
+
 	// A port with no release to look for, as a _select port, is covered,
 	// not a port that couldn't be checked (batch 37).
 	own := func(name string) engine.OutdatedPort {
@@ -337,4 +348,19 @@ func TestALookPastTheAllowanceAsksFirst(t *testing.T) {
 	require.Contains(t, asked.String(), "? Look anyway? [y/N]")
 	no := term.Streams{In: strings.NewReader("\n"), Out: &bytes.Buffer{}, Err: &bytes.Buffer{}}.AsTerminal()
 	require.EqualError(t, allowLook(left(1000), no, false)(t.Context(), 2133), "nothing was looked up")
+}
+
+// An argument holding spaces is several port names, refused before it's
+// looked up and said once: outdated "airspy airspyhf … apache-ant-1.9"
+// read "no port named airspy airspyhf …" three times (field testing, the
+// outdated-ports session's note 18).
+func TestAnArgumentOfSeveralNamesIsRefusedOnce(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	reader := cmdtest.WithOutdated(t)
+	out, _, err := cmdtest.Dockhand(t, "outdated", "airspy airspyhf")
+	require.EqualError(t, err, `"airspy airspyhf": this looks like several port names in one argument; give each as its own`)
+	require.Empty(t, out)
+	require.Empty(t, reader.Asked, "nothing was looked up")
 }

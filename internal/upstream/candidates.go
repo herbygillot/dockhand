@@ -37,6 +37,30 @@ func admits(current, candidate string) bool {
 	return false
 }
 
+// listed are the versions a livecheck read from a page that may be
+// selected automatically, as admits has them, and for each read from the
+// start of a prerelease's name, that name (version.CapturedPrerelease): a
+// port on a stable release passes such a version over, as admits passes
+// the rest, where ap-utils took 1.4.2 from 1.4.2pre1, its newest stable
+// 1.4.1 (field testing, the outdated-ports session's note 19).
+func listed(current, page string, versions []string) ([]macports.VersionCandidate, map[string]string) {
+	var candidates []macports.VersionCandidate
+	from := map[string]string{}
+	for _, found := range versions {
+		if !admits(current, found) {
+			continue
+		}
+		if name, ok := version.CapturedPrerelease(page, found); ok {
+			if !followsPrereleases(current) {
+				continue
+			}
+			from[found] = name
+		}
+		candidates = append(candidates, macports.VersionCandidate{Version: found, MatchText: found})
+	}
+	return candidates, from
+}
+
 // followsPrereleases reports a port already on a prerelease, which selects
 // prereleases from its catalog as well as stable releases.
 func followsPrereleases(current string) bool { return version.Classify(current) == version.Prerelease }

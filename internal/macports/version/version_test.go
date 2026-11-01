@@ -96,3 +96,33 @@ func TestOlderScheme(t *testing.T) {
 	require.False(t, OlderScheme("0.07", "0.08"), "the current version writes leading zeros too")
 	require.False(t, OlderScheme("1.0", "1.0.1"))
 }
+
+// A version captured from the start of a prerelease's name is that
+// prerelease's, where the text has it no other way: ap-utils's 1.4.2 from
+// ap-utils-1.4.2pre1.tar.bz2 (field testing, the outdated-ports session's
+// note 19).
+func TestAVersionCapturedFromAPrereleasesName(t *testing.T) {
+	t.Parallel()
+	for text, want := range map[string]string{
+		`<link>/ap-utils/1.4.2pre1/ap-utils-1.4.2pre1.tar.bz2</link><title>ap-utils-1.4.2pre1.tar.bz2</title>`: "1.4.2pre1",
+		"project-1.4.2-rc1.tar.gz":                      "1.4.2-rc1",
+		"project-1.4.2.dev3":                            "1.4.2.dev3",
+		"project-1.4.2beta2.tar.gz":                     "1.4.2beta2",
+		"project-11.4.2.tar.gz project-1.4.2alpha1.zip": "1.4.2alpha1",
+	} {
+		name, ok := CapturedPrerelease(text, "1.4.2")
+		require.True(t, ok, text)
+		require.Equal(t, want, name, text)
+	}
+	for _, text := range []string{
+		"project-1.4.2.tar.gz",
+		"project-1.4.2pre1.tar.gz project-1.4.2.tar.gz",
+		"project-1.4.2pre1x.tar.gz",
+		"project-1.4.23.tar.gz",
+		"project-1.4.2-preview.tar.gz",
+		"nothing here",
+	} {
+		_, ok := CapturedPrerelease(text, "1.4.2")
+		require.False(t, ok, text)
+	}
+}

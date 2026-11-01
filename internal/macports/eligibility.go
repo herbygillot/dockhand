@@ -59,11 +59,11 @@ func (e Eligibility) Reason() string {
 // error, which is neither eligible nor excluded, and the caller keeps it
 // apart (the private-helper review's finding 1).
 func BuildEligibility(port PortInfo, platform model.Platform) (Eligibility, error) {
-	replacedBy, _, err := port.option("replaced_by")
+	by, err := port.ReplacedBy()
 	if err != nil {
 		return Eligibility{}, err
 	}
-	if by := strings.TrimSpace(replacedBy); by != "" {
+	if by != "" {
 		return Eligibility{Excluded: ExcludedReplaced, Detail: by}, nil
 	}
 	knownFail, err := port.KnownFail()

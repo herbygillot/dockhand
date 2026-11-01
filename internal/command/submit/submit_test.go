@@ -1096,7 +1096,7 @@ func TestCleanNamesOneBranch(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "start", "open-work")
 	require.NoError(t, err)
 	_, _, err = cmdtest.Dockhand(t, "clean", "open-work")
-	require.ErrorContains(t, err, "open-work is open, so there's nothing to clean")
+	require.ErrorContains(t, err, "open-work is open, so there's nothing to clean; clean takes a merged, closed, or archived branch, and dockhand archive sets one aside; dockhand clean --delete open-work then forgets it for good")
 
 	out, _, err = cmdtest.Dockhand(t, "clean", "jq-update")
 	require.Equal(t, term.ExitFailure, term.ExitCode(err))

@@ -21,6 +21,25 @@ import (
 // fine, and a person names the version.
 var ErrAutomaticUnsupported = errors.New("upstream: automatic selection does not support this source convention")
 
+// ReplacedError is a port whose Portfile is an obsolete stub, replaced_by
+// another: its version is the stub's, and the release to look for is the
+// port that replaced it, so it isn't looked up. Its words are a look's,
+// "replaced_by py-ansible"; an update says the rest (Resolve).
+type ReplacedError struct {
+	Port, By string
+}
+
+func (e *ReplacedError) Error() string { return "replaced_by " + e.By }
+
+// replaced is the refusal of a port replaced_by another, nil for any other
+// port. One whose replacement couldn't be read is looked up as any other.
+func replaced(port macports.PortInfo) error {
+	if by, err := port.ReplacedBy(); err == nil && by != "" {
+		return &ReplacedError{Port: port.Name, By: by}
+	}
+	return nil
+}
+
 // versionSelector orders and captures versions the way MacPorts does: vercmp
 // for order and its native regex for livecheck captures.
 type versionSelector interface {
@@ -97,6 +116,14 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 		result.Assessment, result.Detail = OwnVersion, "no source is fetched on this platform, and livecheck does not use the port version"
 		return result, nil
 	}
+	// A stub replaced_by another, ansible's for py-ansible, isn't looked
+	// up: its python PortGroup's livecheck found py-ansible's 14.5.0, said
+	// as a major update of the stub's 2.3.2.0.1 (field testing, the
+	// outdated-ports session's note 16). One that fetches nothing and
+	// reads no version is MacPorts' own above, as it was.
+	if err := replaced(port); err != nil {
+		return result, err
+	}
 	if s == nil || s.Versions == nil || s.EvaluateVersion == nil {
 		return result, fmt.Errorf("upstream: version comparison and Portfile evaluation are required")
 	}
@@ -152,11 +179,12 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 	// notice, a new subport being the maintainer's, never its update.
 	series, inSeries := version.Series(port.Name, port.Version), version.InSeries
 	var candidates, beyond []macports.VersionCandidate
-	var tags, pages []string
+	var tags, pages, listedTags []string
 	for _, release := range observations {
 		if release.Draft || release.Prerelease && !followsPrereleases {
 			continue
 		}
+		listedTags = append(listedTags, release.Tag)
 		version, matches := spec.Pattern.Version(release.Tag)
 		if !matches || !admits(port.Version, version) {
 			continue
@@ -320,7 +348,65 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 	if result.NewerSeries = s.newerSeries(ctx, spec.Livecheck.Regex, candidates[index].Version, beyond); result.NewerSeries != "" {
 		result.Detail += "; " + SeriesWords(result.NewerSeries, port.Name)
 	}
+	if result.OtherPrefix = s.otherPrefix(ctx, port.Version, spec, listedTags, eligibleTags, candidates[index].CaptureVersion); result.OtherPrefix != nil {
+		result.Detail += "; " + result.OtherPrefix.Words()
+	}
 	return result, nil
+}
+
+// OtherPrefix is a tag upstream lists that the port's tag prefix leaves
+// out, which would be taken with a "v" added to the prefix or taken away,
+// and compares newer than the version taken: alot's tags moved to v0.12
+// where github.setup names no prefix, and outdated offered 0.11 (field
+// testing, the outdated-ports session's note 17). Setup is the PortGroup
+// command that names the prefix.
+type OtherPrefix struct{ Tag, Setup string }
+
+// Words say it: "upstream's newest tag, v0.12, doesn't match
+// github.setup's tag prefix".
+func (o OtherPrefix) Words() string {
+	return fmt.Sprintf("upstream's newest tag, %s, doesn't match %s's tag prefix", o.Tag, o.Setup)
+}
+
+// otherPrefix is the newest of the listed tags the port's own spelling
+// left out that, read with a "v" added to the tag prefix or taken away,
+// is a version a look would take and compares newer than the one taken;
+// nil where none is. It reads the tags already listed, and asks nothing
+// more of the forge: the port's own spelling still decides what's
+// offered, and this is said beside it.
+func (s *Service) otherPrefix(ctx context.Context, current string, spec portsource.Spec, listed, taken []string, selected string) *OtherPrefix {
+	if selected == "" {
+		return nil
+	}
+	var alternatives []version.TagPattern
+	alternatives = append(alternatives, version.TagPattern{Prefix: "v" + spec.Pattern.Prefix, Suffix: spec.Pattern.Suffix})
+	if trimmed, ok := strings.CutPrefix(spec.Pattern.Prefix, "v"); ok {
+		alternatives = append(alternatives, version.TagPattern{Prefix: trimmed, Suffix: spec.Pattern.Suffix})
+	}
+	newest, newestVersion := "", selected
+	for _, tag := range listed {
+		if slices.Contains(taken, tag) {
+			continue
+		}
+		for _, pattern := range alternatives {
+			found, ok := pattern.Version(tag)
+			if !ok || !admits(current, found) {
+				continue
+			}
+			// A leading v left on the version, as the prefix with one
+			// added would leave none, is the port's own spelling's.
+			if strings.HasPrefix(found, "v") {
+				continue
+			}
+			if comparison, err := s.Versions.CompareVersions(ctx, found, newestVersion); err == nil && comparison > 0 {
+				newest, newestVersion = tag, found
+			}
+		}
+	}
+	if newest == "" {
+		return nil
+	}
+	return &OtherPrefix{Tag: newest, Setup: string(spec.Forge) + ".setup"}
 }
 
 // newerSeries is the newest of the versions beyond a port's series that

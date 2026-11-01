@@ -83,6 +83,23 @@ type Result struct {
 	// applied at an offset or with a hunk the source carries; nil where
 	// it needs none, or can't be (refresh).
 	Refresh *Refresh `json:",omitempty"`
+	// MissingWorksrcdir is the worksrcdir the source doesn't hold, where
+	// the archive holds its top directory but not it, as angelscript
+	// 2.38.0 dropped sdk/angelscript/projects/gnuc macosx: the patch was
+	// checked against the source as the archive's top directory has it,
+	// and what it says follows from the missing directory.
+	MissingWorksrcdir string `json:",omitempty"`
+}
+
+// MissingWorksrcdir is the worksrcdir the source the results were checked
+// against doesn't hold, empty where it holds it.
+func MissingWorksrcdir(results []Result) string {
+	for _, result := range results {
+		if result.MissingWorksrcdir != "" {
+			return result.MissingWorksrcdir
+		}
+	}
+	return ""
 }
 
 // Hunk is one hunk patch placed other than as written: its number in the
@@ -236,7 +253,8 @@ func Check(ctx context.Context, request Request) ([]Result, error) {
 		return nil, err
 	}
 	defer os.RemoveAll(directory)
-	if err := extract(ctx, request, wanted, directory); err != nil {
+	missing, err := extract(ctx, request, wanted, directory)
+	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
@@ -245,6 +263,11 @@ func Check(ctx context.Context, request Request) ([]Result, error) {
 			results[i] = Result{Name: results[i].Name, Detail: "source archive not readable: " + err.Error()}
 		}
 		return results, nil
+	}
+	if missing {
+		for i := range results {
+			results[i].MissingWorksrcdir = request.Worksrcdir
+		}
 	}
 	command := request.Tools.Patch
 	if command == "" {
@@ -526,8 +549,9 @@ func quotedName(text string) (name, rest string, ok bool) {
 }
 
 // extract writes the wanted members of every archive under directory,
-// keyed by their path relative to the source directory.
-func extract(ctx context.Context, request Request, wanted map[string]bool, directory string) error {
+// keyed by their path relative to the source directory, and says whether
+// the source lacks the worksrcdir (missingWorksrcdir).
+func extract(ctx context.Context, request Request, wanted map[string]bool, directory string) (missing bool, err error) {
 	worksrc := strings.Trim(request.Worksrcdir, "/")
 	// The project's directory below an archive's top: none for a GOPATH
 	// worksrcdir, which a renamed top directory is moved to whole, as
@@ -544,9 +568,14 @@ func extract(ctx context.Context, request Request, wanted map[string]bool, direc
 	if !request.Rename && !request.Mkdir {
 		held, err := holds(ctx, request.Archives, worksrc)
 		if err != nil {
-			return err
+			return false, err
 		}
 		moved, subdir = !held, ""
+		if !held {
+			if missing, err = missingWorksrcdir(ctx, request.Archives, worksrc); err != nil {
+				return false, err
+			}
+		}
 	}
 	relative := func(member string) (string, bool) {
 		// Under extract.mkdir, each archive is unpacked in the source
@@ -597,10 +626,26 @@ func extract(ctx context.Context, request Request, wanted map[string]bool, direc
 			return errors.Join(err, file.Close())
 		})
 		if err != nil {
-			return err
+			return false, err
 		}
 	}
-	return nil
+	return missing, nil
+}
+
+// missingWorksrcdir says whether a worksrcdir no archive holds is one the
+// source lacks rather than one a PortGroup moves the archive's top
+// directory to: the archive holds the worksrcdir's top directory, so it
+// was laid out below it, and the directory below isn't there. angelscript
+// 2.38.0 dropped sdk/angelscript/projects/gnuc macosx, and update said
+// only "patch-makefile.diff: No file to patch" (field testing, the
+// outdated-ports session's note 20); golang's gopath/src/… is in no
+// archive at all.
+func missingWorksrcdir(ctx context.Context, archives []string, worksrc string) (bool, error) {
+	top, _, nested := strings.Cut(worksrc, "/")
+	if !nested || top == "" {
+		return false, nil
+	}
+	return holds(ctx, archives, top)
 }
 
 // holds says whether any archive has a member inside a directory.

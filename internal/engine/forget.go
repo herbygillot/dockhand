@@ -38,7 +38,7 @@ type ForgetPlan struct {
 func (e *Engine) PlanForget(ctx context.Context, branch model.Branch) (ForgetPlan, error) {
 	plan := ForgetPlan{Branch: branch}
 	if branch.State == model.BranchOpen {
-		return plan, fmt.Errorf("%s is open; clean --delete forgets a merged, closed, or archived branch, and dockhand archive sets an open one aside", branch.ShortName())
+		return plan, fmt.Errorf("%s is open; clean --delete forgets a merged, closed, or archived branch, and dockhand archive sets an open one aside; %s", branch.ShortName(), ForgetWords(branch))
 	}
 	if branch.Worktree != "" && exists(branch.Worktree) {
 		if !branch.Managed {

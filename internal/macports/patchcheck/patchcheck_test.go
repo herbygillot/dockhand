@@ -100,6 +100,20 @@ func TestAMovedSourceIsTheArchivesTopDirectory(t *testing.T) {
 	require.True(t, results[0].Applies, results[0].Detail)
 	require.False(t, results[1].Applies, "a stale patch is still said")
 	require.Regexp(t, staleHunk, results[1].Detail)
+	require.Empty(t, MissingWorksrcdir(results), "a moved source isn't a missing one")
+}
+
+// A worksrcdir below a directory the archive holds, that the archive
+// doesn't hold, is one the new source lacks, and is said before its
+// patches: angelscript 2.38.0 dropped sdk/angelscript/projects/gnuc
+// macosx (field testing, the outdated-ports session's note 20).
+func TestAWorksrcdirTheSourceLacksIsSaid(t *testing.T) {
+	archive := sourceArchive(t, map[string]string{"sdk/angelscript/projects/cmake/CMakeLists.txt": "one\n"})
+	results, err := Check(t.Context(), Request{Tools: tools(t), Archives: []string{archive}, Worksrcdir: "sdk/angelscript/projects/gnuc macosx", PreArgs: []string{"-t", "-N", "-p0"},
+		Patches: []Patch{{Name: "good.diff", Data: []byte(good)}}})
+	require.NoError(t, err)
+	require.Equal(t, "sdk/angelscript/projects/gnuc macosx", MissingWorksrcdir(results))
+	require.False(t, results[0].Applies, "its patches' results stand under it")
 }
 
 func TestTargets(t *testing.T) {

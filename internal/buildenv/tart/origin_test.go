@@ -151,7 +151,7 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // run under sudo on this Mac gives what it wrote there to the person who
 // ran sudo as it exits: ownership of its own records, so the protocol
 // stays 3.
-const guestPin = "f081cfae9478c954a97c3368aa751af201f859381544acfee96ffe2a514dea8b"
+const guestPin = "05e1439b07b2d225952e12506686ce2dd5474b75150bc66d8e20a2dd66e82aa3"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this
