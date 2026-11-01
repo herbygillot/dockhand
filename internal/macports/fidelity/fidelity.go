@@ -674,11 +674,13 @@ func SubportChanges(directory string, base, revision *macports.Snapshot, transit
 				change.Kind = model.SubportChanged
 			}
 		}
-		// Its maintainers as the revision evaluates them, or the base for a
-		// subport it removes, kept so status reads them without evaluating.
-		change.Maintainers = next.Options[macports.MaintainersOption]
-		if !has {
-			change.Maintainers = old.Options[macports.MaintainersOption]
+		// Its maintainers as the base evaluates them, the revision's only
+		// for a subport it adds, kept so status reads them without
+		// evaluating: MacPorts' maintainer timeout waits on the maintainers
+		// a port has now, not those the revision would give it.
+		change.Maintainers = old.Options[macports.MaintainersOption]
+		if !had {
+			change.Maintainers = next.Options[macports.MaintainersOption]
 		}
 		changes = append(changes, change)
 	}

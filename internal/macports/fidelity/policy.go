@@ -15,5 +15,8 @@ package fidelity
 // compares a port's PortGroups by their files, not their blobs. Policy 8
 // keeps each subport's evaluated maintainers, which a pull request's merge
 // fitness reads (macports.MergeFitness), so a record made before, which
-// has none, is made again.
-const ChangePolicy = 8
+// has none, is made again. Policy 9 keeps the base's maintainers for a
+// subport the base has, the revision's only for one it adds, since the
+// maintainer timeout waits on a port's maintainers as MacPorts has them,
+// so a record made before, which kept the revision's, is made again.
+const ChangePolicy = 9

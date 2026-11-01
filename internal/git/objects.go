@@ -295,6 +295,34 @@ func objectResult(out []byte, err error) (string, error) {
 	return object, nil
 }
 
+// FirstParentTrees are the trees of start and its first-parent ancestors,
+// newest first, at most limit of them: one rev-list, which a reader of
+// what's cached by tree walks to find the newest it has.
+func (r *Repository) FirstParentTrees(ctx context.Context, start string, limit int) ([]string, error) {
+	if !ValidObjectID(start) {
+		return nil, fmt.Errorf("git: literal commit objects are required")
+	}
+	if limit <= 0 {
+		return nil, nil
+	}
+	// rev-list heads each commit's format with a "commit" line of its own.
+	out, err := r.output(ctx, "rev-list", "--first-parent", "--max-count="+strconv.Itoa(limit), "--format=%T", start, "--")
+	if err != nil {
+		return nil, err
+	}
+	var trees []string
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+		if line == "" || strings.HasPrefix(line, "commit ") {
+			continue
+		}
+		if !ValidObjectID(line) {
+			return nil, fmt.Errorf("git: invalid tree from rev-list: %q", line)
+		}
+		trees = append(trees, line)
+	}
+	return trees, nil
+}
+
 // CommitBefore is the newest first-parent ancestor of start, start itself
 // included, committed at or before the instant; empty when none is.
 func (r *Repository) CommitBefore(ctx context.Context, start string, before time.Time) (string, error) {

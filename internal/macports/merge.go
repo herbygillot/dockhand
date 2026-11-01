@@ -52,8 +52,9 @@ func (p PortMerge) Waits() bool {
 }
 
 // Merge is a pull request's fitness to be merged by MacPorts' maintainer
-// policy: each of its ports, who its description notified, who approved
-// it, and when the maintainer timeout passes, from its opening.
+// policy: each of its ports, whom its description mentions, who approved
+// it, whether it's a draft, and when the maintainer timeout passes, from
+// its opening.
 type Merge struct {
 	Ports []PortMerge
 	// Opened is when the pull request was opened, which the timeout
@@ -61,9 +62,16 @@ type Merge struct {
 	// description's mentions or MacPorts' bot's, and a mention's own time
 	// would take its description's history, requests status doesn't make.
 	Opened time.Time
-	// Notified are the logins its description mentions, and Approvers
-	// every reviewer whose latest review approves it.
-	Notified, Approvers []string
+	// Mentioned are the logins its description mentions, which is all
+	// that's read of who was notified: MacPorts' bot's comment naming
+	// those it notified is no documented interface, and stays unread.
+	// Approvers are every reviewer whose latest review approves it.
+	Mentioned, Approvers []string
+	// Draft is whether it's a draft, which no one merges, so no timeout
+	// is given: once it's ready the timeout counts from its opening
+	// again, an approximation, since the Guide predates drafts and a
+	// draft's readiness has its own time, which status doesn't read.
+	Draft bool
 	// Until is when the maintainer timeout passes, zero where no port
 	// waits on it; Left is how long until then, as of the reading, zero
 	// once it's passed.
@@ -87,13 +95,14 @@ func (m Merge) Passed() bool { return !m.Until.IsZero() && m.Left == 0 }
 
 // MergeFitness is a pull request's Merge, as of now: its ports'
 // maintainers, who opened it, who its description mentions, who approved
-// it, and when it was opened (MaintainerTimeout). A maintainer is matched
-// to a login by their GitHub handle (Maintainer.Names); one named by an
-// address alone can't be, and their approval isn't seen. Where no port
-// waits, or it's unknown when the pull request was opened, there's no
-// time to give.
-func MergeFitness(ports []PortMaintainers, author string, notified, approvers []string, opened, now time.Time) Merge {
-	merge := Merge{Opened: opened, Notified: notified, Approvers: approvers}
+// it, whether it's a draft, and when it was opened (MaintainerTimeout). A
+// maintainer is matched to a login by their GitHub handle
+// (Maintainer.Names); one named by an address alone can't be, and their
+// approval isn't seen. Where no port waits, it's a draft, or it's unknown
+// when the pull request was opened, there's no time to give. The author's
+// own early merge, which their commit access decides, isn't modelled.
+func MergeFitness(ports []PortMaintainers, author string, mentioned, approvers []string, opened time.Time, draft bool, now time.Time) Merge {
+	merge := Merge{Opened: opened, Mentioned: mentioned, Approvers: approvers, Draft: draft}
 	names := func(m Maintainer, login string) bool { return login != "" && m.Names("@"+login) }
 	for _, port := range ports {
 		standing := PortMerge{Port: port.Port}
@@ -115,7 +124,7 @@ func MergeFitness(ports []PortMaintainers, author string, notified, approvers []
 		}
 		merge.Ports = append(merge.Ports, standing)
 	}
-	if len(merge.Waiting()) > 0 && !opened.IsZero() {
+	if len(merge.Waiting()) > 0 && !opened.IsZero() && !draft {
 		merge.Until = opened.Add(MaintainerTimeout)
 		merge.Left = max(merge.Until.Sub(now), 0)
 	}

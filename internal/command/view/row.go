@@ -109,16 +109,18 @@ func workWords(s engine.BranchStatus) string {
 	return prose.Plural(s.Commits, "commit")
 }
 
-// prWords are a branch's pull request: its number, whether it's a draft,
-// its state or review, its CI's mark, when MacPorts' maintainer timeout
-// ends, and whether what's here is pushed.
+// prWords are a branch's pull request: its number, its state or review,
+// its CI's mark, when MacPorts' maintainer timeout ends or that it's a
+// draft, and whether what's here is pushed.
 func prWords(s engine.BranchStatus) string {
 	pr := s.Branch.PullRequest
 	if pr == nil {
 		return "—"
 	}
 	words := fmt.Sprintf("#%d", pr.Number)
-	if pr.Draft {
+	// A draft whose merge is read says so where the merge's timeout
+	// would be (mergeRowWords).
+	if pr.Draft && s.Merge == nil {
 		words += " draft"
 	}
 	if observed := pr.Observed; observed != nil {

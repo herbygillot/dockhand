@@ -615,7 +615,7 @@ func TestABranchsHoldsNameTheirRule(t *testing.T) {
 // A pull request's merge fitness is its row's words, when MacPorts'
 // maintainer timeout ends or that it has, which the console's row shows
 // too, and status's detail under Merge: each port's maintainers and how it
-// stands, whom the description notified, who approved, and the timeout;
+// stands, whom the description mentions, who approved, and the timeout;
 // its JSON says the same, as fields and as the detail's lines.
 func TestStatusSaysAPullRequestsMergeFitness(t *testing.T) {
 	t.Parallel()
@@ -626,7 +626,7 @@ func TestStatusSaysAPullRequestsMergeFitness(t *testing.T) {
 		return maintainers
 	}
 	ports := []macports.PortMaintainers{{Port: "jq", Maintainers: read("{@ryandesign ryandesign} openmaintainer")}, {Port: "gdal", Maintainers: read("nomaintainer")}}
-	merge := macports.MergeFitness(ports, "herbygillot", []string{"ryandesign"}, []string{"jmroot"}, opened, opened.Add(31*time.Hour))
+	merge := macports.MergeFitness(ports, "herbygillot", []string{"ryandesign"}, []string{"jmroot"}, opened, false, opened.Add(31*time.Hour))
 	status := engine.BranchStatus{Branch: model.Branch{Name: "dockhand/jq-update", State: model.BranchOpen, PullRequest: &model.PullRequest{Repository: "macports/macports-ports", Number: 34880, Pushed: "c0ffee",
 		Observed: &model.PullRequestObservation{State: model.PullRequestOpen, Review: model.ReviewApproved, Checks: model.ChecksPassing, Head: "c0ffee", At: opened.Add(31 * time.Hour)}}},
 		Head: "c0ffee", Commits: 1, Merge: &merge, MaintainersUnread: []string{"croc"}}
@@ -636,7 +636,7 @@ func TestStatusSaysAPullRequestsMergeFitness(t *testing.T) {
 		"jq: @ryandesign, openmaintainer; waits on the maintainer timeout",
 		"gdal: nomaintainer; anyone may update it",
 		"croc: maintainers not read yet; dockhand check --plan reads them",
-		"Notified @ryandesign, in the description",
+		"Mentioned in the description: @ryandesign",
 		"Approved by @jmroot",
 		"MacPorts' 72-hour maintainer timeout ends " + until + ", in 41h; until then only its maintainers or its author should merge it",
 	}
@@ -652,28 +652,63 @@ func TestStatusSaysAPullRequestsMergeFitness(t *testing.T) {
 	require.JSONEq(t, `{"ports": [
   {"port": "jq", "maintainers": ["@ryandesign"], "openmaintainer": true, "nomaintainer": false, "opened_by_maintainer": false, "waits": true},
   {"port": "gdal", "maintainers": [], "openmaintainer": false, "nomaintainer": true, "opened_by_maintainer": false, "waits": false}],
-  "maintainers_unread": ["croc"], "opened_at": "2026-10-30T09:00:00Z", "notified": ["ryandesign"], "approved_by": ["jmroot"], "waiting": ["jq"],
-  "timeout_ends_at": "`+end+`", "timeout_passed": false, "timeout_left_seconds": 147600}`, string(data))
+  "maintainers_unread": ["croc"], "opened_at": "2026-10-30T09:00:00Z", "mentioned": ["ryandesign"], "approved_by": ["jmroot"], "waiting": ["jq"],
+  "timeout_ends_at": "`+end+`", "draft": false, "timeout_passed": false, "timeout_left_seconds": 147600}`, string(data))
 	require.Equal(t, lines, view.BranchDetail(status, engine.StatusReport{}).Merge)
 
 	// Once the timeout has passed, the row and the detail say so.
-	passed := macports.MergeFitness(ports, "herbygillot", nil, nil, opened, opened.Add(73*time.Hour))
+	passed := macports.MergeFitness(ports, "herbygillot", nil, nil, opened, false, opened.Add(73*time.Hour))
 	status.Merge, status.MaintainersUnread = &passed, nil
 	require.Equal(t, "#34880 approved, CI ✓, maintainer timeout passed", view.BranchRow(status).PR)
 	require.Equal(t, []string{
 		"jq: @ryandesign, openmaintainer; waits on the maintainer timeout",
 		"gdal: nomaintainer; anyone may update it",
-		"The description mentions no one",
+		"No one is mentioned in the description",
 		"MacPorts' 72-hour maintainer timeout ended " + until + ", so another committer may merge it",
 	}, view.MergeLines(status))
 
 	// And where no port waits, the row says nothing of it.
-	approved := macports.MergeFitness(ports, "herbygillot", nil, []string{"ryandesign"}, opened, opened.Add(time.Hour))
+	approved := macports.MergeFitness(ports, "herbygillot", nil, []string{"ryandesign"}, opened, false, opened.Add(time.Hour))
 	status.Merge = &approved
 	require.Equal(t, "#34880 approved, CI ✓", view.BranchRow(status).PR)
-	require.Equal(t, []string{"jq: @ryandesign, openmaintainer; approved by @ryandesign", "gdal: nomaintainer; anyone may update it", "The description mentions no one", "Approved by @ryandesign", "No port waits on MacPorts' maintainer timeout"}, view.MergeLines(status))
+	require.Equal(t, []string{"jq: @ryandesign, openmaintainer; approved by @ryandesign", "gdal: nomaintainer; anyone may update it", "No one is mentioned in the description", "Approved by @ryandesign", "No port waits on MacPorts' maintainer timeout"}, view.MergeLines(status))
 	data, err = json.Marshal(view.BranchView(status).PullRequest.Merge)
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"waiting":[]`)
 	require.NotContains(t, string(data), "timeout_ends_at")
+
+	// A draft says so where the countdown would be, in the row and the
+	// detail, since no one merges it: once it's ready, the timeout counts
+	// from its opening.
+	draft := macports.MergeFitness(ports, "herbygillot", nil, nil, opened, true, opened.Add(31*time.Hour))
+	status.Merge, status.Branch.PullRequest.Draft = &draft, true
+	status.Branch.PullRequest.Observed.Review = model.ReviewNone
+	require.Equal(t, "#34880, CI ✓, draft", view.BranchRow(status).PR)
+	require.Equal(t, []string{
+		"jq: @ryandesign, openmaintainer; waits on the maintainer timeout",
+		"gdal: nomaintainer; anyone may update it",
+		"No one is mentioned in the description",
+		"A draft, so no one merges it yet; once it's ready, MacPorts' 72-hour maintainer timeout is counted from its opening",
+	}, view.MergeLines(status))
+	data, err = json.Marshal(view.BranchView(status).PullRequest.Merge)
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"draft":true`)
+	require.NotContains(t, string(data), "timeout_ends_at")
+}
+
+// The ports whose maintainers neither a change record nor master's cached
+// port index has, as a new port's until its record is made, are said so;
+// for the person's own branch the line names check --plan, which reads
+// them, and for an adopted one, whose Portfiles nothing evaluates
+// unattended, nothing.
+func TestUnreadMaintainersNameCheckPlanOnlyForTheirOwnBranch(t *testing.T) {
+	t.Parallel()
+	opened := time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC)
+	merge := macports.MergeFitness(nil, "herbygillot", nil, nil, opened, false, opened.Add(time.Hour))
+	status := engine.BranchStatus{Branch: model.Branch{Name: "dockhand/rumdl", State: model.BranchOpen, PullRequest: &model.PullRequest{Repository: "macports/macports-ports", Number: 34881,
+		Observed: &model.PullRequestObservation{State: model.PullRequestOpen}}}, Merge: &merge, MaintainersUnread: []string{"rumdl"}}
+	require.Equal(t, []string{"rumdl: maintainers not read yet; dockhand check --plan reads them", "No one is mentioned in the description"}, view.MergeLines(status))
+
+	status.Branch.PullRequest.Adopted, status.Branch.PullRequest.Author = true, "ada"
+	require.Equal(t, []string{"rumdl: maintainers not read yet", "No one is mentioned in the description"}, view.MergeLines(status))
 }
