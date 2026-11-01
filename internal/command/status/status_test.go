@@ -3,6 +3,7 @@ package status
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -18,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -608,4 +610,70 @@ func TestABranchsHoldsNameTheirRule(t *testing.T) {
 	require.Contains(t, out.String(), "  Holds    ! upstream's Makefile.am changed [build-file-changed]\n"+
 		"           ! upstream's configure.ac is new [build-file-changed]\n"+
 		"           Serve and ship --yes wait on these, and your own submit goes ahead; dockhand decide <rule> -p <port> --because \"…\" answers one for this branch, and holds.allow lets a rule go for every branch.\n")
+}
+
+// A pull request's merge fitness is its row's words, when MacPorts'
+// maintainer timeout ends or that it has, which the console's row shows
+// too, and status's detail under Merge: each port's maintainers and how it
+// stands, whom the description notified, who approved, and the timeout;
+// its JSON says the same, as fields and as the detail's lines.
+func TestStatusSaysAPullRequestsMergeFitness(t *testing.T) {
+	t.Parallel()
+	opened := time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC)
+	read := func(value string) []macports.Maintainer {
+		maintainers, err := macports.ReadMaintainers(value)
+		require.NoError(t, err)
+		return maintainers
+	}
+	ports := []macports.PortMaintainers{{Port: "jq", Maintainers: read("{@ryandesign ryandesign} openmaintainer")}, {Port: "gdal", Maintainers: read("nomaintainer")}}
+	merge := macports.MergeFitness(ports, "herbygillot", []string{"ryandesign"}, []string{"jmroot"}, opened, opened.Add(31*time.Hour))
+	status := engine.BranchStatus{Branch: model.Branch{Name: "dockhand/jq-update", State: model.BranchOpen, PullRequest: &model.PullRequest{Repository: "macports/macports-ports", Number: 34880, Pushed: "c0ffee",
+		Observed: &model.PullRequestObservation{State: model.PullRequestOpen, Review: model.ReviewApproved, Checks: model.ChecksPassing, Head: "c0ffee", At: opened.Add(31 * time.Hour)}}},
+		Head: "c0ffee", Commits: 1, Merge: &merge, MaintainersUnread: []string{"croc"}}
+	require.Equal(t, "#34880 approved, CI ✓, maintainer timeout ends in 41h", view.BranchRow(status).PR)
+	until := opened.Add(72 * time.Hour).Local().Format("Mon 2 Jan 15:04 MST")
+	lines := []string{
+		"jq: @ryandesign, openmaintainer; waits on the maintainer timeout",
+		"gdal: nomaintainer; anyone may update it",
+		"croc: maintainers not read yet; dockhand check --plan reads them",
+		"Notified @ryandesign, in the description",
+		"Approved by @jmroot",
+		"MacPorts' 72-hour maintainer timeout ends " + until + ", in 41h; until then only its maintainers or its author should merge it",
+	}
+	require.Equal(t, lines, view.MergeLines(status))
+	var out strings.Builder
+	showBranch(&out, config.Places{}, status, engine.StatusReport{})
+	require.Contains(t, out.String(), "  PR       #34880 approved, CI ✓, maintainer timeout ends in 41h\n  Merge    "+lines[0]+"\n           "+lines[1]+"\n")
+
+	viewed := view.BranchView(status)
+	data, err := json.Marshal(viewed.PullRequest.Merge)
+	require.NoError(t, err)
+	end := opened.Add(72 * time.Hour).Format(time.RFC3339)
+	require.JSONEq(t, `{"ports": [
+  {"port": "jq", "maintainers": ["@ryandesign"], "openmaintainer": true, "nomaintainer": false, "opened_by_maintainer": false, "waits": true},
+  {"port": "gdal", "maintainers": [], "openmaintainer": false, "nomaintainer": true, "opened_by_maintainer": false, "waits": false}],
+  "maintainers_unread": ["croc"], "opened_at": "2026-10-30T09:00:00Z", "notified": ["ryandesign"], "approved_by": ["jmroot"], "waiting": ["jq"],
+  "timeout_ends_at": "`+end+`", "timeout_passed": false, "timeout_left_seconds": 147600}`, string(data))
+	require.Equal(t, lines, view.BranchDetail(status, engine.StatusReport{}).Merge)
+
+	// Once the timeout has passed, the row and the detail say so.
+	passed := macports.MergeFitness(ports, "herbygillot", nil, nil, opened, opened.Add(73*time.Hour))
+	status.Merge, status.MaintainersUnread = &passed, nil
+	require.Equal(t, "#34880 approved, CI ✓, maintainer timeout passed", view.BranchRow(status).PR)
+	require.Equal(t, []string{
+		"jq: @ryandesign, openmaintainer; waits on the maintainer timeout",
+		"gdal: nomaintainer; anyone may update it",
+		"The description mentions no one",
+		"MacPorts' 72-hour maintainer timeout ended " + until + ", so another committer may merge it",
+	}, view.MergeLines(status))
+
+	// And where no port waits, the row says nothing of it.
+	approved := macports.MergeFitness(ports, "herbygillot", nil, []string{"ryandesign"}, opened, opened.Add(time.Hour))
+	status.Merge = &approved
+	require.Equal(t, "#34880 approved, CI ✓", view.BranchRow(status).PR)
+	require.Equal(t, []string{"jq: @ryandesign, openmaintainer; approved by @ryandesign", "gdal: nomaintainer; anyone may update it", "The description mentions no one", "Approved by @ryandesign", "No port waits on MacPorts' maintainer timeout"}, view.MergeLines(status))
+	data, err = json.Marshal(view.BranchView(status).PullRequest.Merge)
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"waiting":[]`)
+	require.NotContains(t, string(data), "timeout_ends_at")
 }

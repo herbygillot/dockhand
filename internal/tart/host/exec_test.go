@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -14,6 +15,13 @@ import (
 
 func TestGuestCommandsCloseInheritedDescriptorsAndPreserveInputAndArguments(t *testing.T) {
 	t.Parallel()
+	// ExecScript runs in a macOS guest, whose sh is bash and closes a
+	// descriptor past 9 as any other; dash, Linux's sh, takes only one
+	// digit there, and the CI runner's job hands it descriptor 142 (the
+	// ubuntu job's run at 7aab4600: "exec: 142: not found").
+	if runtime.GOOS != "darwin" {
+		t.Skip("ExecScript runs under macOS's sh")
+	}
 	root := t.TempDir()
 	executable := filepath.Join(root, "tart")
 	testsupport.WriteExecutable(t, executable, `#!/bin/sh

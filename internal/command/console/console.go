@@ -314,6 +314,9 @@ func detailLines(status engine.BranchStatus, report engine.StatusReport) []strin
 	for _, line := range detail.Installed {
 		lines = append(lines, "Against  "+line.Mark+" "+line.Words)
 	}
+	for _, line := range detail.Merge {
+		lines = append(lines, "Merge    "+line)
+	}
 	if row.Next != "" {
 		lines = append(lines, "Next: "+row.Next)
 	}

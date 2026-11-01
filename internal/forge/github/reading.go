@@ -17,10 +17,13 @@ import (
 const readingChunk = 25
 
 // pullRequestFields are what a reading takes of each pull request: its
-// state and head, and its latest opinion from each reviewer and its
-// head's checks and statuses, as Observe and Inspect read them, a hundred
-// of each; one with more is Partial, and Inspect reads it.
-const pullRequestFields = `number state isDraft headRefOid mergeable
+// state and head, when it was opened, by whom, and its description, and
+// its latest opinion from each reviewer and its head's checks and
+// statuses, as Observe and Inspect read them, a hundred of each; one with
+// more is Partial, and Inspect reads it. The opening and the description
+// are fields of the same request, so a merge's fitness costs no request
+// more (macports.MergeFitness).
+const pullRequestFields = `number state isDraft headRefOid mergeable createdAt body author { login }
 latestOpinionatedReviews(first: 100) { totalCount nodes { state submittedAt author { login } } }
 commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { totalCount nodes {
   __typename
@@ -46,10 +49,15 @@ type graphContext struct {
 }
 
 type graphPullRequest struct {
-	Number     int    `json:"number"`
-	State      string `json:"state"`
-	IsDraft    bool   `json:"isDraft"`
-	HeadRefOID string `json:"headRefOid"`
+	Number     int       `json:"number"`
+	State      string    `json:"state"`
+	IsDraft    bool      `json:"isDraft"`
+	HeadRefOID string    `json:"headRefOid"`
+	CreatedAt  time.Time `json:"createdAt"`
+	Body       string    `json:"body"`
+	Author     *struct {
+		Login string `json:"login"`
+	} `json:"author"`
 	// Mergeable is MERGEABLE, CONFLICTING, or UNKNOWN until GitHub has
 	// computed the merge, which a later look reads.
 	Mergeable string `json:"mergeable"`
@@ -142,7 +150,10 @@ func readingOf(ref forge.PullRequestRef, pr graphPullRequest) (forge.PullRequest
 	if state == "" {
 		return forge.PullRequestReading{}, fmt.Errorf("github: pull request #%d is %q", pr.Number, pr.State)
 	}
-	reading := forge.PullRequestReading{Ref: ref, Found: true, PullRequest: forge.PullRequest{Ref: ref, State: state, RemoteHead: model.ObjectID(pr.HeadRefOID)}}
+	reading := forge.PullRequestReading{Ref: ref, Found: true, PullRequest: forge.PullRequest{Ref: ref, State: state, RemoteHead: model.ObjectID(pr.HeadRefOID), Body: pr.Body, CreatedAt: pr.CreatedAt.UTC(), Mentions: mentions(pr.Body)}}
+	if pr.Author != nil {
+		reading.PullRequest.Author = pr.Author.Login
+	}
 	status := forge.PullRequestStatus{Draft: pr.IsDraft, Mergeable: "unknown", Review: "none"}
 	// The refresh's query reads mergeable as Inspect's REST read does, where
 	// it was set unknown whatever GitHub said (the docs dig's I2).

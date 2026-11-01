@@ -288,6 +288,21 @@ reviewer requested changes, submit can ask to request their review again after
 pushing. `submit.rerequest_review` controls that behavior; see
 `dockhand usage configuration`.
 
+While the pull request is open, status says when it may be merged under
+MacPorts' maintainer policy (the MacPorts Guide, section 7.4.1). The branch's
+row adds when the 72-hour maintainer timeout ends, as in `#34880 approved, CI
+✓, maintainer timeout ends in 41h`, or that it has passed. `status -b` adds a
+Merge section listing each port's maintainers and openmaintainer or
+nomaintainer, the people the description mentions, the reviewers who approved,
+and the timeout's end. The timeout is counted from when the pull request was
+opened. A port waits on the timeout unless it is nomaintainer, one of its
+maintainers opened the pull request, or one of them approved it.
+Openmaintainer does not shorten the wait for a pull request. Maintainers come
+from the change records a check or submission makes; where none keeps them,
+status says so, and `dockhand check --plan` reads them. `status --json` gives
+the same facts under `pull_request.merge`, and the detail's lines under
+`detail.merge`.
+
 If the branch needs a newer master, rebase it, follow status's check advice, and
 submit the result. A check on your machine is distinct from the pull request's
 MacPorts CI; `retry --ci` reruns eligible failed GitHub jobs and requires the

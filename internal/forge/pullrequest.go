@@ -48,6 +48,12 @@ type PullRequest struct {
 	// the repository's maintainers push to its head branch.
 	Author              string `json:",omitempty"`
 	MaintainerCanModify bool   `json:",omitempty"`
+	// CreatedAt is when it was opened, which MacPorts' maintainer timeout
+	// counts from, and Mentions the logins its description mentions, as
+	// the forge reads a mention, each once in the order written: who was
+	// notified of it (macports.MergeFitness).
+	CreatedAt time.Time `json:",omitzero"`
+	Mentions  []string  `json:",omitempty"`
 }
 
 // PullRequestStatus is what a forge reported about a pull request's head
@@ -67,8 +73,9 @@ type PullRequestStatus struct {
 	Approvals        int `json:",omitempty"`
 	ChangesRequested int `json:",omitempty"`
 	// ChangesRequestedBy are the logins whose latest review requests
-	// changes, sorted.
+	// changes, sorted, and ApprovedBy those whose latest approves it.
 	ChangesRequestedBy []string `json:",omitempty"`
+	ApprovedBy         []string `json:",omitempty"`
 	// ReviewedAt is when the latest review that sets Review was
 	// submitted; zero where none does.
 	ReviewedAt time.Time `json:",omitempty"`

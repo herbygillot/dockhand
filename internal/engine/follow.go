@@ -167,7 +167,9 @@ const anonymousReserve = 10
 
 // observeState reads a pull request's state and head alone, one request,
 // for a refresh without a login: the review and checks recorded stay as
-// they were, since reading them is four requests more.
+// they were, since reading them is four requests more. Its opening,
+// author, and description come with the one request, so a merge's
+// fitness is read signed out as well, its approvals as recorded.
 func (e *Engine) observeState(ctx context.Context, pr *model.PullRequest) (model.PullRequestObservation, error) {
 	observed, err := e.forge().Observe(ctx, pullRequestRef(pr.Repository, pr.Number))
 	if errors.Is(err, forge.ErrNotFound) {
@@ -178,7 +180,7 @@ func (e *Engine) observeState(ctx context.Context, pr *model.PullRequest) (model
 	}
 	next := e.observation(observed.PullRequest, forge.PullRequestStatus{})
 	if was := pr.Observed; was != nil && next.State == model.PullRequestOpen {
-		next.Draft, next.Review, next.ChangesRequestedBy, next.ReviewedAt = was.Draft, was.Review, was.ChangesRequestedBy, was.ReviewedAt
+		next.Draft, next.Review, next.ChangesRequestedBy, next.ReviewedAt, next.ApprovedBy = was.Draft, was.Review, was.ChangesRequestedBy, was.ReviewedAt, was.ApprovedBy
 		next.Checks, next.Failing = was.Checks, was.Failing
 	}
 	return next, nil
@@ -250,13 +252,16 @@ func (e *Engine) readPullRequests(ctx context.Context, branches []model.Branch) 
 }
 
 // observation is a pull request's reading as the branch records it: its
-// state and head, and while it's open, its draft, review, and checks.
+// state and head, and while it's open, its draft, review, and checks, and
+// its opening, author, mentions, and approvals, which its merge's fitness
+// reads.
 func (e *Engine) observation(now forge.PullRequest, status forge.PullRequestStatus) model.PullRequestObservation {
 	next := model.PullRequestObservation{State: model.PullRequestState(now.State), Head: model.ObjectID(now.RemoteHead), Review: model.ReviewNone, Checks: model.ChecksNone, At: e.now()}
 	if next.State != model.PullRequestOpen {
 		return next
 	}
 	next.Draft, next.Review, next.Failing, next.ChangesRequestedBy, next.ReviewedAt = status.Draft, model.PullRequestReview(status.Review), status.Checks.Failing, status.ChangesRequestedBy, status.ReviewedAt
+	next.Opened, next.Author, next.Mentioned, next.ApprovedBy = now.CreatedAt, now.Author, now.Mentions, status.ApprovedBy
 	next.Checks = checksOf(status.Checks)
 	next.Conflicts = status.Mergeable == "no"
 	return next

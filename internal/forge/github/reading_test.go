@@ -22,7 +22,8 @@ import (
 // reviewer, changes requested deciding it, and checks still running or
 // waiting on a maintainer pending. One GitHub hasn't is not found, and one
 // with more checks than a reading takes is partial, for Inspect to read
-// (the SQL study's O8).
+// (the SQL study's O8). Its opening, author, description's mentions, and
+// approvers come in the same request, for its merge's fitness.
 func TestPullRequestsAreReadAtOnce(t *testing.T) {
 	head := strings.Repeat("a", 40)
 	requests := 0
@@ -38,6 +39,7 @@ func TestPullRequestsAreReadAtOnce(t *testing.T) {
 		assert.Contains(t, payload.Query, `p2: repository(owner: "macports", name: "macports-ports") { pullRequest(number: 9) { ...fields } }`)
 		fmt.Fprintf(w, `{"data": {
   "p0": {"pullRequest": {"number": 34901, "state": "OPEN", "isDraft": false, "headRefOid": %[1]q, "mergeable": "CONFLICTING",
+    "createdAt": "2026-10-14T09:00:00Z", "body": "jq: update to 1.8.1\n\ncc @ryandesign", "author": {"login": "herbygillot"},
     "latestOpinionatedReviews": {"totalCount": 2, "nodes": [
       {"state": "APPROVED", "submittedAt": "2026-10-15T08:00:00Z", "author": {"login": "ryandesign"}},
       {"state": "CHANGES_REQUESTED", "submittedAt": "2026-10-15T09:00:00Z", "author": {"login": "jmroot"}}]},
@@ -69,6 +71,10 @@ func TestPullRequestsAreReadAtOnce(t *testing.T) {
 	require.EqualValues(t, head, open.PullRequest.RemoteHead)
 	require.Equal(t, "changes-requested", open.Status.Review)
 	require.Equal(t, []string{"jmroot"}, open.Status.ChangesRequestedBy)
+	require.Equal(t, []string{"ryandesign"}, open.Status.ApprovedBy, "who approved, which a merge's fitness reads")
+	require.Equal(t, time.Date(2026, 10, 14, 9, 0, 0, 0, time.UTC), open.PullRequest.CreatedAt, "its opening, which the maintainer timeout counts from, in the same request")
+	require.Equal(t, "herbygillot", open.PullRequest.Author)
+	require.Equal(t, []string{"ryandesign"}, open.PullRequest.Mentions)
 	require.Equal(t, time.Date(2026, 10, 15, 9, 0, 0, 0, time.UTC), open.Status.ReviewedAt)
 	require.Equal(t, forge.CheckSummary{Total: 4, Passed: 2, Failed: 1, Pending: 1, Failing: []string{"macOS 15"}}, open.Status.Checks)
 	require.Equal(t, "no", open.Status.Mergeable, "GitHub's conflict is read, where it was always unknown (the docs dig's I2)")
@@ -77,4 +83,44 @@ func TestPullRequestsAreReadAtOnce(t *testing.T) {
 	require.Equal(t, forge.PullRequestMerged, readings[1].PullRequest.State)
 	require.True(t, readings[1].Partial, "more checks than a reading takes")
 	require.False(t, readings[2].Found)
+}
+
+// A signed-out look reads a pull request's opening, author, and
+// description's mentions with the one request it makes of it, through the
+// conditional cache: a second look is GitHub's 304, which spends nothing
+// of the hour, and reads the same, so a merge's fitness costs no request
+// a look didn't make.
+func TestAPullRequestsOpeningIsReadAgainForNothing(t *testing.T) {
+	head := strings.Repeat("a", 40)
+	var asked, notModified int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked++
+		if r.Method != http.MethodGet || r.URL.Path != "/repos/macports/macports-ports/pulls/34901" {
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+			return
+		}
+		if r.Header.Get("If-None-Match") == `"v1"` {
+			notModified++
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", `"v1"`)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"number": 34901, "state": "open", "title": "jq: update to 1.8.1", "html_url": "https://github.com/macports/macports-ports/pull/34901",
+  "created_at": "2026-10-14T09:00:00Z", "body": "cc @ryandesign", "user": {"login": "herbygillot"},
+  "head": {"ref": "jq-update", "sha": %q, "repo": {"full_name": "herbygillot/macports-ports"}},
+  "base": {"ref": "master", "repo": {"full_name": "macports/macports-ports"}}}`, head)
+	}))
+	defer server.Close()
+	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}, Conditional: githubapi.NewConditionalCache(t.TempDir())}}
+	ref := forge.PullRequestRef{Forge: forge.GitHub, Repository: "macports/macports-ports", Number: 34901}
+	for range 2 {
+		observed, err := client.Observe(t.Context(), ref)
+		require.NoError(t, err)
+		require.Equal(t, time.Date(2026, 10, 14, 9, 0, 0, 0, time.UTC), observed.PullRequest.CreatedAt)
+		require.Equal(t, "herbygillot", observed.PullRequest.Author)
+		require.Equal(t, []string{"ryandesign"}, observed.PullRequest.Mentions)
+	}
+	require.Equal(t, 2, asked)
+	require.Equal(t, 1, notModified, "the second look is GitHub's 304")
 }

@@ -23,8 +23,8 @@ type opinion struct {
 	At           time.Time
 }
 
-// review is the reviews' standing: approvals, the reviewers asking for
-// changes, which of the two holds, and when the newest review that sets
+// review is the reviews' standing: the reviewers approving and those asking
+// for changes, which of the two holds, and when the newest review that sets
 // it was made, which status says, rather than when dockhand read it (a
 // refresh read a nine-hour-old request for changes as "just now", field
 // testing, 2026-10-02).
@@ -33,12 +33,14 @@ func review(status *forge.PullRequestStatus, opinions []opinion) {
 		switch strings.ToUpper(o.State) {
 		case "APPROVED":
 			status.Approvals++
+			status.ApprovedBy = append(status.ApprovedBy, o.Login)
 		case "CHANGES_REQUESTED":
 			status.ChangesRequested++
 			status.ChangesRequestedBy = append(status.ChangesRequestedBy, o.Login)
 		}
 	}
 	slices.Sort(status.ChangesRequestedBy)
+	slices.Sort(status.ApprovedBy)
 	switch {
 	case status.ChangesRequested > 0:
 		status.Review = "changes-requested"
