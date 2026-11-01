@@ -26,6 +26,9 @@ type archivePlan struct {
 	branch string
 	// subject names the commit the applied plan intends.
 	subject string
+	// fetched are archives choosing the source downloaded already, which
+	// the plan's downloads take rather than fetching again.
+	fetched []distfetch.Download
 }
 
 func (s *Service) planArchiveVersion(ctx context.Context, request Request, input *sourceInput) (archivePlan, error) {
@@ -79,13 +82,32 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 		scope.Input = input.versionInput
 		input.scope = scope
 	}
-	if input.info.GitFetched() {
-		return s.planGitVersion(ctx, request, input, contents, versioned)
+	choice, err := s.chooseSource(ctx, request, input, contents, versioned)
+	if err != nil {
+		return archivePlan{contents: contents}, err
+	}
+	contents, versioned, input.sourceMoved = choice.contents, choice.after, choice.moved
+	if input.sourceMoved == nil && input.tarballMoved {
+		input.sourceMoved = &MovedSource{From: "tarball", To: "archive"}
+	}
+	if input.info.GitFetched() && input.sourceMoved == nil {
+		plan, err := s.planGitVersion(ctx, request, input, contents, versioned)
+		plan.result.SourceNotice = choice.notice
+		return plan, err
 	}
 	observed, err := s.planObservedArchives(ctx, request, input, contents)
-	result := Result{Scope: input.scope, Target: input.target, Release: release, TarballMoved: input.tarballMoved}
-	result.report(fidelity.ScopedVersion(request.SharedRelease, family, versioned, input.target.Name, *release, versioned.Ports[input.target.Name].Options["checksums"]))
-	return archivePlan{result: result, contents: contents, observed: observed, subject: "update to " + release.Version}, err
+	result := Result{Scope: input.scope, Target: input.target, Release: release, SourceMoved: input.sourceMoved, SourceNotice: choice.notice}
+	result.report(scopedVersion(request, input, family, versioned, input.target.Name, versioned.Ports[input.target.Name].Options["checksums"]))
+	return archivePlan{result: result, contents: contents, observed: observed, fetched: choice.fetched, subject: "update to " + release.Version}, err
+}
+
+// scopedVersion is the version's fidelity, a source move's where the
+// update moved the target's source (fidelity.ScopedSourceMove).
+func scopedVersion(request Request, input *sourceInput, before, after macports.Snapshot, selected, checksums string) fidelity.Report {
+	if input.sourceMoved != nil && selected == input.target.Name {
+		return fidelity.ScopedSourceMove(request.SharedRelease, before, after, selected, *request.Release, checksums)
+	}
+	return fidelity.ScopedVersion(request.SharedRelease, before, after, selected, *request.Release, checksums)
 }
 
 func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, input *sourceInput) (Result, error) {

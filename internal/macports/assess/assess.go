@@ -192,9 +192,12 @@ const (
 	SourceRemoved       = "source-removed"
 	SourceUncertain     = "source-uncertain"
 	WorksrcPathGone     = "worksrc-path-gone"
-	GitHubTarball       = "github-tarball"
-	CXXStandardRule     = "cxx-standard"
-	GoLinkTargetRule    = "go-ldflags-target"
+	// SourceChoice is a GitHub port's source as the update left it: one
+	// still on GitHub's tarball, or, said by the update, one that could
+	// have moved to a release's own file and why it didn't. A notice.
+	SourceChoice     = "source"
+	CXXStandardRule  = "cxx-standard"
+	GoLinkTargetRule = "go-ldflags-target"
 )
 
 // Rules are every rule an assessment's finding is raised by, for a hold
@@ -203,7 +206,7 @@ func Rules() []string {
 	return []string{LicenseChanged, LicenseYears, LicenseParty, LicenseMoved, BuildFileChanged, BuildFileVersion, BuildFileOptions, DependencyAdded, DependencyDropped,
 		DependencyMoved, DependenciesCounted, NativeLibrary, NativeLibraryLeft, Unread, LayoutAmbiguous, RequirementUnmet, RequirementUnknown,
 		ProviderUnresolved, ProviderRemoved, GoToolchainRule, GoModuleMoved, RequiresPythonRule, PythonPinBehind, PatchRejected, PatchDropped, PatchFuzz, SourceRemoved,
-		SourceUncertain, WorksrcPathGone, GitHubTarball, CXXStandardRule, GoLinkTargetRule, ProjectRenamed}
+		SourceUncertain, WorksrcPathGone, SourceChoice, CXXStandardRule, GoLinkTargetRule, ProjectRenamed}
 }
 
 // floorRules raise a toolchain's floor upstream: a Go toolchain, a Python,
@@ -1109,6 +1112,6 @@ func (a *assessment) githubTarball() (model.UpstreamChange, bool) {
 	if a.input.Port.Options["github.tarball_from"] != "tarball" {
 		return model.UpstreamChange{}, false
 	}
-	return model.UpstreamChange{Kind: "source", Rule: GitHubTarball, Subject: "github.tarball_from", Class: model.Introduced,
+	return model.UpstreamChange{Kind: "source", Rule: SourceChoice, Subject: "github.tarball_from", Class: model.Introduced,
 		Message: "the port fetches GitHub's tarball: MacPorts prefers a release's source tarball, github.tarball_from releases, where the project publishes one, and else github.tarball_from archive"}, true
 }

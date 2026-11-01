@@ -20,11 +20,11 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
-	"github.com/herbygillot/dockhand/internal/macports/portcreate"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
@@ -447,6 +447,7 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		Subject:    request.Subject,
 		HandEdit:   request.HandEdit,
 		Attended:   !request.Unattended,
+		SourceMode: editprep.SourceMode(e.options.Source),
 	}
 	// The port's plain-HTTP links that answer over HTTPS are switched as
 	// part of the edit, asked from the run's answers (the person's "Let's
@@ -529,8 +530,11 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		return Update{}, err
 	}
 	update.Fixed = fixed
-	if result.TarballMoved {
-		update.Fixed = append(update.Fixed, e.tarballMoved(ctx, update.Release, result))
+	if result.SourceMoved != nil {
+		update.Fixed = append(update.Fixed, sourceMovedWords(*result.SourceMoved))
+	}
+	if len(result.ChecksumsDeclared) > 0 {
+		update.Fixed = append(update.Fixed, fmt.Sprintf("checksums: %s declared none for %s, so they were written after its fetch lines and filled", update.Port, prose.And(result.ChecksumsDeclared)))
 	}
 	// A version update or a checksum refresh is where the port's URLs are
 	// looked at, so its plain-HTTP ones are said there, beside the edit. A
@@ -573,6 +577,12 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		// a dist_subdir other ports share, fails the check at its checksum
 		// where MacPorts fetches the mirror's first: gopls's, under go/
 		// (field testing at f86cec28). It holds, with the fix.
+		// Where the source could move and didn't, the comparison says
+		// why, in place of saying the port fetches GitHub's tarball;
+		// it holds nothing.
+		if update.Upstream != nil && result.SourceNotice != "" {
+			update.Upstream.Changes = withSourceNotice(update.Upstream.Changes, result.SourceNotice)
+		}
 		if update.Upstream != nil {
 			for _, conflict := range result.MirrorConflicts {
 				update.Upstream.Changes = append(update.Upstream.Changes, model.UpstreamChange{Kind: "mirror", Rule: mirrorConflictRule, Subject: conflict.Name, Hold: true, Class: model.Introduced,
@@ -874,7 +884,7 @@ func (e *Engine) editRecord(ctx context.Context, worktree *git.Repository, branc
 		subject = request.subject
 	}
 	edit := model.Edit{ID: model.EditID(store.NewID("ed")), Branch: branch.ID, Kind: request.Action, Port: update.Port, Subject: subject, At: e.now(),
-		Upstream: update.Upstream, Release: update.Release, Excepted: request.Excepted}
+		Upstream: update.Upstream, Release: update.Release, Excepted: request.Excepted, Source: result.SourceMoved}
 	for _, url := range result.HTTPS {
 		edit.HTTPS = append(edit.HTTPS, model.HTTPSLink{Option: url.Option, URL: url.URL})
 	}
@@ -1227,31 +1237,51 @@ func finalize(ctx context.Context, worktree *git.Repository, captured string, re
 	return nil
 }
 
-// tarballMoved says a version update's move from GitHub's tarball to its
-// archive, and where the release carries the archive the github
-// PortGroup's releases fetch names, as create reads it
-// (portcreate.HasReleaseArchive), that github.tarball_from releases
-// fetches it: MacPorts prefers a release's own (the review survey's §4).
-func (e *Engine) tarballMoved(ctx context.Context, release *model.Release, result editprep.Result) string {
-	words := "github.tarball_from tarball is now archive, GitHub's archive of the tag, with the checksums the update made"
-	info, ok := result.PortAfter(result.Target.Name)
-	if !ok || release == nil || release.Forge != forge.GitHub || release.Tag == "" {
-		return words
+// sourceMovedWords say a version update's move of a GitHub port's
+// source, with the lines it wrote beside github.tarball_from: "fetch.type
+// git is now release 2.5.0's mindforger_2.5.0_tarball.tgz, which carries
+// its Git submodules (deps/cmark-gfm), with the checksums the update
+// made; it writes distname ${name}_${version}_tarball, extract.suffix
+// .tgz, worksrcdir ci_${name}_${version}".
+func sourceMovedWords(moved editprep.MovedSource) string {
+	from := "github.tarball_from " + moved.From
+	if moved.From == "git" {
+		from = "fetch.type git"
 	}
-	repository, err := e.forge().Repository("https://github.com", release.Repository)
-	if err != nil {
-		return words
+	if moved.To == "archive" {
+		return from + " is now archive, GitHub's archive of the tag, with the checksums the update made"
 	}
-	assets, ok := repository.(forge.AssetRepository)
-	if !ok {
-		return words
+	words := fmt.Sprintf("%s is now release %s's %s", from, moved.Release, moved.Asset)
+	if moved.From != "git" {
+		words = fmt.Sprintf("%s is now releases, release %s's %s", from, moved.Release, moved.Asset)
 	}
-	names, err := assets.Assets(ctx, release.Tag)
-	project, version := info.Options["github.project"], info.Options["github.version"]
-	if err != nil || !portcreate.HasReleaseArchive(names, project, version) {
-		return words
+	if len(moved.Submodules) > 0 {
+		words += fmt.Sprintf(", which carries its Git submodules (%s)", strings.Join(moved.Submodules, ", "))
 	}
-	return fmt.Sprintf("%s; release %s carries its own, %s-%s.tar.gz, which github.tarball_from releases fetches", words, release.Tag, project, version)
+	words += ", with the checksums the update made"
+	var written []string
+	for _, line := range moved.Lines {
+		if !strings.HasPrefix(line, "github.tarball_from") {
+			written = append(written, strings.Join(strings.Fields(line), " "))
+		}
+	}
+	if len(written) > 0 {
+		words += "; it writes " + strings.Join(written, ", ")
+	}
+	return words
+}
+
+// withSourceNotice is a comparison's changes with the update's source
+// notice, why a GitHub port's source that could move didn't, in place of
+// the notice that it fetches GitHub's tarball, which it says better: a
+// notice, never a hold.
+func withSourceNotice(changes []model.UpstreamChange, notice string) []model.UpstreamChange {
+	change := model.UpstreamChange{Kind: "source", Rule: assess.SourceChoice, Subject: "source", Class: model.Introduced, Message: notice}
+	if i := slices.IndexFunc(changes, func(c model.UpstreamChange) bool { return c.Rule == assess.SourceChoice }); i >= 0 {
+		changes[i] = change
+		return changes
+	}
+	return append(changes, change)
 }
 
 // recordHandEdit records a hand edit's attempt as the person's answer to

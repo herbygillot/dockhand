@@ -27,9 +27,13 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 	var downloads []distfetch.Download
 	for _, item := range plan.observed.downloads {
 		progress.VerboseReport(ctx, "Refreshing %s", item.artifact.Name)
-		download, err := store.FetchFirst(ctx, item.info, item.artifact.Name, item.artifact.URLs)
-		if err != nil {
-			return result, wheelsOnly(ctx, pypi.Client{}, item.artifact.Name, item.artifact.URLs, item.info.Version, err)
+		download, ok := fetchedAlready(plan.fetched, item.artifact)
+		if !ok {
+			var err error
+			download, err = store.FetchFirst(ctx, item.info, item.artifact.Name, item.artifact.URLs)
+			if err != nil {
+				return result, wheelsOnly(ctx, pypi.Client{}, item.artifact.Name, item.artifact.URLs, item.info.Version, err)
+			}
 		}
 		if subdir, differs := store.SharedMirrorCopy(ctx, item.info, download); differs && !slices.ContainsFunc(result.MirrorConflicts, func(c MirrorConflict) bool { return c.Name == download.Name }) {
 			result.MirrorConflicts = append(result.MirrorConflicts, MirrorConflict{Name: download.Name, Subdir: subdir})
@@ -124,6 +128,17 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 		}
 	}
 	return result, nil
+}
+
+// fetchedAlready is the download of an artifact choosing the source made
+// from one of its locations, which the refresh takes as it is.
+func fetchedAlready(fetched []distfetch.Download, artifact distfiles.Artifact) (distfetch.Download, bool) {
+	for _, download := range fetched {
+		if download.Name == artifact.Name && slices.Contains(artifact.URLs, download.URL) {
+			return download, true
+		}
+	}
+	return distfetch.Download{}, false
 }
 
 // scopedChecksums is the checksums step's prediction, observed: each

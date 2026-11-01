@@ -195,7 +195,8 @@ checksums fixture.tar.gz md5 00000000000000000000000000000000 \
 // port's own archive, has a declaration written in its block, after its
 // last fetch line, filled in from its archive; the port's own stays as it
 // was. kb-old, a subport beside kb at 0.1.6, was refused (field testing on
-// rc3). A main port with none is still refused.
+// rc3). A main port with none has its own written at its top, after its
+// fetch lines, the same way.
 func TestASubportsChecksumsAreWrittenInItsBlock(t *testing.T) {
 	t.Parallel()
 	s, r, requests := archiveFixture(t, `version 1.2.3
@@ -224,8 +225,11 @@ revision 0
 master_sites @SITE@/${version}
 `)
 	r.Action, r.Version, r.Release = model.EditChecksums, "", nil
-	_, err = s.Prepare(t.Context(), r)
-	require.ErrorContains(t, err, "no checksum declaration for fixture-1.2.3.tar.gz")
+	result, err = s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Equal(t, []string{"fixture-1.2.3.tar.gz"}, result.ChecksumsDeclared)
+	sum = result.Downloads[0].Checksum
+	require.Contains(t, string(result.Files[0].After), "${version}\n\nchecksums    rmd160  "+sum.RMD160+" \\\n             sha256  "+sum.SHA256+" \\\n             size    "+strconv.FormatInt(sum.Size, 10)+"\n")
 }
 
 // A subport under the port's unnamed declaration, fetching an archive of

@@ -38,3 +38,29 @@ func (s *Service) Manifest(ctx context.Context, port macports.PortInfo, release 
 	}
 	return data, err
 }
+
+// ReleaseAssets are the names of the files uploaded to a forge release of
+// a port's repository, for choosing its source (portedit's chooseSource):
+// none where the release has none, and an error where the forge lists no
+// assets or the release isn't this port's.
+func (s *Service) ReleaseAssets(ctx context.Context, port macports.PortInfo, release model.Release) ([]string, error) {
+	if release.Forge == "" || release.Tag == "" {
+		return nil, fmt.Errorf("upstream: a forge release with a tag is required to list its assets")
+	}
+	spec, repository, err := s.repository(port, false)
+	if err != nil {
+		return nil, err
+	}
+	if string(spec.Forge) != release.Forge || spec.Instance != release.Instance || repository.Name() != release.Repository {
+		return nil, fmt.Errorf("upstream: the resolved release does not name this port's repository")
+	}
+	assets, ok := repository.(forge.AssetRepository)
+	if !ok {
+		return nil, fmt.Errorf("upstream: %s does not list release assets", release.Forge)
+	}
+	names, err := assets.Assets(ctx, release.Tag)
+	if errors.Is(err, forge.ErrNotFound) {
+		return nil, nil
+	}
+	return names, err
+}

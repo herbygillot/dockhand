@@ -37,6 +37,11 @@ type Override = portedit.Override
 type GoToolchainOutcome = portedit.GoToolchainOutcome
 type Stealth = portedit.Stealth
 
+// SourceMode is what a version update does about a GitHub port's source;
+// MovedSource is the move it made.
+type SourceMode = portedit.SourceMode
+type MovedSource = portedit.MovedSource
+
 // ChecksumLeft is what a checksum refresh left as it was, with why.
 type ChecksumLeft = portedit.ChecksumLeft
 
@@ -133,7 +138,7 @@ type Service struct {
 func (s *Service) editor() *portedit.Service {
 	editor := &portedit.Service{Ports: s.Ports, DependencyTools: s.DependencyTools, PatchTools: s.PatchTools, Archives: distfetch.Client{HTTP: s.HTTP, Mirror: s.Mirror}}
 	if s.Upstream != nil {
-		editor.Manifests = s.Upstream
+		editor.Manifests, editor.Releases = s.Upstream, s.Upstream
 	}
 	return editor
 }

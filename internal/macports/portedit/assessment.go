@@ -209,6 +209,8 @@ func (p *VersionProbe) Assess(ctx context.Context, release *model.Release) (Asse
 	if release != nil && depErr == nil {
 		request := p.request
 		request.Version, request.Release = release.Requested, release
+		// The assessment downloads nothing, so it chooses no source.
+		request.downloadsNothing = true
 		plan, candidateErr := p.editor.planArchiveVersion(ctx, request, base)
 		a.Scope = plan.result.Scope
 		add("candidate", "The selected release passes version, source, checksum-structure, and unintended-change checks; archives have not been downloaded", candidateErr)

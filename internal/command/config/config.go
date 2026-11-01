@@ -100,6 +100,7 @@ it is refused by name. Flags, then the environment, come before the file.`,
 				keepHTTP = "true"
 			}
 			set("update.keep_http", keepHTTP)
+			set("update.source", file.Update.Source)
 			set("serve.ship_to", file.Serve.ShipTo)
 			set("serve.outdated_at", file.Serve.OutdatedAt)
 			set("serve.submit_limit", positive(file.Serve.SubmitLimit))

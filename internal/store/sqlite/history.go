@@ -20,7 +20,7 @@ func (t *tx) AddEdit(e model.Edit) error {
 	if err != nil {
 		return err
 	}
-	upstream, release, https, held := "", "", "", ""
+	upstream, release, https, held, source := "", "", "", "", ""
 	if e.Upstream != nil {
 		data, err := json.Marshal(e.Upstream)
 		if err != nil {
@@ -49,8 +49,15 @@ func (t *tx) AddEdit(e model.Edit) error {
 		}
 		held = string(data)
 	}
-	_, err = t.exec("INSERT INTO edits(repository_id, id, branch_id, kind, port, directory, subject, files, at, upstream, release, excepted, https, held) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		t.repo, e.ID, e.Branch, e.Kind, e.Port, e.Directory, e.Subject, string(files), millis(e.At), upstream, release, strings.Join(e.Excepted, " "), https, held)
+	if e.Source != nil {
+		data, err := json.Marshal(e.Source)
+		if err != nil {
+			return err
+		}
+		source = string(data)
+	}
+	_, err = t.exec("INSERT INTO edits(repository_id, id, branch_id, kind, port, directory, subject, files, at, upstream, release, excepted, https, held, source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		t.repo, e.ID, e.Branch, e.Kind, e.Port, e.Directory, e.Subject, string(files), millis(e.At), upstream, release, strings.Join(e.Excepted, " "), https, held, source)
 	return err
 }
 
@@ -71,7 +78,7 @@ func (t *tx) SetExcepted(edit model.EditID, excepted []string) error {
 }
 
 func (t *tx) Edits(branch model.BranchID) ([]model.Edit, error) {
-	rows, err := t.conn.QueryContext(t.ctx, "SELECT id, branch_id, kind, port, directory, subject, files, at, upstream, release, excepted, https, held FROM edits WHERE repository_id=? AND branch_id=? ORDER BY at, rowid", t.repo, branch)
+	rows, err := t.conn.QueryContext(t.ctx, "SELECT id, branch_id, kind, port, directory, subject, files, at, upstream, release, excepted, https, held, source FROM edits WHERE repository_id=? AND branch_id=? ORDER BY at, rowid", t.repo, branch)
 	if err != nil {
 		return nil, storageError(err)
 	}
@@ -79,9 +86,9 @@ func (t *tx) Edits(branch model.BranchID) ([]model.Edit, error) {
 	var edits []model.Edit
 	for rows.Next() {
 		var e model.Edit
-		var files, upstream, release, excepted, https, held string
+		var files, upstream, release, excepted, https, held, source string
 		var at int64
-		if err := rows.Scan(&e.ID, &e.Branch, &e.Kind, &e.Port, &e.Directory, &e.Subject, &files, &at, &upstream, &release, &excepted, &https, &held); err != nil {
+		if err := rows.Scan(&e.ID, &e.Branch, &e.Kind, &e.Port, &e.Directory, &e.Subject, &files, &at, &upstream, &release, &excepted, &https, &held, &source); err != nil {
 			return nil, storageError(err)
 		}
 		if excepted != "" {
@@ -105,6 +112,11 @@ func (t *tx) Edits(branch model.BranchID) ([]model.Edit, error) {
 		if held != "" {
 			if err := json.Unmarshal([]byte(held), &e.Held); err != nil {
 				return nil, fmt.Errorf("%w: edit %s's hold: %w", store.ErrUnavailable, e.ID, err)
+			}
+		}
+		if source != "" {
+			if err := json.Unmarshal([]byte(source), &e.Source); err != nil {
+				return nil, fmt.Errorf("%w: edit %s's source move: %w", store.ErrUnavailable, e.ID, err)
 			}
 		}
 		if err := json.Unmarshal([]byte(files), &e.Files); err != nil {

@@ -74,6 +74,8 @@ type bodyFacts struct {
 	// HTTPS are the links each port's edits switched to https
 	// (httpsSwitches).
 	HTTPS []prdescription.HTTPSSwitch
+	// Sources are each port's source move (sourceMoves).
+	Sources []prdescription.HTTPSSwitch
 	// Installed are the check's install findings as lines, with the
 	// dependents the branch rebuilds (InstallFinding.Lines).
 	Installed []string
@@ -125,11 +127,28 @@ func httpsSwitches(edits []model.Edit) []prdescription.HTTPSSwitch {
 	return switches
 }
 
+// sourceMoves are each directory's move of its GitHub source, as tidy's
+// commit body says it (sourceLine), named by the port.
+func sourceMoves(edits []model.Edit) []prdescription.HTTPSSwitch {
+	var moves []prdescription.HTTPSSwitch
+	var said []string
+	for _, edit := range edits {
+		if slices.Contains(said, edit.Directory) {
+			continue
+		}
+		if line := sourceLine(edits, edit.Directory); line != "" {
+			said = append(said, edit.Directory)
+			moves = append(moves, prdescription.HTTPSSwitch{Port: edit.Port, Line: line})
+		}
+	}
+	return moves
+}
+
 // description is what the facts let the description claim, as
 // prdescription composes it: the evidence's reports and table, in the
 // engine's words, and the checklist's answers.
 func (facts bodyFacts) description() prdescription.Facts {
-	described := prdescription.Facts{Note: facts.Note, Reviewed: facts.Reviewed, Types: facts.Types, Updated: facts.Updated, NewPorts: facts.NewPorts, LeftOut: facts.LeftOut, HTTPS: facts.HTTPS,
+	described := prdescription.Facts{Note: facts.Note, Reviewed: facts.Reviewed, Types: facts.Types, Updated: facts.Updated, NewPorts: facts.NewPorts, LeftOut: facts.LeftOut, HTTPS: facts.HTTPS, Sources: facts.Sources,
 		SkipNotification: facts.SkipNotification, Version: buildinfo.Current().Tag()}
 	for _, hand := range facts.HandEdits {
 		described.HandEdits = append(described.HandEdits, "**"+hand.Directory+"**: "+hand.Line())

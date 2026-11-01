@@ -6,12 +6,12 @@ package fetchguard
 
 import (
 	"fmt"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/textedit"
 )
@@ -69,14 +69,9 @@ func Assess(info macports.PortInfo, procedure, pre, post string, origins []Origi
 	return result
 }
 
-// submoduleUpdate is the one command a Git-fetched port's post-fetch may
-// run and stay standard: git submodule update --init, with --recursive or
-// a --depth, in the source directory, which checks out exactly what the
-// fetched commit pins.
-var submoduleUpdate = regexp.MustCompile(`^git submodule update --init( --recursive)?( --depth [0-9]+)?$`)
-
 // onlySubmodules says whether every post-fetch hook of a Git-fetched port
-// only runs system -W ${worksrcpath} "git submodule update --init".
+// only runs system -W ${worksrcpath} "git submodule update --init", the
+// grammar portfile.SubmoduleHook owns.
 func onlySubmodules(info macports.PortInfo, post string) bool {
 	if info.Options["fetch.type"] != "git" {
 		return false
@@ -86,31 +81,7 @@ func onlySubmodules(info macports.PortInfo, post string) bool {
 		return false
 	}
 	for _, hook := range hooks {
-		src := []byte(hook)
-		script, errs := syntax.Parse(src)
-		if len(errs) != 0 {
-			return false
-		}
-		commands := 0
-		for _, item := range script.Items {
-			cmd, ok := item.(syntax.Command)
-			if !ok {
-				continue
-			}
-			commands++
-			if len(cmd.Words) != 4 || cmd.Words[0].Span.Text(src) != "system" || cmd.Words[1].Span.Text(src) != "-W" {
-				return false
-			}
-			dir := cmd.Words[2].Span.Text(src)
-			if dir != "${worksrcpath}" && dir != "$worksrcpath" {
-				return false
-			}
-			text := strings.Trim(cmd.Words[3].Span.Text(src), `"{}`)
-			if !submoduleUpdate.MatchString(text) {
-				return false
-			}
-		}
-		if commands == 0 {
+		if !portfile.SubmoduleHook(hook) {
 			return false
 		}
 	}

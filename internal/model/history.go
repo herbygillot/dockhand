@@ -69,10 +69,44 @@ type Edit struct {
 	// HTTPS are the plain-HTTP links the edit switched to https, which
 	// answered there, which tidy's commit and the pull request say.
 	HTTPS []HTTPSLink `json:",omitempty"`
+	// Source is, for an update that moved a GitHub port's source, the
+	// move, which tidy's commit and the pull request say; nil for every
+	// other edit.
+	Source *SourceMove `json:",omitempty"`
 	// Held are, for an update an unattended ship held before its check,
 	// the patch problems it held it for: serve's recovery leaves it held,
 	// where it queued its check (Codex's review of 275125ff, finding 2).
 	Held []string `json:",omitempty"`
+}
+
+// SourceMove is an update's move of a GitHub port's source: from
+// tarball, archive, or git, its clone, to releases or archive; the
+// release asset taken, with the Git submodules it carries; and the lines
+// the edit wrote for it.
+type SourceMove struct {
+	From       string   `json:"from"`
+	To         string   `json:"to"`
+	Release    string   `json:"release,omitempty"`
+	Asset      string   `json:"asset,omitempty"`
+	Submodules []string `json:"submodules,omitempty"`
+	Lines      []string `json:"lines,omitempty"`
+}
+
+// Words say the move for the commit's body and the pull request, which
+// say it in place of a Portfile comment (the roadmap's D3): "Fetches
+// release 2.5.0's mindforger_2.5.0_tarball.tgz, which carries the
+// repository's Git submodules (deps/cmark-gfm), instead of a Git
+// checkout."
+func (m SourceMove) Words() string {
+	instead := map[string]string{"git": "a Git checkout", "tarball": "GitHub's tarball of the tag", "archive": "GitHub's archive of the tag"}[m.From]
+	if m.To == "archive" {
+		return fmt.Sprintf("Fetches GitHub's archive of the tag instead of %s.", instead)
+	}
+	carries := ""
+	if len(m.Submodules) > 0 {
+		carries = fmt.Sprintf(", which carries the repository's Git submodules (%s),", strings.Join(m.Submodules, ", "))
+	}
+	return fmt.Sprintf("Fetches release %s's %s%s instead of %s.", m.Release, m.Asset, carries, instead)
 }
 
 // HTTPSLink is a plain-HTTP link an edit switched to https: the option

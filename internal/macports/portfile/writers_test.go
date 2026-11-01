@@ -42,3 +42,16 @@ func TestPortfilesPureGoWriters(t *testing.T) {
 	_, ok = DeclareSubportChecksums([]byte("name kb\nforeach v {1 2} {\n    subport kb-$v {}\n}\n"), "kb-1", []string{"kb.tar.gz"})
 	require.False(t, ok, "no block with a literal name")
 }
+
+// A main port declaring no checksums gets placeholders at its top after
+// its last fetch line, aligned as it is; one declaring some, or with no
+// fetch line, gets none.
+func TestAMainPortsChecksumsAreDeclaredAfterItsFetchLines(t *testing.T) {
+	got, ok := DeclareChecksums([]byte("github.setup        owner tool 1.0\nrevision            0\ndistname            tool_1.0\n\nhomepage            x\n"), []string{"tool_1.0.tar.gz"})
+	require.True(t, ok)
+	require.Equal(t, "github.setup        owner tool 1.0\nrevision            0\ndistname            tool_1.0\n\nchecksums           rmd160  0 \\\n                    sha256  0 \\\n                    size    0\n\nhomepage            x\n", string(got))
+	_, ok = DeclareChecksums([]byte("version 1\nchecksums sha256 1\n"), []string{"a.tar.gz"})
+	require.False(t, ok)
+	_, ok = DeclareChecksums([]byte("name tool\n"), []string{"a.tar.gz"})
+	require.False(t, ok)
+}

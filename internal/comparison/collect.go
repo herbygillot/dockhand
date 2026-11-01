@@ -500,6 +500,10 @@ func (c Collector) readPlans(ctx context.Context, infos [2]macports.PortInfo, pl
 const (
 	PolicyNotCompared     = "not-compared"
 	PolicySourceUnchanged = "source-unchanged"
+	// PolicyAddedWithMove sets apart the Git submodules a port moved off
+	// its clone now fetches in its release asset, which the forge's
+	// archive of the old commit left out: added with the move, said once.
+	PolicyAddedWithMove = "added-with-move"
 )
 
 // Update assesses what upstream's change means for the port an update
@@ -527,7 +531,7 @@ func (c Collector) Update(ctx context.Context, result editprep.Result, versions 
 	// update compared nothing and said nothing (field testing, 2026-10-02).
 	var read []model.Coverage
 	var kind refusal.Kind
-	viaGit := false
+	viaGit, movedOffGit := false, false
 	switch {
 	case !compare:
 	case result.PreviousProblem != "":
@@ -537,6 +541,12 @@ func (c Collector) Update(ctx context.Context, result editprep.Result, versions 
 		// architecture review's L2b).
 		problem = "the current version's archives could not be fetched: " + result.PreviousProblem
 		kind = result.PreviousKind
+	case result.SourceMoved != nil && result.SourceMoved.From == "git" && len(result.Downloads) == 1:
+		// A port moved off its clone to a release asset: the old commit
+		// as its forge archives it, beside the asset, the submodules the
+		// asset carries said once as added with the move.
+		movedOffGit = true
+		input.Pairs, read, problem, kind = c.readMovedOffGit(ctx, input.Base, input.Port, result.Downloads[0], result.SourceMoved.Submodules)
 	case len(result.Downloads) == 0 && input.Port.GitFetched():
 		viaGit = true
 		input.Pairs, read, problem, kind = c.readCommits(ctx, [2]macports.PortInfo{input.Base, input.Port}, true)
@@ -550,7 +560,7 @@ func (c Collector) Update(ctx context.Context, result editprep.Result, versions 
 			}
 		}
 	}
-	if compare && problem == "" && len(result.Downloads) > 0 {
+	if compare && problem == "" && len(result.Downloads) > 0 && !movedOffGit {
 		pairs, err := c.readPairs(ctx, result.Pairs, input.Base, input.Port)
 		switch {
 		case errors.Is(err, archivefile.ErrBinary):
@@ -589,6 +599,47 @@ func (c Collector) Update(ctx context.Context, result editprep.Result, versions 
 	}
 	comparison.Coverage = append(comparison.Coverage, read...)
 	return comparison
+}
+
+// readMovedOffGit pairs a port moved off its Git clone, before, as the
+// forge archives its old commit, submodules left out, with the release
+// asset it fetches now, whose submodules are set apart from the reading
+// and said once as added with the move.
+func (c Collector) readMovedOffGit(ctx context.Context, base, port macports.PortInfo, asset distfetch.Download, submodules []string) ([]assess.Pair, []model.Coverage, string, refusal.Kind) {
+	if asset.Path == "" {
+		return nil, nil, "the archives were not kept to compare", ""
+	}
+	pairs, _, problem, kind := c.readCommits(ctx, [2]macports.PortInfo{{}, base}, false)
+	if problem != "" {
+		return nil, nil, problem, kind
+	}
+	after, err := c.readDistfile(ctx, port, asset.Name, asset.Path, asset.SHA256, port.ReadingSpec())
+	if err != nil {
+		return nil, nil, fmt.Sprintf("reading %s: %v", asset.Name, err), ""
+	}
+	after = withoutPaths(after, submodules)
+	coverage := []model.Coverage{{Path: asset.Name, Relevance: "unknown", Treatment: "inspected", Reason: "compared with the forge's archive of the old commit, which the clone checked out, submodules left out"}}
+	if len(submodules) > 0 {
+		coverage = append(coverage, model.Coverage{Path: strings.Join(submodules, ", "), Source: asset.Name, Relevance: "used", Treatment: "set-apart", Policy: PolicyAddedWithMove,
+			Reason: "the Git submodules the clone checked out, which the release asset carries since the move"})
+	}
+	return []assess.Pair{{Archive: asset.Name, Before: pairs[0].After, After: after, Port: port}}, coverage, "", ""
+}
+
+// withoutPaths is a reading with what it read below the paths left out.
+func withoutPaths(reading project.Reading, paths []string) project.Reading {
+	below := func(name string) bool {
+		return slices.ContainsFunc(paths, func(p string) bool { return name == p || strings.HasPrefix(name, p+"/") })
+	}
+	files := map[string]project.File{}
+	for name, file := range reading.Files {
+		if !below(name) {
+			files[name] = file
+		}
+	}
+	reading.Files = files
+	reading.Directories = slices.DeleteFunc(slices.Clone(reading.Directories), below)
+	return reading
 }
 
 // toolchainOutcomes are what the editor did about go.toolchain_min, as the

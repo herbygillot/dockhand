@@ -139,3 +139,54 @@ func SubportPlace(src []byte, subport string, ordinal int) BlockPlace {
 	}
 	return PlaceUnknown
 }
+
+// DeclareChecksums writes a checksums declaration of placeholders for
+// these archives at a Portfile's top, which declares none, after its last
+// fetch line there, aligned as that line's value is and set off by a
+// blank line: rmd160, sha256, and size, each zero, for a refresh to fill
+// in, as DeclareSubportChecksums writes a subport's. False where the top
+// declares checksums already, has no fetch line, or the line isn't one
+// command to a line.
+func DeclareChecksums(src []byte, names []string) ([]byte, bool) {
+	script, errs := syntax.Parse(src)
+	if len(errs) > 0 || len(names) == 0 {
+		return nil, false
+	}
+	var anchor *syntax.Command
+	for _, item := range script.Items {
+		cmd, ok := item.(syntax.Command)
+		if !ok {
+			continue
+		}
+		name, _ := cmd.Name(src)
+		switch name {
+		case "checksums", "checksums-append", "checksums-prepend":
+			return nil, false
+		}
+		if fetchCommands[strings.TrimSuffix(strings.TrimSuffix(name, "-append"), "-prepend")] {
+			anchor = &cmd
+		}
+	}
+	if anchor == nil || strings.TrimSpace(string(src[lineStart(src, anchor.Span.Start):anchor.Span.Start])) != "" {
+		return nil, false
+	}
+	end := lineEnd(src, anchor.Span.End)
+	if strings.TrimSpace(string(src[anchor.Span.End:end])) != "" {
+		return nil, false
+	}
+	column := max(valueColumn(src, *anchor), len("checksums")+1)
+	indent := strings.Repeat(" ", column)
+	var lines []string
+	for _, name := range names {
+		if len(names) > 1 {
+			lines = append(lines, name)
+		}
+		lines = append(lines, "rmd160  0", "sha256  0", "size    0")
+	}
+	declaration := "\n\nchecksums" + strings.Repeat(" ", column-len("checksums")) + strings.Join(lines, " \\\n"+indent)
+	if next := end + 1; next < len(src) && src[next] != '\n' {
+		declaration += "\n"
+	}
+	out, err := textedit.Apply(src, []textedit.Edit{{Span: textedit.Span{Start: end, End: end}, New: []byte(declaration)}})
+	return out, err == nil
+}

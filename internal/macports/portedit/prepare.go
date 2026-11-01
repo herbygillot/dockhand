@@ -65,6 +65,12 @@ type Request struct {
 	// where a patch that applies only with fuzz is re-emitted for them to
 	// look at in the diff; nobody's holds it (patch-fuzz), unwritten.
 	Attended bool
+	// SourceMode is what a version update does about a GitHub port's
+	// source (chooseSource); empty chooses.
+	SourceMode SourceMode
+	// downloadsNothing is an assessment's plan, which chooses no source,
+	// since choosing downloads the release's files.
+	downloadsNothing bool
 	// HTTPS answers which of the port's plain-HTTP links answer over
 	// HTTPS, which the preparer (editprep) switches as part of the edit;
 	// nil asks nothing and switches nothing.
@@ -116,8 +122,11 @@ type Result struct {
 	Downloads []distfetch.Download
 	// Left is what a checksum refresh left as it was, with why, and
 	// Differing the archives whose checksums weren't as declared.
-	Left      []ChecksumLeft `json:",omitempty"`
-	Differing []string       `json:",omitempty"`
+	Left []ChecksumLeft `json:",omitempty"`
+	// ChecksumsDeclared are the archives a checksum refresh wrote a
+	// declaration for, where the port declared none that covers them.
+	ChecksumsDeclared []string `json:",omitempty"`
+	Differing         []string `json:",omitempty"`
 	// MirrorConflicts are archives MacPorts' mirror holds another file of,
 	// under a dist_subdir other ports share.
 	MirrorConflicts []MirrorConflict `json:",omitempty"`
@@ -156,9 +165,14 @@ type Result struct {
 	// DistSubdirRemoved is true when a version update removed the
 	// dist_subdir an earlier stealth update set.
 	DistSubdirRemoved bool `json:",omitempty"`
-	// TarballMoved is true when a version update moved
-	// github.tarball_from tarball to archive.
-	TarballMoved bool `json:",omitempty"`
+	// SourceMoved is a version update's move of a GitHub port's source,
+	// from GitHub's tarball, its archive, or a Git clone to a release's
+	// own file or GitHub's archive (chooseSource); nil where it moved
+	// none. SourceNotice says why a source that could move didn't, where
+	// one didn't: "release 2.5.0 carries mindforger-2.5.0.tar.gz, which
+	// lacks deps/cmark-gfm, so the port stays on its clone".
+	SourceMoved  *MovedSource `json:",omitempty"`
+	SourceNotice string       `json:",omitempty"`
 	// Unchanged is the port as it stands where nothing was edited, as for
 	// an update to the version it already has: what it is at, which no
 	// fidelity report says then. Nil when there was an edit.
@@ -278,6 +292,9 @@ type Service struct {
 	// a git-fetched port that downloads no archive to read it from; nil
 	// leaves such a port's toolchain minimum as declared.
 	Manifests ManifestSource
+	// Releases lists a GitHub release's files and reads the forge's
+	// archive of its tag, for choosing a port's source; nil chooses none.
+	Releases ReleaseFiles
 }
 
 // ManifestSource reads one file of a port's source repository at the

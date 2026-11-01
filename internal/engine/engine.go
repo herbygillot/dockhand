@@ -93,6 +93,10 @@ type Options struct {
 	// each that answers over HTTPS is otherwise switched (the person's
 	// "keep_http", 2026-10-29).
 	KeepHTTP bool
+	// Source is --source, or [update] source: what every version update
+	// does about a GitHub port's source, choose, keep, releases, or
+	// archive (editprep.SourceMode); empty chooses.
+	Source string
 	// NamedDatabase is a Database named, with --db or DOCKHAND_DB, other
 	// than the default one a release opens: a copy the person made to try
 	// this build, as the refusal advises, which migrates without asking

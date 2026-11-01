@@ -109,7 +109,7 @@ func (s *Service) probeVersion(ctx context.Context, request Request, input *sour
 	// made, or the update doesn't evaluate with it, the update is made as
 	// it was, and the assessment's notice says the tarball.
 	input.tarballMoved = false
-	if input.info.Options["github.tarball_from"] == "tarball" && !input.info.GitFetched() {
+	if input.info.Options["github.tarball_from"] == "tarball" && !input.info.GitFetched() && request.SourceMode != SourceKeep {
 		contents, snapshot, err := s.evaluateVersion(ctx, reader, request, input, carriers, sourceVersion, true, true)
 		if err == nil {
 			input.tarballMoved = true

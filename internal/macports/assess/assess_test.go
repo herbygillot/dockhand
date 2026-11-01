@@ -501,7 +501,7 @@ func TestAPortFetchingGitHubsTarballIsSaid(t *testing.T) {
 	found := Assess(Input{Port: tarball, Base: tarball})
 	var said []model.UpstreamChange
 	for _, change := range found.Changes {
-		if change.Rule == GitHubTarball {
+		if change.Rule == SourceChoice {
 			said = append(said, change)
 		}
 	}
@@ -510,7 +510,7 @@ func TestAPortFetchingGitHubsTarballIsSaid(t *testing.T) {
 	require.Contains(t, said[0].Message, "github.tarball_from releases")
 	archive := macports.PortInfo{Name: "jq", Options: map[string]string{"github.tarball_from": "archive"}}
 	for _, change := range Assess(Input{Port: archive, Base: archive}).Changes {
-		require.NotEqual(t, GitHubTarball, change.Rule)
+		require.NotEqual(t, SourceChoice, change.Rule)
 	}
 }
 

@@ -159,8 +159,8 @@ func (s *Service) refreshChecksums(ctx context.Context, request Request, input *
 }
 
 // declareSubportChecksums writes a checksums declaration in a subport's
-// block, where none it reads covers the archives it fetches, and refreshes
-// it: a declaration of placeholders, as create writes one, filled in as a
+// block, or at a main port's top, where none it reads covers the archives
+// it fetches, and refreshes it: a declaration of placeholders, as create writes one, filled in as a
 // refresh fills any. kb-old, a subport beside kb at an older version, was
 // refused, kb's declaration naming kb's archive (field testing on rc3).
 // Strict fidelity holds the edit to the subport's checksums; where the
@@ -168,7 +168,12 @@ func (s *Service) refreshChecksums(ctx context.Context, request Request, input *
 func (s *Service) declareSubportChecksums(ctx context.Context, request Request, input *sourceInput, undeclared *distfiles.Undeclared) (Result, error) {
 	result := Result{Target: input.target}
 	name := input.target.Name
+	// A main port that declares none, as a port moved off a Git clone by
+	// hand, has its own written at the Portfile's top the same way.
 	placeholders, ok := portfile.DeclareSubportChecksums(input.data, name, undeclared.Names)
+	if input.target.Subport == "" {
+		placeholders, ok = portfile.DeclareChecksums(input.data, undeclared.Names)
+	}
 	if !ok {
 		return result, undeclared
 	}
@@ -201,6 +206,7 @@ func (s *Service) declareSubportChecksums(ctx context.Context, request Request, 
 	if err := result.commitEdit(input, request, final.edit, report, "refresh checksums"); err != nil {
 		return result, err
 	}
+	result.ChecksumsDeclared = undeclared.Names
 	if input.scope != nil {
 		if result.Scope, err = macports.RebindReleaseScope(input.scope, final.after); err != nil {
 			return result, err

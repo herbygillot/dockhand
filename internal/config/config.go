@@ -67,7 +67,16 @@ type Update struct {
 	// switch each that answers over HTTPS, as --keep-http does for one
 	// command (the person's "keep_http", 2026-10-29).
 	KeepHTTP bool `toml:"keep_http"`
+	// Source is what a version update does about a GitHub port's source,
+	// as --source does for one update: choose (the default) a release's
+	// own file where one is the source, keep it as it is, or ask for
+	// releases or archive (the roadmap's "An update chooses a GitHub
+	// port's source").
+	Source string `toml:"source"`
 }
+
+// UpdateSources are [update] source's values, the default first.
+var UpdateSources = []string{"choose", "keep", "releases", "archive"}
 
 // Holds are what holds an update nobody looks over, bump's and serve's, for
 // a person's look, beside what its comparison finds: the hold list that
@@ -492,6 +501,7 @@ func Defaults() map[string]string {
 		"holds.majors":                   "hold",
 		"holds.allow":                    "(none)",
 		"update.keep_http":               "false",
+		"update.source":                  UpdateSources[0],
 		"serve.ship_to":                  DefaultShipTo,
 		"serve.outdated_at":              DefaultOutdatedAt,
 		"serve.submit_limit":             strconv.Itoa(DefaultSubmitLimit),
@@ -684,6 +694,9 @@ func parse(path, text string) (File, error) {
 				return File{}, fmt.Errorf("%s: %s.after: %q is not another port", path, key, after)
 			}
 		}
+	}
+	if f.Update.Source != "" && !slices.Contains(UpdateSources, f.Update.Source) {
+		return File{}, fmt.Errorf("%s: update.source: %q is not choose, keep, releases, or archive", path, f.Update.Source)
 	}
 	switch f.Submit.RerequestReview {
 	case "", "ask", "always", "never":

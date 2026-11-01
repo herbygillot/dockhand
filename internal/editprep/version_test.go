@@ -535,7 +535,7 @@ func TestAnUpdateMovesGitHubsTarballToTheArchive(t *testing.T) {
 		})
 		result, err := service.Prepare(t.Context(), request)
 		require.NoError(t, err, c.why)
-		require.Equal(t, c.moved, result.TarballMoved, c.why)
+		require.Equal(t, c.moved, result.SourceMoved != nil, c.why)
 		require.Equal(t, c.moved, strings.Contains(string(result.Files[0].After), "github.tarball_from archive"), c.why)
 		require.Contains(t, string(result.Files[0].After), "size 21", c.why)
 	}
