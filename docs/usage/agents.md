@@ -58,6 +58,12 @@ open or save the three exported paths before returning to this experiment.
 This isolates the work records and Git workspace. It does not create a new
 GitHub identity or a separate Tart installation. Commands still use the
 available credentials, build providers, and caches unless configured otherwise.
+
+dockhand plans on master as it fetches it from MacPorts, not on the scratch
+clone's own master, so a scratch run that replays an older tree also sets
+`DOCKHAND_UPSTREAM` to a repository whose master is that older commit, such as
+a bare clone sharing the scratch clone's objects; otherwise the plan reads
+today's Portfile.
 To build, follow `dockhand usage` and `dockhand usage configuration` for the
 provider you intend to use. `DOCKHAND_PULL_REQUESTS` selects a sandbox
 repository for testing publication; inspect `submit --plan` to confirm its
