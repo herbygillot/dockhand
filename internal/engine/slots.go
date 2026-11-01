@@ -17,12 +17,12 @@ import (
 
 // slotPoll is how often a check waiting for a provider's slot looks again:
 // two of the engine's polls, 2 seconds unless a test sets them.
-func (e *Engine) slotPoll() time.Duration { return 2 * e.pollInterval() }
+func (c *checkService) slotPoll() time.Duration { return 2 * c.poll }
 
 // capacity is how many checks a provider takes at once, its
 // providers.<name>.capacity (Capacity), 1 where it's unset.
-func (e *Engine) capacity(provider string) int {
-	return max(e.Capacity[provider], 1)
+func (c *checkService) capacity(provider string) int {
+	return max(c.capacities[provider], 1)
 }
 
 // awaitSlot waits, before a check runs here, until reserve takes its
@@ -31,31 +31,31 @@ func (e *Engine) capacity(provider string) int {
 // review's §9: the capacity governed serve alone). Where it waits, the
 // run's journal says so, once, with what fills each provider. A live
 // process that took the run meanwhile is a coord.HeldError.
-func (e *Engine) awaitSlot(ctx context.Context, session *coord.Session, id model.RunID) (model.Lease, error) {
-	run, err := e.Run(ctx, id)
+func (c *checkService) awaitSlot(ctx context.Context, session *coord.Session, id model.RunID) (model.Lease, error) {
+	run, err := c.run(ctx, id)
 	if err != nil {
 		return model.Lease{}, err
 	}
-	needs, err := e.RunProviders(ctx, run)
+	needs, err := c.RunProviders(ctx, run)
 	if err != nil {
 		return model.Lease{}, err
 	}
 	said := false
 	for {
-		lease, full, err := e.reserve(ctx, session, run, needs)
+		lease, full, err := c.reserve(ctx, session, run, needs)
 		if err != nil || len(full) == 0 {
 			return lease, err
 		}
 		if !said {
 			said = true
-			if err := e.sayHeld(ctx, session, run, full); err != nil {
+			if err := c.sayHeld(ctx, session, run, full); err != nil {
 				return model.Lease{}, err
 			}
 		}
 		select {
 		case <-ctx.Done():
 			return model.Lease{}, ctx.Err()
-		case <-time.After(e.slotPoll()):
+		case <-time.After(c.slotPoll()):
 		}
 	}
 }
@@ -69,15 +69,15 @@ func (e *Engine) awaitSlot(ctx context.Context, session *coord.Session, id model
 // didn't count serve's, nor serve's a batch's (Codex's review of
 // 275125ff, finding 4). Where one is full, nothing is taken, and full
 // says what fills each.
-func (e *Engine) reserve(ctx context.Context, session *coord.Session, run model.Run, needs []string) (model.Lease, map[string][]slotHolder, error) {
+func (c *checkService) reserve(ctx context.Context, session *coord.Session, run model.Run, needs []string) (model.Lease, map[string][]slotHolder, error) {
 	var lease model.Lease
 	var full map[string][]slotHolder
-	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+	err := c.store.Update(ctx, c.repository, func(tx store.Tx) error {
 		var err error
-		if full, err = e.fullProviders(tx, session, run.ID, needs); err != nil || len(full) > 0 {
+		if full, err = c.fullProviders(tx, session, run.ID, needs); err != nil || len(full) > 0 {
 			return err
 		}
-		lease, err = session.AcquireIn(tx, RunResource(run.ID))
+		lease, err = c.admit(tx, session, run.ID)
 		return err
 	})
 	return lease, full, err
@@ -93,7 +93,7 @@ type slotHolder struct {
 // fullProviders are the providers among needs whose capacity the checks
 // live processes hold fill, queued or running, with those checks; the run
 // itself doesn't count.
-func (e *Engine) fullProviders(r store.Reader, session *coord.Session, id model.RunID, needs []string) (map[string][]slotHolder, error) {
+func (c *checkService) fullProviders(r store.Reader, session *coord.Session, id model.RunID, needs []string) (map[string][]slotHolder, error) {
 	runs, err := r.Runs(store.RunFilter{States: []model.RunState{model.RunQueued, model.RunRunning}})
 	if err != nil {
 		return nil, err
@@ -120,7 +120,7 @@ func (e *Engine) fullProviders(r store.Reader, session *coord.Session, id model.
 	}
 	full := map[string][]slotHolder{}
 	for provider, others := range using {
-		if len(others) >= e.capacity(provider) {
+		if len(others) >= c.capacity(provider) {
 			full[provider] = others
 		}
 	}
@@ -134,7 +134,7 @@ func (e *Engine) fullProviders(r store.Reader, session *coord.Session, id model.
 // 2 hours)"; Tart's is the Mac's VMs, which no setting names.
 // "check-616 is using it" said nothing of whose it was (the bazel and
 // exiv2 sessions' notes, 2026-10-24).
-func slotWords(full map[string][]slotHolder, e *Engine) []string {
+func (c *checkService) slotWords(full map[string][]slotHolder) []string {
 	var words []string
 	for _, provider := range slices.Sorted(maps.Keys(full)) {
 		var names []string
@@ -142,16 +142,16 @@ func slotWords(full map[string][]slotHolder, e *Engine) []string {
 			name := held.run.Name()
 			if p := held.process; p != nil {
 				ran := "under a minute"
-				if age := e.now().Sub(held.run.CreatedAt); age >= time.Minute {
+				if age := c.now().Sub(held.run.CreatedAt); age >= time.Minute {
 					ran = AgeWords(age.Round(time.Minute))
 				}
 				name += fmt.Sprintf(" (a %s dockhand, pid %d, %s, for %s)", p.Kind, p.PID, p.Version, ran)
 			}
 			names = append(names, name)
 		}
-		limit, it := fmt.Sprintf("providers.%s.capacity is %d", provider, e.capacity(provider)), "it"
+		limit, it := fmt.Sprintf("providers.%s.capacity is %d", provider, c.capacity(provider)), "it"
 		if provider == buildenv.Tart {
-			limit, it = fmt.Sprintf("Tart takes as many checks as the Mac runs VMs, %d", e.capacity(provider)), "them"
+			limit, it = fmt.Sprintf("Tart takes as many checks as the Mac runs VMs, %d", c.capacity(provider)), "them"
 		}
 		words = append(words, fmt.Sprintf("%s, and %s %s using %s", limit, prose.And(names), map[bool]string{true: "is", false: "are"}[len(names) == 1], it))
 	}
@@ -165,8 +165,8 @@ func slotWords(full map[string][]slotHolder, e *Engine) []string {
 // another check builds in is said as local says it, "waiting for
 // /opt/local, held by check-786"; any other provider as "check-820 waits
 // for a slot on tart: …", with each holder's process.
-func (e *Engine) sayHeld(ctx context.Context, session *coord.Session, run model.Run, full map[string][]slotHolder) error {
-	return e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+func (c *checkService) sayHeld(ctx context.Context, session *coord.Session, run model.Run, full map[string][]slotHolder) error {
+	return c.store.Update(ctx, c.repository, func(tx store.Tx) error {
 		own, err := tx.Plan(run.Plan)
 		if err != nil {
 			return err
@@ -184,7 +184,7 @@ func (e *Engine) sayHeld(ctx context.Context, session *coord.Session, run model.
 			}
 		}
 		if len(words) == 0 {
-			words = []string{fmt.Sprintf("waits for a slot on %s: %s", prose.And(slices.Sorted(maps.Keys(full))), strings.Join(slotWords(full, e), "; "))}
+			words = []string{fmt.Sprintf("waits for a slot on %s: %s", prose.And(slices.Sorted(maps.Keys(full))), strings.Join(c.slotWords(full), "; "))}
 		}
 		_, err = session.Emit(tx, model.Event{Branch: run.Branch, Run: run.ID, Kind: model.EventWaiting, Level: model.LevelInfo, Message: run.Name() + " " + strings.Join(words, "; ")})
 		return err

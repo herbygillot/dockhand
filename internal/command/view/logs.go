@@ -100,6 +100,9 @@ func WriteLogs(out io.Writer, places config.Places, logs engine.RunLogs, stopped
 	if !stopped {
 		fmt.Fprintln(out)
 	}
+	if words := WaitWords(logs.Run); words != "" {
+		fmt.Fprintf(out, "  %s.\n", prose.Sentence(words))
+	}
 	if len(logs.Executions) == 0 && logs.Run.State.Terminal() {
 		fmt.Fprintln(out, "  No provider runs are recorded. The check either never reached a provider, or cleanup removed the provider records after the branch ended (cleanup.after).")
 	}

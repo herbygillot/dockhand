@@ -334,9 +334,15 @@ func TestRunsAreNumberedImmutableAndMoveForward(t *testing.T) {
 	moved.Plan = "plan_other"
 	require.ErrorIs(t, f.update(t, func(tx store.Tx) error { return tx.UpdateRun(moved) }), store.ErrConflict, "what a run asks never changes")
 
+	// Its start is when it took its slot, and stands once recorded
+	// (schema 53).
+	started := at.Add(time.Minute)
 	running := first
-	running.State = model.RunRunning
+	running.State, running.StartedAt = model.RunRunning, &started
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateRun(running) }))
+	restarted := running
+	restarted.StartedAt = new(at.Add(2 * time.Minute))
+	require.ErrorIs(t, f.update(t, func(tx store.Tx) error { return tx.UpdateRun(restarted) }), store.ErrConflict, "a start stands once recorded")
 	finished := at.Add(time.Hour)
 	passed := running
 	passed.State, passed.FinishedAt = model.RunPassed, &finished
@@ -349,6 +355,9 @@ func TestRunsAreNumberedImmutableAndMoveForward(t *testing.T) {
 		got, err := rd.RunNumbered(1)
 		require.NoError(t, err)
 		require.Equal(t, passed, got)
+		waited, ok := got.Waited()
+		require.True(t, ok)
+		require.Equal(t, time.Minute, waited)
 		queued, err := rd.Runs(store.RunFilter{States: []model.RunState{model.RunQueued}})
 		require.NoError(t, err)
 		require.Len(t, queued, 1)
@@ -641,6 +650,23 @@ INSERT INTO results(repository_id, execution_id, target_id, outcome, phase, test
        ('repo_1','ex_1','jq','failed','install','none','jq.log','',7,'','no space','',''),
        ('repo_1','ex_2','jq','not-run','','none','','',7,'','','','');
 `
+
+// A run recorded before schema 53 kept no start, and has none after it:
+// how long it waited isn't known, so nothing says it.
+func TestARunBeforeSchema53HasNoStart(t *testing.T) {
+	t.Parallel()
+	s, err := Open(t.Context(), schemaAt(t, 52, schema23Records), Options{})
+	require.NoError(t, err)
+	defer s.Close()
+	require.NoError(t, s.View(t.Context(), "repo_1", func(r store.Reader) error {
+		run, err := r.Run("run_1")
+		require.NoError(t, err)
+		require.Nil(t, run.StartedAt)
+		_, ok := run.Waited()
+		require.False(t, ok)
+		return nil
+	}))
+}
 
 // Schema 24 rebuilds executions and results; what they held comes
 // through, in the order it was made, with the rules the tables kept.

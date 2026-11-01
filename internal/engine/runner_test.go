@@ -744,7 +744,7 @@ func TestServeTakesPeoplesChecksFirst(t *testing.T) {
 			if err := tx.AddPlan(plan); err != nil {
 				return err
 			}
-			run, err = e.queue(tx, model.Run{Branch: started.ID, Revision: revision.ID, Plan: plan.ID, Origin: origin}, "queued")
+			run, err = e.checks().queue(tx, model.Run{Branch: started.ID, Revision: revision.ID, Plan: plan.ID, Origin: origin}, "queued")
 			return err
 		}))
 		return run
@@ -1468,7 +1468,7 @@ func TestABranchHasOneCheckAtATime(t *testing.T) {
 	require.False(t, active.SameRevision)
 	require.Regexp(t, `^check-1 is queued for snapshot \d+, and a branch has one check at a time; dockhand cancel check-1 stops it, keeping what it finished$`, err.Error())
 
-	baseline, err := e.enqueue(t.Context(), branch, mustPlan(t, e, first), model.OriginPerson, first.ID)
+	baseline, err := e.checks().enqueue(t.Context(), branch, mustPlan(t, e, first), model.OriginPerson, first.ID)
 	require.NoError(t, err, "a baseline looks beside the check it explains")
 	require.Equal(t, first.ID, baseline.BaselineOf)
 
@@ -1647,7 +1647,7 @@ func TestABaselineStandsWhereNothingItReadChanged(t *testing.T) {
 	// A baseline of it, built at the tree standing for master's here.
 	plan, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: plan.Environments})
 	require.NoError(t, err)
-	queued, err := e.enqueue(t.Context(), branch, plan, model.OriginPerson, failed.ID)
+	queued, err := e.checks().enqueue(t.Context(), branch, plan, model.OriginPerson, failed.ID)
 	require.NoError(t, err)
 	baseline, err := e.Drive(t.Context(), session(t, e), queued.ID)
 	require.NoError(t, err)

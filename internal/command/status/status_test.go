@@ -192,7 +192,14 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 
 	out, _, err = cmdtest.Dockhand(t, "logs", "check-3")
 	require.NoError(t, err)
-	require.Regexp(t, `check-3 · passed\n  command, attempt 1, run command_[a-z0-9]{16}: finished\n    jq passed  ~/\.dockhand/logs/check-3/command-1/command\.log\.gz\n`, out, "kept compressed once the check ended (D6)")
+	// Beside its queued and finished times, how long it waited for its
+	// slot, which was read only from its finish less its took (rc1's
+	// G13); the engine's clock here is the wall's, so no wait to speak of.
+	require.Regexp(t, `check-3 · passed\n  Queued \d{4}-\d\d-\d\d \d\d:\d\d:\d\d, waited \d+s for its slot, finished \d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\n  command, attempt 1, run command_[a-z0-9]{16}: finished\n    jq passed  ~/\.dockhand/logs/check-3/command-1/command\.log\.gz\n`, out, "kept compressed once the check ended (D6)")
+	logged, err := cmdtest.JSONOf(t, "logs", "check-3")
+	require.NoError(t, err)
+	require.NotEmpty(t, cmdtest.Dig(t, logged.Result, "run", "started_at"))
+	require.IsType(t, float64(0), cmdtest.Dig(t, logged.Result, "run", "waited_seconds"))
 	here, _, err := cmdtest.Dockhand(t, "logs")
 	require.NoError(t, err)
 	require.Equal(t, out, here, "in the branch's worktree, logs is its latest check's")
@@ -200,7 +207,9 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	id := regexp.MustCompile(`command_[a-z0-9]{16}`).FindString(out)
 	out, _, err = cmdtest.Dockhand(t, "logs", id)
 	require.NoError(t, err)
-	require.Contains(t, out, "check-3 · passed\n  command, attempt 1, run "+id+": finished\n")
+	require.Contains(t, out, "check-3 · passed\n")
+	require.Contains(t, out, "for its slot, finished ")
+	require.Contains(t, out, "\n  command, attempt 1, run "+id+": finished\n")
 	out, _, err = cmdtest.Dockhand(t, "logs", id, "jq")
 	require.NoError(t, err)
 	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("building from\n  "))

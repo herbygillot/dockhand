@@ -36,8 +36,8 @@ func RunResource(id model.RunID) string { return "run:" + string(id) }
 // is immutable from here; editing the branch never changes what it means.
 // A branch has one check at a time (decision 29), so it refuses while
 // another is queued or running (ActiveRunError).
-func (e *Engine) Enqueue(ctx context.Context, branch model.Branch, plan model.Plan, origin model.Origin) (model.Run, error) {
-	return e.enqueue(ctx, branch, plan, origin, "")
+func (c *checkService) Enqueue(ctx context.Context, branch model.Branch, plan model.Plan, origin model.Origin) (model.Run, error) {
+	return c.enqueue(ctx, branch, plan, origin, "")
 }
 
 // ActiveCheck is the branch's one check queued or running, beside which a
@@ -45,19 +45,25 @@ func (e *Engine) Enqueue(ctx context.Context, branch model.Branch, plan model.Pl
 // every run that holds the branch, which replacing it stops. A baseline
 // looks beside the check it explains, and a run asked to stop is on its way
 // out: neither is the branch's one check. Stopped is judged with session.
-func (e *Engine) ActiveCheck(ctx context.Context, session *coord.Session, branch model.Branch, revision model.Revision) (*ActiveRunError, []model.Run, error) {
-	runs, err := e.Runs(ctx, store.RunFilter{Branch: branch.ID, States: []model.RunState{model.RunQueued, model.RunRunning}})
-	if err != nil {
+func (c *checkService) ActiveCheck(ctx context.Context, session *coord.Session, branch model.Branch, revision model.Revision) (*ActiveRunError, []model.Run, error) {
+	var runs []model.Run
+	var active *ActiveRunError
+	if err := c.store.View(ctx, c.repository, func(r store.Reader) error {
+		var err error
+		if runs, err = r.Runs(store.RunFilter{Branch: branch.ID, States: []model.RunState{model.RunQueued, model.RunRunning}}); err != nil {
+			return err
+		}
+		runs = slices.DeleteFunc(runs, func(run model.Run) bool { return !run.BranchCheck() })
+		if len(runs) == 0 {
+			return nil
+		}
+		active = &ActiveRunError{Run: runs[0], SameRevision: runs[0].Revision == revision.ID}
+		active.Checking, err = r.Revision(runs[0].Revision)
+		return err
+	}); err != nil || active == nil {
 		return nil, nil, err
 	}
-	runs = slices.DeleteFunc(runs, func(run model.Run) bool { return !run.BranchCheck() })
-	if len(runs) == 0 {
-		return nil, nil, nil
-	}
-	active := &ActiveRunError{Run: runs[0], SameRevision: runs[0].Revision == revision.ID}
-	if active.Checking, err = e.Revision(ctx, runs[0].Revision); err != nil {
-		return nil, nil, err
-	}
+	var err error
 	if active.Stopped, err = Stopped(ctx, session, runs[0]); err != nil {
 		return nil, nil, err
 	}
@@ -68,10 +74,10 @@ func (e *Engine) ActiveCheck(ctx context.Context, session *coord.Session, branch
 // a queued one canceled at once, a running one asked to stop, which its
 // process does at its next step. It returns each as it is after
 // (Enqueue(Replace), the command package review's row 7).
-func (e *Engine) Replace(ctx context.Context, session *coord.Session, runs []model.Run) ([]model.Run, error) {
+func (c *checkService) Replace(ctx context.Context, session *coord.Session, runs []model.Run) ([]model.Run, error) {
 	var replaced []model.Run
 	for _, run := range runs {
-		after, err := e.RequestCancel(ctx, session, run.ID)
+		after, err := c.RequestCancel(ctx, session, run.ID)
 		if err != nil {
 			return replaced, err
 		}
@@ -80,14 +86,14 @@ func (e *Engine) Replace(ctx context.Context, session *coord.Session, runs []mod
 	return replaced, nil
 }
 
-func (e *Engine) enqueue(ctx context.Context, branch model.Branch, plan model.Plan, origin model.Origin, baselineOf model.RunID) (model.Run, error) {
+func (c *checkService) enqueue(ctx context.Context, branch model.Branch, plan model.Plan, origin model.Origin, baselineOf model.RunID) (model.Run, error) {
 	var run model.Run
-	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+	err := c.store.Update(ctx, c.repository, func(tx store.Tx) error {
 		if err := tx.AddPlan(plan); err != nil {
 			return err
 		}
 		var err error
-		run, err = e.queue(tx, model.Run{Branch: branch.ID, Revision: plan.Revision, Plan: plan.ID, Origin: origin, BaselineOf: baselineOf}, "queued for "+branch.ShortName())
+		run, err = c.queue(tx, model.Run{Branch: branch.ID, Revision: plan.Revision, Plan: plan.ID, Origin: origin, BaselineOf: baselineOf}, "queued for "+branch.ShortName())
 		return err
 	})
 	return run, err
@@ -97,7 +103,7 @@ func (e *Engine) enqueue(ctx context.Context, branch model.Branch, plan model.Pl
 // journal. A branch has one check at a time (decision 29): a run that isn't
 // a baseline, which looks beside the check it explains, is refused while
 // another of the branch's is queued or running and not asked to stop.
-func (e *Engine) queue(tx store.Tx, run model.Run, why string) (model.Run, error) {
+func (c *checkService) queue(tx store.Tx, run model.Run, why string) (model.Run, error) {
 	if run.BranchCheck() {
 		active, err := tx.Runs(store.RunFilter{Branch: run.Branch, States: []model.RunState{model.RunQueued, model.RunRunning}})
 		if err != nil {
@@ -118,12 +124,28 @@ func (e *Engine) queue(tx store.Tx, run model.Run, why string) (model.Run, error
 	if err != nil {
 		return run, err
 	}
-	run.ID, run.Number, run.State, run.CreatedAt = model.RunID(store.NewID("run")), number, model.RunQueued, e.now()
+	run.ID, run.Number, run.State, run.CreatedAt = model.RunID(store.NewID("run")), number, model.RunQueued, c.now()
 	if err := tx.AddRun(run); err != nil {
 		return run, err
 	}
 	_, err = tx.AppendEvent(model.Event{At: run.CreatedAt, Branch: run.Branch, Run: run.ID, Kind: model.EventRunState, Level: model.LevelInfo,
 		Message: run.Name() + " " + why})
+	return run, err
+}
+
+// Retry queues a run's exact request again: the same revision and plan,
+// whatever the branch holds now, as the branch's one check (queue). Until
+// per-target reuse lands, the whole plan is built again.
+func (c *checkService) Retry(ctx context.Context, previous model.Run) (model.Run, error) {
+	if !previous.State.Terminal() {
+		return model.Run{}, fmt.Errorf("%s is still %s; dockhand wait %s follows it", previous.Name(), previous.State, previous.Name())
+	}
+	var run model.Run
+	err := c.store.Update(ctx, c.repository, func(tx store.Tx) error {
+		var err error
+		run, err = c.queue(tx, model.Run{Branch: previous.Branch, Revision: previous.Revision, Plan: previous.Plan, Origin: model.OriginPerson, BaselineOf: previous.BaselineOf}, "queued, retrying "+previous.Name())
+		return err
+	})
 	return run, err
 }
 
@@ -161,9 +183,9 @@ func (a *ActiveRunError) Error() string {
 // RequestCancel records that a run should stop. A queued run is canceled
 // at once; a running one is stopped by whoever holds it, or by this
 // session when no one does.
-func (e *Engine) RequestCancel(ctx context.Context, session *coord.Session, id model.RunID) (model.Run, error) {
+func (c *checkService) RequestCancel(ctx context.Context, session *coord.Session, id model.RunID) (model.Run, error) {
 	var run model.Run
-	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+	err := c.store.Update(ctx, c.repository, func(tx store.Tx) error {
 		var err error
 		if run, err = tx.Run(id); err != nil {
 			return err
@@ -171,7 +193,7 @@ func (e *Engine) RequestCancel(ctx context.Context, session *coord.Session, id m
 		if run.State.Terminal() || run.CancelRequested != nil {
 			return nil
 		}
-		now := e.now()
+		now := c.now()
 		run.CancelRequested = &now
 		if run.State == model.RunQueued {
 			run.State, run.FinishedAt, run.Detail = model.RunCanceled, &now, "canceled before it started"
@@ -191,10 +213,10 @@ func (e *Engine) RequestCancel(ctx context.Context, session *coord.Session, id m
 		return run, err
 	}
 	defer session.Release(context.WithoutCancel(ctx), lease)
-	return e.finishCanceled(ctx, session, lease, id)
+	return c.finishCanceled(ctx, session, lease, id)
 }
 
-func (e *Engine) finishCanceled(ctx context.Context, session *coord.Session, lease model.Lease, id model.RunID) (model.Run, error) {
+func (c *checkService) finishCanceled(ctx context.Context, session *coord.Session, lease model.Lease, id model.RunID) (model.Run, error) {
 	var run model.Run
 	err := session.Fenced(ctx, lease, func(tx store.Tx) error {
 		var err error
@@ -205,7 +227,7 @@ func (e *Engine) finishCanceled(ctx context.Context, session *coord.Session, lea
 		if err != nil {
 			return err
 		}
-		now := e.now()
+		now := c.now()
 		for _, execution := range executions {
 			if !execution.State.Terminal() {
 				execution.State, execution.FinishedAt, execution.Detail = model.ExecutionCanceled, &now, "canceled"
@@ -236,36 +258,41 @@ func (e *Engine) finishCanceled(ctx context.Context, session *coord.Session, lea
 // model.MaxAttempts without repeating any verdict, and a cancel request
 // applied at the next step. Canceling ctx stops the run the same way and
 // keeps what finished.
-func (e *Engine) Drive(ctx context.Context, session *coord.Session, id model.RunID) (model.Run, error) {
-	return e.drive(ctx, session, id, false)
+func (c *checkService) Drive(ctx context.Context, session *coord.Session, id model.RunID) (model.Run, error) {
+	return c.drive(ctx, session, id, false)
 }
 
 // Resume drives a run as Drive does, except that when ctx ends without a
 // cancel request, the run is left running for the next driver: serve
 // stopping, or its Mac restarting, loses nothing (Design v3 §11). The
 // execution it interrupted counts as one attempt.
-func (e *Engine) Resume(ctx context.Context, session *coord.Session, id model.RunID) (model.Run, error) {
-	return e.drive(ctx, session, id, true)
+func (c *checkService) Resume(ctx context.Context, session *coord.Session, id model.RunID) (model.Run, error) {
+	return c.drive(ctx, session, id, true)
 }
 
-func (e *Engine) drive(ctx context.Context, session *coord.Session, id model.RunID, resumable bool) (model.Run, error) {
-	lease, err := session.Acquire(ctx, RunResource(id))
+func (c *checkService) drive(ctx context.Context, session *coord.Session, id model.RunID, resumable bool) (model.Run, error) {
+	var lease model.Lease
+	err := c.store.Update(ctx, c.repository, func(tx store.Tx) error {
+		var err error
+		lease, err = c.admit(tx, session, id)
+		return err
+	})
 	if err != nil {
 		return model.Run{}, err
 	}
-	return e.driveLeased(ctx, session, lease, id, resumable)
+	return c.driveLeased(ctx, session, lease, id, resumable)
 }
 
 // driveLeased drives a run whose lease the session took, as its slots
 // (reserve), and releases it when the run's driving ends.
-func (e *Engine) driveLeased(ctx context.Context, session *coord.Session, lease model.Lease, id model.RunID, resumable bool) (model.Run, error) {
+func (c *checkService) driveLeased(ctx context.Context, session *coord.Session, lease model.Lease, id model.RunID, resumable bool) (model.Run, error) {
 	defer session.Release(context.WithoutCancel(ctx), lease)
-	d := &driver{e: e, session: session, lease: lease, resumable: resumable}
+	d := &driver{c: c, session: session, lease: lease, resumable: resumable}
 	return d.drive(ctx, id)
 }
 
 type driver struct {
-	e       *Engine
+	c       *checkService
 	session *coord.Session
 	lease   model.Lease
 	run     model.Run
@@ -298,7 +325,7 @@ func (d *driver) fenced(ctx context.Context, fn func(store.Tx) error) error {
 // anotherCanReuse reports whether another environment of the check has an
 // identity, which reuse needs.
 func (d *driver) anotherCanReuse(ctx context.Context, environment model.Environment) bool {
-	for other, identity := range d.e.identitiesNow(ctx, d.plan.Environments) {
+	for other, identity := range d.c.work.identitiesNow(ctx, d.plan.Environments) {
 		if other != environment && identity != "" {
 			return true
 		}
@@ -314,9 +341,9 @@ func (d *driver) emit(ctx context.Context, kind model.EventKind, message string)
 }
 
 func (d *driver) drive(ctx context.Context, id model.RunID) (model.Run, error) {
-	e := d.e
+	c := d.c
 	var revision model.Revision
-	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+	if err := c.store.View(ctx, c.repository, func(r store.Reader) error {
 		var err error
 		if d.run, err = r.Run(id); err != nil {
 			return err
@@ -333,7 +360,7 @@ func (d *driver) drive(ctx context.Context, id model.RunID) (model.Run, error) {
 		return d.run, nil
 	}
 	if d.run.CancelRequested != nil {
-		return e.finishCanceled(ctx, d.session, d.lease, id)
+		return c.finishCanceled(ctx, d.session, d.lease, id)
 	}
 	if d.run.State == model.RunQueued {
 		if err := d.fenced(ctx, func(tx store.Tx) error {
@@ -353,7 +380,7 @@ func (d *driver) drive(ctx context.Context, id model.RunID) (model.Run, error) {
 	defer stop()
 	go d.watchCancel(running, stop)
 
-	commit, err := e.revisionCommit(ctx, revision)
+	commit, err := c.revisionCommit(ctx, revision)
 	if err != nil {
 		return d.run, err
 	}
@@ -364,7 +391,7 @@ func (d *driver) drive(ctx context.Context, id model.RunID) (model.Run, error) {
 	var names []string
 	queues := map[string][]model.Environment{}
 	for _, environment := range d.plan.Environments {
-		if _, ok := e.Providers[environment.Provider]; !ok {
+		if _, ok := c.providers[environment.Provider]; !ok {
 			d.problem(fmt.Sprintf("no provider %q is set up here", environment.Provider))
 			continue
 		}
@@ -375,7 +402,7 @@ func (d *driver) drive(ctx context.Context, id model.RunID) (model.Run, error) {
 	}
 	group, together := errgroup.WithContext(running)
 	for _, name := range names {
-		provider, queue := e.Providers[name], queues[name]
+		provider, queue := c.providers[name], queues[name]
 		// A provider whose one run builds all its environments gets them
 		// together (buildenv.MatrixProvider).
 		if matrix, ok := provider.(buildenv.MatrixProvider); ok && matrix.Matrix() {
@@ -408,16 +435,16 @@ func (d *driver) drive(ctx context.Context, id model.RunID) (model.Run, error) {
 	}
 	if running.Err() != nil {
 		if d.stopped() {
-			return e.Run(context.WithoutCancel(ctx), id)
+			return c.run(context.WithoutCancel(ctx), id)
 		}
 		// An interrupt cancels ctx too; the run is still settled.
-		return e.finishCanceled(context.WithoutCancel(ctx), d.session, d.lease, id)
+		return c.finishCanceled(context.WithoutCancel(ctx), d.session, d.lease, id)
 	}
 	// Beside the build, what upstream's change means for each port it
 	// changes is collected where it isn't recorded, for the submission
 	// that follows (the assessment design, D). It never fails the check:
 	// what it couldn't do, its assessment says.
-	if _, err := e.revisionAssessments(ctx, d.run.Branch, revision.Source.Base, revision.Source.Tree, true); err != nil {
+	if _, err := c.work.revisionAssessments(ctx, d.run.Branch, revision.Source.Base, revision.Source.Tree, true); err != nil {
 		d.emit(ctx, model.EventProgress, "upstream's change couldn't be assessed: "+err.Error())
 	}
 	return d.finish(context.WithoutCancel(ctx))
@@ -429,14 +456,14 @@ func (d *driver) stopped() bool { return d.resumable && !d.canceled.Load() }
 
 // watchCancel polls the run for a cancel request.
 func (d *driver) watchCancel(ctx context.Context, stop context.CancelFunc) {
-	ticker := time.NewTicker(d.e.pollInterval())
+	ticker := time.NewTicker(d.c.poll)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			_ = d.e.Store.View(ctx, d.e.Repository, func(r store.Reader) error {
+			_ = d.c.store.View(ctx, d.c.repository, func(r store.Reader) error {
 				run, err := r.Run(d.run.ID)
 				if err == nil && run.CancelRequested != nil {
 					d.canceled.Store(true)
@@ -457,7 +484,7 @@ func (e *Engine) pollInterval() time.Duration {
 
 // environment runs the guest executions one environment needs.
 func (d *driver) environment(ctx context.Context, provider buildenv.Provider, environment model.Environment, revision model.Revision, commit string) error {
-	e := d.e
+	c := d.c
 	// What the work tells a person as it goes is the run's to keep, as its
 	// provider's progress is: whoever follows the run sees it, not only the
 	// terminal driving it, and staging the index a guest takes can run for
@@ -474,7 +501,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 	for {
 		var executions []model.GuestExecution
 		var results map[model.TargetID]model.TargetResult
-		if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		if err := c.store.View(ctx, c.repository, func(r store.Reader) error {
 			// The check's records in one read (the SQL study's O2).
 			check, err := r.Check(d.run.ID)
 			if err != nil {
@@ -514,7 +541,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		// compares earlier builds' with it, and the execution records it as
 		// it is when the execution begins: evidence compares it with the
 		// environment's identity whenever it is judged (Counts).
-		identity, err := e.identityNow(ctx, environment)
+		identity, err := c.work.identityNow(ctx, environment)
 		if err != nil {
 			// One that can't be read isn't recorded as none, which a
 			// provider that can't say records, and which evidence would
@@ -561,7 +588,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		// A provider run's ID is unique, and named for its provider:
 		// tart_7y62p4sigena6xlr. The pull request names it, and dockhand
 		// logs finds its evidence by it.
-		execution := model.GuestExecution{ID: model.ExecutionID(store.NewID(environment.Provider)), Run: d.run.ID, Environment: environment, Identity: identity, Attempt: attempt + 1, State: model.ExecutionWaiting, CreatedAt: e.now()}
+		execution := model.GuestExecution{ID: model.ExecutionID(store.NewID(environment.Provider)), Run: d.run.ID, Environment: environment, Identity: identity, Attempt: attempt + 1, State: model.ExecutionWaiting, CreatedAt: c.now()}
 		if err := d.fenced(ctx, func(tx store.Tx) error {
 			if err := tx.AddExecution(execution); err != nil {
 				return err
@@ -630,7 +657,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			build.installs = append(build.installs, dependencies...)
 		}
 		job := buildenv.Job{Run: d.run, Execution: execution, Revision: revision, Plan: d.plan, Environment: environment, Targets: building, Commit: commit, Installs: build.installs,
-			Directory: filepath.Join(e.LogDirectory(), d.run.Name(), fmt.Sprintf("%s-%d", environmentSlug(environment), execution.Attempt))}
+			Directory: filepath.Join(c.logs, d.run.Name(), fmt.Sprintf("%s-%d", environmentSlug(environment), execution.Attempt))}
 		stopWatching := watchStalls(ctx, build, job.Directory)
 		err = provider.Execute(ctx, job, build)
 		stopWatching()
@@ -703,7 +730,7 @@ func (d *driver) sayEstimate(ctx context.Context, environment model.Environment,
 	defer cancel()
 	plan := d.plan
 	plan.Environments = []model.Environment{environment}
-	for _, estimate := range d.e.InstallEstimates(ctx, plan, source, true) {
+	for _, estimate := range d.c.work.InstallEstimates(ctx, plan, source, true) {
 		if ctx.Err() == nil {
 			d.emit(ctx, model.EventProgress, DescribeEnvironment(environment)+": "+estimate.Words())
 		}
@@ -753,7 +780,7 @@ type matrixCell struct {
 // records what no earlier build reads, so nothing is reused, and installs
 // no archives.
 func (d *driver) matrix(ctx context.Context, provider buildenv.Provider, environments []model.Environment, revision model.Revision, commit string) error {
-	e := d.e
+	c := d.c
 	kept := ctx
 	ctx = progress.Keep(progress.Within(ctx, provider.Name()), func(update progress.Update) {
 		if update.Level == progress.Info {
@@ -765,7 +792,7 @@ func (d *driver) matrix(ctx context.Context, provider buildenv.Provider, environ
 	}
 	for {
 		var check store.Check
-		if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		if err := c.store.View(ctx, c.repository, func(r store.Reader) error {
 			var err error
 			check, err = r.Check(d.run.ID)
 			return err
@@ -804,7 +831,7 @@ func (d *driver) matrix(ctx context.Context, provider buildenv.Provider, environ
 		var job buildenv.Job
 		attempt := 0
 		for _, cell := range cells {
-			execution := model.GuestExecution{ID: model.ExecutionID(store.NewID(cell.environment.Provider)), Run: d.run.ID, Environment: cell.environment, Attempt: cell.attempt + 1, State: model.ExecutionWaiting, CreatedAt: e.now()}
+			execution := model.GuestExecution{ID: model.ExecutionID(store.NewID(cell.environment.Provider)), Run: d.run.ID, Environment: cell.environment, Attempt: cell.attempt + 1, State: model.ExecutionWaiting, CreatedAt: c.now()}
 			if err := d.fenced(ctx, func(tx store.Tx) error {
 				if err := tx.AddExecution(execution); err != nil {
 					return err
@@ -827,7 +854,7 @@ func (d *driver) matrix(ctx context.Context, provider buildenv.Provider, environ
 		failpoint.Hit("check.running")
 		first := job.Matrix[0]
 		job.Run, job.Execution, job.Revision, job.Plan, job.Environment, job.Targets, job.Commit = d.run, first.Execution, revision, d.plan, first.Environment, first.Targets, commit
-		job.Directory = filepath.Join(e.LogDirectory(), d.run.Name(), fmt.Sprintf("%s-%d", provider.Name(), attempt))
+		job.Directory = filepath.Join(c.logs, d.run.Name(), fmt.Sprintf("%s-%d", provider.Name(), attempt))
 		run := &matrixBuild{build: cells[0].build, name: provider.Name(), cells: cells}
 		stopWatching := watchStalls(ctx, cells[0].build, job.Directory)
 		err := provider.Execute(ctx, job, run)
@@ -918,7 +945,7 @@ func (m *matrixBuild) Refer(ref string) error {
 // unreadIdentity records an attempt that ended before it began, since what
 // the environment is couldn't be read.
 func (d *driver) unreadIdentity(ctx context.Context, environment model.Environment, attempt int, cause error) error {
-	execution := model.GuestExecution{ID: model.ExecutionID(store.NewID(environment.Provider)), Run: d.run.ID, Environment: environment, Attempt: attempt + 1, State: model.ExecutionWaiting, CreatedAt: d.e.now()}
+	execution := model.GuestExecution{ID: model.ExecutionID(store.NewID(environment.Provider)), Run: d.run.ID, Environment: environment, Attempt: attempt + 1, State: model.ExecutionWaiting, CreatedAt: d.c.now()}
 	if err := d.fenced(ctx, func(tx store.Tx) error { return tx.AddExecution(execution) }); err != nil {
 		return err
 	}
@@ -928,7 +955,7 @@ func (d *driver) unreadIdentity(ctx context.Context, environment model.Environme
 }
 
 func (d *driver) endExecution(ctx context.Context, execution model.GuestExecution, state model.ExecutionState, detail string) error {
-	now := d.e.now()
+	now := d.c.now()
 	execution.State, execution.FinishedAt, execution.Detail = state, &now, detail
 	return d.fenced(ctx, func(tx store.Tx) error { return tx.UpdateExecution(execution) })
 }
@@ -936,7 +963,7 @@ func (d *driver) endExecution(ctx context.Context, execution model.GuestExecutio
 // finish settles the run's state from its results.
 func (d *driver) finish(ctx context.Context) (model.Run, error) {
 	var evidence Evidence
-	err := d.e.Store.View(ctx, d.e.Repository, func(r store.Reader) error {
+	err := d.c.store.View(ctx, d.c.repository, func(r store.Reader) error {
 		var err error
 		evidence, err = runEvidence(r, d.run)
 		return err
@@ -959,7 +986,7 @@ func (d *driver) finish(ctx context.Context) (model.Run, error) {
 				}
 			case model.OutcomeUnmet:
 				problem := fmt.Sprintf("%s isn't built on %s: it %s", name, DescribeEnvironment(d.plan.Environments[i]), UnmetWords(result.Unmet))
-				if remedy := d.e.Remedy(result.Unmet); remedy != "" {
+				if remedy := d.c.work.Remedy(result.Unmet); remedy != "" {
 					problem += "; " + remedy
 				}
 				d.problems = append(d.problems, problem)
@@ -982,7 +1009,7 @@ func (d *driver) finish(ctx context.Context) (model.Run, error) {
 		detail = strings.Join(d.problems, "; ")
 	}
 	err = d.fenced(ctx, func(tx store.Tx) error {
-		now := d.e.now()
+		now := d.c.now()
 		d.run.State, d.run.FinishedAt, d.run.Detail = state, &now, detail
 		if err := tx.UpdateRun(d.run); err != nil {
 			return err
@@ -993,12 +1020,12 @@ func (d *driver) finish(ctx context.Context) (model.Run, error) {
 	// A check that failed queues the baseline it points to, where
 	// check.baseline asks, whichever path ran it (Then's item 4).
 	if err == nil && state == model.RunFailed {
-		d.e.continueWithBaseline(ctx, d.run)
+		d.c.work.continueWithBaseline(ctx, d.run)
 	}
 	if err == nil {
 		// Its logs are kept compressed from now on (D6); one that can't be
 		// is said, and cleanup tries again.
-		if _, compressErr := buildlog.CompressAll(filepath.Join(d.e.LogDirectory(), d.run.Name())); compressErr != nil {
+		if _, compressErr := buildlog.CompressAll(filepath.Join(d.c.logs, d.run.Name())); compressErr != nil {
 			d.emit(ctx, model.EventProgress, fmt.Sprintf("Could not compress %s's logs; cleanup will retry: %v", d.run.Name(), compressErr))
 		}
 	}
@@ -1104,7 +1131,7 @@ func (b *build) activeIn(target model.TargetID, active []model.ActivePort) {
 // provider saw active: nil where it couldn't say (reuse.Inputs). Inputs
 // that can't be read are left unknown, and said to be.
 func (b *build) read(planned model.PlanTarget, active []model.ActivePort) (model.TargetInputs, bool) {
-	inputs, err := reuse.Inputs(b.ctx, b.d.e.Repo, b.tree, b.execution.Identity, planned, active)
+	inputs, err := reuse.Inputs(b.ctx, b.d.c.work.checkout(), b.tree, b.execution.Identity, planned, active)
 	if err != nil {
 		reason := fmt.Sprintf("what its build read wasn't recorded: %v", err)
 		b.Progress(fmt.Sprintf("%s: %s", planned.ID, reason))
@@ -1144,7 +1171,7 @@ func (b *build) record(result model.TargetResult) error {
 	result = b.judgeSource(result)
 	result.Execution = b.execution.ID
 	if result.RecordedAt.IsZero() {
-		result.RecordedAt = b.d.e.now()
+		result.RecordedAt = b.d.c.now()
 	}
 	inputs, read := b.inputs[result.Target]
 	// What a Git-fetched target's build fetched is an input of it, which
@@ -1236,7 +1263,7 @@ func (b *build) Progress(message string) {
 // ref, among the running checks: a wait for the Mac's VMs names them.
 func (b *build) Holding(ref string) string {
 	holding := ""
-	_ = b.d.e.Store.View(b.ctx, b.d.e.Repository, func(r store.Reader) error {
+	_ = b.d.c.store.View(b.ctx, b.d.c.repository, func(r store.Reader) error {
 		executions, err := r.ExecutionsReferred(ref)
 		if err != nil {
 			return err
@@ -1397,23 +1424,23 @@ func runEvidence(r store.Reader, run model.Run) (Evidence, error) {
 // revisionCommit is a commit holding the revision's files: the commit
 // itself, or for a snapshot one made of its tree on the base, kept under
 // refs/dockhand/revisions so it is not collected while checks use it.
-func (e *Engine) revisionCommit(ctx context.Context, revision model.Revision) (string, error) {
+func (c *checkService) revisionCommit(ctx context.Context, revision model.Revision) (string, error) {
 	if revision.Kind == model.RevisionCommit {
 		return string(revision.Source.Commit), nil
 	}
 	ref := "refs/dockhand/revisions/" + string(revision.ID)
-	if existing, err := e.Repo.ReadRef(ctx, ref); err != nil {
+	if existing, err := c.work.checkout().ReadRef(ctx, ref); err != nil {
 		return "", err
 	} else if existing.Exists {
 		return existing.Object, nil
 	}
 	who := git.Signature{Name: "dockhand", Email: "dockhand@localhost", When: revision.CreatedAt}
-	commit, err := e.Repo.WriteCommit(ctx, git.Commit{Tree: string(revision.Source.Tree), Parents: []string{string(revision.Source.Base)},
+	commit, err := c.work.checkout().WriteCommit(ctx, git.Commit{Tree: string(revision.Source.Tree), Parents: []string{string(revision.Source.Base)},
 		Message: fmt.Sprintf("dockhand %s\n", Describe(revision)), Author: who, Committer: who})
 	if err != nil {
 		return "", err
 	}
-	if err := e.Repo.UpdateRefs(ctx, []git.RefChange{{Name: ref, Desired: git.RefValue{Exists: true, Object: commit}}}); err != nil {
+	if err := c.work.checkout().UpdateRefs(ctx, []git.RefChange{{Name: ref, Desired: git.RefValue{Exists: true, Object: commit}}}); err != nil {
 		var conflict *git.RefConflict
 		if !errors.As(err, &conflict) {
 			return "", err
@@ -1533,48 +1560,6 @@ func (e *Engine) LatestEvent(ctx context.Context) (int64, error) {
 	return last, err
 }
 
-// Candidates are the runs serve could drive, in the order it takes them:
-// a run left running by a driver that is gone, then queued runs a person
-// asked for, then serve's own, oldest first. Runs a live session holds,
-// this one included, are left out.
-func (e *Engine) Candidates(ctx context.Context, session *coord.Session) ([]model.Run, error) {
-	var runs []model.Run
-	var holders map[string]*model.Session
-	// The runs and their holders in one read (SQL-O4), every 2 s in serve.
-	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		var err error
-		if runs, err = r.Runs(store.RunFilter{States: []model.RunState{model.RunQueued, model.RunRunning}}); err != nil {
-			return err
-		}
-		holders, err = session.Holders(r, runResources(runs)...)
-		return err
-	}); err != nil {
-		return nil, err
-	}
-	rank := func(run model.Run) int {
-		switch {
-		case run.State == model.RunRunning:
-			return 0
-		case run.Origin == model.OriginPerson:
-			return 1
-		}
-		return 2
-	}
-	slices.SortStableFunc(runs, func(a, b model.Run) int {
-		if ra, rb := rank(a), rank(b); ra != rb {
-			return ra - rb
-		}
-		return a.Number - b.Number
-	})
-	var candidates []model.Run
-	for _, run := range runs {
-		if holders[RunResource(run.ID)] == nil {
-			candidates = append(candidates, run)
-		}
-	}
-	return candidates, nil
-}
-
 // runResources are the runs' lease resources.
 func runResources(runs []model.Run) []string {
 	var resources []string
@@ -1646,9 +1631,9 @@ type QueuedCheck struct {
 // Queue is every check queued or running, oldest first, each with what
 // queue and status say of it, read in one transaction with their holders,
 // where each took four Views and a Holder's (SQL-O3, O4).
-func (e *Engine) Queue(ctx context.Context, session *coord.Session) ([]QueuedCheck, error) {
+func (c *checkService) Queue(ctx context.Context, session *coord.Session) ([]QueuedCheck, error) {
 	var queue []QueuedCheck
-	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+	err := c.store.View(ctx, c.repository, func(r store.Reader) error {
 		runs, err := r.Runs(store.RunFilter{States: []model.RunState{model.RunQueued, model.RunRunning}})
 		if err != nil {
 			return err
@@ -1686,7 +1671,7 @@ func (e *Engine) Queue(ctx context.Context, session *coord.Session) ([]QueuedChe
 						checked.VMs = append(checked.VMs, execution.ProviderRef)
 					}
 				}
-				checked.TartHome = e.TartHome
+				checked.TartHome = c.tartHome
 			}
 			queue = append(queue, checked)
 		}
@@ -1696,9 +1681,9 @@ func (e *Engine) Queue(ctx context.Context, session *coord.Session) ([]QueuedChe
 }
 
 // RunProviders are the providers a run's plan builds on, each once.
-func (e *Engine) RunProviders(ctx context.Context, run model.Run) ([]string, error) {
+func (c *checkService) RunProviders(ctx context.Context, run model.Run) ([]string, error) {
 	var providers []string
-	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+	err := c.store.View(ctx, c.repository, func(r store.Reader) error {
 		plan, err := r.Plan(run.Plan)
 		if err != nil {
 			return err
@@ -1744,7 +1729,7 @@ const stallAfter, stallPoll = 10 * time.Minute, time.Minute
 // has grown since. The returned function stops it.
 func watchStalls(ctx context.Context, build *build, directory string) func() {
 	after, poll := stallAfter, stallPoll
-	if s := build.d.e.stall; s[0] > 0 {
+	if s := build.d.c.stall; s[0] > 0 {
 		after, poll = s[0], s[1]
 	}
 	ctx, cancel := context.WithCancel(ctx)

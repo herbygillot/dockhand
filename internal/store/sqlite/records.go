@@ -277,16 +277,16 @@ func (t *tx) AddPlan(p model.Plan) error {
 	return err
 }
 
-const runColumns = "id, number, branch_id, revision_id, plan_id, origin, state, detail, created_at, finished_at, cancel_requested_at, baseline_of"
+const runColumns = "id, number, branch_id, revision_id, plan_id, origin, state, detail, created_at, finished_at, cancel_requested_at, baseline_of, started_at"
 
 func scanRun(row interface{ Scan(...any) error }) (model.Run, error) {
 	var r model.Run
 	var created int64
-	var finished, cancel sql.NullInt64
-	if err := row.Scan(&r.ID, &r.Number, &r.Branch, &r.Revision, &r.Plan, &r.Origin, &r.State, &r.Detail, &created, &finished, &cancel, &r.BaselineOf); err != nil {
+	var finished, cancel, started sql.NullInt64
+	if err := row.Scan(&r.ID, &r.Number, &r.Branch, &r.Revision, &r.Plan, &r.Origin, &r.State, &r.Detail, &created, &finished, &cancel, &r.BaselineOf, &started); err != nil {
 		return model.Run{}, storageError(err)
 	}
-	r.CreatedAt, r.FinishedAt, r.CancelRequested = fromMillis(created), fromNullable(finished), fromNullable(cancel)
+	r.CreatedAt, r.FinishedAt, r.CancelRequested, r.StartedAt = fromMillis(created), fromNullable(finished), fromNullable(cancel), fromNullable(started)
 	return r, nil
 }
 
@@ -360,8 +360,8 @@ func (t *tx) AddRun(r model.Run) error {
 	if err := r.Validate(); err != nil {
 		return err
 	}
-	if r.State != model.RunQueued {
-		return fmt.Errorf("%w: run %s must start queued", model.ErrInvalid, r.ID)
+	if r.State != model.RunQueued || r.StartedAt != nil {
+		return fmt.Errorf("%w: run %s must start queued, its slot not yet taken", model.ErrInvalid, r.ID)
 	}
 	next, err := t.NextRunNumber()
 	if err != nil {
@@ -386,8 +386,8 @@ func (t *tx) AddRun(r model.Run) error {
 	case !plan.Runnable():
 		return fmt.Errorf("%w: run %s's plan has unresolved targets or none at all", model.ErrInvalid, r.ID)
 	}
-	_, err = t.exec("INSERT INTO runs(repository_id, "+runColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		t.repo, r.ID, r.Number, r.Branch, r.Revision, r.Plan, r.Origin, r.State, r.Detail, millis(r.CreatedAt), nullableMillis(r.FinishedAt), nullableMillis(r.CancelRequested), r.BaselineOf)
+	_, err = t.exec("INSERT INTO runs(repository_id, "+runColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		t.repo, r.ID, r.Number, r.Branch, r.Revision, r.Plan, r.Origin, r.State, r.Detail, millis(r.CreatedAt), nullableMillis(r.FinishedAt), nullableMillis(r.CancelRequested), r.BaselineOf, nullableMillis(r.StartedAt))
 	return err
 }
 
@@ -408,8 +408,11 @@ func (t *tx) UpdateRun(r model.Run) error {
 	if current.CancelRequested != nil && (r.CancelRequested == nil || !r.CancelRequested.Equal(*current.CancelRequested)) {
 		return fmt.Errorf("%w: run %s's cancel request stands once made", store.ErrConflict, r.ID)
 	}
-	return t.update("run "+string(r.ID), "UPDATE runs SET state=?, detail=?, finished_at=?, cancel_requested_at=? WHERE repository_id=? AND id=?",
-		r.State, r.Detail, nullableMillis(r.FinishedAt), nullableMillis(r.CancelRequested), t.repo, r.ID)
+	if current.StartedAt != nil && (r.StartedAt == nil || !r.StartedAt.Equal(*current.StartedAt)) {
+		return fmt.Errorf("%w: run %s's start stands once recorded", store.ErrConflict, r.ID)
+	}
+	return t.update("run "+string(r.ID), "UPDATE runs SET state=?, detail=?, finished_at=?, cancel_requested_at=?, started_at=? WHERE repository_id=? AND id=?",
+		r.State, r.Detail, nullableMillis(r.FinishedAt), nullableMillis(r.CancelRequested), nullableMillis(r.StartedAt), t.repo, r.ID)
 }
 
 const executionColumns = "id, run_id, provider, platform_os, platform_version, platform_architecture, developer_tools, prefix, attempt, state, detail, provider_ref, observed, identity, reused, created_at, finished_at"

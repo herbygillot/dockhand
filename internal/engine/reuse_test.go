@@ -27,7 +27,7 @@ func TestADirectorysEditIsReadByTheSubportBlocksItIsIn(t *testing.T) {
 		require.NoError(t, err)
 		return model.ObjectID(objects["sysutils/terraform"])
 	}
-	d := &driver{e: e}
+	d := &driver{c: e.checks()}
 	then := directory(base)
 
 	subports, ok := d.subportEdits(t.Context(), then, directory(editTree(t, e, base, map[string]string{"sysutils/terraform/Portfile": portfile("1.16.7", "1.0")})))

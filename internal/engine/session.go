@@ -50,7 +50,7 @@ func (e *Engine) Observing(ctx context.Context) (context.Context, *coord.Session
 
 // Leader is the serve leading the queue, which runs what's queued; nil
 // where none leads, and a check runs where it's asked.
-func (e *Engine) Leader(ctx context.Context, session *coord.Session) (*model.Session, error) {
+func (c *checkService) Leader(ctx context.Context, session *coord.Session) (*model.Session, error) {
 	return session.Holder(ctx, coord.LeaderResource)
 }
 
@@ -65,8 +65,8 @@ type Lead struct {
 func (l Lead) Here() bool { return l.Serve == nil && l.Holder == nil }
 
 // LeadOf is who sees the run through now.
-func (e *Engine) LeadOf(ctx context.Context, session *coord.Session, id model.RunID) (Lead, error) {
-	serve, err := e.Leader(ctx, session)
+func (c *checkService) LeadOf(ctx context.Context, session *coord.Session, id model.RunID) (Lead, error) {
+	serve, err := c.Leader(ctx, session)
 	if err != nil {
 		return Lead{}, err
 	}
@@ -82,8 +82,8 @@ func (e *Engine) LeadOf(ctx context.Context, session *coord.Session, id model.Ru
 // and the providers' reports are the work behind the scenes to a process
 // driving only to see its own run through (progress.Quiet). Where ctx ends
 // first, the run is as it was last read, with ctx's error.
-func (e *Engine) SeeThrough(ctx context.Context, session *coord.Session, id model.RunID, before func(Lead)) (run model.Run, taker *model.Session, err error) {
-	lead, err := e.LeadOf(ctx, session, id)
+func (c *checkService) SeeThrough(ctx context.Context, session *coord.Session, id model.RunID, before func(Lead)) (run model.Run, taker *model.Session, err error) {
+	lead, err := c.LeadOf(ctx, session, id)
 	if err != nil {
 		return model.Run{}, nil, err
 	}
@@ -92,7 +92,7 @@ func (e *Engine) SeeThrough(ctx context.Context, session *coord.Session, id mode
 	// who leads, which a command says as the run's start: a batch's ended
 	// checks each read "running here because dockhand serve is not
 	// running" as they were reported (rc1's full stage, G13).
-	if ended, err := e.Run(ctx, id); err != nil || ended.State.Terminal() {
+	if ended, err := c.run(ctx, id); err != nil || ended.State.Terminal() {
 		return ended, nil, err
 	}
 	if before != nil {
@@ -100,8 +100,8 @@ func (e *Engine) SeeThrough(ctx context.Context, session *coord.Session, id mode
 	}
 	if lead.Here() {
 		var lease model.Lease
-		if lease, err = e.awaitSlot(ctx, session, id); err == nil {
-			run, err = e.driveLeased(progress.Quiet(ctx), session, lease, id, false)
+		if lease, err = c.awaitSlot(ctx, session, id); err == nil {
+			run, err = c.driveLeased(progress.Quiet(ctx), session, lease, id, false)
 		}
 		held := new(coord.HeldError)
 		if !errors.As(err, &held) {
@@ -109,7 +109,7 @@ func (e *Engine) SeeThrough(ctx context.Context, session *coord.Session, id mode
 		}
 		taker = &held.Holder
 	}
-	run, err = e.waitFor(ctx, id)
+	run, err = c.waitFor(ctx, id)
 	return run, taker, err
 }
 
@@ -127,7 +127,7 @@ func (e *Engine) SeeThrough(ctx context.Context, session *coord.Session, id mode
 // waited, where given, hears each check's wait for a slot or a VM as its
 // journal says it, once, which the batch says: G13's checks went one at a
 // time behind a VM, and nothing said why (rc1's full stage).
-func (e *Engine) SeeAllThrough(ctx context.Context, ids []model.RunID, waited func(model.Run, string), ended func(model.Run, error)) {
+func (c *checkService) SeeAllThrough(ctx context.Context, ids []model.RunID, waited func(model.Run, string), ended func(model.Run, error)) {
 	type seen struct {
 		run model.Run
 		err error
@@ -136,21 +136,21 @@ func (e *Engine) SeeAllThrough(ctx context.Context, ids []model.RunID, waited fu
 	for _, id := range ids {
 		go func() {
 			results <- func() seen {
-				session, err := e.Session(ctx, model.SessionForeground)
+				session, err := c.sessions.Session(ctx, model.SessionForeground)
 				if err != nil {
 					return seen{model.Run{ID: id}, err}
 				}
 				defer session.End(context.WithoutCancel(ctx))
-				run, err := e.Run(ctx, id)
+				run, err := c.run(ctx, id)
 				if err != nil {
 					return seen{run, err}
 				}
 				if waited != nil {
 					watching, stop := context.WithCancel(ctx)
 					defer stop()
-					go e.sayWaits(watching, run, waited)
+					go c.sayWaits(watching, run, waited)
 				}
-				run, _, err = e.SeeThrough(ctx, session, id, nil)
+				run, _, err = c.SeeThrough(ctx, session, id, nil)
 				return seen{run, err}
 			}()
 		}()
@@ -164,11 +164,11 @@ func (e *Engine) SeeAllThrough(ctx context.Context, ids []model.RunID, waited fu
 // sayWaits tells waited each new wait a run's journal records, until ctx
 // ends: a batch's checks are driven quietly, so a wait for a slot or a VM
 // was only in the journal.
-func (e *Engine) sayWaits(ctx context.Context, run model.Run, waited func(model.Run, string)) {
+func (c *checkService) sayWaits(ctx context.Context, run model.Run, waited func(model.Run, string)) {
 	var last string
 	for {
 		var message string
-		_ = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		_ = c.store.View(ctx, c.repository, func(r store.Reader) error {
 			event, found, err := r.LatestRunEvent(run.ID, model.EventWaiting)
 			if found {
 				message = event.Message
@@ -182,15 +182,15 @@ func (e *Engine) sayWaits(ctx context.Context, run model.Run, waited func(model.
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(e.slotPoll()):
+		case <-time.After(c.slotPoll()):
 		}
 	}
 }
 
 // waitFor reads a run until it ends or ctx does.
-func (e *Engine) waitFor(ctx context.Context, id model.RunID) (model.Run, error) {
+func (c *checkService) waitFor(ctx context.Context, id model.RunID) (model.Run, error) {
 	for {
-		run, err := e.Run(ctx, id)
+		run, err := c.run(ctx, id)
 		if err != nil || run.State.Terminal() {
 			return run, err
 		}
@@ -209,7 +209,7 @@ func (e *Engine) waitFor(ctx context.Context, id model.RunID) (model.Run, error)
 // only once it ended, worded as its start, which read a batch run two at
 // a time as one at a time (rc1's full stage, G13). Empty for fewer than
 // two.
-func (e *Engine) TogetherWords(ctx context.Context, runs []model.Run) string {
+func (c *checkService) TogetherWords(ctx context.Context, runs []model.Run) string {
 	if len(runs) < 2 {
 		return ""
 	}
@@ -217,7 +217,7 @@ func (e *Engine) TogetherWords(ctx context.Context, runs []model.Run) string {
 	using := map[string]int{}
 	for _, run := range runs {
 		names = append(names, run.Name())
-		needs, err := e.RunProviders(ctx, run)
+		needs, err := c.RunProviders(ctx, run)
 		if err != nil {
 			continue
 		}
@@ -227,7 +227,7 @@ func (e *Engine) TogetherWords(ctx context.Context, runs []model.Run) string {
 	}
 	var at []string
 	for _, provider := range slices.Sorted(maps.Keys(using)) {
-		switch capacity := e.capacity(provider); {
+		switch capacity := c.capacity(provider); {
 		case capacity == 1:
 			at = append(at, "one at a time on "+provider)
 		case capacity < using[provider]:

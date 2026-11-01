@@ -751,6 +751,31 @@ func (e *Engine) PutBack(ctx context.Context, run model.Run, progress func(strin
 	return places, nil
 }
 
+// forgetKept removes the clones the branch's checks kept for dockhand
+// shell (model.Plan.Keep).
+func (e *Engine) forgetKept(ctx context.Context, branch model.BranchID) error {
+	if !slices.ContainsFunc(slices.Collect(maps.Values(e.Providers)), func(provider buildenv.Provider) bool {
+		_, ok := provider.(buildenv.LeftoverProvider)
+		return ok
+	}) {
+		return nil
+	}
+	session, err := e.Session(ctx, model.SessionForeground)
+	if err != nil {
+		return err
+	}
+	defer session.End(context.WithoutCancel(ctx))
+	leftovers, err := e.PlanLeftovers(ctx, session)
+	if err != nil {
+		return err
+	}
+	leftovers = slices.DeleteFunc(leftovers, func(leftover Leftover) bool {
+		return leftover.KeptAt.IsZero() || leftover.Run == nil || leftover.Run.Branch != branch
+	})
+	_, err = e.RemoveLeftovers(ctx, session, leftovers)
+	return err
+}
+
 // PlanLeftovers finds what providers left of checks, and which clean may
 // remove. A provider removes its environment when the attempt using it
 // ends, and a run's next attempt removes an earlier one's, so what is left

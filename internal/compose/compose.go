@@ -10,7 +10,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -204,16 +203,6 @@ func (d Dependencies) Lookup(options Options) func(string) (string, error) {
 	return func(name string) (string, error) { return subprocess.LookPath(name, options.Env) }
 }
 
-// LookTart finds Tart: with Look where it's given, else on the process's
-// PATH, which the check-execution service's construction moves to the
-// command line's (docs/roadmap.md).
-func (d Dependencies) LookTart() (string, error) {
-	if d.Look != nil {
-		return d.Look("tart")
-	}
-	return exec.LookPath("tart")
-}
-
 // Assembly is what a command works with: the engine, opened, and the
 // configuration it was opened with.
 type Assembly struct {
@@ -393,7 +382,7 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	e.Providers[buildenv.GitHub] = actions
 	// Tart builds wherever Tart is installed; its images are checked when a
 	// check names a release.
-	if _, err := dependencies.LookTart(); err == nil {
+	if _, err := look("tart"); err == nil {
 		provider := options.TartProvider(look)
 		provider.Repo, provider.Index = e.Repo, e.PortIndex
 		provider.TestTimeout, provider.BuildTimeout = file.Providers.Tart.Timeout(), file.Providers.Tart.BuildBound()

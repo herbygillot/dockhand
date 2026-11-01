@@ -19,10 +19,10 @@ func TestTartsSlotsAreTheMacsVMs(t *testing.T) {
 	e := &Engine{Capacity: map[string]int{"tart": config.TartCapacity, "command": 1}}
 	holder := func(number int) slotHolder { return slotHolder{run: model.Run{Number: number}} }
 	require.Equal(t, []string{"Tart takes as many checks as the Mac runs VMs, 2, and check-1 and check-2 are using them"},
-		slotWords(map[string][]slotHolder{"tart": {holder(1), holder(2)}}, e))
+		e.checks().slotWords(map[string][]slotHolder{"tart": {holder(1), holder(2)}}))
 	require.Equal(t, []string{"providers.command.capacity is 1, and check-3 is using it"},
-		slotWords(map[string][]slotHolder{"command": {holder(3)}}, e))
-	require.Equal(t, 2, e.capacity("tart"))
+		e.checks().slotWords(map[string][]slotHolder{"command": {holder(3)}}))
+	require.Equal(t, 2, e.checks().capacity("tart"))
 }
 
 // A check held for a provider's slots says what it waits behind, in its
@@ -62,7 +62,7 @@ func TestServeSaysWhatAHeldCheckWaitsBehind(t *testing.T) {
 		}))
 		return message
 	}
-	require.NoError(t, e.sayHeld(t.Context(), s, waiting, map[string][]slotHolder{"local": {{run: holding}}}))
+	require.NoError(t, e.checks().sayHeld(t.Context(), s, waiting, map[string][]slotHolder{"local": {{run: holding}}}))
 	require.Equal(t, waiting.Name()+" waiting for /opt/local, held by check-786", said(waiting))
 
 	// The check serve prepared, on command, fills its capacity.
@@ -75,6 +75,6 @@ func TestServeSaysWhatAHeldCheckWaitsBehind(t *testing.T) {
 		return err
 	}))
 	e.Capacity = map[string]int{"command": 1}
-	require.NoError(t, e.sayHeld(t.Context(), s, waiting, map[string][]slotHolder{"command": {{run: prepared}}}))
+	require.NoError(t, e.checks().sayHeld(t.Context(), s, waiting, map[string][]slotHolder{"command": {{run: prepared}}}))
 	require.Equal(t, waiting.Name()+" waits for a slot on command: providers.command.capacity is 1, and "+prepared.Name()+" is using it", said(waiting))
 }

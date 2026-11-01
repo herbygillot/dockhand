@@ -118,22 +118,6 @@ func (e *Engine) directoriesNamed(ctx context.Context, tree, name string) ([]str
 	return directories, nil
 }
 
-// Retry queues a run's exact request again: the same revision and plan,
-// whatever the branch holds now, as the branch's one check (queue). Until
-// per-target reuse lands, the whole plan is built again.
-func (e *Engine) Retry(ctx context.Context, previous model.Run) (model.Run, error) {
-	if !previous.State.Terminal() {
-		return model.Run{}, fmt.Errorf("%s is still %s; dockhand wait %s follows it", previous.Name(), previous.State, previous.Name())
-	}
-	var run model.Run
-	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-		var err error
-		run, err = e.queue(tx, model.Run{Branch: previous.Branch, Revision: previous.Revision, Plan: previous.Plan, Origin: model.OriginPerson, BaselineOf: previous.BaselineOf}, "queued, retrying "+previous.Name())
-		return err
-	})
-	return run, err
-}
-
 // Rebased is what a rebase did.
 type Rebased struct {
 	From, To model.ObjectID

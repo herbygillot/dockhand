@@ -28,7 +28,7 @@ func (d *driver) earlier(ctx context.Context, environment model.Environment, rem
 	targets := make([]reuse.Target, len(remaining))
 	var paths []string
 	plans := map[model.RunID]model.Plan{}
-	err := d.e.Store.View(ctx, d.e.Repository, func(r store.Reader) error {
+	err := d.c.store.View(ctx, d.c.repository, func(r store.Reader) error {
 		for i, target := range remaining {
 			targets[i] = reuse.Target{PlanTarget: target.PlanTarget, DependsOn: target.DependsOn, Git: target.Git, Tag: target.Tag}
 			builds, err := r.Reusable(target.ID, environment, reuseCandidates)
@@ -92,7 +92,7 @@ func (d *driver) sayTagMoved(ctx context.Context, environment model.Environment,
 			continue
 		}
 		built := "an earlier check"
-		_ = d.e.Store.View(ctx, d.e.Repository, func(r store.Reader) error {
+		_ = d.c.store.View(ctx, d.c.repository, func(r store.Reader) error {
 			if run, err := r.Run(newest.Origin.Run); err == nil {
 				built = run.Name()
 			}
@@ -138,7 +138,7 @@ func (d *driver) reusable(ctx context.Context, identity string, targets []reuse.
 		return reuse.Choice{}, nil
 	}
 	slices.Sort(paths)
-	objects, err := d.e.Repo.Directories(ctx, string(tree), slices.Compact(paths))
+	objects, err := d.c.work.checkout().Directories(ctx, string(tree), slices.Compact(paths))
 	if err != nil {
 		return reuse.Choice{}, err
 	}
@@ -147,7 +147,7 @@ func (d *driver) reusable(ctx context.Context, identity string, targets []reuse.
 		trees[path] = model.ObjectID(object)
 	}
 	available := func(c reuse.Candidate) bool {
-		_, kept, err := d.e.keptArchive(ctx, c.Result.Archive)
+		_, kept, err := d.c.work.keptArchive(ctx, c.Result.Archive)
 		return err == nil && kept
 	}
 	return reuse.Choose(targets, identity, trees, d.blocks(ctx), d.plan.Tests.Stands, available), nil
@@ -181,11 +181,11 @@ func (d *driver) blocks(ctx context.Context) reuse.Blocks {
 // subportEdits are the subports whose blocks alone hold how one port
 // directory's tree differs from another's (blocks).
 func (d *driver) subportEdits(ctx context.Context, then, now model.ObjectID) ([]string, bool) {
-	before, err := d.e.Repo.ReadTree(ctx, string(then))
+	before, err := d.c.work.checkout().ReadTree(ctx, string(then))
 	if err != nil {
 		return nil, false
 	}
-	after, err := d.e.Repo.ReadTree(ctx, string(now))
+	after, err := d.c.work.checkout().ReadTree(ctx, string(now))
 	if err != nil || len(before) != len(after) {
 		return nil, false
 	}
@@ -205,7 +205,7 @@ func (d *driver) subportEdits(ctx context.Context, then, now model.ObjectID) ([]
 	}
 	var texts [2][]byte
 	for i, tree := range []model.ObjectID{then, now} {
-		files, err := d.e.Repo.ReadFiles(ctx, string(tree), []string{"Portfile"})
+		files, err := d.c.work.checkout().ReadFiles(ctx, string(tree), []string{"Portfile"})
 		if err != nil || files["Portfile"] == nil {
 			return nil, false
 		}
@@ -231,7 +231,7 @@ func (d *driver) installs(ctx context.Context, environment model.Environment, bu
 			if !ok || result.Outcome != model.OutcomePassed || result.Archive == "" {
 				continue
 			}
-			archive, kept, err := d.e.keptArchive(ctx, result.Archive)
+			archive, kept, err := d.c.work.keptArchive(ctx, result.Archive)
 			if err != nil {
 				return nil, err
 			}
@@ -242,7 +242,7 @@ func (d *driver) installs(ctx context.Context, environment model.Environment, bu
 			// isn't given to the guest: MacPorts builds the target instead,
 			// and the check says why (prime-time D-T1). Signing would refuse
 			// it too, and fail the check, where a build does the work.
-			if _, digest, err := sha256File(d.e.archivePath(archive.Digest)); err != nil || digest != archive.Digest {
+			if _, digest, err := sha256File(d.c.work.archivePath(archive.Digest)); err != nil || digest != archive.Digest {
 				if err := d.altered(ctx, string(need), archive.Digest, "the guest builds it instead"); err != nil {
 					return nil, err
 				}
@@ -253,7 +253,7 @@ func (d *driver) installs(ctx context.Context, environment model.Environment, bu
 			if planned.Target.Subport != "" {
 				port = planned.Target.Subport
 			}
-			installs = append(installs, buildenv.Archive{Target: need, Port: port, Name: archive.Name, Digest: archive.Digest, Path: d.e.archivePath(archive.Digest)})
+			installs = append(installs, buildenv.Archive{Target: need, Port: port, Name: archive.Name, Digest: archive.Digest, Path: d.c.work.archivePath(archive.Digest)})
 		}
 	}
 	return installs, nil
@@ -264,7 +264,7 @@ func (d *driver) installs(ctx context.Context, environment model.Environment, bu
 // what the newest build it reuses found of the environment. The provider
 // isn't started at all.
 func (d *driver) recordReuse(ctx context.Context, environment model.Environment, identity string, remaining []buildenv.Target, chosen map[model.TargetID]reuse.Candidate) error {
-	now := d.e.now()
+	now := d.c.now()
 	ordered := reusedInOrder(remaining, chosen)
 	newest := ordered[0].Origin
 	for _, c := range ordered {
@@ -291,7 +291,7 @@ func (d *driver) recordReuse(ctx context.Context, environment model.Environment,
 // reuses records, in the execution that builds the rest, the results of
 // the targets that reuse an earlier build, before the provider starts.
 func (b *build) reuses(remaining []buildenv.Target, chosen map[model.TargetID]reuse.Candidate) error {
-	now := b.d.e.now()
+	now := b.d.c.now()
 	ordered := reusedInOrder(remaining, chosen)
 	var names []string
 	for _, c := range ordered {
@@ -383,7 +383,7 @@ func (d *driver) dependencyInstalls(ctx context.Context, environment model.Envir
 		}
 		ports = append(ports, port)
 	}
-	reader, err := d.e.portReader()
+	reader, err := d.c.work.portReader()
 	if err != nil {
 		return nil
 	}
@@ -404,7 +404,7 @@ func (d *driver) dependencyInstalls(ctx context.Context, environment model.Envir
 	}
 	// Their dependencies on, from the revision's port index; where it
 	// can't be read, the direct dependencies alone are offered.
-	if ports, err := d.e.capabilities(); err == nil && ports.Graphs != nil && len(queue) > 0 {
+	if ports, err := d.c.work.capabilities(); err == nil && ports.Graphs != nil && len(queue) > 0 {
 		if graph, err := ports.Graphs.DependencyGraph(ctx, source); err == nil {
 			for len(queue) > 0 {
 				next := queue[0]
@@ -419,7 +419,7 @@ func (d *driver) dependencyInstalls(ctx context.Context, environment model.Envir
 	// view (the SQL study's SQL-O5).
 	var kept []model.DependencyArchive
 	recorded := map[string]model.Archive{}
-	if err := d.e.Store.View(ctx, d.e.Repository, func(r store.Reader) error {
+	if err := d.c.store.View(ctx, d.c.repository, func(r store.Reader) error {
 		var err error
 		if kept, err = r.DependencyArchives(environment, ports); err != nil {
 			return err
@@ -441,18 +441,18 @@ func (d *driver) dependencyInstalls(ctx context.Context, environment model.Envir
 		// each check skipped it again in silence (Codex's gcc15 group
 		// update, 2026-10-07).
 		a, ok := recorded[archive.Digest]
-		if info, err := os.Stat(d.e.archivePath(archive.Digest)); !ok || err != nil || info.Size() != a.Size {
+		if info, err := os.Stat(d.c.work.archivePath(archive.Digest)); !ok || err != nil || info.Size() != a.Size {
 			_ = d.gone(ctx, archive)
 			continue
 		}
-		if _, digest, err := sha256File(d.e.archivePath(archive.Digest)); err != nil || digest != archive.Digest {
+		if _, digest, err := sha256File(d.c.work.archivePath(archive.Digest)); err != nil || digest != archive.Digest {
 			// Said, as a target's is, where it was skipped in silence (the
 			// rc8 full stage's D-T1). What can't be said leaves the guest
 			// to fetch the dependency as before.
 			_ = d.altered(ctx, archive.Port, archive.Digest, "the guest gets it as MacPorts would, from its archives or a build")
 			continue
 		}
-		installs = append(installs, buildenv.Archive{Port: archive.Port, Name: archive.Name, Digest: archive.Digest, Path: d.e.archivePath(archive.Digest)})
+		installs = append(installs, buildenv.Archive{Port: archive.Port, Name: archive.Name, Digest: archive.Digest, Path: d.c.work.archivePath(archive.Digest)})
 	}
 	return installs
 }
@@ -478,7 +478,7 @@ func (d *driver) gone(ctx context.Context, archive model.DependencyArchive) erro
 // compares only the size, is the cheap test reuse and cleanup make; the
 // digest is read here, before a guest is given one (prime-time D-T1).
 func (d *driver) altered(ctx context.Context, port, digest, instead string) error {
-	path := d.e.archivePath(digest)
+	path := d.c.work.archivePath(digest)
 	aside := ""
 	if os.Rename(path, path+".altered") == nil {
 		aside = "; it's set aside as " + path + ".altered"

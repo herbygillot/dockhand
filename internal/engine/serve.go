@@ -403,7 +403,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	capacity := map[string]int{}
 	var described []string
 	for _, name := range providers {
-		capacity[name] = e.capacity(name)
+		capacity[name] = e.checks().capacity(name)
 		described = append(described, capacityWords(name, e.Providers[name], capacity[name]))
 	}
 	if len(described) == 0 {
@@ -449,6 +449,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	// waits, and the runs after it that can go ahead.
 	running, stop := context.WithCancel(ctx)
 	defer stop()
+	checks := e.checks()
 	inFlight := map[model.RunID]model.Run{}
 	// unfinished are the runs said unfinished as serve's stop began, before
 	// it waited for them: a Tart check stops its VM for up to a minute, and
@@ -477,7 +478,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 		}
 		s.say("%s %s: %s", run.Name(), branch.ShortName(), verb)
 		go func() {
-			result, err := e.driveLeased(running, session, lease, run.ID, true)
+			result, err := checks.driveLeased(running, session, lease, run.ID, true)
 			if result.ID == "" {
 				result = run
 			}
@@ -585,7 +586,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 			}
 			break
 		}
-		candidates, err := e.Candidates(running, session)
+		candidates, err := checks.Candidates(running, session)
 		if err != nil {
 			if running.Err() == nil {
 				failure = err
@@ -597,7 +598,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 			if _, in := inFlight[run.ID]; in {
 				continue
 			}
-			needs, err := e.RunProviders(running, run)
+			needs, err := checks.RunProviders(running, run)
 			if err != nil {
 				failure = err
 				break
@@ -613,7 +614,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 				failure = err
 				break
 			}
-			lease, full, err := e.reserve(running, session, run, needs)
+			lease, full, err := checks.reserve(running, session, run, needs)
 			if held := new(coord.HeldError); errors.As(err, &held) {
 				continue
 			}
@@ -625,7 +626,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 				waiting = true
 				if !heldSaid[run.ID] {
 					heldSaid[run.ID] = true
-					if err := e.sayHeld(running, session, run, full); err != nil {
+					if err := checks.sayHeld(running, session, run, full); err != nil {
 						s.say("serve: saying what %s waits behind: %v", run.Name(), err)
 					}
 				}

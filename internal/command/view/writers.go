@@ -453,6 +453,13 @@ func WriteQueue(out io.Writer, queue []engine.QueuedCheck, led bool) {
 		fmt.Fprintf(table, "  %s\t%s\t%s\t%s\t%s\t%s\n", run.Name(), queued.Branch.ShortName(), engine.Describe(queued.Revision), strings.Join(on, ", "), state, detail)
 	}
 	_ = table.Flush()
+	// How long each check that took its slot waited for it, which was
+	// read only from its finish less its took (rc1's G13).
+	for _, queued := range queue {
+		if words := WaitWords(queued.Run); words != "" {
+			fmt.Fprintf(out, "  %s %s\n", queued.Run.Name(), words)
+		}
+	}
 	// The VMs a running check runs in, with the Tart home that reaches
 	// them, which a person's tart list doesn't see (the bazel session's
 	// notes, 2026-10-24).

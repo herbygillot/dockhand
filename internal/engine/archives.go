@@ -185,7 +185,7 @@ func (b *build) Keep(target model.TargetID, name string, fetch func(path string)
 	if !ok || result.Outcome != model.OutcomePassed || result.Archive == "" {
 		return fmt.Errorf("%s has no passed result naming an archive to keep", target)
 	}
-	return b.d.e.keepArchive(b.ctx, model.Archive{Digest: result.Archive, Name: name}, fetch, nil)
+	return b.d.c.work.keepArchive(b.ctx, model.Archive{Digest: result.Archive, Name: name}, fetch, nil)
 }
 
 // KeepDependency keeps the archive a dependency of a target was installed
@@ -204,8 +204,8 @@ func (b *build) KeepDependency(port model.ActivePort, name string, fetch func(pa
 	if !b.consumed(port) {
 		return fmt.Errorf("%s wasn't reported active from %s", port.Name, port.Archive)
 	}
-	archive := model.DependencyArchive{Archive: model.Archive{Digest: port.Archive, Name: name, KeptAt: b.d.e.now()}, Port: port.Name, Environment: b.execution.Environment}
-	return b.d.e.keepArchive(b.ctx, model.Archive{Digest: port.Archive, Name: name}, fetch, func(tx store.Tx) error { return tx.KeepDependencyArchive(archive) })
+	archive := model.DependencyArchive{Archive: model.Archive{Digest: port.Archive, Name: name, KeptAt: b.d.c.now()}, Port: port.Name, Environment: b.execution.Environment}
+	return b.d.c.work.keepArchive(b.ctx, model.Archive{Digest: port.Archive, Name: name}, fetch, func(tx store.Tx) error { return tx.KeepDependencyArchive(archive) })
 }
 
 // consumed reports whether a port was reported active from an archive as
