@@ -186,7 +186,8 @@ dockhand serve --install
 ```
 
 It starts at login and restarts if it stops. Installation reports the agent and
-log paths. It retains the selected tree, database, Git executable, relevant
+log paths; each line of serve's log starts with the time it was written, as
+`2026-11-01T08:25:16-05:00`, where on a terminal it doesn't. It retains the selected tree, database, Git executable, relevant
 environment paths, and flags passed beside `--install`. If you used
 `--ship-to list` to override a configuration that permits submission, include
 that override in the installation too:

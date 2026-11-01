@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -38,7 +39,7 @@ func TestServeDrainsTheQueue(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "serve: leading (pid ")
 	require.Contains(t, out, "builds on command (1 check at a time), github (2 checks at a time) · opens no pull requests; it only checks\n")
-	require.Contains(t, out, "check-1 jq-update: running\ncheck-1 jq-update: passed\nserve: the queue is empty\n")
+	require.Contains(t, unstamped(out), "check-1 jq-update: running\ncheck-1 jq-update: passed\nserve: the queue is empty\n")
 	out, _, err = cmdtest.Dockhand(t, "status", "--all")
 	require.NoError(t, err)
 	require.NotContains(t, out, "Checks queued and running")
@@ -109,7 +110,7 @@ func TestServeStopsForAnUpgrade(t *testing.T) {
 	case <-time.After(cmdtest.Settle):
 		t.Fatalf("serve didn't stop for the upgrade: %s", served.String())
 	}
-	require.Contains(t, served.String(), "serve: upgrade detected; waiting for active checks to finish before exiting so launchd can start the new version\nserve: stopped for the upgrade\n")
+	require.Contains(t, unstamped(served.String()), "serve: upgrade detected; waiting for active checks to finish before exiting so launchd can start the new version\nserve: stopped for the upgrade\n")
 }
 
 // A serve whose executable is gone past an upgrade's moment takes dockhand
@@ -135,7 +136,7 @@ func TestServeStopsWhenUninstalled(t *testing.T) {
 	case <-time.After(cmdtest.Settle):
 		t.Fatalf("serve didn't stop once uninstalled: %s", served.String())
 	}
-	require.Contains(t, served.String(), "serve: dockhand was uninstalled; stopping once its checks end. serve --uninstall removes the agent\nserve: stopped, as dockhand was uninstalled\n")
+	require.Contains(t, unstamped(served.String()), "serve: dockhand was uninstalled; stopping once its checks end. serve --uninstall removes the agent\nserve: stopped, as dockhand was uninstalled\n")
 }
 
 // status says when serve runs another build than its own.
@@ -508,7 +509,7 @@ while [ ! -f "$HOME/release" ]; do sleep 0.02; done
 	require.NotContains(t, served.String(), "serve: stopped")
 	require.NoError(t, os.WriteFile(filepath.Join(w.Home, "release"), nil, 0o644))
 	require.NoError(t, <-done)
-	out := served.String()
+	out := unstamped(served.String())
 	require.Equal(t, 1, strings.Count(out, "check-1: unfinished"), out)
 	require.True(t, strings.HasSuffix(out, "check-1: unfinished; the next serve instance will resume it\nserve: stopped\n"), out)
 }
@@ -577,4 +578,47 @@ func TestServeWaitsForTheAnswerToItsDatabasesMigration(t *testing.T) {
 	stop()
 	require.NoError(t, <-done)
 	require.Equal(t, 1, strings.Count(served.String(), "serve: waiting for your answer"), "said once")
+}
+
+// stamps are the times serve's lines start with in a log.
+var stamps = regexp.MustCompile(`(?m)^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(Z|[-+][0-9]{2}:[0-9]{2}) `)
+
+// unstamped is serve's output without the times its lines start with.
+func unstamped(out string) string { return stamps.ReplaceAllString(out, "") }
+
+// serve's output, where it isn't a terminal, is a log: each line starts
+// with the time it was written, RFC 3339 to the second with its zone, by
+// serve's clock; on a terminal, it's as it was (prioritization's placement,
+// 2026-11-01).
+func TestServesLogLinesSayTheirTime(t *testing.T) {
+	t.Parallel()
+	cmdtest.CheckedBranch(t)
+	zone := time.FixedZone("EST", -5*3600)
+	cmdtest.Hosted(t).Now = func() time.Time { return time.Date(2026, 11, 1, 8, 25, 16, 500, zone) }
+	_, _, err := cmdtest.Dockhand(t, "check", "-d")
+	require.NoError(t, err)
+	out, _, err := cmdtest.Dockhand(t, "serve", "--drain")
+	require.NoError(t, err)
+	for _, line := range strings.Split(strings.TrimSuffix(out, "\n"), "\n") {
+		require.True(t, strings.HasPrefix(line, "2026-11-01T08:25:16-05:00 "), line)
+	}
+	require.Contains(t, out, "2026-11-01T08:25:16-05:00 serve: the queue is empty\n")
+
+	var terminal bytes.Buffer
+	_, _, err = cmdtest.Dockhand(t, "check", "-d")
+	require.NoError(t, err)
+	require.NoError(t, cmdtest.RunFor(t, t.Context(), []string{"serve", "--drain"}, term.Streams{In: strings.NewReader(""), Out: &terminal, Err: &terminal}.AsTerminal()))
+	require.NotContains(t, terminal.String(), "2026-11-01T08:25:16")
+	require.Contains(t, terminal.String(), "serve: the queue is empty")
+}
+
+// A line written in parts is stamped once, at its start, and a write of
+// several lines stamps each.
+func TestAStampedLineIsStampedOnce(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	stamp := &stampWriter{w: &out, now: func() time.Time { return time.Date(2026, 11, 1, 13, 25, 16, 0, time.UTC) }}
+	fmt.Fprint(stamp, "serve: ")
+	fmt.Fprint(stamp, "leading\ncheck-1: running\n")
+	require.Equal(t, "2026-11-01T13:25:16Z serve: leading\n2026-11-01T13:25:16Z check-1: running\n", out.String())
 }
