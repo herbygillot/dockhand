@@ -9,13 +9,29 @@
 # for the port's own commit.
 port() { printf '%s' "${ACCEPT_RUST_PORT:?}"; }
 setup() {
+	# The full stage has no pinned upstream, only MacPorts' own (the M1's
+	# rc6 full stage, where the row gave no result): there it makes one
+	# of its own, as D-S10 does, a commit behind MacPorts' master, so it
+	# has a commit to move on to, and the person's fetch reads it.
+	DS12_FETCH=origin
+	if [ -z "${DOCKHAND_UPSTREAM:-}" ]; then
+		local objects master
+		objects=$(git -C "${MACPORTS_TREE:?}" rev-parse --path-format=absolute --git-common-dir)/objects
+		master=$(git -C "$MACPORTS_TREE" rev-parse upstream/master 2>/dev/null || git -C "$MACPORTS_TREE" rev-parse origin/master) || return 1
+		git init -q --bare -b master "$ROW_DIR/upstream.git" || return 1
+		printf '%s\n' "$objects" >"$ROW_DIR/upstream.git/objects/info/alternates"
+		git -C "$ROW_DIR/upstream.git" update-ref refs/heads/master "$master^" || return 1
+		export DOCKHAND_UPSTREAM="$ROW_DIR/upstream.git"
+		DS12_FETCH=$DOCKHAND_UPSTREAM DS12_NEXT=$master
+	fi
 	dh_setup update "$(port)" --new || return 1
 	DS12_BRANCH=$(own_branch)
 	dh tidy -b "$DS12_BRANCH" -y || return 1
 	# The pinned upstream moves on one commit, as D-I3 moves it, and is
 	# put back in teardown.
 	DS12_MASTER=$(git -C "$DOCKHAND_UPSTREAM" rev-parse master)
-	git -C "$DOCKHAND_UPSTREAM" update-ref refs/heads/master "$(git -C "$DOCKHAND_UPSTREAM" rev-list --ancestry-path --reverse master..$(git -C "${ACCEPT_PORTS_SOURCE:-$HOME/Source/macports-ports}" rev-parse origin/master) 2>/dev/null | head -1)" || return 1
+	[ -n "${DS12_NEXT:-}" ] || DS12_NEXT=$(git -C "$DOCKHAND_UPSTREAM" rev-list --ancestry-path --reverse master..$(git -C "${ACCEPT_PORTS_SOURCE:-$HOME/Source/macports-ports}" rev-parse origin/master) 2>/dev/null | head -1)
+	git -C "$DOCKHAND_UPSTREAM" update-ref refs/heads/master "$DS12_NEXT" || return 1
 }
 teardown() {
 	[ -z "${DS12_MASTER:-}" ] || git -C "$DOCKHAND_UPSTREAM" update-ref refs/heads/master "$DS12_MASTER"
@@ -26,7 +42,11 @@ act() {
 	local worktree
 	worktree=$("$DH_BIN" path "$DS12_BRANCH") || return 0
 	# The person's own fetch and rebase.
-	{ git -C "$worktree" fetch -q origin && git -C "$worktree" rebase -q origin/master; } >>"$ROW_DIR/out.log" 2>&1 || return 0
+	if [ "$DS12_FETCH" = origin ]; then
+		{ git -C "$worktree" fetch -q origin && git -C "$worktree" rebase -q origin/master; } >>"$ROW_DIR/out.log" 2>&1 || return 0
+	else
+		{ git -C "$worktree" fetch -q "$DS12_FETCH" master && git -C "$worktree" rebase -q FETCH_HEAD; } >>"$ROW_DIR/out.log" 2>&1 || return 0
+	fi
 	dh_json submit -b "$DS12_BRANCH" --plan || :
 	dh_json rebase -b "$DS12_BRANCH" || :
 	dh_json submit -b "$DS12_BRANCH" --plan || :
