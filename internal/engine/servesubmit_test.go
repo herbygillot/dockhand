@@ -175,9 +175,9 @@ func TestServeSaysAGoToolchainMinimumItNeedNotHold(t *testing.T) {
 		message   string
 	}{
 		{editprep.GoToolchain{Required: "1.26.8", Declared: "1.25.8", Outcome: editprep.GoToolchainRaised},
-			"upstream: go.mod requires Go 1.26.8, so go.toolchain_min is raised from 1.25.8"},
+			"upstream: go.mod requires Go 1.26.8, a newer series than go.toolchain_min 1.25.8's, so it is raised to 1.26.8"},
 		{editprep.GoToolchain{Required: "1.26.8", Declared: "1.26", Outcome: editprep.GoToolchainCovered},
-			"upstream: go.mod requires Go 1.26.8, which go.toolchain_min 1.26 already gates on"},
+			"upstream: go.mod requires Go 1.26.8, of the 1.26 series, which go.toolchain_min 1.26 already gates on; the Go PortGroup compares series"},
 	} {
 		t.Run(string(test.toolchain.Outcome), func(t *testing.T) {
 			t.Parallel()

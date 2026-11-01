@@ -220,6 +220,10 @@ func PullRequestWords(plan engine.SubmitPlan) string {
 	case plan.WasDraft():
 		words += ", a draft: dockhand submit --ready marks it ready for review"
 	}
+	// A title dockhand took from what it last pushed follows the commits.
+	if plan.Retitled {
+		words += fmt.Sprintf("; retitles #%d to '%s'", plan.Existing.PullRequest.Ref.Number, plan.Title)
+	}
 	var refreshing []string
 	if plan.Sections.Description == engine.SectionRefreshed {
 		refreshing = append(refreshing, "its Description section")

@@ -300,6 +300,85 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	require.Equal(t, model.ObjectID(third), plan.OthersPushed)
 }
 
+// A pull request's title that dockhand took from the commits it last
+// pushed follows its commits to a newer release, and the plan says so:
+// ship continued croc-11.6.1's #36310 with "croc: update to 11.6.2", and
+// it stayed "croc: update to 11.6.1" (field testing's croc update,
+// 2026-11-01). A title a person edited on GitHub, an adopted pull
+// request's, and one --title gives stay theirs.
+func TestADockhandTitleFollowsItsCommits(t *testing.T) {
+	t.Parallel()
+	// submitted opens jq's pull request as "jq: update to 1.8.1" and moves
+	// the branch's commit to "jq: update to 1.8.2", which submit plans.
+	submitted := func(t *testing.T, before func(e *Engine, fake *forgetest.GitHub, branch model.Branch, number int), request SubmitRequest) (*Engine, *forgetest.GitHub, SubmitPlan) {
+		t.Helper()
+		f := setup(t)
+		e, _ := f.withPreparer(t)
+		fake := f.withFork(t, e)
+		branch := committedUpdate(t, e)
+		plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+		require.NoError(t, err)
+		require.Equal(t, "jq: update to 1.8.1", plan.Title)
+		first, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+		require.NoError(t, err)
+		branch, err = e.Resolve(t.Context(), "jq-update")
+		require.NoError(t, err)
+		if before != nil {
+			before(e, fake, branch, first.PullRequest.Ref.Number)
+		}
+		testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\n"})
+		testsupport.Git(t, branch.Worktree, "commit", "-q", "-a", "--amend", "-m", "jq: update to 1.8.2")
+		request.Branch, request.NoCheck = branch, true
+		plan, err = e.PlanSubmit(t.Context(), request)
+		require.NoError(t, err)
+		require.NotNil(t, plan.Existing)
+		return e, fake, plan
+	}
+
+	t.Run("dockhand's", func(t *testing.T) {
+		t.Parallel()
+		e, fake, plan := submitted(t, nil, SubmitRequest{})
+		require.True(t, plan.Retitled)
+		require.Equal(t, "jq: update to 1.8.2", plan.Title)
+		_, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+		require.NoError(t, err)
+		require.Len(t, fake.Updated, 1)
+		require.Equal(t, "jq: update to 1.8.2", fake.PRs[plan.Existing.PullRequest.Ref.Number].Title)
+	})
+	t.Run("edited on GitHub after the preview", func(t *testing.T) {
+		t.Parallel()
+		e, fake, plan := submitted(t, nil, SubmitRequest{})
+		require.True(t, plan.Retitled)
+		fake.PRs[plan.Existing.PullRequest.Ref.Number].Title = "jq: update to 1.8.2, my words"
+		_, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+		require.NoError(t, err)
+		require.Equal(t, "jq: update to 1.8.2, my words", fake.PRs[plan.Existing.PullRequest.Ref.Number].Title, "the person's edit stands")
+	})
+	t.Run("a person's", func(t *testing.T) {
+		t.Parallel()
+		_, _, plan := submitted(t, func(_ *Engine, fake *forgetest.GitHub, _ model.Branch, number int) {
+			fake.PRs[number].Title = "jq: update to 1.8.1, my words"
+		}, SubmitRequest{})
+		require.False(t, plan.Retitled)
+		require.Equal(t, "jq: update to 1.8.1, my words", plan.Title)
+	})
+	t.Run("adopted", func(t *testing.T) {
+		t.Parallel()
+		_, _, plan := submitted(t, func(e *Engine, _ *forgetest.GitHub, branch model.Branch, _ int) {
+			branch.PullRequest.Adopted = true
+			require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(branch) }))
+		}, SubmitRequest{})
+		require.False(t, plan.Retitled)
+		require.Equal(t, "jq: update to 1.8.1", plan.Title)
+	})
+	t.Run("--title", func(t *testing.T) {
+		t.Parallel()
+		_, _, plan := submitted(t, nil, SubmitRequest{Title: "jq: update to 1.8.2, reviewed"})
+		require.False(t, plan.Retitled)
+		require.Equal(t, "jq: update to 1.8.2, reviewed", plan.Title)
+	})
+}
+
 func TestSubmitNeedsCommittedWorkAndYourFork(t *testing.T) {
 	t.Parallel()
 	f := setup(t)

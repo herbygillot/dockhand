@@ -51,10 +51,10 @@ func TestAGoPinOlderThanGoModRequiresHolds(t *testing.T) {
 		{"the minimum raised, as the update said it",
 			Input{Port: pinnedGoPort("1.27.0", "1.26"), Base: pinnedGoPort("1.26.3", "1.26"), Pairs: goMods(t, "1.26.3", "1.27.0"),
 				Toolchain: &Toolchain{Required: "1.27.0", Declared: "1.26.3", Outcome: ToolchainRaised}},
-			toolchainFinding("1.27.0", "upstream: go.mod requires Go 1.27.0, so go.toolchain_min is raised from 1.26.3, but the Portfile pins go-1.26 (go.bin, depends_build); the pin may be obsolete", model.Introduced, true)},
+			toolchainFinding("1.27.0", "upstream: go.mod requires Go 1.27.0, a newer series than go.toolchain_min 1.26.3's, so it is raised to 1.27.0, but the Portfile pins go-1.26 (go.bin, depends_build); the pin may be obsolete", model.Introduced, true)},
 		{"the minimum gating on it, as the check's assessment found it",
 			Input{Port: pinnedGoPort("1.27.0", "1.26"), Base: pinnedGoPort("1.26.3", "1.26"), Pairs: goMods(t, "1.26.3", "1.27.0")},
-			toolchainFinding("1.27.0", "upstream: go.mod requires Go 1.27.0, so go.toolchain_min is raised from 1.26.3, but the Portfile pins go-1.26 (go.bin, depends_build); the pin may be obsolete", model.Introduced, true)},
+			toolchainFinding("1.27.0", "upstream: go.mod requires Go 1.27.0, a newer series than go.toolchain_min 1.26.3's, so it is raised to 1.27.0, but the Portfile pins go-1.26 (go.bin, depends_build); the pin may be obsolete", model.Introduced, true)},
 		{"pinned by the dependency alone",
 			Input{Port: byDependency, Base: byDependency, Pairs: goMods(t, "1.26.3", "1.27.0")},
 			toolchainFinding("1.27.0", "upstream: go.mod requires Go 1.27.0, but the Portfile pins go-1.26 (depends_build); the pin may be obsolete", model.Introduced, true)},
@@ -63,7 +63,7 @@ func TestAGoPinOlderThanGoModRequiresHolds(t *testing.T) {
 			toolchainFinding("1.27.0", "upstream: go.mod requires Go 1.27.0, above go.toolchain_min 1.25, which doesn't gate on it; and the Portfile pins go-1.26 (go.bin, depends_build); the pin may be obsolete", model.Introduced, true)},
 		{"the base unread",
 			Input{Port: pinnedGoPort("1.27.0", "1.26"), Base: pinnedGoPort("1.26.3", "1.26"), Toolchain: &Toolchain{Required: "1.27.0"}},
-			toolchainFinding("1.27.0", "upstream: go.mod requires Go 1.27.0, so go.toolchain_min is raised from 1.26.3, but the Portfile pins go-1.26 (go.bin, depends_build); the pin may be obsolete", model.UnknownBaseline, true)},
+			toolchainFinding("1.27.0", "upstream: go.mod requires Go 1.27.0, a newer series than go.toolchain_min 1.26.3's, so it is raised to 1.27.0, but the Portfile pins go-1.26 (go.bin, depends_build); the pin may be obsolete", model.UnknownBaseline, true)},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			require.Equal(t, []model.UpstreamChange{test.want}, Assess(test.input).Changes)
@@ -76,9 +76,9 @@ func TestAGoPinOlderThanGoModRequiresHolds(t *testing.T) {
 // judged by its series, as a minimum is.
 func TestAGoPinMeetingTheRequirementSaysNothingMore(t *testing.T) {
 	changes := Assess(Input{Port: pinnedGoPort("1.27.0", "1.27"), Base: pinnedGoPort("1.26.3", "1.26"), Pairs: goMods(t, "1.26.3", "1.27.0")}).Changes
-	require.Equal(t, []model.UpstreamChange{toolchainFinding("1.27.0", "upstream: go.mod requires Go 1.27.0, so go.toolchain_min is raised from 1.26.3", model.Introduced, false)}, changes)
+	require.Equal(t, []model.UpstreamChange{toolchainFinding("1.27.0", "upstream: go.mod requires Go 1.27.0, a newer series than go.toolchain_min 1.26.3's, so it is raised to 1.27.0", model.Introduced, false)}, changes)
 	changes = Assess(Input{Port: pinnedGoPort("1.26", "1.26"), Base: pinnedGoPort("1.26", "1.26"), Pairs: goMods(t, "1.26.3", "1.26.8")}).Changes
-	require.Equal(t, []model.UpstreamChange{toolchainFinding("1.26.8", "upstream: go.mod requires Go 1.26.8, which go.toolchain_min 1.26 already gates on", model.Introduced, false)}, changes)
+	require.Equal(t, []model.UpstreamChange{toolchainFinding("1.26.8", "upstream: go.mod requires Go 1.26.8, of the 1.26 series, which go.toolchain_min 1.26 already gates on; the Go PortGroup compares series", model.Introduced, false)}, changes)
 }
 
 // A pin the base had, which already didn't meet the base's go.mod, is
@@ -113,9 +113,24 @@ func TestAGoPinAlreadyBehindAtTheBaseIsSaidAndHoldsNothing(t *testing.T) {
 // 2026-10-02). One the base had already says that.
 func TestAMinimumRaisedFromTheBasesIsSaid(t *testing.T) {
 	input := Input{Port: goPort("1.27.1"), Base: goPort("1.25.8"), Pairs: goMods(t, "1.25.8", "1.27.1")}
-	require.Contains(t, messages(Assess(input).Changes), "· upstream: go.mod requires Go 1.27.1, so go.toolchain_min is raised from 1.25.8")
+	require.Contains(t, messages(Assess(input).Changes), "· upstream: go.mod requires Go 1.27.1, a newer series than go.toolchain_min 1.25.8's, so it is raised to 1.27.1")
 	input.Base = goPort("1.27.1")
-	require.Contains(t, messages(Assess(input).Changes), "· upstream: go.mod requires Go 1.27.1, which go.toolchain_min 1.27.1 already gates on")
+	require.Contains(t, messages(Assess(input).Changes), "· upstream: go.mod requires Go 1.27.1, of the 1.27 series, which go.toolchain_min 1.27.1 already gates on; the Go PortGroup compares series")
+	// A minimum raised past a series that already gated on it raised no
+	// series go.mod needed.
+	input.Base = goPort("1.27.0")
+	input.Port = goPort("1.28.0")
+	require.Contains(t, messages(Assess(input).Changes), "· upstream: go.mod requires Go 1.27.1, of the 1.27 series, and go.toolchain_min is raised from 1.27.0 to 1.28.0")
+}
+
+// The words say it's the series that's compared: croc's go.toolchain_min
+// 1.27.0 under go.mod's 1.27.1 read as a contradiction beside nebula's,
+// raised from 1.26.0 to 1.27.3 (field testing's croc update, 2026-11-01).
+func TestTheGoMinimumsWordsSayTheSeriesIsCompared(t *testing.T) {
+	croc := Input{Port: goPort("1.27.0"), Base: goPort("1.27.0"), Pairs: goMods(t, "1.27.0", "1.27.1")}
+	require.Contains(t, messages(Assess(croc).Changes), "· upstream: go.mod requires Go 1.27.1, of the 1.27 series, which go.toolchain_min 1.27.0 already gates on; the Go PortGroup compares series")
+	nebula := Input{Port: goPort("1.27.3"), Base: goPort("1.26.0"), Pairs: goMods(t, "1.26.0", "1.27.3")}
+	require.Contains(t, messages(Assess(nebula).Changes), "· upstream: go.mod requires Go 1.27.3, a newer series than go.toolchain_min 1.26.0's, so it is raised to 1.27.3")
 }
 
 // A go.mod whose module moves is said, and holds for a look, naming both

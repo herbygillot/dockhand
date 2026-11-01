@@ -219,7 +219,7 @@ func TestTheGoMinimumIsJudgedAsItStands(t *testing.T) {
 		hold, says bool
 	}{
 		{"raised", Input{Port: goPort("1.24"), Base: goPort("1.22"), Pairs: pair("1.22", "1.24"), Toolchain: &Toolchain{Required: "1.24", Declared: "1.22", Outcome: ToolchainRaised}},
-			"upstream: go.mod requires Go 1.24, so go.toolchain_min is raised from 1.22", model.Introduced, false, true},
+			"upstream: go.mod requires Go 1.24, a newer series than go.toolchain_min 1.22's, so it is raised to 1.24", model.Introduced, false, true},
 		{"undeclared, the requirement rising", Input{Port: goPort(""), Base: goPort(""), Pairs: pair("1.22", "1.24"), Toolchain: &Toolchain{Required: "1.24", Outcome: ToolchainUndeclared}},
 			"upstream: go.mod requires Go 1.24, and the Portfile declares no go.toolchain_min; declaring one gates the port on older Go, the maintainer's call", model.Introduced, true, true},
 		{"undeclared, as at the base", Input{Port: goPort(""), Base: goPort(""), Pairs: pair("1.24.0", "1.24.3"), Toolchain: &Toolchain{Required: "1.24.3", Outcome: ToolchainUndeclared}},
@@ -331,9 +331,9 @@ func TestWhatWasntObservedIsSaid(t *testing.T) {
 func TestAGoMinimumThatCoversIsSaidSo(t *testing.T) {
 	changes := Assess(Input{Port: goPort("1.26"), Base: goPort("1.20"), Toolchain: &Toolchain{Required: "1.26.8"}}).Changes
 	require.Equal(t, []model.UpstreamChange{{Kind: "toolchain", Path: "go.mod", Rule: GoToolchainRule, Subject: "1.26.8", Class: model.Introduced,
-		Message: "upstream: go.mod requires Go 1.26.8, so go.toolchain_min is raised from 1.20"}}, changes)
+		Message: "upstream: go.mod requires Go 1.26.8, a newer series than go.toolchain_min 1.20's, so it is raised to 1.26"}}, changes)
 	changes = Assess(Input{Port: goPort("1.26"), Base: goPort("1.26"), Toolchain: &Toolchain{Required: "1.26.8"}}).Changes
-	require.Equal(t, "upstream: go.mod requires Go 1.26.8, which go.toolchain_min 1.26 already gates on", changes[0].Message)
+	require.Equal(t, "upstream: go.mod requires Go 1.26.8, of the 1.26 series, which go.toolchain_min 1.26 already gates on; the Go PortGroup compares series", changes[0].Message)
 }
 
 // Where no edit said what go.mod requires, as for a version changed by

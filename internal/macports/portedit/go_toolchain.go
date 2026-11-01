@@ -67,7 +67,7 @@ func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *
 		outcome(GoToolchainUndeclared)
 		return nil
 	case macports.GoToolchainCovers(current, required):
-		progress.VerboseReport(ctx, "The Portfile's go.toolchain_min %s already covers the %s that go.mod requires", current, required)
+		progress.VerboseReport(ctx, "%s's go.mod requires Go %s, of the %s series, which go.toolchain_min %s already gates on; the Go PortGroup compares series", input.target.Name, required, macports.GoSeries(required), current)
 		outcome(GoToolchainCovered)
 		return nil
 	}
