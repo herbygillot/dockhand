@@ -419,6 +419,12 @@ func hintBaseline(ctx context.Context, e *engine.Engine, out io.Writer, run mode
 	if len(ports) > 1 {
 		fails = "fail"
 	}
+	// What MacPorts' builders made of those ports on the releases they
+	// failed on here, where they failed the same release, can save the
+	// baseline's build.
+	for _, words := range e.BuildersBeside(ctx, run, ports) {
+		fmt.Fprintln(out, words+".")
+	}
 	fmt.Fprintf(out, "To see whether %s %s at master %s too: dockhand check --baseline --branch %s\n", strings.Join(ports, ", "), fails, base.Short(), branch.ShortName())
 	return nil
 }

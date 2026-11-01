@@ -236,6 +236,10 @@ type Engine struct {
 	// counts archives by, and master's archive's reading, an install
 	// finding's earlier one. Neither is had where it's nil.
 	Catalog *binaryarchive.Catalog
+	// Builders read what MacPorts' builders made of a port, as
+	// ports.macports.org keeps it, for impact and a failed check's offer
+	// of a baseline; nothing is read where it's nil.
+	Builders BuilderHistory
 	// Providers are where checks build, by name.
 	Providers map[string]buildenv.Provider
 	ports     *selection.Reader

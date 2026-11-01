@@ -57,6 +57,7 @@ The providers implement `buildenv.Provider`, the contract in `internal/buildenv`
 - **`buildenv/ghactions`** pushes the revision's commit to your fork and reads MacPorts' own workflow run, its jobs' logs through `macports/cilog`, which the engine also reads a pull request's failed jobs with. [github provider](github-provider.md).
 - **`buildenv/script`** hands a request file to your command and reads its result file. [command provider](command-provider.md).
 - **`macports/binaryarchive`** makes a kept archive an entry of an archive site MacPorts installs from, signed both ways MacPorts verifies one, and reads such a site. Its `Catalog`, which compose builds with the site, the archive cache, the engine's clock, and the HTTP client, answers what packages.macports.org serves as available, absent, or unavailable: a port's listing, kept a day, and what an archive installs, read as it downloads and kept by its name, an archive not served marked absent for a day; a read that may not fetch answers from what's kept alone. The engine decides which archive matters: each dependency's, for a check's install estimate (`engine/estimate.go`), and master's build of a target never checked in an environment, an install finding's earlier reading (`engine/installed.go`). The kept archives of earlier checks are another thing, `checks.Archives`.
+- **`macports/buildhistory`** reads what MacPorts' builders made of a port, as ports.macports.org's API keeps their build history (`/api/v1/builds/`, filtered by `port_name`): its first page, each builder's newest build that passed or failed standing for that release. Its `Reader`, which compose builds with the build history cache, the engine's clock, and the HTTP client, reads a port once a day, keeping an answer of no builds too; an error, a refusal, or no answer within 5 s says nothing and fails nothing. The engine reads it as `Engine.Builders` (`engine/builders.go`): for `impact`, each changed port's history, and beside a failed check's offer of a baseline, the builders' latest build of each offered port on each release it failed on.
 
 ## Authoring
 
@@ -114,6 +115,7 @@ Beneath the rest, knowing nothing of branches or checks:
 | one run root under the system temporary directory | a process's short-lived workspaces, removed when it exits (`scratch`) |
 | the user cache directory, `dockhand/readings` (`$DOCKHAND_READING_CACHE`) | readings of upstream files, keyed by what they read; disposable |
 | the user cache directory, `dockhand/archives` (`$DOCKHAND_ARCHIVE_CACHE`) | packages.macports.org's listings of ports' archives, each kept a day (`binaryarchive.Catalog`); disposable |
+| the user cache directory, `dockhand/builds` (`$DOCKHAND_BUILD_HISTORY_CACHE`) | ports.macports.org's build histories of ports, each kept a day (`buildhistory.Reader`); disposable |
 | the user cache directory, `dockhand/github` (`$DOCKHAND_GITHUB_CACHE`) | GitHub's answers to reads with their ETags, keyed by the address, what it accepts, and a digest of the credential; disposable |
 | `~/Source/macports-branches` | branch worktrees, unless `worktrees` says otherwise |
 

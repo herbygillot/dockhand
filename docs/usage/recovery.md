@@ -173,6 +173,16 @@ capture's flags. A port newly added by the branch has no baseline version to
 build. A failure before building, such as an incorrect checksum, usually needs a
 Portfile or source investigation instead.
 
+Beside the offer of a baseline, a failed check says what MacPorts' builders made
+of each offered port on each release it failed on, by their latest build there
+on ports.macports.org: "MacPorts' builders failed exiv2 on macOS 15 arm64 too",
+where the failure predates the branch and the baseline's build may not be
+needed, or "MacPorts' builders built exiv2 on macOS 15 arm64", where the branch
+or the environment is the likelier cause. `dockhand impact` says the same of
+each changed port across every release, which helps choose between a patch and
+`known_fail`. The site is read once a day for each port; when it doesn't answer,
+nothing is said.
+
 Read both outcomes and their phases. A baseline failure is an observation, not
 an automatic acceptance. If the same eligible failure is reproduced, direct
 submission can record the appropriate `--accept` and name the baseline in the

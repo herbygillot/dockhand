@@ -762,6 +762,26 @@ type impactJSON struct {
 	Dependents      []dependentJSON     `json:"dependents"`
 	DependentsError string              `json:"dependents_error,omitempty"`
 	Shared          []sharedJSON        `json:"shared_files"`
+	// Builders are what MacPorts' builders made of each changed port, by
+	// each builder's latest build on ports.macports.org; a port the site
+	// gave no answer for is left out.
+	Builders []portBuildsJSON `json:"builders"`
+}
+
+// portBuildsJSON is what MacPorts' builders made of a port
+// (engine.PortBuilds).
+type portBuildsJSON struct {
+	Port   string             `json:"port"`
+	Words  string             `json:"words"`
+	Latest []builderBuildJSON `json:"latest"`
+}
+
+// builderBuildJSON is a builder's latest build of a port that passed or
+// failed.
+type builderBuildJSON struct {
+	Builder string    `json:"builder"`
+	Status  string    `json:"status"`
+	Started time.Time `json:"started"`
 }
 
 type dependentJSON struct {
@@ -785,6 +805,14 @@ func ImpactView(impact engine.Impact) impactJSON {
 	}
 	for _, shared := range impact.Shared {
 		viewed.Shared = append(viewed.Shared, sharedJSON{Path: shared.Path, PortGroup: shared.PortGroup, Users: NonNil(shared.Users)})
+	}
+	viewed.Builders = []portBuildsJSON{}
+	for _, builds := range impact.Builds {
+		port := portBuildsJSON{Port: builds.Port, Words: builds.History.Words(), Latest: []builderBuildJSON{}}
+		for _, build := range builds.History.Latests() {
+			port.Latest = append(port.Latest, builderBuildJSON{Builder: build.Builder, Status: build.Status, Started: build.Started})
+		}
+		viewed.Builders = append(viewed.Builders, port)
 	}
 	return viewed
 }

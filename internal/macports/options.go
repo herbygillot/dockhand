@@ -45,11 +45,15 @@ func ForgeOptions(prefix string) []string {
 // it calls or matches. The worker checks each after the port is
 // evaluated, and an absence is an option error, so a rule that reads it is
 // inconclusive rather than wrong; an entry with neither says the version
-// was checked and nothing of it is assumed.
+// was checked and nothing of it is assumed. Feeds are the facts the
+// evaluator reads through a procedure, by its name: an absent procedure's
+// option error is each of its facts' as well, so a rule reading the fact
+// is inconclusive rather than reading no value as the answer.
 type PortGroupAssumption struct {
 	Name, Version string
 	Options       []string
 	Procs         []string
+	Feeds         map[string][]string
 }
 
 // PortGroupAssumptions are the PortGroups dockhand's code assumes
@@ -66,7 +70,8 @@ var PortGroupAssumptions = []PortGroupAssumption{
 	{Name: "rust", Version: "1.0", Options: []string{"cargo.crates", "cargo.crates_github", "cargo.update", "cargo.offline_cmd"}, Procs: []string{"cargo.rust_platform"}},
 	{Name: "cargo", Version: "1.0", Options: []string{"cargo.crates", "cargo.crates_github", "cargo.update", "cargo.offline_cmd"}, Procs: []string{"cargo.rust_platform"}},
 	{Name: "cargo_fetch", Version: "1.0", Options: []string{"cargo.crates", "cargo.crates_github", "cargo.update", "cargo.dir", "cargo.offline_cmd"}},
-	{Name: "python", Version: "1.0", Options: []string{"python.versions", "python.version", "python.default_version", "python.rootname", "python.pep517", "python.pep517_backend"}, Procs: []string{"python_get_default_version"}},
+	{Name: "python", Version: "1.0", Options: []string{"python.versions", "python.version", "python.default_version", "python.rootname", "python.pep517", "python.pep517_backend"}, Procs: []string{"python_get_default_version"},
+		Feeds: map[string][]string{"python_get_default_version": {"dockhand.python_default", "dockhand.python_group_default"}}},
 	{Name: "cmake", Version: "1.0"},
 	{Name: "cmake", Version: "1.1", Options: []string{"cmake.source_dir"}},
 	{Name: "xcodeversion", Version: "1.0", Options: []string{"minimum_xcodeversions"}},
@@ -76,11 +81,18 @@ var PortGroupAssumptions = []PortGroupAssumption{
 
 // TclPortGroupAssumptions renders assumptions as the Tcl list the
 // evaluator's worker check reads: name, version, options, and procedures,
-// one list each.
+// one list each, and the facts each procedure feeds, a dictionary of
+// procedure to list.
 func TclPortGroupAssumptions(assumptions []PortGroupAssumption) string {
 	var entries []string
 	for _, a := range assumptions {
-		entries = append(entries, tclList(a.Name, a.Version, tclList(a.Options...), tclList(a.Procs...)))
+		var feeds []string
+		for _, proc := range a.Procs {
+			if facts := a.Feeds[proc]; len(facts) > 0 {
+				feeds = append(feeds, proc, tclList(facts...))
+			}
+		}
+		entries = append(entries, tclList(a.Name, a.Version, tclList(a.Options...), tclList(a.Procs...), tclList(feeds...)))
 	}
 	return tclList(entries...)
 }

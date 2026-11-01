@@ -198,19 +198,26 @@ namespace eval ::dockhand {
 
     # assumed checks a port's worker for what the assumption manifest says
     # its PortGroups define, by the version each was loaded at: each
-    # option or procedure it lacks, and why, as name and problem pairs.
+    # option or procedure it lacks, and why, as name and problem pairs,
+    # and for a procedure, each fact it feeds with the same problem, so
+    # the rules reading the fact are inconclusive rather than reading its
+    # absence as an answer.
     proc assumed {worker} {
         set missing {}
         if {[catch {$worker eval {if {[info exists PortInfo(portgroups)]} { set PortInfo(portgroups) }}} groups]} { return $missing }
         foreach group $groups {
             lassign $group name version
             foreach entry $::dockhand::portgroup_assumptions {
-                lassign $entry assumed_name assumed_version options procs
+                lassign $entry assumed_name assumed_version options procs feeds
                 if {$assumed_name ne $name || $assumed_version ne $version} { continue }
                 foreach command [concat $options $procs] {
                     if {![llength [$worker eval [list info commands ::$command]]]} {
                         set kind [expr {$command in $options ? "option" : "procedure"}]
-                        lappend missing $command "the $name $version PortGroup no longer defines the $kind $command, which dockhand relies on"
+                        set problem "the $name $version PortGroup no longer defines the $kind $command, which dockhand relies on"
+                        lappend missing $command $problem
+                        if {[dict exists $feeds $command]} {
+                            foreach fact [dict get $feeds $command] { lappend missing $fact $problem }
+                        }
                     }
                 }
             }
@@ -278,8 +285,9 @@ namespace eval ::dockhand {
             }
             # What dockhand relies on the port's PortGroups to define, the one
             # manifest Go holds (macports.PortGroupAssumptions): an option or
-            # procedure a PortGroup no longer defines is an option error, so
-            # the rules that read it are inconclusive rather than wrong.
+            # procedure a PortGroup no longer defines is an option error, and
+            # a procedure's on the facts it feeds as well, so the rules that
+            # read either are inconclusive rather than wrong.
             foreach {name problem} [::dockhand::assumed $worker] {
                 if {![dict exists $failures $name]} { dict set failures $name $problem }
             }

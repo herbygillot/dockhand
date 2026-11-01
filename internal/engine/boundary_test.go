@@ -47,6 +47,7 @@ var engineImports = map[string]string{
 	"internal/macports/patchcheck":    "diff and patch, as compose found them, for the comparison and outdated's edits",
 	"internal/macports/cilog":         "what MacPorts' workflow's job log says of each port and its first error, for a pull request's CI",
 	"internal/macports/binaryarchive": "archives' names and the archive catalog: the listings an install estimate counts, master's archive an install finding reads",
+	"internal/macports/buildhistory":  "what MacPorts' builders made of a port on each release, for impact and beside a baseline's offer",
 	"internal/macports/fidelity":      "which subports a revision changed, for its change record",
 	"internal/failpoint":              "the acceptance harness's kill steps, which a normal build hasn't",
 	"internal/macports/prdescription": "the pull request's description, as MacPorts' template has it",

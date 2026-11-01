@@ -33,6 +33,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/binaryarchive"
+	"github.com/herbygillot/dockhand/internal/macports/buildhistory"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
@@ -179,7 +180,9 @@ type Dependencies struct {
 	OutdatedReader engine.OutdatedReader
 	ProjectReader  engine.ProjectReader
 	HTTPS          engine.HTTPSProbe
-	GitHubCLI      engine.GitHubCLI
+	// Builders stand in for ports.macports.org's build history.
+	Builders  engine.BuilderHistory
+	GitHubCLI engine.GitHubCLI
 	// Actions stands in for GitHub Actions, with no waiting between polls.
 	Actions ghactions.API
 	// Leftovers is a provider with environments left behind, registered
@@ -345,6 +348,11 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	// checkout's kept archives, by the engine's clock.
 	listings, _ := options.cacheDirectory("DOCKHAND_ARCHIVE_CACHE", "archives")
 	e.Catalog = &binaryarchive.Catalog{Listings: listings, Readings: e.MasterReadings(), HTTP: fetch.Client, Now: engineOptions.Now}
+	// What MacPorts' builders made of each port, by ports.macports.org's
+	// build history: each port's kept a day in the build history cache, or
+	// for the process where it can't be placed, by the engine's clock.
+	histories, _ := options.cacheDirectory("DOCKHAND_BUILD_HISTORY_CACHE", "builds")
+	e.Builders = &buildhistory.Reader{Cache: histories, HTTP: fetch.Client, Now: engineOptions.Now}
 	e.Builds = engine.Builds{Default: file.Build.Default, Unattended: file.Build.Unattended, Profiles: map[string]engine.Profile{}}
 	for name, profile := range file.Build.Profiles {
 		releases, rule := profile.List()
@@ -446,6 +454,9 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	}
 	if dependencies.HTTPS != nil {
 		e.HTTPS = dependencies.HTTPS
+	}
+	if dependencies.Builders != nil {
+		e.Builders = dependencies.Builders
 	}
 	return Assembly{Engine: e, File: file, Options: engineOptions}, nil
 }

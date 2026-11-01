@@ -212,7 +212,9 @@ directly, and the shared files it changes with the ports that load them.
 Dependents come from the port index at the branch's base, and are looked
 for of each port changed beyond its revision, or of the ports named. They
 are candidates to look at, not proof of anything: check --also builds
-some against the branch.`,
+some against the branch. Where ports.macports.org answers, it also says
+whether each changed port built on each macOS release on MacPorts'
+builders, by each builder's latest build of it.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			e, err := s.Open(ctx)
@@ -291,6 +293,20 @@ func writeImpact(out io.Writer, impact engine.Impact, in string) {
 		}
 		if i == 0 {
 			row("Shared files", words)
+		} else {
+			row("", words)
+		}
+	}
+	// Whether each changed port built on each release on MacPorts'
+	// builders before, to choose between a patch and known_fail; nothing
+	// is said of a port the site gave no answer for.
+	for i, builds := range impact.Builds {
+		words := builds.Port + ": " + builds.History.Words()
+		if len(builds.History.Latests()) > 0 {
+			words += ", by each one's latest build on ports.macports.org"
+		}
+		if i == 0 {
+			row("Builders", words)
 		} else {
 			row("", words)
 		}

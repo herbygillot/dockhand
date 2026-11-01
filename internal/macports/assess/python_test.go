@@ -113,6 +113,28 @@ func TestARequiresPythonThatLeavesOutAPythonTheBuildsForHolds(t *testing.T) {
 	}, pythonLines(Assess(input)))
 }
 
+// A pin whose PortGroup default couldn't be read, as when the python
+// PortGroup no longer defines python_get_default_version and the manifest
+// keys its absence by the facts it feeds, is said as inconclusive, not
+// read as a pin that isn't behind; a port without the PortGroup has no
+// pin, and nothing is said.
+func TestAPinWhoseDefaultCouldntBeReadIsInconclusive(t *testing.T) {
+	absent := "the python 1.0 PortGroup no longer defines the procedure python_get_default_version, which dockhand relies on"
+	unread := pythonPort("py-demo")
+	unread.Options["python.default_version"] = "313"
+	unread.OptionErrors = map[string]string{"python_get_default_version": absent, "dockhand.python_default": absent, "dockhand.python_group_default": absent}
+	same := pyproject(t, "demo-2", ">=3.9")
+	input := Input{Port: unread, Base: pythonApp("py-demo", "313", "314"), Pairs: []Pair{{Archive: "demo-2.tar.gz", Before: pyproject(t, "demo-1", ">=3.9"), After: same}}}
+	inconclusive := "· couldn't tell whether the Portfile's python.default_version is behind the python PortGroup's default: macports: evaluating dockhand.python_default: " + absent
+	require.Equal(t, []string{inconclusive + " [introduced]"}, pythonLines(Assess(input)))
+
+	input.Base = unread
+	require.Equal(t, []string{inconclusive + " [present]"}, pythonLines(Assess(input)), "the base couldn't be told either")
+
+	input.Port, input.Base = macports.PortInfo{Name: "demo"}, macports.PortInfo{Name: "demo"}
+	require.Empty(t, pythonLines(Assess(input)))
+}
+
 // A requires-python whose verdict on a series its patch release decides,
 // as >=3.13.2's on 3.13 is, is judged by the release MacPorts has, which
 // Wanted asks for; one that can't be observed holds, as not judged.

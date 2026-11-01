@@ -172,11 +172,24 @@ func (a *assessment) requiresPython() (model.UpstreamChange, bool) {
 // updating it may want to move. It holds nothing, and isn't said where the
 // new version's requires-python leaves the default out, the pin then being
 // upstream's own ceiling, nor of a Python version's subport, whose stub
-// carries the pin.
+// carries the pin. Where the pin or the default couldn't be read, an
+// option error on either, as when the PortGroup no longer defines
+// python_get_default_version, that is said instead, holding nothing as
+// the note doesn't: inconclusive, since silence reads as a pin that
+// isn't behind. A port without the PortGroup has neither, and nothing is
+// said.
 func (a *assessment) pythonPin() (model.UpstreamChange, bool) {
 	port := a.input.Port
 	if _, subport := macports.PythonPackage(port.Name); subport {
 		return model.UpstreamChange{}, false
+	}
+	if err := port.PythonPinUnread(); err != nil {
+		found := model.UpstreamChange{Kind: "python", Path: "Portfile", Rule: PythonPinBehind, Class: model.Introduced,
+			Message: fmt.Sprintf("couldn't tell whether the Portfile's python.default_version is behind the python PortGroup's default: %v", err)}
+		if a.input.Base.PythonPinUnread() != nil {
+			found.Class = model.Present
+		}
+		return found, true
 	}
 	pinned, standard, ok := port.PythonPinned()
 	if !ok {

@@ -1,14 +1,18 @@
 package understand
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
+	"github.com/herbygillot/dockhand/internal/macports/buildhistory"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -56,6 +60,35 @@ Other dependents  jo (build), yq (library, runtime); candidates to look at
 Shared files      none
 Next: dockhand check --also yq,jo (it builds them against the branch)
 `, out)
+
+	// Whether jq built on each release on MacPorts' builders before, by
+	// ports.macports.org, is said where the site answered, and its JSON
+	// carries each builder's latest build.
+	started := time.Date(2026, 10, 25, 20, 0, 0, 0, time.UTC)
+	cmdtest.Stands(t).Builders = cmdtest.BuildHistories{"jq": {Port: "jq", Builds: []buildhistory.Build{
+		{Builder: "26_arm64", Status: "build successful", Started: started},
+		{Builder: "15_arm64", Status: "failed install-port", Started: started},
+		{Builder: "26_arm64", Status: "failed install-port", Started: started.Add(-time.Hour)},
+		{Builder: "14_arm64", Status: "build successful", Started: started},
+	}}}
+	out, _, err = cmdtest.Dockhand(t, "impact")
+	require.NoError(t, err)
+	require.Equal(t, `Changed ports     jq
+Other dependents  jo (build), yq (library, runtime); candidates to look at
+Shared files      none
+Builders          jq: failed on macOS 15 arm64; built on the other 2, by each one's latest build on ports.macports.org
+Next: dockhand check --also yq,jo (it builds them against the branch)
+`, out)
+	out, _, err = cmdtest.Dockhand(t, "impact", "--json")
+	require.NoError(t, err)
+	var compact bytes.Buffer
+	require.NoError(t, json.Compact(&compact, []byte(out)))
+	require.Contains(t, compact.String(), `"builders":[{"port":"jq","words":"failed on macOS 15 arm64; built on the other 2","latest":[{"builder":"14_arm64","status":"build successful","started":"2026-10-25T20:00:00Z"},{"builder":"15_arm64","status":"failed install-port","started":"2026-10-25T20:00:00Z"},{"builder":"26_arm64","status":"build successful","started":"2026-10-25T20:00:00Z"}]}]`)
+	cmdtest.Stands(t).Builders = cmdtest.BuildHistories{"jq": {Port: "jq", Builds: []buildhistory.Build{}}}
+	out, _, err = cmdtest.Dockhand(t, "impact")
+	require.NoError(t, err)
+	require.Contains(t, out, "Builders          jq: no builds on ports.macports.org\n")
+	cmdtest.Stands(t).Builders = cmdtest.BuildHistories{}
 
 	// A changed directory's other ports are named as the base's index has
 	// them: devel/libuv's libuv-devel read as libuv alone (batch 32).
