@@ -141,6 +141,10 @@ type Result struct {
 	// that isn't the one it names and the release stands; nil where
 	// nothing said.
 	Move *RepositoryMove
+	// OtherPrefix is the newest tag the port's tag prefix leaves out that
+	// a "v" added or taken away would take, newer than the release
+	// selected; nil where none is.
+	OtherPrefix *OtherPrefix
 }
 
 // RepositoryMove is a repository the forge answers by another name: From

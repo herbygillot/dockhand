@@ -255,6 +255,9 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 		if move := report.Ports[0].RepositoryMove; move != nil && !all {
 			line += "; " + move.Words()
 		}
+		if other := report.Ports[0].OtherPrefix; other != nil && !all {
+			line += "; " + other.Words()
+		}
 	case alone:
 		line = fmt.Sprintf("%s may have a newer release, at master %s", report.Ports[0].Port, master)
 	case newer == 0:
@@ -525,10 +528,18 @@ func (l *lookups) cutShort(ctx context.Context, report engine.OutdatedReport) bo
 
 // seriesNote says a newer series than a versioned subport's, after a row's
 // note: "; 1.2.1 is a newer series than terragrunt-0.52's; a new subport
-// for it is the maintainer's".
+// for it is the maintainer's", and a newer tag under another prefix, as
+// "; upstream's newest tag, v0.12, doesn't match github.setup's tag
+// prefix".
 func seriesNote(port engine.OutdatedPort) string {
-	if port.NewerSeries == "" {
-		return ""
+	var note string
+	if port.NewerSeries != "" {
+		note = "; " + engine.SeriesWords(port.NewerSeries, port.Port)
 	}
-	return "; " + engine.SeriesWords(port.NewerSeries, port.Port)
+	// A newer tag under another prefix than the port's is said beside it
+	// (the outdated-ports session's note 17).
+	if port.OtherPrefix != nil {
+		note += "; " + port.OtherPrefix.Words()
+	}
+	return note
 }

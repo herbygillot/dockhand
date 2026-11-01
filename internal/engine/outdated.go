@@ -83,11 +83,20 @@ type OutdatedPort struct {
 	// where that isn't the one github.setup names (upstream.Result.Move);
 	// nil where nothing said.
 	RepositoryMove *RepositoryMove
+	// OtherPrefix is the newest tag upstream lists that the port's tag
+	// prefix leaves out, which a "v" added or taken away would take, newer
+	// than Newest (upstream.Result.OtherPrefix); said, the port's own
+	// spelling deciding, and nil where none is.
+	OtherPrefix *OtherPrefix
 }
 
 // RepositoryMove is a repository GitHub answers by another name, and its
 // Words say so.
 type RepositoryMove = upstream.RepositoryMove
+
+// OtherPrefix is a newer tag under another prefix than the port's, and its
+// Words say so.
+type OtherPrefix = upstream.OtherPrefix
 
 // OutdatedClass is what a look found of a port, one of the classes below,
 // which plain outdated counts and lists by (Summary).
@@ -321,7 +330,7 @@ func (s *surveyedPorts) Outdated(ctx context.Context, commit model.ObjectID, req
 
 // outdatedPort is a port as upstream discovery assessed it.
 func outdatedPort(port outdated.Port) OutdatedPort {
-	entry := OutdatedPort{Port: port.Selector, Current: port.CurrentVersion, Newest: port.CandidateVersion, Release: port.Release, With: port.With, NewerSeries: port.NewerSeries, RepositoryMove: port.Move}
+	entry := OutdatedPort{Port: port.Selector, Current: port.CurrentVersion, Newest: port.CandidateVersion, Release: port.Release, With: port.With, NewerSeries: port.NewerSeries, RepositoryMove: port.Move, OtherPrefix: port.OtherPrefix}
 	switch port.Assessment {
 	case upstream.UpdateAvailable:
 		entry.Outdated = true
