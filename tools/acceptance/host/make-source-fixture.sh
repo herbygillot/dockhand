@@ -11,9 +11,15 @@
 # anew each run; full.sh names the project as ACCEPT_SOURCE_FIXTURE.
 #
 # It makes only what isn't there: a repository, a tag, a release, or an
-# asset that exists is left as it is, never changed, and said. It runs as
-# the account that owns the fixture, gh logged in as it. Without --run, it
-# only says what it would do.
+# asset that exists is left as it is, never changed, and said; a repository
+# left empty, as a push that failed after its creation leaves one, is
+# pushed to on the next run. It runs as the account that owns the
+# fixture, gh logged in as it, and pushes with gh's own credential, for
+# that one push, since a stage account's git has no HTTPS credential of
+# its own (the M1's first run, 2026-11-01). The account it runs as writes
+# the Portfile, so the host's fixtures directory must be its to write,
+# which it says before it makes anything. Without --run, it only says what
+# it would do.
 #
 #   tools/acceptance/host/make-source-fixture.sh [--run]
 #
@@ -35,8 +41,25 @@ command -v gh >/dev/null || die "gh isn't on PATH; install it and log it in as $
 login=$(gh api user --jq .login 2>/dev/null) || die "gh has no login: log it in as $owner (gh auth login), or set GH_TOKEN to $owner's token"
 [ "$login" = "$owner" ] || die "gh is logged in as $login, not $owner, whose fixture this is"
 
-# exists says whether a repository of the account's is on GitHub.
+# The fixtures directory, or the nearest directory above it that exists,
+# must be this account's to write: $HOST_ROOT is the admin's, and the
+# Portfile written last failed there after the rest was made.
+writable=$fixtures
+while [ ! -e "$writable" ]; do writable=$(dirname "$writable"); done
+[ -w "$writable" ] || die "$writable belongs to $(stat -f %Su "$writable"), and $(id -un) can't write $portfile there: make $fixtures this account's to write (sudo mkdir -p $fixtures && sudo chown $(id -un) $fixtures), or name another ACCEPT_HOST_ROOT"
+
+# exists says whether a repository of the account's is on GitHub; empty,
+# whether it has no branch, as one a failed push left.
 exists() { gh api "repos/$owner/$1" --silent 2>/dev/null; }
+empty() { [ "$(gh api "repos/$owner/$1/branches" --jq length 2>/dev/null)" = 0 ]; }
+
+# push pushes to the account's repository with gh's credential, for this
+# push alone, git's own helpers set aside.
+push() {
+	local dir=$1 target=$2
+	shift 2
+	git_in "$dir" -c credential.helper= -c 'credential.helper=!gh auth git-credential' push -q "https://github.com/$target.git" "$@"
+}
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -45,7 +68,7 @@ trap 'rm -rf "$work"' EXIT
 git_in() { git -C "$1" -c user.name="$owner" -c user.email="$owner@users.noreply.github.com" -c commit.gpgsign=false -c tag.gpgsign=false "${@:2}"; }
 
 # 1. The submodule's project: one file the main project's build installs.
-if exists "$sub"; then
+if exists "$sub" && ! empty "$sub"; then
 	echo "$owner/$sub is there; left as it is"
 elif [ "$DRY" = 1 ]; then
 	echo "would create $owner/$sub, public, holding share.txt, and push its main"
@@ -55,13 +78,13 @@ else
 	printf 'carried by the submodule\n' >"$work/sub/share.txt"
 	git_in "$work/sub" add share.txt
 	git_in "$work/sub" commit -q -m "the submodule's file"
-	step gh repo create "$owner/$sub" --public --description "dockhand's acceptance fixture: a submodule"
-	step git_in "$work/sub" push -q "https://github.com/$owner/$sub.git" main
+	exists "$sub" || step gh repo create "$owner/$sub" --public --description "dockhand's acceptance fixture: a submodule"
+	step push "$work/sub" "$owner/$sub" main
 fi
 
 # 2. The project: a Makefile whose install needs the submodule's file, the
 # submodule at deps/sub, and tags v1.0.0 and v1.1.0.
-if exists "$name"; then
+if exists "$name" && ! empty "$name"; then
 	echo "$repo is there; left as it is"
 elif [ "$DRY" = 1 ]; then
 	echo "would create $repo, public, with a Makefile, deps/sub as a submodule of $owner/$sub, and tags v1.0.0 and v1.1.0, and push them"
@@ -88,8 +111,8 @@ MAKE
 	printf '1.1.0\n' >"$work/main/VERSION"
 	git_in "$work/main" commit -q -am "1.1.0"
 	git_in "$work/main" tag -a v1.1.0 -m v1.1.0
-	step gh repo create "$repo" --public --description "dockhand's acceptance fixture: a project fetched with Git for its submodule"
-	step git_in "$work/main" push -q "https://github.com/$repo.git" main v1.0.0 v1.1.0
+	exists "$name" || step gh repo create "$repo" --public --description "dockhand's acceptance fixture: a project fetched with Git for its submodule"
+	step push "$work/main" "$repo" main v1.0.0 v1.1.0
 fi
 
 # 3. The v1.1.0 release and its two archives, each with one top directory,
