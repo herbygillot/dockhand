@@ -862,10 +862,20 @@ func (t *tx) KeepDependencyArchive(archive model.DependencyArchive) error {
 	if archive.Port == "" {
 		return fmt.Errorf("%w: archive %q kept for no port", store.ErrConflict, archive.Digest)
 	}
+	// The PortGroups a guest built it with, where one did; a later guest
+	// that installed the same archive built nothing, and leaves them.
+	var groups any
+	if archive.PortGroups != nil {
+		data, err := json.Marshal(archive.PortGroups)
+		if err != nil {
+			return err
+		}
+		groups = string(data)
+	}
 	p := archive.Environment.Platform
-	_, err := t.exec("INSERT INTO dependency_archives(repository_id, digest, port, provider, platform_os, platform_version, platform_architecture, developer_tools, kept_at) "+
-		"VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT DO UPDATE SET kept_at=excluded.kept_at",
-		t.repo, archive.Digest, archive.Port, archive.Environment.Provider, p.OS, p.Version, p.Architecture, archive.Environment.DeveloperTools, millis(archive.KeptAt))
+	_, err := t.exec("INSERT INTO dependency_archives(repository_id, digest, port, provider, platform_os, platform_version, platform_architecture, developer_tools, kept_at, port_groups) "+
+		"VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO UPDATE SET kept_at=excluded.kept_at, port_groups=COALESCE(excluded.port_groups, port_groups)",
+		t.repo, archive.Digest, archive.Port, archive.Environment.Provider, p.OS, p.Version, p.Architecture, archive.Environment.DeveloperTools, millis(archive.KeptAt), groups)
 	return err
 }
 
@@ -897,7 +907,7 @@ func (t *tx) DependencyArchives(environment model.Environment, ports []string) (
 		args = append(args, port)
 	}
 	args = append(args, dependencyArchivesPerPort)
-	rows, err := t.conn.QueryContext(t.ctx, "SELECT digest, name, size, archive_kept, port, kept_at FROM (SELECT d.digest, a.name, a.size, a.kept_at AS archive_kept, d.port, d.kept_at, "+
+	rows, err := t.conn.QueryContext(t.ctx, "SELECT digest, name, size, archive_kept, port, kept_at, port_groups FROM (SELECT d.digest, a.name, a.size, a.kept_at AS archive_kept, d.port, d.kept_at, d.port_groups, "+
 		"ROW_NUMBER() OVER (PARTITION BY d.port ORDER BY d.kept_at DESC, d.digest) AS newest FROM dependency_archives d JOIN archives a ON a.repository_id=d.repository_id AND a.digest=d.digest "+
 		"WHERE d.repository_id=? AND d.provider=? AND d.platform_os=? AND d.platform_version=? AND d.platform_architecture=? AND d.developer_tools=? AND d.port COLLATE NOCASE IN ("+placeholders(len(ports))+")) "+
 		"WHERE newest<=? ORDER BY port, kept_at DESC, digest", args...)
@@ -909,8 +919,14 @@ func (t *tx) DependencyArchives(environment model.Environment, ports []string) (
 	for rows.Next() {
 		archive := model.DependencyArchive{Environment: environment}
 		var archiveKept, kept int64
-		if err := rows.Scan(&archive.Digest, &archive.Name, &archive.Size, &archiveKept, &archive.Port, &kept); err != nil {
+		var groups sql.NullString
+		if err := rows.Scan(&archive.Digest, &archive.Name, &archive.Size, &archiveKept, &archive.Port, &kept, &groups); err != nil {
 			return nil, storageError(err)
+		}
+		if groups.Valid {
+			if err := json.Unmarshal([]byte(groups.String), &archive.PortGroups); err != nil {
+				return nil, fmt.Errorf("the PortGroups kept with %s's archive %s: %w", archive.Port, archive.Digest, err)
+			}
 		}
 		archive.KeptAt = fromMillis(archiveKept)
 		found = append(found, archive)

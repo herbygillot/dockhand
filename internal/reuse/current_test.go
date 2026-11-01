@@ -1,6 +1,7 @@
 package reuse
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -162,4 +163,53 @@ func TestAWholeTreeInputMatchesOnlyItsTree(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, Current(recorded, "origin", target, nil, golang, nil), "a PortGroup changed, which it may have read")
 	require.Equal(t, "_resources", ResourcesChanged(recorded, golang))
+}
+
+// A result lasts until a PortGroup loaded by an active port its
+// environment built from source for the check changes, as well as its
+// own: that build sourced them, and the result read what it made
+// (prioritization's ruling, 2026-11-01). A port installed from an
+// archive, MacPorts' or one dockhand kept, is named by its directory and
+// archive alone, so a change to a PortGroup it loads leaves the result
+// standing. ResourcesChanged says which port's build loaded what changed.
+func TestAResultLastsUntilAPortGroupOfAPortBuiltWithItChanges(t *testing.T) {
+	target := model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}, Directory: "sysutils/jq"}
+	// gettext was built from source, and loaded the cmake PortGroup; zlib
+	// was installed from its archive, and loads the golang PortGroup.
+	active := []model.ActivePort{
+		{Name: "gettext", Spec: "@0.22.5_0", Directory: "devel/gettext", Archive: "sha256:11", PortGroups: map[string]model.ObjectID{"_resources/port1.0/group/cmake-1.1.tcl": model.ObjectID(cmakeBlob)}},
+		{Name: "zlib", Spec: "@1.3.1_0", Directory: "archivers/zlib", Archive: "sha256:22"},
+	}
+	revision := func(tree, cmake, golang string) trees {
+		found := resources(tree, cmake, golang, "c1")
+		found[tree+":devel/gettext"], found[tree+":archivers/zlib"] = "g1", "z1"
+		return found
+	}
+	recorded, err := Inputs(t.Context(), revision("t1", cmakeBlob, golangBlob), "t1", "origin", target, active, map[string]model.ObjectID{})
+	require.NoError(t, err)
+	require.Equal(t, active[0].PortGroups, recorded.Active[0].PortGroups, "what the port built here loaded")
+	require.Nil(t, recorded.Active[1].PortGroups, "the archive names what was installed from it")
+	now := func(revision trees, tree string) map[string]model.ObjectID {
+		objects, err := Objects(t.Context(), revision, model.ObjectID(tree), Paths(recorded))
+		require.NoError(t, err)
+		return objects
+	}
+	require.True(t, Current(recorded, "origin", target, nil, now(revision("t1", cmakeBlob, golangBlob), "t1"), nil))
+
+	installed := now(revision("t2", cmakeBlob, strings.Repeat("f", 40)), "t2")
+	require.True(t, Current(recorded, "origin", target, nil, installed, nil), "a PortGroup of a port installed from its archive changed")
+	require.Empty(t, ResourcesChanged(recorded, installed))
+
+	built := now(revision("t3", cmakeEdited, golangBlob), "t3")
+	require.False(t, Current(recorded, "origin", target, nil, built, nil), "a PortGroup of the port built with it changed")
+	require.Equal(t, "the cmake 1.1 PortGroup, which gettext, built from source, loaded", ResourcesChanged(recorded, built))
+
+	// A record from before, its active ports carrying none, is keyed as
+	// it was: by its own PortGroups alone.
+	old := recorded
+	old.Active = []model.ActivePort{{Name: "gettext", Spec: "@0.22.5_0", Directory: "devel/gettext", Tree: "g1", Archive: "sha256:11"}, recorded.Active[1]}
+	key, err := json.Marshal(old.Active[0])
+	require.NoError(t, err)
+	require.NotContains(t, string(key), "PortGroups", "left out, so the key is the one recorded")
+	require.True(t, Current(old, "origin", target, nil, built, nil), "an old record names no PortGroup of its ports")
 }

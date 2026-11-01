@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -360,7 +361,10 @@ func reusedInOrder(remaining []buildenv.Target, chosen map[model.TargetID]reuse.
 // source once on a release MacPorts has no archives of them for, aren't
 // built again by a later check of any port needing them. A port the plan
 // builds is the branch's, and none of its are given. One changed since it
-// was kept isn't given.
+// was kept isn't given, nor one a guest built from source with PortGroups
+// the check's revision holds otherwise: it is the build of what the ports
+// tree no longer says, which a target voided by that change would be
+// built again against (prioritization's ruling, 2026-11-01).
 func (d *driver) dependencyInstalls(ctx context.Context, environment model.Environment, source model.Source, building []reuse.Target) []buildenv.Archive {
 	var ports []string
 	var queue []string
@@ -431,8 +435,18 @@ func (d *driver) dependencyInstalls(ctx context.Context, environment model.Envir
 	}); err != nil {
 		return nil
 	}
+	// The revision's PortGroups, where a kept archive says what it was
+	// built with; where they can't be read, none such is offered.
+	var objects map[string]model.ObjectID
+	if slices.ContainsFunc(kept, func(a model.DependencyArchive) bool { return a.PortGroups != nil }) {
+		objects, err = reuse.Objects(ctx, d.c.Checkout, source.Tree, []string{macports.ResourcesDirectory})
+		if err != nil {
+			objects = nil
+		}
+	}
 	var installs []buildenv.Archive
 	var missing []model.DependencyArchive
+	var stale []staleArchive
 	for _, archive := range kept {
 		// One whose file is gone is said, and its record dropped, where
 		// each check skipped it again in silence (Codex's gcc15 group
@@ -441,6 +455,17 @@ func (d *driver) dependencyInstalls(ctx context.Context, environment model.Envir
 		if info, err := os.Stat(d.c.Archives.Path(archive.Digest)); !ok || err != nil || info.Size() != a.Size {
 			missing = append(missing, archive)
 			continue
+		}
+		// One built with PortGroups the revision holds otherwise isn't
+		// read through for its digest, since it isn't offered.
+		if archive.PortGroups != nil {
+			if objects == nil {
+				continue
+			}
+			if changed := reuse.PortGroupChanged(archive.PortGroups, objects); changed != "" {
+				stale = append(stale, staleArchive{port: archive.Port, changed: changed})
+				continue
+			}
 		}
 		if _, digest, err := sha256File(d.c.Archives.Path(archive.Digest)); err != nil || digest != archive.Digest {
 			// Said, as a target's is, where it was skipped in silence (the
@@ -454,7 +479,36 @@ func (d *driver) dependencyInstalls(ctx context.Context, environment model.Envir
 	if len(missing) > 0 {
 		_ = d.gone(ctx, missing)
 	}
+	// Those not offered for what changed since are said once, for the
+	// ports no other kept archive of is offered for.
+	stale = slices.DeleteFunc(stale, func(a staleArchive) bool {
+		return slices.ContainsFunc(installs, func(i buildenv.Archive) bool { return strings.EqualFold(i.Port, a.port) })
+	})
+	if len(stale) > 0 {
+		d.emit(ctx, model.EventProgress, staleWords(d.run.Name(), stale))
+	}
 	return installs
+}
+
+// staleArchive is a dependency's kept archive a guest built with a
+// PortGroup the check's revision holds otherwise: its port, and what
+// changed, "the cmake 1.1 PortGroup".
+type staleArchive struct{ port, changed string }
+
+// staleWords say the kept archives not offered since a PortGroup their
+// builds loaded changed: one by its port and the PortGroup, several by
+// their count and ports.
+func staleWords(run string, archives []staleArchive) string {
+	if len(archives) == 1 {
+		return fmt.Sprintf("%s: the saved archive for %s was built before %s changed, so the build environment will use a MacPorts archive or build it from source", run, archives[0].port, archives[0].changed)
+	}
+	var ports []string
+	for _, archive := range archives {
+		if !slices.Contains(ports, archive.port) {
+			ports = append(ports, archive.port)
+		}
+	}
+	return fmt.Sprintf("%s: %d saved archives, of %s, were built before PortGroups they loaded changed, so the build environment will use MacPorts archives or build them from source", run, len(archives), prose.And(ports))
 }
 
 // gone says the dependencies' kept archives whose files are missing, or

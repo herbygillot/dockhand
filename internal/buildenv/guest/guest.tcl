@@ -46,6 +46,16 @@ set phase ""
 # binary archive for the guest, so install builds them from source; said
 # with the target, for live progress, and cleared between targets.
 set fromsource {}
+# builthere are the ports this guest built from source, across its
+# targets: each target, each dependency with no binary archive for it, a
+# kept archive counting as one, and each a target's variants brought,
+# which its install builds from source. One built for an earlier target
+# stays installed, so a later target finds no archive to fetch for it,
+# and builds with what this guest built.
+set builthere {}
+# groupsof remembers the PortGroup files each port built here loaded, by
+# its name and variants: the same port is active for many targets.
+set groupsof [dict create]
 set environment [dict create]
 # local is how a check in a prefix of the person's leaves it: whether it
 # builds clean, as in a VM, whether it keeps what it built active, and the
@@ -89,7 +99,13 @@ proc save {state {detail ""}} {
                 set ports {}
                 foreach entry $value {
                     set object {}
-                    dict for {name field} $entry { lappend object $name [json::write string $field] }
+                    dict for {name field} $entry {
+                        if {$name eq "portgroups"} {
+                            lappend object $name [json::write array {*}[lmap file $field { json::write object path [json::write string [dict get $file path]] blob [json::write string [dict get $file blob]] }]]
+                        } else {
+                            lappend object $name [json::write string $field]
+                        }
+                    }
                     lappend ports [json::write object {*}$object]
                 }
                 lappend fields $key [json::write array {*}$ports]
@@ -432,6 +448,30 @@ proc archiveless {log dependencies} {
     return $missing
 }
 
+# built adds a port to those this guest built from source (builthere).
+proc built {name} {
+    global builthere
+    if {[lsearch -exact -nocase $builthere $name] < 0} { lappend builthere $name }
+}
+
+# builtgroups are the PortGroup files a port this guest built loaded, by
+# MacPorts opening its directory under the variants its spec names, the
+# global ones merged as port(1) merges them (portgroups); an error where
+# they can't be read.
+proc builtgroups {name spec directory} {
+    global root groupsof
+    set variants {}
+    if {[set at [string first + $spec]] >= 0} {
+        foreach variant [split [string range $spec $at+1 end] +] { lappend variants $variant + }
+    }
+    set key [list [string tolower $name] $variants]
+    if {![dict exists $groupsof $key]} {
+        if {$directory eq ""} { error "$name, built here, resolves nowhere in the ports tree" }
+        dict set groupsof $key [sourced [file join $root ports $directory] $name $variants]
+    }
+    return [dict get $groupsof $key]
+}
+
 # digests remembers each archive's digest: the same archive is active for
 # many targets.
 set digests [dict create]
@@ -456,8 +496,17 @@ proc digest {path} {
 # ports tree, and its archive's digest. The target's own archive's digest
 # comes with them, where it is active, and where the archive is, for the
 # host to keep it. Each is asked of port once for all the ports.
+#
+# A port this guest built from source (builthere) comes with the
+# PortGroup files its build loaded, each by its path and blob ID, as the
+# target's own are recorded: the target read what that build made, which
+# this guest sourced for the check, so its result lasts until one of them
+# changes too (prioritization's ruling, 2026-11-01). A port active from an
+# archive, MacPorts' or one dockhand kept, was built elsewhere, and comes
+# with none: its archive's digest names it. Where a built port's can't be
+# read, unread says why, and the host takes all of _resources as read.
 proc consumed {name} {
-    global port root
+    global port root builthere
     set ports {}
     set specs {}
     set own ""
@@ -492,6 +541,7 @@ proc consumed {name} {
     }
     set trees [list $root/ports/ [file normalize $root/ports]/]
     set active {}
+    set unread {}
     foreach other $ports {_ spec} $specs location $locations directory $directories {
         set relative ""
         foreach tree $trees {
@@ -502,9 +552,17 @@ proc consumed {name} {
         # Where its archive is, for the host to keep it for a later guest
         # (batch 90), as the target's own is kept.
         if {[dict get $entry archive] ne ""} { dict set entry archive_file $location }
+        if {[lsearch -exact -nocase $builthere $other] >= 0} {
+            if {[catch {builtgroups $other $spec $relative} files]} {
+                lappend unread $files
+            } else {
+                dict set entry portgroups $files
+            }
+        }
         lappend active $entry
     }
     dict set inputs active $active
+    if {[llength $unread]} { dict set inputs unread [join $unread "; "] }
     return $inputs
 }
 
@@ -873,6 +931,7 @@ proc build {index target} {
         # archive alone, as port(1)'s -b documents, where none is no error
         # but what install will build (the roadmap's part 3).
         set fromsource [archiveless $log $dependencies]
+        foreach other $fromsource { built $other }
         if {[llength $fromsource]} {
             set fd [open $log a]
             puts $fd "dockhand: no binary archive for [join $fromsource {, }] on this release; install builds [expr {[llength $fromsource] == 1 ? {it} : {them}}] from source"
@@ -1000,8 +1059,20 @@ proc build {index target} {
     }
     set install [concat $here -dks install --unrequested $selection]
     if {![llength $variants]} { set install [concat $here -dkns install --unrequested $selection] }
+    # What its variants add to its dependencies, the install brings, and
+    # builds from source, as -s asks of every port it installs: each port
+    # active after it that wasn't before, other than the target, is built
+    # here. Where either listing can't be read, none is taken as built.
+    set before {}
+    set brings [expr {[llength $variants] && ![catch {dict keys [actives [known $port -q installed active]]} before]}]
     mark result $log install
-    if {[set message [timed $log $install [{*}$left]]] eq "timed out"} {
+    set message [timed $log $install [{*}$left]]
+    if {$brings && ![catch {dict keys [actives [known $port -q installed active]]} after]} {
+        foreach other $after {
+            if {$other ni $before && ![string equal -nocase $other $name]} { built $other }
+        }
+    }
+    if {$message eq "timed out"} {
         return [{*}$fail $result install $over]
     } elseif {$message ne ""} {
         return [{*}$fail $result install [why $log $message]]
@@ -1182,11 +1253,16 @@ foreach target [dict get $input targets] {
     # What a verdict's build read is recorded with it; a verdict stands
     # without it, its inputs unknown.
     if {[dict get $result outcome] in {passed failed}} {
+        set unread ""
         if {[catch {consumed [dict get $target name]} inputs]} {
             set log [open $root/[dict get $result log] a]
             puts $log "dockhand: what this build read wasn't recorded: $inputs"
             close $log
         } else {
+            if {[dict exists $inputs unread]} {
+                set unread [dict get $inputs unread]
+                dict unset inputs unread
+            }
             set result [dict merge $result $inputs]
         }
         set portdir [file dirname [file join $root ports [dict get $target portfile]]]
@@ -1194,13 +1270,25 @@ foreach target [dict get $input targets] {
         if {[dict exists $target variants]} {
             dict for {variant enabled} [dict get $target variants] { lappend variants $variant [expr {$enabled ? "+" : "-"}] }
         }
-        if {[catch {sourced $portdir [dict get $target name] $variants} files]} {
+        # Where what a port built here loaded couldn't be read, the
+        # target's own aren't said either, and the host takes all of
+        # _resources as read.
+        if {$unread ne ""} {
+            set log [open $root/[dict get $result log] a]
+            puts $log "dockhand: which PortGroups the ports built here loaded wasn't recorded: $unread"
+            close $log
+        } elseif {[catch {sourced $portdir [dict get $target name] $variants} files]} {
             set log [open $root/[dict get $result log] a]
             puts $log "dockhand: which PortGroups this build loaded wasn't recorded: $files"
             close $log
         } else {
             dict set result sourced $files
         }
+    }
+    # A target that passed was built here, and stays installed for a later
+    # target that needs it.
+    if {[dict get $result outcome] eq "passed"} {
+        built [dict get $target name]
     }
     # What a passed build's binaries link is an observation beside its
     # result, unknown where it can't be read.

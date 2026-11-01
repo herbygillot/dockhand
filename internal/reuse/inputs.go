@@ -33,9 +33,15 @@ type Trees interface {
 // _resources is named by what the build read of it where the provider
 // said which PortGroups it loaded (sourced, each file's blob by its path,
 // as the guest recorded them): those, and what every port's build may read
-// there, by the revision's objects (ResourcesRead). Where it didn't say,
-// or named a file that isn't one of the tree's PortGroups, _resources is
-// named by its tree, as every build was before.
+// there, by the revision's objects (ResourcesRead). An active port the
+// environment built from source for the check comes with the PortGroups
+// its build loaded (model.ActivePort.PortGroups), which name what the
+// build read of _resources too; one installed from an archive comes with
+// none, its archive naming it. Where the provider didn't say what the
+// build loaded, or named a file that isn't one of the tree's PortGroups,
+// for the target or a port it built, _resources is named by its tree, as
+// every build was before, and the ports' PortGroups are left out, the
+// tree holding them.
 func Inputs(ctx context.Context, trees Trees, tree model.ObjectID, identity string, target model.PlanTarget, active []model.ActivePort, sourced map[string]model.ObjectID) (model.TargetInputs, error) {
 	paths := []string{target.Directory, macports.ResourcesDirectory}
 	for _, port := range active {
@@ -53,15 +59,26 @@ func Inputs(ctx context.Context, trees Trees, tree model.ObjectID, identity stri
 	}
 	for i, port := range active {
 		port.Tree = ""
+		port.PortGroups = maps.Clone(port.PortGroups)
 		if port.Directory != "" {
 			port.Tree = found[port.Directory]
 		}
 		read[i] = port
 	}
 	inputs := model.NewTargetInputs(identity, target.Directory, found[target.Directory], found[macports.ResourcesDirectory], target.Target.Variants, read)
-	if loaded := portGroups(sourced); loaded != nil && found[macports.ResourcesDirectory] != "" {
+	loaded := portGroups(sourced)
+	for _, port := range inputs.Active {
+		if port.PortGroups != nil && portGroups(port.PortGroups) == nil {
+			loaded = nil
+		}
+	}
+	if loaded != nil && found[macports.ResourcesDirectory] != "" {
 		inputs.Resources = ""
 		inputs.ResourcesRead = &model.ResourcesRead{Shared: shared(found), PortGroups: loaded}
+		return inputs, nil
+	}
+	for i := range inputs.Active {
+		inputs.Active[i].PortGroups = nil
 	}
 	return inputs, nil
 }

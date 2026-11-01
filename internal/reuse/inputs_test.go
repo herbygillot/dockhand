@@ -115,4 +115,31 @@ func TestInputsNameThePortGroupsTheBuildLoaded(t *testing.T) {
 		require.Equal(t, model.ObjectID("t1r"), whole.Resources, why)
 		require.Nil(t, whole.ResourcesRead, why)
 	}
+
+	// An active port built from source names its PortGroups as the target
+	// does, and is read as the target's are: a file of no PortGroup among
+	// them names the tree, which holds the ports' too, so theirs are left
+	// out; and so does a provider that didn't say what the target loaded.
+	built := func(groups map[string]model.ObjectID) []model.ActivePort {
+		return []model.ActivePort{{Name: "gettext", Spec: "@0.22.5_0", Archive: "sha256:11", PortGroups: groups}}
+	}
+	golang := map[string]model.ObjectID{"_resources/port1.0/group/golang-1.0.tcl": model.ObjectID(golangBlob)}
+	named, err := Inputs(t.Context(), revision, "t1", "origin", target, built(golang), map[string]model.ObjectID{})
+	require.NoError(t, err)
+	require.Equal(t, golang, named.Active[0].PortGroups)
+	require.NotNil(t, named.ResourcesRead)
+	for why, inputs := range map[string]struct {
+		active  []model.ActivePort
+		sourced map[string]model.ObjectID
+	}{
+		"a port's file of no PortGroup":          {built(map[string]model.ObjectID{"_resources/port1.0/compilers/gcc_compilers.tcl": model.ObjectID(golangBlob)}), map[string]model.ObjectID{}},
+		"a port's blob that isn't one":           {built(map[string]model.ObjectID{"_resources/port1.0/group/golang-1.0.tcl": "forged"}), map[string]model.ObjectID{}},
+		"the provider didn't say what it loaded": {built(golang), nil},
+	} {
+		whole, err := Inputs(t.Context(), revision, "t1", "origin", target, inputs.active, inputs.sourced)
+		require.NoError(t, err)
+		require.Equal(t, model.ObjectID("t1r"), whole.Resources, why)
+		require.Nil(t, whole.ResourcesRead, why)
+		require.Nil(t, whole.Active[0].PortGroups, why)
+	}
 }

@@ -25,10 +25,17 @@ type Archive struct {
 // source where MacPorts had no archive for the release yet (batch 90).
 // The port is one the check's revision had as its base did; one the
 // branch changed is a target, whose archive is its result's.
+//
+// PortGroups are the PortGroup files the guest built it with, each by its
+// blob ID, by its path in the ports tree, where it built it from source
+// (ActivePort.PortGroups): a check offers it only while its revision holds
+// the same files. Nil for an archive a guest installed from MacPorts'
+// own, and for those kept before (schema 54), each offered as before.
 type DependencyArchive struct {
 	Archive
 	Port        string
 	Environment Environment
+	PortGroups  map[string]ObjectID
 }
 
 // ValidArchiveName reports whether a name is one file's, as MacPorts names

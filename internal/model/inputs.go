@@ -22,6 +22,15 @@ type ActivePort struct {
 	// Archive is the digest of the archive the port was activated from,
 	// sha256:<hex>; empty where the environment kept none.
 	Archive string `json:",omitempty"`
+	// PortGroups are the PortGroup files the port's build loaded, each by
+	// its blob ID, by its path in the ports tree, where the environment
+	// built it from source for the check, an earlier target or a
+	// dependency it had no archive of: the target read what that build
+	// made, so a change to one of them is a change to what it read
+	// (prioritization's ruling, 2026-11-01). Nil for a port installed from
+	// an archive, MacPorts' or one dockhand kept, which its archive names,
+	// and in every record before, so each keeps its key.
+	PortGroups map[string]ObjectID `json:",omitempty"`
 }
 
 // TargetInputs are what a target's build read, as far as dockhand can name
