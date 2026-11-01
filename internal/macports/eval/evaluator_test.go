@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -82,6 +83,12 @@ func TestEvaluateSnapshotResourcesVariantsAndSubports(t *testing.T) {
 	require.Contains(t, snapshot.Ports["fixture"].Dependencies, macports.Dependency{Port: "zlib", Phase: "lib", Spec: "path:lib/pkgconfig/zlib.pc:zlib"})
 	require.Equal(t, tree.Source(), snapshot.Source)
 	require.NotEmpty(t, snapshot.Platform.Version)
+	// Each PortGroup is recorded with its version, its file, and that
+	// file's blob, every subport alike.
+	groups, known := snapshot.Ports["fixture-child"].LoadedPortGroups()
+	require.True(t, known)
+	require.Equal(t, []macports.LoadedPortGroup{{Name: "dockhand-fixture", Version: "1.0", Path: "<source>/_resources/port1.0/group/dockhand-fixture-1.0.tcl",
+		Blob: git.SHA1BlobID([]byte("set snapshot_major 7\n"))}}, groups)
 	targets, err = evaluator.Resolve(t.Context(), tree, macports.Selection{Selector: "devel/fixture/Portfile", Subport: "fixture-child", Variants: map[string]bool{"debug": false}})
 	require.NoError(t, err)
 	require.Equal(t, "fixture-child", targets[0].Name)
@@ -429,7 +436,7 @@ func TestTheEvaluatorReportsThePortGroupsAPortLoads(t *testing.T) {
 		groups, set := snapshot.Ports[name].Options["dockhand.portgroups"]
 		require.True(t, set, name)
 		if want != "" {
-			want = "{" + want + " 1.0 <source>/_resources/port1.0/group/" + want + "-1.0.tcl}"
+			want = "{" + want + " 1.0 <source>/_resources/port1.0/group/" + want + "-1.0.tcl " + git.SHA1BlobID([]byte("set snapshot_major 7\n")) + "}"
 		}
 		require.Equal(t, want, groups, name)
 		require.Equal(t, "./configure", snapshot.Ports[name].Options["configure.cmd"], name)

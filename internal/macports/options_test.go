@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
 // infoOptions are the mportinfo keys dockhand's rules name; the evaluator
@@ -36,4 +38,23 @@ func TestOptionListsNameOnlyReadOptions(t *testing.T) {
 // knownOption reports whether an option name is one the evaluator reports.
 func knownOption(name string) bool {
 	return slices.Contains(ReadOptions, name) || slices.Contains(infoOptions, name) || slices.Contains(computedOptions, name)
+}
+
+func TestTheAssumptionManifestReadsBackAndKnowsItsVersions(t *testing.T) {
+	t.Parallel()
+	entries, errs := syntax.ListValues(TclPortGroupAssumptions(PortGroupAssumptions))
+	require.Empty(t, errs)
+	require.Len(t, entries, len(PortGroupAssumptions))
+	for i, entry := range entries {
+		fields, errs := syntax.ListValues(entry)
+		require.Empty(t, errs)
+		require.Len(t, fields, 4)
+		options, _ := syntax.ListValues(fields[2])
+		procs, _ := syntax.ListValues(fields[3])
+		require.Equal(t, []string{PortGroupAssumptions[i].Name, PortGroupAssumptions[i].Version}, fields[:2])
+		require.Len(t, options, len(PortGroupAssumptions[i].Options))
+		require.Len(t, procs, len(PortGroupAssumptions[i].Procs))
+	}
+	unchecked := UncheckedPortGroups([]LoadedPortGroup{{Name: "golang", Version: "1.0"}, {Name: "golang", Version: "1.1"}, {Name: "cmake", Version: "1.0"}, {Name: "muniversal", Version: "1.1"}})
+	require.Equal(t, []LoadedPortGroup{{Name: "golang", Version: "1.1"}}, unchecked, "a PortGroup of no assumption at all is none of the manifest's")
 }

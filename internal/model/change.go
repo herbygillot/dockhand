@@ -2,6 +2,7 @@ package model
 
 import (
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -49,8 +50,34 @@ type ChangeRecord struct {
 	// unchanged.
 	Unseen    []string `json:",omitempty"`
 	AllUnseen bool     `json:",omitempty"`
+	// Resources are the PortGroups of _resources whose files differ
+	// between the two sides, each with the ports it moved, said before
+	// them: what moved those ports is the shared code, not their own.
+	Resources []ResourceChange `json:",omitempty"`
 	Policy    int
 	At        time.Time
+}
+
+// ResourceChange is one PortGroup file of _resources whose contents differ
+// between a change record's two sides: its file in the tree, its blob on
+// each, and the ports that load it whose evaluation moved.
+type ResourceChange struct {
+	File     string
+	From, To ObjectID
+	Ports    []string `json:",omitempty"`
+}
+
+// Line is the change as one line, the file and the ports it moved:
+// "_resources/port1.0/group/golang-1.0.tcl changed, moving csvtk".
+func (c ResourceChange) Line() string {
+	line := c.File + " changed"
+	switch len(c.Ports) {
+	case 0:
+		return line + ", moving no port's evaluation"
+	case 1:
+		return line + ", moving " + c.Ports[0]
+	}
+	return line + ", moving " + strings.Join(c.Ports[:len(c.Ports)-1], ", ") + " and " + c.Ports[len(c.Ports)-1]
 }
 
 // SubportChange is one subport's part of a change record.

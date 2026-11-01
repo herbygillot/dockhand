@@ -3,6 +3,7 @@ package macports
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -87,21 +88,86 @@ func (p PortInfo) DeclaresTests() (declares, known bool) {
 }
 
 // PortGroups are the PortGroups the port loads, by name; known is false
-// where they weren't read. The evaluator records each with its version
-// and file, and a name alone reads the same.
+// where they weren't read.
 func (p PortInfo) PortGroups() (groups []string, known bool) {
-	entries, set, err := p.optionList("dockhand.portgroups")
+	loaded, known := p.LoadedPortGroups()
+	for _, group := range loaded {
+		groups = append(groups, group.Name)
+	}
+	return groups, known
+}
+
+// LoadedPortGroup is a PortGroup a port loads, as Base records it for the
+// registry and the PortIndex: its name, its version, and the file it was
+// sourced from, written <source>/ where it is the tree's; and that file's
+// blob, which says whether two evaluations ran the same PortGroup code,
+// so a difference between them can be put down to _resources.
+type LoadedPortGroup struct {
+	Name, Version, Path, Blob string
+}
+
+// File is the PortGroup's file in the tree, as layout names it, or empty
+// for one sourced from outside it.
+func (g LoadedPortGroup) File() string {
+	file, ok := strings.CutPrefix(g.Path, "<source>/")
+	if !ok {
+		return ""
+	}
+	return file
+}
+
+// portGroupsOption is the key the evaluator records the PortGroups a port
+// loads under, each a list of name, version, path, and, once the evaluator
+// has read the file, blob.
+const portGroupsOption = "dockhand.portgroups"
+
+// LoadedPortGroups are the PortGroups the port loads, in the order Base
+// loaded them; known is false where they weren't read. A name alone, as
+// evaluations once recorded, reads as a PortGroup of no known version.
+func (p PortInfo) LoadedPortGroups() (groups []LoadedPortGroup, known bool) {
+	entries, set, err := p.optionList(portGroupsOption)
 	if !set || err != nil {
 		return nil, false
 	}
 	for _, entry := range entries {
 		fields, errs := syntax.ListValues(entry)
-		if len(errs) != 0 || len(fields) == 0 {
+		if len(errs) != 0 || len(fields) == 0 || len(fields) > 4 {
 			return nil, false
 		}
-		groups = append(groups, fields[0])
+		fields = append(fields, "", "", "")
+		groups = append(groups, LoadedPortGroup{Name: fields[0], Version: fields[1], Path: fields[2], Blob: fields[3]})
 	}
 	return groups, true
+}
+
+// WithPortGroups is the port with the PortGroups it loads recorded as
+// groups, as the evaluator records them; a port whose PortGroups weren't
+// read stays as it is. Options are copied, not shared.
+func (p PortInfo) WithPortGroups(groups []LoadedPortGroup) PortInfo {
+	if _, set := p.Options[portGroupsOption]; !set {
+		return p
+	}
+	entries := make([]string, len(groups))
+	for i, group := range groups {
+		fields := []string{group.Name, group.Version, group.Path}
+		if group.Blob != "" {
+			fields = append(fields, group.Blob)
+		}
+		entries[i] = tclWords(fields)
+	}
+	p.Options = maps.Clone(p.Options)
+	p.Options[portGroupsOption] = tclWords(entries)
+	return p
+}
+
+// tclWords are words as one Tcl list, each quoted as Tcl quotes an
+// element.
+func tclWords(words []string) string {
+	quoted := make([]string, len(words))
+	for i, word := range words {
+		quoted[i] = syntax.Quote(word)
+	}
+	return strings.Join(quoted, " ")
 }
 
 // BuildsInto reports a directory below ${worksrcpath} that the port's

@@ -8,6 +8,30 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
+// Each PortGroup a port loads is recorded with its version, its file, and
+// the file's blob, and an older record of names alone reads the same.
+func TestThePortGroupsAPortLoadsAreReadWithTheirFiles(t *testing.T) {
+	t.Parallel()
+	port := PortInfo{Options: map[string]string{"dockhand.portgroups": "{golang 1.0 <source>/_resources/port1.0/group/golang-1.0.tcl 0123abcd} {github 1.0 /elsewhere/github-1.0.tcl}"}}
+	groups, known := port.LoadedPortGroups()
+	require.True(t, known)
+	require.Equal(t, []LoadedPortGroup{
+		{Name: "golang", Version: "1.0", Path: "<source>/_resources/port1.0/group/golang-1.0.tcl", Blob: "0123abcd"},
+		{Name: "github", Version: "1.0", Path: "/elsewhere/github-1.0.tcl"},
+	}, groups)
+	require.Equal(t, "_resources/port1.0/group/golang-1.0.tcl", groups[0].File())
+	require.Empty(t, groups[1].File(), "a PortGroup outside the tree has no file in it")
+	names, _ := port.PortGroups()
+	require.Equal(t, []string{"golang", "github"}, names)
+
+	groups[1].Blob = "4567"
+	again, _ := port.WithPortGroups(groups).LoadedPortGroups()
+	require.Equal(t, groups, again)
+	require.Contains(t, port.Options["dockhand.portgroups"], "/elsewhere/github-1.0.tcl}", "the port's own options aren't changed")
+	unread := PortInfo{Options: map[string]string{}}
+	require.Equal(t, unread, unread.WithPortGroups(groups), "a port whose PortGroups weren't read stays so")
+}
+
 // The evaluator's facts are read as their types, and an unread or failed
 // one is told apart from a false one (the code-organization review's
 // finding 27).

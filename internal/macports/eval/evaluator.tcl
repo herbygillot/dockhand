@@ -196,6 +196,28 @@ namespace eval ::dockhand {
         return $code
     }
 
+    # assumed checks a port's worker for what the assumption manifest says
+    # its PortGroups define, by the version each was loaded at: each
+    # option or procedure it lacks, and why, as name and problem pairs.
+    proc assumed {worker} {
+        set missing {}
+        if {[catch {$worker eval {if {[info exists PortInfo(portgroups)]} { set PortInfo(portgroups) }}} groups]} { return $missing }
+        foreach group $groups {
+            lassign $group name version
+            foreach entry $::dockhand::portgroup_assumptions {
+                lassign $entry assumed_name assumed_version options procs
+                if {$assumed_name ne $name || $assumed_version ne $version} { continue }
+                foreach command [concat $options $procs] {
+                    if {![llength [$worker eval [list info commands ::$command]]]} {
+                        set kind [expr {$command in $options ? "option" : "procedure"}]
+                        lappend missing $command "the $name $version PortGroup no longer defines the $kind $command, which dockhand relies on"
+                    }
+                }
+            }
+        }
+        return $missing
+    }
+
     # placeholders is the string map that writes where a port was
     # evaluated as words: its build directory, named for that place, as
     # <build>, and with sources, the trees' roots as <source>, so two
@@ -253,6 +275,13 @@ namespace eval ::dockhand {
                         dict set out $field [string map $placeless $value]
                     }
                 }
+            }
+            # What dockhand relies on the port's PortGroups to define, the one
+            # manifest Go holds (macports.PortGroupAssumptions): an option or
+            # procedure a PortGroup no longer defines is an option error, so
+            # the rules that read it are inconclusive rather than wrong.
+            foreach {name problem} [::dockhand::assumed $worker] {
+                if {![dict exists $failures $name]} { dict set failures $name $problem }
             }
             # The effective livecheck, resolved the way port livecheck does and
             # with the tree's own checker definitions under

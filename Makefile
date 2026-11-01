@@ -124,12 +124,15 @@ acceptance-selftest:
 	tools/acceptance/selftest.sh
 
 # Replay the corpus's version bumps through this build's update, against
-# MacPorts' own PortGroups (tools/corpus). It needs the network. It takes
-# its turn at the Mac's heavy work (tools/heavy).
+# MacPorts' own PortGroups (tools/corpus): the slice's, pinned, or with
+# CORPUS_RESOURCES a _resources directory, macports-ports master's, as the
+# weekly job replays it. It needs the network. It takes its turn at the
+# Mac's heavy work (tools/heavy).
+CORPUS_RESOURCES ?=
 test-corpus:
 	@tools/heavy sh -c 'tmp=$$(mktemp -d) && trap "rm -rf \"$$tmp\"" EXIT && \
 	$(GO) build -o "$$tmp/dockhand" ./cmd/dockhand && $(GO) build -o "$$tmp/corpus" ./tools/corpus && \
-	env -u MACPORTS_TREE "$$tmp/corpus" replay -dockhand "$$tmp/dockhand"'
+	env -u MACPORTS_TREE "$$tmp/corpus" replay -dockhand "$$tmp/dockhand"$(if $(strip $(CORPUS_RESOURCES)), -resources "$(CORPUS_RESOURCES)")'
 
 # The checks a commit passes before it lands, CI's, as one turn at the
 # Mac's heavy work (tools/heavy). The tests use MacPorts' own port-tclsh,

@@ -157,8 +157,13 @@ namespace eval ::dockhand {
                         default { return 0 }
                     }
                 }
-                variable registry_reads {registry_active registry_open registry_exists registry_exists_for_name registry_file_registered
-                    registry_port_registered registry_list_depends registry_fileinfo_for_file registry_fileinfo_for_index _portnameactive registry_prop_retr}
+                # registry_reads are the aliases that ask the registry,
+                # searches those that look for a file along directories,
+                # and port_reads those that read a port Base has open, as
+                # Go gives them (macports.WorkerAliases).
+                variable registry_reads {}
+                variable searches {}
+                variable port_reads {}
                 # installed answers the registry aliases as a registry that
                 # holds the ports of installed_table does, each installed
                 # and active, in Base's words (registry2.0's receipt_sqlite
@@ -236,6 +241,24 @@ namespace eval ::dockhand {
                     }
                     return $found
                 }
+                # _mportsearchpath, Base's search for a dependency's file
+                # along directories (macports.tcl), which port1.0's path:,
+                # bin:, and lib: tests call, runs in the parent and sees the
+                # host's prefix; this is the same, in the worker, over the
+                # fresh one.
+                proc _mportsearchpath {depfilename search_path {executable 0} {return_match 0}} {
+                    set found ""
+                    foreach directory $search_path {
+                        set path [interp invokehidden {} file join $directory $depfilename]
+                        if {[absent $directory] || ![interp invokehidden {} file isdirectory $directory] || [absent $path]} { continue }
+                        if {![catch {interp invokehidden {} file type $path}] && (!$executable || [interp invokehidden {} file executable $path])} {
+                            set found $path
+                            break
+                        }
+                    }
+                    if {$return_match} { return $found }
+                    expr {$found ne ""}
+                }
                 # fresh is the fresh installation's answer to a call, as its
                 # subject, then catch's code, result, and options; or
                 # nothing, for a call it has no say in.
@@ -244,6 +267,7 @@ namespace eval ::dockhand {
                     if {$installation eq "host"} { return }
                     variable registry_reads
                     variable nowhere
+                    variable searches
                     switch -- $name {
                         findBinary - binaryInPath {
                             set code [catch {$name {*}$arguments} result options]
@@ -262,6 +286,10 @@ namespace eval ::dockhand {
                         }
                         glob { return [enumerate $arguments] }
                         default {
+                            if {$name in $searches} {
+                                set code [catch {_mportsearchpath {*}$arguments} result options]
+                                return [list [lindex $arguments 0] $code $result $options]
+                            }
                             if {$name ni $registry_reads} { return }
                             set code [catch {registry $name $arguments} result options]
                             return [list [lindex $arguments 0] $code $result $options]
@@ -324,6 +352,10 @@ namespace eval ::dockhand {
         $worker eval [list set ::dockhand_dispatcher::prefix $::macports::prefix]
         $worker eval [list set ::dockhand_dispatcher::applications $::macports::applications_dir]
         $worker eval [list set ::dockhand_dispatcher::skeleton [skeleton]]
+        foreach {answer variable} {registry registry_reads search searches port port_reads} {
+            set names [dict keys [dict filter $::dockhand::worker_alias_answers value $answer]]
+            $worker eval [list set ::dockhand_dispatcher::$variable $names]
+        }
         variable installation
         variable installed_table
         $worker eval [list set ::dockhand_dispatcher::installation $installation]

@@ -260,6 +260,36 @@ func TestSubportChangesSayWhatMovedInEach(t *testing.T) {
 	}, SubportChanges("devel/main", &before, &after, renamed))
 }
 
+// A PortGroup's file that moved between the sides is said once, before
+// the ports it moved; a port that only loads it, with nothing of its own
+// moved, is no change, as csvtk's go.vendors and every Go port's build.env
+// moved through the golang PortGroup with no Portfile change (the survey's
+// Q18).
+func TestAPortGroupsChangeIsSaidBeforeThePortsItMoves(t *testing.T) {
+	golang := func(blob, env string) macports.PortInfo {
+		return macports.PortInfo{Name: "x", Version: "1", Options: map[string]string{
+			"dockhand.portgroups": "{golang 1.0 <source>/_resources/port1.0/group/golang-1.0.tcl " + blob + "} {github 1.0 <source>/_resources/port1.0/group/github-1.0.tcl 9999}",
+			"build.env":           env,
+		}}
+	}
+	named := func(port macports.PortInfo, name string) macports.PortInfo {
+		port.Name = name
+		return port
+	}
+	before := snapshot(map[string]macports.PortInfo{"csvtk": named(golang("aaaa", "GOFLAGS="), "csvtk"), "csvtk-docs": named(golang("aaaa", ""), "csvtk-docs")})
+	after := snapshot(map[string]macports.PortInfo{"csvtk": named(golang("bbbb", "GOFLAGS=-modcacherw"), "csvtk"), "csvtk-docs": named(golang("bbbb", ""), "csvtk-docs")})
+	changes := SubportChanges("devel/csvtk", &before, &after, nil)
+	require.Equal(t, []model.SubportChange{
+		{Port: "csvtk", Kind: model.SubportChanged, Fields: []model.FieldChange{{Field: "build.env", From: "GOFLAGS=", To: "GOFLAGS=-modcacherw"}}},
+		{Port: "csvtk-docs", Kind: model.SubportUnchanged},
+	}, changes, "the PortGroup's blob is no field of a port's")
+	resources := ResourceChanges(changes, &before, &after)
+	require.Equal(t, []model.ResourceChange{{File: "_resources/port1.0/group/golang-1.0.tcl", From: "aaaa", To: "bbbb", Ports: []string{"csvtk"}}}, resources)
+	require.Equal(t, "_resources/port1.0/group/golang-1.0.tcl changed, moving csvtk", resources[0].Line())
+	require.Empty(t, ResourceChanges(changes, &before, &before), "the same files say nothing")
+	require.Empty(t, ResourceChanges(nil, nil, &after), "nor a directory new at the revision")
+}
+
 // A port's code is compared part by part: a hook whose body moved is said
 // by its name, one an option known to move without an edit is said as
 // unstable, and neither is a change ComparablePort keeps, so an edit's

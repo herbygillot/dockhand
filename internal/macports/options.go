@@ -39,3 +39,66 @@ var (
 func ForgeOptions(prefix string) []string {
 	return []string{prefix + ".author", prefix + ".project", prefix + ".version", prefix + ".tag_prefix", prefix + ".tag_suffix", "git.branch"}
 }
+
+// PortGroupAssumption is what dockhand relies on a PortGroup's version to
+// define, by name: the options it reads (ReadOptions) and the procedures
+// it calls or matches. The worker checks each after the port is
+// evaluated, and an absence is an option error, so a rule that reads it is
+// inconclusive rather than wrong; an entry with neither says the version
+// was checked and nothing of it is assumed.
+type PortGroupAssumption struct {
+	Name, Version string
+	Options       []string
+	Procs         []string
+}
+
+// PortGroupAssumptions are the PortGroups dockhand's code assumes
+// something of (architecture's PortGroup assumptions inventory,
+// 2026-10-30), checked against macports-ports' _resources at the corpus's
+// pinned ee76ef2c and at master's 5a58a7e6f26 of 2026-10-31: an option
+// counted here is one a PortGroup declares itself or by a PortGroup it
+// loads. A PortGroup of a name here at a version not here is one the
+// manifest wasn't checked against (UncheckedPortGroups).
+var PortGroupAssumptions = []PortGroupAssumption{
+	{Name: "github", Version: "1.0", Options: []string{"github.author", "github.project", "github.version", "github.tag_prefix", "github.tag_suffix", "github.tarball_from"}, Procs: []string{"github.setup"}},
+	{Name: "gitlab", Version: "1.0", Options: []string{"gitlab.author", "gitlab.project", "gitlab.version", "gitlab.tag_prefix", "gitlab.tag_suffix", "gitlab.instance"}, Procs: []string{"gitlab.setup"}},
+	{Name: "golang", Version: "1.0", Options: []string{"go.vendors", "go.version", "go.package", "go.domain", "go.offline_build", "go.toolchain_min", "go.bin"}, Procs: []string{"go.setup", "go_toolchain.ceiling"}},
+	{Name: "rust", Version: "1.0", Options: []string{"cargo.crates", "cargo.crates_github", "cargo.update", "cargo.offline_cmd"}, Procs: []string{"cargo.rust_platform"}},
+	{Name: "cargo", Version: "1.0", Options: []string{"cargo.crates", "cargo.crates_github", "cargo.update", "cargo.offline_cmd"}, Procs: []string{"cargo.rust_platform"}},
+	{Name: "cargo_fetch", Version: "1.0", Options: []string{"cargo.crates", "cargo.crates_github", "cargo.update", "cargo.dir", "cargo.offline_cmd"}},
+	{Name: "python", Version: "1.0", Options: []string{"python.versions", "python.version", "python.default_version", "python.rootname", "python.pep517", "python.pep517_backend"}, Procs: []string{"python_get_default_version"}},
+	{Name: "cmake", Version: "1.0"},
+	{Name: "cmake", Version: "1.1", Options: []string{"cmake.source_dir"}},
+	{Name: "xcodeversion", Version: "1.0", Options: []string{"minimum_xcodeversions"}},
+	{Name: "compilers", Version: "1.0", Procs: []string{"fortran_variant_name"}},
+	{Name: "mpi", Version: "1.0", Procs: []string{"mpi_variant_name"}},
+}
+
+// TclPortGroupAssumptions renders assumptions as the Tcl list the
+// evaluator's worker check reads: name, version, options, and procedures,
+// one list each.
+func TclPortGroupAssumptions(assumptions []PortGroupAssumption) string {
+	var entries []string
+	for _, a := range assumptions {
+		entries = append(entries, tclList(a.Name, a.Version, tclList(a.Options...), tclList(a.Procs...)))
+	}
+	return tclList(entries...)
+}
+
+// UncheckedPortGroups are the PortGroups of groups whose name the manifest
+// has and whose version it doesn't: what it assumes of the name wasn't
+// checked against that version, which is said, and evaluation goes on.
+func UncheckedPortGroups(groups []LoadedPortGroup) []LoadedPortGroup {
+	var unchecked []LoadedPortGroup
+	for _, group := range groups {
+		named, checked := false, false
+		for _, a := range PortGroupAssumptions {
+			named = named || a.Name == group.Name
+			checked = checked || a.Name == group.Name && a.Version == group.Version
+		}
+		if named && !checked {
+			unchecked = append(unchecked, group)
+		}
+	}
+	return unchecked
+}

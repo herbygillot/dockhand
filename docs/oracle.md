@@ -112,9 +112,17 @@ for an explicitly local diagnostic.
 ### Registry questions at the checksum bump
 
 A Portfile never opens the registry itself. It asks through Base's
-aliases in the worker (`registry_active`, `registry_installed`,
-`registry_exists`, `registry_file_registered`, `_portnameactive`), and
-PortGroups build on those. A model has to reproduce Base's answers
+aliases in the worker (`registry_active`, `registry_exists`,
+`registry_file_registered`, `_portnameactive`, and the rest of the 25
+Base 2.12.7 gives a worker), and PortGroups build on those. The aliases
+are one list in Go, `macports.WorkerAliases`, beside `HostPrograms`: the
+dispatcher refuses the ten that write, answers the eleven registry reads
+as the installation holds them, `_mportsearchpath` over the
+installation's files as it does `findBinary`, and passes the three that
+read a port Base has open (`_mportkey`, `_mport_archs`,
+`_mport_supports_archs`) to Base, counted as `base`; the pre-fetch hook
+grammar admits the fifteen that read. A recording session's test holds
+the list to the aliases its Base gives. A model has to reproduce Base's answers
 exactly, including the error `registry_active` throws for a port that
 isn't active: Portfiles rely on it, as in
 `if {![catch {active_variants hdf5 cxx}]}`.
@@ -210,6 +218,28 @@ model.
   answer is that no JDK is installed; under `with-deps`, it is where this
   tree's matching openjdk port installs its JDK, derived from its
   Portfile.
+
+### PortGroups dockhand relies on
+
+dockhand relies on PortGroups by the options and procedures it reads by
+name, by shapes it matches in their text, and by behaviour it restates in
+Go (architecture's inventory, 2026-10-30). Each evaluation records every
+PortGroup a port loads with its version, its file, and that file's blob
+(`dockhand.portgroups`, `macports.LoadedPortGroup`), so a difference
+between two evaluations can be put down to `_resources`; a change record
+says the PortGroup files that differ between its sides before the ports
+they moved (`model.ResourceChange`), and status says it as one line
+before those ports. The options and procedures dockhand relies on are
+one manifest in Go, `macports.PortGroupAssumptions`, beside
+`ReadOptions`, checked in the worker once the port is evaluated: one a
+PortGroup no longer defines is an option error, so the rules that read
+it are inconclusive rather than wrong, and a PortGroup of a name the
+manifest has at a version it doesn't is said in one line, evaluation
+going on. The corpus replays weekly against macports-ports master's
+`_resources` as well as its pinned PortGroups
+(`.github/workflows/portgroups-master.yml`), a row that moves naming the
+PortGroups it loads that differ and what the manifest assumes of each:
+the one check that catches a change of meaning with no rename.
 
 The facts table is different: it is stored data, and goes stale on
 Apple's schedule rather than the tree's. Each row records the image or

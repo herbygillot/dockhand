@@ -44,6 +44,17 @@ func TestHostProgramsReadBackAsTcl(t *testing.T) {
 	}
 }
 
+func TestWorkerAliasesReadBackAsTcl(t *testing.T) {
+	answers, errs := syntax.DictValues(TclWorkerAliases(WorkerAliases))
+	require.Empty(t, errs)
+	require.Len(t, answers, len(WorkerAliases), "each alias is named once")
+	for _, alias := range WorkerAliases {
+		require.Equal(t, string(alias.Answer), answers[alias.Name])
+	}
+	require.Len(t, WorkerAliasReads(), 15, "Base 2.12.7 gives a worker ten aliases that write and fifteen that read")
+	require.NotContains(t, WorkerAliasReads(), "registry_install")
+}
+
 func words(line string) []Argument {
 	var args []Argument
 	for _, word := range strings.Fields(line) {

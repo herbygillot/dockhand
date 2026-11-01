@@ -11,7 +11,9 @@ import (
 // reads are: the evaluator's dispatcher is given HostPrograms and refuses
 // every other program a Portfile or Base runs while a port is evaluated
 // (docs/oracle.md, phase 2), and the pre-fetch hook grammar admits a hook's
-// exec of them by the same rules (CommandLineRefusal).
+// exec of them by the same rules (CommandLineRefusal). The registry
+// aliases Base gives a worker are kept beside them (WorkerAliases), given
+// to the dispatcher and the hook grammar alike.
 
 // ProgramForm says how a host program's arguments are judged.
 type ProgramForm string
@@ -91,6 +93,77 @@ var HostPrograms = []HostProgram{
 		`--atleast-version=.*`, `--exact-version=.*`, `--max-version=.*`, `--variable=.*`, `[^-].*`)},
 	{Name: `llvm-config(-mp-[0-9.]+)?`, Form: FormOnly, Options: flags(`--version`, `--prefix`, `--bindir`, `--libdir`, `--includedir`, `--cflags`, `--cppflags`, `--cxxflags`, `--ldflags`, `--libs`, `--system-libs`, `--libfiles`,
 		`--components`, `--targets-built`, `--host-target`, `--shared-mode`, `--link-shared`, `--link-static`, `--has-rtti`, `--assertion-mode`, `--build-mode`, `--cmakedir`, `--obj-root`, `--src-root`, `[a-z0-9]+`)},
+}
+
+// AliasAnswer says how the evaluator's dispatcher answers one of the
+// registry and installation aliases Base gives a port's worker, and so
+// whether the pre-fetch hook grammar admits it.
+type AliasAnswer string
+
+const (
+	// AliasWrites changes the registry: the dispatcher refuses it, and a
+	// hook that calls it is refused.
+	AliasWrites AliasAnswer = "writes"
+	// AliasRegistry asks the registry what is installed: the dispatcher
+	// answers it as the installation a port is evaluated against holds it,
+	// an empty registry in Base's words for the fresh one.
+	AliasRegistry AliasAnswer = "registry"
+	// AliasSearch looks for a file along a list of directories, as a
+	// path:, bin:, or lib: dependency is tested: the dispatcher answers it
+	// over the installation's files, as it does findBinary.
+	AliasSearch AliasAnswer = "search"
+	// AliasPort reads another port Base has open, by its handle, from that
+	// port's worker, which the dispatcher guards in its own right: the
+	// dispatcher passes it to Base and counts it.
+	AliasPort AliasAnswer = "port"
+)
+
+// WorkerAlias is a command Base aliases into a port's worker interpreter
+// to reach the registry or what is installed, and how it is answered.
+type WorkerAlias struct {
+	Name   string
+	Answer AliasAnswer
+}
+
+// WorkerAliases are the registry_ and _ aliases Base gives a port's
+// worker, the 25 2.12.7's worker_init makes (macports.tcl), in one place:
+// the evaluator's dispatcher guards each and answers it as Answer says,
+// and the pre-fetch hook grammar admits a hook's call of each that
+// doesn't write. A test of a recording session holds the list to the
+// aliases the Base it runs against gives.
+var WorkerAliases = []WorkerAlias{
+	{"registry_new", AliasWrites}, {"registry_write", AliasWrites}, {"registry_prop_store", AliasWrites},
+	{"registry_activate", AliasWrites}, {"registry_deactivate", AliasWrites}, {"registry_deactivate_composite", AliasWrites},
+	{"registry_install", AliasWrites}, {"registry_uninstall", AliasWrites}, {"registry_register_deps", AliasWrites},
+	{"registry_bulk_register_files", AliasWrites},
+	{"registry_open", AliasRegistry}, {"registry_prop_retr", AliasRegistry}, {"registry_exists", AliasRegistry},
+	{"registry_exists_for_name", AliasRegistry}, {"registry_fileinfo_for_index", AliasRegistry}, {"registry_fileinfo_for_file", AliasRegistry},
+	{"registry_active", AliasRegistry}, {"registry_file_registered", AliasRegistry}, {"registry_port_registered", AliasRegistry},
+	{"registry_list_depends", AliasRegistry}, {"_portnameactive", AliasRegistry},
+	{"_mportsearchpath", AliasSearch},
+	{"_mportkey", AliasPort}, {"_mport_archs", AliasPort}, {"_mport_supports_archs", AliasPort},
+}
+
+// WorkerAliasReads are the names of the worker aliases that read and
+// change nothing, which a pre-fetch hook may call.
+func WorkerAliasReads() []string {
+	var names []string
+	for _, alias := range WorkerAliases {
+		if alias.Answer != AliasWrites {
+			names = append(names, alias.Name)
+		}
+	}
+	return names
+}
+
+// TclWorkerAliases renders aliases as the Tcl dictionary the evaluator's
+// dispatcher reads: each name and how it is answered.
+func TclWorkerAliases(aliases []WorkerAlias) string {
+	var entries []string
+	for _, alias := range aliases {
+		entries = append(entries, alias.Name, string(alias.Answer))
+	}
+	return tclList(entries...)
 }
 
 // TclHostPrograms renders programs as the Tcl list the evaluator's

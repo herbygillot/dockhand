@@ -107,6 +107,16 @@ func ComparablePort(port macports.PortInfo, root string) macports.PortInfo {
 	// The port's code is a change record's to compare (Changes), and part
 	// of it moves without an edit.
 	delete(port.Options, codeOption)
+	// The PortGroups' files are compared by their place, not their blobs:
+	// a PortGroup's code that moved is _resources' change, said once for
+	// every port it moves (ResourceChanges), and a port moves by what the
+	// code changed in it, not by its loading it.
+	if groups, known := port.LoadedPortGroups(); known {
+		for i := range groups {
+			groups[i].Blob = ""
+		}
+		port = port.WithPortGroups(groups)
+	}
 	port.OptionErrors = maps.Clone(port.OptionErrors)
 	if root == "" {
 		return port
@@ -667,4 +677,49 @@ func SubportChanges(directory string, base, revision *macports.Snapshot, transit
 		changes = append(changes, change)
 	}
 	return changes
+}
+
+// ResourceChanges are the PortGroup files of _resources whose blobs differ
+// between a directory's evaluation at a base and at a revision, each with
+// the ports changes find moved that load it, in the revision's evaluation
+// or, for a port it removes, the base's: the shared code's change, said
+// once before the ports it moves (the roadmap's "PortGroup change made
+// visible"). A file either side read no blob of says nothing.
+func ResourceChanges(changes []model.SubportChange, base, revision *macports.Snapshot) []model.ResourceChange {
+	blobs := func(side *macports.Snapshot) (map[string]string, map[string][]string) {
+		files, loaders := map[string]string{}, map[string][]string{}
+		if side == nil {
+			return files, loaders
+		}
+		for name, port := range side.Ports {
+			groups, _ := port.LoadedPortGroups()
+			for _, group := range groups {
+				if file := group.File(); file != "" && group.Blob != "" {
+					files[file] = group.Blob
+					loaders[file] = append(loaders[file], name)
+				}
+			}
+		}
+		return files, loaders
+	}
+	before, wasLoaded := blobs(base)
+	after, loaded := blobs(revision)
+	var resources []model.ResourceChange
+	for _, file := range slices.Sorted(maps.Keys(after)) {
+		from, ok := before[file]
+		if !ok || from == after[file] {
+			continue
+		}
+		change := model.ResourceChange{File: file, From: model.ObjectID(from), To: model.ObjectID(after[file])}
+		for _, port := range changes {
+			if port.Kind == model.SubportUnchanged {
+				continue
+			}
+			if slices.Contains(loaded[file], port.Port) || (port.Kind == model.SubportRemoved && slices.Contains(wasLoaded[file], port.Port)) {
+				change.Ports = append(change.Ports, port.Port)
+			}
+		}
+		resources = append(resources, change)
+	}
+	return resources
 }

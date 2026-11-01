@@ -436,3 +436,11 @@ func TestAComparisonsTransientFlagReadsAsTheNetworks(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(`{"changes":[],"problem":"404","problem_kind":"upstream-missing"}`), &c))
 	require.Equal(t, "upstream-missing", c.ProblemKind)
 }
+
+func TestAResourceChangeIsOneLine(t *testing.T) {
+	t.Parallel()
+	change := ResourceChange{File: "_resources/port1.0/group/golang-1.0.tcl"}
+	require.Equal(t, "_resources/port1.0/group/golang-1.0.tcl changed, moving no port's evaluation", change.Line())
+	change.Ports = []string{"csvtk", "gh", "hugo"}
+	require.Equal(t, "_resources/port1.0/group/golang-1.0.tcl changed, moving csvtk, gh and hugo", change.Line())
+}

@@ -44,5 +44,21 @@ the main Mac (2026-10-25). CI's corpus job runs it on macOS on each push,
 with go2port and cargo2port from MacPorts' archives, and field testing
 builds from a main it has passed.
 
+## Against master's PortGroups
+
+`-resources <dir>` replays the rows against another `_resources`, the
+rest of the slice as pinned; `make test-corpus CORPUS_RESOURCES=<dir>`
+passes it. The weekly workflow `portgroups-master.yml` replays them
+against macports-ports master's, beside `base-master.yml`'s job against
+Base's master, so a PortGroup's change on master shows before the pin is
+refreshed. A row that moves names each PortGroup it loads, by name or
+through another, whose file differs from the pinned one, and what dockhand
+assumes of it (`macports.PortGroupAssumptions`):
+
+```
+FAIL <port> <version> (<time>): <how it differs from its bump>
+     the golang 1.0 PortGroup differs from the pinned one; dockhand assumes the options go.vendors … of it, and its behaviour where Go restates it
+```
+
 A port named by a field or acceptance finding joins the corpus in the
 commit that fixes it.
