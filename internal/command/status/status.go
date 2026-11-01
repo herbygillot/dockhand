@@ -547,6 +547,15 @@ func showBranch(out io.Writer, places config.Places, status engine.BranchStatus,
 		pr += " · CI not read yet (dockhand status --refresh)"
 	}
 	fmt.Fprintf(out, "  PR       %s\n", pr)
+	// Its merge by MacPorts' maintainer policy: whose ports, who was
+	// notified and approved, and when the maintainer timeout ends.
+	for i, line := range view.MergeLines(status) {
+		label := "         "
+		if i == 0 {
+			label = "Merge    "
+		}
+		fmt.Fprintf(out, "  %s%s\n", label, line)
+	}
 	view.WriteNext(out, status)
 }
 

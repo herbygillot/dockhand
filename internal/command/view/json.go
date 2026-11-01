@@ -356,6 +356,57 @@ type pullRequestJSON struct {
 	Checks     string     `json:"checks,omitempty"`
 	Failing    []string   `json:"failing,omitempty"`
 	ObservedAt *time.Time `json:"observed_at,omitempty"`
+	// Merge is an open pull request's fitness to be merged by MacPorts'
+	// maintainer policy, as its row and detail say it.
+	Merge *mergeJSON `json:"merge,omitempty"`
+}
+
+// mergeJSON is a pull request's merge fitness (macports.MergeFitness):
+// its ports' maintainers and how each stands, the ports whose maintainers
+// aren't read yet, when it was opened, whom its description mentions, who
+// approved it, and when the maintainer timeout ends, with whether it has.
+type mergeJSON struct {
+	Ports         []portMergeJSON `json:"ports"`
+	Unread        []string        `json:"maintainers_unread,omitempty"`
+	OpenedAt      *time.Time      `json:"opened_at,omitempty"`
+	Notified      []string        `json:"notified"`
+	ApprovedBy    []string        `json:"approved_by"`
+	Waiting       []string        `json:"waiting"`
+	TimeoutEndsAt *time.Time      `json:"timeout_ends_at,omitempty"`
+	TimeoutPassed bool            `json:"timeout_passed"`
+	TimeoutLeft   int64           `json:"timeout_left_seconds,omitempty"`
+}
+
+// portMergeJSON is one port's maintainers and how it stands for the merge.
+type portMergeJSON struct {
+	Port           string   `json:"port"`
+	Maintainers    []string `json:"maintainers"`
+	OpenMaintainer bool     `json:"openmaintainer"`
+	NoMaintainer   bool     `json:"nomaintainer"`
+	ApprovedBy     []string `json:"approved_by,omitempty"`
+	ByMaintainer   bool     `json:"opened_by_maintainer"`
+	Waits          bool     `json:"waits"`
+}
+
+// mergeView is a status's merge fitness as JSON; nil where it has none.
+func mergeView(s engine.BranchStatus) *mergeJSON {
+	merge := s.Merge
+	if merge == nil {
+		return nil
+	}
+	viewed := &mergeJSON{Ports: []portMergeJSON{}, Unread: s.MaintainersUnread, Notified: NonNil(merge.Notified), ApprovedBy: NonNil(merge.Approvers), Waiting: NonNil(merge.Waiting()), TimeoutPassed: merge.Passed(), TimeoutLeft: int64(merge.Left.Seconds())}
+	if !merge.Opened.IsZero() {
+		opened := merge.Opened
+		viewed.OpenedAt = &opened
+	}
+	if !merge.Until.IsZero() {
+		until := merge.Until
+		viewed.TimeoutEndsAt = &until
+	}
+	for _, port := range merge.Ports {
+		viewed.Ports = append(viewed.Ports, portMergeJSON{Port: port.Port, Maintainers: NonNil(port.People), OpenMaintainer: port.OpenMaintainer, NoMaintainer: port.NoMaintainer, ApprovedBy: port.ApprovedBy, ByMaintainer: port.ByMaintainer, Waits: port.Waits()})
+	}
+	return viewed
 }
 
 type latestJSON struct {
@@ -505,6 +556,7 @@ func BranchView(status engine.BranchStatus) BranchJSON {
 			at := observed.At
 			viewed.PullRequest.State, viewed.PullRequest.Review, viewed.PullRequest.Checks, viewed.PullRequest.Failing, viewed.PullRequest.ObservedAt = string(observed.State), string(observed.Review), string(observed.Checks), observed.Failing, &at
 		}
+		viewed.PullRequest.Merge = mergeView(status)
 	}
 	return viewed
 }
@@ -567,6 +619,9 @@ type branchDetailJSON struct {
 	Lint         []linkLineJSON `json:"lint"`
 	Links        []linkLineJSON `json:"links"`
 	Installed    []linkLineJSON `json:"installed"`
+	// Merge are its open pull request's merge lines, as the text's Merge
+	// label says them (MergeLines).
+	Merge []string `json:"merge"`
 }
 
 // linkLineJSON is a detail line: its mark, ✓, !, or ✗, and its words.
@@ -578,7 +633,7 @@ type linkLineJSON struct {
 // BranchDetail is what status's text details of a branch shown alone, from
 // the report the text reads too.
 func BranchDetail(status engine.BranchStatus, report engine.StatusReport) *branchDetailJSON {
-	detail := &branchDetailJSON{Decided: []string{}, Instructions: NonNil(report.Instructions[status.Branch.ID]), Lint: []linkLineJSON{}, Links: []linkLineJSON{}, Installed: []linkLineJSON{}}
+	detail := &branchDetailJSON{Decided: []string{}, Instructions: NonNil(report.Instructions[status.Branch.ID]), Lint: []linkLineJSON{}, Links: []linkLineJSON{}, Installed: []linkLineJSON{}, Merge: NonNil(MergeLines(status))}
 	for _, decision := range status.Decided {
 		detail.Decided = append(detail.Decided, engine.DecisionWords(decision))
 	}

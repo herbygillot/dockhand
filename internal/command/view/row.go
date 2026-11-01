@@ -27,7 +27,8 @@ type Row struct {
 	// Work is its commits and edits, Check its checks' standing, and State
 	// what it's doing, the two together.
 	Work, Check, State string
-	// PR is its pull request's number, review, and CI mark.
+	// PR is its pull request's number, review, CI mark, and when MacPorts'
+	// maintainer timeout ends, where a port waits on it.
 	PR string
 	// Next is the command that moves it on: its attention's where it needs
 	// you, what follows its work where it's under way, none where it waits
@@ -109,7 +110,8 @@ func workWords(s engine.BranchStatus) string {
 }
 
 // prWords are a branch's pull request: its number, whether it's a draft,
-// its state or review, its CI's mark, and whether what's here is pushed.
+// its state or review, its CI's mark, when MacPorts' maintainer timeout
+// ends, and whether what's here is pushed.
 func prWords(s engine.BranchStatus) string {
 	pr := s.Branch.PullRequest
 	if pr == nil {
@@ -136,6 +138,7 @@ func prWords(s engine.BranchStatus) string {
 		case model.ChecksPending:
 			words += ", CI …"
 		}
+		words += mergeRowWords(s)
 	}
 	if !s.Missing && !s.Pushed() {
 		words += ", not pushed"

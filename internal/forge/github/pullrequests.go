@@ -29,7 +29,7 @@ func pullRequestObservation(r *gh.PullRequest, repository string) (forge.PullReq
 	if r.Body != nil {
 		body = *r.Body
 	}
-	return forge.PullRequestObservation{Found: true, PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Forge: forge.GitHub, Repository: repository, Number: r.GetNumber(), URL: r.GetHTMLURL()}, HeadRepository: r.Head.Repo.GetFullName(), HeadBranch: r.Head.GetRef(), BaseBranch: r.Base.GetRef(), State: state, RemoteHead: model.ObjectID(r.Head.GetSHA()), Commits: r.GetCommits(), Title: r.GetTitle(), Body: body, Author: r.GetUser().GetLogin(), MaintainerCanModify: r.GetMaintainerCanModify()}}, nil
+	return forge.PullRequestObservation{Found: true, PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Forge: forge.GitHub, Repository: repository, Number: r.GetNumber(), URL: r.GetHTMLURL()}, HeadRepository: r.Head.Repo.GetFullName(), HeadBranch: r.Head.GetRef(), BaseBranch: r.Base.GetRef(), State: state, RemoteHead: model.ObjectID(r.Head.GetSHA()), Commits: r.GetCommits(), Title: r.GetTitle(), Body: body, Author: r.GetUser().GetLogin(), MaintainerCanModify: r.GetMaintainerCanModify(), CreatedAt: r.GetCreatedAt().UTC(), Mentions: mentions(body)}}, nil
 }
 
 func validQuery(q forge.PullRequestQuery) bool {

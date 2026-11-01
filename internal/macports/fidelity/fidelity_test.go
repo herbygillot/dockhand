@@ -260,6 +260,24 @@ func TestSubportChangesSayWhatMovedInEach(t *testing.T) {
 	}, SubportChanges("devel/main", &before, &after, renamed))
 }
 
+// Each subport keeps its maintainers as evaluated, the revision's, or the
+// base's for one removed, which status reads for a pull request's merge
+// fitness without evaluating; a change of them is a field that moved.
+func TestSubportChangesKeepTheirMaintainers(t *testing.T) {
+	before := snapshot(map[string]macports.PortInfo{
+		"main":     {Name: "main", Version: "1", Options: map[string]string{"maintainers": "@ryandesign openmaintainer"}},
+		"main-old": {Name: "main-old", Version: "1", Options: map[string]string{"maintainers": "nomaintainer"}},
+	})
+	after := snapshot(map[string]macports.PortInfo{
+		"main": {Name: "main", Version: "1", Options: map[string]string{"maintainers": "{@herbygillot gmail.com:herby.gillot} openmaintainer"}},
+	})
+	require.Equal(t, []model.SubportChange{
+		{Port: "main", Kind: model.SubportChanged, Fields: []model.FieldChange{{Field: "maintainers", From: "@ryandesign openmaintainer", To: "{@herbygillot gmail.com:herby.gillot} openmaintainer"}},
+			Maintainers: "{@herbygillot gmail.com:herby.gillot} openmaintainer"},
+		{Port: "main-old", Kind: model.SubportRemoved, Maintainers: "nomaintainer"},
+	}, SubportChanges("devel/main", &before, &after, nil))
+}
+
 // A PortGroup's file that moved between the sides is said once, before
 // the ports it moved; a port that only loads it, with nothing of its own
 // moved, is no change, as csvtk's go.vendors and every Go port's build.env

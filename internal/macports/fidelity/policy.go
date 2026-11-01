@@ -12,5 +12,8 @@ package fidelity
 // (macports.PortTransition), where it read as added beside that port
 // removed. Policy 7 says which of _resources' PortGroup files differ
 // between the sides and the ports each moved (ResourceChanges), and
-// compares a port's PortGroups by their files, not their blobs.
-const ChangePolicy = 7
+// compares a port's PortGroups by their files, not their blobs. Policy 8
+// keeps each subport's evaluated maintainers, which a pull request's merge
+// fitness reads (macports.MergeFitness), so a record made before, which
+// has none, is made again.
+const ChangePolicy = 8

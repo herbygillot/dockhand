@@ -133,6 +133,13 @@ type BranchStatus struct {
 	// commit it for review (cleaning up duckdb-cxx14, finding 1); empty
 	// otherwise, or for a branch that changes nothing.
 	OnMaster model.ObjectID
+	// Merge is an open pull request's fitness to be merged by MacPorts'
+	// maintainer policy, as of the status, over the ports whose
+	// maintainers its change records keep; MaintainersUnread are the
+	// ports changed whose maintainers no record keeps (readMerge). Nil
+	// where there's no open pull request.
+	Merge             *macports.Merge
+	MaintainersUnread []string
 }
 
 // PortRelease is the release an update chose for a port.
@@ -594,6 +601,7 @@ func (e *Engine) branchStatus(ctx context.Context, branch model.Branch, noFork b
 	if err != nil || status.Missing {
 		return status, err
 	}
+	e.readMerge(&status)
 	if branch.State == model.BranchMerged {
 		past, err := e.PastMerge(ctx, branch, status.Head)
 		if err != nil {

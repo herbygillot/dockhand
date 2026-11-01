@@ -105,6 +105,15 @@ type PullRequestObservation struct {
 	// master, which a rebase onto master settles; false where it merges
 	// or GitHub hasn't computed it yet (the docs dig's I2).
 	Conflicts bool `json:",omitempty"`
+	// Opened is when the pull request was opened, Author who opened it,
+	// Mentioned the logins its description mentions, and ApprovedBy the
+	// reviewers whose latest review approves it: what its merge's fitness
+	// is read from (macports.MergeFitness). Zero or empty for an
+	// observation from before they were kept, or of one not open.
+	Opened     time.Time `json:",omitzero"`
+	Author     string    `json:",omitempty"`
+	Mentioned  []string  `json:",omitempty"`
+	ApprovedBy []string  `json:",omitempty"`
 }
 
 // CIFailure is one of a pull request's failed CI jobs, classified once

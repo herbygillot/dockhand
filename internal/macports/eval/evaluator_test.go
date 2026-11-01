@@ -779,4 +779,9 @@ func TestALintFixSaysWhetherItChangesTheEvaluation(t *testing.T) {
 	}
 	// A modeline is a comment on line 1.
 	require.Equal(t, evaluate(base), evaluate(portfile.Modeline+"\n"+base))
+	// The maintainers are among what's evaluated, as MacPorts' port
+	// information carries them, which a change record keeps for a pull
+	// request's merge fitness (macports.MergeFitness).
+	evaluated := evaluate(base)["fixture"].([]any)[0].(macports.PortInfo)
+	require.Equal(t, "{example.org:ada @ada}", evaluated.Options[macports.MaintainersOption])
 }
