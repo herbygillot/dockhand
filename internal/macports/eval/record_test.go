@@ -221,7 +221,10 @@ func TestAPortGroupMissingWhatDockhandAssumesIsAnOptionError(t *testing.T) {
 	require.NoError(t, err)
 	port := snapshot.Ports["py-assumed"]
 	require.Equal(t, "the python 1.0 PortGroup no longer defines the option python.pep517_backend, which dockhand relies on", port.OptionErrors["python.pep517_backend"])
-	require.Equal(t, "the python 1.0 PortGroup no longer defines the procedure python_get_default_version, which dockhand relies on", port.OptionErrors["python_get_default_version"])
+	absent := "the python 1.0 PortGroup no longer defines the procedure python_get_default_version, which dockhand relies on"
+	require.Equal(t, absent, port.OptionErrors["python_get_default_version"])
+	require.Equal(t, absent, port.OptionErrors["dockhand.python_default"], "the facts the procedure feeds carry its absence")
+	require.Equal(t, absent, port.OptionErrors["dockhand.python_group_default"])
 	require.NotContains(t, port.OptionErrors, "python.versions")
 	require.NotContains(t, port.OptionErrors, "go.package", "a version the manifest wasn't checked against isn't held to another's")
 	require.Contains(t, said, "the golang 1.1 PortGroup is one dockhand's PortGroup assumptions weren't checked against; what it reads of golang may be missing")

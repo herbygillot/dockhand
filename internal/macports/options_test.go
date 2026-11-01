@@ -48,12 +48,20 @@ func TestTheAssumptionManifestReadsBackAndKnowsItsVersions(t *testing.T) {
 	for i, entry := range entries {
 		fields, errs := syntax.ListValues(entry)
 		require.Empty(t, errs)
-		require.Len(t, fields, 4)
+		require.Len(t, fields, 5)
 		options, _ := syntax.ListValues(fields[2])
 		procs, _ := syntax.ListValues(fields[3])
+		feeds, _ := syntax.ListValues(fields[4])
 		require.Equal(t, []string{PortGroupAssumptions[i].Name, PortGroupAssumptions[i].Version}, fields[:2])
 		require.Len(t, options, len(PortGroupAssumptions[i].Options))
 		require.Len(t, procs, len(PortGroupAssumptions[i].Procs))
+		require.Len(t, feeds, 2*len(PortGroupAssumptions[i].Feeds), "every procedure fed from is one the entry assumes")
+		for proc, facts := range PortGroupAssumptions[i].Feeds {
+			require.Contains(t, PortGroupAssumptions[i].Procs, proc)
+			for _, fact := range facts {
+				require.True(t, knownOption(fact), "%s feeds %s, which the evaluator doesn't report", proc, fact)
+			}
+		}
 	}
 	unchecked := UncheckedPortGroups([]LoadedPortGroup{{Name: "golang", Version: "1.0"}, {Name: "golang", Version: "1.1"}, {Name: "cmake", Version: "1.0"}, {Name: "muniversal", Version: "1.1"}})
 	require.Equal(t, []LoadedPortGroup{{Name: "golang", Version: "1.1"}}, unchecked, "a PortGroup of no assumption at all is none of the manifest's")

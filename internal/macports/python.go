@@ -162,21 +162,39 @@ func release(version string) (string, bool) {
 // port's follow its pin (python_set_default_version), so the default is
 // the one the PortGroup computes for a port that names none.
 func (p PortInfo) PythonPinned() (pinned, standard string, ok bool) {
-	pin, _, err := p.option("python.default_version")
-	if err != nil {
-		return "", "", false
-	}
-	computed := "dockhand.python_group_default"
-	if strings.HasPrefix(p.Name, "py-") || pythonSubport.MatchString(p.Name) {
-		computed = "dockhand.python_default"
-	}
-	def, _, err := p.option(computed)
+	pin, def, err := p.pythonPin()
 	if err != nil {
 		return "", "", false
 	}
 	pinned, pinnedOK := release(pin)
 	standard, standardOK := release(def)
 	return pinned, standard, pinnedOK && standardOK
+}
+
+// PythonPinUnread is why PythonPinned couldn't be read for a port the
+// python PortGroup's facts say it has: an option error on
+// python.default_version or on the default the PortGroup computes, as
+// when the PortGroup no longer defines python_get_default_version (the
+// assumption manifest's Feeds). Nil where both were read, or the port
+// has neither, as a port without the PortGroup.
+func (p PortInfo) PythonPinUnread() error {
+	_, _, err := p.pythonPin()
+	return err
+}
+
+// pythonPin is the python.default_version a port pins, and the default
+// the PortGroup computes for it, as evaluated (PythonPinned).
+func (p PortInfo) pythonPin() (pin, def string, err error) {
+	pin, _, err = p.option("python.default_version")
+	if err != nil {
+		return "", "", err
+	}
+	computed := "dockhand.python_group_default"
+	if strings.HasPrefix(p.Name, "py-") || pythonSubport.MatchString(p.Name) {
+		computed = "dockhand.python_default"
+	}
+	def, _, err = p.option(computed)
+	return pin, def, err
 }
 
 // PythonPort is the port of a Python version, as Python writes it:
