@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/checkrun"
 	"github.com/herbygillot/dockhand/internal/command/settings"
@@ -57,7 +58,7 @@ get past, as a mirror refusing an archive.`,
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(streams.Out, "%s repeats %s: %s\n", run.Name(), previous.Name(), engine.Describe(revision))
+			fmt.Fprintf(streams.Out, "%s repeats %s: %s\n", run.Name(), previous.Name(), checks.Describe(revision))
 			return checkrun.RunQueued(ctx, e, run, streams, enqueue, s.Places(), s.Drain)
 		},
 	}

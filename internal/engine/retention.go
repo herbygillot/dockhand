@@ -48,7 +48,7 @@ func LogCleanupWords(done LogCleanup, after time.Duration) string {
 		if len(done.Removed) == 1 {
 			whose = "1 check's"
 		}
-		words = append(words, fmt.Sprintf("removed %s logs, %s, kept for nothing past %s", whose, prose.Bytes(done.Bytes), AgeWords(after)))
+		words = append(words, fmt.Sprintf("removed %s logs, %s, kept for nothing past %s", whose, prose.Bytes(done.Bytes), prose.Age(after)))
 	}
 	return strings.Join(words, "; ")
 }
@@ -70,7 +70,7 @@ func HistoryWords(pruned store.Pruned, assessments int, after time.Duration) str
 	}
 	if len(removed) > 0 {
 		words = append(words, fmt.Sprintf("removed %s that branches ended past %s had recorded, keeping what reuse may choose and each branch's newest check",
-			prose.And(removed), AgeWords(after)))
+			prose.And(removed), prose.Age(after)))
 	}
 	if assessments > 0 {
 		words = append(words, fmt.Sprintf("removed %s of trees open branches moved past, assessments and change records", prose.Plural(assessments, "record")))

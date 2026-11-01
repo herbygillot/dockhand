@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/atomicfile"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/evidence"
 	"github.com/herbygillot/dockhand/internal/fetch"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -382,7 +383,7 @@ func (f InstallFinding) Lines(bumped []string) []InstallLine {
 	if f.Version != "" {
 		against += fmt.Sprintf(" (%s, older than master's %s)", f.Version, f.Master)
 	}
-	where := DescribeEnvironment(f.Environment)
+	where := checks.DescribeEnvironment(f.Environment)
 	for _, library := range f.Libraries {
 		words := fmt.Sprintf("%s: %s on %s%s", f.Target, library.Words(), where, against)
 		switch {

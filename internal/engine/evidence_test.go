@@ -356,7 +356,7 @@ func TestAResultStandsOnlyWhileItsEnvironmentDoes(t *testing.T) {
 
 	provider.identity = "source sha256:b; setup 1"
 	remade := blocking()
-	require.Contains(t, remade, "jq: the previous check is no longer valid because "+DescribeEnvironment(tahoeArm)+" was made again")
+	require.Contains(t, remade, "jq: the previous check is no longer valid because "+checks.DescribeEnvironment(tahoeArm)+" was made again")
 	require.Contains(t, remade, "libharbor: the previous check is no longer valid")
 	passing, err := e.PassingBranches(t.Context())
 	require.NoError(t, err)
@@ -368,7 +368,7 @@ func TestAResultStandsOnlyWhileItsEnvironmentDoes(t *testing.T) {
 	checkHead(t, e, branch, "jq")
 	remade = blocking()
 	require.NotContains(t, remade, "jq")
-	require.Contains(t, remade, "libharbor: the previous check is no longer valid because "+DescribeEnvironment(tahoeArm)+" was made again")
+	require.Contains(t, remade, "libharbor: the previous check is no longer valid because "+checks.DescribeEnvironment(tahoeArm)+" was made again")
 	checkHead(t, e, branch, "libharbor")
 	require.Empty(t, blocking(), "the two narrowed checks together stand for the environment as it is now")
 }
@@ -398,7 +398,7 @@ func TestTheProviderSaysWhatChangedInAnEnvironment(t *testing.T) {
 	submission, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update"})
 	require.NoError(t, err)
 	require.Contains(t, strings.Join(submission.Blocking, "\n"),
-		"jq: the previous check is no longer valid because on "+DescribeEnvironment(tahoeArm)+", dockhand has begun to build otherwise, from verifier 1 to verifier 2. Run dockhand check to rebuild in the affected environments")
+		"jq: the previous check is no longer valid because on "+checks.DescribeEnvironment(tahoeArm)+", dockhand has begun to build otherwise, from verifier 1 to verifier 2. Run dockhand check to rebuild in the affected environments")
 	evidence, _, err := e.EvidenceFor(t.Context(), branch.ID, model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD^{tree}")))
 	require.NoError(t, err)
 	cell := evidence.Targets[0].Outcomes[0]
@@ -432,7 +432,7 @@ func TestWhatEvidenceSaysReadsInWords(t *testing.T) {
 		Outcomes: []Cell{{TargetResult: model.TargetResult{Target: "harbor-tools", Outcome: model.OutcomeUnmet}, Kind: CellUnmet, Environment: tools, Unmet: unmet}}}
 	evidence := Evidence{Run: model.Run{ID: "run_2", Number: 2}, Plan: model.Plan{Environments: []model.Environment{tools}}, Targets: []TargetEvidence{needsXcode}}
 	require.Equal(t, "! not built: needs Xcode", EvidenceWords(evidence, needsXcode, 0, AcceptedFailure{}))
-	require.Equal(t, []string{"harbor-tools needs Xcode. " + DescribeEnvironment(tools) + " does not have it; run a check in an environment with Xcode, or submit a draft with --draft"},
+	require.Equal(t, []string{"harbor-tools needs Xcode. " + checks.DescribeEnvironment(tools) + " does not have it; run a check in an environment with Xcode, or submit a draft with --draft"},
 		publicationProblems(evidence, nil, nil, nil))
 
 	failed := TargetEvidence{Target: model.PlanTarget{ID: "oniguruma", Target: model.Target{Name: "oniguruma"}, Kind: model.Unchanged, Role: model.Also},

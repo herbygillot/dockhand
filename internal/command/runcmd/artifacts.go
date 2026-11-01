@@ -5,9 +5,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/settings"
-	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
@@ -49,7 +49,7 @@ branch checked out there.`,
 			}
 			viewed := artifactsJSON{Run: run.Name(), Artifacts: []artifactJSON{}}
 			for _, artifact := range artifacts {
-				viewed.Artifacts = append(viewed.Artifacts, artifactJSON{Port: artifact.Port, Platform: engine.DescribeEnvironment(artifact.Environment), Name: artifact.Name, Path: artifact.Path, Missing: artifact.Missing})
+				viewed.Artifacts = append(viewed.Artifacts, artifactJSON{Port: artifact.Port, Platform: checks.DescribeEnvironment(artifact.Environment), Name: artifact.Name, Path: artifact.Path, Missing: artifact.Missing})
 			}
 			streams.Emit(viewed)
 			if len(artifacts) == 0 {

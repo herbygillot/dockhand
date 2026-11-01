@@ -15,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/evidence"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -85,7 +86,7 @@ func TestAMovedLibraryNamesTheDependentsTheBranchRebuilds(t *testing.T) {
 	finding.Target = "exiv2"
 	finding.Environment = model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
 	finding.Libraries = []evidence.LibraryChange{{Was: model.Library{Name: "/opt/local/lib/libexiv2.27.dylib"}, Now: model.Library{Name: "/opt/local/lib/libexiv2.28.dylib"}}}
-	where := DescribeEnvironment(finding.Environment)
+	where := checks.DescribeEnvironment(finding.Environment)
 	require.Equal(t, []InstallLine{{true, "exiv2: libexiv2.27.dylib is libexiv2.28.dylib now on " + where + " against check-12; darktable, gpsbabel link it, which update --revbump-dependents rebuilds"}}, finding.Lines(nil))
 	require.Equal(t, "exiv2: libexiv2.27.dylib is libexiv2.28.dylib now on "+where+" against check-12; darktable, gpsbabel link it, and this branch rebuilds gpsbabel", finding.Lines([]string{"gpsbabel"})[0].Words)
 	require.Equal(t, "exiv2: libexiv2.27.dylib is libexiv2.28.dylib now on "+where+" against check-12; darktable, gpsbabel link it, and this branch rebuilds each", finding.Lines([]string{"gpsbabel", "darktable"})[0].Words)

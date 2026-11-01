@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -42,7 +43,7 @@ func TestTargetWordsAreDesignV3s(t *testing.T) {
 	knownFail.Exclusion = model.Exclusion{Reason: "known_fail here, as the Portfile says"}
 	require.Equal(t, "— not built: known_fail here, as the Portfile says", targetWords(model.Plan{}, knownFail, "", AcceptedFailure{}), "why the plan left it out")
 	unmet := Cell{TargetResult: model.TargetResult{Outcome: model.OutcomeUnmet}, Kind: CellUnmet, Environment: command, Unmet: model.Unmet{Target: "jq", Environment: command, Needs: model.RequiresXcode}}
-	require.Equal(t, "! not built: "+UnmetWords(unmet.Unmet), targetWords(model.Plan{}, unmet, "", AcceptedFailure{}))
+	require.Equal(t, "! not built: "+checks.UnmetWords(unmet.Unmet), targetWords(model.Plan{}, unmet, "", AcceptedFailure{}))
 }
 
 // A coverage item named more than once is named once, with how many

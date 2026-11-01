@@ -243,7 +243,7 @@ copies it as it grows, as Tart's does.`,
 			found := chosen.Result
 			data, err := buildlog.ReadFile(found.Log)
 			if errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("%s: the log for %s is missing: %s. Cleanup removes logs %s after their results stop counting or their branch ends", run.Name(), port, found.Log, engine.AgeWords(s.File.Cleanup.Age()))
+				return fmt.Errorf("%s: the log for %s is missing: %s. Cleanup removes logs %s after their results stop counting or their branch ends", run.Name(), port, found.Log, prose.Age(s.File.Cleanup.Age()))
 			}
 			if err != nil {
 				return err
@@ -367,7 +367,7 @@ func followPortLog(ctx context.Context, e *engine.Engine, streams term.Streams, 
 // port's other builds, each with how to see its log.
 func writePortLogHeading(out io.Writer, places config.Places, logs engine.RunLogs, port string, chosen engine.PortLog, others []engine.PortLog) {
 	execution := chosen.Execution
-	fmt.Fprintf(out, "%s's log on %s, attempt %d of %d, run %s: %s; %s\n", port, engine.DescribeEnvironment(execution.Environment), execution.Attempt, model.MaxAttempts, execution.ID,
+	fmt.Fprintf(out, "%s's log on %s, attempt %d of %d, run %s: %s; %s\n", port, checks.DescribeEnvironment(execution.Environment), execution.Attempt, model.MaxAttempts, execution.ID,
 		view.PortBuildWords(chosen.Result), places.Tilde(buildlog.Where(chosen.Result.Log)))
 	for _, earlier := range logs.Executions {
 		if earlier.Execution.Environment == execution.Environment && earlier.Execution.Attempt < execution.Attempt {
@@ -376,7 +376,7 @@ func writePortLogHeading(out io.Writer, places config.Places, logs engine.RunLog
 		}
 	}
 	for _, other := range others {
-		fmt.Fprintf(out, "  also on %s, attempt %d, run %s: %s; dockhand logs %s %s\n", engine.DescribeEnvironment(other.Execution.Environment), other.Execution.Attempt, other.Execution.ID, view.PortBuildWords(other.Result), other.Execution.ID, port)
+		fmt.Fprintf(out, "  also on %s, attempt %d, run %s: %s; dockhand logs %s %s\n", checks.DescribeEnvironment(other.Execution.Environment), other.Execution.Attempt, other.Execution.ID, view.PortBuildWords(other.Result), other.Execution.ID, port)
 	}
 }
 

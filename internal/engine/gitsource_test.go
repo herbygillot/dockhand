@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -77,7 +78,7 @@ func TestAPlanExpectsTheCommitAGitFetchedPortsTagNamesNow(t *testing.T) {
 	require.NoError(t, err)
 	source, _ := plan.GitIn(tahoeArm, "libharbor")
 	require.Equal(t, model.ObjectID(second), source.Commit, "the next check expects what the tag names then")
-	require.Equal(t, "git.branch v4 names "+second[:7]+" now, which its build must fetch", GitSourceWords(source))
+	require.Equal(t, "git.branch v4 names "+second[:7]+" now, which its build must fetch", checks.GitSourceWords(source))
 
 	usePorts(e, gitHarbor(url, "v9"))
 	plan, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: environments})
@@ -521,7 +522,7 @@ func TestABuildThatFetchedAnotherCommitFailsAtFetch(t *testing.T) {
 	require.Equal(t, "the source moved: git.branch v4 named "+second[:7]+" when the check was planned, and the build fetched "+first[:7]+"; a new check builds what it names now", results["libharbor"].Detail)
 	require.Equal(t, model.OutcomeBlocked, results["harbor-cli"].Outcome, "what needs it isn't built against another source")
 	fetch := logs.Executions[0].Git["libharbor"]
-	require.Equal(t, "fetched "+first[:7]+", not "+second[:7]+", which git.branch v4 named when the check was planned", FetchedWords(fetch.Expected, fetch.Fetched), "its evidence says what it fetched")
+	require.Equal(t, "fetched "+first[:7]+", not "+second[:7]+", which git.branch v4 named when the check was planned", checks.FetchedWords(fetch.Expected, fetch.Fetched), "its evidence says what it fetched")
 	_, found := logs.Executions[0].Git["harbor-cli"]
 	require.False(t, found, "a blocked target, fetched with Git too, fetched nothing")
 	said := func(run model.Run, words string) bool {
@@ -544,7 +545,7 @@ func TestABuildThatFetchedAnotherCommitFailsAtFetch(t *testing.T) {
 	logs, err = e.Logs(t.Context(), run.ID)
 	require.NoError(t, err)
 	fetch = logs.Executions[0].Git["libharbor"]
-	require.Equal(t, "which commit of git.branch v4 it fetched isn't known: its provider didn't say; "+second[:7]+" was expected", FetchedWords(fetch.Expected, fetch.Fetched))
+	require.Equal(t, "which commit of git.branch v4 it fetched isn't known: its provider didn't say; "+second[:7]+" was expected", checks.FetchedWords(fetch.Expected, fetch.Fetched))
 	jobs := len(provider.jobs)
 	check()
 	require.Len(t, provider.jobs, jobs+1, "no later check reuses a build that didn't say what it fetched")

@@ -882,7 +882,7 @@ func queueHead(ctx context.Context, s *settings.Settings, e *engine.Engine, stre
 		fmt.Fprintf(streams.Out, "%s: %s passed for this commit already; nothing to check.\n", branch.ShortName(), queued.Passed.Name())
 		return nil, nil
 	}
-	fmt.Fprintf(streams.Out, "\n%s · checking %s%s\n", branch.ShortName(), engine.Describe(proposal.Capture.Revision), then)
+	fmt.Fprintf(streams.Out, "\n%s · checking %s%s\n", branch.ShortName(), checks.Describe(proposal.Capture.Revision), then)
 	view.WritePlan(streams.Out, proposal.Plan, e.PlanNotes(ctx, proposal.Plan), e.PlanSiblings(ctx, proposal.Plan), e.Remedy, view.ListShown(streams))
 	view.WritePushes(streams.Out, proposal.Plan)
 	if unrunnable := new(checks.UnrunnableError); errors.As(err, &unrunnable) {
