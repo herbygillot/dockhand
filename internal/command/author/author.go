@@ -864,11 +864,16 @@ func unbranchedPlan(ctx context.Context, e *engine.Engine, where branchflags.Bra
 // longer do, and those it couldn't check: that they apply is said too, so
 // a check that found nothing isn't taken for none (the fluent-bit run).
 func writePatches(out io.Writer, update engine.Update) {
+	source := "the new source"
+	if update.Release != nil && update.Release.Version != "" {
+		source = update.Release.Version + "'s source"
+	}
+	// A worksrcdir the new source lacks comes first, its patches' results
+	// following from it (the outdated-ports session's note 20).
+	if update.MissingWorksrcdir != "" {
+		fmt.Fprintf(out, "! worksrcdir %s isn't in %s\n", update.MissingWorksrcdir, source)
+	}
 	if update.PatchesApplied > 0 {
-		source := "the new source"
-		if update.Release != nil && update.Release.Version != "" {
-			source = update.Release.Version + "'s source"
-		}
 		fmt.Fprintf(out, "✓ %s to %s\n", engine.PatchesApply(update.PatchesApplied, len(update.PatchProblems)), source)
 	}
 	for _, problem := range update.PatchProblems {

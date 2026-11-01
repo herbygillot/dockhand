@@ -82,6 +82,10 @@ func (r Result) UncheckedPatches() []string {
 	return names
 }
 
+// MissingWorksrcdir is the worksrcdir the candidate source doesn't hold,
+// which its patches were checked without; empty where it holds it.
+func (r Result) MissingWorksrcdir() string { return patchcheck.MissingWorksrcdir(r.Patches) }
+
 // PatchesApplied counts the declared patches that apply to the candidate
 // source, checked: fluent-bit's six applied, and nothing said so, so the
 // person dry-ran them by hand (the fluent-bit run, batch 23).
