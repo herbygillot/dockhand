@@ -22,11 +22,18 @@ export PATH="/opt/local/bin:/opt/local/sbin:\$PATH"
 ENV
 	local image=""
 	"$DH_BIN" setup </dev/null 2>/dev/null | matches '✓ images for' || image=" Its check builds in Tart's plain image, which this home hasn't: make it first with dockhand setup tart, the README's setup."
-	checkpoint "in a dhtest Terminal, source $ROW_DIR/env.sh, then follow the README's \"Make your first update\" word for word on $ACCEPT_GO_PORT. At submit, add --title \"[testing] <the commit's subject>\" --skip-notification --note \"This pull request tests a dockhand release candidate, ${ACCEPT_CANDIDATE:-}, and will be closed without merging.\", so it's a test pull request in $DOCKHAND_PULL_REQUESTS.$image Note every disagreement with the README in $ROW_DIR/notes" || return 0
+	checkpoint "in a dhtest Terminal, source $ROW_DIR/env.sh, then follow the README's \"Make your first update\" word for word on $ACCEPT_GO_PORT. At submit, add --title \"[testing] <the commit's subject>\" --skip-notification --note \"This pull request tests a dockhand release candidate, ${ACCEPT_CANDIDATE:-}, and will be closed without merging.\", so it's a test pull request in $DOCKHAND_PULL_REQUESTS.$image Write each disagreement with the README as a line of $ROW_DIR/disagreements, and leave it empty or absent where there are none" || return 0
+}
+# disagreements are the lines a person wrote of the README and the tool
+# disagreeing, a line saying there were none aside: the row once read
+# the notes file, where the runner's own notes go too, and graded the
+# driver's "none" a disagreement (Prime-time's rc6 full stage).
+disagreements() {
+	grep -viE '^[[:space:]]*(none|no disagreements?|n/?a)?[[:space:]]*[.]?[[:space:]]*$' "$ROW_DIR/disagreements" 2>/dev/null || :
 }
 assert() {
-	if [ -s "$ROW_DIR/notes" ]; then
-		row_fail "the README and the tool disagree: $(tr '\n' ';' <"$ROW_DIR/notes")"
+	if [ -n "$(disagreements)" ]; then
+		row_fail "the README and the tool disagree: $(disagreements | tr '\n' ';')"
 	else
 		row_pass "the README worked as written"
 	fi
