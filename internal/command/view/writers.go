@@ -12,6 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildenv/ghactions"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -420,7 +421,7 @@ func WriteVariants(out io.Writer, plan model.Plan) {
 // where, and its state, a run whose process ended said to be stopped.
 // WriteQueue lists the checks queued and running; led is whether a serve
 // or a drain leads, which a queued check waits on.
-func WriteQueue(out io.Writer, queue []engine.QueuedCheck, led bool) {
+func WriteQueue(out io.Writer, queue []checks.QueuedCheck, led bool) {
 	if len(queue) == 0 {
 		return
 	}
@@ -475,7 +476,7 @@ func WriteQueue(out io.Writer, queue []engine.QueuedCheck, led bool) {
 }
 
 // QueueView is the queue for status's JSON.
-func QueueView(queue []engine.QueuedCheck) *[]queuedRunJSON {
+func QueueView(queue []checks.QueuedCheck) *[]queuedRunJSON {
 	rows := []queuedRunJSON{}
 	for _, queued := range queue {
 		row := queuedRunJSON{runJSON: RunView(queued.Run), Branch: queued.Branch.ShortName(), Revision: engine.Describe(queued.Revision), Environments: []environmentJSON{}}

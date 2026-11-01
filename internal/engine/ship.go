@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/failpoint"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -166,9 +167,9 @@ func (e *Engine) ship(ctx context.Context, target shipTarget, options shipOption
 		done.Problem = err.Error()
 		return done
 	}
-	queued, err := e.QueueCheck(ctx, QueueRequest{Branch: branch, Revision: proposal.Capture.Revision, Plan: proposal.Plan, Origin: options.Origin})
-	if unrunnable := new(UnrunnableError); errors.As(err, &unrunnable) {
-		done.Problem = "its check can't be planned: " + unresolvedWords(proposal.Plan)
+	queued, err := e.QueueCheck(ctx, checks.QueueRequest{Branch: branch, Revision: proposal.Capture.Revision, Plan: proposal.Plan, Origin: options.Origin})
+	if unrunnable := new(checks.UnrunnableError); errors.As(err, &unrunnable) {
+		done.Problem = "its check can't be planned: " + checks.UnresolvedWords(proposal.Plan)
 		return done
 	}
 	if err != nil {

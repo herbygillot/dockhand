@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/comparison"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -71,7 +72,7 @@ func (t treeFiles) File(ctx context.Context, tree model.ObjectID, path string) (
 
 // portObserver observes a port of a tree as MacPorts evaluates it on this
 // Mac, for an assessment's providers.
-type portObserver struct{ reader PortReader }
+type portObserver struct{ reader checks.PortReader }
 
 func (p portObserver) Observe(ctx context.Context, tree model.Source, name string) assess.Observation {
 	port, directory, err := providerPort(ctx, p.reader, tree, name)
@@ -94,7 +95,7 @@ func (u unreadablePorts) Observe(context.Context, model.Source, string) assess.O
 // providerPort is a port in a tree, as MacPorts evaluates it on this Mac,
 // and its directory; ErrNoPort, or the index's ErrNotIndexed, where the
 // tree has no such port.
-func providerPort(ctx context.Context, reader PortReader, source model.Source, name string) (macports.PortInfo, string, error) {
+func providerPort(ctx context.Context, reader checks.PortReader, source model.Source, name string) (macports.PortInfo, string, error) {
 	directory, err := reader.Directory(ctx, source, name)
 	if err != nil {
 		return macports.PortInfo{}, "", err

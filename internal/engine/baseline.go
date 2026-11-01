@@ -558,7 +558,7 @@ func (e *Engine) EnqueueBaseline(ctx context.Context, branch model.Branch, basel
 	if baseline.Of.ID == "" {
 		return model.Run{}, errors.New("engine: a baseline names the check it looks into")
 	}
-	return e.checks().enqueue(ctx, branch, baseline.Plan, origin, baseline.Of.ID)
+	return e.checks().EnqueueBaseline(ctx, branch, baseline.Plan, origin, baseline.Of.ID)
 }
 
 // BaselineRow is one port's result at the base beside the branch's, in one

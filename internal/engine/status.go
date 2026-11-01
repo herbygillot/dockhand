@@ -15,6 +15,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -140,19 +141,6 @@ type PortRelease struct {
 	Release model.Release
 }
 
-// Stopped reports whether a run recorded as running has no live process
-// driving it: the process running it ended without settling it, as a
-// killed foreground check does. It is resumable: the next serve takes it
-// up where it stopped, and so does dockhand wait; cancel ends it. Judging
-// who is alive takes a session.
-func Stopped(ctx context.Context, session *coord.Session, run model.Run) (bool, error) {
-	if run.State != model.RunRunning {
-		return false, nil
-	}
-	holder, err := session.Holder(ctx, RunResource(run.ID))
-	return err == nil && holder == nil, err
-}
-
 // JudgeStopped marks the statuses whose active run has stopped, their
 // holders read in one transaction (SQL-O4).
 func (e *Engine) JudgeStopped(ctx context.Context, session *coord.Session, statuses []BranchStatus) error {
@@ -166,14 +154,14 @@ func (e *Engine) JudgeStopped(ctx context.Context, session *coord.Session, statu
 	var holders map[string]*model.Session
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
-		holders, err = session.Holders(r, runResources(active)...)
+		holders, err = session.Holders(r, checks.RunResources(active)...)
 		return err
 	}); err != nil {
 		return err
 	}
 	for i := range statuses {
 		for _, run := range statuses[i].Active {
-			if run.State == model.RunRunning && holders[RunResource(run.ID)] == nil {
+			if run.State == model.RunRunning && holders[checks.RunResource(run.ID)] == nil {
 				statuses[i].Stopped = &run
 			}
 		}

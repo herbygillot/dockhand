@@ -552,17 +552,6 @@ func (e *Engine) prepareOne(ctx context.Context, planned PlannedUpdate, options 
 	return done
 }
 
-func unresolvedWords(plan model.Plan) string {
-	var words []string
-	for _, unresolved := range plan.Unresolved {
-		words = append(words, unresolved.Target.Name+": "+unresolved.Reason)
-	}
-	if len(words) == 0 {
-		return "it builds nothing"
-	}
-	return strings.Join(words, "; ")
-}
-
 // GitHubAllowance is what's left of the hour's GitHub requests for the
 // login the engine's runtime holds, for a look to weigh its cost first.
 func (e *Engine) GitHubAllowance(ctx context.Context) (github.Allowance, error) {

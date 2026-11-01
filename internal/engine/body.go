@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/prdescription"
@@ -197,13 +198,13 @@ func pullRequestBody(facts bodyFacts) string {
 // it observed, the release and tools the environment states, for what it
 // didn't report, who built it, and the runs behind it, each with its
 // check.
-func report(environment model.Environment, observed model.Observed, runs []model.GuestExecution, checks map[model.RunID]string, reusedIn map[model.ExecutionID]string) prdescription.Report {
+func report(environment model.Environment, observed model.Observed, runs []model.GuestExecution, runNames map[model.RunID]string, reusedIn map[model.ExecutionID]string) prdescription.Report {
 	described := prdescription.Report{Observed: observed, Architecture: environment.Platform.Architecture, Tools: environment.DeveloperTools, Provider: providerWords(environment, observed)}
 	if environment.Platform != (model.Platform{}) {
-		described.Release = strings.TrimPrefix(describePlace(model.Environment{Platform: environment.Platform}), " ")
+		described.Release = strings.TrimPrefix(checks.DescribePlace(model.Environment{Platform: environment.Platform}), " ")
 	}
 	for _, run := range runs {
-		described.Runs = append(described.Runs, prdescription.Run{ID: string(run.ID), Ref: run.ProviderRef, Check: checks[run.Run], ReusedIn: reusedIn[run.ID]})
+		described.Runs = append(described.Runs, prdescription.Run{ID: string(run.ID), Ref: run.ProviderRef, Check: runNames[run.Run], ReusedIn: reusedIn[run.ID]})
 	}
 	return described
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/evidence"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -77,27 +78,10 @@ func (e *Engine) EvidenceFor(ctx context.Context, branch model.BranchID, tree mo
 	return judged, err == nil, err
 }
 
-// identitiesNow asks each environment's provider what it is now. It is
-// asked outside any transaction, since a transaction never calls a
-// provider; one that can't say leaves the environment's identity unknown.
+// identitiesNow asks each environment's provider what it is now
+// (checks.Service.Identities).
 func (e *Engine) identitiesNow(ctx context.Context, environments []model.Environment) evidence.Identities {
-	now := evidence.Identities{}
-	for _, environment := range environments {
-		if identity, err := e.identityNow(ctx, environment); err == nil && identity != "" {
-			now[environment] = identity
-		}
-	}
-	return now
-}
-
-// identityNow is what an environment's provider says it is now: empty
-// where the provider can't say, and an error where it couldn't be read.
-func (e *Engine) identityNow(ctx context.Context, environment model.Environment) (string, error) {
-	provider, ok := e.Providers[environment.Provider].(buildenv.IdentityProvider)
-	if !ok {
-		return "", nil
-	}
-	return provider.Identity(ctx, environment)
+	return e.checks().Identities(ctx, environments)
 }
 
 // evidenceNow is what a tree's checks establish now (evidence.Judge): the
@@ -135,7 +119,7 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 	now := e.identitiesNow(ctx, plan.Environments)
 	var judged Evidence
 	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		own, err := loadCheck(r, primary, false)
+		own, err := checks.LoadCheck(r, primary, false)
 		if err != nil {
 			return err
 		}
@@ -144,7 +128,7 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 			if run.ID == primary.ID {
 				continue
 			}
-			check, err := loadCheck(r, run, evidence.ReadsSources(plan))
+			check, err := checks.LoadCheck(r, run, evidence.ReadsSources(plan))
 			if err != nil {
 				return err
 			}
@@ -181,30 +165,6 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 		}
 	}
 	return judged, err
-}
-
-// loadCheck loads a check's record, as evidence reads it, in the store's
-// one read of a check (the SQL study's O2): its plan, its executions and
-// their results, the executions that built the results it reused, with
-// their checks, and, where sources asks, what its results' builds read.
-// The run is the caller's, which a driver finishing it holds ahead of its
-// record.
-func loadCheck(r store.Reader, run model.Run, sources bool) (evidence.Check, error) {
-	record, err := r.Check(run.ID)
-	if err != nil {
-		return evidence.Check{}, err
-	}
-	check := evidence.Check{Run: run, Plan: record.Plan, Executions: record.Executions, Results: record.Results}
-	for id, origin := range record.Origins {
-		if check.Origins == nil {
-			check.Origins = map[model.ExecutionID]evidence.Origin{}
-		}
-		check.Origins[id] = evidence.Origin{Execution: origin.Execution, Check: origin.Run.Name()}
-	}
-	if sources && len(record.Inputs) > 0 {
-		check.Inputs = record.Inputs
-	}
-	return check, nil
 }
 
 // treeRuns lists a branch's finished checks of a tree, newest first. A
@@ -421,50 +381,11 @@ func (e *Engine) Covered(ctx context.Context, branch model.BranchID, tree model.
 	}, want), nil
 }
 
-// PlanCovers reports whether a check still to finish, have, would stand
-// for want once it passed: every cell want builds, each target in each
-// environment, built in have's environment too, a test policy at least as
-// strict, the same freshness and variants, and a guest kept where want
-// keeps one. The sets alone covered a minmax check for check --build all,
-// whose lists were the same and whose cells were more, and a check that
-// keeps no guest for check --keep (Codex's review of 2ad896d2, W4). A
-// rerun follows such a check, and queues another for one that doesn't.
-func PlanCovers(have, want model.Plan) bool {
-	if testsRank(have.Tests) < testsRank(want.Tests) || have.Fresh != want.Fresh || have.Variants != want.Variants || have.EachVariant != want.EachVariant {
-		return false
-	}
-	if want.Keep && !have.Keep {
-		return false
-	}
-	for _, environment := range want.Environments {
-		if !slices.Contains(have.Environments, environment) {
-			return false
-		}
-	}
-	for _, build := range want.Builds {
-		at := slices.IndexFunc(have.Builds, func(b model.EnvironmentPlan) bool { return b.Environment == build.Environment })
-		if at < 0 {
-			return false
-		}
-		for _, id := range build.Order {
-			if !slices.Contains(have.Builds[at].Order, id) {
-				return false
-			}
-		}
-	}
-	for _, target := range want.Targets {
-		if !slices.ContainsFunc(have.Targets, func(other model.PlanTarget) bool { return other.ID == target.ID }) {
-			return false
-		}
-	}
-	return true
-}
-
 // coversPlan is Covered's judgment: each of want's targets, where want
 // builds it, a cell of the evidence that passed and stands under want's
 // tests, or one the environment can't build (unmet) either way.
 func coversPlan(environments []model.Environment, tests model.TestPolicy, cell func(model.TargetID, int) (Cell, bool), want model.Plan) bool {
-	if testsRank(tests) < testsRank(want.Tests) {
+	if checks.TestsRank(tests) < checks.TestsRank(want.Tests) {
 		return false
 	}
 	for _, build := range want.Builds {
@@ -485,16 +406,4 @@ func coversPlan(environments []model.Environment, tests model.TestPolicy, cell f
 		}
 	}
 	return true
-}
-
-// testsRank orders test policies by how much a pass under them shows:
-// skipped tests, then declared ones reported, then required ones.
-func testsRank(policy model.TestPolicy) int {
-	switch policy {
-	case model.TestsRequired:
-		return 2
-	case model.TestsDeclared:
-		return 1
-	}
-	return 0
 }

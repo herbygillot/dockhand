@@ -103,18 +103,6 @@ type Capture struct {
 	Fixed []string
 }
 
-// Describe names the revision for people: "snapshot 3" or "commit 7e3f1a2".
-func Describe(revision model.Revision) string {
-	if revision.Kind == model.RevisionSnapshot {
-		if revision.Snapshot == 0 {
-			// A plan's capture, which only a check records and numbers.
-			return "a new snapshot"
-		}
-		return fmt.Sprintf("snapshot %d", revision.Snapshot)
-	}
-	return "commit " + revision.Source.Commit.Short()
-}
-
 // Capture records what a check will build: the committed tip when the
 // files are exactly it, otherwise a numbered snapshot of the files. A
 // capture whose files an earlier revision already holds reuses it, so

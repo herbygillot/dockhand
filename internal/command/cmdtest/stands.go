@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/command/host"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/compose"
@@ -217,12 +218,12 @@ func TestPlaces(t testing.TB) config.Places {
 // UsePorts gives a command run in the test reader as its port reader,
 // with each capability the reader has, leaving any other given apart, as
 // engine's usePorts does.
-func UsePorts(d *compose.Dependencies, reader engine.PortReader) {
+func UsePorts(d *compose.Dependencies, reader checks.PortReader) {
 	d.Ports.Reader = reader
 	if families, ok := reader.(engine.FamilyReader); ok {
 		d.Ports.Families = families
 	}
-	if graphs, ok := reader.(engine.DependencyGraphReader); ok {
+	if graphs, ok := reader.(checks.DependencyGraphReader); ok {
 		d.Ports.Graphs = graphs
 	}
 	if planner, ok := reader.(engine.ArchivePlanner); ok {

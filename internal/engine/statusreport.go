@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -46,7 +47,7 @@ type StatusReport struct {
 	// the branch, quoted (the docs dig's I7).
 	Instructions map[model.BranchID][]string
 	Serve        ServeState
-	Queue        []QueuedCheck
+	Queue        []checks.QueuedCheck
 	Processes    []Process
 	Changes      []buildenv.Change
 	// Look is serve's last daily look under the selection configured now,

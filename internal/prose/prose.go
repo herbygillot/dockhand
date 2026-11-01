@@ -154,3 +154,14 @@ func Sentence(text string) string {
 	r, size := utf8.DecodeRuneInString(text)
 	return string(unicode.ToUpper(r)) + text[size:]
 }
+
+// Age says an age as a person would: 15 days, 36 hours, 90 minutes.
+func Age(age time.Duration) string {
+	switch {
+	case age >= 24*time.Hour && age%(24*time.Hour) == 0:
+		return Plural(int(age/(24*time.Hour)), "day")
+	case age >= time.Hour && age%time.Hour == 0:
+		return Plural(int(age/time.Hour), "hour")
+	}
+	return Plural(int(age.Round(time.Minute)/time.Minute), "minute")
+}

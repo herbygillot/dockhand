@@ -17,6 +17,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildinfo"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -403,7 +404,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	capacity := map[string]int{}
 	var described []string
 	for _, name := range providers {
-		capacity[name] = e.checks().capacity(name)
+		capacity[name] = e.checks().Capacity(name)
 		described = append(described, capacityWords(name, e.Providers[name], capacity[name]))
 	}
 	if len(described) == 0 {
@@ -449,7 +450,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	// waits, and the runs after it that can go ahead.
 	running, stop := context.WithCancel(ctx)
 	defer stop()
-	checks := e.checks()
+	service := e.checks()
 	inFlight := map[model.RunID]model.Run{}
 	// unfinished are the runs said unfinished as serve's stop began, before
 	// it waited for them: a Tart check stops its VM for up to a minute, and
@@ -478,7 +479,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 		}
 		s.say("%s %s: %s", run.Name(), branch.ShortName(), verb)
 		go func() {
-			result, err := checks.driveLeased(running, session, lease, run.ID, true)
+			result, err := service.DriveLeased(running, session, lease, run.ID, true)
 			if result.ID == "" {
 				result = run
 			}
@@ -586,7 +587,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 			}
 			break
 		}
-		candidates, err := checks.Candidates(running, session)
+		candidates, err := service.Candidates(running, session)
 		if err != nil {
 			if running.Err() == nil {
 				failure = err
@@ -598,7 +599,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 			if _, in := inFlight[run.ID]; in {
 				continue
 			}
-			needs, err := checks.RunProviders(running, run)
+			needs, err := service.RunProviders(running, run)
 			if err != nil {
 				failure = err
 				break
@@ -614,7 +615,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 				failure = err
 				break
 			}
-			lease, full, err := checks.reserve(running, session, run, needs)
+			lease, full, err := service.Reserve(running, session, run, needs)
 			if held := new(coord.HeldError); errors.As(err, &held) {
 				continue
 			}
@@ -626,7 +627,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 				waiting = true
 				if !heldSaid[run.ID] {
 					heldSaid[run.ID] = true
-					if err := checks.sayHeld(running, session, run, full); err != nil {
+					if err := service.SayHeld(running, session, run, full); err != nil {
 						s.say("serve: saying what %s waits behind: %v", run.Name(), err)
 					}
 				}
@@ -1425,7 +1426,7 @@ func (e *Engine) ServeState(ctx context.Context, session *coord.Session) (ServeS
 	}
 	state := ServeState{Queue: len(queued)}
 	for _, run := range queued {
-		stopped, err := Stopped(ctx, session, run)
+		stopped, err := checks.Stopped(ctx, session, run)
 		if err != nil {
 			return ServeState{}, err
 		}

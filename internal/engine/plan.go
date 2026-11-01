@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -20,17 +21,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/store"
 )
-
-// PortReader reads ports from a source tree: the ports a directory defines
-// on a platform, main port first, and the directory that defines a port by
-// name. MacPorts' own evaluator is the real one.
-type PortReader interface {
-	// Ports reads a directory as it reads in an environment: on its
-	// platform, with its developer tools where it states them, and with the
-	// variants chosen, its defaults where none are.
-	Ports(ctx context.Context, source model.Source, directory string, environment model.Environment, variants map[string]bool) ([]macports.PortInfo, error)
-	Directory(ctx context.Context, source model.Source, name string) (string, error)
-}
 
 // CheckRequest is a check asked of a branch: the files it captures, where
 // it builds, and what of it, as check's flags, ship, and serve ask it.
@@ -346,7 +336,7 @@ func (e *Engine) resolveGitSources(ctx context.Context, builds []model.Environme
 			source := planned.Git[id]
 			key := [2]string{source.URL, source.Ref}
 			if _, done := resolved[key]; !done {
-				progress.VerboseReport(ctx, "%s is fetched with Git: reading which commit %s names in %s", id, refWords(source.Ref), source.URL)
+				progress.VerboseReport(ctx, "%s is fetched with Git: reading which commit %s names in %s", id, checks.RefWords(source.Ref), source.URL)
 				resolved[key] = e.resolveGit(ctx, source)
 				if err := ctx.Err(); err != nil {
 					return err
@@ -523,7 +513,7 @@ func (e *Engine) loadsChangedSharedCode(ctx context.Context, tree, start string,
 // with its variants in each environment, since what planning reads of a
 // port can change with them, and is left out where the port doesn't
 // declare them. A variant the port doesn't declare is refused.
-func planVariants(ctx context.Context, reader PortReader, source model.Source, request PlanRequest, plan *model.Plan, candidates []model.PlanTarget, evaluations []planning.Evaluation, infos []map[model.TargetID]macports.PortInfo) ([]model.PlanTarget, error) {
+func planVariants(ctx context.Context, reader checks.PortReader, source model.Source, request PlanRequest, plan *model.Plan, candidates []model.PlanTarget, evaluations []planning.Evaluation, infos []map[model.TargetID]macports.PortInfo) ([]model.PlanTarget, error) {
 	selected, err := variantsTarget(candidates, request.Only)
 	if err != nil {
 		return candidates, err
@@ -597,7 +587,7 @@ func planVariants(ctx context.Context, reader PortReader, source model.Source, r
 // Each is evaluated with its variants, as planVariants evaluates one; an
 // environment whose port doesn't declare them leaves that build out
 // there, since it would be the defaults'.
-func alsoVariants(ctx context.Context, reader PortReader, source model.Source, request PlanRequest, plan *model.Plan, candidates []model.PlanTarget, evaluations []planning.Evaluation) []model.PlanTarget {
+func alsoVariants(ctx context.Context, reader checks.PortReader, source model.Source, request PlanRequest, plan *model.Plan, candidates []model.PlanTarget, evaluations []planning.Evaluation) []model.PlanTarget {
 	for _, name := range request.Also {
 		target, ok := request.variants[model.TargetID(name)]
 		if !ok {
@@ -675,12 +665,6 @@ func VariantBuilds(declared []macports.Variant) []map[string]bool {
 	return builds
 }
 
-// DependencyGraphReader is a port reader that can read every port's direct
-// dependencies from the revision's port index.
-type DependencyGraphReader interface {
-	DependencyGraph(ctx context.Context, source model.Source) (map[string][]string, error)
-}
-
 // throughUnchanged orders the candidates through the ports the plan
 // doesn't build (planning.ThroughUnchanged), from the port index's graph,
 // read once, and only where there are two candidates to order. A guest
@@ -688,7 +672,7 @@ type DependencyGraphReader interface {
 // where the port between comes from a published archive, the order is
 // what makes the build use the branch's. Where the graph can't be read,
 // the plan orders by direct dependencies alone, and says so with -v.
-func throughUnchanged(ctx context.Context, graphs DependencyGraphReader, source model.Source, candidates []model.PlanTarget, evaluations []planning.Evaluation) {
+func throughUnchanged(ctx context.Context, graphs checks.DependencyGraphReader, source model.Source, candidates []model.PlanTarget, evaluations []planning.Evaluation) {
 	if len(candidates) < 2 {
 		return
 	}

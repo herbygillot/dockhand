@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -607,7 +608,7 @@ func TestServeStateSaysWhoLeadsAndWhatStopped(t *testing.T) {
 
 	run := queuedHarborRun(t, e, tahoeArm)
 	driver := session(t, e)
-	lease, err := driver.Acquire(ctx, RunResource(run.ID))
+	lease, err := driver.Acquire(ctx, checks.RunResource(run.ID))
 	require.NoError(t, err)
 	require.NoError(t, driver.Fenced(ctx, lease, func(tx store.Tx) error {
 		run.State = model.RunRunning
@@ -700,16 +701,6 @@ func TestAFailuresDetailSaysWhatItsLogShows(t *testing.T) {
 	}))
 	require.Equal(t, "`make` failed with exit code: 2 · from its log: src/cli.c:3:1: error: expected ';' after expression", details["harbor-cli"])
 	require.Empty(t, details["libharbor"], "a target that passed has no cause, whatever its log")
-	require.Equal(t, "from its log: src/cli.c:3:1: error: expected ';' after expression", withCause("", model.TargetResult{Log: log}), "with nothing else said")
-	require.Equal(t, "said", withCause("said", model.TargetResult{Log: filepath.Join(t.TempDir(), "gone.log")}), "a log that can't be read says nothing")
-
-	// Read from where the step that failed began: an error a dependency's
-	// build printed before it, and went on from, isn't its cause.
-	stepped := filepath.Join(t.TempDir(), "hugo.log")
-	require.NoError(t, os.WriteFile(stepped, []byte("dep/probe.c:1:1: error: tried and went on\n--->  Building hugo\ncmd/main.c:9:2: error: hugo's own\n"), 0o644))
-	steps := []model.LogStep{{Name: model.StepDependencies, Line: 1}, {Name: model.StepInstall, Line: 2}}
-	require.Equal(t, "from its log: cmd/main.c:9:2: error: hugo's own", withCause("", model.TargetResult{Log: stepped, Steps: steps}))
-	require.Equal(t, "from its log: dep/probe.c:1:1: error: tried and went on", withCause("", model.TargetResult{Log: stepped}), "without steps, from the top")
 }
 
 func TestServeTakesPeoplesChecksFirst(t *testing.T) {
@@ -724,13 +715,13 @@ func TestServeTakesPeoplesChecksFirst(t *testing.T) {
 	// branches': each recorded here with the same work as the first.
 	other := func(name string, origin model.Origin) model.Run {
 		t.Helper()
-		var run model.Run
+		started := branch
+		var plan model.Plan
 		require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
 			revision, err := tx.Revision(first.Revision)
 			if err != nil {
 				return err
 			}
-			started := branch
 			started.ID, started.Name, started.Worktree = model.BranchID(store.NewID("br")), model.BranchPrefix+name, filepath.Join(t.TempDir(), name)
 			if err := tx.AddBranch(started); err != nil {
 				return err
@@ -739,14 +730,12 @@ func TestServeTakesPeoplesChecksFirst(t *testing.T) {
 			if err := tx.AddRevision(revision); err != nil {
 				return err
 			}
-			plan := mustPlan(t, e, first)
+			plan = mustPlan(t, e, first)
 			plan.Revision = revision.ID
-			if err := tx.AddPlan(plan); err != nil {
-				return err
-			}
-			run, err = e.checks().queue(tx, model.Run{Branch: started.ID, Revision: revision.ID, Plan: plan.ID, Origin: origin}, "queued")
-			return err
+			return nil
 		}))
+		run, err := e.Enqueue(t.Context(), started, plan, origin)
+		require.NoError(t, err)
 		return run
 	}
 	byServe := other("harbor-serve", model.OriginServe)
@@ -1452,7 +1441,7 @@ func TestABranchHasOneCheckAtATime(t *testing.T) {
 	branch, err := e.Branch(t.Context(), first.Branch)
 	require.NoError(t, err)
 
-	var active *ActiveRunError
+	var active *checks.ActiveRunError
 	_, err = e.Enqueue(t.Context(), branch, mustPlan(t, e, first), model.OriginPerson)
 	require.ErrorAs(t, err, &active)
 	require.True(t, active.SameRevision)
@@ -1468,7 +1457,7 @@ func TestABranchHasOneCheckAtATime(t *testing.T) {
 	require.False(t, active.SameRevision)
 	require.Regexp(t, `^check-1 is queued for snapshot \d+, and a branch has one check at a time; dockhand cancel check-1 stops it, keeping what it finished$`, err.Error())
 
-	baseline, err := e.checks().enqueue(t.Context(), branch, mustPlan(t, e, first), model.OriginPerson, first.ID)
+	baseline, err := e.checks().EnqueueBaseline(t.Context(), branch, mustPlan(t, e, first), model.OriginPerson, first.ID)
 	require.NoError(t, err, "a baseline looks beside the check it explains")
 	require.Equal(t, first.ID, baseline.BaselineOf)
 
@@ -1568,28 +1557,6 @@ func TestACancelLeftUnappliedIsAppliedByTheNextDriver(t *testing.T) {
 	require.Empty(t, provider.jobs, "nothing was built")
 }
 
-// A result whose tests failed names them from its log, from its test step
-// on, whether the target failed or passed under declared tests (the exiv2
-// field notes, 2026-10-19).
-func TestAResultWhoseTestsFailedNamesThem(t *testing.T) {
-	t.Parallel()
-	log := filepath.Join(t.TempDir(), "target-1.log")
-	require.NoError(t, os.WriteFile(log, []byte("FAIL: a dependency's own\n:info:test The following tests FAILED:\nThe following tests FAILED:\n\t  3 - bugfixes-test (Failed)\nmake: *** [test] Error 8\n"), 0o644))
-	steps := []model.LogStep{{Name: model.StepInstall, Line: 1}, {Name: model.StepTest, Line: 2}}
-	require.Equal(t, "tests: make test failed · failed tests, from its log: bugfixes-test", withFailedTests("tests: make test failed", model.TargetResult{Log: log, Steps: steps}))
-	require.Equal(t, "said", withFailedTests("said", model.TargetResult{Log: filepath.Join(t.TempDir(), "gone.log")}))
-}
-
-// A port can have two kept archives offered, its newest and the one
-// before: the count says both where they differ, as gnome-voice's "up to
-// 221 dependencies" were 223 archives given (check-484).
-func TestTheOfferSaysItsArchivesWhereAPortHasTwo(t *testing.T) {
-	t.Parallel()
-	require.Equal(t, "the guest may install up to 2 dependencies from archives earlier checks kept", offeredWords(2, 2))
-	require.Equal(t, "the guest may install up to 221 dependencies from archives earlier checks kept (223 archives, the newest two of some)", offeredWords(221, 223))
-	require.Equal(t, "the guest may install up to 1 dependency from archives earlier checks kept", offeredWords(1, 1))
-}
-
 // A target whose log stops growing is said once, at every level: bazel's
 // server held port's pipe open after its client exited, and the VM sat
 // idle for 36 minutes with nothing said (the bazel session's notes,
@@ -1647,7 +1614,7 @@ func TestABaselineStandsWhereNothingItReadChanged(t *testing.T) {
 	// A baseline of it, built at the tree standing for master's here.
 	plan, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: plan.Environments})
 	require.NoError(t, err)
-	queued, err := e.checks().enqueue(t.Context(), branch, plan, model.OriginPerson, failed.ID)
+	queued, err := e.checks().EnqueueBaseline(t.Context(), branch, plan, model.OriginPerson, failed.ID)
 	require.NoError(t, err)
 	baseline, err := e.Drive(t.Context(), session(t, e), queued.ID)
 	require.NoError(t, err)

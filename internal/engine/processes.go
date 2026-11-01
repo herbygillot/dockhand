@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -43,7 +44,7 @@ func (e *Engine) Processes(ctx context.Context, session *coord.Session) ([]Proce
 		if err != nil {
 			return err
 		}
-		holders, err := session.Holders(r, append(runResources(runs), coord.LeaderResource)...)
+		holders, err := session.Holders(r, append(checks.RunResources(runs), coord.LeaderResource)...)
 		if err != nil {
 			return err
 		}
@@ -63,7 +64,7 @@ func (e *Engine) Processes(ctx context.Context, session *coord.Session) ([]Proce
 				process.Leads = true
 			}
 			for _, run := range runs {
-				if holder := holders[RunResource(run.ID)]; holder != nil && holder.ID == other.ID {
+				if holder := holders[checks.RunResource(run.ID)]; holder != nil && holder.ID == other.ID {
 					process.Runs = append(process.Runs, run)
 				}
 			}

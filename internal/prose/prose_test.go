@@ -64,3 +64,11 @@ func TestTookIsShortEnoughForACell(t *testing.T) {
 	require.Equal(t, "4m 12s", Took(4*time.Minute+12*time.Second+400*time.Millisecond))
 	require.Equal(t, "1h 3m", Took(time.Hour+3*time.Minute+20*time.Second))
 }
+
+func TestAgeSaysTheLargestWholeUnit(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "15 days", Age(15*24*time.Hour))
+	require.Equal(t, "36 hours", Age(36*time.Hour))
+	require.Equal(t, "90 minutes", Age(90*time.Minute))
+	require.Equal(t, "1 minute", Age(70*time.Second))
+}

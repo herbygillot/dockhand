@@ -1,4 +1,4 @@
-package engine
+package checks
 
 import (
 	"context"
@@ -70,7 +70,7 @@ type UnrunnableError struct {
 
 func (u *UnrunnableError) Error() string {
 	if len(u.Plan.Unresolved) > 0 {
-		return unresolvedWords(u.Plan)
+		return UnresolvedWords(u.Plan)
 	}
 	return "none of the planned ports can build in the selected environments; see Not built"
 }
@@ -87,14 +87,14 @@ func Runnable(plan model.Plan) error {
 // Portfiles would run as root unasked: a pull request someone else wrote,
 // which the person adopted (the trust rule, ahead of Then's item 12), and
 // serve's checks, unless [providers.local] serve says they may.
-func (c *checkService) localAllowed(request QueueRequest) error {
+func (c *Service) localAllowed(request QueueRequest) error {
 	if !slices.ContainsFunc(request.Plan.Environments, func(environment model.Environment) bool { return environment.Provider == buildenv.Local }) {
 		return nil
 	}
 	if pr := request.Branch.PullRequest; pr != nil && pr.Adopted {
 		return refusal.New(refusal.Failed, "%s is a pull request you adopted, whose Portfiles someone else wrote. A local check would run them as root on this Mac; check it with --on tart or --on github instead", request.Branch.ShortName())
 	}
-	if request.Origin == model.OriginServe && !c.localServe {
+	if request.Origin == model.OriginServe && !c.LocalServe {
 		return refusal.New(refusal.Environment, "serve does not run checks in a local MacPorts prefix unless [providers.local] serve = true. Portfiles run as root there under a passwordless sudo rule")
 	}
 	return nil
@@ -105,9 +105,9 @@ func (c *checkService) localAllowed(request QueueRequest) error {
 // check that stands for it, where request.Covered takes one; a plan nothing
 // can be built from refused; and one already queued or running for the
 // branch met as request.Beside says.
-func (c *checkService) QueueCheck(ctx context.Context, request QueueRequest) (Queued, error) {
+func (c *Service) QueueCheck(ctx context.Context, request QueueRequest) (Queued, error) {
 	if request.Covered {
-		passed, ok, err := c.work.Covered(ctx, request.Branch.ID, request.Revision.Source.Tree, request.Plan)
+		passed, ok, err := c.Admission.Covered(ctx, request.Branch.ID, request.Revision.Source.Tree, request.Plan)
 		if err != nil {
 			return Queued{}, err
 		}
@@ -131,7 +131,7 @@ func (c *checkService) QueueCheck(ctx context.Context, request QueueRequest) (Qu
 	}
 	// The branch's new check replaces the clones its earlier ones kept for
 	// dockhand shell; one that can't be removed is clean's to find.
-	if err := c.work.forgetKept(ctx, request.Branch.ID); err != nil {
+	if err := c.Admission.ForgetKept(ctx, request.Branch.ID); err != nil {
 		progress.Report(ctx, "removing the clones %s's earlier checks kept: %v", request.Branch.ShortName(), err)
 	}
 	return queued, nil
@@ -142,8 +142,8 @@ func (c *checkService) QueueCheck(ctx context.Context, request QueueRequest) (Qu
 // stopped or not; followed, where it's of the same files and its plan
 // covers this one; or stopped, keeping what it finished, a queued one
 // canceled at once and a running one asked to stop where Stop agrees.
-func (c *checkService) beside(ctx context.Context, request QueueRequest) (Queued, error) {
-	judging, observer, end, err := c.sessions.Observing(ctx)
+func (c *Service) beside(ctx context.Context, request QueueRequest) (Queued, error) {
+	judging, observer, end, err := c.Sessions.Observing(ctx)
 	if err != nil {
 		return Queued{}, err
 	}
@@ -183,7 +183,7 @@ func (c *checkService) beside(ctx context.Context, request QueueRequest) (Queued
 			return Queued{}, fmt.Errorf("%s keeps running; nothing new was queued", run.Name())
 		}
 	}
-	session, err := c.sessions.Session(ctx, model.SessionForeground)
+	session, err := c.Sessions.Session(ctx, model.SessionForeground)
 	if err != nil {
 		return Queued{}, err
 	}

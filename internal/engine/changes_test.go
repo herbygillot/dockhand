@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -133,7 +134,7 @@ func TestARecordKeepsTheSubportsItCantSee(t *testing.T) {
 // flakyFamily is MacPorts' evaluator, failing its first evaluations of a
 // family, as a busy MacPorts or a timeout would, and counting them all.
 type flakyFamily struct {
-	PortReader
+	checks.PortReader
 	family FamilyReader
 	fails  int
 	calls  int

@@ -42,22 +42,6 @@ func TestOnLocalNamesAPrefix(t *testing.T) {
 	require.Empty(t, PrefixNote(environments[0]))
 }
 
-// A check in a prefix on this Mac runs its Portfiles as root there, so
-// it's refused for a pull request someone else wrote, which the person
-// adopted, and for serve, unless [providers.local] serve says it may.
-func TestALocalCheckIsRefusedWhereItsPortfilesArentTheirs(t *testing.T) {
-	t.Parallel()
-	local := model.Plan{Environments: []model.Environment{{Provider: buildenv.Local, Prefix: "/opt/local"}}}
-	adopted := model.Branch{Name: "dockhand/jq-4f2a", PullRequest: &model.PullRequest{Number: 35968, Adopted: true}}
-	e := &Engine{}
-	require.ErrorContains(t, e.checks().localAllowed(QueueRequest{Branch: adopted, Plan: local}), "is a pull request you adopted, whose Portfiles someone else wrote. A local check would run them as root on this Mac; check it with --on tart or --on github instead")
-	require.NoError(t, e.checks().localAllowed(QueueRequest{Branch: adopted, Plan: model.Plan{Environments: []model.Environment{{Provider: buildenv.Tart}}}}))
-	require.ErrorContains(t, e.checks().localAllowed(QueueRequest{Plan: local, Origin: model.OriginServe}), "unless [providers.local] serve = true")
-	e.LocalServe = true
-	require.NoError(t, e.checks().localAllowed(QueueRequest{Plan: local, Origin: model.OriginServe}))
-	require.NoError(t, e.checks().localAllowed(QueueRequest{Plan: local, Origin: model.OriginPerson}))
-}
-
 // What checks changed of the person's own is gathered from each provider
 // that changes something, for status to say.
 func TestChangesAreGatheredFromTheProviders(t *testing.T) {

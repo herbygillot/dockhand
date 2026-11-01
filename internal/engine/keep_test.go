@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -61,7 +62,7 @@ func TestAKeptCloneLastsUntilCleanOrTheNextCheck(t *testing.T) {
 		t.Helper()
 		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}, Keep: true})
 		require.NoError(t, err)
-		queued, err := e.QueueCheck(t.Context(), QueueRequest{Branch: branch, Revision: revision, Plan: plan, Origin: model.OriginPerson})
+		queued, err := e.QueueCheck(t.Context(), checks.QueueRequest{Branch: branch, Revision: revision, Plan: plan, Origin: model.OriginPerson})
 		require.NoError(t, err)
 		run, err := e.Drive(t.Context(), session(t, e), queued.Run.ID)
 		require.NoError(t, err)

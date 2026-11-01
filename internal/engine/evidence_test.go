@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/planning"
@@ -592,12 +593,12 @@ func TestAPlanCoversAnotherCellByCell(t *testing.T) {
 	minmax, all := plan("minmax"), plan("all")
 	require.Equal(t, minmax.Environments, all.Environments, "the same environments")
 	require.Equal(t, minmax.Targets, all.Targets, "and targets")
-	require.False(t, PlanCovers(minmax, all), "minmax builds jq on two releases of three")
-	require.True(t, PlanCovers(all, minmax))
-	require.True(t, PlanCovers(all, all))
+	require.False(t, checks.PlanCovers(minmax, all), "minmax builds jq on two releases of three")
+	require.True(t, checks.PlanCovers(all, minmax))
+	require.True(t, checks.PlanCovers(all, all))
 
 	keep := all
 	keep.Keep = true
-	require.False(t, PlanCovers(all, keep), "a check that keeps no guest doesn't stand for one that does")
-	require.True(t, PlanCovers(keep, all))
+	require.False(t, checks.PlanCovers(all, keep), "a check that keeps no guest doesn't stand for one that does")
+	require.True(t, checks.PlanCovers(keep, all))
 }

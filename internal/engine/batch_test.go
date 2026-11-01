@@ -167,7 +167,7 @@ func TestABatchCountsAnotherProcesssChecks(t *testing.T) {
 	other := session(t, e)
 	held, err := e.Run(t.Context(), ids[0])
 	require.NoError(t, err)
-	lease, full, err := e.checks().reserve(t.Context(), other, held, []string{"command"})
+	lease, full, err := e.checks().Reserve(t.Context(), other, held, []string{"command"})
 	require.NoError(t, err)
 	require.Empty(t, full)
 

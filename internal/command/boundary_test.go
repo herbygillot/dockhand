@@ -18,6 +18,10 @@ import (
 // layer may import (doc.go), each with why.
 var commandImports = map[string]string{
 	"internal/engine": "does the work",
+	// The check-execution service's vocabulary, which the engine's check
+	// verbs take and return: a check to queue and what queuing did, who
+	// sees a run through, and the queue's rows.
+	"internal/checks": "vocabulary in engine results: a queued check, its lead, and the queue",
 	// The guide's pages, which usage prints; the package embeds them and
 	// imports nothing of dockhand's.
 	"docs/usage": "the guide's pages, which usage prints",

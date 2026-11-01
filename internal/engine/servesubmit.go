@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -289,7 +290,7 @@ func (e *Engine) movedSources(ctx context.Context, evidence *Evidence) []model.C
 			continue
 		}
 		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: model.RuleTagMoved, Subject: model.MovedSubject(planned.Commit, current.Commit), Class: model.Introduced,
-			Detail: tagMovedWords(planned, current, evidence.Run.Name(), target.Target.Name)})
+			Detail: checks.TagMovedWords(planned, current, evidence.Run.Name(), target.Target.Name)})
 	}
 	return concerns
 }

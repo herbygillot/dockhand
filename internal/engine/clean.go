@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/history"
@@ -837,7 +838,7 @@ func (e *Engine) judgeLeftover(ctx context.Context, session *coord.Session, left
 		leftover.Kept = "no check of this checkout made it"
 		return nil
 	}
-	holder, err := session.Holder(ctx, RunResource(leftover.Run.ID))
+	holder, err := session.Holder(ctx, checks.RunResource(leftover.Run.ID))
 	if holder != nil {
 		leftover.Kept = leftover.Run.Name() + " is running"
 	}
@@ -855,7 +856,7 @@ func (e *Engine) RemoveLeftovers(ctx context.Context, session *coord.Session, le
 		if leftover.Kept != "" || leftover.Run == nil || !ok {
 			continue
 		}
-		lease, holder, err := session.TakeIfUnattended(ctx, RunResource(leftover.Run.ID))
+		lease, holder, err := session.TakeIfUnattended(ctx, checks.RunResource(leftover.Run.ID))
 		if err != nil {
 			problems = append(problems, err)
 			continue

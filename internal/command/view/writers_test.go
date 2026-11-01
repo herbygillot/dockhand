@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -125,7 +126,7 @@ func TestUnreadLinksAreOneLineAReason(t *testing.T) {
 func TestTheQueueNamesARunningChecksVMsWithTheirTartHome(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
-	WriteQueue(&out, []engine.QueuedCheck{
+	WriteQueue(&out, []checks.QueuedCheck{
 		{Run: model.Run{ID: "r1", Number: 616, State: model.RunRunning}, VMs: []string{"dockhand-check-run-9-tahoe-1"}, TartHome: "~/.dockhand/tart"},
 		{Run: model.Run{ID: "r2", Number: 617, State: model.RunQueued}},
 	}, true)
@@ -145,7 +146,7 @@ func TestAChecksWaitForItsSlotIsSaid(t *testing.T) {
 	started, finished := queued.Add(3*time.Minute+31*time.Second), queued.Add(18*time.Minute)
 	running := model.Run{ID: "r1", Number: 822, State: model.RunRunning, CreatedAt: queued, StartedAt: &started}
 	var out bytes.Buffer
-	WriteQueue(&out, []engine.QueuedCheck{{Run: running}, {Run: model.Run{ID: "r2", Number: 823, State: model.RunQueued, CreatedAt: queued}}}, true)
+	WriteQueue(&out, []checks.QueuedCheck{{Run: running}, {Run: model.Run{ID: "r2", Number: 823, State: model.RunQueued, CreatedAt: queued}}}, true)
 	require.Contains(t, out.String(), "\n  check-822 queued 2026-10-31 14:02:11, waited 3m 31s for its slot\n")
 	require.NotContains(t, out.String(), "check-823 queued")
 
@@ -171,7 +172,7 @@ func TestAChecksWaitForItsSlotIsSaid(t *testing.T) {
 func TestAQueuedCheckNothingRunsSaysSo(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
-	WriteQueue(&out, []engine.QueuedCheck{{Run: model.Run{ID: "r1", Number: 660, State: model.RunQueued}}}, false)
+	WriteQueue(&out, []checks.QueuedCheck{{Run: model.Run{ID: "r1", Number: 660, State: model.RunQueued}}}, false)
 	require.Contains(t, out.String(), "nothing is running the queue; dockhand wait check-660 runs it here, dockhand serve --drain runs the queue, cancel ends it")
 }
 

@@ -8,18 +8,10 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
 )
-
-// Remedy is how to give an environment what an unmet target needs, when
-// its provider can say.
-func (e *Engine) Remedy(unmet model.Unmet) string {
-	if remedier, ok := e.Providers[unmet.Environment.Provider].(buildenv.Remedier); ok {
-		return remedier.Remedy(unmet)
-	}
-	return ""
-}
 
 // Environments turns --on values into the environments a check builds
 // in: each a provider that is set up, with the releases it can take, and
@@ -142,7 +134,7 @@ func OnValues(environments []model.Environment) ([]string, bool) {
 		named := environment.Provider == buildenv.Tart || environment.Provider == buildenv.GitHub && environment.Platform.Version != ""
 		if !named {
 			// A local check's prefix is named as --on names it.
-			value := providerPlace(environment)
+			value := checks.ProviderPlace(environment)
 			if !slices.Contains(values, value) {
 				values = append(values, value)
 			}
