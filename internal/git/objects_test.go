@@ -84,3 +84,15 @@ func TestCommitTreesRejectsMalformedBatchResponses(t *testing.T) {
 }
 
 func quote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
+
+func TestSHA1BlobIDIsGitsOwn(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	repo, err := git.Init(t.Context(), root, "master", git.Program{Env: testsupport.GitEnv(t)})
+	require.NoError(t, err)
+	for _, content := range []string{"", "PortGroup golang 1.0\n"} {
+		blob, err := repo.BlobID(t.Context(), []byte(content))
+		require.NoError(t, err)
+		require.Equal(t, blob, git.SHA1BlobID([]byte(content)))
+	}
+}

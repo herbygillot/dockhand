@@ -62,15 +62,23 @@ const maxProcedureDepth = 5
 // and write only the plain variables their arguments name, which are
 // checked. Control commands and the writers of variables are handled by
 // name below, and everything else is refused.
-var harmlessBuiltins = map[string]bool{
+var harmlessBuiltins = withWorkerAliasReads(map[string]bool{
 	"ui_error": true, "ui_warn": true, "ui_msg": true, "ui_info": true, "ui_notice": true, "ui_debug": true,
 	"global": true, "variable": true, "expr": true, "string": true, "format": true, "join": true, "split": true, "concat": true,
 	"list": true, "lindex": true, "llength": true, "lrange": true, "lsearch": true, "lsort": true, "lreverse": true, "lrepeat": true,
 	"regexp": true, "regsub": true, "scan": true, "vercmp": true, "variant_isset": true, "variant_exists": true, "fortran_variant_name": true, "mpi_variant_name": true,
 	"info": true, "return": true, "error": true, "break": true, "continue": true, "puts": true,
-	// Base's registry and path queries, aliased into the port's interpreter:
-	// they read what is installed and what is on the path.
-	"registry_active": true, "registry_installed": true, "registry_exists": true, "registry_file_registered": true, "_portnameactive": true, "_mportsearchpath": true,
+})
+
+// withWorkerAliasReads adds Base's registry and path queries, aliased into
+// the port's interpreter, to builtins: they read what is installed and
+// what is on the path, the aliases the evaluator's dispatcher answers
+// rather than refuses, by the one list (macports.WorkerAliases).
+func withWorkerAliasReads(builtins map[string]bool) map[string]bool {
+	for _, name := range macports.WorkerAliasReads() {
+		builtins[name] = true
+	}
+	return builtins
 }
 
 // fileReads are the file subcommands that read the host and change nothing.

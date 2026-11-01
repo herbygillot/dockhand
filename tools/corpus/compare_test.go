@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -65,4 +67,26 @@ func TestAPlansPortfileDiffIsItsOwnSection(t *testing.T) {
 	if !strings.HasPrefix(got, "diff --git a/databases/mariadb-10.11/Portfile ") || strings.Contains(got, "files/patch-a.diff") {
 		t.Fatalf("portfileDiff kept %q", got)
 	}
+}
+
+func TestARowThatMovesNamesThePortGroupAndTheAssumption(t *testing.T) {
+	t.Parallel()
+	pinned, replayed := t.TempDir(), t.TempDir()
+	put := func(root, name, content string) {
+		t.Helper()
+		path := filepath.Join(root, name)
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+	}
+	put(pinned, "devel/csvtk/Portfile", "PortSystem 1.0\nPortGroup golang 1.0\nPortGroup obsolete 1.0\n")
+	for _, root := range []string{pinned, replayed} {
+		put(root, "_resources/port1.0/group/go_toolchain-1.0.tcl", "set a 1\n")
+	}
+	put(pinned, "_resources/port1.0/group/golang-1.0.tcl", "PortGroup go_toolchain 1.0\n")
+	put(replayed, "_resources/port1.0/group/golang-1.0.tcl", "PortGroup go_toolchain 1.0\nbuild.env GOTOOLCHAIN=local\n")
+	put(pinned, "_resources/port1.0/group/obsolete-1.0.tcl", "")
+	require.Equal(t, []string{
+		"the golang 1.0 PortGroup differs from the pinned one; dockhand assumes the options go.vendors go.version go.package go.domain go.offline_build go.toolchain_min go.bin and the procedures go.setup go_toolchain.ceiling of it, and its behaviour where Go restates it",
+		"the obsolete 1.0 PortGroup is gone from the replayed _resources",
+	}, movedPortGroups(pinned, replayed, "devel/csvtk"))
 }

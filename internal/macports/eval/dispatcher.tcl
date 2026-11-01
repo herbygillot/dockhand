@@ -80,8 +80,6 @@ namespace eval ::dockhand {
                         "reaches the network" {socket curl curlwrap curlwrap_async check_broken_dns}
                         "runs a process outside the dispatcher" {system mport_exec tracelib macports_create_thread}
                         "changes the filesystem" {mkdtemp mktemp symlink clonefile lchown xinstall set_pingtime}
-                        "changes the MacPorts registry" {registry_activate registry_deactivate registry_deactivate_composite registry_install
-                            registry_uninstall registry_write registry_new registry_prop_store registry_register_deps registry_bulk_register_files}
                     } {
                         foreach name $names { dict set outright $name $reason }
                     }
@@ -134,7 +132,13 @@ namespace eval ::dockhand {
                             if {[lindex $arguments 0] in $pure} { return pure }
                             set path [lindex $arguments 1]
                         }
-                        default { return host }
+                        default {
+                            # A port Base has open is read from its own
+                            # worker, which is guarded in its own right.
+                            variable port_reads
+                            if {$name in $port_reads} { return base }
+                            return host
+                        }
                     }
                     if {[string index $path 0] ne "/"} { return relative }
                     foreach root [list $source_root $base_root] {
@@ -475,11 +479,20 @@ namespace eval ::dockhand {
                 }
             }
         }
+        # The registry aliases Base gives a worker are the one list Go
+        # holds (macports.WorkerAliases): those that write are refused,
+        # and the rest answered by how each reads (installation.tcl).
+        foreach {name answer} $::dockhand::worker_alias_answers {
+            if {$answer eq "writes"} {
+                $worker eval [list dict set ::dockhand_dispatcher::outright $name "changes the MacPorts registry"]
+            }
+        }
         install_fresh $worker
         install_toolchain $worker
         $worker eval {
             ::dockhand_dispatcher::guard [list exec file open glob findBinary binaryInPath \
-                {*}$::dockhand_dispatcher::registry_reads {*}[dict keys $::dockhand_dispatcher::outright]]
+                {*}$::dockhand_dispatcher::registry_reads {*}$::dockhand_dispatcher::searches {*}$::dockhand_dispatcher::port_reads \
+                {*}[dict keys $::dockhand_dispatcher::outright]]
             trace add execution ::PortSystem leave ::dockhand_dispatcher::loaded
         }
         $worker eval [list set ::dockhand_dispatcher::programs $::dockhand::host_programs]

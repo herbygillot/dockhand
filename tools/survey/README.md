@@ -61,7 +61,7 @@ sqlite3 ~/.dockhand/surveys/<date>-<commit>.db < tools/survey/queries/q01-files-
 With `-db` the evaluator records (`eval.Evaluator.Recording`): the paths
 `file`, `open`, `glob`, and `source` read, by what each is and who
 answered, the command lines `exec` ran, the hooks the Portfile and its
-PortGroups declared, each PortGroup's version and file, and once a run
+PortGroups declared, each PortGroup's version, file, and blob, and once a run
 what `mportinit` read and the aliases Base gives a worker. `-recording=false`
 leaves those out, for measuring what they cost.
 

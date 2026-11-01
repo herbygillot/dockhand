@@ -375,16 +375,15 @@ func (r *Record) evaluation(tx *sql.Tx, port int64, o observed) error {
 		return err
 	}
 	if err := insert(`INSERT INTO portgroup (evaluation_id, name, version, path, blob) VALUES (?, ?, ?, ?, nullif(?, ''))`, func(add func(...any) error) error {
-		groups, errs := syntax.ListValues(o.Info.Options["dockhand.portgroups"])
-		if len(errs) != 0 {
-			return nil
-		}
+		groups, _ := o.Info.LoadedPortGroups()
 		for _, group := range groups {
-			fields, errs := syntax.ListValues(group)
-			if len(errs) != 0 || len(fields) != 3 {
-				continue
+			// The evaluation's own blob, of the file it loaded; the
+			// tree's, for an evaluation that read none.
+			blob := group.Blob
+			if blob == "" {
+				blob = r.trees[group.File()]
 			}
-			if err := add(fields[0], fields[1], fields[2], r.trees[strings.TrimPrefix(fields[2], "<source>/")]); err != nil {
+			if err := add(group.Name, group.Version, group.Path, blob); err != nil {
 				return err
 			}
 		}

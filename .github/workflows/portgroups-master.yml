@@ -1,0 +1,59 @@
+name: MacPorts PortGroups master
+
+# The corpus (tools/corpus) replayed weekly against macports-ports master's
+# _resources, beside base-master.yml's job against Base's master (the
+# roadmap's "PortGroup change made visible"): ci.yml replays it against the
+# PortGroups pinned in testdata/corpus, so a PortGroup's change on master
+# is invisible there until the pin is refreshed. A row that moves here
+# names the PortGroups it loads that differ from the pinned ones and what
+# dockhand assumes of each. A failure is a notice for the person, not a
+# gate on main: nothing a release ships waits on this workflow.
+
+on:
+  schedule:
+    - cron: "47 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portgroups-master:
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: MacPorts
+        run: .github/scripts/macports.sh
+
+      # The dependency helpers update runs, as ci.yml's corpus job installs
+      # them.
+      - name: go2port and cargo2port
+        run: |
+          set -euo pipefail
+          echo "rsync://rsync.macports.org/macports/release/tarballs/ports.tar [default]" | sudo tee /opt/local/etc/macports/sources.conf
+          sudo /opt/local/bin/port -N sync
+          sudo /opt/local/bin/port -N install go2port cargo2port
+          echo "/opt/local/bin" >> "$GITHUB_PATH"
+
+      # master's _resources alone, the rest of the slice staying pinned.
+      - name: macports-ports master's _resources
+        run: |
+          set -euo pipefail
+          git clone -q --depth 1 --filter=blob:none --sparse https://github.com/macports/macports-ports.git "$RUNNER_TEMP/ports-master"
+          git -C "$RUNNER_TEMP/ports-master" sparse-checkout set _resources
+          git -C "$RUNNER_TEMP/ports-master" log -1 --format='macports-ports master at %H, %cd'
+
+      - name: Corpus against master's PortGroups
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: make test-corpus CORPUS_RESOURCES="$RUNNER_TEMP/ports-master/_resources"

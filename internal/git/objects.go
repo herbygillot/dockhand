@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -126,6 +128,17 @@ func (r *Repository) CommitTrees(ctx context.Context, commits []string) (map[str
 		trees[commit] = tree[0]
 	}
 	return trees, nil
+}
+
+// SHA1BlobID is the object ID data has as a blob in a repository of
+// Git's SHA-1 object format, macports-ports' among them, worked out
+// without a repository or a process: what one file's contents are where
+// an evaluation records the files it loaded, and many are hashed a run.
+func SHA1BlobID(data []byte) string {
+	hash := sha1.New()
+	fmt.Fprintf(hash, "blob %d\x00", len(data))
+	hash.Write(data)
+	return hex.EncodeToString(hash.Sum(nil))
 }
 
 func (r *Repository) WriteBlob(ctx context.Context, data []byte) (string, error) {

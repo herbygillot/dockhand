@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/fetchguard"
@@ -123,6 +125,8 @@ func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session
 	}
 	tables := "namespace eval ::dockhand {}\nset ::dockhand::read_options [list " + strings.Join(macports.ReadOptions, " ") + "]\n" +
 		"set ::dockhand::host_programs [list " + macports.TclHostPrograms(macports.HostPrograms) + "]\n" +
+		"set ::dockhand::worker_alias_answers [dict create " + macports.TclWorkerAliases(macports.WorkerAliases) + "]\n" +
+		"set ::dockhand::portgroup_assumptions [list " + macports.TclPortGroupAssumptions(macports.PortGroupAssumptions) + "]\n" +
 		"set ::dockhand::recording_paths " + strconv.FormatBool(e.Recording) + "\n" +
 		"set ::dockhand::installation " + string(installation) + "\n"
 	if _, err := session.Call(ctx, "eval", tables+compatibilityScript+"\n"+fetchCredentialsScript+"\n"+platformScript+"\n"+dispatcherScript+"\n"+installationScript+"\n"+toolchainScript+"\n"+observationScript+"\n"+evaluatorScript+"\n"+versionScript); err != nil {
@@ -391,6 +395,8 @@ func evaluateIn(ctx context.Context, session *rpc.Session, runtime macports.Runt
 		}
 	}
 	delete(top.Options, "dockhand.observation")
+	blobs := map[string]string{}
+	top = recordPortGroups(ctx, top, []string{source.Root(), source.Base()}, blobs)
 	ports := map[string]macports.PortInfo{top.Name: top}
 	if !selectedOnly && checked.Target().Subport == "" {
 		for _, sub := range subs {
@@ -411,7 +417,7 @@ func evaluateIn(ctx context.Context, session *rpc.Session, runtime macports.Runt
 				}
 			}
 			delete(value.Options, "dockhand.observation")
-			ports[sub] = value
+			ports[sub] = recordPortGroups(ctx, value, []string{source.Root(), source.Base()}, blobs)
 		}
 	}
 	snapshot := macports.Snapshot{Source: source.Source(), Target: source.Target(), Platform: runtime.Platform, Runtime: runtime, Ports: ports, Root: source.Root()}
@@ -421,6 +427,43 @@ func evaluateIn(ctx context.Context, session *rpc.Session, runtime macports.Runt
 	}
 	// A runtime that models its own platform models every context.
 	return macports.Observation{Snapshot: snapshot, Modeled: other || runtime.Modeled(), Ports: observations}, nil
+}
+
+// recordPortGroups is port with the blob of each PortGroup it loaded
+// from the tree recorded beside its name, version, and file, the file read
+// under the first of roots that has it, as the worker's <source> stands
+// for either of the session's roots; blobs keeps those read, by file, for
+// the evaluation's other subports. A file that can't be read is left
+// without one. A PortGroup the assumption manifest has the name of and not
+// the version is said.
+func recordPortGroups(ctx context.Context, port macports.PortInfo, roots []string, blobs map[string]string) macports.PortInfo {
+	groups, known := port.LoadedPortGroups()
+	if !known {
+		return port
+	}
+	// A PortGroup at a version the assumption manifest wasn't checked
+	// against is said, once, and evaluation goes on.
+	for _, group := range macports.UncheckedPortGroups(groups) {
+		progress.ReportOnce(ctx, "the %s %s PortGroup is one dockhand's PortGroup assumptions weren't checked against; what it reads of %s may be missing", group.Name, group.Version, group.Name)
+	}
+	for i, group := range groups {
+		file := group.File()
+		if file == "" {
+			continue
+		}
+		blob, read := blobs[file]
+		for _, root := range roots {
+			if read {
+				break
+			}
+			if data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(file))); err == nil {
+				blob, read = git.SHA1BlobID(data), true
+				blobs[file] = blob
+			}
+		}
+		groups[i].Blob = blob
+	}
+	return port.WithPortGroups(groups)
 }
 
 // modelsContext reports whether a request's context is modelled rather

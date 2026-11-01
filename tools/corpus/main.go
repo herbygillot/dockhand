@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 )
 
 func main() {
@@ -26,7 +28,7 @@ func main() {
 
 func corpus(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: corpus refresh -ports <checkout> -commit <commit> | corpus replay -dockhand <binary> [-port <name>]")
+		return errors.New("usage: corpus refresh -ports <checkout> -commit <commit> | corpus replay -dockhand <binary> [-port <name>] [-resources <_resources>]")
 	}
 	switch args[0] {
 	case "refresh":
@@ -44,11 +46,12 @@ func corpus(args []string) error {
 		dockhand := flags.String("dockhand", "", "the dockhand binary to replay with")
 		data := flags.String("data", "testdata/corpus", "the corpus's directory")
 		only := flags.String("port", "", "replay this row alone")
+		resources := flags.String("resources", "", "a _resources directory, macports-ports master's, to replay against in place of the slice's pinned one")
 		_ = flags.Parse(args[1:])
 		if *dockhand == "" {
 			return errors.New("replay needs -dockhand")
 		}
-		return replay(*dockhand, *data, *only)
+		return replay(*dockhand, *data, *only, *resources)
 	}
 	return fmt.Errorf("unknown subcommand %q", args[0])
 }
@@ -187,8 +190,12 @@ type envelope struct {
 // with what the bump wrote: the version, checksums, and dependency
 // blocks, as words where order means nothing. A row that should refuse
 // must refuse, saying what its row says. It needs the network, for the
-// forge's tags, the archives, and the dependency helpers.
-func replay(dockhand, data, only string) error {
+// forge's tags, the archives, and the dependency helpers. With resources,
+// the rows replay against that _resources, macports-ports master's, in
+// place of the pinned one, and a row that moves names the PortGroups it
+// loads whose files differ from the pinned ones and what dockhand assumes
+// of each (macports.PortGroupAssumptions).
+func replay(dockhand, data, only, resources string) error {
 	list, err := rows(data)
 	if err != nil {
 		return err
@@ -205,6 +212,14 @@ func replay(dockhand, data, only string) error {
 	tree := filepath.Join(scratch, "ports")
 	if err := os.CopyFS(tree, os.DirFS(filepath.Join(data, "tree"))); err != nil {
 		return err
+	}
+	if resources != "" {
+		if err := os.RemoveAll(filepath.Join(tree, macports.ResourcesDirectory)); err != nil {
+			return err
+		}
+		if err := os.CopyFS(filepath.Join(tree, macports.ResourcesDirectory), os.DirFS(resources)); err != nil {
+			return err
+		}
 	}
 	if err := commitSlice(tree); err != nil {
 		return err
@@ -232,6 +247,11 @@ func replay(dockhand, data, only string) error {
 		if problem != "" {
 			failed++
 			fmt.Printf("FAIL %s %s (%s): %s\n", r.Port, r.Version, took, problem)
+			if resources != "" {
+				for _, line := range movedPortGroups(filepath.Join(data, "tree"), tree, r.Dir) {
+					fmt.Printf("     %s\n", line)
+				}
+			}
 			continue
 		}
 		fmt.Printf("ok   %s %s (%s): %s\n", r.Port, r.Version, took, r.Expect)
@@ -354,4 +374,60 @@ func portfileDiff(diff, dir string) string {
 func lastLine(text string) string {
 	lines := strings.Split(strings.TrimSpace(text), "\n")
 	return lines[len(lines)-1]
+}
+
+// movedPortGroups says, for a row replayed against another _resources,
+// each PortGroup its Portfile loads, by name or through another PortGroup,
+// whose file differs between the pinned slice and the tree replayed, and
+// what dockhand assumes of it: the PortGroup and the assumption a row that
+// moved points at. A PortGroup the replayed tree lacks is said so.
+func movedPortGroups(pinned, replayed, dir string) []string {
+	src, err := os.ReadFile(filepath.Join(pinned, dir, "Portfile"))
+	if err != nil {
+		return []string{err.Error()}
+	}
+	var lines []string
+	seen := map[macports.PortGroup]bool{}
+	queue, _ := portfile.PortGroupReferences(src)
+	for len(queue) > 0 {
+		group := queue[0]
+		queue = queue[1:]
+		if seen[group] {
+			continue
+		}
+		seen[group] = true
+		before, errBefore := os.ReadFile(filepath.Join(pinned, filepath.FromSlash(group.Path())))
+		after, errAfter := os.ReadFile(filepath.Join(replayed, filepath.FromSlash(group.Path())))
+		switch {
+		case errAfter != nil:
+			lines = append(lines, fmt.Sprintf("the %s %s PortGroup is gone from the replayed _resources", group.Name, group.Version))
+			continue
+		case errBefore == nil && !bytes.Equal(before, after):
+			lines = append(lines, fmt.Sprintf("the %s %s PortGroup differs from the pinned one; dockhand assumes %s", group.Name, group.Version, assumptionWords(group)))
+		}
+		nested, _ := portfile.PortGroupReferences(after)
+		queue = append(queue, nested...)
+	}
+	return lines
+}
+
+// assumptionWords are what the manifest says dockhand relies on a
+// PortGroup to define, as words.
+func assumptionWords(group macports.PortGroup) string {
+	for _, a := range macports.PortGroupAssumptions {
+		if a.Name != group.Name || a.Version != group.Version {
+			continue
+		}
+		var named []string
+		if len(a.Options) > 0 {
+			named = append(named, "the options "+strings.Join(a.Options, " "))
+		}
+		if len(a.Procs) > 0 {
+			named = append(named, "the procedures "+strings.Join(a.Procs, " "))
+		}
+		if len(named) > 0 {
+			return strings.Join(named, " and ") + " of it, and its behaviour where Go restates it"
+		}
+	}
+	return "nothing of it by name, so what moved is its behaviour where Go restates it"
 }

@@ -247,6 +247,7 @@ func changeRecord(record model.ChangeRecord, sides [2]*macports.Snapshot, texts 
 		return record
 	}
 	record.Ports = fidelity.SubportChanges(record.Directory, sides[0], sides[1], transitions)
+	record.Resources = fidelity.ResourceChanges(record.Ports, sides[0], sides[1])
 	record.Unseen, record.AllUnseen = portfile.UnseenChanges(texts[0], texts[1])
 	return record
 }

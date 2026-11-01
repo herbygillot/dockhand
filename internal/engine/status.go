@@ -1235,12 +1235,33 @@ func (s BranchStatus) OnlyPort() (string, bool) {
 }
 
 // ChangedPorts are what the branch's files change as they are now, as a
-// person reads it: the ports its change records say (recordedPorts), then
-// _resources, where it changed.
+// person reads it: _resources first, where it changed, with the PortGroup
+// files its change records find changed and the ports each moved, as one
+// line; then the ports its change records say (recordedPorts).
 func (s BranchStatus) ChangedPorts() (ports []string, notes map[string]string) {
 	ports, notes = recordedPorts(s.Scope.Ports, s.Changes)
-	if s.Scope.Resources {
-		ports = append(ports, macports.ResourcesDirectory)
+	// Each directory's record names the ports of its own that a file
+	// moved; the line names them all.
+	files := map[string]*model.ResourceChange{}
+	for _, directory := range slices.Sorted(maps.Keys(s.Changes)) {
+		for _, change := range s.Changes[directory].Resources {
+			if merged, ok := files[change.File]; ok {
+				merged.Ports = append(merged.Ports, change.Ports...)
+				continue
+			}
+			change.Ports = slices.Clone(change.Ports)
+			files[change.File] = &change
+		}
+	}
+	var lines []string
+	for _, file := range slices.Sorted(maps.Keys(files)) {
+		lines = append(lines, files[file].Line())
+	}
+	if s.Scope.Resources || len(lines) > 0 {
+		ports = append([]string{macports.ResourcesDirectory}, ports...)
+		if len(lines) > 0 {
+			notes[macports.ResourcesDirectory] = strings.Join(lines, "; ")
+		}
 	}
 	return ports, notes
 }
