@@ -47,6 +47,7 @@ var commandImports = map[string]string{
 	"internal/credential/keychain":  "setup's, until part 4.2: the macOS Keychain",
 	"github.com/spf13/cobra":        "the command line itself",
 	"internal/term":                 "the streams: terminals, questions, the --json envelope, and exit codes",
+	"internal/term/screen":          "the terminal console draws on whole: raw keys, and a frame at its size",
 	// Where a port's own build begins is the result's (model.OwnBuild);
 	// logs --port prints its log from that line, counted as the guest
 	// counts it.

@@ -24,6 +24,7 @@ import (
 
 // noJSON are the commands with no --json, each with why.
 var noJSON = map[string]string{
+	"console":      "a table redrawn on a terminal, or events as lines, read by a person",
 	"open":         "opens a page in the browser, with nothing to report",
 	"serve":        "a long-running log, read a line an event",
 	"shell":        "prints a shell's completion script",
@@ -42,6 +43,7 @@ var noPlan = map[string]string{
 	"archive":      "sets a branch aside, which archive --undo brings back",
 	"cancel":       "stops a check, keeping what it finished",
 	"config":       "shows or sets one setting, which it names",
+	"console":      "observes only; its keys run commands, each with its own --plan and questions",
 	"decide":       "records one decision, which deciding again replaces",
 	"diff":         "reads only",
 	"edit":         "opens the Portfile in your editor",

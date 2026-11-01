@@ -123,7 +123,9 @@ dockhand serve --ship-to list
 
 This runs queued checks, refreshes recorded pull-request state, and does the
 configured daily look. `list` prepares no automatic updates and publishes none.
-Leave it in a terminal of its own and inspect `dockhand status` from another.
+Leave it in a terminal of its own and inspect `dockhand status` from another,
+or keep `dockhand console` open there: a table of the branches kept current as
+serve works, with the journal's newest events under it.
 One serve leads the repository's queue; another stands by for takeover. Ctrl-C
 ends this foreground worker, leaving completed results for a later worker.
 `serve --drain` instead runs queued work and exits when the queue drains; it is

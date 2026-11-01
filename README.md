@@ -217,7 +217,7 @@ dockhand serve --install
 
 `serve` processes queued checks, follows pull request reviews and CI, checks your ports for new releases daily, and posts macOS notifications. By default, discovering a release only adds it to status. Automatic preparation and submission are opt-in through `serve.ship_to`; automatic submissions have a daily limit and cover only branches `serve` prepared. Use `ship --passing` for branches you started yourself.
 
-`dockhand status --watch` keeps the overview current. You can also use Dockhand without `serve`: checks run in the foreground.
+`dockhand console` keeps the branches current in a table the terminal's size, with keys that run logs, check, tidy, and submit on the row selected. You can also use Dockhand without `serve`: checks run in the foreground.
 
 ## Other port work
 

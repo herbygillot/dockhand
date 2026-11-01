@@ -119,6 +119,15 @@ func (s Streams) Height() int {
 	return 0
 }
 
+// Beneath are the input and the output as a view drawn on the whole screen
+// reads and writes them (term/screen): the output beneath the writers
+// Begin puts before it, which would wrap a frame's lines, colour its
+// marks, and break its one write into several.
+func (s Streams) Beneath() (io.Reader, io.Writer) {
+	out, _ := underlying(s.Out).(io.Writer)
+	return s.In, out
+}
+
 // Unattended are the streams of a command that asks nothing, whatever its
 // input, as bump does: everything that would ask goes the way it goes
 // without a terminal.

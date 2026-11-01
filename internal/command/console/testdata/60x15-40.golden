@@ -1,0 +1,15 @@
+|dockhand console · 15:04:05 · Needs you 14 · Working 13 · W…|
+|  BRANCH        PORTS     STATE         PR      NEXT        |
+>✗ port39-upda…  port39 …  1 commit · …  —       dockhand lo…<
+|✗ port36-upda…  port36 …  1 commit · …  —       dockhand lo…|
+|✗ port33-upda…  port33 …  1 commit · …  —       dockhand lo…|
+|✗ port30-upda…  port30 …  1 commit · …  —       dockhand lo…|
+|✗ port27-upda…  port27 …  1 commit · …  —       dockhand lo…|
+|✗ port24-upda…  port24 …  1 commit · …  —       dockhand lo…|
+|── Events ──────────────────────────────────────────────────|
+|15:01:35  port07-update  check-8 passed                     |
+|15:01:40  port08-update  check-9 passed                     |
+|15:01:45  port09-update  check-10 passed                    |
+|15:01:50  port10-update  check-11 passed                    |
+|15:01:55  port11-update  check-12 passed                    |
+|↑↓ select · PgUp PgDn page · Enter detail · l logs · c chec…|

@@ -13,7 +13,7 @@ import (
 // output isn't a terminal. The command line reads them from the
 // environment (NO_COLOR, COLUMNS), as nothing below it does.
 type Display struct {
-	// NoColour is NO_COLOR set, or status --watch's --plain.
+	// NoColour is NO_COLOR set, or dockhand console's --plain.
 	NoColour bool
 	// Columns is COLUMNS, where it's set; prose off a terminal wraps at it,
 	// else at 100, since field testing reads dockhand through a pipe.
@@ -29,8 +29,8 @@ func (s Streams) WithDisplay(display Display) Streams {
 	return s
 }
 
-// Plain are the streams with their marks uncoloured, for status --watch's
-// --plain: line output a script or a log reads.
+// Plain are the streams with their marks uncoloured, for dockhand
+// console's --plain: line output a script or a log reads.
 func (s Streams) Plain() Streams {
 	s.display.NoColour = true
 	if w, ok := s.Out.(*switchWriter); ok {
