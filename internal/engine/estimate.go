@@ -3,29 +3,23 @@ package engine
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"github.com/herbygillot/dockhand/internal/buildenv"
-	"github.com/herbygillot/dockhand/internal/fetch"
 	"github.com/herbygillot/dockhand/internal/macports/binaryarchive"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/planning"
 )
 
 // An install estimate's lookups: eight ports' listings at once, each within
-// five seconds, kept a day (the install estimate, 2026-10-29).
+// five seconds (the install estimate, 2026-10-29); the catalog keeps each
+// a day.
 const (
 	listingAsks = 8
 	listingWait = 5 * time.Second
-	listingKept = 24 * time.Hour
 )
 
 // InstallEstimate is what a check will install in an environment before it
@@ -145,9 +139,9 @@ func (e *Engine) InstallEstimates(ctx context.Context, plan model.Plan, source m
 }
 
 // unarchived counts the ports with no archive of their version for a
-// release, by their listings, and those whose listing it couldn't have:
-// eight looked up at once where wait, each within listingWait; only those
-// kept otherwise.
+// release, by their listings in the archive catalog, and those whose
+// listing it couldn't have: eight asked of the site at once where wait,
+// each within listingWait; only those kept otherwise.
 func (e *Engine) unarchived(ctx context.Context, ports []string, versions map[string]string, darwin int, arch string, wait bool) (none, unknown int) {
 	var mu sync.Mutex
 	var group sync.WaitGroup
@@ -165,16 +159,18 @@ func (e *Engine) unarchived(ctx context.Context, ports []string, versions map[st
 		group.Add(1)
 		go func() {
 			defer group.Done()
-			listing, had := e.keptListing(port)
-			if !had && wait {
+			listing, availability := e.Catalog.Listing(ctx, port, false)
+			if availability == binaryarchive.Unavailable && wait {
 				slots <- struct{}{}
-				listing, had = e.fetchListing(ctx, port)
+				asking, cancel := context.WithTimeout(ctx, listingWait)
+				listing, availability = e.Catalog.Listing(asking, port, true)
+				cancel()
 				<-slots
 			}
 			mu.Lock()
 			defer mu.Unlock()
 			switch {
-			case !had:
+			case availability == binaryarchive.Unavailable:
 				unknown++
 			case !binaryarchive.Listed(listing, port, version, revision, darwin, arch):
 				none++
@@ -183,82 +179,4 @@ func (e *Engine) unarchived(ctx context.Context, ports []string, versions map[st
 	}
 	group.Wait()
 	return none, unknown
-}
-
-// archiveSite is where archives are listed: packages.macports.org, or a
-// test's stand-in.
-func (e *Engine) archiveSite() string {
-	if e.ArchiveSite != "" {
-		return e.ArchiveSite
-	}
-	return binaryarchive.Packages
-}
-
-// keptListing is a port's listing as kept within listingKept: in the run,
-// else in the archives cache.
-func (e *Engine) keptListing(port string) ([]byte, bool) {
-	e.listings.mu.Lock()
-	defer e.listings.mu.Unlock()
-	if kept, ok := e.listings.kept[port]; ok && time.Since(kept.at) < listingKept {
-		return kept.listing, true
-	}
-	if e.options.Archives == "" {
-		return nil, false
-	}
-	path := filepath.Join(e.options.Archives, port+".html")
-	info, err := os.Stat(path)
-	if err != nil || time.Since(info.ModTime()) >= listingKept {
-		return nil, false
-	}
-	listing, err := os.ReadFile(path)
-	return listing, err == nil
-}
-
-// fetchListing reads a port's directory on packages.macports.org within
-// listingWait, and keeps it: a port with no directory has no archive, an
-// empty listing. One that can't be had in time isn't kept.
-func (e *Engine) fetchListing(ctx context.Context, port string) ([]byte, bool) {
-	asking, cancel := context.WithTimeout(ctx, listingWait)
-	defer cancel()
-	request, err := http.NewRequestWithContext(asking, http.MethodGet, binaryarchive.Directory(e.archiveSite(), port), nil)
-	if err != nil {
-		return nil, false
-	}
-	request.Header.Set("User-Agent", fetch.UserAgent)
-	response, err := fetch.Client.Do(request)
-	if err != nil {
-		return nil, false
-	}
-	defer response.Body.Close()
-	var listing []byte
-	switch response.StatusCode {
-	case http.StatusOK:
-		if listing, err = io.ReadAll(io.LimitReader(response.Body, 4<<20)); err != nil {
-			return nil, false
-		}
-	case http.StatusNotFound:
-	default:
-		return nil, false
-	}
-	e.listings.mu.Lock()
-	if e.listings.kept == nil {
-		e.listings.kept = map[string]keptListing{}
-	}
-	e.listings.kept[port] = keptListing{listing: listing, at: time.Now()}
-	e.listings.mu.Unlock()
-	if e.options.Archives != "" {
-		_ = atomicfile.Write(filepath.Join(e.options.Archives, port+".html"), listing, 0o644)
-	}
-	return listing, true
-}
-
-// listingCache is a run's listings of ports' archives, by port.
-type listingCache struct {
-	mu   sync.Mutex
-	kept map[string]keptListing
-}
-
-type keptListing struct {
-	listing []byte
-	at      time.Time
 }

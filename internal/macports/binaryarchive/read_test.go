@@ -19,7 +19,6 @@ func TestAnArchiveIsNamedAsMacPortsNamesIt(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, "jq-1.8.1_0.darwin_25.arm64.tbz2", ArchiveName("jq", "1.8.1", "0", nil, 25, "arm64"))
 	require.Equal(t, "exiv2-0.28.3_1+docs+universal.darwin_23.x86_64.tbz2", ArchiveName("exiv2", "0.28.3", "1", []string{"universal", "docs"}, 23, "x86_64"))
-	require.Equal(t, "https://packages.macports.org/jq/jq-1.8.1_0.darwin_25.arm64.tbz2", URL("jq", ArchiveName("jq", "1.8.1", "0", nil, 25, "arm64")))
 }
 
 // An archive's files are read as it installs them, its metadata left out,

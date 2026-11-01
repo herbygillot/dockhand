@@ -56,6 +56,7 @@ The providers implement `buildenv.Provider`, the contract in `internal/buildenv`
 - **`buildenv/local`** runs the guest program in a MacPorts prefix on this Mac, under the prefix's `port-tclsh`, with a snapshot first and the active ports put back after. [local provider](local-provider.md).
 - **`buildenv/ghactions`** pushes the revision's commit to your fork and reads MacPorts' own workflow run, its jobs' logs through `macports/cilog`, which the engine also reads a pull request's failed jobs with. [github provider](github-provider.md).
 - **`buildenv/script`** hands a request file to your command and reads its result file. [command provider](command-provider.md).
+- **`macports/binaryarchive`** makes a kept archive an entry of an archive site MacPorts installs from, signed both ways MacPorts verifies one, and reads such a site. Its `Catalog`, which compose builds with the site, the archive cache, the engine's clock, and the HTTP client, answers what packages.macports.org serves as available, absent, or unavailable: a port's listing, kept a day, and what an archive installs, read as it downloads and kept by its name, an archive not served marked absent for a day; a read that may not fetch answers from what's kept alone. The engine decides which archive matters: each dependency's, for a check's install estimate (`engine/estimate.go`), and master's build of a target never checked in an environment, an install finding's earlier reading (`engine/installed.go`). The kept archives of earlier checks are another thing, `checks.Archives`.
 
 ## Authoring
 
@@ -106,11 +107,13 @@ Beneath the rest, knowing nothing of branches or checks:
 | `~/.dockhand/config.toml` (`$DOCKHAND_CONFIG`) | the configuration file, read by `internal/config` |
 | `~/.dockhand/dockhand.db` (`--db`, `$DOCKHAND_DB`) | the records |
 | `~/.dockhand/logs/check-N/` | each execution's logs, beside the database |
+| `~/.dockhand/archives/<checkout>/` | the checkout's kept archives, by digest (`checks.Archives`), and in `master/` the readings of master's archives on packages.macports.org (`binaryarchive.Catalog`), beside the database |
 | `~/.dockhand/tart/` (`$DOCKHAND_TART_HOME`) | dockhand's Tart images, their golden copies, and the check clones |
 | `~/.dockhand/ssh/` (`$DOCKHAND_SSH_DIR`) | the key the host uses to reach its guests (`tart/guestssh`), and the keys kept archives are signed with for them (`macports/binaryarchive`, through `signify`) |
 | the user cache directory, `dockhand/indexes` (`$DOCKHAND_INDEX_CACHE`) | port indexes, keyed by source tree; disposable |
 | one run root under the system temporary directory | a process's short-lived workspaces, removed when it exits (`scratch`) |
 | the user cache directory, `dockhand/readings` (`$DOCKHAND_READING_CACHE`) | readings of upstream files, keyed by what they read; disposable |
+| the user cache directory, `dockhand/archives` (`$DOCKHAND_ARCHIVE_CACHE`) | packages.macports.org's listings of ports' archives, each kept a day (`binaryarchive.Catalog`); disposable |
 | the user cache directory, `dockhand/github` (`$DOCKHAND_GITHUB_CACHE`) | GitHub's answers to reads with their ETags, keyed by the address, what it accepts, and a digest of the credential; disposable |
 | `~/Source/macports-branches` | branch worktrees, unless `worktrees` says otherwise |
 

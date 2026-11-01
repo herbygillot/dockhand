@@ -22,6 +22,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/binaryarchive"
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
@@ -106,18 +107,10 @@ type Options struct {
 	// Readings is where readings of upstream's archives are kept
 	// (ReadingCache); none are kept when empty.
 	Readings string
-	// Archives is where packages.macports.org's listings of ports'
-	// archives are kept a day, for a check's install estimate; kept for
-	// the run alone when empty.
-	Archives string
 	// Indexes is where port indexes are cached, which staging an index
 	// needs; IndexMirror is the directory a cache with no generation near
 	// enough is seeded from, MacPorts' own when empty.
 	Indexes, IndexMirror string
-	// Packages is the site master's binary archives are read from, for an
-	// install finding's earlier reading (masterArchive);
-	// packages.macports.org where empty.
-	Packages string
 	// AllowMajors lets an update nobody looks over move a port's major
 	// version without a look; holds.majors = "allow". Held otherwise.
 	AllowMajors bool
@@ -238,6 +231,11 @@ type Engine struct {
 	// HTTPS says whether a URL answers over HTTPS, for a port's plain-HTTP
 	// URLs; a request of the URL when nil.
 	HTTPS HTTPSProbe
+	// Catalog is what packages.macports.org serves of ports' archives,
+	// kept as compose places it: the listings a check's install estimate
+	// counts archives by, and master's archive's reading, an install
+	// finding's earlier one. Neither is had where it's nil.
+	Catalog *binaryarchive.Catalog
 	// Providers are where checks build, by name.
 	Providers map[string]buildenv.Provider
 	ports     *selection.Reader
@@ -265,13 +263,8 @@ type Engine struct {
 	// required is build.default's environments as last resolved, kept for
 	// requiredWait (requiredEnvironments).
 	required requiredRead
-	// ArchiveSite is where ports' archives are listed, a test's stand-in
-	// for packages.macports.org where set (InstallEstimates).
-	ArchiveSite string
 	// unreachedRemotes are the remotes this run found refusing this Mac.
 	unreachedRemotes unreachedRemotes
-	// listings are packages.macports.org's listings this run has had.
-	listings listingCache
 	// others are the run's searches for ports' open pull requests, which
 	// start, update, bump, ship, serve, and submit share (othersCache).
 	others othersCache

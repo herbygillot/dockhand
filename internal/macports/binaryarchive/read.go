@@ -30,10 +30,8 @@ func ArchiveName(port, version, revision string, variants []string, darwin int, 
 	return fmt.Sprintf("%s-%s_%s%s.darwin_%d.%s.tbz2", port, version, revision, signed.String(), darwin, arch)
 }
 
-// URL is where packages.macports.org serves a port's archive.
-func URL(port, name string) string { return Packages + "/" + port + "/" + name }
-
-// Directory is where packages.macports.org lists a port's archives.
+// Directory is where an archive site, packages.macports.org, lists a
+// port's archives and serves each, by its name, under it.
 func Directory(site, port string) string { return strings.TrimSuffix(site, "/") + "/" + port + "/" }
 
 // Listed reports whether a directory's listing holds an archive of a

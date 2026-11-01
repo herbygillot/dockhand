@@ -32,6 +32,7 @@ import (
 	gitprogram "github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/binaryarchive"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
@@ -280,7 +281,6 @@ func Settings(ctx context.Context, options Options, dependencies Dependencies) (
 		env = gitprogram.Unattended(ctx, gitprogram.Program{Executable: git, Env: env}, tree)
 	}
 	readings, _ := options.cacheDirectory("DOCKHAND_READING_CACHE", "readings")
-	archives, _ := options.cacheDirectory("DOCKHAND_ARCHIVE_CACHE", "archives")
 	indexes, _ := options.cacheDirectory("DOCKHAND_INDEX_CACHE", "indexes")
 	return engine.Options{
 		Tree: tree,
@@ -309,7 +309,6 @@ func Settings(ctx context.Context, options Options, dependencies Dependencies) (
 		// are kept; port indexes are staged, so their cache is refused
 		// when they're staged.
 		Readings:         readings,
-		Archives:         archives,
 		Indexes:          indexes,
 		IndexMirror:      options.Getenv("DOCKHAND_INDEX_MIRROR"),
 		Home:             places.Home,
@@ -340,6 +339,12 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 		return Assembly{}, err
 	}
 	e.ConfigFile = configPath
+	// What packages.macports.org serves of ports' archives: each port's
+	// listing kept a day in the archive cache, or for the process where it
+	// can't be placed, and master's archives' readings beside the
+	// checkout's kept archives, by the engine's clock.
+	listings, _ := options.cacheDirectory("DOCKHAND_ARCHIVE_CACHE", "archives")
+	e.Catalog = &binaryarchive.Catalog{Listings: listings, Readings: e.MasterReadings(), HTTP: fetch.Client, Now: engineOptions.Now}
 	e.Builds = engine.Builds{Default: file.Build.Default, Unattended: file.Build.Unattended, Profiles: map[string]engine.Profile{}}
 	for name, profile := range file.Build.Profiles {
 		releases, rule := profile.List()

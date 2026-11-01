@@ -11,13 +11,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/evidence"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/binaryarchive"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -146,8 +146,8 @@ func TestAFirstCheckComparesAgainstMastersArchive(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	f := setup(t)
-	f.options.Packages = server.URL
 	e, _ := f.withPreparer(t)
+	e.Catalog = &binaryarchive.Catalog{Site: server.URL, Readings: e.MasterReadings(), HTTP: server.Client(), Now: e.now}
 	info := port("jq")
 	info.Version, info.Revision = "1.7.1", 0
 	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {info}}})
@@ -181,7 +181,8 @@ func TestAFirstCheckComparesAgainstMastersArchive(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{filepath.Join(e.ArchiveDirectory(), "master", "jq-1.7.1_0.darwin_25.arm64.tbz2.json")}, kept, "the reading, and no archive")
 
-	// One not served is marked, and asked again once the mark is a day old.
+	// One not served says nothing, and the catalog's mark keeps it from
+	// being asked again within the day (binaryarchive's catalog tests).
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}
 	target := model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}, Directory: "textproc/jq"}
 	_, _, ok := e.masterArchive(t.Context(), target, tahoe, true)
@@ -190,9 +191,4 @@ func TestAFirstCheckComparesAgainstMastersArchive(t *testing.T) {
 	_, _, ok = e.masterArchive(t.Context(), target, tahoe, true)
 	require.False(t, ok)
 	require.Len(t, asked, 2, "not asked again within the day")
-	none := filepath.Join(e.ArchiveDirectory(), "master", "jq-1.7.1_0.darwin_24.arm64.tbz2.json.none")
-	old := e.now().Add(-25 * time.Hour)
-	require.NoError(t, os.Chtimes(none, old, old))
-	_, _, _ = e.masterArchive(t.Context(), target, tahoe, true)
-	require.Len(t, asked, 3, "a day-old mark is asked again")
 }

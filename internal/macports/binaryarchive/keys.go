@@ -3,7 +3,9 @@
 // site's archives, beside the public keys a MacPorts installation is told
 // to trust for them (decision 28). It owns the signing keys and a site
 // entry's files; a provider copies those files where its builder's
-// MacPorts reads them, and configures MacPorts to.
+// MacPorts reads them, and configures MacPorts to. It also reads such a
+// site: archives' names, a port's listing, and what an archive installs,
+// which the Catalog asks packages.macports.org for and keeps.
 //
 // Three kinds of archive are distinct in dockhand: upstream source
 // archives (internal/archive, macports/distfetch), the packages MacPorts

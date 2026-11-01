@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/macports/binaryarchive"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -65,7 +66,7 @@ func TestAnInstallEstimate(t *testing.T) {
 		}
 	}))
 	defer site.Close()
-	e := &Engine{ArchiveSite: site.URL}
+	e := &Engine{Catalog: &binaryarchive.Catalog{Site: site.URL, HTTP: site.Client()}}
 	e.Ports.Graphs = indexedPorts{
 		graph:    map[string][]string{"gnome-voice": {"glib2", "cairo"}, "glib2": {"libffi"}},
 		versions: map[string]string{"glib2": "2.84.0_1", "libffi": "3.4.8_0", "cairo": "1.18.4_0"},
