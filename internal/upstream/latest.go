@@ -21,6 +21,25 @@ import (
 // fine, and a person names the version.
 var ErrAutomaticUnsupported = errors.New("upstream: automatic selection does not support this source convention")
 
+// ReplacedError is a port whose Portfile is an obsolete stub, replaced_by
+// another: its version is the stub's, and the release to look for is the
+// port that replaced it, so it isn't looked up. Its words are a look's,
+// "replaced_by py-ansible"; an update says the rest (Resolve).
+type ReplacedError struct {
+	Port, By string
+}
+
+func (e *ReplacedError) Error() string { return "replaced_by " + e.By }
+
+// replaced is the refusal of a port replaced_by another, nil for any other
+// port. One whose replacement couldn't be read is looked up as any other.
+func replaced(port macports.PortInfo) error {
+	if by, err := port.ReplacedBy(); err == nil && by != "" {
+		return &ReplacedError{Port: port.Name, By: by}
+	}
+	return nil
+}
+
 // versionSelector orders and captures versions the way MacPorts does: vercmp
 // for order and its native regex for livecheck captures.
 type versionSelector interface {
@@ -96,6 +115,14 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 	if port.OwnVersion() {
 		result.Assessment, result.Detail = OwnVersion, "no source is fetched on this platform, and livecheck does not use the port version"
 		return result, nil
+	}
+	// A stub replaced_by another, ansible's for py-ansible, isn't looked
+	// up: its python PortGroup's livecheck found py-ansible's 14.5.0, said
+	// as a major update of the stub's 2.3.2.0.1 (field testing, the
+	// outdated-ports session's note 16). One that fetches nothing and
+	// reads no version is MacPorts' own above, as it was.
+	if err := replaced(port); err != nil {
+		return result, err
 	}
 	if s == nil || s.Versions == nil || s.EvaluateVersion == nil {
 		return result, fmt.Errorf("upstream: version comparison and Portfile evaluation are required")

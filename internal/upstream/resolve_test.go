@@ -255,6 +255,30 @@ func TestAPortWhoseVersionIsMacPortsOwnHasNoReleaseToChoose(t *testing.T) {
 	require.EqualError(t, err, "upstream: no release to look for: kubectl_select fetches no source on this platform, and livecheck does not use its version; specify a version with dockhand update kubectl_select <version>")
 }
 
+// An obsolete stub isn't looked up: ansible's, replaced_by py-ansible,
+// whose python PortGroup's livecheck found py-ansible's release, is said
+// as replaced, and an update of it names the port that replaced it
+// (field testing, the outdated-ports session's note 16). A stub that
+// fetches nothing and reads no version is MacPorts' own, as before.
+func TestAnObsoleteStubIsNotLookedUp(t *testing.T) {
+	t.Parallel()
+	port := macports.PortInfo{Name: "ansible", Version: "2.3.2.0.1", Options: map[string]string{"distfiles": "", "livecheck.type": "regex", "replaced_by": "py-ansible"}}
+	service := upstream.Service{}
+	result, err := service.DiscoverPort(t.Context(), port)
+	var stub *upstream.ReplacedError
+	require.ErrorAs(t, err, &stub)
+	require.Equal(t, upstream.Unknown, result.Assessment)
+	require.Equal(t, "replaced_by py-ansible", result.Detail)
+	for _, requested := range []string{"", "2.3.3"} {
+		_, err = service.Resolve(t.Context(), port, requested)
+		require.EqualError(t, err, "upstream: ansible is an obsolete stub, replaced_by py-ansible, so it has no release of its own; dockhand update py-ansible updates the port that replaced it")
+	}
+	quiet := macports.PortInfo{Name: "terraform", Version: "1.16.0", Options: map[string]string{"distfiles": "", "livecheck.type": "none", "replaced_by": "terraform-1.16"}}
+	result, err = service.DiscoverPort(t.Context(), quiet)
+	require.NoError(t, err)
+	require.Equal(t, upstream.OwnVersion, result.Assessment)
+}
+
 // A saved release is checked again before it's used: an archive release
 // discovery found whose listing no longer is the Portfile's, a forge
 // release whose tag no longer follows the Portfile's convention, and one

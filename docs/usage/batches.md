@@ -45,7 +45,9 @@ Do not combine port arguments with index selectors. A selected port is a
 candidate for discovery, not a promise that Dockhand can safely update and
 publish it. The report distinguishes ready updates, held or uncertain releases,
 and ports it could not check. `--current` expands the report to current ports
-and the explanations for other outcomes.
+and the explanations for other outcomes. An obsolete stub, a port whose
+`replaced_by` names another, isn't checked: its row says `replaced_by
+py-ansible`, and `update` of it names the port that replaced it.
 
 ## Preview a batch, then choose its stopping point
 

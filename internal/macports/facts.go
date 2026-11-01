@@ -311,6 +311,14 @@ func (p PortInfo) ArchiveCompatible() (bool, string, error) {
 	return false, problem, nil
 }
 
+// ReplacedBy is the port this one's replaced_by names, an obsolete stub
+// kept for an old name; empty where it names none, and an error where it
+// couldn't be read.
+func (p PortInfo) ReplacedBy() (string, error) {
+	value, _, err := p.option("replaced_by")
+	return strings.TrimSpace(value), err
+}
+
 // KnownFail reports a port known to fail where it was evaluated, as
 // MacPorts tests known_fail, string is true -strict, in its interpreter;
 // an error where it couldn't be read. A port evaluated without the fact,
