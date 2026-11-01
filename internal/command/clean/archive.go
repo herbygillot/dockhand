@@ -85,6 +85,9 @@ closes it.`,
 			if pr := branch.PullRequest; pr != nil && archived.PullRequestOpen {
 				fmt.Fprintf(out, "Pull request #%d is still open; archiving does not close it. Close it on GitHub or run: gh pr close %d --repo %s\n", pr.Number, pr.Number, pr.Repository)
 			}
+			// Throwing it away is said where it's asked: archive keeps the
+			// Git branch for --undo (the outdated-ports session's note 24).
+			fmt.Fprintf(out, "%s.\n", engine.ForgetWords(branch))
 			return nil
 		},
 	}

@@ -142,6 +142,21 @@ its checks only what another branch's results were reused from. It asks, and wit
 			removable := writeClean(streams.Out, plans, false, s.Places()) + writeLeftovers(streams.Out, leftovers, false)
 			if removable == 0 {
 				fmt.Fprintln(streams.Out, "Nothing to remove.")
+				// Archived branches keep their Git branches, which no
+				// clean removes: said, with what forgets them (the
+				// outdated-ports session's note 24).
+				kept, err := e.ArchivedKept(ctx)
+				if err != nil {
+					return err
+				}
+				if len(args) > 0 {
+					kept = slices.DeleteFunc(kept, func(branch model.Branch) bool {
+						return !slices.ContainsFunc(args, func(name string) bool { return name == branch.ShortName() || name == branch.Name })
+					})
+				}
+				if words := archivedKeptWords(kept); words != "" {
+					fmt.Fprintln(streams.Out, words)
+				}
 				return nil
 			}
 			if plan {
@@ -183,6 +198,21 @@ its checks only what another branch's results were reused from. It asks, and wit
 	_ = cmd.Flags().MarkHidden("automatic")
 	settings.SupportsJSON(cmd)
 	return cmd
+}
+
+// archivedKeptWords say the archived branches that keep their Git
+// branches for archive --undo, and that clean --delete forgets them: "1
+// archived branch, am-utils-6.2, keeps its Git branch for archive --undo;
+// dockhand clean --delete am-utils-6.2 then forgets it for good"; empty
+// where none does.
+func archivedKeptWords(kept []model.Branch) string {
+	switch len(kept) {
+	case 0:
+		return ""
+	case 1:
+		return fmt.Sprintf("1 archived branch, %s, keeps its Git branch for archive --undo; %s.", kept[0].ShortName(), engine.ForgetWords(kept[0]))
+	}
+	return fmt.Sprintf("%d archived branches keep their Git branches for archive --undo; dockhand clean --delete <branch> forgets one for good, and status --all lists them.", len(kept))
 }
 
 // cleanAutomatically is decision 36's automatic pass, as a command starts it
