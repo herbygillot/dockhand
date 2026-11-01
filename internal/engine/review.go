@@ -135,7 +135,7 @@ func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
 	} else if err != nil {
 		return report, fmt.Errorf("reading your access to %s: %w", e.PullRequestRepository(), err)
 	}
-	if report.Head, err = e.Repo.FetchPullRequest(ctx, e.Upstream(), number); err != nil {
+	if report.Head, err = e.Repo.FetchPullRequest(ctx, e.pullRequestRemote(), e.PullRequestRepository(), number); err != nil {
 		return report, fmt.Errorf("fetching #%d: %w", number, err)
 	}
 	master, err := e.fetchMaster(ctx)

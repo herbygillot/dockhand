@@ -406,6 +406,9 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	}
 	request.Branch = branch
 	plan := SubmitPlan{Request: request, Branch: branch, Repository: e.PullRequestRepository()}
+	if err := e.pullRequestHere(branch); err != nil {
+		return plan, err
+	}
 	worktree, err := e.worktree(ctx, branch)
 	if err != nil {
 		return plan, err
@@ -1053,6 +1056,9 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 	if refusal := branchstate.Publish(publication, branchstate.Mode{Answered: answered}, Vocabulary{}); refusal != nil {
 		return Submitted{}, refusal
 	}
+	if err := e.pullRequestHere(plan.Branch); err != nil {
+		return Submitted{}, err
+	}
 	// GitHub refuses a body past its limit after the push, so no pull
 	// request opens; dockhand's own parts are trimmed under it, and a
 	// person's kept part that passes it is said before anything is pushed.
@@ -1141,12 +1147,16 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 		if branch.PullRequest != nil && plan.Existing != nil && !result.Drafted {
 			draft = branch.PullRequest.Draft
 		}
-		var seen *model.PullRequestObservation
-		if branch.PullRequest != nil && branch.PullRequest.Number == observed.PullRequest.Ref.Number {
-			seen = branch.PullRequest.Observed
+		// What the record knows of the same pull request stays: what the
+		// forge last said of it, and, of one adopted, that it was and
+		// whose it is, which the trust rule reads (OthersPortfiles), where
+		// a submit to it made it the person's (the rc6 full stage's G22).
+		next := model.PullRequest{Repository: plan.Repository, Number: observed.PullRequest.Ref.Number, Head: plan.Head(),
+			Pushed: model.ObjectID(plan.Commit), Body: body, Draft: draft}
+		if old := branch.PullRequest; old != nil && old.Number == next.Number {
+			next.Observed, next.Adopted, next.Author = old.Observed, old.Adopted, old.Author
 		}
-		branch.PullRequest = &model.PullRequest{Repository: plan.Repository, Number: observed.PullRequest.Ref.Number, Head: plan.Head(),
-			Pushed: model.ObjectID(plan.Commit), Body: body, Draft: draft, Observed: seen}
+		branch.PullRequest = &next
 		if plan.Request.Title != "" {
 			branch.Title = plan.Request.Title
 		}
