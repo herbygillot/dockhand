@@ -183,7 +183,9 @@ capacity = 1
 The script must implement Dockhand's request/result protocol. Its results are
 labeled as reported by that script. A configured command provider is useful for
 an environment you already manage; the example is not a working builder by
-itself.
+itself. docs/command-provider.md, in dockhand's repository, describes the
+request and result files, and gives a script that builds on another Mac over
+SSH.
 
 ## Set unattended policy deliberately
 

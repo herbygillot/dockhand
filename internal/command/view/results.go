@@ -719,6 +719,10 @@ type outdatedPortJSON struct {
 	// prefix leaves out, which a "v" added or taken away would take, and
 	// the note outdated says of it.
 	OtherPrefix *otherPrefixJSON `json:"other_prefix,omitempty"`
+	// Prerelease is, for a port current because upstream listed nothing
+	// but a prerelease a port on a stable release doesn't take, that
+	// prerelease.
+	Prerelease string `json:"prerelease,omitempty"`
 	// Class is what the look found of it: newer, current, uncertain,
 	// unpublished, moved, own-version, or unchecked; Unpublished, for an
 	// unpublished one, why its newer release isn't ready.
@@ -789,7 +793,7 @@ func OutdatedView(report engine.OutdatedReport) map[string]any {
 	ports := []outdatedPortJSON{}
 	for _, port := range report.Ports {
 		ports = append(ports, outdatedPortJSON{Port: port.Port, Current: port.Current, Newest: port.Newest, Outdated: port.Outdated, Uncertain: setAsideView(port.Uncertain), Ahead: port.Ahead, Problem: port.Problem, OwnVersion: port.OwnVersion, With: port.With, Moved: movedView(port.Moved),
-			RepositoryMove: repositoryMoveView(port.RepositoryMove), OtherPrefix: otherPrefixView(port.OtherPrefix), Class: string(port.Class()), Unpublished: port.Unpublished})
+			RepositoryMove: repositoryMoveView(port.RepositoryMove), OtherPrefix: otherPrefixView(port.OtherPrefix), Prerelease: string(port.Prerelease), Class: string(port.Class()), Unpublished: port.Unpublished})
 	}
 	viewed := map[string]any{"master": report.Master, "ports": ports}
 	// How many couldn't be checked, and why, for a script, which the exit

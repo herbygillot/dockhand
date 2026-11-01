@@ -100,6 +100,15 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 	require.Equal(t, "alot has no newer release, at master 1bb30d5; upstream's newest tag, v0.12, doesn't match github.setup's tag prefix\n",
 		said(engine.OutdatedPort{Port: "alot", Current: "0.11", Newest: "0.11", OtherPrefix: other}))
 
+	// A look that listed only a prerelease says so, the port current
+	// (prioritization's, from php-igbinary, 2026-11-01).
+	require.Equal(t, "php-igbinary has no newer release, at master 1bb30d5; upstream's newest, 3.2.17RC1, is a prerelease, which a port on a stable release doesn't take\n",
+		said(engine.OutdatedPort{Port: "php-igbinary", Current: "3.2.16", Newest: "3.2.16", Prerelease: "3.2.17RC1"}))
+	var pre bytes.Buffer
+	require.NoError(t, writeOutdated(t.Context(), nil, &pre, engine.OutdatedReport{Master: "1bb30d5aaaaa", Ports: []engine.OutdatedPort{
+		{Port: "php-igbinary", Current: "3.2.16", Newest: "3.2.16", Prerelease: "3.2.17RC1"}}}, true))
+	require.Contains(t, pre.String(), "php-igbinary  3.2.16 → 3.2.16  it is current; upstream's newest, 3.2.17RC1, is a prerelease, which a port on a stable release doesn't take\n")
+
 	// A port with no release to look for, as a _select port, is covered,
 	// not a port that couldn't be checked (batch 37).
 	own := func(name string) engine.OutdatedPort {

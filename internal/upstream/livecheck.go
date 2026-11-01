@@ -42,7 +42,11 @@ func (s *Service) discoverOverridden(ctx context.Context, port macports.PortInfo
 	if err != nil {
 		return result, err
 	}
-	candidates, from := listed(current, string(page), versions)
+	candidates, from, passed := listed(current, string(page), versions)
+	if len(candidates) == 0 && passed != "" {
+		result.onlyPrerelease(model.Release{Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name()}, port.Version, passed)
+		return result, nil
+	}
 	index, comparison, err := s.newest(ctx, current, `^(.*)$`, candidates, "the port's livecheck", "a version")
 	if err != nil {
 		return result, err

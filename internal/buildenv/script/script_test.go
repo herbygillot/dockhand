@@ -40,6 +40,16 @@ func (p ports) Ports(_ context.Context, _ model.Source, directory string, _ mode
 	if url := p["git.url"]; len(url) == 1 && len(infos) > 0 {
 		infos[0].Options = map[string]string{"fetch.type": "git", "git.url": url[0], "git.branch": "jq-1.8.1"}
 	}
+	// A variants entry has each directory's main port declare them, the
+	// last a default.
+	if names := p["variants"]; len(names) > 0 && len(infos) > 0 {
+		infos[0].Options["variants"] = strings.Join(names, " ")
+		var vinfo []string
+		for i, name := range names {
+			vinfo = append(vinfo, name+map[bool]string{false: " {}", true: " {is_default +}"}[i == len(names)-1])
+		}
+		infos[0].Options["vinfo"] = strings.Join(vinfo, " ")
+	}
 	return infos, nil
 }
 
@@ -60,11 +70,21 @@ func checked(t *testing.T, body string) (model.Run, string, *engine.Engine) {
 // the grace a canceled one has, for a session to drive.
 func queuedCheck(t *testing.T, body string, grace time.Duration) (*engine.Engine, *coord.Session, model.RunID) {
 	t.Helper()
-	return queuedCheckOf(t, body, grace, ports{"textproc/jq": {"jq", "jq-docs"}})
+	return queuedCheckOf(t, body, grace, ports{"textproc/jq": {"jq", "jq-docs"}}, nil)
 }
 
-// queuedCheckOf is queuedCheck with the ports as reader has them.
-func queuedCheckOf(t *testing.T, body string, grace time.Duration, reader ports) (*engine.Engine, *coord.Session, model.RunID) {
+// checkSetup is what a check adds to queuedCheck's.
+type checkSetup struct {
+	// environment is what the script's environment adds, given the
+	// repository MacPorts' master is in.
+	environment func(upstream string) []string
+	// plan changes the check's request, as --only and --variants do.
+	plan func(*engine.PlanRequest)
+}
+
+// queuedCheckOf is queuedCheck with the ports as reader has them, and
+// what setup adds where it's given.
+func queuedCheckOf(t *testing.T, body string, grace time.Duration, reader ports, setup *checkSetup) (*engine.Engine, *coord.Session, model.RunID) {
 	t.Helper()
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
@@ -88,8 +108,16 @@ func queuedCheckOf(t *testing.T, body string, grace time.Duration, reader ports)
 	capture, err := e.Capture(t.Context(), engine.CaptureRequest{Branch: branch, Mode: engine.CaptureWorking})
 	require.NoError(t, err)
 	e.Ports.Reader = reader
-	e.Providers = map[string]buildenv.Provider{"command": &script.Provider{Run: run, Label: "my build box", Repo: e.Repo, Grace: grace, Env: os.Environ()}}
-	plan, err := e.PlanCheck(t.Context(), engine.PlanRequest{Revision: capture.Revision, Environments: []model.Environment{{Provider: "command"}}})
+	env := os.Environ()
+	if setup != nil && setup.environment != nil {
+		env = append(env, setup.environment(upstream)...)
+	}
+	e.Providers = map[string]buildenv.Provider{"command": &script.Provider{Run: run, Label: "my build box", Repo: e.Repo, Grace: grace, Env: env}}
+	request := engine.PlanRequest{Revision: capture.Revision, Environments: []model.Environment{{Provider: "command"}}}
+	if setup != nil && setup.plan != nil {
+		setup.plan(&request)
+	}
+	plan, err := e.PlanCheck(t.Context(), request)
 	require.NoError(t, err)
 	queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
 	require.NoError(t, err)
@@ -198,7 +226,7 @@ func TestTheScriptIsToldTheCommitAGitFetchMustCheckOut(t *testing.T) {
 JSON`
 	}
 	checked := func(body string) (model.Run, engine.RunLogs, string) {
-		e, session, queued := queuedCheckOf(t, body, 0, reader)
+		e, session, queued := queuedCheckOf(t, body, 0, reader, nil)
 		run, err := e.Drive(t.Context(), session, queued)
 		require.NoError(t, err)
 		logs, err := e.Logs(t.Context(), run.ID)
@@ -237,4 +265,166 @@ func TestNoResultFileIsInfrastructureTrouble(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(log), "unreachable")
 	require.DirExists(t, strings.TrimSuffix(dir, "1")+"3", "three attempts, each with its own directory")
+}
+
+// documentedScript is the example script docs/command-provider.md gives,
+// between its markers, so the page is the one copy.
+func documentedScript(t *testing.T) string {
+	t.Helper()
+	data, err := os.ReadFile("../../../docs/command-provider.md")
+	require.NoError(t, err)
+	_, block, found := strings.Cut(string(data), "<!-- ssh-example: begin -->\n")
+	require.True(t, found, "the page marks where its script begins")
+	block, _, found = strings.Cut(block, "<!-- ssh-example: end -->")
+	require.True(t, found, "the page marks where its script ends")
+	block, found = strings.CutPrefix(block, "```sh\n#!/bin/sh\n")
+	require.True(t, found, "a sh code block")
+	block, found = strings.CutSuffix(block, "```\n")
+	require.True(t, found, "a sh code block")
+	return block
+}
+
+// The script docs/command-provider.md gives for a Mac over SSH reads the
+// request file the provider writes, and writes a result file it reads
+// back: here ssh, scp, sudo, port, and port-tclsh stand in for the other
+// Mac, acting on this one. The bundle is fetched into the clone the
+// other Mac has, at the commit; each target is built in order on its
+// Portfile, as its subport with its variants; a failed one names its
+// phase; and a Git target's fetched is the commit its worksrcpath is at.
+func TestTheDocumentedSSHScriptBuildsThroughTheProvider(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("the documented script reads the request with jq, which this host hasn't")
+	}
+	source := t.TempDir()
+	testsupport.Git(t, source, "init", "-q")
+	testsupport.Git(t, source, "commit", "-q", "--allow-empty", "-m", "1.8.1")
+	testsupport.Git(t, source, "tag", "jq-1.8.1")
+	commit := testsupport.Git(t, source, "rev-parse", "HEAD")
+
+	stubs := t.TempDir()
+	testsupport.WriteExecutable(t, filepath.Join(stubs, "ssh"), `#!/bin/sh
+while [ $# -gt 0 ]; do
+  case $1 in -o) shift 2 ;; -*) shift ;; *) break ;; esac
+done
+echo "$1" >> "$SSH_HOSTS"
+shift
+exec /bin/sh -c "$*"
+`)
+	testsupport.WriteExecutable(t, filepath.Join(stubs, "scp"), `#!/bin/sh
+while [ $# -gt 2 ]; do shift; done
+echo "${2%%:*}" >> "$SSH_HOSTS"
+exec cp "$1" "${2#*:}"
+`)
+	testsupport.WriteExecutable(t, filepath.Join(stubs, "sudo"), `#!/bin/sh
+[ "$1" = -n ] || { echo "sudo would prompt" >&2; exit 1; }
+shift
+exec "$@"
+`)
+	// port is given -N -D <portdir> <action...> subport=<name> <variants>.
+	// Its fetch needs the branch's Portfile there, and jq-docs fails to
+	// install.
+	testsupport.WriteExecutable(t, filepath.Join(stubs, "port"), `#!/bin/sh
+echo "$*" >> "$PORT_CALLS"
+case " $* " in
+*" fetch "*) grep -q 'version 1.8.1' "$3/Portfile" || { echo "Error: not the branch's Portfile"; exit 1; } ;;
+*" install subport=jq-docs ") echo "Error: Failed to install jq-docs"; exit 1 ;;
+esac
+`)
+	// jq declares its tests with +tests -x11, only where MacPorts opens it
+	// with them, and not with its defaults.
+	testsupport.WriteExecutable(t, filepath.Join(stubs, "port-tclsh"), `#!/bin/sh
+script=$(cat)
+case $script in
+*"option worksrcpath"*) echo "$WORKSRC" ;;
+*"subport {jq}] {tests + x11 -}]"*"option test.run"*) echo yes ;;
+*"option test.run"*) echo no ;;
+esac
+`)
+	reader := ports{"textproc/jq": {"jq", "jq-docs"}, "git.url": {source}, "variants": {"tests", "x11"}}
+	// checked runs a check through the documented script, the other Mac's
+	// clone, ssh's hosts, and port's calls its own.
+	checked := func(plan func(*engine.PlanRequest)) (model.Run, *engine.Engine, script.Request, string, []string) {
+		other := t.TempDir()
+		clone, hosts, calls := filepath.Join(other, "macports-ports"), filepath.Join(other, "hosts"), filepath.Join(other, "port calls")
+		environment := func(upstream string) []string {
+			testsupport.Git(t, other, "clone", "-q", upstream, clone)
+			return []string{"PATH=" + stubs + string(os.PathListSeparator) + os.Getenv("PATH"), "BUILD_HOST=oldmac.example.org", "BUILD_PORTS=" + clone,
+				"SSH_HOSTS=" + hosts, "PORT_CALLS=" + calls, "WORKSRC=" + source}
+		}
+		e, session, queued := queuedCheckOf(t, documentedScript(t), 0, reader, &checkSetup{environment: environment, plan: plan})
+		run, err := e.Drive(t.Context(), session, queued)
+		require.NoError(t, err)
+		var request script.Request
+		data, err := os.ReadFile(filepath.Join(e.LogDirectory(), run.Name(), "command-1", "request.json"))
+		require.NoError(t, err)
+		require.NoError(t, json.Unmarshal(data, &request))
+		require.Equal(t, request.Commit, testsupport.Git(t, clone, "rev-parse", "HEAD"), "the other Mac's clone is at the commit")
+		data, err = os.ReadFile(hosts)
+		require.NoError(t, err)
+		for _, host := range strings.Fields(string(data)) {
+			require.Equal(t, "oldmac.example.org", host, "only BUILD_HOST is reached")
+		}
+		data, err = os.ReadFile(calls)
+		require.NoError(t, err)
+		return run, e, request, filepath.Join(clone, "textproc/jq"), strings.Split(strings.TrimSpace(string(data)), "\n")
+	}
+	result := func(request script.Request) script.Result {
+		var result script.Result
+		data, err := os.ReadFile(request.Result)
+		require.NoError(t, err)
+		require.NoError(t, json.Unmarshal(data, &result))
+		return result
+	}
+
+	run, e, request, portdir, calls := checked(nil)
+	require.Equal(t, model.RunFailed, run.State, run.Detail)
+	require.Equal(t, "jq-docs did not pass", run.Detail)
+	require.Equal(t, script.Result{Version: script.Version, Targets: []script.TargetResult{
+		{ID: "jq", Outcome: "passed", Tests: "none", Log: "target-1.log", Fetched: commit},
+		{ID: "jq-docs", Outcome: "failed", Phase: "install", Tests: "none", Log: "target-2.log"},
+	}}, result(request))
+
+	logs, err := e.Logs(t.Context(), run.ID)
+	require.NoError(t, err)
+	results := logs.Executions[0].Results
+	jq := results[slices.IndexFunc(results, func(result model.TargetResult) bool { return result.Target == "jq" })]
+	require.Equal(t, model.OutcomePassed, jq.Outcome)
+	require.Equal(t, model.TestsNone, jq.Tests, "its defaults declare no tests")
+	require.Equal(t, model.ObjectID(commit), logs.Executions[0].Git["jq"].Fetched)
+	docs := results[slices.IndexFunc(results, func(result model.TargetResult) bool { return result.Target == "jq-docs" })]
+	require.Equal(t, model.OutcomeFailed, docs.Outcome)
+	require.Equal(t, model.PhaseInstall, docs.Phase)
+	log, err := buildlog.ReadFile(docs.Log)
+	require.NoError(t, err)
+	require.Contains(t, string(log), "Failed to install jq-docs", "the target's port output is its log")
+
+	var want []string
+	for _, action := range []string{"lint", "clean --work", "fetch", "checksum", "destroot", "install"} {
+		want = append(want, "-N -D "+portdir+" "+action+" subport=jq")
+	}
+	for _, action := range []string{"lint", "clean --work", "fetch", "checksum", "destroot", "install"} {
+		want = append(want, "-N -D "+portdir+" "+action+" subport=jq-docs")
+	}
+	require.Equal(t, want, calls, "each target in order, as its subport")
+
+	// A target with variants is built with them, as port takes them, and
+	// MacPorts opens it with them to read its test.run.
+	run, e, request, portdir, calls = checked(func(plan *engine.PlanRequest) {
+		plan.Only, plan.Variants = []string{"jq"}, map[string]bool{"tests": true, "x11": false}
+	})
+	require.Equal(t, model.RunPassed, run.State, run.Detail)
+	require.Len(t, request.Targets, 1)
+	require.Equal(t, map[string]bool{"tests": true, "x11": false}, request.Targets[0].Variants)
+	require.Equal(t, script.Result{Version: script.Version, Targets: []script.TargetResult{
+		{ID: "jq +tests -x11", Outcome: "passed", Tests: "passed", Log: "target-1.log", Fetched: commit},
+	}}, result(request))
+	logs, err = e.Logs(t.Context(), run.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.TestsPassed, logs.Executions[0].Results[0].Tests)
+	want = nil
+	for _, action := range []string{"lint", "clean --work", "fetch", "checksum", "destroot", "install", "test"} {
+		want = append(want, "-N -D "+portdir+" "+action+" subport=jq +tests -x11")
+	}
+	require.Equal(t, want, calls, "each port call carries the target's variants")
 }
