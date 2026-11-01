@@ -29,3 +29,14 @@ func TestAnUnrunnablePlanSaysWhy(t *testing.T) {
 	require.Equal(t, "jq: no Portfile; fd: excluded on arm64", UnresolvedWords(model.Plan{Unresolved: []model.Unresolved{
 		{Target: model.Target{Name: "jq"}, Reason: "no Portfile"}, {Target: model.Target{Name: "fd"}, Reason: "excluded on arm64"}}}))
 }
+
+// Kept archives found missing are said once a check: one by its port and
+// digest, several by their count and ports, where a DOCKHAND_DB copy
+// without its archives said each of 58 on a line of its own.
+func TestMissingArchivesAreSaidOnce(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "check-3: the saved archive for rust (sha256:aa) is missing. Removing its record; the build environment will use a MacPorts archive or build it from source",
+		goneWords("check-3", []model.DependencyArchive{{Port: "rust", Digest: "sha256:aa"}}))
+	require.Equal(t, "check-3: 3 saved archives are missing, of rust and gcc15. Removing their records; the build environment will use MacPorts archives or build them from source",
+		goneWords("check-3", []model.DependencyArchive{{Port: "rust", Digest: "sha256:aa"}, {Port: "gcc15", Digest: "sha256:bb"}, {Port: "rust", Digest: "sha256:cc"}}))
+}

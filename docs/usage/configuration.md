@@ -272,6 +272,14 @@ their own `worktrees` setting. A scratch checkout alone does not isolate the
 other three locations. `dockhand usage agents` gives a complete scratch example
 and environment reference.
 
+A database and the archives its checks kept are one store: the archives live
+beside it, in `archives/` next to the database file. A copy of a database
+that `DOCKHAND_DB` names takes that directory with it (on APFS, `cp -c -R`
+clones it at no cost) and runs on a ports clone of its own; without it, the
+copy's next check says its kept archives are missing, once, with their count,
+and drops their records. A copy never reads its original's archives, whose
+records a prune of the copy's would delete.
+
 Credentials use `GH_TOKEN`, then `GITHUB_TOKEN`, then Dockhand's stored login,
 then the GitHub CLI. Never put a token in the TOML file or a service command
 line.

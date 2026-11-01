@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/reuse"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -431,13 +432,14 @@ func (d *driver) dependencyInstalls(ctx context.Context, environment model.Envir
 		return nil
 	}
 	var installs []buildenv.Archive
+	var missing []model.DependencyArchive
 	for _, archive := range kept {
 		// One whose file is gone is said, and its record dropped, where
 		// each check skipped it again in silence (Codex's gcc15 group
 		// update, 2026-10-07).
 		a, ok := recorded[archive.Digest]
 		if info, err := os.Stat(d.c.Archives.Path(archive.Digest)); !ok || err != nil || info.Size() != a.Size {
-			_ = d.gone(ctx, archive)
+			missing = append(missing, archive)
 			continue
 		}
 		if _, digest, err := sha256File(d.c.Archives.Path(archive.Digest)); err != nil || digest != archive.Digest {
@@ -449,20 +451,42 @@ func (d *driver) dependencyInstalls(ctx context.Context, environment model.Envir
 		}
 		installs = append(installs, buildenv.Archive{Port: archive.Port, Name: archive.Name, Digest: archive.Digest, Path: d.c.Archives.Path(archive.Digest)})
 	}
+	if len(missing) > 0 {
+		_ = d.gone(ctx, missing)
+	}
 	return installs
 }
 
-// gone says a dependency's kept archive whose file is missing, or isn't the
-// size it was kept at, and drops its record, so no later check meets it.
-func (d *driver) gone(ctx context.Context, archive model.DependencyArchive) error {
+// gone says the dependencies' kept archives whose files are missing, or
+// aren't the size they were kept at, once, and drops their records, so no
+// later check meets them: a DOCKHAND_DB copy without its archives
+// directory said each of 58 on a line of its own (the Prime-time session
+// at 42d3891a).
+func (d *driver) gone(ctx context.Context, archives []model.DependencyArchive) error {
 	return d.fenced(ctx, func(tx store.Tx) error {
-		if err := tx.ForgetDependencyArchive(archive); err != nil {
-			return err
+		for _, archive := range archives {
+			if err := tx.ForgetDependencyArchive(archive); err != nil {
+				return err
+			}
 		}
-		_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: model.EventArchiveGone, Level: model.LevelInfo,
-			Message: fmt.Sprintf("%s: the saved archive for %s (%s) is missing. Removing its record; the build environment will use a MacPorts archive or build it from source", d.run.Name(), archive.Port, archive.Digest)})
+		_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: model.EventArchiveGone, Level: model.LevelInfo, Message: goneWords(d.run.Name(), archives)})
 		return err
 	})
+}
+
+// goneWords say the kept archives found missing: one by its port and
+// digest, several by their count and ports.
+func goneWords(run string, archives []model.DependencyArchive) string {
+	if len(archives) == 1 {
+		return fmt.Sprintf("%s: the saved archive for %s (%s) is missing. Removing its record; the build environment will use a MacPorts archive or build it from source", run, archives[0].Port, archives[0].Digest)
+	}
+	var ports []string
+	for _, archive := range archives {
+		if !slices.Contains(ports, archive.Port) {
+			ports = append(ports, archive.Port)
+		}
+	}
+	return fmt.Sprintf("%s: %d saved archives are missing, of %s. Removing their records; the build environment will use MacPorts archives or build them from source", run, len(archives), prose.And(ports))
 }
 
 // altered says a kept archive that isn't the one it was kept as, by a
