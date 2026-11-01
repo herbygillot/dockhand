@@ -258,6 +258,9 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 		if other := report.Ports[0].OtherPrefix; other != nil && !all {
 			line += "; " + other.Words()
 		}
+		if prerelease := report.Ports[0].Prerelease; prerelease != "" && !all {
+			line += "; " + prerelease.Words()
+		}
 	case alone:
 		line = fmt.Sprintf("%s may have a newer release, at master %s", report.Ports[0].Port, master)
 	case newer == 0:
@@ -540,6 +543,10 @@ func seriesNote(port engine.OutdatedPort) string {
 	// (the outdated-ports session's note 17).
 	if port.OtherPrefix != nil {
 		note += "; " + port.OtherPrefix.Words()
+	}
+	// A look that listed only a prerelease says so beside "it is current".
+	if port.Prerelease != "" {
+		note += "; " + port.Prerelease.Words()
 	}
 	return note
 }

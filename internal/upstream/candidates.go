@@ -43,22 +43,42 @@ func admits(current, candidate string) bool {
 // port on a stable release passes such a version over, as admits passes
 // the rest, where ap-utils took 1.4.2 from 1.4.2pre1, its newest stable
 // 1.4.1 (field testing, the outdated-ports session's note 19).
-func listed(current, page string, versions []string) ([]macports.VersionCandidate, map[string]string) {
-	var candidates []macports.VersionCandidate
-	from := map[string]string{}
+//
+// passed is the first version passed over as a prerelease, or as read
+// from a prerelease's name, in the page's order, as a regexm livecheck
+// reads it: where nothing else is listed, the port is current, and its
+// look says why (prioritization's, from php-igbinary's 3.2.17RC1).
+func listed(current, page string, versions []string) (candidates []macports.VersionCandidate, from map[string]string, passed string) {
+	from = map[string]string{}
 	for _, found := range versions {
 		if !admits(current, found) {
+			if passed == "" && version.Classify(found) == version.Prerelease {
+				passed = found
+			}
 			continue
 		}
 		if name, ok := version.CapturedPrerelease(page, found); ok {
 			if !followsPrereleases(current) {
+				if passed == "" {
+					passed = name
+				}
 				continue
 			}
 			from[found] = name
 		}
 		candidates = append(candidates, macports.VersionCandidate{Version: found, MatchText: found})
 	}
-	return candidates, from
+	return candidates, from, passed
+}
+
+// onlyPrerelease records a port whose look listed nothing but a
+// prerelease a port on a stable release doesn't take as current, saying
+// so, where it read "nothing upstream lists matches" its livecheck.
+func (result *Result) onlyPrerelease(release model.Release, current, passed string) {
+	release.NoUpdate, release.CurrentVersion, release.Version = true, current, current
+	result.finish(release, current, "", "")
+	result.Prerelease = Prerelease(passed)
+	result.Detail = result.Prerelease.Words()
 }
 
 // followsPrereleases reports a port already on a prerelease, which selects

@@ -145,6 +145,21 @@ type Result struct {
 	// a "v" added or taken away would take, newer than the release
 	// selected; nil where none is.
 	OtherPrefix *OtherPrefix
+	// Prerelease is, for a port read current because its look listed
+	// nothing but a prerelease a port on a stable release doesn't take,
+	// that prerelease; empty otherwise.
+	Prerelease Prerelease
+}
+
+// Prerelease is the prerelease a port's look listed alone, which a port on
+// a stable release doesn't take.
+type Prerelease string
+
+// Words say a port's look listed only a prerelease: "upstream's newest,
+// 3.2.17RC1, is a prerelease, which a port on a stable release doesn't
+// take".
+func (p Prerelease) Words() string {
+	return fmt.Sprintf("upstream's newest, %s, is a prerelease, which a port on a stable release doesn't take", string(p))
 }
 
 // RepositoryMove is a repository the forge answers by another name: From

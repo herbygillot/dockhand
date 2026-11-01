@@ -88,7 +88,15 @@ type OutdatedPort struct {
 	// than Newest (upstream.Result.OtherPrefix); said, the port's own
 	// spelling deciding, and nil where none is.
 	OtherPrefix *OtherPrefix
+	// Prerelease is, for a port current because upstream listed nothing
+	// but a prerelease a port on a stable release doesn't take, that
+	// prerelease (upstream.Result.Prerelease); said, and empty otherwise.
+	Prerelease Prerelease
 }
+
+// Prerelease is the prerelease a port's look listed alone, and its Words
+// say so.
+type Prerelease = upstream.Prerelease
 
 // RepositoryMove is a repository GitHub answers by another name, and its
 // Words say so.
@@ -335,7 +343,7 @@ func (s *surveyedPorts) Outdated(ctx context.Context, commit model.ObjectID, req
 
 // outdatedPort is a port as upstream discovery assessed it.
 func outdatedPort(port outdated.Port) OutdatedPort {
-	entry := OutdatedPort{Port: port.Selector, Current: port.CurrentVersion, Newest: port.CandidateVersion, Release: port.Release, With: port.With, NewerSeries: port.NewerSeries, RepositoryMove: port.Move, OtherPrefix: port.OtherPrefix}
+	entry := OutdatedPort{Port: port.Selector, Current: port.CurrentVersion, Newest: port.CandidateVersion, Release: port.Release, With: port.With, NewerSeries: port.NewerSeries, RepositoryMove: port.Move, OtherPrefix: port.OtherPrefix, Prerelease: port.Prerelease}
 	switch port.Assessment {
 	case upstream.UpdateAvailable:
 		entry.Outdated = true

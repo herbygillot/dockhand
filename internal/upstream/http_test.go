@@ -64,7 +64,7 @@ func TestHTTPDiscoveryUsesNativeFilterAndFreezesRelease(t *testing.T) {
 
 func TestHTTPDiscoveryRejectsIncompleteOrUnsupportedObservations(t *testing.T) {
 	t.Parallel()
-	for _, scenario := range []string{"empty", "malformed", "prerelease", "HTTP failure", "not found", "custom hook", "curl option", "unmatched version", "invalid capture", "ambiguous"} {
+	for _, scenario := range []string{"empty", "malformed", "HTTP failure", "not found", "custom hook", "curl option", "unmatched version", "invalid capture", "ambiguous"} {
 		t.Run(scenario, func(t *testing.T) {
 			page := `>terraform_1.16.2<`
 			status := 200
@@ -75,8 +75,6 @@ func TestHTTPDiscoveryRejectsIncompleteOrUnsupportedObservations(t *testing.T) {
 				page = "nothing"
 			case "malformed":
 				port.Options["livecheck.regex"] = `{(}`
-			case "prerelease":
-				page = `>terraform_1.16.2-rc1<`
 			case "HTTP failure":
 				status = 503
 			case "not found":
@@ -219,4 +217,31 @@ func TestAVersionCapturedFromAPrereleasesNameIsOne(t *testing.T) {
 	require.Equal(t, "1.4.2", result.Release.Version)
 	require.Equal(t, "1.4.2pre1", result.Release.CapturedFrom)
 	require.Equal(t, "1.4.2 was read from 1.4.2pre1, a prerelease's name, by the port's livecheck", result.Release.CapturedWords())
+}
+
+// A listing whose only match is a prerelease, which a port on a stable
+// release doesn't take, reads the port current and says why, where it
+// read "nothing upstream lists matches": php-igbinary's PECL page lists
+// 3.2.17RC1 first (prioritization's, 2026-11-01). The same holds of a
+// version read from a prerelease's name.
+func TestAListingOfPrereleasesAloneReadsCurrent(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct{ page, newest string }{
+		{`>terraform_1.16.3-rc1<`, "1.16.3-rc1"},
+		{`>terraform_1.16.3rc1.tar.gz<`, "1.16.3rc1"},
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, c.page) }))
+		port := listingPort(server.URL)
+		if c.newest == "1.16.3rc1" {
+			port.Options["livecheck.regex"] = `{terraform_([0-9.]+[0-9])}`
+		}
+		service := automaticService(t, &catalog{})
+		service.HTTP = server.Client()
+		result, err := service.DiscoverPort(t.Context(), port)
+		server.Close()
+		require.NoError(t, err, c.page)
+		require.Equal(t, upstream.Current, result.Assessment, result.Detail)
+		require.Equal(t, "upstream's newest, "+c.newest+", is a prerelease, which a port on a stable release doesn't take", result.Detail)
+		require.True(t, result.Release.NoUpdate)
+	}
 }
