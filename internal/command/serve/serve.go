@@ -89,6 +89,15 @@ line, unless --keep-modeline.`,
 				}
 				return serveAgent(ctx, s, streams, install, flags)
 			}
+			// A log's lines say when each was written; a terminal's are
+			// read as they come.
+			if !streams.OutTerminal() {
+				now := s.Host.Now
+				if now == nil {
+					now = time.Now
+				}
+				streams.Out = &stampWriter{w: streams.Out, now: now}
+			}
 			// Nobody answers git's ssh under serve, at a terminal or not.
 			s.Unattended = true
 			e, err := openWaiting(ctx, s, streams)
