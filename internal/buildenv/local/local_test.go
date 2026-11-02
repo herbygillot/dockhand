@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -237,6 +240,45 @@ func TestALocalCheckLeftUnfinishedIsPutBack(t *testing.T) {
 	require.Contains(t, build.progress, "putting "+prefix+" back as it was before an earlier check, which ended before it could")
 	require.NoDirExists(t, left)
 	require.Equal(t, "  zlib @1.3.2_0 (active)\n", readRegistry(t, path))
+}
+
+// A guest program killed by a signal dockhand didn't send, as kill -9 of
+// its group, isn't tried again: a kill is someone's choice, said once,
+// and the prefix is put back; one that exited with a status unfinished,
+// as a crash, is tried again, and dockhand's own stop is its own (rc7's
+// G9 on the M1, 2026-11-02).
+func TestAGuestKilledFromOutsideIsntTriedAgain(t *testing.T) {
+	t.Parallel()
+	path, active := registry(t, "  zlib @1.3.2_0 (active)\n")
+	prefix, env, _ := fakePrefix(t, active, "HANG=fetch:harbor-cli")
+	l := localProvider(t, env)
+	build := &fakeBuild{}
+	done := make(chan error, 1)
+	go func() { done <- l.Execute(t.Context(), localJob(t, prefix), build) }()
+	require.Eventually(t, func() bool { return strings.Contains(readRegistry(t, path), "libharbor") }, testsupport.Settle, 10*time.Millisecond)
+	build.mu.Lock()
+	dir := build.refs[0]
+	build.mu.Unlock()
+	found, err := exec.Command("pgrep", "-f", filepath.Join(dir, "guest.tcl")).Output()
+	require.NoError(t, err)
+	pid, err := strconv.Atoi(strings.Fields(string(found))[0])
+	require.NoError(t, err)
+	require.NoError(t, syscall.Kill(-pid, syscall.SIGKILL), "the guest's whole group, as G9 killed it")
+	err = <-done
+	require.ErrorIs(t, err, buildenv.ErrNeedsAttention)
+	require.True(t, buildenv.SaysWhyNotTried(err))
+	require.EqualError(t, err, "the guest program in "+prefix+" was killed by a signal dockhand didn't send (signal: killed); a kill is someone's choice, so no other attempt was made, and dockhand check runs it again")
+	require.Equal(t, "  zlib @1.3.2_0 (active)\n", readRegistry(t, path), "the put-back as it is")
+
+	// A crash, an exit with a status, is tried again; dockhand's own stop
+	// is its own.
+	crashed := &localRun{err: exec.Command("/bin/sh", "-c", "exit 1").Run()}
+	require.NoError(t, crashed.killed(prefix))
+	signaled := exec.Command("/bin/sh", "-c", "kill -9 $$").Run()
+	require.Error(t, (&localRun{err: signaled}).killed(prefix))
+	stopped := &localRun{err: signaled}
+	stopped.stopped.Store(true)
+	require.NoError(t, stopped.killed(prefix))
 }
 
 // dockhand undo check-N puts back a prefix a check left changed, or kept

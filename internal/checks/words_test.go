@@ -5,8 +5,21 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/model"
 )
+
+// Trouble no other attempt was made at says why: its own words where it
+// gives them, as a guest program someone killed, without "another attempt
+// won't fix it", which a kill's next attempt might (rc7's G9 on the M1).
+func TestTroubleNotTriedAgainSaysWhy(t *testing.T) {
+	t.Parallel()
+	killed := buildenv.NotTriedAgain("the guest program in /opt/local was killed; no other attempt was made")
+	require.ErrorIs(t, killed, buildenv.ErrNeedsAttention)
+	require.Equal(t, "local: the guest program in /opt/local was killed; no other attempt was made", notTriedWords("local", killed))
+	refused := buildenv.Infrastructure("%w: sudo refused", buildenv.ErrNeedsAttention)
+	require.Equal(t, "local: provider infrastructure failed: another attempt won't fix it: sudo refused; another attempt won't fix it, so none was made", notTriedWords("local", refused))
+}
 
 // An unmet minimum Xcode says what the environment has, where the plan
 // kept it: "needs Xcode 26.0, which Tart macOS 15 hasn't" left the person

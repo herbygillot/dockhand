@@ -74,6 +74,27 @@ func Infrastructure(format string, args ...any) error {
 // it had spent every attempt on it.
 var ErrNeedsAttention = errors.New("another attempt won't fix it")
 
+// NotTriedAgain is trouble no further attempt is made at for a reason
+// its words give, as a guest program someone killed: ErrNeedsAttention to
+// the runner, which says it as it is, without that error's "another
+// attempt won't fix it", since another attempt might (rc7's G9 on the
+// M1, 2026-11-02).
+func NotTriedAgain(format string, args ...any) error {
+	cause := notTriedAgain{fmt.Errorf(format, args...)}
+	return refusal.Wrap(refusal.Infrastructure, cause, "%s", cause)
+}
+
+type notTriedAgain struct{ error }
+
+func (n notTriedAgain) Unwrap() error      { return n.error }
+func (notTriedAgain) Is(target error) bool { return target == ErrNeedsAttention }
+
+// SaysWhyNotTried says whether err is NotTriedAgain's, whose words say
+// why no other attempt was made.
+func SaysWhyNotTried(err error) bool {
+	return errors.As(err, new(notTriedAgain))
+}
+
 // ErrDockhandFault marks a fault in dockhand's own handling, rather than in
 // the environment or what it built: a guest program reporting what this
 // dockhand can't read, or a target its job didn't ask for. Another attempt

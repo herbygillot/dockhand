@@ -8,6 +8,7 @@
 package guest
 
 import (
+	"cmp"
 	"context"
 	_ "embed"
 	"encoding/json"
@@ -71,6 +72,10 @@ type Follower struct {
 	// end is its Run's, as a process's is, and what it wrote last is read
 	// once that ends.
 	Stopped func(ctx context.Context, g Guest) (bool, error)
+	// Ended, where Stopped is nil, says why the program's process ended
+	// short of its finish, where that's a cause of its own, as a signal
+	// dockhand didn't send is; nil where it isn't.
+	Ended func() error
 	// Drift reports where the guest's tools differ from the facts table's
 	// row for its release, as a clone of dockhand's image should match.
 	Drift bool
@@ -466,9 +471,13 @@ func (f *Follower) Follow(ctx context.Context, g Guest, started Run, job builden
 // ended reads what a local guest program wrote last, once its process
 // has ended: its finish, or why it stopped short.
 func (f *Follower) ended(ctx context.Context, g Guest, job buildenv.Job, build buildenv.Build, take func(Results) error, building string, lost func(error) error) error {
+	var cause error
+	if f.Ended != nil && ctx.Err() == nil {
+		cause = f.Ended()
+	}
 	last, err := f.Read(ctx, g)
 	if err != nil || last.Protocol != Protocol {
-		return lost(buildenv.Infrastructure("the guest program ended without its results: %v", err))
+		return lost(cmp.Or(cause, buildenv.Infrastructure("the guest program ended without its results: %v", err)))
 	}
 	if err := take(last); err != nil {
 		return err
@@ -485,6 +494,9 @@ func (f *Follower) ended(ctx context.Context, g Guest, job buildenv.Job, build b
 		return buildenv.Infrastructure("%w: %s", buildenv.ErrNeedsAttention, last.Detail)
 	case "errored":
 		return interrupted(job, build, last.Building, buildenv.Infrastructure("the guest: %s", last.Detail), func(name string) string { return f.partialLog(ctx, g, job, name) })
+	}
+	if cause != nil {
+		return lost(cause)
 	}
 	log, _ := g.Read(ctx, f.Root+"/runner.log", true)
 	return lost(buildenv.Infrastructure("the guest program stopped before it finished: %s", strings.TrimSpace(tail(string(log), 400))))
