@@ -306,6 +306,33 @@ func (r *Repository) ExistingPaths(ctx context.Context, tree string, paths []str
 	return found, nil
 }
 
+// Entries are the paths of the entries directly in each of dirs the tree
+// holds, as dir/name, found in one listing; a directory the tree lacks
+// gives none.
+func (r *Repository) Entries(ctx context.Context, tree string, dirs []string) ([]string, error) {
+	if len(dirs) == 0 {
+		return nil, nil
+	}
+	specs := make([]string, 0, len(dirs))
+	for _, dir := range dirs {
+		if !snapshotPath(dir) {
+			return nil, fmt.Errorf("git: invalid path %q", dir)
+		}
+		specs = append(specs, dir+"/")
+	}
+	out, err := r.output(ctx, append([]string{"ls-tree", "--name-only", "-z", tree, "--"}, specs...)...)
+	if err != nil {
+		return nil, err
+	}
+	var found []string
+	for _, name := range strings.Split(string(out), "\x00") {
+		if name != "" {
+			found = append(found, name)
+		}
+	}
+	return found, nil
+}
+
 // Add stages new files in a worktree, so the next capture includes them.
 func (r *Repository) Add(ctx context.Context, paths ...string) error {
 	for _, name := range paths {
