@@ -199,4 +199,23 @@ func TestATargetDoesntReuseABuildPastAMovedTag(t *testing.T) {
 	} {
 		require.Contains(t, Choose(target(pair[0], pair[1]), "origin a", now, Judge{}, stands, none).Reused, model.TargetID("lib"), name)
 	}
+
+	// A build at another tag, or of another repository, isn't a tag that
+	// moved: jlv 1.9.2's build, at v1.9.2, read as v1.7.1's having moved
+	// (rc7's G16, check-943).
+	other := &model.GitSource{URL: "https://github.com/harbor/lib.git", Ref: "v1.9.2", Commit: "30693df"}
+	elsewhere := &model.GitSource{URL: "https://github.com/fork/lib.git", Ref: "v1.0.0", Commit: "1d15bc8"}
+	require.False(t, target(tag("6bfede5"), nil)[0].TagMoved(Candidate{Tagged: other}), "another tag")
+	require.False(t, target(tag("6bfede5"), nil)[0].TagMoved(Candidate{Tagged: elsewhere}), "another repository")
+	require.Contains(t, Choose(target(tag("6bfede5"), other), "origin a", now, Judge{}, stands, none).Reused, model.TargetID("lib"))
+
+	// A build whose check recorded no tag isn't reused beside one that
+	// says the tag moved, since it can't say which commit it built; alone,
+	// it's reused as before.
+	untagged := Candidate{Result: model.TargetResult{Target: "lib", Outcome: model.OutcomePassed}, Inputs: inputs}
+	beside := target(tag("d4c0fdb"), tag("1d15bc8"))
+	beside[0].Earlier = append(beside[0].Earlier, untagged)
+	require.Empty(t, Choose(beside, "origin a", now, Judge{}, stands, none).Reused, "beside a moved tag")
+	alone := target(tag("d4c0fdb"), nil)
+	require.Contains(t, Choose(alone, "origin a", now, Judge{}, stands, none).Reused, model.TargetID("lib"), "alone")
 }

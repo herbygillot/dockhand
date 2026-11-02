@@ -87,19 +87,23 @@ func tagged(r store.Reader, plans map[model.RunID]model.Plan, origin model.Guest
 	return nil, nil
 }
 
-// sayTagMoved says, of each target whose newest earlier build here stands
-// but was fetched by a GitHub tag that names another commit now, that it
-// builds again, and why (D-N5): the archive fetched now isn't the one that
-// build checked, and dockhand checksums handles a stealth update.
-func (d *driver) sayTagMoved(ctx context.Context, environment model.Environment, targets []reuse.Target) {
+// sayTagMoved says, of each target that builds, not reused, whose newest
+// earlier build here that stands and was fetched by its GitHub tag finds
+// the tag naming another commit now, that it builds again, and why
+// (D-N5): the archive fetched now isn't the one that build checked, and
+// dockhand checksums handles a stealth update. A target reused from an
+// older build isn't said to build again: check-943 said jlv built again,
+// then reused check-876's (rc7's G16).
+func (d *driver) sayTagMoved(ctx context.Context, environment model.Environment, targets []reuse.Target, reused map[model.TargetID]reuse.Candidate) {
 	for _, target := range targets {
-		if len(target.Earlier) == 0 {
+		if _, ok := reused[target.ID]; ok {
 			continue
 		}
-		newest := target.Earlier[0]
-		if !target.TagMoved(newest) || !d.plan.Tests.Stands(newest.Result) {
+		i := slices.IndexFunc(target.Earlier, func(c reuse.Candidate) bool { return target.TagMoved(c) && d.plan.Tests.Stands(c.Result) })
+		if i < 0 {
 			continue
 		}
+		newest := target.Earlier[i]
 		built := "an earlier check"
 		_ = d.c.Store.View(ctx, d.c.Repository, func(r store.Reader) error {
 			if run, err := r.Run(newest.Origin.Run); err == nil {
