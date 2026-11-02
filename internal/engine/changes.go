@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"maps"
 	"path"
 	"slices"
@@ -162,6 +164,39 @@ func (e *Engine) makeChanges(ctx context.Context, branch model.Branch, base, tre
 		records[directory] = record
 	}
 	return made, nil
+}
+
+// revisionFamily is a port directory evaluated as a revision holds it,
+// every subport of it, on this Mac, as a change record's revision side is
+// (makeChanges), saying whose Portfiles they are where another wrote them
+// (sayWhose). A tree this Mac doesn't hold, a directory the revision has
+// no Portfile in, and nothing here evaluating a port's family are errors,
+// as an evaluation that fails is.
+func (e *Engine) revisionFamily(ctx context.Context, revision model.Revision, directory string) (macports.Snapshot, error) {
+	ports, err := e.capabilities()
+	if err != nil {
+		return macports.Snapshot{}, err
+	}
+	if ports.Families == nil {
+		return macports.Snapshot{}, errors.New("nothing here evaluates a port's family")
+	}
+	file, _, err := e.Repo.File(ctx, string(revision.Source.Tree), directory+"/Portfile")
+	if err != nil {
+		return macports.Snapshot{}, err
+	}
+	if !file.Exists {
+		return macports.Snapshot{}, fmt.Errorf("%s has no Portfile at %s", revision.Source.Tree.Short(), directory)
+	}
+	var branch model.Branch
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		branch, err = r.Branch(revision.Branch)
+		return err
+	}); err != nil {
+		return macports.Snapshot{}, err
+	}
+	e.sayWhose(ctx, branch)
+	return ports.Families.Family(ctx, model.Source{Tree: revision.Source.Tree, Base: revision.Source.Base}, directory)
 }
 
 // sideWords say which side of a change record couldn't be evaluated.

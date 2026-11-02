@@ -353,10 +353,13 @@ func (d *driver) blocks(ctx context.Context) reuse.Blocks {
 // entry but the Portfile the same object, the Portfile's changed lines
 // each an inert option's (portfile.InertChanges), and the change records
 // of the build's revision and of this one, made where they aren't yet,
-// finding nothing else moved (fidelity.InertBetween). Anything it can't
-// read says nothing, and the build reuses nothing, as before. None where
-// nothing gives change records. Each judgment, and each revision's
-// records, is read once.
+// finding nothing else moved (fidelity.InertBetween); for a port both
+// revisions add, which their records can't confirm, the directory's
+// evaluations at the two revisions (Hooks.Family), the build's at the
+// directory it read, finding the same. Anything it can't read or
+// evaluate says nothing, and the build reuses nothing, as before. None
+// where nothing gives change records. Each judgment, each revision's
+// records, and each evaluation is read once.
 func (d *driver) inert(ctx context.Context, revision model.Revision) reuse.Inert {
 	if d.c.Hooks == nil {
 		return nil
@@ -373,6 +376,20 @@ func (d *driver) inert(ctx context.Context, revision model.Revision) reuse.Inert
 	}
 	read := map[key]answer{}
 	records := map[model.RevisionID]map[string]model.ChangeRecord{}
+	type family struct {
+		snapshot macports.Snapshot
+		err      error
+	}
+	families := map[[2]string]family{}
+	familyOf := func(r model.Revision, directory string) (macports.Snapshot, error) {
+		k := [2]string{string(r.ID), directory}
+		if found, ok := families[k]; ok {
+			return found.snapshot, found.err
+		}
+		snapshot, err := d.c.Hooks.Family(ctx, r, directory)
+		families[k] = family{snapshot, err}
+		return snapshot, err
+	}
 	recordsOf := func(r model.Revision) map[string]model.ChangeRecord {
 		if found, ok := records[r.ID]; ok {
 			return found
@@ -405,7 +422,15 @@ func (d *driver) inert(ctx context.Context, revision model.Revision) reuse.Inert
 			})
 			thenRecord, had := recordsOf(built)[from]
 			nowRecord, has := recordsOf(revision)[at]
-			ok = err == nil && had && has && fidelity.InertBetween(thenRecord, nowRecord)
+			evaluations := func() (macports.Snapshot, macports.Snapshot, error) {
+				then, err := familyOf(built, from)
+				if err != nil {
+					return then, macports.Snapshot{}, err
+				}
+				now, err := familyOf(revision, at)
+				return then, now, err
+			}
+			ok = err == nil && had && has && fidelity.InertBetween(thenRecord, nowRecord, evaluations)
 		}
 		read[k] = answer{options, ok}
 		return options, ok

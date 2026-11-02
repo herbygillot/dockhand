@@ -1,6 +1,7 @@
 package fidelity
 
 import (
+	"errors"
 	"maps"
 	"testing"
 
@@ -347,18 +348,79 @@ func TestInertBetweenConfirmsOnlyInertFieldsMoved(t *testing.T) {
 	version := model.FieldChange{Field: "version", From: "1.1.0", To: "1.2.0"}
 	then := record(changed(version, model.FieldChange{Field: "maintainers", From: "a", To: "a"}))
 	now := record(changed(version, model.FieldChange{Field: "maintainers", From: "a", To: "a openmaintainer"}, model.FieldChange{Field: "code options", From: "1", To: "2"}))
-	require.True(t, InertBetween(then, now), "the same version, the maintainers and options' checksum moved")
-	require.True(t, InertBetween(record(model.SubportChange{Port: "omnidiff", Kind: model.SubportAdded}), record(model.SubportChange{Port: "omnidiff", Kind: model.SubportAdded})), "a port both add")
-	require.False(t, InertBetween(then, record(changed(model.FieldChange{Field: "version", From: "1.1.0", To: "1.3.0"}))), "the version moved")
-	require.False(t, InertBetween(then, record(changed(version, model.FieldChange{Field: "license", From: "MIT", To: "BSD"}))), "license isn't inert")
-	require.False(t, InertBetween(then, record(changed(version, model.FieldChange{Field: "code procedures", From: "1", To: "2"}))), "a procedure moved")
-	require.False(t, InertBetween(then, record(changed())), "the version moved back to the base's")
-	require.False(t, InertBetween(then, record(changed(version), model.SubportChange{Port: "omnidiff-lite", Kind: model.SubportAdded})), "a subport added")
-	require.False(t, InertBetween(record(model.SubportChange{Port: "omnidiff", Kind: model.SubportAdded}), record(changed(version))), "added in one alone")
+	require.True(t, InertBetween(then, now, nil), "the same version, the maintainers and options' checksum moved")
+	require.False(t, InertBetween(record(model.SubportChange{Port: "omnidiff", Kind: model.SubportAdded}), record(model.SubportChange{Port: "omnidiff", Kind: model.SubportAdded}), nil), "a port both add, with no evaluations to confirm it")
+	require.False(t, InertBetween(then, record(changed(model.FieldChange{Field: "version", From: "1.1.0", To: "1.3.0"})), nil), "the version moved")
+	require.False(t, InertBetween(then, record(changed(version, model.FieldChange{Field: "license", From: "MIT", To: "BSD"})), nil), "license isn't inert")
+	require.False(t, InertBetween(then, record(changed(version, model.FieldChange{Field: "code procedures", From: "1", To: "2"})), nil), "a procedure moved")
+	require.False(t, InertBetween(then, record(changed()), nil), "the version moved back to the base's")
+	require.False(t, InertBetween(then, record(changed(version), model.SubportChange{Port: "omnidiff-lite", Kind: model.SubportAdded}), nil), "a subport added")
+	require.False(t, InertBetween(record(model.SubportChange{Port: "omnidiff", Kind: model.SubportAdded}), record(changed(version)), nil), "added in one alone")
 	failed := now
 	failed.Problem = "the revision couldn't be evaluated"
-	require.False(t, InertBetween(then, failed), "an unreadable record")
+	require.False(t, InertBetween(then, failed, nil), "an unreadable record")
 	older := now
 	older.Policy = ChangePolicy - 1
-	require.False(t, InertBetween(then, older), "another policy's record")
+	require.False(t, InertBetween(then, older, nil), "another policy's record")
+}
+
+// omnidiffFamily is omnidiff's directory evaluated at root, below it at
+// directory, with the maintainers and categories given and the checksum
+// of every option's value, which those are among, as options.
+func omnidiffFamily(root, directory, maintainers, categories, options string) macports.Snapshot {
+	info := macports.PortInfo{Name: "omnidiff", Version: "1.2.0", Options: map[string]string{
+		macports.MaintainersOption: maintainers,
+		"categories":               categories,
+		"license":                  "MIT",
+		"filespath":                root + "/" + directory + "/files",
+		"patchfiles":               "a.patch",
+		codeOption:                 "options " + options + " procedures 1111",
+	}, OptionErrors: map[string]string{"livecheck.url": "couldn't read <source>/" + directory + "/Portfile"}}
+	family := snapshot(map[string]macports.PortInfo{"omnidiff": info})
+	family.Root = root
+	return family
+}
+
+// A port both records add is confirmed by the directory's evaluations at
+// the two revisions, compared as the records compare a port's: omnidiff's
+// openmaintainer line, and its move from devel to textproc with its
+// categories reordered, each moving only inert options and the checksum of
+// every option's value, its directory written alike on both sides; one
+// moving its license, a port only one evaluation has, and evaluations
+// that couldn't be made confirm nothing (architecture's ruling of
+// 2026-11-02).
+func TestInertBetweenConfirmsAnAddedPortByItsEvaluations(t *testing.T) {
+	t.Parallel()
+	added := func(directory string) model.ChangeRecord {
+		return model.ChangeRecord{Directory: directory, Policy: ChangePolicy, Ports: []model.SubportChange{{Port: "omnidiff", Kind: model.SubportAdded}}}
+	}
+	given := func(then, now macports.Snapshot) func() (macports.Snapshot, macports.Snapshot, error) {
+		return func() (macports.Snapshot, macports.Snapshot, error) { return then, now, nil }
+	}
+	maintainer := "{@herbygillot gmail.com:herby.gillot}"
+	then := omnidiffFamily("/w/one", "devel/omnidiff", maintainer, "devel textproc", "1")
+
+	edited := omnidiffFamily("/w/two", "devel/omnidiff", maintainer+" openmaintainer", "devel textproc", "2")
+	require.True(t, InertBetween(added("devel/omnidiff"), added("devel/omnidiff"), given(then, edited)), "the openmaintainer line")
+
+	moved := omnidiffFamily("/w/two", "textproc/omnidiff", maintainer, "textproc devel", "3")
+	require.True(t, InertBetween(added("devel/omnidiff"), added("textproc/omnidiff"), given(then, moved)), "the move to textproc, its categories reordered")
+	require.False(t, InertBetween(added("devel/omnidiff"), added("devel/omnidiff"), given(then, moved)), "the move, each side read at the same directory, moves filespath")
+
+	licensed := omnidiffFamily("/w/two", "devel/omnidiff", maintainer, "devel textproc", "2")
+	licensed.Ports["omnidiff"].Options["license"] = "BSD"
+	require.False(t, InertBetween(added("devel/omnidiff"), added("devel/omnidiff"), given(then, licensed)), "license isn't inert")
+
+	sibling := omnidiffFamily("/w/two", "devel/omnidiff", maintainer, "devel textproc", "2")
+	sibling.Ports["omnidiff-lite"] = sibling.Ports["omnidiff"]
+	require.False(t, InertBetween(added("devel/omnidiff"), added("devel/omnidiff"), given(then, sibling)), "a subport only one evaluation has")
+
+	alike := omnidiffFamily("/w/two", "devel/omnidiff2", maintainer, "devel textproc", "1")
+	require.False(t, InertBetween(added("devel/omnidiff"), added("devel/omnidiff"), given(then, alike)), "a directory only starting with the port's name isn't its directory")
+
+	unevaluated := func() (macports.Snapshot, macports.Snapshot, error) {
+		return macports.Snapshot{}, macports.Snapshot{}, errors.New("the earlier revision's tree isn't held")
+	}
+	require.False(t, InertBetween(added("devel/omnidiff"), added("devel/omnidiff"), unevaluated), "the earlier revision can't be evaluated")
+	require.Equal(t, "/w/one/devel/omnidiff/files", then.Ports["omnidiff"].Options["filespath"], "comparison must not mutate observations")
 }

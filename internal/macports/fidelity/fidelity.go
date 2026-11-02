@@ -727,17 +727,24 @@ const codeOptions = "code options"
 // subport either inert or the same in both, a subport added in one added
 // in the other, and none in one only. A field one record has and the
 // other doesn't moved between them, or moved against another base; either
-// way it isn't known to be the same. A subport both records add has no
-// fields to compare, which leaves the lines to decide alone
-// (portfile.InertChanges). Fields known to move without an edit
+// way it isn't known to be the same. Fields known to move without an edit
 // (Unstable) are left out, as the records leave them. A record that
 // couldn't be made says nothing, and isn't inert. It confirms what the
-// lines found: decision 28's inert difference reuses a build only where
-// both say so.
-func InertBetween(then, now model.ChangeRecord) bool {
+// lines found (portfile.InertChanges): decision 28's inert difference
+// reuses a build only where both say so.
+//
+// A subport both records add has no fields to compare, against a base
+// without it, so the directory's evaluations at the two revisions, which
+// families gives, then's first, are compared as the records compare a
+// port's (inertFamilies), each at its record's directory: the same
+// strength the records give a port the base has, since they're made from
+// such evaluations (architecture's ruling of 2026-11-02). Where families
+// is nil or can't evaluate either, nothing is confirmed.
+func InertBetween(then, now model.ChangeRecord, families func() (then, now macports.Snapshot, err error)) bool {
 	if then.Problem != "" || now.Problem != "" || len(then.Ports) != len(now.Ports) || then.Policy != ChangePolicy || now.Policy != ChangePolicy {
 		return false
 	}
+	added := false
 	for _, before := range then.Ports {
 		i := slices.IndexFunc(now.Ports, func(p model.SubportChange) bool { return p.Port == before.Port })
 		if i < 0 {
@@ -747,6 +754,7 @@ func InertBetween(then, now model.ChangeRecord) bool {
 		if (before.Kind == model.SubportAdded) != (after.Kind == model.SubportAdded) || (before.Kind == model.SubportRemoved) != (after.Kind == model.SubportRemoved) {
 			return false
 		}
+		added = added || after.Kind == model.SubportAdded
 		fields := map[string][2]*model.FieldChange{}
 		for side, changes := range [2][]model.FieldChange{before.Fields, after.Fields} {
 			for j := range changes {
@@ -756,7 +764,7 @@ func InertBetween(then, now model.ChangeRecord) bool {
 			}
 		}
 		for field, pair := range fields {
-			if field == codeOptions || macports.InertOption(field) {
+			if inertField(field) {
 				continue
 			}
 			if pair[0] == nil || pair[1] == nil || pair[0].To != pair[1].To {
@@ -764,7 +772,78 @@ func InertBetween(then, now model.ChangeRecord) bool {
 			}
 		}
 	}
+	if !added {
+		return true
+	}
+	if families == nil {
+		return false
+	}
+	old, next, err := families()
+	return err == nil && inertFamilies(old, next, then.Directory, now.Directory)
+}
+
+// inertField is a field of a change that moves nothing a build reads: an
+// inert option, or the checksum of every option's value, which those
+// options are among.
+func inertField(field string) bool {
+	return field == codeOptions || macports.InertOption(field)
+}
+
+// inertFamilies reports whether two evaluations of a port directory's
+// family, then's at thenDirectory and now's at nowDirectory, find nothing
+// moved between them but inert options and the checksum of every option's
+// value, as a change record finds a port's fields (Changes): the same
+// subports in both, each with nothing else moved, fields known to move
+// without an edit left out, as the records leave them. Each side is
+// normalized by its root and by its directory, written <portpath> where
+// filespath and the paths built from it name it, so a port that moved
+// between the two reads alike where it's the same (atPortpath).
+func inertFamilies(then, now macports.Snapshot, thenDirectory, nowDirectory string) bool {
+	if len(then.Ports) == 0 || len(then.Ports) != len(now.Ports) {
+		return false
+	}
+	for name, old := range then.Ports {
+		next, ok := now.Ports[name]
+		if !ok {
+			return false
+		}
+		for _, field := range Changes(atPortpath(old, then.Root, thenDirectory), atPortpath(next, now.Root, nowDirectory), then.Root, now.Root) {
+			if !strings.HasPrefix(field.Field, unstableCode) && !inertField(field.Field) {
+				return false
+			}
+		}
+	}
 	return true
+}
+
+// atPortpath is a port with its directory, as the evaluation's root and
+// the directory below it name it, or <source> and the directory as the
+// evaluator writes a tree's root, written <portpath> in its options and
+// their errors: filespath and every path below the directory, which
+// ComparablePort's root alone leaves apart for a port evaluated in two
+// directories. The port's code is left as it is, checksums naming no
+// path. A path that only starts with the directory's name, as
+// devel/omnidiff2 does devel/omnidiff's, is left too.
+func atPortpath(port macports.PortInfo, root, directory string) macports.PortInfo {
+	if directory == "" {
+		return port
+	}
+	prefixes := []string{regexp.QuoteMeta("<source>/" + directory)}
+	if root != "" {
+		prefixes = append(prefixes, regexp.QuoteMeta(path.Join(root, directory)))
+	}
+	at := regexp.MustCompile(`(?:` + strings.Join(prefixes, "|") + `)(/|$|[\s"'}\]])`)
+	rewrite := func(values map[string]string) map[string]string {
+		values = maps.Clone(values)
+		for key, value := range values {
+			if key != codeOption {
+				values[key] = at.ReplaceAllString(value, "<portpath>$1")
+			}
+		}
+		return values
+	}
+	port.Options, port.OptionErrors = rewrite(port.Options), rewrite(port.OptionErrors)
+	return port
 }
 
 // ResourceChanges are the PortGroup files of _resources whose blobs differ

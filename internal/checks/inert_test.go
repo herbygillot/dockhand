@@ -18,10 +18,13 @@ import (
 )
 
 // recordHooks are hooks that give each revision's change records from a
-// table, by revision; the rest do nothing.
+// table, by revision, and a directory's evaluation at a revision from
+// another, by revision and directory; the rest do nothing.
 type recordHooks struct {
-	records map[model.RevisionID]map[string]model.ChangeRecord
-	asked   []model.RevisionID
+	records   map[model.RevisionID]map[string]model.ChangeRecord
+	families  map[model.RevisionID]map[string]macports.Snapshot
+	asked     []model.RevisionID
+	evaluated []string
 }
 
 func (h *recordHooks) BeforeEnvironment(context.Context, model.Run, model.Plan, model.Environment, model.Source) []string {
@@ -35,6 +38,13 @@ func (h *recordHooks) Changes(_ context.Context, revision model.Revision) (map[s
 		return found, nil
 	}
 	return nil, errors.New("no records")
+}
+func (h *recordHooks) Family(_ context.Context, revision model.Revision, directory string) (macports.Snapshot, error) {
+	h.evaluated = append(h.evaluated, string(revision.ID)+" "+directory)
+	if found, ok := h.families[revision.ID][directory]; ok {
+		return found, nil
+	}
+	return macports.Snapshot{}, errors.New("the revision's tree isn't held")
 }
 
 // omnidiffDirectory commits omnidiff's directory with a Portfile of
@@ -106,6 +116,100 @@ func TestTheDriverConfirmsAnInertChangeByBothRevisionsRecords(t *testing.T) {
 
 	d.c.Hooks = nil
 	require.Nil(t, d.inert(t.Context(), current), "nothing gives records")
+}
+
+// portDirectory commits a port directory with the Portfile given and a
+// patch, and reads its tree.
+func portDirectory(t *testing.T, root, directory, portfile string) model.ObjectID {
+	t.Helper()
+	testsupport.WriteFiles(t, root, map[string]string{directory + "/Portfile": portfile, directory + "/files/a.patch": "a\n"})
+	testsupport.Git(t, root, "add", "-A")
+	testsupport.Git(t, root, "commit", "-q", "--allow-empty", "-m", "edit")
+	return model.ObjectID(strings.TrimSpace(testsupport.Git(t, root, "rev-parse", "HEAD:"+directory)))
+}
+
+// addedFamily is omnidiff's directory evaluated at root, below it at
+// directory, with the maintainers, categories, and dependencies given, and
+// the checksum of every option's value, which the maintainers and
+// categories are among.
+func addedFamily(root, directory, maintainers, categories, dependency, options string) macports.Snapshot {
+	info := macports.PortInfo{Name: "omnidiff", Version: "1.2.0", Options: map[string]string{
+		macports.MaintainersOption: maintainers, "categories": categories, "license": "MIT",
+		"filespath": root + "/" + directory + "/files", "dockhand.code": "options " + options + " procedures 1",
+	}}
+	if dependency != "" {
+		info.Dependencies = []macports.Dependency{{Phase: "lib", Spec: dependency}}
+	}
+	return macports.Snapshot{Ports: map[string]macports.PortInfo{"omnidiff": info}, Root: root}
+}
+
+// For a port both revisions add, whose change records can't confirm the
+// lines, the directory's evaluations at the build's revision and at this
+// one do (architecture's ruling of 2026-11-02): omnidiff's openmaintainer
+// line, and its move from devel to textproc with its categories
+// reordered, each carry over, the build's evaluated at the directory it
+// read; an evaluation that moves a dependency, with lines that set
+// nothing but the maintainers, and a build's revision that can't be
+// evaluated, carry nothing over.
+func TestTheDriverConfirmsAnAddedPortByBothRevisionsEvaluations(t *testing.T) {
+	t.Parallel()
+	c := service(t)
+	root := t.TempDir()
+	testsupport.Git(t, root, "init", "-q")
+	checkout, err := git.Open(t.Context(), root, git.Program{Env: os.Environ()})
+	require.NoError(t, err)
+	c.Checkout = checkout
+	origin := c.queued(t, "omnidiff", model.Environment{Provider: "local", Prefix: "/opt/local"})
+	portfile := func(maintainers, categories string) string {
+		return "PortSystem 1.0\nname omnidiff\nversion 1.2.0\ncategories " + categories + "\nmaintainers " + maintainers + "\nlicense MIT\n"
+	}
+	maintainer := "{@herbygillot gmail.com:herby.gillot}"
+	then := portDirectory(t, root, "devel/omnidiff", portfile(maintainer, "devel textproc"))
+	edited := portDirectory(t, root, "devel/omnidiff", portfile(maintainer+" openmaintainer", "devel textproc"))
+	moved := portDirectory(t, root, "textproc/omnidiff", portfile(maintainer, "textproc devel"))
+
+	var built model.Revision
+	require.NoError(t, c.Store.View(t.Context(), c.Repository, func(r store.Reader) error {
+		built, err = r.Revision(origin.Revision)
+		return err
+	}))
+	current := model.Revision{ID: "rev_now"}
+	added := func(directories ...string) map[string]model.ChangeRecord {
+		records := map[string]model.ChangeRecord{}
+		for _, directory := range directories {
+			records[directory] = model.ChangeRecord{Directory: directory, Policy: 9, Ports: []model.SubportChange{{Port: "omnidiff", Kind: model.SubportAdded}}}
+		}
+		return records
+	}
+	hooks := &recordHooks{
+		records: map[model.RevisionID]map[string]model.ChangeRecord{built.ID: added("devel/omnidiff"), current.ID: added("devel/omnidiff", "textproc/omnidiff")},
+		families: map[model.RevisionID]map[string]macports.Snapshot{
+			built.ID: {"devel/omnidiff": addedFamily("/w/one", "devel/omnidiff", maintainer, "devel textproc", "", "1")},
+			current.ID: {
+				"devel/omnidiff":    addedFamily("/w/two", "devel/omnidiff", maintainer+" openmaintainer", "devel textproc", "", "2"),
+				"textproc/omnidiff": addedFamily("/w/two", "textproc/omnidiff", maintainer, "textproc devel", "", "3"),
+			},
+		},
+	}
+	c.Hooks = hooks
+	d := &driver{c: c}
+
+	options, ok := d.inert(t.Context(), current)(origin.ID, "devel/omnidiff", then, "devel/omnidiff", edited)
+	require.True(t, ok, "the openmaintainer line")
+	require.Equal(t, []string{"maintainers"}, options)
+	require.Equal(t, []string{string(built.ID) + " devel/omnidiff", "rev_now devel/omnidiff"}, hooks.evaluated)
+
+	options, ok = d.inert(t.Context(), current)(origin.ID, "devel/omnidiff", then, "textproc/omnidiff", moved)
+	require.True(t, ok, "the move to textproc, its categories reordered")
+	require.Equal(t, []string{"categories"}, options)
+
+	hooks.families[current.ID]["devel/omnidiff"] = addedFamily("/w/two", "devel/omnidiff", maintainer+" openmaintainer", "devel textproc", "zlib", "2")
+	_, ok = d.inert(t.Context(), current)(origin.ID, "devel/omnidiff", then, "devel/omnidiff", edited)
+	require.False(t, ok, "the evaluation moves a dependency")
+
+	delete(hooks.families, built.ID)
+	_, ok = d.inert(t.Context(), current)(origin.ID, "devel/omnidiff", then, "textproc/omnidiff", moved)
+	require.False(t, ok, "the build's revision can't be evaluated")
 }
 
 // linting is a port reader whose lint says what it's given.
