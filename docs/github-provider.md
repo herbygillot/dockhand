@@ -15,7 +15,8 @@ If more than one remote pushes to a fork you own, name one in `~/.dockhand/confi
 ```toml
 [providers.github]
 remote = "fork"
-capacity = 2      # how many checks serve runs on it at once; 2 when unset
+capacity = 2         # how many checks run on it at once, serve's, a batch's, and yours together; 2 when unset
+build_timeout = "4h" # how long a run may build before it's cancelled; 6 hours, GitHub's own cap on a job, when unset
 
 [build]
 default = "fork"  # makes it check's default
@@ -26,7 +27,7 @@ profiles.fork = { provider = "github" }
 
 1. It pushes the commit to `dockhand-check/<commit>` on your fork. `check` says so before it starts. The push only happens if the branch isn't already there, and it is conditional on the branch's current head.
 2. The workflow runs on that push, as it does for every branch but master. Dockhand waits up to 10 minutes for GitHub to start the run. If none starts, it says so and names your fork's Actions page.
-3. It waits for the run to finish, then saves each runner's log beside the check's other logs (`dockhand logs check-N`).
+3. It waits for the run to finish, cancelling one that builds past `build_timeout`, whose targets are then timed out, then saves each runner's log beside the check's other logs (`dockhand logs check-N`).
 4. It reads each log's markers for each port: the subport listing, `port lint` errors, failed dependencies and installs, and the install and test groups.
    - Each release's job is that release's result: the job's labels name its release (below).
    - If GitHub cancels a job before any runner takes it, that release's result isn't recorded, and the check doesn't spend an attempt on it: submit names the release, quoting GitHub's annotation for the job, as "The job was not acquired by Runner of type hosted even after multiple attempts", and says to check that release with Tart, `local`, or a command provider, or to try again later. A check with Tart on that release then becomes what submit needs, and the other releases' results still count. A run where no job ran at all fails as infrastructure and is retried, once for every release still without a result.

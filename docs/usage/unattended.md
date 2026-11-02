@@ -115,6 +115,12 @@ drive it here. A foreground check's interrupt stops work it is running locally
 and preserves completed results; interrupting a follower leaves another worker's
 check running.
 
+A queued check takes a slot on each provider it builds on, within one capacity
+that serve's checks, a batch's, and a foreground check's share; one that waits
+says once, in its journal, which checks hold the slots. `dockhand status -v`
+lists the checks queued and running, each started one with how long it waited,
+as `check-42 queued 2026-11-01 08:25:16, waited 3m 20s for its slot`.
+
 For a worker that accepts new checks, first try it in a terminal:
 
 ```sh
@@ -123,9 +129,19 @@ dockhand serve --ship-to list
 
 This runs queued checks, refreshes recorded pull-request state, and does the
 configured daily look. `list` prepares no automatic updates and publishes none.
+Serve says a problem, such as a submission it couldn't make, once, when a
+worker first finds it, and again only after it has cleared and come back.
 Leave it in a terminal of its own and inspect `dockhand status` from another,
-or keep `dockhand console` open there: a table of the branches kept current as
-serve works, with the journal's newest events under it.
+or keep `dockhand console` open there: a table of the branches the terminal's
+size, kept current as serve works, what needs you first, with the journal's
+newest events in a pane under it. `↑` and `↓` select a row, `PgUp`, `PgDn`,
+`Home`, and `End` page through them, `Enter` shows the selected branch in
+detail in the pane and, pressed again, the journal, and `l`, `c`, `t`, and `s`
+run logs, check, tidy, and submit on it, with that command's own questions,
+returning to the table after;
+`r` reads everything again and `q` quits. `console --plain`, or no terminal,
+prints status once and then each event as a line, for scrollback, SSH, and
+screen readers. It replaces `status --watch`, which is refused naming it.
 One serve leads the repository's queue; another stands by for takeover. Ctrl-C
 ends this foreground worker, leaving completed results for a later worker.
 `serve --drain` instead runs queued work and exits when the queue drains; it is
@@ -166,16 +182,21 @@ defaults to `hold`; allow rules and per-port choices are described in
 The daily stages are `list` (the default), `commit`, `check`, and `submit`. Only
 `submit` enables automatic pull requests. Serve submits branches it prepared,
 under its holds, and opens at most `serve.submit_limit` per day; the default is
-ten. It leaves passing branches you started for you to ship. That limit is a
-serve policy, not a cap on an explicit `ship` batch.
+ten. A branch past the limit is said once, `serve: jq-1.8.1 will wait until
+tomorrow; today's limit of 2 pull requests has been reached
+(serve.submit_limit)`, not at every refresh. It leaves passing branches you
+started for you to ship. That limit is a serve policy, not a cap on an explicit
+`ship` batch.
 
 The daily look runs at the configured local time, or after that time when serve
-next has the opportunity. Restarting serve, or changing `--ship-to`, does not
-repeat a daily look already recorded as complete. To act on a selection now, run
-an explicit `ship --mine --to check` or `ship --mine --to submit` after
-inspecting its plan. Existing branches are best resumed by name. A rate-limited
-daily look schedules one retry after the limit resets and reports it; repeated
-restarts are not the remedy for a depleted allowance.
+next has the opportunity, beside serve's loop, so a check that ends while it
+looks is finished and the next started without waiting for it. Restarting
+serve, or changing `--ship-to`, does not repeat a daily look already recorded
+as complete. To act on a selection now, run an explicit `ship --mine --to check`
+or `ship --mine --to submit` after inspecting its plan. Existing branches are
+best resumed by name. A rate-limited daily look schedules one retry after the
+limit resets and reports it; repeated restarts are not the remedy for a
+depleted allowance.
 
 ## Install, stop, and remove the service
 
@@ -187,8 +208,9 @@ dockhand serve --install
 
 It starts at login and restarts if it stops. Installation reports the agent and
 log paths; each line of serve's log starts with the time it was written, as
-`2026-11-01T08:25:16-05:00`, where on a terminal it doesn't. It retains the selected tree, database, Git executable, relevant
-environment paths, and flags passed beside `--install`. If you used
+`2026-11-01T08:25:16-05:00`, where on a terminal it doesn't. It retains the
+selected tree, database, Git executable, relevant environment paths, and flags
+passed beside `--install`. If you used
 `--ship-to list` to override a configuration that permits submission, include
 that override in the installation too:
 

@@ -138,8 +138,15 @@ Check four things in its output:
    missing or accepted. A local pass and MacPorts' later pull request CI are
    separate observations.
 3. **Review findings:** commit rules, what upstream changed, other pull
-   requests, and concerns a passing build cannot settle. `!` identifies
-   something requiring review on an unattended path; `·` is informational.
+   requests, and concerns a passing build cannot settle. `!` marks what wants
+   your look, a line that would hold an unattended submission says `held`,
+   and a line for your information carries no mark. For a Rust port, the
+   Upstream list names the native libraries the crates Cargo.lock pins link,
+   leaving out the -sys crates the check didn't compile, said once as `the
+   check compiled none of libgit2-sys, libsqlite3-sys, which Cargo.lock pins
+   for features or targets this build doesn't use`; before any check, the
+   crates a default build on macOS can't reach are set apart, `pinned for
+   features or targets the port's build on macOS doesn't take`.
 4. **Title and description:** what a reviewer will actually receive, including
    limitations. `-v` shows the full proposed description where the ordinary
    preview shortens it.
@@ -183,19 +190,28 @@ dockhand submit -b jq-update \
 
 The note stays with the branch for later submissions. A new `--note` replaces
 it; `--note ""` clears it. `--title` explicitly sets the title, including an
-existing pull request's title. Without it, an existing pull request keeps a
-title you edited on GitHub, and an adopted one keeps its author's; a title that
-is still the one Dockhand took from the commits it last pushed follows the
-commits, and the plan says so ("retitles #36310 to 'croc: update to
-11.6.2'"). The branch keeps its name.
+existing pull request's title. Without it, the title is the commits': one
+commit's subject; for one port, the subject of its commit that names the
+version the branch moves it to, else its first; for an update beside the
+rebuilds it causes, the update's; and for commits that each update one port
+to the same version, `ace, tao: update to 8.0.8`. Any other branch of several
+ports needs `--title`. An existing pull request keeps a title you edited on
+GitHub, and an adopted one keeps its author's; a title that is still the one
+Dockhand took from the commits it last pushed follows the commits, and the
+plan says so ("retitles #36310 to 'croc: update to 11.6.2'"). The branch
+keeps its name.
 
 `--tested-binaries` and `--tested-variants` state that you made the
 corresponding manual checks; do not infer them from an install alone. A passing
 `check --variants each` can answer the variants item from what it actually
 built. The generated Tested on section describes recorded environments and
-outcomes and gives the check/provider references a reviewer can follow. A
-reviewer cannot read logs stored on your Mac, so keep the explanation of any
-accepted failure useful in the description or note.
+outcomes and gives the check/provider references a reviewer can follow. Where
+a check reused an earlier check's builds over a change that builds nothing
+differently, a sentence under the table says what changed since: `check-767
+reused check-766's builds (commit 3f2a1c9): since then only omnidiff's
+maintainers changed, which builds nothing differently, and lint ran again on
+this Portfile`. A reviewer cannot read logs stored on your Mac, so keep the
+explanation of any accepted failure useful in the description or note.
 
 Descriptions edited on GitHub are preserved where they are no longer dockhand's
 unchanged text. Subsequent submissions refresh the sections dockhand still owns.
@@ -217,8 +233,10 @@ These choices answer different questions:
   request is a draft and shows its evidence. One already open and ready for
   review is returned to draft before anything is pushed to it; where GitHub
   refuses that, nothing is pushed, and `gh pr ready <number> --undo` does it.
-- `submit --no-check`: Publish without a check. The description explicitly says
-  no local build ran.
+- `submit --no-check`: Publish without a check. The description says it was
+  submitted with `dockhand submit --no-check` and includes no check result,
+  leaving the build to MacPorts CI. It cannot be combined with `--draft`,
+  `--accept`, or `--standing`.
 - `submit --accept <port>`: Accept an eligible recorded failure, or a new port's
   lint warnings, for this commit.
 - `submit --accept <port> --standing`: Accept a specifically identified
@@ -316,9 +334,9 @@ check or lookup, and it takes the newer of the two by their commits' dates;
 status never builds or fetches an index for this. Where the record's is the
 newer, or no index is cached, the port's line says so, as in `maintainers as
 of master, 2026-10-28`. A new port's maintainers come from its change record
-alone, `maintainers as the branch adds it`. Where
-neither has them, status says they're not read yet, and for your own branch,
-that `dockhand check --plan` reads them; an adopted pull request's Portfiles
+alone, `maintainers as the branch adds it`. Where neither has them, status
+says they're not read yet, and for your own branch, that
+`dockhand check --plan` reads them; an adopted pull request's Portfiles
 aren't evaluated for this. `status --json` gives the same facts under
 `pull_request.merge`, and the detail's lines under `detail.merge`.
 

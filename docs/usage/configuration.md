@@ -203,7 +203,8 @@ major-version updates on those paths. `holds.allow` lists specific rule names
 whose concerns remain visible but no longer hold unattended work. It does not
 accept failed builds or waive every submission blocker. Archives that could not
 be compared remain a hold. An unrecognized rule is refused with the known rule
-names.
+names; the rule for a GitHub port's source is `source`, and its earlier name,
+`github-tarball`, is refused like any other.
 
 The `holds.ports."<port>"` table can set that port's `majors` and `allow`,
 overriding global choices where supplied. It also accepts:
@@ -282,6 +283,12 @@ clones it at no cost) and runs on a ports clone of its own; without it, the
 copy's next check says its kept archives are missing, once, with their count,
 and drops their records. A copy never reads its original's archives, whose
 records a prune of the copy's would delete.
+
+A newer dockhand migrates a database forward the first time it opens it, keeping
+a copy of it as it was beside it, and an older dockhand can't open it after. A
+development or rc build asks, on a terminal, before it migrates the default
+database a release last opened; a copy named with `DOCKHAND_DB` migrates without
+asking.
 
 Credentials use `GH_TOKEN`, then `GITHUB_TOKEN`, then Dockhand's stored login,
 then the GitHub CLI. Never put a token in the TOML file or a service command
