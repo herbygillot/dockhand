@@ -33,10 +33,13 @@ act() {
 	[ -z "$G21_RUN" ] || dh cancel "$G21_RUN" || :
 }
 
+# The next serve's line grades it: the killed serve can die at
+# ship.committed before it prints what it committed, as rc7's did, which
+# read as "prepared nothing" (the M1's rc7 full stage).
 assert() {
 	[ -f "$ROW_DIR/result" ] && return 0
 	[ -s "$ROW_DIR/killed.log" ] || return 0
-	if ! matches -E 'committed|prepared|update' "$ROW_DIR/killed.log"; then
+	if [ -z "${G21_RUN:-}" ] && ! matches -E 'committed|prepared|update' "$ROW_DIR/killed.log"; then
 		row_result "not run" "serve's look prepared nothing for $ACCEPT_SERVE_MAINTAINER, so nothing was committed to stop at"
 		return
 	fi
