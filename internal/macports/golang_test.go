@@ -34,6 +34,14 @@ func TestAGoMinimumCoversItsSeries(t *testing.T) {
 	}
 }
 
+// A release's series is what the minimum's words name: 1.27 for 1.27.1.
+func TestAGoReleasesSeries(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "1.27", GoSeries("1.27.1"))
+	require.Equal(t, "1.27", GoSeries("1.27"))
+	require.Empty(t, GoSeries("latest"))
+}
+
 // A pin is go.bin naming one of the versioned toolchains, by their command
 // or the go in their GOROOT, and a build or library dependency on its
 // port: trivy's go-1.26 by both (the trivy run, #35083), vault's by its

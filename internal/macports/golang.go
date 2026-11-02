@@ -45,6 +45,12 @@ func GoToolchainCovers(declared, required string) bool {
 	return series != "" && version.Compare(series, version.Lang("go"+required)) >= 0
 }
 
+// GoSeries is a Go release's series, as the Go PortGroup compares it
+// (GoToolchainCovers): 1.27 for 1.27.1; empty for one Go can't read.
+func GoSeries(release string) string {
+	return strings.TrimPrefix(version.Lang("go"+release), "go")
+}
+
 // goToolchainPort is one of the versioned Go toolchains go_toolchain
 // builds, as it names their ports and commands, go-1.26, with its series.
 var goToolchainPort = regexp.MustCompile(`^go-(1\.[0-9]+)$`)

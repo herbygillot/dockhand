@@ -222,6 +222,10 @@ type SubmitPlan struct {
 	// Theirs is true for a pull request someone else opened: submit only
 	// pushes to it, and never rewrites its title or description.
 	Theirs bool
+	// Retitled is true where the open pull request's title is dockhand's,
+	// taken from the commits it last pushed, and Title is the one its
+	// commits give now (title).
+	Retitled bool
 	// Note is the person's note the description gives under Description:
 	// the one the request gives, or the branch's, trimmed and with Unix
 	// line endings. NoteLeftOut is true when the description won't give
@@ -339,9 +343,11 @@ func (e *Engine) unchangedSince(ctx context.Context, plan *SubmitPlan) error {
 	if now.Body != was.Body && (plan.described || plan.Request.Rewrite) {
 		return fmt.Errorf("#%d's %s changed on GitHub since the preview, and this submission would replace it; nothing was pushed: run dockhand submit again to see it", was.Ref.Number, prose.And(changed))
 	}
+	// A title edited on GitHub since is theirs, where the plan kept the
+	// one there or retitled dockhand's own.
 	title := plan.Title
-	if plan.Request.Title == "" && plan.Branch.Title == "" && plan.Title == was.Title {
-		title = now.Title
+	if plan.Request.Title == "" && plan.Branch.Title == "" && now.Title != was.Title && (plan.Title == was.Title || plan.Retitled) {
+		title, plan.Retitled = now.Title, false
 	}
 	plan.Existing = &fresh
 	plan.Answer(plan.Request.TestedBinaries, plan.Request.TestedVariants)
@@ -532,7 +538,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	if request.Rewrite && plan.Theirs {
 		return plan, fmt.Errorf("--rewrite-description: #%d was opened from %s, so its description stays theirs", plan.Branch.PullRequest.Number, plan.HeadRepository)
 	}
-	e.title(&plan)
+	e.title(ctx, worktree, &plan)
 	plan.UnfoundBuilds, plan.BuildsProblem = e.unfoundBuilds(ctx, plan.Commits)
 	if plan.Upstream, err = e.revisionComparisons(ctx, branch, model.ObjectID(plan.Tree)); err != nil {
 		return plan, err
@@ -907,28 +913,72 @@ func (e *Engine) masters(ctx context.Context) ([]string, error) {
 	return masters, nil
 }
 
-// title keeps a title given at any step; otherwise a single commit's
-// subject, the only port's (portTitle), an update's beside its rebuilds,
-// or updates' to one version joined. Dockhand writes no words of its own,
-// and an existing pull request keeps its own.
-func (e *Engine) title(plan *SubmitPlan) {
+// title keeps a title given at any step; otherwise the commits' title
+// (commitsTitle). Dockhand writes no words of its own, and an existing
+// pull request keeps its own, unless its title is still the one dockhand
+// took from the commits it last pushed and no title was given at a step:
+// that one follows the commits, Retitled. croc-11.6.1's #36310 stayed
+// "croc: update to 11.6.1" under "croc: update to 11.6.2" (field testing's
+// croc update, 2026-11-01).
+func (e *Engine) title(ctx context.Context, worktree *git.Repository, plan *SubmitPlan) {
+	derived := commitsTitle(plan.Commits, plan.Ports, plan.moved)
 	switch {
 	case plan.Request.Title != "":
 		plan.Title = plan.Request.Title
 	case plan.Existing != nil:
 		plan.Title = plan.Existing.PullRequest.Title
+		if plan.Branch.Title == "" && derived != "" && derived != plan.Title && e.dockhandTitled(ctx, worktree, plan) {
+			plan.Title, plan.Retitled = derived, true
+		}
 	case plan.Branch.Title != "":
 		plan.Title = plan.Branch.Title
-	case len(plan.Commits) == 1:
-		plan.Title = plan.Commits[0].Subject()
-	case len(plan.Ports) == 1:
-		plan.Title = portTitle(plan.Ports[0], plan.moved[plan.Ports[0]], plan.Commits)
 	default:
-		plan.Title = cmp.Or(updateWithRebuilds(plan.Commits), updatesToOneVersion(plan.Commits))
+		plan.Title = derived
 	}
 	if plan.Title == "" {
 		plan.block(branchstate.Block{Kind: branchstate.BlockNoTitle})
 	}
+}
+
+// commitsTitle is the title commits give a pull request: a single
+// commit's subject, the only port's (portTitle), an update's beside its
+// rebuilds, or updates' to one version joined; empty where they give none.
+func commitsTitle(commits []git.HistoryCommit, ports []string, moved map[string]string) string {
+	switch {
+	case len(commits) == 1:
+		return commits[0].Subject()
+	case len(ports) == 1:
+		return portTitle(ports[0], moved[ports[0]], commits)
+	default:
+		return cmp.Or(updateWithRebuilds(commits), updatesToOneVersion(commits))
+	}
+}
+
+// dockhandTitled reports whether the open pull request's title on GitHub
+// is still dockhand's own: the one the commits it last pushed
+// (model.PullRequest.Pushed) give, read against the branch's base, with
+// the versions that commit's change records move ports to. Nothing
+// records the title dockhand wrote, and that comparison needs no schema
+// change. A person's own title, edited on GitHub, differs from it; an
+// adopted pull request's or someone else's is theirs; and where the
+// pushed commit can't be read, as after a gc, the title stays.
+func (e *Engine) dockhandTitled(ctx context.Context, worktree *git.Repository, plan *SubmitPlan) bool {
+	pr := plan.Branch.PullRequest
+	if plan.Theirs || pr == nil || pr.Adopted || pr.Pushed == "" || pr.Number != plan.Existing.PullRequest.Ref.Number {
+		return false
+	}
+	pushed := string(pr.Pushed)
+	commits, err := worktree.History(ctx, string(plan.Branch.Base), pushed)
+	if err != nil || len(commits) == 0 {
+		return false
+	}
+	var moved map[string]string
+	if trees, err := worktree.CommitTrees(ctx, []string{pushed}); err == nil {
+		if records, err := e.revisionChanges(ctx, plan.Branch.ID, plan.Branch.Base, model.ObjectID(trees[pushed]), false); err == nil {
+			moved = movedVersions(records)
+		}
+	}
+	return commitsTitle(commits, plan.Ports, moved) == plan.Existing.PullRequest.Title
 }
 
 // portTitle titles a one-port branch of several commits: the port's

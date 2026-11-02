@@ -183,8 +183,11 @@ dockhand submit -b jq-update \
 
 The note stays with the branch for later submissions. A new `--note` replaces
 it; `--note ""` clears it. `--title` explicitly sets the title, including an
-existing pull request's title. Without it, an existing pull request is not
-retitled just because a commit subject changed.
+existing pull request's title. Without it, an existing pull request keeps a
+title you edited on GitHub, and an adopted one keeps its author's; a title that
+is still the one Dockhand took from the commits it last pushed follows the
+commits, and the plan says so ("retitles #36310 to 'croc: update to
+11.6.2'"). The branch keeps its name.
 
 `--tested-binaries` and `--tested-variants` state that you made the
 corresponding manual checks; do not infer them from an install alone. A passing

@@ -353,6 +353,17 @@ func TestAPullRequestOfSomeoneElsesStaysTheirs(t *testing.T) {
 	require.Equal(t, "updates #34905; refreshes its Type(s); the rest of the description is yours, and Dockhand will preserve it", view.PullRequestWords(plan), "types a person names, on a description they edited")
 }
 
+// A title dockhand took from what it last pushed follows the commits, and
+// the preview says so (field testing's croc update, 2026-11-01).
+func TestThePreviewSaysARetitle(t *testing.T) {
+	t.Parallel()
+	plan := engine.SubmitPlan{Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 36310}, Title: "croc: update to 11.6.1"}},
+		Title: "croc: update to 11.6.2", Retitled: true}
+	require.Equal(t, "updates #36310; retitles #36310 to 'croc: update to 11.6.2'; the pull request description is current", view.PullRequestWords(plan))
+	plan.Retitled, plan.Title = false, "croc: update to 11.6.1"
+	require.Equal(t, "updates #36310; the pull request description is current", view.PullRequestWords(plan))
+}
+
 // A commit's body written after the pull request opened reaches its
 // Description while that is still dockhand's, and the preview says so
 // (the hugo exercise's re-submitting sshuttle, finding 3).

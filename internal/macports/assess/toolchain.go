@@ -88,9 +88,18 @@ func (a *assessment) toolchain() (model.UpstreamChange, bool) {
 	}
 	switch outcome {
 	case ToolchainCovered:
-		found.Message = fmt.Sprintf("upstream: go.mod requires Go %s, which go.toolchain_min %s already gates on", t.Required, final)
+		// The series is what's compared, which the words say: croc's
+		// 1.27.0 left under go.mod's 1.27.1 read as a contradiction beside
+		// nebula's raised to 1.27.3 (field testing's croc update,
+		// 2026-11-01).
+		found.Message = fmt.Sprintf("upstream: go.mod requires Go %s, of the %s series, which go.toolchain_min %s already gates on; the Go PortGroup compares series", t.Required, macports.GoSeries(t.Required), final)
 	case ToolchainRaised:
-		found.Message = fmt.Sprintf("upstream: go.mod requires Go %s, so go.toolchain_min is raised from %s", t.Required, t.Declared)
+		found.Message = fmt.Sprintf("upstream: go.mod requires Go %s, a newer series than go.toolchain_min %s's, so it is raised to %s", t.Required, t.Declared, final)
+		// A minimum raised past a series that already gated on it, by
+		// the change rather than the edit, raised no series it needed.
+		if macports.GoToolchainCovers(t.Declared, t.Required) {
+			found.Message = fmt.Sprintf("upstream: go.mod requires Go %s, of the %s series, and go.toolchain_min is raised from %s to %s", t.Required, macports.GoSeries(t.Required), t.Declared, final)
+		}
 	case ToolchainUndeclared:
 		found.Message = fmt.Sprintf("upstream: go.mod requires Go %s, and the Portfile declares no go.toolchain_min; declaring one gates the port on older Go, the maintainer's call", t.Required)
 	case ToolchainByHand:
