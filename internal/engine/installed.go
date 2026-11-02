@@ -52,6 +52,16 @@ func (e *Engine) InstallChanges(ctx context.Context, run model.Run, fetch bool) 
 	if err != nil {
 		return nil, err
 	}
+	return e.installFindings(ctx, run, checked, fetch)
+}
+
+// installFindings is InstallChanges of the run's own evidence as given
+// (RunEvidence), which a caller that read it already passes rather than
+// have it read again: status reads it once for links, lint, and these
+// (Codex's review of 03b380f1, F4). The run's own record it must be, not
+// a tree's combined evidence: only its own builds are compared.
+func (e *Engine) installFindings(ctx context.Context, run model.Run, checked Evidence, fetch bool) ([]InstallFinding, error) {
+	var err error
 	var found []InstallFinding
 	type pending struct {
 		target      model.PlanTarget
