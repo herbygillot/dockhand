@@ -291,7 +291,7 @@ func TestToolsDistinguishMissingFailureAndCancellation(t *testing.T) {
 	t.Parallel()
 	tools := Tools{Go2Port: filepath.Join(t.TempDir(), "missing"), Cargo2Port: outputHelper(t, "")}
 	_, err := tools.Resolve(Go)
-	require.ErrorContains(t, err, "missing executable go2port")
+	require.ErrorContains(t, err, "go2port isn't on PATH or in /opt/local/bin")
 	_, err = tools.Resolve(Cargo)
 	require.NoError(t, err)
 	// By name, a tool is where Look finds it, as compose's lookup finds
@@ -304,7 +304,7 @@ func TestToolsDistinguishMissingFailureAndCancellation(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(bin, "go2port"), found)
 	_, err = Tools{Look: look}.Resolve(Cargo)
-	require.ErrorContains(t, err, "missing executable cargo2port; install it, as sudo port install cargo2port, so it's on PATH")
+	require.ErrorContains(t, err, "cargo2port isn't on PATH or in /opt/local/bin; install it, as sudo port install cargo2port")
 	_, err = Tools{}.Resolve(Go)
 	require.ErrorIs(t, err, ErrToolUnavailable)
 	file := helper(t, "echo 'generator failed' >&2\nexit 7")

@@ -9,6 +9,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/config"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -202,9 +203,33 @@ func (e *Engine) profileEnvironments(ctx context.Context, profile Profile) ([]mo
 func (e *Engine) notSetUp(_ context.Context, profile Profile) error {
 	switch profile.Provider {
 	case buildenv.Tart:
-		return fmt.Errorf(`build profile %s requires Tart, which is not installed. On Apple silicon, install it with sudo port install tart. Alternatively, use --on local to build in your MacPorts prefix on this Mac, --on github to run the MacPorts workflow in your fork, or --on command with a script configured under [providers.command]. To make one of them the default, define a profile under [build.profiles] in %s, for example {provider = "github"}`, profile.Name, e.configFile())
+		return fmt.Errorf(`build profile %s requires Tart, which isn't on PATH or in /opt/local/bin. On Apple silicon, install it with sudo port install tart. Alternatively, use --on local to build in your MacPorts prefix on this Mac, --on github to run the MacPorts workflow in your fork, or --on command with a script configured under [providers.command]. To make one of them the default, define a profile under [build.profiles] in %s, for example {provider = "github"}`, profile.Name, e.configFile())
 	case buildenv.Command:
 		return fmt.Errorf(`build profile %s builds with your own script, which isn't set up: [providers.command] run = "..." in %s`, profile.Name, e.configFile())
 	}
 	return fmt.Errorf("build profile %s: no provider %q is set up", profile.Name, profile.Provider)
+}
+
+// unattendedMissing says the provider serve's checks are to build with
+// where it isn't composed: "build.default's profile host needs Tart, which
+// isn't on PATH or in /opt/local/bin, so serve prepares commits and checks
+// nothing", where serve said it built on github alone (rc7's F5); empty
+// where it's there, or the profile isn't one.
+func (e *Engine) unattendedMissing() string {
+	key, name := "build.default", e.unattendedProfile()
+	if e.Builds.Unattended != "" {
+		key = "build.unattended"
+	}
+	profile, err := e.Profile(name)
+	if err != nil {
+		return ""
+	}
+	if _, ok := e.Providers[profile.Provider]; ok {
+		return ""
+	}
+	needs := fmt.Sprintf("its provider, %s, which isn't set up", profile.Provider)
+	if profile.Provider == buildenv.Tart {
+		needs = "Tart, which " + strings.TrimPrefix(macports.ProgramMissing("tart"), "tart ")
+	}
+	return fmt.Sprintf("%s's profile %s needs %s, so serve prepares commits and checks nothing", key, profile.Name, needs)
 }

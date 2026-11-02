@@ -35,7 +35,7 @@ func TestEnvironmentsAreTheProvidersOnNames(t *testing.T) {
 		require.ErrorContains(t, err, refusal, on)
 	}
 	_, err = (&Engine{}).Environments(t.Context(), nil)
-	require.ErrorContains(t, err, "build profile host requires Tart, which is not installed")
+	require.ErrorContains(t, err, "build profile host requires Tart, which isn't on PATH or in /opt/local/bin")
 	_, err = e.Environments(t.Context(), []string{"ci"})
 	require.EqualError(t, err, "--on ci is gone: --build macports-ci builds on the releases MacPorts' CI does")
 	// Tart's own refusal is said, not the general one that suggests the
@@ -167,4 +167,15 @@ func TestOnTakesAProviderAfterAComma(t *testing.T) {
 	require.Equal(t, []model.Environment{together[0], {Provider: "command"}}, mixed)
 	_, err = e.Environments(t.Context(), []string{"tart:sonoma,foo"})
 	require.EqualError(t, err, `--on tart:sonoma,foo: "foo" is neither a provider nor a release; `+onForms)
+}
+
+// serve's leading line names the provider build.default's profile needs
+// where it isn't composed, where it said it built on github alone (rc7's
+// F5), and nothing where it's there.
+func TestServeSaysTheProviderItsProfileLacks(t *testing.T) {
+	t.Parallel()
+	e := &Engine{Providers: map[string]buildenv.Provider{"github": &scriptedProvider{}}}
+	require.Equal(t, "build.default's profile host needs Tart, which isn't on PATH or in /opt/local/bin, so serve prepares commits and checks nothing", e.unattendedMissing())
+	e.Providers["command"] = &scriptedProvider{}
+	require.Empty(t, e.unattendedMissing(), "build.default is command, which is there")
 }

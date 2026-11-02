@@ -45,3 +45,15 @@ func TestThePreviewSaysWhatServeWouldHold(t *testing.T) {
 	WriteSubmitPlan(&out, engine.SubmitPlan{Branch: model.Branch{Name: "dockhand/jq-1.8.1"}}, false)
 	require.NotContains(t, out.String(), "Serve")
 }
+
+// What a submission's evidence couldn't settle is said under its Checks
+// line, as status says it, and in its JSON (rc7's F5).
+func TestThePreviewSaysWhatTheEvidenceCouldntSettle(t *testing.T) {
+	t.Parallel()
+	problem := "build profile host requires Tart, which isn't on PATH or in /opt/local/bin; required is what the checks planned"
+	plan := engine.SubmitPlan{Branch: model.Branch{Name: "dockhand/jq-1.8.1"}, Evidence: &engine.Evidence{Problem: problem}}
+	var out bytes.Buffer
+	WriteSubmitPlan(&out, plan, false)
+	require.Contains(t, out.String(), "           ! "+problem+"\n")
+	require.Equal(t, problem, checksProblem(plan))
+}

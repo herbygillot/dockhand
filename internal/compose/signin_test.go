@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -97,10 +98,18 @@ func TestTheEnginesProgramsAreFoundOnTheCommandLinesPath(t *testing.T) {
 	require.Equal(t, filepath.Join(bin, "diff"), programs.Patches.Diff)
 	require.Equal(t, filepath.Join(bin, "patch"), programs.Patches.Patch)
 	require.Equal(t, filepath.Join(bin, "go2port"), programs.Vendoring.Go2Port)
-	require.Empty(t, programs.Vendoring.Cargo2Port)
+	// One not on the PATH is MacPorts' own, where its prefix has it, as
+	// port-tclsh is (rc7's F5), and none where it hasn't.
+	fallback := filepath.Join(macports.DefaultPrefix, "bin", "cargo2port")
+	if _, err := os.Stat(fallback); err != nil {
+		fallback = ""
+	}
+	require.Equal(t, fallback, programs.Vendoring.Cargo2Port)
 	require.Equal(t, filepath.Join(bin, "portindex"), programs.Portindex)
-	_, err = programs.Vendoring.Resolve(depblock.Cargo)
-	require.ErrorContains(t, err, "missing executable cargo2port; install it, as sudo port install cargo2port")
+	if fallback == "" {
+		_, err = programs.Vendoring.Resolve(depblock.Cargo)
+		require.ErrorContains(t, err, "cargo2port isn't on PATH or in /opt/local/bin; install it, as sudo port install cargo2port")
+	}
 
 	var looked []string
 	look := func(name string) (string, error) {
@@ -111,5 +120,5 @@ func TestTheEnginesProgramsAreFoundOnTheCommandLinesPath(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, options.Programs.Patches.Patch)
 	require.Empty(t, options.Tclsh)
-	require.Subset(t, looked, []string{"port-tclsh", "portindex", "/opt/local/bin/portindex", "diff", "patch", "go2port", "cargo2port"})
+	require.Subset(t, looked, []string{"port-tclsh", "portindex", "/opt/local/bin/portindex", "diff", "patch", "go2port", "/opt/local/bin/go2port", "cargo2port", "/opt/local/bin/cargo2port"})
 }

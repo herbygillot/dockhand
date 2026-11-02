@@ -170,6 +170,7 @@ func (lockedKeychain) Get(context.Context, credential.Key) (string, error) {
 	return "", keychainLocked{}
 }
 func (lockedKeychain) Put(context.Context, credential.Key, string) error { return keychainLocked{} }
+func (lockedKeychain) Locked(context.Context) bool                       { return true }
 func (lockedKeychain) Delete(context.Context, credential.Key) error      { return keychainLocked{} }
 
 // A locked Keychain isn't no login: setup offers none, its github line and

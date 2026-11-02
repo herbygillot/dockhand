@@ -350,15 +350,17 @@ type submitJSON struct {
 	// as; LoginSource where its token comes from, as auth status named it;
 	// ForkOwner the account that owns where it pushes, another's under a
 	// sandbox or --remote.
-	Account     string        `json:"account"`
-	LoginSource string        `json:"login_source"`
-	ForkOwner   string        `json:"fork_owner"`
-	To          string        `json:"to"`
-	Push        string        `json:"push"`
-	Checks      string        `json:"checks"`
-	Findings    []findingJSON `json:"findings"`
-	Blocking    []string      `json:"blocking"`
-	LeftOut     []string      `json:"left_out"`
+	Account     string `json:"account"`
+	LoginSource string `json:"login_source"`
+	ForkOwner   string `json:"fork_owner"`
+	To          string `json:"to"`
+	Push        string `json:"push"`
+	Checks      string `json:"checks"`
+	// ChecksProblem is what the evidence couldn't settle, as status says.
+	ChecksProblem string        `json:"checks_problem,omitempty"`
+	Findings      []findingJSON `json:"findings"`
+	Blocking      []string      `json:"blocking"`
+	LeftOut       []string      `json:"left_out"`
 	// ChangedPatches are the patches changed under their own names.
 	ChangedPatches []string       `json:"changed_patches"`
 	Body           string         `json:"body"`
@@ -434,7 +436,7 @@ func SubmitView(plan engine.SubmitPlan) submitJSON {
 	owner, _ := plan.ForkOwner()
 	viewed := submitJSON{Branch: plan.Branch.ShortName(), Title: plan.Title, Commit: plan.Commit, Commits: len(plan.Commits), From: FromWords(plan), To: plan.Repository + ":" + engine.UpstreamBranch,
 		Account: plan.Login.Account, LoginSource: plan.Login.Source, ForkOwner: owner,
-		Push: PushWords(plan), Checks: CheckWords(plan), Findings: findingsView(plan.Findings), Blocking: NonNil(plan.Blocking), LeftOut: NonNil(plan.LeftOut), ChangedPatches: NonNil(plan.ChangedPatches), Body: plan.Body,
+		Push: PushWords(plan), Checks: CheckWords(plan), ChecksProblem: checksProblem(plan), Findings: findingsView(plan.Findings), Blocking: NonNil(plan.Blocking), LeftOut: NonNil(plan.LeftOut), ChangedPatches: NonNil(plan.ChangedPatches), Body: plan.Body,
 		Upstream: []portUpstreamJSON{}, ModifiedBuilds: NonNil(plan.ModifiedBuilds), UnfoundBuilds: []unfoundBuildJSON{}, BuildsProblem: plan.BuildsProblem}
 	for _, found := range plan.Upstream {
 		viewed.Upstream = append(viewed.Upstream, portUpstreamJSON{Port: found.Port, upstreamJSON: UpstreamView(found.Comparison)})
@@ -859,4 +861,12 @@ type plainHTTPJSON struct {
 	URL     string `json:"url"`
 	HTTPS   string `json:"https"`
 	Answers bool   `json:"https_answers"`
+}
+
+// checksProblem is what a submission's evidence couldn't settle.
+func checksProblem(plan engine.SubmitPlan) string {
+	if plan.Evidence == nil {
+		return ""
+	}
+	return plan.Evidence.Problem
 }

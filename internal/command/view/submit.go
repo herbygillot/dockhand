@@ -44,6 +44,12 @@ func WriteSubmitPlan(out io.Writer, plan engine.SubmitPlan, noteStill bool) {
 	fmt.Fprintf(out, "  Commits  %d, %s\n", len(plan.Commits), rules)
 	fmt.Fprintf(out, "  Push     %s\n", PushWords(plan))
 	fmt.Fprintf(out, "  Checks   %s\n", CheckWords(plan))
+	// What the evidence couldn't settle, as build.default's profile not
+	// resolving, is said as status says it (rc7's F5): only the planned
+	// environments are then required.
+	if plan.Evidence != nil && plan.Evidence.Problem != "" {
+		fmt.Fprintf(out, "           ! %s\n", plan.Evidence.Problem)
+	}
 	if len(plan.Upstream) > 0 || len(plan.Moved) > 0 {
 		lines := UpstreamLines(plan)
 		if len(lines) == 0 {

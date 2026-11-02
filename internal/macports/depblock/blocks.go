@@ -50,7 +50,7 @@ func (t Tools) Resolve(kind string) (string, error) {
 	}
 	resolved, err := look(path)
 	if err != nil {
-		return "", fmt.Errorf("%w %s: missing executable %s; install it, as sudo port install %s, so it's on PATH", ErrToolUnavailable, kind, name, name)
+		return "", fmt.Errorf("%w %s: %s; install it, as sudo port install %s", ErrToolUnavailable, kind, macports.ProgramMissing(name), name)
 	}
 	return filepath.Abs(resolved)
 }

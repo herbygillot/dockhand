@@ -32,6 +32,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	guestprogram "github.com/herbygillot/dockhand/internal/buildenv/guest"
 	"github.com/herbygillot/dockhand/internal/buildenv/staging"
+	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -676,6 +677,12 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		case <-started.Done():
 			err = fmt.Errorf("tart run exited before %s received an IP address: %w", vm, cmp.Or(started.Err(), err))
 		default:
+		}
+		// A VM Virtualization.framework refused for the locked Keychain
+		// is refused again until it's unlocked: one attempt, said with
+		// how, where three failed as an environment error (rc7's F5).
+		if tartvm.KeychainLocked(err.Error()) {
+			return buildenv.Infrastructure("%w: reaching %s: %s: %w", buildenv.ErrNeedsAttention, vm, credential.LockedKeychain, err)
 		}
 		return p.trouble(ctx, "reaching "+vm, err)
 	}

@@ -49,7 +49,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "check", "--baseline", "--keep")
 	require.ErrorContains(t, err, "none of the others can be")
 	_, _, err = cmdtest.Dockhand(t, "check", "--plan", "--build", "minmax")
-	require.ErrorContains(t, err, "build profile minmax requires Tart, which is not installed")
+	require.ErrorContains(t, err, "build profile minmax requires Tart, which isn't on PATH or in /opt/local/bin")
 	_, _, err = cmdtest.Dockhand(t, "check", "--plan", "--build", "nosuch")
 	require.ErrorContains(t, err, "--build nosuch: unknown build profile")
 	_, _, err = cmdtest.Dockhand(t, "check", "--plan", "--build", "host", "--on", "command")

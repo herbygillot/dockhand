@@ -19,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/host"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/config"
+	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macos"
@@ -34,7 +35,7 @@ func imagesOf(s *settings.Settings) host.TartImages {
 	}
 	options := s.ComposeOptions()
 	look := s.Dependencies().Lookup(options)
-	if _, err := look("tart"); err != nil {
+	if macports.FindProgram(look, "tart") == "" {
 		return nil
 	}
 	return options.TartProvider(look)
@@ -86,7 +87,7 @@ the new one passes.`,
 			options.Xcodes = file.Providers.Tart.Xcode
 			images := imagesOf(s)
 			if images == nil {
-				return fmt.Errorf("checks build in Tart VMs, and Tart isn't installed: %s", installTart)
+				return fmt.Errorf("checks build in Tart VMs, and %s: %s", macports.ProgramMissing("tart"), installTart)
 			}
 			result, err := images.Setup(cmd.Context(), options, streams.Out)
 			if missing := (*tart.MissingXcode)(nil); errors.As(err, &missing) {
@@ -236,6 +237,11 @@ func tartReadiness(ctx context.Context, s *settings.Settings) []string {
 		ready = append(ready, release.Product)
 	}
 	lines := []string{"✓ ready for macOS " + prose.And(ready)}
+	// Tart's VMs need the login Keychain, as the GitHub login does: locked,
+	// as over SSH, each start fails, which is said here first (rc7's F5).
+	if store, ok := s.Host.AuthStore.(credential.LockReporter); ok && store.Locked(ctx) {
+		lines = append(lines, "  ! "+credential.LockedKeychain+"; Tart's VMs need it to start")
+	}
 	type row struct{ name, image, macports, rebuild string }
 	var rows []row
 	var baseBehind []string

@@ -3,6 +3,7 @@ package tart
 import (
 	"archive/tar"
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -196,10 +197,12 @@ func (m *fakeMac) Reach(ctx context.Context, vm, image string) (guest, error) {
 type fakeRun struct {
 	done    chan struct{}
 	stopped bool
+	// output is how tart run ended, "it crashed" where it's empty.
+	output string
 }
 
 func (r *fakeRun) Done() <-chan struct{}                     { return r.done }
-func (r *fakeRun) Err() error                                { return errors.New("it crashed") }
+func (r *fakeRun) Err() error                                { return errors.New(cmp.Or(r.output, "it crashed")) }
 func (r *fakeRun) Stop(context.Context, time.Duration) error { r.stopped = true; return nil }
 
 // fakeGuest answers the provider's commands. Each read of results.json
@@ -691,6 +694,18 @@ func TestGuestTroubleIsInfrastructure(t *testing.T) {
 	require.Equal(t, refusal.Infrastructure, refusal.KindOf(err))
 	require.ErrorContains(t, err, "tart run exited before dockhand-check-run-7-tahoe-1 received an IP address: it crashed")
 	require.Less(t, time.Since(start), 30*time.Second)
+	require.NotErrorIs(t, err, buildenv.ErrNeedsAttention, "another start failure is tried again")
+
+	// One Virtualization.framework refused for the locked login Keychain
+	// needs the person, and is said with how, not tried three times
+	// (rc7's F5, check-925).
+	mac = newMac(guestprogram.Results{State: "running"})
+	mac.noAddress = true
+	mac.run.output = "Error Domain=VZErrorDomain Code=-9 \"The virtual machine encountered a security error.\" … Failed to get current host key … Failed to create new HostKey"
+	close(mac.run.done)
+	err = testProvider(mac).Execute(t.Context(), tartJob(t, 1), &fakeBuild{})
+	require.ErrorIs(t, err, buildenv.ErrNeedsAttention)
+	require.ErrorContains(t, err, "the login Keychain is locked, as it is over SSH with nobody at the screen; unlock it with security unlock-keychain in the same shell")
 
 	// A build the network failed upstream is tried again, its failure
 	// recorded: dolt's go build met proxy.golang.org's stream reset (field

@@ -26,9 +26,7 @@ var errLocked error = lockedError{}
 
 type lockedError struct{}
 
-func (lockedError) Error() string {
-	return "the login Keychain is locked, as it is over SSH with nobody at the screen; unlock it with security unlock-keychain in the same shell, since unlocking it in another SSH session doesn't reach this one"
-}
+func (lockedError) Error() string { return credential.LockedKeychain }
 
 func (lockedError) Is(target error) bool { return target == credential.ErrLocked }
 
@@ -42,6 +40,18 @@ func isLocked(err error) bool {
 // with.
 type Store struct {
 	Executable string
+}
+
+// Locked reports the login Keychain locked where security can't use it
+// without asking, as over SSH with nobody at the screen: security
+// show-keychain-info exits 36 there, as find-generic-password does.
+func (s Store) Locked(ctx context.Context) bool {
+	path, err := s.executable()
+	if err != nil {
+		return false
+	}
+	_, err = subprocess.Run(ctx, subprocess.Spec{Tool: "security", Path: path, Args: []string{"show-keychain-info"}, Limit: 1 << 12})
+	return isLocked(err)
 }
 
 func (s Store) Get(ctx context.Context, key credential.Key) (string, error) {
