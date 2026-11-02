@@ -1,6 +1,7 @@
 package portedit
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/model"
@@ -138,6 +139,22 @@ func TestARevbumpOfASubportSharingTheRevision(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(result.Files[0].After), "revision 3\n")
 	require.Equal(t, "fixture-b: rebuild for libfoo 2", result.Commits[0].Subject)
+}
+
+// A port whose revision is written only in a block, as rust's in an if,
+// beside a subport's own, as rust-src's, has that line bumped: an added
+// line at the end set every subport's revision, rust-src's 2 among them
+// (rc7's rust revbump, 2026-11-02).
+func TestARevbumpOfARevisionWrittenInABlock(t *testing.T) {
+	t.Parallel()
+	body := "version 1.2.3\ndistfiles\nif {${os.platform} eq \"darwin\"} {\n    revision 0\n}\nsubport fixture-src {\n    revision 2\n}\n"
+	s, r, _ := archiveFixture(t, body)
+	r.Action, r.Version, r.Release, r.Subject = model.EditRevbump, "", nil, "rebuild for libfoo 2"
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	after := string(result.Files[0].After)
+	require.True(t, strings.HasSuffix(after, strings.Replace(body, "revision 0", "revision 1", 1)+"\n"), "the if's line, and no line added: %s", after)
+	require.Equal(t, 2, strings.Count(after, "revision"), after)
 }
 
 // A command below the source directory, as qemu's configure.cmd

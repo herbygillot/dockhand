@@ -93,6 +93,34 @@ func lastCommand(src []byte, script *syntax.Script, name string) (syntax.Command
 	return found, ok
 }
 
+// RevisionInBlock says whether BumpRevision would add a revision line at
+// the top level where the Portfile writes one only in a block: none at
+// the top level, and one elsewhere, as rust's is set inside an if and
+// rust-src's in its subport block. A line added at the end would set
+// every subport's revision, so a bump probes RevisionCandidates first
+// (rc7's rust revbump, 2026-11-02). A subport with a block of its own
+// has its line added there, which reaches no other port.
+func RevisionInBlock(src []byte, subport string) bool {
+	script, errs := syntax.Parse(src)
+	if len(errs) != 0 {
+		return false
+	}
+	if subport != "" {
+		if _, ok := subportBody(src, script, subport); ok {
+			return false
+		}
+	}
+	if _, ok := lastCommand(src, script, "revision"); ok {
+		return false
+	}
+	for cmd := range script.Commands(src, func(syntax.Command) bool { return true }) {
+		if name, _ := cmd.Name(src); name == "revision" {
+			return true
+		}
+	}
+	return false
+}
+
 // RevisionCandidates are the literal words that could set a port's
 // revision of current, wherever the Portfile writes them: each `revision
 // N` and `set name N` of that value, in any body, for the probe to try
