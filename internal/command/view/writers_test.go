@@ -293,3 +293,25 @@ func TestAPlanSaysAMoveAndARemoval(t *testing.T) {
 	require.Contains(t, out.String(), "Changed     xgo (renamed from goplus)\n")
 	require.NotContains(t, out.String(), "github's workflow builds nothing")
 }
+
+// check --plan -v prints each target's evaluation in each environment,
+// a line for what it has, each value as MacPorts writes it, and --json
+// carries the same (field testing's curl +sectrust notes, note 8b).
+func TestThePlansEvaluationIsPrinted(t *testing.T) {
+	t.Parallel()
+	tahoe := model.Environment{Provider: buildenv.Tart, Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	plan := model.Plan{Evaluated: []model.Evaluated{{Target: "curl +gnutls +sectrust", Environment: tahoe, Variants: []string{"+brotli", "+gnutls", "+sectrust"},
+		DependsBuild: []string{"port:pkgconfig"}, DependsLib: []string{"port:gnutls", "path:lib/libssl.dylib:openssl"}, ConfigureArgs: "--with-gnutls {--with-ca-path=/opt/local/etc}"}}}
+	var out bytes.Buffer
+	WriteEvaluated(&out, plan)
+	require.Equal(t, "\ncurl +gnutls +sectrust on "+checks.DescribeEnvironment(tahoe)+"\n"+
+		"  variants       +brotli +gnutls +sectrust\n"+
+		"  depends_build  port:pkgconfig\n"+
+		"  depends_lib    port:gnutls path:lib/libssl.dylib:openssl\n"+
+		"  configure.args --with-gnutls {--with-ca-path=/opt/local/etc}\n", out.String())
+	viewed := PlanView(plan)
+	require.Len(t, viewed.Evaluated, 1)
+	require.Equal(t, []string{"port:gnutls", "path:lib/libssl.dylib:openssl"}, viewed.Evaluated[0].DependsLib)
+	require.Equal(t, []string{}, viewed.Evaluated[0].DependsRun, "empty, never null")
+	require.Empty(t, PlanView(model.Plan{}).Evaluated, "a recorded plan has none")
+}

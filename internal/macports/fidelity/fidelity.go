@@ -104,6 +104,13 @@ func Sharing(before, sentinel macports.Snapshot, moved func(old, next macports.P
 func ComparablePort(port macports.PortInfo, root string) macports.PortInfo {
 	port.Options = maps.Clone(port.Options)
 	delete(port.Options, "revision")
+	// What's read for check --plan -v alone names ${workpath}, named for
+	// where the Portfile was evaluated, which no root replaced below
+	// reaches, as belowSource reaches only the source directory.
+	for _, option := range macports.EvaluationOnlyOptions {
+		delete(port.Options, option)
+		delete(port.OptionErrors, option)
+	}
 	// The port's code is a change record's to compare (Changes), and part
 	// of it moves without an edit.
 	delete(port.Options, codeOption)

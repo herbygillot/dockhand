@@ -77,8 +77,14 @@ check.baseline = true, it runs that baseline automatically.`,
 			if tests != "" && !model.TestPolicy(tests).Valid() {
 				return fmt.Errorf("--tests %q is not declared, required, or skip", tests)
 			}
-			if err := baselineFlags(cmd, baseline, of); err != nil {
-				return err
+			if err := baselineFlags(cmd, baseline, of, nil); err != nil {
+				if !cmd.Flags().Changed("variants") {
+					return err
+				}
+				// The variants the baseline takes are the check's, named
+				// where it can be found (field testing's curl +sectrust
+				// notes, note 2).
+				return baselineFlags(cmd, baseline, of, func() (string, string) { return comparedWith(ctx, s, streams, where, of) })
 			}
 			e, err := s.Open(ctx)
 			if err != nil {
@@ -104,12 +110,12 @@ check.baseline = true, it runs that baseline automatically.`,
 			if err != nil {
 				return err
 			}
-			chosen, each, err := variantsFlag(variants)
+			named, chosen, each, err := variantsFlag(variants)
 			if err != nil {
 				return err
 			}
 			proposal, err := e.ProposeCheck(ctx, engine.CheckRequest{Capture: engine.CaptureRequest{Branch: branch, Mode: mode, Named: where.Explicit(), Include: include, Plan: plan}, Where: place,
-				Tests: model.TestPolicy(tests), Only: only, Also: also, Fresh: fresh, Keep: keep, Variants: chosen, EachVariant: each})
+				Tests: model.TestPolicy(tests), Only: only, Also: also, Fresh: fresh, Keep: keep, Variants: chosen, VariantsPort: named, EachVariant: each})
 			if err != nil {
 				return err
 			}
@@ -148,6 +154,12 @@ check.baseline = true, it runs that baseline automatically.`,
 				}
 			}
 			view.WritePlan(out, proposed, e.PlanNotes(ctx, proposed), e.PlanSiblings(ctx, proposed), e.Remedy, view.ListShown(streams))
+			// The plan's evaluation, with -v: check --plan -v is the dry
+			// evaluation under a variant set (field testing's curl
+			// +sectrust notes, note 8b).
+			if plan && streams.Verbose() > 0 {
+				view.WriteEvaluated(out, proposed)
+			}
 			// What it will install, by the port index: --plan waits for
 			// packages.macports.org's listings; a check says what's kept,
 			// and its run says the rest as it starts.
@@ -284,8 +296,10 @@ func captureMode(head, staged, workingTree bool) engine.CaptureMode {
 // baselineFlags refuses the flags --baseline doesn't take, where it
 // returned before reading them, and --of without it: a baseline is built
 // at master as the check it compares with was, in its environments, with
-// its variants and tests, from the files that check captured.
-func baselineFlags(cmd *cobra.Command, baseline bool, of string) error {
+// its variants and tests, from the files that check captured. compared,
+// where given, names that check and its variants, as "check-770" and
+// "+gnutls +sectrust"; empty where it can't.
+func baselineFlags(cmd *cobra.Command, baseline bool, of string, compared func() (name, variants string)) error {
 	if !baseline {
 		if of != "" {
 			return fmt.Errorf("--of names the check a baseline compares with; add --baseline")
@@ -298,10 +312,52 @@ func baselineFlags(cmd *cobra.Command, baseline bool, of string) error {
 			given = append(given, "--"+name)
 		}
 	}
-	if len(given) > 0 {
-		return fmt.Errorf("--baseline builds at master as the check it compares with built, in its environments, with its variants and tests, so it takes no %s", prose.And(given))
+	if len(given) == 0 {
+		return nil
 	}
-	return nil
+	check, variants := "the check it compares with", "its variants"
+	if compared != nil {
+		name, spec := compared()
+		if name != "" {
+			check = name
+		}
+		if spec != "" {
+			variants = "its variants (" + spec + ")"
+		}
+	}
+	return fmt.Errorf("--baseline builds at master as %s built, in its environments, with %s and tests, so it takes no %s", check, variants, prose.And(given))
+}
+
+// comparedWith is the check a baseline would compare with, --of's or the
+// branch's latest, and the variants its plan built with; empty where
+// either can't be found.
+func comparedWith(ctx context.Context, s *settings.Settings, streams term.Streams, where branchflags.BranchFlags, of string) (string, string) {
+	e, err := s.Open(ctx)
+	if err != nil {
+		return "", ""
+	}
+	defer e.Close()
+	var run model.Run
+	if of != "" {
+		if run, err = e.RunNamed(ctx, of); err != nil {
+			return "", ""
+		}
+	} else {
+		branch, err := where.Resolve(ctx, e, streams)
+		if err != nil {
+			return "", ""
+		}
+		latest, ok, err := e.LatestCheck(ctx, branch.ID)
+		if err != nil || !ok {
+			return "", ""
+		}
+		run = latest
+	}
+	plan, err := e.Plan(ctx, run.Plan)
+	if err != nil {
+		return run.Name(), ""
+	}
+	return run.Name(), plan.Variants
 }
 
 // previewBaseline shows the baseline check --baseline would run, and

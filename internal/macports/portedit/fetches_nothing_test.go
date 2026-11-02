@@ -157,6 +157,20 @@ func TestARevbumpOfARevisionWrittenInABlock(t *testing.T) {
 	require.Equal(t, 2, strings.Count(after, "revision"), after)
 }
 
+// configure.args and configure.env, read for check --plan -v alone, name
+// ${workpath}, which is named for where the Portfile was evaluated, so the
+// fidelity check leaves them out: a revbump of a port whose configure.args
+// name it is made, as any other (field testing's curl +sectrust notes,
+// note 8b, prioritization's addition).
+func TestARevbumpOfAPortWhoseConfigureArgsNameItsWorkpath(t *testing.T) {
+	t.Parallel()
+	s, r, _ := archiveFixture(t, "version 1.2.3\nrevision 1\ndistfiles\nconfigure.args --with-cache=${workpath}/cache\nconfigure.env CACHE=${workpath}/cache\n")
+	r.Action, r.Version, r.Release, r.Subject = model.EditRevbump, "", nil, "rebuild for libfoo 2"
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Contains(t, string(result.Files[0].After), "revision 2\n")
+}
+
 // A command below the source directory, as qemu's configure.cmd
 // ${worksrcpath}/configure, moves with the version, and isn't a change of
 // its own: update, update --outdated, and checksums each refused qemu

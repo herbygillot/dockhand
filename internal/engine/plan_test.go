@@ -524,6 +524,13 @@ func TestVariantsBuildOnePortTheirWay(t *testing.T) {
 	require.Equal(t, "+tests", plan.Variants)
 	arm, _ := plan.In(tahoeArm)
 	require.Empty(t, arm.Untested, "+tests declares its tests")
+	// The plan carries each target's evaluation in each environment, its
+	// variants as MacPorts resolves them, x11 a default (field testing's
+	// curl +sectrust notes, note 8b).
+	require.Len(t, plan.Evaluated, 2)
+	require.Equal(t, model.TargetID("libharbor +tests"), plan.Evaluated[0].Target)
+	require.Equal(t, tahoeArm, plan.Evaluated[0].Environment)
+	require.Equal(t, []string{"+tests", "+x11"}, plan.Evaluated[0].Variants)
 
 	plan, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: both, Only: []string{"libharbor"}, EachVariant: true})
 	require.NoError(t, err)
@@ -544,7 +551,18 @@ func TestVariantsBuildOnePortTheirWay(t *testing.T) {
 	_, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: both, Only: []string{"libharbor"}, Variants: map[string]bool{"gui": true}})
 	require.ErrorContains(t, err, "--variants: libharbor declares no gui")
 	_, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: both, Variants: map[string]bool{"tests": true}})
-	require.ErrorContains(t, err, "--variants builds one port, and the branch changes 5; name it with --only")
+	require.EqualError(t, err, "--variants builds one port; the plan has harbor-cli, harbor-cli-old, libharbor, harbor-viewer, and harbor-viewer-legacy, so name it, as --variants 'harbor-cli +tests'")
+
+	// --variants names its port, a changed one or an --also one, as
+	// 'libharbor +tests' or 'harbor-tools +tests'; one the plan hasn't is
+	// refused (field testing's curl +sectrust notes, note 1).
+	plan, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: both, Only: []string{"libharbor"}, Variants: map[string]bool{"tests": true}, VariantsPort: "libharbor"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"libharbor +tests:substantive:changed"}, names(plan.Targets))
+	_, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: both, Also: []string{"harbor-tools"}, Variants: map[string]bool{"tests": true}, VariantsPort: "harbor-tools"})
+	require.EqualError(t, err, "--variants: harbor-tools declares no tests", "the --also port is the one built, its own variants read")
+	_, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: both, Variants: map[string]bool{"tests": true}, VariantsPort: "libpsl"})
+	require.EqualError(t, err, "--variants names libpsl, which the branch doesn't change and --also doesn't name")
 	_, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{{Provider: "github"}}, Only: []string{"libharbor"}, EachVariant: true})
 	require.ErrorContains(t, err, "GitHub's workflow builds default variants only")
 	_, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: both, Only: []string{"libharbor"}, EachVariant: true, Variants: map[string]bool{"tests": true}})
@@ -676,4 +694,46 @@ func TestAMovedPortTidiesAndSubmitsAsAMove(t *testing.T) {
 		require.Equal(t, []string{"jq"}, submit.Ports)
 		require.NotContains(t, submit.Body, "New port", "a moved port is no new one")
 	}
+}
+
+// --variants builds an unchanged port --also names, master's, with its
+// variants: a check of curl +gnutls +sectrust needed a no-op edit to
+// curl's Portfile (field testing's curl +sectrust notes, note 1).
+func TestVariantsBuildAnAlsoPort(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	revision := harborBranch(t, e)
+	ports := harborVariants()
+	tools := port("harbor-tools")
+	tools.Options["variants"] = "sectrust"
+	tools.Options["vinfo"] = "sectrust {description {Secure Transport}}"
+	ports.directories["graphics/harbor-tools"] = []macports.PortInfo{tools}
+	usePorts(e, ports)
+
+	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}, Also: []string{"harbor-tools"}, Variants: map[string]bool{"sectrust": true}, VariantsPort: "harbor-tools"})
+	require.NoError(t, err)
+	require.Contains(t, names(plan.Targets), "harbor-tools +sectrust:unchanged:also", "master's port, with its variants")
+	require.NotContains(t, names(plan.Targets), "harbor-tools:unchanged:also", "in place of its default build")
+	require.Equal(t, "+sectrust", plan.Variants)
+}
+
+// A branch that changes nothing, with one --also port, takes --variants
+// for it unnamed: the plan's one port (field testing's curl +sectrust
+// notes, note 1).
+func TestVariantsTakeThePlansOnePort(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "curl-sectrust", Here: true})
+	require.NoError(t, err)
+	curl := port("curl")
+	curl.Options["variants"] = "sectrust"
+	curl.Options["vinfo"] = "sectrust {description {Secure Transport}}"
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"net/curl": {curl}}})
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
+	require.NoError(t, err)
+	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}, Also: []string{"curl"}, Variants: map[string]bool{"sectrust": true}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"curl +sectrust:unchanged:also"}, names(plan.Targets))
 }

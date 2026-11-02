@@ -19,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/planning"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -35,7 +36,10 @@ type CheckRequest struct {
 	Only, Also  []string
 	Fresh, Keep bool
 	Variants    map[string]bool
-	EachVariant bool
+	// VariantsPort is the port --variants named, as 'curl +sectrust'
+	// names curl; empty where it named none.
+	VariantsPort string
+	EachVariant  bool
 }
 
 // Proposal is a check proposed and not yet queued: the files captured, and
@@ -59,7 +63,7 @@ func (e *Engine) ProposeCheck(ctx context.Context, request CheckRequest) (Propos
 	}
 	where := request.Where
 	plan, err := e.PlanCheck(ctx, PlanRequest{Revision: capture.Revision, Environments: where.Environments, Span: where.Span, Profile: where.Profile, Asked: where.Asked,
-		Only: request.Only, Also: request.Also, Tests: cmp.Or(request.Tests, e.options.Tests), Fresh: request.Fresh, Keep: request.Keep, Variants: request.Variants, EachVariant: request.EachVariant})
+		Only: request.Only, Also: request.Also, Tests: cmp.Or(request.Tests, e.options.Tests), Fresh: request.Fresh, Keep: request.Keep, Variants: request.Variants, VariantsPort: request.VariantsPort, EachVariant: request.EachVariant})
 	if err != nil {
 		return Proposal{Capture: capture, Plan: plan}, err
 	}
@@ -135,6 +139,9 @@ type PlanRequest struct {
 	// and then with each variant it declares (VariantBuilds).
 	Variants    map[string]bool
 	EachVariant bool
+	// VariantsPort is the port --variants named, changed or --also's;
+	// where empty, the plan's one port, else --only's (variantsTarget).
+	VariantsPort string
 	// directories are Also ports' directories where the caller knows them
 	// already, as a baseline does from the check it explains, so they
 	// aren't looked up by name again.
@@ -273,7 +280,7 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	if len(plan.Unresolved) > 0 {
 		return plan, nil
 	}
-	candidates = alsoVariants(ctx, reader, revision.Source, request, &plan, candidates, evaluations)
+	candidates = alsoVariants(ctx, reader, revision.Source, request, &plan, candidates, evaluations, infos)
 	if len(plan.Unresolved) > 0 {
 		return plan, nil
 	}
@@ -310,7 +317,73 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 		return plan, nil
 	}
 	plan.Builds, plan.Targets = decision.Builds, decision.Targets
+	plan.Evaluated = evaluatedTargets(plan, infos)
 	return plan, plan.Validate()
+}
+
+// evaluatedTargets are each planned target's evaluation in each
+// environment that builds it, from the ports as planning read them, for
+// check --plan -v and --json (model.Plan.Evaluated).
+func evaluatedTargets(plan model.Plan, infos []map[model.TargetID]macports.PortInfo) []model.Evaluated {
+	var found []model.Evaluated
+	for e, environment := range plan.Environments {
+		planned, ok := plan.In(environment)
+		if !ok {
+			continue
+		}
+		for _, id := range planned.Order {
+			info, ok := infos[e][id]
+			if !ok {
+				continue
+			}
+			i := slices.IndexFunc(plan.Targets, func(t model.PlanTarget) bool { return t.ID == id })
+			if i < 0 {
+				continue
+			}
+			evaluated := model.Evaluated{Target: id, Environment: environment, Variants: resolvedVariants(info, plan.Targets[i].Target.Variants),
+				ConfigureArgs: info.Options["configure.args"], ConfigureEnv: info.Options["configure.env"]}
+			for _, dependency := range info.Dependencies {
+				switch dependency.Phase {
+				case "build":
+					evaluated.DependsBuild = append(evaluated.DependsBuild, dependency.Spec)
+				case "lib":
+					evaluated.DependsLib = append(evaluated.DependsLib, dependency.Spec)
+				case "run":
+					evaluated.DependsRun = append(evaluated.DependsRun, dependency.Spec)
+				}
+			}
+			found = append(found, evaluated)
+		}
+	}
+	return found
+}
+
+// resolvedVariants are the variants MacPorts opens a port with, given
+// asked: its defaults that asked doesn't negate, and those it asks, each
+// +name, sorted; none where its variants can't be read.
+func resolvedVariants(info macports.PortInfo, asked map[string]bool) []string {
+	declared, err := info.Variants()
+	if err != nil {
+		return nil
+	}
+	on := map[string]bool{}
+	for _, variant := range declared {
+		if variant.Default {
+			if enabled, chosen := asked[variant.Name]; !chosen || enabled {
+				on[variant.Name] = true
+			}
+		}
+	}
+	for name, enabled := range asked {
+		if enabled {
+			on[name] = true
+		}
+	}
+	var resolved []string
+	for _, name := range slices.Sorted(maps.Keys(on)) {
+		resolved = append(resolved, "+"+name)
+	}
+	return resolved
 }
 
 // gitResolveTimeout bounds reading one repository's refs as a check is
@@ -514,7 +587,7 @@ func (e *Engine) loadsChangedSharedCode(ctx context.Context, tree, start string,
 // port can change with them, and is left out where the port doesn't
 // declare them. A variant the port doesn't declare is refused.
 func planVariants(ctx context.Context, reader checks.PortReader, source model.Source, request PlanRequest, plan *model.Plan, candidates []model.PlanTarget, evaluations []planning.Evaluation, infos []map[model.TargetID]macports.PortInfo) ([]model.PlanTarget, error) {
-	selected, err := variantsTarget(candidates, request.Only)
+	selected, err := variantsTarget(candidates, request)
 	if err != nil {
 		return candidates, err
 	}
@@ -557,6 +630,9 @@ func planVariants(ctx context.Context, reader checks.PortReader, source model.So
 				continue
 			}
 			i := slices.IndexFunc(ports, func(port macports.PortInfo) bool { return port.Name == selected.Target.Name })
+			if i >= 0 {
+				infos[e][target.ID] = ports[i]
+			}
 			if i < 0 {
 				plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: target.Target, Reason: "with " + target.Target.VariantSpec() + " it isn't defined"})
 				continue
@@ -587,7 +663,7 @@ func planVariants(ctx context.Context, reader checks.PortReader, source model.So
 // Each is evaluated with its variants, as planVariants evaluates one; an
 // environment whose port doesn't declare them leaves that build out
 // there, since it would be the defaults'.
-func alsoVariants(ctx context.Context, reader checks.PortReader, source model.Source, request PlanRequest, plan *model.Plan, candidates []model.PlanTarget, evaluations []planning.Evaluation) []model.PlanTarget {
+func alsoVariants(ctx context.Context, reader checks.PortReader, source model.Source, request PlanRequest, plan *model.Plan, candidates []model.PlanTarget, evaluations []planning.Evaluation, infos []map[model.TargetID]macports.PortInfo) []model.PlanTarget {
 	for _, name := range request.Also {
 		target, ok := request.variants[model.TargetID(name)]
 		if !ok {
@@ -618,16 +694,35 @@ func alsoVariants(ctx context.Context, reader checks.PortReader, source model.So
 				plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: target, Reason: err.Error()})
 				continue
 			}
-			evaluations[e][planned.ID] = evaluated
+			evaluations[e][planned.ID], infos[e][planned.ID] = evaluated, ports[i]
 		}
 		candidates = append(candidates, planned)
 	}
 	return candidates
 }
 
-// variantsTarget is the one port --variants builds: the one --only names,
-// or the one port the branch changes.
-func variantsTarget(candidates []model.PlanTarget, only []string) (model.PlanTarget, error) {
+// variantsTarget is the one port --variants builds: the one it names, a
+// changed port or an --also one; else the plan's one port, changed or
+// --also's; else the one --only names. An unchanged port takes variants
+// as a changed one does, where a check of master's curl +sectrust needed
+// a no-op edit (field testing's curl +sectrust notes, note 1).
+func variantsTarget(candidates []model.PlanTarget, request PlanRequest) (model.PlanTarget, error) {
+	only := request.Only
+	var ports []model.PlanTarget
+	for _, c := range candidates {
+		if (c.Role == model.Changed || c.Role == model.Also) && !slices.ContainsFunc(ports, func(p model.PlanTarget) bool { return p.Target.Name == c.Target.Name }) {
+			ports = append(ports, c)
+		}
+	}
+	if request.VariantsPort != "" {
+		if i := slices.IndexFunc(ports, func(c model.PlanTarget) bool { return c.Target.Name == request.VariantsPort }); i >= 0 {
+			return ports[i], nil
+		}
+		return model.PlanTarget{}, fmt.Errorf("--variants names %s, which the branch doesn't change and --also doesn't name", request.VariantsPort)
+	}
+	if len(ports) == 1 {
+		return ports[0], nil
+	}
 	switch {
 	case len(only) == 1:
 		if i := slices.IndexFunc(candidates, func(c model.PlanTarget) bool { return c.Target.Name == only[0] }); i >= 0 {
@@ -637,16 +732,18 @@ func variantsTarget(candidates []model.PlanTarget, only []string) (model.PlanTar
 	case len(only) > 1:
 		return model.PlanTarget{}, fmt.Errorf("--variants builds one port; --only names %d", len(only))
 	}
-	var changed []model.PlanTarget
-	for _, c := range candidates {
-		if c.Role == model.Changed {
-			changed = append(changed, c)
-		}
+	if len(ports) == 0 {
+		return model.PlanTarget{}, errors.New("--variants builds one port, and the plan has none: name one with --also")
 	}
-	if len(changed) != 1 {
-		return model.PlanTarget{}, fmt.Errorf("--variants builds one port, and the branch changes %d; name it with --only", len(changed))
+	names := make([]string, len(ports))
+	for i, port := range ports {
+		names[i] = port.Target.Name
 	}
-	return changed[0], nil
+	spec := "each"
+	if !request.EachVariant {
+		spec = model.Target{Variants: request.Variants}.VariantSpec()
+	}
+	return model.PlanTarget{}, fmt.Errorf("--variants builds one port; the plan has %s, so name it, as --variants '%s %s'", prose.And(names), names[0], spec)
 }
 
 // VariantBuilds are the builds --variants each makes of a port beside its

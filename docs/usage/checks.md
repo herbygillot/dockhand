@@ -104,6 +104,26 @@ across environments. More than 12 builds requires confirmation, or `--yes`
 without a terminal. GitHub checks do not accept variant selection because its
 workflow controls variants.
 
+`--variants` builds one port: the one named first in the value, as
+`--variants 'curl +gnutls +sectrust'` or `--variants 'curl each'`, a changed
+port or one `--also` names; else the plan's one port; else `--only`'s. To try
+master's port with variants, start a branch and name it with `--also`:
+
+```sh
+dockhand start curl-sectrust
+dockhand check --also curl --variants 'curl +gnutls +sectrust' --plan -v
+dockhand check --also curl --variants 'curl +gnutls +sectrust'
+dockhand archive curl-sectrust
+```
+
+`check --plan -v` prints each target's evaluation in each environment: its
+variants as MacPorts resolves them, its dependencies by type, and its
+`configure.args` and `configure.env`; `--json` carries them as `evaluated`. A
+branch that changes nothing and whose check passed reads as investigated in
+status, with `dockhand archive` next. `check --baseline --only curl` after a
+variant check builds every build of curl the check made, at master, with its
+variants.
+
 ## Choose build environments explicitly
 
 `--build` selects a configured profile; `--on` selects explicit environments.

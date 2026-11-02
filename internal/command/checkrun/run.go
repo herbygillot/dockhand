@@ -290,6 +290,14 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 			return nil
 		}
 		fmt.Fprintf(out, "%s.\n", passed)
+		// A branch that changes nothing is an investigation, said as
+		// status says it, with archive next, where status would have
+		// said submit (field testing's curl +sectrust notes, note 1).
+		if branch, err := e.Branch(ctx, run.Branch); err == nil {
+			if status, err := e.BranchStatus(ctx, branch); err == nil {
+				view.WriteInvestigated(out, status)
+			}
+		}
 		for _, step := range view.RenderSteps(shells) {
 			fmt.Fprintf(out, "Next: %s\n", step)
 		}

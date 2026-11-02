@@ -153,7 +153,7 @@ func (e *Engine) planBaseline(ctx context.Context, request BaselineRequest, reco
 		}
 	}
 	base := checked.Source.Base
-	targets, added, baseTree, err := e.atBase(ctx, base, evidence, ports)
+	targets, added, baseTree, err := e.atBase(ctx, base, evidence, ports, len(request.Ports) > 0)
 	if err != nil {
 		return baseline, err
 	}
@@ -269,7 +269,7 @@ func (e *Engine) BaselineCandidates(ctx context.Context, run model.Run) (Baselin
 	if len(worthy) == 0 {
 		return offer, nil
 	}
-	targets, _, _, err := e.atBase(ctx, checked.Source.Base, evidence, worthy)
+	targets, _, _, err := e.atBase(ctx, checked.Source.Base, evidence, worthy, false)
 	if err != nil || len(targets) == 0 {
 		return offer, err
 	}
@@ -471,28 +471,43 @@ func latestCheck(r store.Reader, branch model.BranchID) (model.Run, bool, error)
 }
 
 // atBase sorts ports a check built into those whose Portfile master has
-// at base, and those the branch adds, with base's tree.
-func (e *Engine) atBase(ctx context.Context, base model.ObjectID, evidence Evidence, names []string) (have []model.PlanTarget, added []string, tree string, err error) {
+// at base, and those the branch adds, with base's tree. A name is a
+// build's ID, "curl +sectrust"; one --only gave, byName, is a port's name
+// too, which takes every build of it the check made, its variant builds
+// among them: --only curl after a check of curl +gnutls +sectrust refused
+// "did not build it" (field testing's curl +sectrust notes, note 2).
+func (e *Engine) atBase(ctx context.Context, base model.ObjectID, evidence Evidence, names []string, byName bool) (have []model.PlanTarget, added []string, tree string, err error) {
 	trees, err := e.Repo.CommitTrees(ctx, []string{string(base)})
 	if err != nil {
 		return nil, nil, "", err
 	}
 	tree = trees[string(base)]
 	for _, name := range names {
-		i := slices.IndexFunc(evidence.Targets, func(target TargetEvidence) bool { return target.Target.ID == model.TargetID(name) })
-		if i < 0 {
+		var builds []model.PlanTarget
+		for _, target := range evidence.Targets {
+			if target.Target.ID == model.TargetID(name) || byName && target.Target.Target.Name == name {
+				builds = append(builds, target.Target)
+			}
+		}
+		if len(builds) == 0 {
 			return nil, nil, "", fmt.Errorf("--only %s: %s did not build it", name, evidence.Run.Name())
 		}
-		target := evidence.Targets[i].Target
-		state, _, err := e.Repo.File(ctx, tree, target.Target.Portfile)
-		if err != nil {
-			return nil, nil, "", err
+		for _, target := range builds {
+			if slices.ContainsFunc(have, func(t model.PlanTarget) bool { return t.ID == target.ID }) {
+				continue
+			}
+			state, _, err := e.Repo.File(ctx, tree, target.Target.Portfile)
+			if err != nil {
+				return nil, nil, "", err
+			}
+			if !state.Exists {
+				if !slices.Contains(added, name) {
+					added = append(added, name)
+				}
+				continue
+			}
+			have = append(have, target)
 		}
-		if !state.Exists {
-			added = append(added, name)
-			continue
-		}
-		have = append(have, target)
 	}
 	return have, added, tree, nil
 }

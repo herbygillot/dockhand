@@ -406,6 +406,28 @@ func resultWords(evidence engine.Evidence, target engine.TargetEvidence, environ
 	return words
 }
 
+// WriteEvaluated says, for check --plan -v, each target's evaluation in
+// each environment that builds it: its variants as MacPorts resolves
+// them, its dependencies by type, and its configure.args and
+// configure.env, each as MacPorts writes it, a line each where it has
+// one (field testing's curl +sectrust notes, note 8b).
+func WriteEvaluated(out io.Writer, plan model.Plan) {
+	for _, evaluated := range plan.Evaluated {
+		fmt.Fprintf(out, "\n%s on %s\n", evaluated.Target, checks.DescribeEnvironment(evaluated.Environment))
+		line := func(label, value string) {
+			if value != "" {
+				fmt.Fprintf(out, "  %-15s%s\n", label, value)
+			}
+		}
+		line("variants", strings.Join(evaluated.Variants, " "))
+		line("depends_build", strings.Join(evaluated.DependsBuild, " "))
+		line("depends_lib", strings.Join(evaluated.DependsLib, " "))
+		line("depends_run", strings.Join(evaluated.DependsRun, " "))
+		line("configure.args", evaluated.ConfigureArgs)
+		line("configure.env", evaluated.ConfigureEnv)
+	}
+}
+
 // WriteVariants says what --variants builds: the one port with its
 // default variants plus those given, which MacPorts adds as it opens the
 // port, a -variant leaving a default out, built in place of its default
