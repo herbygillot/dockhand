@@ -90,6 +90,15 @@ func (e *Engine) RenamePort(ctx context.Context, request PortRenameRequest) (Ren
 	tree := trees[head]
 	from, err := e.findDirectory(ctx, tree, request.Port)
 	if err != nil {
+		// A port the branch added and hasn't committed, as create leaves
+		// one, is in the working tree alone; its move waits for tidy,
+		// which then folds the move into the port's commit (field
+		// testing's omnidiff, note 7).
+		if _, working, werr := worktree.WorkingTree(ctx); werr == nil {
+			if added, _ := namedLike(ctx, worktree, working, request.Port); len(added) > 0 {
+				return RenamedPort{}, fmt.Errorf("%s isn't committed yet; tidy it, then move it", request.Port)
+			}
+		}
 		return RenamedPort{}, err
 	}
 	if path.Base(from) != request.Port {
