@@ -86,6 +86,26 @@ func (m Maintainer) String() string {
 	return "{" + strings.Join(m, " ") + "}"
 }
 
+// WithOpenMaintainer is a maintainers line with openmaintainer added, as
+// a new port's is by default (the person's "Default on", 2026-11-02): the
+// line as it is where it already lists openmaintainer or nomaintainer, or
+// can't be read as a list, and openmaintainer alone for an empty one.
+func WithOpenMaintainer(line string) string {
+	maintainers, err := ReadMaintainers(line)
+	if err != nil {
+		return line
+	}
+	for _, maintainer := range maintainers {
+		if len(maintainer) == 1 && MaintainerKeyword(maintainer[0]) {
+			return line
+		}
+	}
+	if strings.TrimSpace(line) == "" {
+		return OpenMaintainer
+	}
+	return strings.TrimSpace(line) + " " + OpenMaintainer
+}
+
 // MaintainerKeyword reports whether a spelling is openmaintainer or
 // nomaintainer, which name no one.
 func MaintainerKeyword(spelling string) bool {

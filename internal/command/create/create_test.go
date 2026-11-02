@@ -323,3 +323,22 @@ func TestCreatePlanPrintsThePortfileAndWritesNothing(t *testing.T) {
 	require.Contains(t, out, "Nothing was written (--plan)")
 	require.Empty(t, testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/*"), "no branch was started")
 }
+
+// A new port's maintainers are the configured line with openmaintainer
+// added, and --no-openmaintainer writes the line as it is (the person's
+// "Default on", 2026-11-02).
+func TestCreateAddsOpenmaintainerUnlessAskedNotTo(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.Stands(t).ProjectReader = riftProject{}
+	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return checksummer{repo: e.Repo} }
+	require.NoError(t, os.MkdirAll(filepath.Join(w.Home, ".dockhand"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("maintainer = \"{@ada example.org:ada}\"\n"), 0o644))
+	out, _, err := cmdtest.Dockhand(t, "create", "https://github.com/rift-dev/rift", "--category", "textproc", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "maintainers         {@ada example.org:ada} openmaintainer\n")
+	out, _, err = cmdtest.Dockhand(t, "create", "https://github.com/rift-dev/rift", "--category", "textproc", "--plan", "--no-openmaintainer")
+	require.NoError(t, err)
+	require.Contains(t, out, "maintainers         {@ada example.org:ada}\n")
+}

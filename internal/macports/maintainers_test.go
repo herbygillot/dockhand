@@ -133,3 +133,18 @@ func TestACheckedMaintainersLineReadsAsItsWords(t *testing.T) {
 	require.NoError(t, err, "%s", output)
 	require.Equal(t, want.String(), string(output))
 }
+
+// openmaintainer is added to a maintainers line that has neither keyword.
+func TestWithOpenMaintainer(t *testing.T) {
+	t.Parallel()
+	for line, want := range map[string]string{
+		"@ada":                                  "@ada openmaintainer",
+		"{@ada example.org:ada}":                "{@ada example.org:ada} openmaintainer",
+		"{@ada example.org:ada} openmaintainer": "{@ada example.org:ada} openmaintainer",
+		"nomaintainer":                          "nomaintainer",
+		"":                                      "openmaintainer",
+		"{@ada":                                 "{@ada",
+	} {
+		require.Equal(t, want, macports.WithOpenMaintainer(line), line)
+	}
+}

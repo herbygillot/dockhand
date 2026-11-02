@@ -81,8 +81,9 @@ In particular, verify:
   pyproject.toml, otherwise GitHub's detection. Confirm it against the source
   and use MacPorts' license names. Make the long description useful to someone
   deciding whether to install the port.
-- **Maintainer and category.** The configured maintainer is used; without one,
-  the draft has a marked `nomaintainer`. Choose the maintainer line you intend
+- **Maintainer and category.** The configured maintainer is used, with
+  `openmaintainer` added unless the line already names it or you pass
+  `--no-openmaintainer`; without one, the draft has a marked `nomaintainer`. Choose the maintainer line you intend
   to take responsibility for. The command may suggest a line from your existing
   ports, but writes no configuration for you.
 - **Build and installed files.** Check the selected PortGroups and build

@@ -19,7 +19,7 @@ import (
 func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchChoice
 	var name, category string
-	var plan bool
+	var plan, noOpen bool
 	cmd := &cobra.Command{
 		Use:   "create <url | pypi:NAME | crates:NAME | go:MODULE>",
 		Short: "Write a new port's first Portfile from its project's URL or registry name",
@@ -35,8 +35,9 @@ Cargo.toml or pyproject.toml where it declares one MacPorts has a name for,
 else from GitHub's detection; the long description; and the category,
 guessed from the build system unless --category names it. The description
 is the manifest's one line where it has one, else GitHub's. The
-maintainer is your config's maintainer, else nomaintainer, marked, with
-the line to set: the one the ports naming your GitHub login write. submit
+maintainer is your config's maintainer with openmaintainer added, unless
+it names it or --no-openmaintainer, else nomaintainer, marked, with the
+line to set: the one the ports naming your GitHub login write. submit
 holds until each guess is confirmed and its mark removed. The new
 Portfile is staged, so the next check includes it. Nothing is committed.
 
@@ -92,7 +93,7 @@ its go-get answer.`,
 				fmt.Fprintf(streams.Err, "Couldn't check whether a subport named %s already exists: %s\n", name, unchecked)
 			}
 			if plan {
-				planned, err := e.PlanCreate(ctx, engine.CreateRequest{URL: args[0], Name: name, Category: category, Maintainer: s.File.Maintainer, Project: project})
+				planned, err := e.PlanCreate(ctx, engine.CreateRequest{URL: args[0], Name: name, Category: category, Maintainer: s.File.Maintainer, KeepMaintainers: noOpen, Project: project})
 				if err != nil {
 					return err
 				}
@@ -139,7 +140,7 @@ its go-get answer.`,
 					category = observed.Category
 				}
 			}
-			created, err := e.Create(ctx, engine.CreateRequest{Branch: branch, URL: args[0], Name: name, Category: category, Maintainer: s.File.Maintainer, Project: project})
+			created, err := e.Create(ctx, engine.CreateRequest{Branch: branch, URL: args[0], Name: name, Category: category, Maintainer: s.File.Maintainer, KeepMaintainers: noOpen, Project: project})
 			if err != nil {
 				// Interrupted once the port was written, the result says
 				// what is there.
@@ -225,6 +226,7 @@ its go-get answer.`,
 	}
 	where.Register(cmd)
 	cmd.Flags().StringVar(&name, "name", "", "the port's name (default: the project's, in lower case)")
+	cmd.Flags().BoolVar(&noOpen, "no-openmaintainer", false, "write the configured maintainer line as it is, without adding openmaintainer")
 	cmd.Flags().BoolVar(&plan, "plan", false, "print the Portfile create would write, and write nothing")
 	cmd.Flags().StringVar(&category, "category", "", "port category (prompts in a terminal; otherwise uses a marked guess)")
 	settings.KeepHTTPFlag(cmd, s)
