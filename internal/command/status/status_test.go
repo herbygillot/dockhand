@@ -625,7 +625,7 @@ func TestStatusSaysAPullRequestsMergeFitness(t *testing.T) {
 		require.NoError(t, err)
 		return maintainers
 	}
-	ports := []macports.PortMaintainers{{Port: "jq", Maintainers: read("{@ryandesign ryandesign} openmaintainer")}, {Port: "gdal", Maintainers: read("nomaintainer")}}
+	ports := []macports.MaintainerObservation{{Port: "jq", Maintainers: read("{@ryandesign ryandesign} openmaintainer")}, {Port: "gdal", Maintainers: read("nomaintainer")}}
 	merge := macports.MergeFitness(ports, "herbygillot", []string{"ryandesign"}, []string{"jmroot"}, opened, false, opened.Add(31*time.Hour))
 	status := engine.BranchStatus{Branch: model.Branch{Name: "dockhand/jq-update", State: model.BranchOpen, PullRequest: &model.PullRequest{Repository: "macports/macports-ports", Number: 34880, Pushed: "c0ffee",
 		Observed: &model.PullRequestObservation{State: model.PullRequestOpen, Review: model.ReviewApproved, Checks: model.ChecksPassing, Head: "c0ffee", At: opened.Add(31 * time.Hour)}}},
@@ -711,4 +711,36 @@ func TestUnreadMaintainersNameCheckPlanOnlyForTheirOwnBranch(t *testing.T) {
 
 	status.Branch.PullRequest.Adopted, status.Branch.PullRequest.Author = true, "ada"
 	require.Equal(t, []string{"rumdl: maintainers not read yet", "No one is mentioned in the description"}, view.MergeLines(status))
+}
+
+// A port's merge line names the reading its maintainers were taken from
+// where it isn't master's newest cached port index: the branch's base, as
+// of its date, and a new port's own record; its JSON says the basis and
+// the date (Codex's review of 03b380f1, F3).
+func TestAMergeLineNamesItsMaintainersBasis(t *testing.T) {
+	t.Parallel()
+	opened := time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC)
+	base := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	read := func(value string) []macports.Maintainer {
+		maintainers, err := macports.ReadMaintainers(value)
+		require.NoError(t, err)
+		return maintainers
+	}
+	ports := []macports.MaintainerObservation{
+		{Port: "jq", Maintainers: read("@former"), Basis: macports.MaintainersOfBase, At: base},
+		{Port: "gdal", Maintainers: read("nomaintainer"), Basis: macports.MaintainersOfMaster, At: base},
+		{Port: "rumdl", Maintainers: read("@ada"), Basis: macports.MaintainersOfNewPort},
+	}
+	merge := macports.MergeFitness(ports, "ada", nil, nil, opened, false, opened.Add(time.Hour))
+	status := engine.BranchStatus{Branch: model.Branch{Name: "dockhand/jq", State: model.BranchOpen, PullRequest: &model.PullRequest{Repository: "macports/macports-ports", Number: 34882,
+		Observed: &model.PullRequestObservation{State: model.PullRequestOpen}}}, Merge: &merge}
+	lines := view.MergeLines(status)
+	require.Equal(t, "jq: @former; waits on the maintainer timeout; maintainers as of master, "+base.Local().Format(time.DateOnly), lines[0])
+	require.Equal(t, "gdal: nomaintainer; anyone may update it", lines[1], "the newest cached master isn't named")
+	require.Equal(t, "rumdl: @ada; opened by its maintainer; maintainers as the branch adds it", lines[2])
+
+	data, err := json.Marshal(view.BranchView(status).PullRequest.Merge)
+	require.NoError(t, err)
+	require.Contains(t, string(data), `{"port":"jq","maintainers":["@former"],"openmaintainer":false,"nomaintainer":false,"opened_by_maintainer":false,"waits":true,"maintainers_basis":"base","maintainers_as_of":"2026-10-28T12:00:00Z"}`)
+	require.Contains(t, string(data), `"maintainers_basis":"new port"}`)
 }

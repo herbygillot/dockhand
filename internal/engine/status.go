@@ -244,6 +244,9 @@ type statusReads struct {
 	// indexed are ports' maintainers as master's cached port index has
 	// them, read once a status (indexedMaintainers).
 	indexed *masterIndex
+	// bases are the change records' bases, each with its tree and when it
+	// was master, read once a status (datedBase).
+	bases map[model.ObjectID]datedTree
 }
 
 // readBranches reads what status reads of the branches' Git branches.

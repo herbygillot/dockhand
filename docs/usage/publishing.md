@@ -308,11 +308,15 @@ ready for review, the timeout is again counted from when it was opened. That
 is an approximation: the MacPorts Guide predates drafts, and status doesn't
 read when a draft became ready.
 
-Maintainers are the ones MacPorts has now: for a port master already has, the
-change records a check or submission makes keep master's side, and where no
-record does, status reads them from master's port index, if one is cached
-from an earlier check or lookup; status never builds or fetches an index for
-this. A new port's maintainers come from its change record alone. Where
+Maintainers are the ones MacPorts has now: for a port master already has,
+status has two readings of master, the change record a check or submission
+made, which keeps the maintainers of master where the branch started or was
+last rebased, and master's port index, if one is cached from an earlier
+check or lookup, and it takes the newer of the two by their commits' dates;
+status never builds or fetches an index for this. Where the record's is the
+newer, or no index is cached, the port's line says so, as in `maintainers as
+of master, 2026-10-28`. A new port's maintainers come from its change record
+alone, `maintainers as the branch adds it`. Where
 neither has them, status says they're not read yet, and for your own branch,
 that `dockhand check --plan` reads them; an adopted pull request's Portfiles
 aren't evaluated for this. `status --json` gives the same facts under

@@ -14,6 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -163,4 +165,93 @@ func TestAPullRequestsMaintainersAreReadFromMastersCachedIndex(t *testing.T) {
 	trees, err := portindex.CachedTrees(e.options.Indexes)
 	require.NoError(t, err)
 	require.Equal(t, map[string]bool{parent: true, strings.Repeat("9", 40): true}, trees, "no generation was built")
+}
+
+// masterAt writes a commit of master's onto parent, its tree parent's with
+// a file of its own, committed at the time given, and says it and its tree.
+func masterAt(t *testing.T, e *Engine, parent, file string, when time.Time) (string, string) {
+	t.Helper()
+	parentTree := testsupport.Git(t, e.Repo.Root, "rev-parse", parent+"^{tree}")
+	tree, err := e.Repo.EditTree(t.Context(), parentTree, []git.FileEdit{{Path: file, After: []byte(file + "\n"), Mode: 0o100644}})
+	require.NoError(t, err)
+	signature := git.Signature{Name: "MacPorts", Email: "ports@example.org", When: when}
+	commit, err := e.Repo.WriteCommit(t.Context(), git.Commit{Tree: tree, Parents: []string{parent}, Message: file, Author: signature, Committer: signature})
+	require.NoError(t, err)
+	return commit, tree
+}
+
+// Merge fitness takes the newer of its two readings of master, the change
+// record's base and master's newest cached index generation, each dated
+// by its commit: the latest master wins (the person's word, 2026-11-02;
+// Codex's review of 03b380f1, F3, its probe). Where the record's base is
+// the reading, it is kept with its date, for the detail to name; a port
+// the branch adds has its record alone.
+func TestMergeFitnessTakesTheNewerReadingOfMaster(t *testing.T) {
+	t.Parallel()
+	olderAt, newerAt := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC), time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	// open is an engine whose master has an older and a newer commit past
+	// the fixture's, and a generation cached of one of them, saying
+	// nomaintainer.
+	open := func(cachedNewer bool) (e *Engine, older, newer string) {
+		f := setup(t)
+		e = f.open(t)
+		head := testsupport.Git(t, e.Repo.Root, "rev-parse", "HEAD")
+		older, olderTree := masterAt(t, e, head, "older", olderAt)
+		newer, newerTree := masterAt(t, e, older, "newer", newerAt)
+		cached := olderTree
+		if cachedNewer {
+			cached = newerTree
+		}
+		cacheIndexGeneration(t, e.options.Indexes, cached, map[string][2]string{"jq": {"textproc/jq", "nomaintainer"}})
+		return e, older, newer
+	}
+	// read reads the merge fitness of a pull request whose record of jq,
+	// made on base, keeps @former.
+	read := func(e *Engine, master, base string, kind model.SubportChangeKind) BranchStatus {
+		status := BranchStatus{
+			Branch: model.Branch{State: model.BranchOpen, PullRequest: &model.PullRequest{Observed: &model.PullRequestObservation{
+				State: model.PullRequestOpen, Opened: at.Add(-time.Hour), Author: "outsider",
+			}}},
+			Scope: macports.Scope{Ports: []string{"textproc/jq"}},
+			Changes: map[string]model.ChangeRecord{"textproc/jq": {Directory: "textproc/jq", Base: model.ObjectID(base), Ports: []model.SubportChange{
+				{Port: "jq", Kind: kind, Maintainers: "@former"},
+			}}},
+		}
+		e.readMerge(t.Context(), &status, &statusReads{master: model.ObjectID(master)})
+		require.NotNil(t, status.Merge)
+		require.Len(t, status.Merge.Ports, 1)
+		return status
+	}
+
+	// The cached index, of the newer master, says nomaintainer, the record,
+	// made on the older, @former: nothing waits on @former.
+	e, older, newer := open(true)
+	status := read(e, newer, older, model.SubportChanged)
+	jq := status.Merge.Ports[0]
+	require.True(t, jq.NoMaintainer, "the record's older base doesn't speak for master since")
+	require.Empty(t, status.Merge.Waiting())
+	require.Equal(t, macports.MaintainersOfMaster, jq.Basis)
+	require.Equal(t, newerAt, jq.As)
+
+	// A port the branch adds has its record's maintainers alone.
+	status = read(e, newer, older, model.SubportAdded)
+	require.Equal(t, []string{"@former"}, status.Merge.Ports[0].People)
+	require.Equal(t, macports.MaintainersOfNewPort, status.Merge.Ports[0].Basis)
+
+	// The inverse: the record, made on the newer master, says @former, the
+	// cached index, of the older, nomaintainer: it waits on @former, as of
+	// the newer master.
+	e, older, newer = open(false)
+	status = read(e, newer, newer, model.SubportChanged)
+	jq = status.Merge.Ports[0]
+	require.Equal(t, []string{"@former"}, jq.People)
+	require.Equal(t, []string{"jq"}, status.Merge.Waiting())
+	require.Equal(t, macports.MaintainersOfBase, jq.Basis)
+	require.Equal(t, newerAt, jq.As)
+
+	// With no generation cached, the record's base is the reading.
+	e.options.Indexes = t.TempDir()
+	status = read(e, newer, older, model.SubportChanged)
+	require.Equal(t, macports.MaintainersOfBase, status.Merge.Ports[0].Basis)
+	require.Equal(t, olderAt, status.Merge.Ports[0].As)
 }

@@ -9,11 +9,11 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 )
 
-func portMaintainers(t *testing.T, port, value string) macports.PortMaintainers {
+func portMaintainers(t *testing.T, port, value string) macports.MaintainerObservation {
 	t.Helper()
 	maintainers, err := macports.ReadMaintainers(value)
 	require.NoError(t, err)
-	return macports.PortMaintainers{Port: port, Maintainers: maintainers}
+	return macports.MaintainerObservation{Port: port, Maintainers: maintainers}
 }
 
 // A pull request for a maintained port waits 72 hours from its opening
@@ -23,7 +23,7 @@ func portMaintainers(t *testing.T, port, value string) macports.PortMaintainers 
 func TestAMaintainedPortWaitsOutTheTimeoutFromTheOpening(t *testing.T) {
 	t.Parallel()
 	opened := time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC)
-	ports := []macports.PortMaintainers{portMaintainers(t, "jq", "{@ryandesign ryandesign} openmaintainer")}
+	ports := []macports.MaintainerObservation{portMaintainers(t, "jq", "{@ryandesign ryandesign} openmaintainer")}
 	before := macports.MergeFitness(ports, "herbygillot", []string{"ryandesign"}, nil, opened, false, opened.Add(31*time.Hour))
 	require.Equal(t, []macports.PortMerge{{Port: "jq", People: []string{"@ryandesign"}, OpenMaintainer: true}}, before.Ports)
 	require.Equal(t, []string{"jq"}, before.Waiting(), "openmaintainer still waits on a pull request")
@@ -58,7 +58,7 @@ func TestAMaintainedPortWaitsOutTheTimeoutFromTheOpening(t *testing.T) {
 func TestWhatEndsTheWait(t *testing.T) {
 	t.Parallel()
 	opened := time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC)
-	ports := []macports.PortMaintainers{
+	ports := []macports.MaintainerObservation{
 		portMaintainers(t, "gdal", "nomaintainer"),
 		portMaintainers(t, "fd", "{@herbygillot gmail.com:herby.gillot}"),
 		portMaintainers(t, "jq", "@ryandesign"),
