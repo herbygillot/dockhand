@@ -704,7 +704,7 @@ func TestAPortWaitsForThePortItsHoldsNameFirst(t *testing.T) {
 func TestAnUndeclaredLinkHoldsAnUnattendedSubmission(t *testing.T) {
 	t.Parallel()
 	lzma := map[model.TargetID][]model.Link{"jq": {{Binary: "/opt/local/bin/jq", Library: "/opt/local/lib/liblzma.5.dylib", Port: "xz"}}}
-	held := []string{"jq links liblzma.5.dylib from xz, which it doesn't declare in depends_lib; review is required before automatic submission"}
+	held := []string{"jq links liblzma.5.dylib from xz, which it doesn't declare in depends_lib; depends_lib-append port:xz declares it; review is required before automatic submission"}
 
 	f := setup(t)
 	e, _ := f.withPreparer(t)
