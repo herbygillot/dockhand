@@ -908,3 +908,16 @@ func TestACheckSettlesWhichNativeCratesAreSaid(t *testing.T) {
 	require.Empty(t, one[0].Comparison.Changes)
 	require.Equal(t, "the check didn't compile libgit2-sys, which Cargo.lock pins for features or targets this build doesn't use", CoverageWords(one[0].Comparison))
 }
+
+// The crates a port's build doesn't reach are said in coverage by name,
+// as set apart for features or targets the build doesn't take (the
+// omnidiff session's note 6).
+func TestCratesTheBuildDoesntReachAreSaidInCoverage(t *testing.T) {
+	t.Parallel()
+	compared := model.UpstreamComparison{Coverage: []model.Coverage{
+		{Path: "Cargo.lock", Treatment: "inspected", Policy: "read"},
+		{Path: "Cargo.lock", Relevance: "unknown", Treatment: "set-apart", Policy: assess.NativeLibraryReach, Reason: "libgit2-sys"},
+		{Path: "Cargo.lock", Relevance: "unknown", Treatment: "set-apart", Policy: assess.NativeLibraryReach, Reason: "libmimalloc-sys"},
+	}}
+	require.Equal(t, "Compared Cargo.lock; set apart, pinned for features or targets the port's build on macOS doesn't take: libgit2-sys, libmimalloc-sys", CoverageWords(compared))
+}

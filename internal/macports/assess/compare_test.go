@@ -2,6 +2,7 @@ package assess
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -334,6 +335,96 @@ func TestLibzIsZlibNotZ(t *testing.T) {
 	require.Equal(t, []string{"libz", "zlib"}, wanted)
 	comparison := observed(t, input, map[Provider]Observation{{Port: "libz"}: {Absent: true}, {Port: "z"}: {Version: "1.12", Directory: "sysutils/z"}, {Port: "zlib"}: {Version: "1.3.1", Directory: "archivers/zlib"}})
 	require.Contains(t, messages(comparison.Changes), "· upstream: Cargo.lock adds libz-sys 1.1.22, which links the native library libz, which MacPorts has as archivers/zlib: the Portfile may declare it, rather than the crate linking whatever copy it finds")
+}
+
+// A -sys crate the port's build can't reach, by the lock's edges and the
+// manifests' enabled dependencies under the port's cargo arguments, is set
+// apart before anything is asked of it, and one it reaches says the build
+// it was read for: omnidiff's default build reaches onig_sys, through
+// syntect, and none of libgit2-sys, libmimalloc-sys, and libsqlite3-sys;
+// --features git brings libgit2-sys back, and --all-features prunes
+// nothing and says so (the omnidiff session's note 6).
+func TestANativeCrateTheBuildDoesntReachIsSetApart(t *testing.T) {
+	registry := "registry+https://github.com/rust-lang/crates.io-index"
+	pkg := func(name, version string, dependencies ...string) string {
+		text := fmt.Sprintf("\n[[package]]\nname = %q\nversion = %q\n", name, version)
+		if !strings.HasPrefix(name, "omnidiff") {
+			text += fmt.Sprintf("source = %q\nchecksum = %q\n", registry, strings.Repeat("a", 64))
+		}
+		if len(dependencies) > 0 {
+			text += "dependencies = [\"" + strings.Join(dependencies, "\", \"") + "\"]\n"
+		}
+		return text
+	}
+	manifest := `[package]
+name = "omnidiff"
+
+[features]
+default = ["syntax"]
+syntax = ["dep:syntect"]
+git = ["dep:git2"]
+
+[dependencies]
+syntect = { version = "5", optional = true }
+git2 = { version = "0.20", optional = true }
+omnidiff-core = { path = "crates/omnidiff-core" }
+
+[target.'cfg(target_env = "musl")'.dependencies]
+mimalloc = "0.1"
+
+[workspace]
+members = ["crates/*"]
+`
+	member := "[package]\nname = \"omnidiff-core\"\n\n[dev-dependencies]\nrusqlite = \"0.37\"\n"
+	before := map[string]string{"Cargo.toml": manifest, "crates/omnidiff-core/Cargo.toml": member,
+		"Cargo.lock": "version = 4\n" + pkg("omnidiff", "0.1.0", "omnidiff-core") + pkg("omnidiff-core", "0.1.0")}
+	after := map[string]string{"Cargo.toml": manifest, "crates/omnidiff-core/Cargo.toml": member,
+		"Cargo.lock": "version = 4\n" + pkg("omnidiff", "0.2.0", "git2", "mimalloc", "omnidiff-core", "syntect") + pkg("omnidiff-core", "0.2.0", "rusqlite") +
+			pkg("syntect", "5.2.0", "onig") + pkg("onig", "6.4.0", "onig_sys") + pkg("onig_sys", "69.8.1") + pkg("git2", "0.20.2", "libgit2-sys") + pkg("libgit2-sys", "0.18.2+1.9.1") +
+			pkg("mimalloc", "0.1.47", "libmimalloc-sys") + pkg("libmimalloc-sys", "0.1.43") + pkg("rusqlite", "0.37.0", "libsqlite3-sys") + pkg("libsqlite3-sys", "0.35.0")}
+	var readings [2]project.Reading
+	for i, files := range []map[string]string{before, after} {
+		reading, err := project.Read(t.Context(), testsupport.Tarball(t, fmt.Sprintf("omnidiff-%d", i), files), project.Spec{})
+		require.NoError(t, err)
+		readings[i] = reading
+	}
+	assessed := func(args string) model.UpstreamComparison {
+		omnidiff := macports.PortInfo{Name: "omnidiff", Options: map[string]string{"dockhand.portgroups": "cargo", "build.args": args}}
+		input := Input{Port: omnidiff, Base: omnidiff, Pairs: []Pair{{Archive: "omnidiff-0.2.0.tar.gz", Before: readings[0], After: readings[1]}}}
+		return observed(t, input, map[Provider]Observation{
+			{Port: "onig"}: {Absent: true}, {Port: "oniguruma6"}: {Version: "6.9.10", Directory: "devel/oniguruma6"},
+			{Port: "libgit2"}: {Version: "1.9.1", Directory: "devel/libgit2"},
+		})
+	}
+	reached := func(comparison model.UpstreamComparison) []string {
+		var crates []string
+		for _, coverage := range comparison.Coverage {
+			if coverage.Policy == NativeLibraryReach {
+				crates = append(crates, coverage.Reason)
+			}
+		}
+		return crates
+	}
+	onig := "· upstream: Cargo.lock adds onig_sys 69.8.1, pinned for a build with default features on macOS, which links the native library onig, which MacPorts has as devel/oniguruma6: the Portfile may declare it, rather than the crate linking whatever copy it finds"
+
+	comparison := assessed("")
+	require.Contains(t, messages(comparison.Changes), onig)
+	require.NotContains(t, strings.Join(messages(comparison.Changes), "\n"), "libgit2-sys 0.18.2")
+	require.Equal(t, []string{"libgit2-sys", "libmimalloc-sys", "libsqlite3-sys"}, reached(comparison))
+
+	comparison = assessed("--features git")
+	require.Contains(t, messages(comparison.Changes), "· upstream: Cargo.lock adds libgit2-sys 0.18.2+1.9.1, pinned for a build with the Portfile's features on macOS, which links the native library libgit2, which MacPorts has as devel/libgit2: the Portfile may declare it, rather than the crate linking whatever copy it finds")
+	require.Equal(t, []string{"libmimalloc-sys", "libsqlite3-sys"}, reached(comparison))
+
+	comparison = assessed("--no-default-features")
+	require.Equal(t, []string{"onig_sys", "libgit2-sys", "libmimalloc-sys", "libsqlite3-sys"}, reached(comparison), "--no-default-features drops a default's")
+
+	comparison = assessed("--all-features")
+	require.Empty(t, reached(comparison))
+	require.Contains(t, messages(comparison.Changes), "· upstream: Cargo.lock adds libsqlite3-sys 0.35.0, which links the native library libsqlite3: MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds")
+	require.True(t, slices.ContainsFunc(comparison.Coverage, func(c model.Coverage) bool {
+		return c.Reason == "every -sys crate Cargo.lock pins is said, since the port's build passes --all-features"
+	}))
 }
 
 // llvm-sys names the LLVM it links in its version, 221 for LLVM 22, which

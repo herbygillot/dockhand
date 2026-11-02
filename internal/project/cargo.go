@@ -402,6 +402,9 @@ type CargoPackage struct {
 	Source        CrateSource
 	Origin        string
 	Checksum      string
+	// Dependencies are its edges in the lock, each as the lock writes it:
+	// "name", "name version", or "name version (source)" (CargoReach).
+	Dependencies []string
 }
 
 // NativeLibrary is the native library a package links, by Cargo's
@@ -447,7 +450,10 @@ var cratesIO = []string{"registry+https://github.com/rust-lang/crates.io-index",
 func ReadCargoLock(data []byte) ([]CargoPackage, error) {
 	var lock struct {
 		Version int
-		Package []struct{ Name, Version, Source, Checksum string }
+		Package []struct {
+			Name, Version, Source, Checksum string
+			Dependencies                    []string
+		}
 	}
 	if _, err := toml.Decode(string(data), &lock); err != nil {
 		return nil, fmt.Errorf("project: Cargo.lock: %w", err)
@@ -461,7 +467,7 @@ func ReadCargoLock(data []byte) ([]CargoPackage, error) {
 		if !CrateName(pkg.Name) || !semver.IsValid("v"+pkg.Version) {
 			return nil, fmt.Errorf("project: invalid Cargo.lock package")
 		}
-		found := CargoPackage{Name: pkg.Name, Version: pkg.Version, Origin: pkg.Source, Checksum: pkg.Checksum}
+		found := CargoPackage{Name: pkg.Name, Version: pkg.Version, Origin: pkg.Source, Checksum: pkg.Checksum, Dependencies: pkg.Dependencies}
 		switch {
 		case pkg.Source == "":
 			found.Source = FromLocal
