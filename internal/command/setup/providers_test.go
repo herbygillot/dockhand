@@ -125,7 +125,15 @@ func TestProviderLinesShowTheImages(t *testing.T) {
 	require.Contains(t, out, "tart     ✓ ready for macOS 15\n"+
 		"           macOS 15 Sequoia   base image\n"+
 		"           macOS 26's image was deleted and its golden copy kept: dockhand setup tart tahoe restores it, in about a minute\n", "and none for this Mac's isn't said again")
-	images.status.Base, images.status.Restorable = nil, nil
+	// A locked login Keychain, which Tart's VMs need, is said under the
+	// ready line (rc7's F5).
+	images.status.Restorable = nil
+	unlocked := cmdtest.Hosted(t).AuthStore
+	cmdtest.Hosted(t).AuthStore = lockedKeychain{}
+	out = providers(t)
+	require.Contains(t, out, "tart     ✓ ready for macOS 15\n           ! the login Keychain is locked, as it is over SSH with nobody at the screen;")
+	cmdtest.Hosted(t).AuthStore = unlocked
+	images.status.Base = nil
 
 	// An Xcode image made without the plain one is said (the rc1 full
 	// stage's A2).

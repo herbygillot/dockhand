@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/subprocess"
 )
@@ -41,4 +42,13 @@ func (c Client) Run(ctx context.Context, options RunOptions, args ...string) ([]
 // Environment is the environment Tart runs in for this Tart home.
 func (c Client) Environment() []string {
 	return append(append([]string{}, c.Env...), "TART_HOME="+c.Home, "TART_NO_AUTO_PRUNE=1", "LC_ALL=C")
+}
+
+// KeychainLocked reports tart run's output where Virtualization.framework
+// refused the VM for want of the login Keychain, locked over SSH with
+// nobody at the screen: "VZErrorDomain Code=-9 'The virtual machine
+// encountered a security error.' … Failed to get current host key"
+// (rc7's F5, check-925, whose three attempts each failed so).
+func KeychainLocked(output string) bool {
+	return strings.Contains(output, "VZErrorDomain Code=-9") && (strings.Contains(output, "HostKey") || strings.Contains(output, "host key"))
 }
