@@ -443,7 +443,7 @@ func TestSudoRefusingThePersonSaysWhatRuleIsEnough(t *testing.T) {
 	require.NoError(t, os.WriteFile(says, []byte("Sorry, user dhtest may not run sudo on m1.\n"), 0o644))
 	_, err := l.asRoot(t.Context(), prefix, &fakeBuild{})
 	require.ErrorIs(t, err, buildenv.ErrNeedsAttention)
-	require.ErrorContains(t, err, "dhtest may not use sudo on this Mac, and "+prefix+"'s registry is root's")
+	require.True(t, strings.HasPrefix(err.Error(), "dhtest may not use sudo on this Mac, and "+prefix+"'s registry is root's"), "its own words alone, said once: %v", err)
 	require.ErrorContains(t, err, "one asking a password included, since a check run here has a terminal to ask on: dhtest ALL=(root) "+tclsh+".")
 	require.ErrorContains(t, err, "serve, which has none, needs the rule to ask no password: dhtest ALL=(root) NOPASSWD: "+tclsh)
 	seen, err := os.ReadFile(terminal)
@@ -453,7 +453,7 @@ func TestSudoRefusingThePersonSaysWhatRuleIsEnough(t *testing.T) {
 	require.NoError(t, os.WriteFile(says, []byte("Sorry, try again.\nsudo: 3 incorrect password attempts\n"), 0o644))
 	_, err = l.asRoot(t.Context(), prefix, &fakeBuild{})
 	require.ErrorIs(t, err, buildenv.ErrNeedsAttention)
-	require.ErrorContains(t, err, "sudo didn't let the build run as root in "+prefix+": sudo -v: exit status 1: Sorry, try again.")
+	require.True(t, strings.HasPrefix(err.Error(), "sudo didn't let the build run as root in "+prefix+": sudo -v: exit status 1: Sorry, try again."), err.Error())
 	require.NotContains(t, err.Error(), "may not use sudo")
 }
 

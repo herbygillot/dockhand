@@ -449,7 +449,7 @@ func (f *Follower) Follow(ctx context.Context, g Guest, started Run, job builden
 		case "refused":
 			// What the prefix holds keeps the build from being the
 			// branch's, which another attempt won't change.
-			return buildenv.Infrastructure("%w: %s", buildenv.ErrNeedsAttention, results.Detail)
+			return buildenv.NeedsAttention("%s", results.Detail)
 		}
 		if f.Stopped == nil {
 			continue
@@ -491,7 +491,7 @@ func (f *Follower) ended(ctx context.Context, g Guest, job buildenv.Job, build b
 		}
 		return nil
 	case "refused":
-		return buildenv.Infrastructure("%w: %s", buildenv.ErrNeedsAttention, last.Detail)
+		return buildenv.NeedsAttention("%s", last.Detail)
 	case "errored":
 		return interrupted(job, build, last.Building, buildenv.Infrastructure("the guest: %s", last.Detail), func(name string) string { return f.partialLog(ctx, g, job, name) })
 	}

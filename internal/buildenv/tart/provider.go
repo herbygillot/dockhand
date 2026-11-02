@@ -682,7 +682,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		// is refused again until it's unlocked: one attempt, said with
 		// how, where three failed as an environment error (rc7's F5).
 		if tartvm.KeychainLocked(err.Error()) {
-			return buildenv.Infrastructure("%w: reaching %s: %s: %w", buildenv.ErrNeedsAttention, vm, credential.LockedKeychain, err)
+			return buildenv.NeedsAttention("reaching %s: %s: %w", vm, credential.LockedKeychain, err)
 		}
 		return p.trouble(ctx, "reaching "+vm, err)
 	}
@@ -735,7 +735,7 @@ func (p *Provider) trouble(ctx context.Context, doing string, err error) error {
 	if errors.Is(err, guestssh.ErrRefused) {
 		// A guest that refuses dockhand refuses it again: the image's keys
 		// or password are another's, which another attempt won't change.
-		return buildenv.Infrastructure("%w: %s: %w", buildenv.ErrNeedsAttention, doing, err)
+		return buildenv.NeedsAttention("%s: %w", doing, err)
 	}
 	return buildenv.Infrastructure("%s: %w", doing, err)
 }
