@@ -70,7 +70,7 @@ func TestWriteLinks(t *testing.T) {
 		{Target: "pcre2", Clean: true, Ports: []string{"zlib"}},
 		{Target: "jq", Clean: true},
 	})
-	require.Equal(t, "Links\n  ! harbor links libonig.5.dylib from oniguruma (and 1 more of its libraries), which it doesn't declare in depends_lib\n"+
+	require.Equal(t, "Links\n  ! harbor links libonig.5.dylib from oniguruma (and 1 more of its libraries), which it doesn't declare in depends_lib; depends_lib-append port:oniguruma declares it\n"+
 		"    couldn't read what harbor-cli's build links, so whether it declares them isn't said\n"+
 		"    crystal links boehmgc and pcre2's libraries, each declared in depends_lib\n"+
 		"    pcre2 links zlib's libraries, declared in depends_lib\n"+

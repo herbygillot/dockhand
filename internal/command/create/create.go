@@ -78,6 +78,19 @@ its go-get answer.`,
 				header += fmt.Sprintf(" · %q", observed.Description)
 			}
 			fmt.Fprintln(out, header)
+			// A name master has is refused before anything is planned or written,
+			// on any branch, and before a branch is started for it; a branch's
+			// own tree, which may be older, is checked again as it writes.
+			taken, base, unchecked, err := e.NameTaken(ctx, name)
+			if err != nil {
+				return err
+			}
+			if taken != "" {
+				return errors.New(engine.TakenWords(name, taken))
+			}
+			if unchecked != "" {
+				fmt.Fprintf(streams.Err, "Couldn't check whether a subport named %s already exists: %s\n", name, unchecked)
+			}
 			if plan {
 				planned, err := e.PlanCreate(ctx, engine.CreateRequest{URL: args[0], Name: name, Category: category, Maintainer: s.File.Maintainer, Project: project})
 				if err != nil {
@@ -98,19 +111,7 @@ its go-get answer.`,
 					branch = selection.Branch
 				}
 			case where.IsNew():
-				// A name master has is refused before a branch is started
-				// for it.
-				var taken, unchecked, free string
-				var base model.ObjectID
-				if taken, base, unchecked, err = e.NameTaken(ctx, name); err != nil {
-					return err
-				}
-				if taken != "" {
-					return errors.New(engine.TakenWords(name, taken))
-				}
-				if unchecked != "" {
-					fmt.Fprintf(streams.Err, "Couldn't check whether a subport named %s already exists: %s\n", name, unchecked)
-				}
+				var free string
 				if free = where.NewName(); free == "" {
 					if free, err = e.NameFor(ctx, name, "new"); err != nil {
 						return err

@@ -143,3 +143,20 @@ func TestARenameIsCheckedTidiedAndSubmittedAsOne(t *testing.T) {
 		require.NotContains(t, submit.Body, "New port", "a renamed port is no new one")
 	}
 }
+
+// A port the branch added, as create leaves it before tidy, isn't in the
+// branch's HEAD, which a move reads; it's told to tidy first, where the
+// index's "no port" said nothing of why (field testing's omnidiff, note 7).
+func TestAnUncommittedNewPortIsToldToTidyBeforeItsMove(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "omnidiff-new"})
+	require.NoError(t, err)
+	testsupport.Git(t, branch.Worktree, "sparse-checkout", "add", "devel/omnidiff")
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/omnidiff/Portfile": "name omnidiff\nversion 1.0\ncategories devel\n"})
+	testsupport.Git(t, branch.Worktree, "add", "devel/omnidiff/Portfile")
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{}})
+	_, err = e.RenamePort(t.Context(), PortRenameRequest{Branch: branch, Port: "omnidiff", Category: "textproc"})
+	require.EqualError(t, err, "omnidiff isn't committed yet; tidy it, then move it")
+}

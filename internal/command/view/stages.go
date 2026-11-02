@@ -54,7 +54,9 @@ func Where(places config.Places, dir string) string {
 
 // LinkWords say a link finding (evidence.LinkFinding) as a notice, its
 // mark !, holding nothing: "harbor links libonig.5.dylib from oniguruma
-// (and 1 more of its libraries), which it doesn't declare in depends_lib";
+// (and 1 more of its libraries), which it doesn't declare in depends_lib;
+// depends_lib-append port:oniguruma declares it", naming the line the
+// person writes (the omnidiff session's note 2);
 // or, where the links couldn't be read, so nothing is said of them; or,
 // where each is declared, how many ports they map to.
 func LinkWords(finding engine.LinkFinding) string {
@@ -88,7 +90,7 @@ func LinkWords(finding engine.LinkFinding) string {
 		}
 		where = " on " + prose.And(on)
 	}
-	return fmt.Sprintf("%s links %s from %s%s, which it doesn't declare in depends_lib%s", finding.Target, path.Base(finding.Library), finding.Port, more, where)
+	return fmt.Sprintf("%s links %s from %s%s, which it doesn't declare in depends_lib%s; depends_lib-append port:%s declares it", finding.Target, path.Base(finding.Library), finding.Port, more, where, finding.Port)
 }
 
 // LinkLine is one line of a check's link findings, its mark and words.

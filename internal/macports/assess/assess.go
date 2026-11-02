@@ -315,6 +315,9 @@ type assessment struct {
 	// found and covered are where each finding and coverage line came
 	// from, beside them, for fold.
 	found, covered []origin
+	// reaches are what the port's build reaches of each Cargo.lock, by
+	// its archive and path (reach).
+	reaches map[string]lockReach
 }
 
 // origin is where a finding or coverage line was found: the archive's
@@ -479,7 +482,7 @@ func (a *assessment) pair(pair Pair) {
 	}
 	changes := sourcecompare.Compare(pair.Before, pair.After, a.input.Versions, func(option string) bool {
 		return a.input.Portfile == nil || portfile.Mentions(a.input.Portfile, option)
-	}, sets)
+	}, sets, macports.CargoBuildArgs(port.Options))
 	// Each manifest's dependency findings are put in order as a run: what
 	// holds first. A proven manifest's are counted in one line, where the
 	// file is.
@@ -553,7 +556,7 @@ func (a *assessment) pair(pair Pair) {
 			// found names no manifest, and holds.
 			a.add(finding(change, !proven[base]))
 		case change.How == "native":
-			if found, ok := a.native(change); ok {
+			if found, ok := a.native(change, pair, port); ok {
 				found.Message += alongside(change, pair)
 				a.add(found)
 			}
@@ -732,11 +735,16 @@ func unlinked(change sourcecompare.Change, port macports.PortInfo) (model.Upstre
 // zola run with 68df8b57): one none of whose names (macports.LibraryPorts)
 // is a port in the candidate's tree is set apart in coverage. Where that
 // couldn't be observed, it's said as it was, MacPorts perhaps providing
-// it; Wanted asks for each name not yet observed.
-func (a *assessment) native(change sourcecompare.Change) (model.UpstreamChange, bool) {
+// it; Wanted asks for each name not yet observed. One the port's build
+// doesn't reach, by the lock's edges and the manifests' enabled
+// dependencies, is set apart first, and asks nothing (reached).
+func (a *assessment) native(change sourcecompare.Change, pair Pair, port macports.PortInfo) (model.UpstreamChange, bool) {
 	crate := project.CargoPackage{Name: change.Name, Version: change.Now}
 	library := crate.NativeLibrary()
 	found := finding(change, false)
+	if !a.reached(change, &found, pair, port) {
+		return model.UpstreamChange{}, false
+	}
 	absent := true
 	for _, name := range macports.LibraryPortsAt(library, crate.NativeLibraryVersion()) {
 		observation, ok := a.input.Observed[Provider{Port: name}]

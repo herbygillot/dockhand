@@ -168,12 +168,15 @@ func TestWhatsTiedToANativeLibraryIsWhatsNamedForIt(t *testing.T) {
 }
 
 // A library's ports are looked for by its own name, without its lib
-// prefix, and by the names ports provide it under otherwise.
+// prefix, and by the names ports provide it under otherwise, which come
+// in place of the bare name: libz-sys's libz is zlib, never sysutils/z
+// (the omnidiff session's note 5).
 func TestTheNamesALibrarysPortMayHave(t *testing.T) {
 	for library, want := range map[string][]string{
 		"zstd":       {"zstd"},
 		"libsqlite3": {"libsqlite3", "sqlite3"},
-		"libz":       {"libz", "z", "zlib"},
+		"libz":       {"libz", "zlib"},
+		"liblzma":    {"liblzma", "lzma"},
 		"onig":       {"onig", "oniguruma6"},
 		"lib":        {"lib"},
 	} {

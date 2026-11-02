@@ -94,17 +94,16 @@ func (e *Engine) findDirectory(ctx context.Context, tree, name string) (string, 
 }
 
 // directoriesNamed are the directories of a tree's categories named for
-// a port, category/<name>, that hold a Portfile.
+// a port, category/<name>, that hold a Portfile, the name's case aside, as
+// MacPorts' names are: librecad finds graphics/LibreCAD.
 func (e *Engine) directoriesNamed(ctx context.Context, tree, name string) ([]string, error) {
-	entries, err := e.Repo.ReadTree(ctx, tree)
-	if err != nil {
+	named, err := namedLike(ctx, e.Repo, tree, name)
+	if err != nil || len(named) == 0 {
 		return nil, err
 	}
-	var candidates []string
-	for _, entry := range entries {
-		if entry.Type == "tree" && macports.IsCategory(entry.Name) {
-			candidates = append(candidates, entry.Name+"/"+name+"/Portfile")
-		}
+	candidates := make([]string, 0, len(named))
+	for _, directory := range named {
+		candidates = append(candidates, directory+"/Portfile")
 	}
 	found, err := e.Repo.FileBlobs(ctx, tree, candidates)
 	if err != nil {
@@ -116,6 +115,33 @@ func (e *Engine) directoriesNamed(ctx context.Context, tree, name string) ([]str
 	}
 	slices.Sort(directories)
 	return directories, nil
+}
+
+// namedLike are the entries of a tree's categories, category/<entry>,
+// whose name is name, its case aside, in one listing.
+func namedLike(ctx context.Context, repo *git.Repository, tree, name string) ([]string, error) {
+	entries, err := repo.ReadTree(ctx, tree)
+	if err != nil {
+		return nil, err
+	}
+	var categories []string
+	for _, entry := range entries {
+		if entry.Type == "tree" && macports.IsCategory(entry.Name) {
+			categories = append(categories, entry.Name)
+		}
+	}
+	paths, err := repo.Entries(ctx, tree, categories)
+	if err != nil {
+		return nil, err
+	}
+	var named []string
+	for _, path := range paths {
+		if strings.EqualFold(path[strings.LastIndexByte(path, '/')+1:], name) {
+			named = append(named, path)
+		}
+	}
+	slices.Sort(named)
+	return named, nil
 }
 
 // Rebased is what a rebase did.

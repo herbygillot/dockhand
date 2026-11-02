@@ -80,8 +80,8 @@ func TestACargoProjectsChangedBinariesAreSaid(t *testing.T) {
 	}
 	before := project.Reading{Files: old, Programs: []string{"jgenesis-cli", "jgenesis-gui"}}
 	after := project.Reading{Files: now, Programs: []string{"jgenesis"}}
-	require.Equal(t, []Change{{Kind: "build", How: "binaries", Path: "Cargo.toml", Message: "upstream's Cargo packages and binaries change: jgenesis added; jgenesis-cli, jgenesis-gui removed"}}, cargoBinaries(before, after))
-	require.Empty(t, cargoBinaries(after, after))
+	require.Equal(t, []Change{{Kind: "build", How: "binaries", Path: "Cargo.toml", Message: "upstream's Cargo packages and binaries change: jgenesis added; jgenesis-cli, jgenesis-gui removed"}}, cargoBinaries(before, after, project.CargoFeatures{}))
+	require.Empty(t, cargoBinaries(after, after, project.CargoFeatures{}))
 
 	// A member added with no src/main.rs, or src/bin, is a library, which
 	// installs nothing a destroot names: mise's mise-dotenv (field
@@ -90,9 +90,9 @@ func TestACargoProjectsChangedBinariesAreSaid(t *testing.T) {
 	for name, file := range now {
 		library[name] = file
 	}
-	require.Empty(t, cargoBinaries(after, project.Reading{Files: library, Programs: []string{"jgenesis"}}))
+	require.Empty(t, cargoBinaries(after, project.Reading{Files: library, Programs: []string{"jgenesis"}}, project.CargoFeatures{}))
 	require.Equal(t, []Change{{Kind: "build", How: "new binaries", Path: "Cargo.toml", Message: "upstream's Cargo packages and binaries change: jgenesis-dotenv added"}},
-		cargoBinaries(after, project.Reading{Files: library, Programs: []string{"jgenesis", "jgenesis-dotenv"}}), "one with a main.rs is a program, only added")
+		cargoBinaries(after, project.Reading{Files: library, Programs: []string{"jgenesis", "jgenesis-dotenv"}}, project.CargoFeatures{}), "one with a main.rs is a program, only added")
 }
 
 // A [[bin]] added beside src/main.rs adds a program; the one Cargo infers
@@ -106,11 +106,25 @@ func TestABinBesideMainAddsAProgram(t *testing.T) {
 	}
 	old := reading("[package]\nname = \"ratty\"\nedition = \"2024\"\n")
 	now := reading("[package]\nname = \"ratty\"\nedition = \"2024\"\n\n[[bin]]\nname = \"ratty-mcp\"\npath = \"src/bin/ratty-mcp.rs\"\n")
-	require.Equal(t, []Change{{Kind: "build", How: "new binaries", Path: "Cargo.toml", Message: "upstream's Cargo packages and binaries change: ratty-mcp added"}}, cargoBinaries(old, now))
+	require.Equal(t, []Change{{Kind: "build", How: "new binaries", Path: "Cargo.toml", Message: "upstream's Cargo packages and binaries change: ratty-mcp added"}}, cargoBinaries(old, now, project.CargoFeatures{}))
 	off := reading("[package]\nname = \"ratty\"\nautobins = false\n\n[[bin]]\nname = \"ratty-mcp\"\npath = \"src/bin/ratty-mcp.rs\"\n")
-	require.Equal(t, "upstream's Cargo packages and binaries change: ratty-mcp added; ratty removed", cargoBinaries(old, off)[0].Message, "autobins = false builds only the [[bin]]s")
+	require.Equal(t, "upstream's Cargo packages and binaries change: ratty-mcp added; ratty removed", cargoBinaries(old, off, project.CargoFeatures{})[0].Message, "autobins = false builds only the [[bin]]s")
 	renamed := reading("[package]\nname = \"ratty\"\n\n[[bin]]\nname = \"rt\"\npath = \"src/main.rs\"\n")
-	require.Equal(t, "upstream's Cargo packages and binaries change: rt added; ratty removed", cargoBinaries(old, renamed)[0].Message, "a [[bin]] building src/main.rs is its program")
+	require.Equal(t, "upstream's Cargo packages and binaries change: rt added; ratty removed", cargoBinaries(old, renamed, project.CargoFeatures{})[0].Message, "a [[bin]] building src/main.rs is its program")
+}
+
+// A [[bin]] added behind a feature the port's build doesn't turn on adds
+// no program; where the port's build arguments turn it on, it does (the
+// omnidiff session's note 1).
+func TestABinBehindAFeatureIsAProgramOnlyWhereTheBuildTurnsItOn(t *testing.T) {
+	t.Parallel()
+	reading := func(manifest string) project.Reading {
+		return project.Reading{Files: map[string]project.File{"Cargo.toml": {Data: []byte(manifest)}}, Programs: []string{"."}}
+	}
+	old := reading("[package]\nname = \"omnidiff\"\n[features]\nstats = []\n")
+	now := reading("[package]\nname = \"omnidiff\"\n[features]\nstats = []\n\n[[bin]]\nname = \"diffstats\"\nrequired-features = [\"stats\"]\n")
+	require.Empty(t, cargoBinaries(old, now, project.CargoFeatures{}))
+	require.Equal(t, "upstream's Cargo packages and binaries change: diffstats added", cargoBinaries(old, now, project.CargoFeatures{Features: []string{"stats"}})[0].Message)
 }
 
 // A Python project's PEP 517 backend moving is said, with the new one:

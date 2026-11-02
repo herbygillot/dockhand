@@ -115,6 +115,12 @@ func TestCreateWritesANewPortFromItsProject(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "create", "https://github.com/jqlang/jq", "--new", "--category", "sysutils")
 	require.ErrorContains(t, err, "there is already a port jq, at textproc/jq; --name names this one otherwise")
 	require.Empty(t, strings.TrimSpace(testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/jq-*")), "no branch was started for it")
+	// Every create asks master, and the name's case is set aside in the
+	// asking, never in the name: JQ is jq's (prioritization's, 2026-11-02).
+	_, _, err = cmdtest.Dockhand(t, "create", "https://github.com/jqlang/jq", "--name", "JQ", "--category", "sysutils")
+	require.ErrorContains(t, err, "there is already a port JQ, at textproc/jq")
+	_, _, err = cmdtest.Dockhand(t, "create", "https://github.com/jqlang/jq", "--name", "JQ", "--category", "sysutils", "--plan")
+	require.ErrorContains(t, err, "there is already a port JQ, at textproc/jq", "a plan is refused alike")
 }
 
 type jqProject struct{}

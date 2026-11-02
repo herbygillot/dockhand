@@ -254,8 +254,9 @@ type Versions struct{ Old, New string }
 // may set it, in any variant; nil names none. sets says whether a Portfile
 // that was read names it, which a change to it says first: nil where none
 // was read, where named answers yes to everything, and nothing is said to
-// be the Portfile's.
-func Compare(older, newer project.Reading, versions Versions, named, sets func(option string) bool) []Change {
+// be the Portfile's. cargo is what the port's build turns on, which decides
+// which of a Cargo project's [[bin]]s it builds.
+func Compare(older, newer project.Reading, versions Versions, named, sets func(option string) bool, cargo project.CargoFeatures) []Change {
 	if named == nil {
 		named = func(string) bool { return false }
 	}
@@ -387,7 +388,7 @@ func Compare(older, newer project.Reading, versions Versions, named, sets func(o
 		}
 	}
 	changes = append(changes, libraryVersions(older.LibraryVersions, newer.LibraryVersions)...)
-	changes = append(changes, cargoBinaries(older, newer)...)
+	changes = append(changes, cargoBinaries(older, newer, cargo)...)
 	changes = append(changes, pythonBackend(older, newer)...)
 	changes = append(changes, hostPaths(older, newer)...)
 	changes = licenseMove(changes, before, after)
@@ -896,9 +897,10 @@ func libraryVersions(old, now map[string]string) []Change {
 // and the members a reading kept: a Portfile's destroot names them, and a
 // renamed one isn't there to install. jgenesis 0.14.0 merged jgenesis-cli
 // and jgenesis-gui into one jgenesis, which nothing said (field testing,
-// batch 12). A library package's renaming reads as one too, which a look
-// settles.
-func cargoBinaries(old, now project.Reading) []Change {
+// batch 12). A [[bin]] the port's build doesn't turn its features on for
+// isn't one (project.CargoFeatures). A library package's renaming reads as
+// one too, which a look settles.
+func cargoBinaries(old, now project.Reading, cargo project.CargoFeatures) []Change {
 	binaries := func(reading project.Reading) []string {
 		files := map[string][]byte{}
 		for name, file := range reading.Files {
@@ -910,7 +912,7 @@ func cargoBinaries(old, now project.Reading) []Change {
 		// src/main.rs or src/bin; otherwise it's a library, which installs
 		// nothing a destroot names (mise's mise-dotenv, field testing's
 		// batch 13).
-		return project.CargoPrograms(files, reading.CargoProgram)
+		return project.CargoPrograms(files, reading.CargoProgram, cargo)
 	}
 	before, after := binaries(old), binaries(now)
 	if len(before) == 0 || len(after) == 0 || slices.Equal(before, after) {

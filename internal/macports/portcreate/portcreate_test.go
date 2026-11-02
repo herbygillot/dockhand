@@ -198,6 +198,12 @@ func TestANewPortInstallsWhatItsManifestNames(t *testing.T) {
 	require.Empty(t, Binaries(map[string][]byte{"Cargo.toml": []byte("[package]\nname = \"txt\"\n")}, cargo), "a library, with no src/main.rs, as a comparison reads it (CX-7)")
 	require.Equal(t, []string{"a", "b"}, Binaries(map[string][]byte{"Cargo.toml": []byte("[package]\nname = \"x\"\n[[bin]]\nname = \"a\"\n[[bin]]\nname = \"b\"\n")}, cargo))
 	require.Empty(t, Binaries(map[string][]byte{"Cargo.toml": []byte("[workspace]\nmembers = [\"a\"]\n")}, cargo))
+	// A [[bin]] needing a feature the default set doesn't turn on isn't
+	// built, so isn't installed: omnidiff's dev tools, gated on
+	// test-fixtures or stats (the omnidiff session's note 1).
+	gated := "[package]\nname = \"omnidiff\"\n[features]\ndefault = [\"tui\"]\ntui = []\nstats = []\ntest-fixtures = []\n" +
+		"[[bin]]\nname = \"omnidiff\"\npath = \"src/main.rs\"\nrequired-features = [\"tui\"]\n[[bin]]\nname = \"gen-fixtures\"\nrequired-features = [\"test-fixtures\"]\n[[bin]]\nname = \"diffstats\"\nrequired-features = [\"stats\", \"tui\"]\n"
+	require.Equal(t, []string{"omnidiff"}, Binaries(map[string][]byte{"Cargo.toml": []byte(gated), "src/main.rs": nil}, cargo))
 	// A workspace's members' programs, as its destroot installs them.
 	workspace := map[string][]byte{"Cargo.toml": []byte("[workspace]\nmembers = [\"cli\", \"core\", \"crates/*\"]\n"),
 		"cli/Cargo.toml": []byte("[package]\nname = \"harbor\"\n"), "cli/src/main.rs": nil, "core/Cargo.toml": []byte("[package]\nname = \"harbor-core\"\n")}

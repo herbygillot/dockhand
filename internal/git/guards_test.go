@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -181,4 +182,34 @@ func TestFirstParentTrees(t *testing.T) {
 	require.Equal(t, []git.DatedTree{{Tree: trees[second], Committed: committed}}, found)
 	_, err = repo.FirstParentTrees(t.Context(), "HEAD", 1)
 	require.ErrorContains(t, err, "literal commit objects are required")
+}
+
+// Entries lists what each named directory holds, in one listing, a
+// directory the tree lacks giving nothing.
+func TestEntriesListEachDirectorysChildren(t *testing.T) {
+	t.Parallel()
+	repo, _ := portsCheckout(t)
+	head := testsupport.Git(t, repo.Root, "rev-parse", "HEAD")
+	trees, err := repo.CommitTrees(t.Context(), []string{head})
+	require.NoError(t, err)
+	top, err := repo.ReadTree(t.Context(), trees[head])
+	require.NoError(t, err)
+	var dir, sub string
+	for _, entry := range top {
+		if entry.Type == "tree" {
+			dir, sub = entry.Name, entry.Object
+			break
+		}
+	}
+	require.NotEmpty(t, dir)
+	children, err := repo.ReadTree(t.Context(), sub)
+	require.NoError(t, err)
+	found, err := repo.Entries(t.Context(), trees[head], []string{dir, "no-such-directory"})
+	require.NoError(t, err)
+	require.Len(t, found, len(children))
+	for _, path := range found {
+		require.True(t, strings.HasPrefix(path, dir+"/"), path)
+	}
+	_, err = repo.Entries(t.Context(), trees[head], []string{"../x"})
+	require.Error(t, err)
 }

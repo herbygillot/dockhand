@@ -654,7 +654,7 @@ func (e *Engine) linkHolds(ctx context.Context, checked *Evidence) []model.Conce
 			port = checked.Targets[i].Target.Target.Name
 		}
 		held = append(held, model.Concern{Origin: model.FromHolds, Port: port, Rule: linkUndeclaredRule, Subject: finding.Port,
-			Detail: fmt.Sprintf("%s links %s from %s, which it doesn't declare in depends_lib; review is required before automatic submission", port, path.Base(finding.Library), finding.Port)})
+			Detail: fmt.Sprintf("%s links %s from %s, which it doesn't declare in depends_lib; depends_lib-append port:%s declares it; review is required before automatic submission", port, path.Base(finding.Library), finding.Port, finding.Port)})
 	}
 	return held
 }

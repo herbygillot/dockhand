@@ -78,11 +78,13 @@ func Binaries(files map[string][]byte, build Build) []string {
 	case "cargo":
 		// Each package's programs, the root's and its members', as a
 		// comparison reads them, a package building one of its name where
-		// it has src/main.rs (project.CargoPrograms, CX-7).
+		// it has src/main.rs (project.CargoPrograms, CX-7), with default
+		// features, as the cargo PortGroup builds the Portfile create writes:
+		// a [[bin]] needing another isn't built, so isn't installed.
 		return project.CargoPrograms(files, func(dir string) bool {
 			_, ok := files[path.Join(dir, "src/main.rs")]
 			return ok
-		})
+		}, project.CargoFeatures{})
 	case "go":
 		if module, err := project.ReadGoMod(files["go.mod"]); err == nil {
 			if binary, ok := module.Binary(); ok {

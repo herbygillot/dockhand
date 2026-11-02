@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -847,4 +848,76 @@ type stubArchiver struct{}
 
 func (stubArchiver) SourceArchive(context.Context, macports.PortInfo, model.GitSource, string) (string, error) {
 	return "", errors.New("no Git source here")
+}
+
+// After a check, a native finding whose crate a build compiled keeps its
+// line, saying so, one compiled by either of two builds among them; those
+// no build compiled leave the list for one line of coverage; a port whose
+// logs name no compiled crate is as it was (the omnidiff session's note
+// 6). The submit preview's words are ComparisonLines'.
+func TestACheckSettlesWhichNativeCratesAreSaid(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	write := func(name, text string) string {
+		path := filepath.Join(dir, name)
+		require.NoError(t, os.WriteFile(path, []byte(text), 0o644))
+		return path
+	}
+	arm := write("arm.log", "--->  Building omnidiff\n   Compiling libz-sys v1.1.22\n   Compiling omnidiff v0.2.0 (/work)\n")
+	intel := write("intel.log", "--->  Building omnidiff\n   Compiling onig_sys v69.8.1\n")
+	plain := write("jq.log", "--->  Building jq\nmake all\n")
+	recorded := func(log string) Cell {
+		return Cell{Kind: CellRecorded, TargetResult: model.TargetResult{Log: log, Outcome: model.OutcomePassed}}
+	}
+	checked := Evidence{Targets: []TargetEvidence{
+		{Target: model.PlanTarget{ID: "omnidiff", Target: model.Target{Name: "omnidiff"}}, Outcomes: []Cell{recorded(arm), recorded(intel)}},
+		{Target: model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}}, Outcomes: []Cell{recorded(plain)}},
+	}}
+	native := func(crate, version, library, rest string) model.UpstreamChange {
+		return model.UpstreamChange{Kind: "dependency", Path: "Cargo.lock", Rule: assess.NativeLibrary, Subject: crate, Class: model.Introduced,
+			Message: fmt.Sprintf("upstream: Cargo.lock adds %s %s, which links the native library %s%s", crate, version, library, rest)}
+	}
+	declare := ": the Portfile may declare it, rather than the crate linking whatever copy it finds"
+	changes := []model.UpstreamChange{
+		native("libz-sys", "1.1.22", "libz", ", which MacPorts has as archivers/zlib"+declare),
+		native("libgit2-sys", "0.18.2+1.9.1", "libgit2", ", which MacPorts has as devel/libgit2"+declare),
+		native("libsqlite3-sys", "0.35.0", "libsqlite3", ", which MacPorts has as databases/sqlite3"+declare),
+		native("onig_sys", "69.8.1", "onig", ", which MacPorts has as devel/oniguruma6"+declare),
+		native("libmimalloc-sys", "0.1.43", "libmimalloc", ": MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds"),
+		{Kind: "dependency", Path: "Cargo.lock", Rule: assess.DependenciesCounted, Message: "upstream: Cargo.lock: 446 added", Class: model.Introduced},
+	}
+	comparisons := []PortComparison{
+		{Port: "omnidiff", Comparison: model.UpstreamComparison{Changes: changes, Coverage: []model.Coverage{{Path: "Cargo.lock", Treatment: "inspected", Policy: "read"}}}},
+		{Port: "jq", Comparison: model.UpstreamComparison{Changes: changes[:1]}},
+	}
+	mapped := CompiledNative(comparisons, func(port string) (map[string]bool, bool) { return compiledCrates(checked, port) })
+	require.Equal(t, comparisons[1], mapped[1], "no Compiling line changes nothing")
+	require.Equal(t, changes[0].Message, comparisons[0].Comparison.Changes[0].Message, "the record isn't rewritten")
+	var words []string
+	for _, line := range ComparisonLines(mapped[:1]) {
+		words = append(words, line.Words)
+	}
+	require.Equal(t, []string{
+		"Cargo.lock adds libz-sys 1.1.22, which links the native library libz, which MacPorts has as archivers/zlib, which the check compiled; the Portfile may declare it, rather than the crate linking whatever copy it finds",
+		"Cargo.lock adds onig_sys 69.8.1, which links the native library onig, which MacPorts has as devel/oniguruma6, which the check compiled; the Portfile may declare it, rather than the crate linking whatever copy it finds",
+		"Cargo.lock: 446 added",
+		"Compared Cargo.lock; the check compiled none of libgit2-sys, libsqlite3-sys, libmimalloc-sys, which Cargo.lock pins for features or targets this build doesn't use",
+	}, words)
+
+	one := CompiledNative([]PortComparison{{Port: "omnidiff", Comparison: model.UpstreamComparison{Changes: changes[1:2]}}}, func(string) (map[string]bool, bool) { return map[string]bool{"libz-sys": true}, true })
+	require.Empty(t, one[0].Comparison.Changes)
+	require.Equal(t, "the check didn't compile libgit2-sys, which Cargo.lock pins for features or targets this build doesn't use", CoverageWords(one[0].Comparison))
+}
+
+// The crates a port's build doesn't reach are said in coverage by name,
+// as set apart for features or targets the build doesn't take (the
+// omnidiff session's note 6).
+func TestCratesTheBuildDoesntReachAreSaidInCoverage(t *testing.T) {
+	t.Parallel()
+	compared := model.UpstreamComparison{Coverage: []model.Coverage{
+		{Path: "Cargo.lock", Treatment: "inspected", Policy: "read"},
+		{Path: "Cargo.lock", Relevance: "unknown", Treatment: "set-apart", Policy: assess.NativeLibraryReach, Reason: "libgit2-sys"},
+		{Path: "Cargo.lock", Relevance: "unknown", Treatment: "set-apart", Policy: assess.NativeLibraryReach, Reason: "libmimalloc-sys"},
+	}}
+	require.Equal(t, "Compared Cargo.lock; set apart, pinned for features or targets the port's build on macOS doesn't take: libgit2-sys, libmimalloc-sys", CoverageWords(compared))
 }

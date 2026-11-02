@@ -422,21 +422,13 @@ func TakenWords(name, directory string) string {
 }
 
 // refuseExisting refuses a name a port in the base, or in the branch,
-// already has, in any category.
+// already has, in any category, its case aside.
 func (e *Engine) refuseExisting(ctx context.Context, worktree *git.Repository, name string) error {
 	_, tree, err := worktree.WorkingTree(ctx)
 	if err != nil {
 		return err
 	}
-	categories, err := treeCategories(ctx, worktree)
-	if err != nil {
-		return err
-	}
-	var candidates []string
-	for _, category := range categories {
-		candidates = append(candidates, category+"/"+name)
-	}
-	existing, err := worktree.ExistingPaths(ctx, tree, candidates)
+	existing, err := namedLike(ctx, worktree, tree, name)
 	if err != nil {
 		return err
 	}
