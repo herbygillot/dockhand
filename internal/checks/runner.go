@@ -342,8 +342,13 @@ func (d *driver) anotherCanReuse(ctx context.Context, environment model.Environm
 }
 
 func (d *driver) emit(ctx context.Context, kind model.EventKind, message string) {
+	d.emitAt(ctx, kind, model.LevelInfo, message)
+}
+
+// emitAt journals an event of the run's at a level.
+func (d *driver) emitAt(ctx context.Context, kind model.EventKind, level model.EventLevel, message string) {
 	_ = d.fenced(ctx, func(tx store.Tx) error {
-		_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: kind, Level: model.LevelInfo, Message: message})
+		_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: kind, Level: level, Message: message})
 		return err
 	})
 }
@@ -1310,6 +1315,11 @@ func (b *build) Observe(observed model.Observed) error {
 
 func (b *build) Progress(message string) {
 	b.d.emit(b.ctx, model.EventProgress, DescribeEnvironment(b.execution.Environment)+": "+message)
+}
+
+// Detail is a step a follower says only at --verbose (buildenv.Detailer).
+func (b *build) Detail(message string) {
+	b.d.emitAt(b.ctx, model.EventProgress, model.LevelVerbose, DescribeEnvironment(b.execution.Environment)+": "+message)
 }
 
 // Holding is the check whose execution runs in the VM a provider named

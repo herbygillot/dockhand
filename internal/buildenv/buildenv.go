@@ -287,6 +287,21 @@ type Build interface {
 	Canceled() bool
 }
 
+// Detailer is a Build that takes a step said only at --verbose, beside
+// Progress's: each archive a guest is given, where the default says them
+// once (the omnidiff session's note 9).
+type Detailer interface {
+	Detail(message string)
+}
+
+// Detail reports a step at --verbose where the build takes one, and
+// nowhere otherwise.
+func Detail(build Build, message string) {
+	if detailer, ok := build.(Detailer); ok {
+		detailer.Detail(message)
+	}
+}
+
 // A ReleaseProvider builds on releases a person names, as Tart does: each
 // release --on <provider>:<releases> selects is an environment of its own.
 type ReleaseProvider interface {

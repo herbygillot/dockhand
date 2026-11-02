@@ -114,7 +114,7 @@ func Wait(ctx context.Context, e *engine.Engine, run model.Run, streams term.Str
 }
 
 func Follow(ctx context.Context, e *engine.Engine, session *coord.Session, run model.Run, streams term.Streams, places config.Places, named bool, before func(checks.Lead)) error {
-	journal := &journal{e: e, run: run.ID, out: streams.Err}
+	journal := &journal{e: e, run: run.ID, out: streams.Err, verbose: streams.Verbose() > 0}
 	if quiet(streams) {
 		journal.held, journal.live = true, streams.ErrTerminal()
 		journal.status = streams.Status()
@@ -168,14 +168,20 @@ type journal struct {
 	// prints, off a terminal, what the redrawn line would show, each
 	// change once.
 	held, live, steps bool
-	status            *term.StatusLine
-	shown             string
+	// verbose shows the steps journaled at --verbose, as each archive a
+	// guest is given.
+	verbose bool
+	status  *term.StatusLine
+	shown   string
 }
 
 func (j *journal) show(ctx context.Context) {
 	events, _ := j.e.RunEvents(ctx, j.run, j.last)
 	for _, event := range events {
 		j.last = event.Sequence
+		if event.Level == model.LevelVerbose && !j.verbose {
+			continue
+		}
 		switch event.Kind {
 		case model.EventWaiting:
 			// A wait is said at every level, where the redrawn line
