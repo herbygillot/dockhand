@@ -32,10 +32,42 @@ type unindexedPort struct {
 func (u unindexedPort) Error() string { return u.words }
 func (u unindexedPort) Unwrap() error { return u.err }
 
+// brokenWhere is whose Portfile portindex couldn't parse, which picks
+// brokenPortfileWords' tail.
+type brokenWhere int
+
+const (
+	// brokenByBranch is a Portfile the branch changes.
+	brokenByBranch brokenWhere = iota
+	// brokenUnchanged is one the branch leaves as master has it, which
+	// reads something the branch changes, as a PortGroup.
+	brokenUnchanged
+	// brokenOnMaster is master's own, at a start.
+	brokenOnMaster
+)
+
 // brokenPortfileWords are (a): nothing indexed at the directory, and
-// portindex's reason kept.
-func brokenPortfileWords(portfile, name, branch, reason string) string {
+// portindex's reason kept, its tail by whose Portfile it is
+// (architecture's ruling, 2026-11-02).
+func brokenPortfileWords(portfile, name, branch, reason string, where brokenWhere) string {
+	switch where {
+	case brokenUnchanged:
+		return fmt.Sprintf("%s doesn't parse in %s's index, though the branch doesn't change it: portindex says %s. What the branch changes that the Portfile reads, as a PortGroup, is where to look", portfile, branch, reason)
+	case brokenOnMaster:
+		return fmt.Sprintf("%s doesn't parse, so no port named %s is in master's index: portindex says %s. Master's own Portfile doesn't parse on this Mac's MacPorts", portfile, name, reason)
+	}
 	return fmt.Sprintf("%s doesn't parse, so no port named %s is in %s's index: portindex says %s. Fix the Portfile and run the command again", portfile, name, branch, reason)
+}
+
+// droppedSubportWords are (b) where the name asked for is one master
+// defines at the directory and the branch dropped, its others kept and
+// none added: no rename happened.
+func droppedSubportWords(portfile, name string, now []string) string {
+	ask := "one of them"
+	if len(now) == 1 {
+		ask = now[0]
+	}
+	return fmt.Sprintf("%s defines %s now and not %s, which master has there too. Restore the subport, or ask for %s", portfile, prose.And(now), name, ask)
 }
 
 // unexplainedPortfileWords are (a'): nothing indexed at the directory,
@@ -105,16 +137,23 @@ func (e *Engine) unindexed(ctx context.Context, err error, source model.Source, 
 		return err
 	}
 	changes := slices.Contains(macports.ScopeOf(paths).Ports, directory)
-	if !changes && (indexed || !starting) {
+	portfile := directory + "/Portfile"
+	// A kept parse reason is said where the branch leaves the directory
+	// as master has it too: a PortGroup the branch changes, or, at a
+	// start, master's own Portfile, is why.
+	if !changes {
+		if reason, ok := e.indexFailure(ctx, ports, source, directory); ok {
+			where := brokenUnchanged
+			if starting {
+				where = brokenOnMaster
+			}
+			return unindexedPort{words: brokenPortfileWords(portfile, name, branch, reason, where), err: err}
+		}
 		return err
 	}
-	portfile := directory + "/Portfile"
 	if found, blobErr := e.Repo.FileBlobs(ctx, string(source.Tree), []string{portfile}); blobErr != nil {
 		return err
 	} else if _, ok := found[portfile]; !ok {
-		if !changes {
-			return err
-		}
 		return unindexedPort{words: removedDirectoryWords(directory, name, branch), err: err}
 	}
 	defined, namesErr := ports.Names.PortsDefined(ctx, source, []string{directory})
@@ -122,11 +161,6 @@ func (e *Engine) unindexed(ctx context.Context, err error, source model.Source, 
 		return err
 	}
 	if now := defined[directory]; len(now) > 0 {
-		// A Portfile master names otherwise than its directory is no
-		// rename of the branch's.
-		if !changes {
-			return err
-		}
 		var before []string
 		if indexed {
 			master, _ := ports.Names.PortsDefined(ctx, base, []string{directory})
@@ -140,20 +174,28 @@ func (e *Engine) unindexed(ctx context.Context, err error, source model.Source, 
 				added = append(added, port)
 			}
 		}
+		if len(added) == 0 && slices.Contains(before, name) {
+			return unindexedPort{words: droppedSubportWords(portfile, name, now), err: err}
+		}
 		asked := ""
 		if len(added) == 1 {
 			asked = added[0]
 		}
 		return unindexedPort{words: renamedPortWords(portfile, name, now, asked), err: err}
 	}
-	if ports.Failures != nil {
-		failed, failErr := ports.Failures.IndexFailures(ctx, source, []string{directory})
-		if reason, ok := failed[directory]; failErr == nil && ok {
-			return unindexedPort{words: brokenPortfileWords(portfile, name, branch, reason), err: err}
-		}
-	}
-	if !changes {
-		return err
+	if reason, ok := e.indexFailure(ctx, ports, source, directory); ok {
+		return unindexedPort{words: brokenPortfileWords(portfile, name, branch, reason, brokenByBranch), err: err}
 	}
 	return unindexedPort{words: unexplainedPortfileWords(portfile, directory, branch), err: err}
+}
+
+// indexFailure is portindex's reason for leaving a directory's Portfile
+// out of the source's index, where it was kept.
+func (e *Engine) indexFailure(ctx context.Context, ports Ports, source model.Source, directory string) (string, bool) {
+	if ports.Failures == nil {
+		return "", false
+	}
+	failed, err := ports.Failures.IndexFailures(ctx, source, []string{directory})
+	reason, ok := failed[directory]
+	return reason, err == nil && ok
 }

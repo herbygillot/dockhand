@@ -85,6 +85,14 @@ the branch's worktree to include those edits. See `dockhand usage checks` for
 interpreting the result and `dockhand usage recovery` for failures or
 interrupted runs.
 
+`dockhand status -b pr-35174` adds the pull request's merge fitness, as
+`dockhand usage publishing` describes it: each port's maintainers, read from
+master's port index where dockhand has one cached, whom the description
+mentions, who approved, and when MacPorts' 72-hour maintainer timeout ends.
+The contributor's Portfiles aren't evaluated only to read them, so a port
+whose maintainers neither that index nor a check's change record holds says
+`maintainers not read yet`.
+
 ## Post only the review you intend to send
 
 After reading and confirming the findings, these commands explicitly publish a

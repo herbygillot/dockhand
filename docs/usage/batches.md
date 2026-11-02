@@ -41,16 +41,23 @@ For a short explicit list, name ports instead:
 dockhand outdated jq yq
 ```
 
-Do not combine port arguments with index selectors. A selected port is a
-candidate for discovery, not a promise that Dockhand can safely update and
-publish it. The report distinguishes ready updates, held or uncertain releases,
-and ports it could not check. `--current` expands the report to current ports
-and the explanations for other outcomes. An obsolete stub, a port whose
-`replaced_by` names another, isn't checked: its row says `replaced_by
-py-ansible`, and `update` of it names the port that replaced it. A newer tag
-under another prefix than the port's, as `v0.12` where `github.setup` names
-none, is said on the port's row; the Portfile's prefix still decides what
-`update` takes.
+Do not combine port arguments with index selectors, and give each port as an
+argument of its own: `outdated "airspy airspyhf"` is refused once, as several
+port names in one argument. A selected port is a candidate for discovery, not
+a promise that Dockhand can safely update and publish it. The report
+distinguishes ready updates, held or uncertain releases, and ports it could
+not check. `--current` expands the report to current ports and the
+explanations for other outcomes. An obsolete stub, a port whose `replaced_by`
+names another, isn't checked: its row says `replaced_by py-ansible`, and
+`update` of it names the port that replaced it. A newer tag under another
+prefix than the port's, as `v0.12` where `github.setup` names none, is said on
+the port's row; the Portfile's prefix still decides what `update` takes. A
+look whose only match is a prerelease reads the port current and says so,
+`upstream's newest, 3.2.17RC1, is a prerelease, which a port on a stable
+release doesn't take`. A GitHub repository renamed or transferred is said on
+a current port's row under `--current`, and on `outdated <port>`'s one line,
+as `GitHub answers extrawurst/gitui as gitui-org/gitui now, which
+github.setup could name`; `update --follow-moves` writes the new name.
 
 ## Preview a batch, then choose its stopping point
 
@@ -108,10 +115,11 @@ You can request several ports in one branch directly:
 dockhand update kubectl-1.34 kubectl-1.35 --new
 ```
 
-This names one branch for their shared directory when they share a Portfile. A
-version is supplied with a lone port: `update jq 1.8.1` means a version update
-because the second word is not a port name. Choose currently existing port names
-in your checkout.
+This names one branch for their shared directory when they share a Portfile.
+Where each commit updates one port to the same version, submit titles the pull
+request for them, as `ace, tao: update to 8.0.8`. A version is supplied with a
+lone port: `update jq 1.8.1` means a version update because the second word is
+not a port name. Choose currently existing port names in your checkout.
 
 Discovery and batch planning avoid repeating existing work. A port already
 changed by an open branch is left out of a new selection batch, with its branch
@@ -123,12 +131,21 @@ select it.
 ## Follow progress and resume individual changes
 
 Ship carries each selected change to its queued check before it waits for
-results, then runs the checks together: here, at most as many on a provider at
-once as its capacity, two on Tart, or serve's side by side where serve leads.
-Each change is finished, submitted where ship goes on to submit, as its own
-check ends, in the order they end. At the normal output level a batch gives
-each change a row and lists the ones needing attention below it. `-v` expands
-the stages, and `--json` retains each change's partial result.
+results, then runs the checks together, here where no serve leads and handed to
+serve where one does, saying first which run together and how many at once, as
+`check-820, check-821, and check-822 are checked as a batch, 2 at once on
+tart`. A provider's capacity is one for the batch's checks, serve's, and a
+foreground check's alike: `providers.command.capacity`, or on Tart as many
+checks as the Mac runs VMs, two. A check that waits for a slot says so once,
+naming the checks holding it and the process running each, as `check-822 waits
+for a slot on tart: Tart takes as many checks as the Mac runs VMs, 2, and
+check-820 (a foreground dockhand, pid 4242, v0.8.0, for 2 minutes) and check-821
+(a foreground dockhand, pid 4242, v0.8.0, for 2 minutes) are using them`, which
+ship prints beside the change's name. Each change is finished, submitted
+where ship goes on to submit, as its own check ends, in the order they end. At
+the normal output level a batch gives each change a row and lists the ones
+needing attention below it. `-v` expands the stages, and `--json` retains each
+change's partial result.
 
 If some changes stop, the rest continue. The batch exit is 0 when all requested
 changes complete, 3 when some complete and others stop, and 1 when none
@@ -177,11 +194,12 @@ the cause is addressed.
 ## Budget GitHub requests
 
 Large selections share the GitHub login's allowance with your other sessions and
-tools. Dockhand looks up shared sources once and caches conditional reads, but a
-broad selection can still use substantial capacity. Before discovery, it
-compares an estimate with the remaining hourly allowance. On a terminal it asks
-before exceeding that estimate; without a terminal it refuses unless
-`--over-allowance` is supplied.
+tools. Dockhand looks up shared sources once, caches conditional reads, and
+lists a GitHub repository's tags with `git ls-remote`, outside the API's
+allowance, but a broad selection can still use substantial capacity. Before
+discovery, it compares an estimate with the remaining hourly allowance. On a
+terminal it asks before exceeding that estimate; without a terminal it refuses
+unless `--over-allowance` is supplied.
 
 `--over-allowance` permits the attempt; it does not raise GitHub's limit. Prefer
 a narrower maintainer/category selection, inspect the reset time, or wait. When

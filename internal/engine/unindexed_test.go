@@ -148,7 +148,15 @@ func TestAPortTheBranchsEditBrokeIsSaidAsBroken(t *testing.T) {
 				testsupport.WriteFiles(t, worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversio 1.8.0\n"})
 			},
 			said: "no port named jqx: no port of that name"},
+		// A Portfile the branch leaves alone that doesn't parse says so,
+		// a PortGroup the branch changes being where to look
+		// (architecture's ruling, 2026-11-02).
 		{name: "a directory the branch leaves alone", port: "jq", keepsFailures: true, brokenAtMaster: true,
+			edit: func(t *testing.T, worktree string) {
+				testsupport.WriteFiles(t, worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
+			},
+			said: `textproc/jq/Portfile doesn't parse in jq-update's index, though the branch doesn't change it: portindex says invalid command name "versio". What the branch changes that the Portfile reads, as a PortGroup, is where to look`},
+		{name: "a directory the branch leaves alone, no reason kept", port: "jq", brokenAtMaster: true,
 			edit: func(t *testing.T, worktree string) {
 				testsupport.WriteFiles(t, worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
 			},
@@ -194,7 +202,7 @@ func TestAPortMastersIndexLacksIsSaidAsBrokenAtTheStart(t *testing.T) {
 	usePorts(e, index)
 	e.Preparer = lookingUp{fakePreparer: p, index: index}
 	_, err := e.Update(t.Context(), UpdateRequest{Start: &StartRequest{Name: "jq-update"}, Action: model.EditUpdate, Port: "jq"})
-	require.EqualError(t, err, `textproc/jq/Portfile doesn't parse, so no port named jq is in master's index: portindex says invalid command name "versio". Fix the Portfile and run the command again`)
+	require.EqualError(t, err, `textproc/jq/Portfile doesn't parse, so no port named jq is in master's index: portindex says invalid command name "versio". Master's own Portfile doesn't parse on this Mac's MacPorts`)
 	require.ErrorIs(t, err, selection.ErrUnknownPort)
 	require.Empty(t, testsupport.Git(t, f.clone, "branch", "--list", "dockhand/jq-update"), "no branch is started for an edit that couldn't be prepared")
 }
@@ -207,4 +215,13 @@ func TestARenameOfSeveralPortsListsThem(t *testing.T) {
 		renamedPortWords("security/KeePassXC/Portfile", "keepassxc", []string{"keepasxc", "keepasxc-devel"}, ""))
 	require.Equal(t, "security/KeePassXC/Portfile names its ports keepassxc-devel and keepasxc now, where master has keepassxc among them. Restore the name line, or ask for keepasxc; a port renamed on purpose goes through dockhand rename keepassxc keepasxc",
 		renamedPortWords("security/KeePassXC/Portfile", "keepassxc", []string{"keepassxc-devel", "keepasxc"}, "keepasxc"))
+}
+
+// A subport the branch dropped, master defining it beside the ports the
+// directory still defines and none added, is said as dropped, not as a
+// rename (architecture's ruling, 2026-11-02).
+func TestADroppedSubportIsSaidAsDropped(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "security/KeePassXC/Portfile defines keepassxc now and not keepassxc-devel, which master has there too. Restore the subport, or ask for keepassxc",
+		droppedSubportWords("security/KeePassXC/Portfile", "keepassxc-devel", []string{"keepassxc"}))
 }

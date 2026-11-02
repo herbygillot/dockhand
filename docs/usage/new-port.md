@@ -18,13 +18,13 @@ dockhand create https://github.com/OWNER/PROJECT \
 The output identifies the release and build system, prints the proposed
 Portfile, and lists the fields needing confirmation. Checksums are placeholders
 in this preview. It writes no Portfile and starts no branch; it still reads
-upstream metadata.
+upstream metadata, and fetches master to check that the name is free.
 
 If the project or release is wrong, stop here. `create` currently writes ports
 from GitHub projects. Direct GitHub input needs a published release; draft
 releases and prereleases are excluded. It recognizes Cargo, Go, CMake, Meson,
-and Python projects, but an unfamiliar or complicated build may need a Portfile
-written by hand.
+Python, and autotools projects, but an unfamiliar or complicated build may need
+a Portfile written by hand.
 
 You can also identify a project through its registry:
 
@@ -57,15 +57,22 @@ checksums where it can, and records the subject `mytool: new port` for `tidy`.
 Nothing is committed yet. The staged file is included in a check run from this
 worktree.
 
-Choose the port name deliberately with `--name`. An existing name on master,
-including a subport's name, is refused before `--new` starts a branch. Choose
-another name if it represents different software; use the existing port's branch
-workflow if you meant to update that port.
+Choose the port name deliberately with `--name`. Every `create`, `--plan`
+included, fetches master and refuses a name a port there already has, a
+subport's name among them and its case aside, before it plans or writes
+anything, so `--new` starts no branch for it: `there is already a port jq, at
+textproc/jq; --name names this one otherwise, or dockhand update jq updates
+that one`. The name is written as you typed it. Choose another name if it
+represents different software; use the existing port's branch workflow if you
+meant to update that port.
 
 Use `--category` to choose its directory. Otherwise a terminal asks for a
 category, while a script gets a marked guess. Before the new port is committed,
 rerunning `create` in this branch with another `--category` moves its directory
-and preserves your edits. `--branch <name>` can place a new port in an existing
+and preserves your edits. `dockhand move` moves a port as committed, so before
+`tidy` it answers `mytool isn't committed yet; tidy it, then move it`; once
+tidied, `dockhand move mytool textproc` moves it as one recorded edit.
+`--branch <name>` can place a new port in an existing
 tracked branch; keep unrelated new ports in separate branches unless they belong
 in one change. `dockhand usage branches` covers those choices.
 
@@ -83,9 +90,10 @@ In particular, verify:
   deciding whether to install the port.
 - **Maintainer and category.** The configured maintainer is used, with
   `openmaintainer` added unless the line already names it or you pass
-  `--no-openmaintainer`; without one, the draft has a marked `nomaintainer`. Choose the maintainer line you intend
-  to take responsibility for. The command may suggest a line from your existing
-  ports, but writes no configuration for you.
+  `--no-openmaintainer`; without one, the draft has a marked `nomaintainer`.
+  Choose the maintainer line you intend to take responsibility for. The command
+  may suggest a line from your existing ports, but writes no configuration for
+  you.
 - **Build and installed files.** Check the selected PortGroups and build
   options. A Rust or Go draft includes a guessed `destroot`: review what it
   installs, executable names, data files, and documentation. Neither PortGroup
@@ -98,10 +106,21 @@ Rust crates are read from Cargo.lock. The draft marks crates from unsupported
 registries or Git sources instead of inventing their entries. Program discovery
 includes explicit binaries and `src/main.rs` in packages and explicitly named
 workspace members; workspace members named by a glob such as `crates/*` are not
-read. Review their programs yourself.
+read. A `[[bin]]` whose `required-features` the default build leaves off is not
+installed, as the cargo PortGroup builds with default features. Review their
+programs yourself.
+
+Where a crate links a native library, `submit --plan`'s Upstream list names the
+MacPorts port of that library for the Portfile to declare, looked for by the
+library's own name, so `libz-sys` names `zlib`. A `-sys` crate Cargo.lock pins
+for features or targets a build with default features on macOS doesn't take is
+set apart before any check, and after a check those the build didn't compile
+leave the list: `the check compiled none of libgit2-sys, libsqlite3-sys, which
+Cargo.lock pins for features or targets this build doesn't use`.
 
 For a root Go module, the checksum step can fill an empty `go.vendors` through
-`go2port`. A module below its repository root, such as
+`go2port`, found on PATH, then in `/opt/local/bin`. A module below its
+repository root, such as
 `go:golang.org/x/tools/gopls`, uses the module's version and subdirectory tag.
 Its draft builds in that directory and marks `go.offline_build no` for review,
 because generation of the vendored list assumes a root module. A Python draft
@@ -134,7 +153,11 @@ Review the tidy plan before applying it; manual changes can require approval of
 that plan. Run these commands inside the worktree so the edit being checked is
 the one you just inspected. Examine the installed files and exercise the
 program's basic functionality as appropriate; a passing build alone does not
-confirm your packaging guesses.
+confirm your packaging guesses. A check in Tart or a local prefix also reads
+what the built program links: a library its Portfile doesn't declare is a
+notice naming the line to write, `mytool links libiconv.2.dylib from libiconv,
+which it doesn't declare in depends_lib; depends_lib-append port:libiconv
+declares it`.
 
 Use `dockhand usage checks` to choose environments and interpret failures,
 `dockhand usage publishing` to open the pull request, and

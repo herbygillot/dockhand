@@ -27,8 +27,12 @@ dockhand path jq-update
 ```
 
 `status` groups work by what needs you, what is under way, and what is waiting
-on review. A branch's detail includes its files and checks. `path` prints the
-worktree directory, suitable for an editor or a shell:
+on review; `dockhand console` keeps the same groups in a live table as serve
+works, with keys that act on the row selected, described in
+`dockhand usage unattended`. A branch's detail includes its files, its checks,
+and, while its pull request is open, a Merge section on who may merge it and
+when, which `dockhand usage publishing` explains. `path` prints the worktree
+directory, suitable for an editor or a shell:
 
 ```sh
 cd "$(dockhand path jq-update)"
@@ -53,8 +57,9 @@ whole branch, including `check`, `tidy`, `submit`, `diff`, `rebase`, and
 A selector overrides the branch checked out where you run the command. Dockhand
 says so when they differ. `-p` can be ambiguous when more than one open branch
 changes the port: at a terminal dockhand offers the choices; without a terminal
-it refuses and names them. Use the exact `-b` name for a repeatable script or
-when two changes overlap.
+it refuses and names them. `status -p` reads, so it never asks: one branch
+touching the port is shown in detail, and several are listed. Use the exact
+`-b` name for a repeatable script or when two changes overlap.
 
 `--pr` on these commands selects an already tracked pull request. To bring a
 pull request into dockhand for the first time, use `adopt --pr`, described
