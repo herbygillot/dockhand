@@ -198,14 +198,17 @@ complete catalog beyond the usual `HOME`, `PATH`, and `XDG_CACHE_HOME`.
 | `DOCKHAND_INDEX_CACHE` | Port-index cache; otherwise `dockhand/indexes` in the cache directory. |
 | `DOCKHAND_READING_CACHE` | Upstream-reading cache; otherwise `dockhand/readings` in the cache directory. |
 | `DOCKHAND_GITHUB_CACHE` | GitHub response/ETag cache; otherwise `dockhand/github` in the cache directory. |
+| `DOCKHAND_ARCHIVE_CACHE` | packages.macports.org listing cache; otherwise `dockhand/archives` in the cache directory. |
+| `DOCKHAND_BUILD_HISTORY_CACHE` | ports.macports.org build-history cache; otherwise `dockhand/builds` in the cache directory. |
 | `DOCKHAND_GITHUB_CLIENT_ID` | OAuth application used by `setup github`. |
 | `DOCKHAND_GITHUB_LOG` | File to append each command's GitHub request spending to. |
 | `VISUAL`, `EDITOR` | Editor for Portfiles and pull-request descriptions. |
 
 `serve --install` keeps `DOCKHAND_CONFIG`, `DOCKHAND_UPSTREAM`,
 `DOCKHAND_PULL_REQUESTS`, `DOCKHAND_INDEX_MIRROR`, `DOCKHAND_INDEX_CACHE`,
-`DOCKHAND_READING_CACHE`, `DOCKHAND_GITHUB_CACHE`, `DOCKHAND_TART_HOME`,
-`TART_HOME`, and `DOCKHAND_SSH_DIR` in the agent, with its PATH and explicit
+`DOCKHAND_READING_CACHE`, `DOCKHAND_GITHUB_CACHE`, `DOCKHAND_ARCHIVE_CACHE`,
+`DOCKHAND_BUILD_HISTORY_CACHE`, `DOCKHAND_TART_HOME`, `TART_HOME`, and
+`DOCKHAND_SSH_DIR` in the agent, with its PATH and explicit
 tree, database, and Git selections. It does not write a token into the agent
 file. Read `dockhand usage configuration` for settings and
 `dockhand usage unattended` for installing and stopping the service.

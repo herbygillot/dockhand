@@ -438,6 +438,18 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	if err != nil {
 		return Update{}, err
 	}
+	// unindexed says why the port's name isn't in the index the edit was
+	// prepared on, where its directory at the base says
+	// (herbygillot/dockhand#8): the branch's, or master's, on which a
+	// branch for the port is started after.
+	unindexed := func(err error) error {
+		starting := request.Start != nil || request.FromMaster
+		label := branch.ShortName()
+		if starting {
+			label = "master"
+		}
+		return e.unindexed(ctx, err, model.Source{Tree: model.ObjectID(captured), Base: base}, label, request.Port, starting)
+	}
 	input := editprep.Request{
 		EditIntent: request.EditIntent,
 		Action:     request.Action,
@@ -477,7 +489,7 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		input.Release = request.Release
 		release, err := preparer.ResolveRelease(ctx, input)
 		if err != nil {
-			return byHand(err)
+			return byHand(unindexed(err))
 		}
 		input.Release = &release
 		// A release outdated found already was chosen automatically, and
@@ -512,7 +524,7 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	}
 	result, err := preparer.Prepare(ctx, input)
 	if err != nil {
-		return byHand(err)
+		return byHand(unindexed(err))
 	}
 	failpoint.Hit("update.prepared")
 	update := describe(branch, request.Port, result)

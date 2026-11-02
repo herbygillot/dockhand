@@ -30,6 +30,11 @@ var Environment = []Variable{
 	// Where GitHub's answers are kept with their ETags (github.
 	// ConditionalCache).
 	{Name: "DOCKHAND_GITHUB_CACHE", Agent: true},
+	// Where packages.macports.org's listings are kept
+	// (binaryarchive.Catalog), and ports.macports.org's build histories
+	// (buildhistory.Reader).
+	{Name: "DOCKHAND_ARCHIVE_CACHE", Agent: true},
+	{Name: "DOCKHAND_BUILD_HISTORY_CACHE", Agent: true},
 	{Name: "DOCKHAND_TART_HOME", Agent: true},
 	{Name: "TART_HOME", Agent: true},
 	{Name: "DOCKHAND_SSH_DIR", Agent: true},

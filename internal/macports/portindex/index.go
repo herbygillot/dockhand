@@ -452,7 +452,7 @@ func buildPortIndex(ctx context.Context, c Config, platform model.Platform, sour
 		bound := cmp.Or(c.Bound, RunBound)
 		bounded, cancel := context.WithTimeout(ctx, bound)
 		defer cancel()
-		_, runErr := subprocess.Run(bounded, subprocess.Spec{Tool: "portindex", Path: c.Executable, Args: args, Dir: sourceRoot, Env: indexerEnvironment(c.Env, configuration), Combined: true, ExtraFiles: []*os.File{guard}})
+		run, runErr := subprocess.Run(bounded, subprocess.Spec{Tool: "portindex", Path: c.Executable, Args: args, Dir: sourceRoot, Env: indexerEnvironment(c.Env, configuration), Combined: true, ExtraFiles: []*os.File{guard}})
 		if runErr != nil && ctx.Err() == nil && errors.Is(bounded.Err(), context.DeadlineExceeded) {
 			return fmt.Errorf("portindex ran past %v, so dockhand ended it: %w", bound, runErr)
 		}
@@ -472,6 +472,10 @@ func buildPortIndex(ctx context.Context, c Config, platform model.Platform, sour
 		if !validIndexEntry(temp) {
 			return fmt.Errorf("portindex: executable produced an incomplete index")
 		}
+		// What failed to parse is kept, by directory; the rest of the
+		// output is dropped, as it was. portindex retries every port its
+		// seed lacks, so a generation's record is whole without its seed's.
+		meta.Failed = parseFailures(run.Output)
 		meta.Strict, meta.Changed, meta.Full, meta.Built = strict, len(changed), seed == "", time.Now().UTC()
 		meta.Duration = time.Since(started).Milliseconds()
 		if seed != "" && meta.Mirror == nil {
