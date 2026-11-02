@@ -8,9 +8,12 @@ import (
 	"compress/bzip2"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path"
@@ -94,11 +97,28 @@ func (s *scanLimited) Read(p []byte) (int, error) {
 }
 
 // Member is one archive entry. Body is valid only during the callback.
+// Link is a symbolic link's target, empty for any other member.
 type Member struct {
 	Name    string
 	Regular bool
+	Link    string
 	Size    int64
 	Body    io.Reader
+}
+
+// linkLimit bounds a zip symbolic link's target, which zip stores as the
+// member's body; PATH_MAX, as tar's own fields allow no more in practice.
+const linkLimit = 4096
+
+// Digest is a regular member's contents' SHA-256, in hex, as Tree keeps
+// it: what the member holds, apart from its name, time, and owner. It
+// reads Body.
+func (m Member) Digest() (string, error) {
+	digest := sha256.New()
+	if _, err := io.Copy(digest, m.Body); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(digest.Sum(nil)), nil
 }
 
 // Clean returns the member path without a leading "./", or a directory's
@@ -147,7 +167,16 @@ func Walk(ctx context.Context, filename string, fn func(Member) error) error {
 				return err
 			}
 			budget.r = body
-			err = fn(Member{Name: member.Name, Regular: member.Mode().IsRegular(), Size: int64(member.UncompressedSize64), Body: budget})
+			entry := Member{Name: member.Name, Regular: member.Mode().IsRegular(), Size: int64(member.UncompressedSize64), Body: budget}
+			if member.Mode()&fs.ModeSymlink != 0 {
+				target, readErr := io.ReadAll(io.LimitReader(budget, linkLimit))
+				if readErr != nil {
+					_ = body.Close()
+					return readErr
+				}
+				entry.Link, entry.Body = string(target), strings.NewReader("")
+			}
+			err = fn(entry)
 			closeErr := body.Close()
 			if err != nil {
 				return err
@@ -204,7 +233,11 @@ func Walk(ctx context.Context, filename string, fn func(Member) error) error {
 		case err != nil:
 			return fmt.Errorf("archive: reading %s: %w", path.Base(filename), err)
 		}
-		if err := fn(Member{Name: member.Name, Regular: member.Typeflag == tar.TypeReg, Size: member.Size, Body: tr}); err != nil {
+		entry := Member{Name: member.Name, Regular: member.Typeflag == tar.TypeReg, Size: member.Size, Body: tr}
+		if member.Typeflag == tar.TypeSymlink {
+			entry.Link = member.Linkname
+		}
+		if err := fn(entry); err != nil {
 			return err
 		}
 	}
