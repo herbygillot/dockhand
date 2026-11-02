@@ -218,10 +218,7 @@ the two caches after the table, are the complete catalog beyond the usual
 | `DOCKHAND_GITHUB_LOG` | File to append each command's GitHub request spending to. |
 | `VISUAL`, `EDITOR` | Editor for Portfiles and pull-request descriptions. |
 
-Two more caches, each entry kept a day, are `dockhand/archives` and
-`dockhand/builds` in the cache directory, or where `DOCKHAND_ARCHIVE_CACHE` and
-`DOCKHAND_BUILD_HISTORY_CACHE` point: packages.macports.org's listings of ports'
-archives, and ports.macports.org's build histories. Tart, `go2port`,
+Tart, `go2port`,
 `cargo2port`, `port-tclsh`, and `portindex` are found on `PATH`, then in
 MacPorts' prefix, `/opt/local/bin`, so a shell whose `PATH` lacks it, such as
 one over SSH, still builds; a refusal names both places, `go2port isn't on PATH
