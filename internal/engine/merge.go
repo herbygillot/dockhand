@@ -4,6 +4,7 @@ import (
 	"context"
 	"path"
 	"slices"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
@@ -15,12 +16,14 @@ import (
 // mentions, and approvals, as its last reading has them
 // (macports.MergeFitness). Status reads nothing of GitHub for it: the
 // pull request's reading is the one status already makes. A port's
-// maintainers are what its change record kept of the base's evaluation,
-// and where no record keeps them, as master's cached port index has them
-// (indexedMaintainers), so a port master has, an adopted pull request's
-// included, shows them before any record is made; a port neither has, a
-// new port until its record is made, is Unread, and said so rather than
-// guessed.
+// maintainers are the newer of two readings of master (maintainersOf):
+// what its change record kept of the base's evaluation, and what master's
+// cached port index has (indexedMaintainers), so a port master has, an
+// adopted pull request's included, shows them before any record is made,
+// and a record made on an older base doesn't speak for master since. A
+// port the branch adds has its record's alone; a port neither reading
+// has, a new port until its record is made, is Unread, and said so rather
+// than guessed.
 func (e *Engine) readMerge(ctx context.Context, status *BranchStatus, reads *statusReads) {
 	pr := status.Branch.PullRequest
 	if pr == nil || pr.Observed == nil || pr.Observed.State != model.PullRequestOpen || status.Branch.State != model.BranchOpen || status.Missing {
@@ -29,7 +32,7 @@ func (e *Engine) readMerge(ctx context.Context, status *BranchStatus, reads *sta
 	// Each port changed, in the order said, with its recorded maintainers
 	// where its record keeps them.
 	var wanted []indexedPort
-	recorded := map[indexedPort]string{}
+	recorded := map[indexedPort]recordedMaintainers{}
 	for _, directory := range status.Scope.Ports {
 		// The subports its record says it changes (model.ChangeRecord.Scope),
 		// or, where it says none it sees, every one, as its text scope is;
@@ -50,34 +53,94 @@ func (e *Engine) readMerge(ctx context.Context, status *BranchStatus, reads *sta
 			want := indexedPort{Port: port, Directory: directory}
 			wanted = append(wanted, want)
 			if i := slices.IndexFunc(record.Ports, func(c model.SubportChange) bool { return c.Port == port }); i >= 0 && record.Ports[i].Maintainers != "" {
-				recorded[want] = record.Ports[i].Maintainers
+				recorded[want] = recordedMaintainers{words: record.Ports[i].Maintainers, added: record.Ports[i].Kind == model.SubportAdded, base: record.Base, tree: record.Tree}
 			}
 		}
 	}
-	var missing []indexedPort
+	// Master's index is asked for each port but one the branch adds.
+	var ask []indexedPort
 	for _, want := range wanted {
-		if _, ok := recorded[want]; !ok {
-			missing = append(missing, want)
+		if r, ok := recorded[want]; !ok || !r.added {
+			ask = append(ask, want)
 		}
 	}
-	indexed := e.indexedMaintainers(ctx, reads, missing)
-	var ports []macports.PortMaintainers
+	indexed := e.indexedMaintainers(ctx, reads, ask)
+	var ports []macports.MaintainerObservation
 	for _, want := range wanted {
-		words, ok := recorded[want]
-		if !ok {
-			words, ok = indexed[want]
-		}
+		observation, words, ok := e.maintainersOf(ctx, reads, want, recorded, indexed)
 		maintainers, err := macports.ReadMaintainers(words)
 		if !ok || err != nil {
 			status.MaintainersUnread = append(status.MaintainersUnread, want.Port)
 			continue
 		}
-		ports = append(ports, macports.PortMaintainers{Port: want.Port, Maintainers: maintainers})
+		observation.Maintainers = maintainers
+		ports = append(ports, observation)
 	}
 	// A draft is one as dockhand made it or last read it (SubmitPlan.WasDraft).
 	observed := pr.Observed
 	merge := macports.MergeFitness(ports, observed.Author, observed.Mentioned, observed.ApprovedBy, observed.Opened, pr.Draft || observed.Draft, e.now())
 	status.Merge = &merge
+}
+
+// recordedMaintainers are a port's maintainers as its change record kept
+// them: its maintainers option, the record's base and tree, and whether
+// the branch adds it, the record then keeping the branch's side.
+type recordedMaintainers struct {
+	words      string
+	added      bool
+	base, tree model.ObjectID
+}
+
+// maintainersOf is the reading a port's maintainers are taken from, and
+// its maintainers option; false where neither reading has them. Of the
+// change record's base and master's newest cached generation, each dated
+// by its commit, locally, the newer wins, the cached generation where they
+// are as new or the base's date can't be read; a port the branch adds has
+// its record alone.
+func (e *Engine) maintainersOf(ctx context.Context, reads *statusReads, want indexedPort, recorded map[indexedPort]recordedMaintainers, indexed map[indexedPort]string) (macports.MaintainerObservation, string, bool) {
+	record, hasRecord := recorded[want]
+	words, hasIndex := indexed[want]
+	switch {
+	case hasRecord && record.added:
+		return macports.MaintainerObservation{Port: want.Port, Tree: string(record.tree), Basis: macports.MaintainersOfNewPort}, record.words, true
+	case hasRecord:
+		base := e.datedBase(ctx, reads, record.base)
+		if !hasIndex || base.at.After(reads.indexed.at) {
+			return macports.MaintainerObservation{Port: want.Port, Tree: base.tree, Basis: macports.MaintainersOfBase, At: base.at}, record.words, true
+		}
+	case !hasIndex:
+		return macports.MaintainerObservation{}, "", false
+	}
+	return macports.MaintainerObservation{Port: want.Port, Tree: reads.indexed.tree, Basis: macports.MaintainersOfMaster, At: reads.indexed.at}, words, true
+}
+
+// datedBase is a branch base's tree and committer time, read once a
+// status; empty where Git can't say.
+func (e *Engine) datedBase(ctx context.Context, reads *statusReads, base model.ObjectID) datedTree {
+	if reads.bases == nil {
+		reads.bases = map[model.ObjectID]datedTree{}
+	}
+	if dated, ok := reads.bases[base]; ok {
+		return dated
+	}
+	var dated datedTree
+	if base != "" {
+		if at, err := e.Repo.CommitTime(ctx, string(base)); err == nil {
+			dated.at = at
+		}
+		if trees, err := e.Repo.CommitTrees(ctx, []string{string(base)}); err == nil {
+			dated.tree = trees[string(base)]
+		}
+	}
+	reads.bases[base] = dated
+	return dated
+}
+
+// datedTree is a tree of master's, with when it was: its commit's
+// committer time.
+type datedTree struct {
+	tree string
+	at   time.Time
 }
 
 // indexedPort is a port as master's port index is asked for it: its name,
@@ -86,10 +149,12 @@ func (e *Engine) readMerge(ctx context.Context, status *BranchStatus, reads *sta
 type indexedPort struct{ Port, Directory string }
 
 // masterIndex is what a status read of master's cached port index: the
-// tree of the generation it reads, empty where none is cached, and each
-// port asked for, with its maintainers where the index has it.
+// tree of the generation it reads, empty where none is cached, with when
+// it was master's, and each port asked for, with its maintainers where
+// the index has it.
 type masterIndex struct {
 	tree        string
+	at          time.Time
 	asked       map[indexedPort]bool
 	maintainers map[indexedPort]string
 }
@@ -114,7 +179,7 @@ func (e *Engine) indexedMaintainers(ctx context.Context, reads *statusReads, por
 	}
 	if reads.indexed == nil {
 		reads.indexed = &masterIndex{asked: map[indexedPort]bool{}, maintainers: map[indexedPort]string{}}
-		reads.indexed.tree = e.cachedMasterTree(ctx, reads.master)
+		reads.indexed.tree, reads.indexed.at = e.cachedMasterTree(ctx, reads.master)
 	}
 	known := reads.indexed
 	var ask []indexedPort
@@ -150,25 +215,25 @@ func (e *Engine) indexedMaintainers(ctx context.Context, reads *statusReads, por
 }
 
 // cachedMasterTree is the tree of the newest generation cached for master
-// or a first-parent ancestor of it, as far back as masterIndexDepth; empty
-// where none is, or there's no master.
-func (e *Engine) cachedMasterTree(ctx context.Context, master model.ObjectID) string {
+// or a first-parent ancestor of it, as far back as masterIndexDepth, with
+// its commit's committer time; empty where none is, or there's no master.
+func (e *Engine) cachedMasterTree(ctx context.Context, master model.ObjectID) (string, time.Time) {
 	cache, err := e.indexCache()
 	if err != nil || master == "" {
-		return ""
+		return "", time.Time{}
 	}
 	cached, err := portindex.CachedTrees(cache)
 	if err != nil || len(cached) == 0 {
-		return ""
+		return "", time.Time{}
 	}
 	trees, err := e.Repo.FirstParentTrees(ctx, string(master), masterIndexDepth)
 	if err != nil {
-		return ""
+		return "", time.Time{}
 	}
 	for _, tree := range trees {
-		if cached[tree] {
-			return tree
+		if cached[tree.Tree] {
+			return tree.Tree, tree.Committed
 		}
 	}
-	return ""
+	return "", time.Time{}
 }

@@ -388,6 +388,11 @@ type portMergeJSON struct {
 	ApprovedBy     []string `json:"approved_by,omitempty"`
 	ByMaintainer   bool     `json:"opened_by_maintainer"`
 	Waits          bool     `json:"waits"`
+	// MaintainersBasis is the reading the maintainers were taken from,
+	// "master", "base", or "new port" (macports.MaintainerBasis), and
+	// MaintainersAsOf when that was master's.
+	MaintainersBasis string     `json:"maintainers_basis,omitempty"`
+	MaintainersAsOf  *time.Time `json:"maintainers_as_of,omitempty"`
 }
 
 // mergeView is a status's merge fitness as JSON; nil where it has none.
@@ -406,7 +411,11 @@ func mergeView(s engine.BranchStatus) *mergeJSON {
 		viewed.TimeoutEndsAt = &until
 	}
 	for _, port := range merge.Ports {
-		viewed.Ports = append(viewed.Ports, portMergeJSON{Port: port.Port, Maintainers: NonNil(port.People), OpenMaintainer: port.OpenMaintainer, NoMaintainer: port.NoMaintainer, ApprovedBy: port.ApprovedBy, ByMaintainer: port.ByMaintainer, Waits: port.Waits()})
+		viewed.Ports = append(viewed.Ports, portMergeJSON{Port: port.Port, Maintainers: NonNil(port.People), OpenMaintainer: port.OpenMaintainer, NoMaintainer: port.NoMaintainer, ApprovedBy: port.ApprovedBy, ByMaintainer: port.ByMaintainer, Waits: port.Waits(), MaintainersBasis: string(port.Basis)})
+		if !port.As.IsZero() {
+			as := port.As
+			viewed.Ports[len(viewed.Ports)-1].MaintainersAsOf = &as
+		}
 	}
 	return viewed
 }

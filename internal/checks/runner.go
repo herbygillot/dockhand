@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -624,7 +625,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		builds := slices.DeleteFunc(targets, func(target reuse.Target) bool {
 			return !slices.ContainsFunc(building, func(b buildenv.Target) bool { return b.ID == target.ID })
 		})
-		build.installs, err = d.installs(ctx, environment, builds, build.results)
+		build.installs, build.builtWith, err = d.installs(ctx, environment, builds, build.results)
 		if err != nil {
 			return err
 		}
@@ -642,7 +643,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		// And the ports they depend on, from the archives earlier guests
 		// here installed them from, rather than build them again (batch
 		// 90). A provider that can't install archives leaves them.
-		if dependencies := d.dependencyInstalls(ctx, environment, revision.Source, builds); len(dependencies) > 0 {
+		if dependencies, groups := d.dependencyInstalls(ctx, environment, revision.Source, builds); len(dependencies) > 0 {
 			var names []string
 			for _, archive := range dependencies {
 				if !slices.Contains(names, archive.Port) {
@@ -657,6 +658,10 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			// p5.34-uri's two each (check-484).
 			build.Progress(offeredWords(len(names), len(dependencies)))
 			build.installs = append(build.installs, dependencies...)
+			if build.builtWith == nil {
+				build.builtWith = builtWith{}
+			}
+			maps.Copy(build.builtWith, groups)
 		}
 		job := buildenv.Job{Run: d.run, Execution: execution, Revision: revision, Plan: d.plan, Environment: environment, Targets: building, Commit: commit, Installs: build.installs,
 			Directory: filepath.Join(c.Logs, d.run.Name(), fmt.Sprintf("%s-%d", environmentSlug(environment), execution.Attempt))}
@@ -1054,6 +1059,9 @@ type build struct {
 	sourced map[model.TargetID]map[string]model.ObjectID
 	// installs are the kept archives the guest installs targets from.
 	installs []buildenv.Archive
+	// builtWith are the PortGroups those archives' builds loaded, where
+	// known, by their digests.
+	builtWith builtWith
 	// active are the ports the provider reported active as targets
 	// built (TargetReport.Active), whose archives KeepDependency may keep.
 	active []model.ActivePort
@@ -1142,9 +1150,14 @@ func (b *build) activeIn(target model.TargetID, active []model.ActivePort) {
 // read is what a target's build read of the revision, with the ports its
 // provider saw active, nil where it couldn't say, and the PortGroups it
 // loaded, where it said (reuse.Inputs). Inputs that can't be read are
-// left unknown, and said to be.
+// left unknown, and said to be. A port active from a kept archive the
+// check offered, which the guest built nothing of and so said no
+// PortGroups for, takes those that archive's build loaded, where they are
+// known (builtWith): the target read what that build made, as it would
+// have had the guest built the port itself, so admission and reuse read
+// one provenance (Codex's review of 03b380f1, F1).
 func (b *build) read(planned model.PlanTarget, active []model.ActivePort) (model.TargetInputs, bool) {
-	inputs, err := reuse.Inputs(b.ctx, b.d.c.Checkout, b.tree, b.execution.Identity, planned, active, b.sourced[planned.ID])
+	inputs, err := reuse.Inputs(b.ctx, b.d.c.Checkout, b.tree, b.execution.Identity, planned, b.withBuiltWith(active), b.sourced[planned.ID])
 	if err != nil {
 		reason := fmt.Sprintf("what its build read wasn't recorded: %v", err)
 		b.Progress(fmt.Sprintf("%s: %s", planned.ID, reason))
@@ -1158,6 +1171,33 @@ func (b *build) read(planned model.PlanTarget, active []model.ActivePort) (model
 		return model.TargetInputs{NotReusable: reason}, true
 	}
 	return inputs, true
+}
+
+// withBuiltWith is the active ports with the PortGroups of the kept
+// archives the check offered, for those reported active from one with
+// none; the rest, MacPorts' archives and kept ones whose builds' are
+// unknown among them, as reported.
+func (b *build) withBuiltWith(active []model.ActivePort) []model.ActivePort {
+	if len(b.builtWith) == 0 {
+		return active
+	}
+	var enriched []model.ActivePort
+	for i, port := range active {
+		groups, ok := b.builtWith[port.Archive]
+		if !ok || port.PortGroups != nil || !slices.ContainsFunc(b.installs, func(a buildenv.Archive) bool {
+			return a.Digest == port.Archive && strings.EqualFold(a.Port, port.Name)
+		}) {
+			continue
+		}
+		if enriched == nil {
+			enriched = slices.Clone(active)
+		}
+		enriched[i].PortGroups = maps.Clone(groups)
+	}
+	if enriched == nil {
+		return active
+	}
+	return enriched
 }
 
 // fetchedBy keeps the commit a Git-fetched target's build checked out, for

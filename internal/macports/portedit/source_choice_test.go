@@ -2,17 +2,21 @@ package portedit
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -32,10 +36,11 @@ func TestSourceCandidatesLeaveOutBinaryBundles(t *testing.T) {
 	require.Equal(t, []string{"tool-1.0.tar.gz", "tool_1.0_tarball.tgz", "tool-1.0.tbz"}, sourceCandidates(assets, "tool", "1.0"))
 }
 
+// tree is an archive's tree of files, each with its name for its digest.
 func tree(top string, files ...string) sourceTree {
-	t := sourceTree{top: top, files: map[string]bool{}, dirs: map[string]int{}}
+	t := sourceTree{top: top, files: map[string]string{}, links: map[string]string{}, dirs: map[string]int{}}
 	for _, name := range files {
-		t.files[name] = true
+		t.files[name] = name
 		for dir := filepath.Dir(name); dir != "."; dir = filepath.Dir(dir) {
 			t.dirs[dir]++
 		}
@@ -60,6 +65,95 @@ func TestJudgingSourcesByTheirFiles(t *testing.T) {
 	chosen, ambiguous = judgeSources([]judgedAsset{{name: "a.tar.gz", tree: full}, {name: "b.tar.gz", tree: tree("b", "CMakeLists.txt", "deps/lib/a.c", "extra")}})
 	require.Nil(t, chosen)
 	require.Equal(t, []string{"a.tar.gz", "b.tar.gz"}, ambiguous)
+}
+
+// Two passing assets with the same paths and different contents are two
+// candidates, ambiguous, not one source in two compressions (Codex's
+// review of 03b380f1, F2a, its probe).
+func TestSourcesWithTheSameNamesButDifferentContentsAreAmbiguous(t *testing.T) {
+	t.Parallel()
+	read := func(name, contents string) sourceTree {
+		filename := filepath.Join(t.TempDir(), name)
+		require.NoError(t, os.WriteFile(filename, tarGz(t, map[string]string{
+			"tool-1.0/CMakeLists.txt": "project(tool)\n",
+			"tool-1.0/src/main.c":     contents,
+		}), 0o600))
+		got, err := readSourceTree(t.Context(), filename)
+		require.NoError(t, err)
+		return got
+	}
+	a := read("a.tar.gz", "int main() { return 0; }\n")
+	b := read("b.tar.gz", "int main() { return 1; }\n")
+	chosen, ambiguous := judgeSources([]judgedAsset{{name: "a.tar.gz", tree: a}, {name: "b.tar.gz", tree: b}})
+	require.Nil(t, chosen)
+	require.Equal(t, []string{"a.tar.gz", "b.tar.gz"}, ambiguous)
+}
+
+// The same files with the same contents in .tar.gz and .tar.bz2 are one
+// source, gzip taken, though their members' times differ.
+func TestTheSameContentsInTwoCompressionsAreOneSource(t *testing.T) {
+	t.Parallel()
+	bzip, err := exec.LookPath("bzip2")
+	if err != nil {
+		t.Skip("no bzip2 to pack an archive with")
+	}
+	dir := t.TempDir()
+	files := map[string]string{"tool-1.0/CMakeLists.txt": "project(tool)\n", "tool-1.0/src/main.c": "int main() { return 0; }\n"}
+	gzipped := filepath.Join(dir, "tool-1.0.tar.gz")
+	require.NoError(t, os.WriteFile(gzipped, tarGz(t, files), 0o600))
+	var plain bytes.Buffer
+	tw := tar.NewWriter(&plain)
+	for _, name := range slices.Sorted(maps.Keys(files)) {
+		require.NoError(t, tw.WriteHeader(&tar.Header{Name: name, Mode: 0o600, Size: int64(len(files[name])), Typeflag: tar.TypeReg, ModTime: time.Unix(1700000000, 0)}))
+		_, err := tw.Write([]byte(files[name]))
+		require.NoError(t, err)
+	}
+	require.NoError(t, tw.Close())
+	command := exec.CommandContext(t.Context(), bzip, "-c")
+	command.Stdin = &plain
+	packed, err := command.Output()
+	require.NoError(t, err)
+	bzipped := filepath.Join(dir, "tool-1.0.tar.bz2")
+	require.NoError(t, os.WriteFile(bzipped, packed, 0o600))
+	var judged []judgedAsset
+	for _, filename := range []string{bzipped, gzipped} {
+		got, err := readSourceTree(t.Context(), filename)
+		require.NoError(t, err)
+		judged = append(judged, judgedAsset{name: filepath.Base(filename), tree: got})
+	}
+	chosen, ambiguous := judgeSources(judged)
+	require.Empty(t, ambiguous)
+	require.Equal(t, "tool-1.0.tar.gz", chosen.name)
+}
+
+// A symbolic link is compared by its target; a directory member is not
+// compared, its files saying what it holds.
+func TestSourcesCompareLinksByTargetAndIgnoreDirectories(t *testing.T) {
+	t.Parallel()
+	read := func(name, target string, dir bool) sourceTree {
+		var data bytes.Buffer
+		gz := gzip.NewWriter(&data)
+		tw := tar.NewWriter(gz)
+		if dir {
+			require.NoError(t, tw.WriteHeader(&tar.Header{Name: "tool-1.0/include/", Mode: 0o755, Typeflag: tar.TypeDir}))
+		}
+		require.NoError(t, tw.WriteHeader(&tar.Header{Name: "tool-1.0/include/tool.h", Mode: 0o644, Size: 2, Typeflag: tar.TypeReg}))
+		_, err := tw.Write([]byte("x\n"))
+		require.NoError(t, err)
+		require.NoError(t, tw.WriteHeader(&tar.Header{Name: "tool-1.0/tool.h", Typeflag: tar.TypeSymlink, Linkname: target}))
+		require.NoError(t, tw.Close())
+		require.NoError(t, gz.Close())
+		filename := filepath.Join(t.TempDir(), name)
+		require.NoError(t, os.WriteFile(filename, data.Bytes(), 0o600))
+		got, err := readSourceTree(t.Context(), filename)
+		require.NoError(t, err)
+		return got
+	}
+	with := read("a.tar.gz", "include/tool.h", true)
+	require.Equal(t, map[string]string{"tool.h": "include/tool.h"}, with.links)
+	require.True(t, with.has("tool.h"))
+	require.True(t, sameFiles(with, read("b.tar.gz", "include/tool.h", false)), "a directory member alone is no difference")
+	require.False(t, sameFiles(with, read("c.tar.gz", "include/other.h", true)), "a link to another target is a difference")
 }
 
 // A name is written with the port's name and version put back.

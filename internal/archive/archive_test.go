@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"context"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -30,23 +31,34 @@ func TestWalkReadsTarGzipAndZip(t *testing.T) {
 	w, err := zw.Create("root/a.txt")
 	require.NoError(t, err)
 	_, _ = w.Write([]byte("abc"))
+	header := &zip.FileHeader{Name: "root/link"}
+	header.SetMode(fs.ModeSymlink | 0o777)
+	w, err = zw.CreateHeader(header)
+	require.NoError(t, err)
+	_, _ = w.Write([]byte("a.txt"))
 	require.NoError(t, zw.Close())
 	zipfile := filepath.Join(t.TempDir(), "s.zip")
 	require.NoError(t, os.WriteFile(zipfile, zipped.Bytes(), 0600))
 	for _, file := range []string{tarball, zipfile} {
 		var names []string
+		links := map[string]string{}
 		require.NoError(t, Walk(t.Context(), file, func(m Member) error {
 			clean, ok := m.Clean()
 			require.True(t, ok)
 			if m.Regular {
-				body, err := io.ReadAll(m.Body)
+				require.Empty(t, m.Link)
+				digest, err := m.Digest()
 				require.NoError(t, err)
-				require.Equal(t, "abc", string(body))
+				require.Equal(t, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", digest, "abc's SHA-256")
+			}
+			if m.Link != "" {
+				links[clean] = m.Link
 			}
 			names = append(names, clean)
 			return nil
 		}))
 		require.Equal(t, "root/a.txt", names[0])
+		require.Equal(t, map[string]string{"root/link": "a.txt"}, links, "a symbolic link's target, in tar and zip")
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()

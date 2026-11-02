@@ -215,10 +215,13 @@ func (d *driver) subportEdits(ctx context.Context, then, now model.ObjectID) ([]
 // installs are the kept archives the guest installs targets it doesn't
 // build from, for the targets it builds that need them (reuse.Needs):
 // each a target with a passed result here, reused or finished in an
-// earlier attempt. One whose archive isn't kept is left to MacPorts.
-func (d *driver) installs(ctx context.Context, environment model.Environment, building []reuse.Target, results map[model.TargetID]model.TargetResult) ([]buildenv.Archive, error) {
+// earlier attempt. One whose archive isn't kept is left to MacPorts. Each
+// goes with the PortGroups its build loaded, where its result's inputs
+// name them (builtWith).
+func (d *driver) installs(ctx context.Context, environment model.Environment, building []reuse.Target, results map[model.TargetID]model.TargetResult) ([]buildenv.Archive, builtWith, error) {
 	planned, _ := d.plan.In(environment)
 	var installs []buildenv.Archive
+	var inputs []string
 	for _, target := range building {
 		for _, need := range reuse.Needs(target, planned.Order) {
 			if slices.ContainsFunc(building, func(t reuse.Target) bool { return t.ID == need }) || slices.ContainsFunc(installs, func(a buildenv.Archive) bool { return a.Target == need }) {
@@ -230,7 +233,7 @@ func (d *driver) installs(ctx context.Context, environment model.Environment, bu
 			}
 			archive, kept, err := d.c.Archives.Kept(ctx, result.Archive)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			if !kept {
 				continue
@@ -241,7 +244,7 @@ func (d *driver) installs(ctx context.Context, environment model.Environment, bu
 			// it too, and fail the check, where a build does the work.
 			if _, digest, err := sha256File(d.c.Archives.Path(archive.Digest)); err != nil || digest != archive.Digest {
 				if err := d.altered(ctx, string(need), archive.Digest, "the guest builds it instead"); err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 				continue
 			}
@@ -251,10 +254,47 @@ func (d *driver) installs(ctx context.Context, environment model.Environment, bu
 				port = planned.Target.Subport
 			}
 			installs = append(installs, buildenv.Archive{Target: need, Port: port, Name: archive.Name, Digest: archive.Digest, Path: d.c.Archives.Path(archive.Digest)})
+			inputs = append(inputs, result.Inputs)
 		}
 	}
-	return installs, nil
+	if len(installs) == 0 {
+		return nil, nil, nil
+	}
+	// A result recorded before any provider said which PortGroups its
+	// build loaded, or whose build was taken to have read all of
+	// _resources, names none.
+	groups := builtWith{}
+	if err := d.c.Store.View(ctx, d.c.Repository, func(r store.Reader) error {
+		for i, archive := range installs {
+			if inputs[i] == "" {
+				continue
+			}
+			read, err := r.Inputs(inputs[i])
+			if errors.Is(err, store.ErrNotFound) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if read.ResourcesRead != nil && read.ResourcesRead.PortGroups != nil {
+				groups[archive.Digest] = read.ResourcesRead.PortGroups
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, nil, err
+	}
+	return installs, groups, nil
 }
+
+// builtWith is what the kept archives a check offers its guest were built
+// with, by their digests: the PortGroups each build loaded, where a guest
+// built it for a check and said which (Codex's review of 03b380f1, F1). A
+// target that installed one read what that build made, so they are its
+// inputs as they would be had it built the port itself (build.read).
+// MacPorts' archives, and those kept before any guest said, have none,
+// and a target that installed one stays keyed by its archive alone.
+type builtWith map[string]map[string]model.ObjectID
 
 // recordReuse records the execution that reuses every target's earlier
 // build: one that ran nothing, in the environment as it is now, reporting
@@ -365,7 +405,9 @@ func reusedInOrder(remaining []buildenv.Target, chosen map[model.TargetID]reuse.
 // the check's revision holds otherwise: it is the build of what the ports
 // tree no longer says, which a target voided by that change would be
 // built again against (prioritization's ruling, 2026-11-01).
-func (d *driver) dependencyInstalls(ctx context.Context, environment model.Environment, source model.Source, building []reuse.Target) []buildenv.Archive {
+// Each goes with the PortGroups a guest built it with, where one did
+// (builtWith).
+func (d *driver) dependencyInstalls(ctx context.Context, environment model.Environment, source model.Source, building []reuse.Target) ([]buildenv.Archive, builtWith) {
 	var ports []string
 	var queue []string
 	seen := map[string]bool{}
@@ -385,7 +427,7 @@ func (d *driver) dependencyInstalls(ctx context.Context, environment model.Envir
 	}
 	reader, graphs, err := d.c.ports()
 	if err != nil || reader == nil {
-		return nil
+		return nil, nil
 	}
 	for _, target := range building {
 		name := target.Target.Name
@@ -433,7 +475,7 @@ func (d *driver) dependencyInstalls(ctx context.Context, environment model.Envir
 		}
 		return nil
 	}); err != nil {
-		return nil
+		return nil, nil
 	}
 	// The revision's PortGroups, where a kept archive says what it was
 	// built with; where they can't be read, none such is offered.
@@ -445,6 +487,7 @@ func (d *driver) dependencyInstalls(ctx context.Context, environment model.Envir
 		}
 	}
 	var installs []buildenv.Archive
+	groups := builtWith{}
 	var missing []model.DependencyArchive
 	var stale []staleArchive
 	for _, archive := range kept {
@@ -475,6 +518,9 @@ func (d *driver) dependencyInstalls(ctx context.Context, environment model.Envir
 			continue
 		}
 		installs = append(installs, buildenv.Archive{Port: archive.Port, Name: archive.Name, Digest: archive.Digest, Path: d.c.Archives.Path(archive.Digest)})
+		if archive.PortGroups != nil {
+			groups[archive.Digest] = archive.PortGroups
+		}
 	}
 	if len(missing) > 0 {
 		_ = d.gone(ctx, missing)
@@ -487,7 +533,7 @@ func (d *driver) dependencyInstalls(ctx context.Context, environment model.Envir
 	if len(stale) > 0 {
 		d.emit(ctx, model.EventProgress, staleWords(d.run.Name(), stale))
 	}
-	return installs
+	return installs, groups
 }
 
 // staleArchive is a dependency's kept archive a guest built with a

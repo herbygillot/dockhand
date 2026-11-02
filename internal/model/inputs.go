@@ -27,8 +27,11 @@ type ActivePort struct {
 	// built it from source for the check, an earlier target or a
 	// dependency it had no archive of: the target read what that build
 	// made, so a change to one of them is a change to what it read
-	// (prioritization's ruling, 2026-11-01). Nil for a port installed from
-	// an archive, MacPorts' or one dockhand kept, which its archive names,
+	// (prioritization's ruling, 2026-11-01). A port installed from an
+	// archive dockhand kept of such a build carries that build's, as
+	// recorded with the archive or its result's inputs (Codex's review of
+	// 03b380f1, F1). Nil for a port installed from MacPorts' archive, or
+	// from a kept one whose build's are unknown, which its archive names,
 	// and in every record before, so each keeps its key.
 	PortGroups map[string]ObjectID `json:",omitempty"`
 }

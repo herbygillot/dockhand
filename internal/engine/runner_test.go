@@ -1490,6 +1490,165 @@ func TestAKeptArchiveIsntOfferedOnceAPortGroupItsBuildLoadedChanged(t *testing.T
 	}))
 }
 
+// A result whose build installed a dependency from the archive an earlier
+// guest kept of its build from source is keyed by the PortGroups that
+// build loaded, recorded with the archive, which a guest that installed it
+// built nothing of and doesn't say: when one changes, the result isn't
+// reused, as the archive itself is no longer offered (Codex's review of
+// 03b380f1, F1, its probe). MacPorts' archive stays keyed by itself.
+func TestAResultIsntReusedOnceAPortGroupItsKeptDependencyWasBuiltWithChanged(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	group := "_resources/port1.0/group/github-1.0.tcl"
+	groups := map[string]model.ObjectID{group: model.ObjectID(git.SHA1BlobID([]byte("# group\n")))}
+	// harbor-tools is built from source with the github PortGroup, jq
+	// installed from MacPorts' archive.
+	active := func(loaded map[string]model.ObjectID) []model.ActivePort {
+		var ports []model.ActivePort
+		for i, name := range []string{"harbor-tools", "jq"} {
+			_, _, digest := scriptedArchive(model.TargetID(name))
+			ports = append(ports, model.ActivePort{Name: name, Spec: "@1_0", Directory: []string{"graphics/harbor-tools", "textproc/jq"}[i], Archive: digest})
+		}
+		ports[0].PortGroups = loaded
+		return ports
+	}
+	provider := &identified{scriptedProvider: scriptedProvider{
+		keep: true, keepDependencies: true, active: []model.ActivePort{}, sourced: map[string]model.ObjectID{},
+		consumes: map[model.TargetID][]model.ActivePort{"harbor-viewer": active(groups)},
+	}, identity: "origin a"}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	revision := harborBranch(t, e)
+	var branch model.Branch
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		var err error
+		branch, err = r.Branch(revision.Branch)
+		return err
+	}))
+	branch.Base = revision.Source.Base
+	usePorts(e, graphPorts{fakePorts: fakePorts{directories: map[string][]macports.PortInfo{
+		"devel/libharbor":        {port("libharbor")},
+		"devel/harbor-cli":       {port("harbor-cli", "libharbor")},
+		"graphics/harbor-viewer": {port("harbor-viewer", "harbor-tools", "jq")},
+	}}, graph: map[string][]string{"harbor-viewer": {"harbor-tools", "jq"}}})
+	check := func(files map[string]string) model.Run {
+		t.Helper()
+		testsupport.WriteFiles(t, branch.Worktree, files)
+		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
+		require.NoError(t, err)
+		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
+		require.NoError(t, err)
+		queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+		require.NoError(t, err)
+		run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+		require.NoError(t, err)
+		require.Equal(t, model.RunPassed, run.State, run.Detail)
+		return run
+	}
+	check(map[string]string{"graphics/harbor-viewer/Portfile": "name harbor-viewer\nrevision 1\n"})
+	require.Len(t, provider.jobs, 1)
+
+	// A guest that installed harbor-tools from its kept archive built
+	// nothing of it, and says no PortGroups for it.
+	provider.consumes["harbor-viewer"] = active(nil)
+	second := check(map[string]string{"graphics/harbor-viewer/Portfile": "name harbor-viewer\nrevision 2\n"})
+	require.Len(t, provider.jobs, 2)
+	var given []string
+	for _, archive := range provider.jobs[1].Installs {
+		given = append(given, archive.Port)
+	}
+	require.ElementsMatch(t, []string{"harbor-tools", "jq"}, given)
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		executions, err := r.Executions(second.ID)
+		require.NoError(t, err)
+		results, err := r.Results(executions[0].ID)
+		require.NoError(t, err)
+		for _, result := range results {
+			if result.Target != "harbor-viewer" {
+				continue
+			}
+			inputs, err := r.Inputs(result.Inputs)
+			require.NoError(t, err)
+			require.True(t, inputs.Complete())
+			require.Equal(t, "harbor-tools", inputs.Active[0].Name)
+			require.Equal(t, groups, inputs.Active[0].PortGroups, "the PortGroups kept with harbor-tools' archive")
+			require.Equal(t, "jq", inputs.Active[1].Name)
+			require.Nil(t, inputs.Active[1].PortGroups, "MacPorts' archive, keyed by itself")
+			return nil
+		}
+		return errors.New("harbor-viewer has no result")
+	}))
+
+	// The PortGroup harbor-tools was built with changes: harbor-viewer is
+	// built again, where its result stood.
+	check(map[string]string{group: "# group, changed\n"})
+	require.Len(t, provider.jobs, 3, "harbor-viewer read a build of harbor-tools the ports tree no longer says")
+}
+
+// A target's kept archive installed into the guest of a check that builds
+// a target needing it carries the PortGroups its build loaded, from its
+// result's inputs, into that target's (Codex's review of 03b380f1, F1).
+func TestATargetsKeptArchiveCarriesThePortGroupsItsBuildLoaded(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	group := "_resources/port1.0/group/github-1.0.tcl"
+	loaded := map[string]model.ObjectID{group: model.ObjectID(git.SHA1BlobID([]byte("# group\n")))}
+	_, _, libDigest := scriptedArchive("libharbor")
+	lib := model.ActivePort{Name: "libharbor", Spec: "@4_0", Directory: "devel/libharbor", Archive: libDigest}
+	provider := &identified{scriptedProvider: scriptedProvider{keep: true, active: []model.ActivePort{}, sourced: loaded, consumes: map[model.TargetID][]model.ActivePort{"harbor-cli": {lib}}}, identity: "origin a"}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	revision := harborBranch(t, e)
+	var branch model.Branch
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		var err error
+		branch, err = r.Branch(revision.Branch)
+		return err
+	}))
+	branch.Base = revision.Source.Base
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{
+		"devel/libharbor":        {port("libharbor")},
+		"devel/harbor-cli":       {port("harbor-cli", "libharbor")},
+		"graphics/harbor-viewer": {port("harbor-viewer")},
+	}})
+	check := func() model.Run {
+		t.Helper()
+		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
+		require.NoError(t, err)
+		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
+		require.NoError(t, err)
+		queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+		require.NoError(t, err)
+		run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+		require.NoError(t, err)
+		require.Equal(t, model.RunPassed, run.State, run.Detail)
+		return run
+	}
+	check()
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/harbor-cli/Portfile": "name harbor-cli\nrevision 2\n"})
+	second := check()
+	require.Len(t, provider.jobs, 2)
+	require.Len(t, provider.jobs[1].Installs, 1)
+	require.Equal(t, model.TargetID("libharbor"), provider.jobs[1].Installs[0].Target)
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		executions, err := r.Executions(second.ID)
+		require.NoError(t, err)
+		results, err := r.Results(executions[0].ID)
+		require.NoError(t, err)
+		for _, result := range results {
+			if result.Target != "harbor-cli" {
+				continue
+			}
+			inputs, err := r.Inputs(result.Inputs)
+			require.NoError(t, err)
+			require.Len(t, inputs.Active, 1)
+			require.Equal(t, loaded, inputs.Active[0].PortGroups, "the PortGroups libharbor's build loaded, from its result's inputs")
+			return nil
+		}
+		return errors.New("harbor-cli has no result")
+	}))
+}
+
 func TestTheGuestInstallsWhatABuildNeedsFromItsKeptArchive(t *testing.T) {
 	t.Parallel()
 	f := setup(t)

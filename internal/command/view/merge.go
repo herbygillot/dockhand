@@ -52,7 +52,11 @@ func MergeLines(s engine.BranchStatus) []string {
 	}
 	var lines []string
 	for _, port := range merge.Ports {
-		lines = append(lines, port.Port+": "+portMergeWords(port))
+		line := port.Port + ": " + portMergeWords(port)
+		if basis := basisWords(port); basis != "" {
+			line += "; " + basis
+		}
+		lines = append(lines, line)
 	}
 	if len(s.MaintainersUnread) > 0 {
 		lines = append(lines, unreadWords(s))
@@ -118,6 +122,22 @@ func portMergeWords(port macports.PortMerge) string {
 		return words + "; anyone may update it"
 	}
 	return words + "; no one named to wait for"
+}
+
+// basisWords name the reading a port's maintainers were taken from where
+// it isn't master's newest cached port index: "maintainers as of master,
+// 2026-10-28" for the branch's base, newer than any cached index or with
+// none cached, and "maintainers as the branch adds it" for a new port.
+func basisWords(port macports.PortMerge) string {
+	switch {
+	case port.Basis == macports.MaintainersOfBase && !port.As.IsZero():
+		return "maintainers as of master, " + port.As.Local().Format(time.DateOnly)
+	case port.Basis == macports.MaintainersOfBase:
+		return "maintainers as of the branch's base"
+	case port.Basis == macports.MaintainersOfNewPort:
+		return "maintainers as the branch adds it"
+	}
+	return ""
 }
 
 // handles are logins as a pull request mentions them, @ada.

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -157,7 +158,7 @@ func TestCommitBeforeAndCommitTime(t *testing.T) {
 }
 
 // FirstParentTrees are start's tree and its first-parent ancestors',
-// newest first, as many as asked for.
+// newest first, as many as asked for, each dated by its commit.
 func TestFirstParentTrees(t *testing.T) {
 	t.Parallel()
 	repo, _ := portsCheckout(t)
@@ -168,14 +169,16 @@ func TestFirstParentTrees(t *testing.T) {
 	second := testsupport.Git(t, repo.Root, "rev-parse", "HEAD")
 	trees, err := repo.CommitTrees(t.Context(), []string{first, second})
 	require.NoError(t, err)
+	committed, err := repo.CommitTime(t.Context(), second)
+	require.NoError(t, err)
 
 	found, err := repo.FirstParentTrees(t.Context(), second, 10)
 	require.NoError(t, err)
-	require.Equal(t, trees[second], found[0])
-	require.Contains(t, found, trees[first])
+	require.Equal(t, git.DatedTree{Tree: trees[second], Committed: committed}, found[0])
+	require.True(t, slices.ContainsFunc(found, func(d git.DatedTree) bool { return d.Tree == trees[first] }))
 	found, err = repo.FirstParentTrees(t.Context(), second, 1)
 	require.NoError(t, err)
-	require.Equal(t, []string{trees[second]}, found)
+	require.Equal(t, []git.DatedTree{{Tree: trees[second], Committed: committed}}, found)
 	_, err = repo.FirstParentTrees(t.Context(), "HEAD", 1)
 	require.ErrorContains(t, err, "literal commit objects are required")
 }

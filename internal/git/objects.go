@@ -296,9 +296,10 @@ func objectResult(out []byte, err error) (string, error) {
 }
 
 // FirstParentTrees are the trees of start and its first-parent ancestors,
-// newest first, at most limit of them: one rev-list, which a reader of
-// what's cached by tree walks to find the newest it has.
-func (r *Repository) FirstParentTrees(ctx context.Context, start string, limit int) ([]string, error) {
+// newest first, at most limit of them, each with its commit's committer
+// time: one rev-list, which a reader of what's cached by tree walks to
+// find the newest it has, and dates what it found by.
+func (r *Repository) FirstParentTrees(ctx context.Context, start string, limit int) ([]DatedTree, error) {
 	if !ValidObjectID(start) {
 		return nil, fmt.Errorf("git: literal commit objects are required")
 	}
@@ -306,21 +307,29 @@ func (r *Repository) FirstParentTrees(ctx context.Context, start string, limit i
 		return nil, nil
 	}
 	// rev-list heads each commit's format with a "commit" line of its own.
-	out, err := r.output(ctx, "rev-list", "--first-parent", "--max-count="+strconv.Itoa(limit), "--format=%T", start, "--")
+	out, err := r.output(ctx, "rev-list", "--first-parent", "--max-count="+strconv.Itoa(limit), "--format=%T %ct", start, "--")
 	if err != nil {
 		return nil, err
 	}
-	var trees []string
+	var trees []DatedTree
 	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 		if line == "" || strings.HasPrefix(line, "commit ") {
 			continue
 		}
-		if !ValidObjectID(line) {
+		tree, at, _ := strings.Cut(line, " ")
+		seconds, err := strconv.ParseInt(at, 10, 64)
+		if !ValidObjectID(tree) || err != nil {
 			return nil, fmt.Errorf("git: invalid tree from rev-list: %q", line)
 		}
-		trees = append(trees, line)
+		trees = append(trees, DatedTree{Tree: tree, Committed: time.Unix(seconds, 0).UTC()})
 	}
 	return trees, nil
+}
+
+// DatedTree is a commit's tree, with the commit's committer time.
+type DatedTree struct {
+	Tree      string
+	Committed time.Time
 }
 
 // CommitBefore is the newest first-parent ancestor of start, start itself

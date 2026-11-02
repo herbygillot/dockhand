@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"net/url"
 	"os"
 	"path"
@@ -122,19 +123,25 @@ func binaryName(base string) bool {
 }
 
 // sourceTree is what an archive holds below its one top directory: its
-// regular files, each directory with how many regular files are under
-// it, and .gitmodules' text where it has one. top is empty where the
-// archive doesn't extract to one directory.
+// regular files, each with its contents' digest (archive.Member.Digest),
+// its symbolic links, each with its target, each directory with how many
+// regular files are under it, and .gitmodules' text where it has one.
+// top is empty where the archive doesn't extract to one directory. A
+// link counts as a directory for has, as it did before links were kept.
 type sourceTree struct {
 	top        string
-	files      map[string]bool
+	files      map[string]string
+	links      map[string]string
 	dirs       map[string]int
 	gitmodules []byte
 }
 
+// gitmodulesLimit bounds the .gitmodules text a tree keeps.
+const gitmodulesLimit = 1 << 20
+
 // readSourceTree walks an archive (archive.Walk).
 func readSourceTree(ctx context.Context, filename string) (sourceTree, error) {
-	tree := sourceTree{files: map[string]bool{}, dirs: map[string]int{}}
+	tree := sourceTree{files: map[string]string{}, links: map[string]string{}, dirs: map[string]int{}}
 	shared := true
 	err := archive.Walk(ctx, filename, func(member archive.Member) error {
 		name, ok := member.Clean()
@@ -155,21 +162,29 @@ func readSourceTree(ctx context.Context, filename string) (sourceTree, error) {
 			return nil
 		}
 		if !member.Regular {
+			if member.Link != "" {
+				tree.links[rest] = member.Link
+			}
 			if _, ok := tree.dirs[rest]; !ok {
 				tree.dirs[rest] = 0
 			}
 			return nil
 		}
-		tree.files[rest] = true
+		var gitmodules *cappedBuffer
+		if rest == ".gitmodules" {
+			gitmodules = &cappedBuffer{limit: gitmodulesLimit}
+			member.Body = io.TeeReader(member.Body, gitmodules)
+		}
+		digest, err := member.Digest()
+		if err != nil {
+			return err
+		}
+		tree.files[rest] = digest
 		for dir := path.Dir(rest); dir != "."; dir = path.Dir(dir) {
 			tree.dirs[dir]++
 		}
-		if rest == ".gitmodules" {
-			data, err := io.ReadAll(io.LimitReader(member.Body, 1<<20))
-			if err != nil {
-				return err
-			}
-			tree.gitmodules = data
+		if gitmodules != nil {
+			tree.gitmodules = gitmodules.Bytes()
 		}
 		return nil
 	})
@@ -182,10 +197,25 @@ func readSourceTree(ctx context.Context, filename string) (sourceTree, error) {
 	return tree, nil
 }
 
+// cappedBuffer keeps the first limit bytes written to it and takes the
+// rest unkept.
+type cappedBuffer struct {
+	bytes.Buffer
+	limit int
+}
+
+func (c *cappedBuffer) Write(p []byte) (int, error) {
+	if room := c.limit - c.Len(); room > 0 {
+		c.Buffer.Write(p[:min(room, len(p))])
+	}
+	return len(p), nil
+}
+
 // has reports a file or directory below the top.
 func (t sourceTree) has(name string) bool {
+	_, file := t.files[name]
 	_, dir := t.dirs[name]
-	return t.files[name] || dir
+	return file || dir
 }
 
 // submodules are the paths .gitmodules names, in its order.
@@ -269,9 +299,10 @@ type judgedAsset struct {
 var compressionOrder = []string{".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lz", ".zip"}
 
 // judgeSources is the asset that is the source, among those judged:
-// passing ones with the same files are one source in several
-// compressions, the first in compressionOrder taken; passing ones with
-// different files are ambiguous, named, and none is chosen.
+// passing ones with the same files and contents (sameFiles) are one
+// source in several compressions, the first in compressionOrder taken;
+// passing ones with different files, or the same files with different
+// contents, are ambiguous, named, and none is chosen.
 func judgeSources(judged []judgedAsset) (*judgedAsset, []string) {
 	var passing []judgedAsset
 	for _, asset := range judged {
@@ -299,17 +330,13 @@ func judgeSources(judged []judgedAsset) (*judgedAsset, []string) {
 	return &chosen, nil
 }
 
-// sameFiles reports two trees holding the same regular files.
+// sameFiles reports two trees holding the same regular files with the
+// same contents, by digest, and the same symbolic links to the same
+// targets: one source in two compressions. Directories aren't compared,
+// a tree's files and links saying what it holds, nor are other members,
+// such as hard links, which Extract leaves out.
 func sameFiles(a, b sourceTree) bool {
-	if len(a.files) != len(b.files) {
-		return false
-	}
-	for name := range a.files {
-		if !b.files[name] {
-			return false
-		}
-	}
-	return true
+	return maps.Equal(a.files, b.files) && maps.Equal(a.links, b.links)
 }
 
 // templated is a name with the port's name or GitHub project and its

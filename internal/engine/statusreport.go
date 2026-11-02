@@ -92,15 +92,18 @@ func (e *Engine) StatusReport(ctx context.Context, session *coord.Session, reque
 				}
 			}
 		}
+		// The selected run's own evidence is read once, for its links, its
+		// lint, and what its builds installed (Codex's review of 03b380f1,
+		// F4).
 		if len(request.Branches) > 0 && status.Latest != nil && !status.Cleaned() {
-			if links, err := e.UndeclaredLinks(ctx, *status.Latest); err == nil {
-				report.Links[status.Latest.ID] = links
-			}
 			if checked, err := e.RunEvidence(ctx, status.Latest.ID); err == nil {
+				if links, err := e.linkFindings(ctx, checked); err == nil {
+					report.Links[status.Latest.ID] = links
+				}
 				report.Lint[status.Latest.ID] = LintFindings(checked)
-			}
-			if installed, err := e.InstallChanges(ctx, *status.Latest, false); err == nil {
-				report.Installed[status.Latest.ID] = installed
+				if installed, err := e.installFindings(ctx, *status.Latest, checked, false); err == nil {
+					report.Installed[status.Latest.ID] = installed
+				}
 			}
 		}
 	}

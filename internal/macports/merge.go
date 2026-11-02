@@ -24,12 +24,41 @@ const MaintainersOption = "maintainers"
 // creator's own merge, where they may merge at all, is theirs to judge.
 const MaintainerTimeout = 72 * time.Hour
 
-// PortMaintainers are a port's maintainers, as its evaluated maintainers
-// option lists them (ReadMaintainers).
-type PortMaintainers struct {
+// MaintainerObservation is a port's maintainers, as its evaluated
+// maintainers option lists them (ReadMaintainers), with the reading of the
+// ports tree they were taken from: the tree it is of, its basis, and when
+// that was master. The Guide's timeout waits on the maintainers MacPorts
+// has now, so of two readings of master the newer is taken (the person's
+// "The latest master should always win.", 2026-11-02).
+type MaintainerObservation struct {
 	Port        string
 	Maintainers []Maintainer
+	// Tree is the ports tree read: the cached index generation's, the
+	// branch's base's, or, for a port the branch adds, the branch's own.
+	Tree  string
+	Basis MaintainerBasis
+	// At is when the tree read was master's, its commit's committer time;
+	// zero for a port the branch adds, or where it couldn't be read.
+	At time.Time
 }
+
+// MaintainerBasis is which reading of the ports tree a port's maintainers
+// were taken from.
+type MaintainerBasis string
+
+const (
+	// MaintainersOfMaster are master's newest cached port index
+	// generation's.
+	MaintainersOfMaster MaintainerBasis = "master"
+	// MaintainersOfBase are the branch's base's, master where the branch
+	// started or was last rebased, as its change record evaluated them:
+	// where that is newer than the newest cached generation, or none is
+	// cached.
+	MaintainersOfBase MaintainerBasis = "base"
+	// MaintainersOfNewPort are the branch's own, for a port it adds, which
+	// master hasn't: its record is its only reading.
+	MaintainersOfNewPort MaintainerBasis = "new port"
+)
 
 // PortMerge is how one port of a pull request stands for its merge:
 // the people who maintain it, keywords apart; whether it's openmaintainer
@@ -43,6 +72,10 @@ type PortMerge struct {
 	OpenMaintainer, NoMaintainer bool
 	ApprovedBy                   []string
 	ByMaintainer                 bool
+	// Basis and As are the reading its maintainers were taken from, and
+	// when that was master (MaintainerObservation).
+	Basis MaintainerBasis
+	As    time.Time
 }
 
 // Waits reports whether the port waits on the maintainer timeout: someone
@@ -101,11 +134,12 @@ func (m Merge) Passed() bool { return !m.Until.IsZero() && m.Left == 0 }
 // approval isn't seen. Where no port waits, it's a draft, or it's unknown
 // when the pull request was opened, there's no time to give. The author's
 // own early merge, which their commit access decides, isn't modelled.
-func MergeFitness(ports []PortMaintainers, author string, mentioned, approvers []string, opened time.Time, draft bool, now time.Time) Merge {
+// Each port keeps the reading its maintainers were taken from.
+func MergeFitness(ports []MaintainerObservation, author string, mentioned, approvers []string, opened time.Time, draft bool, now time.Time) Merge {
 	merge := Merge{Opened: opened, Mentioned: mentioned, Approvers: approvers, Draft: draft}
 	names := func(m Maintainer, login string) bool { return login != "" && m.Names("@"+login) }
 	for _, port := range ports {
-		standing := PortMerge{Port: port.Port}
+		standing := PortMerge{Port: port.Port, Basis: port.Basis, As: port.At}
 		for _, maintainer := range port.Maintainers {
 			switch {
 			case len(maintainer) == 1 && maintainer[0] == OpenMaintainer:

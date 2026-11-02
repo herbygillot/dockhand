@@ -2,9 +2,6 @@ package archive
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"io"
 	"slices"
 	"strings"
 )
@@ -31,11 +28,11 @@ func Tree(ctx context.Context, filename string) (map[string]string, error) {
 		case first != top:
 			shared = false
 		}
-		digest := sha256.New()
-		if _, err := io.Copy(digest, member.Body); err != nil {
+		digest, err := member.Digest()
+		if err != nil {
 			return err
 		}
-		files[name] = hex.EncodeToString(digest.Sum(nil))
+		files[name] = digest
 		return nil
 	})
 	if err != nil || !shared || top == "" {
