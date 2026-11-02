@@ -57,7 +57,12 @@ type CreateRequest struct {
 	// so, when empty.
 	Category string
 	// Maintainer is the maintainers line; nomaintainer, marked, when empty.
+	// openmaintainer is added to it unless KeepMaintainers
+	// (macports.WithOpenMaintainer).
 	Maintainer string
+	// KeepMaintainers writes Maintainer as it is, create
+	// --no-openmaintainer.
+	KeepMaintainers bool
 	// Project is the project as ObserveProject found it.
 	Project Project
 }
@@ -581,7 +586,7 @@ func publishedTag(ctx context.Context, repository forge.Repository, prefix, vers
 func (e *Engine) createSpec(ctx context.Context, repo *git.Repository, observed Observed, request CreateRequest, name, prefix string) (portcreate.Spec, string, error) {
 	project, build, version := observed.Project, observed.Build, observed.Version
 	spec := portcreate.Spec{Name: name, Category: request.Category, Owner: project.Owner, Project: project.Name, Version: version, TagPrefix: prefix,
-		Description: observed.Description, Homepage: project.Homepage, License: observed.License, LicenseFrom: observed.LicenseFrom, Maintainer: request.Maintainer, Build: build,
+		Description: observed.Description, Homepage: project.Homepage, License: observed.License, LicenseFrom: observed.LicenseFrom, Maintainer: request.maintainers(), Build: build,
 		Binaries: portcreate.Binaries(project.Files, build), ReleaseAsset: portcreate.HasReleaseArchive(project.Assets, project.Name, version),
 		Directory: project.Directory, Package: project.Package}
 	if spec.Category == "" {
@@ -684,4 +689,14 @@ func (e *Engine) pythonDefault(ctx context.Context, worktree *git.Repository, di
 		}
 	}
 	return ""
+}
+
+// maintainers is the new port's maintainers line: the configured one with
+// openmaintainer added, unless asked to keep it as it is; empty, which
+// writes nomaintainer, where none is configured.
+func (r CreateRequest) maintainers() string {
+	if r.Maintainer == "" || r.KeepMaintainers {
+		return r.Maintainer
+	}
+	return macports.WithOpenMaintainer(r.Maintainer)
 }
