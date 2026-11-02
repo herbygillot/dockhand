@@ -116,6 +116,13 @@ type TestedOn struct {
 	Reports          []Report
 	Columns          []string
 	Rows             []Row
+	// Carried are the sentences under the table that say where a check
+	// reused an earlier check's builds over a change that builds nothing
+	// differently, what changed since: "check-767 reused check-766's
+	// builds (commit 3f2a1c9): since then only omnidiff's maintainers
+	// changed, which builds nothing differently, and lint ran again on
+	// this Portfile".
+	Carried []string
 	// UncoveredCI are the macOS releases MacPorts' CI builds on that no
 	// check here built on, in words, "14 and 15", which a note under the
 	// table says.
@@ -478,6 +485,9 @@ func Owned(facts Facts) string {
 		b.WriteString(notes.String())
 		if tested.RunsLeftOut > 0 {
 			fmt.Fprintf(&b, "\n%s behind these results %s left out to keep within GitHub's limit on a description; the author's `dockhand logs` has them.\n", prose.Plural(tested.RunsLeftOut, "run"), isAre(tested.RunsLeftOut))
+		}
+		for _, line := range tested.Carried {
+			fmt.Fprintf(&b, "\n%s.\n", escape(line))
 		}
 		if tested.UncoveredCI != "" {
 			fmt.Fprintf(&b, "\nMacPorts CI also builds on macOS %s, which was not covered by these checks.\n", tested.UncoveredCI)

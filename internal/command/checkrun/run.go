@@ -275,6 +275,10 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 			passed = "Passed"
 		}
 		if from := evidence.ReusedAll(); len(from) > 0 {
+			if carried := engine.CarriedLines(evidence); len(carried) > 0 {
+				fmt.Fprintf(out, "%s, using results from %s. No builds were needed: %s. Use --fresh to rebuild.\n", passed, prose.And(from), strings.Join(carried, ". "))
+				return nil
+			}
 			fmt.Fprintf(out, "%s, using results from %s. No builds were needed because the inputs are unchanged; use --fresh to rebuild.\n", passed, prose.And(from))
 			return nil
 		}

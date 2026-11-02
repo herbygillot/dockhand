@@ -165,6 +165,7 @@ func (facts bodyFacts) description() prdescription.Facts {
 	default:
 		described.TestedOn.UncoveredCI = prose.And(facts.UncoveredCI)
 		described.TestedOn.Installed = facts.Installed
+		described.TestedOn.Carried = CarriedLines(*evidence)
 		checks := evidence.Checks()
 		// An environment where nothing was built or reused, as one where
 		// every port is excluded, has no report, and isn't named: it

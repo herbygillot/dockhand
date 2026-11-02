@@ -33,6 +33,40 @@ const (
 	CellRemade   = evidence.CellRemade
 )
 
+// CarriedLines say, of the evidence's results reused over a change that
+// builds nothing differently (model.Carried), what changed since each
+// earlier check built them, a sentence for each check that reused and
+// each it reused from, in the targets' order (checks.CarriedWords):
+// "check-767 reused check-766's builds (commit 3f2a1c9): since then only
+// omnidiff's maintainers changed, which builds nothing differently, and
+// lint ran again on this Portfile". None where nothing was carried.
+func CarriedLines(e Evidence) []string {
+	type pair struct{ reusing, from string }
+	var pairs []pair
+	carried := map[pair][]model.Carried{}
+	names := e.Checks()
+	for _, target := range e.Targets {
+		for _, cell := range target.Outcomes {
+			if cell.Carried == nil {
+				continue
+			}
+			key := pair{names[e.Executions[cell.Execution].Run], cell.Carried.Check}
+			if key.reusing == "" {
+				key.reusing = e.Run.Name()
+			}
+			if _, ok := carried[key]; !ok {
+				pairs = append(pairs, key)
+			}
+			carried[key] = append(carried[key], *cell.Carried)
+		}
+	}
+	var lines []string
+	for _, key := range pairs {
+		lines = append(lines, checks.CarriedWords(key.reusing, carried[key]))
+	}
+	return lines
+}
+
 // RemadeWords says what changed in the first environment where the
 // target's result was recorded before it changed: its provider's words
 // where it can say (buildenv.IdentityExplainer), as Tart says a new guest

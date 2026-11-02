@@ -211,6 +211,17 @@ func TestUncoveredCIReleasesAreSaid(t *testing.T) {
 	require.NotContains(t, Owned(facts), "MacPorts CI also builds")
 }
 
+// Where a check reused an earlier one's builds over a change that builds
+// nothing differently, what changed since is said under the table, a
+// sentence of its own (the omnidiff session's note 8).
+func TestACarriedReuseIsSaidUnderTheTable(t *testing.T) {
+	line := "check-767 reused check-766's builds (commit 3f2a1c9): since then only omnidiff's maintainers changed, which builds nothing differently, and lint ran again on this Portfile"
+	facts := Facts{TestedOn: TestedOn{Columns: []string{"macOS 26"}, Rows: []Row{{Port: "omnidiff", Cells: []Cell{{Words: "✓ (check-766)"}}}}, Carried: []string{line}}}
+	require.Contains(t, Owned(facts), "| omnidiff | ✓ (check-766) |\n\n"+line+".\n")
+	facts.TestedOn.Carried = nil
+	require.NotContains(t, Owned(facts), "reused check-766's builds")
+}
+
 // A Description says nothing of the change where the one commit's body is
 // empty or trailers alone, and nothing else is said there.
 func TestADescriptionOfASubjectOnlyCommitSaysNothing(t *testing.T) {
