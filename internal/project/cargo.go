@@ -29,6 +29,12 @@ type CargoManifest struct {
 	Workspace *CargoWorkspace
 	// Bins are its [[bin]] targets' names.
 	Bins []string
+	// required are the features each [[bin]] needs, by its name, its
+	// required-features: Cargo builds it only where each is on.
+	required map[string][]string
+	// Features is the package's [features] table: each feature, with the
+	// features, dep:x, and x/y entries it turns on.
+	Features map[string][]string
 	// mainBin is whether a [[bin]] builds src/main.rs itself, by its path,
 	// or by the package's name with none; noAutobins is autobins = false.
 	mainBin, noAutobins bool
@@ -39,13 +45,23 @@ type CargoManifest struct {
 }
 
 // Programs are the binaries a package's manifest builds, given whether its
-// directory has a program by Cargo's conventions (Reading.CargoProgram):
-// its [[bin]]s, and the one Cargo infers from src/main.rs, named for the
-// package, beside them, unless autobins = false or a [[bin]] builds
-// src/main.rs itself. ratty 0.6.0 added a [[bin]] ratty-mcp and kept
-// src/main.rs, and its ratty read as removed (field testing at beb6e7bc).
-func (m CargoManifest) Programs(conventional bool) []string {
-	programs := slices.Clone(m.Bins)
+// directory has a program by Cargo's conventions (Reading.CargoProgram)
+// and the features the build turns on: its [[bin]]s, less one whose
+// required-features the build doesn't turn on, and the one Cargo infers
+// from src/main.rs, named for the package, beside them, unless autobins =
+// false or a [[bin]] builds src/main.rs itself. ratty 0.6.0 added a
+// [[bin]] ratty-mcp and kept src/main.rs, and its ratty read as removed
+// (field testing at beb6e7bc); omnidiff's 21 dev-tool bins, gated on
+// test-fixtures or stats, were each given an xinstall, and its destroot
+// failed (the omnidiff session's note 1).
+func (m CargoManifest) Programs(conventional bool, build CargoFeatures) []string {
+	var programs []string
+	features, _ := m.Enabled(build)
+	for _, bin := range m.Bins {
+		if !slices.ContainsFunc(m.required[bin], func(feature string) bool { return !features[feature] }) {
+			programs = append(programs, bin)
+		}
+	}
 	if m.Package != nil && m.Package.Name != "" && conventional && !m.noAutobins && !m.mainBin && !slices.Contains(programs, m.Package.Name) {
 		programs = append(programs, m.Package.Name)
 	}
@@ -55,11 +71,11 @@ func (m CargoManifest) Programs(conventional bool) []string {
 // CargoPrograms are the programs a Cargo project builds, by name, sorted:
 // each package's in files, its root's and its members', as Programs reads
 // them, given whether a package's directory has a program by Cargo's
-// conventions. It's the one reading create's destroot and comparison's
-// binaries rest on (CX-7, where create read the root package alone, a
-// program wherever no [[bin]] was declared). A manifest that doesn't
-// parse names none.
-func CargoPrograms(files map[string][]byte, conventional func(dir string) bool) []string {
+// conventions, and the features the build turns on. It's the one reading
+// create's destroot and comparison's binaries rest on (CX-7, where create
+// read the root package alone, a program wherever no [[bin]] was
+// declared). A manifest that doesn't parse names none.
+func CargoPrograms(files map[string][]byte, conventional func(dir string) bool, build CargoFeatures) []string {
 	var names []string
 	for name, data := range files {
 		if path.Base(name) != "Cargo.toml" {
@@ -73,7 +89,7 @@ func CargoPrograms(files map[string][]byte, conventional func(dir string) bool) 
 		if dir == "." {
 			dir = ""
 		}
-		for _, program := range manifest.Programs(conventional(dir)) {
+		for _, program := range manifest.Programs(conventional(dir), build) {
 			if !slices.Contains(names, program) {
 				names = append(names, program)
 			}
@@ -254,6 +270,12 @@ func ReadCargoManifest(data []byte) (CargoManifest, error) {
 			name, _ := bin["name"].(string)
 			if name != "" {
 				found.Bins = append(found.Bins, name)
+				if required := cargoStrings(bin["required-features"]); len(required) > 0 {
+					if found.required == nil {
+						found.required = map[string][]string{}
+					}
+					found.required[name] = required
+				}
 			}
 			binPath, _ := bin["path"].(string)
 			if path.Clean(binPath) == "src/main.rs" || binPath == "" && found.Package != nil && name == found.Package.Name {
@@ -263,6 +285,12 @@ func ReadCargoManifest(data []byte) (CargoManifest, error) {
 	}
 	if pkg, ok := manifest["package"].(map[string]any); ok && pkg["autobins"] == false {
 		found.noAutobins = true
+	}
+	if features, ok := manifest["features"].(map[string]any); ok {
+		found.Features = map[string][]string{}
+		for name, entries := range features {
+			found.Features[name] = cargoStrings(entries)
+		}
 	}
 	read := func(prefix string, tables map[string]any, names []string) error {
 		for _, table := range names {

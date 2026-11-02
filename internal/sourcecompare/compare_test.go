@@ -25,7 +25,7 @@ func compareArchives(t *testing.T, older, newer string, versions Versions) ([]Ch
 		}
 		readings[i] = reading
 	}
-	return Compare(readings[0], readings[1], versions, nil, nil), nil
+	return Compare(readings[0], readings[1], versions, nil, nil, project.CargoFeatures{}), nil
 }
 
 // compareNamed compares two archives as compareArchives does, with a
@@ -38,7 +38,7 @@ func compareNamed(t *testing.T, older, newer string, versions Versions, options 
 		require.NoError(t, err)
 		readings[i] = reading
 	}
-	return Compare(readings[0], readings[1], versions, func(option string) bool { return slices.Contains(options, option) }, func(option string) bool { return slices.Contains(options, option) })
+	return Compare(readings[0], readings[1], versions, func(option string) bool { return slices.Contains(options, option) }, func(option string) bool { return slices.Contains(options, option) }, project.CargoFeatures{})
 }
 
 // hows are the changes as their kind, how, and path.
@@ -426,7 +426,7 @@ func TestAChangesPlaceIsTheBlockTheDocumentReads(t *testing.T) {
 	}
 	compare := func(before, after string) []Change {
 		t.Helper()
-		return Compare(read(before), read(after), Versions{}, nil, nil)
+		return Compare(read(before), read(after), Versions{}, nil, nil, project.CargoFeatures{})
 	}
 	multiline := func(word string) string {
 		return "option(DEMO \"demo\" OFF)\nif(\n  DEMO\n)\n  message(STATUS \"" + word + "\")\nendif()\n"

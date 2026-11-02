@@ -479,7 +479,7 @@ func (a *assessment) pair(pair Pair) {
 	}
 	changes := sourcecompare.Compare(pair.Before, pair.After, a.input.Versions, func(option string) bool {
 		return a.input.Portfile == nil || portfile.Mentions(a.input.Portfile, option)
-	}, sets)
+	}, sets, macports.CargoBuildArgs(port.Options))
 	// Each manifest's dependency findings are put in order as a run: what
 	// holds first. A proven manifest's are counted in one line, where the
 	// file is.
