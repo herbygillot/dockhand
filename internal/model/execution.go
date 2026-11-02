@@ -333,9 +333,38 @@ type TargetResult struct {
 	// prefix, and Nitpicked says lint ran with --nitpick, as it does for a
 	// port the branch adds (the docs dig's I13). Nil where its provider
 	// didn't read them.
-	Lint       []string `json:",omitempty"`
-	Nitpicked  bool     `json:",omitempty"`
+	Lint      []string `json:",omitempty"`
+	Nitpicked bool     `json:",omitempty"`
+	// Carried is how a reused result stands for a revision whose port
+	// directories differ from what its build read only in options no
+	// build reads (decision 28's inert difference); nil for every other
+	// result.
+	Carried    *Carried `json:",omitempty"`
 	RecordedAt time.Time
+}
+
+// Carried is how a reused result stands for a revision whose port
+// directories differ from what its build read only in options no build
+// reads: the check that built it and the commit it built, each port
+// judged, the target's own first where its directory differs, and lint's,
+// where the target's own Portfile changed: Linted where lint ran again on
+// this revision's Portfile, the result's lines its, or LintKept, why it
+// couldn't, the result's lines the earlier Portfile's.
+type Carried struct {
+	Check    string      `json:"check"`
+	Commit   ObjectID    `json:"commit,omitempty"`
+	Ports    []InertPort `json:"ports"`
+	Linted   bool        `json:"linted,omitempty"`
+	LintKept string      `json:"lint_kept,omitempty"`
+}
+
+// InertPort is one port a carried result judged: its name, the inert
+// options its Portfile changed, and the directory it moved from, where it
+// moved.
+type InertPort struct {
+	Port    string   `json:"port"`
+	Options []string `json:"options,omitempty"`
+	From    string   `json:"from,omitempty"`
 }
 
 // Library is one of a build's own dynamic libraries: its file, the

@@ -584,7 +584,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			d.emit(ctx, model.EventExecutionState, fmt.Sprintf("%s: %s: builds every target, since its provider doesn't say what the environment is, so no earlier result can be reused there", d.run.Name(), DescribeEnvironment(environment)))
 		}
 		if attempt == 0 {
-			choice, err := d.reusable(ctx, identity, targets, paths, revision.Source.Tree)
+			choice, err := d.reusable(ctx, identity, targets, paths, revision)
 			if err != nil {
 				return err
 			}

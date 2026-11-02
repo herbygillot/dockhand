@@ -43,18 +43,18 @@ func TestADirectorysEditIsReadByTheSubportBlocksItIsIn(t *testing.T) {
 		testsupport.Git(t, root, "commit", "-q", "--allow-empty", "-m", "back")
 	}
 
-	subports, ok := d.subportEdits(t.Context(), then, directory(map[string]string{"sysutils/terraform/Portfile": portfile("1.16.7", "1.0")}))
+	subports, ok := d.blocks(t.Context())("sysutils/terraform", then, directory(map[string]string{"sysutils/terraform/Portfile": portfile("1.16.7", "1.0")}))
 	require.True(t, ok)
 	require.Equal(t, []string{"terraform-1.16"}, subports)
 
 	base()
-	_, ok = d.subportEdits(t.Context(), then, directory(map[string]string{"sysutils/terraform/Portfile": portfile("1.16.6", "2.0")}))
+	_, ok = d.blocks(t.Context())("sysutils/terraform", then, directory(map[string]string{"sysutils/terraform/Portfile": portfile("1.16.6", "2.0")}))
 	require.False(t, ok, "outside every block")
 	base()
-	_, ok = d.subportEdits(t.Context(), then, directory(map[string]string{"sysutils/terraform/files/a.patch": "b\n"}))
+	_, ok = d.blocks(t.Context())("sysutils/terraform", then, directory(map[string]string{"sysutils/terraform/files/a.patch": "b\n"}))
 	require.False(t, ok, "another file changed")
 	base()
-	_, ok = d.subportEdits(t.Context(), then, directory(map[string]string{"sysutils/terraform/files/b.patch": "b\n"}))
+	_, ok = d.blocks(t.Context())("sysutils/terraform", then, directory(map[string]string{"sysutils/terraform/files/b.patch": "b\n"}))
 	require.False(t, ok, "a file added")
 
 	// The reading reuse takes, the same for a pair of trees asked again.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -36,6 +38,11 @@ func (d *driver) earlier(ctx context.Context, environment model.Environment, rem
 			builds, err := r.Reusable(target.ID, environment, reuseCandidates)
 			if err != nil {
 				return err
+			}
+			// Where the plan has it now, which an earlier build of a port
+			// that moved since didn't read (reuse.Carry).
+			if len(builds) > 0 {
+				paths = append(paths, target.Directory)
 			}
 			for _, build := range builds {
 				inputs, err := r.Inputs(build.Result.Inputs)
@@ -135,10 +142,17 @@ func (d *driver) sayNotReusable(ctx context.Context, environment model.Environme
 // one that builds needs is installed from its kept archive, or builds. A
 // check with Fresh reuses nothing, and nor does an environment that can't
 // say what it is.
-func (d *driver) reusable(ctx context.Context, identity string, targets []reuse.Target, paths []string, tree model.ObjectID) (reuse.Choice, error) {
+//
+// A target whose build is carried over a change that builds nothing
+// differently (reuse.Carry) has lint run again on its Portfile on this Mac
+// where its own Portfile changed, and is reused only where lint finds no
+// error; its result takes lint's lines, or keeps the earlier Portfile's,
+// said so, where lint can't run here (carry).
+func (d *driver) reusable(ctx context.Context, identity string, targets []reuse.Target, paths []string, revision model.Revision) (reuse.Choice, error) {
 	if d.plan.Fresh || identity == "" || len(paths) == 0 {
 		return reuse.Choice{}, nil
 	}
+	tree := revision.Source.Tree
 	trees, err := reuse.Objects(ctx, d.c.Checkout, tree, paths)
 	if err != nil {
 		return reuse.Choice{}, err
@@ -147,15 +161,168 @@ func (d *driver) reusable(ctx context.Context, identity string, targets []reuse.
 		_, kept, err := d.c.Archives.Kept(ctx, c.Result.Archive)
 		return err == nil && kept
 	}
-	return reuse.Choose(targets, identity, trees, d.blocks(ctx), d.plan.Tests.Stands, available), nil
+	judge := reuse.Judge{Blocks: d.blocks(ctx), Inert: d.inert(ctx, revision)}
+	if judge.Inert != nil {
+		if judge.Moved, err = d.moved(ctx, revision.Source, targets, trees); err != nil {
+			return reuse.Choice{}, err
+		}
+	}
+	// A target lint finds an error in builds, and what it needs with it:
+	// its candidates are set aside, and the choice made again.
+	considered := slices.Clone(targets)
+	linted := map[model.TargetID]lintAnswer{}
+	for {
+		choice := reuse.Choose(considered, identity, trees, judge, d.plan.Tests.Stands, available)
+		refused := d.carry(ctx, revision, considered, &choice, linted)
+		if len(refused) == 0 {
+			return choice, nil
+		}
+		for i := range considered {
+			if found, ok := refused[considered[i].ID]; ok {
+				considered[i].Earlier = nil
+				d.emit(ctx, model.EventExecutionState, fmt.Sprintf("%s: %s builds again: lint found an error in its Portfile: %s", d.run.Name(), considered[i].ID, strings.Join(found, "; ")))
+			}
+		}
+	}
+}
+
+// moved finds where each port an earlier build had active is now, by its
+// name, where the directory it read is gone from the revision: a target
+// where the plan has it, any other port as the revision's index has it.
+// What it finds is added to trees, by directory (reuse.Objects).
+func (d *driver) moved(ctx context.Context, source model.Source, targets []reuse.Target, trees map[string]model.ObjectID) (func(string) (string, bool), error) {
+	found := map[string]string{}
+	var lookups []string
+	for _, target := range targets {
+		for _, c := range target.Earlier {
+			for _, port := range c.Inputs.Active {
+				key := strings.ToLower(port.Name)
+				if _, held := trees[port.Directory]; held || port.Directory == "" || slices.Contains(lookups, key) {
+					continue
+				}
+				lookups = append(lookups, key)
+				if i := slices.IndexFunc(d.plan.Targets, func(t model.PlanTarget) bool {
+					return strings.EqualFold(t.Target.Name, port.Name) || strings.EqualFold(t.Target.Subport, port.Name)
+				}); i >= 0 {
+					found[key] = d.plan.Targets[i].Directory
+					continue
+				}
+				if reader, _, err := d.c.ports(); err == nil && reader != nil {
+					if directory, err := reader.Directory(ctx, source, port.Name); err == nil && directory != "" {
+						found[key] = directory
+					}
+				}
+			}
+		}
+	}
+	var directories []string
+	for _, directory := range found {
+		if _, held := trees[directory]; !held && !slices.Contains(directories, directory) {
+			directories = append(directories, directory)
+		}
+	}
+	if len(directories) > 0 {
+		more, err := reuse.Objects(ctx, d.c.Checkout, source.Tree, directories)
+		if err != nil {
+			return nil, err
+		}
+		maps.Copy(trees, more)
+	}
+	return func(port string) (string, bool) {
+		directory, ok := found[strings.ToLower(port)]
+		return directory, ok
+	}, nil
+}
+
+// carry completes each result a choice carries over a change that builds
+// nothing differently (choice.Carried): the check and commit it was built
+// at, the ports judged, and, where the target's own Portfile changed,
+// lint run again on it here, its warnings the result's (relint). It
+// returns the targets lint found an error in, which aren't carried, each
+// with lint's errors. Each target is linted once (linted).
+func (d *driver) carry(ctx context.Context, revision model.Revision, targets []reuse.Target, choice *reuse.Choice, linted map[model.TargetID]lintAnswer) map[model.TargetID][]string {
+	refused := map[model.TargetID][]string{}
+	for _, target := range targets {
+		ports, ok := choice.Carried[target.ID]
+		c, reused := choice.Reused[target.ID]
+		if !ok || !reused {
+			continue
+		}
+		carried := &model.Carried{Ports: ports}
+		_ = d.c.Store.View(ctx, d.c.Repository, func(r store.Reader) error {
+			run, err := r.Run(c.Origin.Run)
+			if err != nil {
+				return err
+			}
+			carried.Check = run.Name()
+			if built, err := r.Revision(run.Revision); err == nil {
+				carried.Commit = built.Source.Commit
+			}
+			return nil
+		})
+		if slices.ContainsFunc(ports, func(p model.InertPort) bool { return p.Port == target.Target.Name && len(p.Options) > 0 }) {
+			answer, ok := linted[target.ID]
+			if !ok {
+				answer = d.relint(ctx, revision, target)
+				linted[target.ID] = answer
+			}
+			if len(answer.failed) > 0 {
+				refused[target.ID] = answer.failed
+				continue
+			}
+			if answer.kept != "" {
+				carried.LintKept = answer.kept
+			} else {
+				carried.Linted = true
+				c.Result.Lint, c.Result.Nitpicked = answer.lines, answer.nitpicked
+			}
+		}
+		c.Result.Carried = carried
+		choice.Reused[target.ID] = c
+	}
+	return refused
+}
+
+// lintAnswer is what lint run again on this Mac said of a target's
+// Portfile (relint): its warnings, and whether it nitpicked; or why it
+// couldn't run here, the earlier Portfile's lines standing; or the errors
+// it found, which the guest's lint fails the target on.
+type lintAnswer struct {
+	lines     []string
+	nitpicked bool
+	kept      string
+	failed    []string
+}
+
+// relint runs port lint on a target's Portfile as the revision holds it,
+// on this Mac, as the guest runs it, with --nitpick for a port the branch
+// adds. Where this Mac's reader can't lint, or lint couldn't finish, it
+// says why.
+func (d *driver) relint(ctx context.Context, revision model.Revision, target reuse.Target) lintAnswer {
+	reader, _, err := d.c.ports()
+	linter, ok := reader.(Linter)
+	if err != nil || reader == nil || !ok {
+		return lintAnswer{kept: "lint can't run on this Mac"}
+	}
+	port := target.Target.Name
+	if target.Target.Subport != "" {
+		port = target.Target.Subport
+	}
+	said, err := linter.Lint(ctx, revision.Source, target.Directory, port, target.Added)
+	if err != nil {
+		return lintAnswer{kept: "lint couldn't run on this Mac: " + err.Error()}
+	}
+	if len(said.Errors) > 0 {
+		return lintAnswer{failed: said.Errors}
+	}
+	return lintAnswer{lines: append([]string{}, said.Warnings...), nitpicked: target.Added}
 }
 
 // blocks reads, of a port directory whose tree differs from the one a
 // build read, which subports' literal blocks alone hold the difference
 // (reuse.Blocks, portfile.BlockChanges): every entry but the Portfile the
 // same object, and the Portfile's lines that differ each inside some
-// subport's block, both versions read from their trees, so nothing is
-// recorded or migrated for it. Anything it can't read says nothing, and
+// subport's block, both versions read from their trees (portfiles). Anything it can't read says nothing, and
 // the build reuses nothing, as before. Each pair of trees is read once.
 func (d *driver) blocks(ctx context.Context) reuse.Blocks {
 	type pair struct{ then, now model.ObjectID }
@@ -169,47 +336,118 @@ func (d *driver) blocks(ctx context.Context) reuse.Blocks {
 		if a, ok := read[key]; ok {
 			return a.subports, a.ok
 		}
-		subports, ok := d.subportEdits(ctx, then, now)
+		var subports []string
+		texts, ok := d.portfiles(ctx, then, now)
+		if ok {
+			var all bool
+			subports, all = portfile.BlockChanges(texts[0], texts[1])
+			ok = !all
+		}
 		read[key] = answer{subports, ok}
 		return subports, ok
 	}
 }
 
-// subportEdits are the subports whose blocks alone hold how one port
-// directory's tree differs from another's (blocks).
-func (d *driver) subportEdits(ctx context.Context, then, now model.ObjectID) ([]string, bool) {
+// inert reads, of a port directory whose tree differs from the one a build
+// read, the inert options alone that tell them apart (reuse.Inert): every
+// entry but the Portfile the same object, the Portfile's changed lines
+// each an inert option's (portfile.InertChanges), and the change records
+// of the build's revision and of this one, made where they aren't yet,
+// finding nothing else moved (fidelity.InertBetween). Anything it can't
+// read says nothing, and the build reuses nothing, as before. None where
+// nothing gives change records. Each judgment, and each revision's
+// records, is read once.
+func (d *driver) inert(ctx context.Context, revision model.Revision) reuse.Inert {
+	if d.c.Hooks == nil {
+		return nil
+	}
+	type key struct {
+		origin   model.RunID
+		from, at string
+		then     model.ObjectID
+		now      model.ObjectID
+	}
+	type answer struct {
+		options []string
+		ok      bool
+	}
+	read := map[key]answer{}
+	records := map[model.RevisionID]map[string]model.ChangeRecord{}
+	recordsOf := func(r model.Revision) map[string]model.ChangeRecord {
+		if found, ok := records[r.ID]; ok {
+			return found
+		}
+		found, err := d.c.Hooks.Changes(ctx, r)
+		if err != nil {
+			found = nil
+		}
+		records[r.ID] = found
+		return found
+	}
+	return func(origin model.RunID, from string, then model.ObjectID, at string, now model.ObjectID) ([]string, bool) {
+		k := key{origin, from, at, then, now}
+		if a, ok := read[k]; ok {
+			return a.options, a.ok
+		}
+		var options []string
+		texts, ok := d.portfiles(ctx, then, now)
+		if ok {
+			options, ok = portfile.InertChanges(texts[0], texts[1])
+		}
+		if ok {
+			var built model.Revision
+			err := d.c.Store.View(ctx, d.c.Repository, func(r store.Reader) error {
+				run, err := r.Run(origin)
+				if err == nil {
+					built, err = r.Revision(run.Revision)
+				}
+				return err
+			})
+			thenRecord, had := recordsOf(built)[from]
+			nowRecord, has := recordsOf(revision)[at]
+			ok = err == nil && had && has && fidelity.InertBetween(thenRecord, nowRecord)
+		}
+		read[k] = answer{options, ok}
+		return options, ok
+	}
+}
+
+// portfiles are the Portfiles of two trees of a port directory whose every
+// other entry is the same object, read from the trees, so nothing is
+// recorded or migrated for them; not ok where anything else differs, or
+// either can't be read.
+func (d *driver) portfiles(ctx context.Context, then, now model.ObjectID) ([2][]byte, bool) {
+	var texts [2][]byte
 	before, err := d.c.Checkout.ReadTree(ctx, string(then))
 	if err != nil {
-		return nil, false
+		return texts, false
 	}
 	after, err := d.c.Checkout.ReadTree(ctx, string(now))
 	if err != nil || len(before) != len(after) {
-		return nil, false
+		return texts, false
 	}
 	found := false
 	for i := range before {
 		switch {
 		case before[i].Name != after[i].Name || before[i].Mode != after[i].Mode:
-			return nil, false
+			return texts, false
 		case before[i].Name == "Portfile":
 			found = true
 		case before[i].Object != after[i].Object:
-			return nil, false
+			return texts, false
 		}
 	}
 	if !found {
-		return nil, false
+		return texts, false
 	}
-	var texts [2][]byte
 	for i, tree := range []model.ObjectID{then, now} {
 		files, err := d.c.Checkout.ReadFiles(ctx, string(tree), []string{"Portfile"})
 		if err != nil || files["Portfile"] == nil {
-			return nil, false
+			return texts, false
 		}
 		texts[i] = files["Portfile"]
 	}
-	subports, all := portfile.BlockChanges(texts[0], texts[1])
-	return subports, !all
+	return texts, true
 }
 
 // installs are the kept archives the guest installs targets it doesn't
@@ -319,8 +557,11 @@ func (d *driver) recordReuse(ctx context.Context, environment model.Environment,
 		if err != nil {
 			return err
 		}
-		_, err = d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: model.EventExecutionState, Level: model.LevelInfo,
-			Message: fmt.Sprintf("%s: %s: reusing results from %s for all targets because their build inputs are unchanged; no builds are needed", d.run.Name(), DescribeEnvironment(environment), strings.Join(checks, ", "))})
+		message := fmt.Sprintf("%s: %s: reusing results from %s for all targets because their build inputs are unchanged; no builds are needed", d.run.Name(), DescribeEnvironment(environment), strings.Join(checks, ", "))
+		if lines := carriedLines(d.run.Name(), ordered); len(lines) > 0 {
+			message = fmt.Sprintf("%s: %s: reusing results from %s for all targets; no builds are needed: %s", d.run.Name(), DescribeEnvironment(environment), strings.Join(checks, ", "), strings.Join(lines, "; "))
+		}
+		_, err = d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: model.EventExecutionState, Level: model.LevelInfo, Message: message})
 		return err
 	})
 }
@@ -339,8 +580,11 @@ func (b *build) reuses(remaining []buildenv.Target, chosen map[model.TargetID]re
 		if err != nil {
 			return err
 		}
-		_, err = b.d.session.Emit(tx, model.Event{Branch: b.d.run.Branch, Run: b.d.run.ID, Kind: model.EventExecutionState, Level: model.LevelInfo,
-			Message: fmt.Sprintf("%s: %s: reusing results for %s from %s because their build inputs are unchanged; building the remaining targets", b.d.run.Name(), DescribeEnvironment(b.execution.Environment), strings.Join(names, ", "), strings.Join(checks, ", "))})
+		message := fmt.Sprintf("%s: %s: reusing results for %s from %s because their build inputs are unchanged; building the remaining targets", b.d.run.Name(), DescribeEnvironment(b.execution.Environment), strings.Join(names, ", "), strings.Join(checks, ", "))
+		if lines := carriedLines(b.d.run.Name(), ordered); len(lines) > 0 {
+			message = fmt.Sprintf("%s: %s: reusing results for %s from %s; building the remaining targets: %s", b.d.run.Name(), DescribeEnvironment(b.execution.Environment), strings.Join(names, ", "), strings.Join(checks, ", "), strings.Join(lines, "; "))
+		}
+		_, err = b.d.session.Emit(tx, model.Event{Branch: b.d.run.Branch, Run: b.d.run.ID, Kind: model.EventExecutionState, Level: model.LevelInfo, Message: message})
 		return err
 	})
 	if err != nil {
@@ -366,6 +610,29 @@ func recordReused(tx store.Tx, execution model.ExecutionID, ordered []reuse.Cand
 		}
 	}
 	return checks, nil
+}
+
+// carriedLines say, of the chosen builds carried over a change that
+// builds nothing differently (model.Carried), what changed since, a
+// sentence for each earlier check, in the order the builds are
+// (CarriedWords).
+func carriedLines(run string, ordered []reuse.Candidate) []string {
+	var checks []string
+	byCheck := map[string][]model.Carried{}
+	for _, c := range ordered {
+		if c.Result.Carried == nil {
+			continue
+		}
+		if _, ok := byCheck[c.Result.Carried.Check]; !ok {
+			checks = append(checks, c.Result.Carried.Check)
+		}
+		byCheck[c.Result.Carried.Check] = append(byCheck[c.Result.Carried.Check], *c.Result.Carried)
+	}
+	var lines []string
+	for _, check := range checks {
+		lines = append(lines, CarriedWords(run, byCheck[check]))
+	}
+	return lines
 }
 
 // reusedResult is an earlier result, as the execution that reuses it

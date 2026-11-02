@@ -701,7 +701,7 @@ func (e *Engine) standingBaseline(ctx context.Context, branch model.BranchID, ba
 			continue
 		}
 		target := evidence.Targets[i].Target
-		if reuse.Current(recorded, identity, model.PlanTarget{ID: target.ID, Target: target.Target, Directory: recorded.Directory}, nil, trees, nil) {
+		if reuse.Current(recorded, identity, model.PlanTarget{ID: target.ID, Target: target.Target, Directory: recorded.Directory}, nil, trees, reuse.Judge{}) {
 			return run.Name(), ""
 		}
 		read := "its own directory"
