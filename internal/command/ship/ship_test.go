@@ -421,3 +421,21 @@ func TestShipGoesOnWithABranchWhereTheNewestReleaseIsUncertain(t *testing.T) {
 	require.Contains(t, out, "passed for this commit already")
 	require.Len(t, g.PRs, 1, "submitted")
 }
+
+// A branch whose edits ship commits itself, at its tidy stage, isn't held
+// for them in its plan: the row says the commit comes first, with no ✗,
+// where dua-cli's plan refused what ship then committed (field testing).
+func TestShipsPlanSaysItCommitsTheEditsFirst(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithScript(t, w, "passed")
+	cmdtest.WithGitHub(t, w)
+	_, errs, err := cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err, errs)
+	out, errs, err := cmdtest.Dockhand(t, "ship", "-b", "jq-1.8.1", "--plan")
+	require.NoError(t, err, errs)
+	require.Contains(t, out, "commits textproc/jq/Portfile first, as tidy would; the preview follows the commit\n")
+	require.NotContains(t, out, "✗ these edits are not committed")
+}
