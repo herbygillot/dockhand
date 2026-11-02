@@ -167,10 +167,37 @@ func sentinelEdit(before, after []byte, sentinel string) ([]byte, bool) {
 }
 
 func (s *Service) bumpRevision(ctx context.Context, input *sourceInput, contents []byte, current int) ([]byte, error) {
+	// Where the Portfile writes its revision only in a block BumpRevision
+	// doesn't read, the line it would add would set every subport's, so
+	// the block's line is probed first, the line added only where none
+	// raises the port's.
+	inBlock := portfile.RevisionInBlock(contents, input.target.Subport)
+	if inBlock {
+		found, err := s.probeRevision(ctx, input, contents, current)
+		if err != nil {
+			return nil, err
+		}
+		if len(found) == 1 {
+			return found[0], nil
+		}
+	}
 	bumped, err := portfile.BumpRevision(contents, input.target.Subport, current)
-	if err == nil || !errors.Is(err, portfile.ErrUnsupported) {
+	if err == nil || !errors.Is(err, portfile.ErrUnsupported) || inBlock {
 		return bumped, err
 	}
+	found, probeErr := s.probeRevision(ctx, input, contents, current)
+	if probeErr != nil {
+		return nil, probeErr
+	}
+	if len(found) != 1 {
+		return nil, err
+	}
+	return found[0], nil
+}
+
+// probeRevision are the Portfiles, each one of RevisionCandidates raised
+// by one, whose evaluation raises the port's revision by one.
+func (s *Service) probeRevision(ctx context.Context, input *sourceInput, contents []byte, current int) ([][]byte, error) {
 	next := strconv.Itoa(current + 1)
 	var found [][]byte
 	for _, span := range portfile.RevisionCandidates(contents, current) {
@@ -189,8 +216,5 @@ func (s *Service) bumpRevision(ctx context.Context, input *sourceInput, contents
 			found = append(found, probe)
 		}
 	}
-	if len(found) != 1 {
-		return nil, err
-	}
-	return found[0], nil
+	return found, nil
 }

@@ -68,11 +68,13 @@ func byHand(err error, request UpdateRequest, branch string, started bool) error
 	} else {
 		reason = unlocated.Error()
 	}
-	what := port
-	if request.Action == model.EditChecksums {
-		what = "the checksums for " + port
+	words := fmt.Sprintf("Could not update %s automatically: %s", port, reason)
+	switch request.Action {
+	case model.EditChecksums:
+		words = fmt.Sprintf("Could not update the checksums for %s automatically: %s", port, reason)
+	case model.EditRevbump:
+		words = fmt.Sprintf("Could not bump %s's revision automatically: %s", port, reason)
 	}
-	words := fmt.Sprintf("Could not update %s automatically: %s", what, reason)
 	kept := ""
 	switch {
 	case request.Plan:
@@ -103,6 +105,8 @@ func byHand(err error, request UpdateRequest, branch string, started bool) error
 		steps = []refusal.Next{{External: "use these checksums in the Portfile:\n    " + indented(portfile.ChecksumsBlock(toWrite.Checksums))}, edit}
 	case request.Action == model.EditChecksums:
 		steps = []refusal.Next{{External: fmt.Sprintf("run port checksum %s, then copy the reported checksums into the Portfile", port)}, edit}
+	case request.Action == model.EditRevbump:
+		steps = []refusal.Next{{External: fmt.Sprintf("raise %s's revision by one by hand", port)}, edit}
 	case unlocated != nil:
 		steps = []refusal.Next{{External: fmt.Sprintf("edit the version, then run dockhand checksums %s to print the checksums to copy into the Portfile", port)}, edit}
 	default:

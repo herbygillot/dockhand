@@ -49,6 +49,12 @@ Kept: dockhand/git-ab12, with nothing changed.`)
 	require.EqualError(t, err, "Could not update rust automatically: rust-src, another port of the same Portfile, fetches its own source (its distfiles differ from rust's), which updating rust doesn't move")
 	require.Len(t, refusal.Of(err).Next, 2)
 
+	// A revbump's refusal says it's the revision, and the steps are a
+	// revbump's, where they were an update's (rc7's rust revbump).
+	err = byHand(ErrFidelity.Because("rust-src.revision changed"), UpdateRequest{Action: model.EditRevbump, Port: "rust"}, "dockhand/rust-ab12", true)
+	require.EqualError(t, err, "Could not bump rust's revision automatically: rust-src.revision changed\nKept: dockhand/rust-ab12, with nothing changed.")
+	require.Equal(t, []refusal.Next{{External: "raise rust's revision by one by hand"}, {Verb: refusal.VerbEdit, Args: []string{"rust"}}}, refusal.Of(err).Next)
+
 	// Started, with no edit kept or one kept, an update that failed says
 	// which; one that started nothing is as it came.
 	failed := fmt.Errorf("the obsolete stub's update failed")

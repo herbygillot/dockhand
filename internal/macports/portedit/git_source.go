@@ -3,6 +3,7 @@ package portedit
 import (
 	"context"
 	"regexp"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
@@ -90,7 +91,7 @@ func (s *Service) planGitVersion(ctx context.Context, request Request, input *so
 	result := Result{Scope: input.scope, Target: input.target, Release: release}
 	result.report(report)
 	if len(report.UnexpectedChanges) > 0 {
-		return archivePlan{result: result}, ErrFidelity.Because("%v", report.UnexpectedChanges)
+		return archivePlan{result: result}, ErrFidelity.Because("%s", strings.Join(report.UnexpectedChanges, "; "))
 	}
 	progress.VerboseReport(ctx, "%s is fetched with git; the build clones %s at %s", input.target.Name, next.Options["git.url"], next.Options["git.branch"])
 	return archivePlan{result: result, contents: contents, viaGit: true, branch: branch, subject: "update to " + release.Version}, nil

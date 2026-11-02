@@ -405,7 +405,7 @@ func (r *Result) commitEdit(input *sourceInput, request Request, edit portfile.E
 	r.Files = []portfile.Edit{edit}
 	r.report(report)
 	if len(report.UnexpectedChanges) > 0 {
-		return ErrFidelity.Because("%v", report.UnexpectedChanges)
+		return ErrFidelity.Because("%s", strings.Join(report.UnexpectedChanges, "; "))
 	}
 	name := input.target.Name
 	if request.Stub != "" {

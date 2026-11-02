@@ -55,3 +55,17 @@ func TestRevisionCandidatesAreFoundInEveryBody(t *testing.T) {
 	_, err := BumpRevision(src, "", 1)
 	require.ErrorIs(t, err, ErrUnsupported, "the text alone has no one place to bump")
 }
+
+// A revision written only in a block BumpRevision doesn't read is said,
+// so a bump probes it before adding a line that would set every
+// subport's: rust's is in an if, rust-src's in its subport block (rc7's
+// rust revbump, 2026-11-02).
+func TestRevisionInBlockIsSaid(t *testing.T) {
+	t.Parallel()
+	rust := []byte("version 1\nif {$a} {\n    revision 0\n}\nsubport rust-src {\n    revision 2\n}\n")
+	require.True(t, RevisionInBlock(rust, ""))
+	require.False(t, RevisionInBlock(rust, "rust-src"), "rust-src's block has its own")
+	require.False(t, RevisionInBlock([]byte("revision 4\nsubport child {\n    description child\n}\n"), "child"), "a line added in child's block reaches no other port")
+	require.False(t, RevisionInBlock([]byte("version 1\nrevision 3\nif {$a} {\n    revision 4\n}\n"), ""), "the top level has one")
+	require.False(t, RevisionInBlock([]byte("version 1\n"), ""), "none anywhere")
+}
