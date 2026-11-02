@@ -916,8 +916,9 @@ func (p *Provider) install(ctx context.Context, g guest, job buildenv.Job, build
 	if _, err := g.Command(ctx, nil, directories...); err != nil {
 		return err
 	}
+	build.Progress(givenWords(job.Installs))
 	for _, archive := range job.Installs {
-		build.Progress(givingWords(archive))
+		buildenv.Detail(build, givingWords(archive))
 		// Signed once, beside the kept archive, which cleanup removes them
 		// with; its digest is checked each time (D18).
 		entry, err := binaryarchive.Sign(ctx, keys, binaryarchive.Archive{Port: archive.Port, Name: archive.Name, Digest: archive.Digest, Path: archive.Path})
@@ -950,6 +951,31 @@ func (p *Provider) install(ctx context.Context, g guest, job buildenv.Job, build
 // it wants, is an earlier guest's install of it (batch 90), and has no
 // target to name, which left "giving the guest , from …" (the M1's run at
 // 11491d4e).
+// givenWords say the archives a guest is given, once: "giving the guest 25
+// archives earlier guests installed and 2 kept of their targets' builds",
+// each said by givingWords at --verbose (the omnidiff session's note 9).
+func givenWords(installs []buildenv.Archive) string {
+	installed, kept := 0, 0
+	for _, archive := range installs {
+		if archive.Target == "" {
+			installed++
+		} else {
+			kept++
+		}
+	}
+	var parts []string
+	if installed > 0 {
+		parts = append(parts, map[bool]string{true: "1 archive an earlier guest installed", false: fmt.Sprintf("%d archives earlier guests installed", installed)}[installed == 1])
+	}
+	if kept > 0 {
+		parts = append(parts, map[bool]string{true: "1 kept of its target's build", false: fmt.Sprintf("%d kept of their targets' builds", kept)}[kept == 1])
+	}
+	if installed == 0 && kept > 0 {
+		parts[0] = map[bool]string{true: "1 archive kept of its target's build", false: fmt.Sprintf("%d archives kept of their targets' builds", kept)}[kept == 1]
+	}
+	return "giving the guest " + prose.And(parts)
+}
+
 func givingWords(archive buildenv.Archive) string {
 	if archive.Target == "" {
 		return fmt.Sprintf("giving the guest %s, from the archive an earlier guest installed it from", archive.Name)

@@ -316,6 +316,8 @@ type fakeBuild struct {
 	fetched  map[model.TargetID]string
 	results  []model.TargetResult
 	progress []string
+	// details are the steps said at --verbose.
+	details  []string
 	observed []model.Observed
 	refs     []string
 	// kept are the archives fetched, by file name, to what arrived.
@@ -409,6 +411,11 @@ func (b *fakeBuild) Progress(message string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.progress = append(b.progress, message)
+}
+func (b *fakeBuild) Detail(message string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.details = append(b.details, message)
 }
 func (b *fakeBuild) Waiting(message string) { b.Progress(message) }
 func (b *fakeBuild) Holding(ref string) string {
@@ -583,7 +590,8 @@ func TestKeptArchivesGoToTheGuestSigned(t *testing.T) {
 	}
 	mkdir, chmod := at("sudo", "-n", "/bin/mkdir", "-p", "/var/tmp/dockhand-archives/libharbor"), at("sudo", "-n", "/bin/chmod", "-R", "a+rX", "/var/tmp/dockhand-archives")
 	require.True(t, mkdir >= 0 && chmod > mkdir && at("/var/tmp/dockhand-check-input.tar") > chmod, "the site is made, then readable to all, before the program starts: %q", mac.guest.commands)
-	require.Contains(t, build.progress, "giving the guest libharbor, from the archive kept of its build")
+	require.Contains(t, build.progress, "giving the guest 1 archive kept of its target's build")
+	require.Contains(t, build.details, "giving the guest libharbor, from the archive kept of its build", "each by name at --verbose")
 	entries, err := os.ReadDir(job.Directory)
 	require.NoError(t, err)
 	for _, entry := range entries {
@@ -1017,6 +1025,14 @@ func TestAnArchiveGivenToTheGuestIsNamed(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, "giving the guest libharbor, from the archive kept of its build", givingWords(buildenv.Archive{Target: "libharbor", Port: "libharbor", Name: "libharbor-3_0.darwin_25.arm64.tbz2"}))
 	require.Equal(t, "giving the guest rust-1.91.0_0.darwin_27.arm64.tbz2, from the archive an earlier guest installed it from", givingWords(buildenv.Archive{Port: "rust", Name: "rust-1.91.0_0.darwin_27.arm64.tbz2"}))
+	// The archives are said once, each by name at --verbose (the omnidiff
+	// session's note 9).
+	kept := buildenv.Archive{Target: "libharbor", Port: "libharbor"}
+	installed := buildenv.Archive{Port: "rust"}
+	require.Equal(t, "giving the guest 2 archives earlier guests installed and 1 kept of its target's build", givenWords([]buildenv.Archive{installed, installed, kept}))
+	require.Equal(t, "giving the guest 1 archive an earlier guest installed and 2 kept of their targets' builds", givenWords([]buildenv.Archive{installed, kept, kept}))
+	require.Equal(t, "giving the guest 1 archive kept of its target's build", givenWords([]buildenv.Archive{kept}))
+	require.Equal(t, "giving the guest 2 archives earlier guests installed", givenWords([]buildenv.Archive{installed, installed}))
 }
 
 // A status has the host's image where a base image is of this Mac's own
