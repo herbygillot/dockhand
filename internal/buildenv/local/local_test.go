@@ -367,15 +367,52 @@ func TestRootStepsRunThePrefixsPortTclsh(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "-n "+tclsh+" "+filepath.Join(dir, "guest.tcl")+" "+dir, strings.Split(strings.TrimSpace(string(said)), "\n")[1], "one command, no /usr/bin/env")
 
-	if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
-		tty.Close()
-		return // a terminal would be asked on
-	}
+	l.terminal = filepath.Join(t.TempDir(), "no-terminal")
 	require.NoError(t, os.WriteFile(answer, []byte("1"), 0o644))
 	_, err = l.asRoot(t.Context(), prefix, &fakeBuild{})
 	require.ErrorIs(t, err, buildenv.ErrNeedsAttention)
 	require.ErrorContains(t, err, "This sudoers line, added with visudo, lets it: dhtest ALL=(root) NOPASSWD: "+tclsh+".")
 	require.ErrorContains(t, err, "A prefix MacPorts installed without root needs no sudo")
+}
+
+// Where sudo refuses the person outright, whatever their password, the
+// refusal says so, and that a rule for the prefix's port-tclsh is enough,
+// one asking a password included, beside the one serve needs; a wrong
+// password's refusal stays as it was, sudo's words on the terminal and
+// in it (rc7's G9 on the M1, 2026-11-02).
+func TestSudoRefusingThePersonSaysWhatRuleIsEnough(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("root writes a registry whatever its mode, so no step asks sudo")
+	}
+	prefix := t.TempDir()
+	registry := filepath.Join(prefix, "var", "macports", "registry")
+	require.NoError(t, os.MkdirAll(registry, 0o755))
+	require.NoError(t, os.Chmod(registry, 0o555))
+	t.Cleanup(func() { os.Chmod(registry, 0o755) })
+	says := filepath.Join(t.TempDir(), "says")
+	sudo := filepath.Join(t.TempDir(), "sudo")
+	testsupport.WriteExecutable(t, sudo, "#!/bin/sh\n[ \"$1\" = -v ] || exit 1\ncat "+says+" >&2\nexit 1\n")
+	terminal := filepath.Join(t.TempDir(), "tty")
+	require.NoError(t, os.WriteFile(terminal, nil, 0o644))
+	l := &Local{sudo: []string{sudo}, terminal: terminal, Env: []string{"USER=dhtest", "PATH=/usr/bin:/bin"}}
+	tclsh := filepath.Join(prefix, "bin", "port-tclsh")
+
+	require.NoError(t, os.WriteFile(says, []byte("Sorry, user dhtest may not run sudo on m1.\n"), 0o644))
+	_, err := l.asRoot(t.Context(), prefix, &fakeBuild{})
+	require.ErrorIs(t, err, buildenv.ErrNeedsAttention)
+	require.ErrorContains(t, err, "dhtest may not use sudo on this Mac, and "+prefix+"'s registry is root's")
+	require.ErrorContains(t, err, "one asking a password included, since a check run here has a terminal to ask on: dhtest ALL=(root) "+tclsh+".")
+	require.ErrorContains(t, err, "serve, which has none, needs the rule to ask no password: dhtest ALL=(root) NOPASSWD: "+tclsh)
+	seen, err := os.ReadFile(terminal)
+	require.NoError(t, err)
+	require.Equal(t, "Sorry, user dhtest may not run sudo on m1.\n", string(seen), "sudo's own words reach the terminal")
+
+	require.NoError(t, os.WriteFile(says, []byte("Sorry, try again.\nsudo: 3 incorrect password attempts\n"), 0o644))
+	_, err = l.asRoot(t.Context(), prefix, &fakeBuild{})
+	require.ErrorIs(t, err, buildenv.ErrNeedsAttention)
+	require.ErrorContains(t, err, "sudo didn't let the build run as root in "+prefix+": sudo -v: exit status 1: Sorry, try again.")
+	require.NotContains(t, err.Error(), "may not use sudo")
 }
 
 // A check's directory dockhand can't remove, as one its guest program,

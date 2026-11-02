@@ -45,6 +45,14 @@ func TestRunCapturesStreamsAndReportsFailures(t *testing.T) {
 	require.Empty(t, combined.Stderr)
 	require.ErrorContains(t, err, "fixture sub: exit status 3: out\nerr")
 
+	// A Stderr writer sees standard error as it's written, and the copy
+	// is still kept for the error.
+	var seen strings.Builder
+	teed, err := Run(t.Context(), Spec{Tool: "fixture", Path: path, Args: []string{"sub"}, Stderr: &seen})
+	require.Equal(t, "err\n", seen.String())
+	require.Equal(t, "err\n", string(teed.Stderr))
+	require.ErrorContains(t, err, "exit status 3: err")
+
 	// Nothing on stderr leaves no ": " behind the exit status.
 	_, err = Run(t.Context(), Spec{Tool: "fixture", Path: script(t, "exit 36\n"), Args: []string{"find"}})
 	require.EqualError(t, err, "fixture find: exit status 36")
