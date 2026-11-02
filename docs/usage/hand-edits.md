@@ -67,6 +67,14 @@ fetches, as a port moved off a Git clone by hand, gets a checksums block
 written and filled, and the refresh says so: `checksums: jq declared none for
 jq-1.8.1.tar.gz, so they were written after its fetch lines and filled`.
 
+A hand edit that leaves the Portfile unparsable, or changes its name line, is
+said as that, not as an unknown port: `security/KeePassXC/Portfile doesn't
+parse, so no port named keepassxc is in keepassxc-2.8.0's index: portindex says
+invalid command name "versio". Fix the Portfile and run the command again`, or
+`security/KeePassXC/Portfile names its port keepasxc now, where master names
+it keepassxc. Restore the name line, or ask for keepasxc; a port renamed on
+purpose goes through dockhand rename keepassxc keepasxc`.
+
 A changed archive under the same name, with the branch's version unchanged, is a
 **stealth update**. A homepage or comment edit does not turn it into a version
 update. Dockhand reports the old and new checksums and compares the archive's
