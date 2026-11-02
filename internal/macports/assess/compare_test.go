@@ -315,6 +315,27 @@ func TestANativeLibraryIsSaidWhereMacPortsHasAPortForIt(t *testing.T) {
 	require.Contains(t, messages(comparison.Changes), "· upstream: Cargo.lock adds aws-lc-sys 0.45.0, which links the native library aws-lc: MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds", "not observed, so said as before")
 }
 
+// libz-sys's libz is zlib, not sysutils/z, the directory-jumping tool the
+// tree also has: the name a port provides it under comes in place of the
+// bare name, so z isn't looked for (the omnidiff session's note 5).
+func TestLibzIsZlibNotZ(t *testing.T) {
+	var readings [2]project.Reading
+	for i, crates := range [][]string{{"serde 1.0.210"}, {"serde 1.0.210", "libz-sys 1.1.22"}} {
+		reading, err := project.Read(t.Context(), testsupport.Tarball(t, fmt.Sprintf("omnidiff-%d", i), map[string]string{"Cargo.lock": lock(crates...)}), project.Spec{})
+		require.NoError(t, err)
+		readings[i] = reading
+	}
+	omnidiff := macports.PortInfo{Name: "omnidiff", Options: map[string]string{"dockhand.portgroups": "cargo"}}
+	input := Input{Port: omnidiff, Base: omnidiff, Pairs: []Pair{{Archive: "omnidiff-0.2.0.tar.gz", Before: readings[0], After: readings[1]}}}
+	var wanted []string
+	for _, provider := range Wanted(input) {
+		wanted = append(wanted, provider.Port)
+	}
+	require.Equal(t, []string{"libz", "zlib"}, wanted)
+	comparison := observed(t, input, map[Provider]Observation{{Port: "libz"}: {Absent: true}, {Port: "z"}: {Version: "1.12", Directory: "sysutils/z"}, {Port: "zlib"}: {Version: "1.3.1", Directory: "archivers/zlib"}})
+	require.Contains(t, messages(comparison.Changes), "· upstream: Cargo.lock adds libz-sys 1.1.22, which links the native library libz, which MacPorts has as archivers/zlib: the Portfile may declare it, rather than the crate linking whatever copy it finds")
+}
+
 // llvm-sys names the LLVM it links in its version, 221 for LLVM 22, which
 // MacPorts has as llvm-22: perry's update added it and said nothing, since
 // no port is named llvm (field testing's batch 13).

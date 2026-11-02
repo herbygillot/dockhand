@@ -195,9 +195,12 @@ var libraryPorts = map[string][]string{
 
 // LibraryPorts are the names a port providing a native library may have,
 // as the library is named, in the order to look for them: the library's
-// own, zstd; without its lib prefix, sqlite3 for libsqlite3; and those
-// named otherwise, zlib for libz. A port named for a library may be
-// versioned too, as openssl3 is, which TiesTo reads.
+// own, zstd; those named otherwise, zlib for libz; and, where none is,
+// without its lib prefix, sqlite3 for libsqlite3. A port named otherwise
+// is looked for in place of the bare name: libz-sys's libz is zlib, not
+// sysutils/z, the directory-jumping tool, which assess named first (the
+// omnidiff session's note 5). A port named for a library may be versioned
+// too, as openssl3 is, which TiesTo reads.
 func LibraryPorts(library string) []string {
 	return LibraryPortsAt(library, "")
 }
@@ -214,10 +217,13 @@ func LibraryPortsAt(library, version string) []string {
 
 func libraryPortNames(library string) []string {
 	names := []string{library}
+	if named, ok := libraryPorts[library]; ok {
+		return append(names, named...)
+	}
 	if bare := strings.TrimPrefix(library, "lib"); bare != library && bare != "" {
 		names = append(names, bare)
 	}
-	return append(names, libraryPorts[library]...)
+	return names
 }
 
 // LibraryTies are what of a port is there for a native library, by the
@@ -230,7 +236,8 @@ type LibraryTies struct {
 
 // TiesTo are what of the port is there for a native library, as the
 // library is named; none where nothing is named for it. Only the
-// library's own name is taken versioned, so libz's z doesn't name z3.
+// library's own name is taken versioned, so libsqlite3's sqlite3 doesn't
+// name sqlite33.
 func (p PortInfo) TiesTo(library string) LibraryTies {
 	names := LibraryPorts(library)
 	named := func(name string) bool {
