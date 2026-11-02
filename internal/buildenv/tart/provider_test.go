@@ -706,6 +706,8 @@ func TestGuestTroubleIsInfrastructure(t *testing.T) {
 	err = testProvider(mac).Execute(t.Context(), tartJob(t, 1), &fakeBuild{})
 	require.ErrorIs(t, err, buildenv.ErrNeedsAttention)
 	require.ErrorContains(t, err, "the login Keychain is locked, as it is over SSH with nobody at the screen; unlock it with security unlock-keychain in the same shell")
+	require.True(t, strings.HasPrefix(err.Error(), "reaching "), "its own words alone, said once: %v", err)
+	require.NotContains(t, err.Error(), "another attempt won't fix it")
 
 	// A build the network failed upstream is tried again, its failure
 	// recorded: dolt's go build met proxy.golang.org's stream reset (field

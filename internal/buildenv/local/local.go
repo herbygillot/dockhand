@@ -420,7 +420,7 @@ func (l *Local) asRoot(ctx context.Context, prefix string, build buildenv.Build)
 	}
 	tty, err := os.OpenFile(cmp.Or(l.terminal, "/dev/tty"), os.O_RDWR, 0)
 	if err != nil {
-		return nil, buildenv.Infrastructure("%w: %s's registry is root's, and sudo asks for a password, which this process has no terminal to ask on. This sudoers line, added with visudo, lets it: %s. It's root for anything a Portfile does, as a rule for port is, and no narrower: port-tclsh runs whatever script it's given, from a directory you can write. A prefix MacPorts installed without root needs no sudo, at the cost of MacPorts' binary archives", buildenv.ErrNeedsAttention, prefix, l.sudoersRule(tclsh, false))
+		return nil, buildenv.NeedsAttention("%s's registry is root's, and sudo asks for a password, which this process has no terminal to ask on. This sudoers line, added with visudo, lets it: %s. It's root for anything a Portfile does, as a rule for port is, and no narrower: port-tclsh runs whatever script it's given, from a directory you can write. A prefix MacPorts installed without root needs no sudo, at the cost of MacPorts' binary archives", prefix, l.sudoersRule(tclsh, false))
 	}
 	defer tty.Close()
 	build.Progress(fmt.Sprintf("%s's registry is root's: MacPorts builds there as root, so sudo asks for your password", prefix))
@@ -429,10 +429,10 @@ func (l *Local) asRoot(ctx context.Context, prefix string, build buildenv.Build)
 	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "sudo", Path: sudo[0], Args: append(slices.Clone(sudo[1:]), "-v"), Env: l.Env,
 		Stdin: tty, Stdout: tty, StdoutOnly: true, Stderr: tty})
 	if err != nil && sudoRefused(result.Stderr) {
-		return nil, buildenv.Infrastructure("%w: %s may not use sudo on this Mac, and %s's registry is root's, so MacPorts builds there as root. A sudoers rule for the prefix's port-tclsh is enough, added with visudo, one asking a password included, since a check run here has a terminal to ask on: %s. serve, which has none, needs the rule to ask no password: %s", buildenv.ErrNeedsAttention, l.username(), prefix, l.sudoersRule(tclsh, true), l.sudoersRule(tclsh, false))
+		return nil, buildenv.NeedsAttention("%s may not use sudo on this Mac, and %s's registry is root's, so MacPorts builds there as root. A sudoers rule for the prefix's port-tclsh is enough, added with visudo, one asking a password included, since a check run here has a terminal to ask on: %s. serve, which has none, needs the rule to ask no password: %s", l.username(), prefix, l.sudoersRule(tclsh, true), l.sudoersRule(tclsh, false))
 	}
 	if err != nil {
-		return nil, buildenv.Infrastructure("%w: sudo didn't let the build run as root in %s: %v", buildenv.ErrNeedsAttention, prefix, err)
+		return nil, buildenv.NeedsAttention("sudo didn't let the build run as root in %s: %v", prefix, err)
 	}
 	return append(slices.Clone(sudo), "-n"), nil
 }
@@ -714,7 +714,7 @@ func (l *Local) restoreLeft(ctx context.Context, prefix string, build buildenv.B
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			return buildenv.Infrastructure("%w: %s couldn't be put back as it was before %s: %v; dockhand undo %s tries again. %s", buildenv.ErrNeedsAttention, prefix, left.owner.Check, err, left.owner.Check, l.byHand(left.dir, left.owner.Check, left.snapshot))
+			return buildenv.NeedsAttention("%s couldn't be put back as it was before %s: %v; dockhand undo %s tries again. %s", prefix, left.owner.Check, err, left.owner.Check, l.byHand(left.dir, left.owner.Check, left.snapshot))
 		}
 		remove(left.dir, build)
 	}
@@ -803,7 +803,7 @@ func (l *Local) PutBack(ctx context.Context, check string, progress func(string)
 			if ctx.Err() != nil {
 				return prefix, true, ctx.Err()
 			}
-			return prefix, true, buildenv.Infrastructure("%w: %s couldn't be put back as it was before %s: %v. %s", buildenv.ErrNeedsAttention, prefix, check, err, l.byHand(left.dir, check, left.snapshot))
+			return prefix, true, buildenv.NeedsAttention("%s couldn't be put back as it was before %s: %v. %s", prefix, check, err, l.byHand(left.dir, check, left.snapshot))
 		}
 		remove(left.dir, build)
 		return prefix, true, nil

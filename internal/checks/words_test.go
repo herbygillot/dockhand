@@ -7,6 +7,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/refusal"
 )
 
 // Trouble no other attempt was made at says why: its own words where it
@@ -17,8 +18,13 @@ func TestTroubleNotTriedAgainSaysWhy(t *testing.T) {
 	killed := buildenv.NotTriedAgain("the guest program in /opt/local was killed; no other attempt was made")
 	require.ErrorIs(t, killed, buildenv.ErrNeedsAttention)
 	require.Equal(t, "local: the guest program in /opt/local was killed; no other attempt was made", notTriedWords("local", killed))
-	refused := buildenv.Infrastructure("%w: sudo refused", buildenv.ErrNeedsAttention)
-	require.Equal(t, "local: provider infrastructure failed: another attempt won't fix it: sudo refused; another attempt won't fix it, so none was made", notTriedWords("local", refused))
+	// Trouble another attempt won't fix says so once, after its own
+	// words, where "provider infrastructure failed: another attempt won't
+	// fix it:" came before them too.
+	refused := buildenv.NeedsAttention("dhtest may not use sudo on this Mac")
+	require.ErrorIs(t, refused, buildenv.ErrNeedsAttention)
+	require.Equal(t, refusal.Infrastructure, refusal.KindOf(refused))
+	require.Equal(t, "local /opt/local: dhtest may not use sudo on this Mac; another attempt won't fix it, so none was made", notTriedWords("local /opt/local", refused))
 }
 
 // An unmet minimum Xcode says what the environment has, where the plan
