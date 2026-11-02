@@ -520,7 +520,7 @@ func TestVariantsBuildOnePortTheirWay(t *testing.T) {
 
 	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: both, Only: []string{"libharbor"}, Variants: map[string]bool{"tests": true}})
 	require.NoError(t, err)
-	require.Equal(t, []string{"libharbor +tests:substantive:changed"}, names(plan.Targets), "in place of its defaults")
+	require.Equal(t, []string{"libharbor +tests:substantive:changed"}, names(plan.Targets), "in place of its default build")
 	require.Equal(t, "+tests", plan.Variants)
 	arm, _ := plan.In(tahoeArm)
 	require.Empty(t, arm.Untested, "+tests declares its tests")

@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/refusal"
 )
 
 // ShellRequest is a command in a clone a check kept (model.Plan.Keep): the
@@ -108,4 +109,34 @@ func (e *Engine) Shell(ctx context.Context, request ShellRequest) (int, error) {
 		job.Test, job.Variants = filepath.Join(branch.Worktree, filepath.Dir(chosen.Target.Portfile)), chosen.Target.VariantSpec()
 	}
 	return provider.Shell(ctx, job)
+}
+
+// ShellSteps are the dockhand shell commands that open the clones a check
+// kept: the check's name, with --on and the release where it kept
+// several; none where it kept none.
+func (e *Engine) ShellSteps(ctx context.Context, run model.Run) ([]refusal.Next, error) {
+	kept, err := e.KeptClones(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var releases []string
+	for _, leftover := range kept {
+		if leftover.Run.ID != run.ID {
+			continue
+		}
+		darwin, _ := strconv.Atoi(leftover.Execution.Environment.Platform.Version)
+		slug := leftover.Execution.Environment.Platform.Version
+		if release, err := macos.ReleaseForDarwin(darwin); err == nil {
+			slug = release.Slug
+		}
+		releases = append(releases, slug)
+	}
+	if len(releases) == 1 {
+		return []refusal.Next{{Verb: refusal.VerbShell, Args: []string{run.Name()}}}, nil
+	}
+	var steps []refusal.Next
+	for _, release := range releases {
+		steps = append(steps, refusal.Next{Verb: refusal.VerbShell, Args: []string{run.Name(), "--on", release}})
+	}
+	return steps, nil
 }

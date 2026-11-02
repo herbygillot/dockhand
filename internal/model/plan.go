@@ -287,7 +287,9 @@ type Plan struct {
 	// a check a person runs, never serve's or ship's.
 	Keep bool `json:",omitempty"`
 	// Variants are the variants --variants built its one port with, as
-	// MacPorts writes them, in place of its defaults; EachVariant is
+	// MacPorts writes them, beside its default variants, which MacPorts
+	// adds but where one is negated, a build in place of its default
+	// build; EachVariant is
 	// --variants each, which built it with its defaults and then with
 	// each variant it declares.
 	Variants    string `json:",omitempty"`

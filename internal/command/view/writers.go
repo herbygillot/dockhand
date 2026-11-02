@@ -407,8 +407,12 @@ func resultWords(evidence engine.Evidence, target engine.TargetEvidence, environ
 }
 
 // WriteVariants says what --variants builds: the one port with its
-// variants in place of its defaults, or, with each, its defaults and then
-// each variant it declares.
+// default variants plus those given, which MacPorts adds as it opens the
+// port, a -variant leaving a default out, built in place of its default
+// build; or, with each, its defaults and then each variant it declares.
+// curl +gnutls +sectrust got brotli, zstd, idn, psl and http2 too, where
+// "in place of its defaults" read as the defaults dropped (field
+// testing's curl +sectrust notes, note 3).
 func WriteVariants(out io.Writer, plan model.Plan) {
 	var builds []string
 	var port string
@@ -422,7 +426,7 @@ func WriteVariants(out io.Writer, plan model.Plan) {
 	case plan.EachVariant && len(builds) > 0:
 		fmt.Fprintf(out, "Variants    %s with default variants, then each of %s added to the defaults (excluding universal)\n", port, strings.Join(builds, ", "))
 	case plan.Variants != "" && len(builds) > 0:
-		fmt.Fprintf(out, "Variants    %s %s, in place of its defaults\n", port, plan.Variants)
+		fmt.Fprintf(out, "Variants    %s with its default variants, plus %s (a -variant leaves a default out), built in place of its default build\n", port, plan.Variants)
 	}
 }
 

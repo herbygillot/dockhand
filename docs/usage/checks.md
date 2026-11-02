@@ -95,6 +95,9 @@ need. `--also` builds an unchanged port against the branch. Replace `DEPENDENT`
 with an actual port named by `dockhand impact`. A narrow pass does not prove the
 omitted targets passed.
 
+`--variants '+tests -docs'` builds the selected port once, in place of its
+default build, with its default variants plus those given, as MacPorts opens
+it; a `-variant` leaves a default out.
 `--variants each` builds the selected port with defaults, then each eligible
 non-default variant separately; `universal` is excluded. It multiplies work
 across environments. More than 12 builds requires confirmation, or `--yes`

@@ -928,6 +928,11 @@ func (e *Engine) executionsNamed(ctx context.Context, name string) ([]model.Gues
 	return executions, err
 }
 
+// NotARunName is a name RunNamed can't read as a run's, as "sh".
+type NotARunName struct{ Name string }
+
+func (n NotARunName) Error() string { return n.Name + " is not a run's name, such as check-42" }
+
 // RunNamed finds a run by the name people type, check-42, or its number.
 func (e *Engine) RunNamed(ctx context.Context, name string) (model.Run, error) {
 	var number int
@@ -938,7 +943,7 @@ func (e *Engine) RunNamed(ctx context.Context, name string) (model.Run, error) {
 		}
 	}
 	if number == 0 {
-		return model.Run{}, errors.New(name + " is not a run's name, such as check-42")
+		return model.Run{}, NotARunName{Name: name}
 	}
 	var run model.Run
 	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {

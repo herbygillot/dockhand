@@ -258,11 +258,14 @@ type Library struct {
 }
 
 // Link is a library a target's binary links, as the guest saw it,
-// with the port that provides it.
+// with the port that provides it, and the path: dependency of the
+// target's that reaches that port through its symbolic links, where one
+// does.
 type Link struct {
-	Binary  string `json:"binary"`
-	Library string `json:"library"`
-	Port    string `json:"port"`
+	Binary   string `json:"binary"`
+	Library  string `json:"library"`
+	Port     string `json:"port"`
+	Declared string `json:"declared,omitempty"`
 }
 
 // Step is where a step of a target's build began in its log: the
@@ -652,7 +655,7 @@ func (f *Follower) record(ctx context.Context, g Guest, job buildenv.Job, build 
 	if got.Links != nil {
 		report.Links = make([]model.Link, len(got.Links))
 		for i, link := range got.Links {
-			report.Links[i] = model.Link{Binary: link.Binary, Library: link.Library, Port: link.Port}
+			report.Links[i] = model.Link{Binary: link.Binary, Library: link.Library, Port: link.Port, Declared: link.Declared}
 		}
 	}
 	if got.Installed != nil {

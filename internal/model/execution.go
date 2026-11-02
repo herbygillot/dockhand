@@ -383,6 +383,10 @@ type Link struct {
 	Binary  string `json:"binary"`
 	Library string `json:"library"`
 	Port    string `json:"port,omitempty"`
+	// Declared is the target's path: dependency that reaches Port through
+	// its symbolic links, as openssl's lib/libssl.dylib reaches
+	// openssl3's file, which declares the link; empty where none does.
+	Declared string `json:"declared,omitempty"`
 }
 
 // FailedDependency is a dependency whose failure failed a target: its

@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -55,7 +56,7 @@ evidence.`,
 			defer e.Close()
 			run, err := e.RunNamed(ctx, args[0])
 			if err != nil {
-				return err
+				return keptHere(ctx, e, err)
 			}
 			if test {
 				fmt.Fprintln(streams.Err, "Rerunning the test phase using the current port files and the existing build. Changes outside the test phase are not applied. This run does not count as a check result.")
@@ -74,4 +75,28 @@ evidence.`,
 	cmd.Flags().BoolVar(&test, "test", false, "copy the port's current branch files into the clone and rerun the test phase against the existing build")
 	cmd.Flags().StringVar(&port, "port", "", "port whose work directory to use (default: the first changed port in the check)")
 	return cmd
+}
+
+// keptHere is a name that isn't a run's refused with the latest check of
+// the branch checked out here that kept a clone, where one did: "shell
+// sh" met "sh is not a run's name" alone, the check's name erased from
+// the terminal (field testing's curl +sectrust notes, note 5).
+func keptHere(ctx context.Context, e *engine.Engine, err error) error {
+	if !errors.As(err, new(engine.NotARunName)) {
+		return err
+	}
+	branch, found := e.Current(ctx)
+	if found != nil {
+		return err
+	}
+	kept, found := e.KeptClones(ctx)
+	if found != nil {
+		return err
+	}
+	for _, leftover := range kept {
+		if leftover.Run.Branch == branch.ID {
+			return fmt.Errorf("%w; the latest check here that kept a clone is %s", err, leftover.Run.Name())
+		}
+	}
+	return err
 }

@@ -1140,6 +1140,7 @@ func TestShellStartsAKeptCloneAndStopsItAfter(t *testing.T) {
 	shell := mac.guest.attached[0]
 	require.False(t, shell.terminal)
 	require.Equal(t, []string{guestRoot + "/ports/devel/libharbor", "otool", "-L", "harbor"}, shell.args[4:])
+	require.True(t, strings.HasPrefix(shell.args[2], `PATH="/opt/local/bin:/opt/local/sbin:$PATH"; export PATH; `), "MacPorts first on the PATH, sshd's after: %s", shell.args[2])
 }
 
 // shell --test puts the port's directory, as it is now, where the check

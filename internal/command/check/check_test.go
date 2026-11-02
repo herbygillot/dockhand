@@ -490,7 +490,7 @@ func TestAVariantsCheckSaysWhatItBuildsAndAsksFirst(t *testing.T) {
 	single := model.Plan{Variants: "+tests", Targets: []model.PlanTarget{plan.Targets[1]}}
 	out.Reset()
 	view.WriteVariants(&out, single)
-	require.Equal(t, "Variants    jq +tests, in place of its defaults\n", out.String())
+	require.Equal(t, "Variants    jq with its default variants, plus +tests (a -variant leaves a default out), built in place of its default build\n", out.String())
 	require.NoError(t, confirmVariantBuilds(term.Streams{}, single, false), "only each asks")
 }
 

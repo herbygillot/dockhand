@@ -391,7 +391,8 @@ func Needs(built []model.PlanTarget, reasons []map[model.TargetID]Excluded, eval
 	}
 	// A dependency names a port: it's the port's default build where the
 	// plan has one, and otherwise its one build, as --variants builds a
-	// port with its variants in place of its defaults.
+	// port with its variants, beside its default variants, in place of
+	// its default build.
 	resolve := func(dep model.TargetID) model.TargetID {
 		if builtAnywhere(dep) {
 			return dep

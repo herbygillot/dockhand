@@ -33,10 +33,13 @@ const (
 	// VerbDecide answers one concern that holds a branch, with the
 	// person's reason (the person's voice).
 	VerbDecide Verb = "decide"
+	// VerbShell opens or runs a command in a clone a check kept, its
+	// Args the check and, where it kept several, --on and the release.
+	VerbShell Verb = "shell"
 )
 
 // Verbs are every verb a Next names, for the command line to render each.
-var Verbs = []Verb{VerbStatus, VerbRefresh, VerbAdopt, VerbWait, VerbSubmit, VerbEdit, VerbArchive, VerbCheck, VerbLogs, VerbExplain, VerbTidy, VerbSetup, VerbOpenChecks, VerbRerunCI, VerbStart, VerbRebase, VerbDecide}
+var Verbs = []Verb{VerbStatus, VerbRefresh, VerbAdopt, VerbWait, VerbSubmit, VerbEdit, VerbArchive, VerbCheck, VerbLogs, VerbExplain, VerbTidy, VerbSetup, VerbOpenChecks, VerbRerunCI, VerbStart, VerbRebase, VerbDecide, VerbShell}
 
 // After is what must change before an action refused can be asked again
 // as it was: a person's look at what holds it, a check finishing, or a
