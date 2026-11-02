@@ -371,12 +371,22 @@ func writeStanding(out io.Writer, indent string, evidence engine.Evidence) {
 			}
 		}
 	}
-	switch len(checks) {
-	case 0:
-	case 1:
+	// Reused over a change that builds nothing differently, what changed
+	// is said under it, as the pull request says it.
+	carried := engine.CarriedLines(evidence)
+	switch {
+	case len(checks) == 0:
+	case len(carried) > 0 && len(checks) == 1:
+		fmt.Fprintf(out, "%s(%s): result reused from an earlier check\n", indent, checks[0])
+	case len(carried) > 0:
+		fmt.Fprintf(out, "%s(%s): results reused from earlier checks\n", indent, strings.Join(checks, ", "))
+	case len(checks) == 1:
 		fmt.Fprintf(out, "%s(%s): result reused from an earlier check; its build inputs have not changed\n", indent, checks[0])
 	default:
 		fmt.Fprintf(out, "%s(%s): results reused from earlier checks; their build inputs have not changed\n", indent, strings.Join(checks, ", "))
+	}
+	for _, line := range carried {
+		fmt.Fprintf(out, "%s%s.\n", indent, line)
 	}
 }
 

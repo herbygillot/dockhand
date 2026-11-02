@@ -46,14 +46,18 @@ func (t Target) TagMoved(c Candidate) bool {
 type Choice struct {
 	Reused   map[model.TargetID]Candidate
 	Installs []model.TargetID
+	// Carried are, of the targets reused, those whose build stands for a
+	// revision that differs from what it read only in options no build
+	// reads, or moves, with each port judged (Carry).
+	Carried map[model.TargetID][]model.InertPort
 }
 
 // Choose decides which of an environment's targets reuse an earlier build
 // (decision 28), given the environment's identity now and what the
 // revision holds by path (Objects of Paths). A target reuses its newest earlier build whose
 // result stands, by the check's test policy (stands), and whose inputs are
-// what it would read now (Current), and whose GitHub tag hasn't moved
-// since (TagMoved). The rest build.
+// what it would read now (Current, with judge), and whose GitHub tag
+// hasn't moved since (TagMoved). The rest build.
 //
 // A target fetched with Git is reused only for the commit its plan expects
 // (Current), and what was built against another commit's build of it, or
@@ -66,12 +70,18 @@ type Choice struct {
 // dependents upstream's archive of the port as master has it, or build it
 // unrecorded. A target that builds for that reason takes what it needs in
 // turn.
-func Choose(targets []Target, identity string, trees map[string]model.ObjectID, blocks Blocks, stands func(model.TargetResult) bool, available func(Candidate) bool) Choice {
-	choice := Choice{Reused: map[model.TargetID]Candidate{}}
+func Choose(targets []Target, identity string, trees map[string]model.ObjectID, judge Judge, stands func(model.TargetResult) bool, available func(Candidate) bool) Choice {
+	choice := Choice{Reused: map[model.TargetID]Candidate{}, Carried: map[model.TargetID][]model.InertPort{}}
 	for _, target := range targets {
 		for _, c := range target.Earlier {
-			if stands(c.Result) && Current(c.Inputs, identity, target.PlanTarget, target.Git, trees, blocks) && !target.TagMoved(c) {
+			if !stands(c.Result) || target.TagMoved(c) {
+				continue
+			}
+			if carried, ok := Carry(c.Inputs, c.Origin.Run, identity, target.PlanTarget, target.Git, trees, judge); ok {
 				choice.Reused[target.ID] = c
+				if len(carried) > 0 {
+					choice.Carried[target.ID] = carried
+				}
 				break
 			}
 		}
@@ -97,6 +107,11 @@ func Choose(targets []Target, identity string, trees map[string]model.ObjectID, 
 					taken = true
 				}
 			}
+		}
+	}
+	for id := range choice.Carried {
+		if _, reused := choice.Reused[id]; !reused {
+			delete(choice.Carried, id)
 		}
 	}
 	for _, target := range targets {

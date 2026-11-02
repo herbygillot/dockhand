@@ -104,6 +104,11 @@ type Hooks interface {
 	// AfterFinish is done once a failed run has settled: the baseline it
 	// points to, where check.baseline asks.
 	AfterFinish(ctx context.Context, run model.Run)
+	// Changes are a revision's change records, by directory, made where
+	// the revision has none yet, as status and submit make them: what
+	// reuse confirms an inert change by (reuse.Inert). An error, or no
+	// record of a directory, carries nothing over.
+	Changes(ctx context.Context, revision model.Revision) (map[string]model.ChangeRecord, error)
 }
 
 // PortReader reads ports from a source tree: the ports a directory defines
@@ -115,6 +120,14 @@ type PortReader interface {
 	// variants chosen, its defaults where none are.
 	Ports(ctx context.Context, source model.Source, directory string, environment model.Environment, variants map[string]bool) ([]macports.PortInfo, error)
 	Directory(ctx context.Context, source model.Source, name string) (string, error)
+}
+
+// Linter is a port reader that can run port lint on this Mac, on a
+// directory's port as a source holds it, with --nitpick where asked
+// (macports.Linter): reuse runs it on a Portfile whose change is inert,
+// so the result carried over says what lint says of it now.
+type Linter interface {
+	Lint(ctx context.Context, source model.Source, directory, port string, nitpick bool) (macports.Lint, error)
 }
 
 // DependencyGraphReader is a port reader that can read every port's direct

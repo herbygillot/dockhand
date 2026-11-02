@@ -1,6 +1,7 @@
 package portfile
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -97,4 +98,74 @@ func TestBlockChangesSayWhoseBlockAChangeIsIn(t *testing.T) {
 	subports, all = BlockChanges(base, base)
 	require.False(t, all)
 	require.Empty(t, subports)
+}
+
+// omnidiffPortfile is omnidiff's Portfile as check-766 built it, before
+// its openmaintainer line and its move to textproc.
+const omnidiffPortfile = `# -*- coding: utf-8; mode: tcl; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- vim:fenc=utf-8:ft=tcl:et:sw=4:ts=4:sts=4
+
+PortSystem          1.0
+PortGroup           github 1.0
+PortGroup           golang 1.0
+
+go.setup            github.com/example/omnidiff 1.2.0 v
+revision            0
+categories          devel textproc
+maintainers         {@herbygillot gmail.com:herby.gillot}
+license             MIT
+description         A diff for every format
+long_description    omnidiff compares two files of any format \
+                    it can read, and says what changed.
+homepage            https://github.com/example/omnidiff
+
+platform darwin 21 {
+    configure.args-append --legacy
+}
+
+checksums           rmd160  0 \
+                    sha256  0 \
+                    size    0
+
+livecheck.type      none
+`
+
+// The lines decide whether a Portfile's change builds anything
+// differently: omnidiff's openmaintainer line and its categories' reorder
+// don't, nor a comment, nor an inert option set inside a platform's body;
+// a value with a command substitution, license, and anything else do.
+func TestInertChangesAreOnlyOptionsNoBuildReads(t *testing.T) {
+	t.Parallel()
+	edit := func(old, new string) []byte {
+		require.Contains(t, omnidiffPortfile, old)
+		return []byte(strings.Replace(omnidiffPortfile, old, new, 1))
+	}
+	before := []byte(omnidiffPortfile)
+	for _, c := range []struct {
+		name    string
+		after   []byte
+		options []string
+		ok      bool
+	}{
+		{"omnidiff's openmaintainer line, check-766 to check-767's first", edit("{@herbygillot gmail.com:herby.gillot}\n", "{@herbygillot gmail.com:herby.gillot} \\\n                    openmaintainer\n"), []string{"maintainers"}, true},
+		{"omnidiff's categories reordered for its move to textproc", edit("categories          devel textproc", "categories          textproc devel"), []string{"categories"}, true},
+		{"a continuation line of long_description", edit("it can read, and says what changed.", "it can read, and says what moved."), []string{"long_description"}, true},
+		{"a comment and a blank line", edit("PortSystem          1.0\n", "PortSystem          1.0\n\n# Built with Go's modules.\n"), nil, true},
+		{"livecheck", edit("livecheck.type      none", "livecheck.regex     {v([0-9.]+)}"), []string{"livecheck.regex", "livecheck.type"}, true},
+		{"a modifier", edit("homepage            https://github.com/example/omnidiff\n", "homepage            https://github.com/example/omnidiff\nmaintainers-append  openmaintainer\n"), []string{"maintainers"}, true},
+		{"an inert option inside a platform's body", edit("    configure.args-append --legacy\n", "    configure.args-append --legacy\n    description  An older diff\n"), []string{"description"}, true},
+		{"a line with a command substitution", edit("description         A diff for every format", "description         [string toupper {A diff}]"), nil, false},
+		{"license", edit("license             MIT", "license             BSD"), nil, false},
+		{"a build option inside a platform's body", edit("configure.args-append --legacy", "configure.args-append --older"), nil, false},
+		{"the platform's own line", edit("platform darwin 21 {", "platform darwin 22 {"), nil, false},
+		{"a separator joining an inert option with another", edit("categories          devel textproc", "categories          devel textproc; revision 1"), nil, false},
+		{"the revision", edit("revision            0", "revision            1"), nil, false},
+		{"a version that doesn't parse", edit("homepage            https://github.com/example/omnidiff", "homepage            {https://github.com/example/omnidiff"), nil, false},
+	} {
+		options, ok := InertChanges(before, c.after)
+		require.Equal(t, c.ok, ok, c.name)
+		require.Equal(t, c.options, options, c.name)
+	}
+	options, ok := InertChanges(before, before)
+	require.True(t, ok)
+	require.Empty(t, options)
 }

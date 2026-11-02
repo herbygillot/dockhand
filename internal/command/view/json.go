@@ -122,6 +122,12 @@ type resultJSON struct {
 	// ReusedFrom is the provider run that built it, where this result is
 	// an earlier build's, reused.
 	ReusedFrom string `json:"reused_from,omitempty"`
+	// Carried is how a reused result stands for files that differ from
+	// what its build read only in options no build reads: the check and
+	// commit it was built at, each port judged with the options changed
+	// and where it moved from, and whether lint ran again on this
+	// Portfile, or why its lines are the earlier one's.
+	Carried *model.Carried `json:"carried,omitempty"`
 	// Builders are each builder's part, where the provider's run has
 	// several, as MacPorts' workflow has a runner for each macOS release.
 	Builders []builderJSON `json:"builders,omitempty"`
@@ -300,7 +306,7 @@ func EvidenceView(evidence engine.Evidence) []TargetJSON {
 		viewed.Passed = &passed
 		for _, result := range target.Outcomes {
 			viewed.Results = append(viewed.Results, resultJSON{Outcome: string(result.Outcome), Phase: string(result.Phase), Tests: string(result.Tests), Log: logWhere(result.Log), Detail: result.Detail, ReusedFrom: string(result.ReusedFrom),
-				Builders: builderViews(result.Builders),
+				Carried: result.Carried, Builders: builderViews(result.Builders),
 				Excluded: result.Kind == engine.CellExcluded, Remade: result.Kind == engine.CellRemade})
 		}
 		targets = append(targets, viewed)

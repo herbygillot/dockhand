@@ -602,3 +602,21 @@ func TestAPlanCoversAnotherCellByCell(t *testing.T) {
 	require.False(t, checks.PlanCovers(all, keep), "a check that keeps no guest doesn't stand for one that does")
 	require.True(t, checks.PlanCovers(keep, all))
 }
+
+// The results a check reused over a change that builds nothing differently
+// are said once for each check they came from, across the environments
+// that reused them: the sentence the pull request's Tested on and status
+// give (the omnidiff session's note 8).
+func TestCarriedResultsAreSaidOnceForEachEarlierCheck(t *testing.T) {
+	t.Parallel()
+	run := model.Run{ID: "run_767", Number: 767}
+	carried := &model.Carried{Check: "check-766", Commit: "3f2a1c9e0b", Ports: []model.InertPort{{Port: "omnidiff", Options: []string{"maintainers"}}}, Linted: true}
+	cell := func(execution model.ExecutionID, carried *model.Carried) Cell {
+		return Cell{TargetResult: model.TargetResult{Execution: execution, Target: "omnidiff", Outcome: model.OutcomePassed, Carried: carried}}
+	}
+	e := Evidence{Run: run, Executions: map[model.ExecutionID]model.GuestExecution{"tart_a": {ID: "tart_a", Run: run.ID}, "tart_b": {ID: "tart_b", Run: run.ID}},
+		Targets: []TargetEvidence{{Outcomes: []Cell{cell("tart_a", carried), cell("tart_b", carried)}}, {Outcomes: []Cell{cell("tart_a", nil), cell("tart_b", nil)}}}}
+	require.Equal(t, []string{"check-767 reused check-766's builds (commit 3f2a1c9): since then only omnidiff's maintainers changed, which builds nothing differently, and lint ran again on this Portfile"}, CarriedLines(e))
+	e.Targets = e.Targets[1:]
+	require.Empty(t, CarriedLines(e))
+}

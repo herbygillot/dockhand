@@ -331,3 +331,34 @@ func TestAPortsCodeIsComparedPartByPart(t *testing.T) {
 	}}, SubportChanges("devel/main", &before, &moved, nil), "a part that moves without an edit is no change")
 	require.NoError(t, Equivalent(before, after), "an edit's fidelity doesn't read the port's code")
 }
+
+// Two revisions' records of a directory confirm an inert change where
+// only inert options and the checksum of every option's value moved
+// between them, and refuse where a record names another field, one
+// subport is added in one alone, or a record couldn't be made.
+func TestInertBetweenConfirmsOnlyInertFieldsMoved(t *testing.T) {
+	t.Parallel()
+	record := func(ports ...model.SubportChange) model.ChangeRecord {
+		return model.ChangeRecord{Directory: "textproc/omnidiff", Ports: ports, Policy: ChangePolicy}
+	}
+	changed := func(fields ...model.FieldChange) model.SubportChange {
+		return model.SubportChange{Port: "omnidiff", Kind: model.SubportChanged, Fields: fields}
+	}
+	version := model.FieldChange{Field: "version", From: "1.1.0", To: "1.2.0"}
+	then := record(changed(version, model.FieldChange{Field: "maintainers", From: "a", To: "a"}))
+	now := record(changed(version, model.FieldChange{Field: "maintainers", From: "a", To: "a openmaintainer"}, model.FieldChange{Field: "code options", From: "1", To: "2"}))
+	require.True(t, InertBetween(then, now), "the same version, the maintainers and options' checksum moved")
+	require.True(t, InertBetween(record(model.SubportChange{Port: "omnidiff", Kind: model.SubportAdded}), record(model.SubportChange{Port: "omnidiff", Kind: model.SubportAdded})), "a port both add")
+	require.False(t, InertBetween(then, record(changed(model.FieldChange{Field: "version", From: "1.1.0", To: "1.3.0"}))), "the version moved")
+	require.False(t, InertBetween(then, record(changed(version, model.FieldChange{Field: "license", From: "MIT", To: "BSD"}))), "license isn't inert")
+	require.False(t, InertBetween(then, record(changed(version, model.FieldChange{Field: "code procedures", From: "1", To: "2"}))), "a procedure moved")
+	require.False(t, InertBetween(then, record(changed())), "the version moved back to the base's")
+	require.False(t, InertBetween(then, record(changed(version), model.SubportChange{Port: "omnidiff-lite", Kind: model.SubportAdded})), "a subport added")
+	require.False(t, InertBetween(record(model.SubportChange{Port: "omnidiff", Kind: model.SubportAdded}), record(changed(version))), "added in one alone")
+	failed := now
+	failed.Problem = "the revision couldn't be evaluated"
+	require.False(t, InertBetween(then, failed), "an unreadable record")
+	older := now
+	older.Policy = ChangePolicy - 1
+	require.False(t, InertBetween(then, older), "another policy's record")
+}

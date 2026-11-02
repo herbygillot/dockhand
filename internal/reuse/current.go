@@ -51,45 +51,111 @@ func Paths(recorded model.TargetInputs) []string {
 // isn't fetched with Git now.
 //
 // A directory whose tree differs stands too where the difference is only
-// Portfile lines inside other subports' literal blocks (blocks): MacPorts
-// runs a `subport X { … }` block's body only when evaluating X, so an edit
-// inside terraform-1.16's reaches none of its siblings, which each patch
-// bump built again on every release (field testing's terraform replay,
-// 2026-10-22). blocks nil compares trees alone.
-func Current(recorded model.TargetInputs, identity string, target model.PlanTarget, git *model.GitSource, trees map[string]model.ObjectID, blocks Blocks) bool {
+// Portfile lines inside other subports' literal blocks (judge.Blocks):
+// MacPorts runs a `subport X { … }` block's body only when evaluating X,
+// so an edit inside terraform-1.16's reaches none of its siblings, which
+// each patch bump built again on every release (field testing's terraform
+// replay, 2026-10-22). And where it is only options no build reads
+// (judge.Inert): omnidiff's openmaintainer line and its categories'
+// reorder each rebuilt it (the omnidiff session's note 8). A port that
+// moved, the directory it was built in gone from the revision, is found
+// by its name, a target where the plan has it and an active port by
+// judge.Moved, and its new directory judged against the recorded tree by
+// the same rule. The zero Judge compares trees alone.
+func Current(recorded model.TargetInputs, identity string, target model.PlanTarget, git *model.GitSource, trees map[string]model.ObjectID, judge Judge) bool {
+	_, ok := Carry(recorded, "", identity, target, git, trees, judge)
+	return ok
+}
+
+// Carry is Current, with the ports whose directories differ only in
+// options no build reads, or moved, each with the options changed and
+// where it moved from, which a result carried over says: none where every
+// directory is the same tree, or differs only in other subports' blocks.
+// origin is the run whose build read the inputs, whose change records
+// judge.Inert reads.
+func Carry(recorded model.TargetInputs, origin model.RunID, identity string, target model.PlanTarget, git *model.GitSource, trees map[string]model.ObjectID, judge Judge) ([]model.InertPort, bool) {
 	if recorded.NotReusable != "" || !recorded.Complete() || identity == "" || recorded.Environment != identity {
-		return false
+		return nil, false
 	}
-	if recorded.Directory != target.Directory || !maps.Equal(recorded.Variants, target.Target.Variants) {
-		return false
+	if !maps.Equal(recorded.Variants, target.Target.Variants) {
+		return nil, false
 	}
 	if git == nil && recorded.Fetched != "" || git != nil && !git.BuiltBy(recorded.Fetched) {
-		return false
+		return nil, false
 	}
+	var carried []model.InertPort
 	// The same directory, or one whose difference is only in other
-	// subports' blocks than port's.
-	same := func(directory string, then model.ObjectID, port string) bool {
-		now, ok := trees[directory]
+	// subports' blocks than port's, or only in inert options: the
+	// directory a build read (from) at its tree then, and where the port
+	// is now (at).
+	same := func(from string, then model.ObjectID, at string, port string) bool {
+		now, ok := trees[at]
+		moved := from != at
+		entry := model.InertPort{Port: port}
+		if moved {
+			entry.From = from
+		}
 		switch {
 		case !ok:
 			return false
-		case now == then:
+		case now == then && !moved:
 			return true
-		case blocks == nil:
+		case now == then:
+			carried = append(carried, entry)
+			return true
+		}
+		if !moved && judge.Blocks != nil {
+			if subports, ok := judge.Blocks(from, then, now); ok && !slices.Contains(subports, port) {
+				return true
+			}
+		}
+		if judge.Inert == nil {
 			return false
 		}
-		subports, ok := blocks(directory, then, now)
-		return ok && !slices.Contains(subports, port)
+		options, ok := judge.Inert(origin, from, then, at, now)
+		if !ok {
+			return false
+		}
+		entry.Options = options
+		carried = append(carried, entry)
+		return true
 	}
-	if !same(recorded.Directory, recorded.Tree, target.Target.Name) || ResourcesChanged(recorded, trees) != "" {
-		return false
+	// A target that moved is where the plan has it, once the directory it
+	// was built in is gone.
+	at := recorded.Directory
+	if recorded.Directory != target.Directory {
+		if _, held := trees[recorded.Directory]; held || judge.Inert == nil {
+			return nil, false
+		}
+		at = target.Directory
+	}
+	if !same(recorded.Directory, recorded.Tree, at, target.Target.Name) || ResourcesChanged(recorded, trees) != "" {
+		return nil, false
 	}
 	for _, port := range recorded.Active {
-		if !same(port.Directory, port.Tree, port.Name) {
-			return false
+		at := port.Directory
+		if _, held := trees[at]; !held && judge.Inert != nil && judge.Moved != nil {
+			if moved, ok := judge.Moved(port.Name); ok {
+				at = moved
+			}
+		}
+		if !same(port.Directory, port.Tree, at, port.Name) {
+			return nil, false
 		}
 	}
-	return true
+	return carried, true
+}
+
+// Judge reads a port directory whose tree differs from the one a build
+// read, for whether the build stands for it still (Current): Blocks where
+// the difference is only in other subports' literal blocks, Inert where
+// it is only in options no build reads, and Moved where an active port's
+// directory is now elsewhere, by its name. A nil field says nothing, and
+// a move is followed only with Inert.
+type Judge struct {
+	Blocks Blocks
+	Inert  Inert
+	Moved  func(port string) (directory string, ok bool)
 }
 
 // Blocks says, of a port directory whose tree now differs from the one a
@@ -98,6 +164,16 @@ func Current(recorded model.TargetInputs, identity string, target model.PlanTarg
 // both versions parse, every change is inside some subport's block, and
 // the earlier tree is still held.
 type Blocks func(directory string, then, now model.ObjectID) (subports []string, ok bool)
+
+// Inert says, of a port directory a build read at one tree (then, at the
+// directory from) that the revision now holds at another (now, at the
+// directory at, from's own unless the port moved), the inert options that
+// alone tell them apart (portfile.InertChanges): every entry but the
+// Portfile the same object, the Portfile's changed lines each an inert
+// option's, and the change records of the build's revision, origin's,
+// and of the revision now finding nothing else moved
+// (fidelity.InertBetween); ok only then.
+type Inert func(origin model.RunID, from string, then model.ObjectID, at string, now model.ObjectID) (options []string, ok bool)
 
 // ResourcesChanged says what a build read of _resources that the revision
 // now holds otherwise (trees, by path, from Objects), or nothing where it

@@ -713,6 +713,60 @@ func SubportChanges(directory string, base, revision *macports.Snapshot, transit
 	return changes
 }
 
+// codeOptions is the field of a change record that says the checksum of
+// every option's value the evaluator doesn't read by name moved
+// (codeChanges): maintainers and long_description are among those values,
+// so an inert change moves it too.
+const codeOptions = "code options"
+
+// InertBetween reports whether the change records of a port directory at
+// two revisions, the one a build read (then) and the one a check reads
+// now, find nothing moved between them but inert options
+// (macports.InertOption) and the checksum of every option's value
+// (codeOptions), for each subport of the directory: each field of each
+// subport either inert or the same in both, a subport added in one added
+// in the other, and none in one only. A field one record has and the
+// other doesn't moved between them, or moved against another base; either
+// way it isn't known to be the same. A subport both records add has no
+// fields to compare, which leaves the lines to decide alone
+// (portfile.InertChanges). Fields known to move without an edit
+// (Unstable) are left out, as the records leave them. A record that
+// couldn't be made says nothing, and isn't inert. It confirms what the
+// lines found: decision 28's inert difference reuses a build only where
+// both say so.
+func InertBetween(then, now model.ChangeRecord) bool {
+	if then.Problem != "" || now.Problem != "" || len(then.Ports) != len(now.Ports) || then.Policy != ChangePolicy || now.Policy != ChangePolicy {
+		return false
+	}
+	for _, before := range then.Ports {
+		i := slices.IndexFunc(now.Ports, func(p model.SubportChange) bool { return p.Port == before.Port })
+		if i < 0 {
+			return false
+		}
+		after := now.Ports[i]
+		if (before.Kind == model.SubportAdded) != (after.Kind == model.SubportAdded) || (before.Kind == model.SubportRemoved) != (after.Kind == model.SubportRemoved) {
+			return false
+		}
+		fields := map[string][2]*model.FieldChange{}
+		for side, changes := range [2][]model.FieldChange{before.Fields, after.Fields} {
+			for j := range changes {
+				pair := fields[changes[j].Field]
+				pair[side] = &changes[j]
+				fields[changes[j].Field] = pair
+			}
+		}
+		for field, pair := range fields {
+			if field == codeOptions || macports.InertOption(field) {
+				continue
+			}
+			if pair[0] == nil || pair[1] == nil || pair[0].To != pair[1].To {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // ResourceChanges are the PortGroup files of _resources whose blobs differ
 // between a directory's evaluation at a base and at a revision, each with
 // the ports changes find moved that load it, in the revision's evaluation

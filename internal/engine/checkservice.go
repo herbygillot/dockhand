@@ -46,8 +46,8 @@ func (a checkAdmission) ForgetKept(ctx context.Context, branch model.BranchID) e
 
 // checkHooks are what the engine does as a check is driven: say the
 // install estimate beside an environment's first clone, assess upstream's
-// change once the check has built, and queue the baseline a failed check
-// points to.
+// change once the check has built, queue the baseline a failed check
+// points to, and give reuse a revision's change records.
 type checkHooks struct{ e *Engine }
 
 func (h checkHooks) BeforeEnvironment(ctx context.Context, _ model.Run, plan model.Plan, environment model.Environment, source model.Source) []string {
@@ -66,6 +66,10 @@ func (h checkHooks) AfterBuild(ctx context.Context, run model.Run, revision mode
 
 func (h checkHooks) AfterFinish(ctx context.Context, run model.Run) {
 	h.e.continueWithBaseline(ctx, run)
+}
+
+func (h checkHooks) Changes(ctx context.Context, revision model.Revision) (map[string]model.ChangeRecord, error) {
+	return h.e.revisionChanges(ctx, revision.Branch, revision.Source.Base, revision.Source.Tree, true)
 }
 
 // QueueCheck is the one way a check is queued (checks.Service.QueueCheck).

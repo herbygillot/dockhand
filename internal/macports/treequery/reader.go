@@ -139,6 +139,40 @@ func (p *Reader) family(ctx context.Context, source model.Source, directory stri
 	return snapshot, nil
 }
 
+// Lint runs port lint on a directory's port as the source holds it, port
+// naming the main port or a subport, with --nitpick where asked, through
+// MacPorts' evaluator on this Mac (macports.Linter).
+func (p *Reader) Lint(ctx context.Context, source model.Source, directory, port string, nitpick bool) (_ macports.Lint, err error) {
+	files, done, err := p.workspaces.Acquire(ctx, p.repo, source)
+	if err != nil {
+		return macports.Lint{}, err
+	}
+	defer func() { err = errors.Join(err, done()) }()
+	if err := files.EnsurePort(ctx, model.Target{Portfile: directory + "/Portfile"}); err != nil {
+		return macports.Lint{}, err
+	}
+	tree, err := files.Tree(model.Platform{})
+	if err != nil {
+		return macports.Lint{}, err
+	}
+	targets, err := p.ports.Resolve(ctx, tree, macports.Selection{Selector: directory})
+	if err != nil {
+		return macports.Lint{}, fmt.Errorf("linting %s: %w", directory, err)
+	}
+	if len(targets) == 0 {
+		return macports.Lint{}, fmt.Errorf("linting %s: it defines no port", directory)
+	}
+	target := targets[0]
+	if port != "" && port != target.Name {
+		target.Subport = port
+	}
+	bound, err := files.Context(target, model.Platform{})
+	if err != nil {
+		return macports.Lint{}, err
+	}
+	return p.ports.Lint(ctx, bound, nitpick)
+}
+
 func (p *Reader) Directory(ctx context.Context, source model.Source, name string) (_ string, err error) {
 	files, done, err := p.workspaces.Acquire(ctx, p.repo, source)
 	if err != nil {

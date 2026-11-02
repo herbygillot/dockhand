@@ -2,10 +2,12 @@ package checks
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 // Describe names the revision for people: "snapshot 3" or "commit 7e3f1a2".
@@ -157,4 +159,88 @@ func UnresolvedWords(plan model.Plan) string {
 		return "it builds nothing"
 	}
 	return strings.Join(words, "; ")
+}
+
+// CarriedWords say how a check's results stand where it reused an earlier
+// check's builds over a change that builds nothing differently, carried
+// all of one earlier check's builds (model.Carried): the ports judged and
+// the options each changed, where one moved from, and lint's: "check-767
+// reused check-766's builds (commit 3f2a1c9): since then only omnidiff's
+// maintainers changed, which builds nothing differently, and lint ran
+// again on this Portfile". It names what changed, never the rule; empty
+// where nothing was carried.
+func CarriedWords(reusing string, carried []model.Carried) string {
+	if len(carried) == 0 {
+		return ""
+	}
+	type judged struct {
+		options []string
+		from    string
+	}
+	var ports []string
+	byPort := map[string]*judged{}
+	var commit model.ObjectID
+	var linted []string
+	kept := ""
+	for _, c := range carried {
+		if commit == "" {
+			commit = c.Commit
+		}
+		for _, port := range c.Ports {
+			found, ok := byPort[port.Port]
+			if !ok {
+				found = &judged{}
+				byPort[port.Port] = found
+				ports = append(ports, port.Port)
+			}
+			for _, option := range port.Options {
+				if !slices.Contains(found.options, option) {
+					found.options = append(found.options, option)
+				}
+			}
+			if port.From != "" {
+				found.from = port.From
+			}
+		}
+		if c.Linted && len(c.Ports) > 0 && !slices.Contains(linted, c.Ports[0].Port) {
+			linted = append(linted, c.Ports[0].Port)
+		}
+		if c.LintKept != "" && kept == "" {
+			kept = c.LintKept
+		}
+	}
+	var changed, moved []string
+	for _, port := range ports {
+		found := byPort[port]
+		if len(found.options) > 0 {
+			changed = append(changed, port+"'s "+prose.And(found.options))
+		}
+		if found.from != "" {
+			moved = append(moved, port+" moved from "+found.from)
+		}
+	}
+	var since string
+	switch {
+	case len(changed) > 0 && len(moved) > 0:
+		since = prose.And(changed) + " changed, and " + prose.And(moved)
+	case len(changed) > 0:
+		since = prose.And(changed) + " changed"
+	default:
+		since = prose.And(moved)
+	}
+	words := reusing + " reused " + carried[0].Check + "'s builds"
+	if commit != "" {
+		words += " (commit " + commit.Short() + ")"
+	}
+	words += ": since then only " + since + ", which builds nothing differently"
+	switch {
+	case len(linted) == 1:
+		words += ", and lint ran again on this Portfile"
+	case len(linted) > 1:
+		words += ", and lint ran again on these Portfiles"
+	}
+	if kept != "" {
+		words += "; lint's lines are the earlier Portfile's, since " + kept
+	}
+	return words
 }

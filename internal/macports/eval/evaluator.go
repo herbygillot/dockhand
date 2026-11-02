@@ -572,6 +572,51 @@ func decodeMetadata(reply string) (macports.PortInfo, []string, error) {
 
 var _ macports.Reader = (*Evaluator)(nil)
 
+var _ macports.Linter = (*Evaluator)(nil)
+
+// Lint runs Base's lint target on the selected port in an interpreter of
+// its own, as macports.Linter says.
+func (e *Evaluator) Lint(ctx context.Context, source macports.Context, nitpick bool) (_ macports.Lint, err error) {
+	checked, err := source.Tree.Select(source.Target())
+	if err != nil {
+		return macports.Lint{}, err
+	}
+	session, _, err := e.start(ctx, checked.Tree)
+	if err != nil {
+		return macports.Lint{}, err
+	}
+	defer func() { err = errors.Join(err, session.Close()) }()
+	portdir := filepath.Dir(filepath.Join(checked.Root(), checked.Target().Portfile))
+	reply, err := session.Call(ctx, "lint", portdir, checked.Target().Subport, strconv.FormatBool(nitpick))
+	if err != nil {
+		return macports.Lint{}, fmt.Errorf("macports: linting %s: %w", checked.Target().Portfile, err)
+	}
+	return decodeLint(reply)
+}
+
+// decodeLint reads the lint call's reply: its warnings and its errors,
+// two lists, or the effects the dispatcher refused.
+func decodeLint(reply string) (macports.Lint, error) {
+	if values, errs := syntax.DictValues(reply); len(errs) == 0 {
+		if refused, ok := values["dockhand.refused"]; ok {
+			return macports.Lint{}, decodeRefusals(refused)
+		}
+	}
+	parts, errs := syntax.ListValues(reply)
+	if len(errs) != 0 || len(parts) != 2 {
+		return macports.Lint{}, fmt.Errorf("macports: invalid lint reply")
+	}
+	var lint macports.Lint
+	for i, into := range []*[]string{&lint.Warnings, &lint.Errors} {
+		lines, errs := syntax.ListValues(parts[i])
+		if len(errs) != 0 {
+			return macports.Lint{}, fmt.Errorf("macports: invalid lint reply")
+		}
+		*into = lines
+	}
+	return lint, nil
+}
+
 // decodeRefusals is the error for an evaluation that attempted effects the
 // dispatcher refused, each named with why and where.
 func decodeRefusals(value string) error {
