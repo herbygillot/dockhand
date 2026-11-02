@@ -5,6 +5,7 @@
 package local
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -81,6 +82,9 @@ type Local struct {
 	// sudo runs the guest program as root where the prefix's registry
 	// isn't the person's to write; /usr/bin/sudo when nil.
 	sudo []string
+	// terminal is where sudo asks the person's password; /dev/tty when
+	// empty.
+	terminal string
 	// stager replaces staging the revision in tests: it writes the guest
 	// program, its input, and a tree into the check's directory.
 	stager func(ctx context.Context, job buildenv.Job, input guest.Input, dir string) error
@@ -412,23 +416,48 @@ func (l *Local) asRoot(ctx context.Context, prefix string, build buildenv.Build)
 	if _, err := subprocess.Run(ctx, subprocess.Spec{Tool: "sudo", Path: sudo[0], Args: append(slices.Clone(sudo[1:]), "-n", tclsh, os.DevNull), Env: l.Env}); err == nil {
 		return append(slices.Clone(sudo), "-n"), nil
 	}
-	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	tty, err := os.OpenFile(cmp.Or(l.terminal, "/dev/tty"), os.O_RDWR, 0)
 	if err != nil {
-		return nil, buildenv.Infrastructure("%w: %s's registry is root's, and sudo asks for a password, which this process has no terminal to ask on. This sudoers line, added with visudo, lets it: %s. It's root for anything a Portfile does, as a rule for port is, and no narrower: port-tclsh runs whatever script it's given, from a directory you can write. A prefix MacPorts installed without root needs no sudo, at the cost of MacPorts' binary archives", buildenv.ErrNeedsAttention, prefix, l.sudoersLine(tclsh))
+		return nil, buildenv.Infrastructure("%w: %s's registry is root's, and sudo asks for a password, which this process has no terminal to ask on. This sudoers line, added with visudo, lets it: %s. It's root for anything a Portfile does, as a rule for port is, and no narrower: port-tclsh runs whatever script it's given, from a directory you can write. A prefix MacPorts installed without root needs no sudo, at the cost of MacPorts' binary archives", buildenv.ErrNeedsAttention, prefix, l.sudoersRule(tclsh, false))
 	}
 	defer tty.Close()
 	build.Progress(fmt.Sprintf("%s's registry is root's: MacPorts builds there as root, so sudo asks for your password", prefix))
-	if _, err := subprocess.Run(ctx, subprocess.Spec{Tool: "sudo", Path: sudo[0], Args: append(slices.Clone(sudo[1:]), "-v"), Env: l.Env,
-		Stdin: tty, Stdout: tty, StdoutOnly: true, Combined: true}); err != nil {
+	// sudo asks on the terminal itself; what it says of a refusal goes to
+	// standard error, which the person sees and the refusal reads.
+	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "sudo", Path: sudo[0], Args: append(slices.Clone(sudo[1:]), "-v"), Env: l.Env,
+		Stdin: tty, Stdout: tty, StdoutOnly: true, Stderr: tty})
+	if err != nil && sudoRefused(result.Stderr) {
+		return nil, buildenv.Infrastructure("%w: %s may not use sudo on this Mac, and %s's registry is root's, so MacPorts builds there as root. A sudoers rule for the prefix's port-tclsh is enough, added with visudo, one asking a password included, since a check run here has a terminal to ask on: %s. serve, which has none, needs the rule to ask no password: %s", buildenv.ErrNeedsAttention, l.username(), prefix, l.sudoersRule(tclsh, true), l.sudoersRule(tclsh, false))
+	}
+	if err != nil {
 		return nil, buildenv.Infrastructure("%w: sudo didn't let the build run as root in %s: %v", buildenv.ErrNeedsAttention, prefix, err)
 	}
 	return append(slices.Clone(sudo), "-n"), nil
 }
 
-// sudoersLine is the one sudoers line that lets serve check in a prefix
-// whose registry is root's: the person's, asking no password for the
-// prefix's port-tclsh. dockhand never writes sudoers itself.
-func (l *Local) sudoersLine(tclsh string) string {
+// sudoRefused says whether sudo refused the person outright, whatever
+// their password, rather than the password being wrong: sudo's "Sorry,
+// user <name> may not run sudo on <host>.", its words for a user no
+// sudoers rule names. Where sudo says it otherwise, as in another
+// language, the refusal is the plain one.
+func sudoRefused(stderr []byte) bool {
+	return bytes.Contains(stderr, []byte(" may not run sudo on "))
+}
+
+// sudoersRule is the sudoers rule that lets the person run the prefix's
+// port-tclsh as root, asking their password where password is true; the
+// one asking none lets serve, with no terminal, check in a prefix whose
+// registry is root's. dockhand never writes sudoers itself.
+func (l *Local) sudoersRule(tclsh string, password bool) string {
+	if password {
+		return fmt.Sprintf("%s ALL=(root) %s", l.username(), tclsh)
+	}
+	return fmt.Sprintf("%s ALL=(root) NOPASSWD: %s", l.username(), tclsh)
+}
+
+// username is the person a sudoers rule names: USER in the command
+// line's environment, or the process's user.
+func (l *Local) username() string {
 	name := ""
 	for _, variable := range l.Env {
 		if value, ok := strings.CutPrefix(variable, "USER="); ok {
@@ -440,7 +469,7 @@ func (l *Local) sudoersLine(tclsh string) string {
 			name = current.Username
 		}
 	}
-	return fmt.Sprintf("%s ALL=(root) NOPASSWD: %s", cmp.Or(name, "<you>"), tclsh)
+	return cmp.Or(name, "<you>")
 }
 
 // start runs the guest program in the check's directory under the
