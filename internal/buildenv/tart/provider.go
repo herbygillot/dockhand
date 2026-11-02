@@ -547,8 +547,11 @@ func (p *Provider) Shell(ctx context.Context, job buildenv.ShellJob) (int, error
 		command = []string{"/bin/zsh", "-l"}
 	}
 	// The work directory is the port's as MacPorts places it, read in the
-	// guest; the staged directory where it's gone.
-	script := `work=$(` + macports.DefaultPrefix + `/bin/port -q -D "$1" work 2>/dev/null); cd "${work:-$1}" 2>/dev/null || cd "$1"; shift; exec "$@"`
+	// guest; the staged directory where it's gone. The prefix's bin and
+	// sbin come first, as the guest program's launchd job has them
+	// (guestPlist): over SSH the PATH is sshd's, and "sh: port: command
+	// not found" (field testing's curl +sectrust notes, note 6).
+	script := `PATH="` + macports.DefaultPrefix + `/bin:` + macports.DefaultPrefix + `/sbin:$PATH"; export PATH; work=$(` + macports.DefaultPrefix + `/bin/port -q -D "$1" work 2>/dev/null); cd "${work:-$1}" 2>/dev/null || cd "$1"; shift; exec "$@"`
 	return g.Attach(ctx, job.Input, job.Output, job.Terminal, "", append([]string{"/bin/sh", "-c", script, "dockhand", staged}, command...)...)
 }
 

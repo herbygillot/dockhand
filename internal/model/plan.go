@@ -287,12 +287,31 @@ type Plan struct {
 	// a check a person runs, never serve's or ship's.
 	Keep bool `json:",omitempty"`
 	// Variants are the variants --variants built its one port with, as
-	// MacPorts writes them, in place of its defaults; EachVariant is
-	// --variants each, which built it with its defaults and then with
-	// each variant it declares.
+	// MacPorts writes them, beside its default variants, which MacPorts
+	// adds but where one is negated: a build in place of its default
+	// build. EachVariant is --variants each, which built it with its
+	// defaults and then with each variant it declares.
 	Variants    string `json:",omitempty"`
 	EachVariant bool   `json:",omitempty"`
 	CreatedAt   time.Time
+	// Evaluated are each planned target's evaluation in each environment
+	// it builds in, as planning read it, for check --plan -v and --json
+	// to print (field testing's curl +sectrust notes, note 8b). Planning's
+	// alone: a recorded plan has none.
+	Evaluated []Evaluated `json:"-"`
+}
+
+// Evaluated is a planned target as an environment evaluated it: its
+// variants as MacPorts resolves them, its defaults not negated and those
+// asked, its dependencies by type, and its configure.args and
+// configure.env as MacPorts writes them, evaluated on this Mac with the
+// environment's platform.
+type Evaluated struct {
+	Target                               TargetID
+	Environment                          Environment
+	Variants                             []string
+	DependsBuild, DependsLib, DependsRun []string
+	ConfigureArgs, ConfigureEnv          string
 }
 
 // In is an environment's plan.

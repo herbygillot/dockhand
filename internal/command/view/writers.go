@@ -406,9 +406,35 @@ func resultWords(evidence engine.Evidence, target engine.TargetEvidence, environ
 	return words
 }
 
+// WriteEvaluated says, for check --plan -v, each target's evaluation in
+// each environment that builds it: its variants as MacPorts resolves
+// them, its dependencies by type, and its configure.args and
+// configure.env, each as MacPorts writes it, a line each where it has
+// one (field testing's curl +sectrust notes, note 8b).
+func WriteEvaluated(out io.Writer, plan model.Plan) {
+	for _, evaluated := range plan.Evaluated {
+		fmt.Fprintf(out, "\n%s on %s\n", evaluated.Target, checks.DescribeEnvironment(evaluated.Environment))
+		line := func(label, value string) {
+			if value != "" {
+				fmt.Fprintf(out, "  %-15s%s\n", label, value)
+			}
+		}
+		line("variants", strings.Join(evaluated.Variants, " "))
+		line("depends_build", strings.Join(evaluated.DependsBuild, " "))
+		line("depends_lib", strings.Join(evaluated.DependsLib, " "))
+		line("depends_run", strings.Join(evaluated.DependsRun, " "))
+		line("configure.args", evaluated.ConfigureArgs)
+		line("configure.env", evaluated.ConfigureEnv)
+	}
+}
+
 // WriteVariants says what --variants builds: the one port with its
-// variants in place of its defaults, or, with each, its defaults and then
-// each variant it declares.
+// default variants plus those given, which MacPorts adds as it opens the
+// port, a -variant leaving a default out, built in place of its default
+// build; or, with each, its defaults and then each variant it declares.
+// curl +gnutls +sectrust got brotli, zstd, idn, psl and http2 too, where
+// "in place of its defaults" read as the defaults dropped (field
+// testing's curl +sectrust notes, note 3).
 func WriteVariants(out io.Writer, plan model.Plan) {
 	var builds []string
 	var port string
@@ -422,7 +448,7 @@ func WriteVariants(out io.Writer, plan model.Plan) {
 	case plan.EachVariant && len(builds) > 0:
 		fmt.Fprintf(out, "Variants    %s with default variants, then each of %s added to the defaults (excluding universal)\n", port, strings.Join(builds, ", "))
 	case plan.Variants != "" && len(builds) > 0:
-		fmt.Fprintf(out, "Variants    %s %s, in place of its defaults\n", port, plan.Variants)
+		fmt.Fprintf(out, "Variants    %s with its default variants, plus %s (a -variant leaves a default out), built in place of its default build\n", port, plan.Variants)
 	}
 }
 

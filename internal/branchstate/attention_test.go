@@ -44,7 +44,7 @@ func (words) Holds(c []model.Concern) []string {
 // second).
 func TestAttentionReadsTheChecksStanding(t *testing.T) {
 	passed := &model.Run{Number: 3, State: model.RunPassed}
-	branch := Branch{Record: model.Branch{Name: "dockhand/jq-1.8.2", State: model.BranchOpen}, Revision: &model.Revision{Kind: model.RevisionCommit}}
+	branch := Branch{Record: model.Branch{Name: "dockhand/jq-1.8.2", State: model.BranchOpen}, Revision: &model.Revision{Kind: model.RevisionCommit}, Commits: 1}
 	changed := evidence.TargetEvidence{Target: model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}, Kind: model.Substantive, Role: model.Changed}, Passed: true}
 	facts := Facts{Branch: branch, Check: Check{Latest: passed, Current: true, Evidence: &evidence.Evidence{Targets: []evidence.TargetEvidence{changed}},
 		Active: []model.Run{{Number: 4, State: model.RunRunning, BaselineOf: "run_3"}}}}
@@ -53,6 +53,19 @@ func TestAttentionReadsTheChecksStanding(t *testing.T) {
 	require.Equal(t, WaitingToSubmit, rows[0].Reason)
 	require.Equal(t, "passed; waiting for you to submit", rows[0].Words(words{}))
 	require.Equal(t, Next{Verb: VerbSubmit, Branch: "jq-1.8.2"}, rows[0].Next)
+
+	// A branch that changes nothing, no commits and no edits, whose check
+	// passed is an investigation, which archive ends, where submit would
+	// refuse it (field testing's curl +sectrust notes, note 1); edits
+	// still ask for tidy.
+	investigated := facts
+	investigated.Branch.Commits = 0
+	rows = Attend(investigated)
+	require.Equal(t, Investigated, rows[0].Reason)
+	require.Equal(t, "check-3 passed; the branch changes nothing, so there is nothing to tidy or submit", rows[0].Words(words{}))
+	require.Equal(t, Next{Verb: VerbArchive, Branch: "jq-1.8.2"}, rows[0].Next)
+	investigated.Branch.Edited = []string{"net/curl/Portfile"}
+	require.Equal(t, CommitForReview, Attend(investigated)[0].Reason)
 
 	// A pull request that conflicts with master says so, and offers the
 	// rebase (the docs dig's I2).

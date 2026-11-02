@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -111,8 +112,26 @@ func TestShellStartsTheClonesACheckKept(t *testing.T) {
 
 	_, err = e.Shell(t.Context(), ShellRequest{Run: run, Command: []string{"ls"}})
 	require.ErrorContains(t, err, run.Name()+" kept no clone; dockhand check --keep keeps each environment's")
+	steps, err := e.ShellSteps(t.Context(), run)
+	require.NoError(t, err)
+	require.Empty(t, steps, "none kept, none named")
+	kept, err := e.KeptClones(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, kept)
 
 	provider.kept[provider.left[0]] = time.Now()
+	// The check's end names the shell that opens its clone, and the
+	// branch's latest check that kept one is found, as shell's refusal of
+	// a name that isn't a run's says it (field testing's curl +sectrust
+	// notes, note 5).
+	steps, err = e.ShellSteps(t.Context(), run)
+	require.NoError(t, err)
+	require.Equal(t, []refusal.Next{{Verb: refusal.VerbShell, Args: []string{run.Name()}}}, steps)
+	kept, err = e.KeptClones(t.Context())
+	require.NoError(t, err)
+	require.Len(t, kept, 1)
+	require.Equal(t, run.ID, kept[0].Run.ID)
+	require.Equal(t, run.Branch, kept[0].Run.Branch)
 	code, err := e.Shell(t.Context(), ShellRequest{Run: run, Command: []string{"ls"}})
 	require.NoError(t, err)
 	require.Equal(t, 7, code)

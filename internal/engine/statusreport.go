@@ -87,6 +87,16 @@ func (e *Engine) StatusReport(ctx context.Context, session *coord.Session, reque
 				if err != nil {
 					continue
 				}
+				// Each phrase instructions find is about an update, so
+				// they're quoted where the branch changes the port's
+				// version, as update quotes them: a branch changing
+				// curl's variants alone was told to increase
+				// p5-www-curl's revision "whenever the version of curl
+				// gets updated" (field testing's curl +sectrust notes,
+				// note 7).
+				if _, before, err := e.Repo.File(ctx, string(status.Branch.Base), directory+"/Portfile"); err == nil && !versionChanged(before, data) {
+					continue
+				}
 				for _, found := range portfile.Instructions(data, "") {
 					report.Instructions[status.Branch.ID] = append(report.Instructions[status.Branch.ID], fmt.Sprintf("%s/Portfile:%d: %s", directory, found.Line, found.Text))
 				}
@@ -123,4 +133,16 @@ func (e *Engine) StatusReport(ctx context.Context, session *coord.Session, reque
 	}
 	report.Processes, err = e.Processes(ctx, session)
 	return report, err
+}
+
+// versionChanged says whether a Portfile's main port's version differs
+// between before and after: true where either is computed, or there was
+// no Portfile before, as a new port's version is its first.
+func versionChanged(before, after []byte) bool {
+	if len(before) == 0 {
+		return true
+	}
+	was, ok := portfile.DeclaredVersion(before, "")
+	now, okNow := portfile.DeclaredVersion(after, "")
+	return !ok || !okNow || was != now
 }

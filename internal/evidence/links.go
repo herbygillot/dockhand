@@ -93,7 +93,10 @@ func UndeclaredLinks(builds []LinkedBuild) []LinkFinding {
 			if link.Port != "" && !slices.ContainsFunc(build.Own, func(name string) bool { return strings.EqualFold(name, link.Port) }) {
 				linked[result.Target][link.Port] = true
 			}
-			if link.Port == "" || slices.ContainsFunc(build.Declared, func(name string) bool { return strings.EqualFold(name, link.Port) }) {
+			// A port a path: dependency reaches through its links is
+			// declared by it, as curl's path:lib/libssl.dylib:openssl
+			// declares openssl3.
+			if link.Port == "" || link.Declared != "" || slices.ContainsFunc(build.Declared, func(name string) bool { return strings.EqualFold(name, link.Port) }) {
 				continue
 			}
 			k := key{result.Target, strings.ToLower(link.Port)}

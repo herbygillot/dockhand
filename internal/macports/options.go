@@ -29,7 +29,16 @@ var ReadOptions = []string{
 	"python.versions", "python.version", "python.default_version", "python.rootname", "python.pep517_backend",
 	"use_xcode", "replaced_by", "known_fail", "supported_archs", "use_configure", "configure.cmd", "macosx_deployment_target",
 	"compiler.cxx_standard", "build.args", "conflicts", "use_parallel_build", "python.pep517",
+	// What check --plan -v prints of a target's evaluation (field
+	// testing's curl +sectrust notes, note 8b), which the fidelity check
+	// leaves out (fidelity.ComparablePort).
+	"configure.args", "configure.env",
 }
+
+// EvaluationOnlyOptions are the options read for check --plan -v to print
+// alone, which no comparison of two evaluations reads: their values name
+// ${workpath}, which is named for where the Portfile was evaluated.
+var EvaluationOnlyOptions = []string{"configure.args", "configure.env"}
 
 // LivecheckOptions are the livecheck options a forge source's discovery
 // reads; LivecheckListingOptions are those an archive source's listing

@@ -104,6 +104,15 @@ proc portgroups {portdir name variants} {
     }
     return $files
 }
+proc path_dependencies {portdir name variants} {
+    global prefix
+    set found {}
+    foreach entry [split $::env(PATHDEPS)] {
+        if {$entry eq ""} { continue }
+        lappend found [list path:$entry [file join $prefix [lindex [split $entry :] 0]]]
+    }
+    return $found
+}
 set foreignManagers [expr {[info exists ::env(FOREIGN)] ? $::env(FOREIGN) : {}}]
 `
 	script := filepath.Join(root, "guest.tcl")
@@ -112,7 +121,7 @@ set foreignManagers [expr {[info exists ::env(FOREIGN)] ? $::env(FOREIGN) : {}}]
 	portLog := filepath.Join(root, "port.log")
 	otool := filepath.Join(root, "otool")
 	testsupport.WriteExecutable(t, otool, guesttest.FakeOtool)
-	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "DOCKHAND_GUEST_OTOOL="+otool, "CONTENTS=", "PROVIDES=", "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "CONFIGURESAYS=", "QUIET=", "HANG=", "NOARCHIVE=", "DEPFAILS=", "ACTIVEFILE=", "INSTALLED=", "DEPVERSION=", "PORTGROUPS=", "BRINGS=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
+	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "DOCKHAND_GUEST_OTOOL="+otool, "CONTENTS=", "PROVIDES=", "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "CONFIGURESAYS=", "QUIET=", "HANG=", "NOARCHIVE=", "DEPFAILS=", "ACTIVEFILE=", "INSTALLED=", "DEPVERSION=", "PORTGROUPS=", "PATHDEPS=", "BRINGS=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
 	return command
 }
 
@@ -797,6 +806,54 @@ func TestTheGuestSaysWhatAPassedTargetsBinariesLink(t *testing.T) {
 	results, _ = guestRun(t, input)
 	require.Equal(t, "finished", results.State, results.Detail)
 	require.Nil(t, results.Targets[0].Links, "its files couldn't be listed")
+}
+
+// A library reached through a declared path: dependency is declared:
+// curl's path:lib/libssl.dylib:openssl is openssl's link to
+// libssl.3.dylib, and that its link to openssl3's file, which curl links,
+// so each owner on the way is the entry's; a path: entry that's a file is
+// its one owner's; and a port linking openssl3 with no path: entry
+// declares nothing so (field testing's curl +sectrust notes, note 4).
+func TestALibraryReachedThroughAPathDependencyIsDeclared(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	prefix := filepath.Join(root, "prefix")
+	bin, lib, openssl3 := filepath.Join(prefix, "bin"), filepath.Join(prefix, "lib"), filepath.Join(prefix, "libexec", "openssl3", "lib")
+	for _, dir := range []string{bin, lib, openssl3} {
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+	}
+	curl, ssl, z := filepath.Join(bin, "curl"), filepath.Join(openssl3, "libssl.3.dylib"), filepath.Join(lib, "libz.1.dylib")
+	macho := []byte{0xcf, 0xfa, 0xed, 0xfe, 0, 0, 0, 0}
+	for _, file := range []string{curl, ssl, z} {
+		require.NoError(t, os.WriteFile(file, macho, 0o755))
+	}
+	require.NoError(t, os.Symlink("../libexec/openssl3/lib/libssl.3.dylib", filepath.Join(lib, "libssl.3.dylib")))
+	require.NoError(t, os.Symlink("libssl.3.dylib", filepath.Join(lib, "libssl.dylib")))
+	require.NoError(t, os.WriteFile(curl+".links", []byte(curl+":\n\t"+ssl+" (compatibility version 3.0.0, current version 3.0.0)\n\t"+z+" (compatibility version 1.0.0, current version 1.3.1)\n"), 0o644))
+	input := Input{Tests: "declared", Targets: []Target{{ID: "curl", Name: "curl", Portfile: "net/curl/Portfile", Log: buildenv.LogName("curl")}}}
+	provides := "PROVIDES=" + ssl + "=openssl3 " + filepath.Join(lib, "libssl.3.dylib") + "=openssl " + filepath.Join(lib, "libssl.dylib") + "=openssl " + z + "=zlib"
+	results, commands := guestRunIn(t, root, input, "CONTENTS="+curl+"\\n", provides, "PATHDEPS=lib/libssl.dylib:openssl lib/libz.1.dylib:zlib")
+	require.Equal(t, "finished", results.State, results.Detail)
+	require.Equal(t, []Link{
+		{Binary: curl, Library: ssl, Port: "openssl3", Declared: "path:lib/libssl.dylib:openssl"},
+		{Binary: curl, Library: z, Port: "zlib", Declared: "path:lib/libz.1.dylib:zlib"},
+	}, results.Targets[0].Links)
+	asked := slices.IndexFunc(commands, func(command string) bool { return strings.HasPrefix(command, "provides ") })
+	require.GreaterOrEqual(t, asked, 0)
+	require.Equal(t, "provides "+strings.Join([]string{filepath.Join(lib, "libssl.3.dylib"), filepath.Join(lib, "libssl.dylib"), z, ssl}, " "), commands[asked], "each link on the way is asked, in the one call")
+
+	// As the host reads it, the link rule finds nothing.
+	links := []model.Link{}
+	for _, link := range results.Targets[0].Links {
+		links = append(links, model.Link{Binary: link.Binary, Library: link.Library, Port: link.Port, Declared: link.Declared})
+	}
+	found := evidence.UndeclaredLinks([]evidence.LinkedBuild{{Result: model.TargetResult{Target: "curl", Outcome: model.OutcomePassed, Links: links}, Declared: []string{"curl"}}})
+	require.True(t, found[0].Clean, "%+v", found)
+
+	// With no path: entry, openssl3 is undeclared, as now.
+	results, _ = guestRunIn(t, root, input, "CONTENTS="+curl+"\\n", provides)
+	require.Equal(t, "finished", results.State, results.Detail)
+	require.Equal(t, []Link{{Binary: curl, Library: ssl, Port: "openssl3"}, {Binary: curl, Library: z, Port: "zlib"}}, results.Targets[0].Links)
 }
 
 // A Rust build linking liblzma, which xz provides, with no depends_lib on

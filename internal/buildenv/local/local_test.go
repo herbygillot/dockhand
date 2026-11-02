@@ -124,6 +124,7 @@ proc mportinit {} {}
 proc declares_tests {portdir name variants} { return 0 }
 proc checkout {portdir name variants} { return "" }
 proc work_dir {portdir name variants} { return "" }
+proc path_dependencies {portdir name variants} { return {} }
 set foreignManagers {}
 set argv0 [lindex $argv 0]
 set argv [lrange $argv 1 end]
