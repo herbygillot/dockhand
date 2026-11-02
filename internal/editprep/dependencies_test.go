@@ -182,7 +182,7 @@ func TestGoDependencyPreparation(t *testing.T) {
 				require.NotContains(t, err.Error(), "dependency resolution failed")
 				require.Zero(t, requests.Load(), "local refusal must precede old-source download and helper")
 			case "missing":
-				require.ErrorContains(t, err, "fixture: dependency: cannot regenerate go.vendors: missing executable go2port")
+				require.ErrorContains(t, err, "fixture: dependency: cannot regenerate go.vendors: go2port isn't on PATH or in /opt/local/bin")
 				require.Zero(t, requests.Load())
 			case "failed":
 				require.ErrorContains(t, err, "dependency resolution failed")
@@ -430,7 +430,7 @@ extract.rename no
 				require.ErrorContains(t, err, "fixture, another port of the same Portfile, moves with fixture-server's release")
 				require.ErrorContains(t, err, "--shared-release moves both")
 			case "missing":
-				require.ErrorContains(t, err, "missing executable cargo2port")
+				require.ErrorContains(t, err, "cargo2port isn't on PATH or in /opt/local/bin")
 				require.Zero(t, requests.Load())
 			case "failed":
 				require.ErrorContains(t, err, "invalid lockfile")

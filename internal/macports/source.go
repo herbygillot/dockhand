@@ -1,6 +1,7 @@
 package macports
 
 import (
+	"fmt"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -32,6 +33,20 @@ func FindTclsh(look func(name string) (string, error)) string {
 // prefix; empty where there's neither.
 func FindPortindex(look func(name string) (string, error)) string {
 	return findTool(look, PortIndexer)
+}
+
+// FindProgram is a program MacPorts installs, as tart, go2port, and
+// cargo2port are, found as FindTclsh finds port-tclsh: where look finds it
+// on a PATH, else under the default prefix; empty where there's neither. A
+// shell over SSH whose PATH lacks /opt/local/bin found none, and dockhand
+// said to install what was installed (rc7's F5).
+func FindProgram(look func(name string) (string, error), name string) string {
+	return findTool(look, name)
+}
+
+// ProgramMissing says a program FindProgram found in neither place.
+func ProgramMissing(name string) string {
+	return fmt.Sprintf("%s isn't on PATH or in %s", name, filepath.Join(DefaultPrefix, "bin"))
 }
 
 // findTool is one of MacPorts' programs, by name, where look finds it, else

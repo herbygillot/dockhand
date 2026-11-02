@@ -104,7 +104,7 @@ func TestProviderLinesWithoutTart(t *testing.T) {
 		localLine+"$", out)
 
 	_, _, err := cmdtest.Dockhand(t, "setup", "tart")
-	require.ErrorContains(t, err, "Tart isn't installed: sudo port install tart")
+	require.ErrorContains(t, err, "tart isn't on PATH or in /opt/local/bin: sudo port install tart")
 }
 
 func TestProviderLinesShowTheImages(t *testing.T) {

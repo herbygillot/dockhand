@@ -151,9 +151,13 @@ type Programs struct {
 // the PATH dockhand was run with, once.
 func FindPrograms(look func(name string) (string, error)) Programs {
 	found := Programs{Vendoring: depblock.Tools{Look: look}, Portindex: macports.FindPortindex(look)}
-	for name, path := range map[string]*string{"diff": &found.Patches.Diff, "patch": &found.Patches.Patch, "go2port": &found.Vendoring.Go2Port, "cargo2port": &found.Vendoring.Cargo2Port} {
+	for name, path := range map[string]*string{"diff": &found.Patches.Diff, "patch": &found.Patches.Patch} {
 		*path, _ = look(name)
 	}
+	// MacPorts installs go2port and cargo2port, so they're found where
+	// port-tclsh is, PATH first, then its prefix.
+	found.Vendoring.Go2Port = macports.FindProgram(look, "go2port")
+	found.Vendoring.Cargo2Port = macports.FindProgram(look, "cargo2port")
 	return found
 }
 

@@ -2,7 +2,10 @@ package macports_test
 
 import (
 	"encoding/hex"
+	"errors"
 	"os/exec"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -147,4 +150,23 @@ func TestWithOpenMaintainer(t *testing.T) {
 	} {
 		require.Equal(t, want, macports.WithOpenMaintainer(line), line)
 	}
+}
+
+// A program MacPorts installs is found on PATH, else in its prefix, and
+// one in neither is said so, naming both (rc7's F5).
+func TestAProgramIsFoundOnPathThenInThePrefix(t *testing.T) {
+	t.Parallel()
+	prefixed := filepath.Join(macports.DefaultPrefix, "bin", "tart")
+	look := func(found ...string) func(string) (string, error) {
+		return func(name string) (string, error) {
+			if slices.Contains(found, name) {
+				return "/found/" + name, nil
+			}
+			return "", errors.New("not here")
+		}
+	}
+	require.Equal(t, "/found/tart", macports.FindProgram(look("tart", prefixed), "tart"))
+	require.Equal(t, "/found/"+prefixed, macports.FindProgram(look(prefixed), "tart"))
+	require.Empty(t, macports.FindProgram(look(), "tart"))
+	require.Equal(t, "tart isn't on PATH or in /opt/local/bin", macports.ProgramMissing("tart"))
 }

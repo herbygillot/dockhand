@@ -410,6 +410,9 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	if len(described) == 0 {
 		described = []string{"none set up; checks will need attention"}
 	}
+	if missing := e.unattendedMissing(); missing != "" {
+		described = append(described, missing)
+	}
 	publishing := "opens no pull requests; it only checks"
 	if options.submits() {
 		publishing = fmt.Sprintf("opens PRs for passing updates it prepared, at most %d a day", options.SubmitLimit)

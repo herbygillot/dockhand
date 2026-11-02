@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/subprocess"
@@ -153,14 +155,15 @@ func testHost() *host.Host {
 // hostFor is the test's host for a command line run with env: it finds
 // programs on env's PATH, as compose does, Tart among them, but only
 // where the test put a stand-in on the run's PATH (Setenv), never the Mac
-// running it, which every test's would otherwise find; a test may give
-// its own lookup instead.
+// running it, which every test's would otherwise find, on its PATH or in
+// MacPorts' prefix, where compose looks next; a test may give its own
+// lookup instead.
 func hostFor(found *standing, env []string) *host.Host {
 	h := *found.Host
 	if h.Look == nil {
 		_, ownPath := found.Env["PATH"]
 		h.Look = func(name string) (string, error) {
-			if name == "tart" && !ownPath {
+			if name == "tart" && !ownPath || name == filepath.Join(macports.DefaultPrefix, "bin", "tart") {
 				return "", exec.ErrNotFound
 			}
 			return subprocess.LookPath(name, env)

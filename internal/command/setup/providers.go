@@ -34,7 +34,7 @@ func imagesOf(s *settings.Settings) host.TartImages {
 	}
 	options := s.ComposeOptions()
 	look := s.Dependencies().Lookup(options)
-	if _, err := look("tart"); err != nil {
+	if macports.FindProgram(look, "tart") == "" {
 		return nil
 	}
 	return options.TartProvider(look)
@@ -86,7 +86,7 @@ the new one passes.`,
 			options.Xcodes = file.Providers.Tart.Xcode
 			images := imagesOf(s)
 			if images == nil {
-				return fmt.Errorf("checks build in Tart VMs, and Tart isn't installed: %s", installTart)
+				return fmt.Errorf("checks build in Tart VMs, and %s: %s", macports.ProgramMissing("tart"), installTart)
 			}
 			result, err := images.Setup(cmd.Context(), options, streams.Out)
 			if missing := (*tart.MissingXcode)(nil); errors.As(err, &missing) {

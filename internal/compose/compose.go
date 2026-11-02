@@ -161,7 +161,7 @@ func (o Options) TartPlaces() TartPlaces {
 func (o Options) TartProvider(look func(string) (string, error)) *tart.Provider {
 	places := o.TartPlaces()
 	xcodes, _ := look("xcodes")
-	return &tart.Provider{Tart: tartvm.Client{Home: places.Home, Env: o.Env}, Personal: places.Personal, Keys: places.Keys, XcodesExecutable: xcodes}
+	return &tart.Provider{Tart: tartvm.Client{Executable: macports.FindProgram(look, "tart"), Home: places.Home, Env: o.Env}, Personal: places.Personal, Keys: places.Keys, XcodesExecutable: xcodes}
 }
 
 // Places are the command line's home, $HOME, and working directory.
@@ -401,7 +401,7 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	e.Providers[buildenv.GitHub] = actions
 	// Tart builds wherever Tart is installed; its images are checked when a
 	// check names a release.
-	if _, err := look("tart"); err == nil {
+	if macports.FindProgram(look, "tart") != "" {
 		provider := options.TartProvider(look)
 		provider.Repo, provider.Index = e.Repo, e.PortIndex
 		provider.TestTimeout, provider.BuildTimeout = file.Providers.Tart.Timeout(), file.Providers.Tart.BuildBound()
