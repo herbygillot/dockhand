@@ -32,7 +32,7 @@ var engineImports = map[string]string{
 	"internal/progress":               "what the work reports as a check builds, which its run keeps for whoever follows it",
 	"internal/prose":                  "counts and sizes worded as everywhere else",
 	"internal/registry":               "where a project named in a registry keeps its source, for create",
-	"internal/buildlog":               "what a failed build's log most likely says made it fail",
+	"internal/buildlog":               "what a failed build's log most likely says made it fail, and what a cargo build compiled",
 	"internal/refusal":                "why something didn't go, of its kind, with what moves it on",
 	"github.com/BurntSushi/toml":      "a saved tidy plan, a file a person edits",
 	"internal/macos":                  "macOS releases, for environments and their words",

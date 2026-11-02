@@ -543,6 +543,10 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	if plan.Upstream, err = e.revisionComparisons(ctx, branch, model.ObjectID(plan.Tree)); err != nil {
 		return plan, err
 	}
+	// What the check compiled settles which native crates are said.
+	if plan.Evidence != nil {
+		plan.Upstream = CompiledNative(plan.Upstream, func(port string) (map[string]bool, bool) { return compiledCrates(*plan.Evidence, port) })
+	}
 	e.searchOthers(ctx, &plan)
 	errorsFound := commitrules.Errors(plan.Findings)
 	squashed := !slices.ContainsFunc(plan.Findings, func(f commitrules.Finding) bool { return f.Code == "follow-up" || f.Code == "merge" })

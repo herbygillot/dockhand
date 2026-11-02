@@ -1,13 +1,16 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
+	"github.com/herbygillot/dockhand/internal/buildlog"
 	"github.com/herbygillot/dockhand/internal/comparison"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
@@ -353,4 +356,83 @@ func ComparisonLines(comparisons []PortComparison) []ComparisonLine {
 		}
 	}
 	return lines
+}
+
+// compiledCrates are the crates a check's builds of a port compiled, read
+// from the cargo "Compiling" lines in their kept logs (buildlog.Compiled),
+// every build's together; false where no log says any, as of a port that
+// isn't cargo's or a log not kept.
+func compiledCrates(checked Evidence, port string) (map[string]bool, bool) {
+	compiled := map[string]bool{}
+	for _, span := range checked.BuildSpans(port) {
+		file, err := buildlog.Open(span.Log)
+		if err != nil {
+			continue
+		}
+		for _, crate := range buildlog.Compiled(file, span.From, span.To) {
+			compiled[crate] = true
+		}
+		file.Close()
+	}
+	return compiled, len(compiled) > 0
+}
+
+// CompiledNative are comparisons as a check settles their native
+// findings, at display, as UnderUpstream words them, the record left as
+// it was (the omnidiff session's note 6): Cargo.lock pins every crate any
+// feature or target could build, so omnidiff's named libgit2-sys,
+// libsqlite3-sys, libmimalloc-sys, and onig_sys, each behind a feature off
+// by default, a musl target, or used by nothing. A native finding whose
+// crate a build of the port compiled keeps its line, saying so; the rest
+// leave the list for one line of coverage. A port no log says compiled
+// anything is as it was.
+func CompiledNative(comparisons []PortComparison, compiled func(port string) (map[string]bool, bool)) []PortComparison {
+	mapped := slices.Clone(comparisons)
+	for i, c := range mapped {
+		crates, ok := compiled(c.Port)
+		if !ok || !slices.ContainsFunc(c.Comparison.Changes, func(change model.UpstreamChange) bool { return change.Rule == assess.NativeLibrary }) {
+			continue
+		}
+		var changes []model.UpstreamChange
+		var uncompiled []string
+		at := ""
+		for _, change := range c.Comparison.Changes {
+			switch {
+			case change.Rule != assess.NativeLibrary:
+				changes = append(changes, change)
+			case crates[change.Subject]:
+				change.Message = compiledWords(change.Message)
+				changes = append(changes, change)
+			default:
+				uncompiled = append(uncompiled, change.Subject)
+				at = cmp.Or(at, change.Path)
+			}
+		}
+		mapped[i].Comparison.Changes = changes
+		if len(uncompiled) > 0 {
+			words := "the check compiled none of " + strings.Join(uncompiled, ", ")
+			if len(uncompiled) == 1 {
+				words = "the check didn't compile " + uncompiled[0]
+			}
+			mapped[i].Comparison.Coverage = append(slices.Clone(c.Comparison.Coverage), model.Coverage{Path: at, Relevance: "unknown", Treatment: "inspected",
+				Reason: words + ", which Cargo.lock pins for features or targets this build doesn't use"})
+		}
+	}
+	return mapped
+}
+
+// compiledWords are a native finding's words for a crate a check
+// compiled: "…, which links the native library libz, which MacPorts has
+// as archivers/zlib, which the check compiled; the Portfile may declare
+// it…".
+func compiledWords(message string) string {
+	i := strings.Index(message, "which links the native library ")
+	if i < 0 {
+		return message
+	}
+	j := strings.Index(message[i:], ": ")
+	if j < 0 {
+		return message + ", which the check compiled"
+	}
+	return message[:i+j] + ", which the check compiled; " + message[i+j+2:]
 }
