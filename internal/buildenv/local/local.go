@@ -14,6 +14,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
@@ -21,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -244,7 +246,7 @@ func (l *Local) Execute(ctx context.Context, job buildenv.Job, build buildenv.Bu
 		return buildenv.Infrastructure("starting the guest program: %w", err)
 	}
 	build.Progress(fmt.Sprintf("building in %s (%s)", prefix, map[bool]string{true: "as root", false: "as you"}[len(sudo) > 0]))
-	follower := &guest.Follower{Prefix: prefix, Root: dir, Poll: l.Poll}
+	follower := &guest.Follower{Prefix: prefix, Root: dir, Poll: l.Poll, Ended: func() error { return started.killed(prefix) }}
 	release, _ := hostRelease(job.Environment.Platform)
 	err = follower.Follow(ctx, hostGuest{}, started, job, build, release)
 	select {
@@ -876,6 +878,24 @@ type localRun struct {
 	done chan struct{}
 	err  error
 	stop context.CancelFunc
+	// stopped is dockhand's own Stop, whose signal is its own.
+	stopped atomic.Bool
+}
+
+// killed is why the program ended where a signal dockhand didn't send
+// ended it, as kill -9 of its group, sudo dying of it too: someone's
+// choice, which another attempt would only meet again, so none is made
+// (rc7's G9 on the M1, 2026-11-02); nil for one that exited with a
+// status, as a crash, which is tried again, or that dockhand stopped.
+func (r *localRun) killed(prefix string) error {
+	var exit *exec.ExitError
+	if r.stopped.Load() || !errors.As(r.err, &exit) {
+		return nil
+	}
+	if status, ok := exit.Sys().(syscall.WaitStatus); !ok || !status.Signaled() {
+		return nil
+	}
+	return buildenv.NotTriedAgain("the guest program in %s was killed by a signal dockhand didn't send (%v); a kill is someone's choice, so no other attempt was made, and dockhand check runs it again", prefix, exit)
 }
 
 func (r *localRun) Done() <-chan struct{} { return r.done }
@@ -886,6 +906,7 @@ func (r *localRun) Err() error            { return r.err }
 // passes the signal to the program. It's killed once subprocess's wait is
 // up, and Stop waits for that, or for ctx.
 func (r *localRun) Stop(ctx context.Context, _ time.Duration) error {
+	r.stopped.Store(true)
 	r.stop()
 	select {
 	case <-r.done:

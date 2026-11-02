@@ -692,7 +692,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			if err := d.endExecution(ctx, execution, model.ExecutionInfrastructure, err.Error()); err != nil {
 				return err
 			}
-			d.problem(fmt.Sprintf("%s: %v; another attempt won't fix it, so none was made", DescribeEnvironment(environment), err))
+			d.problem(notTriedWords(DescribeEnvironment(environment), err))
 			return nil
 		case errors.Is(err, buildenv.ErrDockhandFault):
 			// A fault in dockhand's own handling, as a guest program
@@ -913,7 +913,7 @@ func (d *driver) matrix(ctx context.Context, provider buildenv.Provider, environ
 		case ctx.Err() != nil, unrun != nil:
 			return nil
 		case errors.Is(err, buildenv.ErrNeedsAttention):
-			d.problem(fmt.Sprintf("%s: %v; another attempt won't fix it, so none was made", where, err))
+			d.problem(notTriedWords(where, err))
 			return nil
 		case errors.Is(err, buildenv.ErrDockhandFault):
 			d.problem(fmt.Sprintf("dockhand: %s: %s; the fault is dockhand's own, so another attempt would repeat it, and none was made", where, refusal.WordsOf(err)))
@@ -1644,4 +1644,14 @@ func watchStalls(ctx context.Context, build *build, directory string) func() {
 		cancel()
 		<-done
 	}
+}
+
+// notTriedWords says trouble no other attempt was made at: why, where its
+// own words say it, as a guest program someone killed; otherwise that
+// another attempt won't fix it.
+func notTriedWords(where string, err error) string {
+	if buildenv.SaysWhyNotTried(err) {
+		return fmt.Sprintf("%s: %v", where, err)
+	}
+	return fmt.Sprintf("%s: %v; another attempt won't fix it, so none was made", where, err)
 }
