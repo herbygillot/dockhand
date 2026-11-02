@@ -241,6 +241,9 @@ func UsePorts(d *compose.Dependencies, reader checks.PortReader) {
 	if maintainers, ok := reader.(engine.MaintainerReader); ok {
 		d.Ports.Maintainers = maintainers
 	}
+	if failures, ok := reader.(engine.IndexFailureReader); ok {
+		d.Ports.Failures = failures
+	}
 }
 
 // UseDependents gives a command run in the test reader as what finds

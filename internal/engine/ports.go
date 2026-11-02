@@ -32,11 +32,14 @@ type Ports struct {
 	Dependents DependentReader
 	// Maintainers find how the port index spells a maintainer.
 	Maintainers MaintainerReader
+	// Failures say why the port index left a directory's Portfile out,
+	// for a port a branch's edit broke.
+	Failures IndexFailureReader
 }
 
 // MacPortsPorts are MacPorts' own reader's capabilities, every one.
 func MacPortsPorts(reader *treequery.Reader) Ports {
-	return Ports{Reader: reader, Families: reader, Graphs: reader, Archives: reader, Fetcher: reader, Names: reader, Dependents: reader, Maintainers: reader}
+	return Ports{Reader: reader, Families: reader, Graphs: reader, Archives: reader, Fetcher: reader, Names: reader, Dependents: reader, Maintainers: reader, Failures: reader}
 }
 
 // capabilities are the engine's Ports: those given, or MacPorts' own where
@@ -81,6 +84,9 @@ func (e *Engine) capabilities() (Ports, error) {
 	}
 	if given.Maintainers != nil {
 		own.Maintainers = given.Maintainers
+	}
+	if given.Failures != nil {
+		own.Failures = given.Failures
 	}
 	return own, nil
 }

@@ -48,6 +48,9 @@ type generation struct {
 	// Mirror is the provenance of a generation seeded from the mirror's
 	// index rather than from a generation of this cache.
 	Mirror *mirrorProvenance `json:"mirror,omitempty"`
+	// Failed is portindex's line for each port directory whose Portfile
+	// it couldn't parse, by directory (parseFailures).
+	Failed map[string]string `json:"failed,omitempty"`
 }
 
 type environment struct {
