@@ -75,6 +75,12 @@ invent a test suite. To require tests for this check:
 dockhand check --tests required
 ```
 
+Tests run for at most `providers.tart.test_timeout`, or
+`providers.local.test_timeout` in a prefix, 30 minutes unless set. Tests ended
+at that bound say so:
+`the tests ran past their 30m bound (providers.tart.test_timeout), so they were
+ended`.
+
 Narrow or extend the targets when you have a reason:
 
 ```sh
@@ -139,9 +145,12 @@ environment stands.
 
 ### Tart guests
 
-Tart requires Apple silicon. Each execution clones a prepared image and runs the
-shared build program inside it. Ordinary checks remove the clone afterward; the
-prepared images remain available for later checks.
+Tart requires Apple silicon. Dockhand finds `tart` on PATH, then in
+`/opt/local/bin`; where neither has it, a check that needs it says so,
+`build profile host requires Tart, which isn't on PATH or in /opt/local/bin`.
+Each execution clones a prepared image and runs the shared build program inside
+it. Ordinary checks remove the clone afterward; the prepared images remain
+available for later checks.
 
 ```sh
 dockhand setup tart
@@ -164,7 +173,10 @@ dockhand setup tart --xcode ~/Downloads/Xcode.xip
 `--rebuild` replaces an image after validating its replacement. Changes to an
 image's source or tools can invalidate earlier evidence; check the affected
 targets again. macOS's VM limit includes your other running VMs, so queued work
-can wait for a slot without having failed.
+can wait for a slot without having failed. Over SSH with nobody at the screen,
+the login Keychain is locked and macOS refuses to start a VM; the check says so
+once, with how to unlock it, and makes no further attempt. `dockhand setup`
+warns of it on its Tart line.
 
 ### What a check installs
 
@@ -173,7 +185,13 @@ check's plan estimates what each environment installs before it builds,
 packages.macports.org for this release, by the port index; the clone decides`.
 Those with no archive build from source, which can take a while; it's a hint
 for choosing `-d`, and the clone decides. `check --plan` looks the archives up;
-a check says them as it starts.
+a check says them as it starts. The archives a guest is given are said once,
+`giving the guest 25 archives earlier guests installed and 2 kept of their
+targets' builds`, each by name under `-v`. Kept archives whose files are
+missing, as from a database copy without its archives directory, are said once
+with their count and ports, `check-42: 3 saved archives are missing, of jq,
+oniguruma, and libharbor. Removing their records; the build environment will
+use MacPorts archives or build them from source`.
 
 ### GitHub Actions
 
@@ -251,6 +269,21 @@ dockhand status
 follows the latest check of the current branch. The output also names the check,
 such as `check-12`, for use from anywhere.
 
+A batch's checks, serve's, and a foreground check count against one capacity
+for each provider: Tart's is as many checks as the Mac runs VMs, GitHub's and a
+command provider's are `providers.github.capacity` and
+`providers.command.capacity`, and a prefix takes one. A check that waits for a
+slot says once what holds it, naming each check using one and its process,
+`check-617 waits for a slot on command: providers.command.capacity is 1, and
+check-616 (a foreground dockhand, pid 4242, v0.8.0, for 2 hours) is using it`,
+or `waiting for /opt/local, held by check-786` for a prefix another check
+builds in. `logs` says when a check was queued, how long it waited for its
+slot, and when it finished,
+`Queued 2026-10-31 14:02:11, waited 3m 31s for its slot, finished 2026-10-31
+14:20:40.`, and `status`'s queue says each started check's wait.
+`dockhand console` keeps the branches current as serve works, with the
+journal's newest events under them; it replaces `status --watch`.
+
 One branch runs one check at a time. A new request follows an active check only
 if it covers the requested files, targets, environments, and policy. Otherwise
 it refuses. `--replace` stops the active request, keeps completed results, and
@@ -277,14 +310,34 @@ dockhand artifacts
 Use the actual check and port names. Logs identify the build when several
 environments exist; `--full` includes dependency installation, and `--follow`
 follows supported live logs. `artifacts` lists kept archives of the branch's
-latest check, or explains why one is missing.
+latest check, or explains why one is missing. A build that links another port's
+library the Portfile doesn't declare is a notice, holding nothing, that names
+the line to write: `omnidiff links libiconv.2.dylib from libiconv, which it
+doesn't declare in depends_lib; depends_lib-append port:libiconv declares it`.
 
 Tart results can be reused when recorded input content and environment identity
-still match, including dependencies and fetched Git commits. `--fresh` requests
-a rebuild. A rebase can preserve valid evidence when those inputs did not
-change. Results from separate checks can jointly cover the same branch files; a
-narrow rerun does not erase other still-valid results. Moved tags or changed
-inputs can make evidence stale even when a version string did not change.
+still match, including dependencies and fetched Git commits. A result is keyed
+by the PortGroups MacPorts opened each port with, not the whole of
+`_resources`: a change to a PortGroup the port didn't load leaves it standing,
+and a change to one it did voids it. A dependency the check built from source
+counts its own PortGroups; one installed from an archive doesn't. A kept
+dependency archive is offered only while the PortGroups its build loaded stand,
+and a check says once when it isn't: `check-12: the saved archive for cargo was
+built before the github 1.0 PortGroup changed, so the build environment will
+use a MacPorts archive or build it from source`. `--fresh` requests a rebuild.
+A rebase can preserve valid evidence when those inputs did not change. Results
+from separate checks can jointly cover the same branch files; a narrow rerun
+does not erase other still-valid results. Moved tags or changed inputs can make
+evidence stale even when a version string did not change.
+
+A change that builds nothing differently is carried over: a Portfile edit to
+`maintainers`, `categories`, `description`, `long_description`, `homepage`, or
+`livecheck`, or a directory move, reuses the earlier check's builds without
+starting a guest, running lint again on this Mac where the Portfile changed. The
+check's result, `status`, and the pull request's Tested on say so:
+`check-767 reused check-766's builds (commit 3f2a1c9): since then only
+omnidiff's maintainers changed, which builds nothing differently, and lint ran
+again on this Portfile`. A lint error builds the target again.
 
 To retain a Tart build for inspection, request `--keep` before running it:
 

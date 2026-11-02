@@ -75,14 +75,15 @@ Progress goes to standard error. Standard output contains the human report, or,
 with `--json`, one JSON envelope when the command finishes:
 
 ```json
-{"version":1,"command":"check","exit_code":0,"error":null,"result":{}}
+{"version":1,"command":"check","exit_code":0,"error":null,"result":{},"github_requests":0}
 ```
 
 The result above is only an illustration of the envelope; an actual check
-includes its branch, revision, plan, run, and target results. Keep standard
-error separate when parsing standard output. `-v` adds detail about the work,
-and `-vv` adds individual steps. Long human lists can be shortened; their JSON
-lists retain all entries.
+includes its branch, revision, plan, run, and target results, and
+`github_requests` counts the requests the command sent GitHub's API. Keep
+standard error separate when parsing standard output. `-v` adds detail about
+the work, and `-vv` adds individual steps. Long human lists can be shortened;
+their JSON lists retain all entries.
 
 Inspect both `exit_code` and `result`. A nonzero exit does not mean nothing
 happened. An update may have left an edited branch, a check may have completed
@@ -111,7 +112,17 @@ from its `active_checks`. The first check can still be running while
 `latest_check` is null. `check_standing` gives the verdict for the current
 files: `not-checked`, `checking`, `stopped`, `passed`, `incomplete`, `older`,
 `failed`, or `attention`. Use the reported branch and run names for the next
-inspection.
+inspection. An open pull request's `pull_request.merge` gives each port's
+maintainers, with the `maintainers_basis` and `maintainers_as_of` they were
+read at, whom the description mentions, who approved it, the ports still
+`waiting`, and when MacPorts' maintainer timeout ends; `detail.merge` says the
+same as lines. A run's `started_at` and `waited_seconds` say when a check
+started and how long it waited for its slot.
+
+To follow serve's work from a script or a screen reader, `dockhand console
+--plain` prints status once and then each event as a line; `console` does the
+same wherever its input or output is not a terminal. `status --watch` and
+`status --plain` are refused, naming the console.
 
 ## Terminal input and consent
 
@@ -154,7 +165,9 @@ dockhand explain check-42
 dockhand logs check-42
 ```
 
-Replace those names with the ones the command returned. A stopped check may need
+Replace those names with the ones the command returned. `dockhand logs check-42
+jq` shows one port's log; `-p` chooses a branch there, as in every command, not
+a port. A stopped check may need
 `wait`; a failed build may need an edit and a new check; an upstream concern may
 need review and a recorded decision. Repeating an unchanged request does not
 resolve those different causes. See `dockhand usage recovery` for resuming,
@@ -179,8 +192,9 @@ explains large selections and rate limits.
 
 ## Environment
 
-Flags override the corresponding environment selections. These variables are the
-complete catalog beyond the usual `HOME`, `PATH`, and `XDG_CACHE_HOME`.
+Flags override the corresponding environment selections. These variables, with
+the two caches after the table, are the complete catalog beyond the usual
+`HOME`, `PATH`, and `XDG_CACHE_HOME`.
 
 | Variable | What it selects |
 | --- | --- |
@@ -203,6 +217,15 @@ complete catalog beyond the usual `HOME`, `PATH`, and `XDG_CACHE_HOME`.
 | `DOCKHAND_GITHUB_CLIENT_ID` | OAuth application used by `setup github`. |
 | `DOCKHAND_GITHUB_LOG` | File to append each command's GitHub request spending to. |
 | `VISUAL`, `EDITOR` | Editor for Portfiles and pull-request descriptions. |
+
+Two more caches, each entry kept a day, are `dockhand/archives` and
+`dockhand/builds` in the cache directory, or where `DOCKHAND_ARCHIVE_CACHE` and
+`DOCKHAND_BUILD_HISTORY_CACHE` point: packages.macports.org's listings of ports'
+archives, and ports.macports.org's build histories. Tart, `go2port`,
+`cargo2port`, `port-tclsh`, and `portindex` are found on `PATH`, then in
+MacPorts' prefix, `/opt/local/bin`, so a shell whose `PATH` lacks it, such as
+one over SSH, still builds; a refusal names both places, `go2port isn't on PATH
+or in /opt/local/bin`.
 
 `serve --install` keeps `DOCKHAND_CONFIG`, `DOCKHAND_UPSTREAM`,
 `DOCKHAND_PULL_REQUESTS`, `DOCKHAND_INDEX_MIRROR`, `DOCKHAND_INDEX_CACHE`,

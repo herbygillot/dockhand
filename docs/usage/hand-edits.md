@@ -62,6 +62,11 @@ context Dockhand cannot handle is left unchanged and explained; where possible,
 the command prints checksum lines for you to write yourself. Read that output
 before treating the refresh as complete.
 
+A subport, or a main port, that declares no checksums for the archives it
+fetches, as a port moved off a Git clone by hand, gets a checksums block
+written and filled, and the refresh says so: `checksums: jq declared none for
+jq-1.8.1.tar.gz, so they were written after its fetch lines and filled`.
+
 A changed archive under the same name, with the branch's version unchanged, is a
 **stealth update**. A homepage or comment edit does not turn it into a version
 update. Dockhand reports the old and new checksums and compares the archive's
@@ -75,6 +80,19 @@ established that installed copies need no rebuild; it leaves the revision and
 numbers the mirror directory instead. If the revision or directory change would
 affect other subports unexpectedly, Dockhand refreshes the checksums and leaves
 that part for you, explaining why.
+
+For a port on the github PortGroup, `update` can move the source itself. By
+default it leaves the source where it is, and says, as a notice that holds
+nothing, when a release carries its own source archive: `release 2.5.0's
+mindforger_2.5.0_tarball.tgz carries the source, doc, and deps/cmark-gfm;
+update --source releases fetches it`. `update --source releases` makes that
+move, refusing where the archive doesn't qualify: it writes `distname`,
+`extract.suffix`, a `use_` option, and `worksrcdir` where the archive needs
+them, drops `fetch.type git` and the submodule hook, and fills the checksums;
+the commit's body and the pull request say the move. `--source choose` takes
+it where it qualifies, `--source keep` moves nothing, `--source archive` asks
+for GitHub's archive of the tag, and `[update] source` sets any of these for
+every update; see `dockhand usage configuration`.
 
 ## Request a rebuild without changing the version
 
@@ -113,13 +131,17 @@ revision raised. Dockhand does only that much. It lists the new Portfile's lines
 that still name the old name, such as a Go module path or a binary's name, and
 the ports that depend on the old name; those changes are yours. `--category`
 places the new directory in another category. `tidy` commits the rename as
-`jqlang: rename from jq`.
+`jqlang: rename from jq`. A rename you make by hand is recognized too: a port
+given a new name in its own directory, or moved to the new name's directory
+with the stub left behind, is compared with its predecessor and its upstream
+rather than read as a new port, and tidy names the rename with the update,
+`zsolo2: rename from zsolo, update to 1.1`.
 
 An update whose GitHub repository was renamed under the same owner, where the
 port is named after it or the project's own name changed with it, is held, its
-line leading with `dockhand rename`. `update --follow-moves` still follows it,
-keeping the port's name, but a port's `moves = "follow"` setting and `serve`
-never do.
+line naming `dockhand rename` before `update --follow-moves`.
+`update --follow-moves` still follows it, keeping the port's name, but a
+port's `moves = "follow"` setting and `serve` never do.
 
 To move a port to another category without renaming it:
 
@@ -128,7 +150,11 @@ dockhand move dockhand macports
 ```
 
 The move names the new category first on the port's `categories` line where the
-old one was first, and `tidy` commits it as `dockhand: move to macports`.
+old one was first, and `tidy` commits it as `dockhand: move to macports`. The
+port is moved as committed: one with changes not committed is refused, `tidy
+or commit them first`, and one the branch added and hasn't committed yet, as
+`create` leaves it, is told `dockhand isn't committed yet; tidy it, then move
+it`; tidy then folds the move into the port's commit.
 
 ## Finish an update Dockhand refused
 
@@ -142,7 +168,10 @@ A refusal about unintended changes means Dockhand could not prove that its
 proposed edit changes only what it intended. Inspect the Portfile and its
 subports before proceeding. Use `--shared-release` only when the other subports
 really share the release and you intend to update them together; it is not a
-general override for fidelity failures.
+general override for fidelity failures. The plan also says whether the port's
+patches apply to the new source, and, before them, a `worksrcdir` the source
+lacks, `! worksrcdir sdk/angelscript/projects/gnuc macosx isn't in 2.38.0's
+source`, which the patches' failures follow from.
 
 If you want a starting point for a manual repair, run this in your chosen
 branch:

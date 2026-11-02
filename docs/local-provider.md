@@ -20,6 +20,8 @@ test_timeout = "30m"           # a target's tests' bound, as Tart's
 build_timeout = "6h"           # a target's build's bound, as Tart's
 ```
 
+A target's tests ended at the bound say so, naming this provider's key: "the tests ran past their 30m bound (providers.local.test_timeout), so they were ended".
+
 `--on local:/opt/macports-test` names another prefix, as `tart:sonoma` names a release. Several `--on` flags mean all must pass, so `--on local:/opt/local --on local:/opt/macports-test` builds in both, each its own environment with its own evidence.
 
 ## What it does
@@ -55,4 +57,4 @@ check-12 stopped before it could restore /opt/local. dockhand undo check-12 puts
 
 The next check in that prefix puts it back before it builds. Where the guest program dies and dockhand lives, its put-back asks for root again, as at the check's start, on the terminal where there is one, since a long build outlasts sudo's five minutes.
 
-An image of the version the branch builds that's installed already would be activated, not built, so the check stops, saying `port uninstall jq @1.8.1_0`, or a revision bump, lets it build.
+An image of the version the branch builds that's installed already would be activated, not built. One inactive and unrequested, as a check's put-back leaves what it built, is uninstalled first, and the target's log says so; one active or requested is yours, so the check stops, saying `port uninstall jq @1.8.1_0`, or a revision bump, lets it build.

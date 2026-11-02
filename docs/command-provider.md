@@ -10,7 +10,7 @@ In `~/.dockhand/config.toml`:
 [providers.command]
 run = "~/bin/build-ports"   # run by sh, with the request file's path as $1
 name = "my build box"       # labels its results; "command" when unset
-capacity = 1                # how many checks serve runs on it at once; 1 when unset
+capacity = 1                # how many checks run on it at once, serve's, a batch's, and yours together; 1 when unset
 
 [build]
 default = "command"         # the default for check, as it is where nothing else is set; --on command also selects it

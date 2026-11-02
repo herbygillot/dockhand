@@ -31,12 +31,15 @@ dockhand logs check-42 jq
 dockhand logs check-42 jq --phase install
 ```
 
-The first lists provider runs and log locations; the second selects a build of
-jq, preferring a failed build or failed tests over a pass. It names other builds
-when the port ran in more than one place. A recorded step lets `--phase` isolate
-fetch, dependencies, install, test, or another named step. `--full` includes
-dependency-install output otherwise omitted from the port's own build. Use the
-provider-run ID the listing gives when you need a specific environment's log.
+The first lists provider runs and log locations, and says when the check was
+queued, how long it waited for its slot, and when it finished; the second
+selects a build of jq, preferring a failed build or failed tests over a pass. It
+names other builds when the port ran in more than one place. A recorded step
+lets `--phase` isolate fetch, dependencies, install, test, or another named
+step. `--full` includes dependency-install output otherwise omitted from the
+port's own build. Use the provider-run ID the listing gives when you need a
+specific environment's log. `-p` chooses a branch here as in every command, so
+`logs check-42 -p jq` is refused, naming `logs check-42 jq`.
 
 While it runs, `dockhand logs check-42 jq --follow` follows the host's growing
 copy where the provider supports it. GitHub Actions logs arrive differently;
@@ -181,7 +184,11 @@ needed, or "MacPorts' builders built exiv2 on macOS 15 arm64", where the branch
 or the environment is the likelier cause. `dockhand impact` says the same of
 each changed port across every release, which helps choose between a patch and
 `known_fail`. The site is read once a day for each port; when it doesn't answer,
-nothing is said.
+nothing is said. An earlier baseline of the branch answers a failure again while
+what it read still stands; where that changed, as after a rebase, the offer says
+so instead, `master's build of exiv2 reads libheif's directory, changed since
+check-490's baseline`, naming the PortGroup where one the build loaded changed,
+`the cmake 1.1 PortGroup, which gettext, built from source, loaded`.
 
 Read both outcomes and their phases. A baseline failure is an observation, not
 an automatic acceptance. If the same eligible failure is reproduced, direct
@@ -215,7 +222,12 @@ If a guest could not boot, SSH was lost, a script did not return a usable
 report, or GitHub was unavailable, examine the provider detail before changing
 the port. Dockhand retries infrastructure failures up to its attempt limit while
 keeping completed target results. It does not retry a verdict such as a compiler
-failure as though that were infrastructure.
+failure as though that were infrastructure. A VM macOS refuses because the login
+Keychain is locked, as it is over SSH with nobody at the screen, is said once
+and not tried again: `the login Keychain is locked, as it is over SSH with
+nobody at the screen; unlock it with security unlock-keychain in the same
+shell, since unlocking it in another SSH session doesn't reach this one`.
+`dockhand setup` warns of it on its Tart line.
 
 Once the external cause is resolved, `retry check-42` repeats that capture. If
 you changed the files or need another environment, use a new check with explicit
@@ -259,9 +271,10 @@ reaches the same stopping point.
 ## Recover from stale evidence or a moved branch
 
 A check's files may be older than the branch, an environment may have been
-rebuilt, a fetched Git tag may now identify another commit, or required coverage
-may be missing. These cases require establishing what should be checked now; the
-existence of an old green row is not enough.
+rebuilt, a fetched Git tag may now identify another commit, a PortGroup a port
+loaded may have changed, or required coverage may be missing. These cases
+require establishing what should be checked now; the existence of an old green
+row is not enough.
 
 For a stale file capture, inspect the branch and make the intended new check. A
 rebase changes the base and may require another check, but can reuse individual

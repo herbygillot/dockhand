@@ -50,10 +50,12 @@ dockhand setup
 ```
 
 `setup` checks the tools, registers the checkout, and reports the GitHub login
-and build environments it can use. On a terminal it offers missing setup steps.
-You can decline each offer. Creating a Tart image downloads macOS and is a
-separate choice. `dockhand setup -y` skips the offers; it does not silently
-complete every missing dependency.
+and build environments it can use. It finds `port-tclsh`, `tart`, `go2port`, and
+`cargo2port` on `PATH`, then in `/opt/local/bin`, so a shell whose `PATH` lacks
+MacPorts' prefix, as one over SSH can, still finds them. On a terminal it offers
+missing setup steps. You can decline each offer. Creating a Tart image downloads
+macOS and is a separate choice. `dockhand setup -y` skips the offers; it does
+not silently complete every missing dependency.
 
 Branch worktrees go under `~/Source/macports-branches` by default. To choose
 another location during setup:
@@ -80,6 +82,11 @@ It uses a browser code and stores Dockhand's login in the macOS Keychain.
 precedence over a stored login; an available GitHub CLI login is another
 fallback. `dockhand setup` shows the account and credential source. Git pushing
 must also work through the fork's configured Git transport.
+
+The stored login and Tart's VMs both need the login Keychain, which is locked
+over SSH with nobody at the screen. `security unlock-keychain` in the same shell
+unlocks it; `dockhand setup` says when it is locked, and a check whose VM is
+refused for it says so once, making no further attempt.
 
 Choose a build environment before the first real change:
 
@@ -176,11 +183,12 @@ body and the pull request say it too. `--source keep` moves nothing, and
 these for every update.
 
 `diff` shows the change; `impact` shows the changed ports and dependents worth
-checking. `tidy` makes the commits. `check --head` checks those committed files.
-`submit --plan` now previews the actual submission, including the check evidence
-and holds. `submit` performs the push and PR operation. If you edit files after
-checking, check the resulting files again; eligible unchanged builds can be
-reused.
+checking, and, where ports.macports.org answers, whether MacPorts' builders
+built each changed port on each macOS release. `tidy` makes the commits.
+`check --head` checks those committed files. `submit --plan` now previews the
+actual submission, including the check evidence and holds. `submit` performs
+the push and PR operation. If you edit files after checking, check the
+resulting files again; eligible unchanged builds can be reused.
 
 This worktree context matters: a plain `check` there captures working files,
 whereas naming a branch from elsewhere can select its committed head or require
@@ -194,10 +202,14 @@ dockhand status --refresh
 dockhand open -p jq
 ```
 
-Status shows reviews, CI, and what needs you. `open` opens the PR when there is
-one. Make requested changes in the same branch, tidy and check them, then submit
-again. See `dockhand usage publishing` for amending, rebasing, drafts, and
-accepted failures.
+Status shows reviews, CI, and what needs you, and, while the PR is open, when
+MacPorts' maintainer policy lets it be merged. `dockhand console` keeps the
+branches current in a table the terminal's size, with keys that run logs, check,
+tidy, and submit on the row selected; `console --plain` prints status once and
+then each event as a line. `open` opens the PR when there is one. Make requested
+changes in the same branch, tidy and check them, then submit again. See
+`dockhand usage publishing` for amending, rebasing, drafts, and accepted
+failures.
 
 After a merge, inspect cleanup before removing branch worktrees and other
 eligible leftovers:

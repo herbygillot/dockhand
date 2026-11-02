@@ -55,7 +55,8 @@ of disk. A golden copy is kept beside each image, sharing its blocks, and a
 lost image is restored from it. An image that exists is checked in a
 disposable clone instead and left as it is. `--check` only checks, and
 `--rebuild` makes a replacement, keeping the old image until the new one
-passes.
+passes. `--macports-version` names the MacPorts the image installs: this
+Mac's, at least 2.12.6, when unset.
 
 Golden Gate's images, macOS 27, have ASIF disks where earlier releases'
 are raw. They need Tart 2.39.0 or newer, the first to list its VMs while
@@ -192,17 +193,34 @@ MacPorts' reason.
 ```toml
 [providers.tart]
 test_timeout = "45m"  # a target's tests; 30 minutes when unset
+build_timeout = "8h"  # a target's build, its dependencies' installs, fetch, and its own install; 6 hours when unset
 
 [providers.tart.xcode]  # a release's Xcode image, by name or number
 tahoe = "26.6"          # what MacPorts' arm64 buildbot runs when unset
 ```
 
+A target's tests ended at the bound say so, naming the key: "the tests
+ran past their 30m bound (providers.tart.test_timeout), so they were
+ended".
+
 macOS runs two VMs at most, yours among them, and that is the provider's
 only limit: there is no capacity setting, and a configuration that still
 sets `providers.tart.capacity` is refused by name. A check waits for a slot
-when two are already running. A check of several releases builds two of
-them at once. Their VMs start one at a time, each once the last is
-running, so when your own VM holds one slot they take the other in turn.
+when two are already running: serve's checks, a batch's, and one you run
+in the foreground count against the same two, a check that waits says in
+its journal which checks hold them, and `dockhand logs` says when it was
+queued and how long it waited for its slot. A check of several releases
+builds two of them at once. Their VMs start one at a time, each once the
+last is running, so when your own VM holds one slot they take the other
+in turn.
+
+Tart's VMs need the login Keychain, as the GitHub login does. Over SSH
+with nobody at the screen it's locked, and a VM refused for it isn't
+tried again: the check stops, needing attention, and says "the login
+Keychain is locked, as it is over SSH with nobody at the screen; unlock
+it with security unlock-keychain in the same shell, since unlocking it in
+another SSH session doesn't reach this one". `dockhand setup`'s Tart line
+says it too.
 
 ## What it reports
 
@@ -289,6 +307,11 @@ their earlier builds had active, the two newest of each port, in the same
 site. MacPorts takes one whose name is the archive it would fetch, and
 builds or fetches the rest as before: a Rust toolchain built from source on
 a release MacPorts has no archives of it for builds once, not in each check.
+Kept archives that are missing, as in a copy of the database made without
+its archives, are said once, with their count, and their records removed:
+"check-42: 3 saved archives are missing, of jq, oniguruma, and libharbor.
+Removing their records; the build environment will use MacPorts archives
+or build them from source".
 
 Each target's log is copied into the check's log directory (`dockhand
 logs`). When the guest's Command Line Tools, or its Xcode in an Xcode
@@ -307,9 +330,10 @@ code they explain.
 - **The two-VM limit is the Mac's, whatever Tart home a VM runs from.**
   With two VMs running in dockhand's home, a start from another home was
   refused "The number of VMs exceeds the system limit", naming no VMs; the
-  same start in dockhand's home added "(other running VMs: …)". So only
-  the message's first part is matched, and your own VMs, counted from
-  `TART_HOME` or `~/.tart`, take slots too (2026-09-24).
+  same start in dockhand's home added "(other running VMs: …)". So
+  dockhand reads no refusal: it counts your own VMs, running in
+  `TART_HOME` or `~/.tart`, as taking slots too, from a listing that
+  changes nothing there (2026-09-24).
 - **Dockhand runs Tart with `TART_HOME` set to its own home**, never yours,
   so a VM of yours can't block its listing. Tart makes a home's
   directories on any command, so a command that only reads doesn't run
