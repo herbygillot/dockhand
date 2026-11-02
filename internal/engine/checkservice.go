@@ -5,6 +5,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/coord"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -47,7 +48,8 @@ func (a checkAdmission) ForgetKept(ctx context.Context, branch model.BranchID) e
 // checkHooks are what the engine does as a check is driven: say the
 // install estimate beside an environment's first clone, assess upstream's
 // change once the check has built, queue the baseline a failed check
-// points to, and give reuse a revision's change records.
+// points to, and give reuse a revision's change records and a directory's
+// evaluation at a revision.
 type checkHooks struct{ e *Engine }
 
 func (h checkHooks) BeforeEnvironment(ctx context.Context, _ model.Run, plan model.Plan, environment model.Environment, source model.Source) []string {
@@ -70,6 +72,10 @@ func (h checkHooks) AfterFinish(ctx context.Context, run model.Run) {
 
 func (h checkHooks) Changes(ctx context.Context, revision model.Revision) (map[string]model.ChangeRecord, error) {
 	return h.e.revisionChanges(ctx, revision.Branch, revision.Source.Base, revision.Source.Tree, true)
+}
+
+func (h checkHooks) Family(ctx context.Context, revision model.Revision, directory string) (macports.Snapshot, error) {
+	return h.e.revisionFamily(ctx, revision, directory)
 }
 
 // QueueCheck is the one way a check is queued (checks.Service.QueueCheck).

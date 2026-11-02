@@ -109,6 +109,13 @@ type Hooks interface {
 	// reuse confirms an inert change by (reuse.Inert). An error, or no
 	// record of a directory, carries nothing over.
 	Changes(ctx context.Context, revision model.Revision) (map[string]model.ChangeRecord, error)
+	// Family is a port directory evaluated as a revision holds it, every
+	// subport of it, on this Mac, as a change record's sides are: what
+	// reuse confirms an inert change to a port both revisions add by,
+	// whose records, against a base without it, can't
+	// (fidelity.InertBetween). An error, as for a tree this Mac doesn't
+	// hold, carries nothing over.
+	Family(ctx context.Context, revision model.Revision, directory string) (macports.Snapshot, error)
 }
 
 // PortReader reads ports from a source tree: the ports a directory defines

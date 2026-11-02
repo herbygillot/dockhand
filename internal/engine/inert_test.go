@@ -126,3 +126,29 @@ func TestACheckIsCarriedOverAnEditThatBuildsNothingDifferently(t *testing.T) {
 	check(map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 4\nmaintainers openmaintainer\nlicense BSD\n"})
 	require.Len(t, provider.jobs, 2, "a license line builds again")
 }
+
+// Reuse confirms an inert change to a port both revisions add by the
+// directory's evaluations at each (checks.Hooks.Family): one held is
+// evaluated as a change record's revision side is; a directory the
+// revision has no Portfile in, and a tree this Mac doesn't hold, aren't.
+func TestReuseEvaluatesADirectoryAtARevision(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	revision := harborBranch(t, e)
+	ports := &inertPorts{fakePorts: harborPorts(), e: e}
+	usePorts(e, ports)
+	hooks := checkHooks{e}
+
+	family, err := hooks.Family(t.Context(), revision, "devel/libharbor")
+	require.NoError(t, err)
+	require.Equal(t, "4", family.Ports["libharbor"].Version, "as the revision holds it")
+
+	_, err = hooks.Family(t.Context(), revision, "devel/nothing")
+	require.ErrorContains(t, err, "has no Portfile at devel/nothing")
+
+	unheld := revision
+	unheld.Source.Tree = "0123456789abcdef0123456789abcdef01234567"
+	_, err = hooks.Family(t.Context(), unheld, "devel/libharbor")
+	require.Error(t, err, "a tree this Mac doesn't hold")
+}
