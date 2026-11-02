@@ -3,7 +3,9 @@ package portfile
 import (
 	"bytes"
 	"slices"
+	"strings"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/textedit"
 )
@@ -84,6 +86,157 @@ func BlockChanges(before, after []byte) (subports []string, all bool) {
 	}
 	slices.Sort(subports)
 	return subports, false
+}
+
+// InertChanges says which inert options (macports.InertOption) the lines
+// two versions of a Portfile differ in set, ok where every changed line is
+// a comment, a blank, or belongs to commands that each set one, with a
+// modifier or without (maintainers-append), their value words plain: no
+// command substitution, `[…]`, and no expansion. Both versions must
+// parse, and a change outside a command, between a structure's words or
+// inside a non-inert command's, is no inert one. Where a line sits, in a
+// platform's body, a subport's, or an `if`'s, doesn't matter: an inert
+// option builds nothing differently wherever it's set, and the lines,
+// not an evaluation, decide, since this Mac evaluates its own platform
+// alone and a `platform darwin 21` body the edit touched runs only on 12.
+// It's how a check after an openmaintainer line, or a categories reorder,
+// reuses what an earlier check built (decision 28's inert difference).
+func InertChanges(before, after []byte) (options []string, ok bool) {
+	changed := changedLines(before, after)
+	for i, src := range [2][]byte{before, after} {
+		script, errs := syntax.Parse(src)
+		if len(errs) > 0 {
+			return nil, false
+		}
+		var found inertLayout
+		found.collect(src, script)
+		for _, line := range changed[i] {
+			set, ok := found.judge(src, line)
+			if !ok {
+				return nil, false
+			}
+			for _, option := range set {
+				if !slices.Contains(options, option) {
+					options = append(options, option)
+				}
+			}
+		}
+	}
+	slices.Sort(options)
+	return options, true
+}
+
+// optionModifiers are the suffixes an option takes as a command of its
+// own: maintainers-append adds to maintainers.
+var optionModifiers = []string{"-append", "-prepend", "-delete", "-replace", "-strsed"}
+
+// inertLayout is a script's commands at every depth MacPorts runs them,
+// each before those in its bodies, with its bodies' spans, and its
+// comments at every depth.
+type inertLayout struct {
+	commands []syntax.Command
+	bodies   [][]textedit.Span
+	comments []textedit.Span
+}
+
+func (l *inertLayout) collect(src []byte, script *syntax.Script) {
+	for _, item := range script.Items {
+		switch item := item.(type) {
+		case syntax.Comment:
+			l.comments = append(l.comments, item.Span)
+		case syntax.Command:
+			inner := bodies(src, item)
+			spans := make([]textedit.Span, len(inner))
+			for i, body := range inner {
+				spans[i] = body.Span
+			}
+			l.commands = append(l.commands, item)
+			l.bodies = append(l.bodies, spans)
+			for _, body := range inner {
+				l.collect(src, body)
+			}
+		}
+	}
+}
+
+// innermost is the deepest command holding a span, -1 where none does:
+// siblings don't overlap, so the last in collection order is the deepest.
+func (l *inertLayout) innermost(span textedit.Span) int {
+	found := -1
+	for i, cmd := range l.commands {
+		if cmd.Span.Start <= span.Start && span.End <= cmd.Span.End {
+			found = i
+		}
+	}
+	return found
+}
+
+// judge says which inert options a changed line sets, ok where it sets
+// nothing else: each character not blank and not in a comment belongs to
+// an inert command, and a blank line lies between commands, in a body or
+// outside every command, or inside an inert command's words.
+func (l *inertLayout) judge(src []byte, line textedit.Span) ([]string, bool) {
+	var options []string
+	blank := true
+	for at := line.Start; at < line.End; at++ {
+		if c := src[at]; c == ' ' || c == '\t' || c == '\r' {
+			continue
+		}
+		blank = false
+		if slices.ContainsFunc(l.comments, func(s textedit.Span) bool { return s.Start <= at && at < s.End }) {
+			continue
+		}
+		i := l.innermost(textedit.Span{Start: at, End: at + 1})
+		if i < 0 {
+			return nil, false
+		}
+		option, ok := inertCommand(src, l.commands[i])
+		if !ok {
+			return nil, false
+		}
+		if !slices.Contains(options, option) {
+			options = append(options, option)
+		}
+	}
+	if !blank {
+		return options, true
+	}
+	i := l.innermost(line)
+	if i < 0 {
+		return nil, true
+	}
+	if slices.ContainsFunc(l.bodies[i], func(s textedit.Span) bool { return s.Start <= line.Start && line.End <= s.End }) {
+		return nil, true
+	}
+	option, ok := inertCommand(src, l.commands[i])
+	if !ok {
+		return nil, false
+	}
+	return []string{option}, true
+}
+
+// inertCommand is the inert option a command sets, ok where its first
+// word, less a modifier, is one, and its words are plain.
+func inertCommand(src []byte, cmd syntax.Command) (string, bool) {
+	name, ok := cmd.Name(src)
+	if !ok {
+		return "", false
+	}
+	for _, modifier := range optionModifiers {
+		if trimmed, cut := strings.CutSuffix(name, modifier); cut {
+			name = trimmed
+			break
+		}
+	}
+	if !macports.InertOption(name) {
+		return "", false
+	}
+	for _, word := range cmd.Words[1:] {
+		if !word.Plain() {
+			return "", false
+		}
+	}
+	return name, true
 }
 
 // subportBlocks are a script's `subport X { … }` commands with literal

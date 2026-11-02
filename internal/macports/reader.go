@@ -55,6 +55,22 @@ type Batch interface {
 	Close() error
 }
 
+// Linter runs Base's lint target on a selected port on this Mac, as the
+// guest's port lint does, with --nitpick where asked: what it warned of
+// and what it called an error, each line once, without its prefix. It
+// runs through the evaluator's dispatcher, as an evaluation does, so a
+// Portfile's refused effect is an error. Dependencies, conflicts, and
+// replaced_by aren't looked up in an index, which an evaluation's tree
+// hasn't: what it says is of the Portfile's own lines and options.
+type Linter interface {
+	Lint(ctx context.Context, source Context, nitpick bool) (Lint, error)
+}
+
+// Lint is what a lint run said: the warnings and errors, each line once.
+type Lint struct {
+	Warnings, Errors []string
+}
+
 // Resolver resolves a selection to targets, as Reader does.
 type Resolver interface {
 	Resolve(context.Context, Tree, Selection) ([]model.Target, error)

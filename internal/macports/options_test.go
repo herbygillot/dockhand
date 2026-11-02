@@ -66,3 +66,15 @@ func TestTheAssumptionManifestReadsBackAndKnowsItsVersions(t *testing.T) {
 	unchecked := UncheckedPortGroups([]LoadedPortGroup{{Name: "golang", Version: "1.0"}, {Name: "golang", Version: "1.1"}, {Name: "cmake", Version: "1.0"}, {Name: "muniversal", Version: "1.1"}})
 	require.Equal(t, []LoadedPortGroup{{Name: "golang", Version: "1.1"}}, unchecked, "a PortGroup of no assumption at all is none of the manifest's")
 }
+
+// The inert options are the metadata no build reads and livecheck's, and
+// not license, platforms, or notes, which a check or the receipt reads.
+func TestInertOptionsAreTheMetadataNoBuildReads(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"maintainers", "categories", "description", "long_description", "homepage", "livecheck.type", "livecheck.regex", "livecheck.url"} {
+		require.True(t, InertOption(name), name)
+	}
+	for _, name := range []string{"license", "platforms", "notes", "version", "revision", "livecheck.", "livecheck", "depends_lib", "maintainers-append"} {
+		require.False(t, InertOption(name), name)
+	}
+}

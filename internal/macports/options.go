@@ -1,5 +1,10 @@
 package macports
 
+import (
+	"slices"
+	"strings"
+)
+
 // The Portfile options dockhand reads, and the subsets its rules name, in
 // one place: the evaluator is given ReadOptions, so the Tcl side never
 // restates the list; the fidelity check, discovery, and source
@@ -33,6 +38,24 @@ var (
 	LivecheckOptions        = []string{"livecheck.type", "livecheck.url", "livecheck.regex", "livecheck.version"}
 	LivecheckListingOptions = []string{"livecheck.type", "livecheck.url", "livecheck.regex", "livecheck.version", "livecheck.ignore_sslcert", "livecheck.compression", "livecheck.curloptions", "dockhand.livecheck_standard"}
 )
+
+// InertOptions are the options whose values no build reads, so a change to
+// them builds nothing differently, and livecheck's (InertOption): the
+// metadata MacPorts' revision rule asks no bump for. Not license, which
+// decides whether a dependent's check installs a kept archive
+// (archivefetch only for a distributable one), nor platforms or notes,
+// which PortGroups and the receipt read.
+var InertOptions = []string{"maintainers", "categories", "description", "long_description", "homepage"}
+
+// inertPrefix is livecheck's options, livecheck.type, livecheck.url, and
+// the rest, which a check never runs.
+const inertPrefix = "livecheck."
+
+// InertOption reports whether an option, by its name, is one whose value
+// no build reads (InertOptions), or livecheck's.
+func InertOption(name string) bool {
+	return slices.Contains(InertOptions, name) || strings.HasPrefix(name, inertPrefix) && len(name) > len(inertPrefix)
+}
 
 // ForgeOptions are the options a forge PortGroup's source interpretation
 // reads, for the github or gitlab prefix.

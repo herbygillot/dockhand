@@ -564,9 +564,58 @@ namespace eval ::dockhand {
             mportclose $handle
         }
     }
+
+    # lint runs Base's lint target on a port as the guest's port lint
+    # does, with --nitpick where nitpick, through the dispatcher like any
+    # evaluation, and returns what it warned of and what it called an
+    # error, each line once: the warnings and errors as Base's ui_warn
+    # and ui_error say them, read while lint runs. Base's lint looks each
+    # dependency, conflict, and replaced_by up in the sources' PortIndex,
+    # which an evaluation's tree hasn't; those lookups answer found, so
+    # what is said is the Portfile's own lines and options, not the index.
+    proc lint {portdir subport nitpick} {
+        variable refusals {}
+        variable lint_said [dict create warn {} error {}]
+        set opts {}
+        if {$subport ne ""} { lappend opts subport $subport }
+        if {$nitpick} { lappend opts ports_lint_nitpick yes }
+        if {[catch {mportopen "file://$portdir" $opts {}} handle options]} {
+            if {[llength $refusals]} { return [dict create dockhand.refused $refusals] }
+            return -options $options $handle
+        }
+        set saved {}
+        foreach priority {warn error} {
+            if {[llength [info commands ::ui_$priority]]} {
+                rename ::ui_$priority ::dockhand_lint_ui_$priority
+                lappend saved $priority
+            }
+            proc ::ui_$priority {args} [string map [list @priority@ $priority] {
+                set message [lindex $args end]
+                if {$message ni [dict get $::dockhand::lint_said @priority@]} {
+                    dict lappend ::dockhand::lint_said @priority@ $message
+                }
+            }]
+        }
+        rename ::mportlookup ::dockhand_lint_mportlookup
+        proc ::mportlookup {name} { list $name [list name $name] }
+        try {
+            mportexec $handle lint
+        } finally {
+            rename ::mportlookup {}
+            rename ::dockhand_lint_mportlookup ::mportlookup
+            foreach priority {warn error} {
+                rename ::ui_$priority {}
+                if {$priority in $saved} { rename ::dockhand_lint_ui_$priority ::ui_$priority }
+            }
+            mportclose $handle
+        }
+        if {[llength $refusals]} { return [dict create dockhand.refused $refusals] }
+        return [list [dict get $lint_said warn] [dict get $lint_said error]]
+    }
 }
 ::tclrpc::register probe ::dockhand::probe
 ::tclrpc::register initialize ::dockhand::initialize
 ::tclrpc::register model_platform ::dockhand::model_platform
 ::tclrpc::register metadata ::dockhand::metadata
 ::tclrpc::register bootstrap_record ::dockhand::bootstrap_record
+::tclrpc::register lint ::dockhand::lint
