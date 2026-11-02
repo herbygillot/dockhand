@@ -273,6 +273,22 @@ func (p *Reader) PortsDefined(ctx context.Context, source model.Source, director
 	return defined, err
 }
 
+// IndexFailures are portindex's reasons for leaving out the Portfiles of
+// those of the directories it couldn't parse when it built the source's
+// index, by directory (portindex.Index.Failed).
+func (p *Reader) IndexFailures(ctx context.Context, source model.Source, directories []string) (map[string]string, error) {
+	failed := map[string]string{}
+	err := p.index(ctx, source, func(index *portindex.Index) error {
+		for _, directory := range directories {
+			if reason, ok := index.Failed(directory); ok {
+				failed[directory] = reason
+			}
+		}
+		return nil
+	})
+	return failed, err
+}
+
 // ArchiveVersions are every indexed port's version and revision, by
 // lowercased name, as an archive's name writes them, 2.56.0_0, from the
 // port index of the source: what a check's estimate looks for on

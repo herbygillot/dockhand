@@ -291,6 +291,18 @@ func WriteShipPlan(ctx context.Context, e *engine.Engine, out io.Writer, targets
 // holds it.
 func writeSubmitRow(ctx context.Context, e *engine.Engine, out io.Writer, indent string, branch model.Branch) {
 	plan, err := e.PlanSubmit(ctx, engine.SubmitRequest{Branch: branch, PendingCheck: true})
+	// Edits ship commits itself, at its tidy stage, before it submits,
+	// aren't what holds the submission: dua-cli's row said ✗ for them and
+	// ship went on (field testing). The preview follows the commit.
+	var uncommitted *engine.Uncommitted
+	if errors.As(err, &uncommitted) {
+		what := "its edits"
+		if len(uncommitted.Paths) > 0 {
+			what = strings.Join(uncommitted.Paths, ", ")
+		}
+		fmt.Fprintf(out, "%scommits %s first, as tidy would; the preview follows the commit\n", indent, what)
+		return
+	}
 	if err != nil {
 		fmt.Fprintf(out, "%s✗ %v\n", indent, err)
 		return

@@ -29,6 +29,9 @@ func usePorts(e *Engine, reader checks.PortReader) {
 	if maintainers, ok := reader.(MaintainerReader); ok {
 		e.Ports.Maintainers = maintainers
 	}
+	if failures, ok := reader.(IndexFailureReader); ok {
+		e.Ports.Failures = failures
+	}
 }
 
 // useDependents gives the engine reader as what finds dependents, and as
