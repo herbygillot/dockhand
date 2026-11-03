@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -72,6 +73,10 @@ type ServeOptions struct {
 	// serve takes it as uninstalled, past an upgrade's moment between its
 	// old and new files; a minute when zero.
 	ExecutableGrace time.Duration
+	// Settled is called each time the queue empties after work, the day's
+	// look done and its checks ended, as DOCKHAND_HEAPPROFILE's heap
+	// profile is taken there; nil calls nothing.
+	Settled func()
 }
 
 // ServeOutdated is the daily look serve.ship_to carries, and whose ports
@@ -474,7 +479,11 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	// found (the ninth report).
 	ended := map[model.RunID]bool{}
 	var failure error
+	// worked is work since the queue last emptied, a check or a look,
+	// which serve settles once it's all ended.
+	worked := false
 	launch := func(run model.Run, branch model.Branch, needs []string, lease model.Lease) {
+		worked = true
 		inFlight[run.ID] = run
 		verb := "running"
 		if run.State == model.RunRunning {
@@ -566,6 +575,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 				// scanner is the look's while it runs.
 				if !looking.Load() {
 					if scanned.due() {
+						worked = true
 						looking.Store(true)
 						looks.Go(func() {
 							defer looking.Store(false)
@@ -656,6 +666,10 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 			// Nor while the day's look prepares branches.
 			if !looking.Load() {
 				cleaned.maybe(running)
+				if worked {
+					worked = false
+					e.settle(options)
+				}
 			}
 		}
 		select {
@@ -1495,4 +1509,17 @@ func (e *Engine) stampServeFile(name string, when time.Time) error {
 		return err
 	}
 	return os.Chtimes(e.serveFile(name), when, when)
+}
+
+// settle is serve's once the queue empties after work: the memory the
+// look and its checks used goes back to macOS, and Settled is called after
+// it. After a look of 1,116 ports the live heap was 37 MB where serve's
+// resident size stayed at 407 MB, pages Go keeps for its next use (the
+// roadmap's "serve gives back a look's memory once its work ends"); serve
+// holds them a day otherwise.
+func (e *Engine) settle(options ServeOptions) {
+	debug.FreeOSMemory()
+	if options.Settled != nil {
+		options.Settled()
+	}
 }

@@ -42,6 +42,8 @@ A run of dockhand on a scratch clone, a measurement or a replay, sets three thin
 
 `DOCKHAND_CPUPROFILE=<file>` writes the process's CPU profile, as Go's `runtime/pprof` makes one, to the file, finished when the command ends, an interrupted `serve` included; `go tool pprof -top <file>` reads it. An idle serve's profile on dhtest's database is how the roadmap's "An idle serve costs little" finds where its time goes.
 
+`DOCKHAND_HEAPPROFILE=<file>` writes the in-use heap, after a collection, as `runtime/pprof` makes one, when the command ends, and in `serve` also each time its queue empties after work, the day's look and its checks ended; `go tool pprof -sample_index=inuse_space -top <file>` reads it. Measured on the main Mac (2026-11-02, a scratch copy of the database and caches, `outdated --mine` over 1,116 ports): 458 MB at most resident, 209 MB peak footprint, and 37 MB of live heap at its end, 30 MB of it GitHub's answers the conditional cache held in memory beside its directory; the cache now keeps them on disk alone where it has a directory, and serve gives the rest back to macOS when its queue empties (`debug.FreeOSMemory`). The next rc's serve row samples an hour after its day's work, tens of MB the bar, with the profile kept beside the row.
+
 ## Other opt-in tests
 
 Tests that need MacPorts run only against the installation `DOCKHAND_TEST_MACPORTS_TCLSH` names, taking `portindex` from beside it, and skip without it: a `PATH` that happens to reach another Base would test that one silently. They run on a Mac, and on Linux with MacPorts Base built there, where the evaluator models a Mac:
