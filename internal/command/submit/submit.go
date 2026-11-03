@@ -95,8 +95,20 @@ write, keeping your --note.
 			}
 			streams.Emit(view.SubmitView(plan))
 			view.WriteSubmitPlan(streams.Out, plan, preview || streams.Terminal())
+			// A --note is kept with the branch before the gate, so a
+			// submit refused there or cancelled keeps it (field testing's
+			// notes from the curl fix, note 9); --plan changes nothing.
+			undone := "nothing was submitted"
+			if !preview && request.Note != nil {
+				if err := e.KeepNote(ctx, plan); err != nil {
+					return err
+				}
+				if plan.Note != "" {
+					undone += "; the note is kept with the branch, and submit --yes includes it"
+				}
+			}
 			if len(plan.Blocking) > 0 {
-				return errors.New("nothing was submitted")
+				return errors.New(undone)
 			}
 			if preview {
 				writeReadyPreview(streams.Out, plan, ready)
@@ -105,7 +117,7 @@ write, keeping your --note.
 				return nil
 			}
 			if !streams.Terminal() {
-				if _, _, err := streams.Decide(yes, term.Decision{Undone: "nothing was submitted", ByYes: "--yes submits exactly what is shown"}); err != nil {
+				if _, _, err := streams.Decide(yes, term.Decision{Undone: undone, ByYes: "--yes submits exactly what is shown"}); err != nil {
 					return err
 				}
 				return finishSubmit(ctx, e, streams, plan, ready, s.File.Submit.RerequestReview)
@@ -131,7 +143,7 @@ write, keeping your --note.
 				case "s":
 					return finishSubmit(ctx, e, streams, plan, ready, s.File.Submit.RerequestReview)
 				case "q", "":
-					fmt.Fprintln(streams.Out, "Nothing was submitted.")
+					fmt.Fprintf(streams.Out, "%s.\n", strings.ToUpper(undone[:1])+undone[1:])
 					return nil
 				}
 			}
@@ -172,11 +184,9 @@ func AskTested(streams term.Streams, plan *engine.SubmitPlan) error {
 	if err != nil {
 		return err
 	}
-	// A --variants each check that passed has answered this one.
-	variants := false
-	if plan.Evidence != nil {
-		_, _, variants = plan.Evidence.VariantsBuilt()
-	}
+	// Variant builds of the changed ports that passed, from any check of
+	// the files, have answered this one.
+	variants := plan.Evidence != nil && plan.Evidence.VariantsAnswered()
 	if !variants {
 		if variants, err = streams.AskYes("? Did you check that the most important variants aren't broken? [y/N] ", false); err != nil {
 			return err

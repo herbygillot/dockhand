@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 
@@ -71,4 +72,19 @@ func TestStatusReadsALatestChecksEvidenceOnce(t *testing.T) {
 	require.Contains(t, report.Installed, run.ID)
 	require.Contains(t, report.Links, run.ID)
 	require.Equal(t, overview+1, counter.loads[run.ID], "the latest check's own evidence, read once for its links, lint, and installs")
+}
+
+// Status quotes a Portfile's update instructions only where the branch
+// changes the port's version, as update does: a branch changing curl's
+// variants alone was told to increase p5-www-curl's revision "whenever
+// the version of curl gets updated" (field testing's curl +sectrust
+// notes, note 7). A new port's version, or one computed, counts as
+// changed, so they're quoted as before.
+func TestStatusQuotesUpdateInstructionsForAVersionChange(t *testing.T) {
+	t.Parallel()
+	curl := "# Increase the revision of p5-www-curl whenever the version of curl gets updated.\nversion 8.17.0\n"
+	require.False(t, versionChanged([]byte(curl), []byte(curl+"variant sectrust {}\n")), "variants alone")
+	require.True(t, versionChanged([]byte(curl), []byte(strings.Replace(curl, "8.17.0", "8.18.0", 1))), "a version update")
+	require.True(t, versionChanged(nil, []byte(curl)), "a new port")
+	require.True(t, versionChanged([]byte("version [exec date]\n"), []byte("version [exec date]\n")), "a version that can't be told")
 }

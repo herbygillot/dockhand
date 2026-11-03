@@ -547,8 +547,11 @@ func (p *Provider) Shell(ctx context.Context, job buildenv.ShellJob) (int, error
 		command = []string{"/bin/zsh", "-l"}
 	}
 	// The work directory is the port's as MacPorts places it, read in the
-	// guest; the staged directory where it's gone.
-	script := `work=$(` + macports.DefaultPrefix + `/bin/port -q -D "$1" work 2>/dev/null); cd "${work:-$1}" 2>/dev/null || cd "$1"; shift; exec "$@"`
+	// guest; the staged directory where it's gone. The prefix's bin and
+	// sbin come first, as the guest program's launchd job has them
+	// (guestPlist): over SSH the PATH is sshd's, and "sh: port: command
+	// not found" (field testing's curl +sectrust notes, note 6).
+	script := `PATH="` + macports.DefaultPrefix + `/bin:` + macports.DefaultPrefix + `/sbin:$PATH"; export PATH; work=$(` + macports.DefaultPrefix + `/bin/port -q -D "$1" work 2>/dev/null); cd "${work:-$1}" 2>/dev/null || cd "$1"; shift; exec "$@"`
 	return g.Attach(ctx, job.Input, job.Output, job.Terminal, "", append([]string{"/bin/sh", "-c", script, "dockhand", staged}, command...)...)
 }
 
@@ -682,7 +685,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		// is refused again until it's unlocked: one attempt, said with
 		// how, where three failed as an environment error (rc7's F5).
 		if tartvm.KeychainLocked(err.Error()) {
-			return buildenv.Infrastructure("%w: reaching %s: %s: %w", buildenv.ErrNeedsAttention, vm, credential.LockedKeychain, err)
+			return buildenv.NeedsAttention("reaching %s: %s: %w", vm, credential.LockedKeychain, err)
 		}
 		return p.trouble(ctx, "reaching "+vm, err)
 	}
@@ -735,7 +738,7 @@ func (p *Provider) trouble(ctx context.Context, doing string, err error) error {
 	if errors.Is(err, guestssh.ErrRefused) {
 		// A guest that refuses dockhand refuses it again: the image's keys
 		// or password are another's, which another attempt won't change.
-		return buildenv.Infrastructure("%w: %s: %w", buildenv.ErrNeedsAttention, doing, err)
+		return buildenv.NeedsAttention("%s: %w", doing, err)
 	}
 	return buildenv.Infrastructure("%s: %w", doing, err)
 }

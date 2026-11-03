@@ -32,6 +32,9 @@ type Spec struct {
 	// Combined, standard error too. Where Stdout is a file, the program
 	// writes it itself, and goes on writing if this process ends.
 	StdoutOnly bool
+	// Stderr receives standard error in addition to the captured copy,
+	// as Stdout does standard output; Combined sends it to Stdout instead.
+	Stderr io.Writer
 	// Combined captures standard error into the same buffer as standard output.
 	Combined   bool
 	ExtraFiles []*os.File
@@ -123,6 +126,8 @@ func Run(ctx context.Context, spec Spec) (Result, error) {
 	switch {
 	case spec.Combined:
 		command.Stderr = command.Stdout
+	case spec.Stderr != nil:
+		command.Stderr = io.MultiWriter(spec.Stderr, stderr)
 	default:
 		command.Stderr = stderr
 	}

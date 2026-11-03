@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/stretchr/testify/require"
@@ -51,6 +53,10 @@ func TestBaselineComparesWithTheBase(t *testing.T) {
 	// --of names the check it compares with (Codex's additions).
 	_, _, err = cmdtest.Dockhand(t, "check", "--baseline", "--on", "command")
 	require.EqualError(t, err, "--baseline builds at master as the check it compares with built, in its environments, with its variants and tests, so it takes no --on")
+	// --variants is refused naming the check, and its variants where it
+	// had them (field testing's curl +sectrust notes, note 2).
+	_, _, err = cmdtest.Dockhand(t, "check", "--baseline", "--variants", "+tests")
+	require.EqualError(t, err, "--baseline builds at master as check-2 built, in its environments, with its variants and tests, so it takes no --variants")
 	_, _, err = cmdtest.Dockhand(t, "check", "--baseline", "--tests", "required", "--fresh")
 	require.ErrorContains(t, err, "so it takes no --tests and --fresh")
 	_, _, err = cmdtest.Dockhand(t, "check", "--of", "check-2")
@@ -145,4 +151,15 @@ func TestABackgroundCheckRunsItsBaseline(t *testing.T) {
 	out, _, err = cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "--accept", "the verdict offers --accept, and accepts nothing itself")
+}
+
+// The refusal of --variants with --baseline names the check's variants
+// (field testing's curl +sectrust notes, note 2).
+func TestABaselineRefusesVariantsNamingTheChecks(t *testing.T) {
+	t.Parallel()
+	cmd := &cobra.Command{}
+	cmd.Flags().String("variants", "", "")
+	require.NoError(t, cmd.Flags().Set("variants", "+sectrust"))
+	err := baselineFlags(cmd, true, "", func() (string, string) { return "check-770", "+gnutls +sectrust" })
+	require.EqualError(t, err, "--baseline builds at master as check-770 built, in its environments, with its variants (+gnutls +sectrust) and tests, so it takes no --variants")
 }

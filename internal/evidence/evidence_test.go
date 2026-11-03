@@ -1,6 +1,7 @@
 package evidence
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -430,4 +431,67 @@ func TestOutsideTheNewestAskOnlyWhatACheckFoundCounts(t *testing.T) {
 	gthumbs := judged.Targets[slices.IndexFunc(judged.Targets, func(te TargetEvidence) bool { return te.Target.ID == "gthumb" })]
 	require.True(t, gthumbs.Missing())
 	require.Equal(t, "check-1", gthumbs.Outcomes[1].PlannedIn)
+}
+
+// A tree's evidence is every build its checks made: a defaults check
+// after two variant checks keeps their builds, a port's rows together,
+// its default build first and each cell naming the check behind it, the
+// variant builds extras beside it. The newest result of a build stands,
+// so a later check failing one an earlier passed makes it a failed extra,
+// accepted by its build's name alone; a tree whose only check chose
+// variants keeps its build as the port's coverage (field testing's note
+// 10 from the curl fix).
+func TestATreesEvidenceIsEveryBuildItsChecksMade(t *testing.T) {
+	curl := model.PlanTarget{ID: "curl", Target: model.Target{Name: "curl"}, Kind: model.Substantive, Role: model.Changed}
+	variant := func(names ...string) model.PlanTarget {
+		variants := map[string]bool{}
+		for _, name := range names {
+			variants[name] = true
+		}
+		target := model.Target{Name: "curl", Variants: variants}
+		return model.PlanTarget{ID: target.ID(), Target: target, Kind: model.Substantive, Role: model.Changed}
+	}
+	gnutls, ssl := variant("gnutls", "sectrust"), variant("ssl", "sectrust")
+	checkOf := func(number int, target model.PlanTarget, outcome model.Outcome) Check {
+		run := model.Run{ID: model.RunID(fmt.Sprint("run_", number)), Number: number}
+		execution := model.ExecutionID(fmt.Sprint("x", number))
+		return Check{Run: run, Plan: model.Plan{Targets: []model.PlanTarget{target}, Environments: []model.Environment{tahoeArm},
+			Builds: []model.EnvironmentPlan{{Environment: tahoeArm, Order: []model.TargetID{target.ID}}}},
+			Executions: []model.GuestExecution{{ID: execution, Run: run.ID, Environment: tahoeArm}},
+			Results:    map[model.ExecutionID][]model.TargetResult{execution: {{Execution: execution, Target: target.ID, Outcome: outcome}}}}
+	}
+	required := []model.Environment{tahoeArm}
+	judge := func(primary Check, earlier ...Check) Evidence {
+		var plans []model.Plan
+		for _, check := range earlier {
+			plans = append(plans, check.Plan)
+		}
+		return Judge(primary, Plan(primary.Plan, plans, required), earlier, Identities{}, required)
+	}
+	rows := func(e Evidence) []string {
+		var found []string
+		for _, te := range e.Targets {
+			found = append(found, fmt.Sprintf("%s %s %s", te.Target.ID, te.Target.Role, e.Executions[te.Outcomes[0].Execution].Run))
+		}
+		return found
+	}
+	defaults := checkOf(774, curl, model.OutcomePassed)
+	judged := judge(defaults, checkOf(773, ssl, model.OutcomePassed), checkOf(772, gnutls, model.OutcomePassed))
+	require.Equal(t, []string{"curl changed run_774", "curl +sectrust +ssl also run_773", "curl +gnutls +sectrust also run_772"}, rows(judged))
+	require.Empty(t, judged.Failed())
+
+	// A later check failing a build an earlier one passed: the newest
+	// stands, a failed extra, accepted by its build's name.
+	judged = judge(defaults, checkOf(775, ssl, model.OutcomeFailed), checkOf(773, ssl, model.OutcomePassed), checkOf(772, gnutls, model.OutcomePassed))
+	require.Len(t, judged.Failed(), 1)
+	failed := judged.Failed()[0]
+	require.Equal(t, model.TargetID("curl +sectrust +ssl"), failed.Target.ID)
+	require.True(t, failed.Extra())
+	require.Equal(t, "curl +sectrust +ssl", judged.AcceptName(failed))
+	require.Equal(t, "curl", judged.AcceptName(judged.Targets[0]), "a bare name is the default build")
+
+	// Only variant checks: the build is the port's coverage, by its name.
+	only := judge(checkOf(772, gnutls, model.OutcomePassed))
+	require.Equal(t, []string{"curl +gnutls +sectrust changed run_772"}, rows(only))
+	require.Equal(t, "curl", only.AcceptName(only.Targets[0]))
 }

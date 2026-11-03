@@ -64,13 +64,18 @@ func WriteTidyPlan(out io.Writer, plan engine.TidyPlan, saved bool) {
 			fmt.Fprintln(out, "       new port from dockhand create, including your later edits")
 		}
 		fmt.Fprintf(out, "       files: %s\n", strings.Join(group.Paths, ", "))
+		// Every line of the message's trailer paragraph is said, a
+		// Co-authored-by: among them, and dockhand's own Generated-By as
+		// what it adds: the curl fix's Co-authored-by: went unsaid, the
+		// preview naming Closes: and See: alone (field testing's notes
+		// from the curl fix, note 12).
 		if !saved {
-			if _, rest, ok := strings.Cut(strings.TrimSpace(group.Message), "\n\n"); ok {
-				for _, line := range strings.Split(rest, "\n") {
-					if strings.HasPrefix(line, "Closes:") || strings.HasPrefix(line, "See:") {
-						fmt.Fprintf(out, "       keeps: %s\n", line)
-					}
-				}
+			keeps, adds := group.Trailers()
+			for _, line := range keeps {
+				fmt.Fprintf(out, "       keeps: %s\n", line)
+			}
+			for _, line := range adds {
+				fmt.Fprintf(out, "       adds: %s\n", line)
 			}
 		}
 		if group.Author.Name != "" && (saved || len(group.Combines) > 0) {

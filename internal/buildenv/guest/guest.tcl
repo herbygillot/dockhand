@@ -256,6 +256,27 @@ if {[llength [info procs portgroups]] == 0} {
         return $files
     }
 }
+# path_dependencies are the path: entries of a port's depends_lib, under
+# its variants, as MacPorts opens it here, global variants merged as for
+# portgroups: each the entry as written and its file, under the prefix
+# where the path is relative, as MacPorts reads it.
+if {[llength [info procs path_dependencies]] == 0} {
+    proc path_dependencies {portdir name variants} {
+        global prefix
+        set handle [mportopen "file://$portdir" [list subport $name] [dict merge [array get ::macports::global_variations] $variants]]
+        set info [mportinfo $handle]
+        mportclose $handle
+        set found {}
+        if {[dict exists $info depends_lib]} {
+            foreach entry [dict get $info depends_lib] {
+                if {![regexp {^path:(.+):[^:]+$} $entry -> path]} { continue }
+                if {[file pathtype $path] ne "absolute"} { set path [file join $prefix $path] }
+                lappend found [list $entry $path]
+            }
+        }
+        return $found
+    }
+}
 # test_logs appends to a target's log the last lines of the test logs its
 # build systems left in its work directory, where a failed test phase
 # said why: CTest's Testing/Temporary/LastTest.log, automake's
@@ -598,7 +619,15 @@ proc sourced {portdir name variants} {
 # libraries, its LC_RPATHs resolving an @rpath one, and port provides each
 # library's port, asked once for all of them. A list that can't be read is
 # an error, which leaves the links unknown, never none.
-proc links {contents} {
+#
+# paths are the target's path: dependencies, each its entry and file: the
+# file is followed through its symbolic links, a link at a time, to the
+# real file, and each file on the way asked of port provides in the same
+# call, so a link to a port any of them names is that entry's, declared.
+# openssl's lib/libssl.dylib links to libssl.3.dylib, and that to
+# libexec/openssl3/lib/libssl.3.dylib, openssl3's, which curl links
+# (field testing's curl +sectrust notes, note 4).
+proc links {contents {paths {}}} {
     global port prefix
     set found {}
     foreach file $contents {
@@ -607,19 +636,55 @@ proc links {contents} {
             if {[string first $prefix/ $library] == 0} { lappend found [list $file $library] }
         }
     }
-    set libraries [lsort -unique [lmap entry $found { lindex $entry 1 }]]
+    set chains {}
+    foreach dependency $paths {
+        lassign $dependency entry path
+        set chain {}
+        for {set step 0} {$step < 16 && ![catch {file type $path} type]} {incr step} {
+            lappend chain $path
+            if {$type ne "link"} { break }
+            set next [file readlink $path]
+            if {[file pathtype $next] ne "absolute"} { set next [file join [file dirname $path] $next] }
+            set path [lexical $next]
+        }
+        lappend chains $entry $chain
+    }
+    set asked [lsort -unique [concat [lmap entry $found { lindex $entry 1 }] {*}[dict values $chains]]]
     set owners [dict create]
-    if {[llength $libraries]} {
-        foreach line [split [known $port provides {*}$libraries] \n] {
+    if {[llength $asked]} {
+        foreach line [split [known $port provides {*}$asked] \n] {
             if {[regexp {^(.+) is provided by: (\S+)$} [string trim $line] -> library owner]} { dict set owners $library $owner }
+        }
+    }
+    set declaring [dict create]
+    dict for {entry chain} $chains {
+        foreach file $chain {
+            if {[dict exists $owners $file] && ![dict exists $declaring [dict get $owners $file]]} { dict set declaring [dict get $owners $file] $entry }
         }
     }
     return [lmap entry $found {
         lassign $entry file library
         set owner ""
         if {[dict exists $owners $library]} { set owner [dict get $owners $library] }
-        dict create binary $file library $library port $owner
+        set link [dict create binary $file library $library port $owner]
+        if {$owner ne "" && [dict exists $declaring $owner]} { dict set link declared [dict get $declaring $owner] }
+        set link
     }]
+}
+
+# lexical is a path with its . and .. parts taken out by their names
+# alone, as port provides names files: file normalize would resolve the
+# directories' own links, /var's to /private/var among them.
+proc lexical {path} {
+    set parts {}
+    foreach part [file split $path] {
+        switch -- $part {
+            . {}
+            .. { if {[llength $parts] > 1} { set parts [lrange $parts 0 end-1] } }
+            default { lappend parts $part }
+        }
+    }
+    return [file join {*}$parts]
 }
 
 # summary are the configure phase's summary lines in a build's log, each
@@ -1302,7 +1367,13 @@ foreach target [dict get $input targets] {
             close $log
         } else {
             dict set result installed $installed
-            if {[catch {links $installed} linked]} {
+            if {[catch {path_dependencies $portdir [dict get $target name] $variants} paths]} {
+                set log [open $root/[dict get $result log] a]
+                puts $log "dockhand: this build's path: dependencies weren't read: $paths"
+                close $log
+                set paths {}
+            }
+            if {[catch {links $installed $paths} linked]} {
                 set log [open $root/[dict get $result log] a]
                 puts $log "dockhand: what this build's binaries link wasn't read: $linked"
                 close $log

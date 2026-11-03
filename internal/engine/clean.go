@@ -857,17 +857,7 @@ func (e *Engine) planLeftovers(ctx context.Context, session *coord.Session, spar
 }
 
 func (e *Engine) judgeLeftover(ctx context.Context, session *coord.Session, leftover *Leftover) error {
-	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		executions, err := r.ExecutionsReferred(leftover.Ref)
-		if err != nil || len(executions) == 0 {
-			return err
-		}
-		execution := executions[len(executions)-1]
-		run, err := r.Run(execution.Run)
-		leftover.Run, leftover.Execution = &run, &execution
-		return err
-	})
-	if err != nil {
+	if err := e.leftoverRun(ctx, leftover); err != nil {
 		return err
 	}
 	if leftover.Run == nil {
@@ -879,6 +869,52 @@ func (e *Engine) judgeLeftover(ctx context.Context, session *coord.Session, left
 		leftover.Kept = leftover.Run.Name() + " is running"
 	}
 	return err
+}
+
+// leftoverRun finds the check of this checkout a leftover was made for,
+// and the attempt that made it; neither where none was.
+func (e *Engine) leftoverRun(ctx context.Context, leftover *Leftover) error {
+	return e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		executions, err := r.ExecutionsReferred(leftover.Ref)
+		if err != nil || len(executions) == 0 {
+			return err
+		}
+		execution := executions[len(executions)-1]
+		run, err := r.Run(execution.Run)
+		leftover.Run, leftover.Execution = &run, &execution
+		return err
+	})
+}
+
+// KeptClones are the clones this checkout's checks kept for dockhand
+// shell, each with its check and attempt, the newest check's first.
+func (e *Engine) KeptClones(ctx context.Context) ([]Leftover, error) {
+	var kept []Leftover
+	for _, name := range slices.Sorted(maps.Keys(e.Providers)) {
+		provider, ok := e.Providers[name].(buildenv.LeftoverProvider)
+		if !ok {
+			continue
+		}
+		found, err := provider.Leftovers(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing what %s checks left: %w", name, err)
+		}
+		for _, reported := range found {
+			if reported.KeptAt.IsZero() {
+				continue
+			}
+			reported.Provider = name
+			leftover := Leftover{Leftover: reported}
+			if err := e.leftoverRun(ctx, &leftover); err != nil {
+				return nil, err
+			}
+			if leftover.Run != nil && leftover.Execution != nil {
+				kept = append(kept, leftover)
+			}
+		}
+	}
+	slices.SortStableFunc(kept, func(a, b Leftover) int { return b.Run.Number - a.Run.Number })
+	return kept, nil
 }
 
 // RemoveLeftovers removes what PlanLeftovers found removable. Each goes

@@ -306,6 +306,16 @@ func TestABaselineKeepsTheChecksVariants(t *testing.T) {
 	x86, _ := baseline.Plan.In(tahoeX86)
 	require.Equal(t, []model.TargetID{"libharbor", "libharbor +docs"}, x86.Order)
 	require.Equal(t, []model.TargetID{"libharbor +docs"}, x86.NeedsXcode, "evaluated with +docs, which uses Xcode")
+
+	// --only names a port, and takes every build of it the check made, its
+	// variant builds among them; a build's ID still names the one (field
+	// testing's curl +sectrust notes, note 2).
+	baseline, err = e.PlanBaseline(t.Context(), BaselineRequest{Branch: branch, Ports: []string{"libharbor"}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"libharbor:unchanged:also", "libharbor +tests:unchanged:also", "libharbor +docs:unchanged:also"}, names(baseline.Plan.Targets), "every build of it, passed or failed")
+	baseline, err = e.PlanBaseline(t.Context(), BaselineRequest{Branch: branch, Ports: []string{"libharbor +tests"}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"libharbor +tests:unchanged:also"}, names(baseline.Plan.Targets))
 }
 
 // A port whose only failures are its tests', where its change record says

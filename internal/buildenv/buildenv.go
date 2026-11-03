@@ -74,6 +74,44 @@ func Infrastructure(format string, args ...any) error {
 // it had spent every attempt on it.
 var ErrNeedsAttention = errors.New("another attempt won't fix it")
 
+// NeedsAttention is trouble another attempt won't fix, as a guest that
+// refuses dockhand's login refuses it again: ErrNeedsAttention to the
+// runner, of kind refusal.Infrastructure, in its own words alone, where
+// Infrastructure("%w: …", ErrNeedsAttention) said "provider
+// infrastructure failed: another attempt won't fix it:" before them and
+// the runner said the second half again after (implementation's finding
+// at 1efc5b7f).
+func NeedsAttention(format string, args ...any) error {
+	cause := needsAttention{fmt.Errorf(format, args...)}
+	return refusal.Wrap(refusal.Infrastructure, cause, "%s", cause)
+}
+
+type needsAttention struct{ error }
+
+func (n needsAttention) Unwrap() error      { return n.error }
+func (needsAttention) Is(target error) bool { return target == ErrNeedsAttention }
+
+// NotTriedAgain is trouble no further attempt is made at for a reason
+// its words give, as a guest program someone killed: ErrNeedsAttention to
+// the runner, which says it as it is, without that error's "another
+// attempt won't fix it", since another attempt might (rc7's G9 on the
+// M1, 2026-11-02).
+func NotTriedAgain(format string, args ...any) error {
+	cause := notTriedAgain{fmt.Errorf(format, args...)}
+	return refusal.Wrap(refusal.Infrastructure, cause, "%s", cause)
+}
+
+type notTriedAgain struct{ error }
+
+func (n notTriedAgain) Unwrap() error      { return n.error }
+func (notTriedAgain) Is(target error) bool { return target == ErrNeedsAttention }
+
+// SaysWhyNotTried says whether err is NotTriedAgain's, whose words say
+// why no other attempt was made.
+func SaysWhyNotTried(err error) bool {
+	return errors.As(err, new(notTriedAgain))
+}
+
 // ErrDockhandFault marks a fault in dockhand's own handling, rather than in
 // the environment or what it built: a guest program reporting what this
 // dockhand can't read, or a target its job didn't ask for. Another attempt

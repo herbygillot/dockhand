@@ -233,7 +233,8 @@ settle_stopped() {
 	# M1's run at 11491d4e: B3's check-2).
 	local queued=false
 	[ -s "$ROW_DIR/cut" ] && queued=true
-	runs=$("$DH_BIN" --json queue 2>/dev/null | jq -r --argjson queued "$queued" '.result.runs[]? | select(.stopped or ($queued and .state == "queued")) | .name' 2>/dev/null |
+	# The queue is status's since rc7, which removed dockhand queue.
+	runs=$("$DH_BIN" --json status --all 2>/dev/null | jq -r --argjson queued "$queued" '.result.queue[]? | select(.stopped or ($queued and .state == "queued")) | .name' 2>/dev/null |
 		while IFS= read -r name; do grep -qxF "run $name" "$ROW_DIR/before/running" 2>/dev/null || printf '%s\n' "$name"; done)
 	[ -n "$runs" ] || return 0
 	for name in $runs; do

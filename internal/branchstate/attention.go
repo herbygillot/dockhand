@@ -53,10 +53,15 @@ const (
 	Held            Reason = "held"
 	// Awaiting is a concern the person decided to wait on, which blocks
 	// its submission (the person's voice).
-	Awaiting         Reason = "awaiting"
-	SourceMoved      Reason = "source-moved"
-	NotAssessed      Reason = "not-assessed"
-	WaitingToSubmit  Reason = "waiting-to-submit"
+	Awaiting        Reason = "awaiting"
+	SourceMoved     Reason = "source-moved"
+	NotAssessed     Reason = "not-assessed"
+	WaitingToSubmit Reason = "waiting-to-submit"
+	// Investigated is a branch that changes nothing whose check passed,
+	// an investigation of master's ports, as a variant check of an
+	// unchanged one is, which archive ends: submit would refuse it (field
+	// testing's curl +sectrust notes, note 1).
+	Investigated     Reason = "investigated"
 	CheckWider       Reason = "check-wider"
 	WorkPastMerge    Reason = "work-past-merge"
 	Conflicting      Reason = "conflicting"
@@ -331,7 +336,7 @@ func Attend(facts Facts) []Attention {
 			case target.Missing():
 				unchecked = append(unchecked, target.Target.Target.Name)
 			default:
-				extras = append(extras, target.Target.Target.Name)
+				extras = append(extras, check.Evidence.AcceptName(target))
 			}
 		}
 		// A check that builds them again builds where this one did, which
@@ -360,6 +365,8 @@ func Attend(facts Facts) []Attention {
 		switch {
 		case len(b.Edited) > 0:
 			return row(Ready, CommitForReview, Next{Verb: VerbTidy}, func(a *Attention) { a.Revision = b.Revision })
+		case b.Record.PullRequest == nil && b.Commits == 0:
+			return row(Ready, Investigated, Next{Verb: VerbArchive}, func(a *Attention) { a.Run = run })
 		case b.Record.PullRequest == nil && len(linted) > 0:
 			// A new port's lint warnings count as ✗, which submit asks to
 			// fix or accept, as a failed extra's.
@@ -569,6 +576,11 @@ func (a Attention) Words(v Vocabulary) string {
 		return "awaiting your decision on " + a.Detail
 	case WaitingToSubmit:
 		return "passed; waiting for you to submit"
+	case Investigated:
+		if a.Run == nil {
+			return "passed; the branch changes nothing, so there is nothing to tidy or submit"
+		}
+		return a.Run.Name() + " passed; the branch changes nothing, so there is nothing to tidy or submit"
 	case Conflicting:
 		return fmt.Sprintf("#%d conflicts with master", pr.Number)
 	case WorkPastMerge:

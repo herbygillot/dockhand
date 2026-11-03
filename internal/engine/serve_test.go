@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/progress"
@@ -209,4 +210,37 @@ func TestALeaderThatLostItsLeaseStops(t *testing.T) {
 	case <-time.After(30 * time.Second):
 		t.Fatal("the leader that lost its lease kept serving")
 	}
+}
+
+// serve settles once its queue empties after work: the memory its checks
+// used goes back to macOS, and Settled, which DOCKHAND_HEAPPROFILE's heap
+// profile is taken in, is called (the roadmap's "serve gives back a look's
+// memory once its work ends").
+func TestServeSettlesOnceItsQueueEmptiesAfterWork(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
+	queued := queuedHarborRun(t, e, tahoeArm)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	settled := make(chan struct{}, 4)
+	done := make(chan error, 1)
+	go func() {
+		done <- e.Serve(ctx, session(t, e), ServeOptions{Poll: 10 * time.Millisecond, Settled: func() { settled <- struct{}{} }})
+	}()
+	select {
+	case <-settled:
+	case err := <-done:
+		t.Fatalf("serve ended before it settled: %v", err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("serve never settled")
+	}
+	run, err := e.Run(t.Context(), queued.ID)
+	require.NoError(t, err)
+	require.True(t, run.State.Finished(), "settled once the check ended: %s", run.State)
+	time.Sleep(100 * time.Millisecond)
+	require.Empty(t, settled, "once, not each quiet turn")
+	cancel()
+	<-done
 }

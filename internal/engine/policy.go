@@ -114,7 +114,7 @@ func (e *Engine) tagMovedNotes(ctx context.Context, plan model.Plan) []string {
 					}
 					planned, _ := earlier.In(build.Environment)
 					tag, ok := planned.Tags[id]
-					if !ok || tag.Ref != now.Ref || tag.Commit == "" || then.Commit != "" && tag.Commit != then.Commit {
+					if !ok || tag.Ref != now.Ref || tag.URL != now.URL || tag.Commit == "" || then.Commit != "" && tag.Commit != then.Commit {
 						continue
 					}
 					then, built = tag, run.Name()

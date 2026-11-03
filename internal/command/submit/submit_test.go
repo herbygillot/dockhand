@@ -472,7 +472,15 @@ func TestSubmitNoteIsKeptWithTheBranch(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "  Note     The tests failed on a permission error, …\n")
 	require.Contains(t, out, "    The tests failed on a permission error,\n    before any test ran.\n")
-	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes", "--note", note)
+	// --plan kept nothing; a submit refused at its gate, without a
+	// terminal, keeps the note, and a later --yes gives it (field
+	// testing's notes from the curl fix, note 9).
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
+	require.NoError(t, err)
+	require.NotContains(t, out, "permission error", "--plan kept nothing")
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--note", note)
+	require.ErrorContains(t, err, "nothing was submitted; the note is kept with the branch, and submit --yes includes it")
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, g.PRs[34901].Body, "#### Description\n\nThe tests failed on a permission error,\nbefore any test ran.\n\n###### Type(s)")
 

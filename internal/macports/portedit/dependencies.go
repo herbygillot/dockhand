@@ -527,7 +527,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	}
 	final := prediction.Observe(family, after)
 	if len(final.UnexpectedChanges) > 0 {
-		return Result{}, ErrFidelity.Because("%v", final.UnexpectedChanges)
+		return Result{}, ErrFidelity.Because("%s", strings.Join(final.UnexpectedChanges, "; "))
 	}
 	result.Files = []portfile.Edit{evaluated.edit}
 	result.report(final)

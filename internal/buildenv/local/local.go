@@ -5,6 +5,7 @@
 package local
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -13,6 +14,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
@@ -20,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -81,6 +84,9 @@ type Local struct {
 	// sudo runs the guest program as root where the prefix's registry
 	// isn't the person's to write; /usr/bin/sudo when nil.
 	sudo []string
+	// terminal is where sudo asks the person's password; /dev/tty when
+	// empty.
+	terminal string
 	// stager replaces staging the revision in tests: it writes the guest
 	// program, its input, and a tree into the check's directory.
 	stager func(ctx context.Context, job buildenv.Job, input guest.Input, dir string) error
@@ -240,7 +246,7 @@ func (l *Local) Execute(ctx context.Context, job buildenv.Job, build buildenv.Bu
 		return buildenv.Infrastructure("starting the guest program: %w", err)
 	}
 	build.Progress(fmt.Sprintf("building in %s (%s)", prefix, map[bool]string{true: "as root", false: "as you"}[len(sudo) > 0]))
-	follower := &guest.Follower{Prefix: prefix, Root: dir, Poll: l.Poll}
+	follower := &guest.Follower{Prefix: prefix, Root: dir, Poll: l.Poll, Ended: func() error { return started.killed(prefix) }}
 	release, _ := hostRelease(job.Environment.Platform)
 	err = follower.Follow(ctx, hostGuest{}, started, job, build, release)
 	select {
@@ -412,23 +418,48 @@ func (l *Local) asRoot(ctx context.Context, prefix string, build buildenv.Build)
 	if _, err := subprocess.Run(ctx, subprocess.Spec{Tool: "sudo", Path: sudo[0], Args: append(slices.Clone(sudo[1:]), "-n", tclsh, os.DevNull), Env: l.Env}); err == nil {
 		return append(slices.Clone(sudo), "-n"), nil
 	}
-	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	tty, err := os.OpenFile(cmp.Or(l.terminal, "/dev/tty"), os.O_RDWR, 0)
 	if err != nil {
-		return nil, buildenv.Infrastructure("%w: %s's registry is root's, and sudo asks for a password, which this process has no terminal to ask on. This sudoers line, added with visudo, lets it: %s. It's root for anything a Portfile does, as a rule for port is, and no narrower: port-tclsh runs whatever script it's given, from a directory you can write. A prefix MacPorts installed without root needs no sudo, at the cost of MacPorts' binary archives", buildenv.ErrNeedsAttention, prefix, l.sudoersLine(tclsh))
+		return nil, buildenv.NeedsAttention("%s's registry is root's, and sudo asks for a password, which this process has no terminal to ask on. This sudoers line, added with visudo, lets it: %s. It's root for anything a Portfile does, as a rule for port is, and no narrower: port-tclsh runs whatever script it's given, from a directory you can write. A prefix MacPorts installed without root needs no sudo, at the cost of MacPorts' binary archives", prefix, l.sudoersRule(tclsh, false))
 	}
 	defer tty.Close()
 	build.Progress(fmt.Sprintf("%s's registry is root's: MacPorts builds there as root, so sudo asks for your password", prefix))
-	if _, err := subprocess.Run(ctx, subprocess.Spec{Tool: "sudo", Path: sudo[0], Args: append(slices.Clone(sudo[1:]), "-v"), Env: l.Env,
-		Stdin: tty, Stdout: tty, StdoutOnly: true, Combined: true}); err != nil {
-		return nil, buildenv.Infrastructure("%w: sudo didn't let the build run as root in %s: %v", buildenv.ErrNeedsAttention, prefix, err)
+	// sudo asks on the terminal itself; what it says of a refusal goes to
+	// standard error, which the person sees and the refusal reads.
+	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "sudo", Path: sudo[0], Args: append(slices.Clone(sudo[1:]), "-v"), Env: l.Env,
+		Stdin: tty, Stdout: tty, StdoutOnly: true, Stderr: tty})
+	if err != nil && sudoRefused(result.Stderr) {
+		return nil, buildenv.NeedsAttention("%s may not use sudo on this Mac, and %s's registry is root's, so MacPorts builds there as root. A sudoers rule for the prefix's port-tclsh is enough, added with visudo, one asking a password included, since a check run here has a terminal to ask on: %s. serve, which has none, needs the rule to ask no password: %s", l.username(), prefix, l.sudoersRule(tclsh, true), l.sudoersRule(tclsh, false))
+	}
+	if err != nil {
+		return nil, buildenv.NeedsAttention("sudo didn't let the build run as root in %s: %v", prefix, err)
 	}
 	return append(slices.Clone(sudo), "-n"), nil
 }
 
-// sudoersLine is the one sudoers line that lets serve check in a prefix
-// whose registry is root's: the person's, asking no password for the
-// prefix's port-tclsh. dockhand never writes sudoers itself.
-func (l *Local) sudoersLine(tclsh string) string {
+// sudoRefused says whether sudo refused the person outright, whatever
+// their password, rather than the password being wrong: sudo's "Sorry,
+// user <name> may not run sudo on <host>.", its words for a user no
+// sudoers rule names. Where sudo says it otherwise, as in another
+// language, the refusal is the plain one.
+func sudoRefused(stderr []byte) bool {
+	return bytes.Contains(stderr, []byte(" may not run sudo on "))
+}
+
+// sudoersRule is the sudoers rule that lets the person run the prefix's
+// port-tclsh as root, asking their password where password is true; the
+// one asking none lets serve, with no terminal, check in a prefix whose
+// registry is root's. dockhand never writes sudoers itself.
+func (l *Local) sudoersRule(tclsh string, password bool) string {
+	if password {
+		return fmt.Sprintf("%s ALL=(root) %s", l.username(), tclsh)
+	}
+	return fmt.Sprintf("%s ALL=(root) NOPASSWD: %s", l.username(), tclsh)
+}
+
+// username is the person a sudoers rule names: USER in the command
+// line's environment, or the process's user.
+func (l *Local) username() string {
 	name := ""
 	for _, variable := range l.Env {
 		if value, ok := strings.CutPrefix(variable, "USER="); ok {
@@ -440,7 +471,7 @@ func (l *Local) sudoersLine(tclsh string) string {
 			name = current.Username
 		}
 	}
-	return fmt.Sprintf("%s ALL=(root) NOPASSWD: %s", cmp.Or(name, "<you>"), tclsh)
+	return cmp.Or(name, "<you>")
 }
 
 // start runs the guest program in the check's directory under the
@@ -683,7 +714,7 @@ func (l *Local) restoreLeft(ctx context.Context, prefix string, build buildenv.B
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			return buildenv.Infrastructure("%w: %s couldn't be put back as it was before %s: %v; dockhand undo %s tries again. %s", buildenv.ErrNeedsAttention, prefix, left.owner.Check, err, left.owner.Check, l.byHand(left.dir, left.owner.Check, left.snapshot))
+			return buildenv.NeedsAttention("%s couldn't be put back as it was before %s: %v; dockhand undo %s tries again. %s", prefix, left.owner.Check, err, left.owner.Check, l.byHand(left.dir, left.owner.Check, left.snapshot))
 		}
 		remove(left.dir, build)
 	}
@@ -772,7 +803,7 @@ func (l *Local) PutBack(ctx context.Context, check string, progress func(string)
 			if ctx.Err() != nil {
 				return prefix, true, ctx.Err()
 			}
-			return prefix, true, buildenv.Infrastructure("%w: %s couldn't be put back as it was before %s: %v. %s", buildenv.ErrNeedsAttention, prefix, check, err, l.byHand(left.dir, check, left.snapshot))
+			return prefix, true, buildenv.NeedsAttention("%s couldn't be put back as it was before %s: %v. %s", prefix, check, err, l.byHand(left.dir, check, left.snapshot))
 		}
 		remove(left.dir, build)
 		return prefix, true, nil
@@ -847,6 +878,24 @@ type localRun struct {
 	done chan struct{}
 	err  error
 	stop context.CancelFunc
+	// stopped is dockhand's own Stop, whose signal is its own.
+	stopped atomic.Bool
+}
+
+// killed is why the program ended where a signal dockhand didn't send
+// ended it, as kill -9 of its group, sudo dying of it too: someone's
+// choice, which another attempt would only meet again, so none is made
+// (rc7's G9 on the M1, 2026-11-02); nil for one that exited with a
+// status, as a crash, which is tried again, or that dockhand stopped.
+func (r *localRun) killed(prefix string) error {
+	var exit *exec.ExitError
+	if r.stopped.Load() || !errors.As(r.err, &exit) {
+		return nil
+	}
+	if status, ok := exit.Sys().(syscall.WaitStatus); !ok || !status.Signaled() {
+		return nil
+	}
+	return buildenv.NotTriedAgain("the guest program in %s was killed by a signal dockhand didn't send (%v); a kill is someone's choice, so no other attempt was made, and dockhand check runs it again", prefix, exit)
 }
 
 func (r *localRun) Done() <-chan struct{} { return r.done }
@@ -857,6 +906,7 @@ func (r *localRun) Err() error            { return r.err }
 // passes the signal to the program. It's killed once subprocess's wait is
 // up, and Stop waits for that, or for ctx.
 func (r *localRun) Stop(ctx context.Context, _ time.Duration) error {
+	r.stopped.Store(true)
 	r.stop()
 	select {
 	case <-r.done:

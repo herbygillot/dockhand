@@ -25,7 +25,16 @@ func RenderNext(next branchstate.Next, reason branchstate.Reason) string {
 	branch := " --branch " + next.Branch
 	args := ""
 	if len(next.Args) > 0 {
-		args = " " + strings.Join(next.Args, " ")
+		// An argument with a space, a variant build's name as
+		// "curl +ssl +sectrust", is quoted for the shell.
+		quoted := make([]string, len(next.Args))
+		for i, arg := range next.Args {
+			quoted[i] = arg
+			if strings.Contains(arg, " ") && !strings.ContainsAny(arg, `'"`) {
+				quoted[i] = "'" + arg + "'"
+			}
+		}
+		args = " " + strings.Join(quoted, " ")
 	}
 	if next.Verb == "" {
 		return next.External
@@ -38,7 +47,7 @@ func RenderNext(next branchstate.Next, reason branchstate.Reason) string {
 		return "dockhand adopt <new name> (if you renamed the branch)"
 	case branchstate.VerbStatus, branchstate.VerbArchive:
 		line = "dockhand " + string(next.Verb) + " " + next.Branch
-	case branchstate.VerbWait, branchstate.VerbLogs, branchstate.VerbEdit, refusal.VerbExplain, refusal.VerbStart:
+	case branchstate.VerbWait, branchstate.VerbLogs, branchstate.VerbEdit, refusal.VerbExplain, refusal.VerbStart, refusal.VerbShell:
 		line = "dockhand " + string(next.Verb) + args
 	case refusal.VerbSetup:
 		return "dockhand setup" + args

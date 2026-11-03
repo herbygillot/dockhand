@@ -8,6 +8,7 @@
 package guest
 
 import (
+	"cmp"
 	"context"
 	_ "embed"
 	"encoding/json"
@@ -71,6 +72,10 @@ type Follower struct {
 	// end is its Run's, as a process's is, and what it wrote last is read
 	// once that ends.
 	Stopped func(ctx context.Context, g Guest) (bool, error)
+	// Ended, where Stopped is nil, says why the program's process ended
+	// short of its finish, where that's a cause of its own, as a signal
+	// dockhand didn't send is; nil where it isn't.
+	Ended func() error
 	// Drift reports where the guest's tools differ from the facts table's
 	// row for its release, as a clone of dockhand's image should match.
 	Drift bool
@@ -253,11 +258,14 @@ type Library struct {
 }
 
 // Link is a library a target's binary links, as the guest saw it,
-// with the port that provides it.
+// with the port that provides it, and the path: dependency of the
+// target's that reaches that port through its symbolic links, where one
+// does.
 type Link struct {
-	Binary  string `json:"binary"`
-	Library string `json:"library"`
-	Port    string `json:"port"`
+	Binary   string `json:"binary"`
+	Library  string `json:"library"`
+	Port     string `json:"port"`
+	Declared string `json:"declared,omitempty"`
 }
 
 // Step is where a step of a target's build began in its log: the
@@ -444,7 +452,7 @@ func (f *Follower) Follow(ctx context.Context, g Guest, started Run, job builden
 		case "refused":
 			// What the prefix holds keeps the build from being the
 			// branch's, which another attempt won't change.
-			return buildenv.Infrastructure("%w: %s", buildenv.ErrNeedsAttention, results.Detail)
+			return buildenv.NeedsAttention("%s", results.Detail)
 		}
 		if f.Stopped == nil {
 			continue
@@ -466,9 +474,13 @@ func (f *Follower) Follow(ctx context.Context, g Guest, started Run, job builden
 // ended reads what a local guest program wrote last, once its process
 // has ended: its finish, or why it stopped short.
 func (f *Follower) ended(ctx context.Context, g Guest, job buildenv.Job, build buildenv.Build, take func(Results) error, building string, lost func(error) error) error {
+	var cause error
+	if f.Ended != nil && ctx.Err() == nil {
+		cause = f.Ended()
+	}
 	last, err := f.Read(ctx, g)
 	if err != nil || last.Protocol != Protocol {
-		return lost(buildenv.Infrastructure("the guest program ended without its results: %v", err))
+		return lost(cmp.Or(cause, buildenv.Infrastructure("the guest program ended without its results: %v", err)))
 	}
 	if err := take(last); err != nil {
 		return err
@@ -482,9 +494,12 @@ func (f *Follower) ended(ctx context.Context, g Guest, job buildenv.Job, build b
 		}
 		return nil
 	case "refused":
-		return buildenv.Infrastructure("%w: %s", buildenv.ErrNeedsAttention, last.Detail)
+		return buildenv.NeedsAttention("%s", last.Detail)
 	case "errored":
 		return interrupted(job, build, last.Building, buildenv.Infrastructure("the guest: %s", last.Detail), func(name string) string { return f.partialLog(ctx, g, job, name) })
+	}
+	if cause != nil {
+		return lost(cause)
 	}
 	log, _ := g.Read(ctx, f.Root+"/runner.log", true)
 	return lost(buildenv.Infrastructure("the guest program stopped before it finished: %s", strings.TrimSpace(tail(string(log), 400))))
@@ -640,7 +655,7 @@ func (f *Follower) record(ctx context.Context, g Guest, job buildenv.Job, build 
 	if got.Links != nil {
 		report.Links = make([]model.Link, len(got.Links))
 		for i, link := range got.Links {
-			report.Links[i] = model.Link{Binary: link.Binary, Library: link.Library, Port: link.Port}
+			report.Links[i] = model.Link{Binary: link.Binary, Library: link.Library, Port: link.Port, Declared: link.Declared}
 		}
 	}
 	if got.Installed != nil {

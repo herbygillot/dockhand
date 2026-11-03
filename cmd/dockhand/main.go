@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/herbygillot/dockhand/internal/command"
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/term"
 )
@@ -19,6 +20,11 @@ func main() {
 	stopProfile := startProfile(os.Getenv("DOCKHAND_CPUPROFILE"))
 	err := command.Run(ctx, os.Args[1:], term.Streams{In: os.Stdin, Out: os.Stdout, Err: os.Stderr})
 	stopProfile()
+	if file := os.Getenv(settings.HeapProfileVariable); file != "" {
+		if heapErr := settings.WriteHeapProfile(file); heapErr != nil {
+			fmt.Fprintf(os.Stderr, "%s: %v; no profile is written\n", settings.HeapProfileVariable, heapErr)
+		}
+	}
 	// The process's transient directories go with it, on an interrupt too:
 	// the cancelled context has unwound every command by now.
 	if closeErr := scratch.Close(); closeErr != nil && err == nil {

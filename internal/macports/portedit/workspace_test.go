@@ -38,4 +38,7 @@ func TestCommitEditRecordsFilesAndFidelityBeforeJudging(t *testing.T) {
 	require.Equal(t, []portfile.Edit{edit}, failed.Files, "the attempted edit is reported")
 	require.Len(t, failed.Fidelity, 1)
 	require.Nil(t, failed.Commits, "no commit is intended")
+
+	err = failed.commitEdit(input, request, edit, Fidelity{UnexpectedChanges: []string{"sibling.revision changed", "sibling.version changed"}}, "revbump")
+	require.EqualError(t, err, ErrFidelity.Because("sibling.revision changed; sibling.version changed").Error(), "the changes joined, not a bracketed list")
 }

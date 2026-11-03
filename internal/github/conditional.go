@@ -24,8 +24,11 @@ import (
 // hasn't moved, which it doesn't count against the hour's allowance, is
 // answered with what was kept (Then's item 5): the M1's run at 1da4fdbf
 // spent 2,166 requests on one outdated --mine of 835 ports, and a second
-// look spent as many. It's kept for the process, and on disk where a
-// directory is given, so the next command's look is nearly free too. Each
+// look spent as many. It's kept on disk where a directory is given, so the
+// next command's look is nearly free too, and in the process only where
+// the disk won't take it: serve kept every look's answers in memory, about
+// 30 MB of a 37 MB heap after a look of 1,116 ports (the roadmap's "serve
+// gives back a look's memory once its work ends"). Each
 // answer is kept by the request's address, what it accepts, and a digest
 // of its credential, so one login's answers are never another's.
 type ConditionalCache struct {
@@ -73,26 +76,24 @@ func (c *ConditionalCache) load(key string) (keptAnswer, bool) {
 	if json.Unmarshal(data, &kept) != nil || kept.ETag == "" {
 		return keptAnswer{}, false
 	}
-	c.kept[key] = kept
 	return kept, true
 }
 
-// store keeps an answer; one the disk won't take is kept for the process.
+// store keeps an answer on disk, or, where there's no directory or the
+// disk won't take it, for the process.
 func (c *ConditionalCache) store(key string, kept keptAnswer) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.directory != "" {
+		if data, err := json.Marshal(kept); err == nil {
+			path := c.path(key)
+			if os.MkdirAll(filepath.Dir(path), 0o700) == nil && atomicfile.Write(path, data, 0o600) == nil {
+				delete(c.kept, key)
+				return
+			}
+		}
+	}
 	c.kept[key] = kept
-	if c.directory == "" {
-		return
-	}
-	data, err := json.Marshal(kept)
-	if err != nil {
-		return
-	}
-	path := c.path(key)
-	if os.MkdirAll(filepath.Dir(path), 0o700) == nil {
-		_ = atomicfile.Write(path, data, 0o600)
-	}
 }
 
 func (c *ConditionalCache) path(key string) string {

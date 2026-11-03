@@ -165,6 +165,22 @@ type planJSON struct {
 	Exclusions []exclusionJSON `json:"exclusions"`
 	Unmet      []unmetJSON     `json:"unmet"`
 	Unresolved []exclusionJSON `json:"unresolved"`
+	// Evaluated are each target's evaluation in each environment that
+	// builds it, as planning read it; a recorded plan's are absent.
+	Evaluated []evaluatedJSON `json:"evaluated,omitempty"`
+}
+
+// evaluatedJSON is a planned target as an environment evaluated it
+// (model.Evaluated).
+type evaluatedJSON struct {
+	Target        string          `json:"target"`
+	Environment   environmentJSON `json:"environment"`
+	Variants      []string        `json:"variants"`
+	DependsBuild  []string        `json:"depends_build"`
+	DependsLib    []string        `json:"depends_lib"`
+	DependsRun    []string        `json:"depends_run"`
+	ConfigureArgs string          `json:"configure_args"`
+	ConfigureEnv  string          `json:"configure_env"`
 }
 
 // buildJSON is what a plan builds in one environment, in its order, and
@@ -233,6 +249,11 @@ func PlanView(plan model.Plan) planJSON {
 	}
 	for _, target := range plan.Omitted {
 		viewed.Omitted = append(viewed.Omitted, targetView(plan, target))
+	}
+	for _, evaluated := range plan.Evaluated {
+		viewed.Evaluated = append(viewed.Evaluated, evaluatedJSON{Target: string(evaluated.Target), Environment: EnvironmentView(evaluated.Environment),
+			Variants: orEmpty(evaluated.Variants), DependsBuild: orEmpty(evaluated.DependsBuild), DependsLib: orEmpty(evaluated.DependsLib), DependsRun: orEmpty(evaluated.DependsRun),
+			ConfigureArgs: evaluated.ConfigureArgs, ConfigureEnv: evaluated.ConfigureEnv})
 	}
 	viewed.Builds = []buildJSON{}
 	for _, planned := range plan.Builds {
@@ -903,4 +924,12 @@ type handEditJSON struct {
 	Directory string `json:"directory"`
 	Refused   string `json:"refused"`
 	Adjusted  bool   `json:"adjusted"`
+}
+
+// orEmpty is a list for JSON: empty, never null, where it has none.
+func orEmpty(list []string) []string {
+	if list == nil {
+		return []string{}
+	}
+	return list
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -713,6 +714,10 @@ func TestTidyKeepsThePersonsMessageForDockhandsEdits(t *testing.T) {
 	_, err = e.ApplyTidy(t.Context(), squashed)
 	require.NoError(t, err)
 	written := testsupport.Git(t, branch.Worktree, "log", "-1", "--format=%B")
+	// A squash of dockhand's edits alone carries its Generated-By, as
+	// their commit would (field testing's notes from the curl fix, note
+	// 11).
+	require.True(t, commitmsg.Attributed(written), "Generated-By kept: %s", written)
 
 	again, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
 	require.NoError(t, err)
@@ -832,4 +837,29 @@ func TestTidyRefusesCommitsThatDontEndAtTheWorkingFiles(t *testing.T) {
 	require.ErrorContains(t, err, "not the working files' "+plan.Final+"; nothing was changed")
 	require.Equal(t, string(branch.Base), testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"), "nothing moved")
 	require.Empty(t, testsupport.Git(t, branch.Worktree, "for-each-ref", "refs/dockhand/checkpoints/"), "no checkpoint was taken")
+}
+
+// A squash with --message of a hand edit carries no Generated-By, nor one
+// of dockhand's update with a hand edit beside it (field testing's notes
+// from the curl fix, note 11).
+func TestASquashOfAHandEditCarriesNoGeneratedBy(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-fix"})
+	require.NoError(t, err)
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.0\nrevision 1\n# a hand fix\n"})
+	squashed, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch, Squash: true, Message: "jq: fix the build by hand"})
+	require.NoError(t, err)
+	require.Len(t, squashed.Groups, 1)
+	require.False(t, commitmsg.Attributed(squashed.Groups[0].Message), "a hand edit: %s", squashed.Groups[0].Message)
+
+	both, err := e.Start(t.Context(), StartRequest{Name: "jq-both"})
+	require.NoError(t, err)
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: both, Action: model.EditUpdate, Port: "jq"})
+	require.NoError(t, err)
+	testsupport.WriteFiles(t, both.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 2\n# a hand fix\n"})
+	squashed, err = e.PlanTidy(t.Context(), TidyRequest{Branch: both, Squash: true, Message: "jq: update to 1.8.1, with libharbor fixed by hand"})
+	require.NoError(t, err)
+	require.False(t, commitmsg.Attributed(squashed.Groups[0].Message), "dockhand's update beside a hand edit: %s", squashed.Groups[0].Message)
 }

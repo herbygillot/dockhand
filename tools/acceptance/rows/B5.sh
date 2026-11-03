@@ -10,7 +10,10 @@ act() {
 	dh check -b "$B5_BRANCH" && dh tidy -b "$B5_BRANCH" -y || return 0
 	submit_pr "$(port)" "$B5_BRANCH" || return 0
 	checkpoint "wait until MacPorts' master has moved past the branch's base" || return 0
+	B5_BEFORE=$(dh_quiet --json status --port "$(port)" | jq -r '.result.branches[0].base')
 	dh_json rebase -b "$B5_BRANCH" || :
+	B5_AFTER=$(dh_quiet --json status --port "$(port)" | jq -r '.result.branches[0].base')
+	B5_TREE=$(dh_quiet --json status --port "$(port)" | jq -r '.result.branches[0].worktree')
 	# A rebase moves the commit, so submit wants a check of the new one,
 	# which reuses the earlier build where the port reads the same files:
 	# without it, submit refused (the rc6 full stage).
@@ -18,10 +21,30 @@ act() {
 	dh_json submit -b "$B5_BRANCH" -y || :
 	close_test_pr "$(port)" "$B5_BRANCH"
 }
+# b5_moved_dependencies are the port's dependencies, as port rdeps lists
+# them, whose directories the rebase's master moved: a rebuild after it is
+# right, as rc7's was when nghttp2 came in under dominant_colours through
+# curl (the M1's rc7 full stage).
+b5_moved_dependencies() {
+	[ -n "${B5_BEFORE:-}" ] && [ -n "${B5_AFTER:-}" ] && [ "$B5_BEFORE" != "$B5_AFTER" ] || return 0
+	local deps moved
+	# _resources, which every port's build loads, counts as one.
+	deps=$( { port -q rdeps "$(port)" 2>/dev/null | tr -d ' '; echo _resources; } | sort -u)
+	moved=$(git -C "${B5_TREE:-$MACPORTS_TREE}" diff --name-only "$B5_BEFORE" "$B5_AFTER" 2>/dev/null | awk -F/ '$1 == "_resources" {print $1; next} NF >= 3 {print $2}' | sort -u)
+	[ -n "$deps" ] && [ -n "$moved" ] && comm -12 <(printf '%s\n' "$deps") <(printf '%s\n' "$moved") | paste -sd ' ' -
+}
+
 assert() {
 	[ "$(cat "$ROW_DIR/json/2.json.exit" 2>/dev/null)" = 0 ] || { row_fail "rebase failed: $(jq -r '.error // empty' "$ROW_DIR/json/2.json")"; return; }
-	jq -e '[.result.targets[]?.results[]?.reused_from // empty] | length > 0' "$ROW_DIR/json/3.json" >/dev/null ||
-		{ row_fail "the check after the rebase reused nothing: $(jq -c '[.result.targets[]?.results[]? | {outcome, reused_from}]' "$ROW_DIR/json/3.json" 2>/dev/null)"; return; }
+	local rebuilt=""
+	if ! jq -e '[.result.targets[]?.results[]?.reused_from // empty] | length > 0' "$ROW_DIR/json/3.json" >/dev/null; then
+		rebuilt=$(b5_moved_dependencies)
+		[ -n "$rebuilt" ] || { row_fail "the check after the rebase reused nothing, and the rebase moved none of $(port)'s dependencies: $(jq -c '[.result.targets[]?.results[]? | {outcome, reused_from}]' "$ROW_DIR/json/3.json" 2>/dev/null)"; return; }
+	fi
 	[ "$(cat "$ROW_DIR/json/4.json.exit" 2>/dev/null)" = 0 ] || { row_fail "the submit after the rebase failed: $(jq -r '.error // empty' "$ROW_DIR/json/4.json")"; return; }
+	if [ -n "$rebuilt" ]; then
+		judged "the rebase kept the checkpoint, the check rebuilt $(port) since the rebase moved its dependencies ($rebuilt), and the PR was updated in place"
+		return
+	fi
 	judged "the rebase kept the checkpoint, the check was reused, and the PR was updated in place"
 }

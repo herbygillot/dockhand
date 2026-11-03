@@ -74,6 +74,13 @@ invalid command name "versio". Fix the Portfile and run the command again`, or
 `security/KeePassXC/Portfile names its port keepasxc now, where master names
 it keepassxc. Restore the name line, or ask for keepasxc; a port renamed on
 purpose goes through dockhand rename keepassxc keepasxc`.
+A subport the edit dropped is said as dropped: `security/KeePassXC/Portfile
+defines keepassxc now and not keepassxc-devel, which master has there too.
+Restore the subport, or ask for keepassxc`. A Portfile the branch doesn't
+change that still doesn't parse is said with where to look: `... doesn't parse
+in keepassxc-2.8.0's index, though the branch doesn't change it: portindex says
+... What the branch changes that the Portfile reads, as a PortGroup, is where to
+look`.
 
 A changed archive under the same name, with the branch's version unchanged, is a
 **stealth update**. A homepage or comment edit does not turn it into a version

@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -121,6 +124,7 @@ proc mportinit {} {}
 proc declares_tests {portdir name variants} { return 0 }
 proc checkout {portdir name variants} { return "" }
 proc work_dir {portdir name variants} { return "" }
+proc path_dependencies {portdir name variants} { return {} }
 set foreignManagers {}
 set argv0 [lindex $argv 0]
 set argv [lrange $argv 1 end]
@@ -237,6 +241,45 @@ func TestALocalCheckLeftUnfinishedIsPutBack(t *testing.T) {
 	require.Contains(t, build.progress, "putting "+prefix+" back as it was before an earlier check, which ended before it could")
 	require.NoDirExists(t, left)
 	require.Equal(t, "  zlib @1.3.2_0 (active)\n", readRegistry(t, path))
+}
+
+// A guest program killed by a signal dockhand didn't send, as kill -9 of
+// its group, isn't tried again: a kill is someone's choice, said once,
+// and the prefix is put back; one that exited with a status unfinished,
+// as a crash, is tried again, and dockhand's own stop is its own (rc7's
+// G9 on the M1, 2026-11-02).
+func TestAGuestKilledFromOutsideIsntTriedAgain(t *testing.T) {
+	t.Parallel()
+	path, active := registry(t, "  zlib @1.3.2_0 (active)\n")
+	prefix, env, _ := fakePrefix(t, active, "HANG=fetch:harbor-cli")
+	l := localProvider(t, env)
+	build := &fakeBuild{}
+	done := make(chan error, 1)
+	go func() { done <- l.Execute(t.Context(), localJob(t, prefix), build) }()
+	require.Eventually(t, func() bool { return strings.Contains(readRegistry(t, path), "libharbor") }, testsupport.Settle, 10*time.Millisecond)
+	build.mu.Lock()
+	dir := build.refs[0]
+	build.mu.Unlock()
+	found, err := exec.Command("pgrep", "-f", filepath.Join(dir, "guest.tcl")).Output()
+	require.NoError(t, err)
+	pid, err := strconv.Atoi(strings.Fields(string(found))[0])
+	require.NoError(t, err)
+	require.NoError(t, syscall.Kill(-pid, syscall.SIGKILL), "the guest's whole group, as G9 killed it")
+	err = <-done
+	require.ErrorIs(t, err, buildenv.ErrNeedsAttention)
+	require.True(t, buildenv.SaysWhyNotTried(err))
+	require.EqualError(t, err, "the guest program in "+prefix+" was killed by a signal dockhand didn't send (signal: killed); a kill is someone's choice, so no other attempt was made, and dockhand check runs it again")
+	require.Equal(t, "  zlib @1.3.2_0 (active)\n", readRegistry(t, path), "the put-back as it is")
+
+	// A crash, an exit with a status, is tried again; dockhand's own stop
+	// is its own.
+	crashed := &localRun{err: exec.Command("/bin/sh", "-c", "exit 1").Run()}
+	require.NoError(t, crashed.killed(prefix))
+	signaled := exec.Command("/bin/sh", "-c", "kill -9 $$").Run()
+	require.Error(t, (&localRun{err: signaled}).killed(prefix))
+	stopped := &localRun{err: signaled}
+	stopped.stopped.Store(true)
+	require.NoError(t, stopped.killed(prefix))
 }
 
 // dockhand undo check-N puts back a prefix a check left changed, or kept
@@ -367,15 +410,52 @@ func TestRootStepsRunThePrefixsPortTclsh(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "-n "+tclsh+" "+filepath.Join(dir, "guest.tcl")+" "+dir, strings.Split(strings.TrimSpace(string(said)), "\n")[1], "one command, no /usr/bin/env")
 
-	if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
-		tty.Close()
-		return // a terminal would be asked on
-	}
+	l.terminal = filepath.Join(t.TempDir(), "no-terminal")
 	require.NoError(t, os.WriteFile(answer, []byte("1"), 0o644))
 	_, err = l.asRoot(t.Context(), prefix, &fakeBuild{})
 	require.ErrorIs(t, err, buildenv.ErrNeedsAttention)
 	require.ErrorContains(t, err, "This sudoers line, added with visudo, lets it: dhtest ALL=(root) NOPASSWD: "+tclsh+".")
 	require.ErrorContains(t, err, "A prefix MacPorts installed without root needs no sudo")
+}
+
+// Where sudo refuses the person outright, whatever their password, the
+// refusal says so, and that a rule for the prefix's port-tclsh is enough,
+// one asking a password included, beside the one serve needs; a wrong
+// password's refusal stays as it was, sudo's words on the terminal and
+// in it (rc7's G9 on the M1, 2026-11-02).
+func TestSudoRefusingThePersonSaysWhatRuleIsEnough(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("root writes a registry whatever its mode, so no step asks sudo")
+	}
+	prefix := t.TempDir()
+	registry := filepath.Join(prefix, "var", "macports", "registry")
+	require.NoError(t, os.MkdirAll(registry, 0o755))
+	require.NoError(t, os.Chmod(registry, 0o555))
+	t.Cleanup(func() { os.Chmod(registry, 0o755) })
+	says := filepath.Join(t.TempDir(), "says")
+	sudo := filepath.Join(t.TempDir(), "sudo")
+	testsupport.WriteExecutable(t, sudo, "#!/bin/sh\n[ \"$1\" = -v ] || exit 1\ncat "+says+" >&2\nexit 1\n")
+	terminal := filepath.Join(t.TempDir(), "tty")
+	require.NoError(t, os.WriteFile(terminal, nil, 0o644))
+	l := &Local{sudo: []string{sudo}, terminal: terminal, Env: []string{"USER=dhtest", "PATH=/usr/bin:/bin"}}
+	tclsh := filepath.Join(prefix, "bin", "port-tclsh")
+
+	require.NoError(t, os.WriteFile(says, []byte("Sorry, user dhtest may not run sudo on m1.\n"), 0o644))
+	_, err := l.asRoot(t.Context(), prefix, &fakeBuild{})
+	require.ErrorIs(t, err, buildenv.ErrNeedsAttention)
+	require.True(t, strings.HasPrefix(err.Error(), "dhtest may not use sudo on this Mac, and "+prefix+"'s registry is root's"), "its own words alone, said once: %v", err)
+	require.ErrorContains(t, err, "one asking a password included, since a check run here has a terminal to ask on: dhtest ALL=(root) "+tclsh+".")
+	require.ErrorContains(t, err, "serve, which has none, needs the rule to ask no password: dhtest ALL=(root) NOPASSWD: "+tclsh)
+	seen, err := os.ReadFile(terminal)
+	require.NoError(t, err)
+	require.Equal(t, "Sorry, user dhtest may not run sudo on m1.\n", string(seen), "sudo's own words reach the terminal")
+
+	require.NoError(t, os.WriteFile(says, []byte("Sorry, try again.\nsudo: 3 incorrect password attempts\n"), 0o644))
+	_, err = l.asRoot(t.Context(), prefix, &fakeBuild{})
+	require.ErrorIs(t, err, buildenv.ErrNeedsAttention)
+	require.True(t, strings.HasPrefix(err.Error(), "sudo didn't let the build run as root in "+prefix+": sudo -v: exit status 1: Sorry, try again."), err.Error())
+	require.NotContains(t, err.Error(), "may not use sudo")
 }
 
 // A check's directory dockhand can't remove, as one its guest program,

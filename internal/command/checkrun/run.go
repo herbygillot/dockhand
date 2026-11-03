@@ -262,6 +262,13 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 	if err != nil {
 		return err
 	}
+	// A check run with --keep names the shell that opens what it kept,
+	// whose name the status line erased on a terminal (field testing's
+	// curl +sectrust notes, note 5).
+	var shells []refusal.Next
+	if evidence.Plan.Keep {
+		shells, _ = e.ShellSteps(ctx, run)
+	}
 	fmt.Fprintln(out)
 	switch run.State {
 	case model.RunPassed:
@@ -283,6 +290,17 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 			return nil
 		}
 		fmt.Fprintf(out, "%s.\n", passed)
+		// A branch that changes nothing is an investigation, said as
+		// status says it, with archive next, where status would have
+		// said submit (field testing's curl +sectrust notes, note 1).
+		if branch, err := e.Branch(ctx, run.Branch); err == nil {
+			if status, err := e.BranchStatus(ctx, branch); err == nil {
+				view.WriteInvestigated(out, status)
+			}
+		}
+		for _, step := range view.RenderSteps(shells) {
+			fmt.Fprintf(out, "Next: %s\n", step)
+		}
 		return nil
 	case model.RunFailed:
 		writeFailureLines(out, evidence)
@@ -305,7 +323,7 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 		return refusal.New(refusal.CheckFailed, "%s failed for %s: %s", run.Name(), checks.Describe(revision), run.Detail).
 			// explain says where, the step's last lines, and whether a
 			// baseline can say more (the command UX review's §7).
-			Then(refusal.Next{Verb: refusal.VerbExplain, Args: []string{run.Name()}})
+			Then(append([]refusal.Next{{Verb: refusal.VerbExplain, Args: []string{run.Name()}}}, shells...)...)
 	case model.RunCanceled:
 		return StoppedExit(run, evidence)
 	}
