@@ -390,7 +390,9 @@ func (e *Engine) planTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 		// kubectl's four subports' "kubectl-1.34, kubectl-1.35, …" commit
 		// as "kubectl-1.34: update to 1.34.13", the last update's subject
 		// (field testing on v0.5.0).
-		own := chained && len(group.Combines) == 1 && !commitmsg.Attributed(group.Combines[0].Message)
+		// A squash's commit carries Generated-By too, so one whose subject
+		// isn't dockhand's for the edits is the person's as well.
+		own := chained && len(group.Combines) == 1 && (!commitmsg.Attributed(group.Combines[0].Message) || group.Combines[0].Subject() != subject)
 		// Several of the directory's ports' updates, dockhand's alone, are
 		// a commit each.
 		if chained && !own && !request.Squash {
@@ -537,7 +539,31 @@ func closesFor(branch model.Branch, edits []model.Edit, directory string) []stri
 	return branch.Closes
 }
 
-// squash makes one commit of the whole branch.
+// Trailers are the lines of a group's message's trailer paragraph
+// (commitmsg.SplitTrailers): those it keeps, Closes:, See:, and the
+// attribution trailers a person wrote, and dockhand's own Generated-By,
+// which it adds.
+func (g TidyGroup) Trailers() (keeps, adds []string) {
+	_, rest, ok := strings.Cut(strings.TrimSpace(g.Message), "\n")
+	if !ok {
+		return nil, nil
+	}
+	_, trailers := commitmsg.SplitTrailers(strings.TrimSpace(rest))
+	for _, line := range trailers {
+		if commitmsg.IsAttribution(line) {
+			adds = append(adds, line)
+			continue
+		}
+		keeps = append(keeps, line)
+	}
+	return keeps, adds
+}
+
+// squash makes one commit of the whole branch. With a message, it carries
+// Generated-By where every group it combines is dockhand's edits alone,
+// as a chained group's commit does, and none where any is a hand edit:
+// tidy --squash --message over dockhand's update dropped the trailer its
+// commits had (field testing's notes from the curl fix, note 11).
 func squash(groups []TidyGroup, changed []string, history []git.HistoryCommit, message string, tickets []string, person, author git.Signature) TidyGroup {
 	group := TidyGroup{Paths: changed, Combines: history}
 	for _, g := range groups {
@@ -547,7 +573,8 @@ func squash(groups []TidyGroup, changed []string, history []git.HistoryCommit, m
 	switch {
 	case strings.TrimSpace(message) != "":
 		subject, rest, _ := strings.Cut(strings.TrimSpace(message), "\n")
-		group.Message = commitmsg.Compose(subject, strings.TrimSpace(rest), commitMessages(history), tickets, false)
+		generated := len(groups) > 0 && !slices.ContainsFunc(groups, func(g TidyGroup) bool { return !g.FromEdits })
+		group.Message = commitmsg.Compose(subject, strings.TrimSpace(rest), commitMessages(history), tickets, generated)
 	case len(groups) == 1 && len(groups[0].Blocking) == 0:
 		group.Message = groups[0].Message
 		group.Notes = append(group.Notes, "subject from the only commit it proposes")

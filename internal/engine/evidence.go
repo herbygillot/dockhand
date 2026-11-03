@@ -23,6 +23,7 @@ type (
 	TargetEvidence = evidence.TargetEvidence
 	Cell           = evidence.Cell
 	CellKind       = evidence.CellKind
+	VariantBuild   = evidence.VariantBuild
 )
 
 const (

@@ -256,7 +256,7 @@ Dockhand is built for routine port maintenance, and is used for it every day:
 
 Some ports get a correct plan or a clear refusal rather than an update: subports sharing one Portfile (py-lmdb, terraform-1.16), Python ports, upstreams hosted outside GitHub and GitLab, Git-fetched ports, and Portfiles that compute their version in ways the evaluation can't follow. A refusal says what Dockhand couldn't do and the manual steps available. Read the plan and diff of anything outside the list above more closely.
 
-A pull request someone else wrote, which `review` reads and `adopt --pr` brings into a branch, holds their Portfiles. When a command you run evaluates them on your Mac, it says so once, naming whose they are: "Evaluating @alice's Portfiles on this Mac, for #35174". A local check of an adopted branch, which would run their Portfiles as root, is refused, naming `--on tart` and `--on github` instead; `review <pr> --check` builds it in Tart.
+A pull request someone else wrote, which `review` reads and `adopt --pr` brings into a branch, holds their Portfiles. When a command you run evaluates them on your Mac, it says so once, naming whose they are: "Evaluating `@example-user`'s Portfiles on this Mac, for #35174". A local check of an adopted branch, which would run their Portfiles as root, is refused, naming `--on tart` and `--on github` instead; `review <pr> --check` builds it in Tart.
 
 ## Help and contributing
 

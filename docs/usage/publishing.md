@@ -108,7 +108,12 @@ of working files, the index, and untracked files have different uses.
 
 A narrowed check adds evidence for the targets and environments it actually
 built. It does not erase the need to check the other changed targets. Submission
-combines applicable results for the same files and evaluates the required
+combines applicable results for the same files: every build those checks made,
+a port's variant builds beside its default build, each a row of Tested on
+naming the check behind each cell; a variant build beside the default build is
+required nowhere and shows where it ran. The newest result of a build in an
+environment stands, so a check that fails a build an earlier check passed
+replaces the pass. Submission evaluates the required
 environments: those the newest check covering every changed port was asked to
 build on with `--on` or `--build`, or, where it named none, its own and
 `build.default`'s. The preview names missing, outdated, or failed results instead of
@@ -203,8 +208,12 @@ keeps its name.
 
 `--tested-binaries` and `--tested-variants` state that you made the
 corresponding manual checks; do not infer them from an install alone. A passing
-`check --variants each` can answer the variants item from what it actually
-built. The generated Tested on section describes recorded environments and
+variant build of a changed port answers the variants item from what was built:
+`check --variants each`, or chosen variants, in any finished check of the same
+files; the item's note names each build and its check, `(Dockhand built curl
+with +gnutls +sectrust and with +ssl +sectrust added to the default variants, in
+check-772 and check-773)`. A variant build that failed and stands leaves the
+item unticked and the note says which failed. The generated Tested on section describes recorded environments and
 outcomes and gives the check/provider references a reviewer can follow. Where
 a check reused an earlier check's builds over a change that builds nothing
 differently, a sentence under the table says what changed since: `check-767
@@ -239,6 +248,8 @@ These choices answer different questions:
   `--accept`, or `--standing`.
 - `submit --accept <port>`: Accept an eligible recorded failure, or a new port's
   lint warnings, for this commit.
+- `submit --accept '<port> +variant'`: Accept a variant build's failure by the
+  name the table gives it; `--accept <port>` is the port's default build.
 - `submit --accept <port> --standing`: Accept a specifically identified
   dependency-install failure across branches until its dependency version or
   image changes.
@@ -248,7 +259,8 @@ These choices answer different questions:
 For a failing changed port, an ordinary `--accept` needs a baseline reproducing
 the same failure at the same phase in the relevant environments. A failed extra
 from `--also` or a revision-only target can be accepted without establishing
-that baseline; the pull request says the cause was not established. A port that
+that baseline, and a variant build beside the port's default build is an extra
+too; the pull request says the cause was not established. A port that
 was never built has no build failure to accept. Read the exact refusal rather
 than using acceptance to stand in for missing required coverage.
 

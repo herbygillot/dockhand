@@ -19,9 +19,9 @@ import (
 // one to accept is one that failed.
 func AcceptanceProblem(ev evidence.Evidence, accept []string, atBase map[string][]string, standing bool) error {
 	for _, port := range accept {
-		i := slices.IndexFunc(ev.Targets, func(t evidence.TargetEvidence) bool { return t.Target.Target.Name == port && t.Failing() })
+		i := slices.IndexFunc(ev.Targets, func(t evidence.TargetEvidence) bool { return ev.AcceptName(t) == port && t.Failing() })
 		if i < 0 {
-			i = slices.IndexFunc(ev.Targets, func(t evidence.TargetEvidence) bool { return t.Target.Target.Name == port })
+			i = slices.IndexFunc(ev.Targets, func(t evidence.TargetEvidence) bool { return ev.AcceptName(t) == port })
 		}
 		switch {
 		case i < 0:
@@ -54,7 +54,7 @@ func PublicationBlocks(ev evidence.Evidence, accepted []string, atBase map[strin
 	var blocks []Block
 	run := ev.Run.Name()
 	for _, target := range ev.Failed() {
-		name := target.Target.Target.Name
+		name, port := ev.AcceptName(target), target.Target.Target.Name
 		if slices.Contains(blocked, name) {
 			continue
 		}
@@ -70,13 +70,13 @@ func PublicationBlocks(ev evidence.Evidence, accepted []string, atBase map[strin
 			blocks = append(blocks, Block{Kind: BlockUnchecked, Port: name, Unbuilt: unbuilt(target)})
 		case standing[name].Kind != "":
 			// Its every failure is a dependency's accepted standing.
-		case !target.Acceptable() && len(atBase[name]) > 0 && !slices.Contains(accepted, name):
+		case !target.Acceptable() && len(atBase[port]) > 0 && !slices.Contains(accepted, name):
 			// A failure master has too is no regression, the usual case for
 			// a MacPorts pull request: a person accepts it, never bump or
 			// serve, and the pull request says so (pgdog 0.1.62 on macOS 12,
 			// field testing; the person's word, 2026-10-17).
-			blocks = append(blocks, Block{Kind: BlockFailsAtBase, Port: name, Run: run, Baselines: atBase[name]})
-		case !target.Acceptable() && len(atBase[name]) == 0:
+			blocks = append(blocks, Block{Kind: BlockFailsAtBase, Port: name, Run: run, Baselines: atBase[port]})
+		case !target.Acceptable() && len(atBase[port]) == 0:
 			blocks = append(blocks, Block{Kind: BlockFailed, Port: name, Run: run})
 		case !slices.Contains(accepted, name):
 			blocks = append(blocks, Block{Kind: BlockNotAccepted, Port: name, Run: run, Planned: target.Target})
@@ -203,7 +203,7 @@ func StandingAccepted(ev evidence.Evidence, standing []model.Decision) map[strin
 			}
 		}
 		if ok {
-			accepted[target.Target.Target.Name] = why
+			accepted[ev.AcceptName(target)] = why
 		}
 	}
 	return accepted
@@ -213,11 +213,11 @@ func StandingAccepted(ev evidence.Evidence, standing []model.Decision) map[strin
 func AcceptedReasons(ev evidence.Evidence, accepted []string, atBase map[string][]string, standing map[string]AcceptedFailure) map[string]AcceptedFailure {
 	reasons := map[string]AcceptedFailure{}
 	for _, target := range ev.Failed() {
-		name := target.Target.Target.Name
+		name, port := ev.AcceptName(target), target.Target.Target.Name
 		switch {
 		case !slices.Contains(accepted, name):
-		case len(atBase[name]) > 0:
-			reasons[name] = AcceptedFailure{Kind: AcceptedAtBase, Baselines: atBase[name]}
+		case len(atBase[port]) > 0:
+			reasons[name] = AcceptedFailure{Kind: AcceptedAtBase, Baselines: atBase[port]}
 		default:
 			reasons[name] = AcceptedFailure{Kind: AcceptedUnestablished}
 		}
@@ -238,7 +238,7 @@ func AcceptedReasons(ev evidence.Evidence, accepted []string, atBase map[string]
 func BlockedByAccepted(ev evidence.Evidence, accepted []string) []string {
 	ok := map[model.TargetID]bool{}
 	for _, target := range ev.Targets {
-		if slices.Contains(accepted, target.Target.Target.Name) {
+		if slices.Contains(accepted, ev.AcceptName(target)) {
 			ok[target.Target.ID] = true
 		}
 	}
@@ -274,7 +274,7 @@ func BlockedByAccepted(ev evidence.Evidence, accepted []string) []string {
 			}
 			if blocked && clear {
 				ok[target.Target.ID] = true
-				found = append(found, target.Target.Target.Name)
+				found = append(found, ev.AcceptName(target))
 				changed = true
 			}
 		}

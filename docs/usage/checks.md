@@ -122,7 +122,10 @@ it; a `-variant` leaves a default out.
 with defaults, then each eligible non-default variant separately; `universal` is
 excluded. It multiplies work across environments. More than 12 builds requires
 confirmation, or `--yes` without a terminal. GitHub checks do not accept variant
-selection because its workflow controls variants.
+selection because its workflow controls variants. A variant build is evidence
+for its files: a later check of the same files with other variants, or none,
+adds its builds beside it rather than replacing it, and the pull request's table
+shows each (`dockhand usage publishing`).
 
 ## Choose build environments explicitly
 

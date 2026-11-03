@@ -25,7 +25,16 @@ func RenderNext(next branchstate.Next, reason branchstate.Reason) string {
 	branch := " --branch " + next.Branch
 	args := ""
 	if len(next.Args) > 0 {
-		args = " " + strings.Join(next.Args, " ")
+		// An argument with a space, a variant build's name as
+		// "curl +ssl +sectrust", is quoted for the shell.
+		quoted := make([]string, len(next.Args))
+		for i, arg := range next.Args {
+			quoted[i] = arg
+			if strings.Contains(arg, " ") && !strings.ContainsAny(arg, `'"`) {
+				quoted[i] = "'" + arg + "'"
+			}
+		}
+		args = " " + strings.Join(quoted, " ")
 	}
 	if next.Verb == "" {
 		return next.External

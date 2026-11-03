@@ -185,7 +185,7 @@ func (facts bodyFacts) description() prdescription.Facts {
 			row := prdescription.Row{Port: string(target.Target.ID)}
 			for _, i := range shown {
 				result := target.Outcomes[i]
-				row.Cells = append(row.Cells, prdescription.Cell{Words: EvidenceWords(*evidence, target, i, acceptedFor(facts, target.Target.Target.Name)), Reason: result.Reason()})
+				row.Cells = append(row.Cells, prdescription.Cell{Words: EvidenceWords(*evidence, target, i, acceptedFor(facts, evidence.AcceptName(target))), Reason: result.Reason()})
 			}
 			described.TestedOn.Rows = append(described.TestedOn.Rows, row)
 		}
@@ -197,11 +197,14 @@ func (facts bodyFacts) description() prdescription.Facts {
 	for _, pr := range facts.Others {
 		answers.Others = append(answers.Others, pr.Number)
 	}
-	// A --variants each check that passed answers the variants item, and
-	// says which it built; otherwise it's the person's statement.
+	// Variant builds of the changed ports that all passed, from any check
+	// of the files, answer the variants item, and the note says which it
+	// built; one that failed leaves it the person's statement, the note
+	// saying which failed (field testing's note 10 from the curl fix).
 	if evidence != nil && !facts.NoCheck {
-		if port, builds, passed := evidence.VariantsBuilt(); passed {
-			answers.Variants, answers.VariantsNote = true, fmt.Sprintf("(Dockhand built %s with each of %s added to the default variants)", port, strings.Join(builds, ", "))
+		if builds := evidence.VariantBuilds(); len(builds) > 0 {
+			answers.VariantsNote = VariantsNote(builds, evidence.Plan.EachVariant)
+			answers.Variants = answers.Variants || evidence.VariantsAnswered()
 		}
 	}
 	described.Verification = answers
@@ -264,7 +267,7 @@ func sharedRuns(reports []prdescription.Report) []prdescription.Report {
 // allBuilt reports whether every target passed or was accepted.
 func allBuilt(evidence Evidence, accepted map[string]AcceptedFailure) bool {
 	for _, target := range evidence.Failed() {
-		if _, ok := accepted[target.Target.Target.Name]; !ok {
+		if _, ok := accepted[evidence.AcceptName(target)]; !ok {
 			return false
 		}
 	}
@@ -301,4 +304,66 @@ func testsPassed(evidence Evidence) bool {
 // (SubmitPlan.Accepted); the zero value where it wasn't accepted.
 func acceptedFor(facts bodyFacts, port string) AcceptedFailure {
 	return facts.Accepted[port]
+}
+
+// VariantsNote is the variants item's note, naming each variant build and
+// its checks: "(Dockhand built curl with +gnutls +sectrust and with +ssl
+// +sectrust added to the default variants, in check-772 and check-773)",
+// or, each having been built by --variants each, "(Dockhand built curl
+// with each of +gnutls, +ssl added to the default variants)"; where one
+// failed, "(Dockhand built curl with +gnutls +sectrust, which passed, and
+// with +ssl +sectrust, which failed in check-775)".
+func VariantsNote(builds []VariantBuild, each bool) string {
+	var ports []string
+	byPort := map[string][]VariantBuild{}
+	for _, build := range builds {
+		if _, seen := byPort[build.Port]; !seen {
+			ports = append(ports, build.Port)
+		}
+		byPort[build.Port] = append(byPort[build.Port], build)
+	}
+	failed := slices.ContainsFunc(builds, func(b VariantBuild) bool { return len(b.Failed) > 0 })
+	var parts []string
+	var checks []string
+	for _, port := range ports {
+		var specs []string
+		for _, build := range byPort[port] {
+			for _, name := range build.Checks {
+				if !slices.Contains(checks, name) {
+					checks = append(checks, name)
+				}
+			}
+			switch {
+			case failed && len(build.Failed) > 0:
+				specs = append(specs, "with "+build.Spec+", which failed in "+prose.And(build.Failed))
+			case failed:
+				specs = append(specs, "with "+build.Spec+", which passed")
+			default:
+				specs = append(specs, build.Spec)
+			}
+		}
+		switch {
+		case failed:
+			// Each with its own clause, set off by commas: "with +a,
+			// which passed, and with +b, which failed in check-775".
+			joined := specs[len(specs)-1]
+			if len(specs) > 1 {
+				joined = strings.Join(specs[:len(specs)-1], ", ") + ", and " + joined
+			}
+			parts = append(parts, port+" "+joined)
+		case each:
+			parts = append(parts, port+" with each of "+strings.Join(specs, ", ")+" added to the default variants")
+		default:
+			withs := make([]string, len(specs))
+			for i, spec := range specs {
+				withs[i] = "with " + spec
+			}
+			parts = append(parts, port+" "+strings.Join(withs, " and ")+" added to the default variants")
+		}
+	}
+	note := "(Dockhand built " + strings.Join(parts, "; ")
+	if !failed && !each {
+		note += ", in " + prose.And(checks)
+	}
+	return note + ")"
 }
