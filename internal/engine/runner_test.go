@@ -15,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/coord"
@@ -127,7 +128,11 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 			if err := os.MkdirAll(job.Directory, 0o755); err != nil {
 				return err
 			}
-			if err := os.WriteFile(filepath.Join(job.Directory, buildenv.LogName(target.ID)), []byte("building\n"), 0o644); err != nil {
+			// Written whole, renamed into place, so the watcher never
+			// reads it empty: a pause between creating it and writing it
+			// past the stall limit was said as a stall, then again as it
+			// grew (Intel, run 2344).
+			if err := atomicfile.Write(filepath.Join(job.Directory, buildenv.LogName(target.ID)), []byte("building\n"), 0o644); err != nil {
 				return err
 			}
 			time.Sleep(p.stall)
