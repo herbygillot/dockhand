@@ -380,7 +380,11 @@ func TestServeInstallCarriesTheSettingsItRanWith(t *testing.T) {
 	plist, err := os.ReadFile(filepath.Join(w.Home, "Library", "LaunchAgents", AgentLabel+".plist"))
 	require.NoError(t, err)
 	agent := string(plist)
-	require.Contains(t, agent, "<string>--db</string><string>"+filepath.Join(w.Home, ".dockhand", "dockhand.db")+"</string><string>--git</string><string>"+git+"</string>")
+	require.Contains(t, out, "  Tools  git "+git+", as set now\n")
+	// The programs named go into the agent as --tool, their variables
+	// left out (the roadmap's "--tool").
+	require.Contains(t, agent, "<string>--db</string><string>"+filepath.Join(w.Home, ".dockhand", "dockhand.db")+"</string><string>--tool</string><string>git="+git+"</string>")
+	require.NotContains(t, agent, "GIT_BIN")
 	require.Contains(t, agent, "<key>DOCKHAND_UPSTREAM</key><string>"+w.Upstream+"</string>")
 	require.Contains(t, agent, "<key>TART_HOME</key><string>"+filepath.Join(w.Home, "tart")+"</string>", "made absolute")
 	require.NotContains(t, agent, "ghp_secret")
@@ -621,4 +625,40 @@ func TestAStampedLineIsStampedOnce(t *testing.T) {
 	fmt.Fprint(stamp, "serve: ")
 	fmt.Fprint(stamp, "leading\ncheck-1: running\n")
 	require.Equal(t, "2026-11-01T13:25:16Z serve: leading\n2026-11-01T13:25:16Z check-1: running\n", out.String())
+}
+
+// An agent dockhand installed naming --git, which v0.8.0 removed, is
+// rewritten once by the serve it starts, with --tool git=<path>, and that
+// serve exits for launchd to start the new one; a person typing --git, or
+// an agent that isn't this process's, is refused as before (the
+// roadmap's "--tool").
+func TestServeRewritesItsAgentNamingGit(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.CheckedBranch(t)
+	calls := withLaunchd(t, 0)
+	cmdtest.Hosted(t).OS = "darwin"
+	git, err := exec.LookPath("git")
+	require.NoError(t, err)
+	path := filepath.Join(w.Home, "Library", "LaunchAgents", AgentLabel+".plist")
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+	args := []string{"serve", "--tree", w.Clone, "--git", git}
+	job := macos.LaunchdJob{Label: AgentLabel, Arguments: append([]string{"/opt/local/bin/dockhand"}, args...), Log: "/tmp/serve.log", Environment: map[string]string{"PATH": "/usr/bin"}, KeepAlive: true, ProcessType: "Background"}
+	require.NoError(t, os.WriteFile(path, job.Plist(), 0o644))
+
+	// Another command line is refused.
+	_, _, err = cmdtest.Dockhand(t, "serve", "--git", git)
+	require.EqualError(t, err, "--git is gone: --tool git=<path> names the git dockhand runs")
+
+	out, _, err := cmdtest.Dockhand(t, args...)
+	require.Equal(t, 0, term.ExitCode(err), "it exits, for launchd to start the new one: %v", err)
+	require.Equal(t, "serve: the agent named --git, which is gone; rewritten with --tool git="+git+"\n", out)
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	rewritten, err := macos.ReadLaunchdJob(data)
+	require.NoError(t, err)
+	require.Equal(t, []string{"/opt/local/bin/dockhand", "serve", "--tree", w.Clone, "--tool", "git=" + git}, rewritten.Arguments)
+	require.Equal(t, job.Environment, rewritten.Environment)
+	require.Len(t, *calls, 2)
+	require.Equal(t, "bootout", (*calls)[0][0])
+	require.Equal(t, "bootstrap", (*calls)[1][0])
 }

@@ -17,7 +17,18 @@ var Environment = []Variable{
 	{Name: "MACPORTS_TREE"},
 	{Name: "DOCKHAND_DB"},
 	{Name: PathVariable, Agent: true},
+	// The programs dockhand runs, each named by its variable after --tool
+	// and before [tools] (Programs); serve's agent carries the ones named
+	// as --tool, resolved where it's installed.
 	{Name: "GIT_BIN"},
+	{Name: "PORT_TCLSH_BIN"},
+	{Name: "TART_BIN"},
+	{Name: "GO2PORT_BIN"},
+	{Name: "CARGO2PORT_BIN"},
+	{Name: "XCODES_BIN"},
+	{Name: "GH_BIN"},
+	{Name: "PATCH_BIN"},
+	{Name: "DIFF_BIN"},
 	// A token in GH_TOKEN, else GITHUB_TOKEN, overrides dockhand's login,
 	// which the GitHub CLI's comes after (compose.Options.Signin).
 	{Name: "GH_TOKEN"},

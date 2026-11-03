@@ -58,3 +58,21 @@ func TestALaunchdJobKeptAliveWhileItsProgramIsThere(t *testing.T) {
 		require.NoError(t, err, "%s", out)
 	}
 }
+
+// A job's property list reads back as the job it was written from, so
+// serve can tell its own agent's arguments (the roadmap's "--tool").
+func TestALaunchdJobReadsBackAsWritten(t *testing.T) {
+	t.Parallel()
+	job := LaunchdJob{Label: "io.github.herbygillot.dockhand.serve", Arguments: []string{"/opt/local/bin/dockhand", "serve", "--git", "/opt/homebrew/bin/git", "a <b> & c"},
+		Log: "/Users/ada/.dockhand/logs/serve.log", Environment: map[string]string{"PATH": "/usr/bin:/bin", "DOCKHAND_CONFIG": "/Users/ada/c.toml"},
+		KeepAlive: true, KeepAliveWhile: "/opt/local/bin/dockhand", ProcessType: "Background"}
+	read, err := ReadLaunchdJob(job.Plist())
+	require.NoError(t, err)
+	require.Equal(t, job, read)
+	plain := LaunchdJob{Label: "x", Arguments: []string{"/bin/true"}, Log: "/tmp/x.log", Environment: map[string]string{}}
+	read, err = ReadLaunchdJob(plain.Plist())
+	require.NoError(t, err)
+	require.Equal(t, plain, read)
+	_, err = ReadLaunchdJob([]byte("not a plist"))
+	require.Error(t, err)
+}

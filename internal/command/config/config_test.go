@@ -40,6 +40,18 @@ func TestConfigShowsWhatIsInEffect(t *testing.T) {
 	require.Regexp(t, setting("providers.tart.xcode.sonoma", "16.2"), out, "by release number")
 	require.Regexp(t, setting("providers.tart.xcode.tahoe", "26.6, as MacPorts' arm64 buildbot runs  (default)"), out)
 
+	// Each program dockhand runs, as named: the file's [tools], a
+	// variable, --tool, else the default search (the roadmap's "--tool").
+	require.Regexp(t, setting("tools.git", "git on PATH  (default)"), out)
+	git := filepath.Join(w.Home, "git")
+	require.NoError(t, os.WriteFile(git, []byte("#!/bin/sh\n"), 0o755))
+	cmdtest.Setenv(t, "GIT_BIN", git)
+	out, _, err = cmdtest.Dockhand(t, "config", "--tool", "diff="+git)
+	require.NoError(t, err)
+	require.Regexp(t, setting("tools.git", git+"  (GIT_BIN)"), out)
+	require.Regexp(t, setting("tools.diff", git+"  (--tool diff)"), out)
+	cmdtest.Setenv(t, "GIT_BIN", "")
+
 	result, err := cmdtest.JSONOf(t, "config")
 	require.NoError(t, err)
 	require.Equal(t, "maintainer", cmdtest.Dig(t, result.Result, "settings", 1, "key"))

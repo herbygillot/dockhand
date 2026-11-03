@@ -123,3 +123,32 @@ func (a LaunchAgent) Install(ctx context.Context, job LaunchdJob) error {
 	}
 	return a.await(ctx, true)
 }
+
+// Write writes job's property list in the agent's place, which launchd
+// reads when it next loads the agent (Reload, ReloadCommand).
+func (a LaunchAgent) Write(job LaunchdJob) error {
+	return os.WriteFile(a.Path, job.Plist(), 0o644)
+}
+
+// Reload has launchd load the agent's property list again, bootout and
+// bootstrap, through Launchctl: a test's, which answers at once.
+func (a LaunchAgent) Reload(ctx context.Context) error {
+	if _, err := a.launchctl(ctx, "bootout", a.target()); err != nil {
+		return err
+	}
+	_, err := a.launchctl(ctx, "bootstrap", a.domain(), a.Path)
+	return err
+}
+
+// ReloadCommand is Reload as a program to start in a session of its own,
+// as the agent itself must: launchd's bootout would end the agent before
+// it could bootstrap the new one, so the program waits a second, for the
+// agent to exit, and asks.
+func (a LaunchAgent) ReloadCommand() []string {
+	return []string{"/bin/sh", "-c", fmt.Sprintf("sleep 1; /bin/launchctl bootout %s; /bin/launchctl bootstrap %s %s", a.target(), a.domain(), shellQuote(a.Path))}
+}
+
+// shellQuote is a path quoted for sh.
+func shellQuote(path string) string {
+	return "'" + strings.ReplaceAll(path, "'", `'\''`) + "'"
+}

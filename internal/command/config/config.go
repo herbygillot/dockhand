@@ -101,6 +101,19 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			}
 			set("update.keep_http", keepHTTP)
 			set("update.source", file.Update.Source)
+			// Each program dockhand runs, as named: --tool, then its
+			// variable, then [tools], else found as the default says.
+			for _, program := range config.Programs {
+				key := "tools." + program.Key
+				switch {
+				case s.Tools[program.Name] != "":
+					all = append(all, configSetting{Key: key, Value: s.Tools[program.Name], Source: "--tool " + program.Name})
+				case s.Getenv(program.Variable) != "":
+					all = append(all, configSetting{Key: key, Value: s.Getenv(program.Variable), Source: program.Variable})
+				default:
+					set(key, s.Places().Tilde(file.Tools.Get(program.Key)))
+				}
+			}
 			set("serve.ship_to", file.Serve.ShipTo)
 			set("serve.outdated_at", file.Serve.OutdatedAt)
 			set("serve.submit_limit", positive(file.Serve.SubmitLimit))
@@ -148,8 +161,13 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			}
 			for _, setting := range all {
 				mark := ""
-				if setting.Source == "default" {
+				switch setting.Source {
+				case "default":
 					mark = "  (default)"
+				case "file":
+				default:
+					// A program named by --tool or its variable.
+					mark = "  (" + setting.Source + ")"
 				}
 				fmt.Fprintf(streams.Out, "%-*s  %s%s\n", width, setting.Key, setting.Value, mark)
 			}

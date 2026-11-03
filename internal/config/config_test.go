@@ -390,3 +390,24 @@ func TestLocalIsNoBuildProfile(t *testing.T) {
 	_, err := parse("config.toml", "[build.profiles.local]\nprovider = \"tart\"\n")
 	require.ErrorContains(t, err, "build.profiles.local: local names the local provider, which --on local builds with; name yours another way")
 }
+
+// [tools] names the programs dockhand runs: a file absolute or under ~,
+// its ~ expanded, or a bare name found on PATH; a relative path is
+// refused, since serve runs in /, and an unknown key names the nine (the
+// roadmap's "--tool").
+func TestToolsNameThePrograms(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(t.TempDir(), "config.toml")
+	require.NoError(t, os.WriteFile(path, []byte("[tools]\ngit = \"/opt/homebrew/bin/git\"\ngo2port = \"~/bin/go2port\"\npatch = \"gpatch\"\n"), 0o600))
+	f, err := Places{Home: home}.Load(path)
+	require.NoError(t, err)
+	require.Equal(t, "/opt/homebrew/bin/git", f.Tools.Get("git"))
+	require.Equal(t, filepath.Join(home, "bin", "go2port"), f.Tools.Get("go2port"))
+	require.Equal(t, "gpatch", f.Tools.Get("patch"))
+
+	_, err = parse("config.toml", "[tools]\nport_tclsh = \"mp/bin/port-tclsh\"\n")
+	require.EqualError(t, err, `config.toml: tools.port_tclsh: "mp/bin/port-tclsh" is not an absolute path, or a name found on PATH`)
+	_, err = parse("config.toml", "[tools]\ngitx = \"/x\"\n")
+	require.EqualError(t, err, "config.toml: tools.gitx isn't a program dockhand runs; the keys are git, port_tclsh, tart, go2port, cargo2port, xcodes, gh, patch, and diff")
+	require.Len(t, ProgramNames(), len(Programs))
+}

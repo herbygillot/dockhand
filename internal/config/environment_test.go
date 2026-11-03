@@ -27,7 +27,7 @@ func TestTheEnvironmentIsTheOneUsageLists(t *testing.T) {
 	section = section[strings.Index(section, "## Environment"):]
 	table := section[:strings.Index(section, "`serve --install` keeps")]
 	var listed []string
-	for _, row := range regexp.MustCompile("(?m)^\\| (`[A-Z_]+`(?:, `[A-Z_]+`)*) \\|").FindAllStringSubmatch(table, -1) {
+	for _, row := range regexp.MustCompile("(?m)^\\| (`[A-Z0-9_]+`(?:, `[A-Z0-9_]+`)*) \\|").FindAllStringSubmatch(table, -1) {
 		for _, name := range strings.Split(row[1], ", ") {
 			listed = append(listed, strings.Trim(name, "`"))
 		}

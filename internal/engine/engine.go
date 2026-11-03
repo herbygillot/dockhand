@@ -50,6 +50,10 @@ type Options struct {
 	Tree string
 	// Git is the git executable; "git" on Env's PATH when empty.
 	Git string
+	// Named are the programs the command line, its environment, or the
+	// configuration named, which setup says the source of and the
+	// processes dockhand starts are given as --tool.
+	Named []NamedProgram
 	// Env is the environment the programs dockhand runs run in, git,
 	// port-tclsh, Tart, and ssh among them: the command line's, as compose
 	// builds it.
@@ -159,6 +163,22 @@ func FindPrograms(look func(name string) (string, error)) Programs {
 	found.Vendoring.Go2Port = macports.FindProgram(look, "go2port")
 	found.Vendoring.Cargo2Port = macports.FindProgram(look, "cargo2port")
 	return found
+}
+
+// NamedProgram is a program a person named: its name as dockhand runs it,
+// its path, and what named it, "--tool git", "GIT_BIN", or "[tools] git".
+type NamedProgram struct {
+	Name, Path, Source string
+}
+
+// ToolArgs are the --tool flags that name the same programs to a process
+// dockhand starts, a path each.
+func (o Options) ToolArgs() []string {
+	var args []string
+	for _, program := range o.Named {
+		args = append(args, "--tool", program.Name+"="+program.Path)
+	}
+	return args
 }
 
 // git is the git dockhand runs, in Env.

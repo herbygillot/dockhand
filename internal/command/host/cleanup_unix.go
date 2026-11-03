@@ -20,9 +20,7 @@ func startCleanup(options engine.Options) error {
 		return err
 	}
 	args := []string{"clean", "--automatic", "--db", options.Database, "--tree", options.Tree}
-	if options.Git != "" {
-		args = append(args, "--git", options.Git)
-	}
+	args = append(args, options.ToolArgs()...)
 	log, err := os.OpenFile(filepath.Join(filepath.Dir(options.Database), "cleanup.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
@@ -49,9 +47,7 @@ func startDrain(options engine.Options) (int, error) {
 		return 0, err
 	}
 	args := []string{"serve", "--drain", "--no-notify", "--db", options.Database, "--tree", options.Tree}
-	if options.Git != "" {
-		args = append(args, "--git", options.Git)
-	}
+	args = append(args, options.ToolArgs()...)
 	log, err := os.OpenFile(filepath.Join(filepath.Dir(options.Database), "drain.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return 0, err
