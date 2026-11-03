@@ -50,3 +50,27 @@ func TestAnAnswerPastTheLimitGoesThroughWhole(t *testing.T) {
 	_, kept = transport.cache.load(conditionalKey(req))
 	require.True(t, kept, "within the limit, kept")
 }
+
+// Where the cache has a directory, an answer is kept there alone, read
+// from it when asked again, and not held in the process: serve held every
+// look's answers, about 30 MB of a 37 MB heap after a look of 1,116 ports
+// (the roadmap's "serve gives back a look's memory once its work ends").
+// Without a directory, it's kept for the process.
+func TestAnAnswerIsKeptOnDiskAloneWhereThereIsADirectory(t *testing.T) {
+	t.Parallel()
+	next := &answering{body: []byte(`[{"tag_name":"v1"}]`)}
+	transport := conditional{next: next, cache: NewConditionalCache(t.TempDir())}
+	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/hedhyw/json-log-viewer/tags", nil)
+	require.NoError(t, err)
+	_, _, err = transport.roundTrip(req)
+	require.NoError(t, err)
+	require.Empty(t, transport.cache.kept, "on disk, not in memory")
+	_, kept := transport.cache.load(conditionalKey(req))
+	require.True(t, kept, "read from disk")
+	require.Empty(t, transport.cache.kept, "nor held once read")
+
+	memory := conditional{next: next, cache: NewConditionalCache("")}
+	_, _, err = memory.roundTrip(req)
+	require.NoError(t, err)
+	require.Len(t, memory.cache.kept, 1, "without a directory, for the process")
+}

@@ -110,7 +110,7 @@ line, unless --keep-modeline.`,
 				return err
 			}
 			defer session.End(context.WithoutCancel(ctx))
-			err = e.Serve(ctx, session, serveOptions(s.Host, e, s.File, streams.Out, drain, cmp.Or(shipTo, s.File.Serve.Stage()), s.File.Serve.Notifies() && !noNotify))
+			err = e.Serve(ctx, session, serveOptions(s.Host, e, s.File, streams.Out, drain, cmp.Or(shipTo, s.File.Serve.Stage()), s.File.Serve.Notifies() && !noNotify, s.Getenv(settings.HeapProfileVariable)))
 			// Being stopped is how serve ends, not a failure.
 			if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
 				fmt.Fprintln(streams.Out, "serve: stopped")
@@ -132,8 +132,9 @@ line, unless --keep-modeline.`,
 // serveOptions turns the configuration and flags into what serve does,
 // its lines going to out and its notices to macOS notifications when
 // notify, serve.notify less --no-notify, allows; shipTo is serve.ship_to,
-// or --ship-to.
-func serveOptions(h *host.Host, e *engine.Engine, file config.File, out io.Writer, drain bool, shipTo string, notify bool) engine.ServeOptions {
+// or --ship-to; heap is DOCKHAND_HEAPPROFILE's file, which serve's heap
+// profile is written to each time its queue empties after work.
+func serveOptions(h *host.Host, e *engine.Engine, file config.File, out io.Writer, drain bool, shipTo string, notify bool, heap string) engine.ServeOptions {
 	hour, minute := file.Serve.Time()
 	options := engine.ServeOptions{
 		Drain:           drain,
@@ -154,6 +155,13 @@ func serveOptions(h *host.Host, e *engine.Engine, file config.File, out io.Write
 	}
 	if notify {
 		options.Notify = func(title, text string) { _ = h.Notify(title, text) }
+	}
+	if heap != "" {
+		options.Settled = func() {
+			if err := settings.WriteHeapProfile(heap); err != nil {
+				fmt.Fprintf(out, "serve: %s: %v; no profile is written\n", settings.HeapProfileVariable, err)
+			}
+		}
 	}
 	return options
 }

@@ -349,8 +349,8 @@ JSON
 func TestNotificationsCanBeTurnedOff(t *testing.T) {
 	t.Parallel()
 	e := &engine.Engine{Providers: map[string]buildenv.Provider{}}
-	require.NotNil(t, serveOptions(cmdtest.Hosted(t), e, config.File{}, io.Discard, false, "list", true).Notify)
-	require.Nil(t, serveOptions(cmdtest.Hosted(t), e, config.File{}, io.Discard, false, "list", false).Notify)
+	require.NotNil(t, serveOptions(cmdtest.Hosted(t), e, config.File{}, io.Discard, false, "list", true, "").Notify)
+	require.Nil(t, serveOptions(cmdtest.Hosted(t), e, config.File{}, io.Discard, false, "list", false, "").Notify)
 	off := false
 	file := config.File{Serve: config.Serve{Notify: &off}}
 	require.False(t, file.Serve.Notifies())
