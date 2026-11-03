@@ -80,7 +80,12 @@ with `--json`, one JSON envelope when the command finishes:
 
 The result above is only an illustration of the envelope; an actual check
 includes its branch, revision, plan, run, and target results, and
-`github_requests` counts the requests the command sent GitHub's API. Keep
+`github_requests` counts the requests the command sent GitHub's API. A
+`check --plan` result's plan carries `evaluated` for each target in each
+environment where it's planned: its `target` and `environment`, and the
+resolved `variants`, `depends_build`, `depends_lib`, `depends_run`,
+`configure_args`, and `configure_env`, as the plan evaluated them; a recorded
+plan, as a finished check's, has none. Keep
 standard error separate when parsing standard output. `-v` adds detail about
 the work, and `-vv` adds individual steps. Long human lists can be shortened;
 their JSON lists retain all entries.

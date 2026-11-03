@@ -573,7 +573,6 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		}
 		if attempt == 0 && !d.plan.Fresh {
 			d.sayNotReusable(ctx, environment, targets)
-			d.sayTagMoved(ctx, environment, targets)
 		}
 		var reused map[model.TargetID]reuse.Candidate
 		if attempt == 0 && identity == "" && !d.plan.Fresh && d.anotherCanReuse(ctx, environment) {
@@ -587,6 +586,9 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			choice, err := d.reusable(ctx, identity, targets, paths, revision)
 			if err != nil {
 				return err
+			}
+			if !d.plan.Fresh {
+				d.sayTagMoved(ctx, environment, targets, choice.Reused)
 			}
 			if len(choice.Reused) == len(remaining) {
 				return d.recordReuse(ctx, environment, identity, remaining, choice.Reused)

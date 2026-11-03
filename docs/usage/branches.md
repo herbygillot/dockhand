@@ -232,6 +232,14 @@ away is two steps, `archive` then `clean --delete`, and archive's last line,
 like clean's refusal of an open branch, names the second. A clean that removes
 nothing says how many archived branches still keep their Git branches.
 
+A branch that changes nothing, started plain to check master's port, as
+`check --also curl --variants '+gnutls +sectrust'` does, is an investigation,
+not a change. Once its check passes, status says `check-771 passed; the branch
+changes nothing, so there is nothing to tidy or submit`, with
+`Next: dockhand archive curl-sectrust`, and the check's last line says the
+same; `archive` then `clean --delete` end it. A branch with edits keeps its
+`Next: dockhand tidy`.
+
 After a merge, refresh the observation and inspect cleanup:
 
 ```sh

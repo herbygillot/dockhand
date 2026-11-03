@@ -35,9 +35,19 @@ type Target struct {
 // names another commit now than when an earlier build's check was planned
 // (D-N5): the archive fetched now isn't the one it built, though the
 // Portfile is the same. It is false where either commit isn't known, as
-// for a build before plans recorded tags.
+// for a build before plans recorded tags, and for a build at another tag,
+// or of another repository: jlv 1.9.2's build, its tag v1.9.2, read as
+// v1.7.1's having moved, for a revbump at 1.7.1 on another branch
+// (rc7's G16, check-943).
 func (t Target) TagMoved(c Candidate) bool {
-	return t.Tag != nil && c.Tagged != nil && t.Tag.Commit != "" && c.Tagged.Commit != "" && t.Tag.Commit != c.Tagged.Commit
+	return t.Tag != nil && c.Tagged != nil && t.Tag.Commit != "" && c.Tagged.Commit != "" &&
+		t.Tag.URL == c.Tagged.URL && t.Tag.Ref == c.Tagged.Ref && t.Tag.Commit != c.Tagged.Commit
+}
+
+// tagMovedAny reports whether any of a target's earlier builds says its
+// tag moved, which a build that recorded no tag can't tell of itself.
+func (t Target) tagMovedAny() bool {
+	return slices.ContainsFunc(t.Earlier, t.TagMoved)
 }
 
 // Choice is what an environment's targets reuse: an earlier build for each
@@ -57,7 +67,9 @@ type Choice struct {
 // revision holds by path (Objects of Paths). A target reuses its newest earlier build whose
 // result stands, by the check's test policy (stands), and whose inputs are
 // what it would read now (Current, with judge), and whose GitHub tag
-// hasn't moved since (TagMoved). The rest build.
+// hasn't moved since (TagMoved); one whose check recorded no tag isn't
+// reused where another build of the target says the tag moved, since it
+// can't say which commit it built. The rest build.
 //
 // A target fetched with Git is reused only for the commit its plan expects
 // (Current), and what was built against another commit's build of it, or
@@ -73,8 +85,9 @@ type Choice struct {
 func Choose(targets []Target, identity string, trees map[string]model.ObjectID, judge Judge, stands func(model.TargetResult) bool, available func(Candidate) bool) Choice {
 	choice := Choice{Reused: map[model.TargetID]Candidate{}, Carried: map[model.TargetID][]model.InertPort{}}
 	for _, target := range targets {
+		moved := target.tagMovedAny()
 		for _, c := range target.Earlier {
-			if !stands(c.Result) || target.TagMoved(c) {
+			if !stands(c.Result) || target.TagMoved(c) || moved && c.Tagged == nil {
 				continue
 			}
 			if carried, ok := Carry(c.Inputs, c.Origin.Run, identity, target.PlanTarget, target.Git, trees, judge); ok {

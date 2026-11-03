@@ -18,6 +18,14 @@ dockhand check --plan
 dockhand check
 ```
 
+`--plan` evaluates every target with its variants in each environment and builds
+nothing. With `-v` it prints that evaluation for each target in each
+environment: the variants as MacPorts resolved them, the defaults not negated
+plus those asked; `depends_build`, `depends_lib`, and `depends_run`; and
+`configure.args` and `configure.env`, evaluated on this Mac with the
+environment's platform. It is the dry evaluation of a Portfile under a variant
+set, master's with `--also`, and `--json` carries it as `evaluated`.
+
 Replace `BRANCH` with its exact name from `dockhand status`. The plan shows the
 captured files, targets, build order, and environments. The real check normally
 captures tracked working files, including uncommitted edits, as a numbered
@@ -88,6 +96,8 @@ dockhand check --only jq
 dockhand check --also DEPENDENT
 dockhand check --only jq --variants '+tests -docs'
 dockhand check --only jq --variants each --plan
+dockhand check --also curl --variants '+gnutls +sectrust'
+dockhand check --plan -v --variants 'curl +gnutls +sectrust'
 ```
 
 `--only` keeps selected changed targets and adds back changed prerequisites they
@@ -95,34 +105,24 @@ need. `--also` builds an unchanged port against the branch. Replace `DEPENDENT`
 with an actual port named by `dockhand impact`. A narrow pass does not prove the
 omitted targets passed.
 
+`--variants` builds one port: the one named first in its value,
+`'curl +gnutls +sectrust'`, a changed port or an `--also` one; with no name, the
+one port the plan has, changed or `--also`; else the one `--only` names. Several
+and none named is refused, naming them: `--variants builds one port; the plan
+has curl and libpsl, so name it, as --variants 'curl +sectrust'`. Master's port
+with chosen variants, an investigation rather than a change, is `--also curl
+--variants '+gnutls +sectrust'` on a branch that changes nothing, started plain
+with `dockhand start curl-sectrust`; `dockhand usage branches` says how such a
+branch ends.
+
 `--variants '+tests -docs'` builds the selected port once, in place of its
 default build, with its default variants plus those given, as MacPorts opens
 it; a `-variant` leaves a default out.
-`--variants each` builds the selected port with defaults, then each eligible
-non-default variant separately; `universal` is excluded. It multiplies work
-across environments. More than 12 builds requires confirmation, or `--yes`
-without a terminal. GitHub checks do not accept variant selection because its
-workflow controls variants.
-
-`--variants` builds one port: the one named first in the value, as
-`--variants 'curl +gnutls +sectrust'` or `--variants 'curl each'`, a changed
-port or one `--also` names; else the plan's one port; else `--only`'s. To try
-master's port with variants, start a branch and name it with `--also`:
-
-```sh
-dockhand start curl-sectrust
-dockhand check --also curl --variants 'curl +gnutls +sectrust' --plan -v
-dockhand check --also curl --variants 'curl +gnutls +sectrust'
-dockhand archive curl-sectrust
-```
-
-`check --plan -v` prints each target's evaluation in each environment: its
-variants as MacPorts resolves them, its dependencies by type, and its
-`configure.args` and `configure.env`; `--json` carries them as `evaluated`. A
-branch that changes nothing and whose check passed reads as investigated in
-status, with `dockhand archive` next. `check --baseline --only curl` after a
-variant check builds every build of curl the check made, at master, with its
-variants.
+`--variants each`, or `'curl each'` naming the port, builds the selected port
+with defaults, then each eligible non-default variant separately; `universal` is
+excluded. It multiplies work across environments. More than 12 builds requires
+confirmation, or `--yes` without a terminal. GitHub checks do not accept variant
+selection because its workflow controls variants.
 
 ## Choose build environments explicitly
 
