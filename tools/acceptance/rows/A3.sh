@@ -31,9 +31,25 @@ assert() {
 		row_fail "exited non-zero: $failed"
 		return
 	fi
+	# The main help ends with the issues page; a command's help doesn't
+	# carry it (the person's "Have Dockhand mention its repo issues page in
+	# its help output.", 2026-11-03).
+	local last
+	last=$("$DH_BIN" --help 2>/dev/null | tail -1)
+	case "$last" in
+	"Report problems at https://github.com/"*/issues) ;;
+	*)
+		row_fail "the main help's last line isn't the issues page: $last"
+		return
+		;;
+	esac
+	if "$DH_BIN" check --help 2>/dev/null | grep -q '^Report problems at '; then
+		row_fail "check --help carries the issues line, which the main help alone has"
+		return
+	fi
 	if ! jq -e '(.result.settings | length > 0) and all(.result.settings[]; .source != null and .source != "")' "$ROW_DIR/json/2.json" >/dev/null; then
 		row_fail "config --json gives a setting without its source"
 		return
 	fi
-	row_pass "every command's help, status, and config ran"
+	row_pass "every command's help, status, and config ran, and the main help ends with the issues page"
 }

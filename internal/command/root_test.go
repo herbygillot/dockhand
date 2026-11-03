@@ -21,6 +21,22 @@ func TestBareDockhandSaysHowToStart(t *testing.T) {
 	require.Contains(t, out.String(), "dockhand setup sets up")
 	require.Contains(t, out.String(), "dockhand usage prints the guide")
 	require.NotContains(t, out.String(), "v2-final")
+	require.True(t, strings.HasSuffix(out.String(), "for more information about a command.\n\nReport problems at "+buildinfo.ProjectURL+"/issues\n"), "the main help's foot names the issues page: %s", out.String())
+}
+
+// The main help ends with the issues page, after Cobra's line on each
+// command's help; a subcommand's help doesn't carry it (the person's
+// "Have Dockhand mention its repo issues page in its help output.").
+func TestTheMainHelpNamesTheIssuesPage(t *testing.T) {
+	t.Parallel()
+	out, _, err := cmdtest.Dockhand(t, "--help")
+	require.NoError(t, err)
+	require.True(t, strings.HasSuffix(out, "Use \"dockhand [command] --help\" for more information about a command.\n\nReport problems at "+buildinfo.ProjectURL+"/issues\n"), out)
+	for _, command := range [][]string{{"check", "--help"}, {"setup", "tart", "--help"}} {
+		out, _, err := cmdtest.Dockhand(t, command...)
+		require.NoError(t, err)
+		require.NotContains(t, out, "Report problems at", command)
+	}
 }
 
 func TestVersionNamesTheBuild(t *testing.T) {

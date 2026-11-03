@@ -93,9 +93,17 @@ func (o Options) Getenv(name string) string {
 // PATH.
 func (o Options) Signin(store credential.Store) github.Signin {
 	signin := github.Signin{Store: store, CLI: o.LookPath("gh")}
-	// gh as --tool or GH_BIN names it; [tools] gh, where the file is
-	// read, is Open's.
-	if named, err := o.NamedPrograms(config.File{}, "", func(name string) (string, error) { return subprocess.LookPath(name, o.Env) }); err == nil {
+	// gh as --tool, GH_BIN, or the configuration's [tools] names it, for
+	// setup's lines as for the engine's (the roadmap's "Setup's GitHub
+	// lines read [tools] gh"); a file that can't be read names none here,
+	// and Settings refuses it.
+	var file config.File
+	if path, err := o.Places().ConfigPath(o.Getenv(config.PathVariable)); err == nil {
+		if loaded, err := o.Places().Load(path); err == nil {
+			file = loaded
+		}
+	}
+	if named, err := o.NamedPrograms(file, "", func(name string) (string, error) { return subprocess.LookPath(name, o.Env) }); err == nil {
 		if gh, ok := named["gh"]; ok {
 			signin.CLI = gh.Path
 		}
