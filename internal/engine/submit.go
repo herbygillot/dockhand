@@ -1666,3 +1666,26 @@ func changedPatches(ctx context.Context, worktree *git.Repository, base string, 
 	}
 	return patches
 }
+
+// KeepNote keeps a submission's --note with its branch before submit's
+// gate, given or emptied, so a submit refused there, or cancelled, keeps
+// it for the next: without a terminal, a refused submit --note and a
+// later submit --yes opened the pull request without the note (field
+// testing's notes from the curl fix, note 9). A plan with no --note keeps
+// the branch's as it is.
+func (e *Engine) KeepNote(ctx context.Context, plan SubmitPlan) error {
+	if plan.Request.Note == nil {
+		return nil
+	}
+	return e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		branch, err := tx.Branch(plan.Branch.ID)
+		if err != nil {
+			return err
+		}
+		if branch.Note == plan.Note {
+			return nil
+		}
+		branch.Note = plan.Note
+		return tx.UpdateBranch(branch)
+	})
+}

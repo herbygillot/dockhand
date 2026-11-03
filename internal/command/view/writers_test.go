@@ -315,3 +315,21 @@ func TestThePlansEvaluationIsPrinted(t *testing.T) {
 	require.Equal(t, []string{}, viewed.Evaluated[0].DependsRun, "empty, never null")
 	require.Empty(t, PlanView(model.Plan{}).Evaluated, "a recorded plan has none")
 }
+
+// tidy's preview names every trailer a commit keeps, a Co-authored-by:
+// beside Closes:, and dockhand's own Generated-By as what it adds (field
+// testing's notes from the curl fix, note 12).
+func TestTidysPreviewNamesEveryTrailer(t *testing.T) {
+	t.Parallel()
+	hand := engine.TidyGroup{Directory: "net/curl", Paths: []string{"net/curl/Portfile"}, Message: "curl: fix the build with Secure Transport\n\nThe sectrust variant built without its framework.\n\nCloses: https://trac.macports.org/ticket/74620\nCo-authored-by: Ada <ada@example.com>"}
+	var out bytes.Buffer
+	WriteTidyPlan(&out, engine.TidyPlan{Groups: []engine.TidyGroup{hand}}, false)
+	require.Contains(t, out.String(), "       keeps: Closes: https://trac.macports.org/ticket/74620\n       keeps: Co-authored-by: Ada <ada@example.com>\n")
+	require.NotContains(t, out.String(), "adds:", "a hand edit's commit adds nothing")
+
+	dockhands := engine.TidyGroup{Directory: "textproc/jq", Paths: []string{"textproc/jq/Portfile"}, Message: "jq: update to 1.8.1\n\nGenerated-By: Dockhand devel (https://github.com/herbygillot/dockhand)"}
+	out.Reset()
+	WriteTidyPlan(&out, engine.TidyPlan{Groups: []engine.TidyGroup{dockhands}}, false)
+	require.Contains(t, out.String(), "       adds: Generated-By: Dockhand devel (https://github.com/herbygillot/dockhand)\n")
+	require.NotContains(t, out.String(), "keeps: Generated-By")
+}
