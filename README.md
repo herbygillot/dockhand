@@ -269,7 +269,7 @@ dockhand usage <topic>
 
 `dockhand usage` prints the guide, and `dockhand usage <topic>` one of its topics: `branches`, `hand-edits`, `checks`, `publishing`, `recovery`, `batches`, `unattended`, `new-port`, `review`, `agents`, and `configuration`. For MacPorts contribution practices, see the [MacPorts contribution workflow](https://guide.macports.org/#project.github) and [commit-message guidelines](https://trac.macports.org/wiki/CommitMessages). `dockhand explain <code>` explains the rule behind a finding reported by `tidy` or `submit`; `dockhand explain check-42` says why a check ended as it did, and `dockhand explain -b <branch>` explains the branch's status and suggested next steps.
 
-Report Dockhand bugs and propose improvements in [this repository](https://github.com/herbygillot/dockhand). Include your `dockhand --version`, the command you ran, and the relevant error or build log. To work on Dockhand itself, build with `make build` and run its tests with `make test`.
+Report Dockhand bugs and propose improvements on [its issues page](https://github.com/herbygillot/dockhand/issues), which `dockhand --help` names at its foot. Include your `dockhand --version`, the command you ran, and the relevant error or build log. To work on Dockhand itself, build with `make build` and run its tests with `make test`.
 
 ## License
 

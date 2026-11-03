@@ -150,6 +150,11 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 		},
 	}
 	root.SetVersionTemplate("dockhand {{.Version}}\n")
+	// The main help ends with where to report a problem, as its foot; a
+	// subcommand's help, read many times a day, doesn't (the person's
+	// "Have Dockhand mention its repo issues page in its help output.",
+	// 2026-11-03).
+	root.SetUsageTemplate(root.UsageTemplate() + "{{if not .HasParent}}\nReport problems at " + buildinfo.ProjectURL + "/issues\n{{end}}")
 	// A removed flag says what replaced it (removedFlags). serve's own
 	// agent naming --git, which dockhand wrote, is rewritten once with
 	// --tool, where it would be refused at every start.

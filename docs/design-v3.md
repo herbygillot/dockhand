@@ -153,8 +153,8 @@ your maintainers line, and a clean macOS image for checks to build in. Then:
   dockhand submit                 open the pull request from your fork
 
 dockhand bump <port> does all four asking nothing, and stops where you
-should look. docs/usage.md is the guide, and dockhand status shows where
-things are.
+should look. dockhand usage prints the guide, and dockhand status shows
+where things are.
 ```
 
 The command groups follow, as the table lists them. Someone else's pull request is taken up with `adopt --pr`, and looked over with `review`. The checks queued and running are listed by `status`, and `console` keeps the branches live.
