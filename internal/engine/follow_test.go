@@ -2,8 +2,10 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -355,4 +358,88 @@ func TestASignedOutRefreshReadsOpenPullRequestsNewestFirst(t *testing.T) {
 		require.Equal(t, model.ReviewChangesRequested, r.Branch.PullRequest.Observed.Review)
 		require.Equal(t, []string{"macOS 15"}, r.Branch.PullRequest.Observed.Failing)
 	}
+}
+
+// A branch whose pull request merged since it was read isn't the port's
+// open work: OpenWork reads the stale pull requests first, so the port has
+// no open branch; an authoring selection reads the chosen branch's again
+// where it was read before the command began, so a merge in the minutes
+// since starts the work afresh by the port and is refused by name; and
+// where GitHub can't be read, the branch is taken as open, as last read
+// (field testing's act 0.2.96: "already in act-0.2.95", and ship took it,
+// though #36353 had merged).
+func TestAMergedBranchIsntTakenAsThePortsOpenBranch(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.NoError(t, err)
+	number := submitted.PullRequest.Ref.Number
+	_, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+
+	// Merged since its reading, which is fresh: OpenWork keeps it, as the
+	// stale rule reads nothing.
+	fake.PRs[number].State = forge.PullRequestMerged
+	found, err := e.PortBranches(t.Context(), "jq")
+	require.NoError(t, err)
+	require.Len(t, found, 1, "read under five minutes ago, it stands for OpenWork")
+
+	// An authoring selection reads it again, read before the command
+	// began: by the port, it starts afresh.
+	e.began = time.Now().Add(time.Minute)
+	selection, err := e.Select(t.Context(), Selector{Port: "jq", Policy: SelectOrStart}, WorkUpdate)
+	require.NoError(t, err)
+	require.True(t, selection.ForVersion, "a new branch, named for the version")
+	require.Equal(t, "jq-update's #34901 was merged", selection.Said)
+	merged, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.BranchMerged, merged.State, "the record moved, as status's does")
+
+	// By name, the merged words, and --new.
+	_, err = e.Select(t.Context(), Selector{Branch: "jq-update", Policy: SelectOrStart}, WorkUpdate)
+	require.ErrorIs(t, err, ErrNoBranch)
+	require.ErrorContains(t, err, "--new=jq-update starts a new branch of the name")
+}
+
+// A pull request merged since its last reading, which is stale, isn't
+// open work for outdated and every port selection, OpenWork reading it
+// first; and where GitHub can't be read for a chosen branch, the branch is
+// taken as open, as last read, said (field testing's act 0.2.96).
+func TestOpenWorkReadsStalePullRequestsFirst(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.NoError(t, err)
+	number := submitted.PullRequest.Ref.Number
+	_, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+
+	// GitHub unreachable, the reading read before the command: taken as
+	// open, as last read.
+	e.began = time.Now().Add(time.Minute)
+	fake.ObserveErr = errors.New("connection refused")
+	var said []string
+	ctx := progress.WithReporter(t.Context(), func(update progress.Update) { said = append(said, update.Message) })
+	selection, err := e.Select(ctx, Selector{Port: "jq", Policy: SelectOrStart}, WorkUpdate)
+	require.NoError(t, err)
+	require.Equal(t, branch.ID, selection.Branch.ID, "taken as open")
+	require.Contains(t, strings.Join(said, "\n"), "#34901 couldn't be read, so jq-update is taken as open, as last read at ")
+	fake.ObserveErr = nil
+
+	later := time.Now().Add(PullRequestRefresh + time.Minute)
+	e.options.Now = func() time.Time { return later }
+	fake.PRs[number].State = forge.PullRequestMerged
+	found, err := e.PortBranches(t.Context(), "jq")
+	require.NoError(t, err)
+	require.Empty(t, found, "OpenWork read the stale pull request, merged")
 }

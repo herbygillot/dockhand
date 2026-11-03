@@ -17,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -1181,7 +1182,23 @@ type openBranch struct {
 // head changes from its base by one diff-tree, the worktrees by one
 // worktree list, and a status of each worktree a branch is checked out
 // in. A branch whose Git branch is gone is passed over.
+//
+// The pull requests last read longer ago than serve reads them are read
+// first, as a plain status reads them, so a branch GitHub says merged or
+// closed is no longer open work: outdated said "already in act-0.2.95"
+// and ship took that branch for 0.2.96's update, though #36353 had merged
+// (field testing's act 0.2.96). A read that fails takes the branches as
+// last read.
 func (e *Engine) OpenWork(ctx context.Context) (*OpenWork, error) {
+	if result, read, err := e.RefreshStalePullRequests(ctx); err != nil {
+		progress.VerboseReport(ctx, "the pull requests couldn't be read, so the open branches are taken as last read: %v", err)
+	} else if read {
+		for _, refreshed := range result.Branches {
+			for _, change := range refreshed.Changes {
+				progress.VerboseReport(ctx, "%s: %s", refreshed.Branch.ShortName(), change)
+			}
+		}
+	}
 	open, err := e.OpenBranches(ctx)
 	if err != nil {
 		return nil, err
