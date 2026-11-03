@@ -58,6 +58,71 @@ type File struct {
 	Cleanup Cleanup `toml:"cleanup"`
 	Holds   Holds   `toml:"holds"`
 	Update  Update  `toml:"update"`
+	// Tools names the programs dockhand runs, by Programs' keys.
+	Tools Tools `toml:"tools"`
+}
+
+// Program is a program dockhand runs that a person may name: Name, as
+// it's run and as --tool name=path names it; Variable, the environment
+// variable that names it; and Key, its key under [tools].
+type Program struct {
+	Name, Variable, Key string
+}
+
+// Programs are the programs dockhand runs that a person may name, each
+// three ways, --tool name=path, then its variable, then [tools], ahead of
+// the search for it (the person's ask, 2026-11-03: "respect environment
+// variables pointing it to specific command line tools before it finds
+// whatever it finds in the path", in the config file and on the command
+// line too). port and portindex follow port-tclsh's directory, and sudo,
+// security, open, osascript, and sh are run by their fixed names.
+var Programs = []Program{
+	{"git", "GIT_BIN", "git"},
+	{"port-tclsh", "PORT_TCLSH_BIN", "port_tclsh"},
+	{"tart", "TART_BIN", "tart"},
+	{"go2port", "GO2PORT_BIN", "go2port"},
+	{"cargo2port", "CARGO2PORT_BIN", "cargo2port"},
+	{"xcodes", "XCODES_BIN", "xcodes"},
+	{"gh", "GH_BIN", "gh"},
+	{"patch", "PATCH_BIN", "patch"},
+	{"diff", "DIFF_BIN", "diff"},
+}
+
+// ProgramNames are Programs' names, for a refusal to list.
+func ProgramNames() []string {
+	names := make([]string, len(Programs))
+	for i, program := range Programs {
+		names[i] = program.Name
+	}
+	return names
+}
+
+// Tools is [tools]: each program's file, absolute or under ~, or a bare
+// name found on PATH; empty where the file names none.
+type Tools struct {
+	Git        string `toml:"git"`
+	PortTclsh  string `toml:"port_tclsh"`
+	Tart       string `toml:"tart"`
+	Go2Port    string `toml:"go2port"`
+	Cargo2Port string `toml:"cargo2port"`
+	Xcodes     string `toml:"xcodes"`
+	GH         string `toml:"gh"`
+	Patch      string `toml:"patch"`
+	Diff       string `toml:"diff"`
+}
+
+// fields are the table's values by key, for reading and expanding them.
+func (t *Tools) fields() map[string]*string {
+	return map[string]*string{"git": &t.Git, "port_tclsh": &t.PortTclsh, "tart": &t.Tart, "go2port": &t.Go2Port, "cargo2port": &t.Cargo2Port,
+		"xcodes": &t.Xcodes, "gh": &t.GH, "patch": &t.Patch, "diff": &t.Diff}
+}
+
+// Get is the value [tools] gives a key, or empty.
+func (t Tools) Get(key string) string {
+	if field, ok := t.fields()[key]; ok {
+		return *field
+	}
+	return ""
 }
 
 // Update is what an edit does beside the change it's asked for.
@@ -502,6 +567,15 @@ func Defaults() map[string]string {
 		"holds.majors":                   "hold",
 		"holds.allow":                    "(none)",
 		"update.keep_http":               "false",
+		"tools.git":                      "git on PATH",
+		"tools.port_tclsh":               "port-tclsh on PATH, else in /opt/local/bin",
+		"tools.tart":                     "tart on PATH, else in /opt/local/bin",
+		"tools.go2port":                  "go2port on PATH, else in /opt/local/bin",
+		"tools.cargo2port":               "cargo2port on PATH, else in /opt/local/bin",
+		"tools.xcodes":                   "xcodes on PATH",
+		"tools.gh":                       "gh on PATH",
+		"tools.patch":                    "patch on PATH",
+		"tools.diff":                     "diff on PATH",
 		"update.source":                  UpdateSources[0],
 		"serve.ship_to":                  DefaultShipTo,
 		"serve.outdated_at":              DefaultOutdatedAt,
@@ -599,6 +673,11 @@ func (p Places) Load(path string) (File, error) {
 	if f.Worktrees, err = p.withHome(f.Worktrees); err != nil {
 		return File{}, fmt.Errorf("%s: worktrees: %w", path, err)
 	}
+	for key, field := range f.Tools.fields() {
+		if *field, err = p.withHome(*field); err != nil {
+			return File{}, fmt.Errorf("%s: tools.%s: %w", path, key, err)
+		}
+	}
 	return f, nil
 }
 
@@ -626,6 +705,13 @@ func parse(path, text string) (File, error) {
 		// check.on went with build profiles, with no alias (the person,
 		// 2026-10-13): said with what took its place.
 		for _, key := range unknown {
+			if name, ok := strings.CutPrefix(key.String(), "tools."); ok {
+				var keys []string
+				for _, program := range Programs {
+					keys = append(keys, program.Key)
+				}
+				return File{}, fmt.Errorf("%s: tools.%s isn't a program dockhand runs; the keys are %s", path, name, prose.And(keys))
+			}
 			switch key.String() {
 			case "check.on":
 				return File{}, fmt.Errorf("%s: check.on is gone: build.default names a build profile, as \"host\" or \"macports-ci\", or one of your own under [build.profiles]", path)
@@ -652,6 +738,15 @@ func parse(path, text string) (File, error) {
 	}
 	if err := absoluteOrHome(f.Worktrees); err != nil {
 		return File{}, fmt.Errorf("%s: worktrees: %w", path, err)
+	}
+	// A program's file is absolute or under ~, since serve runs in /; a
+	// bare name is found on PATH.
+	for _, program := range Programs {
+		if value := f.Tools.Get(program.Key); strings.Contains(value, "/") {
+			if err := absoluteOrHome(value); err != nil {
+				return File{}, fmt.Errorf("%s: tools.%s: %w, or a name found on PATH", path, program.Key, err)
+			}
+		}
 	}
 	switch f.Check.Tests {
 	case "", "declared", "required", "skip":

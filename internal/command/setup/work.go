@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -117,11 +118,23 @@ func runSetup(cmd *cobra.Command, s *settings.Settings, streams term.Streams, wo
 	field := func(label, text string) {
 		fmt.Fprintln(out, streams.Hanging(fmt.Sprintf("  %-12s ", label), text))
 	}
-	field("Git", fmt.Sprintf("✓ %s at %s", report.Git.Version, s.Places().Tilde(report.Git.Path)))
+	// What named a program, where something did (the roadmap's
+	// "--tool"): ", from --tool git".
+	from := func(source string) string {
+		if source == "" || source == "PATH" {
+			return ""
+		}
+		return ", from " + source
+	}
+	field("Git", fmt.Sprintf("✓ %s at %s%s", report.Git.Version, s.Places().Tilde(report.Git.Path), from(report.Git.Source)))
 	field("Branches", "worktrees in "+s.Places().Tilde(report.Worktrees))
-	if report.MacPorts != "" {
+	switch {
+	case report.MacPorts != "" && report.MacPortsSource != "":
+		// Named, port-tclsh's own path says which.
+		field("Authoring", "✓ MacPorts at "+s.Places().Tilde(filepath.Join(report.MacPorts, "bin", "port-tclsh"))+from(report.MacPortsSource))
+	case report.MacPorts != "":
 		field("Authoring", "✓ MacPorts at "+s.Places().Tilde(report.MacPorts))
-	} else {
+	default:
 		field("Authoring", "! port-tclsh is not on PATH or in /opt/local/bin; install MacPorts to update ports")
 	}
 	for i, tool := range report.Vendoring {
@@ -130,10 +143,17 @@ func runSetup(cmd *cobra.Command, s *settings.Settings, streams term.Streams, wo
 			label = "Vendoring"
 		}
 		if tool.Path != "" {
-			field(label, fmt.Sprintf("✓ %s at %s, for %s", tool.Name, s.Places().Tilde(tool.Path), tool.For))
+			field(label, fmt.Sprintf("✓ %s at %s%s, for %s", tool.Name, s.Places().Tilde(tool.Path), from(tool.Source), tool.For))
 		} else {
 			field(label, fmt.Sprintf("! %s is not on PATH; %s need it, as create and update write them: sudo port install %s", tool.Name, tool.For, tool.Name))
 		}
+	}
+	if len(report.Programs) > 0 {
+		var named []string
+		for _, program := range report.Programs {
+			named = append(named, fmt.Sprintf("%s at %s%s", program.Name, s.Places().Tilde(program.Path), from(program.Source)))
+		}
+		field("Programs", strings.Join(named, "; "))
 	}
 	for i, line := range providerLines(cmd.Context(), s, file) {
 		report.Providers = append(report.Providers, line)

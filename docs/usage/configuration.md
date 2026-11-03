@@ -268,10 +268,47 @@ Durations use values such as `30m`, `6h`, or, for retention, `15d`. Storage
 sizes accept decimal units such as `30GB` and `1.5TB`, or binary units such as
 `64GiB`. `30GB` means 30,000,000,000 bytes.
 
+## Name the programs dockhand runs
+
+Dockhand runs nine programs that you can point at a particular copy:
+
+| Program | Flag | Variable | `[tools]` key |
+| --- | --- | --- | --- |
+| git | `--tool git=…` | `GIT_BIN` | `git` |
+| port-tclsh | `--tool port-tclsh=…` | `PORT_TCLSH_BIN` | `port_tclsh` |
+| tart | `--tool tart=…` | `TART_BIN` | `tart` |
+| go2port | `--tool go2port=…` | `GO2PORT_BIN` | `go2port` |
+| cargo2port | `--tool cargo2port=…` | `CARGO2PORT_BIN` | `cargo2port` |
+| xcodes | `--tool xcodes=…` | `XCODES_BIN` | `xcodes` |
+| gh | `--tool gh=…` | `GH_BIN` | `gh` |
+| patch | `--tool patch=…` | `PATCH_BIN` | `patch` |
+| diff | `--tool diff=…` | `DIFF_BIN` | `diff` |
+
+`--tool` comes first, then the variable, then `[tools]`, then the usual search
+on `PATH` (and `/opt/local/bin` for MacPorts' programs). For example:
+
+```toml
+[tools]
+git = "/opt/homebrew/bin/git"
+go2port = "~/bin/go2port"
+patch = "/opt/local/bin/gpatch"
+```
+
+A program named that isn't there refuses the command before anything runs,
+naming where it was named: `GO2PORT_BIN: /opt/local/bin/go2port isn't
+executable`. There is no fallback to `PATH`.
+
+`--tool name=path` or a variable names a program for one command; `[tools]`
+names it for every command and for serve. A value with a slash is the program's
+file, absolute or under `~`; a bare name is found on `PATH`. `port` and
+`portindex` follow `port_tclsh`; the local provider's prefix keeps its own.
+`--git` is gone: use `--tool git=<path>`. `dockhand config` lists each
+`tools.*` key with its value and where it came from.
+
 ## Paths and limits worth knowing
 
-The main path selections are `MACPORTS_TREE`, `DOCKHAND_DB`, and
-`DOCKHAND_CONFIG`; `--tree` and `--db` override the first two. Worktrees have
+The main path selections are `MACPORTS_TREE`, `DOCKHAND_DB`,
+`DOCKHAND_CONFIG`, and `[tools]`; `--tree` and `--db` override the first two. Worktrees have
 their own `worktrees` setting. A scratch checkout alone does not isolate the
 other three locations. `dockhand usage agents` gives a complete scratch example
 and environment reference.

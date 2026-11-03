@@ -119,7 +119,8 @@ leave the list: `the check compiled none of libgit2-sys, libsqlite3-sys, which
 Cargo.lock pins for features or targets this build doesn't use`.
 
 For a root Go module, the checksum step can fill an empty `go.vendors` through
-`go2port`, found on PATH, then in `/opt/local/bin`. A module below its
+`go2port`, found on PATH, then in `/opt/local/bin`, or where `--tool go2port=…`,
+`GO2PORT_BIN`, or `[tools] go2port` names it. A module below its
 repository root, such as
 `go:golang.org/x/tools/gopls`, uses the module's version and subdirectory tag.
 Its draft builds in that directory and marks `go.offline_build no` for review,

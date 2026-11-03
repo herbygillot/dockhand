@@ -91,14 +91,17 @@ func RunWith(ctx context.Context, line settings.Invocation, streams term.Streams
 	// review of 8c007979, C8-1).
 	nested := func(ctx context.Context, args []string, streams term.Streams) error {
 		var chosen []string
-		for _, name := range []string{"tree", "db", "git"} {
+		for _, name := range []string{"tree", "db"} {
 			if flag := root.PersistentFlags().Lookup(name); flag != nil && flag.Changed {
 				chosen = append(chosen, "--"+name, flag.Value.String())
 			}
 		}
+		for _, tool := range shared.ToolFlags {
+			chosen = append(chosen, "--tool", tool)
+		}
 		return RunWith(ctx, settings.Invocation{Args: append(chosen, args...), Env: line.Env, Dir: line.Dir}, streams, dependencies, mac)
 	}
-	shared.Deps, shared.Host, shared.Env, shared.Dir, shared.Command = dependencies, mac, line.Env, line.Dir, nested
+	shared.Deps, shared.Host, shared.Env, shared.Dir, shared.Command, shared.Args = dependencies, mac, line.Env, line.Dir, nested, line.Args
 	streams = term.Begin(streams.WithDisplay(display(line.Env)), args)
 	shared.Streams = streams
 	root = newRoot(&shared, streams)
@@ -147,14 +150,31 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 		},
 	}
 	root.SetVersionTemplate("dockhand {{.Version}}\n")
-	// A removed flag says what replaced it (removedFlags).
-	root.SetFlagErrorFunc(removedFlag)
+	// A removed flag says what replaced it (removedFlags). serve's own
+	// agent naming --git, which dockhand wrote, is rewritten once with
+	// --tool, where it would be refused at every start.
+	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		if cmd.Name() == "serve" && err.Error() == "unknown flag: --git" {
+			said, rewritten, rewriteErr := serve.RewriteGitAgent(cmd.Context(), shared, shared.Args)
+			if rewriteErr != nil {
+				return rewriteErr
+			}
+			if rewritten {
+				fmt.Fprintln(streams.Out, said)
+				return &term.ExitError{Code: 0}
+			}
+		}
+		return removedFlag(cmd, err)
+	})
 	shared.Flags(root)
 	root.PersistentFlags().BoolVar(&asJSON, "json", false, "write the result as one JSON envelope on standard output")
 	root.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "show progress on standard error: -v for additional detail, -vv for every step")
 	// A command that can't report as JSON is refused before it does
 	// anything, so --json never does work it can't report.
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if err := shared.ParseTools(); err != nil {
+			return err
+		}
 		// A command naming a branch finds its checkout from anywhere
 		// (settings.registeredCheckout): by -b, -p, or --pr, or path,
 		// status, and archive by its name.

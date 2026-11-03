@@ -20,7 +20,10 @@ import (
 type Settings struct {
 	Tree     string
 	Database string
-	Git      string
+	// ToolFlags are --tool's values as given, name=path, and Tools them
+	// parsed, by name, a later one for a name winning (ParseTools).
+	ToolFlags []string
+	Tools     map[string]string
 	// File is the configuration file, as read when the engine opened.
 	File config.File
 	// Opened is the engine a command opened, and openedWith what it opened
@@ -57,6 +60,9 @@ type Settings struct {
 	Deps compose.Dependencies
 	// Host is the Mac's, or a test's stand-in.
 	Host *host.Host
+	// Args are the command line's arguments, as given, the program's name
+	// aside: serve compares its agent's with them.
+	Args []string
 	// Env and dir are the command line's environment and working
 	// directory (invocation), which compose reads.
 	Env []string
@@ -100,7 +106,21 @@ func SourceFlag(cmd *cobra.Command, s *Settings) {
 func (s *Settings) Flags(root *cobra.Command) {
 	root.PersistentFlags().StringVarP(&s.Tree, "tree", "t", "", "the ports checkout (default $MACPORTS_TREE, else the current directory)")
 	root.PersistentFlags().StringVar(&s.Database, "db", "", "the database (default $DOCKHAND_DB, else ~/.dockhand/dockhand.db)")
-	root.PersistentFlags().StringVar(&s.Git, "git", "", "the git executable (default $GIT_BIN, else git on PATH)")
+	root.PersistentFlags().StringArrayVar(&s.ToolFlags, "tool", nil, "name=path for a program dockhand runs, ahead of its *_BIN variable, [tools], and PATH: git, port-tclsh, tart, go2port, cargo2port, xcodes, gh, patch, or diff; repeatable")
+}
+
+// ParseTools reads --tool's values into Tools, refusing a value that
+// isn't name=path or names a program dockhand doesn't run.
+func (s *Settings) ParseTools() error {
+	s.Tools = map[string]string{}
+	for _, value := range s.ToolFlags {
+		name, path, err := compose.ParseTool(value)
+		if err != nil {
+			return err
+		}
+		s.Tools[name] = path
+	}
+	return nil
 }
 
 // PullRequestsVariable names the sandbox pull requests go to instead of
@@ -109,7 +129,7 @@ const PullRequestsVariable = compose.PullRequestsVariable
 
 // ComposeOptions are the command line's selections, as compose takes them.
 func (s *Settings) ComposeOptions() compose.Options {
-	return compose.Options{Tree: s.Tree, Database: s.Database, Git: s.Git, NamesBranch: s.NamesBranch, Unattended: s.Unattended || !s.Streams.Terminal(), KeepHTTP: s.KeepHTTP, Source: s.Source, Env: s.Env, Dir: s.Dir}
+	return compose.Options{Tree: s.Tree, Database: s.Database, Tools: s.Tools, NamesBranch: s.NamesBranch, Unattended: s.Unattended || !s.Streams.Terminal(), KeepHTTP: s.KeepHTTP, Source: s.Source, Env: s.Env, Dir: s.Dir}
 }
 
 // Options resolves the engine's options, reading the configuration file

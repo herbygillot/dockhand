@@ -206,7 +206,7 @@ the two caches after the table, are the complete catalog beyond the usual
 | `MACPORTS_TREE` | Ports checkout, unless `--tree` is given. |
 | `DOCKHAND_DB` | Database, unless `--db` is given; otherwise `~/.dockhand/dockhand.db`. |
 | `DOCKHAND_CONFIG` | Configuration file; otherwise `~/.dockhand/config.toml`. |
-| `GIT_BIN` | Git executable, unless `--git` is given. |
+| `GIT_BIN`, `PORT_TCLSH_BIN`, `TART_BIN`, `GO2PORT_BIN`, `CARGO2PORT_BIN`, `XCODES_BIN`, `GH_BIN`, `PATCH_BIN`, `DIFF_BIN` | The program, unless `--tool name=path` names it; otherwise `[tools]`, then PATH. |
 | `GH_TOKEN`, `GITHUB_TOKEN` | GitHub token, ahead of the saved login. |
 | `DOCKHAND_TART_HOME` | Dockhand's Tart images; otherwise `~/.dockhand/tart`. |
 | `TART_HOME` | Your Tart home, consulted when counting running VMs; otherwise `~/.tart`. |
@@ -227,13 +227,16 @@ Tart, `go2port`,
 `cargo2port`, `port-tclsh`, and `portindex` are found on `PATH`, then in
 MacPorts' prefix, `/opt/local/bin`, so a shell whose `PATH` lacks it, such as
 one over SSH, still builds; a refusal names both places, `go2port isn't on PATH
-or in /opt/local/bin`.
+or in /opt/local/bin`. `--tool name=path`, its variable, or `[tools]` names one
+ahead of that search, and one that names a program that isn't there is
+refused: `GO2PORT_BIN: /opt/local/bin/go2port isn't executable`. None of them
+reaches a build environment, which runs its own MacPorts.
 
 `serve --install` keeps `DOCKHAND_CONFIG`, `DOCKHAND_UPSTREAM`,
 `DOCKHAND_PULL_REQUESTS`, `DOCKHAND_INDEX_MIRROR`, `DOCKHAND_INDEX_CACHE`,
 `DOCKHAND_READING_CACHE`, `DOCKHAND_GITHUB_CACHE`, `DOCKHAND_ARCHIVE_CACHE`,
 `DOCKHAND_BUILD_HISTORY_CACHE`, `DOCKHAND_TART_HOME`, `TART_HOME`, and
 `DOCKHAND_SSH_DIR` in the agent, with its PATH and explicit
-tree, database, and Git selections. It does not write a token into the agent
+tree and database selections, and each program named, as `--tool name=path`. It does not write a token into the agent
 file. Read `dockhand usage configuration` for settings and
 `dockhand usage unattended` for installing and stopping the service.

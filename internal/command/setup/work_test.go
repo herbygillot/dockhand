@@ -27,6 +27,18 @@ func TestSetupStartPathAndAdopt(t *testing.T) {
 	_, err = os.Stat(filepath.Join(w.Home, ".dockhand", "config.toml"))
 	require.ErrorIs(t, err, os.ErrNotExist, "the default needs no configuration file")
 
+	// A program named says what named it, and one setup has no line of
+	// its own for is said where it's named (the roadmap's "--tool").
+	git, err := exec.LookPath("git")
+	require.NoError(t, err)
+	named, _, err := cmdtest.Dockhand(t, "setup", "--yes", "--tool", "git="+git, "--tool", "patch="+git)
+	require.NoError(t, err)
+	require.Regexp(t, `\n  Git          ✓ \d+\.\d+\.\d+ at \S+/git, from --tool git\n`, named)
+	require.Contains(t, named, "  Programs     patch at "+git+", from --tool patch\n")
+	report, err := cmdtest.JSONOf(t, "setup", "--yes", "--tool", "git="+git)
+	require.NoError(t, err)
+	require.Equal(t, "--tool git", cmdtest.Dig(t, report.Result, "git", "source"))
+
 	out, _, err = cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	require.Contains(t, out, "Created dockhand/jq-update from master ")

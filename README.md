@@ -34,7 +34,7 @@ For local VM builds, install [Tart](https://tart.run) on an Apple silicon Mac:
 sudo port install tart
 ```
 
-On a Mac without Tart, including an Intel Mac, you can run checks in a local MacPorts prefix with `dockhand check --on local`, or use GitHub Actions. Some Go and Rust ports also need the MacPorts `go2port` or `cargo2port` helper to regenerate their dependency lists. Dockhand finds `tart`, `go2port`, and `cargo2port` as it finds `port-tclsh`: on your `PATH`, then in `/opt/local/bin`, so a shell whose `PATH` lacks MacPorts' programs, as one over SSH may, still has them.
+On a Mac without Tart, including an Intel Mac, you can run checks in a local MacPorts prefix with `dockhand check --on local`, or use GitHub Actions. Some Go and Rust ports also need the MacPorts `go2port` or `cargo2port` helper to regenerate their dependency lists. Dockhand finds `tart`, `go2port`, and `cargo2port` as it finds `port-tclsh`: on your `PATH`, then in `/opt/local/bin`, so a shell whose `PATH` lacks MacPorts' programs, as one over SSH may, still has them, or where `--tool`, a `*_BIN` variable, or `[tools]` names one.
 
 <details>
 <summary>Build Dockhand from source</summary>

@@ -295,6 +295,9 @@ var verb = regexp.MustCompile(`%[-+# 0-9.*]*[a-zA-Z%]`)
 func referenceProblems(root *cobra.Command, text string, code bool) []string {
 	var problems []string
 	if !code {
+		// A patch's header, "diff --git a/x b/x", is git's own, not
+		// dockhand diff's, which a root --git once let pass.
+		text = patchHeader.ReplaceAllString(text, "")
 		text = bareCommand.ReplaceAllStringFunc(text, func(line string) string {
 			if child, _, err := root.Find(strings.Fields(line)[:1]); err == nil && child != root {
 				return "dockhand " + line
@@ -352,6 +355,9 @@ var commandWord = regexp.MustCompile(`^[a-z][a-z-]*$`)
 // R3-27); where its first word names one of dockhand's commands, it's
 // read as one.
 var bareCommand = regexp.MustCompile(`(?m)^[a-z][a-z-]* +-`)
+
+// patchHeader is a unified diff's git header line, as a patch has it.
+var patchHeader = regexp.MustCompile(`(?m)^diff --git.*$`)
 
 // flagName is a word's long or short flag, as --name, --name=value, or -x.
 func flagName(word string) (long, short string) {

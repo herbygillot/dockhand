@@ -52,7 +52,9 @@ dockhand setup
 `setup` checks the tools, registers the checkout, and reports the GitHub login
 and build environments it can use. It finds `port-tclsh`, `tart`, `go2port`, and
 `cargo2port` on `PATH`, then in `/opt/local/bin`, so a shell whose `PATH` lacks
-MacPorts' prefix, as one over SSH can, still finds them. On a terminal it offers
+MacPorts' prefix, as one over SSH can, still finds them, unless `--tool`, a
+variable, or `[tools]` names one: `--tool go2port=…`, `GO2PORT_BIN`, or
+`go2port = "…"`. The report says which chose each. On a terminal it offers
 missing setup steps. You can decline each offer. Creating a Tart image downloads
 macOS and is a separate choice. `dockhand setup -y` skips the offers; it does
 not silently complete every missing dependency.

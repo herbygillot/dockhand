@@ -47,8 +47,15 @@ func TestARemovedFlagSaysWhatReplacedIt(t *testing.T) {
 	t.Parallel()
 	for command, flags := range removedFlags {
 		for flag, words := range flags {
-			_, _, err := cmdtest.Dockhand(t, command, "--"+flag)
-			require.EqualError(t, err, words, "%s --%s", command, flag)
+			// The root's are gone on every command (--git, for --tool).
+			commands := []string{command}
+			if command == "" {
+				commands = []string{"status", "update"}
+			}
+			for _, command := range commands {
+				_, _, err := cmdtest.Dockhand(t, command, "--"+flag)
+				require.EqualError(t, err, words, "%s --%s", command, flag)
+			}
 		}
 	}
 	_, _, err := cmdtest.Dockhand(t, "update", "--no-such-flag")
