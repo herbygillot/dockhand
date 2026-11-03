@@ -18,11 +18,13 @@ envelope() {
 }
 case "$verb" in
 status)
-	[ "$json" = 1 ] && envelope 0 "$(cat "$state/status.json" 2>/dev/null || echo '{"attention": [], "branches": []}')"
-	exit 0
-	;;
-queue)
-	[ "$json" = 1 ] && envelope 0 "$(cat "$state/queue.json" 2>/dev/null || echo '{"runs": []}')"
+	# The queue is status's, from queue.json's runs, as dockhand status
+	# --json carries it since rc7 removed dockhand queue.
+	if [ "$json" = 1 ]; then
+		base=$(cat "$state/status.json" 2>/dev/null || echo '{"attention": [], "branches": []}')
+		runs=$(jq -c '.runs // []' "$state/queue.json" 2>/dev/null || echo '[]')
+		envelope 0 "$(printf '%s' "$base" | jq -c --argjson runs "${runs:-[]}" '.queue = $runs')"
+	fi
 	exit 0
 	;;
 cancel)

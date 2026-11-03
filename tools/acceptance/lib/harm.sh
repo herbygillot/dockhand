@@ -17,7 +17,7 @@ HARM_TOKEN='(gh[opsur]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})'
 
 # The verbs whose --plan changes nothing, and those that only read.
 HARM_PLAN_VERBS=" update checksums revbump check tidy submit "
-HARM_READ_VERBS=" status diff impact path logs queue outdated config explain "
+HARM_READ_VERBS=" status diff impact path logs outdated config explain "
 
 harm_id() { printf '%s' "$1" | shasum | cut -c1-12; }
 
@@ -150,7 +150,8 @@ harm_running() {
 			with_timeout 150 env TART_HOME="$home" tart list --format json 2>/dev/null | jq -r '.[] | select(.State == "running") | "vm " + .Name' 2>/dev/null || :
 		done
 	fi
-	"$DH_BIN" --json queue 2>/dev/null | jq -r '.result.runs[]? | select(.state == "queued" or .state == "running") | "run " + .name' 2>/dev/null || :
+	# The queue is status's since rc7, which removed dockhand queue.
+	"$DH_BIN" --json status --all 2>/dev/null | jq -r '.result.queue[]? | select(.state == "queued" or .state == "running") | "run " + .name' 2>/dev/null || :
 	# The fault kit's own processes, a row's proxy among them, and its disk
 	# images still attached, as D-R1's low-disk one was left (the rc8 full
 	# stage).
