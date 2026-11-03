@@ -184,11 +184,9 @@ func AskTested(streams term.Streams, plan *engine.SubmitPlan) error {
 	if err != nil {
 		return err
 	}
-	// A --variants each check that passed has answered this one.
-	variants := false
-	if plan.Evidence != nil {
-		_, _, variants = plan.Evidence.VariantsBuilt()
-	}
+	// Variant builds of the changed ports that passed, from any check of
+	// the files, have answered this one.
+	variants := plan.Evidence != nil && plan.Evidence.VariantsAnswered()
 	if !variants {
 		if variants, err = streams.AskYes("? Did you check that the most important variants aren't broken? [y/N] ", false); err != nil {
 			return err

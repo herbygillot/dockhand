@@ -167,37 +167,45 @@ func TestAnExcludedEnvironmentIsNotCalledTested(t *testing.T) {
 	require.Equal(t, "— not built: known_fail here, as the Portfile says", EvidenceWords(evidence, evidence.Targets[0], 0, AcceptedFailure{}), "a cell shown still says the plan's reason, where it has it")
 }
 
-// A --variants each check that passed ticks the template's variants item
-// by itself, and says which it built; each build is its own row. One
-// where a variant build failed leaves the item to the person.
-func TestAVariantsCheckAnswersTheVariantsItem(t *testing.T) {
+// Variant builds of a changed port that all passed tick the template's
+// variants item by themselves, from any check of the files, and the note
+// says which were built and in which checks; each build is its own row.
+// One that failed leaves the item to the person, the note saying which
+// failed (field testing's note 10 from the curl fix).
+func TestVariantBuildsAnswerTheVariantsItem(t *testing.T) {
 	t.Parallel()
 	command := model.Environment{Provider: "command"}
-	passed := func(target model.Target) TargetEvidence {
-		return TargetEvidence{Target: model.PlanTarget{ID: target.ID(), Target: target}, Passed: true,
-			Outcomes: []Cell{recorded(command, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsNone})}}
+	run := func(n int) model.Run { return model.Run{ID: model.RunID(fmt.Sprint("run_", n)), Number: n} }
+	build := func(target model.Target, role model.TargetRole, check model.Run, outcome model.Outcome) (TargetEvidence, model.GuestExecution) {
+		execution := model.GuestExecution{ID: model.ExecutionID(fmt.Sprint("ex_", check.Number, target.ID())), Run: check.ID, Environment: command}
+		return TargetEvidence{Target: model.PlanTarget{ID: target.ID(), Target: target, Role: role}, Passed: outcome == model.OutcomePassed,
+			Outcomes: []Cell{recorded(command, model.TargetResult{Outcome: outcome, Tests: model.TestsNone, Execution: execution.ID})}}, execution
 	}
-	jq := model.Target{Name: "jq"}
-	tests := model.Target{Name: "jq", Variants: map[string]bool{"tests": true}}
-	docs := model.Target{Name: "jq", Variants: map[string]bool{"docs": true}}
-	evidence := Evidence{Plan: model.Plan{Environments: []model.Environment{command}, EachVariant: true}, Targets: []TargetEvidence{passed(jq), passed(tests), passed(docs)}}
-	port, builds, ok := evidence.VariantsBuilt()
-	require.True(t, ok)
-	require.Equal(t, "jq", port)
-	require.Equal(t, []string{"+tests", "+docs"}, builds)
+	curl := model.Target{Name: "curl"}
+	gnutls := model.Target{Name: "curl", Variants: map[string]bool{"gnutls": true, "sectrust": true}}
+	ssl := model.Target{Name: "curl", Variants: map[string]bool{"ssl": true, "sectrust": true}}
+	evidenceOf := func(sslOutcome model.Outcome, each bool) Evidence {
+		defaults, a := build(curl, model.Changed, run(774), model.OutcomePassed)
+		first, b := build(gnutls, model.Also, run(772), model.OutcomePassed)
+		second, c := build(ssl, model.Also, run(773), sslOutcome)
+		return Evidence{Run: run(774), Earlier: []model.Run{run(772), run(773)}, Plan: model.Plan{Environments: []model.Environment{command}, EachVariant: each},
+			Targets: []TargetEvidence{defaults, first, second}, Executions: map[model.ExecutionID]model.GuestExecution{a.ID: a, b.ID: b, c.ID: c}}
+	}
+	evidence := evidenceOf(model.OutcomePassed, false)
+	require.True(t, evidence.VariantsAnswered())
+	require.Equal(t, []VariantBuild{{Port: "curl", Spec: "+gnutls +sectrust", Checks: []string{"check-772"}}, {Port: "curl", Spec: "+sectrust +ssl", Checks: []string{"check-773"}}}, evidence.VariantBuilds())
 	body := ownedSections(bodyFacts{Evidence: &evidence})
-	require.Contains(t, body, "- [x] checked that the Portfile's most important [variants](https://trac.macports.org/wiki/Variants) haven't been broken? (Dockhand built jq with each of +tests, +docs added to the default variants)\n")
-	require.Contains(t, body, "| jq +tests | ✓ |\n")
+	require.Contains(t, body, "- [x] checked that the Portfile's most important [variants](https://trac.macports.org/wiki/Variants) haven't been broken? (Dockhand built curl with +gnutls +sectrust and with +sectrust +ssl added to the default variants, in check-772 and check-773)\n")
+	require.Contains(t, body, "| curl +gnutls +sectrust | ✓ |\n")
 
-	evidence.Targets[2].Passed = false
-	_, _, ok = evidence.VariantsBuilt()
-	require.False(t, ok, "a variant build that didn't pass answers nothing")
-	require.Contains(t, ownedSections(bodyFacts{Evidence: &evidence}), "- [ ] checked that the Portfile's most important [variants]")
-	require.Contains(t, ownedSections(bodyFacts{Evidence: &evidence, TestedVariants: true}), "- [x] checked that the Portfile's most important [variants](https://trac.macports.org/wiki/Variants) haven't been broken?\n",
+	each := evidenceOf(model.OutcomePassed, true)
+	require.Contains(t, ownedSections(bodyFacts{Evidence: &each}), "(Dockhand built curl with each of +gnutls +sectrust, +sectrust +ssl added to the default variants)\n", "--variants each's form")
+
+	failed := evidenceOf(model.OutcomeFailed, false)
+	require.False(t, failed.VariantsAnswered(), "a variant build that didn't pass answers nothing")
+	require.Contains(t, ownedSections(bodyFacts{Evidence: &failed}), "- [ ] checked that the Portfile's most important [variants](https://trac.macports.org/wiki/Variants) haven't been broken? (Dockhand built curl with +gnutls +sectrust, which passed, and with +sectrust +ssl, which failed in check-773)\n")
+	require.Contains(t, ownedSections(bodyFacts{Evidence: &failed, TestedVariants: true}), "- [x] checked that the Portfile's most important [variants](https://trac.macports.org/wiki/Variants) haven't been broken?",
 		"the person's statement, as before")
-	evidence.Plan.EachVariant = false
-	_, _, ok = evidence.VariantsBuilt()
-	require.False(t, ok, "only --variants each answers it")
 }
 
 // A new port is said under Description as its Portfile says it, for a

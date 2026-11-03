@@ -167,6 +167,22 @@ type TargetEvidence struct {
 	Unchecked bool
 }
 
+// AcceptName is the name submit --accept takes a target's failure by: its
+// build's, as the Tested on table names it, "curl +ssl +sectrust", a
+// bare port name its default build's, so accepting a variant build
+// doesn't accept the default build (field testing's note 10 from the curl
+// fix). A variant build that is its port's only coverage, no default build
+// beside it, goes by the port's name, as before.
+func (e Evidence) AcceptName(target TargetEvidence) string {
+	name := target.Target.Target.Name
+	if target.Target.Target.VariantSpec() == "" || slices.ContainsFunc(e.Targets, func(t TargetEvidence) bool {
+		return t.Target.Target.Name == name && t.Target.Target.VariantSpec() == ""
+	}) {
+		return string(target.Target.ID)
+	}
+	return name
+}
+
 // Remade are the environments where the target's result was recorded
 // before the environment was made again, and none since.
 func (t TargetEvidence) Remade() []model.Environment {
@@ -361,6 +377,7 @@ func Judge(primary Check, plan model.Plan, earlier []Check, now Identities, requ
 		}
 		evidence.Targets = append(evidence.Targets, te)
 	}
+	added := evidence.addBuilds(primary, earlier)
 	for _, check := range earlier {
 		if check.Run.ID == primary.Run.ID || !evidence.missing() {
 			continue
@@ -371,9 +388,82 @@ func Judge(primary Check, plan model.Plan, earlier []Check, now Identities, requ
 			evidence.Earlier = append(evidence.Earlier, check.Run)
 		}
 	}
+	evidence.extrasShown(added)
 	evidence.outsideProfile(required, checks)
 	evidence.settle()
 	return evidence
+}
+
+// addBuilds gives the evidence a row for each build an earlier check of
+// the files planned that it lacks, newest check first, for fill to fill
+// as it fills the others: check-772's curl +gnutls +sectrust and
+// check-773's curl +ssl +sectrust vanished once check-774 built curl with
+// its defaults (field testing's note 10 from the curl fix). A port's rows
+// go together, its default build first, then its variant builds as their
+// checks come, newest first. A build beside a default build the evidence
+// has is an extra, as an --also port is, which asks nothing where no
+// check built it; one of a port with no default build there keeps its
+// check's role, the port's coverage. The extras it added are returned.
+func (e *Evidence) addBuilds(primary Check, earlier []Check) map[model.TargetID]bool {
+	added := map[model.TargetID]bool{}
+	for _, check := range earlier {
+		if check.Run.ID == primary.Run.ID {
+			continue
+		}
+		for _, target := range check.Plan.Targets {
+			if slices.ContainsFunc(e.Targets, func(t TargetEvidence) bool { return t.Target.ID == target.ID }) {
+				continue
+			}
+			name := target.Target.Name
+			if slices.ContainsFunc(e.Targets, func(t TargetEvidence) bool {
+				return t.Target.Target.Name == name && t.Target.Target.VariantSpec() == ""
+			}) {
+				target.Role = model.Also
+				added[target.ID] = true
+			}
+			row := TargetEvidence{Target: target}
+			for _, environment := range e.Plan.Environments {
+				cell := noResult(CellNotRun, environment, target.ID)
+				if exclusion, ok := check.Plan.ExclusionIn(environment, target.ID); ok {
+					cell = noResult(CellExcluded, environment, target.ID)
+					cell.Exclusion = exclusion
+				}
+				row.Outcomes = append(row.Outcomes, cell)
+			}
+			at := len(e.Targets)
+			for i, t := range e.Targets {
+				if t.Target.Target.Name == name {
+					at = i + 1
+				}
+			}
+			if target.Target.VariantSpec() == "" {
+				if i := slices.IndexFunc(e.Targets, func(t TargetEvidence) bool { return t.Target.Target.Name == name }); i >= 0 {
+					at = i
+				}
+			}
+			e.Targets = slices.Insert(e.Targets, at, row)
+		}
+	}
+	return added
+}
+
+// extrasShown shows a build addBuilds added beside a default build only
+// where a check built it: elsewhere its cell is no check's to ask, as a
+// release outside the newest check's ask reads, never unchecked.
+func (e *Evidence) extrasShown(added map[model.TargetID]bool) {
+	for t := range e.Targets {
+		if !added[e.Targets[t].Target.ID] {
+			continue
+		}
+		for i, cell := range e.Targets[t].Outcomes {
+			if cell.Kind != CellNotRun && cell.Kind != CellRemade {
+				continue
+			}
+			skipped := noResult(CellExcluded, cell.Environment, e.Targets[t].Target.ID)
+			skipped.Exclusion = model.Exclusion{Target: e.Targets[t].Target.Target, Reason: "outside what the newest check of these files asked for", Span: true}
+			e.Targets[t].Outcomes[i] = skipped
+		}
+	}
 }
 
 // outsideProfile asks nothing of a target in an environment the newest
@@ -1112,27 +1202,69 @@ func (t TargetEvidence) Unmet() (model.Unmet, bool) {
 	return model.Unmet{}, false
 }
 
-// VariantsBuilt are the variant builds a --variants each check made of its
-// port, as MacPorts writes each, "+tests", with whether every one passed
-// wherever it's required, and its default build too: what the pull
-// request template's variants item asks, which such a check answers.
-func (e Evidence) VariantsBuilt() (port string, builds []string, passed bool) {
-	if !e.Plan.EachVariant {
-		return "", nil, false
-	}
-	passed = true
+// VariantBuild is a variant build of a port the branch changes, as the
+// evidence holds it: its port, its variants as MacPorts writes them, the
+// checks whose results its cells are, and, where it failed and that
+// stands, the checks it failed in.
+type VariantBuild struct {
+	Port, Spec string
+	Checks     []string
+	Failed     []string
+}
+
+// VariantBuilds are the evidence's variant builds of the ports the branch
+// changes, from any check of the files, --variants each's and chosen
+// variants' alike, in the evidence's order: what the pull request
+// template's variants item asks, which they answer where every one passed
+// (field testing's note 10 from the curl fix, where check-772's and
+// check-773's builds went unsaid beside check-774's default build).
+func (e Evidence) VariantBuilds() []VariantBuild {
+	names := e.Checks()
+	changed := map[string]bool{}
 	for _, target := range e.Targets {
-		if spec := target.Target.Target.VariantSpec(); spec != "" {
-			port = target.Target.Target.Name
-			builds = append(builds, spec)
+		if target.Target.Role == model.Changed {
+			changed[target.Target.Target.Name] = true
 		}
 	}
+	var builds []VariantBuild
 	for _, target := range e.Targets {
-		if target.Target.Target.Name == port && !target.Passed {
-			passed = false
+		spec := target.Target.Target.VariantSpec()
+		if spec == "" || !changed[target.Target.Target.Name] {
+			continue
+		}
+		build := VariantBuild{Port: target.Target.Target.Name, Spec: spec}
+		for _, cell := range target.Outcomes {
+			if cell.Kind != CellRecorded {
+				continue
+			}
+			run := e.Executions[cell.Execution].Run
+			if found, ok := e.origins[cell.ReusedFrom]; ok {
+				run = found.Execution.Run
+			}
+			name := names[run]
+			if name == "" {
+				continue
+			}
+			if !slices.Contains(build.Checks, name) {
+				build.Checks = append(build.Checks, name)
+			}
+			if cell.Outcome != model.OutcomePassed && !slices.Contains(build.Failed, name) {
+				build.Failed = append(build.Failed, name)
+			}
+		}
+		if len(build.Checks) > 0 {
+			builds = append(builds, build)
 		}
 	}
-	return port, builds, passed && len(builds) > 0
+	return builds
+}
+
+// VariantsAnswered reports whether the evidence's variant builds answer
+// the template's variants item: there's one, and every one passed
+// wherever it ran.
+func (e Evidence) VariantsAnswered() bool {
+	builds := e.VariantBuilds()
+	return len(builds) > 0 && !slices.ContainsFunc(builds, func(b VariantBuild) bool { return len(b.Failed) > 0 })
 }
 
 // Ask is the governing ask of a branch's checks (D17): the newest that

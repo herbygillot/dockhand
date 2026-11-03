@@ -336,7 +336,7 @@ func Attend(facts Facts) []Attention {
 			case target.Missing():
 				unchecked = append(unchecked, target.Target.Target.Name)
 			default:
-				extras = append(extras, target.Target.Target.Name)
+				extras = append(extras, check.Evidence.AcceptName(target))
 			}
 		}
 		// A check that builds them again builds where this one did, which

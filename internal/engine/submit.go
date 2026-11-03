@@ -683,7 +683,7 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 	// and are recorded with the submission.
 	if request.Standing {
 		for _, port := range request.Accept {
-			i := slices.IndexFunc(evidence.Targets, func(t TargetEvidence) bool { return t.Target.Target.Name == port && t.Failing() })
+			i := slices.IndexFunc(evidence.Targets, func(t TargetEvidence) bool { return evidence.AcceptName(t) == port && t.Failing() })
 			failures, _ := branchstate.EnvironmentFailures(evidence, evidence.Targets[i])
 			for _, failure := range failures {
 				if !slices.ContainsFunc(plan.Standing, func(d model.Decision) bool {

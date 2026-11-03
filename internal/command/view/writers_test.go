@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/config"
@@ -332,4 +333,13 @@ func TestTidysPreviewNamesEveryTrailer(t *testing.T) {
 	WriteTidyPlan(&out, engine.TidyPlan{Groups: []engine.TidyGroup{dockhands}}, false)
 	require.Contains(t, out.String(), "       adds: Generated-By: Dockhand devel (https://github.com/herbygillot/dockhand)\n")
 	require.NotContains(t, out.String(), "keeps: Generated-By")
+}
+
+// A Next: naming a variant build quotes it for the shell, as status's
+// failed extra says "dockhand submit --accept 'curl +sectrust +ssl'"
+// (field testing's note 10 from the curl fix).
+func TestANextNamingAVariantBuildQuotesIt(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "dockhand submit --branch curl-fix --accept 'curl +sectrust +ssl'", RenderNext(branchstate.Next{Verb: branchstate.VerbSubmit, Branch: "curl-fix", Args: []string{"--accept", "curl +sectrust +ssl"}}, ""))
+	require.Equal(t, `dockhand decide --branch jq-fix license-changed jq --because "…"`, RenderNext(branchstate.Next{Verb: branchstate.VerbDecide, Branch: "jq-fix", Args: []string{"license-changed", "jq", "--because", `"…"`}}, ""), "an argument quoted already stays as it is")
 }
