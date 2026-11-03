@@ -251,6 +251,10 @@ type Engine struct {
 	// Providers are where checks build, by name.
 	Providers map[string]buildenv.Provider
 	ports     *selection.Reader
+	// began is when the engine opened, the command's start: a pull
+	// request read before it is read again before a branch is chosen
+	// for work (stillOpen).
+	began time.Time
 	// checkIndex stages the index a check ships; checkIndex.
 	checkIndex *portindex.Stager
 	options    Options
@@ -401,7 +405,9 @@ func Open(ctx context.Context, options Options) (*Engine, error) {
 		s.Close()
 		return nil, err
 	}
-	return &Engine{Repo: repo, Store: s, Repository: id, options: options}, nil
+	e := &Engine{Repo: repo, Store: s, Repository: id, options: options}
+	e.began = e.now()
+	return e, nil
 }
 
 // Close releases the store.

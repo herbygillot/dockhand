@@ -80,11 +80,18 @@ func ChooseBranch(ctx context.Context, e *engine.Engine, streams term.Streams, w
 // starts, and that --new starts another.
 func SettleSelection(ctx context.Context, e *engine.Engine, streams term.Streams, selection engine.Selection, port string, work engine.Work, say bool) (ChosenBranch, error) {
 	switch {
+	case selection.ForVersion && selection.Said != "":
+		// The port's branch merged or closed since it was last read.
+		fmt.Fprintf(streams.Err, "%s, so a branch named for the new version starts from master.\n", selection.Said)
+		return ChosenBranch{ForVersion: true}, nil
 	case selection.ForVersion:
 		fmt.Fprintf(streams.Err, "No open branch changes %s. Starting a branch named for the new version.\n", port)
 		return ChosenBranch{ForVersion: true}, nil
 	case selection.Start != nil:
-		if say {
+		switch {
+		case selection.Said != "":
+			fmt.Fprintf(streams.Err, "%s, so %s starts from master.\n", selection.Said, engine.BranchName(selection.Start.Name))
+		case say:
 			fmt.Fprintf(streams.Err, "No open branch changes %s. Starting %s.\n", port, engine.BranchName(selection.Start.Name))
 		}
 		branch, err := e.Start(ctx, *selection.Start)
