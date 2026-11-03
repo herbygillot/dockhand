@@ -33,6 +33,19 @@ func TestSigninIsTheCommandLinesOwn(t *testing.T) {
 	require.Equal(t, github.Token{Secret: "first", Source: github.SourceGHEnvironment}, options.Signin(nil).Token, "GH_TOKEN first, trimmed")
 
 	require.Empty(t, Options{Env: []string{"PATH=/nowhere"}}.Signin(nil).CLI)
+
+	// gh as [tools] names it, then GH_BIN, then --tool, for setup's
+	// GitHub lines (the roadmap's "Setup's GitHub lines read [tools] gh").
+	other := filepath.Join(bin, "gh-other")
+	testsupport.WriteExecutable(t, other, "#!/bin/sh\n")
+	config := filepath.Join(home, "config.toml")
+	require.NoError(t, os.WriteFile(config, []byte("[tools]\ngh = \""+other+"\"\n"), 0o644))
+	named := Options{Env: []string{"HOME=" + home, "PATH=" + bin, "DOCKHAND_CONFIG=" + config}}
+	require.Equal(t, other, named.Signin(nil).CLI, "[tools] gh")
+	named.Env = append(named.Env, "GH_BIN="+gh)
+	require.Equal(t, gh, named.Signin(nil).CLI, "GH_BIN over [tools]")
+	named.Tools = map[string]string{"gh": other}
+	require.Equal(t, other, named.Signin(nil).CLI, "--tool over both")
 	require.Empty(t, Options{}.Signin(nil).Lock, "no home, no lock")
 }
 
