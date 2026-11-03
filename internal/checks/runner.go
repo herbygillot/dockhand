@@ -1038,9 +1038,22 @@ func (d *driver) finish(ctx context.Context) (model.Run, error) {
 		d.c.Hooks.AfterFinish(ctx, d.run)
 	}
 	if err == nil {
+		// A staged tree an attempt left, as one stopped mid-build does,
+		// goes with the check's end, and an attempt's directory it leaves
+		// empty with it (Prime-time's v0.7.0 acceptance).
+		directory := filepath.Join(d.c.Logs, d.run.Name())
+		if _, _, removeErr := buildenv.RemoveStagedTrees(directory); removeErr == nil {
+			if attempts, readErr := os.ReadDir(directory); readErr == nil {
+				for _, attempt := range attempts {
+					if attempt.IsDir() {
+						_ = os.Remove(filepath.Join(directory, attempt.Name()))
+					}
+				}
+			}
+		}
 		// Its logs are kept compressed from now on (D6); one that can't be
 		// is said, and cleanup tries again.
-		if _, compressErr := buildlog.CompressAll(filepath.Join(d.c.Logs, d.run.Name())); compressErr != nil {
+		if _, compressErr := buildlog.CompressAll(directory); compressErr != nil {
 			d.emit(ctx, model.EventProgress, fmt.Sprintf("Could not compress %s's logs; cleanup will retry: %v", d.run.Name(), compressErr))
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -79,6 +80,9 @@ type scriptedProvider struct {
 	// stall writes each target's log once and holds it that long before
 	// its result, as a build whose output stopped.
 	stall time.Duration
+	// staged leaves a staged tree in the attempt's directory, and one in
+	// an earlier attempt's, as a process stopped mid-build does.
+	staged bool
 }
 
 // scriptedArchive is the archive a scripted build of a target makes: its
@@ -118,6 +122,16 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 	if p.says != "" {
 		progress.Report(ctx, "%s", p.says)
 		progress.VerboseReport(ctx, "behind the scenes of %s", p.says)
+	}
+	if p.staged {
+		for _, directory := range []string{job.Directory, job.Directory + "-stopped"} {
+			if err := os.MkdirAll(directory, 0o755); err != nil {
+				return err
+			}
+			if err := os.WriteFile(filepath.Join(directory, buildenv.StagedTree), []byte("tree"), 0o644); err != nil {
+				return err
+			}
+		}
 	}
 	for i, target := range job.Targets {
 		if p.wait {
@@ -2073,4 +2087,33 @@ func TestABaselineNeedsNothingOfTheBranchsWorktree(t *testing.T) {
 	require.True(t, run.State.Terminal(), run.Detail)
 	require.Len(t, provider.jobs, 2, "the check's one attempt, and the baseline's")
 	require.NoDirExists(t, branch.Worktree, "nothing checked it out again")
+}
+
+// A check's end removes every staged tree its attempts' directories
+// hold, and an attempt's directory that leaves empty: a resumed check's
+// stopped attempt kept 173 MB beside its log (Prime-time's v0.7.0
+// acceptance).
+func TestACheckEndsWithNoStagedTreeLeft(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{staged: true}}
+	queued := queuedHarborRun(t, e, tahoeArm)
+	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, run.State, run.Detail)
+	directory := filepath.Join(e.LogDirectory(), run.Name())
+	var left []string
+	require.NoError(t, filepath.WalkDir(directory, func(path string, entry fs.DirEntry, err error) error {
+		if err == nil && entry.Name() == buildenv.StagedTree {
+			left = append(left, path)
+		}
+		return err
+	}))
+	require.Empty(t, left)
+	entries, err := os.ReadDir(directory)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		require.NotContains(t, entry.Name(), "-stopped", "the stopped attempt's directory, left empty, goes")
+	}
 }

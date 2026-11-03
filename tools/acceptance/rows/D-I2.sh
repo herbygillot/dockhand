@@ -26,8 +26,16 @@ assert() {
 		row_fail "status didn't say $DI2_RUN stopped"
 		return
 	fi
+	# The killed attempt's staged tree goes with the check's end, where it
+	# stayed beside its log (Prime-time's v0.7.0 acceptance, 173 MB).
+	local staged
+	staged=$(find "${DOCKHAND_DB%/*}/logs/$DI2_RUN" -name input.tar 2>/dev/null | head -3 | tr '\n' ' ')
+	if [ -n "$staged" ]; then
+		row_fail "$DI2_RUN left its staged tree after wait: $staged"
+		return
+	fi
 	case "$(cat "$ROW_DIR/json/2.json.exit" 2>/dev/null)" in
-	0 | 2) row_pass "status said $DI2_RUN stopped; wait resumed it to its end ($(jq -r '.result.run.state // empty' "$ROW_DIR/json/2.json"))" ;;
+	0 | 2) row_pass "status said $DI2_RUN stopped; wait resumed it to its end ($(jq -r '.result.run.state // empty' "$ROW_DIR/json/2.json")), leaving no staged tree" ;;
 	*) row_fail "wait on the killed $DI2_RUN exited $(cat "$ROW_DIR/json/2.json.exit" 2>/dev/null): $(jq -r '.error // empty' "$ROW_DIR/json/2.json")" ;;
 	esac
 }

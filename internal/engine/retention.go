@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildlog"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -42,6 +43,13 @@ func LogCleanupWords(done LogCleanup, after time.Duration) string {
 	var words []string
 	if c := done.Compressed; c.Logs > 0 {
 		words = append(words, fmt.Sprintf("compressed %s, %s to %s", prose.Plural(c.Logs, "log"), prose.Bytes(c.Before), prose.Bytes(c.After)))
+	}
+	if done.Staged > 0 {
+		trees := "staged trees"
+		if done.Staged == 1 {
+			trees = "staged tree"
+		}
+		words = append(words, fmt.Sprintf("removed %d %s stopped checks left, %s", done.Staged, trees, prose.Bytes(done.StagedBytes)))
 	}
 	if len(done.Removed) > 0 {
 		whose := prose.Plural(len(done.Removed), "check") + "'"
@@ -84,6 +92,11 @@ type LogCleanup struct {
 	Compressed buildlog.Compression
 	Removed    []string
 	Bytes      int64
+	// Staged and StagedBytes are the staged trees finished checks'
+	// attempts left, as a process stopped mid-build leaves one, which
+	// cleanup removed.
+	Staged      int
+	StagedBytes int64
 }
 
 // cleanLogs keeps every finished check's logs compressed, and removes those
@@ -152,6 +165,9 @@ func (e *Engine) cleanLogs(ctx context.Context, before time.Time) (LogCleanup, e
 				errs = append(errs, err)
 				continue
 			}
+			staged, stagedBytes, err := buildenv.RemoveStagedTrees(directory)
+			done.Staged, done.StagedBytes = done.Staged+staged, done.StagedBytes+stagedBytes
+			errs = append(errs, err)
 			compressed, err := buildlog.CompressAll(directory)
 			done.Compressed.Logs += compressed.Logs
 			done.Compressed.Before += compressed.Before

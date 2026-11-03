@@ -621,7 +621,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	}
 
 	build.Progress("staging the revision for " + release.Name)
-	archive := filepath.Join(job.Directory, "input.tar")
+	archive := filepath.Join(job.Directory, buildenv.StagedTree)
 	defer os.Remove(archive)
 	stage := p.stage
 	if p.stager != nil {
@@ -703,7 +703,13 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		building += fmt.Sprintf(" (TART_HOME=%s tart exec %s …)", home, vm)
 	}
 	build.Progress(building)
-	if err := launch(ctx, g, archive); err != nil {
+	err = launch(ctx, g, archive)
+	// The guest has its own copy once launch returns, so the staged tree
+	// goes now, not when Execute does: a process stopped mid-build runs
+	// no defer, and left 173 MB beside the log (Prime-time's v0.7.0
+	// acceptance).
+	_ = os.Remove(archive)
+	if err != nil {
 		return p.trouble(ctx, "starting the build in "+vm, err)
 	}
 	return p.follower().Follow(ctx, g, started, job, build, release)
