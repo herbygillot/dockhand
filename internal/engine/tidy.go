@@ -150,6 +150,25 @@ type TidyPlan struct {
 	NotRestyled []string
 	// restyled are the restyle's edits of the working files.
 	restyled []git.FileEdit
+	// PathStyle is --restyle's commit after Restyle, of the port:
+	// dependencies it writes path-style, and PathStyled the tree it ends
+	// at; nil where it writes none. pathStyled are its edits of the
+	// working files, restyled.
+	PathStyle  *TidyGroup
+	PathStyled string
+	pathStyled []git.FileEdit
+}
+
+// Series are the plan's commits in the order applying it writes them:
+// its groups, then --restyle's whitespace and path-style commits.
+func (p TidyPlan) Series() []TidyGroup {
+	groups := p.Groups
+	for _, last := range []*TidyGroup{p.Restyle, p.PathStyle} {
+		if last != nil {
+			groups = append(slices.Clone(groups), *last)
+		}
+	}
+	return groups
 }
 
 // Subjects are the subjects the branch is committed with once the plan
@@ -195,7 +214,10 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 	if err != nil || !request.Restyle {
 		return plan, err
 	}
-	return plan, e.restyleTidy(ctx, &plan)
+	if err := e.restyleTidy(ctx, &plan); err != nil {
+		return plan, err
+	}
+	return plan, e.pathStyleTidy(ctx, &plan)
 }
 
 func (e *Engine) planTidy(ctx context.Context, request TidyRequest) (TidyPlan, error) {
@@ -1447,6 +1469,12 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 		}
 		result.Commits = append(result.Commits, parent)
 	}
+	if pathStyle := plan.PathStyle; pathStyle != nil {
+		if parent, err = worktree.WriteCommit(ctx, git.Commit{Tree: plan.PathStyled, Parents: []string{parent}, Message: pathStyle.Message, Author: pathStyle.Author, Committer: committer}); err != nil {
+			return TidyResult{}, err
+		}
+		result.Commits = append(result.Commits, parent)
+	}
 
 	// The checkpoint is recorded before the branch moves, the refs move
 	// together, and the checkpoint is settled after.
@@ -1477,6 +1505,9 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 			}
 			if err := worktree.ApplyToWorkingFiles(ctx, plan.restyled); err != nil {
 				return "", fmt.Errorf("commits were created, but the restyled Portfiles couldn't be written into the working files: %w; git checkout -- %s takes them from the commits", err, strings.Join(fixedPaths(plan.restyled), " "))
+			}
+			if err := worktree.ApplyToWorkingFiles(ctx, plan.pathStyled); err != nil {
+				return "", fmt.Errorf("commits were created, but the path-style dependencies couldn't be written into the working files: %w; git checkout -- %s takes them from the commits", err, strings.Join(fixedPaths(plan.pathStyled), " "))
 			}
 			// A narrowing that fails leaves the worktree as wide as it was.
 			if narrowed, err := e.narrow(ctx, worktree, plan.Branch, plan.Base, plan.Final); err == nil {

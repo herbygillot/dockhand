@@ -424,3 +424,22 @@ func TestInertBetweenConfirmsAnAddedPortByItsEvaluations(t *testing.T) {
 	require.False(t, InertBetween(added("devel/omnidiff"), added("devel/omnidiff"), unevaluated), "the earlier revision can't be evaluated")
 	require.Equal(t, "/w/one/devel/omnidiff/files", then.Ports["omnidiff"].Options["filespath"], "comparison must not mutate observations")
 }
+
+// Dependencies read by port alone compare a path-style entry with the
+// port: entry it rewrote as the same, and still tell another port apart.
+func TestDependenciesReadByPortCompareAPathStyleRewriteAsTheSame(t *testing.T) {
+	t.Parallel()
+	port := func(spec, code string) macports.PortInfo {
+		return macports.PortInfo{Name: "main", Version: "1", Options: map[string]string{"depends_build": spec + " port:cmake", codeOption: code},
+			Dependencies: []macports.Dependency{{Port: "pkgconfig", Phase: "build", Spec: spec}, {Port: "cmake", Phase: "build", Spec: "port:cmake"}}}
+	}
+	before := snapshot(map[string]macports.PortInfo{"main": port("port:pkgconfig", "options 1 variant-docs 2 procedures 3")})
+	after := snapshot(map[string]macports.PortInfo{"main": port("path:bin/pkg-config:pkgconfig", "options 4 variant-docs 5 procedures 3")})
+	require.Equal(t, model.SubportChanged, SubportChanges("devel/main", &before, &after, nil)[0].Kind)
+	require.Equal(t, model.SubportUnchanged, SubportChanges("devel/main", DependenciesByPort(&before), DependenciesByPort(&after), nil)[0].Kind)
+	other := snapshot(map[string]macports.PortInfo{"main": port("path:bin/pkg-config:pkgconf", "options 4 variant-docs 5 procedures 3")})
+	other.Ports["main"].Dependencies[0].Port = "pkgconf"
+	require.Equal(t, model.SubportChanged, SubportChanges("devel/main", DependenciesByPort(&before), DependenciesByPort(&other), nil)[0].Kind, "another port")
+	procedures := snapshot(map[string]macports.PortInfo{"main": port("path:bin/pkg-config:pkgconfig", "options 4 variant-docs 5 procedures 9")})
+	require.Equal(t, model.SubportChanged, SubportChanges("devel/main", DependenciesByPort(&before), DependenciesByPort(&procedures), nil)[0].Kind, "a procedure's code still compared")
+}

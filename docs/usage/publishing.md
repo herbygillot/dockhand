@@ -53,9 +53,12 @@ printed in your output.
 Tidy usually preserves the final files, but it also fixes deterministic lint
 findings on lines your branch changes and reports those fixes. Check makes the
 same fixes before capturing files. Whole-file formatting is separate:
-`tidy --restyle` makes a final whitespace commit for the Portfiles it can safely
-restyle. Keep that choice out of a change when you only want its functional
-edits.
+`tidy --restyle` makes up to two final commits of their own: `<port>:
+whitespace`, for the Portfiles it can restyle whole, and `<port>: path-style
+dependencies`, writing each `port:` dependency the tree writes path-style as
+the tree does, `path:bin/pkg-config:pkgconfig` for pkgconfig, where the port
+evaluates the same, depending on the same ports. Keep that choice out of a
+change when you only want its functional edits.
 
 On a terminal, tidy lets you review the diff, rearrange groups, edit subjects,
 and apply or cancel. For one commit with a message you supply:

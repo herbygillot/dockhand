@@ -897,3 +897,50 @@ func ResourceChanges(changes []model.SubportChange, base, revision *macports.Sna
 	}
 	return resources
 }
+
+// fileSpec is a dependency's word written path-style, as lib:, bin:, or
+// path:, with the port it names.
+var fileSpec = regexp.MustCompile(`\b(?:lib|bin|path):[^\s{}]+:([-._A-Za-z0-9]+)`)
+
+// DependenciesByPort is a snapshot whose dependencies read by phase and
+// port alone, path:bin/pkg-config:pkgconfig as port:pkgconfig, in each
+// port's dependency list and its depends_ options, for comparing a
+// Portfile written port-style with one written path-style (tidy
+// --restyle's path-style commit); nil for nil. The checksums of every
+// option's value together and of each variant's body are left out, since
+// a dependency's word moves them: the options are compared one by one,
+// and a variant body's other words aren't the rewrite's to change.
+func DependenciesByPort(snapshot *macports.Snapshot) *macports.Snapshot {
+	if snapshot == nil {
+		return nil
+	}
+	read := *snapshot
+	read.Ports = make(map[string]macports.PortInfo, len(snapshot.Ports))
+	for name, info := range snapshot.Ports {
+		dependencies := make([]macports.Dependency, len(info.Dependencies))
+		for i, dependency := range info.Dependencies {
+			dependency.Spec = "port:" + dependency.Port
+			dependencies[i] = dependency
+		}
+		info.Dependencies = dependencies
+		options := maps.Clone(info.Options)
+		for key, value := range options {
+			if strings.HasPrefix(key, "depends_") {
+				options[key] = fileSpec.ReplaceAllString(value, "port:$1")
+			}
+		}
+		if code, ok := options[codeOption]; ok {
+			fields := strings.Fields(code)
+			var kept []string
+			for i := 0; i+1 < len(fields); i += 2 {
+				if fields[i] != "options" && !strings.HasPrefix(fields[i], "variant-") {
+					kept = append(kept, fields[i], fields[i+1])
+				}
+			}
+			options[codeOption] = strings.Join(kept, " ")
+		}
+		info.Options = options
+		read.Ports[name] = info
+	}
+	return &read
+}
