@@ -286,3 +286,26 @@ checksums rmd160 aaaa sha256 bbbb size 2
 	require.ErrorContains(t, err, "move fixture's checksums line above the subport fixture-old block, then dockhand checksums fixture-old writes its own")
 	require.Empty(t, requests)
 }
+
+// A main port whose one declaration is unnamed, fetching several archives
+// now, has it written for each, named, and filled in: shader-slang's
+// "checksums rmd160 0 sha256 0 size 0" read "no checksum declaration for
+// slang-2026.21.tar.gz" once it fetched six (field testing, #66).
+func TestAnUnnamedDeclarationIsNamedForEachArchive(t *testing.T) {
+	t.Parallel()
+	s, r, requests := archiveFixture(t, `version 1.2.3
+revision 0
+master_sites @SITE@/${version}
+distfiles a.tar.gz b.tar.gz
+checksums rmd160 0 sha256 0 size 0
+`)
+	r.Action, r.Version, r.Release = model.EditChecksums, "", nil
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"/1.2.3/a.tar.gz", "/1.2.3/b.tar.gz"}, *requests)
+	require.Equal(t, []string{"a.tar.gz", "b.tar.gz"}, result.ChecksumsDeclared)
+	after := string(result.Files[0].After)
+	require.Contains(t, after, "checksums a.tar.gz \\\n          rmd160  ")
+	require.Contains(t, after, " \\\n          b.tar.gz \\\n          rmd160  ")
+	require.NotContains(t, after, " 0 \\")
+}
