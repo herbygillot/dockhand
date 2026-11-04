@@ -66,7 +66,6 @@ var noPlan = map[string]string{
 	"status":       "reads only",
 	"undo":         "restores a checkpoint, keeping the one it replaces",
 	"wait":         "follows a check",
-	"rebase":       "Later: a plan of the commits it would replay; its checkpoint undoes it",
 }
 
 // commands are the command tree's runnable commands, by their path below

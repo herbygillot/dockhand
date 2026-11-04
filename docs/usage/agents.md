@@ -102,6 +102,13 @@ the `baseline` that `check.baseline` ran after it; that baseline's
 `run.baseline_of` identifies the original check. Do not infer completion from
 the presence of a branch alone.
 
+`rebase --json` gives `branch`, `from`, `to`, `up_to_date`, `commits`, and,
+once it moves the branch, `checkpoint`. `rebase --plan --json` adds `plan`,
+true, and `replay`, each of the branch's commits in order with its `id`,
+`subject`, and `outcome`: `replay`, `drop`, `conflict` (with its `paths`), or
+`untried` after a conflict; `refused` says why the rebase wouldn't move the
+branch, and `commits` is the count the replay would make.
+
 The process exit codes are:
 
 | Code | Meaning |

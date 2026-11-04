@@ -52,8 +52,9 @@ func TestReplayRebasesWithoutACheckout(t *testing.T) {
 	repo, err := git.Open(t.Context(), root, git.Program{Env: testsupport.GitEnv(t)})
 	require.NoError(t, err)
 	committer := git.Signature{Name: "Dockhand Test", Email: "test@example.org", When: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)}
-	replayed, err := repo.Replay(t.Context(), master, base, head, committer)
+	replayed, made, err := repo.Replay(t.Context(), master, base, head, committer)
 	require.NoError(t, err)
+	require.Equal(t, []string{"a: update replay", "c: new port replay", "a note replay", "b: update drop"}, outcomes(made), "what it made of each, in order")
 	require.Equal(t, head, testsupport.Git(t, root, "rev-parse", "branch"), "no ref moves")
 	require.Equal(t, "a note\nc: new port\na: update", testsupport.Git(t, root, "log", "--format=%s", master+".."+replayed), "b's update, which master has, is dropped; the empty note is kept")
 	// The date as seconds, since git spells UTC Z or +00:00 by version.
@@ -69,12 +70,25 @@ func TestReplayRebasesWithoutACheckout(t *testing.T) {
 	testsupport.Git(t, root, "switch", "-q", "-c", "conflicting", base)
 	write("b/Portfile", "b-mine\n")
 	conflicting := commit("b: mine", "-a")
-	_, err = repo.Replay(t.Context(), master, base, conflicting, committer)
+	testsupport.Git(t, root, "commit", "-q", "--allow-empty", "-m", "after", "--author=Ada <ada@example.org>")
+	_, made, err = repo.Replay(t.Context(), master, base, testsupport.Git(t, root, "rev-parse", "HEAD"), committer)
 	require.ErrorIs(t, err, git.ErrRebaseConflict)
 	require.ErrorContains(t, err, "in b/Portfile")
+	require.Equal(t, []string{"b: mine conflict", "after untried"}, outcomes(made), "the conflict, and what's left untried")
+	require.Equal(t, []string{"b/Portfile"}, made[0].Paths)
+	require.Equal(t, conflicting, made[0].Commit.ID)
 
 	testsupport.Git(t, root, "switch", "-q", "-c", "merging", base)
 	testsupport.Git(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.org", "merge", "-q", "--no-ff", "-m", "merge", "branch")
-	_, err = repo.Replay(t.Context(), master, base, testsupport.Git(t, root, "rev-parse", "HEAD"), committer)
+	_, _, err = repo.Replay(t.Context(), master, base, testsupport.Git(t, root, "rev-parse", "HEAD"), committer)
 	require.ErrorContains(t, err, "is a merge commit")
+}
+
+// outcomes are each replayed commit's subject and outcome.
+func outcomes(made []git.Replayed) []string {
+	var words []string
+	for _, replayed := range made {
+		words = append(words, replayed.Commit.Subject()+" "+string(replayed.Outcome))
+	}
+	return words
 }
