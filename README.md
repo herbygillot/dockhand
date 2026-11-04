@@ -141,7 +141,7 @@ Dockhand runs lint, fetch, checksum, installation, and declared tests. Test fail
 
 | Build environment | How it works |
 | --- | --- |
-| **Tart** | Builds in disposable macOS VMs on your Apple silicon Mac. The usual `host` profile selects a VM matching your Mac's macOS release. See [the Tart provider](docs/tart-provider.md). |
+| **Tart** | Builds in disposable macOS VMs on your Apple silicon Mac. The usual `minmax` profile selects VMs for each port's oldest and newest release you have images for. See [the Tart provider](docs/tart-provider.md). |
 | **Local** | Builds in a MacPorts prefix on this Mac, such as `/opt/local`, alongside your active ports. Afterward, Dockhand restores the prefix; `--keep` leaves the branch's versions active. Select it with `--on local` or `--on local:/opt/macports-test`. See [the local provider](docs/local-provider.md). |
 | **GitHub Actions** | Runs MacPorts' own workflow in your fork. Enable Actions in the fork and select `--on github`. See [the GitHub provider](docs/github-provider.md). |
 | **Custom command** | Runs a script you configure for a build machine or VM you manage. See [the command provider](docs/command-provider.md). |
@@ -241,7 +241,7 @@ New Portfiles include `# dockhand: unconfirmed` markers for inferred values. Rev
 
 These limitations have workarounds:
 
-- A check covers only this Mac's macOS release unless told otherwise (`build.default`'s `host`), while MacPorts CI builds on the releases its workflow names, macOS 15 and 26 as of this writing, which Dockhand reads from the master you last fetched. `submit` and the pull request say which releases no check covered. To check on CI's releases, use `--build macports-ci`; to make that the default, set `build.default = "macports-ci"`.
+- A check covers each port's oldest and newest macOS among the Tart images you've set up (`build.default`'s `minmax`), this Mac's alone where its image is the only one, while MacPorts CI builds on the releases its workflow names, macOS 15 and 26 as of this writing, which Dockhand reads from the master you last fetched. `submit` and the pull request say which releases no check covered. To check on CI's releases, use `--build macports-ci`; to make that the default, set `build.default = "macports-ci"`.
 - On a new macOS release, before MacPorts' builders have made archives of a Rust or Go toolchain, the first Tart check of a Rust or Go port builds rust and cargo, or go, from source, which takes hours on a VM's two cores. The check says so before it builds, and later checks install them from the archives Dockhand kept, until cleanup removes them. To avoid the wait, check such a port first on the previous release with `--on tahoe`, or let the first check run.
 
 ## Scope

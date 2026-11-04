@@ -418,7 +418,8 @@ func (s BranchStatus) Facts() branchstate.Facts {
 // any check of the default variants, a variant whose sources it changed,
 // since every such build takes the defaults. So minmax comes first where
 // an update does both, and its pass names the variant next. serve, bump,
-// and ship --yes build minmax already; host stays the attended default.
+// and ship --yes build minmax already, and minmax is the attended
+// default; this is a check named host, --build host or build.default's.
 // Nil where neither is asked, or the check built it.
 func (e *Engine) wider(ctx context.Context, status BranchStatus, changed []string) *branchstate.Wider {
 	plan := status.Evidence.Plan

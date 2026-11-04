@@ -364,7 +364,7 @@ func (v *VersionUpdate) Flags(cmd *cobra.Command) {
 // which ship and bump share: where to check, and the pull request's.
 func (v *VersionUpdate) StageFlags(cmd *cobra.Command) {
 	cmd.Flags().StringArrayVar(&v.Linked.On, "on", nil, "where to check, explicit environments (default: build.default's profile; build.unattended's for unattended work)")
-	cmd.Flags().StringVar(&v.Linked.Build, "build", "", "where to check, by build profile (default: build.default; build.unattended for unattended work)")
+	cmd.Flags().StringVar(&v.Linked.Build, "build", "", "where to check, by build profile: host (this Mac's macOS alone), minmax (the default unless build.default names another), macports-ci, all, or yours (build.unattended for unattended work)")
 	cmd.Flags().StringVar(&v.Linked.Tests, "tests", "", "the check's tests: declared (advisory), required, or skip (default check.tests)")
 	cmd.Flags().StringSliceVar(&v.Linked.Types, "type", nil, "the template's Type(s): bugfix, enhancement, security fix (default: enhancement for an update dockhand made)")
 	cmd.Flags().BoolVar(&v.Linked.Draft, "draft", false, "open the pull request as a draft, even where its check fails")

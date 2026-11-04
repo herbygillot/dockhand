@@ -83,7 +83,8 @@ The built-in Tart profiles are `host`, `minmax`, `macports-ci`, and `all`.
 `minmax` selects each port's oldest and newest eligible available releases, with
 macOS 12 as its floor. `macports-ci` reads the releases from MacPorts' workflow
 at master; it is not a permanently fixed release list. With no explicit default,
-ordinary checks use `host`, or `command` when a command provider is configured.
+ordinary checks use `minmax`, which is this Mac's release alone where only its
+image is set up, or `command` when a command provider is configured.
 Unattended publication paths fall back to `minmax` when Tart is available,
 otherwise the ordinary default.
 

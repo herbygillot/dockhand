@@ -259,7 +259,7 @@ check.baseline = true, it runs that baseline automatically.`,
 	cmd.Flags().StringSliceVar(&include, "include", nil, "add an untracked file to the capture without staging it")
 	cmd.Flags().StringSliceVar(&only, "only", nil, "check only these changed ports, and the changed ports they need")
 	cmd.Flags().StringSliceVar(&also, "also", nil, "also build these unchanged ports against the branch")
-	cmd.Flags().StringVar(&build, "build", "", "where to build, by build profile: host, minmax, macports-ci, all, or yours (default build.default)")
+	cmd.Flags().StringVar(&build, "build", "", "where to build, by build profile: host (this Mac's macOS alone), minmax (the default unless build.default names another), macports-ci, all, or yours")
 	cmd.Flags().StringArrayVar(&on, "on", nil, "where to build, explicit environments, as tart:15,26, github, or command; repeat for several, all of which must pass")
 	cmd.Flags().StringVar(&tests, "tests", "", "declared (advisory), required, or skip")
 	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "queue the check and return; serve, or a background drain where none runs, runs it")
