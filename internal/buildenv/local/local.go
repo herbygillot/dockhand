@@ -276,7 +276,13 @@ func (l *Local) settle(ctx context.Context, follower *guest.Follower, dir, prefi
 	snapshot := results.Environment["snapshot"]
 	restored := results.Environment["restored"]
 	switch {
-	case err != nil || snapshot == "":
+	case err != nil:
+		// An unreadable record says nothing of whether the prefix was
+		// changed, so it stays, and the next check here waits on it: it
+		// was removed as one that changed nothing, the prefix's only
+		// record with it (Codex's sixth review, #69).
+		build.Progress(unreadableWords(check, prefix, dir, err))
+	case snapshot == "":
 		// Nothing was changed before the program stopped: its snapshot
 		// comes before anything does.
 		remove(dir, build)
@@ -557,6 +563,15 @@ type leftDirectory struct {
 	// kept is a check that kept its versions active, check --keep's,
 	// whose directory stays for dockhand undo.
 	kept bool
+	// unreadable is why its record of how it left the prefix couldn't be
+	// read, which says nothing of whether it changed it.
+	unreadable error
+}
+
+// unreadableWords say a check whose record of how it left a prefix can't
+// be read, and how the prefix is looked at by hand.
+func unreadableWords(check, prefix, dir string, err error) string {
+	return fmt.Sprintf("%s's record of how it left %s can't be read (%v), so the prefix may be changed: compare its active ports with those %s lists, put back any that differ, then remove %s", check, prefix, err, filepath.Join(dir, "before.txt"), dir)
 }
 
 // awaitOrphans waits for the guest programs a crashed dockhand left
@@ -648,7 +663,9 @@ func (l *Local) left() []leftDirectory {
 		if building(left.owner, results) {
 			continue
 		}
-		if err == nil {
+		if err != nil {
+			left.unreadable = err
+		} else {
 			left.snapshot = results.Environment["snapshot"]
 			left.restored = results.Environment["restored"] == "yes"
 			left.kept = results.Environment["restored"] == "kept"
@@ -696,6 +713,12 @@ func (l *Local) restoreLeft(ctx context.Context, prefix string, build buildenv.B
 	}
 	for _, left := range l.left() {
 		if left.kept {
+			continue
+		}
+		if left.unreadable != nil {
+			if left.owner.Prefix == prefix {
+				return buildenv.NeedsAttention("%s", unreadableWords(left.owner.Check, prefix, left.dir, left.unreadable))
+			}
 			continue
 		}
 		if left.snapshot == "" || left.restored {
@@ -749,6 +772,10 @@ func (l *Local) Changes(ctx context.Context) ([]buildenv.Change, error) {
 			continue
 		}
 		results, err := (&guest.Follower{Root: dir}).Read(ctx, hostGuest{})
+		if err != nil && !building(made, results) {
+			changes = append(changes, buildenv.Change{Check: made.Check, Place: made.Prefix, Remedy: unreadableWords(made.Check, made.Prefix, dir, err)})
+			continue
+		}
 		if err != nil || results.Environment["snapshot"] == "" || results.Environment["restored"] == "yes" {
 			continue
 		}
@@ -785,6 +812,9 @@ func (l *Local) PutBack(ctx context.Context, check string, progress func(string)
 		}
 	}
 	for _, left := range l.left() {
+		if left.owner.Check == check && left.unreadable != nil {
+			return left.owner.Prefix, true, buildenv.NeedsAttention("%s", unreadableWords(check, left.owner.Prefix, left.dir, left.unreadable))
+		}
 		if left.owner.Check != check || left.snapshot == "" || left.restored {
 			continue
 		}
