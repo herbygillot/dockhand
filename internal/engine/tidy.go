@@ -564,15 +564,16 @@ func closesFor(branch model.Branch, edits []model.Edit, directory string) []stri
 // Trailers are the lines of a group's message's trailer paragraph
 // (commitmsg.SplitTrailers): those it keeps, Closes:, See:, and the
 // attribution trailers a person wrote, and dockhand's own Generated-By,
-// which it adds.
+// which it adds, or keeps where a commit it combines carried it.
 func (g TidyGroup) Trailers() (keeps, adds []string) {
 	_, rest, ok := strings.Cut(strings.TrimSpace(g.Message), "\n")
 	if !ok {
 		return nil, nil
 	}
 	_, trailers := commitmsg.SplitTrailers(strings.TrimSpace(rest))
+	carried := slices.ContainsFunc(g.Combines, func(commit git.HistoryCommit) bool { return commitmsg.Attributed(commit.Message) })
 	for _, line := range trailers {
-		if commitmsg.IsAttribution(line) {
+		if commitmsg.IsAttribution(line) && !carried {
 			adds = append(adds, line)
 			continue
 		}
@@ -581,24 +582,32 @@ func (g TidyGroup) Trailers() (keeps, adds []string) {
 	return keeps, adds
 }
 
-// squash makes one commit of the whole branch. With a message, it carries
-// Generated-By where every group it combines is dockhand's edits alone,
-// as a chained group's commit does, and none where any is a hand edit:
-// tidy --squash --message over dockhand's update dropped the trailer its
-// commits had (field testing's notes from the curl fix, note 11).
+// squash makes one commit of the whole branch. It carries Generated-By
+// where any commit it combines carried it, or any group it combines is
+// dockhand's edits, with or without a message, since the commit still
+// holds what dockhand wrote; one of hand edits alone carries none. A
+// squash of ship's update and a hand line dropped the trailer
+// (field testing's atuin and fd, 2026-11-04), as tidy --squash --message
+// over dockhand's update had (the curl fix's note 11), whose rule this
+// replaces.
 func squash(groups []TidyGroup, changed []string, history []git.HistoryCommit, message string, tickets []string, person, author git.Signature) TidyGroup {
 	group := TidyGroup{Paths: changed, Combines: history}
 	for _, g := range groups {
 		group.Ports = append(group.Ports, g.Ports...)
 		group.Working = group.Working || g.Working
 	}
+	generated := slices.ContainsFunc(groups, func(g TidyGroup) bool { return g.FromEdits }) ||
+		slices.ContainsFunc(history, func(commit git.HistoryCommit) bool { return commitmsg.Attributed(commit.Message) })
 	switch {
 	case strings.TrimSpace(message) != "":
 		subject, rest, _ := strings.Cut(strings.TrimSpace(message), "\n")
-		generated := len(groups) > 0 && !slices.ContainsFunc(groups, func(g TidyGroup) bool { return !g.FromEdits })
 		group.Message = commitmsg.Compose(subject, strings.TrimSpace(rest), commitMessages(history), tickets, generated)
 	case len(groups) == 1 && len(groups[0].Blocking) == 0:
 		group.Message = groups[0].Message
+		if generated && !commitmsg.Attributed(group.Message) {
+			subject, rest, _ := strings.Cut(strings.TrimSpace(group.Message), "\n")
+			group.Message = commitmsg.Compose(subject, strings.TrimSpace(rest), nil, nil, true)
+		}
 		group.Notes = append(group.Notes, "subject from the only commit it proposes")
 	default:
 		group.Blocking = append(group.Blocking, "a squash needs its message: --message \"port: what changed\"")

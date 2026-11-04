@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -839,10 +840,12 @@ func TestTidyRefusesCommitsThatDontEndAtTheWorkingFiles(t *testing.T) {
 	require.Empty(t, testsupport.Git(t, branch.Worktree, "for-each-ref", "refs/dockhand/checkpoints/"), "no checkpoint was taken")
 }
 
-// A squash with --message of a hand edit carries no Generated-By, nor one
-// of dockhand's update with a hand edit beside it (field testing's notes
-// from the curl fix, note 11).
-func TestASquashOfAHandEditCarriesNoGeneratedBy(t *testing.T) {
+// A squash of a hand edit alone carries no Generated-By; one of
+// dockhand's update with a hand edit beside it keeps it, with --message or
+// without, since the commit still holds what dockhand wrote, its preview
+// saying it keeps it (field testing's atuin and fd, 2026-11-04, replacing
+// the curl fix's note 11's rule).
+func TestASquashKeepsGeneratedByWhereDockhandsEditsAreIn(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
@@ -861,7 +864,30 @@ func TestASquashOfAHandEditCarriesNoGeneratedBy(t *testing.T) {
 	testsupport.WriteFiles(t, both.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 2\n# a hand fix\n"})
 	squashed, err = e.PlanTidy(t.Context(), TidyRequest{Branch: both, Squash: true, Message: "jq: update to 1.8.1, with libharbor fixed by hand"})
 	require.NoError(t, err)
-	require.False(t, commitmsg.Attributed(squashed.Groups[0].Message), "dockhand's update beside a hand edit: %s", squashed.Groups[0].Message)
+	require.True(t, commitmsg.Attributed(squashed.Groups[0].Message), "dockhand's update beside a hand edit: %s", squashed.Groups[0].Message)
+
+	// ship's update committed with its trailer, a hand line added after,
+	// and squashed with no --message, as field testing's atuin was.
+	shipped, err := e.Start(t.Context(), StartRequest{Name: "jq-shipped"})
+	require.NoError(t, err)
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: shipped, Action: model.EditUpdate, Port: "jq"})
+	require.NoError(t, err)
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: shipped})
+	require.NoError(t, err)
+	_, err = e.ApplyTidy(t.Context(), plan)
+	require.NoError(t, err)
+	require.True(t, commitmsg.Attributed(testsupport.Git(t, shipped.Worktree, "log", "-1", "--format=%B")))
+	portfile := filepath.Join(shipped.Worktree, "textproc/jq/Portfile")
+	text, err := os.ReadFile(portfile)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(portfile, append(text, []byte("depends_lib-append port:libiconv\n")...), 0o644))
+	squashed, err = e.PlanTidy(t.Context(), TidyRequest{Branch: shipped, Squash: true})
+	require.NoError(t, err)
+	require.Len(t, squashed.Groups, 1)
+	require.True(t, commitmsg.Attributed(squashed.Groups[0].Message), "kept with no --message: %s", squashed.Groups[0].Message)
+	keeps, adds := squashed.Groups[0].Trailers()
+	require.True(t, slices.ContainsFunc(keeps, commitmsg.IsAttribution), "the preview says it keeps it: %v", keeps)
+	require.Empty(t, adds)
 }
 
 // tidy --restyle writes each port: dependency the path-style rule would
