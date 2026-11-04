@@ -223,6 +223,8 @@ type fakeGuest struct {
 	appended []string
 	// attached are the commands shell ran.
 	attached []attached
+	// onRead runs at each read of the results, as the build is followed.
+	onRead func()
 }
 
 // attached is a command shell ran, and whether on a terminal.
@@ -274,6 +276,9 @@ func (g *fakeGuest) Read(_ context.Context, path string, _ bool) ([]byte, error)
 	defer g.mu.Unlock()
 	if strings.HasSuffix(path, "runner.log") {
 		return []byte("the runner's last words"), nil
+	}
+	if g.onRead != nil {
+		g.onRead()
 	}
 	if len(g.results) == 0 {
 		return nil, guestssh.ErrTransport
@@ -486,7 +491,17 @@ func TestTheProviderRecordsEachTargetAsTheGuestFinishesIt(t *testing.T) {
 	mac.guest.logs["rust-1.91.0_0.darwin_25.arm64.tbz2"] = "rust's archive"
 	job := tartJob(t, 1)
 	build := &fakeBuild{}
+	// The staged tree is gone once launch returns, while the build goes
+	// on, so a process stopped mid-build leaves none (Prime-time's v0.7.0
+	// acceptance).
+	var stagedDuringBuild []bool
+	mac.guest.onRead = func() {
+		_, err := os.Stat(filepath.Join(job.Directory, "input.tar"))
+		stagedDuringBuild = append(stagedDuringBuild, err == nil)
+	}
 	require.NoError(t, testProvider(mac).Execute(t.Context(), job, build))
+	require.NotEmpty(t, stagedDuringBuild)
+	require.NotContains(t, stagedDuringBuild, true, "no staged tree beside the log while the build is followed")
 
 	require.Len(t, build.results, 2)
 	require.Equal(t, model.TargetResult{Target: "libharbor", Outcome: model.OutcomePassed, Tests: model.TestsPassed, Log: filepath.Join(job.Directory, "target-1.log"), Archive: "sha256:11"}, build.results[0])

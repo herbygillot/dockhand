@@ -355,7 +355,7 @@ func (l *Local) stage(ctx context.Context, job buildenv.Job, input guest.Input, 
 	for _, target := range job.Targets[1:] {
 		rest = append(rest, target.Target)
 	}
-	archive := filepath.Join(job.Directory, "input.tar")
+	archive := filepath.Join(job.Directory, buildenv.StagedTree)
 	defer os.Remove(archive)
 	payload := map[string][]byte{"guest.tcl": guest.Program, "input.json": data}
 	if err := staging.Archive(ctx, l.Repo, &l.workspaces, staging.Request{Source: job.Revision.Source, Target: job.Targets[0].Target, AdditionalTargets: rest,

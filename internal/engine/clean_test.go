@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -383,6 +384,17 @@ func TestCleanupKeepsLogsThatCount(t *testing.T) {
 	again, err := e.cleanLogs(t.Context(), at.Add(time.Hour))
 	require.NoError(t, err)
 	require.Equal(t, LogCleanup{}, again)
+
+	// A staged tree a stopped attempt left under a finished check goes,
+	// counted (Prime-time's v0.7.0 acceptance).
+	staged := filepath.Join(e.LogDirectory(), runs[4].Name(), "tart-26-arm64-1", "input.tar")
+	require.NoError(t, os.WriteFile(staged, []byte(strings.Repeat("x", 2048)), 0o644))
+	swept, err := e.cleanLogs(t.Context(), at.Add(time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, 1, swept.Staged)
+	require.EqualValues(t, 2048, swept.StagedBytes)
+	require.NoFileExists(t, staged)
+	require.Equal(t, "removed 1 staged tree stopped checks left, "+prose.Bytes(2048), LogCleanupWords(swept, 15*24*time.Hour))
 
 	branch.State, branch.EndedAt = model.BranchArchived, at
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(branch) }))
