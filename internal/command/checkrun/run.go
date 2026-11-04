@@ -114,6 +114,28 @@ func Wait(ctx context.Context, e *engine.Engine, run model.Run, streams term.Str
 }
 
 func Follow(ctx context.Context, e *engine.Engine, session *coord.Session, run model.Run, streams term.Streams, places config.Places, named bool, before func(checks.Lead)) error {
+	journal, stop := startJournal(ctx, e, run, streams)
+	// A serve that started meanwhile may have taken the run; then it is
+	// followed instead, and said.
+	run, taker, err := e.SeeThrough(ctx, session, run.ID, before)
+	if taker != nil {
+		fmt.Fprintf(streams.Err, "%s was taken by serve (pid %d); following it.\n", run.Name(), taker.PID)
+	}
+	if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+		err = refusal.New(refusal.Interrupted, "stopped following %s; it continues", run.Name()).
+			Then(refusal.Next{Verb: refusal.VerbWait, Args: []string{run.Name()}})
+	}
+	stop()
+	journal.show(context.WithoutCancel(ctx))
+	if err != nil {
+		return err
+	}
+	return Report(context.WithoutCancel(ctx), e, run, streams, places, named)
+}
+
+// startJournal shows a run's progress as it's journaled, until the stop it
+// returns is called.
+func startJournal(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams) (*journal, func()) {
 	journal := &journal{e: e, run: run.ID, out: streams.Err, verbose: streams.Verbose() > 0}
 	if quiet(streams) {
 		journal.held, journal.live = true, streams.ErrTerminal()
@@ -125,7 +147,7 @@ func Follow(ctx context.Context, e *engine.Engine, session *coord.Session, run m
 		// 2026-10-24). A stage's held journal stays held.
 		journal.steps = !journal.live && !streams.Held()
 	}
-	watching, stop := context.WithCancel(ctx)
+	watching, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -138,23 +160,142 @@ func Follow(ctx context.Context, e *engine.Engine, session *coord.Session, run m
 			}
 		}
 	}()
-	// A serve that started meanwhile may have taken the run; then it is
-	// followed instead, and said.
-	run, taker, err := e.SeeThrough(ctx, session, run.ID, before)
-	if taker != nil {
-		fmt.Fprintf(streams.Err, "%s was taken by serve (pid %d); following it.\n", run.Name(), taker.PID)
+	return journal, func() {
+		cancel()
+		<-done
 	}
-	if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
-		err = refusal.New(refusal.Interrupted, "stopped following %s; it continues", run.Name()).
-			Then(refusal.Next{Verb: refusal.VerbWait, Args: []string{run.Name()}})
+}
+
+// Bound is how long --for follows a check, as the person wrote it, which
+// the words and the Next repeat.
+type Bound struct {
+	For  time.Duration
+	Said string
+}
+
+// ParseBound reads --for's value: a duration in Go's forms, 9m, 90s,
+// 1h30m, above zero; a bare number is refused for its missing unit.
+func ParseBound(value string) (Bound, error) {
+	if strings.Trim(value, "0123456789.") == "" {
+		return Bound{}, fmt.Errorf("--for %s: name a duration with its unit, as 9m or 1h", value)
 	}
-	stop()
-	<-done
-	journal.show(context.WithoutCancel(ctx))
+	bound, err := time.ParseDuration(value)
+	if err != nil {
+		return Bound{}, fmt.Errorf("--for %s: name a duration with its unit, as 9m or 1h", value)
+	}
+	if bound <= 0 {
+		return Bound{}, fmt.Errorf("--for %s: the bound is above zero", value)
+	}
+	return Bound{For: bound, Said: value}, nil
+}
+
+// WaitFor follows a check for at most bound, as dockhand wait --for does,
+// and never drives it here: where nothing leads it, a background worker
+// is started (drain) and followed. One that ended, or ends within the
+// bound, is reported; one still queued or running at the bound is a
+// StillRunning refusal, the check continuing.
+func WaitFor(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams, places config.Places, bound Bound, drain func() (int, error)) error {
+	if run.State.Terminal() {
+		return Report(ctx, e, run, streams, places, false)
+	}
+	session, err := e.Session(ctx, model.SessionForeground)
 	if err != nil {
 		return err
 	}
-	return Report(context.WithoutCancel(ctx), e, run, streams, places, named)
+	defer session.End(context.WithoutCancel(ctx))
+	lead, err := e.LeadOf(ctx, session, run.ID)
+	if err != nil {
+		return err
+	}
+	if lead.Here() {
+		pid, err := drain()
+		if err != nil {
+			return refusal.New(refusal.Failed, "%s is queued and nothing runs it: Dockhand could not start a background worker (%v). Run dockhand serve, or dockhand wait %s without --for runs it here", run.Name(), err, run.Name())
+		}
+		fmt.Fprintf(streams.Err, "No dockhand serve is running; a background worker (PID %d) runs %s. Following it for %s.\n", pid, run.Name(), bound.Said)
+	} else {
+		fmt.Fprintf(streams.Err, "Following %s for %s.\n", run.Name(), bound.Said)
+	}
+	return FollowFor(ctx, e, run, streams, places, false, bound)
+}
+
+// QueuedFor follows a run check --for queued, as -d queues it, for at most
+// bound: said as -d says who runs it, serve or a background worker drain
+// starts, then followed (FollowFor). Where nothing leads and no worker
+// starts, it's refused, the check left queued.
+func QueuedFor(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams, places config.Places, bound Bound, drain func() (int, error)) error {
+	if streams.JSON() {
+		if result, err := checkResult(ctx, e, run); err == nil {
+			streams.Emit(result)
+		}
+	}
+	session, err := e.Session(ctx, model.SessionForeground)
+	if err != nil {
+		return err
+	}
+	defer session.End(context.WithoutCancel(ctx))
+	leader, err := e.Leader(ctx, session)
+	if err != nil {
+		return err
+	}
+	if leader == nil {
+		pid, err := drain()
+		if err != nil {
+			return refusal.New(refusal.Failed, "%s is queued and nothing runs it: Dockhand could not start a background worker (%v). Run dockhand serve, or dockhand wait %s without --for runs it here", run.Name(), err, run.Name())
+		}
+		fmt.Fprintf(streams.Out, "%s is queued; a background worker (PID %d) will run it.\n", run.Name(), pid)
+	} else {
+		fmt.Fprintf(streams.Out, "%s is queued; serve (PID %d) will run it.\n", run.Name(), leader.PID)
+	}
+	fmt.Fprintf(streams.Out, "Following it for %s.\n", bound.Said)
+	return FollowFor(ctx, e, run, streams, places, true, bound)
+}
+
+// FollowFor follows a run that serve or a worker drives for at most bound,
+// driving nothing, and reports it where it ends within the bound; one
+// still queued or running then is a StillRunning refusal, in the words of
+// the journal's latest progress or wait, with the wait that follows it
+// further. Ctrl-C is Interrupted, as Follow's.
+func FollowFor(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams, places config.Places, named bool, bound Bound) error {
+	journal, stop := startJournal(ctx, e, run, streams)
+	bounded, cancel := context.WithTimeout(ctx, bound.For)
+	ended, err := e.Observe(bounded, run.ID)
+	cancel()
+	stop()
+	journal.show(context.WithoutCancel(ctx))
+	switch {
+	case ctx.Err() != nil:
+		return refusal.New(refusal.Interrupted, "stopped following %s; it continues", run.Name()).
+			Then(refusal.Next{Verb: refusal.VerbWait, Args: []string{run.Name()}})
+	case errors.Is(err, context.DeadlineExceeded):
+		if ended, err = e.Run(ctx, run.ID); err != nil {
+			return err
+		}
+		if !ended.State.Terminal() {
+			return stillRunning(ended, journal, bound)
+		}
+	case err != nil:
+		return err
+	}
+	return Report(context.WithoutCancel(ctx), e, ended, streams, places, named)
+}
+
+// stillRunning is a run still queued or running at a bound: "check-42 is
+// still running after 9m: building socat on macOS 26; it continues", with
+// dockhand wait check-42 --for 9m next.
+func stillRunning(run model.Run, journal *journal, bound Bound) error {
+	words := fmt.Sprintf("%s is still running after %s", run.Name(), bound.Said)
+	if journal.latest != "" {
+		words += ": " + journal.latest
+	}
+	if run.State == model.RunQueued {
+		words = fmt.Sprintf("%s is still queued after %s", run.Name(), bound.Said)
+		if journal.waited != "" {
+			words += ", " + journal.waited
+		}
+	}
+	return refusal.New(refusal.StillRunning, "%s; it continues", words).
+		Then(refusal.Next{Verb: refusal.VerbWait, Args: []string{run.Name(), "--for", bound.Said}})
 }
 
 // journal prints a run's progress events as they are appended.
@@ -173,12 +314,21 @@ type journal struct {
 	verbose bool
 	status  *term.StatusLine
 	shown   string
+	// latest is the latest progress the run journaled, and waited its
+	// latest wait, which a bounded follow's end says.
+	latest, waited string
 }
 
 func (j *journal) show(ctx context.Context) {
 	events, _ := j.e.RunEvents(ctx, j.run, j.last)
 	for _, event := range events {
 		j.last = event.Sequence
+		switch event.Kind {
+		case model.EventWaiting:
+			j.waited = event.Message
+		case model.EventProgress:
+			j.latest = event.Message
+		}
 		if event.Level == model.LevelVerbose && !j.verbose {
 			continue
 		}
@@ -468,6 +618,12 @@ func hintBaseline(ctx context.Context, e *engine.Engine, out io.Writer, run mode
 }
 
 // checkResult is a run's --json result, without its targets' results.
+// Result is a check's object as wait and check --json give it before it
+// ends: its branch, revision, plan, and run (checkResult).
+func Result(ctx context.Context, e *engine.Engine, run model.Run) (view.CheckJSON, error) {
+	return checkResult(ctx, e, run)
+}
+
 func checkResult(ctx context.Context, e *engine.Engine, run model.Run) (view.CheckJSON, error) {
 	result := view.CheckJSON{Targets: []view.TargetJSON{}}
 	summary, err := e.CheckSummary(ctx, run)

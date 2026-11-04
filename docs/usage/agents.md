@@ -119,7 +119,15 @@ The process exit codes are:
 | 1 | An error or refusal; also a batch where none of the requested work could complete. |
 | 2 | A check failed. |
 | 3 | Attention is needed: for example a held bump, an uncertain release, a partially successful batch, or a checksum preview finding a mismatch. |
+| 4 | A check is still running: `wait --for` or `check --for` reached its bound before the check ended; the check continues. |
 | 130 | The command was interrupted. |
+
+`check --for 9m` queues a check and follows it for at most nine minutes; `wait
+--for 9m` follows an existing one the same way. Both exit 4 while the check
+continues, saying what it is doing, so a bounded tool call polls with one
+command: `dockhand check --for 9m`, then `dockhand wait --for 9m` until the exit
+code isn't 4; `run.state` in the JSON says queued or running. Neither runs the
+check in its own process: with no serve, a background worker runs it.
 
 `status --json` distinguishes a branch's newest finished check, `latest_check`,
 from its `active_checks`. The first check can still be running while

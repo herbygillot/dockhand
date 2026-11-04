@@ -119,7 +119,9 @@ dockhand wait check-42
 ```
 
 Wait follows a check and, when no other process is driving it, can resume a
-stopped one where it left off. A running serve can also take it up. A repeated
+stopped one where it left off. With `--for`, wait never drives the check here:
+where nothing else runs it, it starts a background worker, as `check -d` does,
+and follows. A running serve can also take it up. A repeated
 `check` for the same files can follow the active check rather than start a
 duplicate; read the message naming the check it follows. A request for different
 files or a stopped check may instead refuse and tell you what is holding the

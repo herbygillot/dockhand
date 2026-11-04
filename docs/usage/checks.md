@@ -304,6 +304,12 @@ dockhand status
 follows the latest check of the current branch. The output also names the check,
 such as `check-12`, for use from anywhere.
 
+`--for 9m` on `check` or `wait` follows for at most nine minutes and then exits
+4 if the check is still queued or running, saying what it is doing; the check
+continues, with serve or a background worker, never in the command's own
+process, so `wait --for` starts a worker where `wait` alone would have run the
+check here. `dockhand wait check-42 --for 9m` follows it further.
+
 A batch's checks, serve's, and a foreground check count against one capacity
 for each provider: Tart's is as many checks as the Mac runs VMs, GitHub's and a
 command provider's are `providers.github.capacity` and

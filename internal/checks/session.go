@@ -155,6 +155,12 @@ func (c *Service) sayWaits(ctx context.Context, run model.Run, waited func(model
 }
 
 // waitFor reads a run until it ends or ctx does.
+// Observe follows a run until it ends, or ctx does, driving nothing: a
+// bounded follow, which returning at its bound mustn't stop (wait --for).
+func (c *Service) Observe(ctx context.Context, id model.RunID) (model.Run, error) {
+	return c.waitFor(ctx, id)
+}
+
 func (c *Service) waitFor(ctx context.Context, id model.RunID) (model.Run, error) {
 	for {
 		run, err := c.run(ctx, id)

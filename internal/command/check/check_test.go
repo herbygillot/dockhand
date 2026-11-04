@@ -660,3 +660,50 @@ func TestACheckSaysThePortfileFindingsBeforeItBuilds(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, before, "a plan says them each time")
 }
+
+// check --for and wait --for follow a check for a bounded time, driving
+// nothing in their own process, and exit 4 while it's still queued or
+// running, saying so and the wait that follows it further (the openssl4
+// session's note 4).
+func TestForFollowsACheckForABoundedTime(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-for")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-for")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	cmdtest.WithScript(t, w, "passed")
+	testsupport.Git(t, dir, "sparse-checkout", "add", "textproc/jq")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n"), 0o644))
+
+	for args, refused := range map[string]string{
+		"--for 9m -d":     "-d returns at once and --for follows for a while; use one",
+		"--for 9m --plan": "--plan builds nothing and waits for nothing",
+		"--for 9":         "--for 9: name a duration with its unit, as 9m or 1h",
+		"--for 0s":        "--for 0s: the bound is above zero",
+	} {
+		_, _, err := cmdtest.Dockhand(t, append([]string{"check"}, strings.Fields(args)...)...)
+		require.EqualError(t, err, refused, args)
+	}
+
+	// No serve, and no worker starts: refused, the check left queued.
+	_, _, err = cmdtest.Dockhand(t, "check", "--for", "1s")
+	require.ErrorContains(t, err, "check-1 is queued and nothing runs it: Dockhand could not start a background worker (no drain starts in a test). Run dockhand serve, or dockhand wait check-1 without --for runs it here")
+	require.Equal(t, 1, term.ExitCode(err))
+	_, _, err = cmdtest.Dockhand(t, "wait", "check-1", "--for", "1s")
+	require.ErrorContains(t, err, "check-1 is queued and nothing runs it", "wait --for never runs it here")
+
+	// A worker that starts and doesn't take it yet: still queued at the
+	// bound, exit 4.
+	cmdtest.Hosted(t).StartDrain = func(engine.Options) (int, error) { return 4242, nil }
+	_, errs, err := cmdtest.Dockhand(t, "wait", "check-1", "--for", "1s")
+	require.Equal(t, 4, term.ExitCode(err))
+	require.Contains(t, errs, "No dockhand serve is running; a background worker (PID 4242) runs check-1. Following it for 1s.\n")
+	require.ErrorContains(t, err, "check-1 is still queued after 1s; it continues")
+	require.Contains(t, err.Error(), "dockhand wait check-1 --for 1s")
+	decoded, err := cmdtest.JSONOf(t, "wait", "check-1", "--for", "1s")
+	require.Equal(t, 4, term.ExitCode(err))
+	require.Equal(t, 4, decoded.ExitCode)
+	require.Contains(t, *decoded.Error, "check-1 is still queued after 1s; it continues")
+	require.Equal(t, "queued", cmdtest.Dig(t, decoded.Result, "run", "state"))
+}
