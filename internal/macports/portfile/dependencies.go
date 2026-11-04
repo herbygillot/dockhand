@@ -10,11 +10,13 @@ import (
 )
 
 // PortDependency is a port: dependency a Portfile writes: its line, the
-// option that declares it, as depends_lib-append, and the port.
+// option that declares it, as depends_lib-append, the port, and the
+// byte span of its word.
 type PortDependency struct {
-	Line   int
-	Option string
-	Port   string
+	Line       int
+	Option     string
+	Port       string
+	Start, End int
 }
 
 // AddedPortDependencies are the port: dependencies after declares that
@@ -25,9 +27,9 @@ type PortDependency struct {
 // that doesn't parse adds none, and a before that doesn't parse is taken
 // as declaring none.
 func AddedPortDependencies(before, after []byte) []PortDependency {
-	had := portDependencies(before)
+	had := PortDependencies(before)
 	var added []PortDependency
-	for _, dependency := range portDependencies(after) {
+	for _, dependency := range PortDependencies(after) {
 		if !slices.ContainsFunc(had, func(d PortDependency) bool { return d.Option == dependency.Option && d.Port == dependency.Port }) {
 			added = append(added, dependency)
 		}
@@ -35,8 +37,9 @@ func AddedPortDependencies(before, after []byte) []PortDependency {
 	return added
 }
 
-// portDependencies are every port: dependency src writes.
-func portDependencies(src []byte) []PortDependency {
+// PortDependencies are every literal port: dependency src writes, at the
+// top or in any body, in the order written; none where it doesn't parse.
+func PortDependencies(src []byte) []PortDependency {
 	script, errs := syntax.Parse(src)
 	if len(errs) > 0 {
 		return nil
@@ -56,11 +59,27 @@ func portDependencies(src []byte) []PortDependency {
 			}
 			if dependency, err := macports.ParseDependency(phase, spec); err == nil {
 				line := 1 + bytes.Count(src[:word.Span.Start], []byte("\n"))
-				found = append(found, PortDependency{Line: line, Option: name, Port: dependency.Port})
+				found = append(found, PortDependency{Line: line, Option: name, Port: dependency.Port, Start: word.Span.Start, End: word.Span.End})
 			}
 		}
 	})
 	return found
+}
+
+// RewriteDependency writes spec in place of a port: dependency's word,
+// nothing else on its line moved, keeping any quoting around it; src as
+// it is where the word there isn't port:<its port>.
+func RewriteDependency(src []byte, dependency PortDependency, spec string) []byte {
+	if dependency.Start < 0 || dependency.End > len(src) || dependency.Start >= dependency.End {
+		return src
+	}
+	word := src[dependency.Start:dependency.End]
+	at := bytes.Index(word, []byte("port:"+dependency.Port))
+	if at < 0 {
+		return src
+	}
+	start := dependency.Start + at
+	return slices.Concat(src[:start], []byte(spec), src[start+len("port:"+dependency.Port):])
 }
 
 // AddedLine is a command a change adds at a Portfile's top: its line, the

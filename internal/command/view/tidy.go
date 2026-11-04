@@ -3,7 +3,6 @@ package view
 import (
 	"fmt"
 	"io"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -30,11 +29,8 @@ func DescribeWork(plan engine.TidyPlan) string {
 // combines, keeps, and notes; or, saved, what applying it writes, each
 // commit's whole message as it may have been edited, with its author.
 func WriteTidyPlan(out io.Writer, plan engine.TidyPlan, saved bool) {
-	// --restyle's commit comes last, after the series it restyles.
-	groups := plan.Groups
-	if plan.Restyle != nil {
-		groups = append(slices.Clone(groups), *plan.Restyle)
-	}
+	// --restyle's commits come last, after the series they restyle.
+	groups := plan.Series()
 	title := map[bool]string{false: "Proposed commit", true: "Commit to write"}[saved]
 	if len(groups) > 1 {
 		title = map[bool]string{false: "Proposed series", true: "Commits to write"}[saved]

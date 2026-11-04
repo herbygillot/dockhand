@@ -37,8 +37,11 @@ your files too.
 --restyle restyles each Portfile the branch changes whole, in a last
 commit of its own, "<port>: whitespace": trailing whitespace, tabs under
 MacPorts' modeline, indentation in fours, and each run of declarations'
-values lined up. A Portfile that evaluates otherwise restyled is left as
-it was. Nothing else restyles a line the change didn't touch.
+values lined up. After it comes "<port>: path-style dependencies", each
+port: dependency another port can satisfy written as the tree writes it,
+path:bin/pkg-config:pkgconfig for pkgconfig. A Portfile that evaluates
+otherwise restyled, or depends on other ports path-style, is left as it
+was. Nothing else restyles a line the change didn't touch.
 
 A plan made only of dockhand's own edits applies without review, which is
 what a script gets. Anything else is shown for review first, on a terminal,
@@ -151,7 +154,7 @@ commits, and its files are as they were when it was saved.`,
 	}
 	where.Register(cmd, s, "tidy")
 	cmd.Flags().BoolVar(&squash, "squash", false, "make one commit of the whole branch")
-	cmd.Flags().BoolVar(&restyle, "restyle", false, "restyle each changed Portfile whole, in a last commit of its own, \"<port>: whitespace\"")
+	cmd.Flags().BoolVar(&restyle, "restyle", false, "restyle each changed Portfile whole and write its path-style dependencies, each in a last commit of its own")
 	cmd.Flags().StringVar(&message, "message", "", "the message of the commit --squash makes")
 	cmd.Flags().StringVar(&author, "author", "", "attribute a commit that combines several people's commits: \"Name <email>\"")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the proposed commits and change nothing")
