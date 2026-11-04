@@ -465,6 +465,7 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 		provider := options.TartProvider(look)
 		provider.Repo, provider.Index = e.Repo, e.PortIndex
 		provider.TestTimeout, provider.BuildTimeout = file.Providers.Tart.Timeout(), file.Providers.Tart.BuildBound()
+		provider.KeepFailed = file.Providers.Tart.KeepsFailed()
 		e.Providers[buildenv.Tart] = provider
 	}
 	// The local provider builds in a MacPorts prefix wherever there's a

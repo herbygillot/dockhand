@@ -106,6 +106,7 @@ combine its keys. Repeating a TOML table declaration is invalid.
 [providers.tart]
 test_timeout = "30m"
 build_timeout = "6h"
+keep_failed = true   # keep a failed check's clone for dockhand shell
 ```
 
 These bound tests and build work per target. Lint has its own 10-minute bound.
@@ -205,7 +206,8 @@ whose concerns remain visible but no longer hold unattended work. It does not
 accept failed builds or waive every submission blocker. Archives that could not
 be compared remain a hold. An unrecognized rule is refused with the known rule
 names; the rule for a GitHub port's source is `source`, and its earlier name,
-`github-tarball`, is refused like any other.
+`github-tarball`, is refused like any other. `not-distributable`, a change that
+makes a port one MacPorts' builders keep no archive of, is among them.
 
 The `holds.ports."<port>"` table can set that port's `majors` and `allow`,
 overriding global choices where supplied. It also accepts:

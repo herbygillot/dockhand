@@ -672,6 +672,45 @@ type branchDetailJSON struct {
 type linkLineJSON struct {
 	Mark  string `json:"mark"`
 	Words string `json:"words"`
+	// Unlinked is a declaration nothing links, and Through the declared
+	// port whose pkg-config brought an undeclared link in, on a link
+	// finding's line (LinkDetail).
+	Unlinked *unlinkedJSON `json:"unlinked,omitempty"`
+	Through  *throughJSON  `json:"through,omitempty"`
+}
+
+type unlinkedJSON struct {
+	Port   string `json:"port"`
+	Option string `json:"option"`
+	Line   int    `json:"line"`
+}
+
+type throughJSON struct {
+	Port    string   `json:"port"`
+	Modules []string `json:"modules"`
+}
+
+// LinkDetail are a check's link findings as JSON lines (LinkLines), each
+// finding's line carrying an unlinked declaration's port, option, and
+// line, or the pkg-config an undeclared link came through.
+func LinkDetail(findings []engine.LinkFinding) []linkLineJSON {
+	out := []linkLineJSON{}
+	for _, line := range LinkLines(findings) {
+		detail := linkLineJSON{Mark: line.Mark, Words: line.Words}
+		for _, finding := range findings {
+			if finding.Unread || LinkWords(finding) != line.Words {
+				continue
+			}
+			if finding.Unlinked {
+				detail.Unlinked = &unlinkedJSON{Port: finding.Port, Option: finding.Option, Line: finding.Line}
+			}
+			if finding.Through != nil {
+				detail.Through = &throughJSON{Port: finding.Through.Port, Modules: finding.Through.Modules}
+			}
+		}
+		out = append(out, detail)
+	}
+	return out
 }
 
 // BranchDetail is what status's text details of a branch shown alone, from
@@ -683,7 +722,7 @@ func BranchDetail(status engine.BranchStatus, report engine.StatusReport) *branc
 	}
 	if status.Latest != nil {
 		detail.Lint = DetailLines(LintLines(report.Lint[status.Latest.ID]))
-		detail.Links = DetailLines(LinkLines(report.Links[status.Latest.ID]))
+		detail.Links = LinkDetail(report.Links[status.Latest.ID])
 		detail.Installed = DetailLines(InstalledLines(report.Installed[status.Latest.ID]))
 	}
 	return detail
@@ -693,7 +732,7 @@ func BranchDetail(status engine.BranchStatus, report engine.StatusReport) *branc
 func DetailLines(from []LinkLine) []linkLineJSON {
 	out := []linkLineJSON{}
 	for _, line := range from {
-		out = append(out, linkLineJSON(line))
+		out = append(out, linkLineJSON{Mark: line.Mark, Words: line.Words})
 	}
 	return out
 }

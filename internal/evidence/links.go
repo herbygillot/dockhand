@@ -35,6 +35,32 @@ type LinkFinding struct {
 	// notice counted ace itself (the ace update, 2026-10-28).
 	Clean bool
 	Ports []string
+	// Unlinked is a port the target's own Portfile declares in depends_lib,
+	// Port, at Option and Line, that installs a library none of its
+	// builds links, where each build installed a Mach-O file: a notice,
+	// never a hold, since a library loaded with dlopen is the maintainer's
+	// to keep (the abook session's libiconv).
+	Unlinked bool
+	Option   string
+	Line     int
+	// Through is how an undeclared link came, where a declared port's
+	// pkg-config modules name its library: gnome-voice links cairo through
+	// gtk4's Libs, gtk4 requiring cairo (gnome-voice's note 9).
+	Through *LinkThrough
+}
+
+// LinkThrough is the declared port whose pkg-config brought a library in,
+// and the modules followed from its own to the one whose Libs names it.
+type LinkThrough struct {
+	Port    string
+	Modules []string
+}
+
+// WrittenLib is a port a Portfile's own text declares in depends_lib: the
+// port, the option that declares it, and its line.
+type WrittenLib struct {
+	Port, Option string
+	Line         int
 }
 
 // Subject is what the finding is about, as a decision on it names it:
@@ -54,6 +80,10 @@ type LinkedBuild struct {
 	Own []string
 	// Unread is why the build's links weren't read, where they weren't.
 	Unread string
+	// Written are the ports the target's own Portfile declares in
+	// depends_lib, by its text, which alone an unlinked finding names:
+	// a dependency a PortGroup adds is never said.
+	Written []WrittenLib
 }
 
 // UndeclaredLinks are what a check's builds link that their ports don't
@@ -114,9 +144,11 @@ func UndeclaredLinks(builds []LinkedBuild) []LinkFinding {
 	undeclared := map[model.TargetID]bool{}
 	for k, finding := range found {
 		finding.Libraries = len(libraries[k])
+		finding.Through = through(builds, finding.Target, finding.Library)
 		findings = append(findings, *finding)
 		undeclared[k.target] = true
 	}
+	findings = append(findings, unlinked(builds)...)
 	for target := range passed {
 		switch {
 		case !read[target]:
@@ -131,7 +163,149 @@ func UndeclaredLinks(builds []LinkedBuild) []LinkFinding {
 		if c := strings.Compare(string(a.Target), string(b.Target)); c != 0 {
 			return c
 		}
+		if a.Unlinked != b.Unlinked {
+			if a.Unlinked {
+				return 1
+			}
+			return -1
+		}
 		return strings.Compare(strings.ToLower(a.Port), strings.ToLower(b.Port))
 	})
 	return findings
+}
+
+// unlinked are the declarations nothing links (unlinked-dependency): a
+// port D a target's own Portfile declares in depends_lib is said where
+// (1) its text declares it, (2) D installs a dynamic library, (3) each
+// build installed a Mach-O file, and (4) no build, in any environment,
+// links a library D installs. A target any of whose passed builds' links
+// or declared ports weren't read says nothing of it.
+func unlinked(builds []LinkedBuild) []LinkFinding {
+	type seen struct {
+		written   []WrittenLib
+		libraries map[string]map[string]bool
+		linked    map[string]bool
+		machos    bool
+		unread    bool
+	}
+	targets := map[model.TargetID]*seen{}
+	var order []model.TargetID
+	for _, build := range builds {
+		result := build.Result
+		if result.Outcome != model.OutcomePassed {
+			continue
+		}
+		t := targets[result.Target]
+		if t == nil {
+			t = &seen{libraries: map[string]map[string]bool{}, linked: map[string]bool{}, machos: true}
+			targets[result.Target] = t
+			order = append(order, result.Target)
+		}
+		if result.Links == nil || result.Declared == nil {
+			t.unread = true
+			continue
+		}
+		t.written = build.Written
+		t.machos = t.machos && result.Declared.MachOs > 0
+		for _, port := range result.Declared.Ports {
+			name := strings.ToLower(port.Port)
+			if t.libraries[name] == nil {
+				t.libraries[name] = map[string]bool{}
+			}
+			for _, library := range port.Libraries {
+				t.libraries[name][library] = true
+			}
+		}
+		for _, link := range result.Links {
+			t.linked[strings.ToLower(link.Port)] = true
+			t.linked["\x00"+link.Library] = true
+		}
+	}
+	var findings []LinkFinding
+	for _, target := range order {
+		t := targets[target]
+		if t.unread || !t.machos {
+			continue
+		}
+		said := map[string]bool{}
+		for _, written := range t.written {
+			name := strings.ToLower(written.Port)
+			libraries := t.libraries[name]
+			if said[name] || len(libraries) == 0 || t.linked[name] {
+				continue
+			}
+			if slices.ContainsFunc(slices.Collect(maps.Keys(libraries)), func(library string) bool { return t.linked["\x00"+library] }) {
+				continue
+			}
+			said[name] = true
+			findings = append(findings, LinkFinding{Target: target, Port: written.Port, Unlinked: true, Option: written.Option, Line: written.Line})
+		}
+	}
+	return findings
+}
+
+// through is how a target's builds came to link library, where a port it
+// declares has a pkg-config module whose Libs names it, directly or by
+// Requires: followed module to module among the declared ports' modules;
+// nil where none does.
+func through(builds []LinkedBuild, target model.TargetID, library string) *LinkThrough {
+	stem := libraryStem(library)
+	if stem == "" {
+		return nil
+	}
+	for _, build := range builds {
+		if build.Result.Target != target || build.Result.Declared == nil {
+			continue
+		}
+		modules := map[string]model.PkgConfigModule{}
+		for _, port := range build.Result.Declared.Ports {
+			for _, module := range port.Modules {
+				if _, ok := modules[module.Name]; !ok {
+					modules[module.Name] = module
+				}
+			}
+		}
+		for _, port := range build.Result.Declared.Ports {
+			for _, start := range port.Modules {
+				if path := modulePath(modules, start, stem, nil); path != nil {
+					return &LinkThrough{Port: port.Port, Modules: path}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// modulePath is the modules from module to one whose Libs names stem,
+// following Requires:, each module once; nil where none does.
+func modulePath(modules map[string]model.PkgConfigModule, module model.PkgConfigModule, stem string, visited []string) []string {
+	if slices.Contains(visited, module.Name) {
+		return nil
+	}
+	visited = append(visited, module.Name)
+	if slices.Contains(module.Libs, stem) {
+		return visited
+	}
+	for _, name := range module.Requires {
+		if next, ok := modules[name]; ok {
+			if path := modulePath(modules, next, stem, visited); path != nil {
+				return path
+			}
+		}
+	}
+	return nil
+}
+
+// libraryStem is the -l name a library's file answers to: libcairo.2.dylib
+// is cairo; empty for a file not named lib<name>.
+func libraryStem(library string) string {
+	base := library[strings.LastIndexByte(library, '/')+1:]
+	name, ok := strings.CutPrefix(base, "lib")
+	if !ok {
+		return ""
+	}
+	if i := strings.IndexByte(name, '.'); i >= 0 {
+		name = name[:i]
+	}
+	return name
 }

@@ -3,11 +3,13 @@ package checkrun
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
 // A failure whose cause a reading of its log found says that cause in one
@@ -39,4 +41,27 @@ func TestAFailureSaysTheCauseItsLogGave(t *testing.T) {
 	out.Reset()
 	writeFailureLines(&out, evidence)
 	require.Equal(t, "sslscan failed at install on tart macOS 26 (Tahoe) arm64: ./sslscan.h:282:23: error: field has incomplete type 'ASN1_OCTET_STRING'\n\n", out.String())
+}
+
+// A check still running at --for's bound says the journal's latest
+// progress, and one still queued its latest wait, with the wait that
+// follows it further.
+func TestAStillRunningCheckSaysWhatItsDoing(t *testing.T) {
+	t.Parallel()
+	bound := Bound{Said: "9m"}
+	running := model.Run{Number: 42, State: model.RunRunning}
+	err := stillRunning(running, &journal{latest: "building socat on macOS 26"}, bound)
+	require.EqualError(t, err, "check-42 is still running after 9m: building socat on macOS 26; it continues")
+	require.Equal(t, 4, term.ExitCode(err))
+	queued := model.Run{Number: 42, State: model.RunQueued}
+	require.EqualError(t, stillRunning(queued, &journal{waited: "waiting for a slot on tart (check-41 is using it)"}, bound),
+		"check-42 is still queued after 9m, waiting for a slot on tart (check-41 is using it); it continues")
+
+	for value, want := range map[string]string{"9": "--for 9: name a duration with its unit, as 9m or 1h", "-1m": "--for -1m: the bound is above zero", "nine": "--for nine: name a duration with its unit, as 9m or 1h"} {
+		_, err := ParseBound(value)
+		require.EqualError(t, err, want)
+	}
+	parsed, err := ParseBound("1h30m")
+	require.NoError(t, err)
+	require.Equal(t, Bound{For: 90 * time.Minute, Said: "1h30m"}, parsed)
 }

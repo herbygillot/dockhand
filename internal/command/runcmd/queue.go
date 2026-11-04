@@ -29,6 +29,7 @@ import (
 
 func WaitCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
+	var bound string
 	cmd := &cobra.Command{
 		Use:   "wait [check]",
 		Short: "Wait for a check and show its result",
@@ -36,9 +37,20 @@ func WaitCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 branch's worktree, with no check named, the branch's latest; -b, -p, or
 --pr names a branch, for its latest check from anywhere. With serve
 running, this only observes, and Ctrl-C stops following; with no serve,
-the check runs here, as a foreground check would.`,
+the check runs here, as a foreground check would.
+
+--for 9m follows for at most nine minutes, then exits 4 if the check is
+still queued or running, saying what it is doing; the check continues,
+with serve or a background worker, never in this process.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var limit checkrun.Bound
+			if bound != "" {
+				var err error
+				if limit, err = checkrun.ParseBound(bound); err != nil {
+					return err
+				}
+			}
 			ctx := cmd.Context()
 			e, err := s.Open(ctx)
 			if err != nil {
@@ -49,9 +61,18 @@ the check runs here, as a foreground check would.`,
 			if err != nil {
 				return err
 			}
+			if bound != "" {
+				if streams.JSON() {
+					if result, err := checkrun.Result(ctx, e, run); err == nil {
+						streams.Emit(result)
+					}
+				}
+				return checkrun.WaitFor(ctx, e, run, streams, s.Places(), limit, s.Drain)
+			}
 			return checkrun.Wait(ctx, e, run, streams, s.Places())
 		},
 	}
+	cmd.Flags().StringVar(&bound, "for", "", "follow for at most this long, then exit 4 if the check is still running; it continues")
 	where.Register(cmd, s, "follow the latest check of")
 	settings.SupportsJSON(cmd)
 	return cmd

@@ -49,7 +49,10 @@ func TestEveryRuleIsExplained(t *testing.T) {
 		require.NotEmpty(t, explanation.Sources)
 	}
 	slices.Sort(reported)
-	codes := Codes()
+	codes := slices.DeleteFunc(Codes(), func(code string) bool {
+		explanation, _ := Explain(code)
+		return explanation.Elsewhere != ""
+	})
 	slices.Sort(codes)
 	require.Equal(t, codes, reported, "every explanation is of a rule the checks report")
 	_, ok := Explain("no-such-rule")

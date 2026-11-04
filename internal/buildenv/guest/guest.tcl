@@ -109,6 +109,22 @@ proc save {state {detail ""}} {
                     lappend ports [json::write object {*}$object]
                 }
                 lappend fields $key [json::write array {*}$ports]
+            } elseif {$key eq "declared"} {
+                set ports {}
+                foreach entry $value {
+                    set modules {}
+                    foreach module [dict get $entry modules] {
+                        lappend modules [json::write object name [json::write string [dict get $module name]] \
+                            libs [json::write array {*}[lmap word [dict get $module libs] { json::write string $word }]] \
+                            requires [json::write array {*}[lmap word [dict get $module requires] { json::write string $word }]]]
+                    }
+                    lappend ports [json::write object port [json::write string [dict get $entry port]] \
+                        libraries [json::write array {*}[lmap file [dict get $entry libraries] { json::write string $file }]] \
+                        modules [json::write array {*}$modules]]
+                }
+                lappend fields $key [json::write array {*}$ports]
+            } elseif {$key eq "machos"} {
+                lappend fields $key $value
             } elseif {$key eq "nitpick"} {
                 lappend fields $key [expr {$value ? "true" : "false"}]
             } elseif {$key eq "steps"} {
@@ -272,6 +288,23 @@ if {[llength [info procs path_dependencies]] == 0} {
                 if {![regexp {^path:(.+):[^:]+$} $entry -> path]} { continue }
                 if {[file pathtype $path] ne "absolute"} { set path [file join $prefix $path] }
                 lappend found [list $entry $path]
+            }
+        }
+        return $found
+    }
+}
+# lib_dependencies are the ports a port's depends_lib names, under its
+# variants, as MacPorts opens it here, port: and path: entries alike, each
+# by the port it names, once.
+if {[llength [info procs lib_dependencies]] == 0} {
+    proc lib_dependencies {portdir name variants} {
+        set handle [mportopen "file://$portdir" [list subport $name] [dict merge [array get ::macports::global_variations] $variants]]
+        set info [mportinfo $handle]
+        mportclose $handle
+        set found {}
+        if {[dict exists $info depends_lib]} {
+            foreach entry [dict get $info depends_lib] {
+                if {[regexp {:([^:]+)$} $entry -> port] && $port ni $found} { lappend found $port }
             }
         }
         return $found
@@ -685,6 +718,53 @@ proc lexical {path} {
         }
     }
     return [file join {*}$parts]
+}
+
+# declared are what each port a target's depends_lib names installs that
+# a build could link: its dynamic libraries, Mach-O files under a lib/
+# directory ending .dylib or .so, and its pkg-config modules, each .pc
+# file's module with the -l names of its Libs: line and the modules its
+# Requires: line names, read with a plain split. A port whose contents
+# can't be read is left out.
+proc declared {ports} {
+    set found {}
+    foreach port $ports {
+        if {[catch {contents $port} files]} { continue }
+        set libraries {}
+        set modules {}
+        foreach file $files {
+            if {[regexp {/lib/[^/]*\.(dylib|so)$} $file] && ![catch {file type $file} type] && $type eq "file" && [macho $file]} {
+                lappend libraries $file
+            } elseif {[string match *.pc $file] && ![catch {open $file r} fd]} {
+                set libs {}
+                set requires {}
+                while {[gets $fd line] >= 0} {
+                    if {[regexp {^Libs:(.*)$} $line -> words]} {
+                        foreach word [split $words] {
+                            if {[string match -l?* $word]} { lappend libs [string range $word 2 end] }
+                        }
+                    } elseif {[regexp {^Requires:(.*)$} $line -> words]} {
+                        foreach word [split [string map {, " "} $words]] {
+                            if {[regexp {^[A-Za-z][A-Za-z0-9_.+-]*$} $word]} { lappend requires $word }
+                        }
+                    }
+                }
+                close $fd
+                lappend modules [dict create name [file rootname [file tail $file]] libs $libs requires $requires]
+            }
+        }
+        lappend found [dict create port $port libraries $libraries modules $modules]
+    }
+    return $found
+}
+
+# machos counts the Mach-O files among a target's installed files.
+proc machos {contents} {
+    set count 0
+    foreach file $contents {
+        if {$file ne "" && ![catch {file type $file} type] && $type eq "file" && [macho $file]} { incr count }
+    }
+    return $count
 }
 
 # summary are the configure phase's summary lines in a build's log, each
@@ -1379,6 +1459,17 @@ foreach target [dict get $input targets] {
                 close $log
             } else {
                 dict set result links $linked
+            }
+            # What each declared port installs that a build could link,
+            # and how many Mach-O files this one installed, which the host
+            # reads for a declaration nothing links (protocol 2).
+            if {[catch {lib_dependencies $portdir [dict get $target name] $variants} ports]} {
+                set log [open $root/[dict get $result log] a]
+                puts $log "dockhand: this build's depends_lib wasn't read: $ports"
+                close $log
+            } else {
+                dict set result declared [declared $ports]
+                dict set result machos [machos $installed]
             }
             if {[catch {libraries $installed} own]} {
                 set log [open $root/[dict get $result log] a]

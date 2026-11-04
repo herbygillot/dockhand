@@ -18,11 +18,17 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "shell <check> [-- <command>...]",
 		Short: "Run a command or open a shell in a retained check VM",
-		Long: `Starts the VM a check retained with check --keep and runs the command in
-the port's work directory, or in its staged directory if MacPorts' work
-directory is gone. The command's output is streamed, Dockhand exits with
-its exit code, and the VM is stopped afterward but stays retained. With
-no command, on a terminal, it opens a shell there.
+		Long: `Starts the VM a check retained, a failed one on its own or any with check
+--keep, and runs the command in the port's work directory, or in its
+staged directory if MacPorts' work directory is gone. The command's output
+is streamed, Dockhand exits with its exit code, and the VM is stopped
+afterward but stays retained. With no command, on a terminal, it opens a
+shell there.
+
+While the check runs on Tart, it enters the running check's VM instead,
+which the check goes on using: what the check had built before the shell
+opened stands, and what it builds after isn't evidence, since the shell
+could have touched it.
 
 If the check retained VMs for several releases, use --on to choose one.
 For a check of several ports, the command runs in the first changed
@@ -61,7 +67,8 @@ evidence.`,
 			if test {
 				fmt.Fprintln(streams.Err, "Rerunning the test phase using the current port files and the existing build. Changes outside the test phase are not applied. This run does not count as a check result.")
 			}
-			code, err := e.Shell(ctx, engine.ShellRequest{Run: run, Release: on, Port: port, Command: command, Test: test, Input: streams.In, Output: streams.Out, Terminal: len(command) == 0 && !test})
+			code, err := e.Shell(ctx, engine.ShellRequest{Run: run, Release: on, Port: port, Command: command, Test: test, Input: streams.In, Output: streams.Out, Terminal: len(command) == 0 && !test,
+				Notice: func(words string) { fmt.Fprintln(streams.Err, words) }})
 			if err != nil {
 				return err
 			}

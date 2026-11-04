@@ -304,6 +304,12 @@ dockhand status
 follows the latest check of the current branch. The output also names the check,
 such as `check-12`, for use from anywhere.
 
+`--for 9m` on `check` or `wait` follows for at most nine minutes and then exits
+4 if the check is still queued or running, saying what it is doing; the check
+continues, with serve or a background worker, never in the command's own
+process, so `wait --for` starts a worker where `wait` alone would have run the
+check here. `dockhand wait check-42 --for 9m` follows it further.
+
 A batch's checks, serve's, and a foreground check count against one capacity
 for each provider: Tart's is as many checks as the Mac runs VMs, GitHub's and a
 command provider's are `providers.github.capacity` and
@@ -349,6 +355,13 @@ latest check, or explains why one is missing. A build that links another port's
 library the Portfile doesn't declare is a notice, holding nothing, that names
 the line to write: `omnidiff links libiconv.2.dylib from libiconv, which it
 doesn't declare in depends_lib; depends_lib-append port:libiconv declares it`.
+The reverse is said too, as a notice: a port the Portfile declares in
+`depends_lib` whose libraries nothing the build installed links, `declares
+libiconv in depends_lib, which nothing it built links`, with where it belongs
+instead; dependencies a PortGroup adds, ports installing no library, and builds
+installing no Mach-O file are never said. Where a declared port's pkg-config
+brought an undeclared library in, the finding says so: `through gtk4's
+pkg-config Libs`, and `-Wl,-dead_strip_dylibs` as the other way out.
 
 Tart results can be reused when recorded input content and environment identity
 still match, including dependencies and fetched Git commits. A result is keyed
@@ -374,12 +387,19 @@ check's result, `status`, and the pull request's Tested on say so:
 omnidiff's maintainers changed, which builds nothing differently, and lint ran
 again on this Portfile`. A lint error builds the target again.
 
-To retain a Tart build for inspection, request `--keep` before running it:
+A failed Tart check keeps its clone on its own, stopped, one for each branch
+and release, for `dockhand shell`: the branch's next check or `clean` removes
+it, and serve's daily cleanup removes one older than seven days. `[providers.tart]
+keep_failed = false` turns that off. To retain a passed build too, request
+`--keep` before running it:
 
 ```sh
 dockhand check --keep
 dockhand shell check-12 -- otool -L /opt/local/bin/PROGRAM
 ```
+
+`dockhand shell check-12` while check-12 is still running on Tart enters its
+VM; what the check builds after the shell opened isn't evidence.
 
 Replace the identifiers with the check and installed program. `shell --test` can
 try edits to the test phase in a retained clone, but that experiment is not

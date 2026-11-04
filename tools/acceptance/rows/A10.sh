@@ -228,8 +228,9 @@ act() {
 		esac
 		case " submit check ship " in *" $verb "*)
 			case " $words " in *" --plan "*) ;; *) words="$words --plan" ;; esac
-			# --plan and --yes go apart: the plan is what --yes would do.
-			words=$(printf '%s' " $words " | sed 's/ --yes / /; s/^ //; s/ $//') ;;
+			# --plan and --yes go apart: the plan is what --yes would do;
+			# and --for, which follows a check, has none to follow.
+			words=$(printf '%s' " $words " | sed 's/ --yes / /; s/ --for [^ ]* / /; s/^ //; s/ $//') ;;
 		esac
 		# shellcheck disable=SC2086
 		eval "set -- $words"

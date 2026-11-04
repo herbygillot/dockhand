@@ -60,6 +60,11 @@ func Where(places config.Places, dir string) string {
 // or, where the links couldn't be read, so nothing is said of them; or,
 // where each is declared, how many ports they map to.
 func LinkWords(finding engine.LinkFinding) string {
+	// A declaration nothing links, and where it belongs instead
+	// (unlinked-dependency).
+	if finding.Unlinked {
+		return fmt.Sprintf("%s declares %s in depends_lib, which nothing it built links: a header-only library or a build tool belongs in depends_build, and a program it runs or a library it loads at run time in depends_run", finding.Target, finding.Port)
+	}
 	if finding.Clean {
 		switch len(finding.Ports) {
 		case 0:
@@ -89,6 +94,19 @@ func LinkWords(finding engine.LinkFinding) string {
 			on = append(on, checks.DescribeEnvironment(environment))
 		}
 		where = " on " + prose.And(on)
+	}
+	// How it came, where a declared port's pkg-config brought it in, and
+	// the other way out (gnome-voice's note 9).
+	if through := finding.Through; through != nil {
+		var requires []string
+		for i := 1; i < len(through.Modules); i++ {
+			requires = append(requires, through.Modules[i-1]+" requires "+through.Modules[i])
+		}
+		how := fmt.Sprintf(", through %s's pkg-config Libs", through.Port)
+		if len(requires) > 0 {
+			how += " (" + strings.Join(requires, ", ") + ")"
+		}
+		return fmt.Sprintf("%s links %s from %s%s, which it doesn't declare in depends_lib%s%s; depends_lib-append port:%s declares it, or -Wl,-dead_strip_dylibs drops what it doesn't call", finding.Target, path.Base(finding.Library), finding.Port, more, where, how, finding.Port)
 	}
 	return fmt.Sprintf("%s links %s from %s%s, which it doesn't declare in depends_lib%s; depends_lib-append port:%s declares it", finding.Target, path.Base(finding.Library), finding.Port, more, where, finding.Port)
 }

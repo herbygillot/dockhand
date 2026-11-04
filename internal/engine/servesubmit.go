@@ -635,17 +635,23 @@ const linkUndeclaredRule = "link-undeclared"
 // linkHolds are the undeclared links of the check a submission rests on
 // (UndeclaredLinks), each a hold for the port that links it, naming the
 // port it links; a declared link, or a build whose links weren't read,
-// holds nothing, as the scan says them.
-func (e *Engine) linkHolds(ctx context.Context, checked *Evidence) []model.Concern {
+// holds nothing, as the scan says them. Its declarations nothing links
+// are returned beside them, notices holding nothing.
+func (e *Engine) linkHolds(ctx context.Context, checked *Evidence) ([]model.Concern, []LinkFinding) {
 	if checked == nil {
-		return nil
+		return nil, nil
 	}
 	findings, err := e.linkFindings(ctx, *checked)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	var held []model.Concern
+	var unlinked []LinkFinding
 	for _, finding := range findings {
+		if finding.Unlinked {
+			unlinked = append(unlinked, finding)
+			continue
+		}
 		if finding.Unread || finding.Clean || finding.Port == "" {
 			continue
 		}
@@ -656,7 +662,7 @@ func (e *Engine) linkHolds(ctx context.Context, checked *Evidence) []model.Conce
 		held = append(held, model.Concern{Origin: model.FromHolds, Port: port, Rule: linkUndeclaredRule, Subject: finding.Port,
 			Detail: fmt.Sprintf("%s links %s from %s, which it doesn't declare in depends_lib; depends_lib-append port:%s declares it; review is required before automatic submission", port, path.Base(finding.Library), finding.Port, finding.Port)})
 	}
-	return held
+	return held, unlinked
 }
 
 // majorHold is the hold on an update nobody looks over whose major version

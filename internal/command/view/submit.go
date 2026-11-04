@@ -72,6 +72,15 @@ func WriteSubmitPlan(out io.Writer, plan engine.SubmitPlan, noteStill bool) {
 		}
 		fmt.Fprintf(out, "%s%s\n", label, hold)
 	}
+	// What its check's builds declare and don't link, notices holding
+	// nothing (unlinked-dependency).
+	for i, finding := range plan.Unlinked {
+		label := "           "
+		if i == 0 {
+			label = "  Notice   "
+		}
+		fmt.Fprintf(out, "%s%s %s\n", label, Look, LinkWords(finding))
+	}
 	// The person's decisions on what holds it, which the description
 	// gives under Reviewed (the person's voice).
 	for i, subject := range slices.Sorted(maps.Keys(plan.Decided)) {

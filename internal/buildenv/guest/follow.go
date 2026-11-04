@@ -100,7 +100,7 @@ func (f *Follower) prefix() string {
 }
 
 // Protocol is the guest program's input and results format.
-const Protocol = 1
+const Protocol = 2
 
 // Input is the guest program's input.
 type Input struct {
@@ -235,6 +235,11 @@ type Result struct {
 	// the prefix; absent where the guest couldn't read them, and empty
 	// where nothing links.
 	Links []Link `json:"links"`
+	// Declared are what each port its depends_lib names installs that a
+	// build could link, and MachOs the Mach-O files it installed; both
+	// absent where the guest couldn't read its depends_lib (protocol 2).
+	Declared []model.DeclaredPort `json:"declared"`
+	MachOs   *int                 `json:"machos"`
 	// Installed are the files a passed target installed, as port contents
 	// lists them, and Libraries its own dynamic libraries' install names;
 	// absent where the guest couldn't read them (Then's item 9).
@@ -657,6 +662,9 @@ func (f *Follower) record(ctx context.Context, g Guest, job buildenv.Job, build 
 		for i, link := range got.Links {
 			report.Links[i] = model.Link{Binary: link.Binary, Library: link.Library, Port: link.Port, Declared: link.Declared}
 		}
+	}
+	if got.Declared != nil && got.MachOs != nil {
+		report.Declared = &model.Declared{Ports: slices.Clone(got.Declared), MachOs: *got.MachOs}
 	}
 	if got.Installed != nil {
 		report.Installed = slices.Clone(got.Installed)

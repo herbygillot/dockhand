@@ -113,6 +113,10 @@ proc path_dependencies {portdir name variants} {
     }
     return $found
 }
+proc lib_dependencies {portdir name variants} {
+    if {[info exists ::env(LIBDEPS_FAIL)]} { error "registry locked" }
+    return [split $::env(LIBDEPS)]
+}
 set foreignManagers [expr {[info exists ::env(FOREIGN)] ? $::env(FOREIGN) : {}}]
 `
 	script := filepath.Join(root, "guest.tcl")
@@ -121,7 +125,7 @@ set foreignManagers [expr {[info exists ::env(FOREIGN)] ? $::env(FOREIGN) : {}}]
 	portLog := filepath.Join(root, "port.log")
 	otool := filepath.Join(root, "otool")
 	testsupport.WriteExecutable(t, otool, guesttest.FakeOtool)
-	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "DOCKHAND_GUEST_OTOOL="+otool, "CONTENTS=", "PROVIDES=", "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "CONFIGURESAYS=", "QUIET=", "HANG=", "NOARCHIVE=", "DEPFAILS=", "ACTIVEFILE=", "INSTALLED=", "DEPVERSION=", "PORTGROUPS=", "PATHDEPS=", "BRINGS=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
+	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "DOCKHAND_GUEST_OTOOL="+otool, "CONTENTS=", "PROVIDES=", "PORT_LOG="+portLog, "TESTED=", "DEPS=", "RDEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "CONFIGURESAYS=", "QUIET=", "HANG=", "NOARCHIVE=", "DEPFAILS=", "ACTIVEFILE=", "INSTALLED=", "DEPVERSION=", "PORTGROUPS=", "PATHDEPS=", "LIBDEPS=", "BRINGS=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
 	return command
 }
 
@@ -943,4 +947,45 @@ func TestLintsWarningsAreKeptAndANewPortIsNitpicked(t *testing.T) {
 	require.Len(t, linted, 2)
 	require.NotContains(t, linted[0], "--nitpick")
 	require.Contains(t, linted[1], "lint --nitpick")
+}
+
+// A passed target says what each port its depends_lib names installs that
+// a build could link, its dynamic libraries and its pkg-config modules,
+// with each .pc file's Libs: and Requires:, and how many Mach-O files it
+// installed (protocol 2); where its depends_lib can't be read, both are
+// absent.
+func TestTheGuestSaysWhatADeclaredPortInstalls(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	prefix := filepath.Join(root, "prefix")
+	bin, lib, pc := filepath.Join(prefix, "bin"), filepath.Join(prefix, "lib"), filepath.Join(prefix, "lib", "pkgconfig")
+	require.NoError(t, os.MkdirAll(pc, 0o755))
+	require.NoError(t, os.MkdirAll(bin, 0o755))
+	macho := []byte{0xcf, 0xfa, 0xed, 0xfe, 0, 0, 0, 0}
+	abook, iconv, iconvLink := filepath.Join(bin, "abook"), filepath.Join(lib, "libiconv.2.dylib"), filepath.Join(lib, "libiconv.dylib")
+	for _, file := range []string{abook, iconv} {
+		require.NoError(t, os.WriteFile(file, macho, 0o755))
+	}
+	require.NoError(t, os.Symlink(iconv, iconvLink))
+	require.NoError(t, os.WriteFile(abook+".links", []byte(abook+":\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1351.0.0)\n"), 0o644))
+	gtk := filepath.Join(pc, "gtk4.pc")
+	require.NoError(t, os.WriteFile(gtk, []byte("prefix=/opt/local\nName: GTK\nRequires: pango >= 1.50, cairo,glib-2.0\nLibs: -L${libdir} -lgtk-4\n"), 0o644))
+	contents := filepath.Join(root, "contents")
+	require.NoError(t, os.MkdirAll(contents, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(contents, "libiconv"), []byte(iconv+"\n"+iconvLink+"\n"+filepath.Join(prefix, "include", "iconv.h")+"\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(contents, "gtk4"), []byte(gtk+"\n"), 0o644))
+	input := Input{Tests: "declared", Targets: []Target{{ID: "abook", Name: "abook", Portfile: "mail/abook/Portfile", Log: buildenv.LogName("abook")}}}
+	results, _ := guestRunIn(t, root, input, "CONTENTS="+abook+"\\n", "LIBDEPS=libiconv gtk4 git")
+	require.Equal(t, "finished", results.State, results.Detail)
+	require.Equal(t, []model.DeclaredPort{
+		{Port: "libiconv", Libraries: []string{iconv}, Modules: []model.PkgConfigModule{}},
+		{Port: "gtk4", Libraries: []string{}, Modules: []model.PkgConfigModule{{Name: "gtk4", Libs: []string{"gtk-4"}, Requires: []string{"pango", "cairo", "glib-2.0"}}}},
+		{Port: "git", Libraries: []string{}, Modules: []model.PkgConfigModule{}},
+	}, results.Targets[0].Declared, "the link and the header aren't libraries, nor a version in Requires:; git's files, programs, none")
+	require.Equal(t, 1, *results.Targets[0].MachOs)
+
+	results, _ = guestRunIn(t, root, input, "CONTENTS="+abook+"\\n", "LIBDEPS_FAIL=1")
+	require.Equal(t, "finished", results.State, results.Detail)
+	require.Nil(t, results.Targets[0].Declared)
+	require.Nil(t, results.Targets[0].MachOs)
 }

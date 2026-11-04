@@ -144,7 +144,8 @@ Check four things in its output:
    with `--remote <remote-name>`.
 2. **Evidence:** what built, where, with what test policy, and anything still
    missing or accepted. A local pass and MacPorts' later pull request CI are
-   separate observations.
+   separate observations. A build a shell entered before it finished isn't
+   evidence.
 3. **Review findings:** commit rules, what upstream changed, other pull
    requests, and concerns a passing build cannot settle. `!` marks what wants
    your look, a line that would hold an unattended submission says `held`,
@@ -154,7 +155,9 @@ Check four things in its output:
    check compiled none of libgit2-sys, libsqlite3-sys, which Cargo.lock pins
    for features or targets this build doesn't use`; before any check, the
    crates a default build on macOS can't reach are set apart, `pinned for
-   features or targets the port's build on macOS doesn't take`.
+   features or targets the port's build on macOS doesn't take`. Beside the
+   hold on a library linked and not declared, a `Notice` names a library
+   declared in `depends_lib` that nothing the build installed links.
 4. **Title and description:** what a reviewer will actually receive, including
    limitations. `-v` shows the full proposed description where the ordinary
    preview shortens it.
@@ -288,6 +291,14 @@ reason:
 dockhand decide license-changed -p jq \
   --because "The new license is acceptable and the Portfile declares it."
 ```
+
+A change that makes a port non-distributable holds as `not-distributable`, in
+the words of MacPorts' own checker, the one MacPorts' builders run: `"wasi-sdk"
+is not distributable because its license "llvm-exception" is not known to be
+distributable, so the builders keep no binary archive of it`. Answer it the
+same way, with `dockhand decide not-distributable -p wasi-sdk --because "…"`,
+or fix the license line it names. One that stays non-distributable, as on
+master, is a notice.
 
 Or record what must happen before proceeding with
 `--waiting "upstream's clarification"`. That waiting decision blocks ordinary

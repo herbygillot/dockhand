@@ -60,6 +60,10 @@ const (
 	CheckFailed Kind = "check-failed"
 	// Interrupted is work a person or a signal stopped, which exits 130.
 	Interrupted Kind = "interrupted"
+	// StillRunning is a check still queued or running when wait --for or
+	// check --for reached its bound, which exits 4; the check continues.
+	// Its producer's Next is the wait that follows it further.
+	StillRunning Kind = "still-running"
 	// Failed is any other refusal, which exits 1.
 	Failed Kind = "failed"
 )
@@ -75,13 +79,16 @@ func (k Kind) Transient() bool {
 func (k Kind) Outcome() bool { return k.Exit() != 1 }
 
 // Exit is the kind's exit code, the one table of them: a check failed 2,
-// waiting for a look 3, interrupted 130, and every other refusal 1.
+// waiting for a look 3, a check still running at a bound 4, interrupted
+// 130, and every other refusal 1.
 func (k Kind) Exit() int {
 	switch k {
 	case CheckFailed:
 		return 2
 	case Attention:
 		return 3
+	case StillRunning:
+		return 4
 	case Interrupted:
 		return 130
 	}

@@ -32,6 +32,7 @@ const (
 	CellUnmet    = evidence.CellUnmet
 	CellNotRun   = evidence.CellNotRun
 	CellRemade   = evidence.CellRemade
+	CellEntered  = evidence.CellEntered
 )
 
 // CarriedLines say, of the evidence's results reused over a change that

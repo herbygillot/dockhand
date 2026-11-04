@@ -399,8 +399,8 @@ func Compare(older, newer project.Reading, versions Versions, named, sets func(o
 }
 
 // hostPaths are the source files of the new version whose string literals
-// name a Homebrew prefix's libraries the old version's source names
-// nowhere, a notice each, holding nothing: hashcat 8.0's src/ext_zlib.c
+// name a Homebrew prefix's paths the old version's source names nowhere, a
+// notice each, holding nothing, said as libraries where each is one: hashcat 8.0's src/ext_zlib.c
 // and four more dlopen "/opt/homebrew/lib/libz.1.dylib" and
 // "/usr/local/lib/libz.1.dylib", and a MacPorts hashcat would lose
 // compression and crypto at run time, where its check passed and its links
@@ -429,10 +429,26 @@ func hostPaths(older, newer project.Reading) []Change {
 		if len(added) > 2 {
 			words = strings.Join(added[:len(added)-1], ", ") + ", and " + added[len(added)-1]
 		}
-		changes = append(changes, Change{Kind: "host-path", How: "adds", Path: name,
-			Message: fmt.Sprintf("upstream: %s adds %s, so it may look for libraries at run time only outside ${prefix}", name, words)})
+		// An executable's path is said as a path: atuin's
+		// /opt/homebrew/opt/atuin/bin/atuin read as a library.
+		var message string
+		switch {
+		case !slices.ContainsFunc(added, func(literal string) bool { return !libraryPath(literal) }):
+			message = fmt.Sprintf("upstream: %s adds %s, so it may look for libraries at run time only outside ${prefix}", name, words)
+		case len(added) == 1:
+			message = fmt.Sprintf("upstream: %s adds %s, a path outside ${prefix} it may use at run time", name, words)
+		default:
+			message = fmt.Sprintf("upstream: %s adds %s, paths outside ${prefix} it may use at run time", name, words)
+		}
+		changes = append(changes, Change{Kind: "host-path", How: "adds", Path: name, Message: message})
 	}
 	return changes
+}
+
+// libraryPath reports a path that's a library's: a .dylib, a .so, or one
+// in a lib/ directory.
+func libraryPath(literal string) bool {
+	return strings.HasSuffix(literal, ".dylib") || strings.HasSuffix(literal, ".so") || strings.Contains(literal, "/lib/")
 }
 
 // licenseWords say what happened to a license file, by what its text is

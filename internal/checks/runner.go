@@ -1121,6 +1121,7 @@ func (b *build) Record(report buildenv.TargetReport) error {
 	}
 	result := report.Result
 	result.Links, result.Installed, result.Libraries, result.Configure = report.Links, report.Installed, report.Libraries, report.Configure
+	result.Declared = report.Declared
 	return b.record(result)
 }
 

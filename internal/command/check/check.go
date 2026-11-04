@@ -25,6 +25,7 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	var tests, variants, build, of string
 	var plan, head, staged, workingTree, enqueue, baseline, replace, fresh, keep, yes bool
+	var bound string
 	var include, only, also, on []string
 	cmd := &cobra.Command{
 		Use:   "check",
@@ -69,13 +70,31 @@ branch's latest check, or the check --of names, or the --only ones, at
 the master that check started from, in its environments, with its
 variants and tests, and reports each beside the branch's result. It reports what happened in each run and nothing more. A
 failed check suggests a baseline when one could tell more; with
-check.baseline = true, it runs that baseline automatically.`,
+check.baseline = true, it runs that baseline automatically.
+
+--for 9m queues the check, as -d does, then follows it for at most nine
+minutes, exiting 4 if it is still queued or running, saying what it is
+doing; the check continues, with serve or a background worker, never in
+this process. dockhand wait check-42 --for 9m follows it further.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			// A misspelled policy is refused before anything is captured.
 			if tests != "" && !model.TestPolicy(tests).Valid() {
 				return fmt.Errorf("--tests %q is not declared, required, or skip", tests)
+			}
+			var limit checkrun.Bound
+			if bound != "" {
+				switch {
+				case enqueue:
+					return errors.New("-d returns at once and --for follows for a while; use one")
+				case plan:
+					return errors.New("--plan builds nothing and waits for nothing")
+				}
+				var err error
+				if limit, err = checkrun.ParseBound(bound); err != nil {
+					return err
+				}
 			}
 			if err := baselineFlags(cmd, baseline, of, nil); err != nil {
 				if !cmd.Flags().Changed("variants") {
@@ -209,6 +228,9 @@ check.baseline = true, it runs that baseline automatically.`,
 					return fmt.Errorf("%s is already %s for these files; dockhand wait %s follows it", queued.Run.Name(), queued.Run.State, queued.Run.Name())
 				}
 				fmt.Fprintf(streams.Err, "%s is already %s and covers this check; following it.\n", queued.Run.Name(), queued.Run.State)
+				if bound != "" {
+					return checkrun.WaitFor(ctx, e, queued.Run, streams, s.Places(), limit, s.Drain)
+				}
 				return checkrun.Wait(ctx, e, queued.Run, streams, s.Places())
 			}
 			if err != nil {
@@ -222,6 +244,22 @@ check.baseline = true, it runs that baseline automatically.`,
 				// One line names each, where a line said each stopped and
 				// another what replaced them (part 5, item 3).
 				fmt.Fprintf(streams.Out, "Replaced %s.\n", strings.Join(replaced, "; "))
+			}
+			if bound != "" {
+				// Queued as -d queues it, then followed for the bound,
+				// driving nothing: returning at it stops nothing.
+				err = checkrun.QueuedFor(ctx, e, run, streams, s.Places(), limit, s.Drain)
+				if err == nil {
+					if status, nextErr := e.BranchStatusOf(ctx, branch.ID); nextErr == nil {
+						view.WriteNext(streams.Out, status)
+					}
+				}
+				if s.File.Check.Baseline {
+					if queued, _, ok := e.QueuedBaseline(ctx, run.ID); ok {
+						fmt.Fprintf(streams.Out, "%s · baseline queued, since check.baseline is on: dockhand wait %s --for %s follows it\n", run.Name(), queued.Name(), limit.Said)
+					}
+				}
+				return err
 			}
 			err = checkrun.RunQueued(ctx, e, run, streams, enqueue, s.Places(), s.Drain)
 			// A check that passed says what moves the branch on now, as
@@ -257,6 +295,7 @@ check.baseline = true, it runs that baseline automatically.`,
 	}
 	where.Register(cmd, s, "check")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show what would be built and change nothing")
+	cmd.Flags().StringVar(&bound, "for", "", "follow for at most this long, then exit 4 if the check is still running; it continues")
 	cmd.Flags().BoolVar(&head, "head", false, "check the committed tip")
 	cmd.Flags().BoolVar(&staged, "staged", false, "check the index")
 	cmd.Flags().BoolVar(&workingTree, "working-tree", false, "check the working files, for a --branch checked out elsewhere")

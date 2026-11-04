@@ -84,3 +84,58 @@ func TestAnUnreadTargetCarriesItsReason(t *testing.T) {
 	})
 	require.Equal(t, []LinkFinding{{Target: "bazel", Unread: true, Reason: "its result is check-610's, which didn't read them"}}, found)
 }
+
+// A port the Portfile's own text declares in depends_lib that installs a
+// library none of the target's builds links, where each build installed a
+// Mach-O file, is said, once, with its line (unlinked-dependency); one a
+// PortGroup adds, a port of programs alone, a build installing no Mach-O,
+// one linked on another release, and a target with an unread build are
+// none (the abook session's libiconv).
+func TestADeclaredLibraryNothingLinksIsSaid(t *testing.T) {
+	arm, old := model.Environment{Provider: "tart", Platform: model.Platform{Version: "25", Architecture: "arm64"}}, model.Environment{Provider: "tart", Platform: model.Platform{Version: "21", Architecture: "arm64"}}
+	iconv := model.DeclaredPort{Port: "libiconv", Libraries: []string{"/opt/local/lib/libiconv.2.dylib"}}
+	ncurses := model.DeclaredPort{Port: "ncurses", Libraries: []string{"/opt/local/lib/libncursesw.6.dylib"}}
+	git := model.DeclaredPort{Port: "git", Libraries: []string{}}
+	python := model.DeclaredPort{Port: "python313", Libraries: []string{"/opt/local/lib/libpython3.13.dylib"}}
+	written := []WrittenLib{{Port: "libiconv", Option: "depends_lib-append", Line: 23}, {Port: "ncurses", Option: "depends_lib-append", Line: 23}, {Port: "git", Option: "depends_lib-append", Line: 24}}
+	ncursesLink := model.Link{Binary: "/opt/local/bin/abook", Library: "/opt/local/lib/libncursesw.6.dylib", Port: "ncurses"}
+	build := func(environment model.Environment, machos int, links ...model.Link) LinkedBuild {
+		return LinkedBuild{Result: model.TargetResult{Target: "abook", Outcome: model.OutcomePassed, Links: append([]model.Link{}, links...),
+			Declared: &model.Declared{Ports: []model.DeclaredPort{iconv, ncurses, git, python}, MachOs: machos}}, Environment: environment, Declared: []string{"abook", "libiconv", "ncurses", "git", "python313"}, Written: written}
+	}
+	unlinked := func(builds ...LinkedBuild) []LinkFinding {
+		var found []LinkFinding
+		for _, finding := range UndeclaredLinks(builds) {
+			if finding.Unlinked {
+				found = append(found, finding)
+			}
+		}
+		return found
+	}
+	require.Equal(t, []LinkFinding{{Target: "abook", Port: "libiconv", Unlinked: true, Option: "depends_lib-append", Line: 23}}, unlinked(build(arm, 1, ncursesLink), build(old, 1, ncursesLink)),
+		"git installs no library, python313 is the PortGroup's, ncurses is linked")
+	require.Empty(t, unlinked(build(arm, 0)), "a build installing no Mach-O file says nothing")
+	linkedOld := model.Link{Binary: "/opt/local/bin/abook", Library: "/opt/local/lib/libiconv.2.dylib", Port: "libiconv"}
+	require.Empty(t, unlinked(build(arm, 1, ncursesLink), build(old, 1, ncursesLink, linkedOld)), "linked on one release is linked")
+	unread := build(old, 1)
+	unread.Result.Declared = nil
+	require.Empty(t, unlinked(build(arm, 1, ncursesLink), unread), "a build whose declared ports weren't read leaves it unsaid")
+	all := UndeclaredLinks([]LinkedBuild{build(arm, 1, ncursesLink)})
+	require.Equal(t, []LinkFinding{{Target: "abook", Clean: true, Ports: []string{"ncurses"}}, {Target: "abook", Port: "libiconv", Unlinked: true, Option: "depends_lib-append", Line: 23}}, all, "beside the clean scan, after it")
+}
+
+// An undeclared link whose library a declared port's pkg-config names, in
+// its own module's Libs or a module its Requires: reaches, says the port
+// and the modules followed (gnome-voice's note 9).
+func TestAnUndeclaredLinkSaysThePkgConfigThatBroughtItIn(t *testing.T) {
+	cairo := model.Link{Binary: "/opt/local/bin/gnome-voice", Library: "/opt/local/lib/libcairo.2.dylib", Port: "cairo"}
+	gtk := model.DeclaredPort{Port: "gtk4", Libraries: []string{"/opt/local/lib/libgtk-4.1.dylib"}, Modules: []model.PkgConfigModule{{Name: "gtk4", Libs: []string{"gtk-4"}, Requires: []string{"pango", "cairo"}}}}
+	cairoPort := model.DeclaredPort{Port: "glib2", Modules: []model.PkgConfigModule{{Name: "cairo", Libs: []string{"cairo"}}}}
+	build := LinkedBuild{Result: model.TargetResult{Target: "gnome-voice", Outcome: model.OutcomePassed, Links: []model.Link{cairo},
+		Declared: &model.Declared{Ports: []model.DeclaredPort{gtk, cairoPort}, MachOs: 1}}, Declared: []string{"gnome-voice", "gtk4", "glib2"}}
+	found := UndeclaredLinks([]LinkedBuild{build})
+	require.Len(t, found, 1)
+	require.Equal(t, &LinkThrough{Port: "gtk4", Modules: []string{"gtk4", "cairo"}}, found[0].Through)
+	build.Result.Declared.Ports = []model.DeclaredPort{{Port: "gtk4", Modules: []model.PkgConfigModule{{Name: "gtk4", Libs: []string{"gtk-4"}, Requires: []string{"pango"}}}}}
+	require.Nil(t, UndeclaredLinks([]LinkedBuild{build})[0].Through, "a Requires: no declared port installs stops there")
+}

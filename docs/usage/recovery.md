@@ -119,7 +119,9 @@ dockhand wait check-42
 ```
 
 Wait follows a check and, when no other process is driving it, can resume a
-stopped one where it left off. A running serve can also take it up. A repeated
+stopped one where it left off. With `--for`, wait never drives the check here:
+where nothing else runs it, it starts a background worker, as `check -d` does,
+and follows. A running serve can also take it up. A repeated
 `check` for the same files can follow the active check rather than start a
 duplicate; read the message naming the check it follows. A request for different
 files or a stopped check may instead refuse and tell you what is holding the
@@ -319,7 +321,9 @@ dockhand check -b jq-update --head --on tart:26 --keep
 ```
 
 Use the check name it prints. After a guest finishes, its retained clone is
-stopped and available for inspection whether its targets passed or failed:
+stopped and available for inspection whether its targets passed or failed. A
+failed check keeps its clone without `--keep` (`[providers.tart] keep_failed`,
+on by default), and its report names the shell that opens it:
 
 ```sh
 dockhand shell check-42 -- otool -L /opt/local/bin/jq
@@ -330,6 +334,13 @@ The command form works without an interactive terminal; the second form opens a
 shell when a terminal is available. The shell starts in the selected port's work
 directory, or its staged directory if the build directory is gone. For several
 retained releases add `--on tahoe`; for several ports add `--port jq`.
+
+While a Tart check is still running, `dockhand shell check-42` enters its VM
+instead, which the check goes on using; it says first what that leaves as no
+evidence. A target the check had built before the shell opened stands; the one
+building, and every one after it, reads `entered by a shell at 10:02 before its
+build finished`, and submit asks for a new check of it. `--test` is refused
+there.
 
 For a test-phase experiment after editing the branch's current test code:
 

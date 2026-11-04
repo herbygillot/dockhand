@@ -545,3 +545,37 @@ func TestAPythonBackendMovingHoldsUnlessThePortfileNamesIt(t *testing.T) {
 	require.True(t, unknown.Hold)
 	require.Contains(t, unknown.Message, "which the python PortGroup has no python.pep517_backend for")
 }
+
+// A change that makes a port non-distributable, by MacPorts' checker,
+// holds in its sentence, with the line to write for a conflict or an
+// empty license; one master's isn't either is a notice; a distributable
+// port, or one the checker couldn't judge, says nothing.
+func TestAChangeThatMakesAPortNonDistributableHolds(t *testing.T) {
+	port := macports.PortInfo{Name: "wasi-sdk", Version: "2"}
+	unknown := Verdict{Known: true, Reason: `"wasi-sdk" is not distributable because its license "llvm-exception" is not known to be distributable`}
+	assessed := func(input Input) []model.UpstreamChange {
+		var found []model.UpstreamChange
+		for _, change := range Assess(input).Changes {
+			if change.Rule == NotDistributable {
+				found = append(found, change)
+			}
+		}
+		return found
+	}
+	held := assessed(Input{Port: port, Base: port, Distributable: &Distribution{Head: unknown, Base: Verdict{Known: true, OK: true}}})
+	require.Equal(t, []model.UpstreamChange{{Kind: "license", Rule: NotDistributable, Subject: "wasi-sdk", Class: model.Introduced, Hold: true,
+		Message: `not distributable: MacPorts' checker says "wasi-sdk" is not distributable because its license "llvm-exception" is not known to be distributable, so the builders keep no binary archive of it`}}, held)
+	require.Len(t, assessed(Input{Port: port, New: true, Distributable: &Distribution{Head: unknown}}), 1, "a new port holds")
+	stays := assessed(Input{Port: port, Base: port, Distributable: &Distribution{Head: unknown, Base: unknown}})
+	require.Equal(t, model.Present, stays[0].Class)
+	require.False(t, stays[0].Hold)
+	require.True(t, strings.HasPrefix(stays[0].Message, "stays non-distributable, as on master: MacPorts' checker says "))
+	conflict := Verdict{Known: true, Reason: `"harbor" is not distributable because its license "gpl" conflicts with license "OpenSSL" of dependency "openssl3"`}
+	require.True(t, strings.HasSuffix(assessed(Input{Port: port, New: true, Distributable: &Distribution{Head: conflict}})[0].Message,
+		". Declare license_noconflict openssl3 where the project's license exempts it, as the Guide allows; otherwise it keeps no archive"))
+	empty := Verdict{Known: true, Reason: `"harbor" is not distributable because its license option is empty`}
+	require.True(t, strings.HasSuffix(assessed(Input{Port: port, New: true, Distributable: &Distribution{Head: empty}})[0].Message, ". Write its license"))
+	require.Empty(t, assessed(Input{Port: port, Base: port, Distributable: &Distribution{Head: Verdict{Known: true, OK: true}}}))
+	require.Empty(t, assessed(Input{Port: port, Base: port, Distributable: &Distribution{Head: Verdict{Reason: "couldn't be judged"}}}))
+	require.Empty(t, assessed(Input{Port: port, Base: port}), "not asked")
+}

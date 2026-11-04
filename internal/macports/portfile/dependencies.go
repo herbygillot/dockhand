@@ -40,6 +40,20 @@ func AddedPortDependencies(before, after []byte) []PortDependency {
 // PortDependencies are every literal port: dependency src writes, at the
 // top or in any body, in the order written; none where it doesn't parse.
 func PortDependencies(src []byte) []PortDependency {
+	return dependencies(src, true)
+}
+
+// WrittenDependencies are every literal dependency src writes, port:,
+// path:, lib:, and bin: alike, each by the port it names, at the top or in
+// any body, in the order written; none where it doesn't parse: what the
+// Portfile's own text declares, which a PortGroup's additions aren't.
+func WrittenDependencies(src []byte) []PortDependency {
+	return dependencies(src, false)
+}
+
+// dependencies are src's literal dependencies, its port: ones alone where
+// portOnly.
+func dependencies(src []byte, portOnly bool) []PortDependency {
 	script, errs := syntax.Parse(src)
 	if len(errs) > 0 {
 		return nil
@@ -54,7 +68,7 @@ func PortDependencies(src []byte) []PortDependency {
 		}
 		for _, word := range cmd.Words[1:] {
 			spec, literal := word.Literal(src)
-			if !literal || !strings.HasPrefix(spec, "port:") {
+			if !literal || portOnly && !strings.HasPrefix(spec, "port:") {
 				continue
 			}
 			if dependency, err := macports.ParseDependency(phase, spec); err == nil {
@@ -133,4 +147,28 @@ func AddedLines(before, after []byte) []AddedLine {
 		added = append(added, AddedLine{Line: 1 + bytes.Count(after[:cmd.Span.Start], []byte("\n")), Option: name, Text: normal, Without: without})
 	}
 	return added
+}
+
+// TopWords are the literal words of option, and of option-append, at
+// src's top, in the order written: what the Portfile sets it to by its
+// default variants, as license_noconflict; none where it doesn't parse,
+// and none of a word written through a variable.
+func TopWords(src []byte, option string) []string {
+	script, errs := syntax.Parse(src)
+	if len(errs) > 0 {
+		return nil
+	}
+	var words []string
+	commands(src, script, false, func(cmd syntax.Command, nested bool) {
+		name, _ := cmd.Name(src)
+		if nested || name != option && name != option+"-append" {
+			return
+		}
+		for _, word := range cmd.Words[1:] {
+			if value, literal := word.Literal(src); literal {
+				words = append(words, value)
+			}
+		}
+	})
+	return words
 }

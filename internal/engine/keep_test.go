@@ -19,6 +19,8 @@ import (
 type keepingProvider struct {
 	leavingProvider
 	kept map[string]time.Time
+	// failed are the clones kept for a failure, unasked.
+	failed map[string]bool
 }
 
 func (p *keepingProvider) Execute(ctx context.Context, job buildenv.Job, build buildenv.Build) error {
@@ -38,7 +40,7 @@ func (p *keepingProvider) Leftovers(ctx context.Context) ([]buildenv.Leftover, e
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for i := range found {
-		found[i].KeptAt = p.kept[found[i].Ref]
+		found[i].KeptAt, found[i].Failed = p.kept[found[i].Ref], p.failed[found[i].Ref]
 	}
 	return found, err
 }
@@ -176,4 +178,73 @@ func TestADrainRunsWhatWasQueuedAsItEnded(t *testing.T) {
 	finished, err := e.Run(t.Context(), late.ID)
 	require.NoError(t, err)
 	require.Equal(t, model.RunPassed, finished.State, finished.Detail)
+}
+
+// Automatic cleanup spares a clone kept for its failure seven days, where
+// one kept as asked goes after a day (keep_failed).
+func TestAFailedChecksKeptCloneLastsSevenDays(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	provider := &keepingProvider{kept: map[string]time.Time{}, failed: map[string]bool{}}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	queued := queuedHarborRun(t, e, tahoeArm)
+	_, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Len(t, provider.left, 1)
+	clone := provider.left[0]
+	keptAgo := func(ago time.Duration, failed bool) {
+		provider.mu.Lock()
+		provider.kept[clone], provider.failed[clone] = e.now().Add(-ago), failed
+		provider.mu.Unlock()
+	}
+	spared := func() bool {
+		t.Helper()
+		planned, err := e.planLeftovers(t.Context(), session(t, e), true)
+		require.NoError(t, err)
+		for _, leftover := range planned {
+			if leftover.Ref == clone {
+				return leftover.Kept != ""
+			}
+		}
+		return false
+	}
+	keptAgo(48*time.Hour, true)
+	require.True(t, spared(), "two days into its seven")
+	keptAgo(8*24*time.Hour, true)
+	require.False(t, spared(), "past seven days")
+	keptAgo(48*time.Hour, false)
+	require.False(t, spared(), "one kept as asked goes after a day")
+}
+
+// A shell in a running check enters the guest its live attempt runs in,
+// left running, says first what it leaves as no evidence, and records the
+// entry on the run; --test is refused there, and a run with no live guest
+// says so.
+func TestAShellEntersARunningChecksGuest(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	provider := &shellingProvider{keepingProvider: keepingProvider{kept: map[string]time.Time{}}}
+	e.Providers = map[string]buildenv.Provider{tahoeArm.Provider: provider}
+	run := queuedHarborRun(t, e, tahoeArm)
+
+	_, err := e.Shell(t.Context(), ShellRequest{Run: run, Command: []string{"ls"}})
+	require.ErrorContains(t, err, run.Name()+" is queued and runs no guest a shell can enter yet")
+	execution := model.GuestExecution{ID: "ex_live", Run: run.ID, Environment: tahoeArm, Attempt: 1, State: model.ExecutionRunning, ProviderRef: "dockhand-check-live-1", CreatedAt: e.now()}
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.AddExecution(execution) }))
+
+	_, err = e.Shell(t.Context(), ShellRequest{Run: run, Test: true})
+	require.EqualError(t, err, "--test reruns the test phase in a kept clone; "+run.Name()+" is running")
+	var notice string
+	code, err := e.Shell(t.Context(), ShellRequest{Run: run, Command: []string{"ls", "-l"}, Notice: func(words string) { notice = words }})
+	require.NoError(t, err)
+	require.Equal(t, 7, code)
+	require.Equal(t, run.Name()+" is building in dockhand-check-live-1; a shell here leaves what it's building, and any target after it, as not evidence (dockhand check again for that).", notice)
+	require.Len(t, provider.shells, 1)
+	require.True(t, provider.shells[0].Running)
+	require.Equal(t, "dockhand-check-live-1", provider.shells[0].Ref)
+	entered, err := e.Run(t.Context(), run.ID)
+	require.NoError(t, err)
+	require.Equal(t, []model.Entry{{At: e.now(), Environment: execution.Environment, Command: "ls -l"}}, entered.Entered)
 }

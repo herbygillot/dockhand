@@ -203,6 +203,9 @@ type SubmitPlan struct {
 	// they don't declare in depends_lib, each of which holds a submission
 	// nobody looks over (linkHolds).
 	Undeclared []model.Concern
+	// Unlinked are the declarations in depends_lib nothing its check's
+	// builds link, notices that hold nothing (unlinked-dependency).
+	Unlinked []LinkFinding
 	// Decided are the person's decisions on its concerns that stand for
 	// its files, by subject (the person's voice): an acceptance lets its
 	// concern go for a submission nobody looks over, said, and given in
@@ -555,7 +558,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	plan.Prereleases = prereleases(edits)
 	plan.After = e.afterHolds(ctx, edits)
 	plan.Floors = e.floorHolds(ctx, branch.ID, branch.Base, model.ObjectID(plan.Tree))
-	plan.Undeclared = e.linkHolds(ctx, plan.Evidence)
+	plan.Undeclared, plan.Unlinked = e.linkHolds(ctx, plan.Evidence)
 	plan.Decided = e.decided(ctx, branch.ID, plan.Tree)
 	var reviewed []string
 	for _, subject := range slices.Sorted(maps.Keys(plan.Decided)) {
