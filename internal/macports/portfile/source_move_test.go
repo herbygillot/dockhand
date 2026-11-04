@@ -130,3 +130,24 @@ checksums           rmd160  0 \
 destroot {}
 `, string(moved))
 }
+
+// A .tar.zst asset, which Base 2.12 has no use_ option for, is written as
+// devel/libhx writes one: its suffix, extract.cmd zstd, and zstd as its
+// extract dependency.
+func TestAZstdAssetWritesItsCommandAndDependency(t *testing.T) {
+	src := []byte(`PortSystem          1.0
+PortGroup           github 1.0
+
+github.setup        owner tool 1.2.0 v
+github.tarball_from tarball
+revision            0
+categories          devel
+`)
+	moved, ok := MoveSource(src, SourceMove{Mode: "releases", Suffix: ".tar.zst", Command: "zstd", Depends: "bin:zstd:zstd"})
+	require.True(t, ok)
+	require.Contains(t, string(moved), `
+extract.suffix      .tar.zst
+extract.cmd         zstd
+depends_extract-append bin:zstd:zstd
+`)
+}

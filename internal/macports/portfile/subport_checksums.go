@@ -4,18 +4,24 @@ import (
 	"bytes"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
 // fetchCommands are the commands that say what a port fetches, after the
 // last of which a subport's checksums are written, as create orders them.
-var fetchCommands = map[string]bool{
-	"version": true, "distname": true, "distfiles": true, "dist_subdir": true,
-	"master_sites": true, "master_sites.mirror_subdir": true, "extract.suffix": true,
-	"use_bzip2": true, "use_xz": true, "use_zip": true, "use_7z": true, "use_lzip": true,
-	"github.setup": true, "github.tarball_from": true, "gitlab.setup": true, "codeberg.setup": true, "bitbucket.setup": true,
-}
+var fetchCommands = func() map[string]bool {
+	commands := map[string]bool{
+		"version": true, "distname": true, "distfiles": true, "dist_subdir": true,
+		"master_sites": true, "master_sites.mirror_subdir": true, "extract.suffix": true,
+		"github.setup": true, "github.tarball_from": true, "gitlab.setup": true, "codeberg.setup": true, "bitbucket.setup": true,
+	}
+	for _, option := range macports.ExtractOptions {
+		commands[option] = true
+	}
+	return commands
+}()
 
 // DeclareSubportChecksums writes a checksums declaration of placeholders
 // for these archives in a subport's block, which declares none, after its

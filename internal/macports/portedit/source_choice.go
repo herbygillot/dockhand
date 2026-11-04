@@ -295,8 +295,10 @@ type judgedAsset struct {
 }
 
 // compressionOrder is which of one source in several compressions is
-// taken: gzip, then bzip2, xz, lzip, and zip.
-var compressionOrder = []string{".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lz", ".zip"}
+// taken: gzip, then those a use_ option extracts, bzip2, xz, lzip, lzma,
+// plain tar, and zip, then zstd, which takes extract.cmd and a dependency,
+// and 7z and a disk image last, a .dmg rarely holding source.
+var compressionOrder = []string{".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lz", ".tar.lzma", ".tar", ".zip", ".tar.zst", ".7z", ".dmg"}
 
 // judgeSources is the asset that is the source, among those judged:
 // passing ones with the same files and contents (sameFiles) are one
@@ -374,8 +376,9 @@ func templated(value string, info macports.PortInfo) (string, bool) {
 func sourceMoveFor(asset judgedAsset, info macports.PortInfo, fromGit bool) (portfile.SourceMove, bool) {
 	extraction, _ := macports.ExtractionOf(asset.name)
 	base := strings.TrimSuffix(asset.name, extraction.Suffix)
-	move := portfile.SourceMove{Mode: "releases", UseOption: extraction.UseOption, FromGit: fromGit}
-	if extraction.Suffix != extraction.Implied {
+	move := portfile.SourceMove{Mode: "releases", UseOption: extraction.UseOption, Command: extraction.Command, Depends: extraction.Depends, FromGit: fromGit}
+	// zstd's suffix is written always: Base 2.12's default is gzip's.
+	if extraction.Suffix != extraction.Implied || extraction.Command != "" {
 		move.Suffix = extraction.Suffix
 	}
 	defaultBase := info.Options["github.project"] + "-" + info.Options["github.version"]

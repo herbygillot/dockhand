@@ -25,7 +25,10 @@ type SourceMove struct {
 	// compression takes, use_bzip2 or use_xz, written yes. Each is
 	// written only where it isn't empty.
 	Distname, UseOption, Suffix, Worksrcdir string
-	FromGit                                 bool
+	// Command and Depends are extract.cmd and the depends_extract-append
+	// an archive no use_ option extracts takes, zstd's (macports.Extraction).
+	Command, Depends string
+	FromGit          bool
 	// Comment are lines written above the block, each without its "# ";
 	// none is written where it's empty (the roadmap's D3).
 	Comment []string
@@ -34,7 +37,7 @@ type SourceMove struct {
 // lines are the block's option lines, in the order written.
 func (m SourceMove) lines() [][2]string {
 	var lines [][2]string
-	for _, line := range [][2]string{{"distname", m.Distname}, {m.UseOption, "yes"}, {"extract.suffix", m.Suffix}, {"worksrcdir", m.Worksrcdir}} {
+	for _, line := range [][2]string{{"distname", m.Distname}, {m.UseOption, "yes"}, {"extract.suffix", m.Suffix}, {"extract.cmd", m.Command}, {"depends_extract-append", m.Depends}, {"worksrcdir", m.Worksrcdir}} {
 		if line[0] != "" && line[1] != "" {
 			lines = append(lines, line)
 		}
