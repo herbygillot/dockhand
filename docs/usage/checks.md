@@ -351,7 +351,8 @@ dockhand artifacts
 Use the actual check and port names. Logs identify the build when several
 environments exist; `--full` includes dependency installation, and `--follow`
 follows supported live logs. `artifacts` lists kept archives of the branch's
-latest check, or explains why one is missing. A build that links another port's
+latest check, or of a check it names, as `artifacts check-12`, or explains why
+one is missing. A build that links another port's
 library the Portfile doesn't declare is a notice, holding nothing, that names
 the line to write: `omnidiff links libiconv.2.dylib from libiconv, which it
 doesn't declare in depends_lib; depends_lib-append port:libiconv declares it`.
