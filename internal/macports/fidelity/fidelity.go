@@ -303,8 +303,11 @@ func Equivalent(expected, actual macports.Snapshot) error {
 	}
 	for name, old := range expected.Ports {
 		next, ok := actual.Ports[name]
-		if !ok || old.Revision != next.Revision {
-			return ErrMismatch.Because("candidate evaluation changed %s", name)
+		switch {
+		case !ok:
+			return ErrMismatch.Because("candidate evaluation lost %s", name)
+		case old.Revision != next.Revision:
+			return ErrMismatch.Because("candidate evaluation changed %s's revision from %d to %d", name, old.Revision, next.Revision)
 		}
 		if changes := Compare(name, ComparablePort(old, expected.Root), ComparablePort(next, actual.Root)); len(changes) > 0 {
 			return ErrMismatch.Because("candidate evaluation: %v", changes)
