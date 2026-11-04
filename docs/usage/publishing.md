@@ -143,7 +143,8 @@ Check four things in its output:
    request if any. Where several remotes could be the destination, choose one
    with `--remote <remote-name>`.
 2. **Evidence:** what built, where, with what test policy, and anything still
-   missing or accepted. A local pass and MacPorts' later pull request CI are
+   missing or accepted, with the variant builds that answer the template's
+   variants item, from any check of the files. A local pass and MacPorts' later pull request CI are
    separate observations. A build a shell entered before it finished isn't
    evidence.
 3. **Review findings:** commit rules, what upstream changed, other pull

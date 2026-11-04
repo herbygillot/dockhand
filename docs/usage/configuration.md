@@ -13,7 +13,9 @@ dockhand config
 dockhand config --json
 ```
 
-The report names the configuration file, database, and effective settings. The
+The report names the configuration file, database, and effective settings, each
+marked `(default)` unless the file sets it; a value the file sets is the file's
+even where it equals the default, an explicit `false` included. The
 default file is `~/.dockhand/config.toml`; `DOCKHAND_CONFIG` selects another. An
 absent file is allowed. An unknown key or malformed value is refused rather than
 silently ignored.

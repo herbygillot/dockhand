@@ -1162,6 +1162,37 @@ func TestCheckWordsSayWhatWasntBuilt(t *testing.T) {
 	require.Equal(t, "check-323: grafana isn't built for these files on "+checks.DescribeEnvironment(tahoe), said)
 }
 
+// The preview says the variant builds behind the variants item beneath
+// its Checks row, as the description's note does: the row named only the
+// governing check, check-774, where check-772 and check-773 built the
+// variants (architecture's review of v0.8.0).
+func TestThePreviewSaysTheVariantBuildsBehindItsTick(t *testing.T) {
+	t.Parallel()
+	command := model.Environment{Provider: "command"}
+	run := func(n int) model.Run { return model.Run{ID: model.RunID(fmt.Sprint("run_", n)), Number: n} }
+	executions := map[model.ExecutionID]model.GuestExecution{}
+	build := func(target model.Target, role model.TargetRole, check model.Run) engine.TargetEvidence {
+		execution := model.GuestExecution{ID: model.ExecutionID(fmt.Sprint("ex_", check.Number)), Run: check.ID, Environment: command}
+		executions[execution.ID] = execution
+		return engine.TargetEvidence{Target: model.PlanTarget{ID: target.ID(), Target: target, Role: role}, Passed: true,
+			Outcomes: []engine.Cell{{TargetResult: model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsNone, Execution: execution.ID}, Kind: engine.CellRecorded, Environment: command}}}
+	}
+	evidence := engine.Evidence{Run: run(774), Earlier: []model.Run{run(772), run(773)}, Plan: model.Plan{Environments: []model.Environment{command}},
+		Targets: []engine.TargetEvidence{
+			build(model.Target{Name: "curl"}, model.Changed, run(774)),
+			build(model.Target{Name: "curl", Variants: map[string]bool{"gnutls": true, "sectrust": true}}, model.Also, run(772)),
+			build(model.Target{Name: "curl", Variants: map[string]bool{"ssl": true, "sectrust": true}}, model.Also, run(773)),
+		}, Executions: executions}
+	var out strings.Builder
+	view.WriteSubmitPlan(&out, engine.SubmitPlan{Evidence: &evidence}, false)
+	require.Contains(t, out.String(), "  Checks   passed on command for this commit's files (check-774)\n           Dockhand built curl with +gnutls +sectrust and with +sectrust +ssl added to the default variants, in check-772 and check-773\n")
+
+	evidence.Targets = evidence.Targets[:1]
+	out.Reset()
+	view.WriteSubmitPlan(&out, engine.SubmitPlan{Evidence: &evidence}, false)
+	require.NotContains(t, out.String(), "Dockhand built", "a default build alone says nothing more")
+}
+
 // A submission that pushes to a fork its login doesn't own, as a sandbox
 // or --remote lets it, says so beneath the account it pushes as (the rc9
 // full stage's D-C4); someone else's pull request, pushed to as theirs,
