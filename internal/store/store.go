@@ -187,6 +187,9 @@ type Reader interface {
 	// LatestRunEvent is a run's newest event of any of the kinds; found is
 	// false where it has none.
 	LatestRunEvent(run model.RunID, kinds ...model.EventKind) (event model.Event, found bool, err error)
+	// LatestBranchEvent is a branch's newest event of any of the kinds;
+	// found is false where it has none.
+	LatestBranchEvent(branch model.BranchID, kinds ...model.EventKind) (event model.Event, found bool, err error)
 	LastEvent() (int64, error)
 	// CountEvents counts the events of a kind journaled at or after a time.
 	CountEvents(kind model.EventKind, since time.Time) (int, error)

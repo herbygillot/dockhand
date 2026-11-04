@@ -1412,6 +1412,30 @@ func (e *Engine) RequestReview(ctx context.Context, branch model.Branch) ([]stri
 	return logins, err
 }
 
+// RerequestDue reports whether the reviewers whose latest review asks for
+// changes are still to be asked again after a push made since that review:
+// the commit dockhand pushed is newer than the review, and nobody was
+// asked since. A request that failed after its push was dropped, a rerun
+// having pushed nothing (Codex's workflow review of 1caa6c3d, finding 8).
+// False where the review's time isn't known.
+func (e *Engine) RerequestDue(ctx context.Context, branch model.Branch) (bool, error) {
+	pr := branch.PullRequest
+	if pr == nil || pr.Observed == nil || len(pr.Observed.ChangesRequestedBy) == 0 || pr.Observed.ReviewedAt.IsZero() || pr.Pushed == "" {
+		return false, nil
+	}
+	pushed, err := e.Repo.CommitTime(ctx, string(pr.Pushed))
+	if err != nil || !pushed.After(pr.Observed.ReviewedAt) {
+		return false, err
+	}
+	var asked model.Event
+	var found bool
+	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		asked, found, err = r.LatestBranchEvent(branch.ID, model.EventBranchRerequest)
+		return err
+	})
+	return err == nil && (!found || asked.At.Before(pr.Observed.ReviewedAt)), err
+}
+
 // hasForkRemote says whether any Git remote pushes to a GitHub repository
 // other than MacPorts' own, as a fork or a sandbox would, by its address
 // alone: a Next: line suggests a submit only

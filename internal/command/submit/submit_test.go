@@ -20,6 +20,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/term"
@@ -1238,4 +1239,61 @@ func TestTheSubmitPlanNamesAPatchChangedUnderItsName(t *testing.T) {
 	planned, err := cmdtest.JSONOf(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Equal(t, []any{"textproc/jq/files/patch-docs.diff"}, planned.Result["changed_patches"])
+}
+
+// failingReviewers fails its reviewer requests while fail is set, counting
+// them.
+type failingReviewers struct {
+	*forgetest.GitHub
+	fail  error
+	calls int
+}
+
+func (g *failingReviewers) RequestReviewers(ctx context.Context, ref forge.PullRequestRef, logins []string) error {
+	g.calls++
+	if g.fail != nil {
+		return g.fail
+	}
+	return g.GitHub.RequestReviewers(ctx, ref, logins)
+}
+
+// A reviewer request that failed after its push is made by the next
+// submit, which pushes nothing: a rerun skipped it, since it hadn't
+// pushed (Codex's workflow review of 1caa6c3d, finding 8, its probe).
+func TestSubmitFinishesAReviewRequestTheLastOneLeft(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
+	wrapped := &failingReviewers{GitHub: g}
+	cmdtest.Stands(t).Forge = func(*engine.Engine) engine.Forge { return wrapped }
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "tidy")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	g.Status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, ChangesRequestedBy: []string{"ryandesign"}, ReviewedAt: time.Now().Add(-time.Hour)}
+	_, _, err = cmdtest.Dockhand(t, "status", "--refresh")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n# reviewed\n"), 0644))
+	testsupport.Git(t, dir, "commit", "-q", "-am", "jq: document review")
+	require.NoError(t, os.MkdirAll(filepath.Join(w.Home, ".dockhand"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("[submit]\nrerequest_review = \"always\"\n"), 0644))
+	wrapped.fail = errors.New("temporary review API failure")
+	out, _, err := cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
+	require.ErrorContains(t, err, "temporary review API failure")
+	require.Contains(t, out, "Updated #34901: pushed through commit")
+	require.Equal(t, 1, wrapped.calls)
+	wrapped.fail = nil
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	require.Contains(t, out, "Asked @ryandesign to review again (left over from the last submit).")
+	require.Equal(t, 2, wrapped.calls, "retry should finish the failed post-push reviewer request")
+	require.Equal(t, []string{"ryandesign"}, g.Rerequested)
 }
