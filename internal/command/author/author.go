@@ -532,6 +532,20 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 		}
 		writeLeft(out, update.ChecksumsLeft)
 		view.WritePlainHTTP(out, update.HTTPS, update.PlainHTTP)
+		// The dependents asked for are a part of the change of their own:
+		// a second update jq --revbump-dependents said current and
+		// bumped none (Codex's workflow review of 1caa6c3d, finding 1).
+		// Those the branch changes already are left as they are.
+		if linked.Revbump && request.Action == model.EditUpdate {
+			if branch.ID == "" {
+				fmt.Fprintln(out, "--revbump-dependents bumped nothing: there's no branch for them, since the version needs no change.")
+				return branch, update, nil
+			}
+			if result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.Except, request.Plan, view.ListShown(streams)); err != nil {
+				return branch, update, err
+			}
+			streams.Emit(result)
+		}
 		return branch, update, nil
 	}
 	if request.Action == model.EditUpdate {
