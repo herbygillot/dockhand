@@ -231,6 +231,18 @@ func TestALocalPatchMayBeInASubdirectoryOfFiles(t *testing.T) {
 	}
 }
 
+// A files directory or a patch that isn't in the files evaluated, as a
+// new port's files/ not yet added to Git, says so and what adds it:
+// shader-slang's checksums read "local patch directory is unavailable"
+// (field testing, #65).
+func TestAPatchNotTrackedSaysToAddIt(t *testing.T) {
+	portdir := t.TempDir()
+	port := macports.PortInfo{Name: "shader-slang", Options: map[string]string{"patchfiles": "patch-cmake.diff"}}
+	require.ErrorContains(t, LocalPatches(port, portdir), "the port's files directory isn't among the files Git tracks, which dockhand reads; git add it")
+	require.NoError(t, os.MkdirAll(filepath.Join(portdir, "files"), 0o755))
+	require.ErrorContains(t, LocalPatches(port, portdir), "patchfile patch-cmake.diff isn't among the files Git tracks")
+}
+
 // A 404 says what it means where it was asked: a GitHub release's asset a
 // tag alone doesn't publish; on a port of the github PortGroup, GitHub's
 // archive of the tag instead (libxkbcommon's dead ${homepage}/download/,
