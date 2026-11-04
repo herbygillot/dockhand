@@ -102,7 +102,7 @@ func writeStep(out io.Writer, logs engine.RunLogs, run model.Run, port string) {
 	if !ok || chosen.Result.Phase == "" {
 		return
 	}
-	step := model.Step(chosen.Result.Phase)
+	step := chosen.Result.Phase.Step()
 	from, to, ok := logs.StepLines(chosen, step)
 	if !ok {
 		return

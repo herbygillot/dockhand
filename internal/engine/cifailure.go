@@ -127,7 +127,7 @@ func CIPortWords(failures []model.CIFailure) string {
 		switch {
 		case port.Outcome == model.OutcomePassed:
 			words = append(words, name+" ✓")
-		case port.Phase == model.PhaseInstall || port.Phase == model.PhaseDependencies || port.Phase == "":
+		case port.Phase.Installing() || port.Phase == model.PhaseDependencies || port.Phase == "":
 			words = append(words, name+" ✗ (build)")
 		default:
 			words = append(words, fmt.Sprintf("%s ✗ (%s)", name, port.Phase))

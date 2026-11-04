@@ -172,8 +172,9 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // to mark the links they declare (field testing's curl +sectrust notes,
 // note 4), reads more of what a passed build links, an observation reuse
 // never reads, and builds and judges no verdict otherwise: the protocol
-// stays 3.
-const guestPin = "fdfcdd3897a89d7a9648d47b8b0a50530c770123e441ea3fc7d247124dbd9042"
+// stays 3. A failed install naming the phase MacPorts' line names, patch
+// or build, says the same verdict more exactly (#52): it stays 3.
+const guestPin = "105a50c09535adf282640759988bf67cb556e31a484a65f98d82eee78b26ef4d"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

@@ -529,12 +529,12 @@ func failedAt(result model.TargetResult) (building, before bool) {
 	switch result.Phase {
 	// A dependency's failure is one master answers too: failing alike
 	// there says it isn't the branch's.
-	case model.PhaseDependencies, model.PhaseInstall, model.PhaseTest:
+	case model.PhaseDependencies, model.PhaseTest:
 		return true, false
 	case model.PhaseLint, model.PhaseFetch, model.PhaseChecksum:
 		return false, true
 	}
-	return false, false
+	return result.Phase.Installing(), false
 }
 
 // BaselineWorthy sorts a check's ports into those a baseline can say
