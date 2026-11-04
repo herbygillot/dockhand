@@ -219,7 +219,9 @@ dockhand check
 dockhand submit --plan
 ```
 
-Replace the sample message with your reason. `tidy` includes the uncommitted
+Replace the sample message with your reason. Where the plan is one commit, as
+it is for edits not yet committed to one port, `--message` alone does the same.
+`tidy` includes the uncommitted
 edit and may fix deterministic lint issues on lines you touched; inspect its
 plan before applying it. A passing check supports the committed files you are
 about to publish. Follow `dockhand usage publishing` for the submission itself,

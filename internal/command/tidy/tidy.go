@@ -47,7 +47,8 @@ A plan made only of dockhand's own edits applies without review, which is
 what a script gets. Anything else is shown for review first, on a terminal,
 or applied as shown with --yes.
 --squash --message "port: what changed" makes one commit of the whole
-branch, applied as given, since the message is yours. Before rewriting,
+branch, applied as given, since the message is yours; --message alone
+names the commit where the plan makes one. Before rewriting,
 tidy keeps the old history as a checkpoint that dockhand undo brings
 back.
 
@@ -60,9 +61,6 @@ commits, and its files are as they were when it was saved.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			if message != "" && !squash {
-				return errors.New("--message requires --squash. Add --squash to create a single commit with this message.")
-			}
 			if saveTo != "" && !plan {
 				return errors.New("--out saves the plan --plan shows; add --plan")
 			}
@@ -81,9 +79,22 @@ commits, and its files are as they were when it was saved.`,
 			if err != nil {
 				return err
 			}
-			proposal, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch, Squash: squash, Message: message, Author: author, Restyle: restyle})
+			// --message without --squash names the one commit a plan of
+			// one makes, as a branch of edits alone and no commits yet
+			// has (field testing on v0.7.0, #53); a plan of several asks
+			// for --squash.
+			proposal, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch, Squash: squash || message != "", Message: message, Author: author, Restyle: restyle})
 			if err != nil {
 				return err
+			}
+			if message != "" && !squash {
+				plain, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch, Author: author, Restyle: restyle})
+				if err != nil {
+					return err
+				}
+				if len(plain.Groups) > 1 {
+					return fmt.Errorf("--message names one commit, and the plan makes %d; add --squash to make one commit of the branch with this message", len(plain.Groups))
+				}
 			}
 			if group != "" && !proposal.Keep {
 				if proposal, err = e.Regroup(ctx, proposal, group, author); err != nil {
