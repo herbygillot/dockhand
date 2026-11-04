@@ -284,7 +284,8 @@ row is not enough.
 
 For a stale file capture, inspect the branch and make the intended new check. A
 rebase changes the base and may require another check, but can reuse individual
-builds whose inputs still stand. `retry` repeats the old base and files, so it
+builds whose inputs still stand. `dockhand rebase --plan` shows a conflict
+before a rebase meets it. `retry` repeats the old base and files, so it
 is not the normal response to “these files have changed.”
 
 If ship says the branch moved while being checked, inspect the intervening work.

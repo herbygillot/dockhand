@@ -174,9 +174,13 @@ work needs the newer base or when review requires it:
 
 ```sh
 dockhand tidy -b jq-update
+dockhand rebase -b jq-update --plan
 dockhand rebase -b jq-update
 dockhand status -b jq-update
 ```
+
+`--plan` fetches master and says what the rebase would replay, drop as already
+on master, or stop at, and moves nothing.
 
 `rebase` requires committed work, fetches master, and replays the branch's
 commits. A conflicting replay leaves the branch as it was and names the

@@ -292,3 +292,80 @@ func TestARebaseAndATidySayAnOlderBuildsAttribution(t *testing.T) {
 // modelineHead is MacPorts' modeline and the blank line after it, which an
 // edit gives a Portfile that lacks it (portfile.WithModeline).
 const modelineHead = portfile.Modeline + "\n\n"
+
+// rebase --plan says what a rebase would make of each commit and moves
+// nothing: a replay with a dropped commit, a conflict and what it leaves
+// untried, a merge commit and uncommitted edits refused, each as the
+// rebase then does it.
+func TestARebasePlanSaysWhatTheRebaseWouldDo(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Here: true})
+	require.NoError(t, err)
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+	commitAs(t, branch.Worktree, "Ada ada@example.org", "jq: update to 1.8.1")
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
+	commitAs(t, branch.Worktree, "Ada ada@example.org", "libharbor: update to 3")
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 3")
+	outcomes := func(rebased Rebased) []string {
+		var words []string
+		for _, made := range rebased.Replay {
+			words = append(words, made.Commit.Subject()+" "+string(made.Outcome))
+		}
+		return words
+	}
+
+	head := testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")
+	plan, err := e.PlanRebase(t.Context(), branch)
+	require.NoError(t, err)
+	require.Equal(t, []string{"jq: update to 1.8.1 replay", "libharbor: update to 3 drop"}, outcomes(plan))
+	require.Equal(t, 1, plan.Commits)
+	require.Empty(t, plan.Refused)
+	require.Nil(t, plan.Checkpoint)
+	require.Equal(t, head, testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"), "nothing moved")
+	current, err := e.Resolve(t.Context(), "jq-update")
+	require.NoError(t, err)
+	require.Equal(t, plan.From, current.Base, "the base didn't move")
+	rebased, err := e.Rebase(t.Context(), branch)
+	require.NoError(t, err)
+	require.Equal(t, outcomes(plan), outcomes(rebased), "the plan's list is the rebase's")
+
+	// A conflict, and the commit after it untried.
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\n"})
+	commitAs(t, branch.Worktree, "Ada ada@example.org", "jq: update to 1.8.2")
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 4\n"})
+	commitAs(t, branch.Worktree, "Ada ada@example.org", "libharbor: update to 4")
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.0\n"})
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.0")
+	plan, err = e.PlanRebase(t.Context(), branch)
+	require.NoError(t, err)
+	require.Equal(t, []string{"jq: update to 1.8.1 conflict", "jq: update to 1.8.2 untried", "libharbor: update to 4 untried"}, outcomes(plan))
+	require.Equal(t, []string{"textproc/jq/Portfile"}, plan.Replay[0].Paths)
+	require.Contains(t, plan.Refused, "the rebase stopped on conflicts in textproc/jq/Portfile")
+	_, err = e.Rebase(t.Context(), branch)
+	require.ErrorContains(t, err, "the rebase stopped on conflicts in textproc/jq/Portfile")
+
+	// Uncommitted edits, refused in the plan's words.
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "mine\n"})
+	plan, err = e.PlanRebase(t.Context(), branch)
+	require.NoError(t, err)
+	require.Equal(t, "jq-update has uncommitted edits to devel/libharbor/Portfile; rebase would refuse until they're committed (dockhand tidy)", plan.Refused)
+	require.Empty(t, plan.Replay)
+	testsupport.Git(t, branch.Worktree, "checkout", "--", "devel/libharbor/Portfile")
+
+	// A merge commit.
+	testsupport.Git(t, branch.Worktree, "switch", "-q", "-c", "side", "HEAD~1")
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/harbor-tools/Portfile": "name harbor-tools\n"})
+	testsupport.Git(t, branch.Worktree, "add", "devel/harbor-tools/Portfile")
+	commitAs(t, branch.Worktree, "Ada ada@example.org", "harbor-tools: new port")
+	testsupport.Git(t, branch.Worktree, "switch", "-q", "dockhand/jq-update")
+	testsupport.Git(t, branch.Worktree, "-c", "user.name=Ada", "-c", "user.email=ada@example.org", "merge", "-q", "--no-ff", "-m", "merge side", "side")
+	merge := testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")
+	plan, err = e.PlanRebase(t.Context(), branch)
+	require.NoError(t, err)
+	require.Equal(t, model.ObjectID(merge).Short()+" is a merge commit, which dockhand doesn't replay", plan.Refused)
+	_, err = e.Rebase(t.Context(), branch)
+	require.ErrorContains(t, err, "is a merge commit")
+}

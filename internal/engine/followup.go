@@ -73,7 +73,7 @@ func (e *Engine) StartFrom(ctx context.Context, name string, from model.Branch) 
 		return result, err
 	}
 	committer.When = e.now()
-	picked, err := e.Repo.Replay(ctx, string(master), string(pushedHead(from)), head, committer)
+	picked, _, err := e.Repo.Replay(ctx, string(master), string(pushedHead(from)), head, committer)
 	if errors.Is(err, git.ErrRebaseConflict) {
 		return result, fmt.Errorf("%w; nothing was started. Pick them by hand with git cherry-pick onto master %s", err, master.Short())
 	}

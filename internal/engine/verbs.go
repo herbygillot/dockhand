@@ -144,7 +144,7 @@ func namedLike(ctx context.Context, repo *git.Repository, tree, name string) ([]
 	return named, nil
 }
 
-// Rebased is what a rebase did.
+// Rebased is what a rebase did, or what its plan says it would do.
 type Rebased struct {
 	From, To model.ObjectID
 	// UpToDate is true when the branch already started from master.
@@ -154,7 +154,28 @@ type Rebased struct {
 	// OlderBuilds are the builds the rebased commits name in Generated-By
 	// other than this one, which a rebase keeps as the commits had them.
 	OlderBuilds []string
+	// Replay is what the replay made of each of the branch's commits, in
+	// order, to its conflict and what it left untried.
+	Replay []Replayed
+	// Refused is why rebase wouldn't move the branch, which its plan says
+	// in its place: uncommitted edits, a merge commit, master having every
+	// change, or a conflict.
+	Refused string
 }
+
+// Replayed is what a replay made of one of a branch's commits, and
+// ReplayOutcome which of replay, drop, conflict, or untried (git.Replay).
+type (
+	Replayed      = git.Replayed
+	ReplayOutcome = git.ReplayOutcome
+)
+
+const (
+	ReplayReplayed = git.ReplayReplayed
+	ReplayDropped  = git.ReplayDropped
+	ReplayConflict = git.ReplayConflict
+	ReplayUntried  = git.ReplayUntried
+)
 
 // Rebase moves a branch's commits onto freshly fetched master, in its
 // worktree, keeping a checkpoint of the old history for restore. A branch
@@ -170,26 +191,47 @@ func (e *Engine) Rebase(ctx context.Context, branch model.Branch) (Rebased, erro
 	return result, err
 }
 
-// rebase replays a branch's commits onto fresh master, then moves the
-// branch and its checkout to them, holding the branch's history lock
-// (withHistory). The commits are made before anything moves, so a
-// conflict changes nothing, and the checkpoint knows the rebased head
-// before the branch holds it.
-func (e *Engine) rebase(ctx context.Context, branch model.Branch) (Rebased, error) {
+// PlanRebase says what Rebase would do: it fetches master and replays the
+// branch's commits into objects nothing refers to, moving nothing and
+// keeping no checkpoint. What rebase refuses, it says in Refused.
+func (e *Engine) PlanRebase(ctx context.Context, branch model.Branch) (Rebased, error) {
+	plan, err := e.planRebase(ctx, branch)
+	return plan.Rebased, err
+}
+
+// rebasePlan is a rebase replayed and not yet moved: the branch, its
+// worktree, its head, and the replayed head, where Refused is empty and
+// it isn't UpToDate.
+type rebasePlan struct {
+	Rebased
+	current        model.Branch
+	worktree       *git.Repository
+	head, replayed string
+	// refusal is what rebase says where the plan says Refused.
+	refusal error
+}
+
+// planRebase finds what a rebase would do, changing nothing: the
+// refusals, master fetched, the merge base, and the replay into objects.
+func (e *Engine) planRebase(ctx context.Context, branch model.Branch) (rebasePlan, error) {
 	current, err := e.Branch(ctx, branch.ID)
 	if err != nil {
-		return Rebased{}, err
+		return rebasePlan{}, err
 	}
 	worktree, err := e.worktree(ctx, current)
 	if err != nil {
-		return Rebased{}, err
+		return rebasePlan{}, err
 	}
+	plan := rebasePlan{current: current, worktree: worktree}
 	edited, err := worktree.TrackedChanges(ctx)
 	if err != nil {
-		return Rebased{}, err
+		return rebasePlan{}, err
 	}
 	if len(edited) > 0 {
-		return Rebased{}, fmt.Errorf("%s has uncommitted edits to %s; commit them (dockhand tidy) or set them aside before rebasing", current.ShortName(), listPaths(edited))
+		edits := fmt.Sprintf("%s has uncommitted edits to %s", current.ShortName(), listPaths(edited))
+		plan.Refused = edits + "; rebase would refuse until they're committed (dockhand tidy)"
+		plan.refusal = fmt.Errorf("%s; commit them (dockhand tidy) or set them aside before rebasing", edits)
+		return plan, nil
 	}
 	// A branch whose pull request merged has nothing to rebase: skim's
 	// replayed nothing onto master, and then said submit would replace
@@ -199,55 +241,85 @@ func (e *Engine) rebase(ctx context.Context, branch model.Branch) (Rebased, erro
 	if pr := current.PullRequest; pr != nil && current.State == model.BranchOpen {
 		if refreshed, err := e.refresh(ctx, current); err == nil && refreshed.Branch.ID != "" {
 			current = refreshed.Branch
+			plan.current = current
 		}
 	}
 	if err := ended(current); err != nil {
-		return Rebased{}, err
+		return rebasePlan{}, err
 	}
 	master, err := e.fetchMaster(ctx)
 	if err != nil {
-		return Rebased{}, err
+		return rebasePlan{}, err
 	}
-	result := Rebased{From: current.Base, To: master}
-	head, _, err := worktree.Branch(ctx, current.Name)
-	if err != nil {
-		return Rebased{}, err
+	plan.From, plan.To = current.Base, master
+	if plan.head, _, err = worktree.Branch(ctx, current.Name); err != nil {
+		return rebasePlan{}, err
 	}
-	if base, err := worktree.MergeBase(ctx, head, string(master)); err != nil {
-		return Rebased{}, err
+	if base, err := worktree.MergeBase(ctx, plan.head, string(master)); err != nil {
+		return rebasePlan{}, err
 	} else if base == string(master) {
-		result.UpToDate = true
-		return result, e.Store.Update(ctx, e.Repository, func(tx store.Tx) error { return e.history().SetBase(tx, current.ID, master, "") })
+		plan.UpToDate = true
+		return plan, nil
 	}
 	committer, err := worktree.Author(ctx)
 	if err != nil {
-		return Rebased{}, err
+		return rebasePlan{}, err
 	}
 	committer.When = e.now()
-	rebased, err := worktree.Replay(ctx, string(master), string(current.Base), head, committer)
-	if errors.Is(err, git.ErrRebaseConflict) {
-		return Rebased{}, fmt.Errorf("%w; %s is as it was. Resolve it by hand with git rebase %s, or ask for help on the PR", err, current.ShortName(), master.Short())
-	}
-	if err != nil {
-		return Rebased{}, err
+	plan.replayed, plan.Replay, err = worktree.Replay(ctx, string(master), string(current.Base), plan.head, committer)
+	var merge *git.MergeCommitError
+	switch {
+	case errors.Is(err, git.ErrRebaseConflict):
+		plan.Refused = err.Error()
+		plan.refusal = fmt.Errorf("%w; %s is as it was. Resolve it by hand with git rebase %s, or ask for help on the PR", err, current.ShortName(), master.Short())
+		return plan, nil
+	case errors.As(err, &merge):
+		plan.Refused = fmt.Sprintf("%s is a merge commit, which dockhand doesn't replay", model.ObjectID(merge.Commit).Short())
+		plan.refusal = err
+		return plan, nil
+	case err != nil:
+		return rebasePlan{}, err
 	}
 	// Counted as replayed: a change master already has is dropped.
-	replayed, err := worktree.History(ctx, string(master), rebased)
+	replayed, err := worktree.History(ctx, string(master), plan.replayed)
 	if err != nil {
-		return Rebased{}, err
+		return rebasePlan{}, err
 	}
 	if len(replayed) == 0 {
 		// Master has every change the branch makes: it was merged, by
 		// its pull request or another's, and moving it onto master would
 		// leave a branch that changes nothing.
-		return Rebased{}, fmt.Errorf("master %s already has every change %s makes, so there's nothing to rebase; dockhand clean %s removes it once its pull request is merged", master.Short(), current.ShortName(), current.ShortName())
+		plan.Refused = fmt.Sprintf("master %s already has every change %s makes, so there's nothing to rebase", master.Short(), current.ShortName())
+		plan.refusal = fmt.Errorf("%s; dockhand clean %s removes it once its pull request is merged", plan.Refused, current.ShortName())
+		return plan, nil
 	}
-	result.Commits = len(replayed)
+	plan.Commits = len(replayed)
 	var messages []string
 	for _, commit := range replayed {
 		messages = append(messages, commit.Message)
 	}
-	result.OlderBuilds = commitmsg.OtherBuilds(messages)
+	plan.OlderBuilds = commitmsg.OtherBuilds(messages)
+	return plan, nil
+}
+
+// rebase replays a branch's commits onto fresh master, then moves the
+// branch and its checkout to them, holding the branch's history lock
+// (withHistory). The commits are made before anything moves, so a
+// conflict changes nothing, and the checkpoint knows the rebased head
+// before the branch holds it.
+func (e *Engine) rebase(ctx context.Context, branch model.Branch) (Rebased, error) {
+	plan, err := e.planRebase(ctx, branch)
+	if err != nil {
+		return Rebased{}, err
+	}
+	current, worktree, head, rebased, master := plan.current, plan.worktree, plan.head, plan.replayed, plan.To
+	if plan.refusal != nil {
+		return Rebased{}, plan.refusal
+	}
+	if plan.UpToDate {
+		return plan.Rebased, e.Store.Update(ctx, e.Repository, func(tx store.Tx) error { return e.history().SetBase(tx, current.ID, master, "") })
+	}
+	result := plan.Rebased
 
 	// The checkpoint is recorded before anything moves. Its ref keeps the
 	// old history reachable before the branch leaves it, and the checkout
