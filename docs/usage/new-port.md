@@ -85,7 +85,10 @@ remove that marker. Submission holds while these guesses remain unconfirmed.
 In particular, verify:
 
 - **License and description.** The license can come from Cargo.toml or
-  pyproject.toml, otherwise GitHub's detection. Confirm it against the source
+  pyproject.toml, otherwise GitHub's detection. Where neither names one, as when
+  GitHub says NOASSERTION, it is guessed from the first line of the project's
+  LICENSE or COPYING file, marked as guessed, with an exception such as
+  `WITH LLVM-exception` left out. Confirm it against the source
   and use MacPorts' license names. Make the long description useful to someone
   deciding whether to install the port.
 - **Maintainer and category.** The configured maintainer is used, with
