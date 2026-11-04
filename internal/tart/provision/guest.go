@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/macos"
-	"github.com/herbygillot/dockhand/internal/tart"
+	"github.com/herbygillot/dockhand/internal/tart/guestssh"
 )
 
 // guest runs a command in a guest reached over SSH, returning its output.
@@ -31,38 +31,23 @@ func (n *native) guestStream(ctx context.Context, name string, input io.Reader, 
 	return streaming.Command(ctx, input, args...)
 }
 
-// ReadyAgent waits for the Tart guest agent to answer `tart exec`, which
-// verification relies on to mark each clone it reaches. Nothing read from
-// the guest depends on it: that goes over SSH.
+// ReadyAgent waits for the guest to answer over SSH, as every check
+// reaches one (guestssh.AwaitSSH), with dockhand's key in place: setup's
+// readiness probe, where it asked the Tart guest agent with tart exec,
+// the last use of it (#1346). A VM whose tart run ended stops the wait.
 func (n *native) ReadyAgent(ctx context.Context, name string) error {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer cancel()
-	var last error
-	for {
-		call, cancel := context.WithTimeout(ctx, 3*time.Second)
-		_, err := n.vm().Exec(call, name, tart.RunOptions{Combined: true}, "/usr/bin/true")
-		cancel()
-		if err == nil {
-			return nil
-		}
-		last = err
-		if run := n.run(name); run != nil {
-			select {
-			case <-run.Done():
-				runErr := run.Err()
-				if runErr == nil {
-					runErr = fmt.Errorf("tart: VM %s stopped before its guest agent became ready", name)
-				}
-				return runErr
-			default:
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("tart: guest agent in %s did not become ready: %w; last probe: %v", name, ctx.Err(), last)
-		case <-time.After(time.Second):
-		}
+	guest, err := n.guestFor(name)
+	if err != nil {
+		return err
 	}
+	var running guestssh.Running
+	if run := n.run(name); run != nil {
+		running = run
+	}
+	if err := guestssh.AwaitSSH(ctx, guest, running, 5*time.Minute, time.Second); err != nil {
+		return fmt.Errorf("setup: %s didn't answer over SSH: %w", name, err)
+	}
+	return nil
 }
 
 func (n *native) target(name string) macos.Command {

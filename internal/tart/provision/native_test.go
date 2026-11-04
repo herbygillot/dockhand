@@ -14,28 +14,34 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAgentReadinessReportsCancellationAndLastProbe(t *testing.T) {
+// Setup's readiness probe asks the guest over SSH, as a check does: a
+// guest whose sshd doesn't answer yet is waited for until the bound, one
+// that answers is ready, and one whose VM exited stops the wait; one not
+// reached over SSH is refused.
+func TestReadinessAsksTheGuestOverSSH(t *testing.T) {
 	t.Parallel()
-	script := filepath.Join(t.TempDir(), "tart")
-	testsupport.WriteExecutable(t, script, "#!/bin/sh\necho 'fixture agent unavailable' >&2\nexit 1\n")
-	n := newNative(Config{Env: os.Environ(), Executable: script}, nil)
-	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	answers := filepath.Join(t.TempDir(), "answers")
+	ssh := filepath.Join(t.TempDir(), "ssh")
+	testsupport.WriteExecutable(t, ssh, "#!/bin/sh\nif [ -f "+answers+" ]; then exit 0; fi\necho 'ssh: connect to host guest port 22: Connection refused' >&2\nexit 255\n")
+	n := newNative(Config{}, nil)
+	n.guests["candidate"] = &guestssh.Guest{Env: os.Environ(), Address: "guest", Image: "fixture", Keys: guestssh.Keys{Directory: t.TempDir()}, Executable: ssh}
+	ctx, cancel := context.WithTimeout(t.Context(), 1500*time.Millisecond)
 	defer cancel()
 	err := n.ReadyAgent(ctx, "candidate")
-	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.ErrorContains(t, err, "last probe")
-}
+	require.ErrorContains(t, err, "setup: candidate didn't answer over SSH")
+	require.NoError(t, os.WriteFile(answers, nil, 0o644))
+	require.NoError(t, n.ReadyAgent(t.Context(), "candidate"))
+	require.ErrorContains(t, n.ReadyAgent(t.Context(), "unreached"), "unreached has not been reached over SSH")
 
-func TestAgentReadinessDetectsVMExit(t *testing.T) {
-	t.Parallel()
+	require.NoError(t, os.Remove(answers))
 	script := filepath.Join(t.TempDir(), "tart")
 	testsupport.WriteExecutable(t, script, "#!/bin/sh\n[ \"$1\" != run ] || echo 'fixture VM exited' >&2\nexit 1\n")
-	n := newNative(Config{Env: os.Environ(), Executable: script}, nil)
-	run, err := n.vm().StartForeground("candidate")
+	exited := newNative(Config{Env: os.Environ(), Executable: script}, nil)
+	run, err := exited.vm().StartForeground("candidate")
 	require.NoError(t, err)
 	<-run.Done()
-	n.runs["candidate"] = run
-	require.ErrorContains(t, n.ReadyAgent(t.Context(), "candidate"), "fixture VM exited")
+	exited.runs["candidate"], exited.guests["candidate"] = run, n.guests["candidate"]
+	require.ErrorContains(t, exited.ReadyAgent(t.Context(), "candidate"), "the VM stopped before it accepted SSH")
 }
 
 // Setup's guest commands go over SSH, with the command's output shown as
