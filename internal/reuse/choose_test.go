@@ -219,3 +219,33 @@ func TestATargetDoesntReuseABuildPastAMovedTag(t *testing.T) {
 	alone := target(tag("d4c0fdb"), nil)
 	require.Contains(t, Choose(alone, "origin a", now, Judge{}, stands, none).Reused, model.TargetID("lib"), "alone")
 }
+
+// A build against a dependency's archive fetched by a GitHub tag that has
+// moved since builds again, as the dependency does: the dependency's own
+// build wasn't reused, and its consumer's was (Codex's sixth review, #71,
+// its probe).
+func TestAMovedTagRebuildsItsDependents(t *testing.T) {
+	t.Parallel()
+	trees := map[string]model.ObjectID{"devel/lib": "1", "devel/cli": "2", macports.ResourcesDirectory: "3"}
+	source := func(commit string) *model.GitSource {
+		return &model.GitSource{URL: "https://github.com/owner/lib.git", Ref: "v1", Commit: model.ObjectID(strings.Repeat(commit, 40))}
+	}
+	makeCandidate := func(id, directory, digest string, active []model.ActivePort) Candidate {
+		return Candidate{
+			Result: model.TargetResult{Target: model.TargetID(id), Outcome: model.OutcomePassed, Archive: digest},
+			Inputs: model.NewTargetInputs("origin", directory, trees[directory], trees[macports.ResourcesDirectory], nil, active),
+		}
+	}
+	oldlib := makeCandidate("lib", "devel/lib", "sha256:old-lib", []model.ActivePort{})
+	oldlib.Tagged = source("a")
+	cli := makeCandidate("cli", "devel/cli", "sha256:cli", []model.ActivePort{{Name: "lib", Spec: "@1_0", Directory: "devel/lib", Tree: "1", Archive: "sha256:old-lib"}})
+	targets := []Target{
+		{PlanTarget: model.PlanTarget{ID: "lib", Target: model.Target{Name: "lib"}, Directory: "devel/lib"}, Tag: source("b"), Earlier: []Candidate{oldlib}},
+		{PlanTarget: model.PlanTarget{ID: "cli", Target: model.Target{Name: "cli"}, Directory: "devel/cli"}, DependsOn: []model.TargetID{"lib"}, Earlier: []Candidate{cli}},
+	}
+	choice := Choose(targets, "origin", trees, Judge{}, func(model.TargetResult) bool { return true }, func(Candidate) bool { return true })
+	_, reusedLibrary := choice.Reused["lib"]
+	_, reusedConsumer := choice.Reused["cli"]
+	require.False(t, reusedLibrary)
+	require.False(t, reusedConsumer, "a consumer built against the old archive source cannot establish the new dependency source")
+}
