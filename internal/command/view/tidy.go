@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/prose"
 )
 
@@ -104,6 +105,28 @@ func WriteTidyPlan(out io.Writer, plan engine.TidyPlan, saved bool) {
 	}
 	WriteFindings(out, plan)
 	fmt.Fprintln(out)
+}
+
+// WriteBeforeBuilding says the Portfile findings submit would, which a
+// check says before it builds.
+func WriteBeforeBuilding(out io.Writer, findings []commitrules.Finding) {
+	if len(findings) == 0 {
+		return
+	}
+	fmt.Fprintln(out, "Before building:")
+	for _, finding := range findings {
+		fmt.Fprintf(out, "  %s\n", finding)
+	}
+	fmt.Fprintln(out, "  dockhand tidy fixes what it can; the rest are edits a reviewer would ask for, best made before the build.")
+}
+
+// WithPortfileFindings is a check's result with the Portfile findings it
+// said before building.
+func (c CheckJSON) WithPortfileFindings(findings []commitrules.Finding) CheckJSON {
+	if len(findings) > 0 {
+		c.PortfileFindings = findingsView(findings)
+	}
+	return c
 }
 
 func WriteFindings(out io.Writer, plan engine.TidyPlan) {
