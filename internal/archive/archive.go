@@ -198,6 +198,11 @@ func Walk(ctx context.Context, filename string, fn func(Member) error) error {
 		return nil
 	}
 	var input io.Reader = reader
+	// finished is the decompressing tool's end, where one runs: its exit
+	// says whether the stream was whole, which a tar reader's EOF doesn't,
+	// a truncated xz read as complete and cached (Codex's sixth review,
+	// #73).
+	finished := func() error { return nil }
 	if len(header) >= 2 && header[0] == 0x1f && header[1] == 0x8b {
 		gz, err := gzip.NewReader(reader)
 		if err != nil {
@@ -222,9 +227,19 @@ func Walk(ctx context.Context, filename string, fn func(Member) error) error {
 		if err := command.Start(); err != nil {
 			return fmt.Errorf("archive: reading %s needs %s: %w", path.Base(filename), tool[0], err)
 		}
+		waited := false
+		finished = func() error {
+			waited = true
+			if err := command.Wait(); err != nil {
+				return fmt.Errorf("archive: reading %s: %s: %w: %s", path.Base(filename), tool[0], err, strings.TrimSpace(stderr.String()))
+			}
+			return nil
+		}
 		defer func() {
 			_ = out.Close()
-			_ = command.Wait()
+			if !waited {
+				_ = command.Wait()
+			}
 		}()
 		input = out
 	}
@@ -236,7 +251,9 @@ func Walk(ctx context.Context, filename string, fn func(Member) error) error {
 		member, err := tr.Next()
 		switch {
 		case err == io.EOF:
-			return nil
+			// The rest of the stream drained, so the tool can end.
+			_, _ = io.Copy(io.Discard, input)
+			return finished()
 		case errors.Is(err, errScanLimit):
 			// Said of the archive by whoever named it: filename may be
 			// a temporary one.

@@ -15,6 +15,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 func TestWalkReadsTarGzipAndZip(t *testing.T) {
@@ -194,4 +196,23 @@ func TestWalkReadsLzmaSevenZipAndADiskImage(t *testing.T) {
 		}
 		require.Equal(t, map[string]string{"a.txt": abc}, files(t, file), "the volume's files, at its root")
 	})
+}
+
+// A decompressing tool that ends unsuccessfully fails the reading, with
+// what it said, though the members it gave read as a whole archive: a
+// truncated xz read as complete and was cached (Codex's sixth review,
+// #73, its probe).
+func TestADecompressorsFailureFailsTheReading(t *testing.T) {
+	// The tool runs under process PATH, so this probe cannot run parallel.
+	bin := t.TempDir()
+	tarfile := testsupport.Tarball(t, "demo-1", map[string]string{"Cargo.toml": "[package]\nname = \"demo\"\n"})
+	// Tarball is gzip; the fake xz emits its uncompressed valid tar, then
+	// reports the failure a truncated/corrupt compressed stream would.
+	testsupport.WriteExecutable(t, filepath.Join(bin, "xz"), "#!/bin/sh\n/usr/bin/gzip -dc '"+tarfile+"'\necho 'compressed data is corrupt' >&2\nexit 1\n")
+	t.Setenv("PATH", bin)
+	input := filepath.Join(t.TempDir(), "demo.tar.xz")
+	require.NoError(t, os.WriteFile(input, []byte{0xfd, '7', 'z', 'X', 'Z', 0x00}, 0600))
+	var names []string
+	err := Walk(t.Context(), input, func(m Member) error { names = append(names, m.Name); return nil })
+	require.ErrorContains(t, err, "compressed data is corrupt")
 }
