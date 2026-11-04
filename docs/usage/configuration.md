@@ -205,7 +205,8 @@ whose concerns remain visible but no longer hold unattended work. It does not
 accept failed builds or waive every submission blocker. Archives that could not
 be compared remain a hold. An unrecognized rule is refused with the known rule
 names; the rule for a GitHub port's source is `source`, and its earlier name,
-`github-tarball`, is refused like any other.
+`github-tarball`, is refused like any other. `not-distributable`, a change that
+makes a port one MacPorts' builders keep no archive of, is among them.
 
 The `holds.ports."<port>"` table can set that port's `majors` and `allow`,
 overriding global choices where supplied. It also accepts:

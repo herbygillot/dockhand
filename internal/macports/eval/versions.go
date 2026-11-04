@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/distributable"
 	"github.com/herbygillot/dockhand/internal/tcl/rpc"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
@@ -134,4 +135,19 @@ func (v *versionSession) ExtractVersions(ctx context.Context, expression, page s
 		return nil, fmt.Errorf("macports: invalid livecheck capture response")
 	}
 	return values, nil
+}
+
+// Distributable is MacPorts' checker's verdict on port, given each port's
+// Info by name (distributable.Judge), in an interpreter of its own with
+// the checker loaded.
+func (e *Evaluator) Distributable(ctx context.Context, port string, infos map[string]distributable.Info) (_ distributable.Verdict, err error) {
+	versions, err := e.versions(ctx)
+	if err != nil {
+		return distributable.Verdict{}, err
+	}
+	defer func() { err = errors.Join(err, versions.Close()) }()
+	if _, err := versions.session.Call(ctx, "eval", distributable.Script()); err != nil {
+		return distributable.Verdict{}, err
+	}
+	return distributable.Judge(ctx, versions.session, port, infos)
 }

@@ -138,6 +138,16 @@ func (c Collector) collect(ctx context.Context, input assess.Input, trees [2]mod
 	if observe && len(input.Pairs) > 0 {
 		input.Observed = c.observe(ctx, input, trees)
 	}
+	// MacPorts' checker on the candidate, and on the base only where the
+	// candidate isn't distributable, which says whether the change made it
+	// so.
+	if c.Judge != nil && input.Port.Name != "" {
+		distribution := &assess.Distribution{Head: c.Judge.Distributable(ctx, trees[0], input.Port, portfile)}
+		if distribution.Head.Known && !distribution.Head.OK && !input.New && input.Base.Name != "" {
+			distribution.Base = c.Judge.Distributable(ctx, trees[0], input.Base, nil)
+		}
+		input.Distributable = distribution
+	}
 	return assess.Assess(input)
 }
 

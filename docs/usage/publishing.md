@@ -291,6 +291,14 @@ dockhand decide license-changed -p jq \
   --because "The new license is acceptable and the Portfile declares it."
 ```
 
+A change that makes a port non-distributable holds as `not-distributable`, in
+the words of MacPorts' own checker, the one MacPorts' builders run: `"wasi-sdk"
+is not distributable because its license "llvm-exception" is not known to be
+distributable, so the builders keep no binary archive of it`. Answer it the
+same way, with `dockhand decide not-distributable -p wasi-sdk --because "…"`,
+or fix the license line it names. One that stays non-distributable, as on
+master, is a notice.
+
 Or record what must happen before proceeding with
 `--waiting "upstream's clarification"`. That waiting decision blocks ordinary
 submission until replaced. Decisions lapse when the port's own files change;

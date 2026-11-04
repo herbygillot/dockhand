@@ -41,6 +41,16 @@ type Collector struct {
 	Readings project.Cache
 	// PatchTools are the diff and patch a port's patches are checked with.
 	PatchTools patchcheck.Tools
+	// Judge asks MacPorts' checker whether a port is distributable; nil
+	// asks nothing.
+	Judge DistributableJudge
+}
+
+// DistributableJudge is MacPorts' checker's verdict on a port as an
+// evaluation gives it, its dependencies read from the base's tree,
+// portfile its text where read, for what its license_noconflict exempts.
+type DistributableJudge interface {
+	Distributable(ctx context.Context, base model.Source, port macports.PortInfo, portfile []byte) assess.Verdict
 }
 
 // ArchivePlanner evaluates a port of a directory, or its first where port

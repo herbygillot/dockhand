@@ -19,3 +19,12 @@ func TestADependencyIsRewrittenInPlace(t *testing.T) {
 	require.Equal(t, "depends_build  path:bin/pkg-config:pkgconfig port:cmake\nvariant x description {x} {\n    depends_lib-append path:bin/pkg-config:pkgconfig\n}\n", string(rewritten))
 	require.Equal(t, src, RewriteDependency(src, PortDependency{Port: "zlib", Start: 15, End: 29}, "path:lib/libz.dylib:zlib"), "the word there isn't port:zlib")
 }
+
+// An option's top words are its literal words and its -append's, at the
+// top alone.
+func TestAnOptionsTopWords(t *testing.T) {
+	t.Parallel()
+	src := []byte("license_noconflict openssl3 ${other}\nlicense_noconflict-append zlib\nvariant x description {x} {\n    license_noconflict-append bzip2\n}\n")
+	require.Equal(t, []string{"openssl3", "zlib"}, TopWords(src, "license_noconflict"))
+	require.Empty(t, TopWords([]byte("license MIT\n"), "license_noconflict"))
+}

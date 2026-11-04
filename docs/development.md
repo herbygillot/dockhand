@@ -93,6 +93,17 @@ DOCKHAND_MEASURE_TREE=~/Source/macports-ports DOCKHAND_TEST_MACPORTS_TCLSH=/opt/
 
 The first four were measured on macports-ports 324108c8883 (20,231 Portfiles), the last four on 9c3d4bd8a7c (20,233). Those four are what the measure says of a whole tree; a change says one only of the lines and files it adds.
 
+## MacPorts' distributable checker
+
+`internal/macports/distributable/distributable_lib.tcl` is
+macports-infrastructure's `jobs/distributable_lib.tcl`, verbatim, at the commit
+`distributable.Pin` names; `distributable.tcl` answers its `infoForPort` from
+the port's evaluation and the base tree's port index, so its verdict is the
+buildbot's. The weekly `distributable-master.yml` job fails when master's copy
+differs. To re-pin, copy master's file over the pinned one, set `Pin` to the
+commit the job names, and run `go test ./internal/macports/distributable/`,
+whose table shows what changed.
+
 ## Libraries we didn't take
 
 Dependencies are few and vendored, and the build is cgo-free, so a new module has to beat what the standard library, `vendor`, or MacPorts' and Apple's own tools already do. The library survey of 2026-10-02 checked the likely candidates, and these were declined:

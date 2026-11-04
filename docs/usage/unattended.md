@@ -80,8 +80,8 @@ dockhand submit --branch jq-update --plan
 
 Use the actual branch name returned by your run. A held single bump normally
 exits 3. A failed build exits 2. A check still running at `--for`'s bound exits
-4. None means the branch should be started again. Read `dockhand usage recovery` for the different ways to resume a stopped
-check or fix a failed one.
+4. None means the branch should be started again. Read `dockhand usage
+recovery` for the different ways to resume a stopped check or fix a failed one.
 
 A concern you have reviewed can receive an evidence-bound decision:
 
@@ -89,6 +89,10 @@ A concern you have reviewed can receive an evidence-bound decision:
 dockhand decide license-changed --branch jq-update jq \
   --because "the new license is acceptable and the Portfile identifies it"
 ```
+
+A change that makes a port non-distributable, by MacPorts' own checker, holds
+as `not-distributable`, since the builders would keep no binary archive of it;
+`holds.allow` names it like any other rule.
 
 Use the actual rule the report named, and your own reason. `--because` permits
 unattended submission to proceed past that concern;

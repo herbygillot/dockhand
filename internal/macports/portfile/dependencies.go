@@ -148,3 +148,27 @@ func AddedLines(before, after []byte) []AddedLine {
 	}
 	return added
 }
+
+// TopWords are the literal words of option, and of option-append, at
+// src's top, in the order written: what the Portfile sets it to by its
+// default variants, as license_noconflict; none where it doesn't parse,
+// and none of a word written through a variable.
+func TopWords(src []byte, option string) []string {
+	script, errs := syntax.Parse(src)
+	if len(errs) > 0 {
+		return nil
+	}
+	var words []string
+	commands(src, script, false, func(cmd syntax.Command, nested bool) {
+		name, _ := cmd.Name(src)
+		if nested || name != option && name != option+"-append" {
+			return
+		}
+		for _, word := range cmd.Words[1:] {
+			if value, literal := word.Literal(src); literal {
+				words = append(words, value)
+			}
+		}
+	})
+	return words
+}
