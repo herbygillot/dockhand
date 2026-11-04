@@ -16,7 +16,20 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT INT TERM
 "$go" test -c -o "$work/package.test" "$@" "$package"
 cd "$directory"
-"$work/package.test" -test.list '.*' | grep -E '^(Test|Example|Fuzz)' >"$work/names" || true
+# A binary that can't list its tests, as one whose init panics, or that
+# lists none fails the run with what it said: `|| true` read either as ok
+# (Codex's sixth review, #75).
+if ! "$work/package.test" -test.list '.*' >"$work/listed" 2>&1; then
+	cat "$work/listed"
+	printf 'FAIL\t%s\t(listing its tests failed)\n' "$package"
+	exit 1
+fi
+grep -E '^(Test|Example|Fuzz)' "$work/listed" >"$work/names" || true
+if [ ! -s "$work/names" ]; then
+	cat "$work/listed"
+	printf 'FAIL\t%s\t(it lists no tests)\n' "$package"
+	exit 1
+fi
 start=$(date +%s)
 shard=0
 while [ "$shard" -lt "$shards" ]; do
