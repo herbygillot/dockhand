@@ -308,7 +308,7 @@ such as `check-12`, for use from anywhere.
 4 if the check is still queued or running, saying what it is doing; the check
 continues, with serve or a background worker, never in the command's own
 process, so `wait --for` starts a worker where `wait` alone would have run the
-check here. `dockhand wait check-42 --for 9m` follows it further.
+check here. `check --baseline --for 9m` follows a baseline the same way. `dockhand wait check-42 --for 9m` follows it further.
 
 A batch's checks, serve's, and a foreground check count against one capacity
 for each provider: Tart's is as many checks as the Mac runs VMs, GitHub's and a

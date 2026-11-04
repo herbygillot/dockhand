@@ -707,3 +707,28 @@ func TestForFollowsACheckForABoundedTime(t *testing.T) {
 	require.Contains(t, *decoded.Error, "check-1 is still queued after 1s; it continues")
 	require.Equal(t, "queued", cmdtest.Dig(t, decoded.Result, "run", "state"))
 }
+
+// check --baseline --for follows the baseline for its bound, queued for a
+// background worker as a check --for is, where it ran here past the bound
+// (Codex's workflow review of 1caa6c3d, finding 4, its probe).
+func TestABaselineForFollowsForItsBound(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	next := cmdtest.WithOutcomeScript(t, w, "")
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-update"))
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	next("failed")
+	_, _, err = cmdtest.Dockhand(t, "check")
+	require.Equal(t, 2, term.ExitCode(err))
+	next("passed")
+	drained := false
+	cmdtest.Hosted(t).StartDrain = func(engine.Options) (int, error) { drained = true; return 4242, nil }
+	_, _, err = cmdtest.Dockhand(t, "check", "--baseline", "--for", "1ms")
+	require.True(t, drained, "a background worker drives it, not this process")
+	require.Equal(t, 4, term.ExitCode(err), "still queued at the bound")
+}
