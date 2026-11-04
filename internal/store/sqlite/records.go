@@ -277,17 +277,35 @@ func (t *tx) AddPlan(p model.Plan) error {
 	return err
 }
 
-const runColumns = "id, number, branch_id, revision_id, plan_id, origin, state, detail, created_at, finished_at, cancel_requested_at, baseline_of, started_at"
+const runColumns = "id, number, branch_id, revision_id, plan_id, origin, state, detail, created_at, finished_at, cancel_requested_at, baseline_of, started_at, entered"
 
 func scanRun(row interface{ Scan(...any) error }) (model.Run, error) {
 	var r model.Run
 	var created int64
 	var finished, cancel, started sql.NullInt64
-	if err := row.Scan(&r.ID, &r.Number, &r.Branch, &r.Revision, &r.Plan, &r.Origin, &r.State, &r.Detail, &created, &finished, &cancel, &r.BaselineOf, &started); err != nil {
+	var entered sql.NullString
+	if err := row.Scan(&r.ID, &r.Number, &r.Branch, &r.Revision, &r.Plan, &r.Origin, &r.State, &r.Detail, &created, &finished, &cancel, &r.BaselineOf, &started, &entered); err != nil {
 		return model.Run{}, storageError(err)
 	}
 	r.CreatedAt, r.FinishedAt, r.CancelRequested, r.StartedAt = fromMillis(created), fromNullable(finished), fromNullable(cancel), fromNullable(started)
+	if entered.Valid {
+		if err := json.Unmarshal([]byte(entered.String), &r.Entered); err != nil {
+			return model.Run{}, fmt.Errorf("%w: run %s's shells entered: %w", store.ErrUnavailable, r.ID, err)
+		}
+	}
 	return r, nil
+}
+
+func (t *tx) EnterRun(id model.RunID, entry model.Entry) error {
+	run, err := t.Run(id)
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(append(run.Entered, entry))
+	if err != nil {
+		return err
+	}
+	return t.update("run "+string(id), "UPDATE runs SET entered=? WHERE repository_id=? AND id=?", string(data), t.repo, id)
 }
 
 func (t *tx) Run(id model.RunID) (model.Run, error) {
@@ -386,7 +404,7 @@ func (t *tx) AddRun(r model.Run) error {
 	case !plan.Runnable():
 		return fmt.Errorf("%w: run %s's plan has unresolved targets or none at all", model.ErrInvalid, r.ID)
 	}
-	_, err = t.exec("INSERT INTO runs(repository_id, "+runColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+	_, err = t.exec("INSERT INTO runs(repository_id, "+runColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)",
 		t.repo, r.ID, r.Number, r.Branch, r.Revision, r.Plan, r.Origin, r.State, r.Detail, millis(r.CreatedAt), nullableMillis(r.FinishedAt), nullableMillis(r.CancelRequested), r.BaselineOf, nullableMillis(r.StartedAt))
 	return err
 }

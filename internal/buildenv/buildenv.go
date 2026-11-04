@@ -514,6 +514,10 @@ type ShellProvider interface {
 type ShellJob struct {
 	Ref, Portfile string
 	Command       []string
+	// Running is a running check's guest, Environment's, which the check
+	// owns: reached as it is, never started or stopped.
+	Running     bool
+	Environment model.Environment
 	// Test, where it's set, is the port's directory as it is now, which
 	// replaces the staged one, and the test phase alone runs again, on
 	// the build as it stands (port -o), with Variants: the command then.

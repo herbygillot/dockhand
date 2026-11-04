@@ -161,6 +161,10 @@ func (b Block) Words(v Vocabulary) string {
 				place += ": " + u.Unrun + "; check that release with Tart, local, or a command provider, or try again later"
 			case u.PlannedIn != "":
 				place += ", planned by " + u.PlannedIn + ", but the check stopped before building it"
+			case u.Entered:
+				// A shell entered its build before it finished, which the
+				// shell could have touched.
+				place += ", whose build a shell entered before it finished, so it isn't evidence; dockhand check builds it again"
 			}
 			places = append(places, place)
 		}
@@ -205,14 +209,21 @@ type Place struct {
 	// Unrun is why its build never ran, in its provider's words
 	// (evidence.Cell.Unrun).
 	Unrun string
+	// Entered is a build a shell entered before it finished, in Run, which
+	// isn't evidence (evidence.CellEntered).
+	Entered bool
+	Run     string
 }
 
 // unbuilt are where a target wasn't built, as its cells say.
 func unbuilt(target evidence.TargetEvidence) []Place {
 	var where []Place
 	for _, cell := range target.Outcomes {
-		if cell.Kind == evidence.CellNotRun {
+		switch cell.Kind {
+		case evidence.CellNotRun:
 			where = append(where, Place{Environment: cell.Environment, PlannedIn: cell.PlannedIn, Unrun: cell.Unrun})
+		case evidence.CellEntered:
+			where = append(where, Place{Environment: cell.Environment, Entered: true})
 		}
 	}
 	return where

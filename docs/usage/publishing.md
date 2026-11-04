@@ -144,7 +144,8 @@ Check four things in its output:
    with `--remote <remote-name>`.
 2. **Evidence:** what built, where, with what test policy, and anything still
    missing or accepted. A local pass and MacPorts' later pull request CI are
-   separate observations.
+   separate observations. A build a shell entered before it finished isn't
+   evidence.
 3. **Review findings:** commit rules, what upstream changed, other pull
    requests, and concerns a passing build cannot settle. `!` marks what wants
    your look, a line that would hold an unattended submission says `held`,

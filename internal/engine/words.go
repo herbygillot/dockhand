@@ -44,6 +44,10 @@ func targetWords(plan model.Plan, result Cell, reading string, accepted Accepted
 		return "— excluded"
 	case CellUnmet:
 		return "! not built: " + checks.UnmetWords(result.Unmet)
+	case CellEntered:
+		// What it recorded, and that a shell entered it first, so it isn't
+		// evidence.
+		return fmt.Sprintf("! %s, entered by a shell at %s before its build finished", result.EnteredOutcome, result.Entered.At.Local().Format("15:04"))
 	}
 	var words string
 	switch result.Outcome {

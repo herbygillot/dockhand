@@ -872,7 +872,7 @@ func TestACanceledCheckStopsItsGuest(t *testing.T) {
 	go func() {
 		for {
 			build.mu.Lock()
-			started := slices.Contains(build.progress, "building in dockhand-check-run-7-tahoe-1")
+			started := slices.Contains(build.progress, "building in dockhand-check-run-7-tahoe-1 (dockhand shell check-3 opens a shell there)")
 			build.mu.Unlock()
 			if started {
 				cancel()
@@ -1227,4 +1227,24 @@ func TestAFailedChecksCloneIsKept(t *testing.T) {
 			require.True(t, mac.run.stopped, "stopped, kept")
 		}
 	}
+}
+
+// A shell in a running check's clone reaches it by its image's keys and
+// neither starts nor stops it: the check owns the VM.
+func TestShellEntersARunningChecksCloneAndLeavesItRunning(t *testing.T) {
+	t.Parallel()
+	mac := newMac()
+	p := testProvider(mac)
+	p.Tart = tartvm.Client{Home: filepath.Join(t.TempDir(), ".dockhand", "tart"), Env: os.Environ()}
+	require.NoError(t, os.MkdirAll(p.Tart.Home, 0o700))
+	clone := clonePrefix("run-1", "tahoe") + "-1"
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	var out bytes.Buffer
+	code, err := p.Shell(t.Context(), buildenv.ShellJob{Ref: clone, Portfile: "devel/libharbor/Portfile", Command: []string{"ls"}, Output: &out, Running: true, Environment: tahoe})
+	require.NoError(t, err)
+	require.Equal(t, 3, code)
+	require.Equal(t, []string{"reach " + clone + " as dockhand-base-tahoe"}, mac.events, "reached, never started or stopped")
+	require.False(t, mac.run.stopped)
+	_, err = p.Shell(t.Context(), buildenv.ShellJob{Ref: "harbor", Running: true, Environment: tahoe})
+	require.ErrorContains(t, err, "isn't a check's clone")
 }

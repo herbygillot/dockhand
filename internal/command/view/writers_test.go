@@ -149,7 +149,7 @@ func TestTheQueueNamesARunningChecksVMsWithTheirTartHome(t *testing.T) {
 		{Run: model.Run{ID: "r1", Number: 616, State: model.RunRunning}, VMs: []string{"dockhand-check-run-9-tahoe-1"}, TartHome: "~/.dockhand/tart"},
 		{Run: model.Run{ID: "r2", Number: 617, State: model.RunQueued}},
 	}, true)
-	require.Contains(t, out.String(), "  check-616 runs in dockhand-check-run-9-tahoe-1: TART_HOME=~/.dockhand/tart tart exec dockhand-check-run-9-tahoe-1 …\n")
+	require.Contains(t, out.String(), "  check-616 runs in dockhand-check-run-9-tahoe-1: dockhand shell check-616 opens a shell there\n")
 	require.NotContains(t, out.String(), "check-617 runs in")
 	require.NotContains(t, out.String(), "nothing is running the queue", "serve leads")
 }

@@ -398,6 +398,9 @@ dockhand check --keep
 dockhand shell check-12 -- otool -L /opt/local/bin/PROGRAM
 ```
 
+`dockhand shell check-12` while check-12 is still running on Tart enters its
+VM; what the check builds after the shell opened isn't evidence.
+
 Replace the identifiers with the check and installed program. `shell --test` can
 try edits to the test phase in a retained clone, but that experiment is not
 recorded check evidence. See `dockhand usage recovery` for baselines and

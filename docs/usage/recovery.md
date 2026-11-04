@@ -335,6 +335,13 @@ shell when a terminal is available. The shell starts in the selected port's work
 directory, or its staged directory if the build directory is gone. For several
 retained releases add `--on tahoe`; for several ports add `--port jq`.
 
+While a Tart check is still running, `dockhand shell check-42` enters its VM
+instead, which the check goes on using; it says first what that leaves as no
+evidence. A target the check had built before the shell opened stands; the one
+building, and every one after it, reads `entered by a shell at 10:02 before its
+build finished`, and submit asks for a new check of it. `--test` is refused
+there.
+
 For a test-phase experiment after editing the branch's current test code:
 
 ```sh
