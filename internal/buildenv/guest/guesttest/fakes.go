@@ -79,7 +79,8 @@ esac
 case "$*" in
   *"-q installed active"*) if [ -n "$ACTIVEFAILS" ]; then echo "Error: registry locked" >&2; exit 1; fi; printf '%b' "$ACTIVE"; exit 0 ;;
   *"-q installed"*) exit 0 ;;
-  *"-q contents "*) if [ -z "$CONTENTS" ]; then echo "Error: registry locked" >&2; exit 1; fi; printf '%b' "$CONTENTS"; exit 0 ;;
+  *"-q contents "*) all="$*"; name=${all##* }; if [ -f "$DOCKHAND_GUEST_ROOT/contents/$name" ]; then cat "$DOCKHAND_GUEST_ROOT/contents/$name"; exit 0; fi
+    if [ -z "$CONTENTS" ]; then echo "Error: registry locked" >&2; exit 1; fi; printf '%b' "$CONTENTS"; exit 0 ;;
   "provides "*)
     shift
     for file in "$@"; do

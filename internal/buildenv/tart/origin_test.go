@@ -173,7 +173,7 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // note 4), reads more of what a passed build links, an observation reuse
 // never reads, and builds and judges no verdict otherwise: the protocol
 // stays 3.
-const guestPin = "79805440fa36f0ee719cd7d5c5741274cd5cf225a55e063c83b5e85f5aa8b25c"
+const guestPin = "fdfcdd3897a89d7a9648d47b8b0a50530c770123e441ea3fc7d247124dbd9042"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

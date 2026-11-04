@@ -355,6 +355,13 @@ latest check, or explains why one is missing. A build that links another port's
 library the Portfile doesn't declare is a notice, holding nothing, that names
 the line to write: `omnidiff links libiconv.2.dylib from libiconv, which it
 doesn't declare in depends_lib; depends_lib-append port:libiconv declares it`.
+The reverse is said too, as a notice: a port the Portfile declares in
+`depends_lib` whose libraries nothing the build installed links, `declares
+libiconv in depends_lib, which nothing it built links`, with where it belongs
+instead; dependencies a PortGroup adds, ports installing no library, and builds
+installing no Mach-O file are never said. Where a declared port's pkg-config
+brought an undeclared library in, the finding says so: `through gtk4's
+pkg-config Libs`, and `-Wl,-dead_strip_dylibs` as the other way out.
 
 Tart results can be reused when recorded input content and environment identity
 still match, including dependencies and fetched Git commits. A result is keyed

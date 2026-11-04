@@ -1065,14 +1065,15 @@ func TestALinkHoldStandsAfterANarrowerCheck(t *testing.T) {
 	first, found, err := e.EvidenceFor(t.Context(), branch.ID, tree)
 	require.NoError(t, err)
 	require.True(t, found)
-	require.NotEmpty(t, e.linkHolds(t.Context(), &first), "the full check finds the viewer's undeclared link")
+	firstHeld, _ := e.linkHolds(t.Context(), &first)
+	require.NotEmpty(t, firstHeld, "the full check finds the viewer's undeclared link")
 
 	checkedWith(t, e, branch, model.OutcomePassed, "", nil)
 	combined, found, err := e.EvidenceFor(t.Context(), branch.ID, tree)
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Empty(t, combined.Failed(), "the viewer's earlier result still stands")
-	held := e.linkHolds(t.Context(), &combined)
+	held, _ := e.linkHolds(t.Context(), &combined)
 	require.Len(t, held, 1, "a narrower check keeps the earlier result's hold")
 	require.Equal(t, "oniguruma", held[0].Subject)
 }

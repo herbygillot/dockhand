@@ -387,7 +387,7 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 		result.Targets = view.EvidenceView(evidence)
 		result.Lint = view.DetailLines(view.LintLines(lint))
 		if linksErr == nil {
-			result.Links = view.DetailLines(view.LinkLines(links))
+			result.Links = view.LinkDetail(links)
 		}
 		if installedErr == nil {
 			result.Installed = view.DetailLines(view.InstalledLines(installed))

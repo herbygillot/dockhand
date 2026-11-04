@@ -316,6 +316,11 @@ type TargetResult struct {
 	// observation of the build, not an input, so reuse never reads it. Nil
 	// where its provider couldn't read them, empty where nothing links.
 	Links []Link
+	// Declared is what each port its depends_lib names installs that a
+	// build could link, and how many Mach-O files it installed, which a
+	// declaration nothing links is read from (protocol 2); nil where its
+	// provider didn't read them, as an older result's.
+	Declared *Declared
 	// Installed are the files a passed build installed, as port contents
 	// lists them, and Libraries its own dynamic libraries, each with its
 	// install name and compatibility version: observations a check of the
@@ -387,6 +392,31 @@ type Link struct {
 	// its symbolic links, as openssl's lib/libssl.dylib reaches
 	// openssl3's file, which declares the link; empty where none does.
 	Declared string `json:"declared,omitempty"`
+}
+
+// Declared is what a passed build's declared libraries install, as its
+// guest read them: each port its depends_lib names, and the count of the
+// Mach-O files the build installed.
+type Declared struct {
+	Ports  []DeclaredPort `json:"ports"`
+	MachOs int            `json:"machos"`
+}
+
+// DeclaredPort is what one port a target declares in depends_lib
+// installs that a build could link: its dynamic libraries' files, and its
+// pkg-config modules.
+type DeclaredPort struct {
+	Port      string            `json:"port"`
+	Libraries []string          `json:"libraries"`
+	Modules   []PkgConfigModule `json:"modules"`
+}
+
+// PkgConfigModule is a .pc file's module: its name, the -l names of its
+// Libs: line, and the modules its Requires: line names.
+type PkgConfigModule struct {
+	Name     string   `json:"name"`
+	Libs     []string `json:"libs"`
+	Requires []string `json:"requires"`
 }
 
 // FailedDependency is a dependency whose failure failed a target: its

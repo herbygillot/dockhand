@@ -393,6 +393,7 @@ func TestExecutionsAndCheckpoints(t *testing.T) {
 	passed := result("libharbor", model.OutcomePassed, "")
 	passed.Links = []model.Link{{Binary: "/opt/local/bin/harbor", Library: "/opt/local/lib/libz.1.dylib", Port: "zlib"}}
 	passed.Lint, passed.Nitpicked = []string{"Line 3 has trailing whitespace"}, true
+	passed.Declared = &model.Declared{Ports: []model.DeclaredPort{{Port: "oniguruma", Libraries: []string{"/opt/local/lib/libonig.5.dylib"}, Modules: []model.PkgConfigModule{{Name: "oniguruma", Libs: []string{"onig"}, Requires: []string{}}}}}, MachOs: 2}
 	passed.Carried = &model.Carried{Check: "check-766", Commit: "3f2a1c9", Ports: []model.InertPort{{Port: "libharbor", Options: []string{"maintainers"}, From: "devel/libharbor"}}, Linted: true}
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.RecordResult(passed) }))
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.RecordResult(result("harbor-cli", model.OutcomeNotRun, "")) }))
@@ -429,9 +430,11 @@ func TestExecutionsAndCheckpoints(t *testing.T) {
 				require.Equal(t, passed.Lint, got.Lint, "what lint warned of (schema 48)")
 				require.True(t, got.Nitpicked)
 				require.Equal(t, passed.Carried, got.Carried, "how it's carried over an inert change (schema 56)")
+				require.Equal(t, passed.Declared, got.Declared, "what its declared ports install (schema 57)")
 			} else {
 				require.Nil(t, got.Links, "not read is nil, never none (schema 39)")
 				require.Nil(t, got.Carried)
+				require.Nil(t, got.Declared)
 			}
 		}
 		executions, err := rd.Executions(run.ID)

@@ -790,7 +790,7 @@ func TestResultsDockhandCantReadAreItsOwnFault(t *testing.T) {
 		results guestprogram.Results
 		want    string
 	}{
-		"protocol": {guestprogram.Results{Protocol: 9, State: "finished"}, "the guest program wrote protocol 9 results; this dockhand reads 1"},
+		"protocol": {guestprogram.Results{Protocol: 9, State: "finished"}, "the guest program wrote protocol 9 results; this dockhand reads 2"},
 		"unasked":  {guestprogram.Results{State: "finished", Targets: []guestprogram.Result{{ID: "fd", Outcome: "passed"}}}, `the guest reported "fd", which this job didn't ask for`},
 		"outcome":  {guestprogram.Results{State: "finished", Targets: []guestprogram.Result{{ID: "libharbor", Outcome: "skipped"}}}, `the guest reported libharbor "skipped"`},
 	} {

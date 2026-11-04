@@ -40,6 +40,20 @@ func AddedPortDependencies(before, after []byte) []PortDependency {
 // PortDependencies are every literal port: dependency src writes, at the
 // top or in any body, in the order written; none where it doesn't parse.
 func PortDependencies(src []byte) []PortDependency {
+	return dependencies(src, true)
+}
+
+// WrittenDependencies are every literal dependency src writes, port:,
+// path:, lib:, and bin: alike, each by the port it names, at the top or in
+// any body, in the order written; none where it doesn't parse: what the
+// Portfile's own text declares, which a PortGroup's additions aren't.
+func WrittenDependencies(src []byte) []PortDependency {
+	return dependencies(src, false)
+}
+
+// dependencies are src's literal dependencies, its port: ones alone where
+// portOnly.
+func dependencies(src []byte, portOnly bool) []PortDependency {
 	script, errs := syntax.Parse(src)
 	if len(errs) > 0 {
 		return nil
@@ -54,7 +68,7 @@ func PortDependencies(src []byte) []PortDependency {
 		}
 		for _, word := range cmd.Words[1:] {
 			spec, literal := word.Literal(src)
-			if !literal || !strings.HasPrefix(spec, "port:") {
+			if !literal || portOnly && !strings.HasPrefix(spec, "port:") {
 				continue
 			}
 			if dependency, err := macports.ParseDependency(phase, spec); err == nil {

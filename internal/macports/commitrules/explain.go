@@ -21,6 +21,10 @@ type Explanation struct {
 	// Rule is what dockhand checks, in its own words.
 	Rule    string
 	Sources []Source
+	// Elsewhere is the reading that reports a code these rules don't, as
+	// a check's link scan reports unlinked-dependency; empty for the
+	// rules' own.
+	Elsewhere string
 }
 
 // Where the quotes come from. They were copied from these files on
@@ -64,6 +68,8 @@ var explanations = []Explanation{
 		Sources: []Source{guidePortGroups}},
 	{Code: "path-style", Severity: Warning, Rule: "A dependency another port can satisfy is written path-style, on a file both install, so either does: path:bin/pkg-config:pkgconfig, which pkgconf satisfies too, and path:lib/libopenblas.dylib:OpenBLAS, which OpenBLAS-devel does. A port that can is one whose conflicts names the port depended on, and the form offered is the one the tree writes most; a port the tree never writes path-style, as libffi, isn't said. Only dependencies the change adds are said, as a notice holding nothing. tidy --restyle rewrites every such dependency the Portfile writes, in a commit of its own.",
 		Sources: []Source{guideDependencies}},
+	{Code: "unlinked-dependency", Severity: Warning, Rule: "A port declared in depends_lib is one the built files link. A check says a declaration nothing links where all four hold: the Portfile's own text declares the port in depends_lib (a dependency a PortGroup adds is never said); the port installs a dynamic library (a port of programs alone, as git or cmake, is never said); the build installed a Mach-O file (a pure Python, Perl, or Tcl module or a script port is never said); and no Mach-O file it installed links a library the port installs, in any environment the check built. A header-only library or a build tool belongs in depends_build, and a program it runs or a library it loads at run time in depends_run. A notice, holding nothing: a library loaded with dlopen is the maintainer's to keep.",
+		Sources: []Source{guideDependencies}, Elsewhere: "a check's link scan (evidence.UndeclaredLinks)"},
 	{Code: "license-spdx", Severity: Warning, Rule: "A license line names each license as MacPorts does, a name, a hyphen, and its version with any \".0\" dropped: BSD for BSD-3-Clause, Apache-2 for Apache-2.0, GPL-3+ for GPL-3.0-or-later. Only a line the change adds or alters is said, as a notice holding nothing.",
 		Sources: []Source{guideLicense}},
 	{Code: "noarch-platforms", Severity: Warning, Rule: "A port with supported_archs noarch builds nothing for an architecture, so its platforms say any, {darwin any} for a Python port, and MacPorts' buildbots build it once rather than on each macOS. Said where the change adds the port or alters either line, as a notice holding nothing.",

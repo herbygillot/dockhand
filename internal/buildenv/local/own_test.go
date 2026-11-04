@@ -29,13 +29,13 @@ func TestAPrefixIsOwnedForAWholeCheck(t *testing.T) {
 	temp := t.TempDir()
 	script := fmt.Sprintf(`set root [lindex $argv 0]
 set fd [open $root/results.json w]
-puts $fd {{"protocol":1,"state":"running","environment":{"snapshot":"7"},"targets":[]}}
+puts $fd {{"protocol":2,"state":"running","environment":{"snapshot":"7"},"targets":[]}}
 close $fd
 set marker [open $root/entered w]; close $marker
 set log [open {%[2]s} a]; puts $log entered; close $log
 while {![file exists {%[1]s}]} { after 10 }
 set fd [open $root/results.json w]
-puts $fd {{"protocol":1,"state":"finished","environment":{"snapshot":"7","restored":"yes"},"targets":[]}}
+puts $fd {{"protocol":2,"state":"finished","environment":{"snapshot":"7","restored":"yes"},"targets":[]}}
 close $fd
 `, release, entries)
 	provider := func() *Local {
@@ -114,7 +114,7 @@ func TestACheckWaitsForAGuestItsCrashedDockhandLeft(t *testing.T) {
 	owned, err := json.Marshal(owner{PID: 999999, Start: "darwin:1.0", Check: "check-12", Prefix: prefix})
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(left, "owner.json"), owned, 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(left, "results.json"), fmt.Appendf(nil, `{"protocol":1,"state":"running","environment":{"pid":"%d"},"targets":[]}`, child.Process.Pid), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(left, "results.json"), fmt.Appendf(nil, `{"protocol":2,"state":"running","environment":{"pid":"%d"},"targets":[]}`, child.Process.Pid), 0o644))
 
 	entries := filepath.Join(t.TempDir(), "entries")
 	l := localProvider(t, env)
@@ -129,7 +129,7 @@ func TestACheckWaitsForAGuestItsCrashedDockhandLeft(t *testing.T) {
 		}
 		script := fmt.Sprintf(`set log [open {%s} a]; puts $log entered; close $log
 set fd [open [lindex $argv 0]/results.json w]
-puts $fd {{"protocol":1,"state":"finished","environment":{},"targets":[]}}
+puts $fd {{"protocol":2,"state":"finished","environment":{},"targets":[]}}
 close $fd
 `, entries)
 		return os.WriteFile(filepath.Join(dir, "guest.tcl"), []byte(script), 0o644)

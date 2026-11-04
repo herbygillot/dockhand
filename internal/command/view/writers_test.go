@@ -78,6 +78,24 @@ func TestWriteLinks(t *testing.T) {
 		"    jq links no other port's libraries\n", out.String())
 }
 
+// A declaration nothing links is a notice with where it belongs instead,
+// and an undeclared link a declared port's pkg-config brought in says it,
+// and the other way out; each line's JSON carries its fields.
+func TestALinkNoticeSaysAnUnlinkedDeclarationAndThePkgConfigThrough(t *testing.T) {
+	t.Parallel()
+	findings := []engine.LinkFinding{
+		{Target: "gnome-voice", Port: "cairo", Library: "/opt/local/lib/libcairo.2.dylib", Binary: "/opt/local/bin/gnome-voice", Libraries: 1, Through: &engine.LinkThrough{Port: "gtk4", Modules: []string{"gtk4", "cairo"}}},
+		{Target: "abook", Port: "libiconv", Unlinked: true, Option: "depends_lib-append", Line: 23},
+	}
+	var out bytes.Buffer
+	WriteLinks(&out, findings)
+	require.Equal(t, "Links\n  ! gnome-voice links libcairo.2.dylib from cairo, which it doesn't declare in depends_lib, through gtk4's pkg-config Libs (gtk4 requires cairo); depends_lib-append port:cairo declares it, or -Wl,-dead_strip_dylibs drops what it doesn't call\n"+
+		"  ! abook declares libiconv in depends_lib, which nothing it built links: a header-only library or a build tool belongs in depends_build, and a program it runs or a library it loads at run time in depends_run\n", out.String())
+	detail := LinkDetail(findings)
+	require.Equal(t, &throughJSON{Port: "gtk4", Modules: []string{"gtk4", "cairo"}}, detail[0].Through)
+	require.Equal(t, &unlinkedJSON{Port: "libiconv", Option: "depends_lib-append", Line: 23}, detail[1].Unlinked)
+}
+
 // A grid with a cell an earlier check gave says once, under it, that the
 // cell stands, since such a cell fills only where nothing its build read
 // has changed; one without such cells says nothing (the exiv2 session's

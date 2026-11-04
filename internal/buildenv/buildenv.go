@@ -250,6 +250,9 @@ type TargetReport struct {
 	// so an unknown stops no reuse. Nil where the provider couldn't read
 	// them, empty where nothing links.
 	Links []model.Link
+	// Declared is what the target's declared ports install that a build
+	// could link (model.TargetResult.Declared); nil where unread.
+	Declared *model.Declared
 	// Installed are the files a passed target installed, and Libraries its
 	// own dynamic libraries' install names (model.TargetResult's): an
 	// observation, which a later check of its next version compares. Nil

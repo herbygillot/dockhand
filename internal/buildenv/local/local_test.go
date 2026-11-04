@@ -310,7 +310,7 @@ func TestUndoPutsBackAPrefixACheckLeftOrKept(t *testing.T) {
 	// A kept check's directory stays, said as kept; the next check there
 	// leaves it; undo puts the prefix back.
 	kept := leftBehind(t, l.Temp, prefix)
-	require.NoError(t, os.WriteFile(filepath.Join(kept, "results.json"), []byte(`{"protocol":1,"state":"finished","environment":{"snapshot":"7","restored":"kept"}}`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(kept, "results.json"), []byte(`{"protocol":2,"state":"finished","environment":{"snapshot":"7","restored":"kept"}}`), 0o644))
 	require.NoError(t, os.WriteFile(path, []byte("  zlib @1.3.2_0 (active)\n  libharbor @9.9_0 (active)\n"), 0o644))
 	changes, err := l.Changes(t.Context())
 	require.NoError(t, err)
@@ -351,7 +351,7 @@ func leftBehind(t *testing.T, temp, prefix string) string {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(left, "input.json"), input, 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(left, "guest.tcl"), guest.Program, 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(left, "results.json"), []byte(`{"protocol":1,"state":"running","environment":{"snapshot":"7"}}`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(left, "results.json"), []byte(`{"protocol":2,"state":"running","environment":{"snapshot":"7"}}`), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(left, "before.txt"), []byte("  zlib @1.3.2_0 (active)\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(left, "macports.conf"), nil, 0o644))
 	return left
