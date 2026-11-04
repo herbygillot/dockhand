@@ -890,6 +890,23 @@ func (e *Engine) leftoverRun(ctx context.Context, leftover *Leftover) error {
 	})
 }
 
+// BranchLeftovers are what the branches' checks left in their providers:
+// the clones they kept for dockhand shell, and any environment one left
+// when its process died, each judged as PlanLeftovers judges it, one whose
+// check is running kept and said. A clean naming the branches removes
+// them, and clean --delete before it forgets them.
+func (e *Engine) BranchLeftovers(ctx context.Context, branches ...model.BranchID) ([]Leftover, error) {
+	session, err := e.Session(ctx, model.SessionForeground)
+	if err != nil {
+		return nil, err
+	}
+	defer session.End(context.WithoutCancel(ctx))
+	all, err := e.PlanLeftovers(ctx, session)
+	return slices.DeleteFunc(all, func(leftover Leftover) bool {
+		return leftover.Run == nil || !slices.Contains(branches, leftover.Run.Branch)
+	}), err
+}
+
 // KeptClones are the clones this checkout's checks kept for dockhand
 // shell, each with its check and attempt, the newest check's first.
 func (e *Engine) KeptClones(ctx context.Context) ([]Leftover, error) {

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // keepingProvider is leavingProvider whose clones a check asked to keep
@@ -247,4 +249,58 @@ func TestAShellEntersARunningChecksGuest(t *testing.T) {
 	entered, err := e.Run(t.Context(), run.ID)
 	require.NoError(t, err)
 	require.Equal(t, []model.Entry{{At: e.now(), Environment: execution.Environment, Command: "ls -l"}}, entered.Entered)
+}
+
+// refusingRemoval is a provider whose leftovers can't be removed.
+type refusingRemoval struct{ keepingProvider }
+
+func (*refusingRemoval) RemoveLeftover(context.Context, string) error {
+	return errors.New("tart delete failed")
+}
+
+// A branch's own leftovers are what its checks left, never another's;
+// clean --delete removes them before it forgets the record, and keeps the
+// record where one can't be removed (field testing's note 13).
+func TestForgettingABranchRemovesTheClonesItsChecksKept(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	provider := &keepingProvider{kept: map[string]time.Time{}}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	queued := queuedHarborRun(t, e, tahoeArm)
+	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Len(t, provider.left, 1)
+	clone := provider.left[0]
+	branch, err := e.Branch(t.Context(), run.Branch)
+	require.NoError(t, err)
+
+	own, err := e.BranchLeftovers(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.Len(t, own, 1, "its own, never clone-elsewhere, no check's of this checkout")
+	require.Equal(t, clone, own[0].Ref)
+	none, err := e.BranchLeftovers(t.Context(), "branch_other")
+	require.NoError(t, err)
+	require.Empty(t, none, "another branch's clean doesn't take it")
+
+	branch, err = e.Archive(t.Context(), branch, false)
+	require.NoError(t, err)
+	testsupport.Git(t, f.clone, "switch", "-q", "--discard-changes", "master")
+	refusing := &refusingRemoval{keepingProvider: keepingProvider{leavingProvider: leavingProvider{left: []string{clone}}, kept: provider.kept}}
+	e.Providers = map[string]buildenv.Provider{"command": refusing}
+	plan, err := e.PlanForget(t.Context(), branch)
+	require.NoError(t, err)
+	require.Len(t, plan.Leftovers, 1)
+	_, err = e.Forget(t.Context(), &plan)
+	require.ErrorContains(t, err, "record is kept, since what its checks left wasn't all removed")
+	_, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err, "the record stays, which alone claims the clone")
+
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	plan, err = e.PlanForget(t.Context(), branch)
+	require.NoError(t, err)
+	_, err = e.Forget(t.Context(), &plan)
+	require.NoError(t, err)
+	require.Contains(t, provider.removed, clone, "removed before the record went")
+	require.True(t, plan.Leftovers[0].Done)
 }
