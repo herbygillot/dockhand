@@ -142,7 +142,9 @@ func (c Collector) collect(ctx context.Context, input assess.Input, trees [2]mod
 	// candidate isn't distributable, which says whether the change made it
 	// so.
 	if c.Judge != nil && input.Port.Name != "" {
-		distribution := &assess.Distribution{Head: c.Judge.Distributable(ctx, trees[0], input.Port, portfile)}
+		// Each side at its own tree: the candidate was judged with the
+		// base's dependencies (#72).
+		distribution := &assess.Distribution{Head: c.Judge.Distributable(ctx, trees[1], input.Port, portfile)}
 		if distribution.Head.Known && !distribution.Head.OK && !input.New && input.Base.Name != "" {
 			distribution.Base = c.Judge.Distributable(ctx, trees[0], input.Base, nil)
 		}
