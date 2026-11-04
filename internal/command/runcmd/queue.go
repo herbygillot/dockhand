@@ -233,7 +233,7 @@ copies it as it grows, as Tart's does.`,
 				if port == "" {
 					return errors.New("--follow follows one port's log: name it, as dockhand logs check-42 jq --follow")
 				}
-				return followPortLog(ctx, e, streams, run, port, s.Host.Timings.FollowPoll)
+				return followPortLog(ctx, e, streams, run, only, port, s.Host.Timings.FollowPoll)
 			}
 			logs, err := e.Logs(ctx, run.ID)
 			if err != nil {
@@ -318,7 +318,7 @@ copies it as it grows, as Tart's does.`,
 // target said it recorded no log until the target ended (the gnome-voice
 // session's notes, 2026-10-20). A check on GitHub Actions, whose log
 // comes back only with its run, says so, with the run's page.
-func followPortLog(ctx context.Context, e *engine.Engine, streams term.Streams, run model.Run, port string, poll time.Duration) error {
+func followPortLog(ctx context.Context, e *engine.Engine, streams term.Streams, run model.Run, only model.ExecutionID, port string, poll time.Duration) error {
 	out := streams.Out
 	var printed int
 	rest := func(data []byte) {
@@ -332,6 +332,12 @@ func followPortLog(ctx context.Context, e *engine.Engine, streams term.Streams, 
 		logs, err := e.Logs(ctx, run.ID)
 		if err != nil {
 			return err
+		}
+		// The execution named is the one followed, as an ordinary read
+		// takes it: --follow printed another release's log (Codex's
+		// workflow review of 1caa6c3d, finding 5).
+		if only != "" {
+			logs.Executions = slices.DeleteFunc(logs.Executions, func(execution engine.ExecutionLogs) bool { return execution.Execution.ID != only })
 		}
 		if chosen, _, ok := logs.ForPort(port); ok {
 			data, err := buildlog.ReadFile(chosen.Result.Log)
@@ -347,7 +353,7 @@ func followPortLog(ctx context.Context, e *engine.Engine, streams term.Streams, 
 		if stoppedRun(ctx, e, logs.Run) {
 			return fmt.Errorf("%s stopped before %s's build ended; dockhand wait %s resumes it", logs.Run.Name(), port, logs.Run.Name())
 		}
-		path, err := e.LiveLog(ctx, run.ID, port)
+		path, err := e.LiveLog(ctx, run.ID, port, only)
 		if err != nil {
 			return err
 		}
