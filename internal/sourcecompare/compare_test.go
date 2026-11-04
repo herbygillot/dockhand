@@ -660,3 +660,32 @@ func TestALicenseComparisonsMemoryIsBounded(t *testing.T) {
 	_, _, _, ok := partyOnly([]byte("Acme "+wide+"Acme\n"), []byte("Zenith "+strings.Repeat("beta ", 2100)+"Zenith\n"))
 	require.False(t, ok)
 }
+
+// Test code isn't read for Homebrew paths, and an executable's path is
+// said as a path, not a library's: atuin 18.24.5's two were in Rust test
+// modules, one an rstest case, and both under bin/ (field testing,
+// #36378).
+func TestTestCodeIsntReadForHomebrewPaths(t *testing.T) {
+	shell := "pub fn shell() {}\n\n#[cfg(all(test, unix))]\nmod tests {\n    use rstest::rstest;\n    #[rstest]\n" +
+		"    #[case::no_trailing_newline(b\"UserShell: /opt/homebrew/bin/fish\", Some(&b\"/opt/homebrew/bin/fish\"[..]))]\n" +
+		"    fn parses(#[case] input: &[u8], #[case] want: Option<&[u8]>) { let _ = (input, want, '}', \"}\"); }\n}\n"
+	pidfile := "pub fn pid() -> &'static str { \"/opt/homebrew/opt/atuin/bin/atuin\" }\n\n#[cfg(test)]\nmod tests {\n" +
+		"    fn helper() -> std::path::PathBuf { std::path::PathBuf::from(\"/opt/homebrew/opt/atuin/bin/atuin-test\") } // }\n}\n"
+	now := map[string]string{
+		"crates/atuin-common/src/shell.rs":           shell,
+		"crates/atuin-daemon/src/service/pidfile.rs": pidfile,
+		"tests/fixture.c":                            "const char *p = \"/opt/homebrew/lib/libfoo.dylib\";\n",
+		"cmd/run_test.go":                            "var p = \"/opt/homebrew/lib/libbar.dylib\"\n",
+		"src/foo_test.cc":                            "const char *p = \"/usr/local/lib/libbaz.dylib\";\n",
+	}
+	changes, err := compareArchives(t, testsupport.Tarball(t, "atuin-18.24.4", map[string]string{"README": "x\n"}), testsupport.Tarball(t, "atuin-18.24.5", now), Versions{Old: "18.24.4", New: "18.24.5"})
+	require.NoError(t, err)
+	var said []string
+	for _, change := range changes {
+		if change.Kind == "host-path" {
+			said = append(said, change.Message)
+		}
+	}
+	require.Equal(t, []string{"upstream: crates/atuin-daemon/src/service/pidfile.rs adds /opt/homebrew/opt/atuin/bin/atuin, a path outside ${prefix} it may use at run time"}, said,
+		"the literal outside the test module still said, as a path; the test items, a tests/ file, a Go test, and a foo_test.cc not read")
+}
