@@ -154,6 +154,15 @@ func (c *Service) Retry(ctx context.Context, previous model.Run) (model.Run, err
 		run, err = c.queue(tx, model.Run{Branch: previous.Branch, Revision: previous.Revision, Plan: previous.Plan, Origin: model.OriginPerson, BaselineOf: previous.BaselineOf}, "queued, retrying "+previous.Name())
 		return err
 	})
+	// The branch's next check replaces the clones its earlier ones kept,
+	// as QueueCheck's does: each retry of a failed Tart check left one more
+	// (Codex's workflow review of 1caa6c3d, finding 6). A baseline's
+	// retry keeps them, as a baseline does, for the guest it's beside.
+	if err == nil && previous.BaselineOf == "" {
+		if err := c.Admission.ForgetKept(ctx, run.Branch); err != nil {
+			progress.Report(ctx, "removing the clones the branch's earlier checks kept, retrying %s: %v", previous.Name(), err)
+		}
+	}
 	return run, err
 }
 
