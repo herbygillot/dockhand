@@ -69,6 +69,35 @@ type ReviewReport struct {
 	// DependentsUnread why they couldn't be read.
 	Dependents       []treequery.Dependent
 	DependentsUnread string
+	// Check is the check review --check made of the head reviewed, which
+	// the posted text says in place of "Not checked": a failed check's
+	// review was posted saying Dockhand hadn't built it (Codex's workflow
+	// review of 1caa6c3d, finding 7). Nil where it made none.
+	Check *ReviewCheck
+}
+
+// ReviewCheck is review --check's check of the head reviewed: its run, as
+// it ended, and the environments it built on, as checks.DescribeEnvironment
+// says them.
+type ReviewCheck struct {
+	Run          model.Run
+	Environments []string
+}
+
+// Words say the check in a sentence: "Dockhand ran `port lint` and the
+// build in check-12 on tart macOS 15 (Sequoia) arm64, which failed; MacPorts
+// CI runs both too."
+func (c ReviewCheck) Words() string {
+	how := "which is " + string(c.Run.State)
+	switch c.Run.State {
+	case model.RunPassed, model.RunFailed:
+		how = "which " + string(c.Run.State)
+	case model.RunCanceled:
+		how = "which was canceled"
+	case model.RunAttention:
+		how = "which needs attention"
+	}
+	return fmt.Sprintf("Dockhand ran `port lint` and the build in %s on %s, %s; MacPorts CI runs both too.", c.Run.Name(), prose.And(c.Environments), how)
 }
 
 // CanRequestChanges reports whether the reviewer may request changes:
@@ -291,7 +320,11 @@ func (r ReviewReport) Markdown() string {
 	if words := r.DependentsWords(); words != "" {
 		fmt.Fprintf(&b, "\n%s\n", words)
 	}
-	b.WriteString("\nNot checked by Dockhand: `port lint` and the build; MacPorts CI runs both.\n")
+	if r.Check != nil {
+		fmt.Fprintf(&b, "\n%s\n", r.Check.Words())
+	} else {
+		b.WriteString("\nNot checked by Dockhand: `port lint` and the build; MacPorts CI runs both.\n")
+	}
 	return b.String()
 }
 

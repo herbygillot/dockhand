@@ -80,18 +80,30 @@ MacPorts on this Mac, which it says; the builds run in the guests.`,
 			writeReview(streams.Out, report)
 			// --check adopts it and builds it, and a script that posts
 			// nothing ends with the check's answer (Then's item 12).
+			// The text posted says the check, rendered after it, and the
+			// command ends with the check's answer whether or not it posts:
+			// a posted review turned a failed check into success, saying
+			// Dockhand hadn't built it (Codex's workflow review of 1caa6c3d,
+			// finding 7).
+			var checked error
 			if check {
-				checked := checkPullRequest(ctx, e, s, streams, number, model.ObjectID(report.Head), on)
+				var run model.Run
+				var environments []string
+				run, environments, checked = checkPullRequest(ctx, e, s, streams, number, model.ObjectID(report.Head), on)
+				if run.ID != "" {
+					if ended, err := e.Run(ctx, run.ID); err == nil {
+						run = ended
+					}
+					report.Check = &engine.ReviewCheck{Run: run, Environments: environments}
+					body = report.Markdown()
+				}
 				if !comment && !requestChanges && !streams.Terminal() {
 					return errors.Join(checked, e.RecordReview(ctx, report, ""))
-				}
-				if checked != nil {
-					fmt.Fprintf(streams.Err, "check: %v\n", checked)
 				}
 			}
 			switch {
 			case comment || requestChanges:
-				return postReview(ctx, e, streams, report, body, requestChanges)
+				return errors.Join(postReview(ctx, e, streams, report, body, requestChanges), checked)
 			case !streams.Terminal():
 				if err := e.RecordReview(ctx, report, ""); err != nil {
 					return err
@@ -109,13 +121,13 @@ MacPorts on this Mac, which it says; the builds run in the guests.`,
 				}
 				switch strings.ToLower(answer) {
 				case "c":
-					return postReview(ctx, e, streams, report, body, false)
+					return errors.Join(postReview(ctx, e, streams, report, body, false), checked)
 				case "r":
 					if !report.CanRequestChanges() {
 						fmt.Fprintf(streams.Err, "Requesting changes requires write or triage access; your access is %s.\n", engine.Access(report.Permission))
 						continue
 					}
-					return postReview(ctx, e, streams, report, body, true)
+					return errors.Join(postReview(ctx, e, streams, report, body, true), checked)
 				case "e":
 					edited, err := settings.EditText(ctx, settings.EditorCommand(s), body)
 					if err != nil {
@@ -125,7 +137,7 @@ MacPorts on this Mac, which it says; the builds run in the guests.`,
 					body = edited
 				default:
 					fmt.Fprintln(streams.Out, "Nothing was posted.")
-					return e.RecordReview(ctx, report, "")
+					return errors.Join(e.RecordReview(ctx, report, ""), checked)
 				}
 			}
 		},
@@ -146,11 +158,12 @@ MacPorts on this Mac, which it says; the builds run in the guests.`,
 // untouched since, and checks that commit where on says, Tart where it
 // says nothing, reporting as check does: the review and its check are of
 // one commit, where review --check reviewed B and checked A (Codex's
-// review of 2ad896d2, W2).
-func checkPullRequest(ctx context.Context, e *engine.Engine, s *settings.Settings, streams term.Streams, number int, head model.ObjectID, on []string) error {
+// review of 2ad896d2, W2). It returns the check's run, where one was
+// queued, and the environments it builds on, for the review's text.
+func checkPullRequest(ctx context.Context, e *engine.Engine, s *settings.Settings, streams term.Streams, number int, head model.ObjectID, on []string) (model.Run, []string, error) {
 	adoption, err := e.AdoptPullRequest(ctx, number, head)
 	if err != nil {
-		return err
+		return model.Run{}, nil, err
 	}
 	branch := adoption.Branch
 	switch {
@@ -158,7 +171,7 @@ func checkPullRequest(ctx context.Context, e *engine.Engine, s *settings.Setting
 		fmt.Fprintf(streams.Out, "Adopted #%d at %s as %s; checking it.\n", number, head.Short(), branch.ShortName())
 	case adoption.Head != head:
 		if branch, err = e.RefreshAdopted(ctx, branch, head); err != nil {
-			return fmt.Errorf("nothing was checked: %w", err)
+			return model.Run{}, nil, fmt.Errorf("nothing was checked: %w", err)
 		}
 		fmt.Fprintf(streams.Out, "#%d is tracked as %s; moved it from %s to the head reviewed, %s, and checking it.\n", number, branch.ShortName(), adoption.Head.Short(), head.Short())
 	default:
@@ -169,30 +182,34 @@ func checkPullRequest(ctx context.Context, e *engine.Engine, s *settings.Setting
 	}
 	place, err := e.Where(ctx, engine.WhereRequest{On: on})
 	if err != nil {
-		return err
+		return model.Run{}, nil, err
 	}
 	proposal, err := e.ProposeCheck(ctx, engine.CheckRequest{Capture: engine.CaptureRequest{Branch: branch, Mode: engine.CaptureHead, Named: true}, Where: place})
 	if err != nil {
-		return err
+		return model.Run{}, nil, err
 	}
 	if captured := proposal.Capture.Revision.Source.Commit; captured != head {
-		return fmt.Errorf("%s moved to %s while review --check ran; nothing was checked", branch.ShortName(), captured.Short())
+		return model.Run{}, nil, fmt.Errorf("%s moved to %s while review --check ran; nothing was checked", branch.ShortName(), captured.Short())
 	}
 	view.WritePlan(streams.Out, proposal.Plan, e.PlanNotes(ctx, proposal.Plan), e.PlanSiblings(ctx, proposal.Plan), e.Remedy, view.ListShown(streams))
 	if err := checks.Runnable(proposal.Plan); err != nil {
-		return fmt.Errorf("nothing was checked: %w", err)
+		return model.Run{}, nil, fmt.Errorf("nothing was checked: %w", err)
 	}
 	// A check running that covers this one, by the engine's rule
 	// (PlanCovers), is followed.
 	queued, err := e.QueueCheck(ctx, checks.QueueRequest{Branch: branch, Revision: proposal.Capture.Revision, Plan: proposal.Plan, Origin: model.OriginPerson, Beside: checks.BesideFollow})
 	if err != nil {
-		return err
+		return model.Run{}, nil, err
+	}
+	var environments []string
+	for _, environment := range proposal.Plan.Environments {
+		environments = append(environments, checks.DescribeEnvironment(environment))
 	}
 	if queued.Followed {
 		fmt.Fprintf(streams.Err, "%s is already %s and covers this check; following it.\n", queued.Run.Name(), queued.Run.State)
-		return checkrun.Wait(ctx, e, queued.Run, streams, s.Places())
+		return queued.Run, environments, checkrun.Wait(ctx, e, queued.Run, streams, s.Places())
 	}
-	return checkrun.RunQueued(ctx, e, queued.Run, streams, false, s.Places(), s.Drain)
+	return queued.Run, environments, checkrun.RunQueued(ctx, e, queued.Run, streams, false, s.Places(), s.Drain)
 }
 
 func postReview(ctx context.Context, e *engine.Engine, streams term.Streams, report engine.ReviewReport, body string, requestChanges bool) error {
