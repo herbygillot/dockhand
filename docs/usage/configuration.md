@@ -106,6 +106,7 @@ combine its keys. Repeating a TOML table declaration is invalid.
 [providers.tart]
 test_timeout = "30m"
 build_timeout = "6h"
+keep_failed = true   # keep a failed check's clone for dockhand shell
 ```
 
 These bound tests and build work per target. Lint has its own 10-minute bound.

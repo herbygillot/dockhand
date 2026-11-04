@@ -387,7 +387,11 @@ check's result, `status`, and the pull request's Tested on say so:
 omnidiff's maintainers changed, which builds nothing differently, and lint ran
 again on this Portfile`. A lint error builds the target again.
 
-To retain a Tart build for inspection, request `--keep` before running it:
+A failed Tart check keeps its clone on its own, stopped, one for each branch
+and release, for `dockhand shell`: the branch's next check or `clean` removes
+it, and serve's daily cleanup removes one older than seven days. `[providers.tart]
+keep_failed = false` turns that off. To retain a passed build too, request
+`--keep` before running it:
 
 ```sh
 dockhand check --keep

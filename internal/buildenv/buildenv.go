@@ -495,7 +495,10 @@ type Leftover struct {
 	What     string
 	// KeptAt is when a check asked to keep it (model.Plan.Keep) kept it,
 	// for dockhand shell; zero for one left by a process that died.
+	// Failed is a clone kept unasked, for a target's failure in it
+	// (providers.tart.keep_failed).
 	KeptAt time.Time
+	Failed bool
 }
 
 // ShellProvider starts a clone a check kept (Leftover.KeptAt) for a person

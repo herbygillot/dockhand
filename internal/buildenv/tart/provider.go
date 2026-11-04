@@ -92,6 +92,9 @@ type Provider struct {
 	BuildTimeout time.Duration
 	// Poll is how often a guest's results are read, 10 seconds when zero.
 	Poll time.Duration
+	// KeepFailed keeps a clone a target failed in, stopped, for dockhand
+	// shell, as Plan.Keep keeps any (providers.tart.keep_failed).
+	KeepFailed bool
 	// XcodesExecutable is xcodes, which compose finds on the PATH
 	// dockhand was run with; empty where it isn't installed.
 	XcodesExecutable string
@@ -417,6 +420,7 @@ func (p *Provider) Leftovers(ctx context.Context) ([]buildenv.Leftover, error) {
 			leftover := buildenv.Leftover{Ref: name, What: "Tart clone " + name}
 			if at, kept := tartvm.KeptAt(home, name); kept && home != "" {
 				leftover.KeptAt, leftover.What = at, "kept Tart clone "+name
+				leftover.Failed = tartvm.KeptFor(home, name) == tartvm.KeptFailed
 			}
 			clones = append(clones, leftover)
 		}
@@ -493,14 +497,33 @@ func tarDirectory(out io.Writer, directory string) error {
 	return writer.Close()
 }
 
-// keepClone marks a check's clone as kept, which is then left for dockhand
-// shell, and for clean or the branch's next check to remove.
-func (p *Provider) keepClone(vm, image string) error {
+// keepClone marks a check's clone as kept, asked or for its failure, which
+// is then left for dockhand shell, and for clean or the branch's next
+// check to remove.
+func (p *Provider) keepClone(vm, image, reason string) error {
 	home, err := p.home()
 	if err != nil {
 		return err
 	}
-	return tartvm.KeepClone(home, vm, image)
+	return tartvm.KeepClone(home, vm, image, reason)
+}
+
+// failures is a build that notes whether a target failed in it, a build's
+// own failure, which keeps its clone (KeepFailed).
+type failures struct {
+	buildenv.Build
+	failed bool
+}
+
+// Detail passes a step journaled at --verbose on, where the build takes
+// one (buildenv.Detailer).
+func (f *failures) Detail(message string) { buildenv.Detail(f.Build, message) }
+
+func (f *failures) Record(report buildenv.TargetReport) error {
+	if report.Result.Outcome == model.OutcomeFailed {
+		f.failed = true
+	}
+	return f.Build.Record(report)
 }
 
 // Shell starts a clone a check kept (keepClone), runs job's command in the
@@ -634,14 +657,22 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		return fmt.Errorf("staging the revision: %w", err)
 	}
 
+	watched := &failures{Build: build}
+	build = watched
 	cloned, started, vms, err := p.start(ctx, m, build, image, vm)
 	if cloned {
 		defer func() {
 			// A check asked to keep its clone keeps it, stopped, where the
 			// guest finished, its targets passed or failed: never after
-			// trouble, where the guest didn't (model.Plan.Keep).
-			if job.Plan.Keep && err == nil {
-				keepErr := p.keepClone(vm, image)
+			// trouble, where the guest didn't (model.Plan.Keep). One a
+			// target failed in is kept too, unasked, for dockhand shell
+			// (keep_failed, the person's "Keep it", 2026-11-04).
+			reason := tartvm.KeptAsked
+			if !job.Plan.Keep {
+				reason = tartvm.KeptFailed
+			}
+			if err == nil && (job.Plan.Keep || p.KeepFailed && watched.failed) {
+				keepErr := p.keepClone(vm, image, reason)
 				if keepErr == nil {
 					return
 				}

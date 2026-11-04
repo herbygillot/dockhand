@@ -462,7 +462,14 @@ type TartProvider struct {
 	// name or number: tahoe = "26.6". A release it doesn't name gets what
 	// MacPorts' arm64 builder for the release runs.
 	Xcode map[string]string `toml:"xcode"`
+	// KeepFailed keeps a check's clone where a target failed in it, for
+	// dockhand shell, one a branch and release; true when unset.
+	KeepFailed *bool `toml:"keep_failed"`
 }
+
+// KeepsFailed is whether a failed check's clone is kept: keep_failed, true
+// when unset (the person's "Keep it", 2026-11-04).
+func (t TartProvider) KeepsFailed() bool { return t.KeepFailed == nil || *t.KeepFailed }
 
 // LocalProvider builds in a MacPorts prefix on this Mac (Design v3 §7).
 type LocalProvider struct {
@@ -586,6 +593,7 @@ func Defaults() map[string]string {
 		"serve.not_maintainers":          "(none)",
 		"providers.tart.test_timeout":    ageWords(buildenv.DefaultTestTimeout),
 		"providers.tart.build_timeout":   ageWords(buildenv.DefaultBuildTimeout),
+		"providers.tart.keep_failed":     "true",
 		"providers.command":              "(not set up)",
 		"providers.command.run":          "",
 		"providers.command.name":         "command",

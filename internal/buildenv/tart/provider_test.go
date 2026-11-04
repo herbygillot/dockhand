@@ -1144,7 +1144,7 @@ func TestShellStartsAKeptCloneAndStopsItAfter(t *testing.T) {
 	_, err := p.Shell(t.Context(), buildenv.ShellJob{Ref: clone, Portfile: "devel/libharbor/Portfile"})
 	require.ErrorContains(t, err, "isn't a clone a check kept")
 
-	require.NoError(t, p.keepClone(clone, "dockhand-base-tahoe"))
+	require.NoError(t, p.keepClone(clone, "dockhand-base-tahoe", tartvm.KeptAsked))
 	var out bytes.Buffer
 	code, err := p.Shell(t.Context(), buildenv.ShellJob{Ref: clone, Portfile: "devel/libharbor/Portfile", Command: []string{"otool", "-L", "harbor"}, Output: &out})
 	require.NoError(t, err)
@@ -1168,7 +1168,7 @@ func TestShellTestRestagesThePortAndRunsItsTestPhase(t *testing.T) {
 	p.Tart = tartvm.Client{Home: filepath.Join(t.TempDir(), ".dockhand", "tart"), Env: os.Environ()}
 	require.NoError(t, os.MkdirAll(p.Tart.Home, 0o700))
 	clone := clonePrefix("run-1", "tahoe") + "-1"
-	require.NoError(t, p.keepClone(clone, "dockhand-base-tahoe"))
+	require.NoError(t, p.keepClone(clone, "dockhand-base-tahoe", tartvm.KeptAsked))
 	port := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(port, "files"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(port, "Portfile"), []byte("name libharbor\n"), 0o644))
@@ -1194,4 +1194,37 @@ func TestShellTestRestagesThePortAndRunsItsTestPhase(t *testing.T) {
 		return slices.Contains(command, staged) && slices.Contains(command, guestRoot+"/shell-port.tar")
 	}), "the staged directory is replaced")
 	require.Equal(t, []string{staged, "/usr/bin/sudo", "/opt/local/bin/port", "-o", "-N", "-D", staged, "test", "+docs", "-tests"}, mac.guest.attached[0].args[4:])
+}
+
+// A clone a target failed in is kept, stopped, marked as kept for its
+// failure, where keep_failed is on; one whose targets all passed is
+// deleted, as is a failed one with keep_failed off.
+func TestAFailedChecksCloneIsKept(t *testing.T) {
+	t.Parallel()
+	failed := guestprogram.Result{ID: "libharbor", Outcome: "failed", Phase: "install", Log: "target-1.log", Detail: "Failed to install libharbor"}
+	passed := guestprogram.Result{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "target-1.log", Active: []guestprogram.Port{}}
+	vm := "dockhand-check-run-7-tahoe-1"
+	for name, test := range map[string]struct {
+		result     guestprogram.Result
+		keepFailed bool
+		kept       bool
+	}{
+		"failed, kept":         {failed, true, true},
+		"passed, deleted":      {passed, true, false},
+		"failed, not kept off": {failed, false, false},
+	} {
+		mac := newMac(guestprogram.Results{State: "finished", Targets: []guestprogram.Result{test.result}})
+		p := testProvider(mac)
+		p.Tart = tartvm.Client{Home: filepath.Join(t.TempDir(), ".dockhand", "tart"), Env: os.Environ()}
+		require.NoError(t, os.MkdirAll(p.Tart.Home, 0o700))
+		p.KeepFailed = test.keepFailed
+		require.NoError(t, p.Execute(t.Context(), tartJob(t, 1), &fakeBuild{}), name)
+		require.Equal(t, !test.kept, slices.Contains(mac.events, "delete "+vm), name)
+		_, kept := tartvm.KeptAt(p.Tart.Home, vm)
+		require.Equal(t, test.kept, kept, name)
+		if test.kept {
+			require.Equal(t, tartvm.KeptFailed, tartvm.KeptFor(p.Tart.Home, vm), name)
+			require.True(t, mac.run.stopped, "stopped, kept")
+		}
+	}
 }

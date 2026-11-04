@@ -19,6 +19,8 @@ import (
 type keepingProvider struct {
 	leavingProvider
 	kept map[string]time.Time
+	// failed are the clones kept for a failure, unasked.
+	failed map[string]bool
 }
 
 func (p *keepingProvider) Execute(ctx context.Context, job buildenv.Job, build buildenv.Build) error {
@@ -38,7 +40,7 @@ func (p *keepingProvider) Leftovers(ctx context.Context) ([]buildenv.Leftover, e
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for i := range found {
-		found[i].KeptAt = p.kept[found[i].Ref]
+		found[i].KeptAt, found[i].Failed = p.kept[found[i].Ref], p.failed[found[i].Ref]
 	}
 	return found, err
 }
@@ -176,4 +178,41 @@ func TestADrainRunsWhatWasQueuedAsItEnded(t *testing.T) {
 	finished, err := e.Run(t.Context(), late.ID)
 	require.NoError(t, err)
 	require.Equal(t, model.RunPassed, finished.State, finished.Detail)
+}
+
+// Automatic cleanup spares a clone kept for its failure seven days, where
+// one kept as asked goes after a day (keep_failed).
+func TestAFailedChecksKeptCloneLastsSevenDays(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	provider := &keepingProvider{kept: map[string]time.Time{}, failed: map[string]bool{}}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	queued := queuedHarborRun(t, e, tahoeArm)
+	_, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Len(t, provider.left, 1)
+	clone := provider.left[0]
+	keptAgo := func(ago time.Duration, failed bool) {
+		provider.mu.Lock()
+		provider.kept[clone], provider.failed[clone] = e.now().Add(-ago), failed
+		provider.mu.Unlock()
+	}
+	spared := func() bool {
+		t.Helper()
+		planned, err := e.planLeftovers(t.Context(), session(t, e), true)
+		require.NoError(t, err)
+		for _, leftover := range planned {
+			if leftover.Ref == clone {
+				return leftover.Kept != ""
+			}
+		}
+		return false
+	}
+	keptAgo(48*time.Hour, true)
+	require.True(t, spared(), "two days into its seven")
+	keptAgo(8*24*time.Hour, true)
+	require.False(t, spared(), "past seven days")
+	keptAgo(48*time.Hour, false)
+	require.False(t, spared(), "one kept as asked goes after a day")
 }

@@ -321,7 +321,9 @@ dockhand check -b jq-update --head --on tart:26 --keep
 ```
 
 Use the check name it prints. After a guest finishes, its retained clone is
-stopped and available for inspection whether its targets passed or failed:
+stopped and available for inspection whether its targets passed or failed. A
+failed check keeps its clone without `--keep` (`[providers.tart] keep_failed`,
+on by default), and its report names the shell that opens it:
 
 ```sh
 dockhand shell check-42 -- otool -L /opt/local/bin/jq

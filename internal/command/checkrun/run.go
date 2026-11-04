@@ -416,7 +416,7 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 	// whose name the status line erased on a terminal (field testing's
 	// curl +sectrust notes, note 5).
 	var shells []refusal.Next
-	if evidence.Plan.Keep {
+	if evidence.Plan.Keep || run.State == model.RunFailed {
 		shells, _ = e.ShellSteps(ctx, run)
 	}
 	fmt.Fprintln(out)
@@ -466,6 +466,11 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 		}
 		if logs, err := e.Logs(ctx, run.ID); err == nil {
 			writeFailureLogs(out, places, logs)
+		}
+		// A clone a target failed in is kept for a shell, unasked
+		// (providers.tart.keep_failed), said with what removes it.
+		if len(shells) > 0 && !evidence.Plan.Keep {
+			fmt.Fprintf(out, "Its clone is kept for %s; clean, or the branch's next check, removes it.\n", strings.Join(view.RenderSteps(shells), " or "))
 		}
 		if err := hintBaseline(ctx, e, out, run); err != nil {
 			fmt.Fprintf(streams.Err, "baseline: %v\n", err)

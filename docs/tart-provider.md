@@ -1,7 +1,9 @@
 # The Tart provider
 
 `check --on tart` builds in a fresh clone of one of dockhand's Tart images,
-one clone for each macOS release and attempt, deleted afterwards (Design v3
+one clone for each macOS release and attempt, deleted afterwards, but kept,
+stopped, where a target failed in it, one for each branch and release, until
+the branch's next check, `dockhand clean`, or seven days under serve (Design v3
 §7). A clone left by a process that died is deleted by the check's next
 attempt, or else by `dockhand clean` or serve's daily cleanup, once no
 process runs its check. It follows MacPorts CI's order (decisions 11 and 22). For each target,

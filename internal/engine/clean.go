@@ -847,7 +847,11 @@ func (e *Engine) planLeftovers(ctx context.Context, session *coord.Session, spar
 			if err := e.judgeLeftover(ctx, session, &leftover); err != nil {
 				return all, err
 			}
-			if until := reported.KeptAt.Add(KeptFor); spareKept && leftover.Kept == "" && !reported.KeptAt.IsZero() && e.now().Before(until) {
+			spared := KeptFor
+			if reported.Failed {
+				spared = KeptFailedFor
+			}
+			if until := reported.KeptAt.Add(spared); spareKept && leftover.Kept == "" && !reported.KeptAt.IsZero() && e.now().Before(until) {
 				leftover.Kept = "kept for dockhand shell until " + until.Local().Format("Jan 2 15:04")
 			}
 			all = append(all, leftover)
