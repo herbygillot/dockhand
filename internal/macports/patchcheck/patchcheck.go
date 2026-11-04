@@ -220,6 +220,10 @@ var (
 	stripArg   = regexp.MustCompile(`^-p([0-9]+)$`)
 	allowedArg = map[string]bool{"-t": true, "-N": true, "-l": true, "-E": true, "-f": true, "-u": true, "-c": true, "--binary": true}
 	problems   = regexp.MustCompile(`(?i)hunks? (?:failed|ignored)|No file to patch|can't find file|malformed patch|Reversed|Only garbage|Skipping patch`)
+	// failedHunk is a hunk's own failure, "Hunk #1 FAILED at 29." in GNU
+	// patch's words and "Hunk #1 failed at 29." in Apple's (with
+	// --verbose), which says where.
+	failedHunk = regexp.MustCompile(`(?i)^Hunk #[0-9]+ failed at [0-9]+`)
 )
 
 // Check runs every patch in check mode against the files it names.
@@ -706,7 +710,12 @@ func describe(output []byte) string {
 	var lines []string
 	for _, line := range strings.Split(string(output), "\n") {
 		line = strings.TrimSpace(line)
-		if problems.MatchString(line) && !slices.Contains(lines, line) {
+		if failedHunk.MatchString(line) {
+			line = strings.TrimSuffix(line, ".")
+		} else if !problems.MatchString(line) {
+			continue
+		}
+		if !slices.Contains(lines, line) {
 			lines = append(lines, line)
 		}
 	}
