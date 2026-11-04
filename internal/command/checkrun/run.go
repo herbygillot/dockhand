@@ -334,8 +334,9 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 // report shows.
 const failureLines = 15
 
-// writeFailureLines shows, for each failure no reading of its log
-// explained, the last lines its failed step printed.
+// writeFailureLines shows, for each failure a reading of its log
+// explained, that cause, and for each it didn't, the last lines its
+// failed step printed.
 func writeFailureLines(out io.Writer, evidence engine.Evidence) {
 	for _, target := range evidence.Targets {
 		for i := range target.Outcomes {
@@ -345,16 +346,25 @@ func writeFailureLines(out io.Writer, evidence engine.Evidence) {
 				fmt.Fprintf(out, "%s: a dependency failed on %s: %s\n\n", target.Target.ID, checks.DescribeEnvironment(evidence.Plan.Environments[i]), cell.Detail)
 				continue
 			}
-			lines := engine.FailureLines(evidence, target, i, failureLines)
-			if len(lines) == 0 {
-				continue
-			}
 			where := ""
 			if phase := target.Outcomes[i].Phase; phase != "" {
 				where = " at " + string(phase)
 			}
 			if len(evidence.Plan.Environments) > 1 {
 				where += " on " + checks.DescribeEnvironment(evidence.Plan.Environments[i])
+			}
+			// A cause a reading of its log found is said in one line,
+			// where the row said only the phase (the openssl4 session's
+			// note 6: sslscan's compiler error, found and unsaid).
+			if cell := target.Outcomes[i]; cell.Kind == engine.CellRecorded && cell.Outcome == model.OutcomeFailed {
+				if _, cause, found := strings.Cut(cell.Detail, checks.FromItsLog); found && cause != "" {
+					fmt.Fprintf(out, "%s failed%s: %s\n\n", target.Target.ID, where, cause)
+					continue
+				}
+			}
+			lines := engine.FailureLines(evidence, target, i, failureLines)
+			if len(lines) == 0 {
+				continue
 			}
 			fmt.Fprintf(out, "%s failed%s. Last output:\n", target.Target.ID, where)
 			for _, line := range lines {
