@@ -68,16 +68,18 @@ It reads your open pull requests' state first, as status --refresh does,
 so a branch merged since dockhand last looked is cleaned with the rest.
 
 Naming branches cleans those alone, each as its state has it, merged,
-closed, or archived, and nothing else: no other branch, nothing a check
-left, and no branch from before v3. An open branch has nothing to clean.
+closed, or archived, and nothing else: no other branch, nothing another
+branch's checks left, and no branch from before v3; the named branches'
+own kept clones go with them. An open branch has nothing to clean.
 
 It shows what it would remove first; on a terminal it asks, and a script
 passes --yes. archive hides a branch; clean removes a merged one's files;
 cancel stops a check. None means another.
 
 --delete forgets merged, closed, or archived branches named: it deletes each one's Git branch,
-unmerged commits included, which it lists first, its worktree, and what it
-left on your fork, as clean offers it, and forgets its record, keeping of
+unmerged commits included, which it lists first, its worktree, what it
+left on your fork, as clean offers it, and the clones its checks kept,
+and forgets its record, keeping of
 its checks only what another branch's results were reused from. It asks, and without a terminal needs --yes.
 
 --plan shows what it would remove, or forget, and removes nothing.`,
@@ -130,11 +132,20 @@ its checks only what another branch's results were reused from. It asks, and wit
 				return err
 			}
 			defer session.End(context.WithoutCancel(ctx))
-			// Branches named are cleaned alone: what other checks left is
-			// for a clean that names none.
+			// Branches named are cleaned alone, with what their own checks
+			// left, the clones they kept above all: what other branches'
+			// checks left is for a clean that names none.
 			var leftovers []engine.Leftover
 			if len(args) == 0 {
 				if leftovers, err = e.PlanLeftovers(ctx, session); err != nil {
+					return err
+				}
+			} else {
+				var ids []model.BranchID
+				for _, plan := range plans {
+					ids = append(ids, plan.Branch.ID)
+				}
+				if leftovers, err = e.BranchLeftovers(ctx, ids...); err != nil {
 					return err
 				}
 			}
@@ -321,13 +332,22 @@ func writeLeftovers(out io.Writer, leftovers []engine.Leftover, done bool) int {
 		case leftover.Kept != "":
 			fmt.Fprintf(out, "  keep     %s: %s\n", leftover.What, leftover.Kept)
 		case done && leftover.Done:
-			fmt.Fprintf(out, "  removed  %s, left by %s\n", leftover.What, leftover.Run.Name())
+			fmt.Fprintf(out, "  removed  %s, %s\n", leftover.What, leftByWords(leftover))
 		default:
-			fmt.Fprintf(out, "  remove   %s, left by %s\n", leftover.What, leftover.Run.Name())
+			fmt.Fprintf(out, "  remove   %s, %s\n", leftover.What, leftByWords(leftover))
 			count++
 		}
 	}
 	return count
+}
+
+// leftByWords say whose a leftover is: "kept by check-771 for dockhand
+// shell", or "left by check-771" where its process died.
+func leftByWords(leftover engine.Leftover) string {
+	if !leftover.KeptAt.IsZero() {
+		return "kept by " + leftover.Run.Name() + " for dockhand shell"
+	}
+	return "left by " + leftover.Run.Name()
 }
 
 // cleanWords abbreviates a worktree's path under your home.
@@ -465,9 +485,23 @@ func forgetBranches(ctx context.Context, e *engine.Engine, streams term.Streams,
 			}
 			fmt.Fprintf(out, "  %s %s\n", step.Kind.Words(), step.What)
 		}
+		// What its checks left goes before the record, which alone
+		// claims it.
+		for _, leftover := range plan.Leftovers {
+			if leftover.Kept != "" {
+				fmt.Fprintf(out, "  keep %s: %s, so the record stays\n", leftover.What, leftover.Kept)
+				continue
+			}
+			fmt.Fprintf(out, "  remove %s, %s\n", leftover.What, leftByWords(leftover))
+		}
 		fmt.Fprintln(out, "  branch record, except check results reused by other branches")
 	}
+	planned := map[string]any{}
+	for _, plan := range plans {
+		planned[plan.Branch.ShortName()] = map[string]any{"leftovers": view.LeftoversView(plan.Leftovers)}
+	}
 	if plan {
+		streams.Emit(map[string]any{"branches": planned, "forgotten": []string{}})
 		fmt.Fprintln(out, "Nothing was forgotten (--plan).")
 		return nil
 	}
@@ -478,12 +512,18 @@ func forgetBranches(ctx context.Context, e *engine.Engine, streams term.Streams,
 		}
 		return err
 	}
-	var forgotten []string
+	forgotten := []string{}
 	for _, plan := range plans {
 		if _, err := e.Forget(ctx, &plan); err != nil {
 			return err
 		}
 		fmt.Fprintf(out, "Forgot %s.\n", plan.Branch.ShortName())
+		for _, leftover := range plan.Leftovers {
+			if leftover.Done {
+				fmt.Fprintf(out, "  removed %s, %s\n", leftover.What, leftByWords(leftover))
+			}
+		}
+		planned[plan.Branch.ShortName()] = map[string]any{"leftovers": view.LeftoversView(plan.Leftovers)}
 		for _, step := range plan.Fork {
 			if step.Kept != "" && !step.Said {
 				fmt.Fprintf(out, "  kept %s: %s\n", step.What, step.Kept)
@@ -491,7 +531,7 @@ func forgetBranches(ctx context.Context, e *engine.Engine, streams term.Streams,
 		}
 		forgotten = append(forgotten, plan.Branch.ShortName())
 	}
-	streams.Emit(map[string]any{"forgotten": forgotten})
+	streams.Emit(map[string]any{"forgotten": forgotten, "branches": planned})
 	return nil
 }
 

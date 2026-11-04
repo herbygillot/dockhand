@@ -224,7 +224,7 @@ These operations have different purposes:
 | Pause an open change | `dockhand archive jq-update` | Git branch, record, checks/checkpoints subject to retention, fork branch, and pull request. |
 | Resume an archived change | `dockhand archive --undo jq-update` | The branch returns to open work; its worktree is available again when needed. |
 | Remove merged worktrees and branches | `dockhand clean --plan`, then `dockhand clean` | The tracking record remains, so `status --all` can still explain the branch. |
-| Forget an ended change entirely | `dockhand clean --delete jq-update` | The preview identifies the worktree, Git branch, unmerged work, and record to remove. |
+| Forget an ended change entirely | `dockhand clean --delete jq-update` | The preview identifies the worktree, Git branch, unmerged work, the clones its checks kept, and record to remove. |
 
 Archiving hides the branch from the ordinary overview. It does not close a pull
 request. With uncommitted edits or untracked files, the terminal offers how to
