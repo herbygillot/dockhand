@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-27",
+  "generated": "2026-11-04",
   "facts": [
     {
       "darwin": 10,
@@ -255,6 +255,11 @@
         "MacOSX13.1.sdk",
         "MacOSX13.sdk -\u003e MacOSX13.1.sdk"
       ],
+      "xcode_sdks": [
+        "MacOSX.sdk",
+        "MacOSX12.3.sdk -\u003e MacOSX.sdk",
+        "MacOSX12.sdk -\u003e MacOSX.sdk"
+      ],
       "sdk": "12",
       "clang": "1400.0.29.202",
       "xcselect": false,
@@ -334,6 +339,11 @@
         "MacOSX12.sdk -\u003e MacOSX12.3.sdk",
         "MacOSX13.3.sdk",
         "MacOSX13.sdk -\u003e MacOSX13.3.sdk"
+      ],
+      "xcode_sdks": [
+        "MacOSX.sdk",
+        "MacOSX13.3.sdk -\u003e MacOSX.sdk",
+        "MacOSX13.sdk -\u003e MacOSX.sdk"
       ],
       "sdk": "13",
       "clang": "1403.0.22.14.1",
@@ -415,6 +425,11 @@
         "MacOSX15.2.sdk",
         "MacOSX15.sdk -\u003e MacOSX15.2.sdk"
       ],
+      "xcode_sdks": [
+        "MacOSX.sdk",
+        "MacOSX14.5.sdk -\u003e MacOSX.sdk",
+        "MacOSX14.sdk -\u003e MacOSX.sdk"
+      ],
       "sdk": "14",
       "clang": "1600.0.26.6",
       "xcselect": false,
@@ -494,6 +509,11 @@
         "MacOSX14.sdk -\u003e MacOSX14.5.sdk",
         "MacOSX15.5.sdk",
         "MacOSX15.sdk -\u003e MacOSX15.5.sdk"
+      ],
+      "xcode_sdks": [
+        "MacOSX.sdk",
+        "MacOSX15.5.sdk -\u003e MacOSX.sdk",
+        "MacOSX15.sdk -\u003e MacOSX.sdk"
       ],
       "sdk": "15",
       "clang": "1700.0.13.5",
@@ -575,6 +595,11 @@
         "MacOSX26.5.sdk",
         "MacOSX26.sdk -\u003e MacOSX26.5.sdk"
       ],
+      "xcode_sdks": [
+        "MacOSX.sdk",
+        "MacOSX26.5.sdk -\u003e MacOSX.sdk",
+        "MacOSX26.sdk -\u003e MacOSX.sdk"
+      ],
       "sdk": "26",
       "clang": "2100.1.1.101",
       "xcselect": false,
@@ -654,6 +679,11 @@
         "MacOSX26.sdk -\u003e MacOSX26.5.sdk",
         "MacOSX27.0.sdk",
         "MacOSX27.sdk -\u003e MacOSX27.0.sdk"
+      ],
+      "xcode_sdks": [
+        "MacOSX.sdk",
+        "MacOSX27.0.sdk -\u003e MacOSX.sdk",
+        "MacOSX27.sdk -\u003e MacOSX.sdk"
       ],
       "sdk": "27",
       "clang": "2100.3.34.2",

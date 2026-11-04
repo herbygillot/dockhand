@@ -44,6 +44,10 @@ type Facts struct {
 	// SDKs are the SDKs in the Command Line Tools, by name, a link shown
 	// as "MacOSX.sdk -> MacOSX26.5.sdk"; Base picks MacOSX<major>.sdk.
 	SDKs []string `json:"sdks,omitempty"`
+	// XcodeSDKs are the SDKs in Xcode's macOS platform, by name, as SDKs
+	// shows them: "MacOSX.sdk", "MacOSX15.5.sdk -> MacOSX.sdk". Empty where
+	// the source doesn't list them, as a buildbot's log doesn't.
+	XcodeSDKs []string `json:"xcode_sdks,omitempty"`
 	// SDK is Base's macosx_sdk_version, the SDK it asks for: the release's
 	// major version, 26, from macOS 11 on.
 	SDK string `json:"sdk,omitempty"`
