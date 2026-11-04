@@ -137,6 +137,9 @@ dockhand rename jq jqlang
 dockhand update jqlang
 ```
 
+`--plan` starts no branch: with `--new`, or where no branch is checked out
+here or changes the port, it plans on master as fetched now.
+
 The new name is set on the Portfile's `name` line, or, where the name comes
 from a setup such as `github.setup` or `go.setup`, on a `name` line below it, so
 the port's source stays where it is. Pointing the setup at a renamed repository

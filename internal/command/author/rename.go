@@ -99,18 +99,37 @@ func renamePort(cmd *cobra.Command, s *settings.Settings, streams term.Streams, 
 		return err
 	}
 	defer e.Close()
-	chosen, err := branchflags.ChooseBranch(ctx, e, streams, where, request.Port, engine.WorkEdit)
-	if err != nil {
-		return err
-	}
-	request.Branch = chosen.Branch
+	// A plan with no branch to plan in, or with --new, is planned on
+	// master and starts none, as update's is: a plan started the branch
+	// --new named (Codex's workflow review of 1caa6c3d, finding 3).
 	out := streams.Out
+	fromMaster := request.Plan && where.IsNew()
+	var beside string
+	if request.Plan && !fromMaster {
+		if fromMaster, beside, err = unbranchedPlan(ctx, e, where, request.Port); err != nil {
+			return err
+		}
+	}
+	var chosen branchflags.ChosenBranch
+	if !fromMaster {
+		if chosen, err = branchflags.ChooseBranch(ctx, e, streams, where, request.Port, engine.WorkEdit); err != nil {
+			return err
+		}
+	}
+	request.Branch, request.FromMaster = chosen.Branch, fromMaster
 	if chosen.Started {
 		fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", chosen.Branch.Name, chosen.Branch.Base.Short())
 	}
 	renamed, err := e.RenamePort(ctx, request)
 	if err != nil {
 		return err
+	}
+	if fromMaster {
+		why := ""
+		if beside != "" {
+			why = fmt.Sprintf(", since %s doesn't change %s", beside, request.Port)
+		}
+		fmt.Fprintf(out, "Planned on master (fetched just now)%s; without --plan it starts a branch\n", why)
 	}
 	result := renameJSON{Branch: view.BranchRef(chosen.Branch), Started: chosen.Started, Port: renamed.Port, Name: renamed.Name, From: renamed.From, To: renamed.To,
 		Left: view.NonNil(renamed.Left), UsesName: view.NonNil(renamed.UsesName), Dependents: view.NonNil(renamed.Dependents), DependentsProblem: renamed.DependentsProblem, Applied: renamed.Applied}
@@ -123,7 +142,11 @@ func renamePort(cmd *cobra.Command, s *settings.Settings, streams term.Streams, 
 		result.Stub = fmt.Sprintf("%s_%d", renamed.Stub.Version, renamed.Stub.Revision)
 		what += fmt.Sprintf(", with an obsolete stub at %s, replaced_by %s, version %s", renamed.From, renamed.Name, result.Stub)
 	}
-	fmt.Fprintf(out, "%s · %s\n", chosen.Branch.ShortName(), what)
+	label := chosen.Branch.ShortName()
+	if fromMaster {
+		label = "master"
+	}
+	fmt.Fprintf(out, "%s · %s\n", label, what)
 	if renamed.Category {
 		fmt.Fprintf(out, "    Its categories line names %s first.\n", strings.SplitN(renamed.To, "/", 2)[0])
 	}
