@@ -1700,6 +1700,26 @@ func changedPatches(ctx context.Context, worktree *git.Repository, base string, 
 // later submit --yes opened the pull request without the note (field
 // testing's notes from the curl fix, note 9). A plan with no --note keeps
 // the branch's as it is.
+// KeepForSubmit keeps a pull request's title and note, given before its
+// submission, with the branch, for the submit that follows: ship --to
+// commit or --to check took them and dropped them (Codex's workflow review
+// of 1caa6c3d). An empty title, or a nil note, keeps what the branch has.
+func (e *Engine) KeepForSubmit(ctx context.Context, id model.BranchID, title string, note *string) error {
+	return e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		branch, err := tx.Branch(id)
+		if err != nil {
+			return err
+		}
+		if title != "" {
+			branch.Title = title
+		}
+		if note != nil {
+			branch.Note = strings.TrimSpace(strings.ReplaceAll(*note, "\r\n", "\n"))
+		}
+		return tx.UpdateBranch(branch)
+	})
+}
+
 func (e *Engine) KeepNote(ctx context.Context, plan SubmitPlan) error {
 	if plan.Request.Note == nil {
 		return nil

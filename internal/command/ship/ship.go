@@ -137,7 +137,7 @@ need review.`,
 		},
 	}
 	where.Register(cmd, s, "ship")
-	version.Flags(cmd)
+	version.Flags(cmd, s)
 	version.StageFlags(cmd)
 	cmd.Flags().StringVar(&to, "to", string(engine.ShipSubmit), "how far to carry each change: commit, check, or submit")
 	selectors.Register(cmd, "ship, with newer releases,")
@@ -147,8 +147,6 @@ need review.`,
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the plan and change nothing")
 	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
 	settings.SupportsJSON(cmd)
-	settings.KeepModelineFlag(cmd, s)
-	settings.KeepHTTPFlag(cmd, s)
 	return cmd
 }
 
@@ -672,6 +670,17 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 		return nil, err
 	}
 	lines.done(commit, "committed", strings.Join(tidied.Subjects, "; "), "")
+	// A title and note for the pull request, where ship stops before it,
+	// are kept for the submit that follows.
+	if stage != engine.ShipSubmit && (linked.Title != "" || linked.NoteSet) {
+		var note *string
+		if linked.NoteSet {
+			note = &linked.Note
+		}
+		if err := e.KeepForSubmit(ctx, tidied.Branch.ID, linked.Title, note); err != nil {
+			return nil, err
+		}
+	}
 	if stage == engine.ShipCommit {
 		return nil, nil
 	}

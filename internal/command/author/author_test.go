@@ -734,3 +734,17 @@ func TestARenamePlanStartsNoBranch(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, out, "rename-preview")
 }
+
+// ship and bump take update's --source, as its other edit flags: a one-off
+// source meant leaving them for update (Codex's workflow review of
+// 1caa6c3d, finding 9, its probe).
+func TestShipAndBumpTakeSource(t *testing.T) {
+	t.Parallel()
+	cmdtest.NewWorld(t)
+	for _, verb := range []string{"bump", "ship"} {
+		_, _, err := cmdtest.Dockhand(t, verb, "jq", "--source", "keep", "--plan")
+		if err != nil {
+			require.NotContains(t, err.Error(), "unknown flag", verb)
+		}
+	}
+}
