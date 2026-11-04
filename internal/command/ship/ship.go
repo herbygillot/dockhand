@@ -56,8 +56,9 @@ still queued or running for the same files is followed rather than
 started again.
 
 Every change's check is queued before any check is followed, and each
-change is submitted as soon as its check passes. If serve is running, the
-checks run side by side; otherwise they run here one at a time.
+change is submitted as soon as its check passes. The checks run side by
+side, by serve where it's running and here otherwise, as each provider's
+capacity allows.
 
 ship shows one plan, with a row for each change, and asks once on a
 terminal. --yes skips the question; running without a terminal is the
