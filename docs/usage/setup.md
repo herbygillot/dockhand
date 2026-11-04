@@ -94,8 +94,9 @@ Choose a build environment before the first real change:
 
 - **Tart on Apple silicon:** install Tart if needed, then run
   `dockhand setup tart`. This prepares an image of this Mac's release. The
-  default `host` build profile uses a Tart guest; it does not install the port
-  into your everyday prefix.
+  default `minmax` build profile uses Tart guests, this Mac's release alone
+  until `dockhand setup tart <release>` adds others; it does not install the
+  port into your everyday prefix.
 - **GitHub Actions:** enable Actions in your fork. `--on github` pushes a
   temporary check branch and runs MacPorts' workflow there.
 - **A MacPorts prefix on this Mac:** `--on local` builds among the active ports

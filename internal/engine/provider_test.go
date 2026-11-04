@@ -35,7 +35,7 @@ func TestEnvironmentsAreTheProvidersOnNames(t *testing.T) {
 		require.ErrorContains(t, err, refusal, on)
 	}
 	_, err = (&Engine{}).Environments(t.Context(), nil)
-	require.ErrorContains(t, err, "build profile host requires Tart, which isn't on PATH or in /opt/local/bin")
+	require.ErrorContains(t, err, "build profile minmax requires Tart, which isn't on PATH or in /opt/local/bin")
 	_, err = e.Environments(t.Context(), []string{"ci"})
 	require.EqualError(t, err, "--on ci is gone: --build macports-ci builds on the releases MacPorts' CI does")
 	// Tart's own refusal is said, not the general one that suggests the
@@ -75,9 +75,16 @@ func (*releasing) Environments(ctx context.Context, releases string) ([]model.En
 	return environments, nil
 }
 
+// oneImage is Tart with this Mac's image alone, as setup makes by default.
+type oneImage struct{ scriptedProvider }
+
+func (*oneImage) Environments(context.Context, string) ([]model.Environment, error) {
+	return []model.Environment{{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}}, nil
+}
+
 // A provider that takes releases makes an environment of each, a bare
-// release name means Tart, and Tart on the Mac's release is the default
-// when no command provider is set up.
+// release name means Tart, and Tart's minmax over its images is the
+// default when no command provider is set up.
 func TestEnvironmentsOfAProviderThatTakesReleases(t *testing.T) {
 	t.Parallel()
 	e := &Engine{Providers: map[string]buildenv.Provider{"tart": &releasing{}, "custom": &scriptedProvider{}}}
@@ -88,7 +95,7 @@ func TestEnvironmentsOfAProviderThatTakesReleases(t *testing.T) {
 	require.Equal(t, []model.Environment{sonoma, tahoe, {Provider: "custom"}}, environments, "the bare release is the tart:tahoe already named")
 	environments, err = e.Environments(t.Context(), nil)
 	require.NoError(t, err)
-	require.Equal(t, []model.Environment{tahoe}, environments)
+	require.Equal(t, []model.Environment{sonoma, tahoe}, environments)
 	e.Providers["command"] = &scriptedProvider{}
 	environments, err = e.Environments(t.Context(), nil)
 	require.NoError(t, err)
@@ -111,8 +118,9 @@ func TestEnvironmentsAreNamedAsOnNamesThem(t *testing.T) {
 	require.False(t, ok)
 }
 
-// A check builds where a build profile says: build.default's, host unless
-// set, build.unattended's for a check nobody looks over, minmax unless
+// A check builds where a build profile says: build.default's, minmax
+// unless set (the person's choice, 2026-11-04), this Mac's release alone
+// where only its image is set up, build.unattended's for a check nobody looks over, minmax unless
 // set, which spans each port's oldest and newest; a profile of the
 // person's own; and --on's explicit environments over any of them (the
 // person's design, 2026-10-13). --on or --build is the person's ask,
@@ -125,7 +133,17 @@ func TestWhereABuildProfileBuilds(t *testing.T) {
 
 	where, err := e.Where(t.Context(), WhereRequest{})
 	require.NoError(t, err)
-	require.Equal(t, Where{Profile: "host", Environments: []model.Environment{tahoe}}, where)
+	require.Equal(t, Where{Profile: "minmax", Environments: []model.Environment{sonoma, tahoe}, Span: true}, where, "each port's oldest and newest of the images")
+	where, err = (&Engine{Providers: map[string]buildenv.Provider{"tart": &oneImage{}}}).Where(t.Context(), WhereRequest{})
+	require.NoError(t, err)
+	require.Equal(t, Where{Profile: "minmax", Environments: []model.Environment{tahoe}, Span: true}, where, "this Mac's image alone, its release alone")
+	where, err = e.Where(t.Context(), WhereRequest{Build: "host"})
+	require.NoError(t, err)
+	require.Equal(t, Where{Profile: "host", Environments: []model.Environment{tahoe}, Asked: true}, where, "--build host, this Mac's release alone")
+	hosted := &Engine{Providers: e.Providers, Builds: Builds{Default: "host"}}
+	where, err = hosted.Where(t.Context(), WhereRequest{})
+	require.NoError(t, err)
+	require.Equal(t, Where{Profile: "host", Environments: []model.Environment{tahoe}}, where, `build.default = "host" keeps the old default`)
 	where, err = e.Where(t.Context(), WhereRequest{Unattended: true})
 	require.NoError(t, err)
 	require.Equal(t, Where{Profile: "minmax", Environments: []model.Environment{sonoma, tahoe}, Span: true}, where)
@@ -175,7 +193,7 @@ func TestOnTakesAProviderAfterAComma(t *testing.T) {
 func TestServeSaysTheProviderItsProfileLacks(t *testing.T) {
 	t.Parallel()
 	e := &Engine{Providers: map[string]buildenv.Provider{"github": &scriptedProvider{}}}
-	require.Equal(t, "build.default's profile host needs Tart, which isn't on PATH or in /opt/local/bin, so serve prepares commits and checks nothing", e.unattendedMissing())
+	require.Equal(t, "build.default's profile minmax needs Tart, which isn't on PATH or in /opt/local/bin, so serve prepares commits and checks nothing", e.unattendedMissing())
 	e.Providers["command"] = &scriptedProvider{}
 	require.Empty(t, e.unattendedMissing(), "build.default is command, which is there")
 }

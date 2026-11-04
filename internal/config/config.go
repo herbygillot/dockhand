@@ -409,7 +409,7 @@ func (p Profile) List() (releases []string, rule ReleaseRule) {
 
 // The profiles build.default and build.unattended take when unset.
 const (
-	DefaultBuildProfile      = "host"
+	DefaultBuildProfile      = "minmax"
 	DefaultUnattendedProfile = "minmax"
 )
 

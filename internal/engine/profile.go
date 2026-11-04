@@ -115,7 +115,10 @@ func (e *Engine) Where(ctx context.Context, request WhereRequest) (Where, error)
 	return where, err
 }
 
-// defaultProfile is build.default: host, or command where it's set up.
+// defaultProfile is build.default: minmax, each port's oldest and newest
+// release among the Tart images set up (the person's choice, 2026-11-04),
+// which is this Mac's alone where only its image is; or command where
+// it's set up.
 func (e *Engine) defaultProfile() string {
 	if e.Builds.Default != "" {
 		return e.Builds.Default
@@ -123,7 +126,7 @@ func (e *Engine) defaultProfile() string {
 	if _, ok := e.Providers[buildenv.Command]; ok {
 		return buildenv.Command
 	}
-	return string(config.RuleHost)
+	return config.DefaultBuildProfile
 }
 
 // unattendedProfile is build.unattended: minmax where Tart is set up, its

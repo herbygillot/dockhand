@@ -133,11 +133,15 @@ shows each (`dockhand usage publishing`).
 They are mutually exclusive.
 
 ```sh
+dockhand check --build host
 dockhand check --build minmax --plan
 dockhand check --on tart:sequoia --on tart:tahoe
 dockhand check --on github
 dockhand check --on local
 ```
+
+`--build host` builds on this Mac's macOS alone, the quick check;
+`build.default = "host"` makes it the default.
 
 Every requested environment contributes its own result. A pass on one does not
 cover another. The submission profile can require environments beyond a
@@ -151,9 +155,9 @@ diagnostic check you ran manually.
 | `all` | Every available Tart release |
 
 `build.default` selects ordinary checks; a configured command provider becomes
-the fallback default instead of `host`. `build.unattended` selects checks on
+the fallback default instead of `minmax`. `build.unattended` selects checks on
 unattended publication paths such as `bump` and `serve`; otherwise its fallback
-is `minmax` when Tart is available, or the ordinary default. Use
+is the same `minmax` when Tart is available, or the ordinary default. Use
 `dockhand config` and the check plan to see which configuration is in effect.
 Define your own profile with `dockhand usage configuration`.
 
