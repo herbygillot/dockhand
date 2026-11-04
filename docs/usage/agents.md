@@ -85,7 +85,9 @@ includes its branch, revision, plan, run, and target results, and
 environment where it's planned: its `target` and `environment`, and the
 resolved `variants`, `depends_build`, `depends_lib`, `depends_run`,
 `configure_args`, and `configure_env`, as the plan evaluated them; a recorded
-plan, as a finished check's, has none. Keep
+plan, as a finished check's, has none. A check's `portfile_findings` are the
+Portfile findings submit would say, each with its `code`, `severity`, `where`,
+and `message`, which the check said before building. Keep
 standard error separate when parsing standard output. `-v` adds detail about
 the work, and `-vv` adds individual steps. Long human lists can be shortened;
 their JSON lists retain all entries.

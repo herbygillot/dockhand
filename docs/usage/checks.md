@@ -26,6 +26,11 @@ plus those asked; `depends_build`, `depends_lib`, and `depends_run`; and
 environment's platform. It is the dry evaluation of a Portfile under a variant
 set, master's with `--also`, and `--json` carries it as `evaluated`.
 
+The plan, and a check before it builds, say the Portfile findings submit would,
+such as a line restating a PortGroup's default, so the edit comes before the
+build it would otherwise repeat. A check says them once for each set of files;
+`--json` carries them as `portfile_findings`.
+
 Replace `BRANCH` with its exact name from `dockhand status`. The plan shows the
 captured files, targets, build order, and environments. The real check normally
 captures tracked working files, including uncommitted edits, as a numbered

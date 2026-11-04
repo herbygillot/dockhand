@@ -160,13 +160,17 @@ check.baseline = true, it runs that baseline automatically.`,
 			if plan && streams.Verbose() > 0 {
 				view.WriteEvaluated(out, proposed)
 			}
+			// The Portfile findings submit would say, before the build
+			// they'd otherwise repeat (the openssl4 session's note 1).
+			findings, _ := e.BeforeBuilding(ctx, branch, capture, plan)
+			view.WriteBeforeBuilding(out, findings)
 			// What it will install, by the port index: --plan waits for
 			// packages.macports.org's listings; a check says what's kept,
 			// and its run says the rest as it starts.
 			view.WriteEstimates(out, e.InstallEstimates(ctx, proposed, capture.Revision.Source, plan), proposed.Environments)
 			view.WritePushes(out, proposed)
 			revision, planned := view.RevisionView(capture.Revision), view.PlanView(proposed)
-			streams.Emit(view.CheckJSON{Branch: branch.ShortName(), Revision: &revision, Plan: &planned, Targets: []view.TargetJSON{}})
+			streams.Emit(view.CheckJSON{Branch: branch.ShortName(), Revision: &revision, Plan: &planned, Targets: []view.TargetJSON{}}.WithPortfileFindings(findings))
 			if err := checks.Runnable(proposed); err != nil {
 				return fmt.Errorf("nothing was checked: %w", err)
 			}

@@ -355,6 +355,9 @@ type CheckJSON struct {
 	Lint      []linkLineJSON `json:"lint,omitempty"`
 	Links     []linkLineJSON `json:"links,omitempty"`
 	Installed []linkLineJSON `json:"installed,omitempty"`
+	// PortfileFindings are the Portfile findings submit would say, which
+	// check says before it builds, in submit's shape.
+	PortfileFindings []findingJSON `json:"portfile_findings,omitempty"`
 }
 
 // Gather takes a check's result, or the baseline's that looks into it.
@@ -365,6 +368,9 @@ func (c *CheckJSON) Gather(step any) {
 			return
 		}
 		step.Baseline = c.Baseline
+		if step.PortfileFindings == nil {
+			step.PortfileFindings = c.PortfileFindings
+		}
 		*c = step
 	}
 }

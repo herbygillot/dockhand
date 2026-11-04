@@ -622,3 +622,41 @@ JSON
 	<-otherDone
 	require.True(t, started("check-2"), "and runs once it's free")
 }
+
+// A check says the Portfile findings submit would before it builds, as
+// its plan does each time, and once a tree: a later check of the same
+// tree doesn't repeat them (the openssl4 session's note 1).
+func TestACheckSaysThePortfileFindingsBeforeItBuilds(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-license")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-license")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	cmdtest.WithScript(t, w, "passed")
+	testsupport.Git(t, dir, "sparse-checkout", "add", "textproc/jq")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n"), 0o644))
+	out, _, err := cmdtest.Dockhand(t, "check", "--plan")
+	require.NoError(t, err)
+	require.NotContains(t, out, "Before building:", "nothing to say")
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nlicense Apache-2.0\n"), 0o644))
+	before := "Before building:\n  ! textproc/jq/Portfile:2: license Apache-2.0 is SPDX's name; MacPorts' is Apache-2 [license-spdx]\n"
+	out, _, err = cmdtest.Dockhand(t, "check", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "Provider    command · tests where declared\n"+before, "under the plan")
+	require.Contains(t, strings.Join(strings.Fields(out), " "), "dockhand tidy fixes what it can; the rest are edits a reviewer would ask for, best made before the build.")
+	out, _, err = cmdtest.Dockhand(t, "check", "--plan", "--json")
+	require.NoError(t, err)
+	require.Contains(t, out, "\"portfile_findings\": [\n      {\n        \"code\": \"license-spdx\"")
+
+	out, _, err = cmdtest.Dockhand(t, "check", "--json")
+	require.NoError(t, err)
+	require.Contains(t, out, "\"portfile_findings\": [\n      {\n        \"code\": \"license-spdx\"", "kept in the finished check's result")
+	out, _, err = cmdtest.Dockhand(t, "check", "--fresh")
+	require.NoError(t, err)
+	require.NotContains(t, out, "Before building:", "a check of the same tree said them already")
+	out, _, err = cmdtest.Dockhand(t, "check", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, before, "a plan says them each time")
+}
