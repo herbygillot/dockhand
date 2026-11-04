@@ -139,3 +139,22 @@ func TestAnUndeclaredLinkSaysThePkgConfigThatBroughtItIn(t *testing.T) {
 	build.Result.Declared.Ports = []model.DeclaredPort{{Port: "gtk4", Modules: []model.PkgConfigModule{{Name: "gtk4", Libs: []string{"gtk-4"}, Requires: []string{"pango"}}}}}
 	require.Nil(t, UndeclaredLinks([]LinkedBuild{build})[0].Through, "a Requires: no declared port installs stops there")
 }
+
+// A finding's "through" is read from the builds that made it, not
+// another environment's: an arm64 finding took an x86_64 build's
+// pkg-config path to cairo (Codex's sixth review, #77, its probe).
+func TestAFindingsThroughIsItsOwnBuilds(t *testing.T) {
+	t.Parallel()
+	arm := model.Environment{Provider: "command", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	intel := arm
+	intel.Platform.Architecture = "x86_64"
+	link := model.Link{Binary: "/opt/local/bin/tool", Library: "/opt/local/lib/libcairo.2.dylib", Port: "cairo"}
+	builds := []LinkedBuild{
+		{Environment: arm, Declared: []string{"tool", "gtk4"}, Result: model.TargetResult{Target: "tool", Outcome: model.OutcomePassed, Links: []model.Link{link}, Declared: &model.Declared{MachOs: 1, Ports: []model.DeclaredPort{{Port: "gtk4", Modules: []model.PkgConfigModule{{Name: "gtk4", Libs: []string{"gtk-4"}}}}}}}},
+		{Environment: intel, Declared: []string{"tool", "gtk4", "cairo"}, Result: model.TargetResult{Target: "tool", Outcome: model.OutcomePassed, Links: []model.Link{link}, Declared: &model.Declared{MachOs: 1, Ports: []model.DeclaredPort{{Port: "gtk4", Modules: []model.PkgConfigModule{{Name: "gtk4", Libs: []string{"cairo"}}}}}}}},
+	}
+	found := UndeclaredLinks(builds)
+	require.Len(t, found, 1)
+	require.Equal(t, []model.Environment{arm}, found[0].Environments)
+	require.Nil(t, found[0].Through, "the arm64 pkg-config modules contain no cairo linkage")
+}
