@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -132,9 +133,10 @@ func (m Member) Clean() (string, bool) {
 	return clean, true
 }
 
-// Walk calls fn for every member in order. Gzip, bzip2, xz, zstd, and lzip
-// tar streams and zip files are recognized by their leading bytes; anything
-// else is read as a plain tar stream.
+// Walk calls fn for every member in order. Gzip, bzip2, xz, lzma, zstd,
+// and lzip tar streams, zip and 7z files are recognized by their leading
+// bytes, and a disk image by its .dmg name; anything else is read as a
+// plain tar stream: every archive Base extracts (macports.Extractions).
 func Walk(ctx context.Context, filename string, fn func(Member) error) error {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -142,9 +144,17 @@ func Walk(ctx context.Context, filename string, fn func(Member) error) error {
 	}
 	defer file.Close()
 	reader := bufio.NewReader(file)
-	header, _ := reader.Peek(4)
+	header, _ := reader.Peek(6)
 	if kind := binaryKind(header); kind != "" {
 		return &BinaryError{File: path.Base(filename), Kind: kind}
+	}
+	// A 7z archive and a disk image are no stream: each is unpacked, or
+	// mounted, where it can be walked, by the tool Base extracts it with.
+	if bytes.HasPrefix(header, sevenZip) {
+		return walkSevenZip(ctx, filename, fn)
+	}
+	if strings.HasSuffix(filename, ".dmg") {
+		return walkDiskImage(ctx, filename, fn)
 	}
 	if len(header) >= 2 && string(header[:2]) == "PK" {
 		stat, err := file.Stat()
@@ -197,10 +207,11 @@ func Walk(ctx context.Context, filename string, fn func(Member) error) error {
 		input = gz
 	} else if len(header) >= 3 && string(header[:3]) == "BZh" {
 		input = bzip2.NewReader(reader)
-	} else if tool := decompressor(reader); tool != "" {
-		// xz, zstd, and lzip have no reader in Go's library; the system's
-		// own tool decompresses, and the members are read here as always.
-		command := exec.CommandContext(ctx, tool, "-dc")
+	} else if tool := decompressor(reader); tool != nil {
+		// xz, lzma, zstd, and lzip have no reader in Go's library; the
+		// system's own tool decompresses, and the members are read here as
+		// always.
+		command := toolCommand(ctx, tool[0], tool[1:]...)
 		command.Stdin = reader
 		var stderr strings.Builder
 		command.Stderr = &stderr
@@ -209,7 +220,7 @@ func Walk(ctx context.Context, filename string, fn func(Member) error) error {
 			return err
 		}
 		if err := command.Start(); err != nil {
-			return fmt.Errorf("archive: reading %s needs %s: %w", path.Base(filename), tool, err)
+			return fmt.Errorf("archive: reading %s needs %s: %w", path.Base(filename), tool[0], err)
 		}
 		defer func() {
 			_ = out.Close()
@@ -244,17 +255,111 @@ func Walk(ctx context.Context, filename string, fn func(Member) error) error {
 }
 
 // decompressor is the system tool for a stream Go's library can't read.
-func decompressor(reader *bufio.Reader) string {
+func decompressor(reader *bufio.Reader) []string {
 	header, _ := reader.Peek(6)
 	switch {
 	case bytes.HasPrefix(header, []byte{0xfd, '7', 'z', 'X', 'Z', 0x00}):
-		return "xz"
+		return []string{"xz", "-dc"}
 	case bytes.HasPrefix(header, []byte{0x28, 0xb5, 0x2f, 0xfd}):
-		return "zstd"
+		return []string{"zstd", "-dc"}
 	case bytes.HasPrefix(header, []byte("LZIP")):
-		return "lzip"
+		return []string{"lzip", "-dc"}
+	case bytes.HasPrefix(header, []byte{0x5d, 0x00, 0x00}):
+		// lzma's own format, as Base's use_lzma extracts it, which xz
+		// reads.
+		return []string{"xz", "--format=lzma", "-dc"}
 	}
-	return ""
+	return nil
+}
+
+// toolCommand is a system tool an archive is read through, as Base
+// extracts it, run with the process's environment.
+func toolCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
+	return exec.CommandContext(ctx, name, args...)
+}
+
+// sevenZip is a 7z archive's signature.
+var sevenZip = []byte{'7', 'z', 0xbc, 0xaf, 0x27, 0x1c}
+
+// walkSevenZip walks a 7z archive unpacked into a scratch directory by
+// 7za, as Base's use_7z extracts it.
+func walkSevenZip(ctx context.Context, filename string, fn func(Member) error) error {
+	scratch, err := os.MkdirTemp("", "dockhand-7z-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(scratch)
+	command := toolCommand(ctx, "7za", "x", "-y", "-bd", "-o"+scratch, filename)
+	if output, err := command.CombinedOutput(); err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
+			return fmt.Errorf("archive: reading %s needs 7za: %w", path.Base(filename), err)
+		}
+		return fmt.Errorf("archive: reading %s: 7za: %w: %s", path.Base(filename), err, strings.TrimSpace(string(output)))
+	}
+	return walkDirectory(ctx, scratch, fn)
+}
+
+// walkDiskImage walks a disk image mounted read-only at a scratch mount
+// point by hdiutil, and detached after, as Base's use_dmg copies it; only
+// macOS's hdiutil reads one.
+func walkDiskImage(ctx context.Context, filename string, fn func(Member) error) error {
+	if runtime.GOOS != "darwin" {
+		return fmt.Errorf("archive: %s is a disk image, which only macOS's hdiutil reads", path.Base(filename))
+	}
+	mount, err := os.MkdirTemp("", "dockhand-dmg-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(mount)
+	if output, err := toolCommand(ctx, "/usr/bin/hdiutil", "attach", "-readonly", "-nobrowse", "-noverify", "-mountpoint", mount, filename).CombinedOutput(); err != nil {
+		return fmt.Errorf("archive: reading %s: hdiutil attach: %w: %s", path.Base(filename), err, strings.TrimSpace(string(output)))
+	}
+	defer func() {
+		_ = toolCommand(context.WithoutCancel(ctx), "/usr/bin/hdiutil", "detach", "-force", mount).Run()
+	}()
+	return walkDirectory(ctx, mount, fn)
+}
+
+// walkDirectory calls fn for each file, link, and directory below root,
+// as an archive's members, named from it.
+func walkDirectory(ctx context.Context, root string, fn func(Member) error) error {
+	budget := &scanLimited{n: scanLimit}
+	return filepath.WalkDir(root, func(file string, entry fs.DirEntry, err error) error {
+		if err != nil || file == root {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(root, file)
+		if err != nil {
+			return err
+		}
+		name := filepath.ToSlash(relative)
+		switch {
+		case entry.Type()&fs.ModeSymlink != 0:
+			target, err := os.Readlink(file)
+			if err != nil {
+				return err
+			}
+			return fn(Member{Name: name, Link: target, Body: strings.NewReader("")})
+		case entry.IsDir():
+			return fn(Member{Name: name + "/", Body: strings.NewReader("")})
+		case !entry.Type().IsRegular():
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		body, err := os.Open(file)
+		if err != nil {
+			return err
+		}
+		defer body.Close()
+		budget.r = body
+		return fn(Member{Name: name, Regular: true, Size: info.Size(), Body: budget})
+	})
 }
 
 // Extract writes an archive's regular files under a directory, less the one

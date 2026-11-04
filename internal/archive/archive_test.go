@@ -9,7 +9,9 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -134,4 +136,62 @@ func TestABinaryIsSaidToBeOne(t *testing.T) {
 		require.ErrorIs(t, err, ErrBinary, name)
 		require.ErrorContains(t, err, name+" is a ")
 	}
+}
+
+// Every archive Base extracts is read: a .tar.lzma through xz's lzma
+// format, a .7z unpacked by 7za, and, on macOS, a .dmg mounted read-only
+// by hdiutil, each fixture made by its own tool, skipped where the host
+// hasn't it.
+func TestWalkReadsLzmaSevenZipAndADiskImage(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "root")
+	require.NoError(t, os.MkdirAll(source, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(source, "a.txt"), []byte("abc"), 0o644))
+	files := func(t *testing.T, file string) map[string]string {
+		t.Helper()
+		found := map[string]string{}
+		require.NoError(t, Walk(t.Context(), file, func(m Member) error {
+			if clean, ok := m.Clean(); ok && m.Regular {
+				digest, err := m.Digest()
+				require.NoError(t, err)
+				found[clean] = digest
+			}
+			return nil
+		}))
+		return found
+	}
+	abc := "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+	tool := func(t *testing.T, name string) {
+		t.Helper()
+		if _, err := exec.LookPath(name); err != nil {
+			t.Skipf("%s isn't on this host", name)
+		}
+	}
+	t.Run("lzma", func(t *testing.T) {
+		tool(t, "xz")
+		file := filepath.Join(t.TempDir(), "s.tar.lzma")
+		out, err := exec.Command("/bin/sh", "-c", `COPYFILE_DISABLE=1 tar -cf - -C "$1" root | xz --format=lzma > "$2"`, "sh", filepath.Dir(source), file).CombinedOutput()
+		require.NoError(t, err, string(out))
+		require.Equal(t, map[string]string{"root/a.txt": abc}, files(t, file))
+	})
+	t.Run("7z", func(t *testing.T) {
+		tool(t, "7za")
+		file := filepath.Join(t.TempDir(), "s.7z")
+		out, err := exec.Command("7za", "a", "-bd", file, source).CombinedOutput()
+		require.NoError(t, err, string(out))
+		require.Equal(t, map[string]string{"root/a.txt": abc}, files(t, file))
+	})
+	t.Run("dmg", func(t *testing.T) {
+		if runtime.GOOS != "darwin" {
+			file := filepath.Join(t.TempDir(), "s.dmg")
+			require.NoError(t, os.WriteFile(file, []byte("not a tar"), 0o644))
+			require.ErrorContains(t, Walk(t.Context(), file, func(Member) error { return nil }), "s.dmg is a disk image, which only macOS's hdiutil reads")
+			return
+		}
+		file := filepath.Join(t.TempDir(), "s.dmg")
+		out, err := exec.Command("/usr/bin/hdiutil", "create", "-quiet", "-srcfolder", source, "-format", "UDZO", file).CombinedOutput()
+		if err != nil {
+			t.Skipf("hdiutil create: %v: %s", err, out)
+		}
+		require.Equal(t, map[string]string{"a.txt": abc}, files(t, file), "the volume's files, at its root")
+	})
 }
