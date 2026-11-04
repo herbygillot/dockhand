@@ -44,6 +44,13 @@ func WriteSubmitPlan(out io.Writer, plan engine.SubmitPlan, noteStill bool) {
 	fmt.Fprintf(out, "  Commits  %d, %s\n", len(plan.Commits), rules)
 	fmt.Fprintf(out, "  Push     %s\n", PushWords(plan))
 	fmt.Fprintf(out, "  Checks   %s\n", CheckWords(plan))
+	// The variant builds behind the variants item, as the description's
+	// note says them, the row having said only the governing check.
+	if plan.Evidence != nil && !plan.Request.NoCheck && !plan.CheckNeeded {
+		if builds := plan.Evidence.VariantBuilds(); len(builds) > 0 {
+			fmt.Fprintf(out, "           %s\n", engine.VariantsWords(builds, plan.Evidence.Plan.EachVariant))
+		}
+	}
 	// What the evidence couldn't settle, as build.default's profile not
 	// resolving, is said as status says it (rc7's F5): only the planned
 	// environments are then required.

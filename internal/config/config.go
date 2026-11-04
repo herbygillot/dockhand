@@ -60,7 +60,14 @@ type File struct {
 	Update  Update  `toml:"update"`
 	// Tools names the programs dockhand runs, by Programs' keys.
 	Tools Tools `toml:"tools"`
+	// defined are the keys the file sets, from its parse, so an explicit
+	// false is the file's and not the default.
+	defined map[string]bool
 }
+
+// Sets reports whether the file sets key, as check.baseline, false
+// included.
+func (f File) Sets(key string) bool { return f.defined[key] }
 
 // Program is a program dockhand runs that a person may name: Name, as
 // it's run and as --tool name=path names it; Variable, the environment
@@ -743,6 +750,10 @@ func parse(path, text string) (File, error) {
 			keys = append(keys, name)
 		}
 		return File{}, fmt.Errorf("%s: unknown setting %s", path, strings.Join(keys, ", "))
+	}
+	f.defined = map[string]bool{}
+	for _, key := range meta.Keys() {
+		f.defined[key.String()] = true
 	}
 	if err := absoluteOrHome(f.Worktrees); err != nil {
 		return File{}, fmt.Errorf("%s: worktrees: %w", path, err)

@@ -351,14 +351,15 @@ code they explain.
   minutes (2026-10-07).
 - **Upstream Tart issues still worked around** (as of 2026-09-27):
   - openai/tart#1345: `tart delete` of a running VM says "does not exist"
-    and leaves it. #1350 fixed it on 2026-09-26, hours after 2.39.0 was
-    tagged; until a release carries it, a delete is trusted only by the
-    VM's absence from the listing.
+    and leaves it. #1350 fixed it, and Tart 2.40.0 carries the fix; below
+    it, and on every version until dockhand's floor rises past 2.39.0, a
+    delete is trusted only by the VM's absence from the listing.
   - #1346, `tart exec` failing once its control socket does; #1347,
     `tart exec` losing output on macOS 12 to 15 guests; and #1348, its
-    buffered input. Guests are reached over SSH, never `tart exec`, but for
-    setup's agent readiness probe.
-  - #1353: a listing that races a delete fails; it is listed again.
+    buffered input. Guests are reached over SSH, never `tart exec`, setup's
+    readiness probe included.
+  - #1353: a listing that races a delete fails; it is listed again. #1354
+    fixed it, and Tart 2.41.1 carries the fix.
   - `tart clone` onto a stopped VM's name replaces it silently, and Tart
     renames running VMs, so dockhand refuses a destination Tart lists and
     renames only stopped VMs.
