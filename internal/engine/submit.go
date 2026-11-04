@@ -1262,8 +1262,12 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 		if result.Created {
 			verb = "opened"
 		}
-		_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchSubmit, Level: model.LevelInfo,
-			Message: fmt.Sprintf("%s #%d with %s", verb, observed.PullRequest.Ref.Number, model.ObjectID(plan.Commit).Short())})
+		if _, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchSubmit, Level: model.LevelInfo,
+			Message: fmt.Sprintf("%s #%d with %s", verb, observed.PullRequest.Ref.Number, model.ObjectID(plan.Commit).Short())}); err != nil || !result.Pushed {
+			return err
+		}
+		_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchPush, Level: model.LevelVerbose,
+			Message: fmt.Sprintf("pushed %s to #%d", model.ObjectID(plan.Commit).Short(), observed.PullRequest.Ref.Number)})
 		return err
 	})
 	if err != nil {
@@ -1414,26 +1418,32 @@ func (e *Engine) RequestReview(ctx context.Context, branch model.Branch) ([]stri
 
 // RerequestDue reports whether the reviewers whose latest review asks for
 // changes are still to be asked again after a push made since that review:
-// the commit dockhand pushed is newer than the review, and nobody was
-// asked since. A request that failed after its push was dropped, a rerun
-// having pushed nothing (Codex's workflow review of 1caa6c3d, finding 8).
-// False where the review's time isn't known.
+// dockhand pushed after the review, by its record of the push
+// (EventBranchPush), and nobody was asked since. A request that failed
+// after its push was dropped, a rerun having pushed nothing (Codex's
+// workflow review of 1caa6c3d, finding 8); the pushed commit's committer
+// time stood for the push, which a commit made before the review and
+// pushed after defeats (Codex's sixth review, #76). False where the
+// review's time, or the push's, isn't known.
 func (e *Engine) RerequestDue(ctx context.Context, branch model.Branch) (bool, error) {
 	pr := branch.PullRequest
-	if pr == nil || pr.Observed == nil || len(pr.Observed.ChangesRequestedBy) == 0 || pr.Observed.ReviewedAt.IsZero() || pr.Pushed == "" {
+	if pr == nil || pr.Observed == nil || len(pr.Observed.ChangesRequestedBy) == 0 || pr.Observed.ReviewedAt.IsZero() {
 		return false, nil
 	}
-	pushed, err := e.Repo.CommitTime(ctx, string(pr.Pushed))
-	if err != nil || !pushed.After(pr.Observed.ReviewedAt) {
-		return false, err
-	}
-	var asked model.Event
-	var found bool
-	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		asked, found, err = r.LatestBranchEvent(branch.ID, model.EventBranchRerequest)
+	var pushed, asked model.Event
+	var hasPush, hasAsked bool
+	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		if pushed, hasPush, err = r.LatestBranchEvent(branch.ID, model.EventBranchPush); err != nil {
+			return err
+		}
+		asked, hasAsked, err = r.LatestBranchEvent(branch.ID, model.EventBranchRerequest)
 		return err
 	})
-	return err == nil && (!found || asked.At.Before(pr.Observed.ReviewedAt)), err
+	if err != nil || !hasPush || !pushed.At.After(pr.Observed.ReviewedAt) {
+		return false, err
+	}
+	return !hasAsked || asked.At.Before(pr.Observed.ReviewedAt), nil
 }
 
 // hasForkRemote says whether any Git remote pushes to a GitHub repository
