@@ -375,6 +375,7 @@ v0.9.0 restructures the code first, then takes the core changes from Codex's rev
 
 - **The source chooser split by owner, with forge's asset descriptor, and `HostMacPorts` read once** ([#16](https://github.com/herbygillot/dockhand/issues/16); Codex's review of 03b380f1, finding 2; about three twentieths, inferred; nothing a person sees). The archive's inventory goes to `project`, the requirements and the selection to a small `macports/sourcechoice`, and portedit keeps the edit; forge's `Assets` gives a descriptor with each asset's size.
 - **Codex's workflow review's core changes,** placed here as architecture's assessment names them.
+- **`dockhand send-facts`: a Mac's toolchain, hardware and macOS facts, shown, then sent as a secret gist** ([#83](https://github.com/herbygillot/dockhand/issues/83); design: [designs/send-facts.md](designs/send-facts.md); the person's ask in the architecture thread, 2026-11-05 02:19Z, placed here at their "Plan it for 0.9.0", 02:46Z; about a third of a batch, inferred; a small feature beside the restructure, not a large one). The probe tools/facts runs, under this Mac's port-tclsh, with `sw_vers`, `uname` and a few sysctl facts, scrubbed and shown before a gist is made; the login gains the `gist` scope; `tools/facts sent` reads the gists as rows for the facts table. The Xcode-key lookup it waits on to fill rows a Tart image already has is its own small core item, not yet placed.
 
 ### v0.10.0
 
