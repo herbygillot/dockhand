@@ -280,3 +280,25 @@ func TestABuildIsCarriedOverAChangeThatBuildsNothingDifferently(t *testing.T) {
 	_, ok = Carry(recorded, "run_766", "origin a", target, nil, movedData, Judge{Inert: maintainers})
 	require.False(t, ok, "nothing finds it")
 }
+
+// A build is carried over a Portfile that only declares ports it had
+// active, as tidy declares what a check found it linking, the ports
+// declared said; one declaring a port it didn't have active builds again
+// (#49; docs/designs/declare-linked-libraries.md, part 3).
+func TestABuildIsCarriedOverADeclarationOfWhatItHadActive(t *testing.T) {
+	recorded := model.NewTargetInputs("origin a", "devel/omnidiff", "11", "22", nil,
+		[]model.ActivePort{{Name: "libiconv", Spec: "@1.18_0", Directory: "textproc/libiconv", Tree: "33", Archive: "sha256:44"}})
+	target := model.PlanTarget{ID: "omnidiff", Target: model.Target{Name: "omnidiff"}, Directory: "devel/omnidiff"}
+	declares := func(ports ...string) Declared {
+		return func(origin model.RunID, directory string, then, now model.ObjectID) ([]string, bool) {
+			require.Equal(t, "devel/omnidiff", directory)
+			return ports, true
+		}
+	}
+	trees := map[string]model.ObjectID{"devel/omnidiff": "12", "_resources": "22", "textproc/libiconv": "33"}
+	carried, ok := Carry(recorded, "run_12", "origin a", target, nil, trees, Judge{Declared: declares("libiconv")})
+	require.True(t, ok)
+	require.Equal(t, []model.InertPort{{Port: "omnidiff", Declared: []string{"libiconv"}}}, carried)
+	_, ok = Carry(recorded, "run_12", "origin a", target, nil, trees, Judge{Declared: declares("zlib")})
+	require.False(t, ok, "zlib wasn't active as it built")
+}

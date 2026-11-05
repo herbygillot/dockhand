@@ -103,7 +103,9 @@ In particular, verify:
   installs the program for you.
 - **Dependencies and source layout.** Check that the declarations cover the
   software's build and runtime needs, including native libraries. Generated
-  language dependency lists do not settle those packaging decisions.
+  language dependency lists do not settle those packaging decisions. The rust PortGroup declares `port:libiconv` on macOS;
+  `rust.system_libiconv yes` links the system's instead, only where no C code
+  the port builds uses iconv.
 
 Rust crates are read from Cargo.lock. The draft marks crates from unsupported
 registries or Git sources instead of inventing their entries. Program discovery
@@ -159,9 +161,11 @@ the one you just inspected. Examine the installed files and exercise the
 program's basic functionality as appropriate; a passing build alone does not
 confirm your packaging guesses. A check in Tart or a local prefix also reads
 what the built program links: a library its Portfile doesn't declare is a
-notice naming the line to write, `mytool links libiconv.2.dylib from libiconv,
-which it doesn't declare in depends_lib; depends_lib-append port:libiconv
-declares it`.
+notice naming the line to write, `mytool links liblzma.5.dylib from xz,
+which it doesn't declare in depends_lib; depends_lib-append port:xz declares
+it, which dockhand tidy writes`. `dockhand tidy` writes that line in a commit
+of its own, and the check's results carry over, since a declaration of a
+library the build already had active builds nothing differently.
 
 Use `dockhand usage checks` to choose environments and interpret failures,
 `dockhand usage publishing` to open the pull request, and

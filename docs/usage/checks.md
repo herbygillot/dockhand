@@ -355,7 +355,10 @@ latest check, or of a check it names, as `artifacts check-12`, or explains why
 one is missing. A build that links another port's
 library the Portfile doesn't declare is a notice, holding nothing, that names
 the line to write: `omnidiff links libiconv.2.dylib from libiconv, which it
-doesn't declare in depends_lib; depends_lib-append port:libiconv declares it`.
+doesn't declare in depends_lib; depends_lib-append port:libiconv declares it,
+which dockhand tidy writes`. `dockhand tidy` writes that line in a commit of
+its own, and the check's results carry over, since declaring a library the build
+already had active builds nothing differently.
 The reverse is said too, as a notice: a port the Portfile declares in
 `depends_lib` whose libraries nothing the build installed links, `declares
 libiconv in depends_lib, which nothing it built links`, with where it belongs
@@ -365,7 +368,9 @@ brought an undeclared library in, the finding says so: `through gtk4's
 pkg-config Libs`, and `-Wl,-dead_strip_dylibs` as the other way out.
 
 Tart results can be reused when recorded input content and environment identity
-still match, including dependencies and fetched Git commits. A result is keyed
+still match, including dependencies and fetched Git commits. A Portfile whose only change declares a port the recorded build had active is
+the same input, so its results carry over, as an edit of metadata no build
+reads does. A result is keyed
 by the PortGroups MacPorts opened each port with, not the whole of
 `_resources`: a change to a PortGroup the port didn't load leaves it standing,
 and a change to one it did voids it. A dependency the check built from source

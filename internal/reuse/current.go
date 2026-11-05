@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -109,6 +110,15 @@ func Carry(recorded model.TargetInputs, origin model.RunID, identity string, tar
 				return true
 			}
 		}
+		// A Portfile that only declares ports the build had active, as
+		// tidy declares what a check found it linking.
+		if !moved && judge.Declared != nil {
+			if ports, ok := judge.Declared(origin, from, then, now); ok && allActive(ports, recorded.Active) {
+				entry.Declared = ports
+				carried = append(carried, entry)
+				return true
+			}
+		}
 		if judge.Inert == nil {
 			return false
 		}
@@ -153,10 +163,19 @@ func Carry(recorded model.TargetInputs, origin model.RunID, identity string, tar
 // directory is now elsewhere, by its name. A nil field says nothing, and
 // a move is followed only with Inert.
 type Judge struct {
-	Blocks Blocks
-	Inert  Inert
-	Moved  func(port string) (directory string, ok bool)
+	Blocks   Blocks
+	Inert    Inert
+	Declared Declared
+	Moved    func(port string) (directory string, ok bool)
 }
+
+// Declared says, of a port directory whose tree now differs from the one
+// a build read, the ports its Portfile now declares that it didn't, ok
+// only where that is all that differs (portfile.DeclaredChanges), its
+// evaluations confirming it (fidelity.DeclaredBetween). Carry reuses the
+// build where each port declared is one it had active, so declaring it
+// builds nothing differently.
+type Declared func(origin model.RunID, directory string, then, now model.ObjectID) (ports []string, ok bool)
 
 // Blocks says, of a port directory whose tree now differs from the one a
 // build read, which subports' literal blocks alone hold the difference
@@ -240,4 +259,15 @@ func PortGroupChanged(files map[string]model.ObjectID, trees map[string]model.Ob
 		}
 	}
 	return ""
+}
+
+// allActive reports whether each port was among those active as a build
+// ran, by name, as MacPorts reads names.
+func allActive(ports []string, active []model.ActivePort) bool {
+	for _, port := range ports {
+		if !slices.ContainsFunc(active, func(a model.ActivePort) bool { return strings.EqualFold(a.Name, port) }) {
+			return false
+		}
+	}
+	return true
 }

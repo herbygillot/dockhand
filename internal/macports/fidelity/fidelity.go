@@ -792,6 +792,40 @@ func InertBetween(then, now model.ChangeRecord, families func() (then, now macpo
 	return err == nil && inertFamilies(old, next, then.Directory, now.Directory)
 }
 
+// DeclaredBetween reports whether two evaluations of a port directory's
+// family, which families gives, then's first, find nothing moved between
+// them but dependencies, the inert options, and the checksum of every
+// option's value, as inertFamilies compares them: what a change that only
+// declares dependencies moves, which the lines found
+// (portfile.DeclaredChanges). It reads evaluations, not change records, so
+// a port the branch adds, as a new Rust port, is judged as one it
+// changes. Where families is nil or can't evaluate either, nothing is
+// confirmed.
+func DeclaredBetween(families func() (then, now macports.Snapshot, err error), directory string) bool {
+	if families == nil {
+		return false
+	}
+	then, now, err := families()
+	if err != nil || len(then.Ports) == 0 || len(then.Ports) != len(now.Ports) {
+		return false
+	}
+	for name, old := range then.Ports {
+		next, ok := now.Ports[name]
+		if !ok {
+			return false
+		}
+		for _, field := range Changes(atPortpath(old, then.Root, directory), atPortpath(next, now.Root, directory), then.Root, now.Root) {
+			switch {
+			case strings.HasPrefix(field.Field, unstableCode), inertField(field.Field), field.Field == "dependencies",
+				strings.HasPrefix(field.Field, "depends_"), strings.HasPrefix(field.Field, "code depends_"):
+			default:
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // inertField is a field of a change that moves nothing a build reads: an
 // inert option, or the checksum of every option's value, which those
 // options are among.

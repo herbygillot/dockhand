@@ -108,10 +108,33 @@ func (e *Engine) serveCandidates(ctx context.Context) ([]ServeCandidate, []model
 			candidates = append(candidates, candidate)
 			continue
 		}
+		// What its check found linked and undeclared, tidy declares, as a
+		// person's tidy would, in a commit of its own; the branch then
+		// waits for its check, which reuses the builds, and submits at
+		// the next pass. Only what tidy can't write holds (the person's
+		// "Write it", 2026-11-04; docs/designs/declare-linked-libraries.md,
+		// part 4).
+		if len(plan.Undeclared) > 0 {
+			if declared, err := e.declareUnattended(ctx, branch); err == nil && declared {
+				continue
+			}
+		}
 		candidate.Held = plan.Held()
 		candidates = append(candidates, candidate)
 	}
 	return candidates, yours, nil
+}
+
+// declareUnattended applies tidy's declaration to a branch nobody looks
+// over where its plan writes one and nothing else (declareTidy), and
+// reports whether it did; the branch's commits are left as they are.
+func (e *Engine) declareUnattended(ctx context.Context, branch model.Branch) (bool, error) {
+	plan, err := e.PlanTidy(ctx, TidyRequest{Branch: branch})
+	if err != nil || plan.Declare == nil || len(plan.Groups) > 0 && !reproduces(plan.Groups, plan.History) {
+		return false, err
+	}
+	_, err = e.ApplyTidy(ctx, plan)
+	return err == nil, err
 }
 
 // personAsked reports whether a branch's governing check was asked, by a

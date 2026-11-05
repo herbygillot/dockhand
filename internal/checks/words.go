@@ -174,8 +174,8 @@ func CarriedWords(reusing string, carried []model.Carried) string {
 		return ""
 	}
 	type judged struct {
-		options []string
-		from    string
+		options, declared []string
+		from              string
 	}
 	var ports []string
 	byPort := map[string]*judged{}
@@ -198,6 +198,11 @@ func CarriedWords(reusing string, carried []model.Carried) string {
 					found.options = append(found.options, option)
 				}
 			}
+			for _, declared := range port.Declared {
+				if !slices.Contains(found.declared, declared) {
+					found.declared = append(found.declared, declared)
+				}
+			}
 			if port.From != "" {
 				found.from = port.From
 			}
@@ -209,25 +214,32 @@ func CarriedWords(reusing string, carried []model.Carried) string {
 			kept = c.LintKept
 		}
 	}
-	var changed, moved []string
+	var changed, declared, moved []string
 	for _, port := range ports {
 		found := byPort[port]
 		if len(found.options) > 0 {
 			changed = append(changed, port+"'s "+prose.And(found.options))
 		}
+		if len(found.declared) > 0 {
+			declared = append(declared, port+" declares "+prose.And(found.declared))
+		}
 		if found.from != "" {
 			moved = append(moved, port+" moved from "+found.from)
 		}
 	}
-	var since string
-	switch {
-	case len(changed) > 0 && len(moved) > 0:
-		since = prose.And(changed) + " changed, and " + prose.And(moved)
-	case len(changed) > 0:
-		since = prose.And(changed) + " changed"
-	default:
-		since = prose.And(moved)
+	var parts []string
+	if len(changed) > 0 {
+		parts = append(parts, prose.And(changed)+" changed")
 	}
+	if len(declared) > 0 {
+		// A declaration of a port the build had active, as tidy writes
+		// from a check's link finding.
+		parts = append(parts, prose.And(declared)+", active as that build ran")
+	}
+	if len(moved) > 0 {
+		parts = append(parts, prose.And(moved))
+	}
+	since := strings.Join(parts, ", and ")
 	words := reusing + " reused " + carried[0].Check + "'s builds"
 	if commit != "" {
 		words += " (commit " + commit.Short() + ")"

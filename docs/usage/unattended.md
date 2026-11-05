@@ -94,6 +94,13 @@ A change that makes a port non-distributable, by MacPorts' own checker, holds
 as `not-distributable`, since the builders would keep no binary archive of it;
 `holds.allow` names it like any other rule.
 
+A build that links a port's library its Portfile doesn't declare holds as
+`link-undeclared` only where tidy can't write the declaration: a subport's or
+a variant build's finding, links that couldn't be read, a library no port
+provides, or libiconv where the port sets `rust.system_libiconv yes`. Elsewhere
+serve's tidy declares it in a commit of its own, and the branch waits for its
+next check, which reuses the builds, before it submits.
+
 Use the actual rule the report named, and your own reason. `--because` permits
 unattended submission to proceed past that concern;
 `--waiting "what must happen"` records that it remains blocked. Decisions stand
