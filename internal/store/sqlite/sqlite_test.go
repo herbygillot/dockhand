@@ -1620,7 +1620,7 @@ func TestADamagedDatabaseIsSaidPlainly(t *testing.T) {
 		_, err := Open(t.Context(), path, Options{})
 		require.ErrorIs(t, err, store.ErrUnavailable, name)
 		require.ErrorContains(t, err, path+" can't be read as dockhand's database", name)
-		require.ErrorContains(t, err, "dockhand left it as it is. Restore it from a backup, such as one sqlite3 "+path+" \".backup <file>\" made, or move it aside", name)
+		require.ErrorContains(t, err, "Dockhand left the file unchanged. Restore a backup, or move this file aside to start a new database", name)
 		require.NotContains(t, err.Error(), "delete")
 		after, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -1930,5 +1930,5 @@ func TestANewerSchemasRefusalNamesItsBuildAndTheCopy(t *testing.T) {
 	require.ErrorContains(t, err, "newer than this dockhand supports")
 	require.ErrorContains(t, err, "dockhand v0.5.1-0.20261024120000-0123456789ab opened it last")
 	require.ErrorContains(t, err, "it was built from commit 0123456789ab of "+buildinfo.ProjectURL)
-	require.ErrorContains(t, err, fmt.Sprintf("Its schema %d form is kept at %s.schema-%d; put back, what was recorded since it was kept is lost", schemaVersion, f.path, schemaVersion))
+	require.ErrorContains(t, err, fmt.Sprintf("A schema %d backup is kept at %s.schema-%d; restoring it loses changes recorded after that backup was made", schemaVersion, f.path, schemaVersion))
 }

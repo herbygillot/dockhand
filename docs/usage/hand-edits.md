@@ -96,17 +96,24 @@ numbers the mirror directory instead. If the revision or directory change would
 affect other subports unexpectedly, Dockhand refreshes the checksums and leaves
 that part for you, explaining why.
 
-For a port on the github PortGroup, `update` can move the source itself. By
-default it leaves the source where it is, and says, as a notice that holds
-nothing, when a release carries its own source archive: `release 2.5.0's
-mindforger_2.5.0_tarball.tgz carries the source, doc, and deps/cmark-gfm;
-update --source releases fetches it`. `update --source releases` makes that
-move, refusing where the archive doesn't qualify: it writes `distname`,
-`extract.suffix`, a `use_` option, and `worksrcdir` where the archive needs
-them, drops `fetch.type git` and the submodule hook, and fills the checksums;
-the commit's body and the pull request say the move. `--source choose` takes
-it where it qualifies, `--source keep` moves nothing, `--source archive` asks
-for GitHub's archive of the tag, and `[update] source` sets any of these for
+For a port using the github PortGroup, `update` can also change the source.
+The default `--source suggest` reports suitable release assets for legacy
+tarball or Git sources. It preserves the source, except that legacy tarballs
+move to GitHub's archive format for the tag. For example, a notice may say
+`release 2.5.0's mindforger_2.5.0_tarball.tgz carries the source, doc, and
+deps/cmark-gfm; update --source releases fetches it`.
+
+`--source releases` requests a release asset and refuses one that does not
+qualify. `--source choose` can move legacy tarballs or Git checkouts to a
+suitable release asset; an asset replacing a Git checkout must contain every
+submodule. Existing archive sources stay unless `--source releases` is
+requested. `--source keep` preserves the source, and `--source archive`
+requests GitHub's archive of the tag.
+
+When switching source, Dockhand sets `distname`, `extract.suffix`, a `use_`
+option, and `worksrcdir` as needed, removes `fetch.type git` and the submodule
+hook when replacing a Git checkout, and fills in checksums. The commit body
+and pull request explain the move. `[update] source` sets the policy for
 every update; see `dockhand usage configuration`.
 
 ## Request a rebuild without changing the version

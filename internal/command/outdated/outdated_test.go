@@ -138,7 +138,7 @@ func TestOutdatedThenUpdateMine(t *testing.T) {
 	reader := cmdtest.WithOutdated(t)
 
 	_, _, err := cmdtest.Dockhand(t, "outdated", "--mine")
-	require.ErrorContains(t, err, `--mine needs to know who you are, as your ports' maintainers lines name you: set maintainer to you as a Portfile's maintainers line writes you, such as "@you" for your GitHub login, or "{example.org:you @you}" with your email too, in `+filepath.Join(w.Home, ".dockhand", "config.toml"))
+	require.ErrorContains(t, err, `--mine needs to know who you are, as your ports' maintainers lines name you: set maintainer in `+filepath.Join(w.Home, ".dockhand", "config.toml")+` to your identity as written in Portfiles, such as "@you" for your GitHub login, or "{example.org:you @you}" to include your email`)
 	cmdtest.Setenv(t, "DOCKHAND_CONFIG", filepath.Join(w.Home, "elsewhere.toml"))
 	_, _, err = cmdtest.Dockhand(t, "outdated", "--mine")
 	require.ErrorContains(t, err, `in `+filepath.Join(w.Home, "elsewhere.toml"), "the file read, not the default (the dogfood run with 251a1264)")

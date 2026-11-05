@@ -342,7 +342,7 @@ func CheckPolicy(info macports.PortInfo, portdir string) error {
 	_, evaluated := info.Options["fetch.ignore_sslcert"]
 	ignoreCertificate, err := info.Bool("fetch.ignore_sslcert")
 	if info.Options["fetch.type"] != "standard" || !evaluated || err != nil || ignoreCertificate || info.Options["go.vendors"] != "" || info.Options["cargo.crates"] != "" || info.Options["cargo.crates_github"] != "" {
-		return portfile.ErrUnsupported.Because("fetch customization or vendored source requires a dedicated preparer")
+		return portfile.ErrUnsupported.Because("custom fetching or vendored source cannot be prepared automatically here; prepare this update manually with MacPorts")
 	}
 	if err := LocalPatches(info, portdir); err != nil {
 		return err

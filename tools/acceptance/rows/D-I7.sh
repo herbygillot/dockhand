@@ -53,14 +53,14 @@ assert() {
 		{ row_fail "the fault check never met the failpoint: $(tail -3 "$fault" | tr '\n' ' ')"; return; }
 	grep -q "attempt 2 of" "$fault" &&
 		{ row_fail "dockhand's own fault was tried again: $(grep -E 'attempt [0-9] of' "$fault" | tr '\n' ' ')"; return; }
-	grep -q "dockhand: .*the fault is dockhand's own, so another attempt would repeat it, and none was made" "$fault" ||
+	grep -q "dockhand: .*this is an internal Dockhand error, so no retry was attempted" "$fault" ||
 		{ row_fail "dockhand's own fault wasn't said as dockhand's: $(tail -3 "$fault" | tr '\n' ' ')"; return; }
 	local error=$ROW_DIR/check.error
 	grep -q "the guest's results were lost, as a failpoint asked" "$error" ||
 		{ row_fail "the error check never met the failpoint: $(tail -3 "$error" | tr '\n' ' ')"; return; }
 	grep -q "attempt 2 of" "$error" &&
 		{ row_fail "the unclassified error was tried again: $(grep -E 'attempt [0-9] of' "$error" | tr '\n' ' ')"; return; }
-	grep -q "dockhand: .*the provider didn't mark it as trouble another attempt could clear, so none was made" "$error" ||
+	grep -q "dockhand: .*the provider did not mark this failure for automatic retry, so no retry was attempted" "$error" ||
 		{ row_fail "the unclassified error wasn't said at once as dockhand's: $(tail -3 "$error" | tr '\n' ' ')"; return; }
 	local infrastructure=$ROW_DIR/check.infrastructure
 	grep -q "the guest stopped answering, as a failpoint asked" "$infrastructure" ||

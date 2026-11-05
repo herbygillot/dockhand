@@ -42,7 +42,7 @@ func WritePushes(out io.Writer, plan model.Plan) {
 		fmt.Fprintf(out, "Won't build %s on github: MacPorts' workflow builds only the ports a commit changes; check %s with Tart, local, or a command provider\n", prose.And(unbuilt), map[bool]string{true: "it", false: "them"}[len(unbuilt) == 1])
 	}
 	if plan.Keep {
-		fmt.Fprintln(out, "Keeps       each Tart environment's clone, stopped, where its guest finishes, for dockhand shell; clean or the branch's next check removes it")
+		fmt.Fprintln(out, "Keeps       each Tart VM, stopped after the build, for dockhand shell; clean or the branch's next check removes it")
 	}
 }
 

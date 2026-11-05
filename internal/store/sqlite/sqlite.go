@@ -145,7 +145,7 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 		// What's wrong, what dockhand did with it, which is nothing, and
 		// what a person can do, rather than SQLite's words alone (the rc6
 		// full stage, D-T5): never to delete it, which nothing restores.
-		return nil, fmt.Errorf("%w: %s can't be read as dockhand's database (%v); dockhand left it as it is. Restore it from a backup, such as one sqlite3 %s \".backup <file>\" made, or move it aside and dockhand starts a new one, which won't know this one's branches, checks, or kept archives", store.ErrUnavailable, path, err, path)
+		return nil, fmt.Errorf("%w: %s can't be read as dockhand's database (%v). Dockhand left the file unchanged. Restore a backup, or move this file aside to start a new database. A new database has no record of this one's branches, checks, or kept archives", store.ErrUnavailable, path, err)
 	}
 	return s, err
 }
@@ -461,7 +461,7 @@ func (s *Store) newerSchema(ctx context.Context, q queryer, version int) error {
 		words += "; use a newer build"
 	}
 	if copy := fmt.Sprintf("%s.schema-%d", s.path, schemaVersion); fileExists(copy) {
-		words += fmt.Sprintf(". Its schema %d form is kept at %s; put back, what was recorded since it was kept is lost", schemaVersion, copy)
+		words += fmt.Sprintf(". A schema %d backup is kept at %s; restoring it loses changes recorded after that backup was made", schemaVersion, copy)
 	}
 	return fmt.Errorf("%w: %s", store.ErrSchema, words)
 }

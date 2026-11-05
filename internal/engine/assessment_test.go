@@ -531,7 +531,7 @@ func TestASourceMovedSinceItsCheckIsAConcern(t *testing.T) {
 	require.Len(t, unknown, 1)
 	require.Equal(t, "source-unknown", unknown[0].Rule)
 	require.Equal(t, model.UnknownBaseline, unknown[0].Class)
-	require.Contains(t, unknown[0].Detail, "tool: whether git.branch v2 still points to "+built[:7]+", as when check-7 was planned, isn't known: ")
+	require.Contains(t, unknown[0].Detail, "tool: could not verify that git.branch v2 still points to "+built[:7]+", as it did when check-7 was planned: ")
 	require.Contains(t, HoldLines(SubmitPlan{Moved: unknown}.Held()), unknown[0].Detail, "it holds a submission nobody looks over")
 	require.NotContains(t, HoldRules(), "source-unknown", "what couldn't be checked holds whatever holds.allow says (D4)")
 	require.Empty(t, e.movedSources(t.Context(), nil))

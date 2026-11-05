@@ -331,7 +331,7 @@ func TestAPutBackByHandSaysWhatPortRestoreDoes(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "before.txt"), []byte("  zlib @1.3.2_0 (active)\n  gettext @0.22.5_0 (active)\n  jq @1.7.1_0 (inactive)\n"), 0o644))
-	require.Equal(t, "Where dockhand's put-back can't run, sudo port restore --snapshot-id 7 restores the ports requested before check-9 and what they need, and sudo port activate gettext @0.22.5_0 zlib @1.3.2_0 the rest that were active, from its record",
+	require.Equal(t, "If dockhand cannot restore the prefix, sudo port restore --snapshot-id 7 restores the ports requested before check-9 and their dependencies. To restore the other ports that were active, run sudo port activate gettext @0.22.5_0 zlib @1.3.2_0",
 		(&Local{}).byHand(dir, "check-9", "7"))
 }
 

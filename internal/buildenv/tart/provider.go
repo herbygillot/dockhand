@@ -1072,7 +1072,7 @@ func (p *Provider) signingKeys() (binaryarchive.Keys, error) {
 // sshKeys are dockhand's SSH keys (Keys).
 func (p *Provider) sshKeys() (guestssh.Keys, error) {
 	if p.Keys == "" {
-		return guestssh.Keys{}, errors.New("tart: no folder for the SSH keys guests are reached with was given")
+		return guestssh.Keys{}, errors.New("tart: no SSH key directory was provided")
 	}
 	return guestssh.Keys{Directory: p.Keys}, nil
 }

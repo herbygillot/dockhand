@@ -71,9 +71,9 @@ func TestWriteLinks(t *testing.T) {
 		{Target: "pcre2", Clean: true, Ports: []string{"zlib"}},
 		{Target: "jq", Clean: true},
 	})
-	require.Equal(t, "Links\n  ! harbor links libonig.5.dylib from oniguruma (and 1 more of its libraries), which it doesn't declare in depends_lib; depends_lib-append port:oniguruma declares it, which dockhand tidy writes\n"+
-		"    couldn't read what harbor-cli's build links, so whether it declares them isn't said\n"+
-		"    crystal links boehmgc and pcre2's libraries, each declared in depends_lib\n"+
+	require.Equal(t, "Links\n  ! harbor links libonig.5.dylib from oniguruma (and 1 more of its libraries), which it doesn't declare in depends_lib. Declare it with depends_lib-append port:oniguruma; dockhand tidy can write this line\n"+
+		"    couldn't read the libraries linked by harbor-cli; dependency declarations could not be checked\n"+
+		"    crystal links libraries from boehmgc and pcre2, all declared in depends_lib\n"+
 		"    pcre2 links zlib's libraries, declared in depends_lib\n"+
 		"    jq links no other port's libraries\n", out.String())
 }
@@ -89,8 +89,8 @@ func TestALinkNoticeSaysAnUnlinkedDeclarationAndThePkgConfigThrough(t *testing.T
 	}
 	var out bytes.Buffer
 	WriteLinks(&out, findings)
-	require.Equal(t, "Links\n  ! gnome-voice links libcairo.2.dylib from cairo, which it doesn't declare in depends_lib, through gtk4's pkg-config Libs (gtk4 requires cairo); depends_lib-append port:cairo declares it, which dockhand tidy writes, or -Wl,-dead_strip_dylibs drops what it doesn't call\n"+
-		"  ! abook declares libiconv in depends_lib, which nothing it built links: a header-only library or a build tool belongs in depends_build, and a program it runs or a library it loads at run time in depends_run\n", out.String())
+	require.Equal(t, "Links\n  ! gnome-voice links libcairo.2.dylib from cairo, which it doesn't declare in depends_lib, through gtk4's pkg-config Libs (gtk4 requires cairo). Declare it with depends_lib-append port:cairo; dockhand tidy can write this line. -Wl,-dead_strip_dylibs can remove unused links\n"+
+		"  ! abook declares libiconv in depends_lib, but none of its builds links that port's libraries. Consider depends_build for build tools or headers, and depends_run for programs or libraries loaded at runtime\n", out.String())
 	detail := LinkDetail(findings)
 	require.Equal(t, &throughJSON{Port: "gtk4", Modules: []string{"gtk4", "cairo"}}, detail[0].Through)
 	require.Equal(t, &unlinkedJSON{Port: "libiconv", Option: "depends_lib-append", Line: 23}, detail[1].Unlinked)
@@ -135,8 +135,8 @@ func TestUnreadLinksAreOneLineAReason(t *testing.T) {
 	findings = append(findings, engine.LinkFinding{Target: "bazel", Unread: true, Reason: "its result is check-610's, which didn't read them"})
 	var out bytes.Buffer
 	WriteLinks(&out, findings)
-	require.Equal(t, "Links\n    couldn't read what 5 targets link (exiv2, gpsbabel, libheif, darktable, and 1 more): "+guest+"\n"+
-		"    couldn't read what bazel's build links: its result is check-610's, which didn't read them\n", out.String())
+	require.Equal(t, "Links\n    couldn't read the libraries linked by 5 targets (exiv2, gpsbabel, libheif, darktable, and 1 more): "+guest+"\n"+
+		"    couldn't read the libraries linked by bazel: its result is check-610's, which didn't read them\n", out.String())
 }
 
 // A running check's VMs are named under the queue with the Tart home that

@@ -32,17 +32,18 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 		Long: `Fetches a macports-ports pull request, such as 34905, and applies
 MacPorts' commit rules to its commits and Portfiles, as tidy and submit
 do. Reviewing it again after it changes shows which findings were
-resolved. port lint and the build are left to MacPorts CI.
+resolved. Without --check, port lint and the build are left to MacPorts CI.
 
 It posts nothing unless asked: on a terminal it shows the text and asks;
 --comment posts it as a comment, and --request-changes as a request for
 changes, which MacPorts honors only from people with write or triage
 access. --markdown prints the text for pasting.
 
---check also builds it: it adopts the pull request as adopt --pr does,
-as pr-<number>, and checks it in Tart, or where --on says, reporting as
-check does. Planning the check evaluates its author's Portfiles with
-MacPorts on this Mac, which it says; the builds run in the guests.`,
+--check adopts the pull request as pr-<number>, as adopt --pr does, and
+checks it in Tart or the environments selected with --on. Reports the
+result as check does and includes it in any posted review. Planning
+evaluates the author's Portfiles with MacPorts on this Mac and reports
+whose files they are; the builds run in the selected environments.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -146,7 +147,7 @@ MacPorts on this Mac, which it says; the builds run in the guests.`,
 	cmd.Flags().BoolVar(&requestChanges, "request-changes", false, "post the review as a request for changes")
 	cmd.Flags().BoolVar(&markdown, "markdown", false, "print the review's text, for pasting, and post nothing")
 	cmd.Flags().BoolVar(&check, "check", false, "adopt the pull request and check it in Tart, as check does")
-	cmd.Flags().StringArrayVar(&on, "on", nil, "with --check, where it builds, as check --on takes it; tart where none is given")
+	cmd.Flags().StringArrayVar(&on, "on", nil, "with --check, select build environments as for check --on (default: tart)")
 	cmd.MarkFlagsMutuallyExclusive("comment", "request-changes", "markdown")
 	cmd.MarkFlagsMutuallyExclusive("check", "markdown")
 	settings.SupportsJSON(cmd)

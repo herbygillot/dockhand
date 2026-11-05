@@ -162,10 +162,11 @@ program's basic functionality as appropriate; a passing build alone does not
 confirm your packaging guesses. A check in Tart or a local prefix also reads
 what the built program links: a library its Portfile doesn't declare is a
 notice naming the line to write, `mytool links liblzma.5.dylib from xz,
-which it doesn't declare in depends_lib; depends_lib-append port:xz declares
-it, which dockhand tidy writes`. `dockhand tidy` writes that line in a commit
-of its own, and the check's results carry over, since a declaration of a
-library the build already had active builds nothing differently.
+which it doesn't declare in depends_lib. Declare it with depends_lib-append
+port:xz; dockhand tidy can write this line`. For a supported declaration,
+`dockhand tidy` writes a separate commit and carries over the check's results,
+because the build already had that library active. It explains when the line
+must be written by hand, such as inside a subport or variant block.
 
 Use `dockhand usage checks` to choose environments and interpret failures,
 `dockhand usage publishing` to open the pull request, and

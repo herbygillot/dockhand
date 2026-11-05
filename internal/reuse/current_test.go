@@ -202,7 +202,7 @@ func TestAResultLastsUntilAPortGroupOfAPortBuiltWithItChanges(t *testing.T) {
 
 	built := now(revision("t3", cmakeEdited, golangBlob), "t3")
 	require.False(t, Current(recorded, "origin", target, nil, built, Judge{}), "a PortGroup of the port built with it changed")
-	require.Equal(t, "the cmake 1.1 PortGroup, which gettext, built from source, loaded", ResourcesChanged(recorded, built))
+	require.Equal(t, "the cmake 1.1 PortGroup loaded by gettext when it was built from source", ResourcesChanged(recorded, built))
 
 	// A record from before, its active ports carrying none, is keyed as
 	// it was: by its own PortGroups alone.

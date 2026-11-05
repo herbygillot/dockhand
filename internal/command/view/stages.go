@@ -64,7 +64,7 @@ func LinkWords(finding engine.LinkFinding) string {
 	// A declaration nothing links, and where it belongs instead
 	// (unlinked-dependency).
 	if finding.Unlinked {
-		return fmt.Sprintf("%s declares %s in depends_lib, which nothing it built links: a header-only library or a build tool belongs in depends_build, and a program it runs or a library it loads at run time in depends_run", finding.Target, finding.Port)
+		return fmt.Sprintf("%s declares %s in depends_lib, but none of its builds links that port's libraries. Consider depends_build for build tools or headers, and depends_run for programs or libraries loaded at runtime", finding.Target, finding.Port)
 	}
 	if finding.Clean {
 		switch len(finding.Ports) {
@@ -73,18 +73,18 @@ func LinkWords(finding engine.LinkFinding) string {
 		case 1:
 			return fmt.Sprintf("%s links %s's libraries, declared in depends_lib", finding.Target, finding.Ports[0])
 		}
-		return fmt.Sprintf("%s links %s's libraries, each declared in depends_lib", finding.Target, prose.And(finding.Ports))
+		return fmt.Sprintf("%s links libraries from %s, all declared in depends_lib", finding.Target, prose.And(finding.Ports))
 	}
 	if finding.Unread {
-		words := fmt.Sprintf("couldn't read what %s's build links, so whether it declares them isn't said", finding.Target)
+		words := fmt.Sprintf("couldn't read the libraries linked by %s; dependency declarations could not be checked", finding.Target)
 		if finding.Reason != "" {
-			words = fmt.Sprintf("couldn't read what %s's build links: %s", finding.Target, finding.Reason)
+			words = fmt.Sprintf("couldn't read the libraries linked by %s: %s", finding.Target, finding.Reason)
 		}
 		return words
 	}
 	more := ""
 	if finding.Libraries > 1 {
-		more = fmt.Sprintf(" (and %s of its libraries)", prose.Plural(finding.Libraries-1, "more"))
+		more = fmt.Sprintf(" (and %d more of its libraries)", finding.Libraries-1)
 	}
 	// Where it doesn't, since a port's dependencies can differ by
 	// environment (C8-2).
@@ -107,9 +107,9 @@ func LinkWords(finding engine.LinkFinding) string {
 		if len(requires) > 0 {
 			how += " (" + strings.Join(requires, ", ") + ")"
 		}
-		return fmt.Sprintf("%s links %s from %s%s, which it doesn't declare in depends_lib%s%s; depends_lib-append port:%s declares it, which dockhand tidy writes, or -Wl,-dead_strip_dylibs drops what it doesn't call", finding.Target, path.Base(finding.Library), finding.Port, more, where, how, finding.Port)
+		return fmt.Sprintf("%s links %s from %s%s, which it doesn't declare in depends_lib%s%s. Declare it with depends_lib-append port:%s; dockhand tidy can write this line. -Wl,-dead_strip_dylibs can remove unused links", finding.Target, path.Base(finding.Library), finding.Port, more, where, how, finding.Port)
 	}
-	return fmt.Sprintf("%s links %s from %s%s, which it doesn't declare in depends_lib%s; depends_lib-append port:%s declares it, which dockhand tidy writes", finding.Target, path.Base(finding.Library), finding.Port, more, where, finding.Port)
+	return fmt.Sprintf("%s links %s from %s%s, which it doesn't declare in depends_lib%s. Declare it with depends_lib-append port:%s; dockhand tidy can write this line", finding.Target, path.Base(finding.Library), finding.Port, more, where, finding.Port)
 }
 
 // LinkLine is one line of a check's link findings, its mark and words.
@@ -146,9 +146,9 @@ func LinkLines(findings []engine.LinkFinding) []LinkLine {
 		if len(targets) > 4 {
 			named = fmt.Sprintf("%s, and %d more", strings.Join(targets[:4], ", "), len(targets)-4)
 		}
-		words := fmt.Sprintf("couldn't read what %d targets link (%s)", len(targets), named)
+		words := fmt.Sprintf("couldn't read the libraries linked by %d targets (%s)", len(targets), named)
 		if reason == "" {
-			words += ", so whether they declare them isn't said"
+			words += "; dependency declarations could not be checked"
 		} else {
 			words += ": " + reason
 		}

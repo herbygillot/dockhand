@@ -552,7 +552,7 @@ func TestAGitHubRunPastItsBoundIsCancelled(t *testing.T) {
 	out, errs, err := cmdtest.Dockhand(t, "check", "--on", "github", "-v")
 	require.Error(t, err, errs)
 	require.Equal(t, 1, f.canceled)
-	require.Contains(t, errs, "built past its 1m0s bound; cancelling it")
+	require.Contains(t, errs, "exceeded its 1m0s build timeout; cancelling it")
 	require.Regexp(t, `\n  jq +✗ failed at install( \(\d+s\))? +✗ failed at install( \(\d+s\))?\n`, out)
 	logs, _, err := cmdtest.Dockhand(t, "logs", "check-1")
 	require.NoError(t, err)

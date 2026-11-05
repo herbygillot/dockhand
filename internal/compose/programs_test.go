@@ -85,7 +85,7 @@ func TestAToolFlagIsNameAndPath(t *testing.T) {
 	require.Equal(t, "git", name)
 	require.Equal(t, "/opt/homebrew/bin/git", path)
 	_, _, err = ParseTool("git")
-	require.EqualError(t, err, "--tool git: name=path, as --tool git=/opt/homebrew/bin/git")
+	require.EqualError(t, err, "--tool git: expected name=path, for example --tool git=/opt/homebrew/bin/git")
 	_, _, err = ParseTool("gitx=/x")
 	require.EqualError(t, err, "--tool gitx=/x: gitx isn't a program dockhand runs; the names are git, port-tclsh, tart, go2port, cargo2port, xcodes, gh, patch, and diff")
 }

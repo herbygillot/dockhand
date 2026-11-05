@@ -520,10 +520,10 @@ func TestAPortFetchingGitHubsTarballIsSaid(t *testing.T) {
 func TestACargoProgramOnlyAddedHoldsNothing(t *testing.T) {
 	t.Parallel()
 	a := &assessment{}
-	added := a.build(sourcecompare.Change{Kind: "build", How: "new binaries", Path: "Cargo.toml", Message: "upstream's Cargo packages and binaries change: lore-stamp added"}, Pair{})
+	added := a.build(sourcecompare.Change{Kind: "build", How: "new binaries", Path: "Cargo.toml", Message: "upstream's Cargo programs changed: lore-stamp added"}, Pair{})
 	require.False(t, added.Hold)
-	require.Equal(t, "upstream's Cargo packages and binaries change: lore-stamp added; the Portfile installs what it names, so it holds nothing", added.Message)
-	removed := a.build(sourcecompare.Change{Kind: "build", How: "binaries", Path: "Cargo.toml", Message: "upstream's Cargo packages and binaries change: lore-stamp removed"}, Pair{})
+	require.Equal(t, "upstream's Cargo programs changed: lore-stamp added; the Portfile installs what it names, so it holds nothing", added.Message)
+	removed := a.build(sourcecompare.Change{Kind: "build", How: "binaries", Path: "Cargo.toml", Message: "upstream's Cargo programs changed: lore-stamp removed"}, Pair{})
 	require.True(t, removed.Hold)
 }
 

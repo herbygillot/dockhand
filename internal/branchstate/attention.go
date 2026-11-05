@@ -584,7 +584,7 @@ func (a Attention) Words(v Vocabulary) string {
 	case Conflicting:
 		return fmt.Sprintf("#%d conflicts with master", pr.Number)
 	case WorkPastMerge:
-		return fmt.Sprintf("#%d merged; %s past the merge %s in it, for a follow-up", pr.Number, a.Detail, map[bool]string{true: "isn't", false: "aren't"}[a.Detail == "1 commit"])
+		return fmt.Sprintf("#%d merged; %s after the merge %s included and can be submitted as a follow-up", pr.Number, a.Detail, map[bool]string{true: "isn't", false: "aren't"}[a.Detail == "1 commit"])
 	case CheckWider:
 		return "passed on this Mac's release alone; " + a.Detail + ", so a wider check comes first; submit still goes on as it stands"
 	case AcceptedToSubmit:

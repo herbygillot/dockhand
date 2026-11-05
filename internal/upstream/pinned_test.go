@@ -49,7 +49,7 @@ func TestACommitPinRefusesWhatItCantMoveTo(t *testing.T) {
 	_, err = service.Resolve(t.Context(), port, strings.Repeat("c", 40))
 	require.ErrorContains(t, err, "upstream: owner/project has no commit "+strings.Repeat("c", 40))
 	_, err = service.Resolve(t.Context(), port, "bbbbbbb")
-	require.ErrorContains(t, err, "upstream: name fixture's commit whole, its 40 characters: bbbbbbb is abbreviated")
+	require.ErrorContains(t, err, "upstream: fixture requires a full 40-character commit hash; bbbbbbb is abbreviated")
 	_, err = service.Resolve(t.Context(), port, pinned)
 	require.ErrorContains(t, err, "upstream: fixture is already at aaaaaaa, the commit it pins")
 	_, err = service.Resolve(t.Context(), pinnedPort("1.0", pinned, "https://github.com/owner/project.git"), newer)

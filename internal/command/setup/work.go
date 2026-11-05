@@ -35,7 +35,7 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 		// v0.3.0's spellings point here, not run as aliases (the UX
 		// thread's answer on the hidden aliases, 2026-10-15).
 		SuggestFor: []string{"init", "auth", "providers"},
-		Short:      "Set up dockhand for this ports checkout, and report its health; safe to rerun",
+		Short:      "Set up this ports checkout and check its configuration",
 		Long: `Registers this ports checkout, finds its remote for macports/macports-ports,
 and chooses where branch worktrees go: ~/Source/macports-branches unless
 --worktrees or the configuration file says otherwise. Then it reports what
@@ -94,7 +94,7 @@ func runSetup(cmd *cobra.Command, s *settings.Settings, streams term.Streams, wo
 			return err
 		}
 		if strings.HasPrefix(strings.ToLower(answer), "n") {
-			where, err := streams.Ask("Where, then? ")
+			where, err := streams.Ask("Worktree directory: ")
 			if err != nil {
 				return err
 			}

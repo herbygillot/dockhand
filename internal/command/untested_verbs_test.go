@@ -30,7 +30,7 @@ func TestDecideWaitingHoldsTheBranch(t *testing.T) {
 	require.Contains(t, listed, "the author's answer on the license")
 	planned, errs, err := cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
 	require.ErrorContains(t, err, "nothing was submitted")
-	require.Contains(t, cmdtest.Flat(planned+errs), "✗ jq license-changed: you're awaiting the author's answer on the license. Decide it once you have it", "submit holds it, saying what for")
+	require.Contains(t, cmdtest.Flat(planned+errs), "✗ jq license-changed: you're awaiting the author's answer on the license. Once you have it, run dockhand decide", "submit holds it, saying what for")
 }
 
 // start --here starts a branch in the checkout it's run in, switching it,

@@ -75,7 +75,7 @@ func TestAFailedCIJobIsClassifiedOnceAndRunAgain(t *testing.T) {
 
 	fake.Failed = nil
 	_, err = e.RerunCI(t.Context(), statuses[0].Branch)
-	require.ErrorContains(t, err, fmt.Sprintf("nothing of #%d's CI failed at its head", number))
+	require.ErrorContains(t, err, fmt.Sprintf("no CI jobs failed for #%d's current head", number))
 }
 
 // What a submission plan found that took the network, another open pull

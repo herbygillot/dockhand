@@ -71,15 +71,15 @@ func MergeLines(s engine.BranchStatus) []string {
 	}
 	switch {
 	case merge.Draft && len(merge.Waiting()) > 0:
-		lines = append(lines, fmt.Sprintf("A draft, so no one merges it yet; once it's ready, MacPorts' %d-hour maintainer timeout is counted from its opening", hours()))
+		lines = append(lines, fmt.Sprintf("Draft pull request: mark it ready before merging. MacPorts' %d-hour maintainer timeout is counted from when it was opened", hours()))
 	case merge.Draft:
-		lines = append(lines, "A draft, so no one merges it yet")
+		lines = append(lines, "Draft pull request: mark it ready before merging")
 	case !merge.Until.IsZero() && merge.Passed():
 		lines = append(lines, fmt.Sprintf("MacPorts' %d-hour maintainer timeout ended %s, so another committer may merge it", hours(), timeWords(merge.Until)))
 	case !merge.Until.IsZero():
 		lines = append(lines, fmt.Sprintf("MacPorts' %d-hour maintainer timeout ends %s, in %s; until then only its maintainers or its author should merge it", hours(), timeWords(merge.Until), leftWords(merge.Left)))
 	case len(merge.Waiting()) > 0:
-		lines = append(lines, fmt.Sprintf("MacPorts' %d-hour maintainer timeout counts from its opening, not read yet (dockhand status --refresh)", hours()))
+		lines = append(lines, fmt.Sprintf("Opening time not read yet; run dockhand status --refresh to calculate MacPorts' %d-hour maintainer timeout", hours()))
 	case len(s.MaintainersUnread) == 0:
 		lines = append(lines, "No port waits on MacPorts' maintainer timeout")
 	}
@@ -93,11 +93,11 @@ func MergeLines(s engine.BranchStatus) []string {
 // which nothing evaluates unattended (engine.OthersPortfiles), so there
 // it names nothing.
 func unreadWords(s engine.BranchStatus) string {
-	words := prose.And(s.MaintainersUnread) + ": maintainers not read yet"
+	words := prose.And(s.MaintainersUnread) + ": maintainer information not read yet"
 	if _, others := engine.OthersPortfiles(s.Branch); others {
 		return words
 	}
-	return words + "; dockhand check --plan reads them"
+	return words + "; dockhand check --plan reads it"
 }
 
 // portMergeWords are a port's maintainers and how it stands for the merge:
@@ -121,7 +121,7 @@ func portMergeWords(port macports.PortMerge) string {
 	case port.NoMaintainer:
 		return words + "; anyone may update it"
 	}
-	return words + "; no one named to wait for"
+	return words + "; no named maintainer to wait for"
 }
 
 // basisWords name the reading a port's maintainers were taken from where
@@ -135,7 +135,7 @@ func basisWords(port macports.PortMerge) string {
 	case port.Basis == macports.MaintainersOfBase:
 		return "maintainers as of the branch's base"
 	case port.Basis == macports.MaintainersOfNewPort:
-		return "maintainers as the branch adds it"
+		return "maintainers declared by this new port"
 	}
 	return ""
 }

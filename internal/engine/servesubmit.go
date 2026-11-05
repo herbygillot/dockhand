@@ -327,7 +327,7 @@ const sourceUnknownRule = "source-unknown"
 // isn't known.
 func unknownSource(port, ref string, planned model.ObjectID, why, run string) model.Concern {
 	return model.Concern{Origin: model.FromUpstream, Port: port, Rule: sourceUnknownRule, Subject: string(planned), Class: model.UnknownBaseline,
-		Detail: fmt.Sprintf("%s: whether %s still points to %s, as when %s was planned, isn't known: %s", port, ref, planned.Short(), run, why)}
+		Detail: fmt.Sprintf("%s: could not verify that %s still points to %s, as it did when %s was planned: %s", port, ref, planned.Short(), run, why)}
 }
 
 // preparedSources are the Git-fetched ports whose update chose a release

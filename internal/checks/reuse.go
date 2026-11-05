@@ -901,7 +901,11 @@ func staleWords(run string, archives []staleArchive) string {
 			ports = append(ports, archive.port)
 		}
 	}
-	return fmt.Sprintf("%s: %d saved archives, of %s, were built before PortGroups they loaded changed, so the build environment will use MacPorts archives or build them from source", run, len(archives), prose.And(ports))
+	verb := "were"
+	if len(archives) == 1 {
+		verb = "was"
+	}
+	return fmt.Sprintf("%s: %s for %s %s built with PortGroups that have since changed; the build environment will use MacPorts archives or build from source", run, prose.Plural(len(archives), "saved archive"), prose.And(ports), verb)
 }
 
 // gone says the dependencies' kept archives whose files are missing, or
@@ -933,7 +937,11 @@ func goneWords(run string, archives []model.DependencyArchive) string {
 			ports = append(ports, archive.Port)
 		}
 	}
-	return fmt.Sprintf("%s: %d saved archives are missing, of %s. Removing their records; the build environment will use MacPorts archives or build them from source", run, len(archives), prose.And(ports))
+	verb := "are"
+	if len(archives) == 1 {
+		verb = "is"
+	}
+	return fmt.Sprintf("%s: %s for %s %s missing. Removing the missing archive records; the build environment will use MacPorts archives or build from source", run, prose.Plural(len(archives), "saved archive"), prose.And(ports), verb)
 }
 
 // altered says a kept archive that isn't the one it was kept as, by a
@@ -951,7 +959,7 @@ func (d *driver) altered(ctx context.Context, port, digest, instead string) erro
 	}
 	return d.fenced(ctx, func(tx store.Tx) error {
 		_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: model.EventArchiveAltered, Level: model.LevelInfo,
-			Message: fmt.Sprintf("%s: the archive kept of %s isn't the one it was kept as, %s, so %s%s", d.run.Name(), port, digest, instead, aside)})
+			Message: fmt.Sprintf("%s: the saved archive for %s no longer matches its recorded digest, %s, so %s%s", d.run.Name(), port, digest, instead, aside)})
 		return err
 	})
 }

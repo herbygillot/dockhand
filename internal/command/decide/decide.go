@@ -20,22 +20,20 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var because, waiting string
 	cmd := &cobra.Command{
 		Use:   "decide <rule> [<port>]",
-		Short: "Answer a concern that holds a branch, with your reason",
-		Long: `Answers one concern that holds the branch's submission, named by the
-rule that raised it, such as license-changed, as status and submit's
-preview show it, for the port -p names, the one named after the rule,
-or the branch's one port.
+		Short: "Record your decision and reason for a submission concern",
+		Long: `Answers a concern shown by status or submit's preview, using its rule
+name, such as license-changed. Select the port with -p, name it after the
+rule, or omit it when the branch changes only one port.
 
---because "<reason>" takes it as acceptable: a submission nobody looks
-over, serve's, ship's, or bump's, no longer waits on it, status and
-submit still say it, and the pull request's description gives your reason
-under Reviewed. --waiting "<what for>" leaves it for later: submit refuses
-the branch until you decide it --because, or its files change.
+--because "<reason>" accepts the concern so unattended serve, ship, or bump
+can proceed. Status and submit still show it, and the pull request includes
+your reason under Reviewed. --waiting "<what for>" blocks submission until
+you replace it with --because or the port's files change.
 
-A decision rests on the port's own files, its Portfile and files/: it
-lapses when they change, as with the port's next version, and a change to
-another port of the branch leaves it standing. Deciding again replaces
-it.`,
+A decision applies to the port's current Portfile and files/. It expires
+when those files change; edits to another port do not expire it. A decision
+about a moving source also applies to the specific commits reviewed.
+Deciding again replaces the previous decision.`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if (because == "") == (waiting == "") {

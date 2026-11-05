@@ -312,7 +312,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		}
 		if building >= bound && ended == "" {
 			ended = fmt.Sprintf("the run exceeded the %s build timeout (providers.github.build_timeout) and was cancelled", bound)
-			build.Progress(fmt.Sprintf("%s built past its %s bound; cancelling it", run.URL, bound))
+			build.Progress(fmt.Sprintf("%s exceeded its %s build timeout; cancelling it", run.URL, bound))
 			if err := p.API.Cancel(ctx, fork.Repository, run.ID); err != nil {
 				return buildenv.Infrastructure("cancelling %s, which built past its %s bound: %w", run.URL, bound, err)
 			}

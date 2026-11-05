@@ -155,7 +155,7 @@ func TestAPortTheBranchsEditBrokeIsSaidAsBroken(t *testing.T) {
 			edit: func(t *testing.T, worktree string) {
 				testsupport.WriteFiles(t, worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
 			},
-			said: `textproc/jq/Portfile doesn't parse in jq-update's index, though the branch doesn't change it: portindex says invalid command name "versio". What the branch changes that the Portfile reads, as a PortGroup, is where to look`},
+			said: `textproc/jq/Portfile doesn't parse in jq-update's index, though the branch doesn't change it: portindex says invalid command name "versio". Check changes on the branch that this Portfile reads, such as PortGroups`},
 		{name: "a directory the branch leaves alone, no reason kept", port: "jq", brokenAtMaster: true,
 			edit: func(t *testing.T, worktree string) {
 				testsupport.WriteFiles(t, worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})

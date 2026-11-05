@@ -66,7 +66,7 @@ func TestAKilledCheckReadsAsStopped(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "check-1 · stopped: the process running it ended; dockhand wait check-1 resumes it\n")
 	_, _, err = cmdtest.Dockhand(t, "check", "-d")
-	require.EqualError(t, err, "check-1 stopped before it finished these files, when the process running it ended; dockhand wait check-1 resumes it, or --replace checks again, keeping what it finished")
+	require.EqualError(t, err, "check-1 stopped before finishing because the process running it ended; dockhand wait check-1 resumes it, or --replace checks again, keeping what it finished")
 
 	_, errs, err := cmdtest.Dockhand(t, "wait", "check-1")
 	require.NoError(t, err)

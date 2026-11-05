@@ -48,7 +48,7 @@ type Transitions struct {
 func (h *Transitions) With(ctx context.Context, branch model.Branch, fn func(context.Context) error) error {
 	return h.Repo.WithBranchLock(ctx, branch.Name, func(ctx context.Context) error {
 		if err := h.settle(ctx, branch); err != nil {
-			return fmt.Errorf("finishing what a stopped dockhand left of %s: %w", branch.ShortName(), err)
+			return fmt.Errorf("recovering interrupted history changes on %s: %w", branch.ShortName(), err)
 		}
 		return fn(ctx)
 	})

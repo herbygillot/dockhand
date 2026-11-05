@@ -24,7 +24,7 @@ func TestTroubleNotTriedAgainSaysWhy(t *testing.T) {
 	refused := buildenv.NeedsAttention("dhtest may not use sudo on this Mac")
 	require.ErrorIs(t, refused, buildenv.ErrNeedsAttention)
 	require.Equal(t, refusal.Infrastructure, refusal.KindOf(refused))
-	require.Equal(t, "local /opt/local: dhtest may not use sudo on this Mac; another attempt won't fix it, so none was made", notTriedWords("local /opt/local", refused))
+	require.Equal(t, "local /opt/local: dhtest may not use sudo on this Mac; this failure needs attention, so no retry was attempted", notTriedWords("local /opt/local", refused))
 }
 
 // An unmet minimum Xcode says what the environment has, where the plan
@@ -56,7 +56,7 @@ func TestMissingArchivesAreSaidOnce(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, "check-3: the saved archive for rust (sha256:aa) is missing. Removing its record; the build environment will use a MacPorts archive or build it from source",
 		goneWords("check-3", []model.DependencyArchive{{Port: "rust", Digest: "sha256:aa"}}))
-	require.Equal(t, "check-3: 3 saved archives are missing, of rust and gcc15. Removing their records; the build environment will use MacPorts archives or build them from source",
+	require.Equal(t, "check-3: 3 saved archives for rust and gcc15 are missing. Removing the missing archive records; the build environment will use MacPorts archives or build from source",
 		goneWords("check-3", []model.DependencyArchive{{Port: "rust", Digest: "sha256:aa"}, {Port: "gcc15", Digest: "sha256:bb"}, {Port: "rust", Digest: "sha256:cc"}}))
 }
 

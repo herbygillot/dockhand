@@ -319,7 +319,7 @@ func (l *Local) settle(ctx context.Context, follower *guest.Follower, dir, prefi
 // what they need, not the active set, so the rest active before are
 // activated from the check's record (G2's rerun on rc8, 2026-10-29).
 func (l *Local) byHand(dir, check, snapshot string) string {
-	words := fmt.Sprintf("Where dockhand's put-back can't run, sudo port restore --snapshot-id %s restores the ports requested before %s and what they need", snapshot, check)
+	words := fmt.Sprintf("If dockhand cannot restore the prefix, sudo port restore --snapshot-id %s restores the ports requested before %s and their dependencies", snapshot, check)
 	before, err := os.ReadFile(filepath.Join(dir, "before.txt"))
 	if err != nil {
 		return words
@@ -331,7 +331,7 @@ func (l *Local) byHand(dir, check, snapshot string) string {
 	if len(activate) == 0 {
 		return words
 	}
-	return words + ", and sudo port activate " + strings.Join(activate, " ") + " the rest that were active, from its record"
+	return words + ". To restore the other ports that were active, run sudo port activate " + strings.Join(activate, " ")
 }
 
 // remove removes a check's directory, saying where it can't, as where

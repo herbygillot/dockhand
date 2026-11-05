@@ -107,7 +107,7 @@ func TestCheckHonorsStripRenameAndPatchDir(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, results[0].Checked)
 	require.Contains(t, results[0].Detail, `"--posix" is not modeled`)
-	require.Equal(t, "1 patches apply", Summary([]Result{{Name: "x", Checked: true, Applies: true}}))
+	require.Equal(t, "1 patch applies", Summary([]Result{{Name: "x", Checked: true, Applies: true}}))
 }
 
 // A source directory no archive holds is one a PortGroup's post-extract
@@ -174,9 +174,9 @@ func TestACompressedPatchPastTheBoundIsUncheckedNotCut(t *testing.T) {
 		{Name: "large.diff.gz", Data: gzipped.Bytes()}, {Name: "good.diff", Data: []byte(good)},
 	}})
 	require.NoError(t, err)
-	require.Equal(t, Result{Name: "large.diff.gz", Detail: "decompresses to more than the 64 MiB dockhand checks of a patch"}, results[0])
+	require.Equal(t, Result{Name: "large.diff.gz", Detail: "the decompressed patch exceeds the 64 MiB read limit"}, results[0])
 	require.True(t, results[1].Applies, results[1].Detail)
-	require.Contains(t, Summary(results), "large.diff.gz unchecked (decompresses to more than the 64 MiB")
+	require.Contains(t, Summary(results), "large.diff.gz unchecked (the decompressed patch exceeds the 64 MiB read limit")
 }
 
 // patch's exit status is its verdict, however much it says: a patch that

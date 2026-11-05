@@ -136,7 +136,7 @@ func TestCheckAndProviderSettings(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, LocalProvider{Prefix: "/opt/macports-test", Keep: true, Clean: []string{"/opt/macports-test"}, Serve: true}, f.Providers.Local)
 	_, err = parse("config.toml", "[providers.local]\nprefix = \"opt/local\"\n")
-	require.ErrorContains(t, err, "providers.local.prefix: \"opt/local\" is not a path from the root")
+	require.ErrorContains(t, err, "providers.local.prefix: \"opt/local\" is not an absolute path")
 	_, err = parse("config.toml", "[providers.local]\nclean = [\"~/mp\"]\n")
 	require.ErrorContains(t, err, "providers.local.clean")
 	_, err = parse("config.toml", "[providers.local]\nbuild_timeout = \"soon\"\n")
@@ -355,11 +355,11 @@ func TestBuildProfiles(t *testing.T) {
 		"[check]\non = [\"tart\"]\n":                                               "check.on is gone: build.default names a build profile",
 		"[providers.tart]\ncapacity = 2\n":                                         "providers.tart.capacity is gone: Tart takes as many checks as the Mac runs VMs",
 		"[build]\ndefault = \"elsewhere\"\n":                                       `build.default: "elsewhere" names no profile`,
-		"[build.profiles]\nhost = { releases = [\"15\"] }\n":                       "host is dockhand's own profile",
+		"[build.profiles]\nhost = { releases = [\"15\"] }\n":                       "host is a built-in profile",
 		"[build.profiles]\nbox = { provider = \"vm\" }\n":                          `"vm" is not tart, github, or command`,
 		"[build.profiles]\nbox = { releases = \"newest\" }\n":                      `"newest" is not a list of releases`,
 		"[build.profiles]\nbox = { releases = [15] }\n":                            "15 is not a release",
-		"[build.profiles]\nbox = { provider = \"github\", releases = [\"15\"] }\n": "the github provider builds where it does",
+		"[build.profiles]\nbox = { provider = \"github\", releases = [\"15\"] }\n": "the github provider chooses its own releases",
 	} {
 		_, err := parse("config.toml", text)
 		require.ErrorContains(t, err, refusal, text)
@@ -385,10 +385,10 @@ func TestPlacesHere(t *testing.T) {
 func TestLocalIsNoBuildProfile(t *testing.T) {
 	for _, text := range []string{"[build]\ndefault = \"local\"\n", "[build]\nunattended = \"local\"\n"} {
 		_, err := parse("config.toml", text)
-		require.ErrorContains(t, err, `"local" is no build profile: "host" builds on Tart on this Mac's release, and --on local, asked each time, in a MacPorts prefix on this Mac`)
+		require.ErrorContains(t, err, `"local" is a provider name; use "host" for Tart on this Mac's release, or --on local for a MacPorts prefix on this Mac`)
 	}
 	_, err := parse("config.toml", "[build.profiles.local]\nprovider = \"tart\"\n")
-	require.ErrorContains(t, err, "build.profiles.local: local names the local provider, which --on local builds with; name yours another way")
+	require.ErrorContains(t, err, "build.profiles.local: local is reserved for the local provider; choose another profile name, and use --on local to build in a MacPorts prefix on this Mac")
 }
 
 // [tools] names the programs dockhand runs: a file absolute or under ~,
