@@ -121,19 +121,30 @@ func TestARunnerProbeIsARowOfItsSelectedXcode(t *testing.T) {
 	require.Equal(t, "macos-15-intel run 123, Command Line Tools", row.Source.From)
 }
 
-// Of a runner's Xcodes the table keeps the one the release's builder runs,
-// and the tools selected where Base sees no Xcode; the rest are reported.
-func TestTheTableKeepsTheBuildersXcodeOfARunner(t *testing.T) {
-	runner := func(xcode string, profile macos.Profile) macos.Facts {
-		return macos.Facts{Darwin: 24, Architecture: "x86_64", Profile: profile, Xcode: xcode, Tools: "16.4", Source: macos.Source{Kind: macos.SourceRunner, From: "macos-15-intel run 1, " + xcode, Date: "2026-11-05"}}
+// Of a runner's Xcodes the table keeps the one with the toolchain the
+// release's builder runs, and the tools selected where they are the
+// builder's; a runner whose tools aren't the builder's stands for nothing.
+func TestTheTableKeepsARunnersBuilderToolchain(t *testing.T) {
+	runner := func(darwin int, xcode, tools string) macos.Facts {
+		profile := macos.ProfileXcode
+		if xcode == "none" {
+			profile = macos.ProfileTools
+		}
+		return macos.Facts{Darwin: darwin, Architecture: "x86_64", Profile: profile, Xcode: xcode, Tools: tools, Source: macos.Source{Kind: macos.SourceRunner, From: "run 1, " + xcode, Date: "2026-11-05"}}
 	}
-	builder := macos.Facts{Darwin: 24, Architecture: "x86_64", Profile: macos.ProfileXcode, Xcode: "16.4", Tools: "26.0", Source: macos.Source{Kind: macos.SourceBuildbot, From: "ports-15_x86_64-builder build 1", Date: "2026-09-27"}}
+	builder := func(darwin int, xcode, tools string) macos.Facts {
+		return macos.Facts{Darwin: darwin, Architecture: "x86_64", Profile: macos.ProfileXcode, Xcode: xcode, Tools: tools, Source: macos.Source{Kind: macos.SourceBuildbot, From: "builder build 1", Date: "2026-09-27"}}
+	}
 	var report strings.Builder
-	kept := runnerRows([]macos.Facts{runner("16.2", macos.ProfileXcode), runner("16.4", macos.ProfileXcode), runner("none", macos.ProfileTools),
-		{Darwin: 25, Architecture: "x86_64", Profile: macos.ProfileXcode, Xcode: "26.6", Source: macos.Source{Kind: macos.SourceRunner, From: "macos-26-intel run 1, Xcode_26.6.app"}}}, []macos.Facts{builder}, &report)
-	require.Equal(t, []macos.Facts{runner("16.4", macos.ProfileXcode), runner("none", macos.ProfileTools)}, kept)
-	require.Contains(t, report.String(), "Xcode 16.2, tools 16.4, clang  (macos-15-intel run 1, 16.2): the builder runs Xcode 16.4")
-	require.Contains(t, report.String(), "no builder row to choose by")
+	kept := runnerRows([]macos.Facts{
+		runner(25, "26.5", "26.6"), runner(25, "26.6", "26.6"), runner(25, "none", "26.6"),
+		runner(24, "16.4", "16.4"), runner(24, "none", "16.4"),
+		runner(23, "16.2", "16.2"),
+	}, []macos.Facts{builder(25, "26.6", "26.6"), builder(24, "16.4", "26.0")}, &report)
+	require.Equal(t, []macos.Facts{runner(25, "26.6", "26.6"), runner(25, "none", "26.6")}, kept)
+	require.Contains(t, report.String(), "darwin 25 x86_64 xcode: Xcode 26.5, tools 26.6, clang  (run 1, 26.5): the builder runs Xcode 26.6, tools 26.6")
+	require.Contains(t, report.String(), "darwin 24 x86_64 xcode: Xcode 16.4, tools 16.4, clang  (run 1, 16.4): the builder runs Xcode 16.4, tools 26.0")
+	require.Contains(t, report.String(), "darwin 23 x86_64 xcode: Xcode 16.2, tools 16.2, clang  (run 1, 16.2): no builder row to choose by")
 }
 
 type file struct {
