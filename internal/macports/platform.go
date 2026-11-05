@@ -171,23 +171,24 @@ func xcodeToolchain(table macos.FactsTable, darwin int, platform model.Platform)
 	return modelled(darwin, facts, false), nil
 }
 
-// fill takes what a row doesn't tell, its clang and SDKs, the tools' and
-// Xcode's, from a Tart image's row with the same Xcode and tools.
+// fill takes what a row doesn't tell from any row that tells it of the
+// same version, whatever its source: the tools' clang and SDKs from a row
+// with the same tools, and Xcode's SDKs from a row with the same Xcode.
+// Each belongs to its version alone, as GitHub's runners, Intel and arm64,
+// and the Tart images give them field for field (#85): a buildbot's Darwin
+// 23 and 24 x86_64 rows take Xcode 15.4's and 16.4's SDKs from the arm64
+// Tart rows (#87). It took them only from a Tart row with both the same.
 func fill(table macos.FactsTable, facts *macos.Facts) {
-	if facts.Clang != "" && len(facts.SDKs) > 0 && (facts.Xcode == "none" || len(facts.XcodeSDKs) > 0) {
-		return
-	}
 	for _, other := range table.Facts {
-		if other.Tools != facts.Tools || other.Xcode != facts.Xcode || other.Source.Kind != macos.SourceTart {
-			continue
+		if facts.Tools != "none" && other.Tools == facts.Tools {
+			if facts.Clang == "" {
+				facts.Clang = other.Clang
+			}
+			if len(facts.SDKs) == 0 {
+				facts.SDKs = other.SDKs
+			}
 		}
-		if facts.Clang == "" {
-			facts.Clang = other.Clang
-		}
-		if len(facts.SDKs) == 0 {
-			facts.SDKs = other.SDKs
-		}
-		if len(facts.XcodeSDKs) == 0 && facts.Xcode != "none" {
+		if facts.Xcode != "none" && other.Xcode == facts.Xcode && len(facts.XcodeSDKs) == 0 {
 			facts.XcodeSDKs = other.XcodeSDKs
 		}
 	}
