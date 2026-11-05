@@ -82,7 +82,12 @@ jobs:
                    ((.facts.shell.xcode_sdks.value // []) | map(select(startswith($app + ": ")) | sub("^[^:]*: "; "")) | join(", "))]
                 | "| " + (map(. // "" | tostring) | join(" | ")) + " |"' "$f" || echo "| $(basename "$f") | unreadable |"
             done
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          # The probes again, in the log, for a reader that can read a
+          # job's log but not fetch its artifact from blob storage.
+          echo "facts-${{ matrix.image }}.tar.gz, base64:"
+          tar -C "$RUNNER_TEMP" -czf - "facts-${{ matrix.image }}" | base64 -b 76
+          echo "end of facts-${{ matrix.image }}.tar.gz"
 
       - name: Upload the probes
         if: always()
