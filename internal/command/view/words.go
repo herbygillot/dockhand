@@ -158,7 +158,7 @@ func WriteOthers(out io.Writer, port string, others []engine.OtherPullRequest) {
 // MacPorts would have over HTTPS, with whether the https form answers.
 func WritePlainHTTP(out io.Writer, switched, plain []engine.PlainURL) {
 	if len(switched) > 0 {
-		fmt.Fprintln(out, "Switched to HTTPS, which answers there:")
+		fmt.Fprintln(out, "Switched these links to their available HTTPS URLs:")
 		for _, url := range switched {
 			fmt.Fprintf(out, "  %s %s\n", url.Option, url.HTTPS)
 		}
@@ -170,7 +170,7 @@ func WritePlainHTTP(out io.Writer, switched, plain []engine.PlainURL) {
 	for _, url := range plain {
 		answer := url.HTTPS + " answers"
 		if !url.Answers {
-			answer = "https doesn't answer there"
+			answer = "HTTPS URL did not respond"
 		}
 		fmt.Fprintf(out, "  %s %s: %s\n", url.Option, url.URL, answer)
 	}

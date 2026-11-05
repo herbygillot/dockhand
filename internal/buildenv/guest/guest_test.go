@@ -278,7 +278,7 @@ func TestAVerdictRecordsThePortGroupsItsBuildLoaded(t *testing.T) {
 	require.Nil(t, results.Targets[0].Sourced, "absent, so the host takes all of _resources as read")
 	log, err := os.ReadFile(filepath.Join(outside, results.Targets[0].Log))
 	require.NoError(t, err)
-	require.Contains(t, string(log), "dockhand: which PortGroups this build loaded wasn't recorded: the PortGroup file")
+	require.Contains(t, string(log), "dockhand: could not record the PortGroups loaded by this build: the PortGroup file")
 	require.Contains(t, string(log), "elsewhere-1.0.tcl is outside the ports tree")
 }
 
@@ -332,7 +332,7 @@ func TestAPortBuiltHereComesWithThePortGroupsItLoaded(t *testing.T) {
 	require.Nil(t, results.Targets[0].Sourced, "absent, so the host takes all of _resources as read")
 	log, err := os.ReadFile(filepath.Join(unresolved, results.Targets[0].Log))
 	require.NoError(t, err)
-	require.Contains(t, string(log), "dockhand: which PortGroups the ports built here loaded wasn't recorded: gettext, built here, resolves nowhere in the ports tree")
+	require.Contains(t, string(log), "dockhand: could not record the PortGroups loaded by ports built here: gettext, built here, resolves nowhere in the ports tree")
 }
 
 // What a target's variants add to its dependencies, its install builds
@@ -595,7 +595,7 @@ func TestAGitFetchThatCantBeReadBuildsAsBefore(t *testing.T) {
 	require.Empty(t, results.Targets[0].Fetched)
 	log, err := os.ReadFile(filepath.Join(root, "libharbor.log"))
 	require.NoError(t, err)
-	require.Contains(t, string(log), "dockhand: which commit the fetch checked out wasn't read:")
+	require.Contains(t, string(log), "dockhand: could not read the commit checked out by fetch:")
 	require.Equal(t, "passed", results.Targets[1].Outcome, results.Targets[1].Detail)
 	require.Equal(t, cli, results.Targets[1].Fetched)
 }

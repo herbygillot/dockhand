@@ -109,7 +109,7 @@ func (e *Engine) restyleEvaluates(ctx context.Context, families FamilyReader, wo
 	}
 	for _, change := range fidelity.SubportChanges(directory, &before, &after, nil) {
 		if change.Kind != model.SubportUnchanged {
-			return fmt.Sprintf("restyled, %s evaluates otherwise", change.Port)
+			return fmt.Sprintf("%s evaluates differently after restyling", change.Port)
 		}
 	}
 	return ""
@@ -241,7 +241,7 @@ func (e *Engine) pathStyleEvaluates(ctx context.Context, families FamilyReader, 
 	}
 	for _, change := range fidelity.SubportChanges(directory, fidelity.DependenciesByPort(&before), fidelity.DependenciesByPort(&after), nil) {
 		if change.Kind != model.SubportUnchanged {
-			return fmt.Sprintf("restyled path-style, %s evaluates otherwise", change.Port)
+			return fmt.Sprintf("%s evaluates differently after rewriting dependencies in path style", change.Port)
 		}
 	}
 	return ""

@@ -492,7 +492,7 @@ func (s *Service) chooseSource(ctx context.Context, request Request, input *sour
 		if ctx.Err() != nil {
 			return kept, ctx.Err()
 		}
-		return refuse(fmt.Sprintf("GitHub's archive of %s couldn't be read to compare release %s's files with (%v)", release.Tag, release.Tag, err))
+		return refuse(fmt.Sprintf("GitHub's archive of %s couldn't be read while checking release %s's files (%v)", release.Tag, release.Tag, err))
 	}
 	tag, err := readSourceTree(ctx, tagPath)
 	_ = os.Remove(tagPath)
@@ -522,14 +522,14 @@ func (s *Service) chooseSource(ctx context.Context, request Request, input *sour
 	}
 	chosen, ambiguous := judgeSources(judged)
 	if len(ambiguous) > 0 {
-		return refuse(fmt.Sprintf("release %s carries %s, each the source but with different files, so none was chosen", release.Tag, prose.And(ambiguous)))
+		return refuse(fmt.Sprintf("release %s has multiple qualifying source archives (%s) with different contents; none was chosen", release.Tag, prose.And(ambiguous)))
 	}
 	if chosen == nil {
 		return refuse(fmt.Sprintf("release %s carries %s, which %s", release.Tag, judged[0].name, judged[0].lacks))
 	}
 	move, ok := sourceMoveFor(*chosen, next, from == "git")
 	if !ok {
-		return refuse(fmt.Sprintf("release %s's %s is named in a way dockhand doesn't write", release.Tag, chosen.name))
+		return refuse(fmt.Sprintf("release %s's %s has a filename or top-level directory that dockhand can't write into the Portfile automatically", release.Tag, chosen.name))
 	}
 	moved := &MovedSource{From: from, To: "releases", Release: release.Tag, Asset: chosen.name, Submodules: needs.submodules}
 	move.Comment = sourceComment(*moved)
@@ -542,7 +542,7 @@ func (s *Service) chooseSource(ctx context.Context, request Request, input *sour
 		if ctx.Err() != nil {
 			return kept, ctx.Err()
 		}
-		return refuse(fmt.Sprintf("release %s carries %s, but the Portfile moved to it didn't evaluate (%v)", release.Tag, chosen.name, err))
+		return refuse(fmt.Sprintf("release %s carries %s, but the Portfile couldn't be evaluated after switching to it (%v)", release.Tag, chosen.name, err))
 	}
 	if why := movedAsWritten(evaluated.after.Ports[input.target.Name], *chosen); why != "" {
 		return refuse(fmt.Sprintf("release %s carries %s, but the Portfile moved to it %s", release.Tag, chosen.name, why))

@@ -74,7 +74,7 @@ func (e *Engine) Shell(ctx context.Context, request ShellRequest) (int, error) {
 	case len(kept) == 0 && request.Release != "":
 		return -1, fmt.Errorf("%s kept no clone on %s", name, request.Release)
 	case len(kept) == 0:
-		return -1, fmt.Errorf("%s kept no clone; dockhand check --keep keeps each environment's", name)
+		return -1, fmt.Errorf("%s kept no clone; dockhand check --keep retains each Tart environment's clone", name)
 	case len(kept) > 1:
 		var releases []string
 		for _, leftover := range kept {
@@ -83,7 +83,7 @@ func (e *Engine) Shell(ctx context.Context, request ShellRequest) (int, error) {
 				releases = append(releases, "--on "+release.Slug)
 			}
 		}
-		return -1, fmt.Errorf("%s kept a clone on each of several releases; choose one with %s", name, strings.Join(releases, " or "))
+		return -1, fmt.Errorf("%s kept clones for several releases; choose one with %s", name, strings.Join(releases, " or "))
 	}
 	clone := kept[0]
 	provider, ok := e.Providers[clone.Provider].(buildenv.ShellProvider)
@@ -149,7 +149,7 @@ func (e *Engine) shellRunning(ctx context.Context, request ShellRequest) (int, e
 	}
 	switch {
 	case len(live) == 0:
-		return -1, fmt.Errorf("%s is %s and runs no guest a shell can enter yet", name, request.Run.State)
+		return -1, fmt.Errorf("%s is %s and has no running guest available for a shell yet", name, request.Run.State)
 	case len(live) > 1:
 		var releases []string
 		for _, execution := range live {

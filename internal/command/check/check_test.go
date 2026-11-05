@@ -45,7 +45,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	// --on ci went with check.on (the person's design, 2026-10-13).
 	out, _, err = cmdtest.Dockhand(t, "check", "--plan", "--keep")
 	require.NoError(t, err)
-	require.Contains(t, out, "Keeps       each Tart environment's clone, stopped, where its guest finishes, for dockhand shell; clean or the branch's next check removes it\n")
+	require.Contains(t, out, "Keeps       each Tart VM, stopped after the build, for dockhand shell; clean or the branch's next check removes it\n")
 	_, _, err = cmdtest.Dockhand(t, "check", "--baseline", "--keep")
 	require.ErrorContains(t, err, "none of the others can be")
 	_, _, err = cmdtest.Dockhand(t, "check", "--plan", "--build", "minmax")
@@ -170,7 +170,7 @@ func TestCheckFollowsOnlyACheckThatCoversIt(t *testing.T) {
 	require.Equal(t, "skip", cmdtest.Dig(t, queued.Result, "plan", "tests"))
 
 	_, _, err = cmdtest.Dockhand(t, "check", "--tests", "required")
-	require.ErrorContains(t, err, "check-1 is queued for these files, but doesn't cover what this check asks")
+	require.ErrorContains(t, err, "check-1 is queued for these files, but does not cover this request's builds")
 	require.ErrorContains(t, err, "--replace stops it, keeping what it finished, and checks this one instead")
 }
 

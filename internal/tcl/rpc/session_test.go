@@ -155,7 +155,7 @@ func TestACallPastItsBoundBreaksTheSession(t *testing.T) {
 	_, err = s.Call(t.Context(), "eval", "vwait never")
 	require.ErrorIs(t, err, rpc.ErrNoAnswer)
 	require.ErrorIs(t, err, rpc.ErrBrokenSession)
-	require.ErrorContains(t, err, "eval went 100ms unanswered")
+	require.ErrorContains(t, err, "eval did not respond within 100ms")
 	_, done := p.Err()
 	require.True(t, done)
 }

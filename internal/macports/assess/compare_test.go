@@ -200,7 +200,7 @@ func TestWhatTheComparisonCouldntReadHolds(t *testing.T) {
 		"! upstream's requirements.txt in the old version reads base.txt too, which the comparison doesn't follow",
 	}, compared(t, map[string]string{"requirements.txt": "-r base.txt\n"}, map[string]string{"requirements.txt": "-r common.txt\n"}))
 	large := strings.Repeat("x", project.FileLimit+1)
-	require.Equal(t, []string{"! upstream's CMakeLists.txt is larger than the 1024 KiB the comparison reads, so it wasn't compared"},
+	require.Equal(t, []string{"! upstream's CMakeLists.txt exceeds the comparison's 1024 KiB per-file limit, so it wasn't compared"},
 		compared(t, map[string]string{"CMakeLists.txt": large}, map[string]string{"CMakeLists.txt": large + "y"}))
 	require.Empty(t, compared(t, map[string]string{"package.json": `{ "dependencies":`}, map[string]string{"package.json": `{ "dependencies":`}),
 		"a manifest that didn't change needn't be read")
@@ -217,11 +217,11 @@ func TestGoRustAndNodeDependenciesAreCountedAndHoldNothing(t *testing.T) {
 	require.Equal(t, []string{"· upstream: go.mod: 1 added (golang.org/x/net)"},
 		compared(t, map[string]string{"go.mod": "module m\n"}, map[string]string{"go.mod": "module m\n\nrequire golang.org/x/net v0.44.0\n"}))
 	large := "module m\n" + strings.Repeat("// x\n", project.FileLimit)
-	require.Equal(t, []string{"· upstream's go.mod is larger than the 1024 KiB the comparison reads, so it wasn't compared"},
+	require.Equal(t, []string{"· upstream's go.mod exceeds the comparison's 1024 KiB per-file limit, so it wasn't compared"},
 		compared(t, map[string]string{"go.mod": large}, map[string]string{"go.mod": large + "// y\n"}))
-	require.Equal(t, []string{"· upstream's package.json is larger than the 1024 KiB the comparison reads, so it wasn't compared"},
+	require.Equal(t, []string{"· upstream's package.json exceeds the comparison's 1024 KiB per-file limit, so it wasn't compared"},
 		compared(t, map[string]string{"package.json": large}, map[string]string{"package.json": large + "y"}))
-	require.Equal(t, []string{"! upstream's requirements.txt is larger than the 1024 KiB the comparison reads, so it wasn't compared"},
+	require.Equal(t, []string{"! upstream's requirements.txt exceeds the comparison's 1024 KiB per-file limit, so it wasn't compared"},
 		compared(t, map[string]string{"requirements.txt": large}, map[string]string{"requirements.txt": large + "y"}))
 	require.Equal(t, []string{"· upstream: package.json: 1 added (zod), 1 dropped (chalk)"},
 		compared(t, map[string]string{"package.json": `{"dependencies": {"chalk": "5"}}`}, map[string]string{"package.json": `{"dependencies": {"zod": "3"}}`}))
@@ -265,9 +265,9 @@ func TestANewCrateLinkingANativeLibraryIsListed(t *testing.T) {
 		"· upstream: Cargo.lock: 3 added (libgit2-sys, onig_sys, tokio), 2 changed (openssl-sys, serde)",
 	}, compared(t, before, map[string]string{"Cargo.lock": lock("libgit2-sys 0.17.0+1.8.1", "libgit2-sys 0.18.1+1.9.1", "onig_sys 69.8.1", "openssl-sys 0.9.109", "serde 1.0.210", "tokio 1.40.0")}),
 		"one that moves, or a crate that links nothing, isn't listed, and one pinned twice is listed once; all are counted, holding nothing (rust 1.99.0, batch 23)")
-	require.Equal(t, []string{"· upstream's Cargo.lock couldn't be read in the new version, so the crates new to it that link a native library weren't looked for: project: unsupported or empty Cargo.lock"},
+	require.Equal(t, []string{"· upstream's Cargo.lock couldn't be read in the new version, so new crates that link native libraries couldn't be identified: project: unsupported or empty Cargo.lock"},
 		compared(t, before, map[string]string{"Cargo.lock": "version = 9\n"}))
-	require.Equal(t, []string{"· upstream's Cargo.lock couldn't be read in the old version, so the crates new to it that link a native library weren't looked for: project: unsupported or empty Cargo.lock"},
+	require.Equal(t, []string{"· upstream's Cargo.lock couldn't be read in the old version, so new crates that link native libraries couldn't be identified: project: unsupported or empty Cargo.lock"},
 		compared(t, map[string]string{"Cargo.lock": "version = 9\n"}, before))
 	require.Equal(t, []string{"· upstream: Cargo.lock adds zstd-sys 2.0.13+zstd.1.5.6, which links the native library zstd: MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds",
 		"· upstream: Cargo.lock: 1 added (zstd-sys)"},
@@ -647,7 +647,7 @@ func TestABuildFileNamingTheNewVersionHoldsNothing(t *testing.T) {
 	}
 	bumped := strings.Replace(before, "5.1.8", "5.1.9", 1)
 	require.Equal(t, []string{`· upstream's CMakeLists.txt changed only the version it names: "project(nuspell VERSION 5.1.9 LANGUAGES CXX)"`}, compare(bumped, versions))
-	held := []string{"! upstream's CMakeLists.txt changed, though no option or find_package did; lines change outside any if(); the build may need the Portfile to follow"}
+	held := []string{"! upstream's CMakeLists.txt changed, but no option or find_package requirement changed; lines change outside any if(); the build may need the Portfile to follow"}
 	require.Equal(t, held, compare(strings.Replace(bumped, "add_subdirectory(src)", "add_subdirectory(src)\nadd_subdirectory(tests)", 1), versions), "a line added")
 	require.Equal(t, held, compare(bumped+"install(TARGETS nuspell)\n", versions), "a line added at the end")
 	unended := func(before, after string) []string {
@@ -717,7 +717,7 @@ func TestArchivesOfEveryLayoutAreComparedOrSaid(t *testing.T) {
 
 	changes, err = compareArchives(t, testsupport.Tarball(t, "pkg-1", map[string]string{"LICENSE": "MIT\n"}), testsupport.Tarball(t, ".", map[string]string{"b-2/LICENSE": "MIT\n", "a-2/LICENSE": "MIT\n"}), Versions{})
 	require.NoError(t, err)
-	require.Equal(t, []string{"! upstream's new archive holds a-2, b-2 and no file beside them, so which is the project wasn't found, and it wasn't compared"}, messages(changes))
+	require.Equal(t, []string{"! upstream's new archive has multiple top-level directories (a-2, b-2); the project root couldn't be identified, so it wasn't compared"}, messages(changes))
 }
 
 // A dependency a workspace's members each declare is counted once for

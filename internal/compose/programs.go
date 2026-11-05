@@ -102,7 +102,7 @@ func lookNamed(named map[string]NamedProgram, look func(string) (string, error))
 func ParseTool(value string) (name, path string, err error) {
 	name, path, ok := strings.Cut(value, "=")
 	if !ok || path == "" {
-		return "", "", fmt.Errorf("--tool %s: name=path, as --tool git=/opt/homebrew/bin/git", value)
+		return "", "", fmt.Errorf("--tool %s: expected name=path, for example --tool git=/opt/homebrew/bin/git", value)
 	}
 	for _, program := range config.Programs {
 		if program.Name == name {

@@ -115,7 +115,7 @@ func TestShellStartsTheClonesACheckKept(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = e.Shell(t.Context(), ShellRequest{Run: run, Command: []string{"ls"}})
-	require.ErrorContains(t, err, run.Name()+" kept no clone; dockhand check --keep keeps each environment's")
+	require.ErrorContains(t, err, run.Name()+" kept no clone; dockhand check --keep retains each Tart environment's clone")
 	steps, err := e.ShellSteps(t.Context(), run)
 	require.NoError(t, err)
 	require.Empty(t, steps, "none kept, none named")
@@ -232,7 +232,7 @@ func TestAShellEntersARunningChecksGuest(t *testing.T) {
 	run := queuedHarborRun(t, e, tahoeArm)
 
 	_, err := e.Shell(t.Context(), ShellRequest{Run: run, Command: []string{"ls"}})
-	require.ErrorContains(t, err, run.Name()+" is queued and runs no guest a shell can enter yet")
+	require.ErrorContains(t, err, run.Name()+" is queued and has no running guest available for a shell yet")
 	execution := model.GuestExecution{ID: "ex_live", Run: run.ID, Environment: tahoeArm, Attempt: 1, State: model.ExecutionRunning, ProviderRef: "dockhand-check-live-1", CreatedAt: e.now()}
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.AddExecution(execution) }))
 

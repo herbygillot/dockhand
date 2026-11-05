@@ -74,7 +74,7 @@ func AcquireAcrossUsers(ctx context.Context, path string) (*os.File, error) {
 	if info, err := os.Lstat(directory); err != nil {
 		return nil, err
 	} else if !info.IsDir() || info.Mode().Perm() != 0o777 || info.Mode()&os.ModeSticky == 0 {
-		return nil, fmt.Errorf("filelock: %s isn't a directory every user can lock in, sticky and open to all", directory)
+		return nil, fmt.Errorf("filelock: %s must be a directory with permissions 1777 (including the sticky bit)", directory)
 	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDONLY|syscall.O_NOFOLLOW, 0o644)
 	if err != nil {

@@ -121,7 +121,7 @@ func TestAWalkPastTheLimitSaysSo(t *testing.T) {
 		return err
 	})
 	require.ErrorIs(t, err, errScanLimit)
-	require.ErrorContains(t, err, "more than the 3 KB dockhand reads of one")
+	require.ErrorContains(t, err, "the uncompressed archive exceeds the 3 KB read limit")
 	require.NoError(t, Walk(t.Context(), zipfile, func(Member) error { return nil }))
 }
 

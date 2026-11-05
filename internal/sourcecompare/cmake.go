@@ -48,7 +48,7 @@ func cmakeWords(old, now project.CMakeDocument, sets func(string) bool) string {
 				said = append(said, words)
 			}
 		case was.Default != option.Default && sets(name):
-			lead = append(lead, fmt.Sprintf("option %s, which the Portfile sets, has its default move from %s to %s", name, was.Default, option.Default))
+			lead = append(lead, fmt.Sprintf("option %s, which the Portfile sets, changed its default from %s to %s", name, was.Default, option.Default))
 		case was.Default != option.Default:
 			said = append(said, fmt.Sprintf("option %s's default moves from %s to %s", name, was.Default, option.Default))
 		}
@@ -102,7 +102,7 @@ func cmakeWords(old, now project.CMakeDocument, sets func(string) bool) string {
 	}
 	switch {
 	case len(lead) == 0 && len(said) == 0:
-		return ", though no option or find_package did"
+		return ", but no option or find_package requirement changed"
 	case len(said) > cmakeNamed:
 		return fmt.Sprintf(": %s; and %d more", strings.Join(append(lead, said[:cmakeNamed]...), "; "), len(said)-cmakeNamed)
 	}

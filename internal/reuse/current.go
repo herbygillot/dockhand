@@ -226,7 +226,7 @@ func ResourcesChanged(recorded model.TargetInputs, trees map[string]model.Object
 	}
 	for _, port := range recorded.Active {
 		if changed := PortGroupChanged(port.PortGroups, trees); changed != "" {
-			return fmt.Sprintf("%s, which %s, built from source, loaded", changed, port.Name)
+			return fmt.Sprintf("%s loaded by %s when it was built from source", changed, port.Name)
 		}
 	}
 	now := shared(trees)

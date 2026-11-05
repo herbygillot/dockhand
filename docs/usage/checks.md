@@ -355,16 +355,20 @@ latest check, or of a check it names, as `artifacts check-12`, or explains why
 one is missing. A build that links another port's
 library the Portfile doesn't declare is a notice, holding nothing, that names
 the line to write: `omnidiff links libiconv.2.dylib from libiconv, which it
-doesn't declare in depends_lib; depends_lib-append port:libiconv declares it,
-which dockhand tidy writes`. `dockhand tidy` writes that line in a commit of
-its own, and the check's results carry over, since declaring a library the build
-already had active builds nothing differently.
-The reverse is said too, as a notice: a port the Portfile declares in
-`depends_lib` whose libraries nothing the build installed links, `declares
-libiconv in depends_lib, which nothing it built links`, with where it belongs
-instead; dependencies a PortGroup adds, ports installing no library, and builds
-installing no Mach-O file are never said. Where a declared port's pkg-config
-brought an undeclared library in, the finding says so: `through gtk4's
+doesn't declare in depends_lib. Declare it with depends_lib-append
+port:libiconv; dockhand tidy can write this line`. For supported declarations,
+`dockhand tidy` writes a separate commit and carries over the check's results:
+the build already had that library active. Subport and variant declarations
+must be written in their appropriate blocks; tidy explains when it cannot
+write the line.
+
+Dockhand also reports a dependency declared in `depends_lib` whose libraries
+none of the builds links: `declares libiconv in depends_lib, but none of its
+builds links that port's libraries`. Consider
+`depends_build` for build tools or headers, and `depends_run` for programs or
+libraries loaded at runtime. Dependencies a PortGroup adds, ports installing
+no library, and builds installing no Mach-O file are not reported. When a
+declared port's pkg-config brings in an undeclared library, the finding says so: `through gtk4's
 pkg-config Libs`, and `-Wl,-dead_strip_dylibs` as the other way out.
 
 Tart results can be reused when recorded input content and environment identity
@@ -393,7 +397,7 @@ check's result, `status`, and the pull request's Tested on say so:
 omnidiff's maintainers changed, which builds nothing differently, and lint ran
 again on this Portfile`. A lint error builds the target again.
 
-A failed Tart check keeps its clone on its own, stopped, one for each branch
+By default, a failed Tart check keeps its clone, stopped, one for each branch
 and release, for `dockhand shell`: the branch's next check or `clean` removes
 it, and serve's daily cleanup removes one older than seven days. `[providers.tart]
 keep_failed = false` turns that off. To retain a passed build too, request

@@ -218,7 +218,7 @@ func preparedWords(prepared branchstate.Prepared, branch model.Branch, err error
 	case err != nil:
 		return err.Error()
 	case prepared.Disposition == branchstate.HandEditsToCarry:
-		return fmt.Sprintf("its worktree holds edits not committed; dockhand ship -b %s carries it on", branch.ShortName())
+		return fmt.Sprintf("its worktree has uncommitted edits; dockhand ship -b %s continues the update", branch.ShortName())
 	}
 	return branchstate.HeldWords(prepared.Why)
 }

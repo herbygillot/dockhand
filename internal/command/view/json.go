@@ -789,11 +789,11 @@ func ChangeWords(change buildenv.Change) string {
 		return fmt.Sprintf("%s is building in %s%s. Your port commands targeting this prefix must wait; upgrades made there in the meantime will be undone when the prefix is restored.", change.Check, change.Place, held)
 	}
 	if change.Kept {
-		return fmt.Sprintf("%s kept its versions active in %s. %s puts it back as it was.", change.Check, change.Place, change.Remedy)
+		return fmt.Sprintf("%s left its installed versions active in %s. Run %s to restore the previous active ports.", change.Check, change.Place, change.Remedy)
 	}
 	// The next check there puts it back too, but one of the same branch
 	// first needs the stopped check settled, as G4's recovery on rc8 met.
-	return fmt.Sprintf("%s stopped before it could restore %s. %s puts it back as it was, or the next check there does; a check of the same branch first needs dockhand wait %s, check --replace, or dockhand cancel %s.", change.Check, change.Place, change.Remedy, change.Check, change.Check)
+	return fmt.Sprintf("%s stopped before restoring %s. Run %s to restore the previous active ports; the next check in that prefix also restores them. Before checking the same branch, use dockhand wait %s, check --replace, or dockhand cancel %s.", change.Check, change.Place, change.Remedy, change.Check, change.Check)
 }
 
 // processJSON is a dockhand process working on the checkout.

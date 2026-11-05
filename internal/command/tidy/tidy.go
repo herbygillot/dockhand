@@ -25,23 +25,22 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "tidy",
 		Short: "Prepare the branch's commits for review",
-		Long: `Proposes the commits a reviewer should see: by default one per port
-directory, and one per update where dockhand updated several of a
-directory's ports, as kubectl's subports, with the subject dockhand's
-commands wrote or the one your own commits give, and every uncommitted
-edit included. The final files are
-what you have, but for the lint findings dockhand fixes on the lines your
-change adds or alters, such as trailing whitespace, which it writes into
-your files too.
+		Long: `Prepares commits for review, including uncommitted edits. By default,
+proposes one commit per port directory, or one per recorded update when
+Dockhand updated several subports, such as kubectl's. Uses the subjects
+recorded by Dockhand's commands or your existing commits.
 
-Where the branch's passed check found a build linking a port's library
-its Portfile doesn't declare, tidy declares it, in a commit of its own
-after the branch's, "<port>: declare libiconv": a depends_lib-append line
-after the Portfile's last depends_lib, written as the tree writes a
-dependency on that port, with the check's evidence in the commit's body.
-The next check reuses the builds, since they had that port active. A
-subport's or a variant build's finding, and libiconv where the port sets
-rust.system_libiconv yes, are said and left to you.
+Preserves the final files except for deterministic lint fixes on changed
+lines, such as trailing whitespace. Those fixes are written to the
+working files too.
+
+When a passed check found a linked library missing from the Portfile's
+dependencies, adds its declaration in a separate final commit, such as
+"<port>: declare libiconv". Places the line after the last depends_lib,
+using the tree's dependency style, and cites the check in the commit body.
+The next check can reuse those builds because the dependency was already
+active. Reports findings for subports, variant builds, or libiconv with
+rust.system_libiconv yes for you to resolve instead.
 
 --restyle restyles each Portfile the branch changes whole, in a last
 commit of its own, "<port>: whitespace": trailing whitespace, tabs under

@@ -56,16 +56,16 @@ const logo = `     _            _    _                     _
 
 // gettingStarted is the main help's introduction: how to begin, and where
 // the guide is.
-const gettingStarted = `In your ports checkout, dockhand setup sets up, offering the GitHub login,
-your maintainers line, and a clean macOS image for checks to build in. Then:
+const gettingStarted = `In your ports checkout, run dockhand setup to configure GitHub login,
+your maintainer identity, and a clean macOS image for builds. Then:
 
   dockhand update <port> --new    a branch with the port at its newest release
   dockhand check                  build what the branch changes
   dockhand tidy                   shape its commits for review
   dockhand submit                 open the pull request from your fork
 
-dockhand bump <port> does all four asking nothing, and stops where you
-should look. dockhand usage prints the guide, and dockhand status shows
+dockhand bump <port> runs all four without prompts, stopping on failures or
+findings requiring review. dockhand usage prints the guide, and dockhand status shows
 where things are.`
 
 // Run executes the command line in args, in the process's environment and

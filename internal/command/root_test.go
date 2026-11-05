@@ -18,7 +18,7 @@ func TestBareDockhandSaysHowToStart(t *testing.T) {
 	var out bytes.Buffer
 	err := cmdtest.RunFor(t, t.Context(), nil, term.Streams{In: strings.NewReader(""), Out: &out, Err: &out})
 	require.NoError(t, err)
-	require.Contains(t, out.String(), "dockhand setup sets up")
+	require.Contains(t, out.String(), "run dockhand setup")
 	require.Contains(t, out.String(), "dockhand usage prints the guide")
 	require.NotContains(t, out.String(), "v2-final")
 	require.True(t, strings.HasSuffix(out.String(), "for more information about a command.\n\nReport problems at "+buildinfo.ProjectURL+"/issues\n"), "the main help's foot names the issues page: %s", out.String())

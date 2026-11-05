@@ -57,7 +57,7 @@ func (p TidyPlan) Regroup(spec, author string) (TidyPlan, error) {
 			if member.Directory != members[0].Directory && slices.ContainsFunc(p.Groups, func(s TidyGroup) bool {
 				return s.From != "" && (s.Directory == member.Directory || s.Directory == members[0].Directory)
 			}) {
-				return p, fmt.Errorf("%s's updates are a commit each, made from each other; combine them only with each other", cmp.Or(member.Directory, members[0].Directory))
+				return p, fmt.Errorf("%s's updates form a sequence of commits; combine them only with other commits in that sequence", cmp.Or(member.Directory, members[0].Directory))
 			}
 		}
 		groups = append(groups, p.combine(members, numbers, chosen))
@@ -86,7 +86,7 @@ func keepsSteps(groups, steps []TidyGroup) error {
 		}
 		at := slices.IndexFunc(steps, func(s TidyGroup) bool { return s.Directory == group.Directory && s.Message == group.Message })
 		if at < last[group.Directory] {
-			return fmt.Errorf("%s's updates are a commit each, made from each other; keep them in the order made", group.Directory)
+			return fmt.Errorf("%s's updates form a sequence of commits; keep them in their original order", group.Directory)
 		}
 		last[group.Directory] = at
 	}
@@ -448,7 +448,7 @@ func (e *Engine) Regroup(ctx context.Context, plan TidyPlan, spec, author string
 			}
 			for _, need := range needs {
 				later, ok := at[directory(need)]
-				note := fmt.Sprintf("comes before commit %d, which changes %s, a port %s depends on as %s orders them", later+1, need, id, evidence.Run.Name())
+				note := fmt.Sprintf("comes before commit %d, which changes %s; %s depends on that port in %s's build order", later+1, need, id, evidence.Run.Name())
 				if ok && later > commit && !slices.Contains(regrouped.Groups[commit].Notes, note) {
 					regrouped.Groups[commit].Notes = append(regrouped.Groups[commit].Notes, note)
 				}

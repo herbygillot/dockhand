@@ -305,12 +305,12 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 	cmd.Flags().StringVar(&build, "build", "", "where to build, by build profile: host (this Mac's macOS alone), minmax (the default unless build.default names another), macports-ci, all, or yours")
 	cmd.Flags().StringArrayVar(&on, "on", nil, "where to build, explicit environments, as tart:15,26, github, or command; repeat for several, all of which must pass")
 	cmd.Flags().StringVar(&tests, "tests", "", "declared (advisory), required, or skip")
-	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "queue the check and return; serve, or a background drain where none runs, runs it")
+	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "run the check in the background using serve or a background worker, and return immediately")
 	cmd.Flags().BoolVar(&replace, "replace", false, "stop the branch's queued or running check, keeping what it finished, and check this instead")
 	cmd.Flags().BoolVar(&baseline, "baseline", false, "build what failed in the latest check, or --only ports, at the master it started from")
 	cmd.Flags().StringVar(&of, "of", "", "with --baseline, the branch's finished check to compare with, as check-42, not its latest")
 	cmd.Flags().BoolVar(&fresh, "fresh", false, "build every port, reusing no earlier build's result")
-	cmd.Flags().BoolVar(&keep, "keep", false, "keep what the check built: each Tart clone, stopped, where its guest finishes, for dockhand shell, and in a local prefix the branch's versions, left active")
+	cmd.Flags().BoolVar(&keep, "keep", false, "retain stopped Tart VMs for dockhand shell, or leave the branch's versions active in a local prefix")
 	cmd.Flags().StringVar(&variants, "variants", "", "build the one port checked with these variants, +name -name, or each: its defaults, then each variant it declares")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --variants each, make its builds without asking")
 	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
@@ -477,7 +477,7 @@ func besideWords(err error, revision model.Revision) error {
 		// testing's rust check, 2026-10-15).
 		return fmt.Errorf("%v, or --replace checks again, keeping what it finished", active)
 	case active.Uncovered:
-		return fmt.Errorf("%s is %s for these files, but doesn't cover what this check asks, the builds it makes in each environment, its variants, tests, or freshness, or a kept guest; --replace stops it, keeping what it finished, and checks this one instead", active.Run.Name(), active.Run.State)
+		return fmt.Errorf("%s is %s for these files, but does not cover this request's builds, environments, variants, test policy, freshness, or guest retention; --replace stops it, keeping what it finished, and checks this one instead", active.Run.Name(), active.Run.State)
 	case active.SameRevision:
 		return active
 	}

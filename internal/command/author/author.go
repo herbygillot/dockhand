@@ -33,13 +33,14 @@ func UpdateCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update <port> [version] | <port>...",
 		Short: "Update a port to a newer release",
-		Long: `Moves a port to the newest release upstream, or the version named, and fills
-in its checksums, in the branch's working files. Nothing is committed.
+		Long: `Updates the branch's working files to the newest upstream release, or
+the version named, and fills in the checksums. Nothing is committed.
 
-The branch is --branch, else the one checked out here; --new starts one,
-once there is an edit to make, so a port already current starts nothing.
---plan shows the edit and changes nothing: with no branch to plan in, it
-plans on master, as --new --plan does, and it never starts one.
+Use --branch to select a branch, or run in its worktree. --new starts a
+branch only when an edit is needed; an up-to-date port starts none.
+--plan previews the edit without applying it and starts no branch. When
+no current or existing branch changes the port, it plans against master,
+as --new --plan does.
 
 --revbump-dependents also bumps the revision of every port that links the
 updated one directly, its library dependents in the port index at the
@@ -51,24 +52,28 @@ The old and new versions' archives are compared, and a changed license
 file, a changed build file, or a new declared dependency is reported: what a
 reviewer would ask about, and what a passing build can't catch.
 
-A port on the github PortGroup has its source chosen with the version: a
-release's own source archive where one holds what the repository has at the
-tag, else GitHub's archive for a port on GitHub's tarball; a port cloned with
-Git for its submodules moves only to an archive holding every one. --source
-keep moves nothing; --source releases or archive asks for that source, and
-refuses where it doesn't qualify. [update] source sets it for every update.
+For a port using the github PortGroup, the default --source suggest
+reports suitable release assets for legacy tarball or Git sources. It
+preserves the source, except that legacy tarballs move to GitHub's archive
+format. --source choose can switch legacy tarballs or Git checkouts to
+suitable release assets; an asset replacing a Git checkout must contain
+every submodule.
+Existing archive sources stay unless --source releases is requested.
+--source keep preserves the source. --source releases or archive requests
+that source and refuses unsupported choices. [update] source sets the default.
 
-Several ports are updated in the one branch, each to its newest release:
+Several ports can be updated in one branch, each to its newest release:
 "update kubectl-1.34 kubectl-1.35 --new" starts one branch, named for the
 ports' directory where they share a Portfile, and tidy makes a commit for
 each update. A version is given with a lone port: a second word that names
 no port is the version.
 
---mine updates every port you maintain that has a newer release, as
-outdated --mine finds them: a branch a Portfile, from fresh master, nothing
-committed. It shows the branches before starting any, and asks once; --yes
-starts them without asking. dockhand ship --mine carries them on, to their
-pull requests, and ship takes a port's update as far as --to says.
+--mine updates your outdated ports, as found by outdated --mine, with one
+branch per Portfile from freshly fetched master. Nothing is committed.
+It previews the branches and asks once; --yes starts them without asking.
+Use dockhand ship --mine instead to take selected updates through
+submission; --to selects an earlier stopping point. To continue a branch
+created by update --mine, use dockhand ship -b <branch>.
 --maintainer, --category, and --not-maintainer choose the ports by
 master's index instead, or beside --mine, as outdated does.`,
 		Args: cobra.ArbitraryArgs,
@@ -258,9 +263,9 @@ func ChecksumsCommand(s *settings.Settings, streams term.Streams) *cobra.Command
 	cmd := &cobra.Command{
 		Use:   "checksums [port]",
 		Short: "Refresh a port's checksums for the version it names",
-		Long: `Fetches the port's distfiles for the version its Portfile names and writes
-their checksums, in the branch's working files: what to run after editing
-the version by hand. Nothing is committed.
+		Long: `Fetches the distfiles for the Portfile's current version and writes their
+checksums into the branch's working files. Use this after editing the
+version by hand. Nothing is committed.
 
 A distfile that changed upstream under the same name, in a Portfile the
 branch has not changed, is a stealth update: it says so, shows the checksums
@@ -270,9 +275,9 @@ dist_subdir ${name}/${version}_${revision}, so mirrors keep both archives.
 numbers the directory instead: ${name}/${version}_1, the MacPorts guide's
 recipe. A later version update removes either.
 
-It reads the Portfile as it stands, on every platform it models, with no
-version to find and none of update's holds: a context it can't read, or a
-declaration none it reads fetches, is left as it was and said.
+Reads the current Portfile across the modeled platforms, without release
+discovery or update's holds. Reports and preserves checksums for contexts
+it cannot evaluate or declarations not fetched in any evaluated context.
 
 The branch is --branch, else the one checked out here; --new starts one.
 With no port named, it's the branch's one port, what it changes or was

@@ -63,7 +63,7 @@ func TestTheOldArchiveComesFromTheMirrorAfterAStealthUpdate(t *testing.T) {
 	custom := info(now)
 	custom.Options["fetch.type"] = "git"
 	_, err = planOf(custom, plan, "")
-	require.ErrorContains(t, err, "fetch customization or vendored source requires a dedicated preparer")
+	require.ErrorContains(t, err, "custom fetching or vendored source cannot be prepared automatically here; prepare this update manually with MacPorts")
 
 	// Without a plan, nothing is fetched, and MacPorts' reason is said;
 	// a plan naming nothing, with no reason, is a port with no archives.

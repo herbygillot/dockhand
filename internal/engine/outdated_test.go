@@ -198,7 +198,7 @@ func TestAPatchThatDoesntApplyHoldsAnUnattendedShipBeforeItsCheck(t *testing.T) 
 	release := model.Release{ReleaseSelection: model.ReleaseSelection{Requested: "1.8.1", CurrentVersion: "1.7.1"}, Version: "1.8.1", Forge: "github", Tag: "jq-1.8.1"}
 	target := shipTarget{Port: "jq", Version: "1.8.1", Release: &release, Name: "jq-1.8.1"}
 	done := e.ship(t.Context(), target, shipOptions{Origin: model.OriginServe, To: ShipCheck, Answered: model.AnsweredNobody})
-	require.Equal(t, `held before its check, at its committed edit: patch-stale.diff: 1 out of 1 hunks failed; holds.allow = ["patch-rejected"] lets it build`, done.Problem)
+	require.Equal(t, `held before its check, with its changes committed: patch-stale.diff: 1 out of 1 hunks failed; holds.allow = ["patch-rejected"] lets it build`, done.Problem)
 	require.True(t, done.Tidied, "committed")
 	require.Nil(t, done.Run, "no check queued")
 
@@ -215,7 +215,7 @@ func TestAPatchThatDoesntApplyHoldsAnUnattendedShipBeforeItsCheck(t *testing.T) 
 	rows := branchstate.Attend(status.Facts())
 	require.Len(t, rows, 1)
 	require.Equal(t, branchstate.HeldBeforeItsCheck, rows[0].Reason)
-	require.Equal(t, `held before its check, at its committed edit: patch-stale.diff: 1 out of 1 hunks failed; holds.allow = ["patch-rejected"] lets it build`, rows[0].Words(Vocabulary{}))
+	require.Equal(t, `held before its check, with its changes committed: patch-stale.diff: 1 out of 1 hunks failed; holds.allow = ["patch-rejected"] lets it build`, rows[0].Words(Vocabulary{}))
 
 }
 

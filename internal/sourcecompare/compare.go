@@ -270,7 +270,7 @@ func Compare(older, newer project.Reading, versions Versions, named, sets func(o
 	}{{"old", older}, {"new", newer}} {
 		if side.reading.Layout == project.Ambiguous {
 			lost = append(lost, Change{Kind: "unread", How: "ambiguous", Side: side.version,
-				Message: fmt.Sprintf("upstream's %s archive holds %s and no file beside them, so which is the project wasn't found, and it wasn't compared", side.version, strings.Join(side.reading.Tops, ", "))})
+				Message: fmt.Sprintf("upstream's %s archive has multiple top-level directories (%s); the project root couldn't be identified, so it wasn't compared", side.version, strings.Join(side.reading.Tops, ", "))})
 		}
 	}
 	if len(lost) > 0 {
@@ -298,7 +298,7 @@ func Compare(older, newer project.Reading, versions Versions, named, sets func(o
 		}
 		if old.Truncated || now.Truncated {
 			changes = append(changes, Change{Kind: "unread", How: "truncated", Path: name,
-				Message: fmt.Sprintf("upstream's %s is larger than the %d KiB the comparison reads, so it wasn't compared", name, project.FileLimit>>10)})
+				Message: fmt.Sprintf("upstream's %s exceeds the comparison's %d KiB per-file limit, so it wasn't compared", name, project.FileLimit>>10)})
 			continue
 		}
 		// A CMakeLists.txt is read with the files it include()s, as one
@@ -957,7 +957,7 @@ func cargoBinaries(old, now project.Reading, cargo project.CargoFeatures) []Chan
 		how = "new binaries"
 	}
 	return []Change{{Kind: "build", How: how, Path: "Cargo.toml",
-		Message: "upstream's Cargo packages and binaries change: " + strings.Join(said, "; ")}}
+		Message: "upstream's Cargo programs changed: " + strings.Join(said, "; ")}}
 }
 
 // pythonBackend is a Python project's PEP 517 backend moving, which the
@@ -1100,7 +1100,7 @@ func nativeLinks(name string, old project.File, hadOld bool, now project.File, h
 		return nil
 	}
 	unread := func(version string, err error) []Change {
-		return []Change{{Kind: "unread", How: "unreadable", Side: version, Path: name, Message: fmt.Sprintf("upstream's Cargo.lock couldn't be read in the %s version, so the crates new to it that link a native library weren't looked for: %v", version, err)}}
+		return []Change{{Kind: "unread", How: "unreadable", Side: version, Path: name, Message: fmt.Sprintf("upstream's Cargo.lock couldn't be read in the %s version, so new crates that link native libraries couldn't be identified: %v", version, err)}}
 	}
 	packages, err := project.ReadCargoLock(now.Data)
 	if err != nil {

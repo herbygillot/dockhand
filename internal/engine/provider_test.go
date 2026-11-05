@@ -27,7 +27,7 @@ func TestEnvironmentsAreTheProvidersOnNames(t *testing.T) {
 
 	for on, refusal := range map[string]string{
 		"tart:sonoma": "Tart isn't installed here",
-		"local":       "the local provider builds in a MacPorts prefix on a Mac, and this isn't one",
+		"local":       "the local provider requires macOS to build in a MacPorts prefix",
 		"nosuch":      `no provider "nosuch" is set up`,
 		"command:15":  "the command provider builds wherever its script does",
 	} {
@@ -162,7 +162,7 @@ func TestWhereABuildProfileBuilds(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, Where{Environments: []model.Environment{tahoe}, Asked: true}, where, "--on's explicit environments")
 	_, err = e.Where(t.Context(), WhereRequest{Build: "local"})
-	require.EqualError(t, err, "--build local: local is no build profile; --build host builds on Tart on this Mac's release, and --on local in a MacPorts prefix on this Mac")
+	require.EqualError(t, err, "--build local: local names a provider; --build host builds on Tart on this Mac's release, and --on local builds in a MacPorts prefix on this Mac")
 	_, err = e.Where(t.Context(), WhereRequest{Build: "nosuch"})
 	require.ErrorContains(t, err, "--build nosuch: unknown build profile")
 	_, err = e.Where(t.Context(), WhereRequest{Build: "command"})

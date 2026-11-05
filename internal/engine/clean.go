@@ -783,7 +783,7 @@ func (e *Engine) PutBack(ctx context.Context, run model.Run, progress func(strin
 		}
 	}
 	if len(places) == 0 {
-		return nil, fmt.Errorf("%s left nothing to put back: it put back what it changed, or changed nothing of yours", run.Name())
+		return nil, fmt.Errorf("%s has no recorded changes to put back", run.Name())
 	}
 	return places, nil
 }

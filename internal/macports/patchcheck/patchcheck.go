@@ -209,6 +209,9 @@ func Summary(results []Result) string {
 		}
 	}
 	if len(parts) == 0 {
+		if len(results) == 1 {
+			return "1 patch applies"
+		}
 		return fmt.Sprintf("%d patches apply", len(results))
 	}
 	return strings.Join(parts, "; ")
@@ -438,7 +441,7 @@ func decompress(patch Patch) ([]byte, error) {
 		return nil, err
 	}
 	if len(data) > maxPatchedFile {
-		return nil, fmt.Errorf("decompresses to more than the %d MiB dockhand checks of a patch", maxPatchedFile>>20)
+		return nil, fmt.Errorf("the decompressed patch exceeds the %d MiB read limit", maxPatchedFile>>20)
 	}
 	return data, nil
 }

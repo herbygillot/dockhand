@@ -441,9 +441,9 @@ func TestAChangesPlaceIsTheBlockTheDocumentReads(t *testing.T) {
 	}
 	changes = compare(branches("old"), branches("new"))
 	require.Len(t, changes, 1)
-	require.Equal(t, "upstream's CMakeLists.txt changed, though no option or find_package did; lines change under if(APPLE)", changes[0].Message)
+	require.Equal(t, "upstream's CMakeLists.txt changed, but no option or find_package requirement changed; lines change under if(APPLE)", changes[0].Message)
 	elsewise := strings.Replace(branches("old"), "c()", "c(new)", 1)
-	require.Equal(t, "upstream's CMakeLists.txt changed, though no option or find_package did; lines change under if(NOT (APPLE))", compare(branches("old"), elsewise)[0].Message)
+	require.Equal(t, "upstream's CMakeLists.txt changed, but no option or find_package requirement changed; lines change under if(NOT (APPLE))", compare(branches("old"), elsewise)[0].Message)
 }
 
 // A CMakeLists.txt is compared with the files it include()s, as one: a
@@ -466,10 +466,10 @@ func TestACMakeListsIsComparedWithWhatItIncludes(t *testing.T) {
 	require.Equal(t, "upstream's CMakeLists.txt changed: option FLB_KAFKA's default moves from OFF to ON", flipped[0].Message)
 
 	placed := compare("option(FLB_KAFKA \"kafka\" OFF)\nset(X 1)\n", "option(FLB_KAFKA \"kafka\" OFF)\nset(X 2)\n")
-	require.Equal(t, "upstream's CMakeLists.txt changed, though no option or find_package did; lines change outside any if() in cmake/plugins_options.cmake", placed[0].Message)
+	require.Equal(t, "upstream's CMakeLists.txt changed, but no option or find_package requirement changed; lines change outside any if() in cmake/plugins_options.cmake", placed[0].Message)
 
 	set := compare("set(Y 1)\n", "set(Y 1)\nset(FLB_DEMO ON)\n")
-	require.Equal(t, "upstream's CMakeLists.txt changed, though no option or find_package did; lines change outside any if() in cmake/plugins_options.cmake, under if(FLB_DEMO)", set[0].Message,
+	require.Equal(t, "upstream's CMakeLists.txt changed, but no option or find_package requirement changed; lines change outside any if() in cmake/plugins_options.cmake, under if(FLB_DEMO)", set[0].Message,
 		"FLB_DEMO, set in a file included, is no longer off, and what it gates is reached")
 }
 

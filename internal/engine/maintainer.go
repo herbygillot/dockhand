@@ -94,7 +94,7 @@ func MaintainerWords(s MaintainerSuggestion, file string) string {
 	// example.org:you}" read as one to copy, and in no order MacPorts
 	// writes (the rc3 and rc6 full stages).
 	if len(s.Spellings) == 0 {
-		return fmt.Sprintf(`set maintainer to you as a Portfile's maintainers line writes you, such as "@you" for your GitHub login, or "{example.org:you @you}" with your email too, in %s`, file)
+		return fmt.Sprintf(`set maintainer in %s to your identity as written in Portfiles, such as "@you" for your GitHub login, or "{example.org:you @you}" to include your email`, file)
 	}
 	first, handle := s.Spellings[0], "@"+s.Login
 	words := fmt.Sprintf("set maintainer = %q in %s", first.Maintainer.String(), file)

@@ -62,7 +62,7 @@ func (e *Engine) Profile(name string) (Profile, error) {
 	// local was host's other name, which built on Tart where a person
 	// asking for local means the local provider (D17).
 	if name == buildenv.Local {
-		return Profile{}, fmt.Errorf("--build local: local is no build profile; --build host builds on Tart on this Mac's release, and --on local in a MacPorts prefix on this Mac")
+		return Profile{}, fmt.Errorf("--build local: local names a provider; --build host builds on Tart on this Mac's release, and --on local builds in a MacPorts prefix on this Mac")
 	}
 	return Profile{}, fmt.Errorf("--build %s: unknown build profile. Built-in profiles are host, minmax, macports-ci, and all. Define custom profiles under [build.profiles] in %s", name, e.configFile())
 }

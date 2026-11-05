@@ -1172,7 +1172,7 @@ proc build {index target} {
             set git [dict get $target git]
             if {[catch {fetched [checkout $portdir $name $variants]} commit]} {
                 set fd [open $log a]
-                puts $fd "dockhand: which commit the fetch checked out wasn't read: $commit"
+                puts $fd "dockhand: could not read the commit checked out by fetch: $commit"
                 close $fd
                 continue
             }
@@ -1216,7 +1216,7 @@ proc build {index target} {
                 save running
                 if {[set message [run $log [list $port -N uninstall $name $image]]] eq ""} {
                     set fd [open $log a]
-                    puts $fd "dockhand: uninstalled $name $image, inactive and unrequested, so the branch's builds"
+                    puts $fd "dockhand: uninstalled $name $image, inactive and unrequested, so MacPorts builds the branch's version"
                     close $fd
                     continue
                 }
@@ -1442,11 +1442,11 @@ foreach target [dict get $input targets] {
         # _resources as read.
         if {$unread ne ""} {
             set log [open $root/[dict get $result log] a]
-            puts $log "dockhand: which PortGroups the ports built here loaded wasn't recorded: $unread"
+            puts $log "dockhand: could not record the PortGroups loaded by ports built here: $unread"
             close $log
         } elseif {[catch {sourced $portdir [dict get $target name] $variants} files]} {
             set log [open $root/[dict get $result log] a]
-            puts $log "dockhand: which PortGroups this build loaded wasn't recorded: $files"
+            puts $log "dockhand: could not record the PortGroups loaded by this build: $files"
             close $log
         } else {
             dict set result sourced $files
@@ -1471,7 +1471,7 @@ foreach target [dict get $input targets] {
             dict set result installed $installed
             if {[catch {path_dependencies $portdir [dict get $target name] $variants} paths]} {
                 set log [open $root/[dict get $result log] a]
-                puts $log "dockhand: this build's path: dependencies weren't read: $paths"
+                puts $log "dockhand: could not resolve this build's path: dependencies: $paths"
                 close $log
                 set paths {}
             }
@@ -1495,7 +1495,7 @@ foreach target [dict get $input targets] {
             }
             if {[catch {libraries $installed} own]} {
                 set log [open $root/[dict get $result log] a]
-                puts $log "dockhand: this build's libraries' install names weren't read: $own"
+                puts $log "dockhand: could not read the install names of this build's libraries: $own"
                 close $log
             } else {
                 dict set result libraries $own

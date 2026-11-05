@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/model"
@@ -14,7 +15,7 @@ import (
 // Times are stored in milliseconds, so a record read back carries its times
 // truncated to the millisecond.
 
-const branchColumns = "id, name, base, worktree, managed, title, state, pr_repository, pr_number, pr_head, pr_pushed, pr_body, pr_draft, pr_observed, pr_adopted, created_at, origin, note, ended_at, ports, clean_kept, forgotten_at, closes, pr_author"
+const branchColumns = "id, name, base, worktree, managed, title, state, pr_repository, pr_number, pr_head, pr_pushed, pr_body, pr_draft, pr_observed, pr_adopted, created_at, origin, note, ended_at, ports, clean_kept, forgotten_at, closes, pr_author, tested"
 
 func (t *tx) scanBranch(row interface{ Scan(...any) error }) (model.Branch, error) {
 	var b model.Branch
@@ -25,10 +26,11 @@ func (t *tx) scanBranch(row interface{ Scan(...any) error }) (model.Branch, erro
 	var prDraft, prAdopted int
 	var created int64
 	var ended, forgotten sql.NullInt64
-	var ports, closes string
-	if err := row.Scan(&b.ID, &b.Name, &b.Base, &b.Worktree, &managed, &b.Title, &b.State, &prRepository, &prNumber, &prHead, &prPushed, &prBody, &prDraft, &prObserved, &prAdopted, &created, &b.Origin, &b.Note, &ended, &ports, &b.CleanKept, &forgotten, &closes, &prAuthor); err != nil {
+	var ports, closes, tested string
+	if err := row.Scan(&b.ID, &b.Name, &b.Base, &b.Worktree, &managed, &b.Title, &b.State, &prRepository, &prNumber, &prHead, &prPushed, &prBody, &prDraft, &prObserved, &prAdopted, &created, &b.Origin, &b.Note, &ended, &ports, &b.CleanKept, &forgotten, &closes, &prAuthor, &tested); err != nil {
 		return model.Branch{}, storageError(err)
 	}
+	b.TestedBinaries, b.TestedVariants = slices.Contains(strings.Fields(tested), "binaries"), slices.Contains(strings.Fields(tested), "variants")
 	if closes != "" {
 		b.Closes = strings.Fields(closes)
 	}
@@ -127,8 +129,8 @@ func (t *tx) AddBranch(b model.Branch) error {
 		}
 		ended = millis(b.EndedAt)
 	}
-	_, err := t.exec("INSERT INTO branches(repository_id, "+branchColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		t.repo, b.ID, b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, adopted, millis(b.CreatedAt), b.Origin, b.Note, ended, strings.Join(b.Ports, " "), b.CleanKept, nil, strings.Join(b.Closes, " "), author)
+	_, err := t.exec("INSERT INTO branches(repository_id, "+branchColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		t.repo, b.ID, b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, adopted, millis(b.CreatedAt), b.Origin, b.Note, ended, strings.Join(b.Ports, " "), b.CleanKept, nil, strings.Join(b.Closes, " "), author, testedWords(b))
 	return err
 }
 
@@ -174,8 +176,8 @@ func (t *tx) UpdateBranch(b model.Branch) error {
 		return err
 	}
 	repository, number, head, pushed, body, draft, observed, adopted, author := pullRequestColumns(b.PullRequest)
-	return t.update("branch "+string(b.ID), "UPDATE branches SET name=?, base=?, worktree=?, managed=?, title=?, state=?, pr_repository=?, pr_number=?, pr_head=?, pr_pushed=?, pr_body=?, pr_draft=?, pr_observed=?, pr_adopted=?, note=?, ended_at=?, ports=?, clean_kept=?, closes=?, pr_author=? WHERE repository_id=? AND id=? AND forgotten_at IS NULL",
-		b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, adopted, b.Note, ended, strings.Join(b.Ports, " "), b.CleanKept, strings.Join(b.Closes, " "), author, t.repo, b.ID)
+	return t.update("branch "+string(b.ID), "UPDATE branches SET name=?, base=?, worktree=?, managed=?, title=?, state=?, pr_repository=?, pr_number=?, pr_head=?, pr_pushed=?, pr_body=?, pr_draft=?, pr_observed=?, pr_adopted=?, note=?, ended_at=?, ports=?, clean_kept=?, closes=?, pr_author=?, tested=? WHERE repository_id=? AND id=? AND forgotten_at IS NULL",
+		b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, adopted, b.Note, ended, strings.Join(b.Ports, " "), b.CleanKept, strings.Join(b.Closes, " "), author, testedWords(b), t.repo, b.ID)
 }
 
 const revisionColumns = "id, branch_id, kind, snapshot, commit_id, tree_id, base_id, head_id, created_at"
@@ -979,4 +981,17 @@ func boolInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// testedWords are a branch's tested statements as its row keeps them,
+// "binaries variants", either, or none.
+func testedWords(b model.Branch) string {
+	var words []string
+	if b.TestedBinaries {
+		words = append(words, "binaries")
+	}
+	if b.TestedVariants {
+		words = append(words, "variants")
+	}
+	return strings.Join(words, " ")
 }

@@ -186,10 +186,10 @@ type ActiveRunError struct {
 func (a *ActiveRunError) Error() string {
 	name := a.Run.Name()
 	if a.Stopped && a.SameRevision {
-		return fmt.Sprintf("%s stopped before it finished these files, when the process running it ended; dockhand wait %s resumes it", name, name)
+		return fmt.Sprintf("%s stopped before finishing because the process running it ended; dockhand wait %s resumes it", name, name)
 	}
 	if a.Uncovered {
-		return fmt.Sprintf("%s is %s for these files, but doesn't cover what this check asks, the builds it makes in each environment, its variants, tests, or freshness, or a kept guest. Run dockhand cancel %s and run this again, or wait for it to finish and run this again", name, a.Run.State, name)
+		return fmt.Sprintf("%s is %s for these files, but does not cover this request's builds, environments, variants, test policy, freshness, or guest retention. Run dockhand cancel %s and run this again, or wait for it to finish and run this again", name, a.Run.State, name)
 	}
 	if a.SameRevision {
 		return fmt.Sprintf("%s is already %s for these files; dockhand wait %s follows it", name, a.Run.State, name)
@@ -589,7 +589,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			// this one's building everything reads as a fault unless it's
 			// said: a GitHub run records neither what its runner is nor
 			// what the build read (the gh rebase's finding 1).
-			d.emit(ctx, model.EventExecutionState, fmt.Sprintf("%s: %s: builds every target, since its provider doesn't say what the environment is, so no earlier result can be reused there", d.run.Name(), DescribeEnvironment(environment)))
+			d.emit(ctx, model.EventExecutionState, fmt.Sprintf("%s: %s: building every target because the provider does not report an environment identity; earlier results cannot be reused there", d.run.Name(), DescribeEnvironment(environment)))
 		}
 		if attempt == 0 {
 			choice, err := d.reusable(ctx, identity, targets, paths, revision)
@@ -714,7 +714,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 				return err
 			}
 			fault := refusal.WordsOf(err)
-			d.problem(fmt.Sprintf("dockhand: %s: %s; the fault is dockhand's own, so another attempt would repeat it, and none was made", DescribeEnvironment(environment), fault))
+			d.problem(fmt.Sprintf("dockhand: %s: %s; this is an internal Dockhand error, so no retry was attempted", DescribeEnvironment(environment), fault))
 			return nil
 		case refusal.Transient(err):
 			// What another try may meet, a VM or a runner that failed, or
@@ -734,7 +734,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			if err := d.endExecution(ctx, execution, model.ExecutionInfrastructure, err.Error()); err != nil {
 				return err
 			}
-			d.problem(fmt.Sprintf("dockhand: %s: %v; the provider didn't mark it as trouble another attempt could clear, so none was made", DescribeEnvironment(environment), err))
+			d.problem(fmt.Sprintf("dockhand: %s: %v; the provider did not mark this failure for automatic retry, so no retry was attempted", DescribeEnvironment(environment), err))
 			return nil
 		}
 		return d.endExecution(ctx, execution, model.ExecutionFinished, "")
@@ -927,13 +927,13 @@ func (d *driver) matrix(ctx context.Context, provider buildenv.Provider, environ
 			d.problem(notTriedWords(where, err))
 			return nil
 		case errors.Is(err, buildenv.ErrDockhandFault):
-			d.problem(fmt.Sprintf("dockhand: %s: %s; the fault is dockhand's own, so another attempt would repeat it, and none was made", where, refusal.WordsOf(err)))
+			d.problem(fmt.Sprintf("dockhand: %s: %s; this is an internal Dockhand error, so no retry was attempted", where, refusal.WordsOf(err)))
 			return nil
 		case retry:
 			d.emit(ctx, model.EventExecutionRetry, fmt.Sprintf("%s: %v", where, err))
 			continue
 		case err != nil:
-			d.problem(fmt.Sprintf("dockhand: %s: %v; the provider didn't mark it as trouble another attempt could clear, so none was made", where, err))
+			d.problem(fmt.Sprintf("dockhand: %s: %v; the provider did not mark this failure for automatic retry, so no retry was attempted", where, err))
 			return nil
 		}
 		return nil
@@ -1153,7 +1153,7 @@ func (b *build) activeIn(target model.TargetID, active []model.ActivePort) {
 				continue
 			}
 			if strings.EqualFold(port.Name, archive.Port) && port.Archive != "" && port.Archive != archive.Digest {
-				b.Progress(fmt.Sprintf("%s built with %s from another archive than the one kept of its build: MacPorts chose %s", target, port.Name, port.Archive))
+				b.Progress(fmt.Sprintf("%s built with a different archive of %s from the one Dockhand kept: MacPorts chose %s", target, port.Name, port.Archive))
 			}
 		}
 	}
@@ -1189,7 +1189,7 @@ func (b *build) activeIn(target model.TargetID, active []model.ActivePort) {
 func (b *build) read(planned model.PlanTarget, active []model.ActivePort) (model.TargetInputs, bool) {
 	inputs, err := reuse.Inputs(b.ctx, b.d.c.Checkout, b.tree, b.execution.Identity, planned, b.withBuiltWith(active), b.sourced[planned.ID])
 	if err != nil {
-		reason := fmt.Sprintf("what its build read wasn't recorded: %v", err)
+		reason := fmt.Sprintf("its build inputs could not be recorded: %v", err)
 		b.Progress(fmt.Sprintf("%s: %s", planned.ID, reason))
 		// Where reuse could have been, the reason is kept, for the
 		// check that builds it again to say (the architecture review's
@@ -1618,7 +1618,7 @@ func dependencyCount(n int) string {
 func offeredWords(ports, archives int) string {
 	words := "the guest may install up to " + dependencyCount(ports) + " from archives earlier checks kept"
 	if archives != ports {
-		words += fmt.Sprintf(" (%d archives, the newest two of some)", archives)
+		words += fmt.Sprintf(" (%d archives, up to two recent archives per dependency)", archives)
 	}
 	return words
 }
@@ -1685,5 +1685,5 @@ func notTriedWords(where string, err error) string {
 	if buildenv.SaysWhyNotTried(err) {
 		return fmt.Sprintf("%s: %v", where, err)
 	}
-	return fmt.Sprintf("%s: %v; another attempt won't fix it, so none was made", where, err)
+	return fmt.Sprintf("%s: %v; this failure needs attention, so no retry was attempted", where, err)
 }

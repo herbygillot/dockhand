@@ -459,9 +459,9 @@ func TestOnlyWhatAnotherAttemptCouldFixIsTriedAgain(t *testing.T) {
 	}{
 		{"infrastructure", buildenv.Infrastructure("the VM stopped"), model.MaxAttempts, "failed 3 times because of an environment error"},
 		{"unclassified", errors.New("release 30 isn't one this dockhand knows"), 1,
-			"dockhand: command macOS 26 (Tahoe) arm64: release 30 isn't one this dockhand knows; the provider didn't mark it as trouble another attempt could clear, so none was made"},
+			"dockhand: command macOS 26 (Tahoe) arm64: release 30 isn't one this dockhand knows; the provider did not mark this failure for automatic retry, so no retry was attempted"},
 		{"dockhand's own", buildenv.ErrDockhandFault.Because("the guest reported %q, which this job didn't ask for", "fd"), 1,
-			`dockhand: command macOS 26 (Tahoe) arm64: the guest reported "fd", which this job didn't ask for; the fault is dockhand's own, so another attempt would repeat it, and none was made`},
+			`dockhand: command macOS 26 (Tahoe) arm64: the guest reported "fd", which this job didn't ask for; this is an internal Dockhand error, so no retry was attempted`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -495,7 +495,7 @@ func TestTroubleAnotherAttemptWontFixIsTriedOnce(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, model.RunAttention, run.State)
 	require.Len(t, provider.jobs, 1, "one attempt")
-	require.Contains(t, run.Detail, "the guest refused SSH; another attempt won't fix it, so none was made")
+	require.Contains(t, run.Detail, "the guest refused SSH; this failure needs attention, so no retry was attempted")
 }
 
 func TestACancelIsAppliedByWhoeverHoldsTheRun(t *testing.T) {
@@ -1062,7 +1062,7 @@ func TestABuildThatCantBeReusedSaysWhy(t *testing.T) {
 	evidence, found, err := e.EvidenceFor(t.Context(), branch.ID, revision.Source.Tree)
 	require.NoError(t, err)
 	require.True(t, found)
-	require.Contains(t, evidence.Targets[0].Outcomes[0].NotReusable, "what its build read wasn't recorded: ")
+	require.Contains(t, evidence.Targets[0].Outcomes[0].NotReusable, "its build inputs could not be recorded: ")
 
 	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}})
 	require.NoError(t, err)
@@ -1080,7 +1080,7 @@ func TestABuildThatCantBeReusedSaysWhy(t *testing.T) {
 		}
 		return err
 	}))
-	require.Contains(t, strings.Join(said, "\n"), "libharbor builds again: its last build here passed, but can't be reused, since what its build read wasn't recorded: ")
+	require.Contains(t, strings.Join(said, "\n"), "libharbor builds again: its last build here passed, but can't be reused, since its build inputs could not be recorded: ")
 }
 
 // Where only some targets would read what their earlier builds read, those
@@ -1290,7 +1290,7 @@ func TestAGuestIsGivenTheDependencyArchivesAnEarlierGuestInstalled(t *testing.T)
 		return err
 	}))
 	require.Len(t, said, 1)
-	require.Contains(t, said[0], "the archive kept of rust isn't the one it was kept as, "+rustDigest+", so the guest gets it as MacPorts would")
+	require.Contains(t, said[0], "the saved archive for rust no longer matches its recorded digest, "+rustDigest+", so the guest gets it as MacPorts would")
 	require.FileExists(t, given[0].Path+".altered", "set aside")
 	data, err = os.ReadFile(given[0].Path)
 	require.NoError(t, err)
@@ -1736,7 +1736,7 @@ func TestTheGuestInstallsWhatABuildNeedsFromItsKeptArchive(t *testing.T) {
 	data, err := os.ReadFile(installed.Path)
 	require.NoError(t, err)
 	require.Equal(t, "libharbor's archive", string(data), "the archive kept of its build")
-	require.NotContains(t, strings.Join(messages(second), "\n"), "another archive", "harbor-cli built with the archive it was given")
+	require.NotContains(t, strings.Join(messages(second), "\n"), "different archive", "harbor-cli built with the archive it was given")
 
 	// A build that shows libharbor active from another archive: MacPorts
 	// gave it another.
@@ -1746,7 +1746,7 @@ func TestTheGuestInstallsWhatABuildNeedsFromItsKeptArchive(t *testing.T) {
 	require.NoError(t, err)
 	revision = capture.Revision
 	third := check(false)
-	require.Contains(t, strings.Join(messages(third), "\n"), "harbor-cli built with libharbor from another archive than the one kept of its build: MacPorts chose sha256:upstream")
+	require.Contains(t, strings.Join(messages(third), "\n"), "harbor-cli built with a different archive of libharbor from the one Dockhand kept: MacPorts chose sha256:upstream")
 
 	// A kept archive altered since, a byte the same size, isn't given to
 	// the guest: MacPorts builds libharbor instead, and the check says
@@ -1761,7 +1761,7 @@ func TestTheGuestInstallsWhatABuildNeedsFromItsKeptArchive(t *testing.T) {
 	revision = capture.Revision
 	fourth := check(false)
 	require.Empty(t, provider.jobs[len(provider.jobs)-1].Installs, "the altered archive isn't given")
-	require.Contains(t, strings.Join(messages(fourth), "\n"), "the archive kept of libharbor isn't the one it was kept as, "+libDigest+", so the guest builds it instead")
+	require.Contains(t, strings.Join(messages(fourth), "\n"), "the saved archive for libharbor no longer matches its recorded digest, "+libDigest+", so the guest builds it instead")
 	require.FileExists(t, installed.Path+".altered", "set aside, so no later check meets it")
 	require.NoError(t, os.WriteFile(installed.Path, []byte("libharbor's archive"), 0o600))
 
@@ -1903,7 +1903,7 @@ func TestAnEnvironmentThatCantReuseSaysSo(t *testing.T) {
 		require.NoError(t, err)
 		var messages []string
 		for _, event := range events {
-			if strings.Contains(event.Message, "builds every target") {
+			if strings.Contains(event.Message, "building every target") {
 				messages = append(messages, event.Message)
 			}
 		}
@@ -1918,7 +1918,7 @@ func TestAnEnvironmentThatCantReuseSaysSo(t *testing.T) {
 	require.Equal(t, model.RunPassed, run.State, run.Detail)
 	messages := said(t, e)
 	require.Len(t, messages, 1)
-	require.Equal(t, run.Name()+": "+checks.DescribeEnvironment(github)+": builds every target, since its provider doesn't say what the environment is, so no earlier result can be reused there", messages[0])
+	require.Equal(t, run.Name()+": "+checks.DescribeEnvironment(github)+": building every target because the provider does not report an environment identity; earlier results cannot be reused there", messages[0])
 
 	f = setup(t)
 	e = f.open(t)

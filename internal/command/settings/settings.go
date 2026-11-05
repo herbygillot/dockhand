@@ -88,19 +88,19 @@ func OverAllowanceFlag(cmd *cobra.Command, s *Settings) {
 // KeepModelineFlag registers --keep-modeline on a command whose edits
 // write a Portfile.
 func KeepModelineFlag(cmd *cobra.Command, s *Settings) {
-	cmd.Flags().BoolVar(&s.KeepModeline, "keep-modeline", false, "leave each Portfile's first line as it is, where dockhand otherwise gives it MacPorts' modeline")
+	cmd.Flags().BoolVar(&s.KeepModeline, "keep-modeline", false, "preserve each Portfile's first line instead of adding MacPorts' modeline")
 }
 
 // KeepHTTPFlag registers --keep-http on a command whose edits switch a
 // Portfile's plain-HTTP links that answer over HTTPS.
 func KeepHTTPFlag(cmd *cobra.Command, s *Settings) {
-	cmd.Flags().BoolVar(&s.KeepHTTP, "keep-http", false, "leave plain-HTTP homepage, master_sites, and livecheck.url links as they are, where dockhand otherwise switches each that answers over HTTPS")
+	cmd.Flags().BoolVar(&s.KeepHTTP, "keep-http", false, "preserve HTTP links in homepage, master_sites, and livecheck.url instead of switching those available over HTTPS")
 }
 
 // SourceFlag registers --source on a command that updates a port's
 // version.
 func SourceFlag(cmd *cobra.Command, s *Settings) {
-	cmd.Flags().StringVar(&s.Source, "source", "", "for a port on the github PortGroup: suggest leaves the source as it is, but for a tarball port's move to GitHub's archive of the tag, and says where a release's own archive is the source; choose takes a release's own source archive where one is the source, else GitHub's archive of the tag for a tarball port, and leaves a port cloned with Git as it is; keep moves nothing; releases or archive asks for that source (default [update] source, else suggest)")
+	cmd.Flags().StringVar(&s.Source, "source", "", "GitHub source policy: suggest reports suitable release assets for legacy tarball or Git sources and only switches legacy tarballs to tag archives; choose can switch those sources to suitable assets, including every Git submodule; keep preserves the source; releases or archive requests that source (default [update] source, else suggest)")
 }
 
 func (s *Settings) Flags(root *cobra.Command) {
@@ -147,7 +147,7 @@ func (s *Settings) Open(ctx context.Context) (*engine.Engine, error) {
 	if refused := new(engine.LiveUnderMigrationError); errors.As(err, &refused) && s.Streams.Terminal() {
 		// A person decides: their checks can be resumed by this build
 		// once they stop, as dockhand wait resumes a stopped check.
-		migrate, askErr := s.Streams.AskYes(fmt.Sprintf("%v.\n? Migrate anyway? What they're doing stops, and this dockhand can resume a stopped check. [y/N] ", refused), false)
+		migrate, askErr := s.Streams.AskYes(fmt.Sprintf("%v.\n? Migrate anyway? This stops the other processes' work; this Dockhand version can resume stopped checks. [y/N] ", refused), false)
 		if askErr != nil {
 			return nil, askErr
 		}
@@ -160,7 +160,7 @@ func (s *Settings) Open(ctx context.Context) (*engine.Engine, error) {
 		// A development or rc build opening a release's database: the
 		// person decides, since the release can't open it after (the
 		// exiv2 session's notes, 2026-10-24).
-		migrate, askErr := s.Streams.AskYes(fmt.Sprintf("%v%s.\n? Migrate it anyway? Its schema %d form is kept at %s. [y/N] ", refused.ReleaseUnderMigrationError, refused.Working(), refused.From, refused.Copy), false)
+		migrate, askErr := s.Streams.AskYes(fmt.Sprintf("%v%s.\n? Migrate anyway? A copy using schema %d will be kept at %s. [y/N] ", refused.ReleaseUnderMigrationError, refused.Working(), refused.From, refused.Copy), false)
 		if askErr != nil {
 			return nil, askErr
 		}

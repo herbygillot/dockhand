@@ -204,7 +204,7 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	plan := model.Plan{ID: model.PlanID(store.NewID("plan")), Revision: revision.ID, Environments: request.Environments, Profile: request.Profile, Asked: request.Asked, Only: request.Only, Also: request.Also, Tests: request.Tests, Fresh: request.Fresh, Keep: request.Keep,
 		Variants: model.Target{Variants: request.Variants}.VariantSpec(), EachVariant: request.EachVariant, CreatedAt: e.now()}
 	if len(request.Variants) > 0 && request.EachVariant {
-		return plan, errors.New("--variants each builds every variant; it takes no others")
+		return plan, errors.New("--variants each cannot be combined with an explicit variant selection")
 	}
 	if len(request.Variants) > 0 || request.EachVariant {
 		// MacPorts' workflow builds each port's default variants alone.

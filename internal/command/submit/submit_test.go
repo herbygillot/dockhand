@@ -599,6 +599,19 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	require.Contains(t, out, "  PR       #34901 changes requested, CI ✓\n", "once read, it says what it read")
 	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
 
+	// A reviewer's comment, the conversation's latest word, waits on you
+	// though GitHub counts no review: #36300 read "CI ✓" alone (#90).
+	g.Status = forge.PullRequestStatus{Review: "none", CommentedBy: "reneeotten", Checks: forge.CheckSummary{Total: 2, Passed: 2}}
+	out, errs, err = cmdtest.Dockhand(t, "status", "--refresh")
+	require.NoError(t, err)
+	require.Contains(t, errs, "jq-update: #34901: @reneeotten commented\n")
+	require.Contains(t, out, "Needs attention (1)\n  ! jq-update  #34901: @reneeotten commented, and the conversation waits on you (just now)\n")
+	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-update"))
+	out, _, err = cmdtest.Dockhand(t, "status")
+	require.NoError(t, err)
+	require.Contains(t, out, "  PR       #34901 @reneeotten commented, CI ✓\n")
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
+
 	// serve reads them by itself.
 	g.Status = forge.PullRequestStatus{Review: "none", Checks: forge.CheckSummary{Total: 2, Passed: 1, Failed: 1, Failing: []string{"macOS 26"}}}
 	cmdtest.Hosted(t).Timings.ServePoll = 20 * time.Millisecond

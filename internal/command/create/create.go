@@ -23,33 +23,33 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create <url | pypi:NAME | crates:NAME | go:MODULE>",
 		Short: "Write a new port's first Portfile from its project's URL or registry name",
-		Long: `Reads a project on GitHub, its latest release, and the build files at that
-release, and writes a new port's Portfile in the branch's working files: the
-github PortGroup, and cargo, golang, cmake, meson, or python as its files
-say, with the release's version. A Rust project's cargo.crates come from
-its Cargo.lock. It then fills in the checksums as dockhand checksums does.
+		Long: `Reads a GitHub project's latest release and build files, then writes a
+new Portfile in the branch's working files. Uses the github PortGroup and
+cargo, golang, cmake, meson, or python as indicated by the project, with the
+release's version. A Rust project's cargo.crates come from Cargo.lock.
+Fills in the checksums as dockhand checksums does.
 
-What it observed, it fills in; what it guessed, it marks with a
-"# dockhand: unconfirmed" comment: the license, from the project's
-Cargo.toml or pyproject.toml where it declares one MacPorts has a name for,
-else from GitHub's detection; the long description; and the category,
-guessed from the build system unless --category names it. The description
-is the manifest's one line where it has one, else GitHub's. The
-maintainer is your config's maintainer with openmaintainer added, unless
-it names it or --no-openmaintainer, else nomaintainer, marked, with the
-line to set: the one the ports naming your GitHub login write. submit
-holds until each guess is confirmed and its mark removed. The new
-Portfile is staged, so the next check includes it. Nothing is committed.
+Fills in observed values and marks guesses with a
+"# dockhand: unconfirmed" comment. The license comes from the project's
+Cargo.toml or pyproject.toml if it declares a license MacPorts recognizes,
+otherwise from GitHub's detection. The long description and category are
+inferred from the project; --category overrides the category. The short
+description comes from the manifest when available, otherwise GitHub. The
+maintainer comes from your configuration, with openmaintainer added unless
+already present or --no-openmaintainer is set. Without a configured
+maintainer, writes nomaintainer as unconfirmed and suggests a maintainer
+line from ports that name your GitHub login. Submission waits until each
+guess is confirmed and its mark removed. The new Portfile is staged so the
+next check includes it. Nothing is committed.
 
 The branch is --branch, else the one checked out here; --new starts one.
 --name names the port when the project's name is not what it should be.
 --plan prints the Portfile create would write, its checksums still to
 fill in, and writes nothing, starting no branch.
 
-In place of the URL, a registry name reads the project from where its
-registry says its source is: pypi:NAME from PyPI's project URLs, crates:NAME
-from the crate's repository on crates.io, go:MODULE from the module path or
-its go-get answer.`,
+Instead of a URL, use a registry name to locate the source: pypi:NAME uses
+PyPI's project URLs, crates:NAME uses the crate's repository on crates.io,
+and go:MODULE uses the module path or its go-get response.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()

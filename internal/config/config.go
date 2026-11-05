@@ -784,7 +784,7 @@ func parse(path, text string) (File, error) {
 		return File{}, fmt.Errorf("%s: serve.outdated_at: %q is not a time of day, such as \"07:00\"", path, f.Serve.OutdatedAt)
 	}
 	if f.Serve.SubmitLimit < 0 {
-		return File{}, fmt.Errorf("%s: serve.submit_limit: %d is not a number of pull requests", path, f.Serve.SubmitLimit)
+		return File{}, fmt.Errorf("%s: serve.submit_limit: %d is negative; use zero for the default limit or a positive number of pull requests", path, f.Serve.SubmitLimit)
 	}
 	switch f.Holds.Majors {
 	case "", "hold", "allow":
@@ -834,35 +834,35 @@ func parse(path, text string) (File, error) {
 		}
 	}
 	if f.Providers.GitHub.Capacity < 0 {
-		return File{}, fmt.Errorf("%s: providers.github.capacity: %d is not a number of checks", path, f.Providers.GitHub.Capacity)
+		return File{}, fmt.Errorf("%s: providers.github.capacity: %d is negative; use zero for the default capacity or a positive number of checks", path, f.Providers.GitHub.Capacity)
 	}
 	if timeout := f.Providers.Tart.TestTimeout; timeout != "" {
 		if d, err := time.ParseDuration(timeout); err != nil || d <= 0 {
-			return File{}, fmt.Errorf("%s: providers.tart.test_timeout: %q is not a duration such as \"45m\"", path, timeout)
+			return File{}, fmt.Errorf("%s: providers.tart.test_timeout: %q is not a positive duration such as \"45m\"", path, timeout)
 		}
 	}
 	if timeout := f.Providers.GitHub.BuildTimeout; timeout != "" {
 		if d, err := time.ParseDuration(timeout); err != nil || d <= 0 {
-			return File{}, fmt.Errorf("%s: providers.github.build_timeout: %q is not a duration such as \"4h\"", path, timeout)
+			return File{}, fmt.Errorf("%s: providers.github.build_timeout: %q is not a positive duration such as \"4h\"", path, timeout)
 		}
 	}
 	if timeout := f.Providers.Tart.BuildTimeout; timeout != "" {
 		if d, err := time.ParseDuration(timeout); err != nil || d <= 0 {
-			return File{}, fmt.Errorf("%s: providers.tart.build_timeout: %q is not a duration such as \"8h\"", path, timeout)
+			return File{}, fmt.Errorf("%s: providers.tart.build_timeout: %q is not a positive duration such as \"8h\"", path, timeout)
 		}
 	}
 	local := &f.Providers.Local
 	if local.Prefix != "" && !filepath.IsAbs(local.Prefix) {
-		return File{}, fmt.Errorf("%s: providers.local.prefix: %q is not a path from the root, such as \"/opt/local\"", path, local.Prefix)
+		return File{}, fmt.Errorf("%s: providers.local.prefix: %q is not an absolute path, such as \"/opt/local\"", path, local.Prefix)
 	}
 	for _, clean := range local.Clean {
 		if !filepath.IsAbs(clean) {
-			return File{}, fmt.Errorf("%s: providers.local.clean: %q is not a path from the root, such as \"/opt/macports-test\"", path, clean)
+			return File{}, fmt.Errorf("%s: providers.local.clean: %q is not an absolute path, such as \"/opt/macports-test\"", path, clean)
 		}
 	}
 	for name, timeout := range map[string]string{"test_timeout": local.TestTimeout, "build_timeout": local.BuildTimeout} {
 		if d, err := time.ParseDuration(timeout); timeout != "" && (err != nil || d <= 0) {
-			return File{}, fmt.Errorf("%s: providers.local.%s: %q is not a duration such as \"45m\"", path, name, timeout)
+			return File{}, fmt.Errorf("%s: providers.local.%s: %q is not a positive duration such as \"45m\"", path, name, timeout)
 		}
 	}
 	for release, version := range f.Providers.Tart.Xcode {
@@ -872,7 +872,7 @@ func parse(path, text string) (File, error) {
 	}
 	if command := f.Providers.Command; command != nil {
 		if command.Capacity < 0 {
-			return File{}, fmt.Errorf("%s: providers.command.capacity: %d is not a number of checks", path, command.Capacity)
+			return File{}, fmt.Errorf("%s: providers.command.capacity: %d is negative; use zero for the default capacity or a positive number of checks", path, command.Capacity)
 		}
 		if strings.TrimSpace(command.Run) == "" {
 			return File{}, fmt.Errorf("%s: providers.command.run: the command to run is required", path)
@@ -1025,10 +1025,10 @@ func setTopLevel(path, key, value string) error {
 func checkBuild(f File) error {
 	for name, profile := range f.Build.Profiles {
 		if name == buildenv.Local {
-			return fmt.Errorf("build.profiles.local: local names the local provider, which --on local builds with; name yours another way")
+			return fmt.Errorf("build.profiles.local: local is reserved for the local provider; choose another profile name, and use --on local to build in a MacPorts prefix on this Mac")
 		}
 		if slices.Contains(builtinProfiles, name) || name == "command" {
-			return fmt.Errorf("build.profiles.%s: %s is dockhand's own profile; name yours another way", name, name)
+			return fmt.Errorf("build.profiles.%s: %s is a built-in profile; choose another name", name, name)
 		}
 		switch profile.Provider {
 		case "", buildenv.Tart, buildenv.GitHub, buildenv.Command:
@@ -1051,7 +1051,7 @@ func checkBuild(f File) error {
 			return fmt.Errorf("build.profiles.%s.releases: a list of releases, as [\"15\", \"26\"], or a rule, as \"minmax\"", name)
 		}
 		if releases, rule := profile.List(); profile.Provider != "" && profile.Provider != buildenv.Tart && (len(releases) > 0 || rule != "" && rule != "macports-ci") {
-			return fmt.Errorf("build.profiles.%s: the %s provider builds where it does, so its releases can only be macports-ci, for github", name, profile.Provider)
+			return fmt.Errorf("build.profiles.%s: the %s provider chooses its own releases; omit releases, or use macports-ci for the github provider", name, profile.Provider)
 		}
 	}
 	for key, name := range map[string]string{"build.default": f.Build.Default, "build.unattended": f.Build.Unattended} {
@@ -1059,7 +1059,7 @@ func checkBuild(f File) error {
 		// for local means the local provider, which dockhand never
 		// chooses itself (D17).
 		if name == buildenv.Local {
-			return fmt.Errorf("%s: \"local\" is no build profile: \"host\" builds on Tart on this Mac's release, and --on local, asked each time, in a MacPorts prefix on this Mac", key)
+			return fmt.Errorf("%s: \"local\" is a provider name; use \"host\" for Tart on this Mac's release, or --on local for a MacPorts prefix on this Mac", key)
 		}
 		if _, defined := f.Build.Profiles[name]; name != "" && !defined && !slices.Contains(builtinProfiles, name) && name != "command" {
 			return fmt.Errorf("%s: %q names no profile: host, minmax, macports-ci, all, or one under [build.profiles]", key, name)

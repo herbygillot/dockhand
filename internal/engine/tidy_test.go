@@ -323,7 +323,7 @@ func TestARegroupPuttingADependentFirstIsNoted(t *testing.T) {
 	regrouped, err := e.Regroup(t.Context(), plan, dependentFirst, "")
 	require.NoError(t, err)
 	require.Equal(t, "textproc/jq", regrouped.Groups[0].Directory)
-	require.Contains(t, regrouped.Groups[0].Notes, "comes before commit 2, which changes libharbor, a port jq depends on as "+check.Name()+" orders them")
+	require.Contains(t, regrouped.Groups[0].Notes, "comes before commit 2, which changes libharbor; jq depends on that port in "+check.Name()+"'s build order")
 
 	dependencyFirst := fmt.Sprintf("%d %d", order["devel/libharbor"], order["textproc/jq"])
 	regrouped, err = e.Regroup(t.Context(), plan, dependencyFirst, "")
@@ -782,7 +782,7 @@ func TestTidyCommitsEachSubportsUpdate(t *testing.T) {
 	require.True(t, reproduces(again.Groups, again.History), "the commits stand: %+v", again.Groups)
 
 	_, err = plan.Regroup("2 1", "")
-	require.ErrorContains(t, err, "in the order made")
+	require.ErrorContains(t, err, "keep them in their original order")
 }
 
 // Tidy refuses a branch that doesn't descend from the base its record

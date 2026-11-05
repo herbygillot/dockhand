@@ -34,6 +34,7 @@ const (
 	StoppedCheck           Reason = "check-stopped"
 	SomeoneElsePushed      Reason = "someone-else-pushed"
 	ChangesRequested       Reason = "changes-requested"
+	ReviewerCommented      Reason = "reviewer-commented"
 	CIFailing              Reason = "ci-failing"
 	OpenedByServe          Reason = "opened-by-serve"
 	OnMaster               Reason = "on-master"
@@ -435,7 +436,8 @@ func submitNext(b Branch) Next {
 }
 
 // pullRequestAttention is what the forge's last reading asks of you:
-// someone else's push, requested changes, or failing CI.
+// someone else's push, requested changes, a reviewer's comment waiting
+// on you, or failing CI.
 func pullRequestAttention(facts Facts, row func(Kind, Reason, Next, func(*Attention)) []Attention) []Attention {
 	b := facts.Branch
 	pr := b.Record.PullRequest
@@ -452,6 +454,11 @@ func pullRequestAttention(facts Facts, row func(Kind, Reason, Next, func(*Attent
 		return row(NeedsYou, SomeoneElsePushed, Next{Verb: VerbSubmit}, with)
 	case pr.Observed.Review == model.ReviewChangesRequested:
 		return row(NeedsYou, ChangesRequested, look, with)
+	case pr.Observed.CommentedBy != "":
+		// A reviewer's comment is the conversation's latest word, which
+		// GitHub counts as no review: #36300 waited on its author while
+		// status read "CI ✓" (#90).
+		return row(NeedsYou, ReviewerCommented, look, with)
 	case pr.Observed.Conflicts:
 		// principles.md promises it: "reports, and offers the command".
 		return row(NeedsYou, Conflicting, Next{Verb: VerbRebase}, with)
@@ -499,6 +506,8 @@ func (a Attention) Words(v Vocabulary) string {
 			at = pr.Observed.ReviewedAt
 		}
 		return fmt.Sprintf("#%d: changes requested%s", pr.Number, age(at))
+	case ReviewerCommented:
+		return fmt.Sprintf("#%d: @%s commented, and the conversation waits on you%s", pr.Number, pr.Observed.CommentedBy, age(pr.Observed.At))
 	case CIFailing:
 		// A failure no reading named says its log's first error line,
 		// where there is one (Then's item 7: xapian-core's said nothing).
@@ -584,7 +593,7 @@ func (a Attention) Words(v Vocabulary) string {
 	case Conflicting:
 		return fmt.Sprintf("#%d conflicts with master", pr.Number)
 	case WorkPastMerge:
-		return fmt.Sprintf("#%d merged; %s past the merge %s in it, for a follow-up", pr.Number, a.Detail, map[bool]string{true: "isn't", false: "aren't"}[a.Detail == "1 commit"])
+		return fmt.Sprintf("#%d merged; %s after the merge %s included and can be submitted as a follow-up", pr.Number, a.Detail, map[bool]string{true: "isn't", false: "aren't"}[a.Detail == "1 commit"])
 	case CheckWider:
 		return "passed on this Mac's release alone; " + a.Detail + ", so a wider check comes first; submit still goes on as it stands"
 	case AcceptedToSubmit:

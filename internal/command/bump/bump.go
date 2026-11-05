@@ -24,17 +24,17 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "bump <port> [version]",
 		Short: "Update a port, check it, and open a pull request without prompts",
-		Long: `Takes a port to the newest release upstream, or the version named, and on
-to its pull request, asking nothing: dockhand ship <port> --yes, with the
-guardrails serve keeps. It opens a pull request, so it isn't port bump, which
-refreshes checksums; dockhand checksums does that.
+		Long: `Updates a port to the newest upstream release, or the version named,
+then checks and submits it without prompts. Equivalent to dockhand ship
+<port> --yes, with the same unattended holds as serve. This opens a pull
+request; use dockhand checksums for the checksum refresh that MacPorts'
+port bump performs.
 
-It updates the port on fresh master, in a branch it starts for the edit, or
-resumes the open branch already changing it, brought to that release where
-it isn't there; tidies the edit into one commit; checks it; and submits
-exactly that commit once the check passes. dockhand ship is the same, and
-asks once on a terminal; dockhand update is the edit alone. With --json,
-its result is ship's.
+Starts a branch from freshly fetched master, or resumes an open branch
+already changing the port. Updates it to the requested release, prepares
+the commit, checks it, and submits exactly that commit once the check
+passes. dockhand ship asks once on a terminal; dockhand update edits the
+files alone. --json uses the same result format as ship.
 
 It stops wherever a person should look:
   - The check has nowhere to build, or the port is already at that release:

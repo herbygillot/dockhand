@@ -83,7 +83,7 @@ func (s *scanLimited) Read(p []byte) (int, error) {
 		k, err := io.ReadFull(s.r, one[:])
 		switch {
 		case k > 0:
-			return 0, fmt.Errorf("%w: it holds more than the %s dockhand reads of one, uncompressed", errScanLimit, prose.Bytes(scanLimit))
+			return 0, fmt.Errorf("%w: the uncompressed archive exceeds the %s read limit", errScanLimit, prose.Bytes(scanLimit))
 		case err != nil && !errors.Is(err, io.EOF):
 			return 0, err
 		}

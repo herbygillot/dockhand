@@ -177,9 +177,9 @@ func (b Block) Words(v Vocabulary) string {
 		return fmt.Sprintf("%s (%s) did not pass in %s. If the failure was not caused by this branch, acknowledge it with --accept %s", b.Port, kindWords(b.Planned), b.Run, b.Port)
 	case BlockAwaiting:
 		port, rule, _ := strings.Cut(b.Port, " ")
-		return fmt.Sprintf("%s: you're awaiting %s. Decide it once you have it, dockhand decide %s -p %s --because \"…\", or share the branch with --draft", b.Port, b.Awaited, rule, port)
+		return fmt.Sprintf("%s: you're awaiting %s. Once you have it, run dockhand decide %s -p %s --because \"…\", or share the branch with --draft", b.Port, b.Awaited, rule, port)
 	case BlockLint:
-		return fmt.Sprintf("%s is a new port, and lint --nitpick warned in %s: %s. Fix %s and check again, or take %s with --accept %s", b.Port, b.Run, strings.Join(b.Lint, "; "), map[bool]string{true: "it", false: "them"}[len(b.Lint) == 1], map[bool]string{true: "it", false: "them"}[len(b.Lint) == 1], b.Port)
+		return fmt.Sprintf("%s is a new port, and lint --nitpick warned in %s: %s. Fix %s and check again, or accept %s with --accept %s", b.Port, b.Run, strings.Join(b.Lint, "; "), map[bool]string{true: "it", false: "them"}[len(b.Lint) == 1], map[bool]string{true: "it", false: "them"}[len(b.Lint) == 1], b.Port)
 	case BlockOthersPushed:
 		p := b.Pushed
 		return fmt.Sprintf("someone else pushed to #%d. The remote is at %s; Dockhand last pushed %s. Fetch it with git fetch %s %s and compare the changes, then incorporate it into your branch, for example with git merge %s, before submitting; Dockhand will not push over it",

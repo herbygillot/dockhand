@@ -21,17 +21,17 @@ func RetryCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "retry [check]",
 		Short: "Repeat a finished check with the same files and plan",
-		Long: `Queues a finished check again, such as check-42: the same files, the same
-plan, and the same environments, whatever the branch holds now. check
-captures newer edits instead. A result an earlier build left that still
-stands is reused, as check reuses one, unless the check was --fresh. In a
-branch's worktree, with no check named, the branch's latest; -b, -p, or
---pr names a branch, for its latest check from anywhere.
+		Long: `Repeats a finished check, such as check-42, using its original files,
+plan, and environments, even if the branch has changed. Use check to
+capture newer edits instead. Reuses earlier results whose inputs still
+match, unless the original check used --fresh.
 
-With --ci, it runs the branch's pull request's failed MacPorts CI jobs
-again instead, through your GitHub login, which needs write access to
-MacPorts' repository, as a maintainer has: for a failure another run may
-get past, as a mirror refusing an archive.`,
+With no check named in a branch's worktree, repeats that branch's latest
+check. Use -b, -p, or --pr to select a branch from another directory.
+
+With --ci, reruns the branch's failed MacPorts pull request CI jobs instead.
+Your GitHub account needs write access to MacPorts' repository. This is
+useful for temporary failures, such as a mirror refusing an archive.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()

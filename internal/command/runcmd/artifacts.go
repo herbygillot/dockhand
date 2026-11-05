@@ -20,14 +20,15 @@ func ArtifactsCommand(s *settings.Settings, streams term.Streams) *cobra.Command
 	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "artifacts [branch | check]",
-		Short: "Show where a check's built archives are on this Mac",
-		Long: `Prints the archive each port of a branch's latest check built, a line for
-each port and platform it passed on: the port, the platform, and the
-archive's path on this Mac with its name, for otool or a smoke test by hand.
-A port that didn't pass built none; one whose archive wasn't kept, or that
-cleanup removed, says so. A check named, such as check-42, is that check's
-archives, as logs takes one. In a branch's worktree, with no branch named,
-the branch checked out there.`,
+		Short: "Show the local paths of a check's built archives",
+		Long: `Lists archives from the branch's latest check, with one line per passed
+port and platform: the port, platform, archive name, and path on this Mac.
+Use these paths to inspect or manually test the built files. The output
+explains when a port did not pass or its archive was not kept or was removed
+by cleanup.
+
+Name a check, such as check-42, to list its archives. With no argument in a
+branch's worktree, lists that branch's latest check.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// A check is named as logs names one: artifacts check-781 read
