@@ -180,7 +180,7 @@ func (e *Engine) observeState(ctx context.Context, pr *model.PullRequest) (model
 	}
 	next := e.observation(observed.PullRequest, forge.PullRequestStatus{})
 	if was := pr.Observed; was != nil && next.State == model.PullRequestOpen {
-		next.Draft, next.Review, next.ChangesRequestedBy, next.ReviewedAt, next.ApprovedBy = was.Draft, was.Review, was.ChangesRequestedBy, was.ReviewedAt, was.ApprovedBy
+		next.Draft, next.Review, next.ChangesRequestedBy, next.ReviewedAt, next.ApprovedBy, next.CommentedBy = was.Draft, was.Review, was.ChangesRequestedBy, was.ReviewedAt, was.ApprovedBy, was.CommentedBy
 		next.Checks, next.Failing = was.Checks, was.Failing
 	}
 	return next, nil
@@ -261,7 +261,7 @@ func (e *Engine) observation(now forge.PullRequest, status forge.PullRequestStat
 		return next
 	}
 	next.Draft, next.Review, next.Failing, next.ChangesRequestedBy, next.ReviewedAt = status.Draft, model.PullRequestReview(status.Review), status.Checks.Failing, status.ChangesRequestedBy, status.ReviewedAt
-	next.Opened, next.Author, next.Mentioned, next.ApprovedBy = now.CreatedAt, now.Author, now.Mentions, status.ApprovedBy
+	next.Opened, next.Author, next.Mentioned, next.ApprovedBy, next.CommentedBy = now.CreatedAt, now.Author, now.Mentions, status.ApprovedBy, status.CommentedBy
 	next.Checks = checksOf(status.Checks)
 	next.Conflicts = status.Mergeable == "no"
 	return next
@@ -317,6 +317,9 @@ func recordPullRequest(tx store.Tx, branch model.Branch, next model.PullRequestO
 	if next.State == model.PullRequestOpen {
 		if previous.Review != next.Review && next.Review != model.ReviewNone {
 			refreshed.Changes = append(refreshed.Changes, fmt.Sprintf("#%d: %s", pr.Number, reviewWords(next.Review)))
+		}
+		if next.CommentedBy != "" && previous.CommentedBy != next.CommentedBy {
+			refreshed.Changes = append(refreshed.Changes, fmt.Sprintf("#%d: @%s commented", pr.Number, next.CommentedBy))
 		}
 		if previous.Checks != next.Checks && (next.Checks == model.ChecksFailing || next.Checks == model.ChecksPassing) {
 			refreshed.Changes = append(refreshed.Changes, fmt.Sprintf("#%d: CI %s", pr.Number, next.Checks))

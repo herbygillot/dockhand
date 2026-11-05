@@ -222,7 +222,10 @@ plan says so ("retitles #36310 to 'croc: update to 11.6.2'"). The branch
 keeps its name.
 
 `--tested-binaries` and `--tested-variants` state that you made the
-corresponding manual checks; do not infer them from an install alone. A passing
+corresponding manual checks; do not infer them from an install alone. They
+are kept with the branch, as `--note` is, so a later `submit`, `ship`, or
+`bump` of it says them without being told again; `ship --to commit` or
+`--to check` keeps them for the submit that follows. A passing
 variant build of a changed port answers the variants item from what was built:
 `check --variants each`, or chosen variants, in any finished check of the same
 files; the item's note names each build and its check, `(Dockhand built curl
@@ -338,7 +341,10 @@ dockhand open -b jq-update
 ```
 
 Refresh reads current review and CI observations; open shows the pull request in
-the browser. Edit the same tracked branch, inspect the diff, tidy and check the
+the browser. A comment by someone other than you that is the conversation's
+latest word, after your last commit, is said as a reviewer waiting, `#36300
+@reneeotten commented`, and puts the branch under Needs attention, though GitHub
+counts no review for it. Edit the same tracked branch, inspect the diff, tidy and check the
 new work, and submit again. The existing pull request is updated. Where a
 reviewer requested changes, submit can ask to request their review again after
 pushing. `submit.rerequest_review` controls that behavior; see

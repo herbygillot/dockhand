@@ -95,6 +95,10 @@ type PullRequestObservation struct {
 	// ReviewedAt is when the review that sets Review was made; zero where
 	// none does, or for an observation from before it was kept.
 	ReviewedAt time.Time `json:",omitzero"`
+	// CommentedBy is the reviewer whose comment is the conversation's
+	// latest word, after the head, which GitHub's review state doesn't
+	// count (forge.PullRequestStatus.CommentedBy); empty where none is.
+	CommentedBy string `json:",omitempty"`
 	// Failing names the checks that concluded unsuccessfully.
 	Checks  PullRequestChecks
 	Failing []string `json:",omitempty"`
@@ -236,6 +240,11 @@ type Branch struct {
 	// run, #35084). It is the branch's, not the pull request's, so a note
 	// given before one opens is kept for it.
 	Note string
+	// TestedBinaries and TestedVariants are the person's statements for
+	// the pull request template's last two items, that they tested its
+	// binaries and its variants, kept with the branch as its note is, so
+	// a later submission says them without being told again (#91).
+	TestedBinaries, TestedVariants bool
 	// Ports are the ports it was started for, by name: start --port's, or
 	// the port an authoring command started it for. -p, status --port,
 	// and its ports read them beside what it changes, so a branch started

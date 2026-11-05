@@ -109,6 +109,25 @@ func TestShipToCommitKeepsTheTitleAndNoteForSubmit(t *testing.T) {
 	require.Contains(t, g.PRs[34901].Body, "A test; it will be closed.")
 }
 
+// The person's statement that they tested the binaries is kept with the
+// branch, as its note is, so a later submission says it without being
+// told again (#91, field testing on #36300).
+func TestTheTestedStatementsAreKeptWithTheBranch(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithScript(t, w, "passed")
+	g := cmdtest.WithGitHub(t, w)
+	g.Others = nil
+	_, errs, err := cmdtest.Dockhand(t, "ship", "jq", "--to", "commit", "--tested-binaries")
+	require.NoError(t, err, errs)
+	_, errs, err = cmdtest.Dockhand(t, "submit", "-b", "jq-1.8.1", "--no-check", "--yes")
+	require.NoError(t, err, errs)
+	require.Contains(t, g.PRs[34901].Body, "- [x] tested basic functionality of all binary files?")
+	require.Contains(t, g.PRs[34901].Body, "- [ ] checked that the Portfile's most important", "only what was stated")
+}
+
 // ship <port> finds the port's branch as every authoring command does,
 // through engine.Select: a script is told the branches where several change
 // it, and a terminal asks which (the architecture review of 5897a82, R3-3:

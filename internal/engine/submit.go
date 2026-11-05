@@ -414,6 +414,10 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		return SubmitPlan{}, err
 	}
 	request.Branch = branch
+	// The statements the person made before for this branch stand, as its
+	// note does: a later run with --yes had to make them again (#91).
+	request.TestedBinaries = request.TestedBinaries || branch.TestedBinaries
+	request.TestedVariants = request.TestedVariants || branch.TestedVariants
 	plan := SubmitPlan{Request: request, Branch: branch, Repository: e.PullRequestRepository()}
 	if err := e.pullRequestHere(branch); err != nil {
 		return plan, err
@@ -1244,6 +1248,8 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 		if plan.Request.Note != nil {
 			branch.Note = plan.Note
 		}
+		branch.TestedBinaries = branch.TestedBinaries || plan.Request.TestedBinaries
+		branch.TestedVariants = branch.TestedVariants || plan.Request.TestedVariants
 		if err := tx.UpdateBranch(branch); err != nil {
 			return err
 		}
@@ -1710,11 +1716,12 @@ func changedPatches(ctx context.Context, worktree *git.Repository, base string, 
 // later submit --yes opened the pull request without the note (field
 // testing's notes from the curl fix, note 9). A plan with no --note keeps
 // the branch's as it is.
-// KeepForSubmit keeps a pull request's title and note, given before its
-// submission, with the branch, for the submit that follows: ship --to
+// KeepForSubmit keeps a pull request's title and note, and the person's
+// tested statements, given before its submission, with the branch, for
+// the submit that follows: ship --to
 // commit or --to check took them and dropped them (Codex's workflow review
 // of 1caa6c3d). An empty title, or a nil note, keeps what the branch has.
-func (e *Engine) KeepForSubmit(ctx context.Context, id model.BranchID, title string, note *string) error {
+func (e *Engine) KeepForSubmit(ctx context.Context, id model.BranchID, title string, note *string, testedBinaries, testedVariants bool) error {
 	return e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		branch, err := tx.Branch(id)
 		if err != nil {
@@ -1723,6 +1730,8 @@ func (e *Engine) KeepForSubmit(ctx context.Context, id model.BranchID, title str
 		if title != "" {
 			branch.Title = title
 		}
+		branch.TestedBinaries = branch.TestedBinaries || testedBinaries
+		branch.TestedVariants = branch.TestedVariants || testedVariants
 		if note != nil {
 			branch.Note = strings.TrimSpace(strings.ReplaceAll(*note, "\r\n", "\n"))
 		}

@@ -25,7 +25,8 @@ const readingChunk = 25
 // more (macports.MergeFitness).
 const pullRequestFields = `number state isDraft headRefOid mergeable createdAt body author { login }
 latestOpinionatedReviews(first: 100) { totalCount nodes { state submittedAt author { login } } }
-commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { totalCount nodes {
+comments(last: 1) { nodes { createdAt author { __typename login } } }
+commits(last: 1) { nodes { commit { committedDate statusCheckRollup { contexts(first: 100) { totalCount nodes {
   __typename
   ... on CheckRun { name status conclusion }
   ... on StatusContext { context state }
@@ -65,10 +66,20 @@ type graphPullRequest struct {
 		TotalCount int           `json:"totalCount"`
 		Nodes      []graphReview `json:"nodes"`
 	} `json:"latestOpinionatedReviews"`
+	Comments struct {
+		Nodes []struct {
+			CreatedAt time.Time `json:"createdAt"`
+			Author    *struct {
+				Type  string `json:"__typename"`
+				Login string `json:"login"`
+			} `json:"author"`
+		} `json:"nodes"`
+	} `json:"comments"`
 	Commits struct {
 		Nodes []struct {
 			Commit struct {
-				Rollup *struct {
+				CommittedDate time.Time `json:"committedDate"`
+				Rollup        *struct {
 					Contexts struct {
 						TotalCount int            `json:"totalCount"`
 						Nodes      []graphContext `json:"nodes"`
@@ -171,6 +182,15 @@ func readingOf(ref forge.PullRequestRef, pr graphPullRequest) (forge.PullRequest
 		}
 	}
 	review(&status, opinions)
+	// The conversation's latest word, where a person other than the
+	// author wrote it after the head was committed, is a reviewer waiting
+	// (#90).
+	if comments := pr.Comments.Nodes; len(comments) > 0 && len(pr.Commits.Nodes) > 0 {
+		last := comments[len(comments)-1]
+		if by := last.Author; by != nil && by.Type == "User" && (pr.Author == nil || !strings.EqualFold(by.Login, pr.Author.Login)) && last.CreatedAt.After(pr.Commits.Nodes[0].Commit.CommittedDate) {
+			status.CommentedBy = by.Login
+		}
+	}
 	if nodes := pr.Commits.Nodes; len(nodes) > 0 && nodes[0].Commit.Rollup != nil {
 		contexts := nodes[0].Commit.Rollup.Contexts
 		reading.Partial = reading.Partial || contexts.TotalCount > len(contexts.Nodes)

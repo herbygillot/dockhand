@@ -673,12 +673,12 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 	lines.done(commit, "committed", strings.Join(tidied.Subjects, "; "), "")
 	// A title and note for the pull request, where ship stops before it,
 	// are kept for the submit that follows.
-	if stage != engine.ShipSubmit && (linked.Title != "" || linked.NoteSet) {
+	if stage != engine.ShipSubmit && (linked.Title != "" || linked.NoteSet || linked.TestedBinaries || linked.TestedVariants) {
 		var note *string
 		if linked.NoteSet {
 			note = &linked.Note
 		}
-		if err := e.KeepForSubmit(ctx, tidied.Branch.ID, linked.Title, note); err != nil {
+		if err := e.KeepForSubmit(ctx, tidied.Branch.ID, linked.Title, note, linked.TestedBinaries, linked.TestedVariants); err != nil {
 			return nil, err
 		}
 	}
