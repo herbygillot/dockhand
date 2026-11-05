@@ -13,7 +13,8 @@ import (
 const usage = `usage:
   facts buildbot -out FILE
   facts tart -out DIR [IMAGE...]
-  facts generate [-tart DIR]... [-buildbot FILE] -out FILE`
+  facts runner -name IMAGE -out DIR
+  facts generate [-tart DIR]... [-runner DIR]... [-buildbot FILE] -out FILE`
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -50,9 +51,19 @@ func run(args []string) error {
 			return errors.New("tart: -out is required")
 		}
 		return harvestTart(ctx, *executable, *out, *parallel, flags.Args())
+	case "runner":
+		name := flags.String("name", "", "the runner's image label, macos-15-intel")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *out == "" || *name == "" {
+			return errors.New("runner: -name and -out are required")
+		}
+		return harvestRunner(ctx, *name, *out)
 	case "generate":
-		var tartDirs list
-		flags.Var(&tartDirs, "tart", "a directory of Tart probes (repeatable)")
+		var probeDirs list
+		flags.Var(&probeDirs, "tart", "a directory of Tart probes (repeatable)")
+		flags.Var(&probeDirs, "runner", "a directory of runner probes (repeatable)")
 		buildbot := flags.String("buildbot", "", "the buildbot harvest")
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
@@ -60,7 +71,7 @@ func run(args []string) error {
 		if *out == "" {
 			return errors.New("generate: -out is required")
 		}
-		return generate(tartDirs, *buildbot, *out)
+		return generate(probeDirs, *buildbot, *out)
 	}
 	return errors.New(usage)
 }

@@ -17,7 +17,7 @@ func TestTheCheckedInFactsTableIsSound(t *testing.T) {
 	}
 }
 
-func TestLookupPrefersATartImageToABuildbot(t *testing.T) {
+func TestLookupPrefersATartImageThenARunnerToABuildbot(t *testing.T) {
 	buildbot := Facts{Darwin: 25, Architecture: "arm64", Profile: ProfileXcode, Xcode: "26.6", Tools: "26.6", Source: Source{Kind: SourceBuildbot, From: "ports-26_arm64-builder build 1", Date: "2026-09-26"}}
 	image := buildbot
 	image.Source = Source{Kind: SourceTart, From: "dockhand-xcode-tahoe", Date: "2026-09-25"}
@@ -27,6 +27,13 @@ func TestLookupPrefersATartImageToABuildbot(t *testing.T) {
 	require.Equal(t, image, got)
 	_, ok = table.Lookup(25, "arm64", ProfileTools)
 	require.False(t, ok)
+
+	runner := buildbot
+	runner.Source = Source{Kind: SourceRunner, From: "macos-26 run 1, Xcode_26.6.app", Date: "2026-11-05"}
+	got, _ = FactsTable{Facts: []Facts{buildbot, runner, image}}.Lookup(25, "arm64", ProfileXcode)
+	require.Equal(t, image, got, "a Tart image over a runner")
+	got, _ = FactsTable{Facts: []Facts{buildbot, runner}}.Lookup(25, "arm64", ProfileXcode)
+	require.Equal(t, runner, got, "a runner over a buildbot, whose log lists no SDKs")
 }
 
 func TestCheckRefusesAnUnsoundRow(t *testing.T) {

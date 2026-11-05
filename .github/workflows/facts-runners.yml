@@ -1,0 +1,93 @@
+name: Toolchain facts on GitHub's runners
+
+# The facts table's runner source (tools/facts/README.md): each of GitHub's
+# macOS images, Intel and arm64, macOS 15 and 26, the images MacPorts' own
+# CI starts from, probed with MacPorts Base installed as CI installs it,
+# once with each Xcode the image carries selected and once with the Command
+# Line Tools. Each image's probes are an artifact; tools/facts generate
+# reads them with -runner. Weekly, since GitHub updates its images about
+# that often, and when the probe changes.
+
+on:
+  schedule:
+    - cron: "17 7 * * 1"
+  workflow_dispatch:
+  push:
+    paths:
+      - tools/facts/probe.tcl
+      - tools/facts/runner.go
+      - .github/workflows/facts-runners.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [macos-15, macos-15-intel, macos-26, macos-26-intel]
+    runs-on: ${{ matrix.image }}
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Build the harvester
+        run: go build -o "$RUNNER_TEMP/facts" ./tools/facts
+
+      # As macports-ports' .github/workflows/bootstrap.sh does before it
+      # installs MacPorts, so the probe sees what CI's builds start from.
+      - name: Set Homebrew aside
+        run: |
+          set -euo pipefail
+          sudo mkdir -p /opt/local-off /opt/homebrew-off
+          test ! -d /usr/local || sudo find /usr/local -mindepth 1 -maxdepth 1 -type d -exec mv {} /opt/local-off/ \;
+          test ! -d /opt/homebrew || sudo find /opt/homebrew -mindepth 1 -maxdepth 1 -type d -exec mv {} /opt/homebrew-off/ \;
+          test ! -d /usr/local || sudo find /usr/local -mindepth 1 -maxdepth 1 -type f -delete
+          test ! -d /opt/homebrew || sudo find /opt/homebrew -mindepth 1 -maxdepth 1 -type f -delete
+
+      - name: MacPorts
+        run: .github/scripts/macports.sh
+
+      - name: Probe each Xcode and the Command Line Tools
+        run: |
+          set -euo pipefail
+          ls -l /Applications | grep -i xcode
+          "$RUNNER_TEMP/facts" runner -name "${{ matrix.image }}" -out "$RUNNER_TEMP/facts-${{ matrix.image }}"
+
+      - name: Summarize
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "### ${{ matrix.image }} (image ${ImageVersion:-unknown})"
+            echo
+            echo "| selected | macOS | arch | Xcode | tools | SDK | clang | tools' SDKs | Xcode's SDKs |"
+            echo "|---|---|---|---|---|---|---|---|---|"
+            for f in "$RUNNER_TEMP/facts-${{ matrix.image }}"/*.json; do
+              [ -e "$f" ] || continue
+              jq -r '(.developer // "" | sub("/Contents/Developer$"; "")) as $app
+                | [.slug, .facts.shell.sw_vers_productVersion.value, .facts.base.build_arch.value,
+                   .facts.base.xcodeversion.value, .facts.base.xcodecltversion.value, .facts.base.macosx_sdk_version.value,
+                   .facts.worker["compiler.command_line_tools_version(clang)"].value,
+                   ((.facts.shell.clt_sdks.value // []) | join(", ")),
+                   ((.facts.shell.xcode_sdks.value // []) | map(select(startswith($app + ": ")) | sub("^[^:]*: "; "")) | join(", "))]
+                | "| " + (map(. // "" | tostring) | join(" | ")) + " |"' "$f" || echo "| $(basename "$f") | unreadable |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the probes
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: facts-${{ matrix.image }}
+          path: ${{ runner.temp }}/facts-${{ matrix.image }}
+          if-no-files-found: error
