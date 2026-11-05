@@ -49,10 +49,13 @@ gh run download --repo herbygillot/dockhand --name facts-macos-15 --dir $dir/run
   each image once with every Xcode it carries selected and once with the
   Command Line Tools selected, Xcode still on disk, which Base reads as no
   Xcode. A row's source names the image, the run, and what was selected.
-  Of a release and architecture's Xcodes the table keeps the one its
-  buildbot runs; `generate` reports the others, which wait for the table's
-  lookup to choose among several. These are the only Intel rows that list
-  SDKs and clang.
+  The table keeps a runner's row only where it has the toolchain the
+  release and architecture's buildbot runs, its Xcode and its tools;
+  `generate` reports the others, which wait for the table's lookup to
+  choose among toolchains. On 2026-11-05 the Intel and arm64 runners gave
+  the same SDKs, Xcode SDKs, and clang as the Tart images for the same
+  Xcode and tools, field for field: these facts are the version's, not
+  the Mac's.
 
 Where more than one describes a release, architecture, and profile, the
 Tart image wins, then the runner (`macos.FactsTable.Lookup`), and the

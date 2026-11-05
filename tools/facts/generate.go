@@ -26,8 +26,7 @@ const sourceRunner = "runner"
 // cross-check where a Tart image or a runner covers the same release; where
 // one source gives a release, architecture, and profile more than once, the
 // newest wins. A runner probes every Xcode its image carries, and the table
-// keeps one Xcode for each release, architecture, and profile, the
-// builder's (runnerRows).
+// keeps the one with the builder's toolchain, if any (runnerRows).
 func generate(probeDirs []string, buildbot, out string) error {
 	var rows, runners []macos.Facts
 	for _, dir := range probeDirs {
@@ -96,29 +95,33 @@ type fact struct {
 	Error *string         `json:"error"`
 }
 
-// runnerRows are the runner rows the table keeps: of each release and
-// architecture's Xcodes, the one its buildbot runs, and the Command Line
-// Tools selected, which Base reads as no Xcode though Xcode stays on disk.
-// Every other Xcode is reported, not kept, until the table's lookup can
-// choose among several (plan/facts-table-xcode-key-2026-11-05.md).
+// runnerRows are the runner rows the table keeps: those with the
+// toolchain the release and architecture's buildbot runs, its Xcode and its
+// tools, or its tools alone with the Command Line Tools selected, which
+// Base reads as no Xcode though Xcode stays on disk. A runner's other
+// Xcodes, and its own tools where they aren't the builder's, are reported,
+// not kept, until the table's lookup can choose among toolchains
+// (plan/facts-table-xcode-key-2026-11-05.md): kept, they would stand for
+// the builder with tools it doesn't run.
 func runnerRows(runners, others []macos.Facts, report io.Writer) []macos.Facts {
-	builders := map[string]string{}
+	builders := map[string]macos.Facts{}
 	for _, row := range others {
 		if row.Source.Kind == macos.SourceBuildbot && row.Profile == macos.ProfileXcode {
-			builders[fmt.Sprintf("%d %s", row.Darwin, row.Architecture)] = row.Xcode
+			builders[fmt.Sprintf("%d %s", row.Darwin, row.Architecture)] = row
 		}
 	}
 	var kept []macos.Facts
 	for _, row := range runners {
 		builder, known := builders[fmt.Sprintf("%d %s", row.Darwin, row.Architecture)]
+		said := fmt.Sprintf("darwin %d %s %s: Xcode %s, tools %s, clang %s (%s)", row.Darwin, row.Architecture, row.Profile, row.Xcode, row.Tools, row.Clang, row.Source.From)
 		switch {
-		case row.Profile == macos.ProfileTools && row.Xcode == "none", row.Profile == macos.ProfileXcode && row.Xcode == builder:
-			kept = append(kept, row)
-			fmt.Fprintf(report, "kept:     darwin %d %s %s: Xcode %s, tools %s, clang %s (%s)\n", row.Darwin, row.Architecture, row.Profile, row.Xcode, row.Tools, row.Clang, row.Source.From)
 		case !known:
-			fmt.Fprintf(report, "reported: darwin %d %s %s: Xcode %s, tools %s, clang %s (%s): no builder row to choose by\n", row.Darwin, row.Architecture, row.Profile, row.Xcode, row.Tools, row.Clang, row.Source.From)
+			fmt.Fprintf(report, "reported: %s: no builder row to choose by\n", said)
+		case row.Tools == builder.Tools && (row.Xcode == builder.Xcode || row.Profile == macos.ProfileTools && row.Xcode == "none"):
+			kept = append(kept, row)
+			fmt.Fprintf(report, "kept:     %s\n", said)
 		default:
-			fmt.Fprintf(report, "reported: darwin %d %s %s: Xcode %s, tools %s, clang %s (%s): the builder runs Xcode %s\n", row.Darwin, row.Architecture, row.Profile, row.Xcode, row.Tools, row.Clang, row.Source.From, builder)
+			fmt.Fprintf(report, "reported: %s: the builder runs Xcode %s, tools %s\n", said, builder.Xcode, builder.Tools)
 		}
 	}
 	return kept
