@@ -169,3 +169,31 @@ func TestInertChangesAreOnlyOptionsNoBuildReads(t *testing.T) {
 	require.True(t, ok)
 	require.Empty(t, options)
 }
+
+// An inert option the Portfile reads elsewhere certifies nothing: a
+// destroot hook writing ${description} into a file builds differently
+// when it changes (Codex's sixth review, #70). One read by another inert
+// option's line, as long_description's, is still metadata, and one named
+// in a comment isn't read.
+func TestAnInertOptionReadByAPhaseIsntInert(t *testing.T) {
+	t.Parallel()
+	port := func(description, rest string) []byte {
+		return []byte("PortSystem 1.0\nname fixture\nversion 1\ndescription " + description + "\n" + rest)
+	}
+	for _, c := range []struct {
+		rest string
+		ok   bool
+	}{
+		{"long_description {*}${description}\n", true},
+		{"# ${description} is said in the README\n", true},
+		{"destroot {\n    puts [open ${destroot}/d w] ${description}\n}\n", false},
+		{"post-destroot { system \"echo $description\" }\n", false},
+		{"if {[option description] eq \"alpha\"} { revision 1 }\n", false},
+	} {
+		options, ok := InertChanges(port("alpha", c.rest), port("beta", c.rest))
+		require.Equal(t, c.ok, ok, c.rest)
+		if ok {
+			require.Equal(t, []string{"description"}, options)
+		}
+	}
+}

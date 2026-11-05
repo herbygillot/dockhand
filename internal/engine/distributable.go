@@ -10,29 +10,34 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/distributable"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
+	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // distributableJudge asks MacPorts' checker whether a port is
 // distributable (comparison.DistributableJudge): the port as its
 // evaluation gives it, its license_noconflict from its text, and each
-// dependency, transitively, from the base tree's port index, with the
-// license_noconflict of those whose Portfiles name one read from their
-// text. Where the base's index isn't cached, or the checker can't run,
-// it's unknown, and nothing is said.
+// dependency, transitively, from the port index of the tree it's judged
+// at, with the license_noconflict of those whose Portfiles name one read
+// from their text. Each side is judged at its own tree: the candidate's
+// was judged with the base's dependencies, so a dependency the branch
+// relicensed went unseen (Codex's sixth review, #72). A tree whose index
+// isn't cached is read from one staged from its base's, as a plan stages
+// one; where neither can be read, or the checker can't run, it's unknown,
+// and nothing is said.
 type distributableJudge struct{ e *Engine }
 
 // closureLimit bounds the dependencies a judgment reads, a GTK port's
 // being some hundreds.
 const closureLimit = 5000
 
-func (j distributableJudge) Distributable(ctx context.Context, base model.Source, port macports.PortInfo, text []byte) assess.Verdict {
+func (j distributableJudge) Distributable(ctx context.Context, at model.Source, port macports.PortInfo, text []byte) assess.Verdict {
 	e := j.e
 	cache, err := e.indexCache()
-	if err != nil || base.Tree == "" {
+	if err != nil || at.Tree == "" {
 		return assess.Verdict{}
 	}
-	exempt := e.noConflicts(ctx, string(base.Tree))
+	exempt := e.noConflicts(ctx, string(at.Tree))
 	infos := map[string]distributable.Info{}
 	top := distributable.Info{License: port.Options["license"], InstallsLibs: true}
 	for _, dependency := range port.Dependencies {
@@ -41,7 +46,7 @@ func (j distributableJudge) Distributable(ctx context.Context, base model.Source
 		}
 	}
 	read := false
-	found, err := portindex.ReadCached(ctx, cache, string(base.Tree), func(index *portindex.Index) error {
+	closure := func(index *portindex.Index) error {
 		read = true
 		if text != nil {
 			top.NoConflict = portfile.TopWords(text, "license_noconflict")
@@ -70,8 +75,23 @@ func (j distributableJudge) Distributable(ctx context.Context, base model.Source
 			queue = append(queue, info.Dependencies...)
 		}
 		return nil
-	})
-	if err != nil || !found || !read {
+	}
+	found, err := portindex.ReadCached(ctx, cache, string(at.Tree), closure)
+	if err == nil && !found {
+		// Staged from the base's by MacPorts' own reader; one that stands
+		// in for it, as a test's, has none to stage, and says nothing.
+		var staged *treequery.Reader
+		if _, capable := e.capabilities(); capable == nil {
+			e.lazy.Lock()
+			staged = e.macPorts
+			e.lazy.Unlock()
+		}
+		if staged == nil {
+			return assess.Verdict{}
+		}
+		err = staged.ReadIndex(ctx, at, closure)
+	}
+	if err != nil || !read {
 		return assess.Verdict{}
 	}
 	reader, err := e.selectionReader()

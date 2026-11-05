@@ -363,6 +363,28 @@ proc known {args} {
 # ${prefix} instead", which lint says and goes on, for the test step's
 # failure. A step whose mark couldn't be read is read from the mark
 # before it, as more of the log than its own; with none, the whole log.
+# installphase is the phase within the install that MacPorts' last
+# "Error: Failed to <phase> <port>" line in the step's log names, or
+# install where none does: "Failed to patch kitty" read as "failed at
+# install" (field testing's kitty 0.50.0, check-791). It reads the line
+# as why does, the exception the person accepted.
+proc installphase {log} {
+    global counted
+    set from 0
+    if {[dict exists $counted $log]} { set from [lindex [dict get $counted $log] 0] }
+    set fd [open $log r]
+    seek $fd $from
+    set text [read $fd]
+    close $fd
+    set phase install
+    foreach line [split $text \n] {
+        if {[regexp {^Error: Failed to (extract|patch|configure|build|destroot|install|activate) } $line -> named]} {
+            set phase $named
+        }
+    }
+    return $phase
+}
+
 proc why {log message} {
     global counted
     set from 0
@@ -1220,7 +1242,7 @@ proc build {index target} {
     if {$message eq "timed out"} {
         return [{*}$fail $result install $over]
     } elseif {$message ne ""} {
-        return [{*}$fail $result install [why $log $message]]
+        return [{*}$fail $result [installphase $log] [why $log $message]]
     }
     dict set result outcome passed
     set tests [dict get $input tests]

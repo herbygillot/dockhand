@@ -80,6 +80,9 @@ type Observed struct {
 	// (LicenseFrom names it) or, failing that, the forge (LicenseFrom
 	// empty); empty where neither says one MacPorts has a name for.
 	License, LicenseFrom string
+	// LicenseGuess says where License was guessed from, a license file's
+	// first line, where neither names one (portcreate.GuessLicense).
+	LicenseGuess string
 	// Description is the port's one line: the manifest's, else the
 	// forge's.
 	Description string
@@ -114,6 +117,8 @@ func observe(project Project) (Observed, error) {
 		observed.License, observed.LicenseFrom = license, observed.Declared.File
 	} else if license, ok := macports.License(project.License); ok {
 		observed.License = license
+	} else if license, file, line, ok := portcreate.GuessLicense(project.Files); ok {
+		observed.License, observed.LicenseGuess = license, file+"'s first line, "+line
 	}
 	if observed.Declared.Description != "" {
 		observed.Description = observed.Declared.Description
@@ -543,6 +548,21 @@ func (g githubProjects) Project(ctx context.Context, address string) (Project, e
 			found.Files[file] = data
 		}
 	}
+	// Where the forge names no license MacPorts can say, as GitHub's
+	// NOASSERTION, the license file is read for create's guess (#67).
+	if _, ok := macports.License(found.License); !ok {
+		for _, file := range portcreate.LicenseFiles {
+			data, err := files.File(ctx, tag.Commit, path.Join(directory, file), projectFileLimit)
+			if errors.Is(err, forge.ErrNotFound) {
+				continue
+			}
+			if err != nil {
+				return Project{}, fmt.Errorf("reading %s at %s: %w", file, found.Tag, err)
+			}
+			found.Files[file] = data
+			break
+		}
+	}
 	// A Cargo project's programs are its packages', the root's and its
 	// workspace members', each building one where it has src/main.rs, as
 	// a comparison reads them (portcreate.Binaries, CX-7).
@@ -586,7 +606,7 @@ func publishedTag(ctx context.Context, repository forge.Repository, prefix, vers
 func (e *Engine) createSpec(ctx context.Context, repo *git.Repository, observed Observed, request CreateRequest, name, prefix string) (portcreate.Spec, string, error) {
 	project, build, version := observed.Project, observed.Build, observed.Version
 	spec := portcreate.Spec{Name: name, Category: request.Category, Owner: project.Owner, Project: project.Name, Version: version, TagPrefix: prefix,
-		Description: observed.Description, Homepage: project.Homepage, License: observed.License, LicenseFrom: observed.LicenseFrom, Maintainer: request.maintainers(), Build: build,
+		Description: observed.Description, Homepage: project.Homepage, License: observed.License, LicenseFrom: observed.LicenseFrom, LicenseGuess: observed.LicenseGuess, Maintainer: request.maintainers(), Build: build,
 		Binaries: portcreate.Binaries(project.Files, build), ReleaseAsset: portcreate.HasReleaseArchive(project.Assets, project.Name, version),
 		Directory: project.Directory, Package: project.Package}
 	if spec.Category == "" {

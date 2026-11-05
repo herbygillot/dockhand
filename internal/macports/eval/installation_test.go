@@ -236,3 +236,30 @@ func TestAModelledContextSaysWhetherItHasSystemHeaders(t *testing.T) {
 		require.False(t, port.ModeledHostAccess, "darwin %s: %v", c.version, port.Problems)
 	}
 }
+
+// A modelled context with Xcode answers Xcode's SDKs, and xcrun's
+// --show-sdk-path, from the facts table, where it lists them: the survey's
+// insight 1 found 3,651 ports testing …/SDKs/MacOSX* on the host, and
+// 3,563 running xcrun there (#17). An SDK not listed is absent and not
+// located; xcrun finds an SDK by its version exactly, MacOSX15.5.sdk,
+// never macosx15.
+func TestAModelledContextAnswersXcodesSDKsFromTheTable(t *testing.T) {
+	t.Parallel()
+	sequoia := model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}
+	sdks := macports.XcodeDeveloper + "/Platforms/MacOSX.platform/Developer/SDKs"
+	clt := macports.CommandLineTools + "/SDKs"
+	lines := strings.Join([]string{
+		"lappend results [file exists " + sdks + "/MacOSX15.sdk] [file exists " + sdks + "/MacOSX10.13.sdk] [file isdirectory " + sdks + "/MacOSX.sdk]",
+		"lappend results [lsort [glob -nocomplain -tails -directory " + sdks + " MacOSX*.sdk]]",
+		"lappend results [exec xcrun --sdk macosx --show-sdk-path 2> /dev/null] [exec xcrun --sdk macosx15.5 --show-sdk-path 2> /dev/null]",
+		"lappend results [catch {exec xcrun --sdk macosx15 --show-sdk-path 2> /dev/null}] [catch {exec xcrun --sdk macosx10.13 --show-sdk-path 2> /dev/null}]",
+		"lappend results [exec env DEVELOPER_DIR=" + macports.CommandLineTools + " xcrun --sdk macosx15.5 --show-sdk-path 2> /dev/null] [exec env DEVELOPER_DIR=" + macports.CommandLineTools + " xcrun --sdk macosx --show-sdk-path 2> /dev/null]",
+	}, "\n")
+	got, port := observedDescription(t, sequoia, model.DeveloperToolsXcode, lines)
+	require.Equal(t, []string{"1", "0", "1",
+		"MacOSX.sdk MacOSX15.5.sdk MacOSX15.sdk",
+		sdks + "/MacOSX15.5.sdk", sdks + "/MacOSX15.5.sdk",
+		"1", "1",
+		clt + "/MacOSX.sdk", clt + "/MacOSX.sdk"}, got, "the tools' MacOSX.sdk links to MacOSX15.5.sdk and comes first, as the tools' 27.0 said here")
+	require.False(t, port.ModeledHostAccess, "%v", port.Problems)
+}

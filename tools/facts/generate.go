@@ -18,6 +18,9 @@ import (
 // Each source row is kept, so the buildbot's stay as a cross-check where a
 // Tart image covers the same release; where one source gives a release,
 // architecture, and profile more than once, the newest wins.
+// xcodeApp is the Xcode a probed image's developer_dir names.
+const xcodeApp = "/Applications/Xcode.app"
+
 func generate(tartDirs []string, buildbot, out string) error {
 	var rows []macos.Facts
 	for _, dir := range tartDirs {
@@ -135,6 +138,17 @@ func tartRow(data []byte) (macos.Facts, bool, error) {
 	}
 	if f, ok := facts["shell.clt_sdks"]; ok && f.Error == nil {
 		_ = json.Unmarshal(f.Value, &row.SDKs)
+	}
+	// Xcode's own SDKs, the probe's listing of each Xcode*.app, for the
+	// one Base's developer_dir names, /Applications/Xcode.app.
+	if f, ok := facts["shell.xcode_sdks"]; ok && f.Error == nil && row.Profile == macos.ProfileXcode {
+		var listed []string
+		_ = json.Unmarshal(f.Value, &listed)
+		for _, entry := range listed {
+			if sdk, ok := strings.CutPrefix(entry, xcodeApp+": "); ok {
+				row.XcodeSDKs = append(row.XcodeSDKs, sdk)
+			}
+		}
 	}
 	if f, ok := facts["host_checks.file_exists_usr_lib_libxcselect_dylib"]; ok && f.Error == nil {
 		var exists bool

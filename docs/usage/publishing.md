@@ -334,7 +334,9 @@ the browser. Edit the same tracked branch, inspect the diff, tidy and check the
 new work, and submit again. The existing pull request is updated. Where a
 reviewer requested changes, submit can ask to request their review again after
 pushing. `submit.rerequest_review` controls that behavior; see
-`dockhand usage configuration`.
+`dockhand usage configuration`. If the request fails after the push, the next
+`submit` makes it, even though it pushes nothing, and says it was left over from
+the last submit.
 
 While the pull request is open, status says when it may be merged under
 MacPorts' maintainer policy (the MacPorts Guide, section 7.4.1). The branch's

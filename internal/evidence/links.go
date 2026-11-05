@@ -144,7 +144,7 @@ func UndeclaredLinks(builds []LinkedBuild) []LinkFinding {
 	undeclared := map[model.TargetID]bool{}
 	for k, finding := range found {
 		finding.Libraries = len(libraries[k])
-		finding.Through = through(builds, finding.Target, finding.Library)
+		finding.Through = through(builds, finding.Target, finding.Library, finding.Environments)
 		findings = append(findings, *finding)
 		undeclared[k.target] = true
 	}
@@ -244,17 +244,21 @@ func unlinked(builds []LinkedBuild) []LinkFinding {
 	return findings
 }
 
-// through is how a target's builds came to link library, where a port it
+// through is how a target's builds in these environments, those that made
+// the finding, came to link library, where a port it
 // declares has a pkg-config module whose Libs names it, directly or by
 // Requires: followed module to module among the declared ports' modules;
 // nil where none does.
-func through(builds []LinkedBuild, target model.TargetID, library string) *LinkThrough {
+func through(builds []LinkedBuild, target model.TargetID, library string, environments []model.Environment) *LinkThrough {
 	stem := libraryStem(library)
 	if stem == "" {
 		return nil
 	}
 	for _, build := range builds {
-		if build.Result.Target != target || build.Result.Declared == nil {
+		// Only the builds that made the finding explain it: an arm64
+		// finding took an x86_64 build's pkg-config path (Codex's sixth
+		// review, #77).
+		if build.Result.Target != target || build.Result.Declared == nil || !slices.Contains(environments, build.Environment) {
 			continue
 		}
 		modules := map[string]model.PkgConfigModule{}

@@ -154,6 +154,15 @@ func (c *Service) Retry(ctx context.Context, previous model.Run) (model.Run, err
 		run, err = c.queue(tx, model.Run{Branch: previous.Branch, Revision: previous.Revision, Plan: previous.Plan, Origin: model.OriginPerson, BaselineOf: previous.BaselineOf}, "queued, retrying "+previous.Name())
 		return err
 	})
+	// The branch's next check replaces the clones its earlier ones kept,
+	// as QueueCheck's does: each retry of a failed Tart check left one more
+	// (Codex's workflow review of 1caa6c3d, finding 6). A baseline's
+	// retry keeps them, as a baseline does, for the guest it's beside.
+	if err == nil && previous.BaselineOf == "" {
+		if err := c.Admission.ForgetKept(ctx, run.Branch); err != nil {
+			progress.Report(ctx, "removing the clones the branch's earlier checks kept, retrying %s: %v", previous.Name(), err)
+		}
+	}
 	return run, err
 }
 
@@ -671,7 +680,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			maps.Copy(build.builtWith, groups)
 		}
 		job := buildenv.Job{Run: d.run, Execution: execution, Revision: revision, Plan: d.plan, Environment: environment, Targets: building, Commit: commit, Installs: build.installs,
-			Directory: filepath.Join(c.Logs, d.run.Name(), fmt.Sprintf("%s-%d", environmentSlug(environment), execution.Attempt))}
+			Directory: filepath.Join(c.Logs, d.run.Name(), ExecutionDirectory(execution))}
 		stopWatching := watchStalls(ctx, build, job.Directory)
 		err = provider.Execute(ctx, job, build)
 		stopWatching()
@@ -1470,6 +1479,13 @@ func (c *Service) revisionCommit(ctx context.Context, revision model.Revision) (
 // release as everything else names it, macOS 26 as macos26, and its
 // architecture. A Darwin release macos doesn't know keeps its Darwin
 // version, darwin30, which isn't macOS's.
+// ExecutionDirectory is the directory, beside its run's others, that an
+// execution a guest ran writes its logs in: tart-macos12-arm64-1. A
+// matrix provider's executions share their attempt's, named for it.
+func ExecutionDirectory(execution model.GuestExecution) string {
+	return fmt.Sprintf("%s-%d", environmentSlug(execution.Environment), execution.Attempt)
+}
+
 func environmentSlug(environment model.Environment) string {
 	parts := []string{environment.Provider}
 	platform := environment.Platform

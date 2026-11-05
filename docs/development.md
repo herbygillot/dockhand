@@ -98,8 +98,11 @@ The first four were measured on macports-ports 324108c8883 (20,231 Portfiles), t
 `internal/macports/distributable/distributable_lib.tcl` is
 macports-infrastructure's `jobs/distributable_lib.tcl`, verbatim, at the commit
 `distributable.Pin` names; `distributable.tcl` answers its `infoForPort` from
-the port's evaluation and the base tree's port index, so its verdict is the
-buildbot's. The weekly `distributable-master.yml` job fails when master's copy
+the port's evaluation and the port index of the tree it judges, the
+candidate's for the change and the base's for master, read from the cache or
+staged from the base's as a check's plan stages one, so its verdict is the
+buildbot's for that tree. Where neither index can be read, the verdict is
+unknown, and nothing is said. The weekly `distributable-master.yml` job fails when master's copy
 differs. To re-pin, copy master's file over the pinned one, set `Pin` to the
 commit the job names, and run `go test ./internal/macports/distributable/`,
 whose table shows what changed.

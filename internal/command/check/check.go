@@ -122,7 +122,7 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 				return previewBaseline(ctx, e, streams, request)
 			}
 			if baseline {
-				return runBaseline(ctx, e, streams, request, enqueue, s)
+				return runBaseline(ctx, e, streams, request, enqueue, limit, s)
 			}
 			mode := captureMode(head, staged, workingTree)
 			place, err := e.Where(ctx, engine.WhereRequest{On: on, Build: build})
@@ -420,7 +420,10 @@ func previewBaseline(ctx context.Context, e *engine.Engine, streams term.Streams
 
 // runBaseline plans a baseline of the branch's check, its latest or the
 // one --of names, and runs it, here or through serve.
-func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, request engine.BaselineRequest, enqueue bool, s *settings.Settings) error {
+// A --for bound follows it as it follows a check, queued as -d queues it:
+// it was run in the foreground past the bound (Codex's workflow review of
+// 1caa6c3d, finding 4).
+func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, request engine.BaselineRequest, enqueue bool, limit checkrun.Bound, s *settings.Settings) error {
 	branch := request.Branch
 	baseline, err := e.PlanBaseline(ctx, request)
 	if err != nil {
@@ -430,6 +433,9 @@ func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, re
 	run, err := e.EnqueueBaseline(ctx, branch, baseline, model.OriginPerson)
 	if err != nil {
 		return err
+	}
+	if limit.Said != "" {
+		return checkrun.QueuedFor(ctx, e, run, streams, s.Places(), limit, s.Drain)
 	}
 	return checkrun.RunQueued(ctx, e, run, streams, enqueue, s.Places(), s.Drain)
 }

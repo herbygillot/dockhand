@@ -621,3 +621,35 @@ func TestAGitHubLogWithoutHeadingsIsPrintedWholeAndSaid(t *testing.T) {
 	require.NoError(t, view.WritePortLog(&out, cmdtest.TestPlaces(t), result, []byte("a log\n"), false))
 	require.Equal(t, "No build-step markers were found for jq. Showing the full log.\n\na log\n", out.String())
 }
+
+// logs <execution> <port> --follow follows the execution named, as the
+// ordinary read does: it printed another release's log (Codex's workflow
+// review of 1caa6c3d, finding 5, its probe).
+func TestFollowingALogKeepsTheExecutionNamed(t *testing.T) {
+	t.Parallel()
+	f, _ := githubBranch(t)
+	f.logs = []map[string]string{{
+		"build (macos-14)": built("jq", false) + "SONOMA_EXECUTION_ONLY\n",
+		"build (macos-15)": built("jq", true) + "SEQUOIA_EXECUTION_ONLY\n",
+	}}
+	f.conclusion = []string{"success"}
+	_, _, err := cmdtest.Dockhand(t, "check", "--on", "github")
+	require.NoError(t, err)
+	logs, err := cmdtest.JSONOf(t, "logs", "check-1")
+	require.NoError(t, err)
+	var selected string
+	for _, execution := range logs.Result["executions"].([]any) {
+		id := execution.(map[string]any)["id"].(string)
+		ordinary, _, err := cmdtest.Dockhand(t, "logs", id, "jq")
+		require.NoError(t, err)
+		if strings.Contains(ordinary, "SONOMA_EXECUTION_ONLY") {
+			selected = id
+			break
+		}
+	}
+	require.NotEmpty(t, selected)
+	followed, _, err := cmdtest.Dockhand(t, "logs", selected, "jq", "--follow")
+	require.NoError(t, err)
+	require.Contains(t, followed, "SONOMA_EXECUTION_ONLY", "following must retain the explicitly selected provider execution")
+	require.NotContains(t, followed, "SEQUOIA_EXECUTION_ONLY")
+}

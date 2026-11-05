@@ -137,6 +137,9 @@ dockhand rename jq jqlang
 dockhand update jqlang
 ```
 
+`--plan` starts no branch: with `--new`, or where no branch is checked out
+here or changes the port, it plans on master as fetched now.
+
 The new name is set on the Portfile's `name` line, or, where the name comes
 from a setup such as `github.setup` or `go.setup`, on a `name` line below it, so
 the port's source stays where it is. Pointing the setup at a renamed repository
@@ -216,7 +219,9 @@ dockhand check
 dockhand submit --plan
 ```
 
-Replace the sample message with your reason. `tidy` includes the uncommitted
+Replace the sample message with your reason. Where the plan is one commit, as
+it is for edits not yet committed to one port, `--message` alone does the same.
+`tidy` includes the uncommitted
 edit and may fix deterministic lint issues on lines you touched; inspect its
 plan before applying it. A passing check supports the committed files you are
 about to publish. Follow `dockhand usage publishing` for the submission itself,

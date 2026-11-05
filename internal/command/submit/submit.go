@@ -330,8 +330,18 @@ func followUp(ctx context.Context, e *engine.Engine, streams term.Streams, plan 
 	for _, login := range observed.Observed.ChangesRequestedBy {
 		result.PullRequest.ChangesRequestedBy = append(result.PullRequest.ChangesRequestedBy, view.ChangesRequestedJSON{Login: login})
 	}
-	if !submitted.Pushed || len(observed.Observed.ChangesRequestedBy) == 0 || rerequest == "never" {
+	if len(observed.Observed.ChangesRequestedBy) == 0 || rerequest == "never" {
 		return nil
+	}
+	// One the last submit's push left due, its request having failed, is
+	// asked now.
+	leftOver := ""
+	if !submitted.Pushed {
+		due, err := e.RerequestDue(ctx, plan.Branch)
+		if err != nil || !due {
+			return err
+		}
+		leftOver = " (left over from the last submit)"
 	}
 	who := "@" + strings.Join(observed.Observed.ChangesRequestedBy, ", @")
 	if rerequest != "always" {
@@ -350,7 +360,7 @@ func followUp(ctx context.Context, e *engine.Engine, streams term.Streams, plan 
 	for i, requested := range result.PullRequest.ChangesRequestedBy {
 		result.PullRequest.ChangesRequestedBy[i].Rerequested = slices.Contains(asked, requested.Login)
 	}
-	fmt.Fprintf(streams.Out, "Asked %s to review again.\n", who)
+	fmt.Fprintf(streams.Out, "Asked %s to review again%s.\n", who, leftOver)
 	return nil
 }
 

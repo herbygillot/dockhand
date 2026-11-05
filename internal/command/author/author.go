@@ -97,7 +97,7 @@ master's index instead, or beside --mine, as outdated does.`,
 		},
 	}
 	where.Register(cmd)
-	version.Flags(cmd)
+	version.Flags(cmd, s)
 	cmd.Flags().BoolVar(&version.HandEdit, "hand-edit", false, "write Dockhand's best attempt when an update is refused, for you to finish manually; record the refusal")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the edit and change nothing")
 	selectors.Register(cmd, "update, a branch a Portfile,")
@@ -105,9 +105,6 @@ master's index instead, or beside --mine, as outdated does.`,
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with a selection, start the branches without asking")
 	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
 	settings.SupportsJSON(cmd)
-	settings.KeepModelineFlag(cmd, s)
-	settings.KeepHTTPFlag(cmd, s)
-	settings.SourceFlag(cmd, s)
 	return cmd
 }
 
@@ -349,8 +346,11 @@ type VersionUpdate struct {
 	Linked LinkedOptions
 }
 
-// flags adds the edit's flags, which update, ship, and bump share.
-func (v *VersionUpdate) Flags(cmd *cobra.Command) {
+// flags adds the edit's flags, which update, ship, and bump share, those
+// the settings carry with them: --source was update's alone, so a one-off
+// source meant leaving ship (Codex's workflow review of 1caa6c3d, finding
+// 9).
+func (v *VersionUpdate) Flags(cmd *cobra.Command, s *settings.Settings) {
 	cmd.Flags().BoolVar(&v.KeepOld, "keep-old-checksums", false, "refresh legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size")
 	cmd.Flags().BoolVar(&v.Shared, "shared-release", false, "update every subport that shares the release")
 	cmd.Flags().BoolVar(&v.FollowMoves, "follow-moves", false, "update github.setup when GitHub redirects the repository to a new name")
@@ -358,6 +358,9 @@ func (v *VersionUpdate) Flags(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&v.Linked.Revbump, "revbump-dependents", false, "also bump the revision of the ports that link it directly")
 	cmd.Flags().StringSliceVar(&v.Linked.Except, "except", nil, "leave this dependent out of --revbump-dependents")
 	cmd.Flags().StringSliceVar(&v.Closes, "closes", nil, "the Trac ticket the update closes, by number, written as the commit's Closes: trailer with its URL; repeat for more")
+	settings.KeepModelineFlag(cmd, s)
+	settings.KeepHTTPFlag(cmd, s)
+	settings.SourceFlag(cmd, s)
 }
 
 // stageFlags adds the flags of the stages after the edit, defined once,
@@ -532,6 +535,20 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 		}
 		writeLeft(out, update.ChecksumsLeft)
 		view.WritePlainHTTP(out, update.HTTPS, update.PlainHTTP)
+		// The dependents asked for are a part of the change of their own:
+		// a second update jq --revbump-dependents said current and
+		// bumped none (Codex's workflow review of 1caa6c3d, finding 1).
+		// Those the branch changes already are left as they are.
+		if linked.Revbump && request.Action == model.EditUpdate {
+			if branch.ID == "" {
+				fmt.Fprintln(out, "--revbump-dependents bumped nothing: there's no branch for them, since the version needs no change.")
+				return branch, update, nil
+			}
+			if result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.Except, request.Plan, view.ListShown(streams)); err != nil {
+				return branch, update, err
+			}
+			streams.Emit(result)
+		}
 		return branch, update, nil
 	}
 	if request.Action == model.EditUpdate {

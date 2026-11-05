@@ -97,3 +97,25 @@ func TestAModuleBelowItsRootIsObservedAtItsTag(t *testing.T) {
 	require.Equal(t, "go", observed.Build.System)
 	require.Equal(t, "gopls/", directoryTag(project))
 }
+
+// A project whose forge names no license MacPorts can say, as GitHub's
+// NOASSERTION, has one guessed from its license file's first line, its
+// exception left out, and said as guessed: shader-slang's LICENSE began
+// "Apache-2.0 WITH LLVM-exception", and create wrote license unknown
+// (field testing, #67). One whose first line is no expression guesses
+// none.
+func TestALicenseIsGuessedFromItsFilesFirstLine(t *testing.T) {
+	t.Parallel()
+	project := Project{Owner: "shader-slang", Name: "slang", Tag: "v2026.21", License: "NOASSERTION",
+		Files: map[string][]byte{"CMakeLists.txt": []byte("project(slang)\n"), "LICENSE": []byte("Apache-2.0 WITH LLVM-exception\n\nApache License\n")}}
+	observed, err := observe(project)
+	require.NoError(t, err)
+	require.Equal(t, "Apache-2", observed.License)
+	require.Equal(t, "LICENSE's first line, Apache-2.0 WITH LLVM-exception", observed.LicenseGuess)
+
+	project.Files["LICENSE"] = []byte("                                 Apache License\n")
+	observed, err = observe(project)
+	require.NoError(t, err)
+	require.Empty(t, observed.License)
+	require.Empty(t, observed.LicenseGuess)
+}

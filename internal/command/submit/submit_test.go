@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/term"
@@ -623,6 +625,9 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	out, _, err = cmdtest.Dockhand(t, "status", "--attention", "--refresh")
 	require.Equal(t, 3, term.ExitCode(err))
 	require.Contains(t, cmdtest.Flat(out), "✗ jq-update  #34901: MacPorts CI failed: fetching jq-1.8.1.tar.gz (mirror.sjtu.edu.cn answered 403) on macOS 26 (just now) dockhand retry --ci --branch jq-update\n")
+	_, _, err = cmdtest.Dockhand(t, "retry", "--ci", "-d", "--branch", "jq-update")
+	require.ErrorContains(t, err, "none of the others can be", "--ci queues nothing for -d to return from")
+	require.Empty(t, g.Rerun)
 	out, _, err = cmdtest.Dockhand(t, "retry", "--ci", "--branch", "jq-update")
 	require.NoError(t, err)
 	require.Equal(t, cmdtest.Flat("Asked GitHub to run #34901's failed CI again (1 workflow run); dockhand status --refresh reads how it went.\n"), cmdtest.Flat(out))
@@ -1238,4 +1243,107 @@ func TestTheSubmitPlanNamesAPatchChangedUnderItsName(t *testing.T) {
 	planned, err := cmdtest.JSONOf(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Equal(t, []any{"textproc/jq/files/patch-docs.diff"}, planned.Result["changed_patches"])
+}
+
+// failingReviewers fails its reviewer requests while fail is set, counting
+// them.
+type failingReviewers struct {
+	*forgetest.GitHub
+	fail  error
+	calls int
+}
+
+func (g *failingReviewers) RequestReviewers(ctx context.Context, ref forge.PullRequestRef, logins []string) error {
+	g.calls++
+	if g.fail != nil {
+		return g.fail
+	}
+	return g.GitHub.RequestReviewers(ctx, ref, logins)
+}
+
+// A reviewer request that failed after its push is made by the next
+// submit, which pushes nothing: a rerun skipped it, since it hadn't
+// pushed (Codex's workflow review of 1caa6c3d, finding 8, its probe).
+func TestSubmitFinishesAReviewRequestTheLastOneLeft(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
+	wrapped := &failingReviewers{GitHub: g}
+	cmdtest.Stands(t).Forge = func(*engine.Engine) engine.Forge { return wrapped }
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "tidy")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	g.Status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, ChangesRequestedBy: []string{"ryandesign"}, ReviewedAt: time.Now().Add(-time.Hour)}
+	_, _, err = cmdtest.Dockhand(t, "status", "--refresh")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n# reviewed\n"), 0644))
+	testsupport.Git(t, dir, "commit", "-q", "-am", "jq: document review")
+	require.NoError(t, os.MkdirAll(filepath.Join(w.Home, ".dockhand"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("[submit]\nrerequest_review = \"always\"\n"), 0644))
+	wrapped.fail = errors.New("temporary review API failure")
+	out, _, err := cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
+	require.ErrorContains(t, err, "temporary review API failure")
+	require.Contains(t, out, "Updated #34901: pushed through commit")
+	require.Equal(t, 1, wrapped.calls)
+	wrapped.fail = nil
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	require.Contains(t, out, "Asked @ryandesign to review again (left over from the last submit).")
+	require.Equal(t, 2, wrapped.calls, "retry should finish the failed post-push reviewer request")
+	require.Equal(t, []string{"ryandesign"}, g.Rerequested)
+}
+
+// The re-request a failed reviewer request left is made by the next
+// submit where the commit pushed is older than the review, as one made
+// before it and pushed after is: the push's time decides, not the
+// commit's (Codex's sixth review, #76, its probe).
+func TestAReRequestLeftOverIsDueByThePushNotTheCommit(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
+	wrapped := &failingReviewers{GitHub: g}
+	cmdtest.Stands(t).Forge = func(*engine.Engine) engine.Forge { return wrapped }
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "tidy")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	g.Status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, ChangesRequestedBy: []string{"ryandesign"}, ReviewedAt: time.Now().Add(-time.Hour)}
+	_, _, err = cmdtest.Dockhand(t, "status", "--refresh")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n# reviewed\n"), 0644))
+	commit := exec.Command("/usr/bin/git", "-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgSign=false", "-c", "core.hooksPath=/dev/null", "commit", "-q", "-am", "jq: document review")
+	commit.Dir = dir
+	commit.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1", "GIT_AUTHOR_DATE=2000-01-01T00:00:00Z", "GIT_COMMITTER_DATE=2000-01-01T00:00:00Z")
+	output, commitErr := commit.CombinedOutput()
+	require.NoError(t, commitErr, string(output))
+	require.NoError(t, os.MkdirAll(filepath.Join(w.Home, ".dockhand"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("[submit]\nrerequest_review = \"always\"\n"), 0644))
+	wrapped.fail = errors.New("temporary review API failure")
+	out, _, err := cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
+	require.ErrorContains(t, err, "temporary review API failure")
+	require.Contains(t, out, "Updated #34901: pushed through commit")
+	require.Equal(t, 1, wrapped.calls)
+	wrapped.fail = nil
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	require.Contains(t, out, "(left over from the last submit)")
+	require.Equal(t, 2, wrapped.calls, "retry should finish the failed post-push reviewer request")
+	require.Equal(t, []string{"ryandesign"}, g.Rerequested)
 }

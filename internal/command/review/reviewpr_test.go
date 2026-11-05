@@ -194,3 +194,25 @@ func TestReviewCheckRefusesABranchOfAnotherRepository(t *testing.T) {
 	require.ErrorContains(t, err, "unset it to work on pr-34905")
 	cmdtest.Setenv(t, "DOCKHAND_PULL_REQUESTS", "")
 }
+
+// review --check --comment posts the review saying the check, which
+// failed, and ends with the check's failure: the post's success was the
+// command's, and its text said Dockhand hadn't built it (Codex's workflow
+// review of 1caa6c3d, finding 7, its probe).
+func TestAPostedReviewSaysItsFailedCheckAndFails(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.WithScript(t, w, "failed")
+	g := cmdtest.WithGitHub(t, w)
+	testsupport.Git(t, w.Upstream, "switch", "-q", "-c", "contrib")
+	require.NoError(t, os.WriteFile(filepath.Join(w.Upstream, "textproc/jq/Portfile"), []byte("name jq\n# docs\n"), 0644))
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-am", "jq: document the options")
+	testsupport.Git(t, w.Upstream, "update-ref", "refs/pull/34905/head", "contrib")
+	testsupport.Git(t, w.Upstream, "switch", "-q", "master")
+	g.Theirs = map[int]forge.PullRequest{34905: {Ref: forge.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 34905}, HeadRepository: "newcontrib/macports-ports", HeadBranch: "patch-1", Title: "jq: document the options", State: forge.PullRequestOpen, Author: "newcontrib", MaintainerCanModify: true}}
+	out, said, err := cmdtest.Dockhand(t, "review", "34905", "--check", "--on", "command", "--comment")
+	require.Len(t, g.Reviews, 1, "posted all the same", out, said)
+	require.Equal(t, 2, term.ExitCode(err), "the check's failure")
+	require.Contains(t, g.Reviews[0].Body, "Dockhand ran `port lint` and the build in check-1 on command, which failed")
+	require.NotContains(t, g.Reviews[0].Body, "Not checked by Dockhand")
+}

@@ -478,3 +478,52 @@ func TestADirectoryThatCantBeRemovedIsSaid(t *testing.T) {
 	require.Contains(t, build.progress[0], dir+" couldn't be removed: ")
 	require.Contains(t, build.progress[0], "; sudo rm -rf "+dir+" removes it")
 }
+
+// A check whose last record can't be read keeps its directory, the
+// prefix's only record of what was active before, and says how to look:
+// a read error isn't evidence it changed nothing, and the directory was
+// removed as though it were (Codex's sixth review, #69, its probes).
+func TestAnUnreadableResultKeepsThePrefixsRecord(t *testing.T) {
+	t.Parallel()
+	directory := filepath.Join(t.TempDir(), "check-that-changed-prefix")
+	require.NoError(t, os.Mkdir(directory, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(directory, "before.txt"), []byte("  original @1_0 (active)\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(directory, "snapshot.log"), []byte("snapshot 7 created\n"), 0644))
+	follower := &guest.Follower{Root: directory}
+	require.NoError(t, os.WriteFile(filepath.Join(directory, "results.json"), []byte(`{"protocol":2,"state":"running","environment":{"snapshot":"7"},"targets":[]}`), 0644))
+	earlier, err := follower.Read(t.Context(), hostGuest{})
+	require.NoError(t, err)
+	require.Equal(t, "7", earlier.Environment["snapshot"])
+	// Simulate an unreadable final result after the guest took a snapshot
+	// and changed the active ports. A read error is not evidence that it
+	// never reached the snapshot or mutation.
+	require.NoError(t, os.WriteFile(filepath.Join(directory, "results.json"), []byte("{corrupt final result"), 0644))
+	_, err = follower.Read(t.Context(), hostGuest{})
+	require.Error(t, err)
+	build := &fakeBuild{}
+	(&Local{}).settle(t.Context(), follower, directory, "/fake-prefix", "check-7", nil, build)
+	require.DirExists(t, directory)
+	require.Contains(t, strings.Join(build.progress, "\n"), "check-7's record of how it left /fake-prefix can't be read")
+}
+
+// The next check on a prefix an unreadable record left is refused, saying
+// how to look, and the record stays; one on another prefix goes on.
+func TestAnUnreadableRecordRefusesTheNextCheckThere(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	directory := filepath.Join(root, localDirectory+"damaged")
+	require.NoError(t, os.Mkdir(directory, 0755))
+	before := filepath.Join(directory, "before.txt")
+	require.NoError(t, os.WriteFile(before, []byte("  original @1_0 (active)\n"), 0644))
+	data, err := json.Marshal(owner{PID: 999999, Start: "darwin:1.0", Check: "check-7", Prefix: "/fake-prefix"})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(directory, "owner.json"), data, 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(directory, "results.json"), []byte("{corrupt final result"), 0644))
+	build := &fakeBuild{}
+	err = (&Local{Temp: root}).restoreLeft(t.Context(), "/fake-prefix", build)
+	_, retained := os.Stat(before)
+	require.NoError(t, retained)
+	require.ErrorContains(t, err, "check-7's record of how it left /fake-prefix can't be read")
+	require.NoError(t, (&Local{Temp: root}).restoreLeft(t.Context(), "/other-prefix", build))
+	require.FileExists(t, before)
+}

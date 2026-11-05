@@ -99,8 +99,9 @@ type ModelledToolchain struct {
 	Xcode, Tools, DeveloperDir, SDK string
 	// Clang is the tools' clang's build number.
 	Clang string
-	// SDKs are the SDKs in the tools, by name.
-	SDKs []string
+	// SDKs are the SDKs in the tools, by name, and XcodeSDKs those in
+	// Xcode's macOS platform, empty where no source lists them.
+	SDKs, XcodeSDKs []string
 	// XCSelect is whether /usr/lib/libxcselect.dylib exists.
 	XCSelect bool
 	// Source is the row the toolchain came from, and Derived whether it
@@ -170,10 +171,10 @@ func xcodeToolchain(table macos.FactsTable, darwin int, platform model.Platform)
 	return modelled(darwin, facts, false), nil
 }
 
-// fill takes what a row doesn't tell, its clang and SDKs, from a Tart
-// image's row with the same Xcode and tools.
+// fill takes what a row doesn't tell, its clang and SDKs, the tools' and
+// Xcode's, from a Tart image's row with the same Xcode and tools.
 func fill(table macos.FactsTable, facts *macos.Facts) {
-	if facts.Clang != "" && len(facts.SDKs) > 0 {
+	if facts.Clang != "" && len(facts.SDKs) > 0 && (facts.Xcode == "none" || len(facts.XcodeSDKs) > 0) {
 		return
 	}
 	for _, other := range table.Facts {
@@ -186,6 +187,9 @@ func fill(table macos.FactsTable, facts *macos.Facts) {
 		if len(facts.SDKs) == 0 {
 			facts.SDKs = other.SDKs
 		}
+		if len(facts.XcodeSDKs) == 0 && facts.Xcode != "none" {
+			facts.XcodeSDKs = other.XcodeSDKs
+		}
 	}
 }
 
@@ -197,7 +201,7 @@ func modelled(darwin int, facts macos.Facts, derived bool) ModelledToolchain {
 		xcselect = *facts.XCSelect
 	}
 	return ModelledToolchain{Darwin: darwin, Xcode: facts.Xcode, Tools: facts.Tools, DeveloperDir: facts.DeveloperDir, SDK: facts.SDK,
-		Clang: facts.Clang, SDKs: facts.SDKs, XCSelect: xcselect, Source: facts.Source, Derived: derived}
+		Clang: facts.Clang, SDKs: facts.SDKs, XcodeSDKs: facts.XcodeSDKs, XCSelect: xcselect, Source: facts.Source, Derived: derived}
 }
 
 // shims are the programs /usr/bin holds for the developer tools from OS X
@@ -264,14 +268,22 @@ func ToolchainAnswers(platform model.Platform, developer model.DeveloperTools) (
 	if err != nil {
 		return "", err
 	}
-	var sdks []string
-	for _, sdk := range tools.SDKs {
-		name, target, _ := strings.Cut(sdk, " -> ")
-		sdks = append(sdks, name)
-		if target != "" {
-			sdks = append(sdks, target)
+	// Each SDK by name, a link and its target alike, and the links apart,
+	// whose targets xcrun names: Xcode's MacOSX.sdk is the directory, and
+	// xcrun --sdk macosx says MacOSX15.5.sdk, a link to it.
+	names := func(listed []string) (sdks, links []string) {
+		for _, sdk := range listed {
+			name, target, _ := strings.Cut(sdk, " -> ")
+			sdks = append(sdks, name)
+			if target != "" {
+				sdks = append(sdks, target)
+				links = append(links, name, target)
+			}
 		}
+		return sdks, links
 	}
+	sdks, links := names(tools.SDKs)
+	xcodeSDKs, xcodeLinks := names(tools.XcodeSDKs)
 	flag := func(b bool) string {
 		if b {
 			return "1"
@@ -284,5 +296,9 @@ func ToolchainAnswers(platform model.Platform, developer model.DeveloperTools) (
 		"xcode", flag(tools.Xcode != "none"),
 		"xcselect", flag(tools.XCSelect),
 		"sdks", "{" + strings.Join(sdks, " ") + "}",
+		"links", "{" + strings.Join(links, " ") + "}",
+		"xcode_sdks", "{" + strings.Join(xcodeSDKs, " ") + "}",
+		"xcode_links", "{" + strings.Join(xcodeLinks, " ") + "}",
+		"developer_dir", "{" + tools.DeveloperDir + "}",
 	}, " "), nil
 }

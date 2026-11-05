@@ -304,3 +304,34 @@ func TestForgettingABranchRemovesTheClonesItsChecksKept(t *testing.T) {
 	require.Contains(t, provider.removed, clone, "removed before the record went")
 	require.True(t, plan.Leftovers[0].Done)
 }
+
+// A retry is the branch's next check, which removes the clone its earlier
+// check kept, as a new check does: each retry of a failed Tart check left
+// one more (Codex's workflow review of 1caa6c3d, finding 6, its probe).
+func TestARetryRemovesTheCloneTheEarlierCheckKept(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	provider := &keepingProvider{kept: map[string]time.Time{}}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	revision := harborBranch(t, e)
+	usePorts(e, harborPorts())
+	var branch model.Branch
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) (err error) { branch, err = r.Branch(revision.Branch); return err }))
+	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}, Keep: true})
+	require.NoError(t, err)
+	queued, err := e.QueueCheck(t.Context(), checks.QueueRequest{Branch: branch, Revision: revision, Plan: plan, Origin: model.OriginPerson})
+	require.NoError(t, err)
+	previous, err := e.Drive(t.Context(), session(t, e), queued.Run.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, previous.State)
+	require.Len(t, provider.left, 1)
+	old := provider.left[0]
+	retry, err := e.Retry(t.Context(), previous)
+	require.NoError(t, err)
+	done, err := e.Drive(t.Context(), session(t, e), retry.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, done.State)
+	require.NotContains(t, provider.left, old, "a retry is the branch's next check, which should remove its earlier retained clone")
+	require.Len(t, provider.left, 1)
+}

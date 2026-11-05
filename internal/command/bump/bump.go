@@ -88,11 +88,9 @@ dockhand can't. The check builds where build.unattended's profile says;
 			return ship.ShipAll(ctx, s, streams, whole, targets, engine.ShipSubmit, model.AnsweredYes, version)
 		},
 	}
-	version.Flags(cmd)
+	version.Flags(cmd, s)
 	version.StageFlags(cmd)
 	cmd.Flags().BoolVar(&plan, "plan", false, "show what it would do and change nothing")
 	settings.SupportsJSON(cmd)
-	settings.KeepModelineFlag(cmd, s)
-	settings.KeepHTTPFlag(cmd, s)
 	return cmd
 }

@@ -88,7 +88,7 @@ func TestARunningTargetsLogIsFoundWhereTheDriverCopiesIt(t *testing.T) {
 	require.NoError(t, err)
 	queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
 	require.NoError(t, err)
-	path, err := e.LiveLog(t.Context(), queued.ID, "jq")
+	path, err := e.LiveLog(t.Context(), queued.ID, "jq", "")
 	require.NoError(t, err)
 	require.Empty(t, path, "nothing copied yet")
 
@@ -99,7 +99,7 @@ func TestARunningTargetsLogIsFoundWhereTheDriverCopiesIt(t *testing.T) {
 		require.NoError(t, os.WriteFile(name, []byte("building jq\n"), 0o644))
 	}
 	require.NoError(t, os.Chtimes(older, time.Now().Add(-time.Hour), time.Now().Add(-time.Hour)))
-	path, err = e.LiveLog(t.Context(), queued.ID, "jq")
+	path, err = e.LiveLog(t.Context(), queued.ID, "jq", "")
 	require.NoError(t, err)
 	require.Equal(t, newer, path, "the newest attempt's")
 }

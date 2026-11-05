@@ -65,6 +65,9 @@ get past, as a mirror refusing an archive.`,
 	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "queue it and return")
 	cmd.Flags().BoolVar(&ci, "ci", false, "run the branch's pull request's failed MacPorts CI jobs again, through your GitHub login")
 	where.Register(cmd, s, "repeat the latest check of")
+	// --ci queues nothing here, so -d had nothing to queue and was
+	// ignored (Codex's workflow review of 1caa6c3d).
+	cmd.MarkFlagsMutuallyExclusive("ci", "enqueue")
 	settings.SupportsJSON(cmd)
 	return cmd
 }

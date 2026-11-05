@@ -74,8 +74,22 @@ func TestTidyAsksAboutAPersonsCommits(t *testing.T) {
 	require.Contains(t, out.String(), "Created 1 commit.")
 	require.Equal(t, "jq: describe the b option", testsupport.Git(t, w.Clone, "log", "-1", "--format=%s"))
 
-	_, _, err = cmdtest.Dockhand(t, "tidy", "--message", "x")
-	require.ErrorContains(t, err, "Add --squash")
+}
+
+// --message alone names the one commit a branch of uncommitted edits
+// makes, where it asked for --squash with nothing to squash (field testing
+// on v0.7.0, #53); a plan of several commits asks for --squash still.
+func TestTidyMessageAloneNamesAPlansOneCommit(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.WithBumper(t)
+	testsupport.Git(t, w.Clone, "switch", "-q", "-c", "update-jq")
+	_, _, err := cmdtest.Dockhand(t, "adopt")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(w.Clone, "textproc/jq/Portfile"), []byte("name jq\n# a\n"), 0o644))
+	_, _, err = cmdtest.Dockhand(t, "tidy", "--message", "jq: describe the a option", "--yes")
+	require.NoError(t, err)
+	require.Equal(t, "jq: describe the a option", testsupport.Git(t, w.Clone, "log", "-1", "--format=%s"))
 }
 
 // A plan tidy proposes of a person's own edits, which needs a review on a

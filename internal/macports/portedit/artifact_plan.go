@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/textedit"
 )
@@ -139,8 +140,15 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 			return ErrFidelity.Because("candidate changed an independent version on %+v", profile)
 		}
 		if !affected {
+			// Where a block conditional on the platform keeps the port
+			// at another version, as kitty's second github.setup under
+			// ${os.major} <= 19 does, the edit is said to have changed it
+			// there, by its platform and the version kept: "candidate
+			// evaluation changed kitty" named neither (field testing's
+			// kitty 0.50.0, #51).
 			if err := fidelity.Equivalent(before.Snapshot, after.Snapshot); err != nil {
-				return fmt.Errorf("protected context %+v: %w", profile, err)
+				return ErrFidelity.Because("on %s %s %s, where %s stays at %s, as a block conditional on the platform has it, the edit changed it: %s; edit the version and checksums the edit moves by hand",
+					profile.OS, profile.Version, profile.Architecture, member.target.Name, old.Version, refusal.WordsOf(err))
 			}
 		} else {
 			report := scopedVersion(request, input, before.Snapshot, after.Snapshot, member.target.Name, next.Options["checksums"])

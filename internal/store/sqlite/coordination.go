@@ -223,6 +223,21 @@ func (t *tx) LatestRunEvent(run model.RunID, kinds ...model.EventKind) (model.Ev
 	return events[0], true, nil
 }
 
+func (t *tx) LatestBranchEvent(branch model.BranchID, kinds ...model.EventKind) (model.Event, bool, error) {
+	if len(kinds) == 0 {
+		return model.Event{}, false, nil
+	}
+	args := []any{t.repo, branch}
+	for _, kind := range kinds {
+		args = append(args, kind)
+	}
+	events, err := t.events("SELECT sequence, at, session_id, branch_id, run_id, target_id, kind, level, message FROM events WHERE repository_id=? AND branch_id=? AND kind IN (?"+strings.Repeat(",?", len(kinds)-1)+") ORDER BY sequence DESC LIMIT 1", args...)
+	if err != nil || len(events) == 0 {
+		return model.Event{}, false, err
+	}
+	return events[0], true, nil
+}
+
 func (t *tx) LastEvent() (int64, error) {
 	var last int64
 	err := t.conn.QueryRowContext(t.ctx, "SELECT COALESCE(MAX(sequence), 0) FROM events WHERE repository_id=?", t.repo).Scan(&last)

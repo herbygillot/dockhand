@@ -691,3 +691,60 @@ func TestAMissingWorksrcdirIsSaidBeforeThePatches(t *testing.T) {
 	writePatches(&out, engine.Update{Release: &model.Release{Version: "2.38.0"}, MissingWorksrcdir: "sdk/angelscript/projects/gnuc macosx", PatchProblems: []string{"patch-makefile.diff: No file to patch"}})
 	require.Equal(t, "! worksrcdir sdk/angelscript/projects/gnuc macosx isn't in 2.38.0's source\n! patch patch-makefile.diff: No file to patch\n", out.String())
 }
+
+// --revbump-dependents asked again of a port already at its version bumps
+// its dependents: a second update jq --revbump-dependents said current and
+// bumped none (Codex's workflow review of 1caa6c3d, finding 1, its probe).
+func TestAnUpdateAlreadyCurrentStillBumpsItsDependents(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	require.NoError(t, os.MkdirAll(filepath.Join(w.Upstream, "textproc", "yq"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(w.Upstream, "textproc", "yq", "Portfile"), []byte("name yq\nversion 1\n"), 0644))
+	testsupport.Git(t, w.Upstream, "add", "-A")
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-m", "yq")
+	cmdtest.WithBumper(t)
+	cmdtest.UseDependents(cmdtest.Stands(t), cmdtest.JqDependents{})
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	out, _, err := cmdtest.Dockhand(t, "update", "jq", "--revbump-dependents")
+	require.NoError(t, err, out)
+	require.Contains(t, out, "is already at")
+	require.FileExists(t, filepath.Join(dir, "textproc", "yq", "Portfile"))
+	require.Contains(t, out, "Revision bumped 1 port")
+}
+
+// rename --plan with --new plans on master and starts no branch: it left a
+// tracked rename-preview worktree (Codex's workflow review of 1caa6c3d,
+// finding 3, its probe).
+func TestARenamePlanStartsNoBranch(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.UsePorts(cmdtest.Stands(t), versioned{})
+	out, _, err := cmdtest.Dockhand(t, "rename", "jq", "jq2", "--new=rename-preview", "--plan")
+	require.NoError(t, err, out)
+	require.Contains(t, out, "master · would rename jq to jq2")
+	require.NoDirExists(t, filepath.Join(w.Home, "Source", "macports-branches", "rename-preview"))
+	out, _, err = cmdtest.Dockhand(t, "status", "--all")
+	require.NoError(t, err)
+	require.NotContains(t, out, "rename-preview")
+}
+
+// ship and bump take update's --source, as its other edit flags: a one-off
+// source meant leaving them for update (Codex's workflow review of
+// 1caa6c3d, finding 9, its probe).
+func TestShipAndBumpTakeSource(t *testing.T) {
+	t.Parallel()
+	cmdtest.NewWorld(t)
+	for _, verb := range []string{"bump", "ship"} {
+		_, _, err := cmdtest.Dockhand(t, verb, "jq", "--source", "keep", "--plan")
+		if err != nil {
+			require.NotContains(t, err.Error(), "unknown flag", verb)
+		}
+	}
+}

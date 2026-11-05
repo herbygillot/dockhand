@@ -219,6 +219,12 @@ func (unknownPort) Is(target error) bool { return target == ErrNoPort }
 // dependencyPhases words the index's reverse-dependency fields.
 var dependencyPhases = map[string]string{portindex.DependsBuild: "build", portindex.DependsLib: "library", portindex.DependsRun: "runtime"}
 
+// ReadIndex reads the port index of a source, as index does: a
+// candidate's, which no cache may hold, staged from its base's.
+func (p *Reader) ReadIndex(ctx context.Context, source model.Source, read func(*portindex.Index) error) error {
+	return p.index(ctx, source, read)
+}
+
 // index reads the port index of a source, staged for it as the source's
 // ports are resolved.
 func (p *Reader) index(ctx context.Context, source model.Source, read func(*portindex.Index) error) (err error) {

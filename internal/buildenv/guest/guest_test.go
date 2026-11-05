@@ -437,7 +437,7 @@ func TestAFailuresReasonIsTheFailingSteps(t *testing.T) {
 	// it, rather than "command execution failed" (field testing,
 	// 2026-10-02: mods' go build).
 	results, _ = guestRun(t, twoTargets("declared"), "FAIL=install:libharbor", "COMMAND=1", lint)
-	require.Equal(t, "install", results.Targets[0].Phase)
+	require.Equal(t, "build", results.Targets[0].Phase, "the phase MacPorts' line names within the install (field testing's kitty, check-791)")
 	require.Equal(t, "Failed to build libharbor: go: github.com/spf13/pflag: cannot find package; the command was: cd /work/libharbor && go build ./...", results.Targets[0].Detail)
 	require.Empty(t, results.Targets[0].Transient, "the port's own failure")
 

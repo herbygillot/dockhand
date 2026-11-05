@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"net/http"
 	"net/url"
@@ -72,7 +73,13 @@ func LocalPatches(info macports.PortInfo, portdir string) error {
 	if root == "" {
 		root = filepath.Join(portdir, "files")
 	}
+	// The port is evaluated from the files Git tracks, so a files/ not yet
+	// added, as a new port's is, isn't there: shader-slang's checksums read
+	// "local patch directory is unavailable" (field testing, #65).
 	resolved, err := filepath.EvalSymlinks(root)
+	if errors.Is(err, fs.ErrNotExist) {
+		return portfile.ErrUnsupported.Because("the port's files directory isn't among the files Git tracks, which dockhand reads; git add it, with its patches")
+	}
 	if err != nil {
 		return portfile.ErrUnsupported.Because("local patch directory is unavailable")
 	}
@@ -93,6 +100,9 @@ func LocalPatches(info macports.PortInfo, portdir string) error {
 			return portfile.ErrUnsupported.Because("patchfile %s is not in the port's files directory; checking downloaded patches is not supported", name)
 		}
 		stat, err := os.Lstat(filepath.Join(resolved, name))
+		if errors.Is(err, fs.ErrNotExist) {
+			return portfile.ErrUnsupported.Because("patchfile %s isn't among the files Git tracks, which dockhand reads; git add it", name)
+		}
 		if err != nil || !stat.Mode().IsRegular() {
 			return portfile.ErrUnsupported.Because("patchfile %s is not a frozen regular file", name)
 		}

@@ -194,7 +194,35 @@ const (
 	PhaseChecksum     Phase = "checksum"
 	PhaseInstall      Phase = "install"
 	PhaseTest         Phase = "test"
+	// The phases MacPorts runs within the install, which a failure there
+	// names: "Failed to patch kitty" read as "failed at install" (field
+	// testing's kitty 0.50.0, check-791).
+	PhaseExtract   Phase = "extract"
+	PhasePatch     Phase = "patch"
+	PhaseConfigure Phase = "configure"
+	PhaseBuild     Phase = "build"
+	PhaseDestroot  Phase = "destroot"
+	PhaseActivate  Phase = "activate"
 )
+
+// Installing reports the install or one of the phases MacPorts runs
+// within it.
+func (p Phase) Installing() bool {
+	switch p {
+	case PhaseInstall, PhaseExtract, PhasePatch, PhaseConfigure, PhaseBuild, PhaseDestroot, PhaseActivate:
+		return true
+	}
+	return false
+}
+
+// Step is the step of a target's build the phase is in: the install for
+// a phase MacPorts runs within it, else the step of its name.
+func (p Phase) Step() Step {
+	if p.Installing() {
+		return StepInstall
+	}
+	return Step(p)
+}
 
 // FailureWords say a failure at the phase: "failed at install", and "a
 // dependency failed" for a dependency's.
@@ -208,10 +236,10 @@ func (p Phase) FailureWords() string {
 // Valid reports one of the phases a check stops at.
 func (p Phase) Valid() bool {
 	switch p {
-	case PhaseLint, PhaseDependencies, PhaseFetch, PhaseChecksum, PhaseInstall, PhaseTest:
+	case PhaseLint, PhaseDependencies, PhaseFetch, PhaseChecksum, PhaseTest:
 		return true
 	}
-	return false
+	return p.Installing()
 }
 
 // TestOutcome reports a target's tests apart from its verdict, since tests

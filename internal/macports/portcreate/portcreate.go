@@ -174,6 +174,10 @@ type Spec struct {
 	// from, Cargo.toml or pyproject.toml, and empty for the forge's
 	// detection.
 	License, LicenseFrom string
+	// LicenseGuess says where License was guessed from, a license file's
+	// first line, "LICENSE's first line, Apache-2.0 WITH LLVM-exception";
+	// empty where it wasn't guessed.
+	LicenseGuess string
 	// Maintainer is the maintainers line; nomaintainer when empty.
 	Maintainer string
 	Build      Build
@@ -295,9 +299,12 @@ func Write(s Spec) []byte {
 		mark("neither the project's manifest nor the forge names a license MacPorts has a name for; read the project's license")
 		line("license", "unknown")
 	} else {
-		if s.LicenseFrom != "" {
+		switch {
+		case s.LicenseGuess != "":
+			mark("guessed from " + s.LicenseGuess + "; check it against the license file")
+		case s.LicenseFrom != "":
 			mark("from " + s.LicenseFrom + "'s license field")
-		} else {
+		default:
 			mark("from the forge's license detection")
 		}
 		line("license", s.License)
