@@ -141,6 +141,17 @@ type TidyPlan struct {
 	// (tidyWorkingFiles); applying commits them and writes them into the
 	// working files.
 	Fixed []string
+	// Declare is the commit after the groups that declares what the
+	// branch's passed check found its builds link and not declare
+	// (declareTidy), Declared the tree it ends at, and Declarations its
+	// lines; nil where it declares nothing. NotDeclared say the findings
+	// it leaves to the person, and why.
+	Declare      *TidyGroup
+	Declared     string
+	Declarations []Declaration
+	NotDeclared  []string
+	// declared are the declaration's edits of the working files.
+	declared []git.FileEdit
 	// Restyle is the commit --restyle makes after the groups, of the
 	// Portfiles it restyles, and Restyled the tree it ends at, Final's
 	// with them; nil where nothing is restyled. NotRestyled say the
@@ -160,10 +171,11 @@ type TidyPlan struct {
 }
 
 // Series are the plan's commits in the order applying it writes them:
-// its groups, then --restyle's whitespace and path-style commits.
+// its groups, its declaration, then --restyle's whitespace and path-style
+// commits.
 func (p TidyPlan) Series() []TidyGroup {
 	groups := p.Groups
-	for _, last := range []*TidyGroup{p.Restyle, p.PathStyle} {
+	for _, last := range []*TidyGroup{p.Declare, p.Restyle, p.PathStyle} {
 		if last != nil {
 			groups = append(slices.Clone(groups), *last)
 		}
@@ -211,8 +223,14 @@ func (p TidyPlan) Blocking() []string { return p.Gate().Blocking() }
 // committed included. Nothing is changed.
 func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, error) {
 	plan, err := e.planTidy(ctx, request)
-	if err != nil || !request.Restyle {
+	if err != nil {
 		return plan, err
+	}
+	if err := e.declareTidy(ctx, &plan); err != nil {
+		return plan, err
+	}
+	if !request.Restyle {
+		return plan, nil
 	}
 	if err := e.restyleTidy(ctx, &plan); err != nil {
 		return plan, err
@@ -1384,7 +1402,7 @@ var ErrStalePlan = errors.New("the branch changed since this plan was made")
 // files as they were planned, so every file stays as it is; the index is
 // reset to the new head.
 func (e *Engine) ApplyTidy(ctx context.Context, plan TidyPlan) (TidyResult, error) {
-	if plan.Keep || len(plan.Groups) == 0 {
+	if plan.Keep || len(plan.Series()) == 0 {
 		return TidyResult{}, errors.New("the plan changes nothing")
 	}
 	if blocking := plan.Blocking(); len(blocking) > 0 {
@@ -1445,6 +1463,11 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 		return TidyResult{}, err
 	}
 	parent, tree := plan.Base, trees[plan.Base]
+	// A branch whose commits stand, with only tidy's own commits after
+	// them, as a declaration, keeps them all.
+	if len(plan.Groups) == 0 {
+		parent, tree = plan.Head, plan.Final
+	}
 	var result TidyResult
 	// A commit the branch has already, at the same place, from the same
 	// parent, with the same tree, author, and message (commitmsg.Unchanged),
@@ -1471,6 +1494,12 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 	}
 	if tree != plan.Final {
 		return TidyResult{}, fmt.Errorf("engine: the tidied commits end at tree %s, not the working files' %s; nothing was changed", tree, plan.Final)
+	}
+	if declare := plan.Declare; declare != nil {
+		if parent, err = worktree.WriteCommit(ctx, git.Commit{Tree: plan.Declared, Parents: []string{parent}, Message: declare.Message, Author: declare.Author, Committer: committer}); err != nil {
+			return TidyResult{}, err
+		}
+		result.Commits = append(result.Commits, parent)
 	}
 	if restyle := plan.Restyle; restyle != nil {
 		if parent, err = worktree.WriteCommit(ctx, git.Commit{Tree: plan.Restyled, Parents: []string{parent}, Message: restyle.Message, Author: restyle.Author, Committer: committer}); err != nil {
@@ -1511,6 +1540,9 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 			// which would otherwise read as undoing them.
 			if err := worktree.ApplyToWorkingFiles(ctx, files.fixed); err != nil {
 				return "", fmt.Errorf("commits were created, but the lint fixes couldn't be written into the working files: %w; git checkout -- %s takes them from the commits", err, strings.Join(fixedPaths(files.fixed), " "))
+			}
+			if err := worktree.ApplyToWorkingFiles(ctx, plan.declared); err != nil {
+				return "", fmt.Errorf("commits were created, but the declared dependencies couldn't be written into the working files: %w; git checkout -- %s takes them from the commits", err, strings.Join(fixedPaths(plan.declared), " "))
 			}
 			if err := worktree.ApplyToWorkingFiles(ctx, plan.restyled); err != nil {
 				return "", fmt.Errorf("commits were created, but the restyled Portfiles couldn't be written into the working files: %w; git checkout -- %s takes them from the commits", err, strings.Join(fixedPaths(plan.restyled), " "))

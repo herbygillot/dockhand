@@ -34,6 +34,15 @@ what you have, but for the lint findings dockhand fixes on the lines your
 change adds or alters, such as trailing whitespace, which it writes into
 your files too.
 
+Where the branch's passed check found a build linking a port's library
+its Portfile doesn't declare, tidy declares it, in a commit of its own
+after the branch's, "<port>: declare libiconv": a depends_lib-append line
+after the Portfile's last depends_lib, written as the tree writes a
+dependency on that port, with the check's evidence in the commit's body.
+The next check reuses the builds, since they had that port active. A
+subport's or a variant build's finding, and libiconv where the port sets
+rust.system_libiconv yes, are said and left to you.
+
 --restyle restyles each Portfile the branch changes whole, in a last
 commit of its own, "<port>: whitespace": trailing whitespace, tabs under
 MacPorts' modeline, indentation in fours, and each run of declarations'

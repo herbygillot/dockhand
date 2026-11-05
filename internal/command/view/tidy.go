@@ -97,6 +97,9 @@ func WriteTidyPlan(out io.Writer, plan engine.TidyPlan, saved bool) {
 			fmt.Fprintf(out, "       ✗ %s\n", blocking)
 		}
 	}
+	for _, left := range plan.NotDeclared {
+		fmt.Fprintf(out, "    Not declared: %s\n", left)
+	}
 	for _, left := range plan.NotRestyled {
 		fmt.Fprintf(out, "    Not restyled: %s\n", left)
 	}

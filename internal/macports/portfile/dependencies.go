@@ -2,6 +2,7 @@ package portfile
 
 import (
 	"bytes"
+	"cmp"
 	"slices"
 	"strings"
 
@@ -171,4 +172,116 @@ func TopWords(src []byte, option string) []string {
 		}
 	})
 	return words
+}
+
+// DeclareLibrary writes "depends_lib-append  <spec>" at a Portfile's top:
+// after its last depends_lib command, else its last depends_ command,
+// else its last checksums command, aligned as that line's value is, as
+// tidy declares what a check found the build linking and not declaring.
+// False where the Portfile doesn't parse, has none of those at its top,
+// or the line holds another command.
+func DeclareLibrary(src []byte, spec string) ([]byte, bool) {
+	script, errs := syntax.Parse(src)
+	if len(errs) > 0 {
+		return nil, false
+	}
+	var lib, any, sums *syntax.Command
+	for _, item := range script.Items {
+		cmd, ok := item.(syntax.Command)
+		if !ok {
+			continue
+		}
+		name, _ := cmd.Name(src)
+		switch {
+		case strings.HasPrefix(name, "depends_lib"):
+			lib, any = &cmd, &cmd
+		case strings.HasPrefix(name, "depends_"):
+			any = &cmd
+		case strings.HasPrefix(name, "checksums"):
+			sums = &cmd
+		}
+	}
+	anchor := cmp.Or(lib, any, sums)
+	if anchor == nil || strings.TrimSpace(string(src[lineStart(src, anchor.Span.Start):anchor.Span.Start])) != "" {
+		return nil, false
+	}
+	end := lineEnd(src, anchor.Span.End)
+	if strings.TrimSpace(string(src[anchor.Span.End:end])) != "" {
+		return nil, false
+	}
+	const option = "depends_lib-append"
+	column := max(valueColumn(src, *anchor), len(option)+1)
+	line := "\n" + option + strings.Repeat(" ", column-len(option)) + spec
+	if anchor == sums {
+		line = "\n" + line
+	}
+	return slices.Concat(src[:end], []byte(line), src[end:]), true
+}
+
+// DeclaredChanges are the ports after declares at its top that before
+// doesn't, ok where that is the whole difference: every other line the
+// same, but for blank lines, the dependencies before declares all still
+// declared, each added one literal, port:, path:, lib:, or bin:, by the
+// port it names. It's how a check
+// after tidy declares a library its builds linked reuses what they built
+// (docs/designs/declare-linked-libraries.md, part 3). False where either
+// doesn't parse, or anything else differs.
+func DeclaredChanges(before, after []byte) (ports []string, ok bool) {
+	strippedBefore, okBefore := withoutTopDependencies(before)
+	strippedAfter, okAfter := withoutTopDependencies(after)
+	if !okBefore || !okAfter || strippedBefore != strippedAfter {
+		return nil, false
+	}
+	had, has := WrittenDependencies(before), WrittenDependencies(after)
+	same := func(a, b PortDependency) bool { return a.Option == b.Option && a.Port == b.Port }
+	for _, dependency := range had {
+		if !slices.ContainsFunc(has, func(d PortDependency) bool { return same(d, dependency) }) {
+			return nil, false
+		}
+	}
+	for _, dependency := range has {
+		if !slices.ContainsFunc(had, func(d PortDependency) bool { return same(d, dependency) }) && !slices.Contains(ports, dependency.Port) {
+			ports = append(ports, dependency.Port)
+		}
+	}
+	return ports, len(ports) > 0
+}
+
+// withoutTopDependencies is a Portfile's text without the lines of its
+// top-level depends_ commands, and its blank lines; false where it doesn't
+// parse, or such a command shares a line with another.
+func withoutTopDependencies(src []byte) (string, bool) {
+	script, errs := syntax.Parse(src)
+	if len(errs) > 0 {
+		return "", false
+	}
+	var spans [][2]int
+	for _, item := range script.Items {
+		cmd, ok := item.(syntax.Command)
+		if !ok {
+			continue
+		}
+		if name, _ := cmd.Name(src); !strings.HasPrefix(name, "depends_") {
+			continue
+		}
+		start, end := lineStart(src, cmd.Span.Start), lineEnd(src, cmd.Span.End)
+		if strings.TrimSpace(string(src[start:cmd.Span.Start])) != "" || strings.TrimSpace(string(src[cmd.Span.End:end])) != "" {
+			return "", false
+		}
+		spans = append(spans, [2]int{start, end})
+	}
+	var kept []byte
+	at := 0
+	for _, span := range spans {
+		kept = append(kept, src[at:span[0]]...)
+		at = span[1]
+	}
+	kept = append(kept, src[at:]...)
+	var lines []string
+	for _, line := range strings.Split(string(kept), "\n") {
+		if strings.TrimSpace(line) != "" {
+			lines = append(lines, strings.TrimRight(line, " \t"))
+		}
+	}
+	return strings.Join(lines, "\n"), true
 }

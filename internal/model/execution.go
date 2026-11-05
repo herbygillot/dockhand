@@ -398,6 +398,9 @@ type InertPort struct {
 	Port    string   `json:"port"`
 	Options []string `json:"options,omitempty"`
 	From    string   `json:"from,omitempty"`
+	// Declared are the ports its Portfile declares since, each one the
+	// build had active (reuse.Declared).
+	Declared []string `json:"declared,omitempty"`
 }
 
 // Library is one of a build's own dynamic libraries: its file, the

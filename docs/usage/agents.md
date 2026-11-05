@@ -89,7 +89,9 @@ plan, as a finished check's, has none. A check's `links` are lines, each with
 its `mark` and `words`; a declaration nothing links carries `unlinked`, its
 `port`, `option`, and `line`, and an undeclared link a declared port's
 pkg-config brought in carries `through`, that `port` and the `modules`
-followed. A check's `portfile_findings` are the
+followed. `tidy --json` lists a declaration's commit, `<port>: declare
+libiconv`, among `commits` after the branch's, and `not_declared` says the
+findings it leaves to you. A check's `portfile_findings` are the
 Portfile findings submit would say, each with its `code`, `severity`, `where`,
 and `message`, which the check said before building. Keep
 standard error separate when parsing standard output. `-v` adds detail about

@@ -60,6 +60,14 @@ the tree does, `path:bin/pkg-config:pkgconfig` for pkgconfig, where the port
 evaluates the same, depending on the same ports. Keep that choice out of a
 change when you only want its functional edits.
 
+Tidy also declares what the branch's passed check found its builds link and
+not declare, `depends_lib-append port:libiconv`, written as the tree writes a
+dependency on that port, in its own commit `<port>: declare libiconv` after the
+branch's and before `--restyle`'s, with the check's evidence in its body. A
+finding on a subport of a Portfile with several ports or on a variant build,
+and libiconv where the port sets `rust.system_libiconv yes`, is left to you and
+said under the plan's notes.
+
 On a terminal, tidy lets you review the diff, rearrange groups, edit subjects,
 and apply or cancel. For one commit with a message you supply:
 

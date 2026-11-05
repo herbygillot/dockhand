@@ -28,7 +28,12 @@ func (e *Engine) restyleTidy(ctx context.Context, plan *TidyPlan) error {
 	if err != nil {
 		return err
 	}
-	changed, err := worktree.ChangedPaths(ctx, plan.BaseTree, plan.Final)
+	// After the declaration's commit, where tidy writes one.
+	from := plan.Final
+	if plan.Declare != nil {
+		from = plan.Declared
+	}
+	changed, err := worktree.ChangedPaths(ctx, plan.BaseTree, from)
 	if err != nil {
 		return err
 	}
@@ -42,7 +47,7 @@ func (e *Engine) restyleTidy(ctx context.Context, plan *TidyPlan) error {
 		if path.Base(name) != "Portfile" {
 			continue
 		}
-		state, text, err := worktree.File(ctx, plan.Final, name)
+		state, text, err := worktree.File(ctx, from, name)
 		if err != nil {
 			return err
 		}
@@ -55,7 +60,7 @@ func (e *Engine) restyleTidy(ctx context.Context, plan *TidyPlan) error {
 		}
 		directory := path.Dir(name)
 		edit := git.FileEdit{Path: name, Before: state, After: restyled, Mode: state.Mode}
-		if why := e.restyleEvaluates(ctx, ports.Families, worktree, plan.Final, directory, edit); why != "" {
+		if why := e.restyleEvaluates(ctx, ports.Families, worktree, from, directory, edit); why != "" {
 			plan.NotRestyled = append(plan.NotRestyled, name+": "+why)
 			continue
 		}
@@ -65,7 +70,7 @@ func (e *Engine) restyleTidy(ctx context.Context, plan *TidyPlan) error {
 	if len(edits) == 0 {
 		return nil
 	}
-	if plan.Restyled, err = worktree.EditTree(ctx, plan.Final, edits); err != nil {
+	if plan.Restyled, err = worktree.EditTree(ctx, from, edits); err != nil {
 		return err
 	}
 	author, err := worktree.Author(ctx)
@@ -124,6 +129,9 @@ func (e *Engine) pathStyleTidy(ctx context.Context, plan *TidyPlan) error {
 		return err
 	}
 	tree := plan.Final
+	if plan.Declare != nil {
+		tree = plan.Declared
+	}
 	if plan.Restyle != nil {
 		tree = plan.Restyled
 	}

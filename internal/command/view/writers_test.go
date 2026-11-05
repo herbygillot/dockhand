@@ -71,7 +71,7 @@ func TestWriteLinks(t *testing.T) {
 		{Target: "pcre2", Clean: true, Ports: []string{"zlib"}},
 		{Target: "jq", Clean: true},
 	})
-	require.Equal(t, "Links\n  ! harbor links libonig.5.dylib from oniguruma (and 1 more of its libraries), which it doesn't declare in depends_lib; depends_lib-append port:oniguruma declares it\n"+
+	require.Equal(t, "Links\n  ! harbor links libonig.5.dylib from oniguruma (and 1 more of its libraries), which it doesn't declare in depends_lib; depends_lib-append port:oniguruma declares it, which dockhand tidy writes\n"+
 		"    couldn't read what harbor-cli's build links, so whether it declares them isn't said\n"+
 		"    crystal links boehmgc and pcre2's libraries, each declared in depends_lib\n"+
 		"    pcre2 links zlib's libraries, declared in depends_lib\n"+
@@ -89,7 +89,7 @@ func TestALinkNoticeSaysAnUnlinkedDeclarationAndThePkgConfigThrough(t *testing.T
 	}
 	var out bytes.Buffer
 	WriteLinks(&out, findings)
-	require.Equal(t, "Links\n  ! gnome-voice links libcairo.2.dylib from cairo, which it doesn't declare in depends_lib, through gtk4's pkg-config Libs (gtk4 requires cairo); depends_lib-append port:cairo declares it, or -Wl,-dead_strip_dylibs drops what it doesn't call\n"+
+	require.Equal(t, "Links\n  ! gnome-voice links libcairo.2.dylib from cairo, which it doesn't declare in depends_lib, through gtk4's pkg-config Libs (gtk4 requires cairo); depends_lib-append port:cairo declares it, which dockhand tidy writes, or -Wl,-dead_strip_dylibs drops what it doesn't call\n"+
 		"  ! abook declares libiconv in depends_lib, which nothing it built links: a header-only library or a build tool belongs in depends_build, and a program it runs or a library it loads at run time in depends_run\n", out.String())
 	detail := LinkDetail(findings)
 	require.Equal(t, &throughJSON{Port: "gtk4", Modules: []string{"gtk4", "cairo"}}, detail[0].Through)
