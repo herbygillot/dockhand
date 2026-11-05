@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,16 +15,21 @@ import (
 	"github.com/herbygillot/dockhand/internal/macos"
 )
 
-// generate builds the facts table from Tart probes and a buildbot harvest.
-// Each source row is kept, so the buildbot's stay as a cross-check where a
-// Tart image covers the same release; where one source gives a release,
-// architecture, and profile more than once, the newest wins.
 // xcodeApp is the Xcode a probed image's developer_dir names.
 const xcodeApp = "/Applications/Xcode.app"
 
-func generate(tartDirs []string, buildbot, out string) error {
-	var rows []macos.Facts
-	for _, dir := range tartDirs {
+// sourceRunner is how a runner's probe names its source.
+const sourceRunner = "runner"
+
+// generate builds the facts table from Tart probes, runner probes, and a
+// buildbot harvest. Each source row is kept, so the buildbot's stay as a
+// cross-check where a Tart image or a runner covers the same release; where
+// one source gives a release, architecture, and profile more than once, the
+// newest wins. A runner probes every Xcode its image carries, and the table
+// keeps the one with the builder's toolchain, if any (runnerRows).
+func generate(probeDirs []string, buildbot, out string) error {
+	var rows, runners []macos.Facts
+	for _, dir := range probeDirs {
 		paths, err := filepath.Glob(filepath.Join(dir, "*.json"))
 		if err != nil {
 			return err
@@ -33,11 +39,15 @@ func generate(tartDirs []string, buildbot, out string) error {
 			if err != nil {
 				return err
 			}
-			row, ok, err := tartRow(data)
+			row, ok, err := probeRow(data)
 			if err != nil {
 				return fmt.Errorf("%s: %w", path, err)
 			}
-			if ok {
+			switch {
+			case !ok:
+			case row.Source.Kind == macos.SourceRunner:
+				runners = append(runners, row)
+			default:
 				rows = append(rows, row)
 			}
 		}
@@ -55,6 +65,7 @@ func generate(tartDirs []string, buildbot, out string) error {
 			rows = append(rows, buildbotRow(builder))
 		}
 	}
+	rows = append(rows, runnerRows(runners, rows, os.Stderr)...)
 	table := macos.FactsTable{Generated: time.Now().UTC().Format(time.DateOnly), Facts: newest(rows), Generations: generations(rows)}
 	if err := table.Check(); err != nil {
 		return err
@@ -84,7 +95,40 @@ type fact struct {
 	Error *string         `json:"error"`
 }
 
-func tartRow(data []byte) (macos.Facts, bool, error) {
+// runnerRows are the runner rows the table keeps: those with the
+// toolchain the release and architecture's buildbot runs, its Xcode and its
+// tools, or its tools alone with the Command Line Tools selected, which
+// Base reads as no Xcode though Xcode stays on disk. A runner's other
+// Xcodes, and its own tools where they aren't the builder's, are reported,
+// not kept, until the table's lookup can choose among toolchains
+// (plan/facts-table-xcode-key-2026-11-05.md): kept, they would stand for
+// the builder with tools it doesn't run.
+func runnerRows(runners, others []macos.Facts, report io.Writer) []macos.Facts {
+	builders := map[string]macos.Facts{}
+	for _, row := range others {
+		if row.Source.Kind == macos.SourceBuildbot && row.Profile == macos.ProfileXcode {
+			builders[fmt.Sprintf("%d %s", row.Darwin, row.Architecture)] = row
+		}
+	}
+	var kept []macos.Facts
+	for _, row := range runners {
+		builder, known := builders[fmt.Sprintf("%d %s", row.Darwin, row.Architecture)]
+		said := fmt.Sprintf("darwin %d %s %s: Xcode %s, tools %s, clang %s (%s)", row.Darwin, row.Architecture, row.Profile, row.Xcode, row.Tools, row.Clang, row.Source.From)
+		switch {
+		case !known:
+			fmt.Fprintf(report, "reported: %s: no builder row to choose by\n", said)
+		case row.Tools == builder.Tools && (row.Xcode == builder.Xcode || row.Profile == macos.ProfileTools && row.Xcode == "none"):
+			kept = append(kept, row)
+			fmt.Fprintf(report, "kept:     %s\n", said)
+		default:
+			fmt.Fprintf(report, "reported: %s: the builder runs Xcode %s, tools %s\n", said, builder.Xcode, builder.Tools)
+		}
+	}
+	return kept
+}
+
+// probeRow is a Tart image's or a runner's probe as a row of the table.
+func probeRow(data []byte) (macos.Facts, bool, error) {
 	var doc probed
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return macos.Facts{}, false, err
@@ -127,9 +171,12 @@ func tartRow(data []byte) (macos.Facts, bool, error) {
 		Clang:        text("worker.compiler.command_line_tools_version(clang)"),
 		Source:       macos.Source{Kind: macos.SourceTart, From: doc.Image, MacPorts: text("base.macports_version")},
 	}
+	if doc.Source == sourceRunner {
+		row.Source.Kind, row.Source.From = macos.SourceRunner, runnerFrom(doc)
+	}
 	row.Darwin, _ = strconv.Atoi(text("base.os_major"))
 	switch doc.Profile {
-	case "base":
+	case "base", "clt":
 		row.Profile = macos.ProfileTools
 	case "xcode":
 		row.Profile = macos.ProfileXcode
@@ -140,12 +187,17 @@ func tartRow(data []byte) (macos.Facts, bool, error) {
 		_ = json.Unmarshal(f.Value, &row.SDKs)
 	}
 	// Xcode's own SDKs, the probe's listing of each Xcode*.app, for the
-	// one Base's developer_dir names, /Applications/Xcode.app.
+	// one Base's developer_dir names: /Applications/Xcode.app on an image,
+	// the Xcode selected on a runner.
 	if f, ok := facts["shell.xcode_sdks"]; ok && f.Error == nil && row.Profile == macos.ProfileXcode {
+		app := xcodeApp
+		if dir, ok := strings.CutSuffix(row.DeveloperDir, "/Contents/Developer"); ok {
+			app = dir
+		}
 		var listed []string
 		_ = json.Unmarshal(f.Value, &listed)
 		for _, entry := range listed {
-			if sdk, ok := strings.CutPrefix(entry, xcodeApp+": "); ok {
+			if sdk, ok := strings.CutPrefix(entry, app+": "); ok {
 				row.XcodeSDKs = append(row.XcodeSDKs, sdk)
 			}
 		}
@@ -160,6 +212,20 @@ func tartRow(data []byte) (macos.Facts, bool, error) {
 		row.Source.Date = date.UTC().Format(time.DateOnly)
 	}
 	return row, true, nil
+}
+
+// runnerFrom names a runner's row: its image, the run, and what was
+// selected, "macos-15-intel run 123, Xcode_16.4.app".
+func runnerFrom(doc probed) string {
+	from := doc.Image
+	if run, ok := doc.Host["run"].(string); ok {
+		from += " run " + run[strings.LastIndex(run, "/")+1:]
+	}
+	selected := "Command Line Tools"
+	if app, ok := strings.CutSuffix(doc.Developer, "/Contents/Developer"); ok {
+		selected = filepath.Base(app)
+	}
+	return from + ", " + selected
 }
 
 func buildbotRow(builder builderFacts) macos.Facts {

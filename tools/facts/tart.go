@@ -27,16 +27,19 @@ import (
 var probe []byte
 
 // probed is one image's probe, as the 2026-09-23 driver wrote them, so
-// generate reads the old harvests and the new alike.
+// generate reads the old harvests and the new alike. A runner's probe
+// also names its source, runner, and the developer directory it selected.
 type probed struct {
-	Image   string          `json:"image"`
-	Slug    string          `json:"slug"`
-	Profile string          `json:"profile"`
-	Date    string          `json:"date"`
-	Host    map[string]any  `json:"host"`
-	Output  string          `json:"probe_output"`
-	Errors  []string        `json:"driver_errors"`
-	Facts   json.RawMessage `json:"facts"`
+	Image     string          `json:"image"`
+	Slug      string          `json:"slug"`
+	Profile   string          `json:"profile"`
+	Source    string          `json:"source,omitempty"`
+	Developer string          `json:"developer,omitempty"`
+	Date      string          `json:"date"`
+	Host      map[string]any  `json:"host"`
+	Output    string          `json:"probe_output"`
+	Errors    []string        `json:"driver_errors"`
+	Facts     json.RawMessage `json:"facts"`
 }
 
 // harvestTart probes dockhand's images, the base and Xcode images of every

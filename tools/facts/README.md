@@ -19,8 +19,15 @@ dir=~/.dockhand/surveys/$(date +%F)-toolchain-facts
 # two at a time, the clone deleted after. The images are only read.
 /tmp/facts tart -out $dir/tart
 
-# The table, from both.
-/tmp/facts generate -tart $dir/tart -buildbot $dir/buildbot.json -out internal/macos/facts.json
+# GitHub's macOS runners: the latest run of the Toolchain facts workflow
+# (.github/workflows/facts-runners.yml), one artifact for each image.
+gh run download --repo herbygillot/dockhand --name facts-macos-15 --dir $dir/runner \
+  $(gh run list --repo herbygillot/dockhand --workflow facts-runners.yml --status success --limit 1 --json databaseId -q '.[0].databaseId')
+# ...and likewise facts-macos-15-intel, facts-macos-26, facts-macos-26-intel,
+# or every artifact of the run at once with no --name.
+
+# The table, from all three.
+/tmp/facts generate -tart $dir/tart -runner $dir/runner -buildbot $dir/buildbot.json -out internal/macos/facts.json
 ```
 
 ## The sources
@@ -36,9 +43,23 @@ dir=~/.dockhand/surveys/$(date +%F)-toolchain-facts
   directory, or the SDKs installed. The buildbots carry full Xcode, so
   their rows are the Xcode profile.
 
-Where both describe a release, architecture, and profile, the Tart image
-wins (`macos.FactsTable.Lookup`) and the buildbot's row stays as a
-cross-check. Darwin 8 and 9 have no builder, and Base's own tables are
+- **GitHub's runners** (`probe.tcl`, `facts runner`): the macOS images
+  MacPorts' CI starts from, Intel and arm64, macOS 15 and 26, with MacPorts
+  installed as CI installs it, Homebrew set aside. A weekly workflow probes
+  each image once with every Xcode it carries selected and once with the
+  Command Line Tools selected, Xcode still on disk, which Base reads as no
+  Xcode. A row's source names the image, the run, and what was selected.
+  The table keeps a runner's row only where it has the toolchain the
+  release and architecture's buildbot runs, its Xcode and its tools;
+  `generate` reports the others, which wait for the table's lookup to
+  choose among toolchains. On 2026-11-05 the Intel and arm64 runners gave
+  the same SDKs, Xcode SDKs, and clang as the Tart images for the same
+  Xcode and tools, field for field: these facts are the version's, not
+  the Mac's.
+
+Where more than one describes a release, architecture, and profile, the
+Tart image wins, then the runner (`macos.FactsTable.Lookup`), and the
+buildbot's row stays as a cross-check. Darwin 8 and 9 have no builder, and Base's own tables are
 not read yet.
 
 ## The Xcode setup installs
