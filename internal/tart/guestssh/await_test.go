@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/progress"
 )
 
 // answers is a guest that answers each try in turn, as ssh would.
@@ -63,4 +65,24 @@ func TestAGuestIsAwaitedOnlyWhileItCantBeReached(t *testing.T) {
 	err = AwaitSSH(t.Context(), &answers{replies: []reply{unreachable}}, nil, 10*time.Millisecond, time.Millisecond)
 	require.ErrorContains(t, err, "the guest didn't accept SSH within 10ms")
 	require.ErrorIs(t, err, ErrTransport)
+}
+
+// The wait says what ssh says, at -v, on its first try, and a wait that
+// ends on "No route to host" says what that means: setup -vvvv waited
+// four minutes saying nothing, then gave no hint (#89).
+func TestTheWaitSaysWhatSSHSays(t *testing.T) {
+	noRoute := reply{output: "ssh: connect to host 192.168.64.6 port 22: No route to host", err: ErrTransport}
+	var said []progress.Update
+	ctx := progress.WithReporter(t.Context(), func(u progress.Update) { said = append(said, u) })
+	err := AwaitSSH(ctx, &answers{replies: []reply{noRoute}}, nil, 20*time.Millisecond, time.Millisecond)
+	require.ErrorContains(t, err, "the guest didn't accept SSH within 20ms")
+	require.ErrorContains(t, err, "this Mac has no route to the guest's address: a VPN or firewall that routes Tart's 192.168.64.0/24 network elsewhere does this")
+	require.NotEmpty(t, said)
+	require.Equal(t, progress.Verbose, said[0].Level)
+	require.Contains(t, said[0].Message, "waiting for the guest's SSH (0s so far): ssh: connect to host 192.168.64.6 port 22: No route to host")
+	require.Len(t, said, 1, "once a half minute")
+
+	refused := reply{output: "ssh: connect to host 192.168.64.6 port 22: Connection refused", err: ErrTransport}
+	err = AwaitSSH(t.Context(), &answers{replies: []reply{refused}}, nil, 10*time.Millisecond, time.Millisecond)
+	require.NotContains(t, err.Error(), "no route", "another failure gets no hint")
 }
