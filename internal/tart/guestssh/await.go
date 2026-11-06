@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"time"
 
@@ -47,6 +48,12 @@ func AwaitSSH(ctx context.Context, guest Commander, vm Running, wait, interval t
 		done = vm.Done()
 	}
 	started, said := time.Now(), time.Time{}
+	// Only "No route to host" for a quarter of the wait, at most a minute,
+	// with the guest's address routed to Tart's bridge, which rules out a
+	// VPN, is Local Network privacy or a guest network that never came
+	// up, which waiting longer doesn't change (#89).
+	var unrouted time.Time
+	early := min(wait/4, time.Minute)
 	for {
 		output, err := guest.Command(ctx, nil, "/usr/bin/true")
 		if err == nil {
@@ -66,6 +73,15 @@ func AwaitSSH(ctx context.Context, guest Commander, vm Running, wait, interval t
 				return fmt.Errorf("%w: %s: %w", ErrRefused, refusal, err)
 			}
 		}
+		if address := noRouteAddress(output); address == "" {
+			unrouted = time.Time{}
+		} else if unrouted.IsZero() {
+			unrouted = time.Now()
+		} else if router, ok := guest.(Router); ok && time.Since(unrouted) >= early {
+			if iface, routeErr := router.Route(ctx, address); routeErr == nil && strings.HasPrefix(iface, "bridge") {
+				return fmt.Errorf("the guest didn't accept SSH in %s, its address routed to Tart's %s: %w%s", time.Since(started).Round(time.Second), iface, err, noRouteHint(guest, output, err))
+			}
+		}
 		select {
 		case <-done:
 			if vm.Err() != nil {
@@ -73,7 +89,7 @@ func AwaitSSH(ctx context.Context, guest Commander, vm Running, wait, interval t
 			}
 			return errors.New("the VM stopped before it accepted SSH")
 		case <-ctx.Done():
-			return fmt.Errorf("the guest didn't accept SSH within %s: %w%s", wait, err, noRouteHint(output, err))
+			return fmt.Errorf("the guest didn't accept SSH within %s: %w%s", wait, err, noRouteHint(guest, output, err))
 		case <-time.After(interval):
 		}
 	}
@@ -88,15 +104,54 @@ func lastLine(output []byte, err error) string {
 	return err.Error()
 }
 
+// Router reads which interface this Mac routes an address through, as
+// route -n get says it: a Guest does.
+type Router interface {
+	Route(ctx context.Context, address string) (string, error)
+}
+
+// noRouteSaid is ssh's line for an address it found no route to.
+var noRouteSaid = regexp.MustCompile(`connect to host (\S+) port \d+: No route to host`)
+
+// noRouteAddress is the address ssh found no route to, or empty where it
+// said something else.
+func noRouteAddress(output []byte) string {
+	if found := noRouteSaid.FindSubmatch(output); found != nil {
+		return string(found[1])
+	}
+	return ""
+}
+
+// terminalApps are the apps TERM_PROGRAM names, as System Settings lists
+// them under Local Network.
+var terminalApps = map[string]string{"ghostty": "Ghostty", "Apple_Terminal": "Terminal", "iTerm.app": "iTerm2", "vscode": "Visual Studio Code"}
+
+// terminalApp is the app dockhand runs from, by the TERM_PROGRAM its
+// environment names, or "the app you ran dockhand from".
+func terminalApp(env []string) string {
+	for _, entry := range env {
+		if value, ok := strings.CutPrefix(entry, "TERM_PROGRAM="); ok {
+			if app, known := terminalApps[value]; known {
+				return app
+			}
+		}
+	}
+	return "the app you ran dockhand from"
+}
+
 // noRouteHint says what "No route to host" means where the wait ended on
-// it: this Mac sent the guest's address somewhere other than Tart's
-// network, as a VPN or a firewall routing its subnet does, or the guest's
-// network never came up, or Local Network privacy, which decision 43 found
-// doesn't hold Apple's /usr/bin/ssh, holding it on a newer macOS, as
-// #89's 27.2 may; empty for any other failure (#89).
-func noRouteHint(output []byte, err error) string {
+// it, most likely first: Local Network privacy, which holds Apple's
+// /usr/bin/ssh too where the app it runs from is denied the local network
+// (macOS 27.2 and Ghostty, #89), naming that app; a VPN or firewall
+// routing Tart's network elsewhere; or a guest network that never came
+// up. Empty for any other failure.
+func noRouteHint(guest Commander, output []byte, err error) string {
 	if !strings.Contains(string(output), "No route to host") && !strings.Contains(err.Error(), "No route to host") {
 		return ""
 	}
-	return "; this Mac has no route to the guest's address: a VPN or firewall that routes Tart's 192.168.64.0/24 network elsewhere does this, which route -n get <address> shows; so does Local Network privacy where it holds the app dockhand runs from, which System Settings › Privacy & Security › Local Network allows; or the guest's network didn't come up"
+	var env []string
+	if g, ok := guest.(*Guest); ok {
+		env = g.Env
+	}
+	return fmt.Sprintf("; this Mac has no route to the guest's address. Local Network privacy does this where %s may not use the local network: allow it in System Settings › Privacy & Security › Local Network, then run this again. A VPN or firewall that routes Tart's 192.168.64.0/24 network elsewhere does it too, which route -n get <address> shows, or the guest's network didn't come up", terminalApp(env))
 }

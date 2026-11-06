@@ -368,19 +368,22 @@ code they explain.
     failed ten of eleven starts; on 2.39.0 eleven of eleven succeeded.
     `tart get` now reads an ASIF disk's capacity as `null` (2026-09-27).
 - **Local Network privacy stops a Go program's direct dial to a guest**
-  ("no route to host"), whichever app launched it, but not Apple's
-  `/usr/bin/ssh`, which is why the guest channel uses it. Its
+  ("no route to host"), whichever app launched it, which is why the guest
+  channel uses Apple's `/usr/bin/ssh`. It stops `/usr/bin/ssh` too where
+  the app dockhand runs from is denied Local Network access, a correction
+  of what this entry said first (herbygillot/dockhand#89). Its
   ControlMaster socket is under `/tmp`, since the per-user temporary
   directory's path is too long for a socket. 64 MiB moved up in 0.9 s and
   down in 0.4 s on Monterey (2026-09-24).
 - **A guest that never accepts SSH with "No route to host"** (herbygillot/dockhand#89,
-  on macOS 27.2): this Mac sends the guest's address somewhere other than
-  Tart's network. A VPN or firewall that routes 192.168.64.0/24 elsewhere
-  does it, which `route -n get <address>` shows; so may Local Network
-  privacy, where it holds the app dockhand runs from (System Settings ›
-  Privacy & Security › Local Network). setup and check say so when the
-  wait ends, and `-v` shows what ssh said every half minute while it
-  waits.
+  on macOS 27.2): Local Network privacy, the app dockhand ran from
+  (Ghostty) having been denied it; allowing it in System Settings ›
+  Privacy & Security › Local Network fixed it. A VPN or firewall that
+  routes 192.168.64.0/24 elsewhere does the same, which `route -n get
+  <address>` shows. The message names the app from `TERM_PROGRAM`; after
+  a minute of only "No route to host" with the address routed to Tart's
+  `bridge` interface, which rules out a VPN, the wait ends with it rather
+  than running out. `-v` shows what ssh said every half minute.
 
 ### Images and guests
 

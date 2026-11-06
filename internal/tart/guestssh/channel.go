@@ -1,13 +1,16 @@
 // Package guestssh reaches a Tart guest over SSH through Apple's
-// /usr/bin/ssh, macOS's own documented client, which Local Network privacy
-// does not stop the way it stops a Go program's direct dial, whichever app
-// launched dockhand (decision 43 of the contracts direction). Commands
-// share one multiplexed connection per guest. Files move by `ssh … cat`,
+// /usr/bin/ssh, macOS's own documented client (decision 43 of the
+// contracts direction). Local Network privacy stops a Go program's direct
+// dial whichever app launched dockhand; it stops /usr/bin/ssh only where
+// that app is denied the local network, as Ghostty was on macOS 27.2
+// (#89), so the wait for a guest names the app and how to allow it.
+// Commands share one multiplexed connection per guest. Files move by `ssh … cat`,
 // every transfer checked against a size and sha256 computed on the other
 // side, since a transport can report success while losing data.
 package guestssh
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -123,6 +126,22 @@ func (g *Guest) run(ctx context.Context, input io.Reader, stream io.Writer, comb
 		return result.Output, err
 	}
 	return result.Output, nil
+}
+
+// Route is the interface this Mac routes an address through, as
+// route -n get says it (Router): a guest's on Tart's network is a
+// bridge, bridge100.
+func (g *Guest) Route(ctx context.Context, address string) (string, error) {
+	var output bytes.Buffer
+	if _, err := subprocess.Run(ctx, subprocess.Spec{Tool: "route", Command: "get", Path: "/sbin/route", Args: []string{"-n", "get", address}, Env: g.Env, Stdout: &output, Combined: true, Limit: 1 << 14}); err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(output.String(), "\n") {
+		if iface, ok := strings.CutPrefix(strings.TrimSpace(line), "interface: "); ok {
+			return strings.TrimSpace(iface), nil
+		}
+	}
+	return "", fmt.Errorf("route -n get %s named no interface", address)
 }
 
 func (g *Guest) executable() string {
