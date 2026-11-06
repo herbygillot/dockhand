@@ -52,3 +52,23 @@ func TestAGoLinkTargetMustStillBeDeclared(t *testing.T) {
 	require.Len(t, covered, 1)
 	require.Contains(t, covered[0], "couldn't be parsed")
 }
+
+// A file of a -X target's package changing, or new, holds nothing while
+// the package still declares the variable: rclone 1.76.0 was held on
+// twelve of package fs's files for its fs.Version, which fs/version.go
+// still declared (field testing, macports-ports#36436).
+func TestAGoLinkTargetsPackageIsntABuildFile(t *testing.T) {
+	port := macports.PortInfo{Name: "rclone", Options: map[string]string{"build.args": `-ldflags "-X github.com/rclone/rclone/fs.Version=1.76.0"`}}
+	spec := project.Spec{GoPackages: port.GoLinkPackages()}
+	version := func(top string, files map[string]string) project.Reading {
+		files["go.mod"] = "module github.com/rclone/rclone\n\ngo 1.22\n"
+		return read(t, top, files, spec)
+	}
+	comparison := Assess(Input{Port: port, Base: port, Pairs: []Pair{{Archive: "rclone-1.76.0.tar.gz",
+		Before: version("rclone-1.75.0", map[string]string{"fs/version.go": "package fs\n\nvar Version = \"dev\"\n", "fs/config.go": "package fs\n\nvar A = 1\n"}),
+		After:  version("rclone-1.76.0", map[string]string{"fs/version.go": "package fs\n\nvar Version = \"dev\"\n", "fs/config.go": "package fs\n\nvar A = 2\n", "fs/log.go": "package fs\n"})}}})
+	for _, change := range comparison.Changes {
+		require.False(t, change.Hold, change.Message)
+		require.NotContains(t, change.Path, "fs/", change.Message)
+	}
+}

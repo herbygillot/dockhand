@@ -385,12 +385,13 @@ func TestAReadingsCacheKeyTakesItsGoPackages(t *testing.T) {
 	digest := strings.Repeat("a", 64)
 	ordinary, err := cache.Read(t.Context(), archive, digest, Spec{})
 	require.NoError(t, err)
-	require.NotContains(t, ordinary.Files, "version/version.go")
+	require.NotContains(t, ordinary.GoFiles, "version/version.go")
 	spec := Spec{GoPackages: []string{"example.test/demo/version"}}
 	fresh, err := Read(t.Context(), archive, spec)
 	require.NoError(t, err)
-	require.Contains(t, fresh.Files, "version/version.go", "fresh reader honors the named package")
+	require.Contains(t, fresh.GoFiles, "version/version.go", "fresh reader honors the named package")
+	require.NotContains(t, fresh.Files, "version/version.go", "not a build file")
 	cached, err := cache.Read(t.Context(), archive, digest, spec)
 	require.NoError(t, err)
-	require.Equal(t, names(fresh), names(cached), "changing the files a reading asks for must change the cache key")
+	require.Equal(t, fresh.GoFiles, cached.GoFiles, "changing the files a reading asks for must change the cache key")
 }

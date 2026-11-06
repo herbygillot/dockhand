@@ -303,6 +303,13 @@ type Reading struct {
 	// manifests, and Cargo.lock, and the package.json of each Node
 	// workspace the root's names, each by its path below Top.
 	Files map[string]File
+	// GoFiles are the Go files of the packages a port's -X arguments name
+	// (Spec.GoPackages), by their path below Top, kept apart from Files:
+	// they're read for the variable an argument sets, and aren't build
+	// files, so a change to one holds nothing. rclone 1.76.0 was held on
+	// twelve changed files of package fs for its fs.Version, which fs
+	// still declared (field testing, macports-ports#36436).
+	GoFiles map[string]File `json:",omitempty"`
 	// Directories are the archive's directories below Top, to
 	// DirectoryDepth deep, sorted: a Portfile's build names some, as
 	// semgrep's ${worksrcpath}/pfff, which a new version may not have.
@@ -621,8 +628,14 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 			}
 		}
 		below := strings.TrimPrefix(rest, found.Root+"/")
-		if wanted(rest, found.Root) || buildFileIn(rest, spec.directories(found.Root)) || (found.Root == "" || below != rest) && goPackageFile(below, spec.GoPackages) {
+		switch {
+		case wanted(rest, found.Root) || buildFileIn(rest, spec.directories(found.Root)):
 			found.Files[rest] = file
+		case (found.Root == "" || below != rest) && goPackageFile(below, spec.GoPackages):
+			if found.GoFiles == nil {
+				found.GoFiles = map[string]File{}
+			}
+			found.GoFiles[rest] = file
 		}
 	}
 	for name, versions := range libraries {

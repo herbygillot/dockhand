@@ -23,9 +23,10 @@ import (
 // src/main.rs files (Programs). 8: the build files of the directories
 // below the root a port's build reads them from (Spec.Directories).
 // 9: the Go packages' files a port's -X arguments name (Spec.GoPackages),
-// which 8's readings were kept without (Codex's sixth review, #74). A
-// change to what read.go reads, or how, raises it.
-const ReaderVersion = 9
+// which 8's readings were kept without (Codex's sixth review, #74). 10:
+// those files kept apart from the build files (GoFiles). A change to what
+// read.go reads, or how, raises it.
+const ReaderVersion = 10
 
 // Cache keeps readings on disk by what they read: an archive's content, by
 // its sha256, and where in it the project is, with the reader's version

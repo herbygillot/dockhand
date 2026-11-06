@@ -76,7 +76,7 @@ func packageDir(module, imported string) (string, bool) {
 func declaresVariable(reading project.Reading, dir string, target macports.GoLinkTarget) (bool, string) {
 	files := token.NewFileSet()
 	read := 0
-	for name, file := range reading.Files {
+	for name, file := range reading.GoFiles {
 		if path.Dir(name) != dir || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
