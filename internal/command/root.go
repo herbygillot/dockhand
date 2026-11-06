@@ -111,6 +111,22 @@ func RunWith(ctx context.Context, line settings.Invocation, streams term.Streams
 	root.SetIn(streams.In)
 	root.SetOut(streams.Out)
 	root.SetErr(streams.Err)
+	// Cobra's completion scripts are code, written as they are: wrapped at
+	// the terminal's width, fish's and bash's broke where a line split
+	// (#88). It's made once the output is set, which it takes then.
+	root.InitDefaultCompletionCmd()
+	for _, cmd := range root.Commands() {
+		if cmd.Name() != "completion" {
+			continue
+		}
+		for _, shell := range cmd.Commands() {
+			run := shell.RunE
+			shell.RunE = func(cmd *cobra.Command, args []string) error {
+				streams.Unwrapped()
+				return run(cmd, args)
+			}
+		}
+	}
 	spend := github.StartSpend()
 	err := view.SayNext(root.ExecuteContext(ctx))
 	clean.CleanupAfter(&shared, streams, streams.Command())
