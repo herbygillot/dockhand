@@ -1360,3 +1360,24 @@ func TestAReRequestLeftOverIsDueByThePushNotTheCommit(t *testing.T) {
 	require.Equal(t, 2, wrapped.calls, "retry should finish the failed post-push reviewer request")
 	require.Equal(t, []string{"ryandesign"}, g.Rerequested)
 }
+
+// submit's preview writes the title and body as they are on a terminal:
+// wrapped at its width, a long line broke, code blocks too (#93).
+func TestSubmitsPreviewIsNotWrapped(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithGitHub(t, w)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-update"))
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "tidy")
+	require.NoError(t, err)
+	note := "A note whose one line runs well past a terminal's hundred columns, as a command or a URL in a pull request's body does."
+	var out, errs bytes.Buffer
+	_ = cmdtest.RunFor(t, t.Context(), []string{"submit", "--no-check", "--note", note, "--tested-binaries"}, term.Streams{In: strings.NewReader("p\nq\n"), Out: &out, Err: &errs}.AsTerminal())
+	require.Contains(t, out.String(), note+"\n", errs.String())
+}

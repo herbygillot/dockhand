@@ -132,6 +132,9 @@ write, keeping your --note.
 				}
 				switch strings.ToLower(answer) {
 				case "p":
+					// The title and Markdown body are written as they are,
+					// code blocks and all (#93).
+					streams.Unwrapped()
 					fmt.Fprintf(streams.Out, "\n%s\n\n%s\n", plan.Title, plan.Body)
 				case "e":
 					edited, err := settings.EditText(ctx, settings.EditorCommand(s), plan.Body)
@@ -216,6 +219,9 @@ func writeReadyPreview(out io.Writer, plan engine.SubmitPlan, ready bool) {
 // writeDescription shows the pull request's description as the submission
 // would leave it, which a preview otherwise shows only in its JSON.
 func writeDescription(streams term.Streams, plan engine.SubmitPlan) {
+	// The description's lines are written as they are, code blocks and
+	// all (#93).
+	streams.Unwrapped()
 	out := streams.Out
 	fmt.Fprintln(out, "\nProposed pull request description:")
 	lines := strings.Split(strings.TrimRight(plan.Body, "\n"), "\n")

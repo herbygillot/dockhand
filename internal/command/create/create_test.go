@@ -1,6 +1,7 @@
 package create
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -341,4 +342,16 @@ func TestCreateAddsOpenmaintainerUnlessAskedNotTo(t *testing.T) {
 	out, _, err = cmdtest.Dockhand(t, "create", "https://github.com/rift-dev/rift", "--category", "textproc", "--plan", "--no-openmaintainer")
 	require.NoError(t, err)
 	require.Contains(t, out, "maintainers         {@ada example.org:ada}\n")
+}
+
+// create --plan's Portfile is written as it is on a terminal: wrapped at
+// its width, the modeline broke, its second half a Tcl command (#93).
+func TestCreatePlansPortfileIsNotWrapped(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.Stands(t).ProjectReader = riftProject{}
+	var out, errs bytes.Buffer
+	require.NoError(t, cmdtest.RunFor(t, t.Context(), []string{"create", "https://github.com/rift-dev/rift", "--plan", "--category", "textproc"}, term.Streams{Out: &out, Err: &errs}.AsTerminal()))
+	require.Contains(t, out.String(), "\n"+portfile.Modeline+"\n")
 }

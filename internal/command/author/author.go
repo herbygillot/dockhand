@@ -602,6 +602,9 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 		fmt.Fprintf(out, "%s %s\n", update.Port, update.After)
 	}
 	if request.Plan {
+		// The diff is written as it is, and the short lines after it
+		// with it: wrapped, a Portfile's long lines broke (#93).
+		streams.Unwrapped()
 		fmt.Fprintf(out, "Plan, nothing changed:\n\n%s", update.Diff)
 		if !strings.HasSuffix(update.Diff, "\n") {
 			fmt.Fprintln(out)

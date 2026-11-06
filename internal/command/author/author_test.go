@@ -748,3 +748,20 @@ func TestShipAndBumpTakeSource(t *testing.T) {
 		}
 	}
 }
+
+// update --plan's diff is written as it is on a terminal: wrapped at its
+// width, a Portfile's long line broke (#93).
+func TestAnUpdatePlansDiffIsNotWrapped(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	long := "long_description    jq is a lightweight and flexible command-line JSON processor, akin to sed for JSON data, written in portable C"
+	require.NoError(t, os.WriteFile(filepath.Join(w.Upstream, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\n"+long+"\n"), 0o644))
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-am", "jq: 1.7.1")
+	cmdtest.WithBumper(t)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-update"))
+	var out, errs bytes.Buffer
+	require.NoError(t, cmdtest.RunFor(t, t.Context(), []string{"update", "jq", "--plan"}, term.Streams{Out: &out, Err: &errs}.AsTerminal()))
+	require.Contains(t, out.String(), " "+long+"\n", "the long line whole, as context")
+}

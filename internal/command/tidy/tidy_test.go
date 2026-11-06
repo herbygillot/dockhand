@@ -213,3 +213,19 @@ func TestTidySaysWhatTheRulesWarnOfAndSavesTheCommitsToRewrite(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "nothing to tidy", "with nothing left to warn of")
 }
+
+// tidy's review diff is written as it is on a terminal: wrapped at its
+// width, a Portfile's long line broke (#93).
+func TestTidysReviewDiffIsNotWrapped(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.WithBumper(t)
+	testsupport.Git(t, w.Clone, "switch", "-q", "-c", "update-jq")
+	_, _, err := cmdtest.Dockhand(t, "adopt")
+	require.NoError(t, err)
+	long := "long_description    jq is a lightweight and flexible command-line JSON processor, akin to sed for JSON data, written in portable C"
+	require.NoError(t, os.WriteFile(filepath.Join(w.Clone, "textproc/jq/Portfile"), []byte("name jq\n"+long+"\n"), 0o644))
+	var out, errs bytes.Buffer
+	_ = cmdtest.RunFor(t, t.Context(), []string{"tidy"}, term.Streams{In: strings.NewReader("d\nq\n"), Out: &out, Err: &errs}.AsTerminal())
+	require.Contains(t, out.String(), "+"+long+"\n")
+}
