@@ -72,3 +72,16 @@ func TestAGoLinkTargetsPackageIsntABuildFile(t *testing.T) {
 		require.NotContains(t, change.Path, "fs/", change.Message)
 	}
 }
+
+// Package main's files are the module's own at its root, and fzf 0.75.0's
+// main.go changing only its own version literal held as a build file on
+// v0.7.0 for -X main.version (field testing, macports-ports#36456).
+func TestAGoLinkTargetsMainIsntABuildFile(t *testing.T) {
+	port := macports.PortInfo{Name: "fzf", Options: map[string]string{"build.args": `-ldflags "-X main.version=0.75.0 -X main.revision=MacPorts"`}}
+	spec := project.Spec{GoPackages: port.GoLinkPackages()}
+	version := func(top, literal string) project.Reading {
+		return read(t, top, map[string]string{"go.mod": "module github.com/junegunn/fzf\n\ngo 1.23\n", "main.go": "package main\n\nvar version = \"" + literal + "\"\nvar revision = \"devel\"\n"}, spec)
+	}
+	comparison := Assess(Input{Port: port, Base: port, Pairs: []Pair{{Archive: "fzf-0.75.0.tar.gz", Before: version("fzf-0.74.5", "0.74"), After: version("fzf-0.75.0", "0.75")}}})
+	require.Empty(t, comparison.Changes)
+}
