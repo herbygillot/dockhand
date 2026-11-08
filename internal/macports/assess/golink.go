@@ -1,6 +1,7 @@
 package assess
 
 import (
+	"cmp"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -43,11 +44,15 @@ func (a *assessment) goLinkTargets() {
 			if !inModule {
 				continue
 			}
-			dir = path.Join(reading.Root, dir)
+			// path.Dir names the root ".", which Join's "" for package
+			// main at a root-level project never matched: its files went
+			// unread, and coverage named an empty path (lazygit 0.66.3,
+			// field testing).
+			dir = cmp.Or(path.Join(reading.Root, dir), ".")
 			declared, problem := declaresVariable(reading, dir, target)
 			switch {
 			case problem != "":
-				a.cover(model.Coverage{Path: dir, System: "go", Relevance: "used", Treatment: "set-apart", Policy: GoLinkTargetRule, Reason: problem})
+				a.cover(model.Coverage{Path: path.Join(dir, "*.go"), System: "go", Relevance: "used", Treatment: "set-apart", Policy: GoLinkTargetRule, Reason: problem})
 			case !declared:
 				a.add(model.UpstreamChange{Kind: "go-ldflags", Path: dir, Rule: GoLinkTargetRule, Subject: target.Package + "." + target.Name, Class: model.Introduced, Hold: true,
 					Message: fmt.Sprintf("upstream: package %s declares no variable %s, so the build's %s sets nothing, and the version it reports may be wrong", target.Package, target.Name, target.Argument)})

@@ -84,4 +84,19 @@ func TestAGoLinkTargetsMainIsntABuildFile(t *testing.T) {
 	}
 	comparison := Assess(Input{Port: port, Base: port, Pairs: []Pair{{Archive: "fzf-0.75.0.tar.gz", Before: version("fzf-0.74.5", "0.74"), After: version("fzf-0.75.0", "0.75")}}})
 	require.Empty(t, comparison.Changes)
+	for _, coverage := range comparison.Coverage {
+		require.NotEqual(t, GoLinkTargetRule, coverage.Policy, "package main at the root is read: %+v", coverage)
+	}
+
+	// Its files are read, so a variable main no longer declares holds:
+	// they went unread, and lazygit 0.66.3's coverage named an empty path.
+	moved := read(t, "fzf-0.75.0", map[string]string{"go.mod": "module github.com/junegunn/fzf\n\ngo 1.23\n", "main.go": "package main\n\nvar revision = \"devel\"\n"}, spec)
+	comparison = Assess(Input{Port: port, Base: port, Pairs: []Pair{{Archive: "fzf-0.75.0.tar.gz", Before: version("fzf-0.74.5", "0.74"), After: moved}}})
+	var held []string
+	for _, change := range comparison.Changes {
+		if change.Rule == GoLinkTargetRule && change.Hold {
+			held = append(held, change.Subject)
+		}
+	}
+	require.Equal(t, []string{"main.version"}, held)
 }
