@@ -11,7 +11,7 @@
 set -euo pipefail
 bucket=$1 release=$2
 name=aws-mac1-$release
-work=/Users/ec2-user/facts
+work=~ec2-user/facts
 export HOME=/var/root PATH=/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
 mkdir -p "$work" && cd "$work"
 log() { echo "== $(date -u +%H:%M:%S) $*"; }

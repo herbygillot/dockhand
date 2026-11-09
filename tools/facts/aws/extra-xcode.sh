@@ -7,7 +7,7 @@
 # to s3://BUCKET/probes/NAME/.
 set -euo pipefail
 bucket=$1 prefix=$2 name=$3
-work=/Users/ec2-user/facts
+work=~ec2-user/facts
 export HOME=/var/root PATH=/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
 log() { echo "== $(date -u +%H:%M:%S) $*"; }
 cd "$work"

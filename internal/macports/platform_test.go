@@ -37,9 +37,8 @@ func TestPlatformVariablesFollowMacPortsBase(t *testing.T) {
 }
 
 // A modelled context that states the Command Line Tools takes them from
-// the facts table: an image's row where there is one, else a buildbot's
-// made tools-only, with what it doesn't tell from an image with the same
-// tools package, and the host where no source tells.
+// the facts table: an image's or a runner's row where there is one, else
+// a buildbot's made tools-only, and the host where no source tells.
 func TestToolchainComesFromTheFactsTable(t *testing.T) {
 	t.Parallel()
 	image, ok := macos.Table().Lookup(25, "arm64", macos.ProfileTools)
@@ -54,17 +53,26 @@ func TestToolchainComesFromTheFactsTable(t *testing.T) {
 	require.Equal(t, image.SDKs, got.SDKs)
 	require.False(t, got.XCSelect)
 
-	builder, ok := macos.Table().Lookup(25, "x86_64", macos.ProfileXcode)
-	require.True(t, ok)
-	require.Equal(t, image.Tools, builder.Tools, "the harvest found the same tools package on both")
+	// Intel Tahoe's tools are a runner's row, probed with the tools
+	// selected, which agrees with the arm64 image's of the same package.
 	got, err = macports.Toolchain(model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"}, model.DeveloperToolsCommandLine)
+	require.NoError(t, err)
+	require.False(t, got.Derived)
+	require.Equal(t, macos.SourceRunner, got.Source.Kind)
+	require.Equal(t, "none", got.Xcode)
+	require.Equal(t, image.Tools, got.Tools)
+	require.Equal(t, macports.CommandLineTools, got.DeveloperDir)
+	require.Equal(t, image.Clang, got.Clang)
+	require.Equal(t, image.SDKs, got.SDKs)
+
+	builder, ok := macos.Table().Lookup(17, "x86_64", macos.ProfileXcode)
+	require.True(t, ok)
+	got, err = macports.Toolchain(model.Platform{OS: "darwin", Version: "17", Architecture: "x86_64"}, model.DeveloperToolsCommandLine)
 	require.NoError(t, err)
 	require.True(t, got.Derived)
 	require.Equal(t, "none", got.Xcode, "a buildbot's Xcode row is modelled without Xcode")
 	require.Equal(t, builder.Tools, got.Tools)
 	require.Equal(t, macports.CommandLineTools, got.DeveloperDir)
-	require.Equal(t, image.Clang, got.Clang, "the arm64 image with the same tools gives clang")
-	require.Equal(t, image.SDKs, got.SDKs)
 
 	got, err = macports.Toolchain(model.Platform{OS: "darwin", Version: "19", Architecture: "x86_64"}, model.DeveloperToolsCommandLine)
 	require.NoError(t, err)
