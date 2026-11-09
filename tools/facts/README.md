@@ -26,8 +26,10 @@ gh run download --repo herbygillot/dockhand --name facts-macos-15 --dir $dir/run
 # ...and likewise facts-macos-15-intel, facts-macos-26, facts-macos-26-intel,
 # or every artifact of the run at once with no --name.
 
-# The table, from all three.
-/tmp/facts generate -tart $dir/tart -runner $dir/runner -buildbot $dir/buildbot.json -out internal/macos/facts.json
+# Hosts: Macs probed once, kept in tools/facts/probes, one directory each.
+# The table, from all four.
+/tmp/facts generate -tart $dir/tart -runner $dir/runner -host tools/facts/probes/aws-mac1 \
+  -buildbot $dir/buildbot.json -out internal/macos/facts.json
 ```
 
 ## The sources
@@ -50,15 +52,34 @@ gh run download --repo herbygillot/dockhand --name facts-macos-15 --dir $dir/run
   Command Line Tools selected, Xcode still on disk, which Base reads as no
   Xcode. A row's source names the image, the run, and what was selected.
   The table keeps a runner's row only where it has the toolchain the
-  release and architecture's buildbot runs, its Xcode and its tools;
-  `generate` reports the others, which wait for the table's lookup to
-  choose among toolchains. On 2026-11-05 the Intel and arm64 runners gave
+  release and architecture's buildbot runs, its Xcode and its tools, the
+  tools by version: a build of the same release that differs only in the
+  trailing build stamp, 26.0.0.0.1.1756965055 for the builder's
+  26.0.0.0.1.1757719676, carries the same clang and SDKs. `generate`
+  reports the others, which wait for the table's lookup to choose among
+  toolchains. On 2026-11-05 the Intel and arm64 runners gave
   the same SDKs, Xcode SDKs, and clang as the Tart images for the same
   Xcode and tools, field for field: these facts are the version's, not
   the Mac's.
 
+- **Hosts** (`probe.tcl`, `facts host`): any other Mac probed once the way
+  a runner is, every Xcode then the Command Line Tools, kept by the same
+  rule. Its probes can't be made again, so they are committed under
+  [probes](probes), one directory per host, and `generate -host` reads them
+  every time. [aws-mac1](probes/aws-mac1) is an AWS EC2 Intel Mac
+  (mac1.metal) on 2026-11-09: macOS 10.14 to 15, each with its x86_64
+  builder's Xcode and tools (Catalina's builder has no tools), MacPorts
+  2.12.7. Below macOS 12, where `facts` can't run, the harvest ran
+  `probe.tcl` itself and wrote the same document. [aws](aws) holds the
+  scripts that made them: `driver.sh` drives one Dedicated Host over the
+  EC2, SSM, and S3 APIs (allocate, launch, harvest, finish, release), and
+  `harvest.sh` installs MacPorts, the builder's tools and Xcode from the
+  person's own S3 bucket, then probes; `extra-xcode.sh` adds another Xcode
+  beside it. A host is billed for 24 hours at least, and AWS scrubs it for
+  about an hour between instances.
+
 Where more than one describes a release, architecture, and profile, the
-Tart image wins, then the runner (`macos.FactsTable.Lookup`), and the
+Tart image wins, then the runner, then the host (`macos.FactsTable.Lookup`), and the
 buildbot's row stays as a cross-check. Darwin 8 and 9 have no builder, and Base's own tables are
 not read yet.
 

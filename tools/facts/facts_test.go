@@ -3,6 +3,8 @@ package main
 import (
 	"io/fs"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -99,6 +101,30 @@ func TestARunnerProbeIsARowOfItsSelectedXcode(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, macos.ProfileTools, row.Profile)
 	require.Equal(t, "macos-15-intel run 123, Command Line Tools", row.Source.From)
+
+	host := strings.NewReplacer(`"source": "runner"`, `"source": "host"`, `"image": "macos-15-intel"`, `"image": "aws-mac1-sequoia"`).Replace(runnerDoc)
+	host = regexp.MustCompile(`"run": "[^"]*"`).ReplaceAllString(host, `"macos": "15.8"`)
+	row, ok, err = probeRow([]byte(host))
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, macos.Source{Kind: macos.SourceHost, From: "aws-mac1-sequoia, Xcode_16.4.app", Date: "2026-11-05", MacPorts: "2.12.7"}, row.Source, "a host is named without a run")
+}
+
+// The probes kept in tools/facts/probes are rows of the table: each one
+// parses, names a host, and has its release and toolchain.
+func TestTheKeptHostProbesAreRows(t *testing.T) {
+	paths, err := filepath.Glob("probes/*/*.json")
+	require.NoError(t, err)
+	require.NotEmpty(t, paths)
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		require.NoError(t, err)
+		row, ok, err := probeRow(data)
+		require.NoError(t, err, path)
+		require.True(t, ok, path)
+		require.Equal(t, macos.SourceHost, row.Source.Kind, path)
+		require.NoError(t, macos.FactsTable{Facts: []macos.Facts{row}}.Check(), path)
+	}
 }
 
 // Of a runner's Xcodes the table keeps the one with the toolchain the
@@ -120,8 +146,11 @@ func TestTheTableKeepsARunnersBuilderToolchain(t *testing.T) {
 		runner(25, "26.5", "26.6"), runner(25, "26.6", "26.6"), runner(25, "none", "26.6"),
 		runner(24, "16.4", "16.4"), runner(24, "none", "16.4"),
 		runner(23, "16.2", "16.2"),
-	}, []macos.Facts{builder(25, "26.6", "26.6"), builder(24, "16.4", "26.0")}, &report)
-	require.Equal(t, []macos.Facts{runner(25, "26.6", "26.6"), runner(25, "none", "26.6")}, kept)
+		runner(22, "16.4", "26.0.0.0.1.1756965055"), runner(22, "none", "26.0.0.0.1.1756965055"), runner(22, "16.4", "26.1.0.0.1.1760000000"),
+	}, []macos.Facts{builder(25, "26.6", "26.6"), builder(24, "16.4", "26.0"), builder(22, "16.4", "26.0.0.0.1.1757719676")}, &report)
+	require.Equal(t, []macos.Facts{runner(25, "26.6", "26.6"), runner(25, "none", "26.6"),
+		runner(22, "16.4", "26.0.0.0.1.1756965055"), runner(22, "none", "26.0.0.0.1.1756965055")}, kept,
+		"tools of the builder's release in another build are the builder's")
 	require.Contains(t, report.String(), "darwin 25 x86_64 xcode: Xcode 26.5, tools 26.6, clang  (run 1, 26.5): the builder runs Xcode 26.6, tools 26.6")
 	require.Contains(t, report.String(), "darwin 24 x86_64 xcode: Xcode 16.4, tools 16.4, clang  (run 1, 16.4): the builder runs Xcode 16.4, tools 26.0")
 	require.Contains(t, report.String(), "darwin 23 x86_64 xcode: Xcode 16.2, tools 16.2, clang  (run 1, 16.2): no builder row to choose by")
