@@ -18,15 +18,20 @@ import (
 // xcodeApp is the Xcode a probed image's developer_dir names.
 const xcodeApp = "/Applications/Xcode.app"
 
-// sourceRunner is how a runner's probe names its source.
-const sourceRunner = "runner"
+// sourceRunner and sourceHost are how a runner's probe and a host's name
+// their source.
+const (
+	sourceRunner = "runner"
+	sourceHost   = "host"
+)
 
-// generate builds the facts table from Tart probes, runner probes, and a
-// buildbot harvest. Each source row is kept, so the buildbot's stay as a
-// cross-check where a Tart image or a runner covers the same release; where
-// one source gives a release, architecture, and profile more than once, the
-// newest wins. A runner probes every Xcode its image carries, and the table
-// keeps the one with the builder's toolchain, if any (runnerRows).
+// generate builds the facts table from Tart probes, runner and host
+// probes, and a buildbot harvest. Each source row is kept, so the
+// buildbot's stay as a cross-check where a Tart image, a runner, or a host
+// covers the same release; where one source gives a release, architecture,
+// and profile more than once, the newest wins. A runner or a host probes
+// every Xcode it carries, and the table keeps the one with the builder's
+// toolchain, if any (runnerRows).
 func generate(probeDirs []string, buildbot, out string) error {
 	var rows, runners []macos.Facts
 	for _, dir := range probeDirs {
@@ -45,7 +50,7 @@ func generate(probeDirs []string, buildbot, out string) error {
 			}
 			switch {
 			case !ok:
-			case row.Source.Kind == macos.SourceRunner:
+			case row.Source.Kind == macos.SourceRunner || row.Source.Kind == macos.SourceHost:
 				runners = append(runners, row)
 			default:
 				rows = append(rows, row)
@@ -95,12 +100,14 @@ type fact struct {
 	Error *string         `json:"error"`
 }
 
-// runnerRows are the runner rows the table keeps: those with the
+// runnerRows are the runner and host rows the table keeps: those with the
 // toolchain the release and architecture's buildbot runs, its Xcode and its
 // tools, or its tools alone with the Command Line Tools selected, which
-// Base reads as no Xcode though Xcode stays on disk. A runner's other
-// Xcodes, and its own tools where they aren't the builder's, are reported,
-// not kept, until the table's lookup can choose among toolchains
+// Base reads as no Xcode though Xcode stays on disk. The tools are matched
+// by version (toolsVersion): two builds of one release of the Command Line
+// Tools carry the same clang and SDKs. A runner's other Xcodes, and its own
+// tools where they aren't the builder's, are reported, not kept, until the
+// table's lookup can choose among toolchains
 // (plan/facts-table-xcode-key-2026-11-05.md): kept, they would stand for
 // the builder with tools it doesn't run.
 func runnerRows(runners, others []macos.Facts, report io.Writer) []macos.Facts {
@@ -117,7 +124,7 @@ func runnerRows(runners, others []macos.Facts, report io.Writer) []macos.Facts {
 		switch {
 		case !known:
 			fmt.Fprintf(report, "reported: %s: no builder row to choose by\n", said)
-		case row.Tools == builder.Tools && (row.Xcode == builder.Xcode || row.Profile == macos.ProfileTools && row.Xcode == "none"):
+		case toolsVersion(row.Tools) == toolsVersion(builder.Tools) && (row.Xcode == builder.Xcode || row.Profile == macos.ProfileTools && row.Xcode == "none"):
 			kept = append(kept, row)
 			fmt.Fprintf(report, "kept:     %s\n", said)
 		default:
@@ -127,7 +134,19 @@ func runnerRows(runners, others []macos.Facts, report io.Writer) []macos.Facts {
 	return kept
 }
 
-// probeRow is a Tart image's or a runner's probe as a row of the table.
+// toolsVersion is the Command Line Tools' version without the build stamp
+// that ends it: 26.0.0.0.1 for 26.0.0.0.1.1757719676. Apple has shipped one
+// release in builds that differ only there, the developer download and
+// Software Update's (Sonoma's 15.3, Sequoia's 26.0).
+func toolsVersion(tools string) string {
+	if strings.Count(tools, ".") < 5 {
+		return tools
+	}
+	return tools[:strings.LastIndex(tools, ".")]
+}
+
+// probeRow is a Tart image's, a runner's, or a host's probe as a row of
+// the table.
 func probeRow(data []byte) (macos.Facts, bool, error) {
 	var doc probed
 	if err := json.Unmarshal(data, &doc); err != nil {
@@ -171,8 +190,11 @@ func probeRow(data []byte) (macos.Facts, bool, error) {
 		Clang:        text("worker.compiler.command_line_tools_version(clang)"),
 		Source:       macos.Source{Kind: macos.SourceTart, From: doc.Image, MacPorts: text("base.macports_version")},
 	}
-	if doc.Source == sourceRunner {
+	switch doc.Source {
+	case sourceRunner:
 		row.Source.Kind, row.Source.From = macos.SourceRunner, runnerFrom(doc)
+	case sourceHost:
+		row.Source.Kind, row.Source.From = macos.SourceHost, runnerFrom(doc)
 	}
 	row.Darwin, _ = strconv.Atoi(text("base.os_major"))
 	switch doc.Profile {
@@ -214,8 +236,9 @@ func probeRow(data []byte) (macos.Facts, bool, error) {
 	return row, true, nil
 }
 
-// runnerFrom names a runner's row: its image, the run, and what was
-// selected, "macos-15-intel run 123, Xcode_16.4.app".
+// runnerFrom names a runner's or a host's row: its image, the run, and
+// what was selected, "macos-15-intel run 123, Xcode_16.4.app", or
+// "aws-mac1-ventura, Xcode.app" for a host, which has no run.
 func runnerFrom(doc probed) string {
 	from := doc.Image
 	if run, ok := doc.Host["run"].(string); ok {

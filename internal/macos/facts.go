@@ -62,10 +62,11 @@ type Facts struct {
 
 // Source is where a row of facts came from, and when.
 type Source struct {
-	// Kind is tart, runner, or buildbot.
+	// Kind is tart, runner, host, or buildbot.
 	Kind string `json:"kind"`
 	// From is the Tart image probed, the GitHub runner image, run, and
-	// developer directory selected, or the buildbot builder and build.
+	// developer directory selected, the Mac probed and its developer
+	// directory, or the buildbot builder and build.
 	From string `json:"from"`
 	Date string `json:"date"`
 	// MacPorts is the Base version the facts were read with.
@@ -79,7 +80,12 @@ const (
 	// SourceRunner is one of GitHub's macOS runners, probed as a Tart
 	// image is, with the Xcode its release's builder runs selected, or the
 	// Command Line Tools with Xcode still on disk (tools/facts/README.md).
-	SourceRunner   = "runner"
+	SourceRunner = "runner"
+	// SourceHost is one Mac someone probed once, as a runner is probed,
+	// such as an Intel Mac rented for an older release. Unlike a runner's,
+	// its probes can't be made again, so they are kept with the table's
+	// generator (tools/facts/probes).
+	SourceHost     = "host"
 	SourceBuildbot = "buildbot"
 )
 
@@ -163,10 +169,12 @@ func sourceRank(kind string) int {
 		return 0
 	case SourceRunner:
 		return 1
-	case SourceBuildbot:
+	case SourceHost:
 		return 2
+	case SourceBuildbot:
+		return 3
 	}
-	return 3
+	return 4
 }
 
 // Check reports the table's first unsound row: one without its key, its
@@ -183,7 +191,7 @@ func (t FactsTable) Check() error {
 			return fmt.Errorf("macos: %s: Xcode and tools versions are required, none where absent", where)
 		case facts.Profile == ProfileTools && facts.Xcode != "none":
 			return fmt.Errorf("macos: %s: the tools profile has no Xcode", where)
-		case facts.Source.Kind != SourceTart && facts.Source.Kind != SourceRunner && facts.Source.Kind != SourceBuildbot:
+		case !slices.Contains([]string{SourceTart, SourceRunner, SourceHost, SourceBuildbot}, facts.Source.Kind):
 			return fmt.Errorf("macos: %s: unknown source %q", where, facts.Source.Kind)
 		case facts.Source.From == "" || facts.Source.Date == "":
 			return fmt.Errorf("macos: %s: the source and its date are required", where)
