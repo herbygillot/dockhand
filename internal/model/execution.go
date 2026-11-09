@@ -110,12 +110,27 @@ type Observed struct {
 
 // BuilderObserved is what one builder of an environment reported about
 // itself: a GitHub runner, its macOS release as the label its job ran on
-// names it.
+// names it, and the rest as MacPorts Base's header in its log says it.
 type BuilderObserved struct {
 	// Builder names it, as its parts of results do (BuilderResult).
 	Builder string `json:"builder"`
 	// MacOS is its macOS release alone, 15; empty where it didn't say.
 	MacOS string `json:"macos,omitempty"`
+	// Version is its macOS version, 15.8.2, and Architecture the
+	// machine's, arm64.
+	Version      string `json:"version,omitempty"`
+	Architecture string `json:"architecture,omitempty"`
+	// Xcode is Xcode's version, 16.4, where there is Xcode; Tools is the
+	// Command Line Tools package's version.
+	Xcode string `json:"xcode,omitempty"`
+	Tools string `json:"tools,omitempty"`
+	// MacPorts is the MacPorts that built the ports, 2.12.7.
+	MacPorts string `json:"macports,omitempty"`
+}
+
+// ToolsKnown reports whether the builder reported more than its release.
+func (b BuilderObserved) ToolsKnown() bool {
+	return b.Version != "" || b.Xcode != "" || b.Tools != "" || b.MacPorts != ""
 }
 
 // IsZero reports a report that says nothing.

@@ -3,7 +3,9 @@
 # build.default a github profile, update, check, tidy and submit. setup and
 # check say there's no on-host provider and point to --on github; the
 # check runs MacPorts' workflow in the fork and reads back; the
-# dockhand-check/ branch is removed.
+# dockhand-check/ branch is removed. submit's Tested on gives a line for
+# each runner with its macOS, Xcode, and MacPorts, from MacPorts Base's
+# header in the runner's log (#100).
 # prs: ${ACCEPT_GO_PORT} test
 #
 # In run order Tart is set up already, A4 and A12 having made images, so
@@ -31,6 +33,7 @@ act() {
 	B9_BRANCH=$(own_branch)
 	dh_json check -b "$B9_BRANCH" || :
 	dh tidy -b "$B9_BRANCH" -y || :
+	dh submit -b "$B9_BRANCH" --plan --no-check >"$ROW_DIR/preview.txt" 2>&1 || :
 	submit_pr "$(port)" "$B9_BRANCH" || :
 	close_test_pr "$(port)" "$B9_BRANCH"
 }
@@ -40,6 +43,8 @@ assert() {
 		row_fail "a dockhand-check/ branch was left on the fork"
 		return
 	fi
+	grep -qE 'macOS [0-9.]+ (arm64|x86_64) · (Xcode|Command Line Tools) [0-9.]+ · MacPorts [0-9.]+ \(macos-[0-9]+' "$ROW_DIR/preview.txt" ||
+		{ row_fail "submit's preview's Tested on gave no runner's macOS, Xcode, and MacPorts from its log: $(grep -E 'macOS|Developer tools' "$ROW_DIR/preview.txt" | head -3 | tr '\n' ' ')"; return; }
 	# On Apple silicon an empty Tart home is Tart not set up yet, and
 	# providers points to its setup; only an Intel Mac, where Tart can't
 	# run, has no on-host provider to point to (the rc8 full stage). setup

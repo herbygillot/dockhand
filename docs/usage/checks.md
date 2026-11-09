@@ -242,7 +242,11 @@ column, and one run builds them all. `--on github` asks for every release;
 release whose job no runner took is left unchecked, and submit says so with
 GitHub's reason; check that release with Tart or `local`, or try again later.
 The workflow builds only the ports a commit changes, so the plan says which
-`--also` or baseline targets it won't build.
+`--also` or baseline targets it won't build. The pull request's Tested on gives
+each runner's macOS version, architecture, Xcode, and MacPorts as MacPorts
+wrote them in the runner's log, `macOS 15.8.2 arm64 · Xcode 16.4 · MacPorts
+2.12.7 (macos-15)`; a runner that failed before writing them gives its release
+alone.
 
 The workflow chooses its runners and tests. A host check's pass does not
 guarantee those runners will pass. `dockhand usage publishing` explains local
