@@ -69,7 +69,9 @@ gh run download --repo herbygillot/dockhand --name facts-macos-15 --dir $dir/run
   every time. [aws-mac1](probes/aws-mac1) is an AWS EC2 Intel Mac
   (mac1.metal) on 2026-11-09: macOS 10.14 to 15, each with its x86_64
   builder's Xcode and tools (Catalina's builder has no tools), MacPorts
-  2.12.7. Below macOS 12, where `facts` can't run, the harvest ran
+  2.12.7, and on macOS 13 Xcode 15.2 too, the newest Xcode it runs, which
+  `generate` reports rather than keeps until the lookup chooses among
+  Xcodes. Below macOS 12, where `facts` can't run, the harvest ran
   `probe.tcl` itself and wrote the same document. [aws](aws) holds the
   scripts that made them: `driver.sh` drives one Dedicated Host over the
   EC2, SSM, and S3 APIs (allocate, launch, harvest, finish, release), and
