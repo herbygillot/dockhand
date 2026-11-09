@@ -23,8 +23,10 @@ dir=~/.dockhand/surveys/$(date +%F)-toolchain-facts
 # (.github/workflows/facts-runners.yml), one artifact for each image.
 gh run download --repo herbygillot/dockhand --name facts-macos-15 --dir $dir/runner \
   $(gh run list --repo herbygillot/dockhand --workflow facts-runners.yml --status success --limit 1 --json databaseId -q '.[0].databaseId')
-# ...and likewise facts-macos-15-intel, facts-macos-26, facts-macos-26-intel,
-# or every artifact of the run at once with no --name.
+# ...and likewise facts-macos-15-intel, facts-macos-26, facts-macos-26-intel.
+# With no --name, gh downloads every artifact of the run at once, each into
+# its own directory under $dir/runner; generate reads only the *.json directly
+# in a directory, so pass each of those as its own -runner.
 
 # Hosts: Macs probed once, kept in tools/facts/probes, one directory each.
 # The table, from all four.
