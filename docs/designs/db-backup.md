@@ -1,6 +1,6 @@
 # `dockhand backup`: a consistent copy of the database
 
-A feature for v0.9.0, [#92](https://github.com/herbygillot/dockhand/issues/92), placed at the person's word ("Place it for 0.9.0", 2026-11-05 22:00Z, in the architecture thread). The issue and the roadmap's entry say where it stands; this file is the design, architecture's of 2026-11-05.
+A feature for v0.9.0, [#92](https://github.com/herbygillot/dockhand/issues/92), placed at the person's word ("Place it for 0.9.0", 2026-11-05 22:00Z, in the architecture thread). The issue says where it stands; this file is the design, architecture's of 2026-11-05.
 
 Herby's ask (project chat, 2026-11-05 21:12Z and 21:14Z): a `dockhand
 backup <file>` that backs up the database the correct way, weighed against

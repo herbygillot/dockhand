@@ -1,6 +1,6 @@
 # Standard output wraps only dockhand's own prose: `Out` raw, `Prose` wrapped
 
-A core item for v0.9.0, [#94](https://github.com/herbygillot/dockhand/issues/94), placed at the person's word ("Agreed with the wrapping write-up", 2026-11-06 03:16Z, in the architecture thread). The issue and the roadmap's entry say where it stands; this file is the design, from architecture's review of dcef3282 of 2026-11-06, read at main f769954e, after the person's ask in the user-feedback thread (02:53Z): "Can we ensure that we won't break the Tcl code when we column wrap in general?" The four writers below are v0.8.0's bug, [#93](https://github.com/herbygillot/dockhand/issues/93), fixed the way the six opted-out commands are; this item is what makes the opt-out unnecessary.
+A core item for v0.9.0, [#94](https://github.com/herbygillot/dockhand/issues/94), placed at the person's word ("Agreed with the wrapping write-up", 2026-11-06 03:16Z, in the architecture thread). The issue says where it stands; this file is the design, from architecture's review of dcef3282 of 2026-11-06, read at main f769954e, after the person's ask in the user-feedback thread (02:53Z): "Can we ensure that we won't break the Tcl code when we column wrap in general?" The four writers below are v0.8.0's bug, [#93](https://github.com/herbygillot/dockhand/issues/93), fixed the way the six opted-out commands are; this item is what makes the opt-out unnecessary.
 
 ## The fix: dcef3282 (#88)
 
