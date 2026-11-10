@@ -37,8 +37,9 @@ func TestPlatformVariablesFollowMacPortsBase(t *testing.T) {
 }
 
 // A modelled context that states the Command Line Tools takes them from
-// the facts table: an image's or a runner's row where there is one, else
-// a buildbot's made tools-only, and the host where no source tells.
+// the facts table: an image's, a runner's, or an installer reading's row
+// where there is one, else a buildbot's made tools-only, and the host where
+// no source tells.
 func TestToolchainComesFromTheFactsTable(t *testing.T) {
 	t.Parallel()
 	image, ok := macos.Table().Lookup(25, "arm64", macos.ProfileTools)
@@ -65,14 +66,19 @@ func TestToolchainComesFromTheFactsTable(t *testing.T) {
 	require.Equal(t, image.Clang, got.Clang)
 	require.Equal(t, image.SDKs, got.SDKs)
 
+	// High Sierra's tools are its builder's, with the SDK and clang their
+	// installer gives them.
 	builder, ok := macos.Table().Lookup(17, "x86_64", macos.ProfileXcode)
 	require.True(t, ok)
 	got, err = macports.Toolchain(model.Platform{OS: "darwin", Version: "17", Architecture: "x86_64"}, model.DeveloperToolsCommandLine)
 	require.NoError(t, err)
-	require.True(t, got.Derived)
-	require.Equal(t, "none", got.Xcode, "a buildbot's Xcode row is modelled without Xcode")
+	require.False(t, got.Derived)
+	require.Equal(t, macos.SourceInstaller, got.Source.Kind)
+	require.Equal(t, "none", got.Xcode)
 	require.Equal(t, builder.Tools, got.Tools)
 	require.Equal(t, macports.CommandLineTools, got.DeveloperDir)
+	require.Equal(t, "902.0.39.2", got.Clang)
+	require.Equal(t, []string{"MacOSX.sdk", "MacOSX10.13.sdk -> MacOSX.sdk"}, got.SDKs)
 
 	got, err = macports.Toolchain(model.Platform{OS: "darwin", Version: "19", Architecture: "x86_64"}, model.DeveloperToolsCommandLine)
 	require.NoError(t, err)
@@ -119,8 +125,13 @@ func TestAnXcodeToolchainComesFromItsProfile(t *testing.T) {
 
 	builder, err := macports.Toolchain(model.Platform{OS: "darwin", Version: "20", Architecture: "arm64"}, model.DeveloperToolsXcode)
 	require.NoError(t, err)
-	require.Equal(t, macos.SourceBuildbot, builder.Source.Kind, "Big Sur has no Tart image; its builder has Xcode")
+	require.Equal(t, macos.SourceInstaller, builder.Source.Kind, "Big Sur has no Tart image; its builder's Xcode is read from its installer")
 	require.Equal(t, macports.XcodeDeveloper, builder.DeveloperDir)
+
+	snowLeopard, err := macports.Toolchain(model.Platform{OS: "darwin", Version: "10", Architecture: "x86_64"}, model.DeveloperToolsXcode)
+	require.NoError(t, err)
+	require.Equal(t, "/Developer", snowLeopard.DeveloperDir, "Xcode 3 is installed in /Developer")
+	require.Equal(t, []string{"MacOSX10.4u.sdk", "MacOSX10.5.sdk", "MacOSX10.6.sdk"}, snowLeopard.XcodeSDKs)
 
 	_, err = macports.Toolchain(model.Platform{OS: "darwin", Version: "9", Architecture: "x86_64"}, model.DeveloperToolsXcode)
 	require.ErrorIs(t, err, macports.ErrNoToolchain)

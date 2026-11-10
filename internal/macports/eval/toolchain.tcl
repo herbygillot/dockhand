@@ -149,6 +149,16 @@ namespace eval ::dockhand {
                             dict for {named target} $versions {
                                 if {$target eq "MacOSX.sdk"} { set found MacOSX${named}.sdk }
                             }
+                            # An Xcode before 8 has no MacOSX.sdk, only an
+                            # SDK per version, MacOSX10.7.sdk and
+                            # MacOSX10.8.sdk in Xcode 4.6.3 (its installer,
+                            # tools/facts/installers): xcrun takes the newest
+                            # for an SDK named without its version.
+                            if {$found eq ""} {
+                                foreach named [lsort -command {package vcompare} [dict keys $versions]] {
+                                    set found MacOSX${named}.sdk
+                                }
+                            }
                         }
                     } elseif {[dict exists $versions $version]} {
                         set target [dict get $versions $version]

@@ -263,3 +263,20 @@ func TestAModelledContextAnswersXcodesSDKsFromTheTable(t *testing.T) {
 		clt + "/MacOSX.sdk", clt + "/MacOSX.sdk"}, got, "the tools' MacOSX.sdk links to MacOSX15.5.sdk and comes first, as the tools' 27.0 said here")
 	require.False(t, port.ModeledHostAccess, "%v", port.Problems)
 }
+
+// An Xcode before 8 has an SDK per version and no MacOSX.sdk: Xcode 4.6.3,
+// Darwin 11's builder's, has MacOSX10.7.sdk and MacOSX10.8.sdk, read from
+// its installer, and xcrun takes the newest for --sdk macosx.
+func TestAModelledContextAnswersAnOldXcodesSDKsByVersion(t *testing.T) {
+	t.Parallel()
+	lion := model.Platform{OS: "darwin", Version: "11", Architecture: "x86_64"}
+	sdks := macports.XcodeDeveloper + "/Platforms/MacOSX.platform/Developer/SDKs"
+	lines := strings.Join([]string{
+		"lappend results [file isdirectory " + sdks + "/MacOSX10.7.sdk] [file exists " + sdks + "/MacOSX.sdk]",
+		"lappend results [exec xcrun --sdk macosx --show-sdk-path 2> /dev/null] [exec xcrun --sdk macosx10.7 --show-sdk-path 2> /dev/null]",
+		"lappend results [catch {exec xcrun --sdk macosx10.6 --show-sdk-path 2> /dev/null}]",
+	}, "\n")
+	got, port := observedDescription(t, lion, model.DeveloperToolsXcode, lines)
+	require.Equal(t, []string{"1", "0", sdks + "/MacOSX10.8.sdk", sdks + "/MacOSX10.7.sdk", "1"}, got)
+	require.False(t, port.ModeledHostAccess, "%v", port.Problems)
+}
