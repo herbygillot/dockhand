@@ -62,6 +62,7 @@ func PlatformVariables(platform model.Platform) (string, error) {
 		"os_platform", "darwin",
 		"os_subplatform", "macosx",
 		"os_major", strconv.Itoa(major),
+		"os_minor", "0",
 		"os_version", strconv.Itoa(major) + ".0.0",
 		"os_arch", osArch,
 		"build_arch", platform.Architecture,
@@ -94,6 +95,10 @@ const XcodeDeveloper = "/Applications/Xcode.app/Contents/Developer"
 // the table.
 type ModelledToolchain struct {
 	Darwin int
+	// DarwinVersion and MacOS are the release's kernel and product
+	// versions as the row's source ran them, 22.6.0 and 13.7.8, Base's
+	// os_version and macos_version; empty where the row doesn't say.
+	DarwinVersion, MacOS string
 	// Xcode, Tools, DeveloperDir, and SDK are Base's xcodeversion,
 	// xcodecltversion, developer_dir, and macosx_sdk_version.
 	Xcode, Tools, DeveloperDir, SDK string
@@ -201,7 +206,7 @@ func modelled(darwin int, facts macos.Facts, derived bool) ModelledToolchain {
 	if facts.XCSelect != nil {
 		xcselect = *facts.XCSelect
 	}
-	return ModelledToolchain{Darwin: darwin, Xcode: facts.Xcode, Tools: facts.Tools, DeveloperDir: facts.DeveloperDir, SDK: facts.SDK,
+	return ModelledToolchain{Darwin: darwin, DarwinVersion: facts.DarwinVersion, MacOS: facts.MacOS, Xcode: facts.Xcode, Tools: facts.Tools, DeveloperDir: facts.DeveloperDir, SDK: facts.SDK,
 		Clang: facts.Clang, SDKs: facts.SDKs, XcodeSDKs: facts.XcodeSDKs, XCSelect: xcselect, Source: facts.Source, Derived: derived}
 }
 
@@ -233,6 +238,17 @@ func ModelVariables(platform model.Platform, developer model.DeveloperTools) (st
 		return "", err
 	}
 	variables := []string{pairs, "developer_dir", tools.DeveloperDir, "xcodeversion", tools.Xcode, "xcodecltversion", tools.Tools}
+	// The release's versions are the row's source's, whose minor some
+	// Portfiles test: py-numpy's +accelerate wants os.minor 4 or later on
+	// Darwin 22, and PlatformVariables' 22.0.0 lost it (#105). A later
+	// pair stands over an earlier one.
+	if version := tools.DarwinVersion; strings.HasPrefix(version, strconv.Itoa(tools.Darwin)+".") {
+		minor, _, _ := strings.Cut(strings.TrimPrefix(version, strconv.Itoa(tools.Darwin)+"."), ".")
+		variables = append(variables, "os_version", version, "os_minor", minor)
+	}
+	if tools.MacOS != "" {
+		variables = append(variables, "macos_version", tools.MacOS)
+	}
 	if tools.SDK != "" {
 		variables = append(variables, "macosx_sdk_version", tools.SDK)
 	}

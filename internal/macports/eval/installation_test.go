@@ -280,3 +280,21 @@ func TestAModelledContextAnswersAnOldXcodesSDKsByVersion(t *testing.T) {
 	require.Equal(t, []string{"1", "0", sdks + "/MacOSX10.8.sdk", sdks + "/MacOSX10.7.sdk", "1"}, got)
 	require.False(t, port.ModeledHostAccess, "%v", port.Problems)
 }
+
+// A modelled release's os.version and macos_version are the table's,
+// whose minor some Portfiles test: py-numpy, py-scipy, and stimfit offer
+// +accelerate on Darwin 22 only from os.minor 4, and at 22.0.0 the model
+// picked +openblas where MacPorts' builder, 22.6.0, has +accelerate
+// (#105).
+func TestAModelledContextHasItsReleasesMinorVersion(t *testing.T) {
+	t.Parallel()
+	ventura := model.Platform{OS: "darwin", Version: "22", Architecture: "x86_64"}
+	tools, err := macports.Toolchain(ventura, "")
+	require.NoError(t, err)
+	require.Equal(t, []string{"22.6.0", "13.7.8"}, []string{tools.DarwinVersion, tools.MacOS}, "the table, as this test expects it")
+	got, _ := observedDescription(t, ventura, "", strings.Join([]string{
+		"lappend results ${os.version} ${os.minor} $macos_version ${macos_version_major} ${macosx_deployment_target}",
+		"if {${os.major} == 22 && ${os.minor} >= 4} { lappend results accelerate }",
+	}, "\n"))
+	require.Equal(t, []string{"22.6.0", "6", "13.7.8", "13", "13.0", "accelerate"}, got)
+}
