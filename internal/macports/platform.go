@@ -254,9 +254,23 @@ func ModelVariables(platform model.Platform, developer model.DeveloperTools) (st
 	}
 	// Both caches are always replaced, emptied where the table doesn't
 	// tell, so neither the host's nor another modelled platform's answers.
+	// Base asks it under configure.developer_dir, which is the tools'
+	// wherever they're installed, Xcode or not: keyed by Xcode's directory
+	// alone, a context with Xcode and the tools ran this Mac's clang, and
+	// a C++20 port kept Apple's 1403 clang where Base's 1500 minimum turns
+	// it down (#106).
 	compilers := ""
 	if tools.Clang != "" {
-		compilers = "versions {" + tools.DeveloperDir + " {/usr/bin/clang " + tools.Clang + " " + CommandLineTools + "/usr/bin/clang " + tools.Clang + "}}"
+		versions := "/usr/bin/clang " + tools.Clang + " " + CommandLineTools + "/usr/bin/clang " + tools.Clang
+		directories := []string{tools.DeveloperDir}
+		if tools.Tools != "none" && tools.DeveloperDir != CommandLineTools {
+			directories = append(directories, CommandLineTools)
+		}
+		var entries []string
+		for _, directory := range directories {
+			entries = append(entries, directory+" {"+versions+"}")
+		}
+		compilers = "versions {" + strings.Join(entries, " ") + "}"
 	}
 	variables = append(variables, "compiler_version_cache", "{"+compilers+"}")
 	var paths []string

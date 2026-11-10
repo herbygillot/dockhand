@@ -170,6 +170,13 @@ func TestModelVariablesAddTheModelledTools(t *testing.T) {
 	pairs, errs = syntax.DictValues(got)
 	require.Empty(t, errs)
 	require.Equal(t, []string{"22.6.0", "6", "13.7.8"}, []string{pairs["os_version"], pairs["os_minor"], pairs["macos_version"]})
+	// Base asks clang's version under configure.developer_dir, the tools'
+	// where they're installed beside Xcode, so the cache answers there too
+	// (#106).
+	ventura, err := macports.Toolchain(model.Platform{OS: "darwin", Version: "22", Architecture: "x86_64"}, "")
+	require.NoError(t, err)
+	versions := "{/usr/bin/clang " + ventura.Clang + " /Library/Developer/CommandLineTools/usr/bin/clang " + ventura.Clang + "}"
+	require.Equal(t, "versions {"+macports.XcodeDeveloper+" "+versions+" "+macports.CommandLineTools+" "+versions+"}", pairs["compiler_version_cache"])
 
 	old := model.Platform{OS: "darwin", Version: "9", Architecture: "x86_64"}
 	described, err := macports.PlatformVariables(old)

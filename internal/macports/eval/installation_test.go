@@ -298,3 +298,27 @@ func TestAModelledContextHasItsReleasesMinorVersion(t *testing.T) {
 	}, "\n"))
 	require.Equal(t, []string{"22.6.0", "6", "13.7.8", "13", "13.0", "accelerate"}, got)
 }
+
+// A C++20 port in a modelled context with Xcode and the tools takes the
+// tools' clang's version from the table, under configure.developer_dir,
+// which is the tools': Ventura's Intel builder's 1403 is under Base's 1500
+// minimum for C++20, so a MacPorts clang builds it, as on the builder,
+// where the model had asked this Mac's clang and kept Apple's (#106).
+func TestAModelledCxx20PortTakesTheTablesClang(t *testing.T) {
+	t.Parallel()
+	ventura := model.Platform{OS: "darwin", Version: "22", Architecture: "x86_64"}
+	tools, err := macports.Toolchain(ventura, "")
+	require.NoError(t, err)
+	require.Equal(t, "1403.0.22.14.1", tools.Clang, "the table, as this test expects it")
+	for _, standard := range []string{"2017", "2020"} {
+		got, port := observedDescription(t, ventura, "", "compiler.cxx_standard "+standard+"\nlappend results [compiler.command_line_tools_version clang] ${configure.compiler}")
+		require.Len(t, got, 2)
+		require.Equal(t, tools.Clang, got[0], standard)
+		if standard == "2017" {
+			require.Equal(t, "clang", got[1], "Apple's clang builds C++17")
+		} else {
+			require.True(t, strings.HasPrefix(got[1], "macports-clang-"), "C++20: %s", got[1])
+		}
+		require.False(t, port.ModeledHostAccess, "%v", port.Problems)
+	}
+}

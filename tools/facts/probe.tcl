@@ -263,6 +263,29 @@ if {$mport ne ""} {
     fact worker get_clang_compilers() {weval {portconfigure::get_clang_compilers}} list
     catch {mportclose $mport}
 }
+
+# The same port requiring C++17 and C++20, whose compiler Base chooses by
+# the tools' clang against its minimum for the standard: Ventura's Intel
+# builder takes clang-22 over Apple's 1403 clang for C++20, and with only
+# the plain port recorded the model's choice went unchecked (#106).
+foreach standard {2017 2020} {
+    set fd [open $portdir/Portfile a]
+    puts $fd "compiler.cxx_standard $standard"
+    close $fd
+    set mport ""
+    fact worker_cxx$standard mportopen {
+        set ::mport [mportopen file://$::portdir {} {}]
+        return ok
+    }
+    if {$mport ne ""} {
+        set ::workername [ditem_key $mport workername]
+        foreach opt {compiler.cxx_standard compiler.fallback configure.compiler configure.cxx} {
+            fact worker_cxx$standard $opt [list wset $opt] [expr {$opt eq "compiler.fallback" ? "list" : "str"}]
+        }
+        fact worker_cxx$standard compiler.command_line_tools_version(clang) {weval {compiler.command_line_tools_version clang}}
+        catch {mportclose $mport}
+    }
+}
 catch {file delete -force $portdir}
 
 # ---------------------------------------------------------------- emit --
