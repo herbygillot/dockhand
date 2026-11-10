@@ -1305,3 +1305,60 @@ func TestSubmitRefusesADescriptionPastGitHubsLimit(t *testing.T) {
 	require.Empty(t, fake.ForkHead(branch.Name), "nothing was pushed")
 	require.Empty(t, fake.PRs)
 }
+
+// failingUpdate is a forge whose pull request updates fail while fail is
+// set.
+type failingUpdate struct {
+	*forgetest.GitHub
+	fail bool
+}
+
+func (g *failingUpdate) Update(ctx context.Context, in forge.PullRequestInput) (forge.PullRequestObservation, error) {
+	if g.fail {
+		return forge.PullRequestObservation{}, errors.New("GitHub refused the update")
+	}
+	return g.GitHub.Update(ctx, in)
+}
+
+// A push after review whose pull request update then failed still leaves
+// the reviewers' re-request due once a retry records it: the retry pushed
+// nothing, so the push went unsaid (#117; Codex's review of b2e7b616, its
+// probe).
+func TestAPushWhoseUpdateFailedStillAsksTheReviewersAgain(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	g := f.withFork(t, e)
+	wrapped := &failingUpdate{GitHub: g}
+	e.Forge = wrapped
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.NoError(t, err)
+	g.Status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, ChangesRequestedBy: []string{"reviewer"}, ReviewedAt: at.Add(time.Hour)}
+	e.options.Now = func() time.Time { return at.Add(2 * time.Hour) }
+	_, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# review addressed\n"})
+	testsupport.Git(t, branch.Worktree, "commit", "-qam", "jq: address review")
+	branch, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Title: "jq: review addressed"})
+	require.NoError(t, err)
+	wrapped.fail = true
+	partial, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.ErrorContains(t, err, "GitHub refused the update")
+	require.True(t, partial.Pushed)
+	wrapped.fail = false
+	again, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Title: "jq: review addressed"})
+	require.NoError(t, err)
+	complete, err := e.ApplySubmit(t.Context(), again, model.AnsweredAsked)
+	require.NoError(t, err)
+	require.False(t, complete.Pushed, "the fork had it")
+	branch, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	due, err := e.RerequestDue(t.Context(), branch)
+	require.NoError(t, err)
+	require.True(t, due)
+}
