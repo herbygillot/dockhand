@@ -285,11 +285,14 @@ func pushedHead(branch model.Branch) model.ObjectID {
 // branches its GitHub checks left. A merged branch's, and a closed,
 // archived, or forgotten one's alike: only the merged path reached them,
 // so a pull request closed unmerged and a canceled check left theirs for
-// good (the dig's I31).
+// good (the dig's I31). An adopted pull request's head is its author's,
+// and MacPorts' repository is never yours to push to, so neither is
+// removed: a committer who adopted a merged pull request had its
+// author's branch in macports/macports-ports deleted (#112).
 func (e *Engine) planCleanFork(ctx context.Context, branch model.Branch, pushed model.ObjectID, moved string) ([]CleanStep, error) {
 	var steps []CleanStep
 	repositories := []string{}
-	if pr := branch.PullRequest; pr != nil && pr.Head != "" {
+	if pr := branch.PullRequest; ownedHead(pr) {
 		repository, name := pr.HeadParts()
 		repositories = append(repositories, repository)
 		step := CleanStep{What: pr.Head, Kind: CleanFork, expected: string(pushed)}
@@ -355,6 +358,17 @@ func (e *Engine) forkRepositories(ctx context.Context) ([]string, error) {
 		}
 	}
 	return repositories, nil
+}
+
+// ownedHead reports whether a pull request's head branch is one dockhand
+// pushed to a fork of yours: not an adopted pull request's, its author's,
+// and never one in MacPorts' repository.
+func ownedHead(pr *model.PullRequest) bool {
+	if pr == nil || pr.Head == "" || pr.Adopted {
+		return false
+	}
+	repository, _ := pr.HeadParts()
+	return !strings.EqualFold(repository, UpstreamRepository)
 }
 
 // planCleanChecks finds the branches the github provider pushed to your
@@ -612,6 +626,11 @@ func (e *Engine) ApplyClean(ctx context.Context, plans []CleanBranch) ([]CleanBr
 				}
 				err = e.Repo.DeleteBranch(ctx, plan.Branch.Name, step.expected)
 			case "fork":
+				// Asked again as it's removed, whatever planned it (#112).
+				if !ownedHead(plan.Branch.PullRequest) {
+					step.Kept = "it is the pull request's author's, not yours"
+					continue
+				}
 				_, name := plan.Branch.PullRequest.HeadParts()
 				err = e.Repo.DeleteRemoteBranch(ctx, step.remote, name, git.RefValue{Exists: true, Object: step.expected})
 			case "check":
