@@ -15,12 +15,22 @@ import (
 // StatusRequest is what status shows: the branches named, else every
 // branch in States touching Port where it names one; and with Overview,
 // serve's state, the check queue, dockhand's processes, and what changed
-// in the providers, which a branch's own status leaves out.
+// in the providers, which a branch's own status leaves out. Detail names
+// one of the branches in States whose status is shown in detail too, as a
+// branch named is, its extras read in the same request: the console's
+// pane read the branch and a report of its own again at each refresh
+// (#12).
 type StatusRequest struct {
 	Branches []model.Branch
 	States   []model.BranchState
 	Port     string
 	Overview bool
+	Detail   model.BranchID
+}
+
+// detailed reports whether a status is one the request shows in detail.
+func (r StatusRequest) detailed(status BranchStatus) bool {
+	return len(r.Branches) > 0 || r.Detail != "" && status.Branch.ID == r.Detail
 }
 
 // StatusReport is everything status shows, gathered before anything is
@@ -81,7 +91,7 @@ func (e *Engine) StatusReport(ctx context.Context, session *coord.Session, reque
 	}
 	report.Links, report.Installed, report.Instructions, report.Lint = map[model.RunID][]LinkFinding{}, map[model.RunID][]InstallFinding{}, map[model.BranchID][]string{}, map[model.RunID][]LintFinding{}
 	for _, status := range report.Statuses {
-		if len(request.Branches) > 0 && !status.Missing && status.Tree != "" {
+		if request.detailed(status) && !status.Missing && status.Tree != "" {
 			for _, directory := range status.Scope.Ports {
 				_, data, err := e.Repo.File(ctx, status.Tree, directory+"/Portfile")
 				if err != nil {
@@ -105,7 +115,7 @@ func (e *Engine) StatusReport(ctx context.Context, session *coord.Session, reque
 		// The selected run's own evidence is read once, for its links, its
 		// lint, and what its builds installed (Codex's review of 03b380f1,
 		// F4).
-		if len(request.Branches) > 0 && status.Latest != nil && !status.Cleaned() {
+		if request.detailed(status) && status.Latest != nil && !status.Cleaned() {
 			if checked, err := e.RunEvidence(ctx, status.Latest.ID); err == nil {
 				if links, err := e.linkFindings(ctx, checked); err == nil {
 					report.Links[status.Latest.ID] = links
