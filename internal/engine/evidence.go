@@ -407,7 +407,7 @@ func (e *Engine) Covered(ctx context.Context, branch model.BranchID, tree model.
 	if err != nil || !found || judged.Unfinished() || len(judged.Failed()) > 0 {
 		return model.Run{}, false, err
 	}
-	return judged.Run, coversPlan(judged.Plan.Environments, judged.Plan.Tests, func(id model.TargetID, environment int) (Cell, bool) {
+	return judged.Run, coversPlan(judged.Plan, func(id model.TargetID, environment int) (Cell, bool) {
 		for _, target := range judged.Targets {
 			if target.Target.ID == id {
 				return target.Outcomes[environment], true
@@ -419,9 +419,11 @@ func (e *Engine) Covered(ctx context.Context, branch model.BranchID, tree model.
 
 // coversPlan is Covered's judgment: each of want's targets, where want
 // builds it, a cell of the evidence that passed and stands under want's
-// tests, or one the environment can't build (unmet) either way.
-func coversPlan(environments []model.Environment, tests model.TestPolicy, cell func(model.TargetID, int) (Cell, bool), want model.Plan) bool {
-	if checks.TestsRank(tests) < checks.TestsRank(want.Tests) {
+// tests, or one the environment can't build (unmet) either way, with
+// the same resolved sources (checks.SourcesCover).
+func coversPlan(have model.Plan, cell func(model.TargetID, int) (Cell, bool), want model.Plan) bool {
+	environments := have.Environments
+	if checks.TestsRank(have.Tests) < checks.TestsRank(want.Tests) || !checks.SourcesCover(have, want) {
 		return false
 	}
 	for _, build := range want.Builds {

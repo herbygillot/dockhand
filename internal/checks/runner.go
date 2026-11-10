@@ -179,8 +179,18 @@ type ActiveRunError struct {
 	Checking     model.Revision
 	SameRevision bool
 	// Uncovered is a run of the same files whose plan doesn't cover the
-	// new check's (PlanCovers), which a follow refuses.
-	Uncovered bool
+	// new check's (PlanCovers), which a follow refuses; OtherSource where
+	// it builds another source, a tag or branch the port fetches having
+	// moved since it was planned (SourcesCover).
+	Uncovered, OtherSource bool
+}
+
+// Uncovering says why an uncovered run doesn't stand for the new check.
+func (a *ActiveRunError) Uncovering() string {
+	if a.OtherSource {
+		return "but builds another source than this request: a tag or branch a port fetches moved since it was planned"
+	}
+	return "but does not cover this request's builds, environments, variants, test policy, freshness, or guest retention"
 }
 
 func (a *ActiveRunError) Error() string {
@@ -189,7 +199,7 @@ func (a *ActiveRunError) Error() string {
 		return fmt.Sprintf("%s stopped before finishing because the process running it ended; dockhand wait %s resumes it", name, name)
 	}
 	if a.Uncovered {
-		return fmt.Sprintf("%s is %s for these files, but does not cover this request's builds, environments, variants, test policy, freshness, or guest retention. Run dockhand cancel %s and run this again, or wait for it to finish and run this again", name, a.Run.State, name)
+		return fmt.Sprintf("%s is %s for these files, %s. Run dockhand cancel %s and run this again, or wait for it to finish and run this again", name, a.Run.State, a.Uncovering(), name)
 	}
 	if a.SameRevision {
 		return fmt.Sprintf("%s is already %s for these files; dockhand wait %s follows it", name, a.Run.State, name)

@@ -42,6 +42,31 @@ func PlanCovers(have, want model.Plan) bool {
 			return false
 		}
 	}
+	return SourcesCover(have, want)
+}
+
+// SourcesCover reports whether have's resolved sources are want's: for
+// each target want builds in each environment, the same Git source and
+// the same tag's commit, or neither. A tag a port fetches by that moved
+// between the plans names another source though the Portfile is the same,
+// and a check of the old one stood for the new, queued or finished
+// (#114; #71 fixed the reuse of builds after it).
+func SourcesCover(have, want model.Plan) bool {
+	for _, build := range want.Builds {
+		at := slices.IndexFunc(have.Builds, func(b model.EnvironmentPlan) bool { return b.Environment == build.Environment })
+		if at < 0 {
+			return false
+		}
+		for _, id := range build.Order {
+			for _, sources := range [][2]map[model.TargetID]model.GitSource{{have.Builds[at].Git, build.Git}, {have.Builds[at].Tags, build.Tags}} {
+				had, ok := sources[0][id]
+				wanted, wants := sources[1][id]
+				if ok != wants || ok && !had.Same(wanted) {
+					return false
+				}
+			}
+		}
+	}
 	return true
 }
 
