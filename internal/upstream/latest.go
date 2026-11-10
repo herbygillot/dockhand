@@ -177,7 +177,7 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 	// A versioned subport, terragrunt-0.52 at 0.52.1, takes its
 	// candidates within its series; the newer series beyond it are a
 	// notice, a new subport being the maintainer's, never its update.
-	series, inSeries := version.Series(port.Name, port.Version), version.InSeries
+	series, inSeries := Series(port), version.InSeries
 	var candidates, beyond []macports.VersionCandidate
 	var tags, pages, listedTags []string
 	for _, release := range observations {
@@ -428,6 +428,11 @@ func (s *Service) newerSeries(ctx context.Context, expression, selected string, 
 	}
 	return beyond[tied[0]].CaptureVersion
 }
+
+// Series is the series a port's lookup keeps its candidates in, the one
+// its name gives, terragrunt-0.52's 0.52; empty for a port whose name
+// gives none. A lookup shared by subports depends on it (#120).
+func Series(port macports.PortInfo) string { return version.Series(port.Name, port.Version) }
 
 // SeriesWords say a newer series than a versioned subport's: "1.2.1 is a
 // newer series than terragrunt-0.52's; a new subport for it is the
