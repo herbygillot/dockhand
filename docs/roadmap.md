@@ -384,6 +384,7 @@ v0.9.0 restructures the code first, then takes the core changes from Codex's rev
 ### v0.10.0
 
 - **Canary checks: `check --also a,b --set name=value`** ([#50](https://github.com/herbygillot/dockhand/issues/50); design: [designs/canary-checks.md](designs/canary-checks.md); the openssl4 new-port session's note 5, moved from v0.9.0 when it became the core release; about a batch, inferred). Each `--also` port is built with a Portfile or PortGroup option set, as `port install libssh2 openssl.branch=4` sets it, in the check's builds alone: a library branch checked against the ports that use it, with no edit to their Portfiles. Such a build is its own target, an extra, never evidence for the branch's changed ports.
+- **A weekly survey on GitHub's Intel runners holds the modelled context to the real Mac, field by field** ([#111](https://github.com/herbygillot/dockhand/issues/111); design: [designs/model-versus-real-survey.md](designs/model-versus-real-survey.md); architecture's model-from-snapshots assessment, item H, at the person's "Ok, do H as well", 2026-11-10 13:23Z; medium, inferred). On macos-15-intel and macos-26-intel, a slice surveyed natively and modelled from the table at one ports commit, compared field by field, a rotating slice covering the tree in about six weeks; a notice, never a gate. New in tools/survey: `-model` and a record comparison in `-compare`.
 
 ## Decisions for the person
 
