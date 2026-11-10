@@ -42,7 +42,7 @@ On a Mac without Tart, including an Intel Mac, you can run checks in a local Mac
 Install Go 1.27.1 or later, then:
 
 ```sh
-git clone https://github.com/herbygillot/dockhand.git
+git clone --branch v0.8.0 https://github.com/herbygillot/dockhand.git
 cd dockhand
 make build
 mkdir -p "$HOME/.local/bin"
@@ -52,6 +52,10 @@ install -m 755 dockhand "$HOME/.local/bin/dockhand"
 Make sure `~/.local/bin` is on your `PATH`. Dependencies are vendored; `make build` does not need to download Go modules.
 
 </details>
+
+### Shell completion
+
+Installed with MacPorts, dockhand's completion scripts for zsh, bash, and fish are already in place under `/opt/local/share`; fish needs nothing more, Apple's `/bin/zsh` needs `/opt/local/share/zsh/site-functions` on its `fpath`, and bash needs the `bash-completion` port. The help of each shell's completion command, `completion zsh`, `completion bash`, and `completion fish`, says how, for a build from source too.
 
 ## Set up your ports checkout
 
@@ -175,9 +179,10 @@ dockhand ship ripgrep --plan
 dockhand ship ripgrep
 ```
 
-In a terminal, `ship` shows its plan and asks once before proceeding. Use `--to check` to stop after committing and checking, without opening a pull request:
+In a terminal, `ship` shows its plan and asks once before proceeding. Use `--to commit` to stop once the change is prepared and committed, or `--to check` to stop after committing and checking, without opening a pull request:
 
 ```sh
+dockhand ship ripgrep --to commit
 dockhand ship ripgrep --to check
 ```
 
