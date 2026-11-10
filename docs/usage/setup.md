@@ -96,7 +96,11 @@ Choose a build environment before the first real change:
   `dockhand setup tart`. This prepares an image of this Mac's release. The
   default `minmax` build profile uses Tart guests, this Mac's release alone
   until `dockhand setup tart <release>` adds others; it does not install the
-  port into your everyday prefix.
+  port into your everyday prefix. The first time, macOS asks whether your
+  terminal app may find devices on the local network. Allow it: Tart's
+  guests are on that network, and dockhand can't reach them otherwise. If
+  you declined, turn it on for that app in System Settings › Privacy &
+  Security › Local Network.
 - **GitHub Actions:** enable Actions in your fork. `--on github` pushes a
   temporary check branch and runs MacPorts' workflow there.
 - **A MacPorts prefix on this Mac:** `--on local` builds among the active ports

@@ -237,6 +237,15 @@ nobody at the screen; unlock it with security unlock-keychain in the same
 shell, since unlocking it in another SSH session doesn't reach this one`.
 `dockhand setup` warns of it on its Tart line.
 
+A guest that never accepts SSH, with ssh saying `No route to host`, is most
+often Local Network privacy: macOS stops even `/usr/bin/ssh` from reaching the
+guest when the app you ran dockhand from may not use the local network. Turn
+it on for that app in System Settings › Privacy & Security › Local Network,
+then run the command again. The message names the app, and a wait whose
+address routes to Tart's bridge ends early rather than after the full timeout.
+A VPN or firewall that routes Tart's 192.168.64.0/24 network elsewhere does the
+same, which `route -n get <address>` shows.
+
 Once the external cause is resolved, `retry check-42` repeats that capture. If
 you changed the files or need another environment, use a new check with explicit
 selections. The provider-specific setup commands, local-prefix behavior, and

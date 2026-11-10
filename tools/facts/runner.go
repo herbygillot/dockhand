@@ -23,8 +23,10 @@ const runnerCache = "/opt/local/var/macports/cache"
 // Tools selected, switching xcode-select with sudo and putting back the
 // runner's own selection after. name is the runner's image label,
 // macos-15-intel, which the runner doesn't tell. MacPorts must be
-// installed, as MacPorts' CI installs it.
-func harvestRunner(ctx context.Context, name, out string) (err error) {
+// installed, as MacPorts' CI installs it. source is sourceRunner, or
+// sourceHost for any other Mac probed the same way (`facts host`), whose
+// probes are kept in tools/facts/probes since they can't be made again.
+func harvestRunner(ctx context.Context, source, name, out string) (err error) {
 	original, err := exec.CommandContext(ctx, "/usr/bin/xcode-select", "-p").Output()
 	if err != nil {
 		return fmt.Errorf("xcode-select -p: %w", err)
@@ -53,7 +55,7 @@ func harvestRunner(ctx context.Context, name, out string) (err error) {
 	}()
 	var failed []error
 	for _, developer := range developers {
-		if err := probeSelected(ctx, name, developer, script.Name(), out); err != nil {
+		if err := probeSelected(ctx, source, name, developer, script.Name(), out); err != nil {
 			failed = append(failed, fmt.Errorf("%s: %w", developer, err))
 			fmt.Fprintf(os.Stderr, "%s: %v\n", developer, err)
 		} else {
@@ -85,7 +87,7 @@ func runnerDevelopers(glob func(string) ([]string, error), lstat func(string) (o
 
 // probeSelected selects one developer directory and probes Base's view of
 // it, writing one document as the Tart harvest writes them.
-func probeSelected(ctx context.Context, name, developer, script, out string) error {
+func probeSelected(ctx context.Context, source, name, developer, script, out string) error {
 	if err := sudo(ctx, "/usr/bin/xcode-select", "--switch", developer); err != nil {
 		return err
 	}
@@ -96,7 +98,7 @@ func probeSelected(ctx context.Context, name, developer, script, out string) err
 	if !strings.HasSuffix(developer, "/Contents/Developer") {
 		profile, slug = "clt", "clt"
 	}
-	doc := probed{Image: name, Slug: slug, Profile: profile, Source: sourceRunner, Developer: developer,
+	doc := probed{Image: name, Slug: slug, Profile: profile, Source: source, Developer: developer,
 		Date: time.Now().UTC().Format(time.RFC3339), Host: runnerHost()}
 	result := filepath.Join(os.TempDir(), "dockhand-facts-"+slug+".json")
 	output, err := exec.CommandContext(ctx, "/opt/local/bin/port-tclsh", script, result).CombinedOutput()

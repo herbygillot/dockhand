@@ -143,6 +143,8 @@ since a rebuild has its own reason.`,
 				result.Ports = append(result.Ports, view.RevbumpedJSON{Port: update.Port, Before: update.Before.Revision, After: update.After.Revision})
 				fmt.Fprintf(out, "  %-*s  revision %d → %d\n", width, update.Port, update.Before.Revision, update.After.Revision)
 				if plan {
+					// The diff is written as it is (#93).
+					streams.Unwrapped()
 					fmt.Fprint(out, update.Diff)
 				}
 			}

@@ -52,3 +52,51 @@ func TestAGoLinkTargetMustStillBeDeclared(t *testing.T) {
 	require.Len(t, covered, 1)
 	require.Contains(t, covered[0], "couldn't be parsed")
 }
+
+// A file of a -X target's package changing, or new, holds nothing while
+// the package still declares the variable: rclone 1.76.0 was held on
+// twelve of package fs's files for its fs.Version, which fs/version.go
+// still declared (field testing, macports-ports#36436).
+func TestAGoLinkTargetsPackageIsntABuildFile(t *testing.T) {
+	port := macports.PortInfo{Name: "rclone", Options: map[string]string{"build.args": `-ldflags "-X github.com/rclone/rclone/fs.Version=1.76.0"`}}
+	spec := project.Spec{GoPackages: port.GoLinkPackages()}
+	version := func(top string, files map[string]string) project.Reading {
+		files["go.mod"] = "module github.com/rclone/rclone\n\ngo 1.22\n"
+		return read(t, top, files, spec)
+	}
+	comparison := Assess(Input{Port: port, Base: port, Pairs: []Pair{{Archive: "rclone-1.76.0.tar.gz",
+		Before: version("rclone-1.75.0", map[string]string{"fs/version.go": "package fs\n\nvar Version = \"dev\"\n", "fs/config.go": "package fs\n\nvar A = 1\n"}),
+		After:  version("rclone-1.76.0", map[string]string{"fs/version.go": "package fs\n\nvar Version = \"dev\"\n", "fs/config.go": "package fs\n\nvar A = 2\n", "fs/log.go": "package fs\n"})}}})
+	for _, change := range comparison.Changes {
+		require.False(t, change.Hold, change.Message)
+		require.NotContains(t, change.Path, "fs/", change.Message)
+	}
+}
+
+// Package main's files are the module's own at its root, and fzf 0.75.0's
+// main.go changing only its own version literal held as a build file on
+// v0.7.0 for -X main.version (field testing, macports-ports#36456).
+func TestAGoLinkTargetsMainIsntABuildFile(t *testing.T) {
+	port := macports.PortInfo{Name: "fzf", Options: map[string]string{"build.args": `-ldflags "-X main.version=0.75.0 -X main.revision=MacPorts"`}}
+	spec := project.Spec{GoPackages: port.GoLinkPackages()}
+	version := func(top, literal string) project.Reading {
+		return read(t, top, map[string]string{"go.mod": "module github.com/junegunn/fzf\n\ngo 1.23\n", "main.go": "package main\n\nvar version = \"" + literal + "\"\nvar revision = \"devel\"\n"}, spec)
+	}
+	comparison := Assess(Input{Port: port, Base: port, Pairs: []Pair{{Archive: "fzf-0.75.0.tar.gz", Before: version("fzf-0.74.5", "0.74"), After: version("fzf-0.75.0", "0.75")}}})
+	require.Empty(t, comparison.Changes)
+	for _, coverage := range comparison.Coverage {
+		require.NotEqual(t, GoLinkTargetRule, coverage.Policy, "package main at the root is read: %+v", coverage)
+	}
+
+	// Its files are read, so a variable main no longer declares holds:
+	// they went unread, and lazygit 0.66.3's coverage named an empty path.
+	moved := read(t, "fzf-0.75.0", map[string]string{"go.mod": "module github.com/junegunn/fzf\n\ngo 1.23\n", "main.go": "package main\n\nvar revision = \"devel\"\n"}, spec)
+	comparison = Assess(Input{Port: port, Base: port, Pairs: []Pair{{Archive: "fzf-0.75.0.tar.gz", Before: version("fzf-0.74.5", "0.74"), After: moved}}})
+	var held []string
+	for _, change := range comparison.Changes {
+		if change.Rule == GoLinkTargetRule && change.Hold {
+			held = append(held, change.Subject)
+		}
+	}
+	require.Equal(t, []string{"main.version"}, held)
+}

@@ -45,6 +45,8 @@ func Decide(ctx context.Context, e *engine.Engine, streams term.Streams, proposa
 			if err != nil {
 				return false, err
 			}
+			// The diff is written as it is (#93).
+			streams.Unwrapped()
 			fmt.Fprint(out, string(diff))
 		case "g":
 			spec, err := streams.Ask("Enter commit numbers in order; use + to combine them (for example, 2 1+3): ")

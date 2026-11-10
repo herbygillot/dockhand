@@ -13,6 +13,7 @@
 package ghactions
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"errors"
@@ -27,6 +28,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/buildlog"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports/cilog"
@@ -403,7 +405,8 @@ func (p *Provider) read(ctx context.Context, job buildenv.Job, build buildenv.Bu
 		case ranFor(j, JobCap):
 			capped = fmt.Sprintf("GitHub ended the job at its %s cap on a job", JobCap)
 		}
-		runners = append(runners, runner{job: j, log: path, built: cilog.ReadLog(log), listing: cilog.ListsSubports(log), capped: capped})
+		header, _ := buildlog.ReadHeader(bytes.NewReader(cilog.Untimed(log)))
+		runners = append(runners, runner{job: j, log: path, built: cilog.ReadLog(log), listing: cilog.ListsSubports(log), capped: capped, header: header})
 	}
 	// A run where no runner took a job built nothing, and is tried again
 	// as any infrastructure failure is (Codex's review of 2ad896d2, W1).
@@ -536,18 +539,26 @@ func jobWords(names []string) []string {
 	return words
 }
 
-// observe records the macOS release of each of an environment's runners,
-// as its job's labels name it (RunnerJob.Release), for the pull request's
-// Tested on: the jobs API is GitHub's documented word for it. A runner's
-// Xcode is only in its log's text, which isn't a documented interface, so
-// it isn't recorded. Where no runner's labels name a release, nothing is.
+// observe records what each of an environment's runners was, for the pull
+// request's Tested on: its macOS release, as its job's labels name it
+// (RunnerJob.Release), the jobs API being GitHub's documented word for
+// it; and its macOS version, architecture, Xcode, Command Line Tools, and
+// MacPorts, as MacPorts Base's -d header in its log says them, the tools
+// MacPorts used, which bootstrap.sh may choose over the image's default.
+// The header is Base's text, not a documented interface, an exception
+// decision 32 names. A runner that wrote no header, as one that failed
+// installing dependencies, whose output goes to a file, gives its release
+// alone. Where no runner says anything, nothing is recorded.
 func observe(build buildenv.Build, runners []runner) error {
 	var observed model.Observed
 	named := false
 	for _, r := range runners {
-		builder := model.BuilderObserved{Builder: r.job.Name, MacOS: r.job.Release()}
+		h := r.header
+		xcode, tools := h.DeveloperTools()
+		builder := model.BuilderObserved{Builder: r.job.Name, MacOS: r.job.Release(), Version: h.MacOS, Architecture: h.Architecture(),
+			Xcode: xcode, Tools: tools, MacPorts: h.MacPorts}
 		observed.Builders = append(observed.Builders, builder)
-		named = named || builder.MacOS != ""
+		named = named || builder.MacOS != "" || builder.ToolsKnown()
 	}
 	if !named {
 		return nil
@@ -590,6 +601,8 @@ type runner struct {
 	// capped says why the job was ended for its time; empty where it
 	// wasn't. The subport it was installing then failed.
 	capped string
+	// header is MacPorts Base's -d header in the log, what of one it has.
+	header buildlog.Header
 }
 
 // verdict is a port's result across the runners, with each runner's part

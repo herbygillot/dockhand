@@ -185,7 +185,7 @@ func TestANewVersionRemovesTheStealthDistSubdir(t *testing.T) {
 
 	planned, _, err := cmdtest.Dockhand(t, "update", "jq", "--new", "--plan")
 	require.NoError(t, err)
-	require.Contains(t, planned, "Removes dist_subdir: a stealth update set it for the old version, and every archive of the new\n  version has a name of its own.\n",
+	require.Contains(t, planned, "Removes dist_subdir: a stealth update set it for the old version, and every archive of the new version has a name of its own.\n",
 		"the plan says it, as the update does (the hugo exercise's yq run, finding 2)")
 	out, _, err := cmdtest.Dockhand(t, "update", "jq", "--new")
 	require.NoError(t, err)

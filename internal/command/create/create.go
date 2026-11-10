@@ -98,6 +98,10 @@ and go:MODULE uses the module path or its go-get response.`,
 					return err
 				}
 				streams.Emit(map[string]any{"directory": planned.Directory, "portfile": string(planned.Portfile), "unconfirmed": view.NonNil(planned.Unconfirmed)})
+				// The Portfile is written as it is: wrapped at the
+				// terminal's width, its modeline broke into a Tcl command
+				// (#93).
+				streams.Unwrapped()
 				fmt.Fprintf(out, "Would write %s/Portfile:\n\n%s\n", planned.Directory, planned.Portfile)
 				fmt.Fprintln(out, "Nothing was written (--plan); create writes it, then fills in its checksums.")
 				return nil
