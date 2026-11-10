@@ -14,6 +14,8 @@ A property of every modelled context: when `model_platform` is called, the dispa
 
 What this buys: no host fact ever enters an observation, Mac or Linux, so the same row gives the same answers everywhere, with no spawns, and one model instead of two. The ledger says which reads the model lacks, with no Mac behind it to hide them. A Portfile that `catch`es a probe takes its absent branch, which is what an empty Mac gives too. A Tcl error raised instead of an answer would reach the same `catch`, so an error buys nothing an answer doesn't, and an answer keeps the evaluation going to record the next read.
 
+What runs in the master interpreter on the worker's behalf is closed too. The helpers toolchain.tcl aliases into a modelled worker from the master (`lookup_helpers`: `macports::get_tool_path`, `macports::get_compiler_version`, `macports::getportresourcepath`) are copied into the worker as the lookups are (`copy_procedure`), reading the context's caches there, so every `exec` they make is the worker's and the dispatcher answers it. As a backstop, under a modelled context the master's own `exec` is closed: it answers "couldn't execute" with the `closed` mark, so an alias this design didn't name can't reopen the gap. #106's host clang run, a version-cache miss that spawned this Mac's clang unmarked, is the case.
+
 The Mac's own native context is untouched: it is the Mac, and reads the Mac.
 
 ## Order, and the gate
@@ -36,7 +38,7 @@ The Linux design's first question: the closed model answers as an empty Mac rath
 
 ## Tests
 
-The dispatcher's closed answers for each call kind (`file`, `open`, `glob` with and without `-nocomplain`, `source`, `exec` of a `HostPrograms` entry and of another), each with its `closed` mark in the ledger and the record, in a modelled context on a Mac and off one; the native context on a Mac still reading the host; the Go side counting `closed` as host state, `Tolerate` explaining a Base-owned read as it does `host-in-model`; a Portfile `catch`ing a probe taking its absent branch.
+The dispatcher's closed answers for each call kind (`file`, `open`, `glob` with and without `-nocomplain`, `source`, `exec` of a `HostPrograms` entry and of another), each with its `closed` mark in the ledger and the record, in a modelled context on a Mac and off one; the native context on a Mac still reading the host; the Go side counting `closed` as host state, `Tolerate` explaining a Base-owned read as it does `host-in-model`; a Portfile `catch`ing a probe taking its absent branch; every alias a modelled worker holds into the master is either a copied procedure or a read-only helper named by this design (an audit over `interp aliases`, so a new alias fails a test); a version-cache miss in a modelled context answers closed and never spawns, in the ledger and the record.
 
 ## Size and docs
 
