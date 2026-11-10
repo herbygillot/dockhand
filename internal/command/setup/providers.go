@@ -29,12 +29,20 @@ import (
 )
 
 // images is dockhand's Tart images, or nil when Tart isn't installed.
-func imagesOf(s *settings.Settings) host.TartImages {
+// The tart it runs is the one --tool, TART_BIN, or [tools] names, ahead of
+// PATH's, as every other command's is: setup tart checked the named one
+// and then ran PATH's, which pulled a 24 GB image a guard meant to refuse
+// (Codex's new-user walk of release/v0.8.0, finding 1). A configuration
+// that can't be read leaves PATH's, as setup says the problem elsewhere.
+func imagesOf(ctx context.Context, s *settings.Settings) host.TartImages {
 	if s.Host.TartImages != nil {
 		return s.Host.TartImages
 	}
 	options := s.ComposeOptions()
 	look := s.Dependencies().Lookup(options)
+	if resolved, _, _, err := s.Options(ctx); err == nil {
+		look = s.Dependencies().LookupNamed(options, resolved)
+	}
 	if macports.FindProgram(look, "tart") == "" {
 		return nil
 	}
@@ -85,9 +93,15 @@ the new one passes.`,
 				return err
 			}
 			options.Xcodes = file.Providers.Tart.Xcode
-			images := imagesOf(s)
+			images := imagesOf(cmd.Context(), s)
 			if images == nil {
 				return fmt.Errorf("checks build in Tart VMs, and %s: %s", macports.ProgramMissing("tart"), installTart)
+			}
+			// The download is said before it starts, where a standalone
+			// setup tart began 24 GB unannounced (Codex's new-user walk of
+			// release/v0.8.0, finding 7).
+			if !options.Check {
+				fmt.Fprintf(streams.Out, "Where the release has no image yet, making one downloads Cirrus Labs' vanilla macOS image the first time and uses up to %s of disk.\n", tart.SetupDisk)
 			}
 			result, err := images.Setup(cmd.Context(), options, streams.Out)
 			if missing := (*tart.MissingXcode)(nil); errors.As(err, &missing) {
@@ -180,7 +194,7 @@ func tartReadiness(ctx context.Context, s *settings.Settings) []string {
 	if !s.Host.TartSupported() {
 		return []string{noTart}
 	}
-	images := imagesOf(s)
+	images := imagesOf(ctx, s)
 	if images == nil {
 		return []string{"! needs Tart: " + installTart + ", then dockhand setup tart"}
 	}
@@ -344,7 +358,7 @@ func forkWorkflow(ctx context.Context, s *settings.Settings) (string, string, er
 func missingSteps(ctx context.Context, s *settings.Settings) []string {
 	var steps []string
 	if s.Host.TartSupported() {
-		if images := imagesOf(s); images != nil {
+		if images := imagesOf(ctx, s); images != nil {
 			if status, err := images.Status(ctx); err == nil && (status.Readiness() == tart.NoImage || status.Readiness() == tart.XcodeOnly) {
 				steps = append(steps, "dockhand setup tart")
 			}
