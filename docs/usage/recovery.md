@@ -143,8 +143,8 @@ dockhand cancel check-42
 A GitHub check whose driver stopped leaves MacPorts' workflow running on your
 fork, for `wait` to pick up. Cancelling it first cancels that workflow run.
 Where GitHub can't be reached, the cancel stays requested and the check is not
-reported stopped: `check-42's cancel is recorded, but github couldn't stop
-<run URL>: …; dockhand cancel check-42 tries again`.
+reported stopped: `check-42: cancellation is recorded, but github could not stop
+<run URL>: …; run dockhand cancel check-42 to try again`.
 
 Ctrl-C has two meanings. When the check runs in the foreground here, it stops
 that run and keeps completed results. When another serve process drives the
@@ -323,10 +323,11 @@ recovery dockhand implements.
 
 A refusal that names whose a thing is, such as `dockhand doesn't push a branch
 in macports/macports-ports` or `dockhand doesn't delete a branch in
-someone/macports-ports on the grounds of …`, is the ownership rule: dockhand
-changes only what is yours, what it made, what you were invited to change, or
-what you named. Nothing retries it. Make the change yourself where it's yours
-to make, or ask the pull request's author.
+someone/macports-ports based only on …`, is an ownership refusal. Each action
+requires permission based on ownership, a record that Dockhand created the
+object, an invitation to edit, or an explicit request, as that action permits.
+Dockhand does not retry this refusal automatically. Make the change yourself
+where you have permission, or ask the pull request's author.
 
 A saved tidy plan also becomes stale when its bound base, commits, or files
 change. Generate a new `tidy --plan` rather than applying the obsolete file. If

@@ -28,7 +28,7 @@ func TestPatchesAreSaidAgainstTheCandidatesSource(t *testing.T) {
 	require.Equal(t, []string{
 		"! patch-stale.diff doesn't apply to 1.52.1's source, as dockhand read it, and a check shows whether the build's patch phase fails: 1 out of 1 hunk FAILED",
 		"· patch-libuv-legacy.diff, which the base applied, is dropped, and no longer applies to 1.52.1's source: 5 out of 5 hunks FAILED",
-		"· patch-still.diff, which the base applied, is dropped, though it still applies to 1.52.1's source: what it fixed may need it still",
+		"· patch-still.diff, which the base applied, is dropped, though it still applies to 1.52.1's source: its fix may still be needed",
 	}, messages(comparison.Changes))
 	require.Equal(t, []string{PatchRejected, PatchDropped, PatchDropped}, []string{comparison.Changes[0].Rule, comparison.Changes[1].Rule, comparison.Changes[2].Rule})
 	require.Equal(t, []model.Coverage{

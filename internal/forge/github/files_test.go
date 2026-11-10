@@ -88,6 +88,6 @@ func TestAFileLargerThanTheAPIGivesInlineIsReadRaw(t *testing.T) {
 	require.EqualValues(t, 1, raw.Load())
 
 	_, err = files.File(t.Context(), commit, "package.json", 1<<20)
-	require.EqualError(t, err, "github: package.json is larger than the 1024 KiB dockhand reads of it")
+	require.EqualError(t, err, "github: package.json exceeds the 1024 KiB file read limit")
 	require.EqualValues(t, 1, raw.Load(), "a file the API says is too large isn't fetched")
 }

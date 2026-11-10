@@ -94,7 +94,7 @@ master's port index where dockhand has one cached, whom the description
 mentions, who approved, and when MacPorts' 72-hour maintainer timeout ends.
 The contributor's Portfiles aren't evaluated only to read them, so a port
 whose maintainers neither that index nor a check's change record holds says
-`maintainers not read yet`.
+`maintainer information not read yet`.
 
 ## Post only the review you intend to send
 

@@ -227,12 +227,12 @@ that tidy committed read as uncommitted again. After a rebase, the files go
 back as they were before it, with the master the branch started from; a
 change to one of those files stops it.
 
-Named a check, such as check-12, it puts back the MacPorts prefix a local
-check kept its versions active in (check --keep), or left changed when it
-stopped before it could: each port active before it active again at its
-version, and what it activated deactivated, from its record. MacPorts' port
-restore brings back the ports requested before and what they need, not
-that.
+Name a check, such as check-12, to restore the MacPorts prefix after a
+local check used --keep or stopped before restoring it. Uses the check's
+record to reactivate each previously active port at its previous version
+and deactivate ports the check activated. This restores the active
+versions; MacPorts' port restore restores requested ports and their
+dependencies instead.
 
 With no checkpoint named, the branch is -b, -p, or --pr, else the one
 checked out here.`,
@@ -246,7 +246,7 @@ checked out here.`,
 			defer e.Close()
 			if len(args) == 1 {
 				if where.Explicit() {
-					return errors.New("a checkpoint names its branch already; name the checkpoint or the branch, not both")
+					return errors.New("a checkpoint or check identifies its branch; name it or select a branch, not both")
 				}
 				if model.IsRunName(args[0]) {
 					return putBack(ctx, e, streams, args[0])

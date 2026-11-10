@@ -368,10 +368,10 @@ func allowLook(allowed func(context.Context) (github.Allowance, error), streams 
 		if err != nil || estimate <= allowance.Remaining {
 			return nil
 		}
-		words := fmt.Sprintf("Looking up %s ports asks GitHub about %s times, and the login has %s of its %s left this hour, until %s, which other sessions sharing it spend too",
+		words := fmt.Sprintf("Looking up %s ports requires about %s GitHub API requests. This login has %s of its %s requests left until %s; other sessions using the login share this allowance",
 			prose.Count(lookups), prose.Count(estimate), prose.Count(allowance.Remaining), prose.Count(allowance.Limit), allowance.Reset.Local().Format("15:04"))
 		if !streams.Terminal() {
-			return fmt.Errorf("%s; --over-allowance looks anyway", words)
+			return fmt.Errorf("%s. Pass --over-allowance to proceed", words)
 		}
 		yes, err := streams.AskYes(words+".\n? Look anyway? [y/N] ", false)
 		if err != nil {
@@ -496,7 +496,7 @@ func (l *lookups) progress(done, total int) {
 	l.total.Store(int64(total))
 	if total >= costlyLook {
 		l.costly.Do(func() {
-			l.say(fmt.Sprintf("Looking up %s ports asks GitHub about %s times, of the 5,000 an hour a login has.", prose.Count(total), prose.Count(lookCost(total))))
+			l.say(fmt.Sprintf("Looking up %s ports requires about %s GitHub API requests from this login's hourly allowance of 5,000.", prose.Count(total), prose.Count(lookCost(total))))
 		})
 	}
 	if !l.draw {

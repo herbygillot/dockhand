@@ -1423,7 +1423,7 @@ foreach target [dict get $input targets] {
         set unread ""
         if {[catch {consumed [dict get $target name]} inputs]} {
             set log [open $root/[dict get $result log] a]
-            puts $log "dockhand: what this build read wasn't recorded: $inputs"
+            puts $log "dockhand: could not record this build's inputs: $inputs"
             close $log
         } else {
             if {[dict exists $inputs unread]} {
@@ -1465,7 +1465,7 @@ foreach target [dict get $input targets] {
     if {[dict get $result outcome] eq "passed"} {
         if {[catch {contents [dict get $target name]} installed]} {
             set log [open $root/[dict get $result log] a]
-            puts $log "dockhand: what this build installed wasn't read: $installed"
+            puts $log "dockhand: could not read the files installed by this build: $installed"
             close $log
         } else {
             dict set result installed $installed
@@ -1477,7 +1477,7 @@ foreach target [dict get $input targets] {
             }
             if {[catch {links $installed $paths} linked]} {
                 set log [open $root/[dict get $result log] a]
-                puts $log "dockhand: what this build's binaries link wasn't read: $linked"
+                puts $log "dockhand: could not read the libraries linked by this build's binaries: $linked"
                 close $log
             } else {
                 dict set result links $linked
@@ -1487,7 +1487,7 @@ foreach target [dict get $input targets] {
             # reads for a declaration nothing links (protocol 2).
             if {[catch {lib_dependencies $portdir [dict get $target name] $variants} ports]} {
                 set log [open $root/[dict get $result log] a]
-                puts $log "dockhand: this build's depends_lib wasn't read: $ports"
+                puts $log "dockhand: could not read this build's depends_lib declarations: $ports"
                 close $log
             } else {
                 dict set result declared [declared $ports]

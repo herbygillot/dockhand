@@ -226,9 +226,9 @@ a check says them as it starts. The archives a guest is given are said once,
 `giving the guest 25 archives earlier guests installed and 2 kept of their
 targets' builds`, each by name under `-v`. Kept archives whose files are
 missing, as from a database copy without its archives directory, are said once
-with their count and ports, `check-42: 3 saved archives are missing, of jq,
-oniguruma, and libharbor. Removing their records; the build environment will
-use MacPorts archives or build them from source`.
+with their count and ports, `check-42: 3 saved archives for jq, oniguruma,
+and libharbor are missing. Removing the missing archive records; the build
+environment will use MacPorts archives or build from source`.
 
 ### GitHub Actions
 

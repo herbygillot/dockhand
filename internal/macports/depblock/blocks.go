@@ -190,12 +190,12 @@ func declaration(src []byte, name string, candidates []syntax.Command, expected 
 			continue
 		}
 		if ran >= 0 {
-			return -1, fmt.Errorf("dependency: %s is declared %d times, and more than one is what MacPorts evaluated, so which ran can't be told", name, len(candidates))
+			return -1, fmt.Errorf("dependency: %s is declared %d times, and multiple declarations match the evaluated value; the active declaration could not be identified", name, len(candidates))
 		}
 		ran = i
 	}
 	if ran < 0 {
-		return -1, fmt.Errorf("dependency: %s is declared %d times, and none is what MacPorts evaluated", name, len(candidates))
+		return -1, fmt.Errorf("dependency: %s is declared %d times, but none matches the evaluated value", name, len(candidates))
 	}
 	return ran, nil
 }
@@ -216,7 +216,7 @@ func pick(commands map[string][]syntax.Command, which map[string]int, name strin
 	case 1:
 		return candidates[0], true, nil
 	}
-	return syntax.Command{}, false, fmt.Errorf("dependency: %s is declared %d times; which to edit isn't known", name, len(candidates))
+	return syntax.Command{}, false, fmt.Errorf("dependency: %s is declared %d times; the declaration to edit could not be identified", name, len(candidates))
 }
 func safeToken(value string) bool {
 	if value == "" {

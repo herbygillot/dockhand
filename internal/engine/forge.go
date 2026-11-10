@@ -67,7 +67,9 @@ func (e *Engine) pullRequests() outward.PullRequests {
 // readOnly is a forge that writes nothing, saying so.
 type readOnly struct{}
 
-func (readOnly) refuse() error { return errors.New("this forge doesn't write pull requests") }
+func (readOnly) refuse() error {
+	return errors.New("the configured forge does not support remote writes")
+}
 func (r readOnly) Create(context.Context, forge.PullRequestInput) (forge.PullRequestObservation, error) {
 	return forge.PullRequestObservation{}, r.refuse()
 }

@@ -35,8 +35,8 @@ func TestEachEffectTakesOnlyItsBases(t *testing.T) {
 		}
 	}
 	require.Equal(t, []Basis{Made}, rules[DeleteBranch], "a deletion needs a record that dockhand made it")
-	require.ErrorContains(t, Permit(PushBranch, Upstream, Invited), "dockhand doesn't push a branch in macports/macports-ports: it never pushes, deletes, cancels, or reruns anything there, whoever's the change is")
-	require.ErrorContains(t, Permit(DeleteBranch, "someone/macports-ports", OwnFork), "dockhand doesn't delete a branch in someone/macports-ports on the grounds of your fork")
+	require.ErrorContains(t, Permit(PushBranch, Upstream, Invited), "dockhand doesn't push a branch in macports/macports-ports: this operation is never allowed in the upstream repository, regardless of ownership")
+	require.ErrorContains(t, Permit(DeleteBranch, "someone/macports-ports", OwnFork), "dockhand doesn't delete a branch in someone/macports-ports based only on your fork")
 	require.NoError(t, Permit(EditPullRequest, Upstream, Made), "pull requests live in MacPorts' repository")
 }
 

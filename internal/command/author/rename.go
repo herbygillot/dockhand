@@ -24,18 +24,18 @@ func RenameCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rename <port> <new name>",
 		Short: "Rename a port, leaving an obsolete stub at its old name",
-		Long: `Renames a port as MacPorts does: its Portfile and files/ move to the new
-name's directory, in its category unless --category names another, with the
-new name on its name line, or on a name line below the setup its name comes
-from, such as github.setup or go.setup, keeping its source; and its old
-Portfile becomes a stub: PortGroup obsolete 1.0, replaced_by the new name, at its
-version with its revision raised. It's one edit, so tidy commits it as
-"<new>: rename from <old>", and check and submit take the pair as one change.
+		Long: `Moves a port's Portfile and files/ to the new name's directory, keeping
+its category unless --category names another. Sets the name explicitly,
+adding a name line after its setup, such as github.setup or go.setup,
+if needed to preserve the source. The old Portfile becomes an obsolete stub with replaced_by
+set to the new name, its version unchanged, and its revision increased.
+Tidy commits the pair as "<new>: rename from <old>"; check and submit treat
+it as one change.
 
-It does the mechanical part alone. What the new name implies inside the
-Portfile, a Go module's path, a binary's name, notes, is yours, and the lines
-still naming the old name are said, as are the ports that depend on it. A new
-release is dockhand update <new name> after.
+Reports remaining references to the old name, uses of ${name}, and ports
+that depend on it. Review these and make any changes needed to module
+paths, binary names, notes, or other Portfile logic. To update the renamed
+port's version afterward, run dockhand update <new name>.
 
 The branch is --branch, else the one checked out here; --new starts one.`,
 		Args: cobra.ExactArgs(2),
@@ -44,7 +44,7 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 		},
 	}
 	where.Register(cmd)
-	cmd.Flags().StringVar(&category, "category", "", "the category of the new name's directory, where it isn't the port's own")
+	cmd.Flags().StringVar(&category, "category", "", "category for the renamed port (default: its current category)")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show what the rename would write, and change nothing")
 	settings.SupportsJSON(cmd)
 	return cmd

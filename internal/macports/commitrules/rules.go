@@ -382,7 +382,7 @@ func CheckDependencies(portfiles []Portfile, providers Providers) []Finding {
 			}
 			offered[dependency.Port] = true
 			findings = append(findings, Finding{Code: "path-style", Severity: Warning, Where: fmt.Sprintf("%s:%d", p.Path, dependency.Line),
-				Message: fmt.Sprintf("%s takes port:%s, which %s can satisfy too; the tree writes it path-style, %s, which lets either", dependency.Option, dependency.Port, strings.Join(others, " or "), spec)})
+				Message: fmt.Sprintf("%s uses port:%s, which %s can also satisfy; the tree's path-style form, %s, allows alternative providers", dependency.Option, dependency.Port, strings.Join(others, " or "), spec)})
 		}
 	}
 	return findings

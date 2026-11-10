@@ -292,7 +292,7 @@ func (h *Transitions) settle(ctx context.Context, branch model.Branch) error {
 			if err := h.finishIndex(ctx, branch, checkpoint, head); err != nil {
 				return err
 			}
-			if err := h.Settle(ctx, checkpoint, model.CheckpointApplied, fmt.Sprintf("recorded %s, whose change a stopped dockhand had made", checkpoint.Name())); err != nil {
+			if err := h.Settle(ctx, checkpoint, model.CheckpointApplied, fmt.Sprintf("recorded %s: an earlier Dockhand process applied its change before stopping", checkpoint.Name())); err != nil {
 				return err
 			}
 			checkpoint.State = model.CheckpointApplied
@@ -302,7 +302,7 @@ func (h *Transitions) settle(ctx context.Context, branch model.Branch) error {
 		if err := h.dropCheckpointRefs(ctx, checkpoint); err != nil {
 			return err
 		}
-		if err := h.Settle(ctx, checkpoint, model.CheckpointAbandoned, fmt.Sprintf("abandoned %s, whose change a stopped dockhand hadn't made", checkpoint.Name())); err != nil {
+		if err := h.Settle(ctx, checkpoint, model.CheckpointAbandoned, fmt.Sprintf("abandoned %s: an earlier Dockhand process stopped before applying its change", checkpoint.Name())); err != nil {
 			return err
 		}
 	}
@@ -313,7 +313,7 @@ func (h *Transitions) settle(ctx context.Context, branch model.Branch) error {
 		}
 		restored := h.Now()
 		latest.RestoredAt = &restored
-		if _, err := h.RecordRestore(ctx, *latest, fmt.Sprintf("recorded the restore of %s's history from %s, which a stopped dockhand had made%s", branch.Name, latest.Name(), said)); err != nil {
+		if _, err := h.RecordRestore(ctx, *latest, fmt.Sprintf("recorded the restore of %s's history from %s: an earlier Dockhand process restored it before stopping%s", branch.Name, latest.Name(), said)); err != nil {
 			return err
 		}
 	}
@@ -360,7 +360,7 @@ func (h *Transitions) finishRestoreIndex(ctx context.Context, branch model.Branc
 		return "", err
 	}
 	if index != trees[string(checkpoint.After)] {
-		return "; its staged changes were made since, so they were left", nil
+		return "; newer staged changes were left unchanged", nil
 	}
 	return "", worktree.SetIndex(ctx, string(checkpoint.Index))
 }

@@ -56,7 +56,7 @@ func (r *repository) File(ctx context.Context, commit, path string, limit int64)
 	if file == nil || file.GetType() != "file" {
 		return nil, fmt.Errorf("%w: %s is not a file at %s", forge.ErrNotFound, path, commit)
 	}
-	tooLarge := fmt.Errorf("github: %s is larger than the %d KiB dockhand reads of it", path, limit>>10)
+	tooLarge := fmt.Errorf("github: %s exceeds the %d KiB file read limit", path, limit>>10)
 	if int64(file.GetSize()) > limit {
 		return nil, tooLarge
 	}

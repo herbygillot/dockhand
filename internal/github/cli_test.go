@@ -35,7 +35,7 @@ func TestTheGitHubCLIRunsItsDocumentedCommands(t *testing.T) {
 	require.Equal(t, "api --hostname github.com user --jq .login\npr ready 7 --repo macports/macports-ports\npr ready 8 --repo macports/macports-ports\n", string(logged))
 
 	_, err = github.CLI{Path: script("silent", "")}.Login(t.Context())
-	require.EqualError(t, err, "the GitHub CLI named no account it's signed in as")
+	require.EqualError(t, err, "the GitHub CLI did not report a valid signed-in account")
 	_, err = github.CLI{}.Login(t.Context())
 	require.EqualError(t, err, "the GitHub CLI isn't installed")
 }

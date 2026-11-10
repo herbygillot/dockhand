@@ -242,7 +242,7 @@ func TestAShellEntersARunningChecksGuest(t *testing.T) {
 	code, err := e.Shell(t.Context(), ShellRequest{Run: run, Command: []string{"ls", "-l"}, Notice: func(words string) { notice = words }})
 	require.NoError(t, err)
 	require.Equal(t, 7, code)
-	require.Equal(t, run.Name()+" is building in dockhand-check-live-1; a shell here leaves what it's building, and any target after it, as not evidence (dockhand check again for that).", notice)
+	require.Equal(t, run.Name()+" is building in dockhand-check-live-1; entering a shell makes this guest's current and subsequent builds unusable as submission evidence. Run dockhand check again to rebuild them.", notice)
 	require.Len(t, provider.shells, 1)
 	require.True(t, provider.shells[0].Running)
 	require.Equal(t, "dockhand-check-live-1", provider.shells[0].Ref)

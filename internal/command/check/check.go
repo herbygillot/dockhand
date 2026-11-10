@@ -36,12 +36,13 @@ every port the branch changes as MacPorts CI does: lint, fetch and
 checksum, install, and declared tests (advisory unless --tests required).
 
 Where it builds comes from a build profile. --build selects one;
-otherwise build.default is used, which is host, this Mac's macOS, unless
-set. Dockhand's own profiles are host, minmax (each port on the oldest
-and newest releases Dockhand runs, macOS 12 at the earliest), macports-ci
-(the releases MacPorts' CI builds on), and all; your own go under
-[build.profiles]. --on selects explicit environments instead, such as
-tart:15,26, github, local, or command. Every environment must pass.
+otherwise build.default is used. The default is minmax, or command when
+that provider is configured. Dockhand's own Tart profiles are host (this
+Mac's macOS), minmax (each port's oldest and newest eligible releases with
+available images, macOS 12 or later), macports-ci (the releases MacPorts'
+CI builds on), and all. Define your own under [build.profiles]. --on
+selects explicit environments instead, such as tart:15,26, github, local,
+or command. Every environment must pass.
 
 --only narrows the check to some changed ports and adds back the changed
 ports they need; --also builds unchanged ports against the branch. --plan
@@ -295,15 +296,15 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 	}
 	where.Register(cmd, s, "check")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show what would be built and change nothing")
-	cmd.Flags().StringVar(&bound, "for", "", "follow for at most this long, then exit 4 if the check is still running; it continues")
+	cmd.Flags().StringVar(&bound, "for", "", "follow for at most this long, then exit 4 if the check is still queued or running; it continues")
 	cmd.Flags().BoolVar(&head, "head", false, "check the committed tip")
 	cmd.Flags().BoolVar(&staged, "staged", false, "check the index")
 	cmd.Flags().BoolVar(&workingTree, "working-tree", false, "check the working files, for a --branch checked out elsewhere")
 	cmd.Flags().StringSliceVar(&include, "include", nil, "add an untracked file to the capture without staging it")
 	cmd.Flags().StringSliceVar(&only, "only", nil, "check only these changed ports, and the changed ports they need")
 	cmd.Flags().StringSliceVar(&also, "also", nil, "also build these unchanged ports against the branch")
-	cmd.Flags().StringVar(&build, "build", "", "where to build, by build profile: host (this Mac's macOS alone), minmax (the default unless build.default names another), macports-ci, all, or yours")
-	cmd.Flags().StringArrayVar(&on, "on", nil, "where to build, explicit environments, as tart:15,26, github, or command; repeat for several, all of which must pass")
+	cmd.Flags().StringVar(&build, "build", "", "where to build, by build profile: host (this Mac's macOS alone), minmax, macports-ci, all, or yours (default: build.default)")
+	cmd.Flags().StringArrayVar(&on, "on", nil, "where to build, explicit environments such as tart:15,26, github, local, or command; repeat for several, all of which must pass")
 	cmd.Flags().StringVar(&tests, "tests", "", "declared (advisory), required, or skip")
 	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "run the check in the background using serve or a background worker, and return immediately")
 	cmd.Flags().BoolVar(&replace, "replace", false, "stop the branch's queued or running check, keeping what it finished, and check this instead")

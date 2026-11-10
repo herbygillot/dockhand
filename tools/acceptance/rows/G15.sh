@@ -44,7 +44,7 @@ assert() {
 	[ -n "${G15_PREFIX:-}" ] || return 0
 	local second
 	second=$(sed -n "/^\\\$ dockhand check -b $G15_SECOND/,/^\\[exit/p" "$ROW_DIR/out.log")
-	printf '%s\n' "$second" | matches -E "waiting for check-[0-9]+'s program \\(pid [0-9]+\\), which its dockhand left running, to finish in $G15_PREFIX" ||
+	printf '%s\n' "$second" | matches -E "waiting for check-[0-9]+'s build process \\(pid [0-9]+\\) to finish in $G15_PREFIX; the process outlived dockhand" ||
 		{ row_fail "the second check didn't say it waited for the killed check's program in $G15_PREFIX: $(printf '%s\n' "$second" | grep -i wait | head -2 | tr '\n' ' ')"; return; }
 	printf '%s\n' "$second" | matches -F "[exit 0]" || { row_fail "the second check failed: $(printf '%s\n' "$second" | tail -3 | tr '\n' ' ')"; return; }
 	local_same "$G15_PREFIX" "$ROW_DIR/active.before" "the checks left $G15_PREFIX's active ports changed" || return
