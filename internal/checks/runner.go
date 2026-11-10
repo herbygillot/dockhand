@@ -1,6 +1,7 @@
 package checks
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -240,7 +241,46 @@ func (c *Service) RequestCancel(ctx context.Context, session *coord.Session, id 
 		return run, err
 	}
 	defer session.Release(context.WithoutCancel(ctx), lease)
+	if err := c.stopUnfinished(ctx, id); err != nil {
+		return run, err
+	}
 	return c.finishCanceled(ctx, session, lease, id)
+}
+
+// stopUnfinished asks the provider of each execution of a run still to
+// finish to end the work it left, where it can outlive its driver
+// (buildenv.Stopper): a GitHub check whose driver stopped kept its
+// workflow running, and canceling it said it stopped (#115). The
+// execution a stopped driver interrupted is recorded as an attempt that
+// failed, so each is asked, once for each reference; the provider knows
+// whether its work is done. One that can't be reached leaves the cancel
+// requested, and says so.
+func (c *Service) stopUnfinished(ctx context.Context, id model.RunID) error {
+	var executions []model.GuestExecution
+	var name string
+	if err := c.Store.View(ctx, c.Repository, func(r store.Reader) error {
+		run, err := r.Run(id)
+		if err != nil {
+			return err
+		}
+		name = run.Name()
+		executions, err = r.Executions(id)
+		return err
+	}); err != nil {
+		return err
+	}
+	asked := map[string]bool{}
+	for _, execution := range executions {
+		stopper, ok := c.Providers[execution.Environment.Provider].(buildenv.Stopper)
+		if !ok || execution.ProviderRef == "" || asked[execution.ProviderRef] {
+			continue
+		}
+		asked[execution.ProviderRef] = true
+		if err := stopper.Stop(ctx, execution); err != nil {
+			return refusal.New(refusal.Infrastructure, "%s's cancel is recorded, but %s couldn't stop %s: %v; dockhand cancel %s tries again", name, execution.Environment.Provider, cmp.Or(execution.ProviderRef, "its work"), err, name)
+		}
+	}
+	return nil
 }
 
 func (c *Service) finishCanceled(ctx context.Context, session *coord.Session, lease model.Lease, id model.RunID) (model.Run, error) {

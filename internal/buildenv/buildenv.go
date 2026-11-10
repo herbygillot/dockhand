@@ -272,6 +272,16 @@ func Reported(result model.TargetResult) TargetReport { return TargetReport{Resu
 // (TargetReport.Links), as Tart's guest does: where its results' links
 // are nil, they couldn't be read, where another provider's are nil
 // because it never reads them.
+// Stopper is a provider whose work can outlive its driver, as GitHub's
+// workflow runs on when a resumable driver stops, so the next can find it
+// again: Stop ends the work an execution recorded (ProviderRef), and is
+// nil where there is none left to end. A cancel no driver attends asks it
+// before settling the check (#115).
+type Stopper interface {
+	Provider
+	Stop(ctx context.Context, execution model.GuestExecution) error
+}
+
 type LinkReader interface {
 	ReadsLinks() bool
 }

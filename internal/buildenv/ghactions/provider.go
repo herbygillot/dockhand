@@ -584,6 +584,35 @@ func stoppedShort(conclusion string) bool {
 	return false
 }
 
+// runURL is a workflow run's URL, as an execution records it: the
+// repository and the run's ID.
+var runURL = regexp.MustCompile(`^https://github\.com/([^/]+/[^/]+)/actions/runs/(\d+)`)
+
+// Stop cancels the workflow run an execution recorded, which a driver that
+// stopped without a cancel left running for the next driver to find
+// (buildenv.Stopper). One already finished, or never started, needs
+// nothing.
+func (p *Provider) Stop(ctx context.Context, execution model.GuestExecution) error {
+	match := runURL.FindStringSubmatch(execution.ProviderRef)
+	if match == nil {
+		return nil
+	}
+	id, err := strconv.ParseInt(match[2], 10, 64)
+	if err != nil {
+		return nil
+	}
+	run, err := p.API.Run(ctx, match[1], id)
+	if err != nil {
+		return err
+	}
+	if run.Status == "completed" {
+		return nil
+	}
+	return p.API.Cancel(ctx, match[1], id)
+}
+
+var _ buildenv.Stopper = (*Provider)(nil)
+
 // RunsOwnTests says the workflow runs a port's declared tests whatever the
 // check's policy: it is MacPorts' own, and dockhand doesn't change it.
 func (p *Provider) RunsOwnTests() bool { return true }
