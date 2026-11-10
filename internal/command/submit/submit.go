@@ -67,6 +67,10 @@ write, keeping your --note.
 			}
 			defer e.Close()
 			request.TestedBinaries, request.TestedVariants = testedBinaries, testedVariants
+			// =false withdraws a kept statement, which leaving the flag out
+			// keeps (#153).
+			request.WithdrawBinaries = cmd.Flags().Changed("tested-binaries") && !testedBinaries
+			request.WithdrawVariants = cmd.Flags().Changed("tested-variants") && !testedVariants
 			// --note "" clears the note, which leaving --note out keeps.
 			if cmd.Flags().Changed("note") {
 				request.Note = &note
@@ -166,8 +170,8 @@ write, keeping your --note.
 	cmd.Flags().StringSliceVar(&request.Types, "type", nil, "the template's Type(s): bugfix, enhancement, security fix (default: enhancement for a branch that updates a port)")
 	cmd.Flags().StringVar(&request.Remote, "remote", "", "the Git remote of your fork, when several could be")
 	cmd.Flags().BoolVar(&request.SkipNotification, "skip-notification", false, "add [skip notification], so maintainers are not mentioned")
-	cmd.Flags().BoolVar(&testedBinaries, "tested-binaries", false, "state that you tested the basic functionality of all binary files")
-	cmd.Flags().BoolVar(&testedVariants, "tested-variants", false, "state that you checked the most important variants")
+	cmd.Flags().BoolVar(&testedBinaries, "tested-binaries", false, "state that you tested the basic functionality of all binary files, for these files; =false withdraws it")
+	cmd.Flags().BoolVar(&testedVariants, "tested-variants", false, "state that you checked the most important variants, for these files; =false withdraws it")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "submit without asking, when there is no terminal")
 	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
 	cmd.MarkFlagsMutuallyExclusive("draft", "no-check")
