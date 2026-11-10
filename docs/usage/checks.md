@@ -23,7 +23,9 @@ nothing. With `-v` it prints that evaluation for each target in each
 environment: the variants as MacPorts resolved them, the defaults not negated
 plus those asked; `depends_build`, `depends_lib`, and `depends_run`; and
 `configure.args` and `configure.env`, evaluated on this Mac with the
-environment's platform. It is the dry evaluation of a Portfile under a variant
+environment's platform and the developer tools of that release's image, as the
+facts table records them; the guest's own build is the result, and a check says
+where your image's tools differ from the table's. It is the dry evaluation of a Portfile under a variant
 set, master's with `--also`, and `--json` carries it as `evaluated`.
 
 The plan, and a check before it builds, say the Portfile findings submit would,
