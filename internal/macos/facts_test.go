@@ -17,7 +17,7 @@ func TestTheCheckedInFactsTableIsSound(t *testing.T) {
 	}
 }
 
-func TestLookupPrefersATartImageThenARunnerThenAHostToABuildbot(t *testing.T) {
+func TestLookupPrefersATartImageThenARunnerAHostAnInstallerReadingAndABuildbot(t *testing.T) {
 	buildbot := Facts{Darwin: 25, Architecture: "arm64", Profile: ProfileXcode, Xcode: "26.6", Tools: "26.6", Source: Source{Kind: SourceBuildbot, From: "ports-26_arm64-builder build 1", Date: "2026-09-26"}}
 	image := buildbot
 	image.Source = Source{Kind: SourceTart, From: "dockhand-xcode-tahoe", Date: "2026-09-25"}
@@ -42,6 +42,14 @@ func TestLookupPrefersATartImageThenARunnerThenAHostToABuildbot(t *testing.T) {
 	got, _ = FactsTable{Facts: []Facts{buildbot, host}}.Lookup(25, "arm64", ProfileXcode)
 	require.Equal(t, host, got, "a host over a buildbot")
 	require.NoError(t, FactsTable{Facts: []Facts{host}}.Check())
+
+	installer := buildbot
+	installer.Source = Source{Kind: SourceInstaller, From: "Xcode_26.6.xip", Date: "2026-11-10"}
+	got, _ = FactsTable{Facts: []Facts{buildbot, installer, host}}.Lookup(25, "arm64", ProfileXcode)
+	require.Equal(t, host, got, "a host, Base's own view, over an installer read without it")
+	got, _ = FactsTable{Facts: []Facts{buildbot, installer}}.Lookup(25, "arm64", ProfileXcode)
+	require.Equal(t, installer, got, "an installer reading over a buildbot, whose log lists no SDKs")
+	require.NoError(t, FactsTable{Facts: []Facts{installer}}.Check())
 }
 
 func TestCheckRefusesAnUnsoundRow(t *testing.T) {

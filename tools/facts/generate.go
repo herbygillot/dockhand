@@ -26,13 +26,14 @@ const (
 )
 
 // generate builds the facts table from Tart probes, runner and host
-// probes, and a buildbot harvest. Each source row is kept, so the
+// probes, readings of installers, and a buildbot harvest. Each source row is kept, so the
 // buildbot's stay as a cross-check where a Tart image, a runner, or a host
 // covers the same release; where one source gives a release, architecture,
 // and profile more than once, the newest wins. A runner or a host probes
 // every Xcode it carries, and the table keeps the one with the builder's
-// toolchain, if any (runnerRows).
-func generate(probeDirs []string, buildbot, out string) error {
+// toolchain, if any (runnerRows). The installers give each builder's
+// toolchain the facts its log doesn't (installerRows).
+func generate(probeDirs, installerPaths []string, buildbot, out string) error {
 	var rows, runners []macos.Facts
 	for _, dir := range probeDirs {
 		paths, err := filepath.Glob(filepath.Join(dir, "*.json"))
@@ -70,6 +71,11 @@ func generate(probeDirs []string, buildbot, out string) error {
 			rows = append(rows, buildbotRow(builder))
 		}
 	}
+	installers, date, err := readInstallers(installerPaths)
+	if err != nil {
+		return err
+	}
+	rows = append(rows, installerRows(installers, date, rows, os.Stderr)...)
 	rows = append(rows, runnerRows(runners, rows, os.Stderr)...)
 	table := macos.FactsTable{Generated: time.Now().UTC().Format(time.DateOnly), Facts: newest(rows), Generations: generations(rows)}
 	if err := table.Check(); err != nil {
