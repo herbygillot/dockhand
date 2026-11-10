@@ -48,10 +48,19 @@ checkpoint() {
 	return 1
 }
 
-# judged asks a person whether what the row shows holds, after its
-# commands have run, and passes the row on done.
+# judged leaves to a person whether what the row shows holds, after its
+# commands have run: the row records the claim, its evidence in its
+# out.log, as "judge pending", and the run goes on, where it stopped for
+# a person at each of 23 rows, and A1's WAITING sat two hours unseen.
+# tools/acceptance/judge.sh answers every pending claim at the end (#133).
+# In a dry run or the quick stage, it's not run, as a checkpoint is.
 judged() {
-	checkpoint "judge whether this holds, from $ROW_DIR/out.log: $*" && row_pass "a person judged it holds: $*"
+	if ! protocol_live; then
+		row_result "not run" "waits on a person's judgment: $*"
+		return 1
+	fi
+	printf 'JUDGE: %s\n' "$*" >>"$ROW_DIR/out.log"
+	row_result "judge pending" "$*"
 }
 
 # The pull requests a row means to open are on its header line

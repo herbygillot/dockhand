@@ -1,4 +1,5 @@
 # stages: full
+# order: last
 # D-N4: GitHub's rate limit: outdated over named ports with a near-spent
 # budget says when the limit resets, with its time zone; leads with the
 # ports it couldn't check, never saying none of them has a newer release;
@@ -9,21 +10,22 @@
 # of the budget from a real response's X-RateLimit-Remaining, since gh api
 # rate_limit said 5000 where the headers said 0.
 #
-# The row spends what's left itself, to 0, where at 87 left outdated's four
-# ports fit in it and it simply succeeded (the rc8 full stage); and it
-# waits for the limit to reset before it ends, up to 65 minutes, since a
-# spent budget leaves every later GitHub row rate-limited until it does.
+# The row spends the budget itself, to 0, where at 87 left outdated's four
+# ports fit in it and it simply succeeded (the rc8 full stage), and where a
+# checkpoint once asked a person to spend it to under 100 first (#134); and
+# it waits for the limit to reset before it ends, up to 65 minutes, since a
+# spent budget leaves every later GitHub row rate-limited until it does. It
+# runs after every other row, so that wait holds none.
 
 # dn4_header is a header of a real response, as read for the budget.
 dn4_header() { gh api -i repos/macports/macports-ports 2>/dev/null | tr -d '\r' | awk -v h="$1" 'tolower($1) == tolower(h) ":" {print $2; exit}'; }
 
 act() {
 	host_only "a near-spent GitHub budget" || return 0
-	checkpoint "spend the test account's GitHub API budget to under 100 requests" || return 0
 	local left n=0
 	left=$(dn4_header x-ratelimit-remaining)
 	printf 'x-ratelimit-remaining: %s\n' "$left" >"$ROW_DIR/remaining"
-	while [ -n "$left" ] && [ "$left" -gt 0 ] && [ "$n" -lt 150 ]; do
+	while [ -n "$left" ] && [ "$left" -gt 0 ] && [ "$n" -lt 6000 ]; do
 		left=$(dn4_header x-ratelimit-remaining)
 		n=$((n + 1))
 	done
