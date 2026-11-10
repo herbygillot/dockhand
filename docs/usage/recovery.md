@@ -321,6 +321,13 @@ dockhand observed it. Refresh and inspect the pull request and remote history
 before deciding how to integrate that work. Repeating a forced push is not the
 recovery dockhand implements.
 
+A refusal that names whose a thing is, such as `dockhand doesn't push a branch
+in macports/macports-ports` or `dockhand doesn't delete a branch in
+someone/macports-ports on the grounds of …`, is the ownership rule: dockhand
+changes only what is yours, what it made, what you were invited to change, or
+what you named. Nothing retries it. Make the change yourself where it's yours
+to make, or ask the pull request's author.
+
 A saved tidy plan also becomes stale when its bound base, commits, or files
 change. Generate a new `tidy --plan` rather than applying the obsolete file. If
 a tidy or rebase itself was the operation you want to reverse, checkpoints and

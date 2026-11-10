@@ -33,6 +33,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports/cilog"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/outward"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/refusal"
 )
@@ -232,7 +233,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 			before = max(before, r.ID)
 		}
 		build.Progress(fmt.Sprintf("pushing to %s on %s", branch, fork.Repository))
-		if err := p.Repo.Push(ctx, git.Push{Remote: fork.PushURL, Branch: branch, Commit: job.Commit, ExpectedRemote: head}); err != nil {
+		if err := outward.Push(ctx, p.Repo, outward.OwnFork, fork.Repository, git.Push{Remote: fork.PushURL, Branch: branch, Commit: job.Commit, ExpectedRemote: head}); err != nil {
 			return buildenv.Infrastructure("pushing to %s: %w", fork.Repository, err)
 		}
 	}
@@ -268,7 +269,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		if ctx.Err() != nil && build.Canceled() && run.Status != "completed" {
 			stopping, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 			defer cancel()
-			_ = p.API.Cancel(stopping, fork.Repository, run.ID)
+			_ = outward.Cancel(stopping, p.API, outward.Made, fork.Repository, run.ID)
 		}
 	}()
 	// A run that builds past the bound is cancelled, and what it was
@@ -293,7 +294,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	// again.
 	if ended == "" && run.Status == "completed" && (stoppedShort(run.Conclusion) || job.Execution.Attempt > 1 && run.Conclusion != "success") {
 		build.Progress(fmt.Sprintf("running %s's unsuccessful jobs again", run.URL))
-		if err := p.API.Rerun(ctx, fork.Repository, run.ID); err != nil {
+		if err := outward.Rerun(ctx, p.API, outward.Made, fork.Repository, run.ID); err != nil {
 			return buildenv.Infrastructure("running %s again: %w", run.URL, err)
 		}
 		previous := run.Attempt
@@ -315,7 +316,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		if building >= bound && ended == "" {
 			ended = fmt.Sprintf("the run exceeded the %s build timeout (providers.github.build_timeout) and was cancelled", bound)
 			build.Progress(fmt.Sprintf("%s exceeded its %s build timeout; cancelling it", run.URL, bound))
-			if err := p.API.Cancel(ctx, fork.Repository, run.ID); err != nil {
+			if err := outward.Cancel(ctx, p.API, outward.Made, fork.Repository, run.ID); err != nil {
 				return buildenv.Infrastructure("cancelling %s, which built past its %s bound: %w", run.URL, bound, err)
 			}
 		}
@@ -352,7 +353,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 // holds the commit pushed. One it can't remove is said, once, and left for
 // clean, which removes a merged branch's; it never fails the check.
 func (p *Provider) removeBranch(ctx context.Context, build buildenv.Build, fork buildenv.Fork, branch, commit string) {
-	err := p.Repo.DeleteRemoteBranch(ctx, fork.PushURL, branch, git.RefValue{Exists: true, Object: commit})
+	err := outward.Delete(ctx, p.Repo, outward.Made, fork.Repository, fork.PushURL, branch, git.RefValue{Exists: true, Object: commit})
 	var moved *git.RefConflict
 	switch {
 	case errors.As(err, &moved):
@@ -601,6 +602,15 @@ func (p *Provider) Stop(ctx context.Context, execution model.GuestExecution) err
 	if err != nil {
 		return nil
 	}
+	// Only in the fork: a recorded URL naming another repository is
+	// none of dockhand's to cancel (#128).
+	fork, err := p.Fork(ctx)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(match[1], fork.Repository) {
+		return refusal.New(refusal.Unsupported, "%s is a run in %s, not your fork %s, so dockhand doesn't cancel it", execution.ProviderRef, match[1], fork.Repository)
+	}
 	run, err := p.API.Run(ctx, match[1], id)
 	if err != nil {
 		return err
@@ -608,7 +618,7 @@ func (p *Provider) Stop(ctx context.Context, execution model.GuestExecution) err
 	if run.Status == "completed" {
 		return nil
 	}
-	return p.API.Cancel(ctx, match[1], id)
+	return outward.Cancel(ctx, p.API, outward.Made, match[1], id)
 }
 
 var _ buildenv.Stopper = (*Provider)(nil)

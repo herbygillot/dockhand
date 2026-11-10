@@ -255,7 +255,13 @@ dockhand clean
 Clean keeps worktrees with edits or untracked files, branches that moved beyond
 the merge, and a fork branch someone moved since dockhand last pushed it. An
 adopted pull request's branch belongs to its author and is never removed from
-their repository, nor is any branch in `macports/macports-ports`.
+their repository, nor is any branch in `macports/macports-ports`. Every
+command keeps to the same rule: dockhand changes only what is yours, what it
+made, what you were invited to change, or what you named, and never pushes,
+deletes, cancels, or reruns anything in MacPorts' repository. Where something
+would, it refuses, saying which rule: `dockhand doesn't push a branch in
+macports/macports-ports: it never pushes, deletes, cancels, or reruns anything
+there, whoever's the change is`.
 `clean --closed` also considers pull requests closed without merging, while
 preserving local work master lacks. A named `clean jq-update` considers only
 that ended branch; an open branch must first be finished or archived. Use

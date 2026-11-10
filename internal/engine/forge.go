@@ -2,8 +2,10 @@ package engine
 
 import (
 	"context"
+	"errors"
 
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/outward"
 )
 
 // Forge is what submit needs of GitHub: who you are, which repositories
@@ -16,21 +18,11 @@ type Forge interface {
 	RepositoryInfo(ctx context.Context, name string) (forge.RepositoryInfo, error)
 	Find(ctx context.Context, query forge.PullRequestQuery) (forge.PullRequestObservation, error)
 	Observe(ctx context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error)
-	Create(ctx context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error)
-	Update(ctx context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error)
 	OpenPullRequests(ctx context.Context, repository, port string) ([]forge.PullRequestSummary, error)
 	// Inspect reports a pull request's reviews and checks.
 	Inspect(ctx context.Context, ref forge.PullRequestRef) (forge.PullRequestStatus, error)
-	// MarkReady takes a draft out of draft, and MarkDraft returns one
-	// ready for review to draft.
-	MarkReady(ctx context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error)
-	MarkDraft(ctx context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error)
 	// Permission is a person's role on a repository.
 	Permission(ctx context.Context, repository, login string) (string, error)
-	// PostReview posts a review on a pull request.
-	PostReview(ctx context.Context, input forge.ReviewInput) (string, error)
-	// RequestReviewers asks people to review a pull request again.
-	RequestReviewers(ctx context.Context, ref forge.PullRequestRef, logins []string) error
 	// Repository binds a repository for reading, such as dockhand's own,
 	// asked whether it has the builds a branch's commits name.
 	Repository(instance, name string) (forge.Repository, error)
@@ -43,13 +35,12 @@ type Forge interface {
 	// move's old owner name.
 	Account(ctx context.Context, instance, login string) (forge.Account, error)
 	// FailedJobs are a head's CI jobs that failed, of each run's latest
-	// attempt; JobLog a job's log, forge.ErrNotFound where the forge no
-	// longer keeps it or won't give it; and RerunFailed runs a run's
-	// failed jobs again, as the person, forge.ErrRejected without the
-	// access it needs.
+	// attempt, and JobLog a job's log, forge.ErrNotFound where the forge no
+	// longer keeps it or won't give it. Its writes, a pull request's
+	// creation and edits, reviews, and CI run again, are outward's alone
+	// (outward.PullRequests, #128).
 	FailedJobs(ctx context.Context, repository, head string) ([]forge.CIJob, error)
 	JobLog(ctx context.Context, repository string, job int64) ([]byte, error)
-	RerunFailed(ctx context.Context, repository string, run int64) error
 }
 
 // GitHubCLI is the GitHub CLI, which acts on GitHub as its own app. An
@@ -63,6 +54,39 @@ type GitHubCLI interface {
 	MarkReady(ctx context.Context, ref forge.PullRequestRef) error
 	MarkDraft(ctx context.Context, ref forge.PullRequestRef) error
 }
+
+// pullRequests are the engine's Forge's writes, which only outward calls
+// (#128).
+func (e *Engine) pullRequests() outward.PullRequests {
+	if writes, ok := e.forge().(outward.PullRequests); ok {
+		return writes
+	}
+	return readOnly{}
+}
+
+// readOnly is a forge that writes nothing, saying so.
+type readOnly struct{}
+
+func (readOnly) refuse() error { return errors.New("this forge doesn't write pull requests") }
+func (r readOnly) Create(context.Context, forge.PullRequestInput) (forge.PullRequestObservation, error) {
+	return forge.PullRequestObservation{}, r.refuse()
+}
+func (r readOnly) Update(context.Context, forge.PullRequestInput) (forge.PullRequestObservation, error) {
+	return forge.PullRequestObservation{}, r.refuse()
+}
+func (r readOnly) MarkReady(context.Context, forge.PullRequestRef) (forge.PullRequestObservation, error) {
+	return forge.PullRequestObservation{}, r.refuse()
+}
+func (r readOnly) MarkDraft(context.Context, forge.PullRequestRef) (forge.PullRequestObservation, error) {
+	return forge.PullRequestObservation{}, r.refuse()
+}
+func (r readOnly) PostReview(context.Context, forge.ReviewInput) (string, error) {
+	return "", r.refuse()
+}
+func (r readOnly) RequestReviewers(context.Context, forge.PullRequestRef, []string) error {
+	return r.refuse()
+}
+func (r readOnly) RerunFailed(context.Context, string, int64) error { return r.refuse() }
 
 // forge is the engine's Forge: the one it was given, or GitHub with the
 // login compose gave the runtime, assembled on first use.
