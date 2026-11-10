@@ -38,11 +38,11 @@ func CheckNotices(portfiles []Portfile) []Finding {
 				platforms = "{darwin any}"
 			}
 			findings = append(findings, Finding{Code: "noarch-platforms", Severity: Warning, Where: fmt.Sprintf("%s:%d", p.Path, line),
-				Message: fmt.Sprintf("supported_archs noarch builds nothing for an architecture, so platforms says %s, which MacPorts' buildbots build once", platforms)})
+				Message: fmt.Sprintf("supported_archs noarch declares architecture-independent files; platforms %s lets MacPorts' buildbots build the port once", platforms)})
 		}
 		for _, line := range portfile.CommentedCode(before, after) {
 			findings = append(findings, Finding{Code: "commented-code", Severity: Warning, Where: fmt.Sprintf("%s:%d", p.Path, line.Line),
-				Message: fmt.Sprintf("%q is commented-out code; a reviewer asks for it to go, or for a comment saying why it stays", line.Text)})
+				Message: fmt.Sprintf("%q is commented-out code; remove it or add a comment explaining why it stays", line.Text)})
 		}
 		for _, file := range p.Files {
 			if !portfile.NamesFile(after, file) {

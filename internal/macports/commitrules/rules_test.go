@@ -174,8 +174,8 @@ func TestADependencyAnotherPortProvidesIsOfferedPathStyle(t *testing.T) {
 		{Path: "devel/wharf/Portfile", After: "name wharf\ndepends_lib port:libfoo port:libffi\n"},
 	}, providers)
 	require.Equal(t, []Finding{
-		{Code: "path-style", Severity: Warning, Where: "devel/harbor/Portfile:3", Message: "depends_build-append takes port:pkgconfig, which pkgconf can satisfy too; the tree writes it path-style, path:bin/pkg-config:pkgconfig, which lets either"},
-		{Code: "path-style", Severity: Warning, Where: "devel/wharf/Portfile:2", Message: "depends_lib takes port:libfoo, which libfoo-devel can satisfy too; the tree writes it path-style, path:lib/libfoo.dylib:libfoo, which lets either"},
+		{Code: "path-style", Severity: Warning, Where: "devel/harbor/Portfile:3", Message: "depends_build-append uses port:pkgconfig, which pkgconf can also satisfy; the tree's path-style form, path:bin/pkg-config:pkgconfig, allows alternative providers"},
+		{Code: "path-style", Severity: Warning, Where: "devel/wharf/Portfile:2", Message: "depends_lib uses port:libfoo, which libfoo-devel can also satisfy; the tree's path-style form, path:lib/libfoo.dylib:libfoo, allows alternative providers"},
 	}, findings, "a new port's every dependency is one it adds; libffi the tree never writes path-style")
 	require.Empty(t, CheckDependencies([]Portfile{{Path: "devel/wharf/Portfile", After: "depends_lib port:libfoo\n"}}, nil))
 }

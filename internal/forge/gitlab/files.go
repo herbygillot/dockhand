@@ -36,7 +36,7 @@ func (r *repository) File(ctx context.Context, commit, path string, limit int64)
 		return nil, fmt.Errorf("gitlab: reading %s: %w", path, err)
 	}
 	if int64(len(data)) > limit {
-		return nil, fmt.Errorf("gitlab: %s is larger than the %d KiB dockhand reads of it", path, limit>>10)
+		return nil, fmt.Errorf("gitlab: %s exceeds the %d KiB file read limit", path, limit>>10)
 	}
 	return data, nil
 }

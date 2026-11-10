@@ -66,7 +66,7 @@ func AwaitSSH(ctx context.Context, guest Commander, vm Running, wait, interval t
 		// setup -vvvv waited four minutes saying nothing (#89).
 		if said.IsZero() || time.Since(said) >= 30*time.Second {
 			said = time.Now()
-			progress.VerboseReport(ctx, "waiting for the guest's SSH (%s so far): %s", time.Since(started).Round(time.Second), lastLine(output, err))
+			progress.VerboseReport(ctx, "waiting for SSH on the guest (%s elapsed): %s", time.Since(started).Round(time.Second), lastLine(output, err))
 		}
 		for _, refusal := range refusals {
 			if strings.Contains(string(output), refusal) {
@@ -79,7 +79,7 @@ func AwaitSSH(ctx context.Context, guest Commander, vm Running, wait, interval t
 			unrouted = time.Now()
 		} else if router, ok := guest.(Router); ok && time.Since(unrouted) >= early {
 			if iface, routeErr := router.Route(ctx, address); routeErr == nil && strings.HasPrefix(iface, "bridge") {
-				return fmt.Errorf("the guest didn't accept SSH in %s, its address routed to Tart's %s: %w%s", time.Since(started).Round(time.Second), iface, err, noRouteHint(guest, output, err))
+				return fmt.Errorf("the guest did not accept SSH after %s; the route to its address uses Tart's %s: %w%s", time.Since(started).Round(time.Second), iface, err, noRouteHint(guest, output, err))
 			}
 		}
 		select {
@@ -153,5 +153,5 @@ func noRouteHint(guest Commander, output []byte, err error) string {
 	if g, ok := guest.(*Guest); ok {
 		env = g.Env
 	}
-	return fmt.Sprintf("; this Mac has no route to the guest's address. Local Network privacy does this where %s may not use the local network: allow it in System Settings › Privacy & Security › Local Network, then run this again. A VPN or firewall that routes Tart's 192.168.64.0/24 network elsewhere does it too, which route -n get <address> shows, or the guest's network didn't come up", terminalApp(env))
+	return fmt.Sprintf("; SSH reported no route to the guest. If Local Network access is disabled for %s, enable it in System Settings › Privacy & Security › Local Network and retry. A VPN or firewall may also block or redirect Tart's 192.168.64.0/24 network; inspect the route with route -n get <address>. The guest's network may also have failed to start", terminalApp(env))
 }

@@ -59,7 +59,7 @@ func TestExtractRefusesAMemberOutsideIt(t *testing.T) {
 	require.NoError(t, tw.Close())
 	require.NoError(t, out.Close())
 	_, err = Extract(t.Context(), name, t.TempDir())
-	require.ErrorContains(t, err, "member outside it")
+	require.ErrorContains(t, err, "unsafe member path")
 }
 
 func TestWalkReadsXZThroughTheSystemTool(t *testing.T) {
@@ -114,5 +114,5 @@ func TestExtractTakesDirectoriesAsTarNamesThem(t *testing.T) {
 		require.FileExists(t, filepath.Join(dir, "CMakeLists.txt"))
 	}
 	_, err := Extract(t.Context(), write("duckdb-1.5.6/", "../evil/"), t.TempDir())
-	require.ErrorContains(t, err, "member outside it")
+	require.ErrorContains(t, err, "unsafe member path")
 }

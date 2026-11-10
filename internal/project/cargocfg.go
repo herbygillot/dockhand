@@ -69,7 +69,7 @@ func cargoTargetOn(key, architecture string) (Applies, error) {
 	}
 	inner, ok = strings.CutSuffix(inner, ")")
 	if !ok {
-		return Unknown, fmt.Errorf("%q: an unclosed cfg(", key)
+		return Unknown, fmt.Errorf("%q: missing ')' to close cfg(", key)
 	}
 	tokens, err := cfgTokens(inner)
 	if err != nil {
@@ -147,7 +147,7 @@ func (p *cfgParser) peek() string {
 func (p *cfgParser) predicate() (Applies, error) {
 	name := p.next()
 	if name == "" || strings.IndexByte("(),=\"", name[0]) >= 0 {
-		return Unknown, fmt.Errorf("a predicate expected, not %q", name)
+		return Unknown, fmt.Errorf("expected a cfg predicate, got %q", name)
 	}
 	switch {
 	case p.peek() == "(" && (name == "all" || name == "any" || name == "not"):

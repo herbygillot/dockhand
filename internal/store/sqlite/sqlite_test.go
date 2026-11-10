@@ -1660,7 +1660,7 @@ INSERT INTO leases(repository_id, resource, holder, generation, acquired_at) VAL
 			{Kind: "foreground", PID: 101, Build: "v0.3.1", Started: started, Checks: []int{1}},
 			{Kind: "serve", PID: 102, Build: "v0.3.1", Started: started, Leads: true},
 		}}, refused, "each named, with what it does, as status names it (the abook session)")
-	require.ErrorContains(t, err, fmt.Sprintf("2 dockhand processes are working on schema %d (v0.3.1): migrating the database to schema %d would leave them unable to record what they do", schemaVersion-1, schemaVersion))
+	require.ErrorContains(t, err, fmt.Sprintf("2 dockhand processes are using schema %d (v0.3.1); migrating this database to schema %d would prevent them from recording further work", schemaVersion-1, schemaVersion))
 
 	s, err := Open(t.Context(), path, Options{MigrateUnderLive: true})
 	require.NoError(t, err, "a person's answer migrates")

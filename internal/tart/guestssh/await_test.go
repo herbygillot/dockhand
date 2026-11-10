@@ -76,11 +76,11 @@ func TestTheWaitSaysWhatSSHSays(t *testing.T) {
 	ctx := progress.WithReporter(t.Context(), func(u progress.Update) { said = append(said, u) })
 	err := AwaitSSH(ctx, &answers{replies: []reply{noRoute}}, nil, 20*time.Millisecond, time.Millisecond)
 	require.ErrorContains(t, err, "the guest didn't accept SSH within 20ms")
-	require.ErrorContains(t, err, "this Mac has no route to the guest's address. Local Network privacy does this where the app you ran dockhand from may not use the local network")
-	require.ErrorContains(t, err, "A VPN or firewall that routes Tart's 192.168.64.0/24 network elsewhere does it too")
+	require.ErrorContains(t, err, "SSH reported no route to the guest. If Local Network access is disabled for the app you ran dockhand from")
+	require.ErrorContains(t, err, "A VPN or firewall may also block or redirect Tart's 192.168.64.0/24 network")
 	require.NotEmpty(t, said)
 	require.Equal(t, progress.Verbose, said[0].Level)
-	require.Contains(t, said[0].Message, "waiting for the guest's SSH (0s so far): ssh: connect to host 192.168.64.6 port 22: No route to host")
+	require.Contains(t, said[0].Message, "waiting for SSH on the guest (0s elapsed): ssh: connect to host 192.168.64.6 port 22: No route to host")
 	require.Len(t, said, 1, "once a half minute")
 
 	refused := reply{output: "ssh: connect to host 192.168.64.6 port 22: Connection refused", err: ErrTransport}
@@ -107,7 +107,7 @@ func TestTheHintNamesTheTerminalApp(t *testing.T) {
 	}
 	require.Equal(t, "the app you ran dockhand from", terminalApp(nil))
 	hint := noRouteHint(&Guest{Env: []string{"TERM_PROGRAM=ghostty"}}, []byte("ssh: connect to host 192.168.64.6 port 22: No route to host"), ErrTransport)
-	require.Contains(t, hint, "Local Network privacy does this where Ghostty may not use the local network: allow it in System Settings › Privacy & Security › Local Network")
+	require.Contains(t, hint, "If Local Network access is disabled for Ghostty, enable it in System Settings › Privacy & Security › Local Network")
 }
 
 // A guest ssh finds no route to, its address routed to Tart's bridge,
@@ -119,8 +119,8 @@ func TestANoRouteWaitEndsEarlyOnTartsBridge(t *testing.T) {
 	noRoute := reply{output: "ssh: connect to host 192.168.64.6 port 22: No route to host", err: ErrTransport}
 	started := time.Now()
 	err := AwaitSSH(t.Context(), &routed{answers: answers{replies: []reply{noRoute}}, iface: "bridge100"}, nil, 2*time.Second, time.Millisecond)
-	require.ErrorContains(t, err, "its address routed to Tart's bridge100")
-	require.ErrorContains(t, err, "Local Network privacy does this")
+	require.ErrorContains(t, err, "the route to its address uses Tart's bridge100")
+	require.ErrorContains(t, err, "If Local Network access is disabled")
 	require.Less(t, time.Since(started), 2*time.Second, "it ended early")
 
 	started = time.Now()

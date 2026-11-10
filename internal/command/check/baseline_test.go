@@ -91,7 +91,7 @@ func TestBaselineComparesWithTheBase(t *testing.T) {
 	require.NotContains(t, out, "--baseline")
 	require.NotContains(t, out, "check.baseline")
 	_, _, err = cmdtest.Dockhand(t, "check", "--baseline")
-	require.ErrorContains(t, err, "jq failed only before building, at lint, fetch, or checksum, which master can't speak to; --only builds them there anyway")
+	require.ErrorContains(t, err, "jq failed only at lint, fetch, or checksum, which baselines do not compare automatically; --only builds these ports on master anyway")
 
 	// Only the branch's newest check points to it, the one --baseline
 	// looks into.

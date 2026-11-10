@@ -162,7 +162,7 @@ func serveOptions(h *host.Host, e *engine.Engine, file config.File, out io.Write
 	if heap != "" {
 		options.Settled = func() {
 			if err := settings.WriteHeapProfile(heap); err != nil {
-				fmt.Fprintf(out, "serve: %s: %v; no profile is written\n", settings.HeapProfileVariable, err)
+				fmt.Fprintf(out, "serve: %s: could not write heap profile: %v\n", settings.HeapProfileVariable, err)
 			}
 		}
 	}

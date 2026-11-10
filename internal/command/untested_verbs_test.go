@@ -46,7 +46,7 @@ func TestStartHereAndFrom(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "dockhand/jq-here", testsupport.Git(t, w.Clone, "branch", "--show-current"), "the checkout it ran in")
 	_, _, err = cmdtest.Dockhand(t, "start", "--from", "jq-here", "jq-followup")
-	require.ErrorContains(t, err, "start --from takes a merged branch's commits past its merge, and jq-here is open; dockhand path jq-here works in it")
+	require.ErrorContains(t, err, "start --from requires a merged branch with follow-up commits; jq-here is open. dockhand path jq-here shows its worktree path")
 	require.NoDirExists(t, filepath.Join(w.Home, "Source", "macports-branches", "jq-followup"))
 }
 

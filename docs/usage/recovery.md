@@ -143,8 +143,8 @@ dockhand cancel check-42
 A GitHub check whose driver stopped leaves MacPorts' workflow running on your
 fork, for `wait` to pick up. Cancelling it first cancels that workflow run.
 Where GitHub can't be reached, the cancel stays requested and the check is not
-reported stopped: `check-42's cancel is recorded, but github couldn't stop
-<run URL>: …; dockhand cancel check-42 tries again`.
+reported stopped: `check-42: cancellation is recorded, but github could not stop
+<run URL>: …; run dockhand cancel check-42 to try again`.
 
 Ctrl-C has two meanings. When the check runs in the foreground here, it stops
 that run and keeps completed results. When another serve process drives the
@@ -202,7 +202,7 @@ nothing is said. An earlier baseline of the branch answers a failure again while
 what it read still stands; where that changed, as after a rebase, the offer says
 so instead, `master's build of exiv2 reads libheif's directory, changed since
 check-490's baseline`, naming the PortGroup where one the build loaded changed,
-`the cmake 1.1 PortGroup, which gettext, built from source, loaded`.
+`the cmake 1.1 PortGroup loaded by gettext when it was built from source`.
 
 Read both outcomes and their phases. A baseline failure is an observation, not
 an automatic acceptance. If the same eligible failure is reproduced, direct

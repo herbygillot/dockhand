@@ -564,7 +564,7 @@ func TestLicenseTextMovedBetweenFilesIsSaidOnce(t *testing.T) {
 	notes := "libuv is licensed as follows:\n====\n- a file no longer here, copyright someone.\n"
 	before := map[string]string{"LICENSE": notes + own + "====\n" + joyent + "====\n" + tree}
 	moved := map[string]string{"LICENSE": own, "LICENSE-extra": joyent + "\n====\n\n" + tree}
-	require.Equal(t, []string{"· upstream moved license text into LICENSE-extra from LICENSE, and none of it is new; 4 lines went beside it"}, compared(t, before, moved))
+	require.Equal(t, []string{"· upstream moved license text into LICENSE-extra from LICENSE, and none of it is new; 4 other lines were removed"}, compared(t, before, moved))
 
 	added := map[string]string{"LICENSE": own, "LICENSE-extra": joyent + tree + "Additional terms: no use on Tuesdays.\n"}
 	require.Equal(t, []string{"! upstream's LICENSE only drops text, 48 words from \"libuv is licensed as follows: ==== - a file no longer here, copyright someone.\" on; the Portfile's license line may need to follow", "! upstream's LICENSE-extra was added; the Portfile's license line may need to follow"},

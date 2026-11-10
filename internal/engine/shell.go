@@ -170,7 +170,7 @@ func (e *Engine) shellRunning(ctx context.Context, request ShellRequest) (int, e
 		return -1, err
 	}
 	if request.Notice != nil {
-		request.Notice(fmt.Sprintf("%s is building in %s; a shell here leaves what it's building, and any target after it, as not evidence (dockhand check again for that).", name, execution.ProviderRef))
+		request.Notice(fmt.Sprintf("%s is building in %s; entering a shell makes this guest's current and subsequent builds unusable as submission evidence. Run dockhand check again to rebuild them.", name, execution.ProviderRef))
 	}
 	entry := model.Entry{At: e.now(), Environment: execution.Environment, Command: strings.Join(request.Command, " ")}
 	if err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error { return tx.EnterRun(request.Run.ID, entry) }); err != nil {

@@ -238,7 +238,7 @@ func TestALocalCheckLeftUnfinishedIsPutBack(t *testing.T) {
 	l.Temp = filepath.Dir(left)
 	build = &fakeBuild{}
 	require.NoError(t, l.Execute(t.Context(), localJob(t, prefix), build))
-	require.Contains(t, build.progress, "putting "+prefix+" back as it was before an earlier check, which ended before it could")
+	require.Contains(t, build.progress, "restoring "+prefix+" after an earlier check ended without restoring it")
 	require.NoDirExists(t, left)
 	require.Equal(t, "  zlib @1.3.2_0 (active)\n", readRegistry(t, path))
 }
@@ -503,7 +503,7 @@ func TestAnUnreadableResultKeepsThePrefixsRecord(t *testing.T) {
 	build := &fakeBuild{}
 	(&Local{}).settle(t.Context(), follower, directory, "/fake-prefix", "check-7", nil, build)
 	require.DirExists(t, directory)
-	require.Contains(t, strings.Join(build.progress, "\n"), "check-7's record of how it left /fake-prefix can't be read")
+	require.Contains(t, strings.Join(build.progress, "\n"), "could not read check-7's restoration record for /fake-prefix")
 }
 
 // The next check on a prefix an unreadable record left is refused, saying
@@ -523,7 +523,7 @@ func TestAnUnreadableRecordRefusesTheNextCheckThere(t *testing.T) {
 	err = (&Local{Temp: root}).restoreLeft(t.Context(), "/fake-prefix", build)
 	_, retained := os.Stat(before)
 	require.NoError(t, retained)
-	require.ErrorContains(t, err, "check-7's record of how it left /fake-prefix can't be read")
+	require.ErrorContains(t, err, "could not read check-7's restoration record for /fake-prefix")
 	require.NoError(t, (&Local{Temp: root}).restoreLeft(t.Context(), "/other-prefix", build))
 	require.FileExists(t, before)
 }

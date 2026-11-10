@@ -76,11 +76,12 @@ It shows what it would remove first; on a terminal it asks, and a script
 passes --yes. archive hides a branch; clean removes a merged one's files;
 cancel stops a check. None means another.
 
---delete forgets merged, closed, or archived branches named: it deletes each one's Git branch,
-unmerged commits included, which it lists first, its worktree, what it
-left on your fork, as clean offers it, and the clones its checks kept,
-and forgets its record, keeping of
-its checks only what another branch's results were reused from. It asks, and without a terminal needs --yes.
+--delete permanently removes the named merged, closed, or archived
+branches: their Git branches, including any unmerged commits listed in
+the preview, their worktrees, eligible fork branches, and the clones
+their checks kept. It also deletes their records, except for check
+results reused by other branches. It asks before proceeding; without a
+terminal, pass --yes.
 
 --plan shows what it would remove, or forget, and removes nothing.`,
 		RunE: func(cmd *cobra.Command, args []string) error {

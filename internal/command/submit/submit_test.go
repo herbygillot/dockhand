@@ -605,7 +605,7 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	out, errs, err = cmdtest.Dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
 	require.Contains(t, errs, "jq-update: #34901: @reneeotten commented\n")
-	require.Contains(t, out, "Needs attention (1)\n  ! jq-update  #34901: @reneeotten commented, and the conversation waits on you (just now)\n")
+	require.Contains(t, out, "Needs attention (1)\n  ! jq-update  #34901: @reneeotten commented; awaiting your response (just now)\n")
 	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-update"))
 	out, _, err = cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)

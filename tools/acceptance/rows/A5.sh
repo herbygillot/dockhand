@@ -72,7 +72,7 @@ a5_status() {
 
 # a5_refused_release is whether a status was refused for migrating a
 # database a release last opened, which a development or rc build asks.
-a5_refused_release() { jq -r '.error // ""' "$1" 2>/dev/null | matches 'a release, last opened this database'; }
+a5_refused_release() { jq -r '.error // ""' "$1" 2>/dev/null | matches -E 'a release, last opened this database|this database was last opened by dockhand'; }
 
 # a5_status_yes is a5_status on a terminal, given the person's yes to the
 # migration it asks of a release's database: script gives it the
@@ -86,7 +86,7 @@ a5_status_yes() {
 
 # a5_refused_live is whether a status was refused for processes working
 # on the database, which the candidate does rather than migrate under them.
-a5_refused_live() { jq -r '.error // ""' "$1" 2>/dev/null | matches 'would leave them unable to record what they do'; }
+a5_refused_live() { jq -r '.error // ""' "$1" 2>/dev/null | matches -E 'would leave them unable to record what they do|would prevent them from recording further work'; }
 
 act() {
 	# The candidate first, on its own copy as a home's default database,

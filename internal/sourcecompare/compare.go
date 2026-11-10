@@ -475,29 +475,29 @@ func licenseWords(change Change, old, now []byte) string {
 	case was.Known() && is.Known() && !was.Same(is):
 		return fmt.Sprintf("was %s, now %s, by its text", was, is)
 	case was.Known() && is.Known() && drops:
-		return fmt.Sprintf("is still %s by its text, and only drops text beside it, %s", is, dropped)
+		return fmt.Sprintf("is still %s by its text, with only other text removed: %s", is, dropped)
 	case was.Known() && is.Known():
 		if said, ok := linesAdded(old, now); ok {
 			return fmt.Sprintf("is still %s by its text, with %s", is, said)
 		}
-		return fmt.Sprintf("is still %s by its text, and changed beside it", is)
+		return fmt.Sprintf("is still %s by its text, with other text changed", is)
 	case was.Known() && was.Same(is):
 		// The licenses are the ones it had, and less of the text is theirs:
 		// libxkbcommon 1.13.2 added Anton Zinoviev's terms for its test
 		// data, and its hold said no license was known (prioritization's
 		// ruling, 2026-10-19).
 		if added := addedTerms(old, is); added != "" {
-			return fmt.Sprintf("is still %s by what its text matches, and adds terms no license that's known has: %q", is, added)
+			return fmt.Sprintf("still matches %s, but adds terms that do not match a recognized license: %q", is, added)
 		}
 		// Lines added alone are said by their count and the first, where
 		// "they cover less of it, 73% of its words" said nothing of what
 		// changed (field testing's outdated-ports session).
 		if said, ok := linesAdded(old, now); ok {
-			return fmt.Sprintf("is still %s by what its text matches, with %s", is, said)
+			return fmt.Sprintf("still matches %s, with %s", is, said)
 		}
-		return fmt.Sprintf("is still %s by what its text matches, and they cover less of it, %.0f%% of its words", is, is.Percent)
+		return fmt.Sprintf("still matches %s in parts, covering %.0f%% of its words", is, is.Percent)
 	case was.Known():
-		return fmt.Sprintf("was %s by its text, and now reads as no license that's known", was)
+		return fmt.Sprintf("was %s by its text; the new text could not be classified as a known license", was)
 	case is.Known():
 		return "changed, and now reads as " + is.String()
 	case drops:
@@ -647,9 +647,9 @@ func licenseMove(changes []Change, before, after map[string]project.File) []Chan
 	message += ", and none of it is new"
 	switch {
 	case went == 1:
-		message += "; a line went beside it"
+		message += "; one other line was removed"
 	case went > 1:
-		message += fmt.Sprintf("; %d lines went beside it", went)
+		message += fmt.Sprintf("; %d other lines were removed", went)
 	}
 	moved := Change{Kind: "license", How: "moved", Path: added[0], Message: message}
 	var folded []Change

@@ -77,7 +77,7 @@ func HistoryWords(pruned store.Pruned, assessments int, after time.Duration) str
 		}
 	}
 	if len(removed) > 0 {
-		words = append(words, fmt.Sprintf("removed %s that branches ended past %s had recorded, keeping what reuse may choose and each branch's newest check",
+		words = append(words, fmt.Sprintf("removed %s recorded by branches that ended more than %s ago, keeping history needed for reuse and each branch's newest check",
 			prose.And(removed), prose.Age(after)))
 	}
 	if assessments > 0 {

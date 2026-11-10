@@ -63,7 +63,7 @@ func (c Client) Files(ctx context.Context, project, version string) ([]File, err
 	}
 	switch {
 	case errors.Is(err, fetch.ErrTooLarge):
-		return nil, fmt.Errorf("pypi: %s %s: its JSON is larger than the %d MiB dockhand reads of a release", project, version, maxRelease>>20)
+		return nil, fmt.Errorf("pypi: %s %s: release metadata exceeds the %d MiB read limit", project, version, maxRelease>>20)
 	case err != nil:
 		return nil, fmt.Errorf("pypi: %s %s: %w", project, version, err)
 	}

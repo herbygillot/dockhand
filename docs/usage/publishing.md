@@ -377,7 +377,7 @@ check or lookup, and it takes the newer of the two by their commits' dates;
 status never builds or fetches an index for this. Where the record's is the
 newer, or no index is cached, the port's line says so, as in `maintainers as
 of master, 2026-10-28`. A new port's maintainers come from its change record
-alone, `maintainers as the branch adds it`. Where neither has them, status
+alone, `maintainers declared by this new port`. Where neither has them, status
 says they're not read yet, and for your own branch, that
 `dockhand check --plan` reads them; an adopted pull request's Portfiles
 aren't evaluated for this. `status --json` gives the same facts under

@@ -478,7 +478,7 @@ if {${os.platform} eq "darwin" && ${os.major} <= 15} {
 	// Which ran is the one MacPorts evaluated: neither, or both alike,
 	// can't say.
 	_, err = Inspect(src, map[string]string{Cargo: "adler2 9.9.9 " + sha("c")})
-	require.ErrorContains(t, err, "cargo.crates is declared 2 times, and none is what MacPorts evaluated")
+	require.ErrorContains(t, err, "cargo.crates is declared 2 times, but none matches the evaluated value")
 }
 
 // Differences name what Equivalent finds, by crate, module, or Git crate;

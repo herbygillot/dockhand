@@ -186,7 +186,7 @@ func TestWalkReadsLzmaSevenZipAndADiskImage(t *testing.T) {
 		if runtime.GOOS != "darwin" {
 			file := filepath.Join(t.TempDir(), "s.dmg")
 			require.NoError(t, os.WriteFile(file, []byte("not a tar"), 0o644))
-			require.ErrorContains(t, Walk(t.Context(), file, func(Member) error { return nil }), "s.dmg is a disk image, which only macOS's hdiutil reads")
+			require.ErrorContains(t, Walk(t.Context(), file, func(Member) error { return nil }), "reading the disk image s.dmg requires macOS's hdiutil")
 			return
 		}
 		file := filepath.Join(t.TempDir(), "s.dmg")
