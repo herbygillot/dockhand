@@ -1342,8 +1342,13 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		// One that failed after its pull request opened stops the pass:
+		// what it opened may be uncounted (#118).
 		if err != nil {
 			pass.say(ctx, fmt.Sprintf("serve: submitting %s: %v", name, err))
+			if submitted.PullRequest.Ref.Number != 0 {
+				return
+			}
 			continue
 		}
 		p.s.say("serve: opened #%d for %s after its check passed", submitted.PullRequest.Ref.Number, name)

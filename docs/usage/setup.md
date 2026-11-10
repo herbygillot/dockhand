@@ -180,7 +180,9 @@ Where the release carries its own source archive, one that holds what the
 repository has at the tag (its build files, the paths the Portfile names, and
 for a port cloned with Git, every submodule), the update says so, a notice
 that holds nothing: "release 2.5.0's mindforger_2.5.0_tarball.tgz carries the
-source, doc, and deps/cmark-gfm; update --source releases fetches it".
+source, doc, and deps/cmark-gfm; update --source releases, run instead of this
+update, fetches it". The move belongs to the update that changes the version:
+once the port is at that version, `--source releases` doesn't move it yet.
 `--source releases` makes that move, refusing where the release's archive
 doesn't qualify, and `--source choose` takes it where it qualifies, else
 GitHub's archive for a port on GitHub's tarball, a port cloned for its

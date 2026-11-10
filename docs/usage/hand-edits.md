@@ -101,14 +101,20 @@ The default `--source suggest` reports suitable release assets for legacy
 tarball or Git sources. It preserves the source, except that legacy tarballs
 move to GitHub's archive format for the tag. For example, a notice may say
 `release 2.5.0's mindforger_2.5.0_tarball.tgz carries the source, doc, and
-deps/cmark-gfm; update --source releases fetches it`.
+deps/cmark-gfm; update --source releases, run instead of this update, fetches
+it`. The move belongs to the update that changes the version: once the port is
+at that version, `--source releases` doesn't move it yet.
 
 `--source releases` requests a release asset and refuses one that does not
 qualify. `--source choose` can move legacy tarballs or Git checkouts to a
 suitable release asset; an asset replacing a Git checkout must contain every
 submodule. Existing archive sources stay unless `--source releases` is
 requested. `--source keep` preserves the source, and `--source archive`
-requests GitHub's archive of the tag.
+requests GitHub's archive of the tag. Update doesn't move a port that already
+fetches a release asset back to the archive, so `--source archive` there is
+refused before anything changes: `--source archive: mindforger fetches a
+release asset, and update doesn't move a port back to GitHub's archive of the
+tag`.
 
 When switching source, Dockhand sets `distname`, `extract.suffix`, a `use_`
 option, and `worksrcdir` as needed, removes `fetch.type git` and the submodule

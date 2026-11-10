@@ -95,6 +95,9 @@ type SubmitPlan struct {
 	Ports   []string
 	// recorded is Ports read from every directory's change record.
 	recorded bool
+	// served is a submission serve makes by itself, whose serve.submit
+	// event, which serve.submit_limit counts, is written with its record.
+	served bool
 	// moved are the versions the change records move ports to, by port.
 	moved    map[string]string
 	Findings []commitrules.Finding
@@ -1238,6 +1241,11 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 		// a submit to it made it the person's (the rc6 full stage's G22).
 		next := model.PullRequest{Repository: plan.Repository, Number: observed.PullRequest.Ref.Number, Head: plan.Head(),
 			Pushed: model.ObjectID(plan.Commit), Body: body, Draft: draft}
+		// The push is the record's to say, not this run's: one whose pull
+		// request update then failed left the fork at the commit, and the
+		// retry, pushing nothing, never said it, so the reviewers who asked
+		// for changes weren't asked again (#117).
+		pushed := result.Pushed || branch.PullRequest == nil || branch.PullRequest.Pushed != next.Pushed
 		if old := branch.PullRequest; old != nil && old.Number == next.Number {
 			next.Observed, next.Adopted, next.Author = old.Observed, old.Adopted, old.Author
 		}
@@ -1269,8 +1277,20 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 			verb = "opened"
 		}
 		if _, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchSubmit, Level: model.LevelInfo,
-			Message: fmt.Sprintf("%s #%d with %s", verb, observed.PullRequest.Ref.Number, model.ObjectID(plan.Commit).Short())}); err != nil || !result.Pushed {
+			Message: fmt.Sprintf("%s #%d with %s", verb, observed.PullRequest.Ref.Number, model.ObjectID(plan.Commit).Short())}); err != nil {
 			return err
+		}
+		// Serve's count lands with the pull request's record: written after
+		// it, a failed write left a pull request open and uncounted, and
+		// serve opened two under a limit of one (#118).
+		if plan.served {
+			if _, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventServeSubmit, Level: model.LevelInfo,
+				Message: fmt.Sprintf("serve opened #%d for %s, which passed its check", observed.PullRequest.Ref.Number, plan.Branch.ShortName())}); err != nil {
+				return err
+			}
+		}
+		if !pushed {
+			return nil
 		}
 		_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchPush, Level: model.LevelVerbose,
 			Message: fmt.Sprintf("pushed %s to #%d", model.ObjectID(plan.Commit).Short(), observed.PullRequest.Ref.Number)})

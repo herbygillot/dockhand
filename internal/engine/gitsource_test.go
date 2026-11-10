@@ -654,3 +654,40 @@ func TestAMovedGitHubTagIsSaidByCheckAndSubmit(t *testing.T) {
 	planned, _ = plan().In(tahoeArm)
 	require.Equal(t, url+" has no tag v9", planned.Tags["libharbor"].Unresolved)
 }
+
+// A check of a tag's old commit doesn't stand for a request whose plan
+// resolves the moved tag, queued or finished: the same Portfile revision
+// planned again fetches another source (#114; Codex's review of b2e7b616,
+// its probe).
+func TestAdmissionHonoursTheResolvedSource(t *testing.T) {
+	t.Parallel()
+	for _, finished := range []bool{false, true} {
+		f := setup(t)
+		e := f.open(t)
+		url, first, move := harborRepository(t)
+		provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}, fetches: map[model.TargetID]string{"libharbor": first}}, identity: "origin a"}
+		c := newHarborChecks(t, e, gitHarbor(url, "v4"), provider)
+		old, err := e.PlanCheck(t.Context(), PlanRequest{Revision: c.revision, Environments: []model.Environment{tahoeArm}})
+		require.NoError(t, err)
+		previous, err := e.Enqueue(t.Context(), c.branch, old, model.OriginPerson)
+		require.NoError(t, err)
+		if finished {
+			previous, err = e.Drive(t.Context(), session(t, e), previous.ID)
+			require.NoError(t, err)
+			require.Equal(t, model.RunPassed, previous.State)
+		}
+		second := move()
+		want, err := e.PlanCheck(t.Context(), PlanRequest{Revision: c.revision, Environments: []model.Environment{tahoeArm}})
+		require.NoError(t, err)
+		newSource, _ := want.GitIn(tahoeArm, "libharbor")
+		require.Equal(t, model.ObjectID(second), newSource.Commit)
+		got, err := e.QueueCheck(t.Context(), checks.QueueRequest{Branch: c.branch, Revision: c.revision, Plan: want, Origin: model.OriginPerson, Covered: finished, Beside: checks.BesideFollow})
+		if finished {
+			require.Nil(t, got.Passed, "the old commit's pass doesn't stand for the new one")
+		} else {
+			require.Error(t, err, "a queued check of another source isn't followed")
+			require.ErrorContains(t, err, "but builds another source than this request: a tag or branch a port fetches moved since it was planned")
+			require.False(t, got.Followed)
+		}
+	}
+}

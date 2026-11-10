@@ -54,7 +54,7 @@ assert() {
 	portfile=$(g35_portfile "$G35_DEFAULT") || { row_fail "no Portfile of mindforger on $G35_DEFAULT"; return; }
 	printf '%s\n' "$portfile" | matches -E '^fetch\.type[[:space:]]+git$' && printf '%s\n' "$portfile" | matches -E '^github\.tarball_from[[:space:]]+tarball$' ||
 		{ row_fail "the default update moved mindforger's source: $(printf '%s\n' "$portfile" | grep -E '^(fetch|github\.tarball)' | tr '\n' ';')"; return; }
-	jq -e '[.. | objects | select(.rule? == "source" and .hold == false and (.message | startswith("release 2.5.0'"'"'s mindforger_2.5.0_tarball.tgz carries the source") and contains("deps/cmark-gfm") and endswith("; update --source releases fetches it")))] | length == 1' "$ROW_DIR/json/1.json" >/dev/null ||
+	jq -e '[.. | objects | select(.rule? == "source" and .hold == false and (.message | startswith("release 2.5.0'"'"'s mindforger_2.5.0_tarball.tgz carries the source") and contains("deps/cmark-gfm") and endswith("; update --source releases, run instead of this update, fetches it")))] | length == 1' "$ROW_DIR/json/1.json" >/dev/null ||
 		{ row_fail "the default update didn't say, a notice, that the release's tarball carries the source: $(jq -c '[.. | objects | select(.rule? == "source")]' "$ROW_DIR/json/1.json")"; return; }
 	jq -e '[.. | .fixed? // empty | .[] | select(startswith("fetch.type git is now"))] | length == 0' "$ROW_DIR/json/1.json" >/dev/null ||
 		{ row_fail "the default update said a move: $(jq -c '[.. | .fixed? // empty]' "$ROW_DIR/json/1.json")"; return; }

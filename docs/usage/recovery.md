@@ -140,6 +140,12 @@ request. To stop without creating another:
 dockhand cancel check-42
 ```
 
+A GitHub check whose driver stopped leaves MacPorts' workflow running on your
+fork, for `wait` to pick up. Cancelling it first cancels that workflow run.
+Where GitHub can't be reached, the cancel stays requested and the check is not
+reported stopped: `check-42's cancel is recorded, but github couldn't stop
+<run URL>: …; dockhand cancel check-42 tries again`.
+
 Ctrl-C has two meanings. When the check runs in the foreground here, it stops
 that run and keeps completed results. When another serve process drives the
 check and you are only following, it stops following; the check continues. Use

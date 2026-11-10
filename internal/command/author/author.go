@@ -359,7 +359,7 @@ func (v *VersionUpdate) Flags(cmd *cobra.Command, s *settings.Settings) {
 	cmd.Flags().BoolVar(&v.KeepOld, "keep-old-checksums", false, "refresh legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size")
 	cmd.Flags().BoolVar(&v.Shared, "shared-release", false, "update every subport that shares the release")
 	cmd.Flags().BoolVar(&v.FollowMoves, "follow-moves", false, "update github.setup when GitHub redirects the repository to a new name")
-	cmd.Flags().BoolVar(&v.Obsolete, "with-obsolete", false, "also update an obsolete stub replaced by this port to the same version")
+	cmd.Flags().BoolVar(&v.Obsolete, "with-obsolete", false, "also update an obsolete stub replaced by this port to the same version; may be added after the update")
 	cmd.Flags().BoolVar(&v.Linked.Revbump, "revbump-dependents", false, "also bump the revision of the ports that link it directly")
 	cmd.Flags().StringSliceVar(&v.Linked.Except, "except", nil, "leave this dependent out of --revbump-dependents")
 	cmd.Flags().StringSliceVar(&v.Closes, "closes", nil, "the Trac ticket the update closes, by number, written as the commit's Closes: trailer with its URL; repeat for more")
@@ -533,6 +533,9 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 		switch {
 		case deferred:
 			fmt.Fprintf(out, "%s is already at %s; nothing to change, so no branch was started.\n", update.Port, update.After)
+		case request.Action == model.EditUpdate && update.Obsolete != nil && update.Obsolete.Moved:
+			// --with-obsolete added after the update moves the stub (#122).
+			fmt.Fprintf(out, "%s is already at %s; updating obsolete port %s to it.\n", update.Port, update.After, update.Obsolete.Port)
 		case request.Action == model.EditUpdate:
 			fmt.Fprintf(out, "%s is already at %s; nothing to change.\n", update.Port, update.After)
 		default:

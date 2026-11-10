@@ -42,6 +42,8 @@ type fakeActions struct {
 	// hold keeps a run in progress, calling hold at each look, until it
 	// returns false.
 	hold func() bool
+	// unreachable is GitHub refusing every cancel.
+	unreachable error
 	// workflow is the fork's workflow's state, active when empty.
 	workflow string
 	// untaken are the jobs GitHub cancelled before any runner took them,
@@ -150,6 +152,9 @@ func (f *fakeActions) Rerun(_ context.Context, _ string, id int64) error {
 }
 
 func (f *fakeActions) Cancel(_ context.Context, repository string, id int64) error {
+	if f.unreachable != nil {
+		return f.unreachable
+	}
 	f.canceled++
 	run := f.find(id)
 	run.Status, run.Conclusion = "completed", "cancelled"
@@ -652,4 +657,52 @@ func TestFollowingALogKeepsTheExecutionNamed(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, followed, "SONOMA_EXECUTION_ONLY", "following must retain the explicitly selected provider execution")
 	require.NotContains(t, followed, "SEQUOIA_EXECUTION_ONLY")
+}
+
+// Canceling a GitHub check whose driver stopped, leaving its workflow
+// running for the next driver, cancels the workflow before it says the
+// check stopped: it was recorded canceled while the run went on on the
+// fork (#115; Codex's review of b2e7b616, its probe).
+func TestCancellingAStoppedGitHubCheckStopsItsWorkflow(t *testing.T) {
+	t.Parallel()
+	f, _ := githubBranch(t)
+	f.logs = []map[string]string{both(built("jq", false))}
+	f.conclusion = []string{"success"}
+	_, _, err := cmdtest.Dockhand(t, "check", "--on", "github", "-d")
+	require.NoError(t, err)
+	ctx := t.Context()
+	e, err := cmdtest.TestSettings(t).Open(ctx)
+	require.NoError(t, err)
+	defer e.Close()
+	run, err := e.RunNamed(ctx, "check-1")
+	require.NoError(t, err)
+	serving, err := e.Session(ctx, model.SessionServe)
+	require.NoError(t, err)
+	stopping, stop := context.WithCancel(ctx)
+	f.hold = func() bool { stop(); return true }
+	stopped, err := e.Resume(stopping, serving, run.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunRunning, stopped.State)
+	require.NoError(t, serving.End(context.WithoutCancel(ctx)))
+	require.Len(t, f.runs, 1)
+	require.Equal(t, "in_progress", f.runs[0].Status)
+	require.Zero(t, f.canceled)
+
+	// GitHub out of reach, the cancel stays requested, and says so.
+	f.unreachable = errors.New("GitHub answered 503")
+	_, _, err = cmdtest.Dockhand(t, "cancel", "check-1")
+	require.Error(t, err)
+	require.ErrorContains(t, err, "check-1's cancel is recorded, but github couldn't stop https://github.com/ada/macports-ports/actions/runs/7: GitHub answered 503; dockhand cancel check-1 tries again")
+	pending, err := e.RunNamed(ctx, "check-1")
+	require.NoError(t, err)
+	require.Equal(t, model.RunRunning, pending.State)
+
+	f.unreachable = nil
+	_, errs, err := cmdtest.Dockhand(t, "cancel", "check-1")
+	require.NoError(t, err, errs)
+	after, err := e.RunNamed(ctx, "check-1")
+	require.NoError(t, err)
+	require.Equal(t, model.RunCanceled, after.State)
+	require.Equal(t, 1, f.canceled)
+	require.Equal(t, "completed", f.runs[0].Status)
 }

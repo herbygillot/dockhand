@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -86,5 +87,48 @@ func TestEachGroupedSubportsPatchHoldsItsOwnEdit(t *testing.T) {
 			require.Equal(t, broken, heldPort, "each subport's preparation hold must stay on its own edit")
 			require.Nil(t, done.Run, "a failed patch in any grouped update holds the check")
 		})
+	}
+}
+
+// holdFailureStore is a store whose every patch hold fails to record.
+type holdFailureStore struct{ store.Store }
+
+type holdFailureTx struct{ store.Tx }
+
+func (s holdFailureStore) Update(ctx context.Context, repo model.RepositoryID, fn func(store.Tx) error) error {
+	return s.Store.Update(ctx, repo, func(tx store.Tx) error { return fn(holdFailureTx{tx}) })
+}
+
+func (holdFailureTx) SetHeld(model.EditID, []string) error {
+	return errors.New("recording the patch hold failed")
+}
+
+// An unattended ship records a rejected patch's hold before it commits
+// the branch: committed first, a hold that failed to record, or a serve
+// stopped between the two, left a branch the next serve's recovery
+// queued unheld (#116; Codex's review of b2e7b616, its probe).
+func TestAPatchHoldIsRecordedBeforeShipCommits(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\nrevision 0\nsubport jq-doc {\nversion 1.0.1\n}\n"})
+	testsupport.Git(t, f.upstream, "add", "-A")
+	testsupport.Git(t, f.upstream, "commit", "-qm", "independent subports")
+	e, p := f.withPreparer(t)
+	e.Preparer = groupedPreparer{p, "jq"}
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq"), port("jq-doc")}}})
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
+	kept := e.Store
+	e.Store = holdFailureStore{kept}
+	release := &model.Release{ReleaseSelection: model.ReleaseSelection{Requested: "1.8.1", CurrentVersion: "1.7.1"}, Version: "1.8.1", Forge: "github", Tag: "v1.8.1"}
+	where := Where{Environments: []model.Environment{{Provider: "command"}}}
+	done := e.ship(t.Context(), shipTarget{Port: "jq", Version: "1.8.1", Release: release, Name: "held-recovery"}, shipOptions{Origin: model.OriginServe, To: ShipCheck, Where: where, Answered: model.AnsweredNobody})
+	require.Contains(t, done.Problem, "recording the patch hold failed")
+	require.False(t, done.Tidied, "nothing committed")
+	require.Nil(t, done.Run)
+	e.Store = kept
+	resumed, err := e.ResumePrepared(t.Context(), where, model.TestsDeclared)
+	require.NoError(t, err)
+	for _, r := range resumed {
+		require.Nil(t, r.Run, "recovery queues no check of an update whose patch was rejected: %+v", r)
 	}
 }

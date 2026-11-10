@@ -243,13 +243,15 @@ func (s *sharedLookups) do(ctx context.Context, key string, lookup func(context.
 }
 
 // lookupKey is what a port's upstream lookup depends on: its Portfile, its
-// version, and the options that name its source and how its releases are
-// read. Subports that share all of them share the lookup.
+// version, the series its name keeps it in (upstream.Series), and the
+// options that name its source and how its releases are read. Subports
+// that share all of them share the lookup; fixture-1 beside fixture took
+// fixture's 2.0 for its own, its series left out (#120).
 func lookupKey(portfile string, port macports.PortInfo) string {
 	if portfile == "" {
 		return ""
 	}
-	key := []string{portfile, port.Version}
+	key := []string{portfile, port.Version, upstream.Series(port)}
 	for _, option := range []string{"livecheck.type", "livecheck.url", "livecheck.regex", "livecheck.version", "livecheck.branch", "github.author", "github.project", "github.version", "github.tag_prefix", "github.tag_suffix", "gitlab.instance", "gitlab.author", "gitlab.project", "gitlab.version", "git.url", "git.branch", "distname", "distfiles", "master_sites"} {
 		key = append(key, port.Options[option])
 	}

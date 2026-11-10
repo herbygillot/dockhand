@@ -518,16 +518,8 @@ func (e *Engine) SubmitForServe(ctx context.Context, candidate ServeCandidate) (
 	}
 	plan := candidate.Plan
 	plan.Body = plan.Body + "\n\n" + ServeNote + "\n"
-	submitted, err := e.ApplySubmit(ctx, plan, model.AnsweredNobody)
-	if err != nil {
-		return submitted, err
-	}
-	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: candidate.Branch.ID, Kind: model.EventServeSubmit, Level: model.LevelInfo,
-			Message: fmt.Sprintf("serve opened #%d for %s, which passed its check", submitted.PullRequest.Ref.Number, candidate.Branch.ShortName())})
-		return err
-	})
-	return submitted, err
+	plan.served = true
+	return e.ApplySubmit(ctx, plan, model.AnsweredNobody)
 }
 
 // majorRule is the hold on an update whose major version moves.

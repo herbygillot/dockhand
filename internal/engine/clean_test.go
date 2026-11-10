@@ -556,3 +556,37 @@ func TestForgetKeepsABranchCheckedOutElsewhere(t *testing.T) {
 	require.ErrorContains(t, err, "mine, which clean --delete doesn't remove")
 	require.NotEmpty(t, testsupport.Git(t, own, "rev-parse", "HEAD"))
 }
+
+// An adopted pull request's head branch is its author's: cleaning the
+// adopted branch keeps it, even in MacPorts' repository, where a
+// committer's credentials could delete it, and the plan doesn't offer it
+// (#112; Codex's review of b2e7b616, its probe).
+func TestCleanKeepsAnAdoptedPullRequestsBranch(t *testing.T) {
+	t.Parallel()
+	f, e, _, branch := mergedBranch(t)
+	head := testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")
+	const theirs = "contributor-original-work"
+	testsupport.Git(t, branch.Worktree, "push", "-q", f.upstream, head+":refs/heads/"+theirs)
+	branch.PullRequest.Head = forgetest.UpstreamRepository + ":" + theirs
+	branch.PullRequest.Pushed = model.ObjectID(head)
+	branch.PullRequest.Adopted = true
+	branch.PullRequest.Author = "contributor"
+	branch.PullRequest.Observed.Head = model.ObjectID(head)
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(branch) }))
+	plans, err := e.PlanCleanBranches(t.Context(), []model.Branch{branch})
+	require.NoError(t, err)
+	for _, plan := range plans {
+		for _, step := range plan.Steps {
+			require.NotEqual(t, CleanFork, step.Kind, "%+v", step)
+		}
+	}
+	_, err = e.ApplyClean(t.Context(), plans)
+	require.NoError(t, err)
+	require.Equal(t, head, testsupport.Git(t, f.upstream, "for-each-ref", "--format=%(objectname)", "refs/heads/"+theirs))
+
+	// Asked again as it's applied: a plan made before adoption keeps it.
+	stale := []CleanBranch{{Branch: branch, Steps: []CleanStep{{What: branch.PullRequest.Head, Kind: CleanFork, expected: head}}}}
+	_, err = e.ApplyClean(t.Context(), stale)
+	require.NoError(t, err)
+	require.Equal(t, head, testsupport.Git(t, f.upstream, "for-each-ref", "--format=%(objectname)", "refs/heads/"+theirs))
+}

@@ -127,6 +127,26 @@ func (e *Engine) ship(ctx context.Context, target shipTarget, options shipOption
 		return done
 	}
 	branch := done.Branch
+	// A patch that doesn't apply, which the refresh couldn't mend, fails
+	// the check at its patch phase after its dependencies' installs and
+	// extract: nobody looking, the branch stays at its committed edit
+	// (the docs dig's I9, e2fsprogs and net-snmp in field testing).
+	// patchcheck's reading isn't the build's, so a person's ship and check
+	// build as before, and holds.allow's patch-rejected lets one go.
+	// The hold is recorded on the update's edit, so serve's recovery
+	// leaves it held, and a person's ship takes it off (finding 2): before
+	// the commit, which makes the branch one the next serve queues, or a
+	// serve stopped between them queued it unheld (#116).
+	for _, update := range updates {
+		var held []string
+		if options.Unattended() && len(update.PatchProblems) > 0 && !slices.Contains(e.holdsFor(update.port).allow, assess.PatchRejected) {
+			held = update.PatchProblems
+		}
+		if err := e.holdBeforeCheck(ctx, branch, update.port, held); err != nil {
+			done.Problem = err.Error()
+			return done
+		}
+	}
 	tidy, err := e.PlanTidy(ctx, TidyRequest{Branch: branch})
 	if err != nil {
 		done.Problem = err.Error()
@@ -146,24 +166,6 @@ func (e *Engine) ship(ctx context.Context, target shipTarget, options shipOption
 	failpoint.Hit("ship.committed")
 	if options.To == ShipCommit {
 		return done
-	}
-	// A patch that doesn't apply, which the refresh couldn't mend, fails
-	// the check at its patch phase after its dependencies' installs and
-	// extract: nobody looking, the branch stays at its committed edit
-	// (the docs dig's I9, e2fsprogs and net-snmp in field testing).
-	// patchcheck's reading isn't the build's, so a person's ship and check
-	// build as before, and holds.allow's patch-rejected lets one go.
-	// The hold is recorded on the update's edit, so serve's recovery
-	// leaves it held, and a person's ship takes it off (finding 2).
-	for _, update := range updates {
-		var held []string
-		if options.Unattended() && len(update.PatchProblems) > 0 && !slices.Contains(e.holdsFor(update.port).allow, assess.PatchRejected) {
-			held = update.PatchProblems
-		}
-		if err := e.holdBeforeCheck(ctx, branch, update.port, held); err != nil {
-			done.Problem = err.Error()
-			return done
-		}
 	}
 	if prepared, err := e.preparation(ctx, branch); err != nil || prepared.Disposition != branchstate.ReadyToCheck {
 		done.Problem = preparedWords(prepared, branch, err)
