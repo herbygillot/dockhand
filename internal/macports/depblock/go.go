@@ -282,9 +282,9 @@ func unfetched(missing MissingChecksum, stderr []byte) error {
 		if string(match[2]) == "404" {
 			gone = "; its repository may be gone"
 		}
-		return fmt.Errorf("dependency: go2port couldn't fetch %s %s's archive (HTTP %s)%s, so it wrote the module no checksum", missing.Module, missing.Lock, match[2], gone)
+		return fmt.Errorf("dependency: go2port couldn't fetch %s %s's archive (HTTP %s)%s, so it wrote the module without a checksum", missing.Module, missing.Lock, match[2], gone)
 	}
-	return fmt.Errorf("dependency: go2port wrote %s %s no checksum", missing.Module, missing.Lock)
+	return fmt.Errorf("dependency: go2port wrote %s %s without a checksum", missing.Module, missing.Lock)
 }
 
 func goRows(values []string) ([][]string, error) {

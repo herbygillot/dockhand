@@ -53,9 +53,20 @@ printed in your output.
 Tidy usually preserves the final files, but it also fixes deterministic lint
 findings on lines your branch changes and reports those fixes. Check makes the
 same fixes before capturing files. Whole-file formatting is separate:
-`tidy --restyle` makes a final whitespace commit for the Portfiles it can safely
-restyle. Keep that choice out of a change when you only want its functional
-edits.
+`tidy --restyle` makes up to two final commits of their own: `<port>:
+whitespace`, for the Portfiles it can restyle whole, and `<port>: path-style
+dependencies`, writing each `port:` dependency the tree writes path-style as
+the tree does, `path:bin/pkg-config:pkgconfig` for pkgconfig, where the port
+evaluates the same, depending on the same ports. Keep that choice out of a
+change when you only want its functional edits.
+
+Tidy also declares what the branch's passed check found its builds link and
+not declare, `depends_lib-append port:libiconv`, written as the tree writes a
+dependency on that port, in its own commit `<port>: declare libiconv` after the
+branch's and before `--restyle`'s, with the check's evidence in its body. A
+finding on a subport of a Portfile with several ports or on a variant build,
+and libiconv where the port sets `rust.system_libiconv yes`, is left to you and
+said under the plan's notes.
 
 On a terminal, tidy lets you review the diff, rearrange groups, edit subjects,
 and apply or cancel. For one commit with a message you supply:
@@ -140,8 +151,10 @@ Check four things in its output:
    request if any. Where several remotes could be the destination, choose one
    with `--remote <remote-name>`.
 2. **Evidence:** what built, where, with what test policy, and anything still
-   missing or accepted. A local pass and MacPorts' later pull request CI are
-   separate observations.
+   missing or accepted, with the variant builds that answer the template's
+   variants item, from any check of the files. A local pass and MacPorts' later pull request CI are
+   separate observations. A build a shell entered before it finished isn't
+   evidence.
 3. **Review findings:** commit rules, what upstream changed, other pull
    requests, and concerns a passing build cannot settle. `!` marks what wants
    your look, a line that would hold an unattended submission says `held`,
@@ -151,7 +164,9 @@ Check four things in its output:
    check compiled none of libgit2-sys, libsqlite3-sys, which Cargo.lock pins
    for features or targets this build doesn't use`; before any check, the
    crates a default build on macOS can't reach are set apart, `pinned for
-   features or targets the port's build on macOS doesn't take`.
+   features or targets the port's build on macOS doesn't take`. Beside the
+   hold on a library linked and not declared, a `Notice` names a library
+   declared in `depends_lib` that nothing the build installed links.
 4. **Title and description:** what a reviewer will actually receive, including
    limitations. `-v` shows the full proposed description where the ordinary
    preview shortens it.
@@ -207,7 +222,18 @@ plan says so ("retitles #36310 to 'croc: update to 11.6.2'"). The branch
 keeps its name.
 
 `--tested-binaries` and `--tested-variants` state that you made the
-corresponding manual checks; do not infer them from an install alone. A passing
+corresponding manual checks; do not infer them from an install alone. They
+are kept with the branch, as `--note` is, so a later `submit`, `ship`, or
+`bump` of it says them without being told again; `ship --to commit` or
+`--to check` keeps them for the submit that follows. A statement is about
+the files you made it for, each port directory the branch changes: any change
+under one, a comment in the Portfile included, or a new port joining the
+branch, unticks it, and the plan says your statement was about an earlier
+state of the files and names the flag that says it again; on a terminal,
+submit asks again. A new commit message, a squash or a rebase that leaves those
+directories as they were, or a new title or note keeps it. The statement isn't
+lost: it stands again if the files return to what it was about.
+`--tested-binaries=false` or `--tested-variants=false` withdraws it. A passing
 variant build of a changed port answers the variants item from what was built:
 `check --variants each`, or chosen variants, in any finished check of the same
 files; the item's note names each build and its check, `(Dockhand built curl
@@ -286,6 +312,14 @@ dockhand decide license-changed -p jq \
   --because "The new license is acceptable and the Portfile declares it."
 ```
 
+A change that makes a port non-distributable holds as `not-distributable`, in
+the words of MacPorts' own checker, the one MacPorts' builders run: `"wasi-sdk"
+is not distributable because its license "llvm-exception" is not known to be
+distributable, so the builders keep no binary archive of it`. Answer it the
+same way, with `dockhand decide not-distributable -p wasi-sdk --because "…"`,
+or fix the license line it names. One that stays non-distributable, as on
+master, is a notice.
+
 Or record what must happen before proceeding with
 `--waiting "upstream's clarification"`. That waiting decision blocks ordinary
 submission until replaced. Decisions lapse when the port's own files change;
@@ -315,11 +349,16 @@ dockhand open -b jq-update
 ```
 
 Refresh reads current review and CI observations; open shows the pull request in
-the browser. Edit the same tracked branch, inspect the diff, tidy and check the
+the browser. A comment by someone other than you that is the conversation's
+latest word, after your last commit, is said as a reviewer waiting, `#36300
+@reneeotten commented`, and puts the branch under Needs attention, though GitHub
+counts no review for it. Edit the same tracked branch, inspect the diff, tidy and check the
 new work, and submit again. The existing pull request is updated. Where a
 reviewer requested changes, submit can ask to request their review again after
 pushing. `submit.rerequest_review` controls that behavior; see
-`dockhand usage configuration`.
+`dockhand usage configuration`. If the request fails after the push, the next
+`submit` makes it, even though it pushes nothing, and says it was left over from
+the last submit.
 
 While the pull request is open, status says when it may be merged under
 MacPorts' maintainer policy (the MacPorts Guide, section 7.4.1). The branch's
@@ -346,7 +385,7 @@ check or lookup, and it takes the newer of the two by their commits' dates;
 status never builds or fetches an index for this. Where the record's is the
 newer, or no index is cached, the port's line says so, as in `maintainers as
 of master, 2026-10-28`. A new port's maintainers come from its change record
-alone, `maintainers as the branch adds it`. Where neither has them, status
+alone, `maintainers declared by this new port`. Where neither has them, status
 says they're not read yet, and for your own branch, that
 `dockhand check --plan` reads them; an adopted pull request's Portfiles
 aren't evaluated for this. `status --json` gives the same facts under

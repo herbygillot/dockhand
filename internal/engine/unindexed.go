@@ -52,7 +52,7 @@ const (
 func brokenPortfileWords(portfile, name, branch, reason string, where brokenWhere) string {
 	switch where {
 	case brokenUnchanged:
-		return fmt.Sprintf("%s doesn't parse in %s's index, though the branch doesn't change it: portindex says %s. What the branch changes that the Portfile reads, as a PortGroup, is where to look", portfile, branch, reason)
+		return fmt.Sprintf("%s doesn't parse in %s's index, though the branch doesn't change it: portindex says %s. Check changes on the branch that this Portfile reads, such as PortGroups", portfile, branch, reason)
 	case brokenOnMaster:
 		return fmt.Sprintf("%s doesn't parse, so no port named %s is in master's index: portindex says %s. Master's own Portfile doesn't parse on this Mac's MacPorts", portfile, name, reason)
 	}

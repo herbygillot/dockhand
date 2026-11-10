@@ -67,6 +67,10 @@ write, keeping your --note.
 			}
 			defer e.Close()
 			request.TestedBinaries, request.TestedVariants = testedBinaries, testedVariants
+			// =false withdraws a kept statement, which leaving the flag out
+			// keeps (#153).
+			request.WithdrawBinaries = cmd.Flags().Changed("tested-binaries") && !testedBinaries
+			request.WithdrawVariants = cmd.Flags().Changed("tested-variants") && !testedVariants
 			// --note "" clears the note, which leaving --note out keeps.
 			if cmd.Flags().Changed("note") {
 				request.Note = &note
@@ -132,6 +136,9 @@ write, keeping your --note.
 				}
 				switch strings.ToLower(answer) {
 				case "p":
+					// The title and Markdown body are written as they are,
+					// code blocks and all (#93).
+					streams.Unwrapped()
 					fmt.Fprintf(streams.Out, "\n%s\n\n%s\n", plan.Title, plan.Body)
 				case "e":
 					edited, err := settings.EditText(ctx, settings.EditorCommand(s), plan.Body)
@@ -163,8 +170,8 @@ write, keeping your --note.
 	cmd.Flags().StringSliceVar(&request.Types, "type", nil, "the template's Type(s): bugfix, enhancement, security fix (default: enhancement for a branch that updates a port)")
 	cmd.Flags().StringVar(&request.Remote, "remote", "", "the Git remote of your fork, when several could be")
 	cmd.Flags().BoolVar(&request.SkipNotification, "skip-notification", false, "add [skip notification], so maintainers are not mentioned")
-	cmd.Flags().BoolVar(&testedBinaries, "tested-binaries", false, "state that you tested the basic functionality of all binary files")
-	cmd.Flags().BoolVar(&testedVariants, "tested-variants", false, "state that you checked the most important variants")
+	cmd.Flags().BoolVar(&testedBinaries, "tested-binaries", false, "state that you tested the basic functionality of all binary files, for these files; =false withdraws it")
+	cmd.Flags().BoolVar(&testedVariants, "tested-variants", false, "state that you checked the most important variants, for these files; =false withdraws it")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "submit without asking, when there is no terminal")
 	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
 	cmd.MarkFlagsMutuallyExclusive("draft", "no-check")
@@ -216,6 +223,9 @@ func writeReadyPreview(out io.Writer, plan engine.SubmitPlan, ready bool) {
 // writeDescription shows the pull request's description as the submission
 // would leave it, which a preview otherwise shows only in its JSON.
 func writeDescription(streams term.Streams, plan engine.SubmitPlan) {
+	// The description's lines are written as they are, code blocks and
+	// all (#93).
+	streams.Unwrapped()
 	out := streams.Out
 	fmt.Fprintln(out, "\nProposed pull request description:")
 	lines := strings.Split(strings.TrimRight(plan.Body, "\n"), "\n")
@@ -330,8 +340,18 @@ func followUp(ctx context.Context, e *engine.Engine, streams term.Streams, plan 
 	for _, login := range observed.Observed.ChangesRequestedBy {
 		result.PullRequest.ChangesRequestedBy = append(result.PullRequest.ChangesRequestedBy, view.ChangesRequestedJSON{Login: login})
 	}
-	if !submitted.Pushed || len(observed.Observed.ChangesRequestedBy) == 0 || rerequest == "never" {
+	if len(observed.Observed.ChangesRequestedBy) == 0 || rerequest == "never" {
 		return nil
+	}
+	// One the last submit's push left due, its request having failed, is
+	// asked now.
+	leftOver := ""
+	if !submitted.Pushed {
+		due, err := e.RerequestDue(ctx, plan.Branch)
+		if err != nil || !due {
+			return err
+		}
+		leftOver = " (left over from the last submit)"
 	}
 	who := "@" + strings.Join(observed.Observed.ChangesRequestedBy, ", @")
 	if rerequest != "always" {
@@ -350,7 +370,7 @@ func followUp(ctx context.Context, e *engine.Engine, streams term.Streams, plan 
 	for i, requested := range result.PullRequest.ChangesRequestedBy {
 		result.PullRequest.ChangesRequestedBy[i].Rerequested = slices.Contains(asked, requested.Login)
 	}
-	fmt.Fprintf(streams.Out, "Asked %s to review again.\n", who)
+	fmt.Fprintf(streams.Out, "Asked %s to review again%s.\n", who, leftOver)
 	return nil
 }
 

@@ -1065,14 +1065,15 @@ func TestALinkHoldStandsAfterANarrowerCheck(t *testing.T) {
 	first, found, err := e.EvidenceFor(t.Context(), branch.ID, tree)
 	require.NoError(t, err)
 	require.True(t, found)
-	require.NotEmpty(t, e.linkHolds(t.Context(), &first), "the full check finds the viewer's undeclared link")
+	firstHeld, _ := e.linkHolds(t.Context(), &first)
+	require.NotEmpty(t, firstHeld, "the full check finds the viewer's undeclared link")
 
 	checkedWith(t, e, branch, model.OutcomePassed, "", nil)
 	combined, found, err := e.EvidenceFor(t.Context(), branch.ID, tree)
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Empty(t, combined.Failed(), "the viewer's earlier result still stands")
-	held := e.linkHolds(t.Context(), &combined)
+	held, _ := e.linkHolds(t.Context(), &combined)
 	require.Len(t, held, 1, "a narrower check keeps the earlier result's hold")
 	require.Equal(t, "oniguruma", held[0].Subject)
 }
@@ -1303,4 +1304,119 @@ func TestSubmitRefusesADescriptionPastGitHubsLimit(t *testing.T) {
 	require.ErrorContains(t, err, "shorten it on GitHub, or submit --rewrite-description; nothing was pushed")
 	require.Empty(t, fake.ForkHead(branch.Name), "nothing was pushed")
 	require.Empty(t, fake.PRs)
+}
+
+// failingUpdate is a forge whose pull request updates fail while fail is
+// set.
+type failingUpdate struct {
+	*forgetest.GitHub
+	fail bool
+}
+
+func (g *failingUpdate) Update(ctx context.Context, in forge.PullRequestInput) (forge.PullRequestObservation, error) {
+	if g.fail {
+		return forge.PullRequestObservation{}, errors.New("GitHub refused the update")
+	}
+	return g.GitHub.Update(ctx, in)
+}
+
+// A push after review whose pull request update then failed still leaves
+// the reviewers' re-request due once a retry records it: the retry pushed
+// nothing, so the push went unsaid (#117; Codex's review of b2e7b616, its
+// probe).
+func TestAPushWhoseUpdateFailedStillAsksTheReviewersAgain(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	g := f.withFork(t, e)
+	wrapped := &failingUpdate{GitHub: g}
+	e.Forge = wrapped
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.NoError(t, err)
+	g.Status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, ChangesRequestedBy: []string{"reviewer"}, ReviewedAt: at.Add(time.Hour)}
+	e.options.Now = func() time.Time { return at.Add(2 * time.Hour) }
+	_, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# review addressed\n"})
+	testsupport.Git(t, branch.Worktree, "commit", "-qam", "jq: address review")
+	branch, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Title: "jq: review addressed"})
+	require.NoError(t, err)
+	wrapped.fail = true
+	partial, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.ErrorContains(t, err, "GitHub refused the update")
+	require.True(t, partial.Pushed)
+	wrapped.fail = false
+	again, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Title: "jq: review addressed"})
+	require.NoError(t, err)
+	complete, err := e.ApplySubmit(t.Context(), again, model.AnsweredAsked)
+	require.NoError(t, err)
+	require.False(t, complete.Pushed, "the fork had it")
+	branch, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	due, err := e.RerequestDue(t.Context(), branch)
+	require.NoError(t, err)
+	require.True(t, due)
+}
+
+// A tested statement is about the files it was made for: it stands while
+// every port directory the branch changes is the same, across a message
+// amended, and is unticked, said, once the Portfile changes or a port
+// joins; it stands again where the files return; =false withdraws it; and
+// one kept before trees were kept stands for nothing (#153; Codex's
+// probe: state it, edit the Portfile, submit, unticked).
+func TestATestedStatementStandsForItsFilesAlone(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan := func(request SubmitRequest) SubmitPlan {
+		t.Helper()
+		current, err := e.Branch(t.Context(), branch.ID)
+		require.NoError(t, err)
+		request.Branch, request.NoCheck = current, true
+		plan, err := e.PlanSubmit(t.Context(), request)
+		require.NoError(t, err)
+		return plan
+	}
+	stated := plan(SubmitRequest{TestedBinaries: true})
+	_, err := e.ApplySubmit(t.Context(), stated, model.AnsweredAsked)
+	require.NoError(t, err)
+	require.True(t, plan(SubmitRequest{}).Request.TestedBinaries, "kept for the same files")
+
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "--amend", "-m", "jq: update to 1.8.1, said again")
+	require.True(t, plan(SubmitRequest{}).Request.TestedBinaries, "a message amended leaves the files as they were")
+
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# a comment\n"})
+	testsupport.Git(t, branch.Worktree, "commit", "-qam", "jq: a comment")
+	edited := plan(SubmitRequest{})
+	require.False(t, edited.Request.TestedBinaries, "a change under the port's directory unticks it")
+	require.Equal(t, []string{"Your --tested-binaries statement was about an earlier state of the files, so it isn't ticked; --tested-binaries says it again"}, edited.TestedStale)
+
+	testsupport.Git(t, branch.Worktree, "revert", "--no-edit", "HEAD")
+	require.True(t, plan(SubmitRequest{}).Request.TestedBinaries, "back to the files it was about")
+
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq-extra/Portfile": "name jq-extra\nversion 1.0\n"})
+	testsupport.Git(t, branch.Worktree, "add", "--sparse", "textproc/jq-extra/Portfile")
+	testsupport.Git(t, branch.Worktree, "commit", "-qm", "jq-extra: new port")
+	require.False(t, plan(SubmitRequest{}).Request.TestedBinaries, "a port joining the branch unticks it")
+
+	withdrawn := plan(SubmitRequest{WithdrawBinaries: true})
+	require.False(t, withdrawn.Request.TestedBinaries)
+	require.Empty(t, withdrawn.TestedStale, "withdrawn, there's nothing to say again")
+	_, err = e.ApplySubmit(t.Context(), withdrawn, model.AnsweredAsked)
+	require.NoError(t, err)
+	current, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.Nil(t, current.TestedBinaries, "=false withdraws it")
+
+	// One kept before #153, with no trees, stands for nothing.
+	current.TestedVariants = &model.TestedStatement{}
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(current) }))
+	require.False(t, plan(SubmitRequest{}).Request.TestedVariants)
 }

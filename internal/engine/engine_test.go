@@ -413,7 +413,7 @@ func TestHereIsTheWorktreeACommandRunsIn(t *testing.T) {
 func TestAMigrationRefusedSaysTheWayOn(t *testing.T) {
 	t.Parallel()
 	err := error(&LiveUnderMigrationError{&store.LiveUnderMigrationError{Processes: 1, Builds: []string{"v0.4.0"}, From: 31, To: 32}})
-	require.EqualError(t, err, "1 dockhand process is working on schema 31 (v0.4.0): migrating the database to schema 32 would leave them unable to record what they do; wait for them to finish, or stop them, and run this again")
+	require.EqualError(t, err, "1 dockhand process is using schema 31 (v0.4.0); migrating this database to schema 32 would prevent them from recording further work; wait for them to finish, or stop them, and run this again")
 	refused := new(store.LiveUnderMigrationError)
 	require.ErrorAs(t, err, &refused, "the store's, under it")
 
@@ -424,7 +424,7 @@ func TestAMigrationRefusedSaysTheWayOn(t *testing.T) {
 		{Kind: "foreground", PID: 4712, Started: started},
 	}
 	err = &LiveUnderMigrationError{&store.LiveUnderMigrationError{Processes: 2, Builds: []string{"v0.5.0"}, From: 39, To: 49, Live: live}}
-	require.EqualError(t, err, "2 dockhand processes are working on schema 39 (v0.5.0): migrating the database to schema 49 would leave them unable to record what they do; wait for them to finish, or stop them, and run this again\n"+
+	require.EqualError(t, err, "2 dockhand processes are using schema 39 (v0.5.0); migrating this database to schema 49 would prevent them from recording further work; wait for them to finish, or stop them, and run this again\n"+
 		"  serve, pid 4711, v0.5.0, since 2026-10-28 10:02, leads the queue and runs check-12 and check-13\n"+
 		"  foreground, pid 4712, an unknown build, since 2026-10-28 10:02")
 	err = &ReleaseUnderMigrationError{&store.ReleaseUnderMigrationError{Release: "v0.5.0", Copy: "/db.schema-39", From: 39, To: 49, Live: live[:1]}}

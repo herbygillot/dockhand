@@ -29,16 +29,29 @@ import (
 
 func WaitCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
+	var bound string
 	cmd := &cobra.Command{
 		Use:   "wait [check]",
 		Short: "Wait for a check and show its result",
-		Long: `Follows a check, such as check-42, until it ends, and reports it; in a
-branch's worktree, with no check named, the branch's latest; -b, -p, or
---pr names a branch, for its latest check from anywhere. With serve
-running, this only observes, and Ctrl-C stops following; with no serve,
-the check runs here, as a foreground check would.`,
+		Long: `Follows a check, such as check-42, until it ends and reports the result.
+With no check named in a branch's worktree, follows that branch's latest
+check. Use -b, -p, or --pr to select a branch from another directory.
+
+When serve is running, wait observes its progress; Ctrl-C stops following.
+With no serve, wait runs the check here, as a foreground check would.
+
+--for 9m follows for at most nine minutes, then exits 4 if the check is
+still queued or running, reporting its progress. The check continues under
+serve or a background worker after wait exits.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var limit checkrun.Bound
+			if bound != "" {
+				var err error
+				if limit, err = checkrun.ParseBound(bound); err != nil {
+					return err
+				}
+			}
 			ctx := cmd.Context()
 			e, err := s.Open(ctx)
 			if err != nil {
@@ -49,9 +62,18 @@ the check runs here, as a foreground check would.`,
 			if err != nil {
 				return err
 			}
+			if bound != "" {
+				if streams.JSON() {
+					if result, err := checkrun.Result(ctx, e, run); err == nil {
+						streams.Emit(result)
+					}
+				}
+				return checkrun.WaitFor(ctx, e, run, streams, s.Places(), limit, s.Drain)
+			}
 			return checkrun.Wait(ctx, e, run, streams, s.Places())
 		},
 	}
+	cmd.Flags().StringVar(&bound, "for", "", "follow for at most this long, then exit 4 if the check is still queued or running; it continues")
 	where.Register(cmd, s, "follow the latest check of")
 	settings.SupportsJSON(cmd)
 	return cmd
@@ -62,9 +84,9 @@ func CancelCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cancel [check]",
 		Short: "Cancel a check and keep completed results",
-		Long: `Stops a check, such as check-42, keeping what it finished; in a branch's
-worktree, with no check named, the branch's latest; -b, -p, or --pr names a
-branch, for its latest check from anywhere.`,
+		Long: `Stops a check, such as check-42, and keeps its completed results.
+With no check named in a branch's worktree, stops that branch's latest
+check. Use -b, -p, or --pr to select a branch from another directory.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -116,23 +138,21 @@ func LogsCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "logs [check or provider run] [port]",
 		Short: "Show a check's log locations or a port's log",
-		Long: `Shows a check's provider runs, check-42's, and where each port's log is, or
-one provider run's alone, by the ID a pull request's Tested on names,
-tart_7y62p4sigena6xlr, or by its provider's own reference, such as a workflow
-run's URL. In a branch's worktree, with none named, it shows the branch's
-latest check; -b, -p, or --pr names a branch, for its latest check from
-anywhere.
+		Long: `Lists the provider runs and port log locations for a check such as
+check-42. To show one provider run, use its ID from the pull request's
+Tested on section, such as tart_7y62p4sigena6xlr, or the provider's own
+reference, such as a workflow run URL. With no check named in a branch's
+worktree, shows that branch's latest check. Use -b, -p, or --pr to select a
+branch from another directory.
 
-A port, named after the check or alone, prints that port's log: logs
-check-42 semgrep, or logs semgrep for the branch's latest check; logs -p
-semgrep prints it from the latest check of semgrep's branch. Where its
-provider recorded where each step of the build began, as Tart's does, it
-lists them with their lines first, and prints from the port's own build on,
-leaving out its dependencies' installs before it; --full prints the whole
-log. --phase prints one step's lines alone, logs check-42 jq --phase fetch,
-from where it began to where the next began. --follow prints a port's log
-as its build writes it, and the rest once the build ends, where its provider
-copies it as it grows, as Tart's does.`,
+Name a port to print its log: logs check-42 semgrep, or logs semgrep for the
+current branch's latest check. logs -p semgrep prints it from the latest
+check of semgrep's branch. When the provider records build-step boundaries,
+as Tart does, lists those steps and their line numbers, then prints the
+port's build log without the preceding dependency installs. --full prints
+the whole log. --phase prints one step, for example logs check-42 jq
+--phase fetch. --follow streams the port's log during the build when the
+provider supports it, then prints any remaining output when the build ends.`,
 		Args: cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// A log is read as it is (term.Streams.Unwrapped).
@@ -212,7 +232,7 @@ copies it as it grows, as Tart's does.`,
 				if port == "" {
 					return errors.New("--follow follows one port's log: name it, as dockhand logs check-42 jq --follow")
 				}
-				return followPortLog(ctx, e, streams, run, port, s.Host.Timings.FollowPoll)
+				return followPortLog(ctx, e, streams, run, only, port, s.Host.Timings.FollowPoll)
 			}
 			logs, err := e.Logs(ctx, run.ID)
 			if err != nil {
@@ -297,7 +317,7 @@ copies it as it grows, as Tart's does.`,
 // target said it recorded no log until the target ended (the gnome-voice
 // session's notes, 2026-10-20). A check on GitHub Actions, whose log
 // comes back only with its run, says so, with the run's page.
-func followPortLog(ctx context.Context, e *engine.Engine, streams term.Streams, run model.Run, port string, poll time.Duration) error {
+func followPortLog(ctx context.Context, e *engine.Engine, streams term.Streams, run model.Run, only model.ExecutionID, port string, poll time.Duration) error {
 	out := streams.Out
 	var printed int
 	rest := func(data []byte) {
@@ -311,6 +331,12 @@ func followPortLog(ctx context.Context, e *engine.Engine, streams term.Streams, 
 		logs, err := e.Logs(ctx, run.ID)
 		if err != nil {
 			return err
+		}
+		// The execution named is the one followed, as an ordinary read
+		// takes it: --follow printed another release's log (Codex's
+		// workflow review of 1caa6c3d, finding 5).
+		if only != "" {
+			logs.Executions = slices.DeleteFunc(logs.Executions, func(execution engine.ExecutionLogs) bool { return execution.Execution.ID != only })
 		}
 		if chosen, _, ok := logs.ForPort(port); ok {
 			data, err := buildlog.ReadFile(chosen.Result.Log)
@@ -326,7 +352,7 @@ func followPortLog(ctx context.Context, e *engine.Engine, streams term.Streams, 
 		if stoppedRun(ctx, e, logs.Run) {
 			return fmt.Errorf("%s stopped before %s's build ended; dockhand wait %s resumes it", logs.Run.Name(), port, logs.Run.Name())
 		}
-		path, err := e.LiveLog(ctx, run.ID, port)
+		path, err := e.LiveLog(ctx, run.ID, port, only)
 		if err != nil {
 			return err
 		}

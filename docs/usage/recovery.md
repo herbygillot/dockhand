@@ -119,7 +119,9 @@ dockhand wait check-42
 ```
 
 Wait follows a check and, when no other process is driving it, can resume a
-stopped one where it left off. A running serve can also take it up. A repeated
+stopped one where it left off. With `--for`, wait never drives the check here:
+where nothing else runs it, it starts a background worker, as `check -d` does,
+and follows. A running serve can also take it up. A repeated
 `check` for the same files can follow the active check rather than start a
 duplicate; read the message naming the check it follows. A request for different
 files or a stopped check may instead refuse and tell you what is holding the
@@ -137,6 +139,12 @@ request. To stop without creating another:
 ```sh
 dockhand cancel check-42
 ```
+
+A GitHub check whose driver stopped leaves MacPorts' workflow running on your
+fork, for `wait` to pick up. Cancelling it first cancels that workflow run.
+Where GitHub can't be reached, the cancel stays requested and the check is not
+reported stopped: `check-42: cancellation is recorded, but github could not stop
+<run URL>: …; run dockhand cancel check-42 to try again`.
 
 Ctrl-C has two meanings. When the check runs in the foreground here, it stops
 that run and keeps completed results. When another serve process drives the
@@ -194,7 +202,7 @@ nothing is said. An earlier baseline of the branch answers a failure again while
 what it read still stands; where that changed, as after a rebase, the offer says
 so instead, `master's build of exiv2 reads libheif's directory, changed since
 check-490's baseline`, naming the PortGroup where one the build loaded changed,
-`the cmake 1.1 PortGroup, which gettext, built from source, loaded`.
+`the cmake 1.1 PortGroup loaded by gettext when it was built from source`.
 
 Read both outcomes and their phases. A baseline failure is an observation, not
 an automatic acceptance. If the same eligible failure is reproduced, direct
@@ -234,6 +242,15 @@ and not tried again: `the login Keychain is locked, as it is over SSH with
 nobody at the screen; unlock it with security unlock-keychain in the same
 shell, since unlocking it in another SSH session doesn't reach this one`.
 `dockhand setup` warns of it on its Tart line.
+
+A guest that never accepts SSH, with ssh saying `No route to host`, is most
+often Local Network privacy: macOS stops even `/usr/bin/ssh` from reaching the
+guest when the app you ran dockhand from may not use the local network. Turn
+it on for that app in System Settings › Privacy & Security › Local Network,
+then run the command again. The message names the app, and a wait whose
+address routes to Tart's bridge ends early rather than after the full timeout.
+A VPN or firewall that routes Tart's 192.168.64.0/24 network elsewhere does the
+same, which `route -n get <address>` shows.
 
 Once the external cause is resolved, `retry check-42` repeats that capture. If
 you changed the files or need another environment, use a new check with explicit
@@ -284,7 +301,8 @@ row is not enough.
 
 For a stale file capture, inspect the branch and make the intended new check. A
 rebase changes the base and may require another check, but can reuse individual
-builds whose inputs still stand. `retry` repeats the old base and files, so it
+builds whose inputs still stand. `dockhand rebase --plan` shows a conflict
+before a rebase meets it. `retry` repeats the old base and files, so it
 is not the normal response to “these files have changed.”
 
 If ship says the branch moved while being checked, inspect the intervening work.
@@ -303,6 +321,14 @@ dockhand observed it. Refresh and inspect the pull request and remote history
 before deciding how to integrate that work. Repeating a forced push is not the
 recovery dockhand implements.
 
+A refusal that names whose a thing is, such as `dockhand doesn't push a branch
+in macports/macports-ports` or `dockhand doesn't delete a branch in
+someone/macports-ports based only on …`, is an ownership refusal. Each action
+requires permission based on ownership, a record that Dockhand created the
+object, an invitation to edit, or an explicit request, as that action permits.
+Dockhand does not retry this refusal automatically. Make the change yourself
+where you have permission, or ask the pull request's author.
+
 A saved tidy plan also becomes stale when its bound base, commits, or files
 change. Generate a new `tidy --plan` rather than applying the obsolete file. If
 a tidy or rebase itself was the operation you want to reverse, checkpoints and
@@ -318,7 +344,9 @@ dockhand check -b jq-update --head --on tart:26 --keep
 ```
 
 Use the check name it prints. After a guest finishes, its retained clone is
-stopped and available for inspection whether its targets passed or failed:
+stopped and available for inspection whether its targets passed or failed. A
+failed check keeps its clone without `--keep` (`[providers.tart] keep_failed`,
+on by default), and its report names the shell that opens it:
 
 ```sh
 dockhand shell check-42 -- otool -L /opt/local/bin/jq
@@ -329,6 +357,13 @@ The command form works without an interactive terminal; the second form opens a
 shell when a terminal is available. The shell starts in the selected port's work
 directory, or its staged directory if the build directory is gone. For several
 retained releases add `--on tahoe`; for several ports add `--port jq`.
+
+While a Tart check is still running, `dockhand shell check-42` enters its VM
+instead, which the check goes on using; it says first what that leaves as no
+evidence. A target the check had built before the shell opened stands; the one
+building, and every one after it, reads `entered by a shell at 10:02 before its
+build finished`, and submit asks for a new check of it. `--test` is refused
+there.
 
 For a test-phase experiment after editing the branch's current test code:
 

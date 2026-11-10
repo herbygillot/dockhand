@@ -270,7 +270,7 @@ func Compare(older, newer project.Reading, versions Versions, named, sets func(o
 	}{{"old", older}, {"new", newer}} {
 		if side.reading.Layout == project.Ambiguous {
 			lost = append(lost, Change{Kind: "unread", How: "ambiguous", Side: side.version,
-				Message: fmt.Sprintf("upstream's %s archive holds %s and no file beside them, so which is the project wasn't found, and it wasn't compared", side.version, strings.Join(side.reading.Tops, ", "))})
+				Message: fmt.Sprintf("upstream's %s archive has multiple top-level directories (%s); the project root couldn't be identified, so it wasn't compared", side.version, strings.Join(side.reading.Tops, ", "))})
 		}
 	}
 	if len(lost) > 0 {
@@ -298,7 +298,7 @@ func Compare(older, newer project.Reading, versions Versions, named, sets func(o
 		}
 		if old.Truncated || now.Truncated {
 			changes = append(changes, Change{Kind: "unread", How: "truncated", Path: name,
-				Message: fmt.Sprintf("upstream's %s is larger than the %d KiB the comparison reads, so it wasn't compared", name, project.FileLimit>>10)})
+				Message: fmt.Sprintf("upstream's %s exceeds the comparison's %d KiB per-file limit, so it wasn't compared", name, project.FileLimit>>10)})
 			continue
 		}
 		// A CMakeLists.txt is read with the files it include()s, as one
@@ -399,8 +399,8 @@ func Compare(older, newer project.Reading, versions Versions, named, sets func(o
 }
 
 // hostPaths are the source files of the new version whose string literals
-// name a Homebrew prefix's libraries the old version's source names
-// nowhere, a notice each, holding nothing: hashcat 8.0's src/ext_zlib.c
+// name a Homebrew prefix's paths the old version's source names nowhere, a
+// notice each, holding nothing, said as libraries where each is one: hashcat 8.0's src/ext_zlib.c
 // and four more dlopen "/opt/homebrew/lib/libz.1.dylib" and
 // "/usr/local/lib/libz.1.dylib", and a MacPorts hashcat would lose
 // compression and crypto at run time, where its check passed and its links
@@ -429,10 +429,26 @@ func hostPaths(older, newer project.Reading) []Change {
 		if len(added) > 2 {
 			words = strings.Join(added[:len(added)-1], ", ") + ", and " + added[len(added)-1]
 		}
-		changes = append(changes, Change{Kind: "host-path", How: "adds", Path: name,
-			Message: fmt.Sprintf("upstream: %s adds %s, so it may look for libraries at run time only outside ${prefix}", name, words)})
+		// An executable's path is said as a path: atuin's
+		// /opt/homebrew/opt/atuin/bin/atuin read as a library.
+		var message string
+		switch {
+		case !slices.ContainsFunc(added, func(literal string) bool { return !libraryPath(literal) }):
+			message = fmt.Sprintf("upstream: %s adds %s, so it may look for libraries at run time only outside ${prefix}", name, words)
+		case len(added) == 1:
+			message = fmt.Sprintf("upstream: %s adds %s, a path outside ${prefix} it may use at run time", name, words)
+		default:
+			message = fmt.Sprintf("upstream: %s adds %s, paths outside ${prefix} it may use at run time", name, words)
+		}
+		changes = append(changes, Change{Kind: "host-path", How: "adds", Path: name, Message: message})
 	}
 	return changes
+}
+
+// libraryPath reports a path that's a library's: a .dylib, a .so, or one
+// in a lib/ directory.
+func libraryPath(literal string) bool {
+	return strings.HasSuffix(literal, ".dylib") || strings.HasSuffix(literal, ".so") || strings.Contains(literal, "/lib/")
 }
 
 // licenseWords say what happened to a license file, by what its text is
@@ -459,29 +475,29 @@ func licenseWords(change Change, old, now []byte) string {
 	case was.Known() && is.Known() && !was.Same(is):
 		return fmt.Sprintf("was %s, now %s, by its text", was, is)
 	case was.Known() && is.Known() && drops:
-		return fmt.Sprintf("is still %s by its text, and only drops text beside it, %s", is, dropped)
+		return fmt.Sprintf("is still %s by its text, with only other text removed: %s", is, dropped)
 	case was.Known() && is.Known():
 		if said, ok := linesAdded(old, now); ok {
 			return fmt.Sprintf("is still %s by its text, with %s", is, said)
 		}
-		return fmt.Sprintf("is still %s by its text, and changed beside it", is)
+		return fmt.Sprintf("is still %s by its text, with other text changed", is)
 	case was.Known() && was.Same(is):
 		// The licenses are the ones it had, and less of the text is theirs:
 		// libxkbcommon 1.13.2 added Anton Zinoviev's terms for its test
 		// data, and its hold said no license was known (prioritization's
 		// ruling, 2026-10-19).
 		if added := addedTerms(old, is); added != "" {
-			return fmt.Sprintf("is still %s by what its text matches, and adds terms no license that's known has: %q", is, added)
+			return fmt.Sprintf("still matches %s, but adds terms that do not match a recognized license: %q", is, added)
 		}
 		// Lines added alone are said by their count and the first, where
 		// "they cover less of it, 73% of its words" said nothing of what
 		// changed (field testing's outdated-ports session).
 		if said, ok := linesAdded(old, now); ok {
-			return fmt.Sprintf("is still %s by what its text matches, with %s", is, said)
+			return fmt.Sprintf("still matches %s, with %s", is, said)
 		}
-		return fmt.Sprintf("is still %s by what its text matches, and they cover less of it, %.0f%% of its words", is, is.Percent)
+		return fmt.Sprintf("still matches %s in parts, covering %.0f%% of its words", is, is.Percent)
 	case was.Known():
-		return fmt.Sprintf("was %s by its text, and now reads as no license that's known", was)
+		return fmt.Sprintf("was %s by its text; the new text could not be classified as a known license", was)
 	case is.Known():
 		return "changed, and now reads as " + is.String()
 	case drops:
@@ -631,9 +647,9 @@ func licenseMove(changes []Change, before, after map[string]project.File) []Chan
 	message += ", and none of it is new"
 	switch {
 	case went == 1:
-		message += "; a line went beside it"
+		message += "; one other line was removed"
 	case went > 1:
-		message += fmt.Sprintf("; %d lines went beside it", went)
+		message += fmt.Sprintf("; %d other lines were removed", went)
 	}
 	moved := Change{Kind: "license", How: "moved", Path: added[0], Message: message}
 	var folded []Change
@@ -941,7 +957,7 @@ func cargoBinaries(old, now project.Reading, cargo project.CargoFeatures) []Chan
 		how = "new binaries"
 	}
 	return []Change{{Kind: "build", How: how, Path: "Cargo.toml",
-		Message: "upstream's Cargo packages and binaries change: " + strings.Join(said, "; ")}}
+		Message: "upstream's Cargo programs changed: " + strings.Join(said, "; ")}}
 }
 
 // pythonBackend is a Python project's PEP 517 backend moving, which the
@@ -1084,7 +1100,7 @@ func nativeLinks(name string, old project.File, hadOld bool, now project.File, h
 		return nil
 	}
 	unread := func(version string, err error) []Change {
-		return []Change{{Kind: "unread", How: "unreadable", Side: version, Path: name, Message: fmt.Sprintf("upstream's Cargo.lock couldn't be read in the %s version, so the crates new to it that link a native library weren't looked for: %v", version, err)}}
+		return []Change{{Kind: "unread", How: "unreadable", Side: version, Path: name, Message: fmt.Sprintf("upstream's Cargo.lock couldn't be read in the %s version, so new crates that link native libraries couldn't be identified: %v", version, err)}}
 	}
 	packages, err := project.ReadCargoLock(now.Data)
 	if err != nil {

@@ -101,7 +101,11 @@ func (c Collector) Revision(ctx context.Context, transition macports.PortTransit
 		}
 		defer os.RemoveAll(scratchDirectory)
 		var fetched map[string]string
-		input.Pairs, input.Unpaired, fetched, problem, kind = c.readPlans(ctx, infos, plans, hadBase, scratchDirectory)
+		var binaries []string
+		input.Pairs, input.Unpaired, fetched, binaries, problem, kind = c.readPlans(ctx, infos, plans, hadBase, scratchDirectory)
+		for _, binary := range binaries {
+			coverage = append(coverage, model.Coverage{Path: directory, Relevance: "unknown", Treatment: "set-apart", Policy: PolicyNotCompared, Reason: name + " ships " + binary + ", which is a binary package, so it wasn't compared"})
+		}
 		// A port that fetches a binary, as 1password-cli's installer
 		// package, has no source to compare, which is said and holds
 		// nothing, as for a port that fetches none (field testing's batch
@@ -137,6 +141,18 @@ func (c Collector) collect(ctx context.Context, input assess.Input, trees [2]mod
 	input.Portfile = portfile
 	if observe && len(input.Pairs) > 0 {
 		input.Observed = c.observe(ctx, input, trees)
+	}
+	// MacPorts' checker on the candidate, and on the base only where the
+	// candidate isn't distributable, which says whether the change made it
+	// so.
+	if c.Judge != nil && input.Port.Name != "" {
+		// Each side at its own tree: the candidate was judged with the
+		// base's dependencies (#72).
+		distribution := &assess.Distribution{Head: c.Judge.Distributable(ctx, trees[1], input.Port, portfile)}
+		if distribution.Head.Known && !distribution.Head.OK && !input.New && input.Base.Name != "" {
+			distribution.Base = c.Judge.Distributable(ctx, trees[0], input.Base, nil)
+		}
+		input.Distributable = distribution
 	}
 	return assess.Assess(input)
 }
@@ -391,7 +407,11 @@ func (c Collector) readDistfile(ctx context.Context, info macports.PortInfo, nam
 // the rest are fetched as the Portfile's checksums declare them, and
 // kept, in directory, the caller's, which the revision's fetched are
 // returned by name from. What couldn't be fetched or read is the problem.
-func (c Collector) readPlans(ctx context.Context, infos [2]macports.PortInfo, plans [2][]macports.Distfile, hadBase bool, directory string) ([]assess.Pair, []macports.SourceMatch, map[string]string, string, refusal.Kind) {
+// A binary package is set apart, named in binaries, and the rest are
+// compared: one beside the source took the whole set as binary, and a
+// change in the source went unassessed (#119). Where every archive is
+// one, it's the problem, binaryPackage's.
+func (c Collector) readPlans(ctx context.Context, infos [2]macports.PortInfo, plans [2][]macports.Distfile, hadBase bool, directory string) (pairs []assess.Pair, unpaired []macports.SourceMatch, fetchedNow map[string]string, binaries []string, problem string, kind refusal.Kind) {
 	type side struct {
 		info     macports.PortInfo
 		plan     []macports.Distfile
@@ -435,7 +455,7 @@ func (c Collector) readPlans(ctx context.Context, infos [2]macports.PortInfo, pl
 	}
 	// The revision's archives fetched, by name, which the patch check
 	// reads too.
-	fetchedNow := map[string]string{}
+	fetchedNow = map[string]string{}
 	cache := c.Readings
 	for i, s := range sides {
 		var missing []macports.Distfile
@@ -454,7 +474,7 @@ func (c Collector) readPlans(ctx context.Context, infos [2]macports.PortInfo, pl
 		}
 		into, err := os.MkdirTemp(directory, "")
 		if err != nil {
-			return nil, nil, nil, err.Error(), ""
+			return nil, nil, nil, nil, err.Error(), ""
 		}
 		fetched, err := treequery.FetchPlanned(ctx, distfetch.Client{Mirror: c.mirror()}.Store(into), s.info, missing)
 		if err != nil {
@@ -462,15 +482,18 @@ func (c Collector) readPlans(ctx context.Context, infos [2]macports.PortInfo, pl
 			if i == 0 {
 				which = "the base's"
 			}
-			return nil, nil, nil, fmt.Sprintf("%s archives couldn't be fetched: %v", which, err), refusal.KindOf(err)
+			return nil, nil, nil, nil, fmt.Sprintf("%s archives couldn't be fetched: %v", which, err), refusal.KindOf(err)
 		}
 		for _, archive := range fetched {
 			reading, err := c.readDistfile(ctx, s.info, archive.Name, archive.Path, archive.Sum.SHA256, s.spec)
 			if errors.Is(err, archivefile.ErrBinary) {
-				return nil, nil, nil, binaryPackage + archive.Name + ", which is a binary package, with no source to compare", ""
+				if !slices.Contains(binaries, archive.Name) {
+					binaries = append(binaries, archive.Name)
+				}
+				continue
 			}
 			if err != nil {
-				return nil, nil, nil, fmt.Sprintf("reading %s: %v", archive.Name, err), ""
+				return nil, nil, nil, nil, fmt.Sprintf("reading %s: %v", archive.Name, err), ""
 			}
 			s.readings[archive.Name] = reading
 			if i == 1 && s.info.Extracts(archive.Name) {
@@ -478,9 +501,10 @@ func (c Collector) readPlans(ctx context.Context, infos [2]macports.PortInfo, pl
 			}
 		}
 	}
-	var pairs []assess.Pair
-	var unpaired []macports.SourceMatch
 	for _, match := range matches {
+		if slices.Contains(binaries, match.Before) || slices.Contains(binaries, match.After) {
+			continue
+		}
 		switch match.Status {
 		case macports.SourceMatched:
 			pairs = append(pairs, assess.Pair{Archive: match.After, Before: sides[0].readings[match.Before], After: sides[1].readings[match.After], Match: match})
@@ -490,7 +514,10 @@ func (c Collector) readPlans(ctx context.Context, infos [2]macports.PortInfo, pl
 			unpaired = append(unpaired, match)
 		}
 	}
-	return pairs, unpaired, fetchedNow, "", ""
+	if len(binaries) > 0 && len(pairs) == 0 && len(unpaired) == 0 {
+		return nil, nil, nil, nil, binaryPackage + binaries[0] + ", which is a binary package, with no source to compare", ""
+	}
+	return pairs, unpaired, fetchedNow, binaries, "", ""
 }
 
 // PolicyNotCompared is the coverage policy of a port that fetches no upstream
@@ -561,7 +588,11 @@ func (c Collector) Update(ctx context.Context, result editprep.Result, versions 
 		}
 	}
 	if compare && problem == "" && len(result.Downloads) > 0 && !movedOffGit {
-		pairs, err := c.readPairs(ctx, result.Pairs, input.Base, input.Port)
+		pairs, binaries, err := c.readPairs(ctx, result.Pairs, input.Base, input.Port)
+		for _, binary := range binaries {
+			read = append(read, model.Coverage{Path: path.Dir(result.Target.Portfile), Relevance: "unknown", Treatment: "set-apart", Policy: PolicyNotCompared,
+				Reason: fmt.Sprintf("%s ships %s (%s), so it wasn't compared", result.Target.Name, binary.Kind, binary.File)})
+		}
 		switch {
 		case errors.Is(err, archivefile.ErrBinary):
 			// A binary package holds no source: said, holding nothing,
@@ -657,7 +688,10 @@ var toolchainOutcomes = map[editprep.GoToolchainOutcome]string{
 // by the archive's content, for an assessment made again. Each pair is the
 // editor's observed replacement, its entry in the port's source set as a
 // revision's assessment's are (macports.MatchSources).
-func (c Collector) readPairs(ctx context.Context, pairs []editprep.ArchivePair, base, port macports.PortInfo) ([]assess.Pair, error) {
+// A pair whose archive is a binary package is set apart, in binaries, and
+// the rest are read; where every pair is one, the binary is the error
+// (#119).
+func (c Collector) readPairs(ctx context.Context, pairs []editprep.ArchivePair, base, port macports.PortInfo) (read []assess.Pair, binaries []*archivefile.BinaryError, err error) {
 	var before, after []string
 	var observed [][2]string
 	for _, pair := range pairs {
@@ -665,10 +699,10 @@ func (c Collector) readPairs(ctx context.Context, pairs []editprep.ArchivePair, 
 		observed = append(observed, [2]string{pair.Previous.Name, pair.Next.Name})
 	}
 	matches := macports.MatchSources(before, after, observed)
-	var read []assess.Pair
+pairs:
 	for _, pair := range pairs {
 		if pair.Previous.Path == "" || pair.Next.Path == "" {
-			return nil, errors.New("the archives were not kept to compare")
+			return nil, nil, errors.New("the archives were not kept to compare")
 		}
 		ports := [2]macports.PortInfo{pair.Base, pair.Port}
 		for i, fallback := range []macports.PortInfo{base, port} {
@@ -684,10 +718,11 @@ func (c Collector) readPairs(ctx context.Context, pairs []editprep.ArchivePair, 
 			// package" (field testing at 5eb101a3, 1password-cli).
 			if binary := new(archivefile.BinaryError); errors.As(err, &binary) {
 				binary.File = archive.Name
-				return nil, binary
+				binaries = append(binaries, binary)
+				continue pairs
 			}
 			if err != nil {
-				return nil, fmt.Errorf("reading %s: %v", path.Base(archive.Path), err)
+				return nil, nil, fmt.Errorf("reading %s: %v", path.Base(archive.Path), err)
 			}
 			readings[i] = reading
 		}
@@ -697,7 +732,10 @@ func (c Collector) readPairs(ctx context.Context, pairs []editprep.ArchivePair, 
 		}
 		read = append(read, assess.Pair{Archive: pair.Next.Name, Before: readings[0], After: readings[1], Port: pair.Port, Match: match})
 	}
-	return read, nil
+	if len(read) == 0 && len(binaries) > 0 {
+		return nil, nil, binaries[0]
+	}
+	return read, binaries, nil
 }
 
 // observe observes what an assessment wants, until it wants nothing

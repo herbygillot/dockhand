@@ -168,7 +168,8 @@ func needs(dependsOn []model.TargetID, active []model.ActivePort, among []model.
 
 // AgainstOtherSources are the targets whose chosen earlier build (chosen)
 // was built against another source of a Git-fetched target than its plan
-// expects now (batch 20): the build had active an archive of a Git-fetched
+// expects now (batch 20), or against an archive fetched by a GitHub tag
+// that has moved since (builtAgainstMovedTag): the build had active an archive of a Git-fetched
 // target it needs that no build of the commit expected made
 // (builtAgainst), or it needs a target whose chosen build is in that case,
 // since it read that build in turn. What a build needs is what the plan
@@ -193,7 +194,7 @@ func AgainstOtherSources(targets []Target, chosen map[model.TargetID]Candidate) 
 				continue
 			}
 			for _, need := range needs(target.DependsOn, c.Inputs.Active, ids) {
-				if dependency := byID[need]; against[need] || dependency.Git != nil && !builtAgainst(c, dependency) {
+				if dependency := byID[need]; against[need] || dependency.Git != nil && !builtAgainst(c, dependency) || builtAgainstMovedTag(c, dependency) {
 					against[target.ID], taken = true, true
 					break
 				}
@@ -215,6 +216,38 @@ func builtAgainst(c Candidate, dependency Target) bool {
 			if earlier.Result.Archive == port.Archive && dependency.Git.BuiltBy(earlier.Inputs.Fetched) {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// builtAgainstMovedTag reports whether an earlier build had active an
+// archive of a target whose GitHub tag has moved since that archive's
+// build was planned (TagMoved), or, where the archive is no recorded
+// build's, whose tag any earlier build says moved: the dependency builds
+// again, from the commit the tag names now, so a build against the old
+// one stands for nothing now, as one against another commit of a
+// Git-fetched target doesn't (Codex's sixth review, #71).
+func builtAgainstMovedTag(c Candidate, dependency Target) bool {
+	if dependency.Tag == nil {
+		return false
+	}
+	for _, port := range c.Inputs.Active {
+		if !strings.EqualFold(port.Name, string(dependency.ID)) || port.Archive == "" {
+			continue
+		}
+		recorded := false
+		for _, earlier := range dependency.Earlier {
+			if earlier.Result.Archive != port.Archive {
+				continue
+			}
+			recorded = true
+			if dependency.TagMoved(earlier) {
+				return true
+			}
+		}
+		if !recorded && dependency.tagMovedAny() {
+			return true
 		}
 	}
 	return false

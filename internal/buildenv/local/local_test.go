@@ -238,7 +238,7 @@ func TestALocalCheckLeftUnfinishedIsPutBack(t *testing.T) {
 	l.Temp = filepath.Dir(left)
 	build = &fakeBuild{}
 	require.NoError(t, l.Execute(t.Context(), localJob(t, prefix), build))
-	require.Contains(t, build.progress, "putting "+prefix+" back as it was before an earlier check, which ended before it could")
+	require.Contains(t, build.progress, "restoring "+prefix+" after an earlier check ended without restoring it")
 	require.NoDirExists(t, left)
 	require.Equal(t, "  zlib @1.3.2_0 (active)\n", readRegistry(t, path))
 }
@@ -310,7 +310,7 @@ func TestUndoPutsBackAPrefixACheckLeftOrKept(t *testing.T) {
 	// A kept check's directory stays, said as kept; the next check there
 	// leaves it; undo puts the prefix back.
 	kept := leftBehind(t, l.Temp, prefix)
-	require.NoError(t, os.WriteFile(filepath.Join(kept, "results.json"), []byte(`{"protocol":1,"state":"finished","environment":{"snapshot":"7","restored":"kept"}}`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(kept, "results.json"), []byte(`{"protocol":2,"state":"finished","environment":{"snapshot":"7","restored":"kept"}}`), 0o644))
 	require.NoError(t, os.WriteFile(path, []byte("  zlib @1.3.2_0 (active)\n  libharbor @9.9_0 (active)\n"), 0o644))
 	changes, err := l.Changes(t.Context())
 	require.NoError(t, err)
@@ -331,7 +331,7 @@ func TestAPutBackByHandSaysWhatPortRestoreDoes(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "before.txt"), []byte("  zlib @1.3.2_0 (active)\n  gettext @0.22.5_0 (active)\n  jq @1.7.1_0 (inactive)\n"), 0o644))
-	require.Equal(t, "Where dockhand's put-back can't run, sudo port restore --snapshot-id 7 restores the ports requested before check-9 and what they need, and sudo port activate gettext @0.22.5_0 zlib @1.3.2_0 the rest that were active, from its record",
+	require.Equal(t, "If dockhand cannot restore the prefix, sudo port restore --snapshot-id 7 restores the ports requested before check-9 and their dependencies. To restore the other ports that were active, run sudo port activate gettext @0.22.5_0 zlib @1.3.2_0",
 		(&Local{}).byHand(dir, "check-9", "7"))
 }
 
@@ -351,7 +351,7 @@ func leftBehind(t *testing.T, temp, prefix string) string {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(left, "input.json"), input, 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(left, "guest.tcl"), guest.Program, 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(left, "results.json"), []byte(`{"protocol":1,"state":"running","environment":{"snapshot":"7"}}`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(left, "results.json"), []byte(`{"protocol":2,"state":"running","environment":{"snapshot":"7"}}`), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(left, "before.txt"), []byte("  zlib @1.3.2_0 (active)\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(left, "macports.conf"), nil, 0o644))
 	return left
@@ -477,4 +477,53 @@ func TestADirectoryThatCantBeRemovedIsSaid(t *testing.T) {
 	require.Len(t, build.progress, 1)
 	require.Contains(t, build.progress[0], dir+" couldn't be removed: ")
 	require.Contains(t, build.progress[0], "; sudo rm -rf "+dir+" removes it")
+}
+
+// A check whose last record can't be read keeps its directory, the
+// prefix's only record of what was active before, and says how to look:
+// a read error isn't evidence it changed nothing, and the directory was
+// removed as though it were (Codex's sixth review, #69, its probes).
+func TestAnUnreadableResultKeepsThePrefixsRecord(t *testing.T) {
+	t.Parallel()
+	directory := filepath.Join(t.TempDir(), "check-that-changed-prefix")
+	require.NoError(t, os.Mkdir(directory, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(directory, "before.txt"), []byte("  original @1_0 (active)\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(directory, "snapshot.log"), []byte("snapshot 7 created\n"), 0644))
+	follower := &guest.Follower{Root: directory}
+	require.NoError(t, os.WriteFile(filepath.Join(directory, "results.json"), []byte(`{"protocol":2,"state":"running","environment":{"snapshot":"7"},"targets":[]}`), 0644))
+	earlier, err := follower.Read(t.Context(), hostGuest{})
+	require.NoError(t, err)
+	require.Equal(t, "7", earlier.Environment["snapshot"])
+	// Simulate an unreadable final result after the guest took a snapshot
+	// and changed the active ports. A read error is not evidence that it
+	// never reached the snapshot or mutation.
+	require.NoError(t, os.WriteFile(filepath.Join(directory, "results.json"), []byte("{corrupt final result"), 0644))
+	_, err = follower.Read(t.Context(), hostGuest{})
+	require.Error(t, err)
+	build := &fakeBuild{}
+	(&Local{}).settle(t.Context(), follower, directory, "/fake-prefix", "check-7", nil, build)
+	require.DirExists(t, directory)
+	require.Contains(t, strings.Join(build.progress, "\n"), "could not read check-7's restoration record for /fake-prefix")
+}
+
+// The next check on a prefix an unreadable record left is refused, saying
+// how to look, and the record stays; one on another prefix goes on.
+func TestAnUnreadableRecordRefusesTheNextCheckThere(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	directory := filepath.Join(root, localDirectory+"damaged")
+	require.NoError(t, os.Mkdir(directory, 0755))
+	before := filepath.Join(directory, "before.txt")
+	require.NoError(t, os.WriteFile(before, []byte("  original @1_0 (active)\n"), 0644))
+	data, err := json.Marshal(owner{PID: 999999, Start: "darwin:1.0", Check: "check-7", Prefix: "/fake-prefix"})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(directory, "owner.json"), data, 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(directory, "results.json"), []byte("{corrupt final result"), 0644))
+	build := &fakeBuild{}
+	err = (&Local{Temp: root}).restoreLeft(t.Context(), "/fake-prefix", build)
+	_, retained := os.Stat(before)
+	require.NoError(t, retained)
+	require.ErrorContains(t, err, "could not read check-7's restoration record for /fake-prefix")
+	require.NoError(t, (&Local{Temp: root}).restoreLeft(t.Context(), "/other-prefix", build))
+	require.FileExists(t, before)
 }

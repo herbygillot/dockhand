@@ -9,12 +9,17 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/evidence"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // LinkFinding is evidence's (evidence.LinkFinding), for the command line
 // to word.
 type LinkFinding = evidence.LinkFinding
+
+// LinkThrough is the pkg-config an undeclared link came through
+// (evidence.LinkThrough).
+type LinkThrough = evidence.LinkThrough
 
 // LintFinding is evidence's (evidence.LintFinding), for the command line.
 type LintFinding = evidence.LintFinding
@@ -72,6 +77,24 @@ func (e *Engine) linkFindings(ctx context.Context, checked Evidence) ([]evidence
 		evaluated[key] = found
 		return found, found != nil
 	}
+	// What each target's own Portfile declares in depends_lib, by its
+	// text, read once a directory, which alone an unlinked finding names.
+	written := map[string][]evidence.WrittenLib{}
+	writtenIn := func(directory string) []evidence.WrittenLib {
+		if found, ok := written[directory]; ok {
+			return found
+		}
+		var found []evidence.WrittenLib
+		if state, text, err := e.Repo.File(ctx, string(revision.Source.Tree), directory+"/Portfile"); err == nil && state.Exists {
+			for _, dependency := range portfile.WrittenDependencies(text) {
+				if strings.HasPrefix(dependency.Option, "depends_lib") {
+					found = append(found, evidence.WrittenLib{Port: dependency.Port, Option: dependency.Option, Line: dependency.Line})
+				}
+			}
+		}
+		written[directory] = found
+		return found
+	}
 	var builds []evidence.LinkedBuild
 	for _, target := range checked.Targets {
 		for _, cell := range target.Outcomes {
@@ -109,7 +132,7 @@ func (e *Engine) linkFindings(ctx context.Context, checked Evidence) ([]evidence
 					}
 				}
 			}
-			builds = append(builds, evidence.LinkedBuild{Result: result, Environment: cell.Environment, Declared: declared, Own: own, Unread: unread})
+			builds = append(builds, evidence.LinkedBuild{Result: result, Environment: cell.Environment, Declared: declared, Own: own, Unread: unread, Written: writtenIn(target.Target.Directory)})
 		}
 	}
 	return evidence.UndeclaredLinks(builds), nil

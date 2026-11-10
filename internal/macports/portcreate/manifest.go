@@ -4,6 +4,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/project"
 )
 
@@ -93,4 +94,36 @@ func Binaries(files map[string][]byte, build Build) []string {
 		}
 	}
 	return nil
+}
+
+// LicenseFiles are the files a project's license is guessed from, where
+// neither its manifest nor its forge names one MacPorts can say, in order.
+var LicenseFiles = []string{"LICENSE", "LICENSE.txt", "LICENSE.md", "COPYING"}
+
+// GuessLicense is MacPorts' license line for the SPDX expression the first
+// line of a project's license file gives, its exception left out, which
+// MacPorts' license names have no way to say, as wasmtime's Apache-2.0
+// WITH LLVM-exception is Apache-2; with the file and the line, for the
+// Portfile's mark. False where no license file's first line is an
+// expression MacPorts can say: shader-slang's LICENSE began "Apache-2.0
+// WITH LLVM-exception", and create wrote license unknown, GitHub saying
+// NOASSERTION (field testing, #67).
+func GuessLicense(files map[string][]byte) (license, file, line string, ok bool) {
+	for _, name := range LicenseFiles {
+		data, found := files[name]
+		if !found {
+			continue
+		}
+		first, _, _ := strings.Cut(strings.TrimSpace(string(data)), "\n")
+		first = strings.TrimSpace(first)
+		expression := first
+		if before, _, cut := strings.Cut(expression, " WITH "); cut {
+			expression = before
+		}
+		if license, ok := macports.License(expression); ok {
+			return license, name, first, true
+		}
+		return "", "", "", false
+	}
+	return "", "", "", false
 }

@@ -62,7 +62,7 @@ func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environ
 			case buildenv.Tart:
 				return nil, fmt.Errorf("--on %s: Tart isn't installed here; MacPorts' tart port installs it", value)
 			case buildenv.Local:
-				return nil, fmt.Errorf("--on %s: the local provider builds in a MacPorts prefix on a Mac, and this isn't one", value)
+				return nil, fmt.Errorf("--on %s: the local provider requires macOS to build in a MacPorts prefix", value)
 			}
 			return nil, fmt.Errorf("--on %s: no provider %q is set up", value, name)
 		}

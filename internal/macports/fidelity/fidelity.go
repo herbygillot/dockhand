@@ -303,8 +303,11 @@ func Equivalent(expected, actual macports.Snapshot) error {
 	}
 	for name, old := range expected.Ports {
 		next, ok := actual.Ports[name]
-		if !ok || old.Revision != next.Revision {
-			return ErrMismatch.Because("candidate evaluation changed %s", name)
+		switch {
+		case !ok:
+			return ErrMismatch.Because("candidate evaluation lost %s", name)
+		case old.Revision != next.Revision:
+			return ErrMismatch.Because("candidate evaluation changed %s's revision from %d to %d", name, old.Revision, next.Revision)
 		}
 		if changes := Compare(name, ComparablePort(old, expected.Root), ComparablePort(next, actual.Root)); len(changes) > 0 {
 			return ErrMismatch.Because("candidate evaluation: %v", changes)
@@ -789,6 +792,40 @@ func InertBetween(then, now model.ChangeRecord, families func() (then, now macpo
 	return err == nil && inertFamilies(old, next, then.Directory, now.Directory)
 }
 
+// DeclaredBetween reports whether two evaluations of a port directory's
+// family, which families gives, then's first, find nothing moved between
+// them but dependencies, the inert options, and the checksum of every
+// option's value, as inertFamilies compares them: what a change that only
+// declares dependencies moves, which the lines found
+// (portfile.DeclaredChanges). It reads evaluations, not change records, so
+// a port the branch adds, as a new Rust port, is judged as one it
+// changes. Where families is nil or can't evaluate either, nothing is
+// confirmed.
+func DeclaredBetween(families func() (then, now macports.Snapshot, err error), directory string) bool {
+	if families == nil {
+		return false
+	}
+	then, now, err := families()
+	if err != nil || len(then.Ports) == 0 || len(then.Ports) != len(now.Ports) {
+		return false
+	}
+	for name, old := range then.Ports {
+		next, ok := now.Ports[name]
+		if !ok {
+			return false
+		}
+		for _, field := range Changes(atPortpath(old, then.Root, directory), atPortpath(next, now.Root, directory), then.Root, now.Root) {
+			switch {
+			case strings.HasPrefix(field.Field, unstableCode), inertField(field.Field), field.Field == "dependencies",
+				strings.HasPrefix(field.Field, "depends_"), strings.HasPrefix(field.Field, "code depends_"):
+			default:
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // inertField is a field of a change that moves nothing a build reads: an
 // inert option, or the checksum of every option's value, which those
 // options are among.
@@ -896,4 +933,51 @@ func ResourceChanges(changes []model.SubportChange, base, revision *macports.Sna
 		resources = append(resources, change)
 	}
 	return resources
+}
+
+// fileSpec is a dependency's word written path-style, as lib:, bin:, or
+// path:, with the port it names.
+var fileSpec = regexp.MustCompile(`\b(?:lib|bin|path):[^\s{}]+:([-._A-Za-z0-9]+)`)
+
+// DependenciesByPort is a snapshot whose dependencies read by phase and
+// port alone, path:bin/pkg-config:pkgconfig as port:pkgconfig, in each
+// port's dependency list and its depends_ options, for comparing a
+// Portfile written port-style with one written path-style (tidy
+// --restyle's path-style commit); nil for nil. The checksums of every
+// option's value together and of each variant's body are left out, since
+// a dependency's word moves them: the options are compared one by one,
+// and a variant body's other words aren't the rewrite's to change.
+func DependenciesByPort(snapshot *macports.Snapshot) *macports.Snapshot {
+	if snapshot == nil {
+		return nil
+	}
+	read := *snapshot
+	read.Ports = make(map[string]macports.PortInfo, len(snapshot.Ports))
+	for name, info := range snapshot.Ports {
+		dependencies := make([]macports.Dependency, len(info.Dependencies))
+		for i, dependency := range info.Dependencies {
+			dependency.Spec = "port:" + dependency.Port
+			dependencies[i] = dependency
+		}
+		info.Dependencies = dependencies
+		options := maps.Clone(info.Options)
+		for key, value := range options {
+			if strings.HasPrefix(key, "depends_") {
+				options[key] = fileSpec.ReplaceAllString(value, "port:$1")
+			}
+		}
+		if code, ok := options[codeOption]; ok {
+			fields := strings.Fields(code)
+			var kept []string
+			for i := 0; i+1 < len(fields); i += 2 {
+				if fields[i] != "options" && !strings.HasPrefix(fields[i], "variant-") {
+					kept = append(kept, fields[i], fields[i+1])
+				}
+			}
+			options[codeOption] = strings.Join(kept, " ")
+		}
+		info.Options = options
+		read.Ports[name] = info
+	}
+	return &read
 }

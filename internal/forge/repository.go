@@ -34,12 +34,12 @@ var ErrNotFound = errors.New("the requested object was not found")
 // one it hasn't approved, as GitHub's OAuth App access restrictions do.
 // Another app it has approved may do what this one can't.
 var ErrAppRestricted = errors.New("the organization restricts which apps may act for it")
-var ErrIncomplete = errors.New("the repository's evidence is incomplete")
+var ErrIncomplete = errors.New("the repository returned incomplete information")
 
 // ErrAccessUnknown is a role on a repository the forge wouldn't say, as
 // GitHub won't to a fine-grained token not granted the repository
 // (403 "Resource not accessible by personal access token").
-var ErrAccessUnknown = errors.New("your access to the repository isn't readable with this login")
+var ErrAccessUnknown = errors.New("your repository permissions could not be determined with this login")
 
 type Tag struct{ Name, Commit string }
 

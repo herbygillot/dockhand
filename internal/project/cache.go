@@ -22,7 +22,11 @@ import (
 // Makefile.am's libtool version (LibraryVersions). 7: Cargo's
 // src/main.rs files (Programs). 8: the build files of the directories
 // below the root a port's build reads them from (Spec.Directories).
-const ReaderVersion = 8
+// 9: the Go packages' files a port's -X arguments name (Spec.GoPackages),
+// which 8's readings were kept without (Codex's sixth review, #74). 10:
+// those files kept apart from the build files (GoFiles). A change to what
+// read.go reads, or how, raises it.
+const ReaderVersion = 10
 
 // Cache keeps readings on disk by what they read: an archive's content, by
 // its sha256, and where in it the project is, with the reader's version
@@ -45,7 +49,10 @@ func (c Cache) file(digest string, spec Spec) (string, bool) {
 	if c.Directory == "" || !sha256Hex.MatchString(digest) {
 		return "", false
 	}
-	key := sha256.Sum256(fmt.Appendf(nil, "%d\x00%s\x00%s\x00%s", ReaderVersion, digest, spec.subdirectory(), strings.Join(spec.directories(""), "\x00")))
+	// Every field of the spec says what's read, so each is in the key:
+	// GoPackages wasn't, and a reading kept without a package's files
+	// stood for one that asked for them.
+	key := sha256.Sum256(fmt.Appendf(nil, "%d\x00%s\x00%s\x00%s\x00\x01%s", ReaderVersion, digest, spec.subdirectory(), strings.Join(spec.directories(""), "\x00"), strings.Join(spec.GoPackages, "\x00")))
 	return filepath.Join(c.Directory, hex.EncodeToString(key[:])+".json"), true
 }
 

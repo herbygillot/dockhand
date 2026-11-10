@@ -177,7 +177,7 @@ func (s *Session) Call(ctx context.Context, op string, args ...string) (string, 
 	}
 	select {
 	case <-bound:
-		return "", s.breakSession(fmt.Errorf("%w: %s went %v unanswered", ErrNoAnswer, op, s.callBound))
+		return "", s.breakSession(fmt.Errorf("%w: %s did not respond within %v", ErrNoAnswer, op, s.callBound))
 	case res := <-ch:
 		if res.err != nil {
 			var ce CallError

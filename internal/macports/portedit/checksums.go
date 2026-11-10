@@ -173,6 +173,11 @@ func (s *Service) declareSubportChecksums(ctx context.Context, request Request, 
 	placeholders, ok := portfile.DeclareSubportChecksums(input.data, name, undeclared.Names)
 	if input.target.Subport == "" {
 		placeholders, ok = portfile.DeclareChecksums(input.data, undeclared.Names)
+		// One that declares one archive's, unnamed, where it fetches
+		// several now, has it named for each (#66).
+		if !ok {
+			placeholders, ok = portfile.NameChecksums(input.data, undeclared.Names)
+		}
 	}
 	if !ok {
 		return result, undeclared

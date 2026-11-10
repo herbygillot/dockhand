@@ -138,7 +138,7 @@ func TestOutdatedThenUpdateMine(t *testing.T) {
 	reader := cmdtest.WithOutdated(t)
 
 	_, _, err := cmdtest.Dockhand(t, "outdated", "--mine")
-	require.ErrorContains(t, err, `--mine needs to know who you are, as your ports' maintainers lines name you: set maintainer to you as a Portfile's maintainers line writes you, such as "@you" for your GitHub login, or "{example.org:you @you}" with your email too, in `+filepath.Join(w.Home, ".dockhand", "config.toml"))
+	require.ErrorContains(t, err, `--mine needs to know who you are, as your ports' maintainers lines name you: set maintainer in `+filepath.Join(w.Home, ".dockhand", "config.toml")+` to your identity as written in Portfiles, such as "@you" for your GitHub login, or "{example.org:you @you}" to include your email`)
 	cmdtest.Setenv(t, "DOCKHAND_CONFIG", filepath.Join(w.Home, "elsewhere.toml"))
 	_, _, err = cmdtest.Dockhand(t, "outdated", "--mine")
 	require.ErrorContains(t, err, `in `+filepath.Join(w.Home, "elsewhere.toml"), "the file read, not the default (the dogfood run with 251a1264)")
@@ -313,7 +313,7 @@ func TestALargeLookSaysItsCost(t *testing.T) {
 	require.Empty(t, said)
 	l.progress(1, 835)
 	l.progress(2, 835)
-	require.Equal(t, []string{"Looking up 835 ports asks GitHub about 2,200 times, of the 5,000 an hour a login has."}, said)
+	require.Equal(t, []string{"Looking up 835 ports requires about 2,200 GitHub API requests from this login's hourly allowance of 5,000."}, said)
 }
 
 // Off a terminal, a look says its count once it has run a while, and
@@ -347,7 +347,7 @@ func TestALookPastTheAllowanceAsksFirst(t *testing.T) {
 	script := term.Streams{In: strings.NewReader(""), Out: &bytes.Buffer{}, Err: &bytes.Buffer{}}
 	require.NoError(t, allowLook(left(5000), script, false)(t.Context(), 100), "within it")
 	err := allowLook(left(1000), script, false)(t.Context(), 2133)
-	require.EqualError(t, err, "Looking up 2,133 ports asks GitHub about 5,500 times, and the login has 1,000 of its 5,000 left this hour, until 15:04, which other sessions sharing it spend too; --over-allowance looks anyway")
+	require.EqualError(t, err, "Looking up 2,133 ports requires about 5,500 GitHub API requests. This login has 1,000 of its 5,000 requests left until 15:04; other sessions using the login share this allowance. Pass --over-allowance to proceed")
 	require.NoError(t, allowLook(left(1000), script, true)(t.Context(), 2133), "--over-allowance")
 	require.NoError(t, allowLook(func(context.Context) (github.Allowance, error) { return github.Allowance{}, errors.New("offline") }, script, false)(t.Context(), 2133), "GitHub can't be asked")
 

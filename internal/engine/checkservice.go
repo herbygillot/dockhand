@@ -132,6 +132,12 @@ func (e *Engine) LeadOf(ctx context.Context, session *coord.Session, id model.Ru
 	return e.checks().LeadOf(ctx, session, id)
 }
 
+// Observe follows a run until it ends, driving nothing
+// (checks.Service.Observe).
+func (e *Engine) Observe(ctx context.Context, id model.RunID) (model.Run, error) {
+	return e.checks().Observe(ctx, id)
+}
+
 // SeeThrough sees a queued run to its end (checks.Service.SeeThrough).
 func (e *Engine) SeeThrough(ctx context.Context, session *coord.Session, id model.RunID, before func(checks.Lead)) (model.Run, *model.Session, error) {
 	return e.checks().SeeThrough(ctx, session, id, before)

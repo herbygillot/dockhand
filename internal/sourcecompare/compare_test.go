@@ -251,7 +251,7 @@ func TestALicenseChangeSaysWhatItsTextIs(t *testing.T) {
 	require.Equal(t, []string{"MIT"}, relicensed[0].Licenses[0].IDs)
 	require.Equal(t, []string{"ISC"}, relicensed[0].Licenses[1].IDs)
 
-	require.Equal(t, []string{"upstream's LICENSE is still MIT by its text, and changed beside it"},
+	require.Equal(t, []string{"upstream's LICENSE is still MIT by its text, with other text changed"},
 		messages(compare(map[string]string{"LICENSE": mit}, map[string]string{"LICENSE": strings.Replace(mit, "Ann Author", "Bea Builder", 1)})))
 	clause := "The above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n"
 	require.Equal(t, []string{"upstream's LICENSE was MIT, now MIT-0, by its text"},
@@ -277,7 +277,7 @@ func TestALicenseThatAddsTermsQuotesThem(t *testing.T) {
 		testsupport.Tarball(t, "libxkbcommon-1.13.2", map[string]string{"LICENSE": read("1.13.2")}), Versions{})
 	require.NoError(t, err)
 	require.Len(t, changes, 1)
-	require.Equal(t, `upstream's LICENSE is still MIT, HPND and HPND-sell-variant by what its text matches, and adds terms no license that's known has: "This software may be used, modified, copied, distributed, and sold"`,
+	require.Equal(t, `upstream's LICENSE still matches MIT, HPND and HPND-sell-variant, but adds terms that do not match a recognized license: "This software may be used, modified, copied, distributed, and sold"`,
 		changes[0].Message)
 }
 
@@ -441,9 +441,9 @@ func TestAChangesPlaceIsTheBlockTheDocumentReads(t *testing.T) {
 	}
 	changes = compare(branches("old"), branches("new"))
 	require.Len(t, changes, 1)
-	require.Equal(t, "upstream's CMakeLists.txt changed, though no option or find_package did; lines change under if(APPLE)", changes[0].Message)
+	require.Equal(t, "upstream's CMakeLists.txt changed, but no option or find_package requirement changed; lines change under if(APPLE)", changes[0].Message)
 	elsewise := strings.Replace(branches("old"), "c()", "c(new)", 1)
-	require.Equal(t, "upstream's CMakeLists.txt changed, though no option or find_package did; lines change under if(NOT (APPLE))", compare(branches("old"), elsewise)[0].Message)
+	require.Equal(t, "upstream's CMakeLists.txt changed, but no option or find_package requirement changed; lines change under if(NOT (APPLE))", compare(branches("old"), elsewise)[0].Message)
 }
 
 // A CMakeLists.txt is compared with the files it include()s, as one: a
@@ -466,10 +466,10 @@ func TestACMakeListsIsComparedWithWhatItIncludes(t *testing.T) {
 	require.Equal(t, "upstream's CMakeLists.txt changed: option FLB_KAFKA's default moves from OFF to ON", flipped[0].Message)
 
 	placed := compare("option(FLB_KAFKA \"kafka\" OFF)\nset(X 1)\n", "option(FLB_KAFKA \"kafka\" OFF)\nset(X 2)\n")
-	require.Equal(t, "upstream's CMakeLists.txt changed, though no option or find_package did; lines change outside any if() in cmake/plugins_options.cmake", placed[0].Message)
+	require.Equal(t, "upstream's CMakeLists.txt changed, but no option or find_package requirement changed; lines change outside any if() in cmake/plugins_options.cmake", placed[0].Message)
 
 	set := compare("set(Y 1)\n", "set(Y 1)\nset(FLB_DEMO ON)\n")
-	require.Equal(t, "upstream's CMakeLists.txt changed, though no option or find_package did; lines change outside any if() in cmake/plugins_options.cmake, under if(FLB_DEMO)", set[0].Message,
+	require.Equal(t, "upstream's CMakeLists.txt changed, but no option or find_package requirement changed; lines change outside any if() in cmake/plugins_options.cmake, under if(FLB_DEMO)", set[0].Message,
 		"FLB_DEMO, set in a file included, is no longer off, and what it gates is reached")
 }
 
@@ -659,4 +659,33 @@ func TestALicenseComparisonsMemoryIsBounded(t *testing.T) {
 	wide := strings.Repeat("alpha ", 2100)
 	_, _, _, ok := partyOnly([]byte("Acme "+wide+"Acme\n"), []byte("Zenith "+strings.Repeat("beta ", 2100)+"Zenith\n"))
 	require.False(t, ok)
+}
+
+// Test code isn't read for Homebrew paths, and an executable's path is
+// said as a path, not a library's: atuin 18.24.5's two were in Rust test
+// modules, one an rstest case, and both under bin/ (field testing,
+// #36378).
+func TestTestCodeIsntReadForHomebrewPaths(t *testing.T) {
+	shell := "pub fn shell() {}\n\n#[cfg(all(test, unix))]\nmod tests {\n    use rstest::rstest;\n    #[rstest]\n" +
+		"    #[case::no_trailing_newline(b\"UserShell: /opt/homebrew/bin/fish\", Some(&b\"/opt/homebrew/bin/fish\"[..]))]\n" +
+		"    fn parses(#[case] input: &[u8], #[case] want: Option<&[u8]>) { let _ = (input, want, '}', \"}\"); }\n}\n"
+	pidfile := "pub fn pid() -> &'static str { \"/opt/homebrew/opt/atuin/bin/atuin\" }\n\n#[cfg(test)]\nmod tests {\n" +
+		"    fn helper() -> std::path::PathBuf { std::path::PathBuf::from(\"/opt/homebrew/opt/atuin/bin/atuin-test\") } // }\n}\n"
+	now := map[string]string{
+		"crates/atuin-common/src/shell.rs":           shell,
+		"crates/atuin-daemon/src/service/pidfile.rs": pidfile,
+		"tests/fixture.c":                            "const char *p = \"/opt/homebrew/lib/libfoo.dylib\";\n",
+		"cmd/run_test.go":                            "var p = \"/opt/homebrew/lib/libbar.dylib\"\n",
+		"src/foo_test.cc":                            "const char *p = \"/usr/local/lib/libbaz.dylib\";\n",
+	}
+	changes, err := compareArchives(t, testsupport.Tarball(t, "atuin-18.24.4", map[string]string{"README": "x\n"}), testsupport.Tarball(t, "atuin-18.24.5", now), Versions{Old: "18.24.4", New: "18.24.5"})
+	require.NoError(t, err)
+	var said []string
+	for _, change := range changes {
+		if change.Kind == "host-path" {
+			said = append(said, change.Message)
+		}
+	}
+	require.Equal(t, []string{"upstream: crates/atuin-daemon/src/service/pidfile.rs adds /opt/homebrew/opt/atuin/bin/atuin, a path outside ${prefix} it may use at run time"}, said,
+		"the literal outside the test module still said, as a path; the test items, a tests/ file, a Go test, and a foo_test.cc not read")
 }

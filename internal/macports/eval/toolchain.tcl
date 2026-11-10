@@ -32,8 +32,14 @@ namespace eval ::dockhand {
                         return [expr {[dict get $toolchain xcselect] ? "file" : "absent"}]
                     }
                     if {$path eq $xcode_app || [string first "$xcode_app/" $path] == 0} {
-                        # Xcode's contents are the host's where the model has Xcode.
-                        return [expr {[dict get $toolchain xcode] ? "" : "absent"}]
+                        if {![dict get $toolchain xcode]} { return absent }
+                        # Xcode's SDKs are the table's where it lists them
+                        # (#17: qt5's PortGroups test them, 367 of the 533
+                        # ports a modelled context sent to the host); its
+                        # other contents are the host's.
+                        set directory [xcode_sdk_directory]
+                        if {[string first "$directory/" $path] != 0} { return "" }
+                        return [listed [dict get $toolchain xcode_sdks] [string range $path [string length $directory]+1 end]]
                     }
                     if {[regexp {^/usr/bin/([^/]+)$} $path -> tool] && $tool in $shims} {
                         if {[dict get $toolchain darwin] < 13} { return "" }
@@ -58,13 +64,131 @@ namespace eval ::dockhand {
                     if {$path eq $clt || $rest eq "SDKs"} { return directory }
                     if {[string match usr/bin/* $rest] && [llength [split $rest /]] == 3} { return file }
                     if {[string match SDKs/* $rest]} {
-                        set sdks [dict get $toolchain sdks]
-                        if {![llength $sdks]} { return "" }
-                        set parts [split $rest /]
-                        if {[lindex $parts 1] ni $sdks} { return absent }
-                        return [expr {[llength $parts] == 2 ? "directory" : "file"}]
+                        return [listed [dict get $toolchain sdks] [string range $rest 5 end]]
                     }
                     return ""
+                }
+                # xcode_sdk_directory is where Xcode keeps its macOS SDKs.
+                proc xcode_sdk_directory {} {
+                    variable xcode_app
+                    return $xcode_app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs
+                }
+                # listed is what a path below an SDKs directory is, by the
+                # SDKs the table lists there: an SDK a directory, what's in
+                # it a file, one not listed absent, and nothing where the
+                # table lists none.
+                proc listed {sdks rest} {
+                    if {![llength $sdks]} { return "" }
+                    set parts [split $rest /]
+                    if {[lindex $parts 0] ni $sdks} { return absent }
+                    return [expr {[llength $parts] == 1 ? "directory" : "file"}]
+                }
+                # show_sdk_path answers `xcrun --sdk macosx<version>
+                # --show-sdk-path`, as Base's get_sdkroot and qt5's
+                # PortGroups run it, from the SDKs the table lists in the
+                # developer directory it runs in: DEVELOPER_DIR where the
+                # command line sets it, else the row's. It finds an SDK by
+                # its version exactly, as the SDK's own directory names it,
+                # MacOSX26.5.sdk, never by a link's shorter name: macosx26
+                # isn't located where MacOSX26.sdk links to MacOSX26.5.sdk.
+                # In the tools it says the first name, in order, of the
+                # SDK's directory or a link to it, and --sdk macosx says
+                # MacOSX.sdk; Xcode's one SDK is MacOSX.sdk, and xcrun names
+                # it by its version's link, MacOSX27.2.sdk, for --sdk macosx
+                # too. Read with Xcode 27.2 and the tools' 27.0 on the
+                # person's Mac, 2026-11-04, and --sdk macosx from each Tart
+                # image's probe; xcrun documents none of it. Nothing where
+                # the table lists none, or the command is another.
+                proc show_sdk_path {arguments} {
+                    variable toolchain
+                    variable clt
+                    if {[lindex $arguments 0] eq "-ignorestderr"} { set arguments [lrange $arguments 1 end] }
+                    if {[lindex $arguments end-1] eq "2>" && [lindex $arguments end] eq "/dev/null"} { set arguments [lrange $arguments 0 end-2] }
+                    set developer [dict get $toolchain developer_dir]
+                    if {[lindex $arguments 0] eq "env" && [regexp {^DEVELOPER_DIR=(.+)$} [lindex $arguments 1] -> developer]} {
+                        set arguments [lrange $arguments 2 end]
+                    }
+                    if {[llength $arguments] != 4 || [file tail [lindex $arguments 0]] ne "xcrun" || [lindex $arguments 1] ne "--sdk"
+                        || [lindex $arguments 3] ne "--show-sdk-path" || ![regexp {^macosx([0-9.]*)$} [lindex $arguments 2] -> version]} {
+                        return
+                    }
+                    if {$developer eq $clt} {
+                        if {![dict get $toolchain tools]} { return }
+                        set directory $clt/SDKs
+                        set sdks [dict get $toolchain sdks]
+                        set links [dict get $toolchain links]
+                    } elseif {$developer eq [file dirname [file dirname [file dirname [file dirname [xcode_sdk_directory]]]]]} {
+                        if {![dict get $toolchain xcode]} { return }
+                        set directory [xcode_sdk_directory]
+                        set sdks [dict get $toolchain xcode_sdks]
+                        set links [dict get $toolchain xcode_links]
+                    } elseif {$developer eq [dict get $toolchain developer_dir]} {
+                        # The row's own developer directory, which isn't
+                        # where the model keeps Xcode's SDKs, as Darwin
+                        # 10's /Developer (#104): it lists none there.
+                        set sdks {}
+                    } else {
+                        return
+                    }
+                    # Where the row lists no SDKs, xcrun finds none, the
+                    # table's lack marked as the answer's subject, and the
+                    # host's xcrun isn't run: it ran 8,059 times in Darwin
+                    # 10 to 12 contexts, and gave a Darwin 10 context the
+                    # host's own SDK (#108).
+                    if {![llength $sdks]} {
+                        return [list sdks-unlisted 1 "child process exited abnormally" {-code 1 -errorcode {CHILDSTATUS 0 1}}]
+                    }
+                    # Each SDK's directory, by its version: the tools' a
+                    # directory named for it, Xcode's MacOSX.sdk, whose
+                    # version its links name.
+                    set versions {}
+                    foreach sdk [lsort -unique $sdks] {
+                        if {[dict exists $links $sdk]} { continue }
+                        if {[regexp {^MacOSX([0-9]+\.[0-9.]+)\.sdk$} $sdk -> named]} {
+                            dict set versions $named $sdk
+                        }
+                    }
+                    dict for {link target} $links {
+                        if {$target eq "MacOSX.sdk" && [regexp {^MacOSX([0-9]+\.[0-9.]+)\.sdk$} $link -> named]} {
+                            dict set versions $named $target
+                        }
+                    }
+                    set found ""
+                    if {$version eq ""} {
+                        if {$directory eq "$clt/SDKs"} {
+                            if {"MacOSX.sdk" in $sdks} { set found MacOSX.sdk }
+                        } else {
+                            dict for {named target} $versions {
+                                if {$target eq "MacOSX.sdk"} { set found MacOSX${named}.sdk }
+                            }
+                            # An Xcode before 8 has no MacOSX.sdk, only an
+                            # SDK per version, MacOSX10.7.sdk and
+                            # MacOSX10.8.sdk in Xcode 4.6.3 (its installer,
+                            # tools/facts/installers): xcrun takes the newest
+                            # for an SDK named without its version.
+                            if {$found eq ""} {
+                                foreach named [lsort -command {package vcompare} [dict keys $versions]] {
+                                    set found MacOSX${named}.sdk
+                                }
+                            }
+                        }
+                    } elseif {[dict exists $versions $version]} {
+                        set target [dict get $versions $version]
+                        if {$directory eq "$clt/SDKs"} {
+                            foreach sdk [lsort -unique $sdks] {
+                                if {$sdk eq $target || ([dict exists $links $sdk] && [dict get $links $sdk] eq $target)} {
+                                    set found $sdk
+                                    break
+                                }
+                            }
+                        } else {
+                            set found MacOSX${version}.sdk
+                        }
+                    }
+                    if {$found eq ""} {
+                        return [list xcrun 1 "child process exited abnormally" {-code 1 -errorcode {CHILDSTATUS 0 1}}]
+                    }
+                    return [list "" 0 $directory/$found {-code 0}]
                 }
                 # modelled is the modelled context's answer to a call about
                 # the developer tools, as fresh's are; or nothing.
@@ -72,7 +196,11 @@ namespace eval ::dockhand {
                     variable toolchain
                     # Whether a directory of the snapshot is in a work tree
                     # has one answer in every context, git's own there.
-                    if {$name eq "exec"} { return [work_tree $arguments] }
+                    if {$name eq "exec"} {
+                        set answer [work_tree $arguments]
+                        if {$answer eq "" && [dict size $toolchain]} { set answer [show_sdk_path $arguments] }
+                        return $answer
+                    }
                     if {![dict size $toolchain]} { return }
                     switch -- $name {
                         file {
@@ -150,9 +278,26 @@ namespace eval ::dockhand {
                             default { break }
                         }
                     }
-                    set sdks [dict get $toolchain sdks]
-                    if {$directory ne "$clt/SDKs" || ![llength $sdks] || ![dict get $toolchain tools]} { return }
+                    switch -- $directory \
+                        "$clt/SDKs" {
+                            if {![dict get $toolchain tools]} { return }
+                            set sdks [dict get $toolchain sdks]
+                        } \
+                        [xcode_sdk_directory] {
+                            if {![dict get $toolchain xcode]} { return }
+                            set sdks [dict get $toolchain xcode_sdks]
+                        } \
+                        default { return }
                     set patterns [lrange $arguments $i end]
+                    # Where the row lists no SDKs, the glob finds none,
+                    # marked as the table's lack (#108).
+                    if {![llength $sdks]} {
+                        if {$complain} {
+                            set noun [expr {[llength $patterns] == 1 ? "pattern" : "patterns"}]
+                            return [list sdks-unlisted 1 "no files matched glob $noun \"[join $patterns]\"" {-code 1 -errorcode {TCL OPERATION GLOB NOMATCH}}]
+                        }
+                        return [list sdks-unlisted 0 {} {-code 0}]
+                    }
                     set found {}
                     foreach sdk $sdks {
                         foreach pattern $patterns {

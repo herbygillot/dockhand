@@ -23,4 +23,11 @@ func TestArtifactsSaysWhereEachPassedPortsArchiveIs(t *testing.T) {
 	require.Contains(t, out, "its archive wasn't kept", "the command provider keeps none")
 	_, _, err = cmdtest.Dockhand(t, "artifacts", "jq-update", "-b", "jq-update")
 	require.ErrorContains(t, err, "name a branch once, as the argument or with -b, -p, or --pr")
+	// A check is named as logs names one: artifacts check-781 read "no
+	// tracked branch named check-781" (field testing, #68).
+	named, _, err := cmdtest.Dockhand(t, "artifacts", "check-1")
+	require.NoError(t, err)
+	require.Equal(t, out, named)
+	_, _, err = cmdtest.Dockhand(t, "artifacts", "check-1", "-b", "jq-update")
+	require.ErrorContains(t, err, "name a check or a branch, not both")
 }

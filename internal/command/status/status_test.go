@@ -146,7 +146,7 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "\nChecks queued and running\n  RUN      BRANCH     SOURCE      ON       STATE   DETAIL\n  check-1  jq-update  snapshot 1  command  queued  nothing is running the queue; dockhand wait check-1 runs it here, dockhand serve --drain runs the queue, cancel ends it\n\nserve: not running · queue: 1 run\n")
 	_, _, err = cmdtest.Dockhand(t, "queue")
-	require.EqualError(t, err, "queue is part of status now: dockhand status lists the checks queued and running")
+	require.EqualError(t, err, "queue is part of status now: dockhand status -v lists the checks queued and running")
 	_, _, err = cmdtest.Dockhand(t, "watch")
 	require.EqualError(t, err, "watch is dockhand console now: it keeps the branches current")
 	out, _, err = cmdtest.Dockhand(t, "check", "-d", "--replace")
@@ -635,7 +635,7 @@ func TestStatusSaysAPullRequestsMergeFitness(t *testing.T) {
 	lines := []string{
 		"jq: @ryandesign, openmaintainer; waits on the maintainer timeout",
 		"gdal: nomaintainer; anyone may update it",
-		"croc: maintainers not read yet; dockhand check --plan reads them",
+		"croc: maintainer information not read yet; dockhand check --plan reads it",
 		"Mentioned in the description: @ryandesign",
 		"Approved by @jmroot",
 		"MacPorts' 72-hour maintainer timeout ends " + until + ", in 41h; until then only its maintainers or its author should merge it",
@@ -688,7 +688,7 @@ func TestStatusSaysAPullRequestsMergeFitness(t *testing.T) {
 		"jq: @ryandesign, openmaintainer; waits on the maintainer timeout",
 		"gdal: nomaintainer; anyone may update it",
 		"No one is mentioned in the description",
-		"A draft, so no one merges it yet; once it's ready, MacPorts' 72-hour maintainer timeout is counted from its opening",
+		"Draft pull request: mark it ready before merging. MacPorts' 72-hour maintainer timeout is counted from when it was opened",
 	}, view.MergeLines(status))
 	data, err = json.Marshal(view.BranchView(status).PullRequest.Merge)
 	require.NoError(t, err)
@@ -707,10 +707,10 @@ func TestUnreadMaintainersNameCheckPlanOnlyForTheirOwnBranch(t *testing.T) {
 	merge := macports.MergeFitness(nil, "herbygillot", nil, nil, opened, false, opened.Add(time.Hour))
 	status := engine.BranchStatus{Branch: model.Branch{Name: "dockhand/rumdl", State: model.BranchOpen, PullRequest: &model.PullRequest{Repository: "macports/macports-ports", Number: 34881,
 		Observed: &model.PullRequestObservation{State: model.PullRequestOpen}}}, Merge: &merge, MaintainersUnread: []string{"rumdl"}}
-	require.Equal(t, []string{"rumdl: maintainers not read yet; dockhand check --plan reads them", "No one is mentioned in the description"}, view.MergeLines(status))
+	require.Equal(t, []string{"rumdl: maintainer information not read yet; dockhand check --plan reads it", "No one is mentioned in the description"}, view.MergeLines(status))
 
 	status.Branch.PullRequest.Adopted, status.Branch.PullRequest.Author = true, "ada"
-	require.Equal(t, []string{"rumdl: maintainers not read yet", "No one is mentioned in the description"}, view.MergeLines(status))
+	require.Equal(t, []string{"rumdl: maintainer information not read yet", "No one is mentioned in the description"}, view.MergeLines(status))
 }
 
 // A port's merge line names the reading its maintainers were taken from
@@ -737,7 +737,7 @@ func TestAMergeLineNamesItsMaintainersBasis(t *testing.T) {
 	lines := view.MergeLines(status)
 	require.Equal(t, "jq: @former; waits on the maintainer timeout; maintainers as of master, "+base.Local().Format(time.DateOnly), lines[0])
 	require.Equal(t, "gdal: nomaintainer; anyone may update it", lines[1], "the newest cached master isn't named")
-	require.Equal(t, "rumdl: @ada; opened by its maintainer; maintainers as the branch adds it", lines[2])
+	require.Equal(t, "rumdl: @ada; opened by its maintainer; maintainers declared by this new port", lines[2])
 
 	data, err := json.Marshal(view.BranchView(status).PullRequest.Merge)
 	require.NoError(t, err)

@@ -1,7 +1,9 @@
 # The Tart provider
 
 `check --on tart` builds in a fresh clone of one of dockhand's Tart images,
-one clone for each macOS release and attempt, deleted afterwards (Design v3
+one clone for each macOS release and attempt, deleted afterwards, but kept,
+stopped, where a target failed in it, one for each branch and release, until
+the branch's next check, `dockhand clean`, or seven days under serve (Design v3
 §7). A clone left by a process that died is deleted by the check's next
 attempt, or else by `dockhand clean` or serve's daily cleanup, once no
 process runs its check. It follows MacPorts CI's order (decisions 11 and 22). For each target,
@@ -349,14 +351,15 @@ code they explain.
   minutes (2026-10-07).
 - **Upstream Tart issues still worked around** (as of 2026-09-27):
   - openai/tart#1345: `tart delete` of a running VM says "does not exist"
-    and leaves it. #1350 fixed it on 2026-09-26, hours after 2.39.0 was
-    tagged; until a release carries it, a delete is trusted only by the
-    VM's absence from the listing.
+    and leaves it. #1350 fixed it, and Tart 2.40.0 carries the fix; below
+    it, and on every version until dockhand's floor rises past 2.39.0, a
+    delete is trusted only by the VM's absence from the listing.
   - #1346, `tart exec` failing once its control socket does; #1347,
     `tart exec` losing output on macOS 12 to 15 guests; and #1348, its
-    buffered input. Guests are reached over SSH, never `tart exec`, but for
-    setup's agent readiness probe.
-  - #1353: a listing that races a delete fails; it is listed again.
+    buffered input. Guests are reached over SSH, never `tart exec`, setup's
+    readiness probe included.
+  - #1353: a listing that races a delete fails; it is listed again. #1354
+    fixed it, and Tart 2.41.1 carries the fix.
   - `tart clone` onto a stopped VM's name replaces it silently, and Tart
     renames running VMs, so dockhand refuses a destination Tart lists and
     renames only stopped VMs.
@@ -365,11 +368,22 @@ code they explain.
     failed ten of eleven starts; on 2.39.0 eleven of eleven succeeded.
     `tart get` now reads an ASIF disk's capacity as `null` (2026-09-27).
 - **Local Network privacy stops a Go program's direct dial to a guest**
-  ("no route to host"), whichever app launched it, but not Apple's
-  `/usr/bin/ssh`, which is why the guest channel uses it. Its
+  ("no route to host"), whichever app launched it, which is why the guest
+  channel uses Apple's `/usr/bin/ssh`. It stops `/usr/bin/ssh` too where
+  the app dockhand runs from is denied Local Network access, a correction
+  of what this entry said first (herbygillot/dockhand#89). Its
   ControlMaster socket is under `/tmp`, since the per-user temporary
   directory's path is too long for a socket. 64 MiB moved up in 0.9 s and
   down in 0.4 s on Monterey (2026-09-24).
+- **A guest that never accepts SSH with "No route to host"** (herbygillot/dockhand#89,
+  on macOS 27.2): Local Network privacy, the app dockhand ran from
+  (Ghostty) having been denied it; allowing it in System Settings ›
+  Privacy & Security › Local Network fixed it. A VPN or firewall that
+  routes 192.168.64.0/24 elsewhere does the same, which `route -n get
+  <address>` shows. The message names the app from `TERM_PROGRAM`; after
+  a minute of only "No route to host" with the address routed to Tart's
+  `bridge` interface, which rules out a VPN, the wait ends with it rather
+  than running out. `-v` shows what ssh said every half minute.
 
 ### Images and guests
 

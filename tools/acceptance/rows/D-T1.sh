@@ -1,7 +1,7 @@
 # stages: quick full
 # D-T1: a kept archive altered by one byte. A check that would install it
 # catches it by its digest, and builds the port rather than install it,
-# saying so ("the archive kept of X isn't the one it was kept as").
+# saying so ("the saved archive for X no longer matches its recorded digest").
 #
 # A kept archive is given to a guest only as a dependency of what it
 # builds, reused from an earlier check. So the row revbumps a dependency,
@@ -84,8 +84,8 @@ $(find "$(dt1_archives)" -type f ! -name '*.sig' ! -name '*.rmd160' ! -name '*.a
 EOT
 	[ -z "$bad" ] || { row_fail "kept archives that don't match their digests after the row:$bad"; return; }
 	[ "${DT1_ALTERED:-0}" -gt 0 ] || { row_fail "no archive of $ACCEPT_LIB_PORT was kept to alter, so the guard wasn't exercised"; return; }
-	if grep -qi "isn't the one it was kept as" "$ROW_DIR/out.log"; then
-		row_pass "the altered archive was caught and the dependency built instead: $(grep -i "isn't the one it was kept as" "$ROW_DIR/out.log" | head -1)"
+	if grep -qi "no longer matches its recorded digest" "$ROW_DIR/out.log"; then
+		row_pass "the altered archive was caught and the dependency built instead: $(grep -i "no longer matches its recorded digest" "$ROW_DIR/out.log" | head -1)"
 	else
 		# A harm row: a tamper nothing named is never a known issue.
 		row_fail "the second check didn't say it caught the altered archive (exit $(cat "$ROW_DIR/json/1.json.exit" 2>/dev/null)); whether the guest was given it is in $ROW_DIR/out.log"

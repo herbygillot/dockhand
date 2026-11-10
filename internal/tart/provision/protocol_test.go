@@ -26,7 +26,7 @@ import (
 // a Mac, and the unused-logic step dropped the copy of images a dockhand
 // before v0.3.0 made in the person's Tart home and the guest prefix only
 // /opt/local could take, none of which changes an image.
-const setupPin = "a912e6aa9d0cec81563780f70ffe8742f0482be7e49c5f1710d89235a3023cd3"
+const setupPin = "6ee41142b9eb922f8245143081e714e0dfc839e8e6066fd3e4cad21075a3470d"
 
 // What setup puts in an image is identified by tart.SetupProtocol, which
 // evidence's reuse compares (decision 28). A change to the provisioning

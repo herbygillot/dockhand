@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/planning"
@@ -72,6 +73,36 @@ func (e *Engine) ProposeCheck(ctx context.Context, request CheckRequest) (Propos
 	// alike: ship's check of net-snmp 404'd fetching one on both VMs
 	// (field testing, check-469).
 	return Proposal{Capture: capture, Plan: plan}, e.patchesHeld(ctx, request.Capture.Branch, capture, plan)
+}
+
+// BeforeBuilding are the Portfile findings submit would say of a
+// capture's changed Portfiles against its base (portfileFindings), which
+// check says before it builds, so the edit comes before the build it
+// would otherwise repeat (the openssl4 session's note 1). A plan says
+// them each time; a check says them once a tree, none where an earlier
+// check of the branch built the same tree.
+func (e *Engine) BeforeBuilding(ctx context.Context, branch model.Branch, capture Capture, plan bool) ([]commitrules.Finding, error) {
+	revision := capture.Revision
+	if !plan {
+		earlier, err := e.Runs(ctx, store.RunFilter{Branch: branch.ID, Tree: revision.Source.Tree, Limit: 1})
+		if err != nil || len(earlier) > 0 {
+			return nil, err
+		}
+	}
+	worktree, err := e.worktree(ctx, branch)
+	if err != nil {
+		return nil, err
+	}
+	trees, err := worktree.CommitTrees(ctx, []string{string(revision.Source.Base)})
+	if err != nil {
+		return nil, err
+	}
+	base := trees[string(revision.Source.Base)]
+	changed, err := worktree.ChangedPaths(ctx, base, string(revision.Source.Tree))
+	if err != nil {
+		return nil, err
+	}
+	return e.portfileFindings(ctx, worktree, base, string(revision.Source.Tree), changed)
 }
 
 // patchesHeld refuses a capture that leaves out an untracked file a
@@ -173,12 +204,12 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	plan := model.Plan{ID: model.PlanID(store.NewID("plan")), Revision: revision.ID, Environments: request.Environments, Profile: request.Profile, Asked: request.Asked, Only: request.Only, Also: request.Also, Tests: request.Tests, Fresh: request.Fresh, Keep: request.Keep,
 		Variants: model.Target{Variants: request.Variants}.VariantSpec(), EachVariant: request.EachVariant, CreatedAt: e.now()}
 	if len(request.Variants) > 0 && request.EachVariant {
-		return plan, errors.New("--variants each builds every variant; it takes no others")
+		return plan, errors.New("--variants each cannot be combined with an explicit variant selection")
 	}
 	if len(request.Variants) > 0 || request.EachVariant {
 		// MacPorts' workflow builds each port's default variants alone.
 		if slices.ContainsFunc(request.Environments, func(environment model.Environment) bool { return environment.Provider == buildenv.GitHub }) {
-			return plan, errors.New("--variants builds on tart or your command: GitHub's workflow builds default variants only")
+			return plan, errors.New("--variants is not supported by GitHub's workflow, which builds default variants only; use tart, local, or a command provider")
 		}
 	}
 	if plan.Tests == "" {

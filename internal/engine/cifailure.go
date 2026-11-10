@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports/cilog"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/outward"
 	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -127,7 +128,7 @@ func CIPortWords(failures []model.CIFailure) string {
 		switch {
 		case port.Outcome == model.OutcomePassed:
 			words = append(words, name+" ✓")
-		case port.Phase == model.PhaseInstall || port.Phase == model.PhaseDependencies || port.Phase == "":
+		case port.Phase.Installing() || port.Phase == model.PhaseDependencies || port.Phase == "":
 			words = append(words, name+" ✗ (build)")
 		default:
 			words = append(words, fmt.Sprintf("%s ✗ (%s)", name, port.Phase))
@@ -158,11 +159,11 @@ func (e *Engine) RerunCI(ctx context.Context, branch model.Branch) ([]int64, err
 		}
 	}
 	if len(runs) == 0 {
-		return nil, refusal.New(refusal.Failed, "nothing of #%d's CI failed at its head, %s", pr.Number, pr.Observed.Head.Short()).
+		return nil, refusal.New(refusal.Failed, "no CI jobs failed for #%d's current head, %s", pr.Number, pr.Observed.Head.Short()).
 			Then(refusal.Next{Verb: refusal.VerbRefresh})
 	}
 	for i, run := range runs {
-		err := e.forge().RerunFailed(ctx, pr.Repository, run)
+		err := outward.RerunFailed(ctx, e.pullRequests(), outward.Named, pr.Repository, run)
 		switch {
 		case errors.Is(err, forge.ErrRejected):
 			return runs[:i], refusal.Wrap(refusal.Auth, err, "running #%d's failed CI again needs write access to %s, which a maintainer has", pr.Number, pr.Repository).

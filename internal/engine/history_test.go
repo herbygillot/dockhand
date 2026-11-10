@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -492,4 +493,33 @@ func TestARestoreOfAnUnresolvedCheckpointIsRefused(t *testing.T) {
 	_, _, err = e.Restore(t.Context(), "tidy-1")
 	require.ErrorContains(t, err, "tidy-1 has an unresolved state: "+branch.Name+" is not checked out, so dockhand cannot determine whether the operation was applied")
 	require.Equal(t, model.CheckpointPrepared, checkpointNumbered(t, e, 1).State)
+}
+
+// A restore that moved the ref and not the index is finished by the next
+// command's recovery, which sets the saved index before recording the
+// restore: it recorded it from the ref alone, and the working version
+// read as staged (#113; Codex's review of b2e7b616, its probe).
+func TestARestoreStoppedBeforeItsIndexIsFinished(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch := committedUpdate(t, e)
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# staged version\n"})
+	testsupport.Git(t, branch.Worktree, "add", "textproc/jq/Portfile")
+	staged := testsupport.Git(t, branch.Worktree, "show", ":textproc/jq/Portfile")
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# working version\n"})
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch, Squash: true, Message: "jq: update to 1.8.1"})
+	require.NoError(t, err)
+	tidied, err := e.ApplyTidy(t.Context(), plan)
+	require.NoError(t, err)
+	wrapper := filepath.Join(t.TempDir(), "git")
+	testsupport.WriteExecutable(t, wrapper, "#!/bin/sh\nfor arg do\n if [ \"$arg\" = update-index ]; then echo 'index restore failed' >&2; exit 1; fi\ndone\nexec /usr/bin/git \"$@\"\n")
+	e.options.Git = wrapper
+	_, _, err = e.Restore(t.Context(), tidied.Checkpoint.Name())
+	require.ErrorContains(t, err, "index restore failed")
+	require.Equal(t, string(tidied.Checkpoint.Before), testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"), "the ref moved")
+	e.options.Git = ""
+	_, _, err = e.Restore(t.Context(), tidied.Checkpoint.Name())
+	require.True(t, err == nil || strings.Contains(err.Error(), "already restored"), "%v", err)
+	require.Equal(t, staged, testsupport.Git(t, branch.Worktree, "show", ":textproc/jq/Portfile"), "the saved staged version")
 }

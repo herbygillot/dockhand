@@ -131,6 +131,10 @@ func prWords(s engine.BranchStatus) string {
 			words += " changes requested"
 		case observed.Review == model.ReviewApproved:
 			words += " approved"
+		case observed.CommentedBy != "":
+			// A reviewer's question waits on the author, though GitHub
+			// counts no review: #36300 read "CI ✓" alone (#90).
+			words += " @" + observed.CommentedBy + " commented"
 		}
 		switch observed.Checks {
 		case model.ChecksPassing:

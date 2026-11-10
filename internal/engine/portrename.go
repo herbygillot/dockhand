@@ -32,6 +32,10 @@ type PortRenameRequest struct {
 	// rename. A move names one.
 	Category string
 	Plan     bool
+	// FromMaster plans it against master as fetched now, with no branch,
+	// as update's plan does: a plan with --new started the branch it
+	// named (Codex's workflow review of 1caa6c3d, finding 3). Plan alone.
+	FromMaster bool
 }
 
 // RenamedPort is a port's rename or move, as written or, for a plan, as it
@@ -64,6 +68,25 @@ type RenamedPort struct {
 	Applied           bool
 }
 
+// renameSource is the repository and commit a rename reads: the branch's
+// worktree at its head, or for a plan from master, master as fetched now,
+// read through the clone.
+func (e *Engine) renameSource(ctx context.Context, request PortRenameRequest) (*git.Repository, string, error) {
+	if request.FromMaster {
+		if !request.Plan {
+			return nil, "", errors.New("engine: only a rename's plan is made from master; start a branch to rename it")
+		}
+		master, err := e.fetchMaster(ctx)
+		return e.Repo, string(master), err
+	}
+	worktree, err := e.worktree(ctx, request.Branch)
+	if err != nil {
+		return nil, "", err
+	}
+	head, err := worktree.Resolve(ctx, "HEAD^{commit}")
+	return worktree, head, err
+}
+
 // RenamePort renames or moves a port on a branch: one edit, recorded, so
 // tidy takes it as dockhand's. It does the mechanical part alone, saying
 // what's left; a new release is update of the new name after. The port's
@@ -75,11 +98,7 @@ func (e *Engine) RenamePort(ctx context.Context, request PortRenameRequest) (Ren
 	if !macports.ValidName(name) {
 		return RenamedPort{}, fmt.Errorf("%q is not a port name", name)
 	}
-	worktree, err := e.worktree(ctx, request.Branch)
-	if err != nil {
-		return RenamedPort{}, err
-	}
-	head, err := worktree.Resolve(ctx, "HEAD^{commit}")
+	worktree, head, err := e.renameSource(ctx, request)
 	if err != nil {
 		return RenamedPort{}, err
 	}
@@ -94,6 +113,9 @@ func (e *Engine) RenamePort(ctx context.Context, request PortRenameRequest) (Ren
 		// one, is in the working tree alone; its move waits for tidy,
 		// which then folds the move into the port's commit (field
 		// testing's omnidiff, note 7).
+		if request.FromMaster {
+			return RenamedPort{}, err
+		}
 		if _, working, werr := worktree.WorkingTree(ctx); werr == nil {
 			if added, _ := namedLike(ctx, worktree, working, request.Port); len(added) > 0 {
 				return RenamedPort{}, fmt.Errorf("%s isn't committed yet; tidy it, then move it", request.Port)
@@ -115,12 +137,14 @@ func (e *Engine) RenamePort(ctx context.Context, request PortRenameRequest) (Ren
 	case to == from:
 		return RenamedPort{}, fmt.Errorf("%s is %s's name already", name, request.Port)
 	}
-	changed, err := worktree.TrackedChanges(ctx)
-	if err != nil {
-		return RenamedPort{}, err
-	}
-	if slices.ContainsFunc(changed, func(file string) bool { return strings.HasPrefix(file, from+"/") }) {
-		return RenamedPort{}, fmt.Errorf("%s has changes not committed; it's moved as committed, so tidy or commit them first", from)
+	if !request.FromMaster {
+		changed, err := worktree.TrackedChanges(ctx)
+		if err != nil {
+			return RenamedPort{}, err
+		}
+		if slices.ContainsFunc(changed, func(file string) bool { return strings.HasPrefix(file, from+"/") }) {
+			return RenamedPort{}, fmt.Errorf("%s has changes not committed; it's moved as committed, so tidy or commit them first", from)
+		}
 	}
 	if existing, err := worktree.ExistingPaths(ctx, tree, []string{to}); err != nil || len(existing) > 0 {
 		if err != nil {
@@ -128,7 +152,17 @@ func (e *Engine) RenamePort(ctx context.Context, request PortRenameRequest) (Ren
 		}
 		return RenamedPort{}, fmt.Errorf("there is already a %s", to)
 	}
-	if !moving {
+	switch {
+	case moving:
+	case request.FromMaster:
+		existing, err := namedLike(ctx, worktree, tree, name)
+		if err != nil {
+			return RenamedPort{}, err
+		}
+		if len(existing) > 0 {
+			return RenamedPort{}, errors.New(TakenWords(name, existing[0]))
+		}
+	default:
 		if err := e.refuseExisting(ctx, worktree, name); err != nil {
 			return RenamedPort{}, err
 		}

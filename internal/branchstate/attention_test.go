@@ -206,7 +206,7 @@ func TestANewPortsLintWarningsHoldUntilAccepted(t *testing.T) {
 	require.False(t, check.Publishable())
 	blocks := PublicationBlocks(ev, nil, nil, nil)
 	require.Equal(t, []Block{{Kind: BlockLint, Port: "harbor", Run: "check-4", Lint: []string{"Line 3 has trailing whitespace"}}}, blocks)
-	require.Equal(t, "harbor is a new port, and lint --nitpick warned in check-4: Line 3 has trailing whitespace. Fix it and check again, or take it with --accept harbor", blocks[0].Words(words{}))
+	require.Equal(t, "harbor is a new port, and lint --nitpick warned in check-4: Line 3 has trailing whitespace. Fix it and check again, or accept it with --accept harbor", blocks[0].Words(words{}))
 	rows := Attend(facts)
 	require.Equal(t, LintWarned, rows[0].Reason)
 	require.Equal(t, Next{Verb: VerbSubmit, Branch: "harbor-1.0", Args: []string{"--accept", "harbor"}}, rows[0].Next)

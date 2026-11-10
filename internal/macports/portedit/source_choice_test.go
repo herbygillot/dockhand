@@ -23,6 +23,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -33,7 +34,7 @@ import (
 func TestSourceCandidatesLeaveOutBinaryBundles(t *testing.T) {
 	assets := []string{"tool-1.0-darwin-arm64.tar.gz", "tool_1.0_tarball.tgz", "tool-1.0-x86_64-linux-musl.tar.xz", "tool-1.0.tar.gz", "tool-win64.zip",
 		"tool-1.0.tar.zst", "checksums.txt", "tool-1.0.tar.gz.sig", "tool-1.0-universal2.zip", "tool-1.0.tbz"}
-	require.Equal(t, []string{"tool-1.0.tar.gz", "tool_1.0_tarball.tgz", "tool-1.0.tbz"}, sourceCandidates(assets, "tool", "1.0"))
+	require.Equal(t, []string{"tool-1.0.tar.gz", "tool_1.0_tarball.tgz", "tool-1.0.tar.zst", "tool-1.0.tbz"}, sourceCandidates(assets, "tool", "1.0"), "a .tar.zst is one too, as Base extracts it")
 }
 
 // tree is an archive's tree of files, each with its name for its digest.
@@ -334,7 +335,7 @@ func TestATarballPortGoesToItsReleasesSourceElseTheArchive(t *testing.T) {
 	result, err := s.Prepare(t.Context(), r)
 	require.NoError(t, err)
 	require.Equal(t, &MovedSource{From: "tarball", To: "archive"}, result.SourceMoved)
-	require.Equal(t, "release v1.2.4's fixture-1.2.4.tar.gz carries the source; update --source releases fetches it", result.SourceNotice)
+	require.Equal(t, "release v1.2.4's fixture-1.2.4.tar.gz carries the source; update --source releases, run instead of this update, fetches it", result.SourceNotice)
 	require.Contains(t, string(result.Files[0].After), "github.tarball_from archive")
 	require.NotContains(t, strings.Join(requested(), "\n"), "darwin-arm64", "the binary bundle is never fetched")
 
@@ -390,7 +391,7 @@ func TestAGitPortGoesToAReleaseAssetHoldingItsSubmodules(t *testing.T) {
 	result, err := s.Prepare(t.Context(), r)
 	require.NoError(t, err)
 	require.Nil(t, result.SourceMoved)
-	require.Equal(t, "release v1.2.4's fixture_1.2.4_tarball.tgz carries the source and deps/lib; update --source releases fetches it", result.SourceNotice)
+	require.Equal(t, "release v1.2.4's fixture_1.2.4_tarball.tgz carries the source and deps/lib; update --source releases, run instead of this update, fetches it", result.SourceNotice)
 	require.Contains(t, string(result.Files[0].After), "fetch.type          git")
 	require.Contains(t, string(result.Files[0].After), "post-fetch")
 	require.Empty(t, result.Downloads)
@@ -462,4 +463,46 @@ func TestAGitPortWithAHookOfItsOwnOrAPinStays(t *testing.T) {
 	_, err := s.Prepare(t.Context(), r)
 	require.Error(t, err)
 	require.Empty(t, requested())
+}
+
+// Every archive Base extracts is a candidate, gzip first among one
+// source's compressions, then those a use_ option extracts, zstd after
+// them and .7z and .dmg last; a .tar.zst asset is written as devel/libhx
+// writes one, its suffix, extract.cmd zstd, and its extract dependency.
+func TestEveryArchiveBaseExtractsIsASourceCandidate(t *testing.T) {
+	full := tree("tool-1.0", "CMakeLists.txt")
+	order := func(names ...string) string {
+		var judged []judgedAsset
+		for _, name := range names {
+			judged = append(judged, judgedAsset{name: name, tree: full})
+		}
+		chosen, ambiguous := judgeSources(judged)
+		require.Empty(t, ambiguous)
+		return chosen.name
+	}
+	require.Equal(t, "tool-1.0.tar.gz", order("tool-1.0.tar.zst", "tool-1.0.7z", "tool-1.0.tar.gz"))
+	require.Equal(t, "tool-1.0.tar.lzma", order("tool-1.0.tar.zst", "tool-1.0.tar.lzma", "tool-1.0.dmg"))
+	require.Equal(t, "tool-1.0.tar.zst", order("tool-1.0.dmg", "tool-1.0.7z", "tool-1.0.tar.zst"))
+	require.Equal(t, "tool-1.0.7z", order("tool-1.0.dmg", "tool-1.0.7z"))
+
+	info := macports.PortInfo{Options: map[string]string{"github.project": "tool", "github.version": "1.0"}}
+	move, ok := sourceMoveFor(judgedAsset{name: "tool-1.0.tar.zst", tree: full}, info, false)
+	require.True(t, ok)
+	require.Equal(t, portfile.SourceMove{Mode: "releases", Suffix: ".tar.zst", Command: "zstd", Depends: "bin:zstd:zstd"}, move)
+	move, ok = sourceMoveFor(judgedAsset{name: "tool-1.0.7z", tree: full}, info, false)
+	require.True(t, ok)
+	require.Equal(t, portfile.SourceMove{Mode: "releases", UseOption: "use_7z"}, move, "use_7z's own suffix")
+}
+
+// --source archive on a port that fetches a release asset is refused
+// before anything changes: it updated, fetched the assets, and kept
+// releases mode, saying nothing of the policy it didn't follow (#123;
+// Codex's review of b2e7b616, its probe).
+func TestSourceArchiveOnAReleasesPortIsRefused(t *testing.T) {
+	body := strings.Replace(tarballPort, "github.tarball_from tarball", "github.tarball_from releases", 1)
+	s, r, _ := githubFixture(t, body, fakeRelease{})
+	r.SourceMode = SourceArchive
+	_, err := s.Prepare(t.Context(), r)
+	require.ErrorIs(t, err, ErrUnsupported)
+	require.ErrorContains(t, err, "--source archive: fixture fetches a release asset, and update doesn't move a port back to GitHub's archive of the tag")
 }

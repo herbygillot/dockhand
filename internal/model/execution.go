@@ -110,12 +110,27 @@ type Observed struct {
 
 // BuilderObserved is what one builder of an environment reported about
 // itself: a GitHub runner, its macOS release as the label its job ran on
-// names it.
+// names it, and the rest as MacPorts Base's header in its log says it.
 type BuilderObserved struct {
 	// Builder names it, as its parts of results do (BuilderResult).
 	Builder string `json:"builder"`
 	// MacOS is its macOS release alone, 15; empty where it didn't say.
 	MacOS string `json:"macos,omitempty"`
+	// Version is its macOS version, 15.8.2, and Architecture the
+	// machine's, arm64.
+	Version      string `json:"version,omitempty"`
+	Architecture string `json:"architecture,omitempty"`
+	// Xcode is Xcode's version, 16.4, where there is Xcode; Tools is the
+	// Command Line Tools package's version.
+	Xcode string `json:"xcode,omitempty"`
+	Tools string `json:"tools,omitempty"`
+	// MacPorts is the MacPorts that built the ports, 2.12.7.
+	MacPorts string `json:"macports,omitempty"`
+}
+
+// ToolsKnown reports whether the builder reported more than its release.
+func (b BuilderObserved) ToolsKnown() bool {
+	return b.Version != "" || b.Xcode != "" || b.Tools != "" || b.MacPorts != ""
 }
 
 // IsZero reports a report that says nothing.
@@ -194,7 +209,35 @@ const (
 	PhaseChecksum     Phase = "checksum"
 	PhaseInstall      Phase = "install"
 	PhaseTest         Phase = "test"
+	// The phases MacPorts runs within the install, which a failure there
+	// names: "Failed to patch kitty" read as "failed at install" (field
+	// testing's kitty 0.50.0, check-791).
+	PhaseExtract   Phase = "extract"
+	PhasePatch     Phase = "patch"
+	PhaseConfigure Phase = "configure"
+	PhaseBuild     Phase = "build"
+	PhaseDestroot  Phase = "destroot"
+	PhaseActivate  Phase = "activate"
 )
+
+// Installing reports the install or one of the phases MacPorts runs
+// within it.
+func (p Phase) Installing() bool {
+	switch p {
+	case PhaseInstall, PhaseExtract, PhasePatch, PhaseConfigure, PhaseBuild, PhaseDestroot, PhaseActivate:
+		return true
+	}
+	return false
+}
+
+// Step is the step of a target's build the phase is in: the install for
+// a phase MacPorts runs within it, else the step of its name.
+func (p Phase) Step() Step {
+	if p.Installing() {
+		return StepInstall
+	}
+	return Step(p)
+}
 
 // FailureWords say a failure at the phase: "failed at install", and "a
 // dependency failed" for a dependency's.
@@ -208,10 +251,10 @@ func (p Phase) FailureWords() string {
 // Valid reports one of the phases a check stops at.
 func (p Phase) Valid() bool {
 	switch p {
-	case PhaseLint, PhaseDependencies, PhaseFetch, PhaseChecksum, PhaseInstall, PhaseTest:
+	case PhaseLint, PhaseDependencies, PhaseFetch, PhaseChecksum, PhaseTest:
 		return true
 	}
-	return false
+	return p.Installing()
 }
 
 // TestOutcome reports a target's tests apart from its verdict, since tests
@@ -316,6 +359,11 @@ type TargetResult struct {
 	// observation of the build, not an input, so reuse never reads it. Nil
 	// where its provider couldn't read them, empty where nothing links.
 	Links []Link
+	// Declared is what each port its depends_lib names installs that a
+	// build could link, and how many Mach-O files it installed, which a
+	// declaration nothing links is read from (protocol 2); nil where its
+	// provider didn't read them, as an older result's.
+	Declared *Declared
 	// Installed are the files a passed build installed, as port contents
 	// lists them, and Libraries its own dynamic libraries, each with its
 	// install name and compatibility version: observations a check of the
@@ -365,6 +413,9 @@ type InertPort struct {
 	Port    string   `json:"port"`
 	Options []string `json:"options,omitempty"`
 	From    string   `json:"from,omitempty"`
+	// Declared are the ports its Portfile declares since, each one the
+	// build had active (reuse.Declared).
+	Declared []string `json:"declared,omitempty"`
 }
 
 // Library is one of a build's own dynamic libraries: its file, the
@@ -387,6 +438,31 @@ type Link struct {
 	// its symbolic links, as openssl's lib/libssl.dylib reaches
 	// openssl3's file, which declares the link; empty where none does.
 	Declared string `json:"declared,omitempty"`
+}
+
+// Declared is what a passed build's declared libraries install, as its
+// guest read them: each port its depends_lib names, and the count of the
+// Mach-O files the build installed.
+type Declared struct {
+	Ports  []DeclaredPort `json:"ports"`
+	MachOs int            `json:"machos"`
+}
+
+// DeclaredPort is what one port a target declares in depends_lib
+// installs that a build could link: its dynamic libraries' files, and its
+// pkg-config modules.
+type DeclaredPort struct {
+	Port      string            `json:"port"`
+	Libraries []string          `json:"libraries"`
+	Modules   []PkgConfigModule `json:"modules"`
+}
+
+// PkgConfigModule is a .pc file's module: its name, the -l names of its
+// Libs: line, and the modules its Requires: line names.
+type PkgConfigModule struct {
+	Name     string   `json:"name"`
+	Libs     []string `json:"libs"`
+	Requires []string `json:"requires"`
 }
 
 // FailedDependency is a dependency whose failure failed a target: its

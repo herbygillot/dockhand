@@ -134,7 +134,7 @@ func TestAConsolesCommandRunsInTheConsolesInvocation(t *testing.T) {
 	_, err = io.WriteString(typing, "q")
 	require.NoError(t, err)
 	require.NoError(t, <-done)
-	require.Contains(t, observed, "\x1b[?1049l$ dockhand logs check-1\n", "said as typed, off the table's screen")
+	require.Contains(t, observed, "\x1b[?1049l\x1b[H\x1b[2J$ dockhand logs check-1\n", "said as typed, off the table's screen")
 	require.NotContains(t, observed, "dockhand:", "the logs of the check the console shows, from its tree and database")
 }
 

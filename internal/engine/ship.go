@@ -87,6 +87,10 @@ func (e *Engine) ship(ctx context.Context, target shipTarget, options shipOption
 	done.Update, err = e.Update(ctx, UpdateRequest{Start: &StartRequest{Name: target.Name, Origin: options.Origin}, Action: model.EditUpdate, Port: target.Port, Version: target.Version,
 		Release: target.Release, CompareUpstream: true, Batch: true, Unattended: options.Unattended()})
 	done.Branch = done.Update.Branch
+	// Each port's own update, whose patch problems hold its own edit: the
+	// last one's alone were read, on the first port's edit (Codex's
+	// workflow review of 1caa6c3d, finding 2).
+	updates := []portUpdate{{target.Port, done.Update}}
 	// The other ports of its Portfile follow, in the one branch, a commit
 	// each: where the first is current, the next starts it.
 	for _, also := range target.Also {
@@ -103,6 +107,7 @@ func (e *Engine) ship(ctx context.Context, target shipTarget, options shipOption
 		if next, err = e.Update(ctx, request); err != nil {
 			err = fmt.Errorf("%s: %w", also.Port, err)
 		}
+		updates = append(updates, portUpdate{also.Port, next})
 		if !next.Current || done.Update.Current {
 			done.Update = next
 		}
@@ -122,6 +127,26 @@ func (e *Engine) ship(ctx context.Context, target shipTarget, options shipOption
 		return done
 	}
 	branch := done.Branch
+	// A patch that doesn't apply, which the refresh couldn't mend, fails
+	// the check at its patch phase after its dependencies' installs and
+	// extract: nobody looking, the branch stays at its committed edit
+	// (the docs dig's I9, e2fsprogs and net-snmp in field testing).
+	// patchcheck's reading isn't the build's, so a person's ship and check
+	// build as before, and holds.allow's patch-rejected lets one go.
+	// The hold is recorded on the update's edit, so serve's recovery
+	// leaves it held, and a person's ship takes it off (finding 2): before
+	// the commit, which makes the branch one the next serve queues, or a
+	// serve stopped between them queued it unheld (#116).
+	for _, update := range updates {
+		var held []string
+		if options.Unattended() && len(update.PatchProblems) > 0 && !slices.Contains(e.holdsFor(update.port).allow, assess.PatchRejected) {
+			held = update.PatchProblems
+		}
+		if err := e.holdBeforeCheck(ctx, branch, update.port, held); err != nil {
+			done.Problem = err.Error()
+			return done
+		}
+	}
 	tidy, err := e.PlanTidy(ctx, TidyRequest{Branch: branch})
 	if err != nil {
 		done.Problem = err.Error()
@@ -140,22 +165,6 @@ func (e *Engine) ship(ctx context.Context, target shipTarget, options shipOption
 	// which the next serve queues (ResumePrepared, W6).
 	failpoint.Hit("ship.committed")
 	if options.To == ShipCommit {
-		return done
-	}
-	// A patch that doesn't apply, which the refresh couldn't mend, fails
-	// the check at its patch phase after its dependencies' installs and
-	// extract: nobody looking, the branch stays at its committed edit
-	// (the docs dig's I9, e2fsprogs and net-snmp in field testing).
-	// patchcheck's reading isn't the build's, so a person's ship and check
-	// build as before, and holds.allow's patch-rejected lets one go.
-	// The hold is recorded on the update's edit, so serve's recovery
-	// leaves it held, and a person's ship takes it off (finding 2).
-	var held []string
-	if options.Unattended() && len(done.Update.PatchProblems) > 0 && !slices.Contains(e.holdsFor(target.Port).allow, assess.PatchRejected) {
-		held = done.Update.PatchProblems
-	}
-	if err := e.holdBeforeCheck(ctx, branch, target.Port, held); err != nil {
-		done.Problem = err.Error()
 		return done
 	}
 	if prepared, err := e.preparation(ctx, branch); err != nil || prepared.Disposition != branchstate.ReadyToCheck {
@@ -178,6 +187,12 @@ func (e *Engine) ship(ctx context.Context, target shipTarget, options shipOption
 	}
 	done.Run = &queued.Run
 	return done
+}
+
+// portUpdate is one port's update of a ship's Portfile.
+type portUpdate struct {
+	port string
+	Update
 }
 
 // preparation is the branch's preparation verdict (branchstate.Preparation)
@@ -205,7 +220,7 @@ func preparedWords(prepared branchstate.Prepared, branch model.Branch, err error
 	case err != nil:
 		return err.Error()
 	case prepared.Disposition == branchstate.HandEditsToCarry:
-		return fmt.Sprintf("its worktree holds edits not committed; dockhand ship -b %s carries it on", branch.ShortName())
+		return fmt.Sprintf("its worktree has uncommitted edits; dockhand ship -b %s continues the update", branch.ShortName())
 	}
 	return branchstate.HeldWords(prepared.Why)
 }

@@ -76,6 +76,10 @@ const (
 	// again, from another source or with other tools: another environment,
 	// whose results don't stand for it (Counts).
 	CellRemade CellKind = "remade"
+	// CellEntered is a result recorded after a shell opened in its
+	// running guest (model.Run.Entered), which the shell could have
+	// touched: no evidence, its outcome kept as EnteredOutcome for words.
+	CellEntered CellKind = "entered"
 )
 
 // Cell is a target's result in one environment, with what kind of cell it
@@ -105,6 +109,10 @@ type Cell struct {
 	// nothing: a GitHub job no runner took, "the job never ran: GitHub
 	// says …" (buildenv.Unrun).
 	Unrun string
+	// Entered is the shell opened before a CellEntered result was
+	// recorded, and EnteredOutcome the outcome it recorded.
+	Entered        *model.Entry
+	EnteredOutcome model.Outcome
 }
 
 // recorded is a result recorded in an environment, as a cell: one that
@@ -149,7 +157,7 @@ func (c Cell) Reason() string {
 // Unbuilt reports a cell whose target no check of the files built there,
 // where the plan asks it to be: not run, remade, or unmet.
 func (c Cell) Unbuilt() bool {
-	return c.Kind == CellNotRun || c.Kind == CellRemade || c.Kind == CellUnmet
+	return c.Kind == CellNotRun || c.Kind == CellRemade || c.Kind == CellUnmet || c.Kind == CellEntered
 }
 
 // TargetEvidence is one planned target's result across a run's
@@ -312,6 +320,15 @@ func Of(check Check) Evidence {
 				te.Passed = false
 				continue
 			}
+			// A result recorded after a shell opened in its guest isn't
+			// evidence: the shell could have touched it.
+			if entry := enteredBefore(check.Run, environment, result); entry != nil {
+				cell := noResult(CellEntered, environment, target.ID)
+				cell.Entered, cell.EnteredOutcome = entry, result.Outcome
+				te.Outcomes = append(te.Outcomes, cell)
+				te.Passed = false
+				continue
+			}
 			te.Outcomes = append(te.Outcomes, recorded(environment, result))
 			te.Passed = te.Passed && result.Outcome == model.OutcomePassed
 			if found, ok := check.Origins[result.ReusedFrom]; ok && result.ReusedFrom != "" {
@@ -325,6 +342,22 @@ func Of(check Check) Evidence {
 	}
 	evidence.settle()
 	return evidence
+}
+
+// enteredBefore is the first shell opened in run's guest in environment
+// before result was recorded, by run's own build, nil where none was: a
+// result recorded before any shell opened stands, as does one reused from
+// another check's build.
+func enteredBefore(run model.Run, environment model.Environment, result model.TargetResult) *model.Entry {
+	if result.ReusedFrom != "" {
+		return nil
+	}
+	for i, entry := range run.Entered {
+		if entry.Environment == environment && entry.At.Before(result.RecordedAt) {
+			return &run.Entered[i]
+		}
+	}
+	return nil
 }
 
 // Merged are one environment's results across a check's attempts, oldest
@@ -456,7 +489,7 @@ func (e *Evidence) extrasShown(added map[model.TargetID]bool) {
 			continue
 		}
 		for i, cell := range e.Targets[t].Outcomes {
-			if cell.Kind != CellNotRun && cell.Kind != CellRemade {
+			if cell.Kind != CellNotRun && cell.Kind != CellRemade && cell.Kind != CellEntered {
 				continue
 			}
 			skipped := noResult(CellExcluded, cell.Environment, e.Targets[t].Target.ID)
@@ -495,7 +528,7 @@ func (e *Evidence) outsideProfile(required []model.Environment, checks []Check) 
 			switch {
 			case asked && cell.Kind == CellNotRun:
 				cell.PlannedIn = planned(environment, e.Targets[t].Target.ID)
-			case !asked && (cell.Kind == CellNotRun || cell.Kind == CellRemade):
+			case !asked && (cell.Kind == CellNotRun || cell.Kind == CellRemade || cell.Kind == CellEntered):
 				skipped := noResult(CellExcluded, environment, e.Targets[t].Target.ID)
 				skipped.Exclusion = model.Exclusion{Target: e.Targets[t].Target.Target, Reason: "outside what the newest check of these files asked for", Span: true}
 				*cell = skipped
@@ -902,7 +935,7 @@ func Covers(required, planned model.Environment) bool {
 func (e Evidence) missing() bool {
 	for _, target := range e.Targets {
 		for _, c := range target.Outcomes {
-			if c.Kind == CellNotRun || c.Kind == CellRemade {
+			if c.Kind == CellNotRun || c.Kind == CellRemade || c.Kind == CellEntered {
 				return true
 			}
 		}
@@ -1109,7 +1142,7 @@ func (e *Evidence) fill(earlier Evidence) bool {
 		}
 		for i, result := range target.Outcomes {
 			environment := result.Environment
-			if result.Kind != CellNotRun && result.Kind != CellRemade {
+			if result.Kind != CellNotRun && result.Kind != CellRemade && result.Kind != CellEntered {
 				continue
 			}
 			j := slices.Index(earlier.Plan.Environments, environment)

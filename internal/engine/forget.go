@@ -29,6 +29,10 @@ type ForgetPlan struct {
 	// (planCleanFork): removed before the record, whose checks name the
 	// check branches, is forgotten; a step kept is said and left.
 	Fork []CleanStep
+	// Leftovers are what the branch's checks left in their providers, the
+	// clones they kept above all, removed before the record, with which
+	// no check of this checkout would claim them (BranchLeftovers).
+	Leftovers []Leftover
 }
 
 // PlanForget is what forgetting branch would remove; a merged, closed, or
@@ -54,6 +58,9 @@ func (e *Engine) PlanForget(ctx context.Context, branch model.Branch) (ForgetPla
 		return plan, err
 	}
 	var err error
+	if plan.Leftovers, err = e.BranchLeftovers(ctx, branch.ID); err != nil {
+		return plan, err
+	}
 	if plan.Fork, err = e.planCleanFork(ctx, branch, pushedHead(branch), "it has moved since dockhand pushed it"); err != nil {
 		return plan, err
 	}
@@ -96,6 +103,13 @@ func (e *Engine) Forget(ctx context.Context, plan *ForgetPlan) (store.Pruned, er
 	if err := e.refuseCheckedOut(ctx, *plan); err != nil {
 		return store.Pruned{}, err
 	}
+	// What its checks left goes first: one that stays, its check running
+	// or its removal failing, keeps the record, which alone claims it.
+	if len(plan.Leftovers) > 0 {
+		if err := e.removeBranchLeftovers(ctx, plan); err != nil {
+			return store.Pruned{}, err
+		}
+	}
 	if len(plan.Fork) > 0 {
 		cleaned, err := e.ApplyClean(ctx, []CleanBranch{{Branch: plan.Branch, Steps: plan.Fork}})
 		if err != nil {
@@ -120,6 +134,27 @@ func (e *Engine) Forget(ctx context.Context, plan *ForgetPlan) (store.Pruned, er
 		return err
 	})
 	return pruned, err
+}
+
+// removeBranchLeftovers removes what a branch's checks left, under each
+// check's lease, refusing to go on, the record kept, where one stays.
+func (e *Engine) removeBranchLeftovers(ctx context.Context, plan *ForgetPlan) error {
+	session, err := e.Session(ctx, model.SessionForeground)
+	if err != nil {
+		return err
+	}
+	defer session.End(context.WithoutCancel(ctx))
+	removed, err := e.RemoveLeftovers(ctx, session, plan.Leftovers)
+	plan.Leftovers = removed
+	if err != nil {
+		return refusal.New(refusal.Attention, "%s's record is kept, since what its checks left wasn't all removed: %v; run clean --delete again", plan.Branch.ShortName(), err)
+	}
+	for _, leftover := range removed {
+		if !leftover.Done {
+			return refusal.New(refusal.Attention, "%s's record is kept, since %s stays (%s); run clean --delete again once it's done", plan.Branch.ShortName(), leftover.What, leftover.Kept)
+		}
+	}
+	return nil
 }
 
 // refuseDirty refuses to forget a branch whose worktree holds work of its

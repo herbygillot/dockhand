@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,9 +11,9 @@ import (
 	"os"
 	"regexp"
 	"sort"
-	"strconv"
-	"strings"
 	"time"
+
+	"github.com/herbygillot/dockhand/internal/buildlog"
 )
 
 const buildbotURL = "https://build.macports.org"
@@ -28,60 +27,11 @@ var builderName = regexp.MustCompile(`^ports-([0-9.]+)_(x86_64|arm64|i386)-build
 // A buildbot harvest is one record for each builder whose recent logs
 // carry the header Base prints when it runs with -d.
 type builderFacts struct {
-	Builder      string `json:"builder"`
-	Build        int    `json:"build"`
-	Started      string `json:"started"`
-	Architecture string `json:"architecture"`
-	Header       header `json:"header"`
-}
-
-// header is Base's debug header in a port -d log:
-//
-//	DEBUG: macOS 26.7 (darwin/25.6.0) arch i386
-//	DEBUG: MacPorts 2.12.6
-//	DEBUG: Xcode 26.6, CLT 26.6.0.0.1781586589
-//	DEBUG: SDK 26
-type header struct {
-	MacOS    string `json:"macos"`
-	Darwin   int    `json:"darwin"`
-	MacPorts string `json:"macports"`
-	Xcode    string `json:"xcode"`
-	Tools    string `json:"tools"`
-	SDK      string `json:"sdk"`
-}
-
-var (
-	// Base names the release as Apple did when it shipped: Mac OS X 10.6,
-	// OS X 10.11, macOS 10.12 and on.
-	headerMacOS    = regexp.MustCompile(`^DEBUG: (?:macOS|OS X|Mac OS X) (\S+) \(darwin/(\d+)\.`)
-	headerMacPorts = regexp.MustCompile(`^DEBUG: MacPorts (\S+)$`)
-	headerXcode    = regexp.MustCompile(`^DEBUG: Xcode (\S+), CLT (\S+)$`)
-	headerSDK      = regexp.MustCompile(`^DEBUG: SDK (\S+)$`)
-)
-
-// readHeader reads a log up to its first complete header, and reports
-// whether it found one.
-func readHeader(log io.Reader) (header, bool) {
-	var h header
-	scanner := bufio.NewScanner(log)
-	scanner.Buffer(make([]byte, 1<<20), 16<<20)
-	for scanner.Scan() {
-		line := strings.TrimRight(scanner.Text(), "\r")
-		if m := headerMacOS.FindStringSubmatch(line); m != nil {
-			h.MacOS = m[1]
-			h.Darwin, _ = strconv.Atoi(m[2])
-		} else if m := headerMacPorts.FindStringSubmatch(line); m != nil {
-			h.MacPorts = m[1]
-		} else if m := headerXcode.FindStringSubmatch(line); m != nil {
-			h.Xcode, h.Tools = m[1], m[2]
-		} else if m := headerSDK.FindStringSubmatch(line); m != nil {
-			h.SDK = m[1]
-		}
-		if h.Darwin != 0 && h.MacPorts != "" && h.Xcode != "" && h.SDK != "" {
-			return h, true
-		}
-	}
-	return h, false
+	Builder      string          `json:"builder"`
+	Build        int             `json:"build"`
+	Started      string          `json:"started"`
+	Architecture string          `json:"architecture"`
+	Header       buildlog.Header `json:"header"`
 }
 
 func harvestBuildbot(ctx context.Context, base string, builds int, out string) error {
@@ -145,7 +95,7 @@ func harvestBuilder(ctx context.Context, client *http.Client, base, name string,
 		if err != nil {
 			return nil, err
 		}
-		h, ok := readHeader(log)
+		h, ok := buildlog.ReadHeader(log)
 		log.Close()
 		if !ok {
 			continue

@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -384,6 +385,17 @@ func TestCleanupKeepsLogsThatCount(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, LogCleanup{}, again)
 
+	// A staged tree a stopped attempt left under a finished check goes,
+	// counted (Prime-time's v0.7.0 acceptance).
+	staged := filepath.Join(e.LogDirectory(), runs[4].Name(), "tart-26-arm64-1", "input.tar")
+	require.NoError(t, os.WriteFile(staged, []byte(strings.Repeat("x", 2048)), 0o644))
+	swept, err := e.cleanLogs(t.Context(), at.Add(time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, 1, swept.Staged)
+	require.EqualValues(t, 2048, swept.StagedBytes)
+	require.NoFileExists(t, staged)
+	require.Equal(t, "removed 1 staged tree stopped checks left, "+prose.Bytes(2048), LogCleanupWords(swept, 15*24*time.Hour))
+
 	branch.State, branch.EndedAt = model.BranchArchived, at
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(branch) }))
 	kept, err := e.cleanLogs(t.Context(), at)
@@ -416,10 +428,10 @@ func TestCleanupKeepsAnEndedBranchsNewestCheck(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, report.History.Runs, "all but the newest")
 	require.Contains(t, HistoryWords(report.History, report.Assessments, 15*24*time.Hour), "removed 2 checks, ")
-	require.Contains(t, HistoryWords(report.History, report.Assessments, 15*24*time.Hour), " that branches ended past 15 days had recorded, keeping what reuse may choose and each branch's newest check")
+	require.Contains(t, HistoryWords(report.History, report.Assessments, 15*24*time.Hour), " recorded by branches that ended more than 15 days ago, keeping history needed for reuse and each branch's newest check")
 	// What wasn't removed isn't counted: "recorded of 0 checks: 1 result"
 	// read as a contradiction (the v0.3.1-rc1 quick stage).
-	require.Equal(t, "removed 1 result that branches ended past 1 day had recorded, keeping what reuse may choose and each branch's newest check",
+	require.Equal(t, "removed 1 result recorded by branches that ended more than 1 day ago, keeping history needed for reuse and each branch's newest check",
 		HistoryWords(store.Pruned{Results: 1}, 0, 24*time.Hour))
 	status, err := e.BranchStatus(t.Context(), branch)
 	require.NoError(t, err)
@@ -543,4 +555,38 @@ func TestForgetKeepsABranchCheckedOutElsewhere(t *testing.T) {
 	require.ErrorContains(t, err, branch.Name+" is checked out in ")
 	require.ErrorContains(t, err, "mine, which clean --delete doesn't remove")
 	require.NotEmpty(t, testsupport.Git(t, own, "rev-parse", "HEAD"))
+}
+
+// An adopted pull request's head branch is its author's: cleaning the
+// adopted branch keeps it, even in MacPorts' repository, where a
+// committer's credentials could delete it, and the plan doesn't offer it
+// (#112; Codex's review of b2e7b616, its probe).
+func TestCleanKeepsAnAdoptedPullRequestsBranch(t *testing.T) {
+	t.Parallel()
+	f, e, _, branch := mergedBranch(t)
+	head := testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")
+	const theirs = "contributor-original-work"
+	testsupport.Git(t, branch.Worktree, "push", "-q", f.upstream, head+":refs/heads/"+theirs)
+	branch.PullRequest.Head = forgetest.UpstreamRepository + ":" + theirs
+	branch.PullRequest.Pushed = model.ObjectID(head)
+	branch.PullRequest.Adopted = true
+	branch.PullRequest.Author = "contributor"
+	branch.PullRequest.Observed.Head = model.ObjectID(head)
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(branch) }))
+	plans, err := e.PlanCleanBranches(t.Context(), []model.Branch{branch})
+	require.NoError(t, err)
+	for _, plan := range plans {
+		for _, step := range plan.Steps {
+			require.NotEqual(t, CleanFork, step.Kind, "%+v", step)
+		}
+	}
+	_, err = e.ApplyClean(t.Context(), plans)
+	require.NoError(t, err)
+	require.Equal(t, head, testsupport.Git(t, f.upstream, "for-each-ref", "--format=%(objectname)", "refs/heads/"+theirs))
+
+	// Asked again as it's applied: a plan made before adoption keeps it.
+	stale := []CleanBranch{{Branch: branch, Steps: []CleanStep{{What: branch.PullRequest.Head, Kind: CleanFork, expected: head}}}}
+	_, err = e.ApplyClean(t.Context(), stale)
+	require.NoError(t, err)
+	require.Equal(t, head, testsupport.Git(t, f.upstream, "for-each-ref", "--format=%(objectname)", "refs/heads/"+theirs))
 }

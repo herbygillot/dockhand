@@ -83,6 +83,18 @@ type Run struct {
 	// branch's base; empty for the branch's own checks. A baseline is
 	// evidence about that run, never the branch's check.
 	BaselineOf RunID
+	// Entered are the shells opened in the run's guests while it ran
+	// (dockhand shell check-N): a result on that release recorded after
+	// one opened isn't evidence, since the shell could have touched it.
+	Entered []Entry `json:",omitempty"`
+}
+
+// Entry is a shell opened in a running check's guest: when, in which
+// environment, and the command, empty for an interactive shell.
+type Entry struct {
+	At          time.Time   `json:"at"`
+	Environment Environment `json:"environment"`
+	Command     string      `json:"command,omitempty"`
 }
 
 // BranchCheck reports whether r, queued or running, is the branch's one

@@ -133,5 +133,5 @@ func TestALockAcrossUsersIsInAStickyDirectory(t *testing.T) {
 	open := filepath.Join(t.TempDir(), "open")
 	require.NoError(t, os.Mkdir(open, 0o700))
 	_, err = AcquireAcrossUsers(t.Context(), Path(open, "prefix:/opt/local"))
-	require.ErrorContains(t, err, "isn't a directory every user can lock in")
+	require.ErrorContains(t, err, "must be a directory with permissions 1777")
 }

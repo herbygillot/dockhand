@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -159,7 +162,7 @@ func serveOptions(h *host.Host, e *engine.Engine, file config.File, out io.Write
 	if heap != "" {
 		options.Settled = func() {
 			if err := settings.WriteHeapProfile(heap); err != nil {
-				fmt.Fprintf(out, "serve: %s: %v; no profile is written\n", settings.HeapProfileVariable, err)
+				fmt.Fprintf(out, "serve: %s: could not write heap profile: %v\n", settings.HeapProfileVariable, err)
 			}
 		}
 	}
@@ -211,9 +214,9 @@ func serveAgent(ctx context.Context, s *settings.Settings, streams term.Streams,
 		return err
 	}
 	arguments := []string{executable, "serve", "--tree", tree, "--db", database}
-	if options.Git != "" {
-		arguments = append(arguments, "--git", options.Git)
-	}
+	// Each program named, as --tool, its path resolved now; the
+	// variables that name them stay out of the agent.
+	arguments = append(arguments, options.ToolArgs()...)
 	environment, err := agentEnvironment(s)
 	if err != nil {
 		return err
@@ -232,6 +235,13 @@ func serveAgent(ctx context.Context, s *settings.Settings, streams term.Streams,
 	}
 	if len(carried) > 0 {
 		fmt.Fprintf(streams.Out, "  With   %s, as set now\n", strings.Join(carried, ", "))
+	}
+	if len(options.Named) > 0 {
+		var tools []string
+		for _, program := range options.Named {
+			tools = append(tools, program.Name+" "+s.Places().Tilde(program.Path))
+		}
+		fmt.Fprintf(streams.Out, "  Tools  %s, as set now\n", strings.Join(tools, ", "))
 	}
 	for _, token := range []string{"GH_TOKEN", "GITHUB_TOKEN"} {
 		if s.Getenv(token) != "" {
@@ -306,4 +316,60 @@ func openWaiting(ctx context.Context, s *settings.Settings, streams term.Streams
 		case <-time.After(s.Host.Timings.MigrationPoll):
 		}
 	}
+}
+
+// RewriteGitAgent rewrites serve's own agent once where it names --git,
+// which v0.8.0 removed: started with the agent's exact arguments, args,
+// and they name --git <path>, serve installs the agent again with --tool
+// git=<path> in its place and exits, launchd starting it with the new
+// arguments. An agent dockhand installed would otherwise exit at the
+// removed flag and be started again every ten seconds, dead until someone
+// read the log. A person typing --git is still refused: only a file
+// dockhand wrote is migrated. Whether it rewrote it is returned, with what
+// to say.
+func RewriteGitAgent(ctx context.Context, s *settings.Settings, args []string) (string, bool, error) {
+	home := s.Places().Home
+	if s.Host.OS != "darwin" || home == "" {
+		return "", false, nil
+	}
+	path := filepath.Join(home, "Library", "LaunchAgents", AgentLabel+".plist")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false, nil
+	}
+	job, err := macos.ReadLaunchdJob(data)
+	if err != nil || len(job.Arguments) < 2 || !slices.Equal(job.Arguments[1:], args) {
+		return "", false, nil
+	}
+	i := slices.Index(job.Arguments, "--git")
+	if i < 0 || i+1 >= len(job.Arguments) {
+		return "", false, nil
+	}
+	git := job.Arguments[i+1]
+	job.Arguments = slices.Concat(job.Arguments[:i], []string{"--tool", "git=" + git}, job.Arguments[i+2:])
+	agent := macos.LaunchAgent{Label: AgentLabel, Path: path, Launchctl: s.Host.Launchctl}
+	if err := agent.Write(job); err != nil {
+		return "", false, err
+	}
+	if s.Host.Launchctl != nil {
+		// A test's launchctl answers at once.
+		err = agent.Reload(ctx)
+	} else {
+		err = startDetached(agent.ReloadCommand())
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return fmt.Sprintf("serve: the agent named --git, which is gone; rewritten with --tool git=%s", git), true, nil
+}
+
+// startDetached starts a program in a session of its own, which outlives
+// serve, and doesn't wait for it.
+func startDetached(command []string) error {
+	process := exec.Command(command[0], command[1:]...)
+	process.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := process.Start(); err != nil {
+		return err
+	}
+	return process.Process.Release()
 }

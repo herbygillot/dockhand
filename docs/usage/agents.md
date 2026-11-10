@@ -85,7 +85,15 @@ includes its branch, revision, plan, run, and target results, and
 environment where it's planned: its `target` and `environment`, and the
 resolved `variants`, `depends_build`, `depends_lib`, `depends_run`,
 `configure_args`, and `configure_env`, as the plan evaluated them; a recorded
-plan, as a finished check's, has none. Keep
+plan, as a finished check's, has none. A check's `links` are lines, each with
+its `mark` and `words`; a declaration nothing links carries `unlinked`, its
+`port`, `option`, and `line`, and an undeclared link a declared port's
+pkg-config brought in carries `through`, that `port` and the `modules`
+followed. `tidy --json` lists a declaration's commit, `<port>: declare
+libiconv`, among `commits` after the branch's, and `not_declared` says the
+findings it leaves to you. A check's `portfile_findings` are the
+Portfile findings submit would say, each with its `code`, `severity`, `where`,
+and `message`, which the check said before building. Keep
 standard error separate when parsing standard output. `-v` adds detail about
 the work, and `-vv` adds individual steps. Long human lists can be shortened;
 their JSON lists retain all entries.
@@ -102,6 +110,13 @@ the `baseline` that `check.baseline` ran after it; that baseline's
 `run.baseline_of` identifies the original check. Do not infer completion from
 the presence of a branch alone.
 
+`rebase --json` gives `branch`, `from`, `to`, `up_to_date`, `commits`, and,
+once it moves the branch, `checkpoint`. `rebase --plan --json` adds `plan`,
+true, and `replay`, each of the branch's commits in order with its `id`,
+`subject`, and `outcome`: `replay`, `drop`, `conflict` (with its `paths`), or
+`untried` after a conflict; `refused` says why the rebase wouldn't move the
+branch, and `commits` is the count the replay would make.
+
 The process exit codes are:
 
 | Code | Meaning |
@@ -110,7 +125,15 @@ The process exit codes are:
 | 1 | An error or refusal; also a batch where none of the requested work could complete. |
 | 2 | A check failed. |
 | 3 | Attention is needed: for example a held bump, an uncertain release, a partially successful batch, or a checksum preview finding a mismatch. |
+| 4 | A check is still running: `wait --for` or `check --for` reached its bound before the check ended; the check continues. |
 | 130 | The command was interrupted. |
+
+`check --for 9m` queues a check and follows it for at most nine minutes; `wait
+--for 9m` follows an existing one the same way. Both exit 4 while the check
+continues, saying what it is doing, so a bounded tool call polls with one
+command: `dockhand check --for 9m`, then `dockhand wait --for 9m` until the exit
+code isn't 4; `run.state` in the JSON says queued or running. Neither runs the
+check in its own process: with no serve, a background worker runs it.
 
 `status --json` distinguishes a branch's newest finished check, `latest_check`,
 from its `active_checks`. The first check can still be running while
@@ -206,7 +229,7 @@ the two caches after the table, are the complete catalog beyond the usual
 | `MACPORTS_TREE` | Ports checkout, unless `--tree` is given. |
 | `DOCKHAND_DB` | Database, unless `--db` is given; otherwise `~/.dockhand/dockhand.db`. |
 | `DOCKHAND_CONFIG` | Configuration file; otherwise `~/.dockhand/config.toml`. |
-| `GIT_BIN` | Git executable, unless `--git` is given. |
+| `GIT_BIN`, `PORT_TCLSH_BIN`, `TART_BIN`, `GO2PORT_BIN`, `CARGO2PORT_BIN`, `XCODES_BIN`, `GH_BIN`, `PATCH_BIN`, `DIFF_BIN` | The program, unless `--tool name=path` names it; otherwise `[tools]`, then PATH. |
 | `GH_TOKEN`, `GITHUB_TOKEN` | GitHub token, ahead of the saved login. |
 | `DOCKHAND_TART_HOME` | Dockhand's Tart images; otherwise `~/.dockhand/tart`. |
 | `TART_HOME` | Your Tart home, consulted when counting running VMs; otherwise `~/.tart`. |
@@ -227,13 +250,16 @@ Tart, `go2port`,
 `cargo2port`, `port-tclsh`, and `portindex` are found on `PATH`, then in
 MacPorts' prefix, `/opt/local/bin`, so a shell whose `PATH` lacks it, such as
 one over SSH, still builds; a refusal names both places, `go2port isn't on PATH
-or in /opt/local/bin`.
+or in /opt/local/bin`. `--tool name=path`, its variable, or `[tools]` names one
+ahead of that search, and one that names a program that isn't there is
+refused: `GO2PORT_BIN: /opt/local/bin/go2port isn't executable`. None of them
+reaches a build environment, which runs its own MacPorts.
 
 `serve --install` keeps `DOCKHAND_CONFIG`, `DOCKHAND_UPSTREAM`,
 `DOCKHAND_PULL_REQUESTS`, `DOCKHAND_INDEX_MIRROR`, `DOCKHAND_INDEX_CACHE`,
 `DOCKHAND_READING_CACHE`, `DOCKHAND_GITHUB_CACHE`, `DOCKHAND_ARCHIVE_CACHE`,
 `DOCKHAND_BUILD_HISTORY_CACHE`, `DOCKHAND_TART_HOME`, `TART_HOME`, and
 `DOCKHAND_SSH_DIR` in the agent, with its PATH and explicit
-tree, database, and Git selections. It does not write a token into the agent
+tree and database selections, and each program named, as `--tool name=path`. It does not write a token into the agent
 file. Read `dockhand usage configuration` for settings and
 `dockhand usage unattended` for installing and stopping the service.

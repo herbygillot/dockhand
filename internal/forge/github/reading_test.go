@@ -124,3 +124,38 @@ func TestAPullRequestsOpeningIsReadAgainForNothing(t *testing.T) {
 	require.Equal(t, 2, asked)
 	require.Equal(t, 1, notModified, "the second look is GitHub's 304")
 }
+
+// A comment by someone other than the author, a person and after the
+// head was committed, is a reviewer waiting, which GitHub's review state
+// doesn't count: reneeotten's question on #36300 read "CI ✓" alone (#90).
+// The author's own word, a bot's, or one before the head isn't.
+func TestAReviewersLatestCommentIsRead(t *testing.T) {
+	head := strings.Repeat("a", 40)
+	pullRequest := func(number int, by, kind, at string) string {
+		return fmt.Sprintf(`{"pullRequest": {"number": %d, "state": "OPEN", "isDraft": false, "headRefOid": %q, "mergeable": "MERGEABLE",
+    "createdAt": "2026-11-01T09:00:00Z", "body": "", "author": {"login": "herbygillot"},
+    "latestOpinionatedReviews": {"totalCount": 0, "nodes": []},
+    "comments": {"nodes": [{"createdAt": %q, "author": {"__typename": %q, "login": %q}}]},
+    "commits": {"nodes": [{"commit": {"committedDate": "2026-11-04T09:00:00Z", "statusCheckRollup": {"contexts": {"totalCount": 0, "nodes": []}}}}]}}}`, number, head, at, kind, by)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `{"data": {"p0": %s, "p1": %s, "p2": %s, "p3": %s}}`,
+			pullRequest(1, "reneeotten", "User", "2026-11-05T14:00:09Z"),
+			pullRequest(2, "herbygillot", "User", "2026-11-05T14:00:09Z"),
+			pullRequest(3, "macportsbot", "Bot", "2026-11-05T14:00:09Z"),
+			pullRequest(4, "reneeotten", "User", "2026-11-03T14:00:09Z"))
+	}))
+	defer server.Close()
+	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, Token: "fixture-token"}}}
+	var refs []forge.PullRequestRef
+	for number := 1; number <= 4; number++ {
+		refs = append(refs, forge.PullRequestRef{Forge: forge.GitHub, Repository: "macports/macports-ports", Number: number})
+	}
+	readings, err := client.ReadPullRequests(t.Context(), refs)
+	require.NoError(t, err)
+	var commented []string
+	for _, reading := range readings {
+		commented = append(commented, reading.Status.CommentedBy)
+	}
+	require.Equal(t, []string{"reneeotten", "", "", ""}, commented)
+}

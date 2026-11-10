@@ -2,20 +2,27 @@ package portfile
 
 import (
 	"bytes"
+	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
 // fetchCommands are the commands that say what a port fetches, after the
 // last of which a subport's checksums are written, as create orders them.
-var fetchCommands = map[string]bool{
-	"version": true, "distname": true, "distfiles": true, "dist_subdir": true,
-	"master_sites": true, "master_sites.mirror_subdir": true, "extract.suffix": true,
-	"use_bzip2": true, "use_xz": true, "use_zip": true, "use_7z": true, "use_lzip": true,
-	"github.setup": true, "github.tarball_from": true, "gitlab.setup": true, "codeberg.setup": true, "bitbucket.setup": true,
-}
+var fetchCommands = func() map[string]bool {
+	commands := map[string]bool{
+		"version": true, "distname": true, "distfiles": true, "dist_subdir": true,
+		"master_sites": true, "master_sites.mirror_subdir": true, "extract.suffix": true,
+		"github.setup": true, "github.tarball_from": true, "gitlab.setup": true, "codeberg.setup": true, "bitbucket.setup": true,
+	}
+	for _, option := range macports.ExtractOptions {
+		commands[option] = true
+	}
+	return commands
+}()
 
 // DeclareSubportChecksums writes a checksums declaration of placeholders
 // for these archives in a subport's block, which declares none, after its
@@ -188,5 +195,54 @@ func DeclareChecksums(src []byte, names []string) ([]byte, bool) {
 		declaration += "\n"
 	}
 	out, err := textedit.Apply(src, []textedit.Edit{{Span: textedit.Span{Start: end, End: end}, New: []byte(declaration)}})
+	return out, err == nil
+}
+
+// NameChecksums rewrites a Portfile's top checksums declaration of one
+// archive, unnamed, as one of placeholders for each of these archives,
+// named, as DeclareChecksums writes one, for a refresh to fill in: a port
+// that came to fetch several archives, as shader-slang's six, kept its one
+// "checksums rmd160 0 sha256 0 size 0", and checksums refused it (field
+// testing, #66). False where the top has no such one declaration, its
+// values aren't literal, or its lines hold another command.
+func NameChecksums(src []byte, names []string) ([]byte, bool) {
+	script, errs := syntax.Parse(src)
+	if len(errs) > 0 || len(names) < 2 {
+		return nil, false
+	}
+	var found *syntax.Command
+	for _, item := range script.Items {
+		cmd, ok := item.(syntax.Command)
+		if !ok {
+			continue
+		}
+		switch name, _ := cmd.Name(src); name {
+		case "checksums-append", "checksums-prepend":
+			return nil, false
+		case "checksums":
+			if found != nil {
+				return nil, false
+			}
+			found = &cmd
+		}
+	}
+	if found == nil || len(found.Words) < 3 {
+		return nil, false
+	}
+	first, ok := found.Words[1].Literal(src)
+	if !ok || !slices.Contains([]string{"rmd160", "sha256", "sha1", "md5", "size"}, first) {
+		return nil, false
+	}
+	start, end := lineStart(src, found.Span.Start), lineEnd(src, found.Span.End)
+	if strings.TrimSpace(string(src[start:found.Span.Start])) != "" || strings.TrimSpace(string(src[found.Span.End:end])) != "" {
+		return nil, false
+	}
+	column := max(valueColumn(src, *found), len("checksums")+1)
+	var lines []string
+	for _, name := range names {
+		lines = append(lines, name, "rmd160  0", "sha256  0", "size    0")
+	}
+	declaration := "checksums" + strings.Repeat(" ", column-len("checksums")) + strings.Join(lines, " \\\n"+strings.Repeat(" ", column))
+	out, err := textedit.Apply(src, []textedit.Edit{{Span: textedit.Span{Start: start, End: end}, New: []byte(declaration)}})
 	return out, err == nil
 }

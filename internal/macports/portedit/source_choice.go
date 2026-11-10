@@ -295,8 +295,10 @@ type judgedAsset struct {
 }
 
 // compressionOrder is which of one source in several compressions is
-// taken: gzip, then bzip2, xz, lzip, and zip.
-var compressionOrder = []string{".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lz", ".zip"}
+// taken: gzip, then those a use_ option extracts, bzip2, xz, lzip, lzma,
+// plain tar, and zip, then zstd, which takes extract.cmd and a dependency,
+// and 7z and a disk image last, a .dmg rarely holding source.
+var compressionOrder = []string{".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lz", ".tar.lzma", ".tar", ".zip", ".tar.zst", ".7z", ".dmg"}
 
 // judgeSources is the asset that is the source, among those judged:
 // passing ones with the same files and contents (sameFiles) are one
@@ -374,8 +376,9 @@ func templated(value string, info macports.PortInfo) (string, bool) {
 func sourceMoveFor(asset judgedAsset, info macports.PortInfo, fromGit bool) (portfile.SourceMove, bool) {
 	extraction, _ := macports.ExtractionOf(asset.name)
 	base := strings.TrimSuffix(asset.name, extraction.Suffix)
-	move := portfile.SourceMove{Mode: "releases", UseOption: extraction.UseOption, FromGit: fromGit}
-	if extraction.Suffix != extraction.Implied {
+	move := portfile.SourceMove{Mode: "releases", UseOption: extraction.UseOption, Command: extraction.Command, Depends: extraction.Depends, FromGit: fromGit}
+	// zstd's suffix is written always: Base 2.12's default is gzip's.
+	if extraction.Suffix != extraction.Implied || extraction.Command != "" {
 		move.Suffix = extraction.Suffix
 	}
 	defaultBase := info.Options["github.project"] + "-" + info.Options["github.version"]
@@ -430,6 +433,10 @@ func (s *Service) chooseSource(ctx context.Context, request Request, input *sour
 	switch {
 	case mode == SourceKeep:
 		return kept, nil
+	case from == "releases" && mode == SourceArchive:
+		// Kept, it updated, fetched the release's assets, and said nothing
+		// of the policy it didn't follow (#123).
+		return kept, ErrUnsupported.Because("--source archive: %s fetches a release asset, and update doesn't move a port back to GitHub's archive of the tag", input.target.Name)
 	case from == "releases":
 		return kept, nil
 	case from == "git" && mode == SourceArchive:
@@ -489,7 +496,7 @@ func (s *Service) chooseSource(ctx context.Context, request Request, input *sour
 		if ctx.Err() != nil {
 			return kept, ctx.Err()
 		}
-		return refuse(fmt.Sprintf("GitHub's archive of %s couldn't be read to compare release %s's files with (%v)", release.Tag, release.Tag, err))
+		return refuse(fmt.Sprintf("GitHub's archive of %s couldn't be read while checking release %s's files (%v)", release.Tag, release.Tag, err))
 	}
 	tag, err := readSourceTree(ctx, tagPath)
 	_ = os.Remove(tagPath)
@@ -519,14 +526,14 @@ func (s *Service) chooseSource(ctx context.Context, request Request, input *sour
 	}
 	chosen, ambiguous := judgeSources(judged)
 	if len(ambiguous) > 0 {
-		return refuse(fmt.Sprintf("release %s carries %s, each the source but with different files, so none was chosen", release.Tag, prose.And(ambiguous)))
+		return refuse(fmt.Sprintf("release %s has multiple qualifying source archives (%s) with different contents; none was chosen", release.Tag, prose.And(ambiguous)))
 	}
 	if chosen == nil {
 		return refuse(fmt.Sprintf("release %s carries %s, which %s", release.Tag, judged[0].name, judged[0].lacks))
 	}
 	move, ok := sourceMoveFor(*chosen, next, from == "git")
 	if !ok {
-		return refuse(fmt.Sprintf("release %s's %s is named in a way dockhand doesn't write", release.Tag, chosen.name))
+		return refuse(fmt.Sprintf("release %s's %s has a filename or top-level directory that dockhand can't write into the Portfile automatically", release.Tag, chosen.name))
 	}
 	moved := &MovedSource{From: from, To: "releases", Release: release.Tag, Asset: chosen.name, Submodules: needs.submodules}
 	move.Comment = sourceComment(*moved)
@@ -539,7 +546,7 @@ func (s *Service) chooseSource(ctx context.Context, request Request, input *sour
 		if ctx.Err() != nil {
 			return kept, ctx.Err()
 		}
-		return refuse(fmt.Sprintf("release %s carries %s, but the Portfile moved to it didn't evaluate (%v)", release.Tag, chosen.name, err))
+		return refuse(fmt.Sprintf("release %s carries %s, but the Portfile couldn't be evaluated after switching to it (%v)", release.Tag, chosen.name, err))
 	}
 	if why := movedAsWritten(evaluated.after.Ports[input.target.Name], *chosen); why != "" {
 		return refuse(fmt.Sprintf("release %s carries %s, but the Portfile moved to it %s", release.Tag, chosen.name, why))
@@ -558,10 +565,10 @@ func (s *Service) chooseSource(ctx context.Context, request Request, input *sour
 // sourceSuggestion is suggest's notice of a release asset that is the
 // source, where the update left the source as it was: "release 2.5.0's
 // mindforger_2.5.0_tarball.tgz carries the source, doc, and
-// deps/cmark-gfm; update --source releases fetches it".
+// deps/cmark-gfm; update --source releases, run instead of this update, fetches it".
 func sourceSuggestion(moved MovedSource) string {
 	carried := append([]string{"the source"}, moved.Submodules...)
-	return fmt.Sprintf("release %s's %s carries %s; update --source releases fetches it", moved.Release, moved.Asset, prose.And(carried))
+	return fmt.Sprintf("release %s's %s carries %s; update --source releases, run instead of this update, fetches it", moved.Release, moved.Asset, prose.And(carried))
 }
 
 // gitMoveBlocked says why a port cloned with Git doesn't qualify for a

@@ -108,10 +108,33 @@ func (e *Engine) serveCandidates(ctx context.Context) ([]ServeCandidate, []model
 			candidates = append(candidates, candidate)
 			continue
 		}
+		// What its check found linked and undeclared, tidy declares, as a
+		// person's tidy would, in a commit of its own; the branch then
+		// waits for its check, which reuses the builds, and submits at
+		// the next pass. Only what tidy can't write holds (the person's
+		// "Write it", 2026-11-04; docs/designs/declare-linked-libraries.md,
+		// part 4).
+		if len(plan.Undeclared) > 0 {
+			if declared, err := e.declareUnattended(ctx, branch); err == nil && declared {
+				continue
+			}
+		}
 		candidate.Held = plan.Held()
 		candidates = append(candidates, candidate)
 	}
 	return candidates, yours, nil
+}
+
+// declareUnattended applies tidy's declaration to a branch nobody looks
+// over where its plan writes one and nothing else (declareTidy), and
+// reports whether it did; the branch's commits are left as they are.
+func (e *Engine) declareUnattended(ctx context.Context, branch model.Branch) (bool, error) {
+	plan, err := e.PlanTidy(ctx, TidyRequest{Branch: branch})
+	if err != nil || plan.Declare == nil || len(plan.Groups) > 0 && !reproduces(plan.Groups, plan.History) {
+		return false, err
+	}
+	_, err = e.ApplyTidy(ctx, plan)
+	return err == nil, err
 }
 
 // personAsked reports whether a branch's governing check was asked, by a
@@ -304,7 +327,7 @@ const sourceUnknownRule = "source-unknown"
 // isn't known.
 func unknownSource(port, ref string, planned model.ObjectID, why, run string) model.Concern {
 	return model.Concern{Origin: model.FromUpstream, Port: port, Rule: sourceUnknownRule, Subject: string(planned), Class: model.UnknownBaseline,
-		Detail: fmt.Sprintf("%s: whether %s still points to %s, as when %s was planned, isn't known: %s", port, ref, planned.Short(), run, why)}
+		Detail: fmt.Sprintf("%s: could not verify that %s still points to %s, as it did when %s was planned: %s", port, ref, planned.Short(), run, why)}
 }
 
 // preparedSources are the Git-fetched ports whose update chose a release
@@ -495,16 +518,8 @@ func (e *Engine) SubmitForServe(ctx context.Context, candidate ServeCandidate) (
 	}
 	plan := candidate.Plan
 	plan.Body = plan.Body + "\n\n" + ServeNote + "\n"
-	submitted, err := e.ApplySubmit(ctx, plan, model.AnsweredNobody)
-	if err != nil {
-		return submitted, err
-	}
-	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: candidate.Branch.ID, Kind: model.EventServeSubmit, Level: model.LevelInfo,
-			Message: fmt.Sprintf("serve opened #%d for %s, which passed its check", submitted.PullRequest.Ref.Number, candidate.Branch.ShortName())})
-		return err
-	})
-	return submitted, err
+	plan.served = true
+	return e.ApplySubmit(ctx, plan, model.AnsweredNobody)
 }
 
 // majorRule is the hold on an update whose major version moves.
@@ -635,17 +650,23 @@ const linkUndeclaredRule = "link-undeclared"
 // linkHolds are the undeclared links of the check a submission rests on
 // (UndeclaredLinks), each a hold for the port that links it, naming the
 // port it links; a declared link, or a build whose links weren't read,
-// holds nothing, as the scan says them.
-func (e *Engine) linkHolds(ctx context.Context, checked *Evidence) []model.Concern {
+// holds nothing, as the scan says them. Its declarations nothing links
+// are returned beside them, notices holding nothing.
+func (e *Engine) linkHolds(ctx context.Context, checked *Evidence) ([]model.Concern, []LinkFinding) {
 	if checked == nil {
-		return nil
+		return nil, nil
 	}
 	findings, err := e.linkFindings(ctx, *checked)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	var held []model.Concern
+	var unlinked []LinkFinding
 	for _, finding := range findings {
+		if finding.Unlinked {
+			unlinked = append(unlinked, finding)
+			continue
+		}
 		if finding.Unread || finding.Clean || finding.Port == "" {
 			continue
 		}
@@ -656,7 +677,7 @@ func (e *Engine) linkHolds(ctx context.Context, checked *Evidence) []model.Conce
 		held = append(held, model.Concern{Origin: model.FromHolds, Port: port, Rule: linkUndeclaredRule, Subject: finding.Port,
 			Detail: fmt.Sprintf("%s links %s from %s, which it doesn't declare in depends_lib; depends_lib-append port:%s declares it; review is required before automatic submission", port, path.Base(finding.Library), finding.Port, finding.Port)})
 	}
-	return held
+	return held, unlinked
 }
 
 // majorHold is the hold on an update nobody looks over whose major version

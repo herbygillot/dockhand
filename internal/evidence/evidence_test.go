@@ -495,3 +495,34 @@ func TestATreesEvidenceIsEveryBuildItsChecksMade(t *testing.T) {
 	require.Equal(t, []string{"curl +gnutls +sectrust changed run_772"}, rows(only))
 	require.Equal(t, "curl", only.AcceptName(only.Targets[0]))
 }
+
+// A result recorded after a shell opened in its running guest isn't
+// evidence: its cell is entered, missing, its outcome kept for words; one
+// recorded before the shell opened stands, as does one on another release.
+func TestAResultAShellEnteredIsNoEvidence(t *testing.T) {
+	opened := time.Date(2026, 11, 4, 10, 2, 0, 0, time.UTC)
+	run := model.Run{ID: "run_12", Number: 12, Entered: []model.Entry{{At: opened, Environment: tahoeArm, Command: "ls"}}}
+	targets := []model.PlanTarget{
+		{ID: "libharbor", Target: model.Target{Name: "libharbor"}, Role: model.Changed},
+		{ID: "harbor-cli", Target: model.Target{Name: "harbor-cli"}, Role: model.Changed},
+	}
+	plan := model.Plan{Environments: []model.Environment{tahoeArm}, Targets: targets, Builds: []model.EnvironmentPlan{{Environment: tahoeArm, Order: []model.TargetID{"libharbor", "harbor-cli"}}}}
+	evidence := Of(Check{Run: run, Plan: plan, Executions: []model.GuestExecution{{ID: "tart_a", Run: run.ID, Environment: tahoeArm, Attempt: 1, State: model.ExecutionFinished}},
+		Results: map[model.ExecutionID][]model.TargetResult{"tart_a": {
+			{Execution: "tart_a", Target: "libharbor", Outcome: model.OutcomePassed, RecordedAt: opened.Add(-time.Minute)},
+			{Execution: "tart_a", Target: "harbor-cli", Outcome: model.OutcomePassed, RecordedAt: opened.Add(time.Minute)},
+		}}})
+	require.Equal(t, CellRecorded, evidence.Targets[0].Outcomes[0].Kind, "built before the shell opened")
+	entered := evidence.Targets[1].Outcomes[0]
+	require.Equal(t, CellEntered, entered.Kind)
+	require.Equal(t, model.OutcomePassed, entered.EnteredOutcome)
+	require.Equal(t, opened, entered.Entered.At)
+	require.True(t, entered.Unbuilt())
+	require.False(t, evidence.Targets[1].Passed)
+	require.True(t, evidence.missing())
+
+	run.Entered[0].Environment = model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}
+	evidence = Of(Check{Run: run, Plan: plan, Executions: []model.GuestExecution{{ID: "tart_a", Run: run.ID, Environment: tahoeArm, Attempt: 1, State: model.ExecutionFinished}},
+		Results: map[model.ExecutionID][]model.TargetResult{"tart_a": {{Execution: "tart_a", Target: "harbor-cli", Outcome: model.OutcomePassed, RecordedAt: opened.Add(time.Minute)}}}})
+	require.Equal(t, CellRecorded, evidence.Targets[1].Outcomes[0].Kind, "a shell on another release")
+}

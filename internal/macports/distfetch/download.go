@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"net/http"
 	"net/url"
@@ -72,7 +73,13 @@ func LocalPatches(info macports.PortInfo, portdir string) error {
 	if root == "" {
 		root = filepath.Join(portdir, "files")
 	}
+	// The port is evaluated from the files Git tracks, so a files/ not yet
+	// added, as a new port's is, isn't there: shader-slang's checksums read
+	// "local patch directory is unavailable" (field testing, #65).
 	resolved, err := filepath.EvalSymlinks(root)
+	if errors.Is(err, fs.ErrNotExist) {
+		return portfile.ErrUnsupported.Because("the port's files directory isn't among the files Git tracks, which dockhand reads; git add it, with its patches")
+	}
 	if err != nil {
 		return portfile.ErrUnsupported.Because("local patch directory is unavailable")
 	}
@@ -93,6 +100,9 @@ func LocalPatches(info macports.PortInfo, portdir string) error {
 			return portfile.ErrUnsupported.Because("patchfile %s is not in the port's files directory; checking downloaded patches is not supported", name)
 		}
 		stat, err := os.Lstat(filepath.Join(resolved, name))
+		if errors.Is(err, fs.ErrNotExist) {
+			return portfile.ErrUnsupported.Because("patchfile %s isn't among the files Git tracks, which dockhand reads; git add it", name)
+		}
 		if err != nil || !stat.Mode().IsRegular() {
 			return portfile.ErrUnsupported.Because("patchfile %s is not a frozen regular file", name)
 		}
@@ -300,10 +310,10 @@ func notFoundWords(info macports.PortInfo, address string) string {
 func CheckFetchCredentials(info macports.PortInfo) error {
 	credentials, err := info.FetchCredentials()
 	if err != nil {
-		return portfile.ErrUnsupported.Because("cannot determine applicable MacPorts fetch credentials; prepare this update manually with MacPorts")
+		return portfile.ErrUnsupported.Because("cannot determine applicable MacPorts fetch credentials; fetch this port's sources with MacPorts instead")
 	}
 	if credentials {
-		return portfile.ErrUnsupported.Because("MacPorts credentials apply to the selected source downloads; authenticated fetching is not supported by the direct downloader; prepare this update manually with MacPorts")
+		return portfile.ErrUnsupported.Because("MacPorts credentials apply to the selected source downloads; authenticated fetching is not supported by the direct downloader; fetch this port's sources with MacPorts instead")
 	}
 	return nil
 }
@@ -332,7 +342,7 @@ func CheckPolicy(info macports.PortInfo, portdir string) error {
 	_, evaluated := info.Options["fetch.ignore_sslcert"]
 	ignoreCertificate, err := info.Bool("fetch.ignore_sslcert")
 	if info.Options["fetch.type"] != "standard" || !evaluated || err != nil || ignoreCertificate || info.Options["go.vendors"] != "" || info.Options["cargo.crates"] != "" || info.Options["cargo.crates_github"] != "" {
-		return portfile.ErrUnsupported.Because("fetch customization or vendored source requires a dedicated preparer")
+		return portfile.ErrUnsupported.Because("custom fetching or vendored source cannot be prepared automatically here; fetch this port's sources with MacPorts instead")
 	}
 	if err := LocalPatches(info, portdir); err != nil {
 		return err

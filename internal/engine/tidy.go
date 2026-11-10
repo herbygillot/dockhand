@@ -123,8 +123,8 @@ type TidyPlan struct {
 	// Keep is true when the history already has a good shape and nothing
 	// is uncommitted.
 	Keep bool
-	// Findings are problems in the files, for the person to fix; tidy
-	// never changes files.
+	// Findings are problems in the files that the plan leaves for the
+	// person to fix.
 	Findings []commitrules.Finding
 	// Warnings are what MacPorts' commit rules warn of in the commits as
 	// they are, as submit says them: a plan that would keep the commits
@@ -141,6 +141,17 @@ type TidyPlan struct {
 	// (tidyWorkingFiles); applying commits them and writes them into the
 	// working files.
 	Fixed []string
+	// Declare is the commit after the groups that declares what the
+	// branch's passed check found its builds link and not declare
+	// (declareTidy), Declared the tree it ends at, and Declarations its
+	// lines; nil where it declares nothing. NotDeclared say the findings
+	// it leaves to the person, and why.
+	Declare      *TidyGroup
+	Declared     string
+	Declarations []Declaration
+	NotDeclared  []string
+	// declared are the declaration's edits of the working files.
+	declared []git.FileEdit
 	// Restyle is the commit --restyle makes after the groups, of the
 	// Portfiles it restyles, and Restyled the tree it ends at, Final's
 	// with them; nil where nothing is restyled. NotRestyled say the
@@ -150,6 +161,26 @@ type TidyPlan struct {
 	NotRestyled []string
 	// restyled are the restyle's edits of the working files.
 	restyled []git.FileEdit
+	// PathStyle is --restyle's commit after Restyle, of the port:
+	// dependencies it writes path-style, and PathStyled the tree it ends
+	// at; nil where it writes none. pathStyled are its edits of the
+	// working files, restyled.
+	PathStyle  *TidyGroup
+	PathStyled string
+	pathStyled []git.FileEdit
+}
+
+// Series are the plan's commits in the order applying it writes them:
+// its groups, its declaration, then --restyle's whitespace and path-style
+// commits.
+func (p TidyPlan) Series() []TidyGroup {
+	groups := p.Groups
+	for _, last := range []*TidyGroup{p.Declare, p.Restyle, p.PathStyle} {
+		if last != nil {
+			groups = append(slices.Clone(groups), *last)
+		}
+	}
+	return groups
 }
 
 // Subjects are the subjects the branch is committed with once the plan
@@ -192,10 +223,19 @@ func (p TidyPlan) Blocking() []string { return p.Gate().Blocking() }
 // committed included. Nothing is changed.
 func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, error) {
 	plan, err := e.planTidy(ctx, request)
-	if err != nil || !request.Restyle {
+	if err != nil {
 		return plan, err
 	}
-	return plan, e.restyleTidy(ctx, &plan)
+	if err := e.declareTidy(ctx, &plan); err != nil {
+		return plan, err
+	}
+	if !request.Restyle {
+		return plan, nil
+	}
+	if err := e.restyleTidy(ctx, &plan); err != nil {
+		return plan, err
+	}
+	return plan, e.pathStyleTidy(ctx, &plan)
 }
 
 func (e *Engine) planTidy(ctx context.Context, request TidyRequest) (TidyPlan, error) {
@@ -542,15 +582,16 @@ func closesFor(branch model.Branch, edits []model.Edit, directory string) []stri
 // Trailers are the lines of a group's message's trailer paragraph
 // (commitmsg.SplitTrailers): those it keeps, Closes:, See:, and the
 // attribution trailers a person wrote, and dockhand's own Generated-By,
-// which it adds.
+// which it adds, or keeps where a commit it combines carried it.
 func (g TidyGroup) Trailers() (keeps, adds []string) {
 	_, rest, ok := strings.Cut(strings.TrimSpace(g.Message), "\n")
 	if !ok {
 		return nil, nil
 	}
 	_, trailers := commitmsg.SplitTrailers(strings.TrimSpace(rest))
+	carried := slices.ContainsFunc(g.Combines, func(commit git.HistoryCommit) bool { return commitmsg.Attributed(commit.Message) })
 	for _, line := range trailers {
-		if commitmsg.IsAttribution(line) {
+		if commitmsg.IsAttribution(line) && !carried {
 			adds = append(adds, line)
 			continue
 		}
@@ -559,24 +600,32 @@ func (g TidyGroup) Trailers() (keeps, adds []string) {
 	return keeps, adds
 }
 
-// squash makes one commit of the whole branch. With a message, it carries
-// Generated-By where every group it combines is dockhand's edits alone,
-// as a chained group's commit does, and none where any is a hand edit:
-// tidy --squash --message over dockhand's update dropped the trailer its
-// commits had (field testing's notes from the curl fix, note 11).
+// squash makes one commit of the whole branch. It carries Generated-By
+// where any commit it combines carried it, or any group it combines is
+// dockhand's edits, with or without a message, since the commit still
+// holds what dockhand wrote; one of hand edits alone carries none. A
+// squash of ship's update and a hand line dropped the trailer
+// (field testing's atuin and fd, 2026-11-04), as tidy --squash --message
+// over dockhand's update had (the curl fix's note 11), whose rule this
+// replaces.
 func squash(groups []TidyGroup, changed []string, history []git.HistoryCommit, message string, tickets []string, person, author git.Signature) TidyGroup {
 	group := TidyGroup{Paths: changed, Combines: history}
 	for _, g := range groups {
 		group.Ports = append(group.Ports, g.Ports...)
 		group.Working = group.Working || g.Working
 	}
+	generated := slices.ContainsFunc(groups, func(g TidyGroup) bool { return g.FromEdits }) ||
+		slices.ContainsFunc(history, func(commit git.HistoryCommit) bool { return commitmsg.Attributed(commit.Message) })
 	switch {
 	case strings.TrimSpace(message) != "":
 		subject, rest, _ := strings.Cut(strings.TrimSpace(message), "\n")
-		generated := len(groups) > 0 && !slices.ContainsFunc(groups, func(g TidyGroup) bool { return !g.FromEdits })
 		group.Message = commitmsg.Compose(subject, strings.TrimSpace(rest), commitMessages(history), tickets, generated)
 	case len(groups) == 1 && len(groups[0].Blocking) == 0:
 		group.Message = groups[0].Message
+		if generated && !commitmsg.Attributed(group.Message) {
+			subject, rest, _ := strings.Cut(strings.TrimSpace(group.Message), "\n")
+			group.Message = commitmsg.Compose(subject, strings.TrimSpace(rest), nil, nil, true)
+		}
 		group.Notes = append(group.Notes, "subject from the only commit it proposes")
 	default:
 		group.Blocking = append(group.Blocking, "a squash needs its message: --message \"port: what changed\"")
@@ -1353,7 +1402,7 @@ var ErrStalePlan = errors.New("the branch changed since this plan was made")
 // files as they were planned, so every file stays as it is; the index is
 // reset to the new head.
 func (e *Engine) ApplyTidy(ctx context.Context, plan TidyPlan) (TidyResult, error) {
-	if plan.Keep || len(plan.Groups) == 0 {
+	if plan.Keep || len(plan.Series()) == 0 {
 		return TidyResult{}, errors.New("the plan changes nothing")
 	}
 	if blocking := plan.Blocking(); len(blocking) > 0 {
@@ -1414,6 +1463,11 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 		return TidyResult{}, err
 	}
 	parent, tree := plan.Base, trees[plan.Base]
+	// A branch whose commits stand, with only tidy's own commits after
+	// them, as a declaration, keeps them all.
+	if len(plan.Groups) == 0 {
+		parent, tree = plan.Head, plan.Final
+	}
 	var result TidyResult
 	// A commit the branch has already, at the same place, from the same
 	// parent, with the same tree, author, and message (commitmsg.Unchanged),
@@ -1441,8 +1495,20 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 	if tree != plan.Final {
 		return TidyResult{}, fmt.Errorf("engine: the tidied commits end at tree %s, not the working files' %s; nothing was changed", tree, plan.Final)
 	}
+	if declare := plan.Declare; declare != nil {
+		if parent, err = worktree.WriteCommit(ctx, git.Commit{Tree: plan.Declared, Parents: []string{parent}, Message: declare.Message, Author: declare.Author, Committer: committer}); err != nil {
+			return TidyResult{}, err
+		}
+		result.Commits = append(result.Commits, parent)
+	}
 	if restyle := plan.Restyle; restyle != nil {
 		if parent, err = worktree.WriteCommit(ctx, git.Commit{Tree: plan.Restyled, Parents: []string{parent}, Message: restyle.Message, Author: restyle.Author, Committer: committer}); err != nil {
+			return TidyResult{}, err
+		}
+		result.Commits = append(result.Commits, parent)
+	}
+	if pathStyle := plan.PathStyle; pathStyle != nil {
+		if parent, err = worktree.WriteCommit(ctx, git.Commit{Tree: plan.PathStyled, Parents: []string{parent}, Message: pathStyle.Message, Author: pathStyle.Author, Committer: committer}); err != nil {
 			return TidyResult{}, err
 		}
 		result.Commits = append(result.Commits, parent)
@@ -1475,8 +1541,14 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 			if err := worktree.ApplyToWorkingFiles(ctx, files.fixed); err != nil {
 				return "", fmt.Errorf("commits were created, but the lint fixes couldn't be written into the working files: %w; git checkout -- %s takes them from the commits", err, strings.Join(fixedPaths(files.fixed), " "))
 			}
+			if err := worktree.ApplyToWorkingFiles(ctx, plan.declared); err != nil {
+				return "", fmt.Errorf("commits were created, but the declared dependencies couldn't be written into the working files: %w; git checkout -- %s takes them from the commits", err, strings.Join(fixedPaths(plan.declared), " "))
+			}
 			if err := worktree.ApplyToWorkingFiles(ctx, plan.restyled); err != nil {
 				return "", fmt.Errorf("commits were created, but the restyled Portfiles couldn't be written into the working files: %w; git checkout -- %s takes them from the commits", err, strings.Join(fixedPaths(plan.restyled), " "))
+			}
+			if err := worktree.ApplyToWorkingFiles(ctx, plan.pathStyled); err != nil {
+				return "", fmt.Errorf("commits were created, but the path-style dependencies couldn't be written into the working files: %w; git checkout -- %s takes them from the commits", err, strings.Join(fixedPaths(plan.pathStyled), " "))
 			}
 			// A narrowing that fails leaves the worktree as wide as it was.
 			if narrowed, err := e.narrow(ctx, worktree, plan.Branch, plan.Base, plan.Final); err == nil {

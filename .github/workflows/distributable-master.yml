@@ -1,0 +1,38 @@
+name: MacPorts' distributable checker
+
+# MacPorts' own distributable checker, macports-infrastructure's
+# jobs/distributable_lib.tcl, against the copy dockhand keeps pinned
+# (internal/macports/distributable), weekly: a change upstream fails this
+# job, naming upstream's commit, so the pin is renewed and the table test
+# rerun. A failure is a notice for the person, not a gate on main, as
+# base-master.yml's is.
+
+on:
+  schedule:
+    - cron: "41 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  distributable-master:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Compare the pinned checker with master's
+        run: |
+          set -euo pipefail
+          url=https://raw.githubusercontent.com/macports/macports-infrastructure/master/jobs/distributable_lib.tcl
+          curl -fsSL "$url" -o "$RUNNER_TEMP/distributable_lib.tcl"
+          commit=$(curl -fsSL "https://api.github.com/repos/macports/macports-infrastructure/commits?path=jobs/distributable_lib.tcl&per_page=1" | sed -n 's/^    "sha": "\(.*\)",$/\1/p' | head -1)
+          pinned=$(sed -n 's/^const Pin = "\(.*\)"$/\1/p' internal/macports/distributable/distributable.go)
+          if ! diff -u internal/macports/distributable/distributable_lib.tcl "$RUNNER_TEMP/distributable_lib.tcl"; then
+            echo "::error::macports-infrastructure's jobs/distributable_lib.tcl moved at ${commit:-an unknown commit} from the pinned ${pinned}: copy it to internal/macports/distributable/, set Pin, and rerun the table test"
+            exit 1
+          fi
+          echo "the pinned checker (${pinned}) is master's (${commit:-unknown})"

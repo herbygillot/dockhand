@@ -30,25 +30,24 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "status [branch]",
 		Short: "Show branches and work that needs attention",
-		Long: `Shows each open branch: its ports, its work, its checks, and its pull
-request, each in a column of its own, under a list of what needs attention, each
-row ending with the command that moves it forward. Inside a branch's
-worktree, or naming one, it shows that branch in detail.
+		Long: `Summarizes open branches, listing work that needs attention and the next
+command for each item. Shows work in progress and counts pull requests
+waiting on reviewers. Inside a branch's worktree, or with a branch named,
+shows that branch in detail.
 
-Below the branches, the checks queued and running, each with its branch,
-what it checks, where, and its state; a check whose process ended is said
-to be stopped, for dockhand wait to resume.
+Use -v to list all branch rows, queued and running checks, and active
+processes. A check whose process ended is marked stopped; dockhand wait
+can resume it.
 
---attention prints only what needs attention, for a prompt or a script, and exits
-3 when anything does. -b and --pr name a branch, shown in detail; -p finds
-the branches touching a port, shown in detail where one does and listed
-where several do. --all
-includes merged and archived branches. dockhand console keeps the
-branches current as serve works.
+--attention prints only items needing attention and exits 3 when any exist,
+for use in prompts or scripts. -b and --pr select a branch to show in
+detail; -p finds branches touching a port, showing detail for one match or
+listing multiple matches. --all includes merged, closed, and archived
+branches. Use dockhand console for a live view.
 
-Your pull requests' state, reviews, and CI are read from GitHub first where
-what's recorded is older than serve reads them, every five minutes;
---refresh reads them whatever their age.`,
+Pull request state, reviews, and CI are refreshed from GitHub when their
+recorded information is more than five minutes old. --refresh reads them
+regardless of age.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 && where.Explicit() {

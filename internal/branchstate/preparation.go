@@ -58,5 +58,5 @@ func Preparation(b Branch) Prepared {
 
 // HeldWords say a branch held before its check, and what lets it build.
 func HeldWords(why string) string {
-	return fmt.Sprintf("held before its check, at its committed edit: %s; holds.allow = [\"patch-rejected\"] lets it build", why)
+	return fmt.Sprintf("held before its check, with its changes committed: %s; holds.allow = [\"patch-rejected\"] lets it build", why)
 }

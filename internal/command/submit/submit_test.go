@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/term"
@@ -597,6 +599,19 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	require.Contains(t, out, "  PR       #34901 changes requested, CI ✓\n", "once read, it says what it read")
 	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
 
+	// A reviewer's comment, the conversation's latest word, waits on you
+	// though GitHub counts no review: #36300 read "CI ✓" alone (#90).
+	g.Status = forge.PullRequestStatus{Review: "none", CommentedBy: "reneeotten", Checks: forge.CheckSummary{Total: 2, Passed: 2}}
+	out, errs, err = cmdtest.Dockhand(t, "status", "--refresh")
+	require.NoError(t, err)
+	require.Contains(t, errs, "jq-update: #34901: @reneeotten commented\n")
+	require.Contains(t, out, "Needs attention (1)\n  ! jq-update  #34901: @reneeotten commented; awaiting your response (just now)\n")
+	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-update"))
+	out, _, err = cmdtest.Dockhand(t, "status")
+	require.NoError(t, err)
+	require.Contains(t, out, "  PR       #34901 @reneeotten commented, CI ✓\n")
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
+
 	// serve reads them by itself.
 	g.Status = forge.PullRequestStatus{Review: "none", Checks: forge.CheckSummary{Total: 2, Passed: 1, Failed: 1, Failing: []string{"macOS 26"}}}
 	cmdtest.Hosted(t).Timings.ServePoll = 20 * time.Millisecond
@@ -623,6 +638,9 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	out, _, err = cmdtest.Dockhand(t, "status", "--attention", "--refresh")
 	require.Equal(t, 3, term.ExitCode(err))
 	require.Contains(t, cmdtest.Flat(out), "✗ jq-update  #34901: MacPorts CI failed: fetching jq-1.8.1.tar.gz (mirror.sjtu.edu.cn answered 403) on macOS 26 (just now) dockhand retry --ci --branch jq-update\n")
+	_, _, err = cmdtest.Dockhand(t, "retry", "--ci", "-d", "--branch", "jq-update")
+	require.ErrorContains(t, err, "none of the others can be", "--ci queues nothing for -d to return from")
+	require.Empty(t, g.Rerun)
 	out, _, err = cmdtest.Dockhand(t, "retry", "--ci", "--branch", "jq-update")
 	require.NoError(t, err)
 	require.Equal(t, cmdtest.Flat("Asked GitHub to run #34901's failed CI again (1 workflow run); dockhand status --refresh reads how it went.\n"), cmdtest.Flat(out))
@@ -1162,6 +1180,37 @@ func TestCheckWordsSayWhatWasntBuilt(t *testing.T) {
 	require.Equal(t, "check-323: grafana isn't built for these files on "+checks.DescribeEnvironment(tahoe), said)
 }
 
+// The preview says the variant builds behind the variants item beneath
+// its Checks row, as the description's note does: the row named only the
+// governing check, check-774, where check-772 and check-773 built the
+// variants (architecture's review of v0.8.0).
+func TestThePreviewSaysTheVariantBuildsBehindItsTick(t *testing.T) {
+	t.Parallel()
+	command := model.Environment{Provider: "command"}
+	run := func(n int) model.Run { return model.Run{ID: model.RunID(fmt.Sprint("run_", n)), Number: n} }
+	executions := map[model.ExecutionID]model.GuestExecution{}
+	build := func(target model.Target, role model.TargetRole, check model.Run) engine.TargetEvidence {
+		execution := model.GuestExecution{ID: model.ExecutionID(fmt.Sprint("ex_", check.Number)), Run: check.ID, Environment: command}
+		executions[execution.ID] = execution
+		return engine.TargetEvidence{Target: model.PlanTarget{ID: target.ID(), Target: target, Role: role}, Passed: true,
+			Outcomes: []engine.Cell{{TargetResult: model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsNone, Execution: execution.ID}, Kind: engine.CellRecorded, Environment: command}}}
+	}
+	evidence := engine.Evidence{Run: run(774), Earlier: []model.Run{run(772), run(773)}, Plan: model.Plan{Environments: []model.Environment{command}},
+		Targets: []engine.TargetEvidence{
+			build(model.Target{Name: "curl"}, model.Changed, run(774)),
+			build(model.Target{Name: "curl", Variants: map[string]bool{"gnutls": true, "sectrust": true}}, model.Also, run(772)),
+			build(model.Target{Name: "curl", Variants: map[string]bool{"ssl": true, "sectrust": true}}, model.Also, run(773)),
+		}, Executions: executions}
+	var out strings.Builder
+	view.WriteSubmitPlan(&out, engine.SubmitPlan{Evidence: &evidence}, false)
+	require.Contains(t, out.String(), "  Checks   passed on command for this commit's files (check-774)\n           Dockhand built curl with +gnutls +sectrust and with +sectrust +ssl added to the default variants, in check-772 and check-773\n")
+
+	evidence.Targets = evidence.Targets[:1]
+	out.Reset()
+	view.WriteSubmitPlan(&out, engine.SubmitPlan{Evidence: &evidence}, false)
+	require.NotContains(t, out.String(), "Dockhand built", "a default build alone says nothing more")
+}
+
 // A submission that pushes to a fork its login doesn't own, as a sandbox
 // or --remote lets it, says so beneath the account it pushes as (the rc9
 // full stage's D-C4); someone else's pull request, pushed to as theirs,
@@ -1207,4 +1256,128 @@ func TestTheSubmitPlanNamesAPatchChangedUnderItsName(t *testing.T) {
 	planned, err := cmdtest.JSONOf(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Equal(t, []any{"textproc/jq/files/patch-docs.diff"}, planned.Result["changed_patches"])
+}
+
+// failingReviewers fails its reviewer requests while fail is set, counting
+// them.
+type failingReviewers struct {
+	*forgetest.GitHub
+	fail  error
+	calls int
+}
+
+func (g *failingReviewers) RequestReviewers(ctx context.Context, ref forge.PullRequestRef, logins []string) error {
+	g.calls++
+	if g.fail != nil {
+		return g.fail
+	}
+	return g.GitHub.RequestReviewers(ctx, ref, logins)
+}
+
+// A reviewer request that failed after its push is made by the next
+// submit, which pushes nothing: a rerun skipped it, since it hadn't
+// pushed (Codex's workflow review of 1caa6c3d, finding 8, its probe).
+func TestSubmitFinishesAReviewRequestTheLastOneLeft(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
+	wrapped := &failingReviewers{GitHub: g}
+	cmdtest.Stands(t).Forge = func(*engine.Engine) engine.Forge { return wrapped }
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "tidy")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	g.Status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, ChangesRequestedBy: []string{"ryandesign"}, ReviewedAt: time.Now().Add(-time.Hour)}
+	_, _, err = cmdtest.Dockhand(t, "status", "--refresh")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n# reviewed\n"), 0644))
+	testsupport.Git(t, dir, "commit", "-q", "-am", "jq: document review")
+	require.NoError(t, os.MkdirAll(filepath.Join(w.Home, ".dockhand"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("[submit]\nrerequest_review = \"always\"\n"), 0644))
+	wrapped.fail = errors.New("temporary review API failure")
+	out, _, err := cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
+	require.ErrorContains(t, err, "temporary review API failure")
+	require.Contains(t, out, "Updated #34901: pushed through commit")
+	require.Equal(t, 1, wrapped.calls)
+	wrapped.fail = nil
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	require.Contains(t, out, "Asked @ryandesign to review again (left over from the last submit).")
+	require.Equal(t, 2, wrapped.calls, "retry should finish the failed post-push reviewer request")
+	require.Equal(t, []string{"ryandesign"}, g.Rerequested)
+}
+
+// The re-request a failed reviewer request left is made by the next
+// submit where the commit pushed is older than the review, as one made
+// before it and pushed after is: the push's time decides, not the
+// commit's (Codex's sixth review, #76, its probe).
+func TestAReRequestLeftOverIsDueByThePushNotTheCommit(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
+	wrapped := &failingReviewers{GitHub: g}
+	cmdtest.Stands(t).Forge = func(*engine.Engine) engine.Forge { return wrapped }
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "tidy")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	g.Status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, ChangesRequestedBy: []string{"ryandesign"}, ReviewedAt: time.Now().Add(-time.Hour)}
+	_, _, err = cmdtest.Dockhand(t, "status", "--refresh")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n# reviewed\n"), 0644))
+	commit := exec.Command("/usr/bin/git", "-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgSign=false", "-c", "core.hooksPath=/dev/null", "commit", "-q", "-am", "jq: document review")
+	commit.Dir = dir
+	commit.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1", "GIT_AUTHOR_DATE=2000-01-01T00:00:00Z", "GIT_COMMITTER_DATE=2000-01-01T00:00:00Z")
+	output, commitErr := commit.CombinedOutput()
+	require.NoError(t, commitErr, string(output))
+	require.NoError(t, os.MkdirAll(filepath.Join(w.Home, ".dockhand"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("[submit]\nrerequest_review = \"always\"\n"), 0644))
+	wrapped.fail = errors.New("temporary review API failure")
+	out, _, err := cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
+	require.ErrorContains(t, err, "temporary review API failure")
+	require.Contains(t, out, "Updated #34901: pushed through commit")
+	require.Equal(t, 1, wrapped.calls)
+	wrapped.fail = nil
+	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	require.Contains(t, out, "(left over from the last submit)")
+	require.Equal(t, 2, wrapped.calls, "retry should finish the failed post-push reviewer request")
+	require.Equal(t, []string{"ryandesign"}, g.Rerequested)
+}
+
+// submit's preview writes the title and body as they are on a terminal:
+// wrapped at its width, a long line broke, code blocks too (#93).
+func TestSubmitsPreviewIsNotWrapped(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithGitHub(t, w)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-update"))
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "tidy")
+	require.NoError(t, err)
+	note := "A note whose one line runs well past a terminal's hundred columns, as a command or a URL in a pull request's body does."
+	var out, errs bytes.Buffer
+	_ = cmdtest.RunFor(t, t.Context(), []string{"submit", "--no-check", "--note", note, "--tested-binaries"}, term.Streams{In: strings.NewReader("p\nq\n"), Out: &out, Err: &errs}.AsTerminal())
+	require.Contains(t, out.String(), note+"\n", errs.String())
 }

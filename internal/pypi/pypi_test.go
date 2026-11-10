@@ -44,7 +44,7 @@ func TestAReleaseTooLargeOrDowngradedIsSaid(t *testing.T) {
 	client := Client{HTTP: server.Client(), Base: server.URL}
 	for _, project := range []string{"declared", "streamed"} {
 		_, err := client.Files(t.Context(), project, "1.0")
-		require.ErrorContains(t, err, "pypi: "+project+" 1.0: its JSON is larger than the 8 MiB dockhand reads of a release")
+		require.ErrorContains(t, err, "pypi: "+project+" 1.0: release metadata exceeds the 8 MiB read limit")
 	}
 
 	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, `{"urls": []}`) }))

@@ -8,6 +8,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/settings"
+	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
@@ -17,17 +19,22 @@ import (
 func ArtifactsCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
-		Use:   "artifacts [branch]",
-		Short: "Show where a check's built archives are on this Mac",
-		Long: `Prints the archive each port of a branch's latest check built, a line for
-each port and platform it passed on: the port, the platform, and the
-archive's path on this Mac with its name, for otool or a smoke test by hand.
-A port that didn't pass built none; one whose archive wasn't kept, or that
-cleanup removed, says so. In a branch's worktree, with no branch named, the
-branch checked out there.`,
+		Use:   "artifacts [branch | check]",
+		Short: "Show the local paths of a check's built archives",
+		Long: `Lists archives from the branch's latest check, with one line per passed
+port and platform: the port, platform, archive name, and path on this Mac.
+Use these paths to inspect or manually test the built files. The output
+explains when a port did not pass or its archive was not kept or was removed
+by cleanup.
+
+Name a check, such as check-42, to list its archives. With no argument in a
+branch's worktree, lists that branch's latest check.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 1 {
+			// A check is named as logs names one: artifacts check-781 read
+			// "no tracked branch named check-781" (field testing, #68).
+			check := len(args) == 1 && engine.IsCheckName(args[0])
+			if len(args) == 1 && !check {
 				if where.Explicit() {
 					return fmt.Errorf("name a branch once, as the argument or with -b, -p, or --pr")
 				}
@@ -39,7 +46,15 @@ branch checked out there.`,
 				return err
 			}
 			defer e.Close()
-			run, err := branchflags.LatestOf(ctx, e, streams, where, "name a branch, or run this in a branch's worktree")
+			var run model.Run
+			switch {
+			case check && where.Explicit():
+				return fmt.Errorf("name a check or a branch, not both")
+			case check:
+				run, _, err = e.RunOrExecution(ctx, args[0])
+			default:
+				run, err = branchflags.LatestOf(ctx, e, streams, where, "name a branch or a check, or run this in a branch's worktree")
+			}
 			if err != nil {
 				return err
 			}

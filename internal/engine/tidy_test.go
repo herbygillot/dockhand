@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -322,7 +323,7 @@ func TestARegroupPuttingADependentFirstIsNoted(t *testing.T) {
 	regrouped, err := e.Regroup(t.Context(), plan, dependentFirst, "")
 	require.NoError(t, err)
 	require.Equal(t, "textproc/jq", regrouped.Groups[0].Directory)
-	require.Contains(t, regrouped.Groups[0].Notes, "comes before commit 2, which changes libharbor, a port jq depends on as "+check.Name()+" orders them")
+	require.Contains(t, regrouped.Groups[0].Notes, "comes before commit 2, which changes libharbor; jq depends on that port in "+check.Name()+"'s build order")
 
 	dependencyFirst := fmt.Sprintf("%d %d", order["devel/libharbor"], order["textproc/jq"])
 	regrouped, err = e.Regroup(t.Context(), plan, dependencyFirst, "")
@@ -781,7 +782,7 @@ func TestTidyCommitsEachSubportsUpdate(t *testing.T) {
 	require.True(t, reproduces(again.Groups, again.History), "the commits stand: %+v", again.Groups)
 
 	_, err = plan.Regroup("2 1", "")
-	require.ErrorContains(t, err, "in the order made")
+	require.ErrorContains(t, err, "keep them in their original order")
 }
 
 // Tidy refuses a branch that doesn't descend from the base its record
@@ -839,10 +840,12 @@ func TestTidyRefusesCommitsThatDontEndAtTheWorkingFiles(t *testing.T) {
 	require.Empty(t, testsupport.Git(t, branch.Worktree, "for-each-ref", "refs/dockhand/checkpoints/"), "no checkpoint was taken")
 }
 
-// A squash with --message of a hand edit carries no Generated-By, nor one
-// of dockhand's update with a hand edit beside it (field testing's notes
-// from the curl fix, note 11).
-func TestASquashOfAHandEditCarriesNoGeneratedBy(t *testing.T) {
+// A squash of a hand edit alone carries no Generated-By; one of
+// dockhand's update with a hand edit beside it keeps it, with --message or
+// without, since the commit still holds what dockhand wrote, its preview
+// saying it keeps it (field testing's atuin and fd, 2026-11-04, replacing
+// the curl fix's note 11's rule).
+func TestASquashKeepsGeneratedByWhereDockhandsEditsAreIn(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
@@ -861,5 +864,85 @@ func TestASquashOfAHandEditCarriesNoGeneratedBy(t *testing.T) {
 	testsupport.WriteFiles(t, both.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 2\n# a hand fix\n"})
 	squashed, err = e.PlanTidy(t.Context(), TidyRequest{Branch: both, Squash: true, Message: "jq: update to 1.8.1, with libharbor fixed by hand"})
 	require.NoError(t, err)
-	require.False(t, commitmsg.Attributed(squashed.Groups[0].Message), "dockhand's update beside a hand edit: %s", squashed.Groups[0].Message)
+	require.True(t, commitmsg.Attributed(squashed.Groups[0].Message), "dockhand's update beside a hand edit: %s", squashed.Groups[0].Message)
+
+	// ship's update committed with its trailer, a hand line added after,
+	// and squashed with no --message, as field testing's atuin was.
+	shipped, err := e.Start(t.Context(), StartRequest{Name: "jq-shipped"})
+	require.NoError(t, err)
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: shipped, Action: model.EditUpdate, Port: "jq"})
+	require.NoError(t, err)
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: shipped})
+	require.NoError(t, err)
+	_, err = e.ApplyTidy(t.Context(), plan)
+	require.NoError(t, err)
+	require.True(t, commitmsg.Attributed(testsupport.Git(t, shipped.Worktree, "log", "-1", "--format=%B")))
+	portfile := filepath.Join(shipped.Worktree, "textproc/jq/Portfile")
+	text, err := os.ReadFile(portfile)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(portfile, append(text, []byte("depends_lib-append port:libiconv\n")...), 0o644))
+	squashed, err = e.PlanTidy(t.Context(), TidyRequest{Branch: shipped, Squash: true})
+	require.NoError(t, err)
+	require.Len(t, squashed.Groups, 1)
+	require.True(t, commitmsg.Attributed(squashed.Groups[0].Message), "kept with no --message: %s", squashed.Groups[0].Message)
+	keeps, adds := squashed.Groups[0].Trailers()
+	require.True(t, slices.ContainsFunc(keeps, commitmsg.IsAttribution), "the preview says it keeps it: %v", keeps)
+	require.Empty(t, adds)
+}
+
+// tidy --restyle writes each port: dependency the path-style rule would
+// offer a form for as the tree writes it, at the top and in a variant, in
+// a commit of its own after the whitespace one, each port depending on
+// the same ports; a path: entry and one through a variable are left, and
+// the notice no longer fires on what it rewrote.
+func TestTidyRestyleWritesPathStyleDependencies(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	f.options.Tclsh = testsupport.MacPortsTclsh(t)
+	port := func(name, extra string) string {
+		return "PortSystem 1.0\nname " + name + "\nversion 1.0\ncategories devel\nlicense MIT\nmaintainers nomaintainer\n" +
+			"homepage https://example.invalid\ndescription demo\nlong_description demo\nmaster_sites https://example.invalid/releases\n" +
+			"checksums sha256 " + strings.Repeat("a", 64) + " size 10\n" + extra
+	}
+	testsupport.WriteFiles(t, f.upstream, map[string]string{
+		"devel/zdemo/Portfile":   port("zdemo", ""),
+		"devel/pkgconf/Portfile": port("pkgconf", "conflicts pkgconfig\n"),
+		"devel/other/Portfile":   port("other", "depends_build path:bin/pkg-config:pkgconfig\n"),
+	})
+	testsupport.Git(t, f.upstream, "add", ".")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "the ports")
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "zdemo-hand"})
+	require.NoError(t, err)
+	written := port("zdemo", "set pc port:pkgconfig\ndepends_build port:pkgconfig port:cmake\ndepends_lib-append path:lib/libz.dylib:zlib ${pc}\n"+
+		"variant docs description {docs} {\n    depends_build-append port:pkgconfig\n}\n")
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/zdemo/Portfile": written})
+
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch, Restyle: true})
+	require.NoError(t, err)
+	require.Empty(t, plan.NotRestyled)
+	require.NotNil(t, plan.PathStyle)
+	require.Equal(t, "zdemo: path-style dependencies", plan.PathStyle.Subject())
+	require.Contains(t, plan.PathStyle.Message, "Writes pkgconfig as path:bin/pkg-config:pkgconfig, which pkgconf satisfies too.")
+	require.Equal(t, []string{"rewritten by --restyle, each port depending on the same ports"}, plan.PathStyle.Notes)
+	var subjects []string
+	for _, group := range plan.Series() {
+		subjects = append(subjects, group.Subject())
+	}
+	require.Equal(t, "zdemo: path-style dependencies", subjects[len(subjects)-1], "last of the series")
+
+	plan.Groups[0].SetSubject("zdemo: depend on pkgconfig")
+	_, err = e.ApplyTidy(t.Context(), plan)
+	require.NoError(t, err)
+	styled := testsupport.Git(t, branch.Worktree, "show", "HEAD:devel/zdemo/Portfile")
+	require.Contains(t, styled, "depends_build")
+	require.Contains(t, styled, "path:bin/pkg-config:pkgconfig port:cmake\n", "at the top, cmake left as no other port provides it")
+	require.Contains(t, styled, "depends_build-append path:bin/pkg-config:pkgconfig\n}", "in the variant")
+	require.Contains(t, styled, "set pc port:pkgconfig\n", "a word not in a depends_ option is left")
+	require.Contains(t, styled, "path:lib/libz.dylib:zlib ${pc}\n", "a path: entry and a variable left")
+	require.Empty(t, testsupport.Git(t, branch.Worktree, "status", "--porcelain"), "the working files are the path-styled ones")
+
+	// The notice reads only port: entries, so it has nothing left to say.
+	before := port("zdemo", "")
+	require.Empty(t, commitrules.CheckDependencies([]commitrules.Portfile{{Path: "devel/zdemo/Portfile", Before: before, After: styled}}, e.providers(t.Context(), string(branch.Base))))
 }

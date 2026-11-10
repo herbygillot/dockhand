@@ -3,11 +3,11 @@ package view
 import (
 	"fmt"
 	"io"
-	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/prose"
 )
 
@@ -30,11 +30,8 @@ func DescribeWork(plan engine.TidyPlan) string {
 // combines, keeps, and notes; or, saved, what applying it writes, each
 // commit's whole message as it may have been edited, with its author.
 func WriteTidyPlan(out io.Writer, plan engine.TidyPlan, saved bool) {
-	// --restyle's commit comes last, after the series it restyles.
-	groups := plan.Groups
-	if plan.Restyle != nil {
-		groups = append(slices.Clone(groups), *plan.Restyle)
-	}
+	// --restyle's commits come last, after the series they restyle.
+	groups := plan.Series()
 	title := map[bool]string{false: "Proposed commit", true: "Commit to write"}[saved]
 	if len(groups) > 1 {
 		title = map[bool]string{false: "Proposed series", true: "Commits to write"}[saved]
@@ -100,6 +97,9 @@ func WriteTidyPlan(out io.Writer, plan engine.TidyPlan, saved bool) {
 			fmt.Fprintf(out, "       ✗ %s\n", blocking)
 		}
 	}
+	for _, left := range plan.NotDeclared {
+		fmt.Fprintf(out, "    Not declared: %s\n", left)
+	}
 	for _, left := range plan.NotRestyled {
 		fmt.Fprintf(out, "    Not restyled: %s\n", left)
 	}
@@ -110,12 +110,34 @@ func WriteTidyPlan(out io.Writer, plan engine.TidyPlan, saved bool) {
 	fmt.Fprintln(out)
 }
 
+// WriteBeforeBuilding says the Portfile findings submit would, which a
+// check says before it builds.
+func WriteBeforeBuilding(out io.Writer, findings []commitrules.Finding) {
+	if len(findings) == 0 {
+		return
+	}
+	fmt.Fprintln(out, "Before building:")
+	for _, finding := range findings {
+		fmt.Fprintf(out, "  %s\n", finding)
+	}
+	fmt.Fprintln(out, "  dockhand tidy fixes what it can; the rest are edits a reviewer would ask for, best made before the build.")
+}
+
+// WithPortfileFindings is a check's result with the Portfile findings it
+// said before building.
+func (c CheckJSON) WithPortfileFindings(findings []commitrules.Finding) CheckJSON {
+	if len(findings) > 0 {
+		c.PortfileFindings = findingsView(findings)
+	}
+	return c
+}
+
 func WriteFindings(out io.Writer, plan engine.TidyPlan) {
 	writeUntracked(out, plan)
 	if len(plan.Findings) == 0 {
 		return
 	}
-	fmt.Fprintln(out, "File issues to resolve separately (tidy only changes commits):")
+	fmt.Fprintln(out, "Issues to resolve by hand in these files:")
 	for _, finding := range plan.Findings {
 		fmt.Fprintf(out, "  %s\n", finding)
 	}

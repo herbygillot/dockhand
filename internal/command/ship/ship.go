@@ -56,8 +56,9 @@ still queued or running for the same files is followed rather than
 started again.
 
 Every change's check is queued before any check is followed, and each
-change is submitted as soon as its check passes. If serve is running, the
-checks run side by side; otherwise they run here one at a time.
+change is submitted as soon as its check passes. The checks run side by
+side, by serve where it's running and here otherwise, as each provider's
+capacity allows.
 
 ship shows one plan, with a row for each change, and asks once on a
 terminal. --yes skips the question; running without a terminal is the
@@ -133,11 +134,12 @@ need review.`,
 				answered = model.AnsweredAsked
 			}
 			version.Linked.NoteSet = cmd.Flags().Changed("note")
+			version.Withdrawn(cmd)
 			return ShipAll(ctx, s, streams, whole, targets, stage, answered, version)
 		},
 	}
 	where.Register(cmd, s, "ship")
-	version.Flags(cmd)
+	version.Flags(cmd, s)
 	version.StageFlags(cmd)
 	cmd.Flags().StringVar(&to, "to", string(engine.ShipSubmit), "how far to carry each change: commit, check, or submit")
 	selectors.Register(cmd, "ship, with newer releases,")
@@ -147,8 +149,6 @@ need review.`,
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the plan and change nothing")
 	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
 	settings.SupportsJSON(cmd)
-	settings.KeepModelineFlag(cmd, s)
-	settings.KeepHTTPFlag(cmd, s)
 	return cmd
 }
 
@@ -672,6 +672,17 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 		return nil, err
 	}
 	lines.done(commit, "committed", strings.Join(tidied.Subjects, "; "), "")
+	// A title and note for the pull request, where ship stops before it,
+	// are kept for the submit that follows.
+	if stage != engine.ShipSubmit && (linked.Title != "" || linked.NoteSet || linked.TestedBinaries || linked.TestedVariants || linked.WithdrawBinaries || linked.WithdrawVariants) {
+		var note *string
+		if linked.NoteSet {
+			note = &linked.Note
+		}
+		if err := e.KeepForSubmit(ctx, tidied.Branch.ID, linked.Title, note, engine.TestedSaid{Binaries: linked.TestedBinaries, Variants: linked.TestedVariants, WithdrawBinaries: linked.WithdrawBinaries, WithdrawVariants: linked.WithdrawVariants}); err != nil {
+			return nil, err
+		}
+	}
 	if stage == engine.ShipCommit {
 		return nil, nil
 	}
@@ -698,7 +709,7 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 	// Its submission is previewed, and held where it would be, before its
 	// check is queued.
 	lines.begin("submitted")
-	request := engine.SubmitRequest{Branch: branch, TestedBinaries: linked.TestedBinaries, TestedVariants: linked.TestedVariants, Title: linked.Title, SkipNotification: linked.SkipNotification, Types: linked.Types, Draft: linked.Draft}
+	request := engine.SubmitRequest{Branch: branch, TestedBinaries: linked.TestedBinaries, TestedVariants: linked.TestedVariants, WithdrawBinaries: linked.WithdrawBinaries, WithdrawVariants: linked.WithdrawVariants, Title: linked.Title, SkipNotification: linked.SkipNotification, Types: linked.Types, Draft: linked.Draft}
 	if linked.NoteSet {
 		request.Note = &linked.Note
 	}

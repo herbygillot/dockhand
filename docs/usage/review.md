@@ -65,8 +65,11 @@ dockhand review 35174 --check
 Dockhand adopts it as `pr-35174`, or uses its already adopted branch, and
 records a check. Tart is selected by default for this command; `--on` can choose
 another supported environment. On a terminal it can offer to post the review
-afterwards. In a script, with no posting flag, it posts nothing and returns the
-check's outcome. `--markdown` and `--check` cannot be combined.
+afterwards. The posted text names the check and how it ended, in place of the
+line saying Dockhand didn't build it. The command returns the check's outcome
+whether or not it posts: with `--comment` or `--request-changes`, a failed check
+is still posted and the command still exits 2. `--markdown` and `--check` cannot
+be combined.
 
 For a workflow in which you inspect the build plan before running it:
 
@@ -91,7 +94,7 @@ master's port index where dockhand has one cached, whom the description
 mentions, who approved, and when MacPorts' 72-hour maintainer timeout ends.
 The contributor's Portfiles aren't evaluated only to read them, so a port
 whose maintainers neither that index nor a check's change record holds says
-`maintainers not read yet`.
+`maintainer information not read yet`.
 
 ## Post only the review you intend to send
 

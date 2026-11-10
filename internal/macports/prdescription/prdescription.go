@@ -551,12 +551,20 @@ func installNote(built bool) string {
 // Xcode's version and build or the Command Line Tools', as the environment
 // reported them, then who built it, and in which runs of which checks. An
 // environment of several builders, as MacPorts' workflow has, gives the
-// releases they reported, "macOS 14, 15, 26". What it didn't report is
-// said by the release's name and the tools the environment stated, and
-// never by the Darwin version, which isn't macOS's.
+// releases they reported, "macOS 14, 15, 26", or, where a builder
+// reported its tools, a line for each builder, named. What it didn't
+// report is said by the release's name and the tools the environment
+// stated, and never by the Darwin version, which isn't macOS's.
 func (r Report) lines() string {
 	var b strings.Builder
 	observed := r.Observed
+	if slices.ContainsFunc(observed.Builders, model.BuilderObserved.ToolsKnown) {
+		for _, builder := range observed.Builders {
+			fmt.Fprintln(&b, builderLine(builder))
+		}
+		fmt.Fprintf(&b, "%s%s\n\n", r.Provider, runWords(r.Runs))
+		return b.String()
+	}
 	var releases []string
 	for _, builder := range observed.Builders {
 		if builder.MacOS != "" && !slices.Contains(releases, builder.MacOS) {
@@ -589,6 +597,27 @@ func (r Report) lines() string {
 	}
 	fmt.Fprintf(&b, "%s · %s%s\n\n", tools, r.Provider, runWords(r.Runs))
 	return b.String()
+}
+
+// builderLine is one builder's line, as a GitHub runner reported itself:
+// "macOS 15.8.2 arm64 · Xcode 16.4 · MacPorts 2.12.7 (macos-15)".
+func builderLine(builder model.BuilderObserved) string {
+	var words []string
+	if release := cmpOr(builder.Version, builder.MacOS); release != "" {
+		words = append(words, strings.Join(nonEmpty("macOS", release, builder.Architecture), " "))
+	}
+	switch {
+	case builder.Xcode != "":
+		words = append(words, "Xcode "+builder.Xcode)
+	case builder.Tools != "":
+		words = append(words, "Command Line Tools "+builder.Tools)
+	default:
+		words = append(words, "Developer tools not recorded")
+	}
+	if builder.MacPorts != "" {
+		words = append(words, "MacPorts "+builder.MacPorts)
+	}
+	return strings.Join(words, " · ") + " (" + builder.Builder + ")"
 }
 
 func nonEmpty(values ...string) []string {
@@ -949,6 +978,13 @@ func mergeDescription(body, lastWritten, fresh string) (string, Outcome) {
 	}
 	was, wasEnd, written := sectionSpan(lastWritten, descriptionHeading)
 	start, end, ok := sectionSpan(fresh, descriptionHeading)
+	// One that already reads as dockhand writes it now is dockhand's,
+	// whatever was last recorded: a submit whose record failed after
+	// GitHub took the description, or whose reply was lost, left the
+	// record a submit behind, and its own text read as a person's (#127).
+	if written && ok && normalize(body[from:to]) == normalize(fresh[start:end]) {
+		return body, Current
+	}
 	if !written || !ok || normalize(body[from:to]) != normalize(lastWritten[was:wasEnd]) {
 		return body, Kept
 	}
@@ -972,6 +1008,9 @@ func mergeTestedOn(existing, lastWritten, fresh string) (string, Outcome) {
 	}
 	last, lastOK := ownedSpan(lastWritten)
 	next, nextOK := ownedSpan(fresh)
+	if lastOK && nextOK && normalize(existing[at:]) == normalize(fresh[next:]) {
+		return existing, Current
+	}
 	if !lastOK || !nextOK || normalize(existing[at:]) != normalize(lastWritten[last:]) {
 		return existing, Kept
 	}
@@ -996,6 +1035,9 @@ func mergeTypes(body, lastWritten, fresh string, named bool) (string, Outcome) {
 		case written && normalize(body[from:to]) == normalize(lastWritten[was:wasEnd]):
 			section := typesSection(append(tickedTypes(body[from:to]), tickedTypes(types)...))
 			return body[:from] + section + body[to:], rewritten(body[from:to], section)
+		case written && normalize(body[from:to]) == normalize(typesSection(append(tickedTypes(lastWritten[was:wasEnd]), tickedTypes(types)...))):
+			// As dockhand would have written them from its last record.
+			return body, Current
 		}
 		return body, Kept
 	}

@@ -79,7 +79,13 @@ type PullRequestStatus struct {
 	// ReviewedAt is when the latest review that sets Review was
 	// submitted; zero where none does.
 	ReviewedAt time.Time `json:",omitempty"`
-	Checks     CheckSummary
+	// CommentedBy is who wrote the conversation's latest word, where that
+	// is someone other than the pull request's author, a bot, and after
+	// its head was committed: a reviewer waiting on the author, as
+	// reneeotten's question on #36300 was, which GitHub's review state
+	// doesn't count; empty otherwise, or where the forge doesn't say.
+	CommentedBy string `json:",omitempty"`
+	Checks      CheckSummary
 }
 
 // CheckSummary counts the checks and statuses reported for a pull

@@ -24,6 +24,9 @@ import (
 const (
 	enterView = "\x1b[?1049h\x1b[?25l"
 	leaveView = "\x1b[?25h\x1b[?1049l"
+	// clearView clears what the terminal shows and puts the cursor at its
+	// top, for a command the screen is suspended for.
+	clearView = "\x1b[H\x1b[2J"
 )
 
 // defaultHeight is the rows a frame has where the output isn't a terminal,
@@ -155,11 +158,14 @@ func Fit(text string, width int) string {
 // Suspend leaves the screen and gives the terminal back as it was, runs
 // run, as a command whose output the person reads, and then, where prompt
 // isn't empty, says it and waits for a key before drawing on the screen
-// again. Keys typed while run runs are its own, never the screen's.
+// again. Keys typed while run runs are its own, never the screen's. The
+// terminal is cleared for it: left as it was, the command's output began
+// over the table's rows, in Ghostty at least (the person's console sitting,
+// 2026-11-10, dockhand logs).
 func (s *Screen) Suspend(ctx context.Context, run func(), prompt string) error {
 	s.gate.pause(s.fd >= 0)
 	defer s.gate.resume()
-	if _, err := io.WriteString(s.out, leaveView); err != nil {
+	if _, err := io.WriteString(s.out, leaveView+clearView); err != nil {
 		return err
 	}
 	if err := s.restore(); err != nil {

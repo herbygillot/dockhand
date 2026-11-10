@@ -91,7 +91,9 @@ dockhand ship --mine --to submit
 These are alternative stopping points, not three required commands. `commit`
 prepares and tidies the updates; `check` also builds their committed files;
 `submit` also publishes eligible changes. The default is `submit`, so use an
-explicit stage when publication is not intended.
+explicit stage when publication is not intended. A `--title` or `--note` given with
+`--to commit` or `--to check` is kept with each branch for the `submit` that
+follows.
 
 On a terminal ship asks about the initial plan. With `--yes`, or without a
 terminal, it runs unattended and holds findings a person must review; `--yes`

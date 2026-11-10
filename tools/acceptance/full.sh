@@ -36,6 +36,12 @@
 #                      its Portfile in the host's fixtures directory is,
 #                      for G35's full-stage case and the Tart check of a
 #                      moved port; not run unset
+#   ACCEPT_DN2_FIXTURE optional: the project host/make-gone-fixture.sh
+#                      made, <owner>/dockhand-gone-fixture, whose v1.0.0
+#                      release asset is gone, its port's Portfile in the
+#                      host's fixtures directory, which full.sh names as
+#                      ACCEPT_DN2_PORT for D-N2 unless that's set; not run
+#                      with neither
 #   ACCEPT_GH_KEY      the test account's SSH key, which git offers alone,
 #                      ~/.dockhand-acceptance/test-account_ed25519 unless
 #                      set: never the agent's keys, which may be a person's
@@ -110,6 +116,12 @@ export DOCKHAND_CONFIG=${DOCKHAND_CONFIG:-$HOME/.dockhand/config.toml}
 export DOCKHAND_DB=${DOCKHAND_DB:-$HOME/.dockhand/dockhand.db}
 mkdir -p "$(dirname "$DOCKHAND_CONFIG")"
 touch "$DOCKHAND_CONFIG"
+# D-N2's port is the fixture's where its Portfile is there and none is named.
+if [ -z "${ACCEPT_DN2_PORT:-}" ] && [ -n "${ACCEPT_DN2_FIXTURE:-}" ] &&
+	[ -f "${ACCEPT_HOST_ROOT:-/Users/Shared/dockhand-acceptance}/fixtures/${ACCEPT_DN2_FIXTURE#*/}/Portfile" ]; then
+	ACCEPT_DN2_PORT=${ACCEPT_DN2_FIXTURE#*/}
+fi
+export ACCEPT_DN2_PORT ACCEPT_DN2_FIXTURE
 export ACCEPT_STATE ACCEPT_GH_LOGIN ACCEPT_GO_PORT ACCEPT_RUST_PORT ACCEPT_SLEEP_PORT ACCEPT_G9_PORT ACCEPT_LOCAL_SLEEP_PORT MACPORTS_TREE ACCEPT_SOURCE_FIXTURE
 export ACCEPT_REPO=$(cd "$here/../.." && pwd)
 export DH_BIN=${DH_BIN:-/opt/local/bin/dockhand}

@@ -303,16 +303,44 @@ func (e *Engine) Impact(ctx context.Context, branch model.Branch, ports []string
 		impact.Shared = append(impact.Shared, shared)
 	}
 	// Whether each changed port built on each release on MacPorts'
-	// builders before, to choose between a patch and known_fail; a new
-	// port has no history there.
-	var changed []string
+	// builders before, to choose between a patch and known_fail, read by
+	// each port's own name, a directory's subports among them, as
+	// BuildersBeside reads a target's port; a new port has no history
+	// there.
+	var directories []string
 	for _, port := range diff.Ports {
 		if !port.Added && !port.Deleted {
-			changed = append(changed, directoryName(port.Directory))
+			directories = append(directories, port.Directory)
 		}
 	}
-	impact.Builds = e.builderHistories(ctx, changed)
+	impact.Builds = e.builderHistories(ctx, e.portsNamed(ctx, model.Source{Tree: model.ObjectID(diff.Status.Tree), Base: branch.Base}, directories, impact.Defined))
 	return impact, nil
+}
+
+// portsNamed are the ports the directories define in source, in order,
+// each directory's as its base defined them where source's evaluation
+// gave none, and by the directory's name where neither did.
+func (e *Engine) portsNamed(ctx context.Context, source model.Source, directories []string, base map[string][]string) []string {
+	if len(directories) == 0 {
+		return nil
+	}
+	defined := e.portsDefined(ctx, source, directories)
+	var names []string
+	for _, directory := range directories {
+		found := defined[directory]
+		if len(found) == 0 {
+			found = base[directory]
+		}
+		if len(found) == 0 {
+			found = []string{directoryName(directory)}
+		}
+		for _, name := range found {
+			if !slices.Contains(names, name) {
+				names = append(names, name)
+			}
+		}
+	}
+	return names
 }
 
 // dependents asks the engine's DependentReader, or the port reader when

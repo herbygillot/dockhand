@@ -62,6 +62,13 @@ func (s GitSource) BuiltBy(fetched ObjectID) bool {
 	return false
 }
 
+// Same reports whether two resolutions name one source: the same
+// repository and ref, resolved to the same commit; when each was read
+// doesn't matter.
+func (s GitSource) Same(other GitSource) bool {
+	return s.URL == other.URL && s.Ref == other.Ref && s.Expected() == other.Expected()
+}
+
 // Moved reports whether a build that checked out fetched built another
 // source than this one: Ref named another commit when the build fetched it
 // than when it was resolved, as a tag moved in between does. What isn't

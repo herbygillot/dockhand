@@ -478,3 +478,24 @@ func TestALowerVersionRaisesTheEpoch(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, string(result.Files[0].After), "epoch", "a higher version raises nothing")
 }
+
+// An edit that changes the port where a block conditional on the platform
+// keeps it at another version is refused naming the platform, the version
+// kept, and what changed: kitty's second github.setup under
+// ${os.major} <= 19 read "candidate evaluation changed kitty" (field
+// testing's kitty 0.50.0, #51).
+func TestAnEditChangingAPortAPlatformKeepsSaysWhere(t *testing.T) {
+	t.Parallel()
+	s, r, _ := archiveFixture(t, `version 1.2.3
+revision 2
+if {${os.major} <= 19} {
+ version 0.26.2
+}
+master_sites @SITE@/${version}
+checksums sha256 aaaa size 2
+`)
+	_, err := s.Prepare(t.Context(), r)
+	require.ErrorIs(t, err, ErrFidelity)
+	require.ErrorContains(t, err, "where fixture stays at 0.26.2, as a block conditional on the platform has it")
+	require.ErrorContains(t, err, "changed fixture's revision from 2 to 0")
+}

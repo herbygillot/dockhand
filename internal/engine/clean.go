@@ -20,6 +20,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/outward"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -48,10 +49,12 @@ type CleanStep struct {
 	// pr-34539's was on every clean (field testing).
 	Said bool
 
-	path     string
-	remote   string
-	name     string
-	expected string
+	path   string
+	remote string
+	// repository is the fork a fork's or a check's branch is removed from.
+	repository string
+	name       string
+	expected   string
 }
 
 // CleanKind is what a step of clean removes.
@@ -285,14 +288,17 @@ func pushedHead(branch model.Branch) model.ObjectID {
 // branches its GitHub checks left. A merged branch's, and a closed,
 // archived, or forgotten one's alike: only the merged path reached them,
 // so a pull request closed unmerged and a canceled check left theirs for
-// good (the dig's I31).
+// good (the dig's I31). An adopted pull request's head is its author's,
+// and MacPorts' repository is never yours to push to, so neither is
+// removed: a committer who adopted a merged pull request had its
+// author's branch in macports/macports-ports deleted (#112).
 func (e *Engine) planCleanFork(ctx context.Context, branch model.Branch, pushed model.ObjectID, moved string) ([]CleanStep, error) {
 	var steps []CleanStep
 	repositories := []string{}
-	if pr := branch.PullRequest; pr != nil && pr.Head != "" {
+	if pr := branch.PullRequest; ownedHead(pr) {
 		repository, name := pr.HeadParts()
 		repositories = append(repositories, repository)
-		step := CleanStep{What: pr.Head, Kind: CleanFork, expected: string(pushed)}
+		step := CleanStep{What: pr.Head, Kind: CleanFork, expected: string(pushed), repository: repository}
 		remote, err := e.remoteFor(ctx, repository)
 		switch {
 		case pushed == "":
@@ -357,6 +363,17 @@ func (e *Engine) forkRepositories(ctx context.Context) ([]string, error) {
 	return repositories, nil
 }
 
+// ownedHead reports whether a pull request's head branch is one dockhand
+// pushed to a fork of yours: not an adopted pull request's, its author's,
+// and never one in MacPorts' repository.
+func ownedHead(pr *model.PullRequest) bool {
+	if pr == nil || pr.Head == "" || pr.Adopted {
+		return false
+	}
+	repository, _ := pr.HeadParts()
+	return !strings.EqualFold(repository, UpstreamRepository)
+}
+
 // planCleanChecks finds the branches the github provider pushed to your
 // fork for the branch's checks, one per commit checked, each removed only
 // while it still holds that commit. The provider removes each once its
@@ -410,7 +427,7 @@ func (e *Engine) planCleanChecks(ctx context.Context, branch model.Branch, repos
 		}
 		seen[commit] = true
 		name := buildenv.CheckBranchPrefix + commit[:12]
-		step := CleanStep{What: repository + ":" + name, Kind: CleanCheck, name: name, expected: commit}
+		step := CleanStep{What: repository + ":" + name, Kind: CleanCheck, name: name, expected: commit, repository: repository}
 		if remoteErr != nil {
 			step.Kept = remoteErr.Error()
 			steps = append(steps, step)
@@ -612,10 +629,15 @@ func (e *Engine) ApplyClean(ctx context.Context, plans []CleanBranch) ([]CleanBr
 				}
 				err = e.Repo.DeleteBranch(ctx, plan.Branch.Name, step.expected)
 			case "fork":
-				_, name := plan.Branch.PullRequest.HeadParts()
-				err = e.Repo.DeleteRemoteBranch(ctx, step.remote, name, git.RefValue{Exists: true, Object: step.expected})
+				// Asked again as it's removed, whatever planned it (#112).
+				if !ownedHead(plan.Branch.PullRequest) {
+					step.Kept = "it is the pull request's author's, not yours"
+					continue
+				}
+				repository, name := plan.Branch.PullRequest.HeadParts()
+				err = outward.Delete(ctx, e.Repo, outward.Made, repository, step.remote, name, git.RefValue{Exists: true, Object: step.expected})
 			case "check":
-				err = e.Repo.DeleteRemoteBranch(ctx, step.remote, step.name, git.RefValue{Exists: true, Object: step.expected})
+				err = outward.Delete(ctx, e.Repo, outward.Made, step.repository, step.remote, step.name, git.RefValue{Exists: true, Object: step.expected})
 			}
 			if err != nil {
 				var conflict *git.RefConflict
@@ -783,7 +805,7 @@ func (e *Engine) PutBack(ctx context.Context, run model.Run, progress func(strin
 		}
 	}
 	if len(places) == 0 {
-		return nil, fmt.Errorf("%s left nothing to put back: it put back what it changed, or changed nothing of yours", run.Name())
+		return nil, fmt.Errorf("%s has no recorded changes to put back", run.Name())
 	}
 	return places, nil
 }
@@ -847,7 +869,11 @@ func (e *Engine) planLeftovers(ctx context.Context, session *coord.Session, spar
 			if err := e.judgeLeftover(ctx, session, &leftover); err != nil {
 				return all, err
 			}
-			if until := reported.KeptAt.Add(KeptFor); spareKept && leftover.Kept == "" && !reported.KeptAt.IsZero() && e.now().Before(until) {
+			spared := KeptFor
+			if reported.Failed {
+				spared = KeptFailedFor
+			}
+			if until := reported.KeptAt.Add(spared); spareKept && leftover.Kept == "" && !reported.KeptAt.IsZero() && e.now().Before(until) {
 				leftover.Kept = "kept for dockhand shell until " + until.Local().Format("Jan 2 15:04")
 			}
 			all = append(all, leftover)
@@ -884,6 +910,23 @@ func (e *Engine) leftoverRun(ctx context.Context, leftover *Leftover) error {
 		leftover.Run, leftover.Execution = &run, &execution
 		return err
 	})
+}
+
+// BranchLeftovers are what the branches' checks left in their providers:
+// the clones they kept for dockhand shell, and any environment one left
+// when its process died, each judged as PlanLeftovers judges it, one whose
+// check is running kept and said. A clean naming the branches removes
+// them, and clean --delete before it forgets them.
+func (e *Engine) BranchLeftovers(ctx context.Context, branches ...model.BranchID) ([]Leftover, error) {
+	session, err := e.Session(ctx, model.SessionForeground)
+	if err != nil {
+		return nil, err
+	}
+	defer session.End(context.WithoutCancel(ctx))
+	all, err := e.PlanLeftovers(ctx, session)
+	return slices.DeleteFunc(all, func(leftover Leftover) bool {
+		return leftover.Run == nil || !slices.Contains(branches, leftover.Run.Branch)
+	}), err
 }
 
 // KeptClones are the clones this checkout's checks kept for dockhand

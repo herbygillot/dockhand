@@ -66,7 +66,7 @@ func rootForReference(t *testing.T) *cobra.Command {
 }
 
 // referenceDocs are the README and docs/*.md that teach dockhand, apart
-// from the roadmap, reviews, activity, and v2's, which record what was,
+// from the reviews, activity, and v2's, which record what was,
 // and the design records below, which name commands proposed or retired.
 func referenceDocs(t *testing.T) []string {
 	docs := []string{"../../README.md"}
@@ -84,10 +84,9 @@ func referenceDocs(t *testing.T) []string {
 }
 
 // designRecords are docs/*.md that record a design rather than teach the
-// commands: the roadmap; Design v3, whose sketches and v2 table name old
+// commands: Design v3, whose sketches and v2 table name old
 // spellings on purpose; and the decisions, which name what was declined.
 var designRecords = map[string]bool{
-	"roadmap.md":   true,
 	"design-v3.md": true,
 	"decisions.md": true,
 }
@@ -295,6 +294,9 @@ var verb = regexp.MustCompile(`%[-+# 0-9.*]*[a-zA-Z%]`)
 func referenceProblems(root *cobra.Command, text string, code bool) []string {
 	var problems []string
 	if !code {
+		// A patch's header, "diff --git a/x b/x", is git's own, not
+		// dockhand diff's, which a root --git once let pass.
+		text = patchHeader.ReplaceAllString(text, "")
 		text = bareCommand.ReplaceAllStringFunc(text, func(line string) string {
 			if child, _, err := root.Find(strings.Fields(line)[:1]); err == nil && child != root {
 				return "dockhand " + line
@@ -352,6 +354,9 @@ var commandWord = regexp.MustCompile(`^[a-z][a-z-]*$`)
 // R3-27); where its first word names one of dockhand's commands, it's
 // read as one.
 var bareCommand = regexp.MustCompile(`(?m)^[a-z][a-z-]* +-`)
+
+// patchHeader is a unified diff's git header line, as a patch has it.
+var patchHeader = regexp.MustCompile(`(?m)^diff --git.*$`)
 
 // flagName is a word's long or short flag, as --name, --name=value, or -x.
 func flagName(word string) (long, short string) {

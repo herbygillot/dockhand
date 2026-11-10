@@ -79,9 +79,9 @@ dockhand submit --branch jq-update --plan
 ```
 
 Use the actual branch name returned by your run. A held single bump normally
-exits 3. A failed build exits 2. Neither means the branch should be started
-again. Read `dockhand usage recovery` for the different ways to resume a stopped
-check or fix a failed one.
+exits 3. A failed build exits 2. A check still running at `--for`'s bound exits
+4. None means the branch should be started again. Read `dockhand usage
+recovery` for the different ways to resume a stopped check or fix a failed one.
 
 A concern you have reviewed can receive an evidence-bound decision:
 
@@ -89,6 +89,17 @@ A concern you have reviewed can receive an evidence-bound decision:
 dockhand decide license-changed --branch jq-update jq \
   --because "the new license is acceptable and the Portfile identifies it"
 ```
+
+A change that makes a port non-distributable, by MacPorts' own checker, holds
+as `not-distributable`, since the builders would keep no binary archive of it;
+`holds.allow` names it like any other rule.
+
+A build that links a port's library its Portfile doesn't declare holds as
+`link-undeclared` only where tidy can't write the declaration: a subport's or
+a variant build's finding, links that couldn't be read, a library no port
+provides, or libiconv where the port sets `rust.system_libiconv yes`. Elsewhere
+serve's tidy declares it in a commit of its own, and the branch waits for its
+next check, which reuses the builds, before it submits.
 
 Use the actual rule the report named, and your own reason. `--because` permits
 unattended submission to proceed past that concern;
@@ -103,11 +114,15 @@ build failures or lint findings and has different evidence requirements; see
 For one background build:
 
 ```sh
-dockhand check --branch jq-update --head -d
-dockhand wait check-42
+dockhand check --branch jq-update --head --for 20m
+dockhand wait check-42 --for 20m
 ```
 
-Use the queued run's actual number. `-d` returns after queueing. A running serve
+`--for` bounds the follow: exit 4 says the check is still running and continues;
+repeat `wait --for` until the exit code is 0, 2, or 3.
+
+Use the queued run's actual number. `-d` returns after queueing, and `--for`
+follows for the time given after queueing as `-d` does. A running serve
 takes the work; otherwise Dockhand starts a background drain and reports its
 PID. If starting that worker fails, the check remains queued and the message
 tells you to run serve. `wait` follows it and, when nobody is running it, can

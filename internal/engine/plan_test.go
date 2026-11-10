@@ -564,9 +564,9 @@ func TestVariantsBuildOnePortTheirWay(t *testing.T) {
 	_, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: both, Variants: map[string]bool{"tests": true}, VariantsPort: "libpsl"})
 	require.EqualError(t, err, "--variants names libpsl, which the branch doesn't change and --also doesn't name")
 	_, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{{Provider: "github"}}, Only: []string{"libharbor"}, EachVariant: true})
-	require.ErrorContains(t, err, "GitHub's workflow builds default variants only")
+	require.ErrorContains(t, err, "GitHub's workflow, which builds default variants only")
 	_, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: both, Only: []string{"libharbor"}, EachVariant: true, Variants: map[string]bool{"tests": true}})
-	require.ErrorContains(t, err, "--variants each builds every variant")
+	require.ErrorContains(t, err, "--variants each cannot be combined with an explicit variant selection")
 }
 
 // A check that asks no tests runs check.tests, resolved here for check,

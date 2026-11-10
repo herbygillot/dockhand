@@ -56,16 +56,16 @@ const logo = `     _            _    _                     _
 
 // gettingStarted is the main help's introduction: how to begin, and where
 // the guide is.
-const gettingStarted = `In your ports checkout, dockhand setup sets up, offering the GitHub login,
-your maintainers line, and a clean macOS image for checks to build in. Then:
+const gettingStarted = `In your ports checkout, run dockhand setup to configure GitHub login,
+your maintainer identity, and a clean macOS image for builds. Then:
 
   dockhand update <port> --new    a branch with the port at its newest release
   dockhand check                  build what the branch changes
   dockhand tidy                   shape its commits for review
   dockhand submit                 open the pull request from your fork
 
-dockhand bump <port> does all four asking nothing, and stops where you
-should look. dockhand usage prints the guide, and dockhand status shows
+dockhand bump <port> runs all four without prompts, stopping on failures or
+findings requiring review. dockhand usage prints the guide, and dockhand status shows
 where things are.`
 
 // Run executes the command line in args, in the process's environment and
@@ -91,14 +91,17 @@ func RunWith(ctx context.Context, line settings.Invocation, streams term.Streams
 	// review of 8c007979, C8-1).
 	nested := func(ctx context.Context, args []string, streams term.Streams) error {
 		var chosen []string
-		for _, name := range []string{"tree", "db", "git"} {
+		for _, name := range []string{"tree", "db"} {
 			if flag := root.PersistentFlags().Lookup(name); flag != nil && flag.Changed {
 				chosen = append(chosen, "--"+name, flag.Value.String())
 			}
 		}
+		for _, tool := range shared.ToolFlags {
+			chosen = append(chosen, "--tool", tool)
+		}
 		return RunWith(ctx, settings.Invocation{Args: append(chosen, args...), Env: line.Env, Dir: line.Dir}, streams, dependencies, mac)
 	}
-	shared.Deps, shared.Host, shared.Env, shared.Dir, shared.Command = dependencies, mac, line.Env, line.Dir, nested
+	shared.Deps, shared.Host, shared.Env, shared.Dir, shared.Command, shared.Args = dependencies, mac, line.Env, line.Dir, nested, line.Args
 	streams = term.Begin(streams.WithDisplay(display(line.Env)), args)
 	shared.Streams = streams
 	root = newRoot(&shared, streams)
@@ -108,6 +111,22 @@ func RunWith(ctx context.Context, line settings.Invocation, streams term.Streams
 	root.SetIn(streams.In)
 	root.SetOut(streams.Out)
 	root.SetErr(streams.Err)
+	// Cobra's completion scripts are code, written as they are: wrapped at
+	// the terminal's width, fish's and bash's broke where a line split
+	// (#88). It's made once the output is set, which it takes then.
+	root.InitDefaultCompletionCmd()
+	for _, cmd := range root.Commands() {
+		if cmd.Name() != "completion" {
+			continue
+		}
+		for _, shell := range cmd.Commands() {
+			run := shell.RunE
+			shell.RunE = func(cmd *cobra.Command, args []string) error {
+				streams.Unwrapped()
+				return run(cmd, args)
+			}
+		}
+	}
 	spend := github.StartSpend()
 	err := view.SayNext(root.ExecuteContext(ctx))
 	clean.CleanupAfter(&shared, streams, streams.Command())
@@ -147,14 +166,36 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 		},
 	}
 	root.SetVersionTemplate("dockhand {{.Version}}\n")
-	// A removed flag says what replaced it (removedFlags).
-	root.SetFlagErrorFunc(removedFlag)
+	// The main help ends with where to report a problem, as its foot; a
+	// subcommand's help, read many times a day, doesn't (the person's
+	// "Have Dockhand mention its repo issues page in its help output.",
+	// 2026-11-03).
+	root.SetUsageTemplate(root.UsageTemplate() + "{{if not .HasParent}}\nReport problems at " + buildinfo.ProjectURL + "/issues\n{{end}}")
+	// A removed flag says what replaced it (removedFlags). serve's own
+	// agent naming --git, which dockhand wrote, is rewritten once with
+	// --tool, where it would be refused at every start.
+	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		if cmd.Name() == "serve" && err.Error() == "unknown flag: --git" {
+			said, rewritten, rewriteErr := serve.RewriteGitAgent(cmd.Context(), shared, shared.Args)
+			if rewriteErr != nil {
+				return rewriteErr
+			}
+			if rewritten {
+				fmt.Fprintln(streams.Out, said)
+				return &term.ExitError{Code: 0}
+			}
+		}
+		return removedFlag(cmd, err)
+	})
 	shared.Flags(root)
 	root.PersistentFlags().BoolVar(&asJSON, "json", false, "write the result as one JSON envelope on standard output")
 	root.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "show progress on standard error: -v for additional detail, -vv for every step")
 	// A command that can't report as JSON is refused before it does
 	// anything, so --json never does work it can't report.
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if err := shared.ParseTools(); err != nil {
+			return err
+		}
 		// A command naming a branch finds its checkout from anywhere
 		// (settings.registeredCheckout): by -b, -p, or --pr, or path,
 		// status, and archive by its name.
@@ -285,7 +326,7 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 // foldedCommands are the commands folded into another, each with where
 // it went and what does its work now.
 var foldedCommands = map[string]string{
-	"queue": "queue is part of status now: dockhand status lists the checks queued and running",
+	"queue": "queue is part of status now: dockhand status -v lists the checks queued and running",
 	"watch": "watch is dockhand console now: it keeps the branches current",
 }
 

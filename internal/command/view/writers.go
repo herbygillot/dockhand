@@ -42,7 +42,7 @@ func WritePushes(out io.Writer, plan model.Plan) {
 		fmt.Fprintf(out, "Won't build %s on github: MacPorts' workflow builds only the ports a commit changes; check %s with Tart, local, or a command provider\n", prose.And(unbuilt), map[bool]string{true: "it", false: "them"}[len(unbuilt) == 1])
 	}
 	if plan.Keep {
-		fmt.Fprintln(out, "Keeps       each Tart environment's clone, stopped, where its guest finishes, for dockhand shell; clean or the branch's next check removes it")
+		fmt.Fprintln(out, "Keeps       each Tart VM, stopped after the build, for dockhand shell; clean or the branch's next check removes it")
 	}
 }
 
@@ -497,16 +497,12 @@ func WriteQueue(out io.Writer, queue []checks.QueuedCheck, led bool) {
 			fmt.Fprintf(out, "  %s %s\n", queued.Run.Name(), words)
 		}
 	}
-	// The VMs a running check runs in, with the Tart home that reaches
-	// them, which a person's tart list doesn't see (the bazel session's
-	// notes, 2026-10-24).
+	// The VMs a running check runs in, with the shell that enters them,
+	// which a person's tart list doesn't see (the bazel session's notes,
+	// 2026-10-24).
 	for _, queued := range queue {
 		for _, vm := range queued.VMs {
-			reach := "tart exec " + vm + " …"
-			if queued.TartHome != "" {
-				reach = "TART_HOME=" + queued.TartHome + " " + reach
-			}
-			fmt.Fprintf(out, "  %s runs in %s: %s\n", queued.Run.Name(), vm, reach)
+			fmt.Fprintf(out, "  %s runs in %s: dockhand shell %s opens a shell there\n", queued.Run.Name(), vm, queued.Run.Name())
 		}
 	}
 }

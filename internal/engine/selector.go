@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -149,7 +150,8 @@ func (e *Engine) startRequest(ctx context.Context, port, name string, work Work)
 }
 
 // Selection is what a Selector found: Branch, an existing branch, with
-// Said, how it was chosen where the first line says it; Start, a branch to
+// Said, how it was chosen where the first line says it, or, with Start,
+// why the port's branch was passed over, its pull request ended; Start, a branch to
 // start; or Choices, the open branches that change the port, where more
 // than one does, for a person to choose among, or a script to be told.
 type Selection struct {
@@ -172,12 +174,24 @@ func (e *Engine) Select(ctx context.Context, selector Selector, work Work) (Sele
 	switch {
 	case selector.Branch != "":
 		branch, err := e.Resolve(ctx, selector.Branch)
+		if err == nil && selector.Policy == SelectOrStart {
+			// A pull request merged since it was read leaves the branch
+			// no work's to take, as Resolve says of one recorded merged.
+			if ended, still := e.stillOpen(ctx, branch); !still {
+				return Selection{}, fmt.Errorf("%w named %s: %s; --new=<name> starts a new branch", ErrNoBranch, selector.Branch, e.endedWords(ctx, ended))
+			}
+		}
 		if !errors.Is(err, ErrNoBranch) {
 			return Selection{Branch: branch}, err
 		}
 		// A Git branch of the name that dockhand doesn't track is the
-		// person's to adopt, as start refuses one.
+		// person's to adopt, as start refuses one; a merged branch's,
+		// which dockhand tracks, is said as merged.
+		var ended *MergedError
 		for _, name := range []string{selector.Branch, model.BranchPrefix + selector.Branch} {
+			if errors.As(err, &ended) {
+				break
+			}
 			if _, _, gerr := e.Repo.Branch(ctx, name); gerr == nil {
 				return Selection{}, fmt.Errorf("%w named %s; Git has %s, which dockhand doesn't track: dockhand adopt %s tracks it", ErrNoBranch, selector.Branch, name, name)
 			}
@@ -200,6 +214,11 @@ func (e *Engine) Select(ctx context.Context, selector Selector, work Work) (Sele
 		return e.portSelection(ctx, selector.Port, false, work)
 	}
 	branch, err := e.Current(ctx)
+	if err == nil && selector.Policy == SelectOrStart {
+		if ended, still := e.stillOpen(ctx, branch); !still {
+			return Selection{}, fmt.Errorf("%w checked out here: %s; --new=<name> starts a new branch", ErrNoBranch, e.endedWords(ctx, ended))
+		}
+	}
 	if err == nil || !errors.Is(err, ErrNoBranch) || selector.Policy == SelectExisting || selector.Port == "" {
 		return Selection{Branch: branch}, err
 	}
@@ -250,6 +269,17 @@ func (e *Engine) portSelection(ctx context.Context, port string, start bool, wor
 	case err != nil:
 		return Selection{}, err
 	case len(found) == 1:
+		// Read again where it was read before this command: a merge in
+		// the five minutes since starts the work afresh (field testing's
+		// act 0.2.96).
+		if ended, still := e.stillOpen(ctx, found[0].Branch); !still {
+			if !start {
+				return Selection{}, fmt.Errorf("%w changes %s: %s", ErrNoBranch, port, e.endedWords(ctx, ended))
+			}
+			selection, err := e.startRequest(ctx, port, "", work)
+			selection.Said = e.endedWords(ctx, ended)
+			return selection, err
+		}
 		return Selection{Branch: found[0].Branch, Said: fmt.Sprintf("the one open branch changing %s", port)}, nil
 	case len(found) > 1:
 		return Selection{Choices: found}, nil
@@ -257,4 +287,44 @@ func (e *Engine) portSelection(ctx context.Context, port string, start bool, wor
 		return Selection{}, fmt.Errorf("%w changes %s; dockhand status -p %s lists every branch touching it", ErrNoBranch, port, port)
 	}
 	return e.startRequest(ctx, port, "", work)
+}
+
+// stillOpen reads a branch's pull request again where it's recorded open
+// and was read before this command began, so a merge or close since moves
+// the record before the branch is taken for work; the branch as it stands
+// then, and whether it's still open. Where GitHub can't be read, it's
+// taken as open, as last read, said once.
+func (e *Engine) stillOpen(ctx context.Context, branch model.Branch) (model.Branch, bool) {
+	pr := branch.PullRequest
+	if branch.State != model.BranchOpen || pr == nil || pr.Observed != nil && pr.Observed.State != model.PullRequestOpen {
+		return branch, branch.State == model.BranchOpen
+	}
+	if pr.Observed != nil && !e.began.IsZero() && !pr.Observed.At.Before(e.began) {
+		return branch, true
+	}
+	read, cancel := context.WithTimeout(ctx, staleReadTimeout)
+	defer cancel()
+	refreshed, err := e.refresh(read, branch)
+	if err != nil {
+		last := "never read"
+		if pr.Observed != nil {
+			last = "as last read at " + pr.Observed.At.Local().Format("Jan 2 15:04")
+		}
+		progress.Report(ctx, "#%d couldn't be read, so %s is taken as open, %s", pr.Number, branch.ShortName(), last)
+		return branch, true
+	}
+	return refreshed.Branch, refreshed.Branch.State == model.BranchOpen
+}
+
+// endedWords say what became of a branch whose pull request ended: "act-
+// 0.2.95's #36353 was merged", or closed.
+func (e *Engine) endedWords(ctx context.Context, branch model.Branch) string {
+	state := "closed"
+	if branch.State == model.BranchMerged {
+		state = "merged"
+	}
+	if pr := branch.PullRequest; pr != nil {
+		return fmt.Sprintf("%s's #%d was %s", branch.ShortName(), pr.Number, state)
+	}
+	return branch.ShortName() + " was " + state
 }

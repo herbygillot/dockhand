@@ -23,6 +23,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portcreate"
 	"github.com/herbygillot/dockhand/internal/macports/prdescription"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/outward"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/refusal"
@@ -70,8 +71,11 @@ type SubmitRequest struct {
 	Remote           string
 	SkipNotification bool
 	// TestedBinaries and TestedVariants are the person's statements for
-	// the template's last two items.
-	TestedBinaries, TestedVariants bool
+	// the template's last two items; WithdrawBinaries and WithdrawVariants
+	// are their saying no, --tested-binaries=false, which removes a kept
+	// statement, where saying nothing keeps it (#153).
+	TestedBinaries, TestedVariants     bool
+	WithdrawBinaries, WithdrawVariants bool
 	// Rewrite replaces an open pull request's description with the one
 	// dockhand composes, a person's own included, their note kept: an
 	// adopted branch's description, which nothing recorded dockhand
@@ -95,6 +99,14 @@ type SubmitPlan struct {
 	Ports   []string
 	// recorded is Ports read from every directory's change record.
 	recorded bool
+	// testedTrees are the trees of the port directories the branch
+	// changes, at Commit, which a tested statement is about; TestedStale
+	// says a kept statement about earlier files, which isn't ticked (#153).
+	testedTrees map[string]model.ObjectID
+	TestedStale []string
+	// served is a submission serve makes by itself, whose serve.submit
+	// event, which serve.submit_limit counts, is written with its record.
+	served bool
 	// moved are the versions the change records move ports to, by port.
 	moved    map[string]string
 	Findings []commitrules.Finding
@@ -203,6 +215,9 @@ type SubmitPlan struct {
 	// they don't declare in depends_lib, each of which holds a submission
 	// nobody looks over (linkHolds).
 	Undeclared []model.Concern
+	// Unlinked are the declarations in depends_lib nothing its check's
+	// builds link, notices that hold nothing (unlinked-dependency).
+	Unlinked []LinkFinding
 	// Decided are the person's decisions on its concerns that stand for
 	// its files, by subject (the person's voice): an acceptance lets its
 	// concern go for a submission nobody looks over, said, and given in
@@ -359,6 +374,34 @@ func (e *Engine) unchangedSince(ctx context.Context, plan *SubmitPlan) error {
 // Head is the fork's head as "owner/repo:branch".
 func (p SubmitPlan) Head() string { return p.HeadRepository + ":" + p.RemoteBranch() }
 
+// pushBasis is what lets a submission push its branch (outward): an
+// invitation to someone's, which mayPushTheirs established, else your own
+// fork.
+func (p SubmitPlan) pushBasis() outward.Basis {
+	if p.Theirs {
+		return outward.Invited
+	}
+	return outward.OwnFork
+}
+
+// editBasis is what lets a submission edit its open pull request: an
+// invitation to someone's, else that dockhand made it.
+func (p SubmitPlan) editBasis() outward.Basis {
+	if p.Theirs {
+		return outward.Invited
+	}
+	return outward.Made
+}
+
+// pullRequestBasis is what lets dockhand change a branch's recorded pull
+// request: one it made, or, adopted, someone's it was invited to.
+func pullRequestBasis(pr *model.PullRequest) outward.Basis {
+	if pr != nil && pr.Adopted {
+		return outward.Invited
+	}
+	return outward.Made
+}
+
 // ToDraft reports whether a draft submission returns its open pull request
 // to draft before it pushes: a draft request lets failing or unchecked
 // work through, which only a pull request that is a draft may carry, and
@@ -455,6 +498,27 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		return plan, err
 	}
 	changed := analysis.Paths
+	// The statements the person made before for this branch stand, as its
+	// note does, while the files they were about are the same: a later
+	// run with --yes had to make them again (#91), and once made they
+	// ticked the template's items whatever changed after (#153).
+	if plan.testedTrees, err = statementTrees(ctx, worktree, plan.Tree, analysis.Scope.Ports); err != nil {
+		return plan, err
+	}
+	for _, kept := range []struct {
+		statement      *model.TestedStatement
+		said, withdraw *bool
+		flag           string
+	}{{branch.TestedBinaries, &request.TestedBinaries, &request.WithdrawBinaries, "--tested-binaries"}, {branch.TestedVariants, &request.TestedVariants, &request.WithdrawVariants, "--tested-variants"}} {
+		switch {
+		case *kept.withdraw || *kept.said || kept.statement == nil:
+		case kept.statement.Stands(plan.testedTrees):
+			*kept.said = true
+		default:
+			plan.TestedStale = append(plan.TestedStale, fmt.Sprintf("Your %s statement was about an earlier state of the files, so it isn't ticked; %s says it again", kept.flag, kept.flag))
+		}
+	}
+	plan.Request.TestedBinaries, plan.Request.TestedVariants = request.TestedBinaries, request.TestedVariants
 	// The ports are the subports the revision's change records say it
 	// changes: terraform-1.16, where the directory is terraform's.
 	records, err := e.revisionChanges(ctx, branch.ID, branch.Base, model.ObjectID(plan.Tree), true)
@@ -555,7 +619,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	plan.Prereleases = prereleases(edits)
 	plan.After = e.afterHolds(ctx, edits)
 	plan.Floors = e.floorHolds(ctx, branch.ID, branch.Base, model.ObjectID(plan.Tree))
-	plan.Undeclared = e.linkHolds(ctx, plan.Evidence)
+	plan.Undeclared, plan.Unlinked = e.linkHolds(ctx, plan.Evidence)
 	plan.Decided = e.decided(ctx, branch.ID, plan.Tree)
 	var reviewed []string
 	for _, subject := range slices.Sorted(maps.Keys(plan.Decided)) {
@@ -1167,7 +1231,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 	if !plan.RemoteHead.Exists || plan.RemoteHead.Object != plan.Commit {
 		// A fork's branch that holds the commit already, as a submit
 		// racing this one leaves it, is pushed (git.Push).
-		if err := worktree.Push(ctx, git.Push{Remote: plan.PushURL, Branch: plan.RemoteBranch(), Commit: plan.Commit, ExpectedRemote: plan.RemoteHead}); err != nil {
+		if err := outward.Push(ctx, worktree, plan.pushBasis(), plan.HeadRepository, git.Push{Remote: plan.PushURL, Branch: plan.RemoteBranch(), Commit: plan.Commit, ExpectedRemote: plan.RemoteHead}); err != nil {
 			var conflict *git.RefConflict
 			if errors.As(err, &conflict) {
 				return Submitted{}, fmt.Errorf("%w: %s changed on %s since submit looked; nothing was pushed", ErrStaleSubmit, plan.RemoteBranch(), plan.HeadRepository)
@@ -1182,7 +1246,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 		Desired: forge.PullRequestContent{Head: model.ObjectID(plan.Commit), Title: plan.Title, Body: plan.Body}, Draft: plan.Request.Draft}
 	var observed forge.PullRequestObservation
 	if plan.Existing == nil {
-		observed, err = e.forge().Create(ctx, input)
+		observed, err = outward.Open(ctx, e.pullRequests(), outward.OwnFork, input)
 		result.Created = true
 		if err != nil {
 			observed, err = e.createdAnyway(ctx, plan, err)
@@ -1195,7 +1259,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 			result.Edited = SubmitEdits{Title: plan.Title != plan.Existing.PullRequest.Title, Body: plan.Body != plan.Existing.PullRequest.Body}
 		}
 		if result.Edited.Title || result.Edited.Body {
-			observed, err = e.forge().Update(ctx, input)
+			observed, err = outward.Edit(ctx, e.pullRequests(), plan.editBasis(), input)
 		}
 	}
 	if err != nil {
@@ -1231,6 +1295,11 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 		// a submit to it made it the person's (the rc6 full stage's G22).
 		next := model.PullRequest{Repository: plan.Repository, Number: observed.PullRequest.Ref.Number, Head: plan.Head(),
 			Pushed: model.ObjectID(plan.Commit), Body: body, Draft: draft}
+		// The push is the record's to say, not this run's: one whose pull
+		// request update then failed left the fork at the commit, and the
+		// retry, pushing nothing, never said it, so the reviewers who asked
+		// for changes weren't asked again (#117).
+		pushed := result.Pushed || branch.PullRequest == nil || branch.PullRequest.Pushed != next.Pushed
 		if old := branch.PullRequest; old != nil && old.Number == next.Number {
 			next.Observed, next.Adopted, next.Author = old.Observed, old.Adopted, old.Author
 		}
@@ -1241,6 +1310,8 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 		if plan.Request.Note != nil {
 			branch.Note = plan.Note
 		}
+		branch.TestedBinaries = keptStatement(branch.TestedBinaries, plan.Request.TestedBinaries, plan.Request.WithdrawBinaries, plan.testedTrees)
+		branch.TestedVariants = keptStatement(branch.TestedVariants, plan.Request.TestedVariants, plan.Request.WithdrawVariants, plan.testedTrees)
 		if err := tx.UpdateBranch(branch); err != nil {
 			return err
 		}
@@ -1259,8 +1330,24 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 		if result.Created {
 			verb = "opened"
 		}
-		_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchSubmit, Level: model.LevelInfo,
-			Message: fmt.Sprintf("%s #%d with %s", verb, observed.PullRequest.Ref.Number, model.ObjectID(plan.Commit).Short())})
+		if _, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchSubmit, Level: model.LevelInfo,
+			Message: fmt.Sprintf("%s #%d with %s", verb, observed.PullRequest.Ref.Number, model.ObjectID(plan.Commit).Short())}); err != nil {
+			return err
+		}
+		// Serve's count lands with the pull request's record: written after
+		// it, a failed write left a pull request open and uncounted, and
+		// serve opened two under a limit of one (#118).
+		if plan.served {
+			if _, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventServeSubmit, Level: model.LevelInfo,
+				Message: fmt.Sprintf("serve opened #%d for %s, which passed its check", observed.PullRequest.Ref.Number, plan.Branch.ShortName())}); err != nil {
+				return err
+			}
+		}
+		if !pushed {
+			return nil
+		}
+		_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchPush, Level: model.LevelVerbose,
+			Message: fmt.Sprintf("pushed %s to #%d", model.ObjectID(plan.Commit).Short(), observed.PullRequest.Ref.Number)})
 		return err
 	})
 	if err != nil {
@@ -1288,14 +1375,14 @@ func (e *Engine) createdAnyway(ctx context.Context, plan SubmitPlan, failed erro
 // is pushed, and the refusal names the command that does it.
 func (e *Engine) draftFirst(ctx context.Context, plan SubmitPlan) error {
 	ref := plan.Existing.PullRequest.Ref
-	_, err := e.forge().MarkDraft(ctx, ref)
+	_, err := outward.Draft(ctx, e.pullRequests(), plan.editBasis(), ref)
 	if err == nil {
 		return nil
 	}
 	why := ""
 	if errors.Is(err, forge.ErrAppRestricted) {
 		var byCLI bool
-		if byCLI, why = e.byCLI(ctx, func() error { return e.GitHubCLI.MarkDraft(ctx, ref) }, "return it to draft"); byCLI {
+		if byCLI, why = e.byCLI(ctx, func() error { return outward.DraftByCLI(ctx, e.GitHubCLI, plan.editBasis(), ref) }, "return it to draft"); byCLI {
 			return nil
 		}
 	}
@@ -1309,8 +1396,8 @@ func (e *Engine) draftFirst(ctx context.Context, plan SubmitPlan) error {
 // readyByCLI marks a pull request ready with the GitHub CLI, when it's
 // signed in as the account dockhand acts for, since the change is then
 // made by the same person through another app; why it didn't, otherwise.
-func (e *Engine) readyByCLI(ctx context.Context, ref forge.PullRequestRef) (bool, string) {
-	return e.byCLI(ctx, func() error { return e.GitHubCLI.MarkReady(ctx, ref) }, "mark it ready")
+func (e *Engine) readyByCLI(ctx context.Context, ref forge.PullRequestRef, basis outward.Basis) (bool, string) {
+	return e.byCLI(ctx, func() error { return outward.ReadyByCLI(ctx, e.GitHubCLI, basis, ref) }, "mark it ready")
 }
 
 // byCLI does what the GitHub CLI does for the account dockhand acts for,
@@ -1351,13 +1438,13 @@ func (e *Engine) Ready(ctx context.Context, branch model.Branch) (_ model.Branch
 		return branch, false, fmt.Errorf("%s has no pull request yet; dockhand submit opens one", branch.Name)
 	}
 	ref := pullRequestRef(pr.Repository, pr.Number)
-	if _, err := e.forge().MarkReady(ctx, ref); err != nil {
+	if _, err := outward.Ready(ctx, e.pullRequests(), pullRequestBasis(pr), ref); err != nil {
 		// GitHub may refuse dockhand's app what it allows another, as an
 		// organization that restricts which apps may act for its members
 		// does (the hugo exercise's sshuttle run, finding 2).
 		var why string
 		if errors.Is(err, forge.ErrAppRestricted) {
-			byCLI, why = e.readyByCLI(ctx, ref)
+			byCLI, why = e.readyByCLI(ctx, ref, pullRequestBasis(pr))
 		}
 		if !byCLI {
 			err = fmt.Errorf("marking #%d ready for review: %w\nIt's still a draft. Mark it ready on its page, %s, or with the GitHub CLI, which signs in as its own app: gh pr ready %d --repo %s", pr.Number, err, github.PullRequestURL(pr.Repository, pr.Number), pr.Number, pr.Repository)
@@ -1398,7 +1485,7 @@ func (e *Engine) RequestReview(ctx context.Context, branch model.Branch) ([]stri
 		return nil, nil
 	}
 	logins := pr.Observed.ChangesRequestedBy
-	if err := e.forge().RequestReviewers(ctx, pullRequestRef(pr.Repository, pr.Number), logins); err != nil {
+	if err := outward.Ask(ctx, e.pullRequests(), pullRequestBasis(pr), pullRequestRef(pr.Repository, pr.Number), logins); err != nil {
 		return nil, fmt.Errorf("asking %s to review #%d again: %w", strings.Join(logins, ", "), pr.Number, err)
 	}
 	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
@@ -1407,6 +1494,36 @@ func (e *Engine) RequestReview(ctx context.Context, branch model.Branch) ([]stri
 		return err
 	})
 	return logins, err
+}
+
+// RerequestDue reports whether the reviewers whose latest review asks for
+// changes are still to be asked again after a push made since that review:
+// dockhand pushed after the review, by its record of the push
+// (EventBranchPush), and nobody was asked since. A request that failed
+// after its push was dropped, a rerun having pushed nothing (Codex's
+// workflow review of 1caa6c3d, finding 8); the pushed commit's committer
+// time stood for the push, which a commit made before the review and
+// pushed after defeats (Codex's sixth review, #76). False where the
+// review's time, or the push's, isn't known.
+func (e *Engine) RerequestDue(ctx context.Context, branch model.Branch) (bool, error) {
+	pr := branch.PullRequest
+	if pr == nil || pr.Observed == nil || len(pr.Observed.ChangesRequestedBy) == 0 || pr.Observed.ReviewedAt.IsZero() {
+		return false, nil
+	}
+	var pushed, asked model.Event
+	var hasPush, hasAsked bool
+	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		if pushed, hasPush, err = r.LatestBranchEvent(branch.ID, model.EventBranchPush); err != nil {
+			return err
+		}
+		asked, hasAsked, err = r.LatestBranchEvent(branch.ID, model.EventBranchRerequest)
+		return err
+	})
+	if err != nil || !hasPush || !pushed.At.After(pr.Observed.ReviewedAt) {
+		return false, err
+	}
+	return !hasAsked || asked.At.Before(pr.Observed.ReviewedAt), nil
 }
 
 // hasForkRemote says whether any Git remote pushes to a GitHub repository
@@ -1673,6 +1790,57 @@ func changedPatches(ctx context.Context, worktree *git.Repository, base string, 
 // later submit --yes opened the pull request without the note (field
 // testing's notes from the curl fix, note 9). A plan with no --note keeps
 // the branch's as it is.
+// KeepForSubmit keeps a pull request's title and note, and the person's
+// tested statements, given before its submission, with the branch, for
+// the submit that follows: ship --to
+// commit or --to check took them and dropped them (Codex's workflow review
+// of 1caa6c3d). An empty title, or a nil note, keeps what the branch has.
+func (e *Engine) KeepForSubmit(ctx context.Context, id model.BranchID, title string, note *string, tested TestedSaid) error {
+	// A statement is about the files at the branch's head, as submit's is
+	// about the commit it submits (#153).
+	var trees map[string]model.ObjectID
+	if tested.Binaries || tested.Variants {
+		branch, err := e.Branch(ctx, id)
+		if err != nil {
+			return err
+		}
+		worktree, err := e.worktree(ctx, branch)
+		if err != nil {
+			return err
+		}
+		head, _, err := worktree.WorkingTree(ctx)
+		if err != nil {
+			return err
+		}
+		commitTrees, err := worktree.CommitTrees(ctx, []string{head})
+		if err != nil {
+			return err
+		}
+		analysis, err := e.analyze(ctx, branch.Base, model.ObjectID(commitTrees[head]))
+		if err != nil {
+			return err
+		}
+		if trees, err = statementTrees(ctx, worktree, commitTrees[head], analysis.Scope.Ports); err != nil {
+			return err
+		}
+	}
+	return e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		branch, err := tx.Branch(id)
+		if err != nil {
+			return err
+		}
+		if title != "" {
+			branch.Title = title
+		}
+		branch.TestedBinaries = keptStatement(branch.TestedBinaries, tested.Binaries, tested.WithdrawBinaries, trees)
+		branch.TestedVariants = keptStatement(branch.TestedVariants, tested.Variants, tested.WithdrawVariants, trees)
+		if note != nil {
+			branch.Note = strings.TrimSpace(strings.ReplaceAll(*note, "\r\n", "\n"))
+		}
+		return tx.UpdateBranch(branch)
+	})
+}
+
 func (e *Engine) KeepNote(ctx context.Context, plan SubmitPlan) error {
 	if plan.Request.Note == nil {
 		return nil
@@ -1688,4 +1856,39 @@ func (e *Engine) KeepNote(ctx context.Context, plan SubmitPlan) error {
 		branch.Note = plan.Note
 		return tx.UpdateBranch(branch)
 	})
+}
+
+// TestedSaid is what a person said of the template's last two items: that
+// they tested the binaries and the variants, or, withdrawing, that they
+// didn't (--tested-binaries=false).
+type TestedSaid struct {
+	Binaries, Variants, WithdrawBinaries, WithdrawVariants bool
+}
+
+// keptStatement is a branch's statement once a submission says what it
+// says: removed where it's withdrawn, made anew about the files' trees
+// where it's said, and otherwise kept as it was, standing again should
+// the files return to what it was about (#153).
+func keptStatement(kept *model.TestedStatement, said, withdraw bool, trees map[string]model.ObjectID) *model.TestedStatement {
+	switch {
+	case withdraw:
+		return nil
+	case said:
+		return &model.TestedStatement{Trees: trees}
+	}
+	return kept
+}
+
+// statementTrees are the trees of the port directories a branch changes,
+// in a tree, which a tested statement is about.
+func statementTrees(ctx context.Context, repo *git.Repository, tree string, directories []string) (map[string]model.ObjectID, error) {
+	found, err := repo.DirectoryTrees(ctx, tree, directories)
+	if err != nil {
+		return nil, err
+	}
+	trees := make(map[string]model.ObjectID, len(found))
+	for directory, id := range found {
+		trees[directory] = model.ObjectID(id)
+	}
+	return trees, nil
 }

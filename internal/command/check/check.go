@@ -25,6 +25,7 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	var tests, variants, build, of string
 	var plan, head, staged, workingTree, enqueue, baseline, replace, fresh, keep, yes bool
+	var bound string
 	var include, only, also, on []string
 	cmd := &cobra.Command{
 		Use:   "check",
@@ -35,12 +36,13 @@ every port the branch changes as MacPorts CI does: lint, fetch and
 checksum, install, and declared tests (advisory unless --tests required).
 
 Where it builds comes from a build profile. --build selects one;
-otherwise build.default is used, which is host, this Mac's macOS, unless
-set. Dockhand's own profiles are host, minmax (each port on the oldest
-and newest releases Dockhand runs, macOS 12 at the earliest), macports-ci
-(the releases MacPorts' CI builds on), and all; your own go under
-[build.profiles]. --on selects explicit environments instead, such as
-tart:15,26, github, local, or command. Every environment must pass.
+otherwise build.default is used. The default is minmax, or command when
+that provider is configured. Dockhand's own Tart profiles are host (this
+Mac's macOS), minmax (each port's oldest and newest eligible releases with
+available images, macOS 12 or later), macports-ci (the releases MacPorts'
+CI builds on), and all. Define your own under [build.profiles]. --on
+selects explicit environments instead, such as tart:15,26, github, local,
+or command. Every environment must pass.
 
 --only narrows the check to some changed ports and adds back the changed
 ports they need; --also builds unchanged ports against the branch. --plan
@@ -69,13 +71,31 @@ branch's latest check, or the check --of names, or the --only ones, at
 the master that check started from, in its environments, with its
 variants and tests, and reports each beside the branch's result. It reports what happened in each run and nothing more. A
 failed check suggests a baseline when one could tell more; with
-check.baseline = true, it runs that baseline automatically.`,
+check.baseline = true, it runs that baseline automatically.
+
+--for 9m queues the check, as -d does, then follows it for at most nine
+minutes, exiting 4 if it is still queued or running, saying what it is
+doing; the check continues, with serve or a background worker, never in
+this process. dockhand wait check-42 --for 9m follows it further.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			// A misspelled policy is refused before anything is captured.
 			if tests != "" && !model.TestPolicy(tests).Valid() {
 				return fmt.Errorf("--tests %q is not declared, required, or skip", tests)
+			}
+			var limit checkrun.Bound
+			if bound != "" {
+				switch {
+				case enqueue:
+					return errors.New("-d returns at once and --for follows for a while; use one")
+				case plan:
+					return errors.New("--plan builds nothing and waits for nothing")
+				}
+				var err error
+				if limit, err = checkrun.ParseBound(bound); err != nil {
+					return err
+				}
 			}
 			if err := baselineFlags(cmd, baseline, of, nil); err != nil {
 				if !cmd.Flags().Changed("variants") {
@@ -103,7 +123,7 @@ check.baseline = true, it runs that baseline automatically.`,
 				return previewBaseline(ctx, e, streams, request)
 			}
 			if baseline {
-				return runBaseline(ctx, e, streams, request, enqueue, s)
+				return runBaseline(ctx, e, streams, request, enqueue, limit, s)
 			}
 			mode := captureMode(head, staged, workingTree)
 			place, err := e.Where(ctx, engine.WhereRequest{On: on, Build: build})
@@ -160,13 +180,17 @@ check.baseline = true, it runs that baseline automatically.`,
 			if plan && streams.Verbose() > 0 {
 				view.WriteEvaluated(out, proposed)
 			}
+			// The Portfile findings submit would say, before the build
+			// they'd otherwise repeat (the openssl4 session's note 1).
+			findings, _ := e.BeforeBuilding(ctx, branch, capture, plan)
+			view.WriteBeforeBuilding(out, findings)
 			// What it will install, by the port index: --plan waits for
 			// packages.macports.org's listings; a check says what's kept,
 			// and its run says the rest as it starts.
 			view.WriteEstimates(out, e.InstallEstimates(ctx, proposed, capture.Revision.Source, plan), proposed.Environments)
 			view.WritePushes(out, proposed)
 			revision, planned := view.RevisionView(capture.Revision), view.PlanView(proposed)
-			streams.Emit(view.CheckJSON{Branch: branch.ShortName(), Revision: &revision, Plan: &planned, Targets: []view.TargetJSON{}})
+			streams.Emit(view.CheckJSON{Branch: branch.ShortName(), Revision: &revision, Plan: &planned, Targets: []view.TargetJSON{}}.WithPortfileFindings(findings))
 			if err := checks.Runnable(proposed); err != nil {
 				return fmt.Errorf("nothing was checked: %w", err)
 			}
@@ -205,6 +229,9 @@ check.baseline = true, it runs that baseline automatically.`,
 					return fmt.Errorf("%s is already %s for these files; dockhand wait %s follows it", queued.Run.Name(), queued.Run.State, queued.Run.Name())
 				}
 				fmt.Fprintf(streams.Err, "%s is already %s and covers this check; following it.\n", queued.Run.Name(), queued.Run.State)
+				if bound != "" {
+					return checkrun.WaitFor(ctx, e, queued.Run, streams, s.Places(), limit, s.Drain)
+				}
 				return checkrun.Wait(ctx, e, queued.Run, streams, s.Places())
 			}
 			if err != nil {
@@ -218,6 +245,22 @@ check.baseline = true, it runs that baseline automatically.`,
 				// One line names each, where a line said each stopped and
 				// another what replaced them (part 5, item 3).
 				fmt.Fprintf(streams.Out, "Replaced %s.\n", strings.Join(replaced, "; "))
+			}
+			if bound != "" {
+				// Queued as -d queues it, then followed for the bound,
+				// driving nothing: returning at it stops nothing.
+				err = checkrun.QueuedFor(ctx, e, run, streams, s.Places(), limit, s.Drain)
+				if err == nil {
+					if status, nextErr := e.BranchStatusOf(ctx, branch.ID); nextErr == nil {
+						view.WriteNext(streams.Out, status)
+					}
+				}
+				if s.File.Check.Baseline {
+					if queued, _, ok := e.QueuedBaseline(ctx, run.ID); ok {
+						fmt.Fprintf(streams.Out, "%s · baseline queued, since check.baseline is on: dockhand wait %s --for %s follows it\n", run.Name(), queued.Name(), limit.Said)
+					}
+				}
+				return err
 			}
 			err = checkrun.RunQueued(ctx, e, run, streams, enqueue, s.Places(), s.Drain)
 			// A check that passed says what moves the branch on now, as
@@ -253,21 +296,22 @@ check.baseline = true, it runs that baseline automatically.`,
 	}
 	where.Register(cmd, s, "check")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show what would be built and change nothing")
+	cmd.Flags().StringVar(&bound, "for", "", "follow for at most this long, then exit 4 if the check is still queued or running; it continues")
 	cmd.Flags().BoolVar(&head, "head", false, "check the committed tip")
 	cmd.Flags().BoolVar(&staged, "staged", false, "check the index")
 	cmd.Flags().BoolVar(&workingTree, "working-tree", false, "check the working files, for a --branch checked out elsewhere")
 	cmd.Flags().StringSliceVar(&include, "include", nil, "add an untracked file to the capture without staging it")
 	cmd.Flags().StringSliceVar(&only, "only", nil, "check only these changed ports, and the changed ports they need")
 	cmd.Flags().StringSliceVar(&also, "also", nil, "also build these unchanged ports against the branch")
-	cmd.Flags().StringVar(&build, "build", "", "where to build, by build profile: host, minmax, macports-ci, all, or yours (default build.default)")
-	cmd.Flags().StringArrayVar(&on, "on", nil, "where to build, explicit environments, as tart:15,26, github, or command; repeat for several, all of which must pass")
+	cmd.Flags().StringVar(&build, "build", "", "where to build, by build profile: host (this Mac's macOS alone), minmax, macports-ci, all, or yours (default: build.default)")
+	cmd.Flags().StringArrayVar(&on, "on", nil, "where to build, explicit environments such as tart:15,26, github, local, or command; repeat for several, all of which must pass")
 	cmd.Flags().StringVar(&tests, "tests", "", "declared (advisory), required, or skip")
-	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "queue the check and return; serve, or a background drain where none runs, runs it")
+	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "run the check in the background using serve or a background worker, and return immediately")
 	cmd.Flags().BoolVar(&replace, "replace", false, "stop the branch's queued or running check, keeping what it finished, and check this instead")
 	cmd.Flags().BoolVar(&baseline, "baseline", false, "build what failed in the latest check, or --only ports, at the master it started from")
 	cmd.Flags().StringVar(&of, "of", "", "with --baseline, the branch's finished check to compare with, as check-42, not its latest")
 	cmd.Flags().BoolVar(&fresh, "fresh", false, "build every port, reusing no earlier build's result")
-	cmd.Flags().BoolVar(&keep, "keep", false, "keep what the check built: each Tart clone, stopped, where its guest finishes, for dockhand shell, and in a local prefix the branch's versions, left active")
+	cmd.Flags().BoolVar(&keep, "keep", false, "retain stopped Tart VMs for dockhand shell, or leave the branch's versions active in a local prefix")
 	cmd.Flags().StringVar(&variants, "variants", "", "build the one port checked with these variants, +name -name, or each: its defaults, then each variant it declares")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --variants each, make its builds without asking")
 	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
@@ -377,7 +421,10 @@ func previewBaseline(ctx context.Context, e *engine.Engine, streams term.Streams
 
 // runBaseline plans a baseline of the branch's check, its latest or the
 // one --of names, and runs it, here or through serve.
-func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, request engine.BaselineRequest, enqueue bool, s *settings.Settings) error {
+// A --for bound follows it as it follows a check, queued as -d queues it:
+// it was run in the foreground past the bound (Codex's workflow review of
+// 1caa6c3d, finding 4).
+func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, request engine.BaselineRequest, enqueue bool, limit checkrun.Bound, s *settings.Settings) error {
 	branch := request.Branch
 	baseline, err := e.PlanBaseline(ctx, request)
 	if err != nil {
@@ -387,6 +434,9 @@ func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, re
 	run, err := e.EnqueueBaseline(ctx, branch, baseline, model.OriginPerson)
 	if err != nil {
 		return err
+	}
+	if limit.Said != "" {
+		return checkrun.QueuedFor(ctx, e, run, streams, s.Places(), limit, s.Drain)
 	}
 	return checkrun.RunQueued(ctx, e, run, streams, enqueue, s.Places(), s.Drain)
 }
@@ -428,7 +478,7 @@ func besideWords(err error, revision model.Revision) error {
 		// testing's rust check, 2026-10-15).
 		return fmt.Errorf("%v, or --replace checks again, keeping what it finished", active)
 	case active.Uncovered:
-		return fmt.Errorf("%s is %s for these files, but doesn't cover what this check asks, the builds it makes in each environment, its variants, tests, or freshness, or a kept guest; --replace stops it, keeping what it finished, and checks this one instead", active.Run.Name(), active.Run.State)
+		return fmt.Errorf("%s is %s for these files, %s; --replace stops it, keeping what it finished, and checks this one instead", active.Run.Name(), active.Run.State, active.Uncovering())
 	case active.SameRevision:
 		return active
 	}

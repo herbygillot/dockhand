@@ -45,7 +45,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	// --on ci went with check.on (the person's design, 2026-10-13).
 	out, _, err = cmdtest.Dockhand(t, "check", "--plan", "--keep")
 	require.NoError(t, err)
-	require.Contains(t, out, "Keeps       each Tart environment's clone, stopped, where its guest finishes, for dockhand shell; clean or the branch's next check removes it\n")
+	require.Contains(t, out, "Keeps       each Tart VM, stopped after the build, for dockhand shell; clean or the branch's next check removes it\n")
 	_, _, err = cmdtest.Dockhand(t, "check", "--baseline", "--keep")
 	require.ErrorContains(t, err, "none of the others can be")
 	_, _, err = cmdtest.Dockhand(t, "check", "--plan", "--build", "minmax")
@@ -170,7 +170,7 @@ func TestCheckFollowsOnlyACheckThatCoversIt(t *testing.T) {
 	require.Equal(t, "skip", cmdtest.Dig(t, queued.Result, "plan", "tests"))
 
 	_, _, err = cmdtest.Dockhand(t, "check", "--tests", "required")
-	require.ErrorContains(t, err, "check-1 is queued for these files, but doesn't cover what this check asks")
+	require.ErrorContains(t, err, "check-1 is queued for these files, but does not cover this request's builds")
 	require.ErrorContains(t, err, "--replace stops it, keeping what it finished, and checks this one instead")
 }
 
@@ -353,7 +353,7 @@ func TestABaselineSaysWhatTheTestsDidAtTheBase(t *testing.T) {
 	}{
 		{model.TestsFailed, model.TestsFailed, "✓ builds at the base, as it does on the branch; tests fail at the base and in check-38; the failure also occurs without this branch's changes."},
 		{model.TestsPassed, model.TestsTimedOut, "✓ builds at the base, as it does on the branch; its tests pass at the base, and time out in check-38; the cause isn't established."},
-		{model.TestsSkipped, model.TestsFailed, "✓ builds at the base, as it does on the branch; its tests fail in check-38, and weren't run at the base (skipped), so there's nothing to set beside them."},
+		{model.TestsSkipped, model.TestsFailed, "✓ builds at the base, as it does on the branch; its tests fail in check-38, and weren't run at the base (skipped), so the test results cannot be compared."},
 		{model.TestsFailed, model.TestsPassed, "✓ builds at the base, as it does on the branch; its tests fail at the base, and pass in check-38."},
 		{model.TestsTimedOut, model.TestsNone, "✓ builds at the base, as it does on the branch; its tests time out at the base, and weren't run in check-38 (none)."},
 		{model.TestsPassed, model.TestsPassed, "✓ builds at the base, as it does on the branch."},
@@ -621,4 +621,114 @@ JSON
 	<-firstDone
 	<-otherDone
 	require.True(t, started("check-2"), "and runs once it's free")
+}
+
+// A check says the Portfile findings submit would before it builds, as
+// its plan does each time, and once a tree: a later check of the same
+// tree doesn't repeat them (the openssl4 session's note 1).
+func TestACheckSaysThePortfileFindingsBeforeItBuilds(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-license")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-license")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	cmdtest.WithScript(t, w, "passed")
+	testsupport.Git(t, dir, "sparse-checkout", "add", "textproc/jq")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n"), 0o644))
+	out, _, err := cmdtest.Dockhand(t, "check", "--plan")
+	require.NoError(t, err)
+	require.NotContains(t, out, "Before building:", "nothing to say")
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nlicense Apache-2.0\n"), 0o644))
+	before := "Before building:\n  ! textproc/jq/Portfile:2: license Apache-2.0 is SPDX's name; MacPorts' is Apache-2 [license-spdx]\n"
+	out, _, err = cmdtest.Dockhand(t, "check", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "Provider    command · tests where declared\n"+before, "under the plan")
+	require.Contains(t, strings.Join(strings.Fields(out), " "), "dockhand tidy fixes what it can; the rest are edits a reviewer would ask for, best made before the build.")
+	out, _, err = cmdtest.Dockhand(t, "check", "--plan", "--json")
+	require.NoError(t, err)
+	require.Contains(t, out, "\"portfile_findings\": [\n      {\n        \"code\": \"license-spdx\"")
+
+	out, _, err = cmdtest.Dockhand(t, "check", "--json")
+	require.NoError(t, err)
+	require.Contains(t, out, "\"portfile_findings\": [\n      {\n        \"code\": \"license-spdx\"", "kept in the finished check's result")
+	out, _, err = cmdtest.Dockhand(t, "check", "--fresh")
+	require.NoError(t, err)
+	require.NotContains(t, out, "Before building:", "a check of the same tree said them already")
+	out, _, err = cmdtest.Dockhand(t, "check", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, before, "a plan says them each time")
+}
+
+// check --for and wait --for follow a check for a bounded time, driving
+// nothing in their own process, and exit 4 while it's still queued or
+// running, saying so and the wait that follows it further (the openssl4
+// session's note 4).
+func TestForFollowsACheckForABoundedTime(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-for")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-for")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	cmdtest.WithScript(t, w, "passed")
+	testsupport.Git(t, dir, "sparse-checkout", "add", "textproc/jq")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n"), 0o644))
+
+	for args, refused := range map[string]string{
+		"--for 9m -d":     "-d returns at once and --for follows for a while; use one",
+		"--for 9m --plan": "--plan builds nothing and waits for nothing",
+		"--for 9":         "--for 9: name a duration with its unit, as 9m or 1h",
+		"--for 0s":        "--for 0s: duration must be greater than zero",
+	} {
+		_, _, err := cmdtest.Dockhand(t, append([]string{"check"}, strings.Fields(args)...)...)
+		require.EqualError(t, err, refused, args)
+	}
+
+	// No serve, and no worker starts: refused, the check left queued.
+	_, _, err = cmdtest.Dockhand(t, "check", "--for", "1s")
+	require.ErrorContains(t, err, "check-1 is queued and nothing runs it: Dockhand could not start a background worker (no drain starts in a test). Run dockhand serve, or dockhand wait check-1 without --for runs it here")
+	require.Equal(t, 1, term.ExitCode(err))
+	_, _, err = cmdtest.Dockhand(t, "wait", "check-1", "--for", "1s")
+	require.ErrorContains(t, err, "check-1 is queued and nothing runs it", "wait --for never runs it here")
+
+	// A worker that starts and doesn't take it yet: still queued at the
+	// bound, exit 4.
+	cmdtest.Hosted(t).StartDrain = func(engine.Options) (int, error) { return 4242, nil }
+	_, errs, err := cmdtest.Dockhand(t, "wait", "check-1", "--for", "1s")
+	require.Equal(t, 4, term.ExitCode(err))
+	require.Contains(t, errs, "No dockhand serve is running; a background worker (PID 4242) runs check-1. Following it for 1s.\n")
+	require.ErrorContains(t, err, "check-1 is still queued after 1s; it continues")
+	require.Contains(t, err.Error(), "dockhand wait check-1 --for 1s")
+	decoded, err := cmdtest.JSONOf(t, "wait", "check-1", "--for", "1s")
+	require.Equal(t, 4, term.ExitCode(err))
+	require.Equal(t, 4, decoded.ExitCode)
+	require.Contains(t, *decoded.Error, "check-1 is still queued after 1s; it continues")
+	require.Equal(t, "queued", cmdtest.Dig(t, decoded.Result, "run", "state"))
+}
+
+// check --baseline --for follows the baseline for its bound, queued for a
+// background worker as a check --for is, where it ran here past the bound
+// (Codex's workflow review of 1caa6c3d, finding 4, its probe).
+func TestABaselineForFollowsForItsBound(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	next := cmdtest.WithOutcomeScript(t, w, "")
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-update"))
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	next("failed")
+	_, _, err = cmdtest.Dockhand(t, "check")
+	require.Equal(t, 2, term.ExitCode(err))
+	next("passed")
+	drained := false
+	cmdtest.Hosted(t).StartDrain = func(engine.Options) (int, error) { drained = true; return 4242, nil }
+	_, _, err = cmdtest.Dockhand(t, "check", "--baseline", "--for", "1ms")
+	require.True(t, drained, "a background worker drives it, not this process")
+	require.Equal(t, 4, term.ExitCode(err), "still queued at the bound")
 }

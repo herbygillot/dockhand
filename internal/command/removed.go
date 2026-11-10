@@ -38,6 +38,9 @@ var removedFlags = map[string]map[string]string{
 	"logs":     {"all": "logs --all is gone: logs --full shows the whole log"},
 	"outdated": {"all": "outdated --all is gone: outdated --current lists the ports with no newer release too"},
 	"diff":     {"archive": "diff --archive is gone: diff --source compares the source archives"},
+	// The root's flags, removed on every command: v0.8.0's --tool names
+	// git as it names the other programs dockhand runs.
+	"": {"git": "--git is gone: --tool git=<path> names the git dockhand runs"},
 	// v0.8.0's console took the live view's place.
 	"status": {
 		"watch": "status --watch is now dockhand console",
@@ -54,6 +57,10 @@ func removedFlag(cmd *cobra.Command, err error) error {
 		return err
 	}
 	if words, ok := removedFlags[strings.TrimPrefix(cmd.CommandPath(), "dockhand ")][name]; ok {
+		return errors.New(words)
+	}
+	// A root flag is gone on every command.
+	if words, ok := removedFlags[""][name]; ok {
 		return errors.New(words)
 	}
 	return err

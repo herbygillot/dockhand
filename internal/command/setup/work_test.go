@@ -27,6 +27,18 @@ func TestSetupStartPathAndAdopt(t *testing.T) {
 	_, err = os.Stat(filepath.Join(w.Home, ".dockhand", "config.toml"))
 	require.ErrorIs(t, err, os.ErrNotExist, "the default needs no configuration file")
 
+	// A program named says what named it, and one setup has no line of
+	// its own for is said where it's named (the roadmap's "--tool").
+	git, err := exec.LookPath("git")
+	require.NoError(t, err)
+	named, _, err := cmdtest.Dockhand(t, "setup", "--yes", "--tool", "git="+git, "--tool", "patch="+git)
+	require.NoError(t, err)
+	require.Regexp(t, `\n  Git          ✓ \d+\.\d+\.\d+ at \S+/git, from --tool git\n`, named)
+	require.Contains(t, named, "  Programs     patch at "+git+", from --tool patch\n")
+	report, err := cmdtest.JSONOf(t, "setup", "--yes", "--tool", "git="+git)
+	require.NoError(t, err)
+	require.Equal(t, "--tool git", cmdtest.Dig(t, report.Result, "git", "source"))
+
 	out, _, err = cmdtest.Dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	require.Contains(t, out, "Created dockhand/jq-update from master ")
@@ -164,7 +176,7 @@ func TestSetupOffersWhatsMissing(t *testing.T) {
 	require.Contains(t, errs.String(), "Keep branch worktrees in ")
 	require.Contains(t, errs.String(), "? Log in to GitHub to submit pull requests and run checks in your fork? [Y/n] ")
 	require.Contains(t, out.String(), "  Publishing     not set up: dockhand setup github, when you're ready to submit\n")
-	require.Contains(t, out.String(), "\n  maintainer: set maintainer to you as a Portfile's maintainers line writes you, such as \"@you\" for\n    your GitHub login, or \"{example.org:you @you}\" with your email too, in ~/.dockhand/config.toml,\n    for --mine, create, and serve's daily lookup of new releases\n")
+	require.Contains(t, cmdtest.Flat(out.String()), `maintainer: set maintainer in ~/.dockhand/config.toml to your identity as written in Portfiles, such as "@you" for your GitHub login, or "{example.org:you @you}" to include your email, for --mine, create, and serve's daily lookup of new releases`)
 	require.Contains(t, out.String(), "Next: dockhand setup github, then dockhand update <port>, or set maintainer in the configuration\n  file for dockhand outdated --mine\n", "no maintainer, so outdated --mine isn't named alone")
 
 	quiet, said, err := cmdtest.Dockhand(t, "setup", "-y")

@@ -95,6 +95,10 @@ type PullRequestObservation struct {
 	// ReviewedAt is when the review that sets Review was made; zero where
 	// none does, or for an observation from before it was kept.
 	ReviewedAt time.Time `json:",omitzero"`
+	// CommentedBy is the reviewer whose comment is the conversation's
+	// latest word, after the head, which GitHub's review state doesn't
+	// count (forge.PullRequestStatus.CommentedBy); empty where none is.
+	CommentedBy string `json:",omitempty"`
 	// Failing names the checks that concluded unsuccessfully.
 	Checks  PullRequestChecks
 	Failing []string `json:",omitempty"`
@@ -236,6 +240,13 @@ type Branch struct {
 	// run, #35084). It is the branch's, not the pull request's, so a note
 	// given before one opens is kept for it.
 	Note string
+	// TestedBinaries and TestedVariants are the person's statements for
+	// the pull request template's last two items, that they tested its
+	// binaries and its variants, kept with the branch as its note is, so
+	// a later submission says them without being told again (#91); nil
+	// where none was made. Each is about the files it was made for, and
+	// stands only while they're the same (TestedStatement.Stands, #153).
+	TestedBinaries, TestedVariants *TestedStatement
 	// Ports are the ports it was started for, by name: start --port's, or
 	// the port an authoring command started it for. -p, status --port,
 	// and its ports read them beside what it changes, so a branch started
@@ -311,6 +322,34 @@ func validRefName(name string) bool {
 	}
 	for part := range strings.SplitSeq(name, "/") {
 		if part == "" || strings.HasPrefix(part, ".") || strings.HasSuffix(part, ".lock") {
+			return false
+		}
+	}
+	return true
+}
+
+// TestedStatement is a person's statement that they tested a branch's
+// binaries or its variants, about the files it was made for: each port
+// directory the branch changed, with its Git tree there, at the commit it
+// was recorded for (#153). Kept as a branch's boolean, it ticked the
+// template's item at every later submission, the Portfile changed since.
+type TestedStatement struct {
+	Trees map[string]ObjectID `json:"trees,omitempty"`
+}
+
+// Stands reports whether a statement holds for the port directories a
+// branch changes now, by their trees: every one recorded, with the same
+// tree. Any change under one, or a port the branch starts to change,
+// clears it; a directory the branch no longer changes doesn't, nor
+// does anything outside the directories, a message, a squash, or a
+// rebase that leaves them alone. A statement kept with no trees, from
+// before #153, stands for nothing.
+func (s *TestedStatement) Stands(trees map[string]ObjectID) bool {
+	if s == nil || len(s.Trees) == 0 || len(trees) == 0 {
+		return false
+	}
+	for directory, tree := range trees {
+		if s.Trees[directory] != tree {
 			return false
 		}
 	}

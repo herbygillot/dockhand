@@ -236,3 +236,126 @@ func TestAModelledContextSaysWhetherItHasSystemHeaders(t *testing.T) {
 		require.False(t, port.ModeledHostAccess, "darwin %s: %v", c.version, port.Problems)
 	}
 }
+
+// A modelled context with Xcode answers Xcode's SDKs, and xcrun's
+// --show-sdk-path, from the facts table, where it lists them: the survey's
+// insight 1 found 3,651 ports testing …/SDKs/MacOSX* on the host, and
+// 3,563 running xcrun there (#17). An SDK not listed is absent and not
+// located; xcrun finds an SDK by its version exactly, MacOSX15.5.sdk,
+// never macosx15.
+func TestAModelledContextAnswersXcodesSDKsFromTheTable(t *testing.T) {
+	t.Parallel()
+	sequoia := model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}
+	sdks := macports.XcodeDeveloper + "/Platforms/MacOSX.platform/Developer/SDKs"
+	clt := macports.CommandLineTools + "/SDKs"
+	lines := strings.Join([]string{
+		"lappend results [file exists " + sdks + "/MacOSX15.sdk] [file exists " + sdks + "/MacOSX10.13.sdk] [file isdirectory " + sdks + "/MacOSX.sdk]",
+		"lappend results [lsort [glob -nocomplain -tails -directory " + sdks + " MacOSX*.sdk]]",
+		"lappend results [exec xcrun --sdk macosx --show-sdk-path 2> /dev/null] [exec xcrun --sdk macosx15.5 --show-sdk-path 2> /dev/null]",
+		"lappend results [catch {exec xcrun --sdk macosx15 --show-sdk-path 2> /dev/null}] [catch {exec xcrun --sdk macosx10.13 --show-sdk-path 2> /dev/null}]",
+		"lappend results [exec env DEVELOPER_DIR=" + macports.CommandLineTools + " xcrun --sdk macosx15.5 --show-sdk-path 2> /dev/null] [exec env DEVELOPER_DIR=" + macports.CommandLineTools + " xcrun --sdk macosx --show-sdk-path 2> /dev/null]",
+	}, "\n")
+	got, port := observedDescription(t, sequoia, model.DeveloperToolsXcode, lines)
+	require.Equal(t, []string{"1", "0", "1",
+		"MacOSX.sdk MacOSX15.5.sdk MacOSX15.sdk",
+		sdks + "/MacOSX15.5.sdk", sdks + "/MacOSX15.5.sdk",
+		"1", "1",
+		clt + "/MacOSX.sdk", clt + "/MacOSX.sdk"}, got, "the tools' MacOSX.sdk links to MacOSX15.5.sdk and comes first, as the tools' 27.0 said here")
+	require.False(t, port.ModeledHostAccess, "%v", port.Problems)
+}
+
+// An Xcode before 8 has an SDK per version and no MacOSX.sdk: Xcode 4.6.3,
+// Darwin 11's builder's, has MacOSX10.7.sdk and MacOSX10.8.sdk, read from
+// its installer, and xcrun takes the newest for --sdk macosx.
+func TestAModelledContextAnswersAnOldXcodesSDKsByVersion(t *testing.T) {
+	t.Parallel()
+	lion := model.Platform{OS: "darwin", Version: "11", Architecture: "x86_64"}
+	sdks := macports.XcodeDeveloper + "/Platforms/MacOSX.platform/Developer/SDKs"
+	lines := strings.Join([]string{
+		"lappend results [file isdirectory " + sdks + "/MacOSX10.7.sdk] [file exists " + sdks + "/MacOSX.sdk]",
+		"lappend results [exec xcrun --sdk macosx --show-sdk-path 2> /dev/null] [exec xcrun --sdk macosx10.7 --show-sdk-path 2> /dev/null]",
+		"lappend results [catch {exec xcrun --sdk macosx10.6 --show-sdk-path 2> /dev/null}]",
+	}, "\n")
+	got, port := observedDescription(t, lion, model.DeveloperToolsXcode, lines)
+	require.Equal(t, []string{"1", "0", sdks + "/MacOSX10.8.sdk", sdks + "/MacOSX10.7.sdk", "1"}, got)
+	require.False(t, port.ModeledHostAccess, "%v", port.Problems)
+}
+
+// A modelled release's os.version and macos_version are the table's,
+// whose minor some Portfiles test: py-numpy, py-scipy, and stimfit offer
+// +accelerate on Darwin 22 only from os.minor 4, and at 22.0.0 the model
+// picked +openblas where MacPorts' builder, 22.6.0, has +accelerate
+// (#105).
+func TestAModelledContextHasItsReleasesMinorVersion(t *testing.T) {
+	t.Parallel()
+	ventura := model.Platform{OS: "darwin", Version: "22", Architecture: "x86_64"}
+	tools, err := macports.Toolchain(ventura, "")
+	require.NoError(t, err)
+	require.Equal(t, []string{"22.6.0", "13.7.8"}, []string{tools.DarwinVersion, tools.MacOS}, "the table, as this test expects it")
+	got, _ := observedDescription(t, ventura, "", strings.Join([]string{
+		"lappend results ${os.version} ${os.minor} $macos_version ${macos_version_major} ${macosx_deployment_target}",
+		"if {${os.major} == 22 && ${os.minor} >= 4} { lappend results accelerate }",
+	}, "\n"))
+	require.Equal(t, []string{"22.6.0", "6", "13.7.8", "13", "13.0", "accelerate"}, got)
+}
+
+// A C++20 port in a modelled context with Xcode and the tools takes the
+// tools' clang's version from the table, under configure.developer_dir,
+// which is the tools': Ventura's Intel builder's 1403 is under Base's 1500
+// minimum for C++20, so a MacPorts clang builds it, as on the builder,
+// where the model had asked this Mac's clang and kept Apple's (#106).
+func TestAModelledCxx20PortTakesTheTablesClang(t *testing.T) {
+	t.Parallel()
+	ventura := model.Platform{OS: "darwin", Version: "22", Architecture: "x86_64"}
+	tools, err := macports.Toolchain(ventura, "")
+	require.NoError(t, err)
+	require.Equal(t, "1403.0.22.14.1", tools.Clang, "the table, as this test expects it")
+	for _, standard := range []string{"2017", "2020"} {
+		got, port := observedDescription(t, ventura, "", "compiler.cxx_standard "+standard+"\nlappend results [compiler.command_line_tools_version clang] ${configure.compiler}")
+		require.Len(t, got, 2)
+		require.Equal(t, tools.Clang, got[0], standard)
+		if standard == "2017" {
+			require.Equal(t, "clang", got[1], "Apple's clang builds C++17")
+		} else {
+			require.True(t, strings.HasPrefix(got[1], "macports-clang-"), "C++20: %s", got[1])
+		}
+		require.False(t, port.ModeledHostAccess, "%v", port.Problems)
+	}
+}
+
+// Where the row lists no SDKs, as the Command Line Tools before 10.14
+// have none and Darwin 10's /Developer is no directory the model keeps
+// Xcode's SDKs in, xcrun finds none and the SDK glob is empty, the
+// table's lack marked, and the host's xcrun isn't run: it ran 8,059 times
+// in Darwin 10 to 12 contexts in the M1 survey, and gave Darwin 10 the
+// host's own SDK (#108).
+func TestAnUnlistedSDKIsAbsentWithoutTheHost(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		platform model.Platform
+		tools    model.DeveloperTools
+		glob     string
+	}{
+		{model.Platform{OS: "darwin", Version: "13", Architecture: "x86_64"}, model.DeveloperToolsCommandLine, macports.CommandLineTools + "/SDKs"},
+		{model.Platform{OS: "darwin", Version: "10", Architecture: "x86_64"}, model.DeveloperToolsXcode, ""},
+	} {
+		lines := "lappend results [catch {exec xcrun --sdk macosx --show-sdk-path 2> /dev/null}] [catch {exec xcrun --sdk macosx10.9 --show-sdk-path 2> /dev/null}]"
+		if c.glob != "" {
+			lines += "\nlappend results [llength [glob -nocomplain -directory " + c.glob + " MacOSX*.sdk]] [catch {glob -directory " + c.glob + " MacOSX*.sdk}]"
+		}
+		got, port := observedDescription(t, c.platform, c.tools, lines)
+		want := []string{"1", "1"}
+		if c.glob != "" {
+			want = append(want, "0", "1")
+		}
+		require.Equal(t, want, got, "%+v", c.platform)
+		require.False(t, port.ModeledHostAccess, "%+v: %v", c.platform, port.Problems)
+		unlisted := 0
+		for _, entry := range port.Ledger {
+			if entry.Source == "table" && entry.Subject == "sdks-unlisted" {
+				unlisted += entry.Count
+			}
+		}
+		require.Positive(t, unlisted, "%+v: %v", c.platform, port.Ledger)
+	}
+}

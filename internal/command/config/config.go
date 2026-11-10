@@ -64,11 +64,16 @@ it is refused by name. Flags, then the environment, come before the file.`,
 				add("build.profiles."+name, fmt.Sprintf("%s, %s", cmp.Or(profile.Provider, "tart"), cmp.Or(string(rule), strings.Join(releases, ", "), string(config.RuleHost))), "")
 			}
 			set("check.tests", file.Check.Tests)
-			baselineValue := ""
-			if file.Check.Baseline {
-				baselineValue = "true"
+			// A switch the file sets is the file's, false included, which
+			// read as the default where only true was said.
+			flag := func(key string, value bool) {
+				words := ""
+				if value || file.Sets(key) {
+					words = strconv.FormatBool(value)
+				}
+				set(key, words)
 			}
-			set("check.baseline", baselineValue)
+			flag("check.baseline", file.Check.Baseline)
 			set("submit.rerequest_review", file.Submit.RerequestReview)
 			automatic := ""
 			if file.Cleanup.Automatic != nil {
@@ -95,12 +100,21 @@ it is refused by name. Flags, then the environment, come before the file.`,
 					}
 				}
 			}
-			keepHTTP := ""
-			if file.Update.KeepHTTP {
-				keepHTTP = "true"
-			}
-			set("update.keep_http", keepHTTP)
+			flag("update.keep_http", file.Update.KeepHTTP)
 			set("update.source", file.Update.Source)
+			// Each program dockhand runs, as named: --tool, then its
+			// variable, then [tools], else found as the default says.
+			for _, program := range config.Programs {
+				key := "tools." + program.Key
+				switch {
+				case s.Tools[program.Name] != "":
+					all = append(all, configSetting{Key: key, Value: s.Tools[program.Name], Source: "--tool " + program.Name})
+				case s.Getenv(program.Variable) != "":
+					all = append(all, configSetting{Key: key, Value: s.Getenv(program.Variable), Source: program.Variable})
+				default:
+					set(key, s.Places().Tilde(file.Tools.Get(program.Key)))
+				}
+			}
 			set("serve.ship_to", file.Serve.ShipTo)
 			set("serve.outdated_at", file.Serve.OutdatedAt)
 			set("serve.submit_limit", positive(file.Serve.SubmitLimit))
@@ -114,6 +128,11 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			set("serve.not_maintainers", strings.Join(file.Serve.NotMaintainers, ", "))
 			set("providers.tart.test_timeout", file.Providers.Tart.TestTimeout)
 			set("providers.tart.build_timeout", file.Providers.Tart.BuildTimeout)
+			keepFailed := ""
+			if file.Providers.Tart.KeepFailed != nil {
+				keepFailed = strconv.FormatBool(*file.Providers.Tart.KeepFailed)
+			}
+			set("providers.tart.keep_failed", keepFailed)
 			// Each release's Xcode image installs what MacPorts' arm64
 			// buildbot for it runs, unless the file names another.
 			xcodes, err := tart.Xcodes(file.Providers.Tart.Xcode)
@@ -148,8 +167,13 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			}
 			for _, setting := range all {
 				mark := ""
-				if setting.Source == "default" {
+				switch setting.Source {
+				case "default":
 					mark = "  (default)"
+				case "file":
+				default:
+					// A program named by --tool or its variable.
+					mark = "  (" + setting.Source + ")"
 				}
 				fmt.Fprintf(streams.Out, "%-*s  %s%s\n", width, setting.Key, setting.Value, mark)
 			}

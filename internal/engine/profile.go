@@ -62,7 +62,7 @@ func (e *Engine) Profile(name string) (Profile, error) {
 	// local was host's other name, which built on Tart where a person
 	// asking for local means the local provider (D17).
 	if name == buildenv.Local {
-		return Profile{}, fmt.Errorf("--build local: local is no build profile; --build host builds on Tart on this Mac's release, and --on local in a MacPorts prefix on this Mac")
+		return Profile{}, fmt.Errorf("--build local: local names a provider; --build host builds on Tart on this Mac's release, and --on local builds in a MacPorts prefix on this Mac")
 	}
 	return Profile{}, fmt.Errorf("--build %s: unknown build profile. Built-in profiles are host, minmax, macports-ci, and all. Define custom profiles under [build.profiles] in %s", name, e.configFile())
 }
@@ -115,7 +115,10 @@ func (e *Engine) Where(ctx context.Context, request WhereRequest) (Where, error)
 	return where, err
 }
 
-// defaultProfile is build.default: host, or command where it's set up.
+// defaultProfile is build.default: minmax, each port's oldest and newest
+// release among the Tart images set up (the person's choice, 2026-11-04),
+// which is this Mac's alone where only its image is; or command where
+// it's set up.
 func (e *Engine) defaultProfile() string {
 	if e.Builds.Default != "" {
 		return e.Builds.Default
@@ -123,7 +126,7 @@ func (e *Engine) defaultProfile() string {
 	if _, ok := e.Providers[buildenv.Command]; ok {
 		return buildenv.Command
 	}
-	return string(config.RuleHost)
+	return config.DefaultBuildProfile
 }
 
 // unattendedProfile is build.unattended: minmax where Tart is set up, its

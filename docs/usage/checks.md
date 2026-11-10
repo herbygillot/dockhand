@@ -23,8 +23,15 @@ nothing. With `-v` it prints that evaluation for each target in each
 environment: the variants as MacPorts resolved them, the defaults not negated
 plus those asked; `depends_build`, `depends_lib`, and `depends_run`; and
 `configure.args` and `configure.env`, evaluated on this Mac with the
-environment's platform. It is the dry evaluation of a Portfile under a variant
+environment's platform and the developer tools of that release's image, as the
+facts table records them; the guest's own build is the result, and a check says
+where your image's tools differ from the table's. It is the dry evaluation of a Portfile under a variant
 set, master's with `--also`, and `--json` carries it as `evaluated`.
+
+The plan, and a check before it builds, say the Portfile findings submit would,
+such as a line restating a PortGroup's default, so the edit comes before the
+build it would otherwise repeat. A check says them once for each set of files;
+`--json` carries them as `portfile_findings`.
 
 Replace `BRANCH` with its exact name from `dockhand status`. The plan shows the
 captured files, targets, build order, and environments. The real check normally
@@ -133,11 +140,15 @@ shows each (`dockhand usage publishing`).
 They are mutually exclusive.
 
 ```sh
+dockhand check --build host
 dockhand check --build minmax --plan
 dockhand check --on tart:sequoia --on tart:tahoe
 dockhand check --on github
 dockhand check --on local
 ```
+
+`--build host` builds on this Mac's macOS alone, the quick check;
+`build.default = "host"` makes it the default.
 
 Every requested environment contributes its own result. A pass on one does not
 cover another. The submission profile can require environments beyond a
@@ -151,9 +162,9 @@ diagnostic check you ran manually.
 | `all` | Every available Tart release |
 
 `build.default` selects ordinary checks; a configured command provider becomes
-the fallback default instead of `host`. `build.unattended` selects checks on
+the fallback default instead of `minmax`. `build.unattended` selects checks on
 unattended publication paths such as `bump` and `serve`; otherwise its fallback
-is `minmax` when Tart is available, or the ordinary default. Use
+is the same `minmax` when Tart is available, or the ordinary default. Use
 `dockhand config` and the check plan to see which configuration is in effect.
 Define your own profile with `dockhand usage configuration`.
 
@@ -215,9 +226,9 @@ a check says them as it starts. The archives a guest is given are said once,
 `giving the guest 25 archives earlier guests installed and 2 kept of their
 targets' builds`, each by name under `-v`. Kept archives whose files are
 missing, as from a database copy without its archives directory, are said once
-with their count and ports, `check-42: 3 saved archives are missing, of jq,
-oniguruma, and libharbor. Removing their records; the build environment will
-use MacPorts archives or build them from source`.
+with their count and ports, `check-42: 3 saved archives for jq, oniguruma,
+and libharbor are missing. Removing the missing archive records; the build
+environment will use MacPorts archives or build from source`.
 
 ### GitHub Actions
 
@@ -233,7 +244,11 @@ column, and one run builds them all. `--on github` asks for every release;
 release whose job no runner took is left unchecked, and submit says so with
 GitHub's reason; check that release with Tart or `local`, or try again later.
 The workflow builds only the ports a commit changes, so the plan says which
-`--also` or baseline targets it won't build.
+`--also` or baseline targets it won't build. The pull request's Tested on gives
+each runner's macOS version, architecture, Xcode, and MacPorts as MacPorts
+wrote them in the runner's log, `macOS 15.8.2 arm64 · Xcode 16.4 · MacPorts
+2.12.7 (macos-15)`; a runner that failed before writing them gives its release
+alone.
 
 The workflow chooses its runners and tests. A host check's pass does not
 guarantee those runners will pass. `dockhand usage publishing` explains local
@@ -295,6 +310,12 @@ dockhand status
 follows the latest check of the current branch. The output also names the check,
 such as `check-12`, for use from anywhere.
 
+`--for 9m` on `check` or `wait` follows for at most nine minutes and then exits
+4 if the check is still queued or running, saying what it is doing; the check
+continues, with serve or a background worker, never in the command's own
+process, so `wait --for` starts a worker where `wait` alone would have run the
+check here. `check --baseline --for 9m` follows a baseline the same way. `dockhand wait check-42 --for 9m` follows it further.
+
 A batch's checks, serve's, and a foreground check count against one capacity
 for each provider: Tart's is as many checks as the Mac runs VMs, GitHub's and a
 command provider's are `providers.github.capacity` and
@@ -312,8 +333,11 @@ journal's newest events under them; it replaces `status --watch`.
 
 One branch runs one check at a time. A new request follows an active check only
 if it covers the requested files, targets, environments, and policy. Otherwise
-it refuses. `--replace` stops the active request, keeps completed results, and
-queues the new one. Read `dockhand usage recovery` before choosing between wait,
+it refuses, as it does where a tag or branch a port fetches moved since the
+active check was planned. `--replace` stops the active request, keeps completed
+results, and queues the new one. `dockhand cancel` of a GitHub check whose
+driver stopped cancels its workflow run on your fork too, and says so where
+GitHub can't be reached. Read `dockhand usage recovery` before choosing between wait,
 retry, replacement, and cancellation.
 
 ## Read results and reuse
@@ -336,13 +360,30 @@ dockhand artifacts
 Use the actual check and port names. Logs identify the build when several
 environments exist; `--full` includes dependency installation, and `--follow`
 follows supported live logs. `artifacts` lists kept archives of the branch's
-latest check, or explains why one is missing. A build that links another port's
+latest check, or of a check it names, as `artifacts check-12`, or explains why
+one is missing. A build that links another port's
 library the Portfile doesn't declare is a notice, holding nothing, that names
 the line to write: `omnidiff links libiconv.2.dylib from libiconv, which it
-doesn't declare in depends_lib; depends_lib-append port:libiconv declares it`.
+doesn't declare in depends_lib. Declare it with depends_lib-append
+port:libiconv; dockhand tidy can write this line`. For supported declarations,
+`dockhand tidy` writes a separate commit and carries over the check's results:
+the build already had that library active. Subport and variant declarations
+must be written in their appropriate blocks; tidy explains when it cannot
+write the line.
+
+Dockhand also reports a dependency declared in `depends_lib` whose libraries
+none of the builds links: `declares libiconv in depends_lib, but none of its
+builds links that port's libraries`. Consider
+`depends_build` for build tools or headers, and `depends_run` for programs or
+libraries loaded at runtime. Dependencies a PortGroup adds, ports installing
+no library, and builds installing no Mach-O file are not reported. When a
+declared port's pkg-config brings in an undeclared library, the finding says so: `through gtk4's
+pkg-config Libs`, and `-Wl,-dead_strip_dylibs` as the other way out.
 
 Tart results can be reused when recorded input content and environment identity
-still match, including dependencies and fetched Git commits. A result is keyed
+still match, including dependencies and fetched Git commits. A Portfile whose only change declares a port the recorded build had active is
+the same input, so its results carry over, as an edit of metadata no build
+reads does. A result is keyed
 by the PortGroups MacPorts opened each port with, not the whole of
 `_resources`: a change to a PortGroup the port didn't load leaves it standing,
 and a change to one it did voids it. A dependency the check built from source
@@ -365,12 +406,19 @@ check's result, `status`, and the pull request's Tested on say so:
 omnidiff's maintainers changed, which builds nothing differently, and lint ran
 again on this Portfile`. A lint error builds the target again.
 
-To retain a Tart build for inspection, request `--keep` before running it:
+By default, a failed Tart check keeps its clone, stopped, one for each branch
+and release, for `dockhand shell`: the branch's next check or `clean` removes
+it, and serve's daily cleanup removes one older than seven days. `[providers.tart]
+keep_failed = false` turns that off. To retain a passed build too, request
+`--keep` before running it:
 
 ```sh
 dockhand check --keep
 dockhand shell check-12 -- otool -L /opt/local/bin/PROGRAM
 ```
+
+`dockhand shell check-12` while check-12 is still running on Tart enters its
+VM; what the check builds after the shell opened isn't evidence.
 
 Replace the identifiers with the check and installed program. `shell --test` can
 try edits to the test phase in a retained clone, but that experiment is not

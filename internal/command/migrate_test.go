@@ -37,7 +37,7 @@ func TestAReleasesDatabaseMigratesAtThePersonsWord(t *testing.T) {
 	}
 	said, err := ask("n\n")
 	require.ErrorContains(t, err, "v0.4.0")
-	require.Contains(t, said, "? Migrate it anyway? Its schema 32 form is kept at "+path+".schema-32. [y/N] ")
+	require.Contains(t, said, "? Migrate anyway? A copy using schema 32 will be kept at "+path+".schema-32. [y/N] ")
 	require.NoFileExists(t, path+".schema-32", "nothing kept or migrated when the answer is no")
 
 	said, err = ask("y\n")

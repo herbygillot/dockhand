@@ -223,6 +223,8 @@ type fakeGuest struct {
 	appended []string
 	// attached are the commands shell ran.
 	attached []attached
+	// onRead runs at each read of the results, as the build is followed.
+	onRead func()
 }
 
 // attached is a command shell ran, and whether on a terminal.
@@ -274,6 +276,9 @@ func (g *fakeGuest) Read(_ context.Context, path string, _ bool) ([]byte, error)
 	defer g.mu.Unlock()
 	if strings.HasSuffix(path, "runner.log") {
 		return []byte("the runner's last words"), nil
+	}
+	if g.onRead != nil {
+		g.onRead()
 	}
 	if len(g.results) == 0 {
 		return nil, guestssh.ErrTransport
@@ -486,7 +491,17 @@ func TestTheProviderRecordsEachTargetAsTheGuestFinishesIt(t *testing.T) {
 	mac.guest.logs["rust-1.91.0_0.darwin_25.arm64.tbz2"] = "rust's archive"
 	job := tartJob(t, 1)
 	build := &fakeBuild{}
+	// The staged tree is gone once launch returns, while the build goes
+	// on, so a process stopped mid-build leaves none (Prime-time's v0.7.0
+	// acceptance).
+	var stagedDuringBuild []bool
+	mac.guest.onRead = func() {
+		_, err := os.Stat(filepath.Join(job.Directory, "input.tar"))
+		stagedDuringBuild = append(stagedDuringBuild, err == nil)
+	}
 	require.NoError(t, testProvider(mac).Execute(t.Context(), job, build))
+	require.NotEmpty(t, stagedDuringBuild)
+	require.NotContains(t, stagedDuringBuild, true, "no staged tree beside the log while the build is followed")
 
 	require.Len(t, build.results, 2)
 	require.Equal(t, model.TargetResult{Target: "libharbor", Outcome: model.OutcomePassed, Tests: model.TestsPassed, Log: filepath.Join(job.Directory, "target-1.log"), Archive: "sha256:11"}, build.results[0])
@@ -775,7 +790,7 @@ func TestResultsDockhandCantReadAreItsOwnFault(t *testing.T) {
 		results guestprogram.Results
 		want    string
 	}{
-		"protocol": {guestprogram.Results{Protocol: 9, State: "finished"}, "the guest program wrote protocol 9 results; this dockhand reads 1"},
+		"protocol": {guestprogram.Results{Protocol: 9, State: "finished"}, "the guest program wrote protocol 9 results; this dockhand reads 2"},
 		"unasked":  {guestprogram.Results{State: "finished", Targets: []guestprogram.Result{{ID: "fd", Outcome: "passed"}}}, `the guest reported "fd", which this job didn't ask for`},
 		"outcome":  {guestprogram.Results{State: "finished", Targets: []guestprogram.Result{{ID: "libharbor", Outcome: "skipped"}}}, `the guest reported libharbor "skipped"`},
 	} {
@@ -857,7 +872,7 @@ func TestACanceledCheckStopsItsGuest(t *testing.T) {
 	go func() {
 		for {
 			build.mu.Lock()
-			started := slices.Contains(build.progress, "building in dockhand-check-run-7-tahoe-1")
+			started := slices.Contains(build.progress, "building in dockhand-check-run-7-tahoe-1 (dockhand shell check-3 opens a shell there)")
 			build.mu.Unlock()
 			if started {
 				cancel()
@@ -1129,7 +1144,7 @@ func TestShellStartsAKeptCloneAndStopsItAfter(t *testing.T) {
 	_, err := p.Shell(t.Context(), buildenv.ShellJob{Ref: clone, Portfile: "devel/libharbor/Portfile"})
 	require.ErrorContains(t, err, "isn't a clone a check kept")
 
-	require.NoError(t, p.keepClone(clone, "dockhand-base-tahoe"))
+	require.NoError(t, p.keepClone(clone, "dockhand-base-tahoe", tartvm.KeptAsked))
 	var out bytes.Buffer
 	code, err := p.Shell(t.Context(), buildenv.ShellJob{Ref: clone, Portfile: "devel/libharbor/Portfile", Command: []string{"otool", "-L", "harbor"}, Output: &out})
 	require.NoError(t, err)
@@ -1153,7 +1168,7 @@ func TestShellTestRestagesThePortAndRunsItsTestPhase(t *testing.T) {
 	p.Tart = tartvm.Client{Home: filepath.Join(t.TempDir(), ".dockhand", "tart"), Env: os.Environ()}
 	require.NoError(t, os.MkdirAll(p.Tart.Home, 0o700))
 	clone := clonePrefix("run-1", "tahoe") + "-1"
-	require.NoError(t, p.keepClone(clone, "dockhand-base-tahoe"))
+	require.NoError(t, p.keepClone(clone, "dockhand-base-tahoe", tartvm.KeptAsked))
 	port := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(port, "files"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(port, "Portfile"), []byte("name libharbor\n"), 0o644))
@@ -1179,4 +1194,57 @@ func TestShellTestRestagesThePortAndRunsItsTestPhase(t *testing.T) {
 		return slices.Contains(command, staged) && slices.Contains(command, guestRoot+"/shell-port.tar")
 	}), "the staged directory is replaced")
 	require.Equal(t, []string{staged, "/usr/bin/sudo", "/opt/local/bin/port", "-o", "-N", "-D", staged, "test", "+docs", "-tests"}, mac.guest.attached[0].args[4:])
+}
+
+// A clone a target failed in is kept, stopped, marked as kept for its
+// failure, where keep_failed is on; one whose targets all passed is
+// deleted, as is a failed one with keep_failed off.
+func TestAFailedChecksCloneIsKept(t *testing.T) {
+	t.Parallel()
+	failed := guestprogram.Result{ID: "libharbor", Outcome: "failed", Phase: "install", Log: "target-1.log", Detail: "Failed to install libharbor"}
+	passed := guestprogram.Result{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "target-1.log", Active: []guestprogram.Port{}}
+	vm := "dockhand-check-run-7-tahoe-1"
+	for name, test := range map[string]struct {
+		result     guestprogram.Result
+		keepFailed bool
+		kept       bool
+	}{
+		"failed, kept":         {failed, true, true},
+		"passed, deleted":      {passed, true, false},
+		"failed, not kept off": {failed, false, false},
+	} {
+		mac := newMac(guestprogram.Results{State: "finished", Targets: []guestprogram.Result{test.result}})
+		p := testProvider(mac)
+		p.Tart = tartvm.Client{Home: filepath.Join(t.TempDir(), ".dockhand", "tart"), Env: os.Environ()}
+		require.NoError(t, os.MkdirAll(p.Tart.Home, 0o700))
+		p.KeepFailed = test.keepFailed
+		require.NoError(t, p.Execute(t.Context(), tartJob(t, 1), &fakeBuild{}), name)
+		require.Equal(t, !test.kept, slices.Contains(mac.events, "delete "+vm), name)
+		_, kept := tartvm.KeptAt(p.Tart.Home, vm)
+		require.Equal(t, test.kept, kept, name)
+		if test.kept {
+			require.Equal(t, tartvm.KeptFailed, tartvm.KeptFor(p.Tart.Home, vm), name)
+			require.True(t, mac.run.stopped, "stopped, kept")
+		}
+	}
+}
+
+// A shell in a running check's clone reaches it by its image's keys and
+// neither starts nor stops it: the check owns the VM.
+func TestShellEntersARunningChecksCloneAndLeavesItRunning(t *testing.T) {
+	t.Parallel()
+	mac := newMac()
+	p := testProvider(mac)
+	p.Tart = tartvm.Client{Home: filepath.Join(t.TempDir(), ".dockhand", "tart"), Env: os.Environ()}
+	require.NoError(t, os.MkdirAll(p.Tart.Home, 0o700))
+	clone := clonePrefix("run-1", "tahoe") + "-1"
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	var out bytes.Buffer
+	code, err := p.Shell(t.Context(), buildenv.ShellJob{Ref: clone, Portfile: "devel/libharbor/Portfile", Command: []string{"ls"}, Output: &out, Running: true, Environment: tahoe})
+	require.NoError(t, err)
+	require.Equal(t, 3, code)
+	require.Equal(t, []string{"reach " + clone + " as dockhand-base-tahoe"}, mac.events, "reached, never started or stopped")
+	require.False(t, mac.run.stopped)
+	_, err = p.Shell(t.Context(), buildenv.ShellJob{Ref: "harbor", Running: true, Environment: tahoe})
+	require.ErrorContains(t, err, "isn't a check's clone")
 }

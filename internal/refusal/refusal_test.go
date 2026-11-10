@@ -21,6 +21,8 @@ func TestARefusalIsReachedByItsKind(t *testing.T) {
 	require.Equal(t, Failed, KindOf(errors.New("plain")))
 	require.False(t, Transient(errors.New("plain")))
 	require.Equal(t, 3, Attention.Exit())
+	require.Equal(t, 4, StillRunning.Exit())
+	require.True(t, StillRunning.Outcome(), "a check still running is an outcome")
 	require.Equal(t, 2, CheckFailed.Exit())
 	require.Equal(t, 1, Auth.Exit())
 	require.Panics(t, func() { New("", "no kind") })

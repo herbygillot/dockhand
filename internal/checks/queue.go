@@ -167,6 +167,7 @@ func (c *Service) beside(ctx context.Context, request QueueRequest) (Queued, err
 		}
 		if !PlanCovers(running, request.Plan) {
 			active.Uncovered = true
+			active.OtherSource = !SourcesCover(running, request.Plan)
 			return Queued{}, active
 		}
 		return Queued{Run: active.Run, Followed: true}, nil

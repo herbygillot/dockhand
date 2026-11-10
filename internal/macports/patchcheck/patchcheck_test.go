@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -64,8 +65,28 @@ func TestCheckReportsEachPatch(t *testing.T) {
 	require.False(t, results[4].Checked)
 	require.Contains(t, results[4].Detail, "xz compression is not modeled")
 	require.Len(t, Rejected(results), 2)
-	require.Regexp(t, "stale.diff "+staleHunk, Summary(results))
+	require.Regexp(t, "stale.diff (?i)Hunk #1 failed at 1; "+staleHunk, Summary(results), "the hunk's line ahead of the count")
 	require.Contains(t, Summary(results), "packed.diff.xz unchecked")
+}
+
+// A patch that doesn't apply names each failed hunk's line ahead of the
+// count, in Apple's patch's words and GNU patch's alike.
+func TestAFailedPatchNamesEachFailedHunksLine(t *testing.T) {
+	var lines []string
+	for n := 1; n <= 60; n++ {
+		lines = append(lines, strconv.Itoa(n))
+	}
+	archive := sourceArchive(t, map[string]string{"project-2.0/a.txt": strings.Join(lines, "\n") + "\n"})
+	twoOfThree := "--- a.txt\n+++ a.txt\n@@ -1,3 +1,3 @@\n-x1\n+y1\n 2\n 3\n@@ -20,3 +20,3 @@\n 20\n-21\n+twentyone\n 22\n@@ -40,3 +40,3 @@\n-x40\n+y40\n x41\n x42\n"
+	results, err := Check(t.Context(), Request{Tools: tools(t), Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{{Name: "bump.diff", Data: []byte(twoOfThree)}}})
+	require.NoError(t, err)
+	require.False(t, results[0].Applies)
+	require.Regexp(t, `^(?i)Hunk #1 failed at 1; Hunk #3 failed at 40; 2 out of 3 hunks failed`, results[0].Detail)
+
+	gnu := "checking file Makefile.in\nHunk #1 FAILED at 29.\nHunk #2 succeeded at 80 (offset 3 lines).\nHunk #3 FAILED at 112.\n2 out of 3 hunks FAILED -- saving rejects to file Makefile.in.rej\n"
+	require.Equal(t, "Hunk #1 FAILED at 29; Hunk #3 FAILED at 112; 2 out of 3 hunks FAILED -- saving rejects to file Makefile.in.rej", describe([]byte(gnu)))
+	all := "checking file configure\nHunk #1 FAILED at 10.\nHunk #2 FAILED at 400.\n2 out of 2 hunks FAILED -- saving rejects to file configure.rej\n"
+	require.Equal(t, "Hunk #1 FAILED at 10; Hunk #2 FAILED at 400; 2 out of 2 hunks FAILED -- saving rejects to file configure.rej", describe([]byte(all)))
 }
 
 func TestCheckHonorsStripRenameAndPatchDir(t *testing.T) {
@@ -86,7 +107,7 @@ func TestCheckHonorsStripRenameAndPatchDir(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, results[0].Checked)
 	require.Contains(t, results[0].Detail, `"--posix" is not modeled`)
-	require.Equal(t, "1 patches apply", Summary([]Result{{Name: "x", Checked: true, Applies: true}}))
+	require.Equal(t, "1 patch applies", Summary([]Result{{Name: "x", Checked: true, Applies: true}}))
 }
 
 // A source directory no archive holds is one a PortGroup's post-extract
@@ -153,9 +174,9 @@ func TestACompressedPatchPastTheBoundIsUncheckedNotCut(t *testing.T) {
 		{Name: "large.diff.gz", Data: gzipped.Bytes()}, {Name: "good.diff", Data: []byte(good)},
 	}})
 	require.NoError(t, err)
-	require.Equal(t, Result{Name: "large.diff.gz", Detail: "decompresses to more than the 64 MiB dockhand checks of a patch"}, results[0])
+	require.Equal(t, Result{Name: "large.diff.gz", Detail: "the decompressed patch exceeds the 64 MiB read limit"}, results[0])
 	require.True(t, results[1].Applies, results[1].Detail)
-	require.Contains(t, Summary(results), "large.diff.gz unchecked (decompresses to more than the 64 MiB")
+	require.Contains(t, Summary(results), "large.diff.gz unchecked (the decompressed patch exceeds the 64 MiB read limit")
 }
 
 // patch's exit status is its verdict, however much it says: a patch that

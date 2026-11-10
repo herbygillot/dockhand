@@ -58,7 +58,7 @@ assert() {
 	portfile=$(g36_text "$G36_DEFAULT") || { row_fail "no Portfile of $name on $G36_DEFAULT"; return; }
 	printf '%s\n' "$portfile" | matches -E '^fetch\.type[[:space:]]+git$' ||
 		{ row_fail "the default update moved $name's source: $(printf '%s\n' "$portfile" | grep -E '^(fetch|github\.tarball)' | tr '\n' ';')"; return; }
-	jq -e --arg asset "${name}_1.1.0_tarball.tgz" '[.. | objects | select(.rule? == "source" and .hold == false and (.message | contains($asset) and contains("deps/sub") and endswith("; update --source releases fetches it")))] | length == 1' "$ROW_DIR/json/1.json" >/dev/null ||
+	jq -e --arg asset "${name}_1.1.0_tarball.tgz" '[.. | objects | select(.rule? == "source" and .hold == false and (.message | contains($asset) and contains("deps/sub") and endswith("; update --source releases, run instead of this update, fetches it")))] | length == 1' "$ROW_DIR/json/1.json" >/dev/null ||
 		{ row_fail "the default update didn't say, a notice, that the release's .tgz carries the source: $(jq -c '[.. | objects | select(.rule? == "source")]' "$ROW_DIR/json/1.json")"; return; }
 	portfile=$(g36_text "$G36_MOVED") || { row_fail "no Portfile of $name on $G36_MOVED"; return; }
 	printf '%s\n' "$portfile" | matches -E '^github\.tarball_from[[:space:]]+releases$' || { row_fail "--source releases didn't move $name to its release: $(printf '%s\n' "$portfile" | grep -E '^(fetch|github|distname|extract)' | tr '\n' ';')"; return; }

@@ -29,6 +29,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/selection"
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/outward"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/refusal"
@@ -42,7 +43,7 @@ import (
 const UpstreamURL = "https://github.com/macports/macports-ports.git"
 
 // UpstreamRepository is MacPorts' ports repository on GitHub.
-const UpstreamRepository = "macports/macports-ports"
+const UpstreamRepository = outward.Upstream
 
 // Options selects what an engine works on.
 type Options struct {
@@ -50,6 +51,10 @@ type Options struct {
 	Tree string
 	// Git is the git executable; "git" on Env's PATH when empty.
 	Git string
+	// Named are the programs the command line, its environment, or the
+	// configuration named, which setup says the source of and the
+	// processes dockhand starts are given as --tool.
+	Named []NamedProgram
 	// Env is the environment the programs dockhand runs run in, git,
 	// port-tclsh, Tart, and ssh among them: the command line's, as compose
 	// builds it.
@@ -161,6 +166,22 @@ func FindPrograms(look func(name string) (string, error)) Programs {
 	return found
 }
 
+// NamedProgram is a program a person named: its name as dockhand runs it,
+// its path, and what named it, "--tool git", "GIT_BIN", or "[tools] git".
+type NamedProgram struct {
+	Name, Path, Source string
+}
+
+// ToolArgs are the --tool flags that name the same programs to a process
+// dockhand starts, a path each.
+func (o Options) ToolArgs() []string {
+	var args []string
+	for _, program := range o.Named {
+		args = append(args, "--tool", program.Name+"="+program.Path)
+	}
+	return args
+}
+
 // git is the git dockhand runs, in Env.
 func (o Options) git() git.Program { return git.Program{Executable: o.Git, Env: o.Env} }
 
@@ -251,6 +272,10 @@ type Engine struct {
 	// Providers are where checks build, by name.
 	Providers map[string]buildenv.Provider
 	ports     *selection.Reader
+	// began is when the engine opened, the command's start: a pull
+	// request read before it is read again before a branch is chosen
+	// for work (stillOpen).
+	began time.Time
 	// checkIndex stages the index a check ships; checkIndex.
 	checkIndex *portindex.Stager
 	options    Options
@@ -386,7 +411,7 @@ func Open(ctx context.Context, options Options) (*Engine, error) {
 	// database after it, so it's said, with the copy kept of the database
 	// before it.
 	if migrated := s.Migration(); migrated != nil && migrated.Release != "" && !options.MigrateRelease {
-		progress.Report(ctx, "Migrated the database at %s, which dockhand %s, a release, last opened, from schema %d to %d without asking, since it isn't the default one a release opens; %s can't open it now. Its schema %d form is kept at %s.", options.Database, migrated.Release, migrated.From, migrated.To, migrated.Release, migrated.From, migrated.Copy)
+		progress.Report(ctx, "Migrated the database at %s, last opened by Dockhand release %s, from schema %d to %d. This non-default database was migrated without prompting; dockhand %s can no longer open it. Its schema %d form is kept at %s.", options.Database, migrated.Release, migrated.From, migrated.To, migrated.Release, migrated.From, migrated.Copy)
 	} else if migrated != nil {
 		progress.Report(ctx, "Migrated dockhand's database from schema %d to %d; dockhand builds older than this one can't open it now. Its schema %d form is kept at %s.", migrated.From, migrated.To, migrated.From, migrated.Copy)
 	}
@@ -401,7 +426,9 @@ func Open(ctx context.Context, options Options) (*Engine, error) {
 		s.Close()
 		return nil, err
 	}
-	return &Engine{Repo: repo, Store: s, Repository: id, options: options}, nil
+	e := &Engine{Repo: repo, Store: s, Repository: id, options: options}
+	e.began = e.now()
+	return e, nil
 }
 
 // Close releases the store.

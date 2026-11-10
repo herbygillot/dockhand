@@ -48,7 +48,7 @@ type Transitions struct {
 func (h *Transitions) With(ctx context.Context, branch model.Branch, fn func(context.Context) error) error {
 	return h.Repo.WithBranchLock(ctx, branch.Name, func(ctx context.Context) error {
 		if err := h.settle(ctx, branch); err != nil {
-			return fmt.Errorf("finishing what a stopped dockhand left of %s: %w", branch.ShortName(), err)
+			return fmt.Errorf("recovering interrupted history changes on %s: %w", branch.ShortName(), err)
 		}
 		return fn(ctx)
 	})
@@ -292,7 +292,7 @@ func (h *Transitions) settle(ctx context.Context, branch model.Branch) error {
 			if err := h.finishIndex(ctx, branch, checkpoint, head); err != nil {
 				return err
 			}
-			if err := h.Settle(ctx, checkpoint, model.CheckpointApplied, fmt.Sprintf("recorded %s, whose change a stopped dockhand had made", checkpoint.Name())); err != nil {
+			if err := h.Settle(ctx, checkpoint, model.CheckpointApplied, fmt.Sprintf("recorded %s: an earlier Dockhand process applied its change before stopping", checkpoint.Name())); err != nil {
 				return err
 			}
 			checkpoint.State = model.CheckpointApplied
@@ -302,14 +302,18 @@ func (h *Transitions) settle(ctx context.Context, branch model.Branch) error {
 		if err := h.dropCheckpointRefs(ctx, checkpoint); err != nil {
 			return err
 		}
-		if err := h.Settle(ctx, checkpoint, model.CheckpointAbandoned, fmt.Sprintf("abandoned %s, whose change a stopped dockhand hadn't made", checkpoint.Name())); err != nil {
+		if err := h.Settle(ctx, checkpoint, model.CheckpointAbandoned, fmt.Sprintf("abandoned %s: an earlier Dockhand process stopped before applying its change", checkpoint.Name())); err != nil {
 			return err
 		}
 	}
 	if latest != nil && latest.RestoredAt == nil && head == string(latest.Before) && head != string(latest.After) {
+		said, err := h.finishRestoreIndex(ctx, branch, *latest)
+		if err != nil {
+			return err
+		}
 		restored := h.Now()
 		latest.RestoredAt = &restored
-		if _, err := h.RecordRestore(ctx, *latest, fmt.Sprintf("recorded the restore of %s's history from %s, which a stopped dockhand had made", branch.Name, latest.Name())); err != nil {
+		if _, err := h.RecordRestore(ctx, *latest, fmt.Sprintf("recorded the restore of %s's history from %s: an earlier Dockhand process restored it before stopping%s", branch.Name, latest.Name(), said)); err != nil {
 			return err
 		}
 	}
@@ -331,6 +335,34 @@ func (h *Transitions) finishIndex(ctx context.Context, branch model.Branch, chec
 		return err
 	}
 	return worktree.ResetIndex(ctx)
+}
+
+// finishRestoreIndex sets the index a restore saved, where a stopped
+// restore moved the ref and not the index: it still holds the tree of
+// the checkpoint's After, as the restore's own guard found it, and the
+// working version read as staged where the saved staged version should
+// be (#113). An index holding anything else is newer staging and is
+// left, which said says.
+func (h *Transitions) finishRestoreIndex(ctx context.Context, branch model.Branch, checkpoint model.Checkpoint) (said string, err error) {
+	if checkpoint.Index == "" || checkpoint.Kind == model.CheckpointRebase || branch.Worktree == "" {
+		return "", nil
+	}
+	worktree, err := h.Worktree(ctx, branch)
+	if err != nil {
+		return "", err
+	}
+	index, err := worktree.IndexTree(ctx)
+	if err != nil || index == string(checkpoint.Index) {
+		return "", err
+	}
+	trees, err := worktree.CommitTrees(ctx, []string{string(checkpoint.After)})
+	if err != nil {
+		return "", err
+	}
+	if index != trees[string(checkpoint.After)] {
+		return "; newer staged changes were left unchanged", nil
+	}
+	return "", worktree.SetIndex(ctx, string(checkpoint.Index))
 }
 
 // dropCheckpointRefs removes the refs a checkpoint whose change wasn't

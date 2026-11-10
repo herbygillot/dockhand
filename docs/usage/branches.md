@@ -174,9 +174,13 @@ work needs the newer base or when review requires it:
 
 ```sh
 dockhand tidy -b jq-update
+dockhand rebase -b jq-update --plan
 dockhand rebase -b jq-update
 dockhand status -b jq-update
 ```
+
+`--plan` fetches master and says what the rebase would replay, drop as already
+on master, or stop at, and moves nothing.
 
 `rebase` requires committed work, fetches master, and replays the branch's
 commits. A conflicting replay leaves the branch as it was and names the
@@ -220,7 +224,7 @@ These operations have different purposes:
 | Pause an open change | `dockhand archive jq-update` | Git branch, record, checks/checkpoints subject to retention, fork branch, and pull request. |
 | Resume an archived change | `dockhand archive --undo jq-update` | The branch returns to open work; its worktree is available again when needed. |
 | Remove merged worktrees and branches | `dockhand clean --plan`, then `dockhand clean` | The tracking record remains, so `status --all` can still explain the branch. |
-| Forget an ended change entirely | `dockhand clean --delete jq-update` | The preview identifies the worktree, Git branch, unmerged work, and record to remove. |
+| Forget an ended change entirely | `dockhand clean --delete jq-update` | The preview identifies the worktree, Git branch, unmerged work, the clones its checks kept, and record to remove. |
 
 Archiving hides the branch from the ordinary overview. It does not close a pull
 request. With uncommitted edits or untracked files, the terminal offers how to
@@ -249,7 +253,18 @@ dockhand clean
 ```
 
 Clean keeps worktrees with edits or untracked files, branches that moved beyond
-the merge, and a fork branch someone moved since dockhand last pushed it.
+the merge, and a fork branch someone moved since dockhand last pushed it. An
+adopted pull request's branch belongs to its author and is never removed from
+their repository, nor is any branch in `macports/macports-ports`. What Dockhand
+can change depends on the action and whether you own it, Dockhand created it,
+you were invited to change it, or you explicitly requested that action.
+Dockhand never pushes or deletes branches in MacPorts' repository. Checks
+using `--on github` manage workflow runs only on your fork. An explicit
+`retry --ci` can rerun a pull request's failed CI jobs in MacPorts' repository
+when your login has write access. Refusals name the operation, for
+example: `dockhand doesn't push a branch in macports/macports-ports: this
+operation is never allowed in the upstream repository, regardless of ownership`.
+
 `clean --closed` also considers pull requests closed without merging, while
 preserving local work master lacks. A named `clean jq-update` considers only
 that ended branch; an open branch must first be finished or archived. Use

@@ -76,6 +76,10 @@ func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time
 // remove it any time.
 const KeptFor = 24 * time.Hour
 
+// KeptFailedFor is how long automatic cleanup spares a clone kept unasked
+// for a failure in it (providers.tart.keep_failed), unless space is low.
+const KeptFailedFor = 7 * 24 * time.Hour
+
 // cleanup is Cleanup, sparing what checks kept (KeptFor) where spareKept,
 // as it does but where space is low.
 func (e *Engine) cleanup(ctx context.Context, session *coord.Session, after time.Duration, spareKept bool) (CleanupReport, error) {

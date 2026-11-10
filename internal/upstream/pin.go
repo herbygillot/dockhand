@@ -58,7 +58,7 @@ func (s *Service) resolvePin(ctx context.Context, port macports.PortInfo, spec p
 			}
 		}
 	case regexp.MustCompile(`^[0-9a-f]{7,39}$`).MatchString(requested):
-		return model.Release{}, fmt.Errorf("upstream: name %s's commit whole, its 40 characters: %s is abbreviated", port.Name, requested)
+		return model.Release{}, fmt.Errorf("upstream: %s requires a full 40-character commit hash; %s is abbreviated", port.Name, requested)
 	default:
 		named = requested
 		if commit, err = git.RemoteBranchCommit(ctx, s.Git, spec.Livecheck.URL, spec.Livecheck.Branch); err != nil {

@@ -22,7 +22,7 @@ func main() {
 	stopProfile()
 	if file := os.Getenv(settings.HeapProfileVariable); file != "" {
 		if heapErr := settings.WriteHeapProfile(file); heapErr != nil {
-			fmt.Fprintf(os.Stderr, "%s: %v; no profile is written\n", settings.HeapProfileVariable, heapErr)
+			fmt.Fprintf(os.Stderr, "%s: could not write heap profile: %v\n", settings.HeapProfileVariable, heapErr)
 		}
 	}
 	// The process's transient directories go with it, on an interrupt too:
@@ -57,7 +57,7 @@ func startProfile(file string) func() {
 		}
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "DOCKHAND_CPUPROFILE: %v; no profile is written\n", err)
+		fmt.Fprintf(os.Stderr, "DOCKHAND_CPUPROFILE: could not start CPU profiling: %v\n", err)
 		return func() {}
 	}
 	return func() {

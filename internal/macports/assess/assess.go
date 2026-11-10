@@ -92,7 +92,10 @@ import (
 // new version's source names as string literals are said (field
 // testing's outdated-ports session, hashcat 8.0). 29: a patch that
 // applies only with fuzz holds (patch-fuzz, v1's D12, the docs dig's I4).
-const Policy = 29
+// 30: test code isn't read for Homebrew paths, and an executable's path is
+// said as one (field testing's atuin 18.24.5); a port MacPorts' checker
+// says the change makes non-distributable holds (not-distributable).
+const Policy = 30
 
 // Input is what one port's assessment reads.
 type Input struct {
@@ -126,6 +129,22 @@ type Input struct {
 	// New is a port the base doesn't have: its archives are read against
 	// nothing, so every file is new to it.
 	New bool
+	// Distributable is MacPorts' checker's verdict on the candidate and
+	// the base (distributable.Judge), where it was asked; nil where not.
+	Distributable *Distribution
+}
+
+// Distribution is MacPorts' checker's verdict on a port at the candidate,
+// Head, and at the base, Base, where the base has it.
+type Distribution struct {
+	Head, Base Verdict
+}
+
+// Verdict is the checker's answer: whether the port is distributable, in
+// its sentence; Known false where it couldn't judge.
+type Verdict struct {
+	Known, OK bool
+	Reason    string
 }
 
 // Pair is one archive the candidate fetches, read, beside the base's it
@@ -198,6 +217,10 @@ const (
 	SourceChoice     = "source"
 	CXXStandardRule  = "cxx-standard"
 	GoLinkTargetRule = "go-ldflags-target"
+	// NotDistributable is a port MacPorts' checker says the builders may
+	// keep no binary archive of: a hold where the change makes it so, a
+	// notice where master's isn't either.
+	NotDistributable = "not-distributable"
 )
 
 // Rules are every rule an assessment's finding is raised by, for a hold
@@ -206,7 +229,7 @@ func Rules() []string {
 	return []string{LicenseChanged, LicenseYears, LicenseParty, LicenseMoved, BuildFileChanged, BuildFileVersion, BuildFileOptions, DependencyAdded, DependencyDropped,
 		DependencyMoved, DependenciesCounted, NativeLibrary, NativeLibraryLeft, Unread, LayoutAmbiguous, RequirementUnmet, RequirementUnknown,
 		ProviderUnresolved, ProviderRemoved, GoToolchainRule, GoModuleMoved, RequiresPythonRule, PythonPinBehind, PatchRejected, PatchDropped, PatchFuzz, SourceRemoved,
-		SourceUncertain, WorksrcPathGone, SourceChoice, CXXStandardRule, GoLinkTargetRule, ProjectRenamed}
+		SourceUncertain, WorksrcPathGone, SourceChoice, CXXStandardRule, GoLinkTargetRule, ProjectRenamed, NotDistributable}
 }
 
 // floorRules raise a toolchain's floor upstream: a Go toolchain, a Python,
@@ -293,7 +316,35 @@ func Assess(input Input) model.UpstreamComparison {
 	if found, ok := a.githubTarball(); ok {
 		a.add(found)
 	}
+	if found, ok := a.distributable(); ok {
+		a.add(found)
+	}
 	return a.comparison
+}
+
+// distributable is a port MacPorts' checker says is no longer
+// distributable, or isn't, as master's isn't either: a hold where the
+// change makes it so, a notice where it stays so, in the checker's own
+// sentence and the line to write where dockhand knows one.
+func (a *assessment) distributable() (model.UpstreamChange, bool) {
+	d := a.input.Distributable
+	if d == nil || !d.Head.Known || d.Head.OK {
+		return model.UpstreamChange{}, false
+	}
+	said := "MacPorts' checker says " + d.Head.Reason
+	if !a.input.New && d.Base.Known && !d.Base.OK {
+		return model.UpstreamChange{Kind: "license", Rule: NotDistributable, Subject: a.input.Port.Name, Class: model.Present,
+			Message: "stays non-distributable, as on master: " + said}, true
+	}
+	message := "not distributable: " + said + ", so the builders keep no binary archive of it"
+	switch {
+	case strings.Contains(d.Head.Reason, "conflicts with license"):
+		dependency := d.Head.Reason[strings.LastIndex(d.Head.Reason, "dependency \"")+len("dependency \""):]
+		message += fmt.Sprintf(". Declare license_noconflict %s where the project's license exempts it, as the Guide allows; otherwise it keeps no archive", strings.TrimSuffix(dependency, "\""))
+	case strings.HasSuffix(d.Head.Reason, "its license option is empty"):
+		message += ". Write its license"
+	}
+	return model.UpstreamChange{Kind: "license", Rule: NotDistributable, Subject: a.input.Port.Name, Class: model.Introduced, Hold: true, Message: message}, true
 }
 
 // assessment is an assessment as it's made.

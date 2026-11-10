@@ -2,6 +2,7 @@ package portfile
 
 import (
 	"bytes"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -123,7 +124,74 @@ func InertChanges(before, after []byte) (options []string, ok bool) {
 		}
 	}
 	slices.Sort(options)
+	// An option the Portfile reads elsewhere, as a destroot hook writing
+	// ${description} into a file, builds differently when it changes, so
+	// no certificate is given: inert by name isn't inert by use (Codex's
+	// sixth review, #70). A read in another inert option's line, as
+	// long_description's ${description}, is metadata still.
+	for _, src := range [2][]byte{before, after} {
+		if readElsewhere(src, options) {
+			return nil, false
+		}
+	}
 	return options, true
+}
+
+// readElsewhere reports whether a Portfile reads any of these options,
+// as ${name}, $name, or [option name], in a command other than one that
+// sets an inert option; true where it can't tell.
+func readElsewhere(src []byte, options []string) bool {
+	if len(options) == 0 {
+		return false
+	}
+	var patterns []string
+	for _, option := range options {
+		quoted := regexp.QuoteMeta(option)
+		patterns = append(patterns, `\$\{`+quoted+`\}`, `\[option\s+`+quoted+`[\s\]]`)
+		if !strings.Contains(option, ".") {
+			patterns = append(patterns, `\$`+quoted+`(?:[^A-Za-z0-9_:.]|$)`)
+		}
+	}
+	reads := regexp.MustCompile(strings.Join(patterns, "|")).FindAllIndex(src, -1)
+	if len(reads) == 0 {
+		return false
+	}
+	script, errs := syntax.Parse(src)
+	if len(errs) > 0 {
+		return true
+	}
+	var commands []syntax.Command
+	for cmd := range script.Commands(src, func(syntax.Command) bool { return true }) {
+		commands = append(commands, cmd)
+	}
+	for _, read := range reads {
+		// The innermost command holding the read is the one reading it;
+		// one held by none is in a comment.
+		var reader *syntax.Command
+		for i := range commands {
+			c := &commands[i]
+			if c.Span.Start <= read[0] && read[1] <= c.Span.End && (reader == nil || c.Span.End-c.Span.Start < reader.Span.End-reader.Span.Start) {
+				reader = c
+			}
+		}
+		if reader == nil {
+			continue
+		}
+		name, ok := reader.Name(src)
+		if !ok {
+			return true
+		}
+		for _, modifier := range optionModifiers {
+			if trimmed, cut := strings.CutSuffix(name, modifier); cut {
+				name = trimmed
+				break
+			}
+		}
+		if !macports.InertOption(name) {
+			return true
+		}
+	}
+	return false
 }
 
 // optionModifiers are the suffixes an option takes as a command of its

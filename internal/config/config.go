@@ -58,6 +58,78 @@ type File struct {
 	Cleanup Cleanup `toml:"cleanup"`
 	Holds   Holds   `toml:"holds"`
 	Update  Update  `toml:"update"`
+	// Tools names the programs dockhand runs, by Programs' keys.
+	Tools Tools `toml:"tools"`
+	// defined are the keys the file sets, from its parse, so an explicit
+	// false is the file's and not the default.
+	defined map[string]bool
+}
+
+// Sets reports whether the file sets key, as check.baseline, false
+// included.
+func (f File) Sets(key string) bool { return f.defined[key] }
+
+// Program is a program dockhand runs that a person may name: Name, as
+// it's run and as --tool name=path names it; Variable, the environment
+// variable that names it; and Key, its key under [tools].
+type Program struct {
+	Name, Variable, Key string
+}
+
+// Programs are the programs dockhand runs that a person may name, each
+// three ways, --tool name=path, then its variable, then [tools], ahead of
+// the search for it (the person's ask, 2026-11-03: "respect environment
+// variables pointing it to specific command line tools before it finds
+// whatever it finds in the path", in the config file and on the command
+// line too). port and portindex follow port-tclsh's directory, and sudo,
+// security, open, osascript, and sh are run by their fixed names.
+var Programs = []Program{
+	{"git", "GIT_BIN", "git"},
+	{"port-tclsh", "PORT_TCLSH_BIN", "port_tclsh"},
+	{"tart", "TART_BIN", "tart"},
+	{"go2port", "GO2PORT_BIN", "go2port"},
+	{"cargo2port", "CARGO2PORT_BIN", "cargo2port"},
+	{"xcodes", "XCODES_BIN", "xcodes"},
+	{"gh", "GH_BIN", "gh"},
+	{"patch", "PATCH_BIN", "patch"},
+	{"diff", "DIFF_BIN", "diff"},
+}
+
+// ProgramNames are Programs' names, for a refusal to list.
+func ProgramNames() []string {
+	names := make([]string, len(Programs))
+	for i, program := range Programs {
+		names[i] = program.Name
+	}
+	return names
+}
+
+// Tools is [tools]: each program's file, absolute or under ~, or a bare
+// name found on PATH; empty where the file names none.
+type Tools struct {
+	Git        string `toml:"git"`
+	PortTclsh  string `toml:"port_tclsh"`
+	Tart       string `toml:"tart"`
+	Go2Port    string `toml:"go2port"`
+	Cargo2Port string `toml:"cargo2port"`
+	Xcodes     string `toml:"xcodes"`
+	GH         string `toml:"gh"`
+	Patch      string `toml:"patch"`
+	Diff       string `toml:"diff"`
+}
+
+// fields are the table's values by key, for reading and expanding them.
+func (t *Tools) fields() map[string]*string {
+	return map[string]*string{"git": &t.Git, "port_tclsh": &t.PortTclsh, "tart": &t.Tart, "go2port": &t.Go2Port, "cargo2port": &t.Cargo2Port,
+		"xcodes": &t.Xcodes, "gh": &t.GH, "patch": &t.Patch, "diff": &t.Diff}
+}
+
+// Get is the value [tools] gives a key, or empty.
+func (t Tools) Get(key string) string {
+	if field, ok := t.fields()[key]; ok {
+		return *field
+	}
+	return ""
 }
 
 // Update is what an edit does beside the change it's asked for.
@@ -344,7 +416,7 @@ func (p Profile) List() (releases []string, rule ReleaseRule) {
 
 // The profiles build.default and build.unattended take when unset.
 const (
-	DefaultBuildProfile      = "host"
+	DefaultBuildProfile      = "minmax"
 	DefaultUnattendedProfile = "minmax"
 )
 
@@ -393,11 +465,22 @@ type TartProvider struct {
 	// fetch, and its own install, as a duration such as "8h"; 6 hours,
 	// GitHub's cap on a job, when unset (D16).
 	BuildTimeout string `toml:"build_timeout"`
+	// StallTimeout ends a target's build, to be tried again, where its log
+	// grows by nothing for that long, as a duration such as "45m"; 30
+	// minutes when unset, and never where it's "0".
+	StallTimeout string `toml:"stall_timeout"`
 	// Xcode is the Xcode each release's Xcode image installs, by release
 	// name or number: tahoe = "26.6". A release it doesn't name gets what
 	// MacPorts' arm64 builder for the release runs.
 	Xcode map[string]string `toml:"xcode"`
+	// KeepFailed keeps a check's clone where a target failed in it, for
+	// dockhand shell, one a branch and release; true when unset.
+	KeepFailed *bool `toml:"keep_failed"`
 }
+
+// KeepsFailed is whether a failed check's clone is kept: keep_failed, true
+// when unset (the person's "Keep it", 2026-11-04).
+func (t TartProvider) KeepsFailed() bool { return t.KeepFailed == nil || *t.KeepFailed }
 
 // LocalProvider builds in a MacPorts prefix on this Mac (Design v3 §7).
 type LocalProvider struct {
@@ -442,6 +525,25 @@ func (t TartProvider) Timeout() time.Duration {
 // BuildBound is the build timeout the configuration sets, or zero.
 func (t TartProvider) BuildBound() time.Duration {
 	timeout, _ := time.ParseDuration(t.BuildTimeout)
+	return timeout
+}
+
+// DefaultStallTimeout is how long a target's log may grow by nothing
+// before its build is taken as stalled, where the configuration sets
+// none.
+const DefaultStallTimeout = 30 * time.Minute
+
+// StallBound is how long a target's log may grow by nothing before its
+// build is taken as stalled: the configuration's, DefaultStallTimeout
+// where it sets none, and zero, never, where it sets "0".
+func (t TartProvider) StallBound() time.Duration {
+	if t.StallTimeout == "" {
+		return DefaultStallTimeout
+	}
+	timeout, err := time.ParseDuration(t.StallTimeout)
+	if err != nil || timeout < 0 {
+		return DefaultStallTimeout
+	}
 	return timeout
 }
 
@@ -502,6 +604,15 @@ func Defaults() map[string]string {
 		"holds.majors":                   "hold",
 		"holds.allow":                    "(none)",
 		"update.keep_http":               "false",
+		"tools.git":                      "git on PATH",
+		"tools.port_tclsh":               "port-tclsh on PATH, else in /opt/local/bin",
+		"tools.tart":                     "tart on PATH, else in /opt/local/bin",
+		"tools.go2port":                  "go2port on PATH, else in /opt/local/bin",
+		"tools.cargo2port":               "cargo2port on PATH, else in /opt/local/bin",
+		"tools.xcodes":                   "xcodes on PATH",
+		"tools.gh":                       "gh on PATH",
+		"tools.patch":                    "patch on PATH",
+		"tools.diff":                     "diff on PATH",
 		"update.source":                  UpdateSources[0],
 		"serve.ship_to":                  DefaultShipTo,
 		"serve.outdated_at":              DefaultOutdatedAt,
@@ -512,6 +623,8 @@ func Defaults() map[string]string {
 		"serve.not_maintainers":          "(none)",
 		"providers.tart.test_timeout":    ageWords(buildenv.DefaultTestTimeout),
 		"providers.tart.build_timeout":   ageWords(buildenv.DefaultBuildTimeout),
+		"providers.tart.stall_timeout":   ageWords(DefaultStallTimeout),
+		"providers.tart.keep_failed":     "true",
 		"providers.command":              "(not set up)",
 		"providers.command.run":          "",
 		"providers.command.name":         "command",
@@ -599,6 +712,11 @@ func (p Places) Load(path string) (File, error) {
 	if f.Worktrees, err = p.withHome(f.Worktrees); err != nil {
 		return File{}, fmt.Errorf("%s: worktrees: %w", path, err)
 	}
+	for key, field := range f.Tools.fields() {
+		if *field, err = p.withHome(*field); err != nil {
+			return File{}, fmt.Errorf("%s: tools.%s: %w", path, key, err)
+		}
+	}
 	return f, nil
 }
 
@@ -626,6 +744,13 @@ func parse(path, text string) (File, error) {
 		// check.on went with build profiles, with no alias (the person,
 		// 2026-10-13): said with what took its place.
 		for _, key := range unknown {
+			if name, ok := strings.CutPrefix(key.String(), "tools."); ok {
+				var keys []string
+				for _, program := range Programs {
+					keys = append(keys, program.Key)
+				}
+				return File{}, fmt.Errorf("%s: tools.%s isn't a program dockhand runs; the keys are %s", path, name, prose.And(keys))
+			}
 			switch key.String() {
 			case "check.on":
 				return File{}, fmt.Errorf("%s: check.on is gone: build.default names a build profile, as \"host\" or \"macports-ci\", or one of your own under [build.profiles]", path)
@@ -650,8 +775,21 @@ func parse(path, text string) (File, error) {
 		}
 		return File{}, fmt.Errorf("%s: unknown setting %s", path, strings.Join(keys, ", "))
 	}
+	f.defined = map[string]bool{}
+	for _, key := range meta.Keys() {
+		f.defined[key.String()] = true
+	}
 	if err := absoluteOrHome(f.Worktrees); err != nil {
 		return File{}, fmt.Errorf("%s: worktrees: %w", path, err)
+	}
+	// A program's file is absolute or under ~, since serve runs in /; a
+	// bare name is found on PATH.
+	for _, program := range Programs {
+		if value := f.Tools.Get(program.Key); strings.Contains(value, "/") {
+			if err := absoluteOrHome(value); err != nil {
+				return File{}, fmt.Errorf("%s: tools.%s: %w, or a name found on PATH", path, program.Key, err)
+			}
+		}
 	}
 	switch f.Check.Tests {
 	case "", "declared", "required", "skip":
@@ -670,7 +808,7 @@ func parse(path, text string) (File, error) {
 		return File{}, fmt.Errorf("%s: serve.outdated_at: %q is not a time of day, such as \"07:00\"", path, f.Serve.OutdatedAt)
 	}
 	if f.Serve.SubmitLimit < 0 {
-		return File{}, fmt.Errorf("%s: serve.submit_limit: %d is not a number of pull requests", path, f.Serve.SubmitLimit)
+		return File{}, fmt.Errorf("%s: serve.submit_limit: %d is negative; use zero for the default limit or a positive number of pull requests", path, f.Serve.SubmitLimit)
 	}
 	switch f.Holds.Majors {
 	case "", "hold", "allow":
@@ -720,35 +858,35 @@ func parse(path, text string) (File, error) {
 		}
 	}
 	if f.Providers.GitHub.Capacity < 0 {
-		return File{}, fmt.Errorf("%s: providers.github.capacity: %d is not a number of checks", path, f.Providers.GitHub.Capacity)
+		return File{}, fmt.Errorf("%s: providers.github.capacity: %d is negative; use zero for the default capacity or a positive number of checks", path, f.Providers.GitHub.Capacity)
 	}
 	if timeout := f.Providers.Tart.TestTimeout; timeout != "" {
 		if d, err := time.ParseDuration(timeout); err != nil || d <= 0 {
-			return File{}, fmt.Errorf("%s: providers.tart.test_timeout: %q is not a duration such as \"45m\"", path, timeout)
+			return File{}, fmt.Errorf("%s: providers.tart.test_timeout: %q is not a positive duration such as \"45m\"", path, timeout)
 		}
 	}
 	if timeout := f.Providers.GitHub.BuildTimeout; timeout != "" {
 		if d, err := time.ParseDuration(timeout); err != nil || d <= 0 {
-			return File{}, fmt.Errorf("%s: providers.github.build_timeout: %q is not a duration such as \"4h\"", path, timeout)
+			return File{}, fmt.Errorf("%s: providers.github.build_timeout: %q is not a positive duration such as \"4h\"", path, timeout)
 		}
 	}
 	if timeout := f.Providers.Tart.BuildTimeout; timeout != "" {
 		if d, err := time.ParseDuration(timeout); err != nil || d <= 0 {
-			return File{}, fmt.Errorf("%s: providers.tart.build_timeout: %q is not a duration such as \"8h\"", path, timeout)
+			return File{}, fmt.Errorf("%s: providers.tart.build_timeout: %q is not a positive duration such as \"8h\"", path, timeout)
 		}
 	}
 	local := &f.Providers.Local
 	if local.Prefix != "" && !filepath.IsAbs(local.Prefix) {
-		return File{}, fmt.Errorf("%s: providers.local.prefix: %q is not a path from the root, such as \"/opt/local\"", path, local.Prefix)
+		return File{}, fmt.Errorf("%s: providers.local.prefix: %q is not an absolute path, such as \"/opt/local\"", path, local.Prefix)
 	}
 	for _, clean := range local.Clean {
 		if !filepath.IsAbs(clean) {
-			return File{}, fmt.Errorf("%s: providers.local.clean: %q is not a path from the root, such as \"/opt/macports-test\"", path, clean)
+			return File{}, fmt.Errorf("%s: providers.local.clean: %q is not an absolute path, such as \"/opt/macports-test\"", path, clean)
 		}
 	}
 	for name, timeout := range map[string]string{"test_timeout": local.TestTimeout, "build_timeout": local.BuildTimeout} {
 		if d, err := time.ParseDuration(timeout); timeout != "" && (err != nil || d <= 0) {
-			return File{}, fmt.Errorf("%s: providers.local.%s: %q is not a duration such as \"45m\"", path, name, timeout)
+			return File{}, fmt.Errorf("%s: providers.local.%s: %q is not a positive duration such as \"45m\"", path, name, timeout)
 		}
 	}
 	for release, version := range f.Providers.Tart.Xcode {
@@ -758,7 +896,7 @@ func parse(path, text string) (File, error) {
 	}
 	if command := f.Providers.Command; command != nil {
 		if command.Capacity < 0 {
-			return File{}, fmt.Errorf("%s: providers.command.capacity: %d is not a number of checks", path, command.Capacity)
+			return File{}, fmt.Errorf("%s: providers.command.capacity: %d is negative; use zero for the default capacity or a positive number of checks", path, command.Capacity)
 		}
 		if strings.TrimSpace(command.Run) == "" {
 			return File{}, fmt.Errorf("%s: providers.command.run: the command to run is required", path)
@@ -911,10 +1049,10 @@ func setTopLevel(path, key, value string) error {
 func checkBuild(f File) error {
 	for name, profile := range f.Build.Profiles {
 		if name == buildenv.Local {
-			return fmt.Errorf("build.profiles.local: local names the local provider, which --on local builds with; name yours another way")
+			return fmt.Errorf("build.profiles.local: local is reserved for the local provider; choose another profile name, and use --on local to build in a MacPorts prefix on this Mac")
 		}
 		if slices.Contains(builtinProfiles, name) || name == "command" {
-			return fmt.Errorf("build.profiles.%s: %s is dockhand's own profile; name yours another way", name, name)
+			return fmt.Errorf("build.profiles.%s: %s is a built-in profile; choose another name", name, name)
 		}
 		switch profile.Provider {
 		case "", buildenv.Tart, buildenv.GitHub, buildenv.Command:
@@ -937,7 +1075,7 @@ func checkBuild(f File) error {
 			return fmt.Errorf("build.profiles.%s.releases: a list of releases, as [\"15\", \"26\"], or a rule, as \"minmax\"", name)
 		}
 		if releases, rule := profile.List(); profile.Provider != "" && profile.Provider != buildenv.Tart && (len(releases) > 0 || rule != "" && rule != "macports-ci") {
-			return fmt.Errorf("build.profiles.%s: the %s provider builds where it does, so its releases can only be macports-ci, for github", name, profile.Provider)
+			return fmt.Errorf("build.profiles.%s: the %s provider chooses its own releases; omit releases, or use macports-ci for the github provider", name, profile.Provider)
 		}
 	}
 	for key, name := range map[string]string{"build.default": f.Build.Default, "build.unattended": f.Build.Unattended} {
@@ -945,7 +1083,7 @@ func checkBuild(f File) error {
 		// for local means the local provider, which dockhand never
 		// chooses itself (D17).
 		if name == buildenv.Local {
-			return fmt.Errorf("%s: \"local\" is no build profile: \"host\" builds on Tart on this Mac's release, and --on local, asked each time, in a MacPorts prefix on this Mac", key)
+			return fmt.Errorf("%s: \"local\" is a provider name; use \"host\" for Tart on this Mac's release, or --on local for a MacPorts prefix on this Mac", key)
 		}
 		if _, defined := f.Build.Profiles[name]; name != "" && !defined && !slices.Contains(builtinProfiles, name) && name != "command" {
 			return fmt.Errorf("%s: %q names no profile: host, minmax, macports-ci, all, or one under [build.profiles]", key, name)

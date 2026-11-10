@@ -147,7 +147,7 @@ func (e *Engine) planBaseline(ctx context.Context, request BaselineRequest, reco
 		}
 		if len(ports) == 0 {
 			if len(baseline.Skipped) > 0 {
-				return baseline, fmt.Errorf("%s failed only before building, at lint, fetch, or checksum, which master can't speak to; --only builds them there anyway", strings.Join(baseline.Skipped, ", "))
+				return baseline, fmt.Errorf("%s failed only at lint, fetch, or checksum, which baselines do not compare automatically; --only builds these ports on master anyway", strings.Join(baseline.Skipped, ", "))
 			}
 			return baseline, fmt.Errorf("nothing failed in %s, so there is nothing to compare; name ports with --only", baseline.Of.Name())
 		}
@@ -529,12 +529,12 @@ func failedAt(result model.TargetResult) (building, before bool) {
 	switch result.Phase {
 	// A dependency's failure is one master answers too: failing alike
 	// there says it isn't the branch's.
-	case model.PhaseDependencies, model.PhaseInstall, model.PhaseTest:
+	case model.PhaseDependencies, model.PhaseTest:
 		return true, false
 	case model.PhaseLint, model.PhaseFetch, model.PhaseChecksum:
 		return false, true
 	}
-	return false, false
+	return result.Phase.Installing(), false
 }
 
 // BaselineWorthy sorts a check's ports into those a baseline can say
@@ -733,7 +733,7 @@ func (e *Engine) standingBaseline(ctx context.Context, branch model.BranchID, ba
 			}
 		}
 		if read == "its own directory" && trees[recorded.Directory] == recorded.Tree {
-			return "", fmt.Sprintf("%s's baseline of %s doesn't stand: %s isn't what built it, or what it read wasn't recorded", run.Name(), target.Target.Name, checks.DescribeEnvironment(environment))
+			return "", fmt.Sprintf("%s's baseline of %s cannot be used for %s: its build environment or inputs differ, or its inputs were not recorded", run.Name(), target.Target.Name, checks.DescribeEnvironment(environment))
 		}
 		return "", fmt.Sprintf("master's build of %s reads %s, changed since %s's baseline", target.Target.Name, read, run.Name())
 	}

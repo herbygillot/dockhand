@@ -1,6 +1,6 @@
 # Dockhand Design v3
 
-Accepted direction, 2026-09-25, and built on `main` since. [The roadmap](roadmap.md) says what remains, [architecture](architecture.md) where each part lives in the code, and [usage](usage.md) how to use it.
+Accepted direction, 2026-09-25, and built on `main` since. The [issues](https://github.com/herbygillot/dockhand/issues) say what remains, each release's under its milestone; [architecture](architecture.md) where each part lives in the code, and [usage](usage.md) how to use it.
 
 ## Sources and status
 
@@ -153,8 +153,8 @@ your maintainers line, and a clean macOS image for checks to build in. Then:
   dockhand submit                 open the pull request from your fork
 
 dockhand bump <port> does all four asking nothing, and stops where you
-should look. docs/usage.md is the guide, and dockhand status shows where
-things are.
+should look. dockhand usage prints the guide, and dockhand status shows
+where things are.
 ```
 
 The command groups follow, as the table lists them. Someone else's pull request is taken up with `adopt --pr`, and looked over with `review`. The checks queued and running are listed by `status`, and `console` keeps the branches live.

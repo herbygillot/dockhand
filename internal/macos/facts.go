@@ -32,8 +32,11 @@ type Facts struct {
 	Darwin       int     `json:"darwin"`
 	Architecture string  `json:"architecture"`
 	Profile      Profile `json:"profile"`
-	// MacOS is the release's product version the source ran, 26.6.2.
-	MacOS string `json:"macos,omitempty"`
+	// MacOS is the release's product version the source ran, 26.6.2, and
+	// DarwinVersion its kernel's, 25.6.0: Base's macos_version and
+	// os_version, whose minor some Portfiles test.
+	MacOS         string `json:"macos,omitempty"`
+	DarwinVersion string `json:"darwin_version,omitempty"`
 	// Xcode is Base's xcodeversion: Xcode's version, or none.
 	Xcode string `json:"xcode"`
 	// Tools is Base's xcodecltversion: the Command Line Tools package's
@@ -44,6 +47,10 @@ type Facts struct {
 	// SDKs are the SDKs in the Command Line Tools, by name, a link shown
 	// as "MacOSX.sdk -> MacOSX26.5.sdk"; Base picks MacOSX<major>.sdk.
 	SDKs []string `json:"sdks,omitempty"`
+	// XcodeSDKs are the SDKs in Xcode's macOS platform, by name, as SDKs
+	// shows them: "MacOSX.sdk", "MacOSX15.5.sdk -> MacOSX.sdk". Empty where
+	// the source doesn't list them, as a buildbot's log doesn't.
+	XcodeSDKs []string `json:"xcode_sdks,omitempty"`
 	// SDK is Base's macosx_sdk_version, the SDK it asks for: the release's
 	// major version, 26, from macOS 11 on.
 	SDK string `json:"sdk,omitempty"`
@@ -58,9 +65,11 @@ type Facts struct {
 
 // Source is where a row of facts came from, and when.
 type Source struct {
-	// Kind is tart or buildbot.
+	// Kind is tart, runner, host, installer, or buildbot.
 	Kind string `json:"kind"`
-	// From is the Tart image probed, or the buildbot builder and build.
+	// From is the Tart image probed, the GitHub runner image, run, and
+	// developer directory selected, the Mac probed and its developer
+	// directory, the installers read, or the buildbot builder and build.
 	From string `json:"from"`
 	Date string `json:"date"`
 	// MacPorts is the Base version the facts were read with.
@@ -70,8 +79,22 @@ type Source struct {
 // Source kinds, in order of preference where both describe the same
 // release, architecture, and profile (decision 12).
 const (
-	SourceTart     = "tart"
-	SourceBuildbot = "buildbot"
+	SourceTart = "tart"
+	// SourceRunner is one of GitHub's macOS runners, probed as a Tart
+	// image is, with the Xcode its release's builder runs selected, or the
+	// Command Line Tools with Xcode still on disk (tools/facts/README.md).
+	SourceRunner = "runner"
+	// SourceHost is one Mac someone probed once, as a runner is probed,
+	// such as an Intel Mac rented for an older release. Unlike a runner's,
+	// its probes can't be made again, so they are kept with the table's
+	// generator (tools/facts/probes).
+	SourceHost = "host"
+	// SourceInstaller is a reading of Xcode and Command Line Tools
+	// installers, made without installing them: versions' facts with no
+	// live Base view, on a buildbot's release, macOS, and versions
+	// (tools/facts/installers).
+	SourceInstaller = "installer"
+	SourceBuildbot  = "buildbot"
 )
 
 // Generation is the Command Line Tools generation, the major version,
@@ -133,7 +156,8 @@ var table = func() FactsTable {
 func Table() FactsTable { return table }
 
 // Lookup is the preferred row for a release, architecture, and profile:
-// a Tart image's where there is one, else a buildbot's.
+// a Tart image's where there is one, else a runner's, a host's, an
+// installer reading's, and a buildbot's, in that order.
 func (t FactsTable) Lookup(darwin int, architecture string, profile Profile) (Facts, bool) {
 	var found []Facts
 	for _, facts := range t.Facts {
@@ -152,10 +176,16 @@ func sourceRank(kind string) int {
 	switch kind {
 	case SourceTart:
 		return 0
-	case SourceBuildbot:
+	case SourceRunner:
 		return 1
+	case SourceHost:
+		return 2
+	case SourceInstaller:
+		return 3
+	case SourceBuildbot:
+		return 4
 	}
-	return 2
+	return 5
 }
 
 // Check reports the table's first unsound row: one without its key, its
@@ -172,7 +202,7 @@ func (t FactsTable) Check() error {
 			return fmt.Errorf("macos: %s: Xcode and tools versions are required, none where absent", where)
 		case facts.Profile == ProfileTools && facts.Xcode != "none":
 			return fmt.Errorf("macos: %s: the tools profile has no Xcode", where)
-		case facts.Source.Kind != SourceTart && facts.Source.Kind != SourceBuildbot:
+		case !slices.Contains([]string{SourceTart, SourceRunner, SourceHost, SourceInstaller, SourceBuildbot}, facts.Source.Kind):
 			return fmt.Errorf("macos: %s: unknown source %q", where, facts.Source.Kind)
 		case facts.Source.From == "" || facts.Source.Date == "":
 			return fmt.Errorf("macos: %s: the source and its date are required", where)

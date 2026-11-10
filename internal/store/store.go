@@ -187,6 +187,9 @@ type Reader interface {
 	// LatestRunEvent is a run's newest event of any of the kinds; found is
 	// false where it has none.
 	LatestRunEvent(run model.RunID, kinds ...model.EventKind) (event model.Event, found bool, err error)
+	// LatestBranchEvent is a branch's newest event of any of the kinds;
+	// found is false where it has none.
+	LatestBranchEvent(branch model.BranchID, kinds ...model.EventKind) (event model.Event, found bool, err error)
 	LastEvent() (int64, error)
 	// CountEvents counts the events of a kind journaled at or after a time.
 	CountEvents(kind model.EventKind, since time.Time) (int, error)
@@ -245,6 +248,9 @@ type Tx interface {
 	AddRun(run model.Run) error
 	NextRunNumber() (int, error)
 	UpdateRun(run model.Run) error
+	// EnterRun records a shell opened in a running run's guest, beside
+	// what its driver writes (model.Run.Entered).
+	EnterRun(id model.RunID, entry model.Entry) error
 
 	AddExecution(execution model.GuestExecution) error
 	UpdateExecution(execution model.GuestExecution) error
@@ -391,7 +397,7 @@ func (e *LiveUnderMigrationError) Error() string {
 	if e.Processes != 1 {
 		processes = fmt.Sprintf("%d dockhand processes are", e.Processes)
 	}
-	return fmt.Sprintf("%s working on schema %d%s: migrating the database to schema %d would leave them unable to record what they do", processes, e.From, builds, e.To)
+	return fmt.Sprintf("%s using schema %d%s; migrating this database to schema %d would prevent them from recording further work", processes, e.From, builds, e.To)
 }
 
 // A LiveProcess is a dockhand process working on a database whose
@@ -427,7 +433,7 @@ type ReleaseUnderMigrationError struct {
 }
 
 func (e *ReleaseUnderMigrationError) Error() string {
-	return fmt.Sprintf("dockhand %s, a release, last opened this database, at schema %d; migrating it to schema %d, as this build would, leaves %s unable to open it", e.Release, e.From, e.To, e.Release)
+	return fmt.Sprintf("this database was last opened by dockhand %s (schema %d). Migrating to schema %d would prevent dockhand %s from opening it", e.Release, e.From, e.To, e.Release)
 }
 
 func (e *ReleaseUnderMigrationError) Unwrap() error { return ErrReleaseUnderMigration }

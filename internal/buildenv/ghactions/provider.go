@@ -13,6 +13,7 @@
 package ghactions
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"errors"
@@ -27,10 +28,12 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/buildlog"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports/cilog"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/outward"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/refusal"
 )
@@ -230,7 +233,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 			before = max(before, r.ID)
 		}
 		build.Progress(fmt.Sprintf("pushing to %s on %s", branch, fork.Repository))
-		if err := p.Repo.Push(ctx, git.Push{Remote: fork.PushURL, Branch: branch, Commit: job.Commit, ExpectedRemote: head}); err != nil {
+		if err := outward.Push(ctx, p.Repo, outward.OwnFork, fork.Repository, git.Push{Remote: fork.PushURL, Branch: branch, Commit: job.Commit, ExpectedRemote: head}); err != nil {
 			return buildenv.Infrastructure("pushing to %s: %w", fork.Repository, err)
 		}
 	}
@@ -266,7 +269,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		if ctx.Err() != nil && build.Canceled() && run.Status != "completed" {
 			stopping, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 			defer cancel()
-			_ = p.API.Cancel(stopping, fork.Repository, run.ID)
+			_ = outward.Cancel(stopping, p.API, outward.Made, fork.Repository, run.ID)
 		}
 	}()
 	// A run that builds past the bound is cancelled, and what it was
@@ -291,7 +294,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	// again.
 	if ended == "" && run.Status == "completed" && (stoppedShort(run.Conclusion) || job.Execution.Attempt > 1 && run.Conclusion != "success") {
 		build.Progress(fmt.Sprintf("running %s's unsuccessful jobs again", run.URL))
-		if err := p.API.Rerun(ctx, fork.Repository, run.ID); err != nil {
+		if err := outward.Rerun(ctx, p.API, outward.Made, fork.Repository, run.ID); err != nil {
 			return buildenv.Infrastructure("running %s again: %w", run.URL, err)
 		}
 		previous := run.Attempt
@@ -312,8 +315,8 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		}
 		if building >= bound && ended == "" {
 			ended = fmt.Sprintf("the run exceeded the %s build timeout (providers.github.build_timeout) and was cancelled", bound)
-			build.Progress(fmt.Sprintf("%s built past its %s bound; cancelling it", run.URL, bound))
-			if err := p.API.Cancel(ctx, fork.Repository, run.ID); err != nil {
+			build.Progress(fmt.Sprintf("%s exceeded its %s build timeout; cancelling it", run.URL, bound))
+			if err := outward.Cancel(ctx, p.API, outward.Made, fork.Repository, run.ID); err != nil {
 				return buildenv.Infrastructure("cancelling %s, which built past its %s bound: %w", run.URL, bound, err)
 			}
 		}
@@ -350,7 +353,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 // holds the commit pushed. One it can't remove is said, once, and left for
 // clean, which removes a merged branch's; it never fails the check.
 func (p *Provider) removeBranch(ctx context.Context, build buildenv.Build, fork buildenv.Fork, branch, commit string) {
-	err := p.Repo.DeleteRemoteBranch(ctx, fork.PushURL, branch, git.RefValue{Exists: true, Object: commit})
+	err := outward.Delete(ctx, p.Repo, outward.Made, fork.Repository, fork.PushURL, branch, git.RefValue{Exists: true, Object: commit})
 	var moved *git.RefConflict
 	switch {
 	case errors.As(err, &moved):
@@ -403,7 +406,8 @@ func (p *Provider) read(ctx context.Context, job buildenv.Job, build buildenv.Bu
 		case ranFor(j, JobCap):
 			capped = fmt.Sprintf("GitHub ended the job at its %s cap on a job", JobCap)
 		}
-		runners = append(runners, runner{job: j, log: path, built: cilog.ReadLog(log), listing: cilog.ListsSubports(log), capped: capped})
+		header, _ := buildlog.ReadHeader(bytes.NewReader(cilog.Untimed(log)))
+		runners = append(runners, runner{job: j, log: path, built: cilog.ReadLog(log), listing: cilog.ListsSubports(log), capped: capped, header: header})
 	}
 	// A run where no runner took a job built nothing, and is tried again
 	// as any infrastructure failure is (Codex's review of 2ad896d2, W1).
@@ -536,18 +540,26 @@ func jobWords(names []string) []string {
 	return words
 }
 
-// observe records the macOS release of each of an environment's runners,
-// as its job's labels name it (RunnerJob.Release), for the pull request's
-// Tested on: the jobs API is GitHub's documented word for it. A runner's
-// Xcode is only in its log's text, which isn't a documented interface, so
-// it isn't recorded. Where no runner's labels name a release, nothing is.
+// observe records what each of an environment's runners was, for the pull
+// request's Tested on: its macOS release, as its job's labels name it
+// (RunnerJob.Release), the jobs API being GitHub's documented word for
+// it; and its macOS version, architecture, Xcode, Command Line Tools, and
+// MacPorts, as MacPorts Base's -d header in its log says them, the tools
+// MacPorts used, which bootstrap.sh may choose over the image's default.
+// The header is Base's text, not a documented interface, an exception
+// decision 32 names. A runner that wrote no header, as one that failed
+// installing dependencies, whose output goes to a file, gives its release
+// alone. Where no runner says anything, nothing is recorded.
 func observe(build buildenv.Build, runners []runner) error {
 	var observed model.Observed
 	named := false
 	for _, r := range runners {
-		builder := model.BuilderObserved{Builder: r.job.Name, MacOS: r.job.Release()}
+		h := r.header
+		xcode, tools := h.DeveloperTools()
+		builder := model.BuilderObserved{Builder: r.job.Name, MacOS: r.job.Release(), Version: h.MacOS, Architecture: h.Architecture(),
+			Xcode: xcode, Tools: tools, MacPorts: h.MacPorts}
 		observed.Builders = append(observed.Builders, builder)
-		named = named || builder.MacOS != ""
+		named = named || builder.MacOS != "" || builder.ToolsKnown()
 	}
 	if !named {
 		return nil
@@ -573,6 +585,44 @@ func stoppedShort(conclusion string) bool {
 	return false
 }
 
+// runURL is a workflow run's URL, as an execution records it: the
+// repository and the run's ID.
+var runURL = regexp.MustCompile(`^https://github\.com/([^/]+/[^/]+)/actions/runs/(\d+)`)
+
+// Stop cancels the workflow run an execution recorded, which a driver that
+// stopped without a cancel left running for the next driver to find
+// (buildenv.Stopper). One already finished, or never started, needs
+// nothing.
+func (p *Provider) Stop(ctx context.Context, execution model.GuestExecution) error {
+	match := runURL.FindStringSubmatch(execution.ProviderRef)
+	if match == nil {
+		return nil
+	}
+	id, err := strconv.ParseInt(match[2], 10, 64)
+	if err != nil {
+		return nil
+	}
+	// Only in the fork: a recorded URL naming another repository is
+	// none of dockhand's to cancel (#128).
+	fork, err := p.Fork(ctx)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(match[1], fork.Repository) {
+		return refusal.New(refusal.Unsupported, "%s is a run in %s, not your fork %s, so dockhand doesn't cancel it", execution.ProviderRef, match[1], fork.Repository)
+	}
+	run, err := p.API.Run(ctx, match[1], id)
+	if err != nil {
+		return err
+	}
+	if run.Status == "completed" {
+		return nil
+	}
+	return outward.Cancel(ctx, p.API, outward.Made, match[1], id)
+}
+
+var _ buildenv.Stopper = (*Provider)(nil)
+
 // RunsOwnTests says the workflow runs a port's declared tests whatever the
 // check's policy: it is MacPorts' own, and dockhand doesn't change it.
 func (p *Provider) RunsOwnTests() bool { return true }
@@ -590,6 +640,8 @@ type runner struct {
 	// capped says why the job was ended for its time; empty where it
 	// wasn't. The subport it was installing then failed.
 	capped string
+	// header is MacPorts Base's -d header in the log, what of one it has.
+	header buildlog.Header
 }
 
 // verdict is a port's result across the runners, with each runner's part

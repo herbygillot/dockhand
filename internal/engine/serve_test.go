@@ -14,6 +14,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -243,4 +245,62 @@ func TestServeSettlesOnceItsQueueEmptiesAfterWork(t *testing.T) {
 	require.Empty(t, settled, "once, not each quiet turn")
 	cancel()
 	<-done
+}
+
+// serveCountFailure is a store whose first serve.submit event fails to
+// record.
+type serveCountFailure struct {
+	store.Store
+	fail *bool
+}
+
+type serveCountFailureTx struct {
+	store.Tx
+	fail *bool
+}
+
+func (s serveCountFailure) Update(ctx context.Context, repo model.RepositoryID, fn func(store.Tx) error) error {
+	return s.Store.Update(ctx, repo, func(tx store.Tx) error { return fn(serveCountFailureTx{tx, s.fail}) })
+}
+
+func (tx serveCountFailureTx) AppendEvent(event model.Event) (int64, error) {
+	if event.Kind == model.EventServeSubmit && *tx.fail {
+		*tx.fail = false
+		return 0, errors.New("counting serve's submission failed")
+	}
+	return tx.Tx.AppendEvent(event)
+}
+
+// serve.submit_limit holds where counting a submission fails: the count
+// is written with the pull request's record, and the pass stops at a
+// submission that failed after its pull request opened. Written after it,
+// a failed count let serve open two under a limit of one (#118; Codex's
+// review of b2e7b616, its probe).
+func TestServesDailyLimitSurvivesAFailedCount(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	g := f.withFork(t, e)
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}})
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
+	where := Where{Environments: []model.Environment{{Provider: "command"}}}
+	release := &model.Release{ReleaseSelection: model.ReleaseSelection{Requested: "1.8.1", CurrentVersion: "1.7.1"}, Version: "1.8.1", Forge: "github", Tag: "v1.8.1"}
+	for _, name := range []string{"first-auto-update", "second-auto-update"} {
+		prepared := e.ship(t.Context(), shipTarget{Port: "jq", Version: "1.8.1", Release: release, Name: name}, shipOptions{Origin: model.OriginServe, To: ShipCheck, Where: where, Answered: model.AnsweredNobody})
+		require.Empty(t, prepared.Problem)
+		require.NotNil(t, prepared.Run)
+		run, err := e.Drive(t.Context(), session(t, e), prepared.Run.ID)
+		require.NoError(t, err)
+		require.Equal(t, model.RunPassed, run.State)
+	}
+	candidates, _, err := e.serveCandidates(t.Context())
+	require.NoError(t, err)
+	require.Len(t, candidates, 2)
+	kept, fail := e.Store, true
+	e.Store = serveCountFailure{kept, &fail}
+	var said []string
+	s := newServer(e, ServeOptions{SubmitLimit: 1, Now: e.now, Say: func(line string) { said = append(said, line) }})
+	(&passingSubmitter{s: s}).maybe(t.Context())
+	e.Store = kept
+	require.Len(t, g.PRs, 1, "%q", said)
 }

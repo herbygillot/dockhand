@@ -85,7 +85,10 @@ remove that marker. Submission holds while these guesses remain unconfirmed.
 In particular, verify:
 
 - **License and description.** The license can come from Cargo.toml or
-  pyproject.toml, otherwise GitHub's detection. Confirm it against the source
+  pyproject.toml, otherwise GitHub's detection. Where neither names one, as when
+  GitHub says NOASSERTION, it is guessed from the first line of the project's
+  LICENSE or COPYING file, marked as guessed, with an exception such as
+  `WITH LLVM-exception` left out. Confirm it against the source
   and use MacPorts' license names. Make the long description useful to someone
   deciding whether to install the port.
 - **Maintainer and category.** The configured maintainer is used, with
@@ -100,7 +103,9 @@ In particular, verify:
   installs the program for you.
 - **Dependencies and source layout.** Check that the declarations cover the
   software's build and runtime needs, including native libraries. Generated
-  language dependency lists do not settle those packaging decisions.
+  language dependency lists do not settle those packaging decisions. The rust PortGroup declares `port:libiconv` on macOS;
+  `rust.system_libiconv yes` links the system's instead, only where no C code
+  the port builds uses iconv.
 
 Rust crates are read from Cargo.lock. The draft marks crates from unsupported
 registries or Git sources instead of inventing their entries. Program discovery
@@ -119,7 +124,8 @@ leave the list: `the check compiled none of libgit2-sys, libsqlite3-sys, which
 Cargo.lock pins for features or targets this build doesn't use`.
 
 For a root Go module, the checksum step can fill an empty `go.vendors` through
-`go2port`, found on PATH, then in `/opt/local/bin`. A module below its
+`go2port`, found on PATH, then in `/opt/local/bin`, or where `--tool go2port=…`,
+`GO2PORT_BIN`, or `[tools] go2port` names it. A module below its
 repository root, such as
 `go:golang.org/x/tools/gopls`, uses the module's version and subdirectory tag.
 Its draft builds in that directory and marks `go.offline_build no` for review,
@@ -155,9 +161,12 @@ the one you just inspected. Examine the installed files and exercise the
 program's basic functionality as appropriate; a passing build alone does not
 confirm your packaging guesses. A check in Tart or a local prefix also reads
 what the built program links: a library its Portfile doesn't declare is a
-notice naming the line to write, `mytool links libiconv.2.dylib from libiconv,
-which it doesn't declare in depends_lib; depends_lib-append port:libiconv
-declares it`.
+notice naming the line to write, `mytool links liblzma.5.dylib from xz,
+which it doesn't declare in depends_lib. Declare it with depends_lib-append
+port:xz; dockhand tidy can write this line`. For a supported declaration,
+`dockhand tidy` writes a separate commit and carries over the check's results,
+because the build already had that library active. It explains when the line
+must be written by hand, such as inside a subport or variant block.
 
 Use `dockhand usage checks` to choose environments and interpret failures,
 `dockhand usage publishing` to open the pull request, and

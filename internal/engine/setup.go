@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"path/filepath"
+	"slices"
 
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
 )
@@ -24,6 +25,12 @@ type SetupReport struct {
 	// Go and Rust vendoring run, each found or not, so a missing one is
 	// said before serve's next look fails on it (the docs dig's I38).
 	Vendoring []SetupTool `json:"vendoring"`
+	// MacPortsSource is what named port-tclsh, where something did, and
+	// Programs the other programs named that the report has no line of
+	// its own for, xcodes, gh, patch, diff, and tart, each with its
+	// source (Options.Named).
+	MacPortsSource string      `json:"macports_source,omitempty"`
+	Programs       []SetupTool `json:"programs,omitempty"`
 	// Unchosen is where the person hasn't said where worktrees go, by name
 	// or in the configuration, so Worktrees is the default, which a
 	// question may change (Choose).
@@ -51,6 +58,9 @@ type SetupUpstream struct {
 type SetupGit struct {
 	Version string `json:"version"`
 	Path    string `json:"path"`
+	// Source is what named it, "--tool git", "GIT_BIN", or "[tools]
+	// git"; "PATH" where nothing did.
+	Source string `json:"source"`
 }
 
 // Setup opens the engine for setup and reports on it, refusing a Git too
@@ -64,7 +74,7 @@ func Setup(ctx context.Context, options Options, named string) (*Engine, SetupRe
 	if err != nil {
 		return nil, report, err
 	}
-	report.Git = SetupGit{Version: version.String(), Path: version.Path}
+	report.Git = SetupGit{Version: version.String(), Path: version.Path, Source: options.namedSource("git")}
 	e, err := Open(ctx, options)
 	if err != nil {
 		return nil, report, err
@@ -87,16 +97,39 @@ func Setup(ctx context.Context, options Options, named string) (*Engine, SetupRe
 	if tclsh := e.Tclsh(); tclsh != "" {
 		report.MacPorts = filepath.Dir(filepath.Dir(tclsh))
 	}
+	if source := options.namedSource("port-tclsh"); source != "PATH" {
+		report.MacPortsSource = source
+	}
 	report.Vendoring = vendoringTools(options.Programs.Vendoring)
+	for i := range report.Vendoring {
+		report.Vendoring[i].Source = options.namedSource(report.Vendoring[i].Name)
+	}
+	for _, program := range options.Named {
+		if !slices.Contains([]string{"git", "port-tclsh", "go2port", "cargo2port"}, program.Name) {
+			report.Programs = append(report.Programs, SetupTool{Name: program.Name, Path: program.Path, Source: program.Source})
+		}
+	}
 	return e, report, nil
+}
+
+// namedSource is what named a program, as Named says it; "PATH" where
+// nothing did, and it was searched for.
+func (o Options) namedSource(name string) string {
+	for _, program := range o.Named {
+		if program.Name == name {
+			return program.Source
+		}
+	}
+	return "PATH"
 }
 
 // SetupTool is a helper dockhand runs, where it was found, or empty, and
 // what it's for.
 type SetupTool struct {
-	Name string `json:"name"`
-	Path string `json:"path,omitempty"`
-	For  string `json:"for"`
+	Name   string `json:"name"`
+	Path   string `json:"path,omitempty"`
+	For    string `json:"for,omitempty"`
+	Source string `json:"source"`
 }
 
 // vendoringTools are go2port and cargo2port as the edits that run them

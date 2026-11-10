@@ -31,25 +31,25 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var all, plain bool
 	cmd := &cobra.Command{
 		Use:   "console",
-		Short: "Show the branches live, and act on the one selected",
-		Long: `Shows the branches in a table the terminal's size, kept current as serve
-works: what needs you first, then what's under way, then what waits on
-reviewers, each row its branch, ports, state, pull request, and the command
-that moves it on. The header counts them; under the table, a pane shows the
-journal's newest events. It only observes: serve does the work.
+		Short: "Show a live branch table and act on the selected branch",
+		Long: `Shows a live table sized to your terminal. Branches needing attention
+appear first, followed by work in progress and branches waiting for
+reviewers. Each row shows the branch, ports, state, pull request, and next
+command. The header shows branch counts; the pane below shows recent
+events. The table updates as work progresses.
 
   ↑ ↓         select a row       PgUp PgDn Home End   page through them
-  Enter       the selected branch in detail in the pane, and back
+  Enter       toggle the selected branch's details in the pane
   l           logs of its latest check       c   check it
   t           tidy it                        s   submit it
-  r           read everything again          q   quit (Esc and Ctrl-C too)
+  r           refresh the table              q   quit (also Esc or Ctrl-C)
 
 l, c, t, and s leave the table and run the command on the selected branch,
-with that command's own questions; Ctrl-C stops the command, not the
-console, and a key returns to the table.
+with that command's own questions. Ctrl-C stops the command and returns
+control to the console. Press any key to return to the table.
 
---plain, and any input or output that isn't a terminal, prints status once
-and then each event as a line, for scrollback, SSH, and screen readers.
+With --plain, or when input or output is not a terminal, prints status once
+and then each event on its own line, for scrollback, SSH, and screen readers.
 --all includes merged, closed, and archived branches.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -136,8 +136,12 @@ type console struct {
 	all     bool
 	command runner
 	model   Model
-	// gathered is when the rows were last gathered.
+	// gathered is when the rows were last gathered, report what was read
+	// then, and detailed the branch it read in detail, where the pane
+	// showed one.
 	gathered time.Time
+	report   engine.StatusReport
+	detailed model.BranchID
 }
 
 // live draws the table on the terminal until q, Esc, or Ctrl-C. Its
@@ -247,18 +251,23 @@ func live(parent context.Context, e *engine.Engine, streams term.Streams, all bo
 }
 
 // gather reads every branch's status in one report, the rows from it, and
-// the selected branch's detail where the pane shows it.
+// the selected branch's detail where the pane shows it, in the same read.
 func (c *console) gather(ctx context.Context) {
 	c.gathered = time.Now()
 	states := []model.BranchState{model.BranchOpen}
 	if c.all {
 		states = []model.BranchState{model.BranchOpen, model.BranchMerged, model.BranchClosed, model.BranchArchived}
 	}
-	report, err := c.e.StatusReport(ctx, c.session, engine.StatusRequest{States: states, Overview: true})
+	var detail model.BranchID
+	if row, ok := c.model.Row(); ok && c.model.Pane == paneDetail {
+		detail = row.ID
+	}
+	report, err := c.e.StatusReport(ctx, c.session, engine.StatusRequest{States: states, Overview: true, Detail: detail})
 	if err != nil {
 		c.model.Problem = "status: " + err.Error()
 		return
 	}
+	c.report, c.detailed = report, detail
 	c.model.Problem = ""
 	var rows []view.Row
 	for _, status := range report.Statuses {
@@ -269,19 +278,25 @@ func (c *console) gather(ctx context.Context) {
 	c.detail(ctx)
 }
 
-// detail gathers the selected branch's detail, where the pane shows it.
+// detail is the selected branch's detail, where the pane shows it: from
+// the gather's read where it read that branch in detail, else, the
+// selection having moved since, read for it alone.
 func (c *console) detail(ctx context.Context) {
 	row, ok := c.model.Row()
 	if c.model.Pane != paneDetail || !ok {
 		c.model.Detail = nil
 		return
 	}
-	branch, err := c.e.Branch(ctx, row.ID)
-	if err != nil {
-		c.model.Detail = []string{view.Look + " " + err.Error()}
+	at := slices.IndexFunc(c.report.Statuses, func(s engine.BranchStatus) bool { return s.Branch.ID == row.ID })
+	if at < 0 {
+		c.model.Detail = nil
 		return
 	}
-	report, err := c.e.StatusReport(ctx, c.session, engine.StatusRequest{Branches: []model.Branch{branch}})
+	if c.detailed == row.ID {
+		c.model.Detail = detailLines(c.report.Statuses[at], c.report)
+		return
+	}
+	report, err := c.e.StatusReport(ctx, c.session, engine.StatusRequest{Branches: []model.Branch{c.report.Statuses[at].Branch}})
 	if err != nil {
 		c.model.Detail = []string{view.Look + " " + err.Error()}
 		return

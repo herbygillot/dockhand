@@ -1,6 +1,7 @@
 package checks
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -154,6 +155,15 @@ func (c *Service) Retry(ctx context.Context, previous model.Run) (model.Run, err
 		run, err = c.queue(tx, model.Run{Branch: previous.Branch, Revision: previous.Revision, Plan: previous.Plan, Origin: model.OriginPerson, BaselineOf: previous.BaselineOf}, "queued, retrying "+previous.Name())
 		return err
 	})
+	// The branch's next check replaces the clones its earlier ones kept,
+	// as QueueCheck's does: each retry of a failed Tart check left one more
+	// (Codex's workflow review of 1caa6c3d, finding 6). A baseline's
+	// retry keeps them, as a baseline does, for the guest it's beside.
+	if err == nil && previous.BaselineOf == "" {
+		if err := c.Admission.ForgetKept(ctx, run.Branch); err != nil {
+			progress.Report(ctx, "removing the clones the branch's earlier checks kept, retrying %s: %v", previous.Name(), err)
+		}
+	}
 	return run, err
 }
 
@@ -170,17 +180,27 @@ type ActiveRunError struct {
 	Checking     model.Revision
 	SameRevision bool
 	// Uncovered is a run of the same files whose plan doesn't cover the
-	// new check's (PlanCovers), which a follow refuses.
-	Uncovered bool
+	// new check's (PlanCovers), which a follow refuses; OtherSource where
+	// it builds another source, a tag or branch the port fetches having
+	// moved since it was planned (SourcesCover).
+	Uncovered, OtherSource bool
+}
+
+// Uncovering says why an uncovered run doesn't stand for the new check.
+func (a *ActiveRunError) Uncovering() string {
+	if a.OtherSource {
+		return "but its planned source differs from this request's; an upstream tag or branch may have moved since the check was planned"
+	}
+	return "but does not cover this request's builds, environments, variants, test policy, freshness, or guest retention"
 }
 
 func (a *ActiveRunError) Error() string {
 	name := a.Run.Name()
 	if a.Stopped && a.SameRevision {
-		return fmt.Sprintf("%s stopped before it finished these files, when the process running it ended; dockhand wait %s resumes it", name, name)
+		return fmt.Sprintf("%s stopped before finishing because the process running it ended; dockhand wait %s resumes it", name, name)
 	}
 	if a.Uncovered {
-		return fmt.Sprintf("%s is %s for these files, but doesn't cover what this check asks, the builds it makes in each environment, its variants, tests, or freshness, or a kept guest. Run dockhand cancel %s and run this again, or wait for it to finish and run this again", name, a.Run.State, name)
+		return fmt.Sprintf("%s is %s for these files, %s. Run dockhand cancel %s and run this again, or wait for it to finish and run this again", name, a.Run.State, a.Uncovering(), name)
 	}
 	if a.SameRevision {
 		return fmt.Sprintf("%s is already %s for these files; dockhand wait %s follows it", name, a.Run.State, name)
@@ -221,7 +241,46 @@ func (c *Service) RequestCancel(ctx context.Context, session *coord.Session, id 
 		return run, err
 	}
 	defer session.Release(context.WithoutCancel(ctx), lease)
+	if err := c.stopUnfinished(ctx, id); err != nil {
+		return run, err
+	}
 	return c.finishCanceled(ctx, session, lease, id)
+}
+
+// stopUnfinished asks the provider of each execution of a run still to
+// finish to end the work it left, where it can outlive its driver
+// (buildenv.Stopper): a GitHub check whose driver stopped kept its
+// workflow running, and canceling it said it stopped (#115). The
+// execution a stopped driver interrupted is recorded as an attempt that
+// failed, so each is asked, once for each reference; the provider knows
+// whether its work is done. One that can't be reached leaves the cancel
+// requested, and says so.
+func (c *Service) stopUnfinished(ctx context.Context, id model.RunID) error {
+	var executions []model.GuestExecution
+	var name string
+	if err := c.Store.View(ctx, c.Repository, func(r store.Reader) error {
+		run, err := r.Run(id)
+		if err != nil {
+			return err
+		}
+		name = run.Name()
+		executions, err = r.Executions(id)
+		return err
+	}); err != nil {
+		return err
+	}
+	asked := map[string]bool{}
+	for _, execution := range executions {
+		stopper, ok := c.Providers[execution.Environment.Provider].(buildenv.Stopper)
+		if !ok || execution.ProviderRef == "" || asked[execution.ProviderRef] {
+			continue
+		}
+		asked[execution.ProviderRef] = true
+		if err := stopper.Stop(ctx, execution); err != nil {
+			return refusal.New(refusal.Infrastructure, "%s: cancellation is recorded, but %s could not stop %s: %v; run dockhand cancel %s to try again", name, execution.Environment.Provider, cmp.Or(execution.ProviderRef, "its work"), err, name)
+		}
+	}
+	return nil
 }
 
 func (c *Service) finishCanceled(ctx context.Context, session *coord.Session, lease model.Lease, id model.RunID) (model.Run, error) {
@@ -580,7 +639,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			// this one's building everything reads as a fault unless it's
 			// said: a GitHub run records neither what its runner is nor
 			// what the build read (the gh rebase's finding 1).
-			d.emit(ctx, model.EventExecutionState, fmt.Sprintf("%s: %s: builds every target, since its provider doesn't say what the environment is, so no earlier result can be reused there", d.run.Name(), DescribeEnvironment(environment)))
+			d.emit(ctx, model.EventExecutionState, fmt.Sprintf("%s: %s: building every target because the provider does not report an environment identity; earlier results cannot be reused there", d.run.Name(), DescribeEnvironment(environment)))
 		}
 		if attempt == 0 {
 			choice, err := d.reusable(ctx, identity, targets, paths, revision)
@@ -671,7 +730,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			maps.Copy(build.builtWith, groups)
 		}
 		job := buildenv.Job{Run: d.run, Execution: execution, Revision: revision, Plan: d.plan, Environment: environment, Targets: building, Commit: commit, Installs: build.installs,
-			Directory: filepath.Join(c.Logs, d.run.Name(), fmt.Sprintf("%s-%d", environmentSlug(environment), execution.Attempt))}
+			Directory: filepath.Join(c.Logs, d.run.Name(), ExecutionDirectory(execution))}
 		stopWatching := watchStalls(ctx, build, job.Directory)
 		err = provider.Execute(ctx, job, build)
 		stopWatching()
@@ -705,7 +764,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 				return err
 			}
 			fault := refusal.WordsOf(err)
-			d.problem(fmt.Sprintf("dockhand: %s: %s; the fault is dockhand's own, so another attempt would repeat it, and none was made", DescribeEnvironment(environment), fault))
+			d.problem(fmt.Sprintf("dockhand: %s: %s; this is an internal Dockhand error, so no retry was attempted", DescribeEnvironment(environment), fault))
 			return nil
 		case refusal.Transient(err):
 			// What another try may meet, a VM or a runner that failed, or
@@ -725,7 +784,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			if err := d.endExecution(ctx, execution, model.ExecutionInfrastructure, err.Error()); err != nil {
 				return err
 			}
-			d.problem(fmt.Sprintf("dockhand: %s: %v; the provider didn't mark it as trouble another attempt could clear, so none was made", DescribeEnvironment(environment), err))
+			d.problem(fmt.Sprintf("dockhand: %s: %v; the provider did not mark this failure for automatic retry, so no retry was attempted", DescribeEnvironment(environment), err))
 			return nil
 		}
 		return d.endExecution(ctx, execution, model.ExecutionFinished, "")
@@ -918,13 +977,13 @@ func (d *driver) matrix(ctx context.Context, provider buildenv.Provider, environ
 			d.problem(notTriedWords(where, err))
 			return nil
 		case errors.Is(err, buildenv.ErrDockhandFault):
-			d.problem(fmt.Sprintf("dockhand: %s: %s; the fault is dockhand's own, so another attempt would repeat it, and none was made", where, refusal.WordsOf(err)))
+			d.problem(fmt.Sprintf("dockhand: %s: %s; this is an internal Dockhand error, so no retry was attempted", where, refusal.WordsOf(err)))
 			return nil
 		case retry:
 			d.emit(ctx, model.EventExecutionRetry, fmt.Sprintf("%s: %v", where, err))
 			continue
 		case err != nil:
-			d.problem(fmt.Sprintf("dockhand: %s: %v; the provider didn't mark it as trouble another attempt could clear, so none was made", where, err))
+			d.problem(fmt.Sprintf("dockhand: %s: %v; the provider did not mark this failure for automatic retry, so no retry was attempted", where, err))
 			return nil
 		}
 		return nil
@@ -1038,9 +1097,22 @@ func (d *driver) finish(ctx context.Context) (model.Run, error) {
 		d.c.Hooks.AfterFinish(ctx, d.run)
 	}
 	if err == nil {
+		// A staged tree an attempt left, as one stopped mid-build does,
+		// goes with the check's end, and an attempt's directory it leaves
+		// empty with it (Prime-time's v0.7.0 acceptance).
+		directory := filepath.Join(d.c.Logs, d.run.Name())
+		if _, _, removeErr := buildenv.RemoveStagedTrees(directory); removeErr == nil {
+			if attempts, readErr := os.ReadDir(directory); readErr == nil {
+				for _, attempt := range attempts {
+					if attempt.IsDir() {
+						_ = os.Remove(filepath.Join(directory, attempt.Name()))
+					}
+				}
+			}
+		}
 		// Its logs are kept compressed from now on (D6); one that can't be
 		// is said, and cleanup tries again.
-		if _, compressErr := buildlog.CompressAll(filepath.Join(d.c.Logs, d.run.Name())); compressErr != nil {
+		if _, compressErr := buildlog.CompressAll(directory); compressErr != nil {
 			d.emit(ctx, model.EventProgress, fmt.Sprintf("Could not compress %s's logs; cleanup will retry: %v", d.run.Name(), compressErr))
 		}
 	}
@@ -1108,6 +1180,7 @@ func (b *build) Record(report buildenv.TargetReport) error {
 	}
 	result := report.Result
 	result.Links, result.Installed, result.Libraries, result.Configure = report.Links, report.Installed, report.Libraries, report.Configure
+	result.Declared = report.Declared
 	return b.record(result)
 }
 
@@ -1130,7 +1203,7 @@ func (b *build) activeIn(target model.TargetID, active []model.ActivePort) {
 				continue
 			}
 			if strings.EqualFold(port.Name, archive.Port) && port.Archive != "" && port.Archive != archive.Digest {
-				b.Progress(fmt.Sprintf("%s built with %s from another archive than the one kept of its build: MacPorts chose %s", target, port.Name, port.Archive))
+				b.Progress(fmt.Sprintf("%s built with a different archive of %s from the one Dockhand kept: MacPorts chose %s", target, port.Name, port.Archive))
 			}
 		}
 	}
@@ -1166,7 +1239,7 @@ func (b *build) activeIn(target model.TargetID, active []model.ActivePort) {
 func (b *build) read(planned model.PlanTarget, active []model.ActivePort) (model.TargetInputs, bool) {
 	inputs, err := reuse.Inputs(b.ctx, b.d.c.Checkout, b.tree, b.execution.Identity, planned, b.withBuiltWith(active), b.sourced[planned.ID])
 	if err != nil {
-		reason := fmt.Sprintf("what its build read wasn't recorded: %v", err)
+		reason := fmt.Sprintf("its build inputs could not be recorded: %v", err)
 		b.Progress(fmt.Sprintf("%s: %s", planned.ID, reason))
 		// Where reuse could have been, the reason is kept, for the
 		// check that builds it again to say (the architecture review's
@@ -1456,6 +1529,13 @@ func (c *Service) revisionCommit(ctx context.Context, revision model.Revision) (
 // release as everything else names it, macOS 26 as macos26, and its
 // architecture. A Darwin release macos doesn't know keeps its Darwin
 // version, darwin30, which isn't macOS's.
+// ExecutionDirectory is the directory, beside its run's others, that an
+// execution a guest ran writes its logs in: tart-macos12-arm64-1. A
+// matrix provider's executions share their attempt's, named for it.
+func ExecutionDirectory(execution model.GuestExecution) string {
+	return fmt.Sprintf("%s-%d", environmentSlug(execution.Environment), execution.Attempt)
+}
+
 func environmentSlug(environment model.Environment) string {
 	parts := []string{environment.Provider}
 	platform := environment.Platform
@@ -1588,7 +1668,7 @@ func dependencyCount(n int) string {
 func offeredWords(ports, archives int) string {
 	words := "the guest may install up to " + dependencyCount(ports) + " from archives earlier checks kept"
 	if archives != ports {
-		words += fmt.Sprintf(" (%d archives, the newest two of some)", archives)
+		words += fmt.Sprintf(" (%d archives, up to two recent archives per dependency)", archives)
 	}
 	return words
 }
@@ -1655,5 +1735,5 @@ func notTriedWords(where string, err error) string {
 	if buildenv.SaysWhyNotTried(err) {
 		return fmt.Sprintf("%s: %v", where, err)
 	}
-	return fmt.Sprintf("%s: %v; another attempt won't fix it, so none was made", where, err)
+	return fmt.Sprintf("%s: %v; this failure needs attention, so no retry was attempted", where, err)
 }

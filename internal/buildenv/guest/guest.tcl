@@ -109,6 +109,22 @@ proc save {state {detail ""}} {
                     lappend ports [json::write object {*}$object]
                 }
                 lappend fields $key [json::write array {*}$ports]
+            } elseif {$key eq "declared"} {
+                set ports {}
+                foreach entry $value {
+                    set modules {}
+                    foreach module [dict get $entry modules] {
+                        lappend modules [json::write object name [json::write string [dict get $module name]] \
+                            libs [json::write array {*}[lmap word [dict get $module libs] { json::write string $word }]] \
+                            requires [json::write array {*}[lmap word [dict get $module requires] { json::write string $word }]]]
+                    }
+                    lappend ports [json::write object port [json::write string [dict get $entry port]] \
+                        libraries [json::write array {*}[lmap file [dict get $entry libraries] { json::write string $file }]] \
+                        modules [json::write array {*}$modules]]
+                }
+                lappend fields $key [json::write array {*}$ports]
+            } elseif {$key eq "machos"} {
+                lappend fields $key $value
             } elseif {$key eq "nitpick"} {
                 lappend fields $key [expr {$value ? "true" : "false"}]
             } elseif {$key eq "steps"} {
@@ -277,6 +293,23 @@ if {[llength [info procs path_dependencies]] == 0} {
         return $found
     }
 }
+# lib_dependencies are the ports a port's depends_lib names, under its
+# variants, as MacPorts opens it here, port: and path: entries alike, each
+# by the port it names, once.
+if {[llength [info procs lib_dependencies]] == 0} {
+    proc lib_dependencies {portdir name variants} {
+        set handle [mportopen "file://$portdir" [list subport $name] [dict merge [array get ::macports::global_variations] $variants]]
+        set info [mportinfo $handle]
+        mportclose $handle
+        set found {}
+        if {[dict exists $info depends_lib]} {
+            foreach entry [dict get $info depends_lib] {
+                if {[regexp {:([^:]+)$} $entry -> port] && $port ni $found} { lappend found $port }
+            }
+        }
+        return $found
+    }
+}
 # test_logs appends to a target's log the last lines of the test logs its
 # build systems left in its work directory, where a failed test phase
 # said why: CTest's Testing/Temporary/LastTest.log, automake's
@@ -330,6 +363,28 @@ proc known {args} {
 # ${prefix} instead", which lint says and goes on, for the test step's
 # failure. A step whose mark couldn't be read is read from the mark
 # before it, as more of the log than its own; with none, the whole log.
+# installphase is the phase within the install that MacPorts' last
+# "Error: Failed to <phase> <port>" line in the step's log names, or
+# install where none does: "Failed to patch kitty" read as "failed at
+# install" (field testing's kitty 0.50.0, check-791). It reads the line
+# as why does, the exception the person accepted.
+proc installphase {log} {
+    global counted
+    set from 0
+    if {[dict exists $counted $log]} { set from [lindex [dict get $counted $log] 0] }
+    set fd [open $log r]
+    seek $fd $from
+    set text [read $fd]
+    close $fd
+    set phase install
+    foreach line [split $text \n] {
+        if {[regexp {^Error: Failed to (extract|patch|configure|build|destroot|install|activate) } $line -> named]} {
+            set phase $named
+        }
+    }
+    return $phase
+}
+
 proc why {log message} {
     global counted
     set from 0
@@ -685,6 +740,53 @@ proc lexical {path} {
         }
     }
     return [file join {*}$parts]
+}
+
+# declared are what each port a target's depends_lib names installs that
+# a build could link: its dynamic libraries, Mach-O files under a lib/
+# directory ending .dylib or .so, and its pkg-config modules, each .pc
+# file's module with the -l names of its Libs: line and the modules its
+# Requires: line names, read with a plain split. A port whose contents
+# can't be read is left out.
+proc declared {ports} {
+    set found {}
+    foreach port $ports {
+        if {[catch {contents $port} files]} { continue }
+        set libraries {}
+        set modules {}
+        foreach file $files {
+            if {[regexp {/lib/[^/]*\.(dylib|so)$} $file] && ![catch {file type $file} type] && $type eq "file" && [macho $file]} {
+                lappend libraries $file
+            } elseif {[string match *.pc $file] && ![catch {open $file r} fd]} {
+                set libs {}
+                set requires {}
+                while {[gets $fd line] >= 0} {
+                    if {[regexp {^Libs:(.*)$} $line -> words]} {
+                        foreach word [split $words] {
+                            if {[string match -l?* $word]} { lappend libs [string range $word 2 end] }
+                        }
+                    } elseif {[regexp {^Requires:(.*)$} $line -> words]} {
+                        foreach word [split [string map {, " "} $words]] {
+                            if {[regexp {^[A-Za-z][A-Za-z0-9_.+-]*$} $word]} { lappend requires $word }
+                        }
+                    }
+                }
+                close $fd
+                lappend modules [dict create name [file rootname [file tail $file]] libs $libs requires $requires]
+            }
+        }
+        lappend found [dict create port $port libraries $libraries modules $modules]
+    }
+    return $found
+}
+
+# machos counts the Mach-O files among a target's installed files.
+proc machos {contents} {
+    set count 0
+    foreach file $contents {
+        if {$file ne "" && ![catch {file type $file} type] && $type eq "file" && [macho $file]} { incr count }
+    }
+    return $count
 }
 
 # summary are the configure phase's summary lines in a build's log, each
@@ -1070,7 +1172,7 @@ proc build {index target} {
             set git [dict get $target git]
             if {[catch {fetched [checkout $portdir $name $variants]} commit]} {
                 set fd [open $log a]
-                puts $fd "dockhand: which commit the fetch checked out wasn't read: $commit"
+                puts $fd "dockhand: could not read the commit checked out by fetch: $commit"
                 close $fd
                 continue
             }
@@ -1114,7 +1216,7 @@ proc build {index target} {
                 save running
                 if {[set message [run $log [list $port -N uninstall $name $image]]] eq ""} {
                     set fd [open $log a]
-                    puts $fd "dockhand: uninstalled $name $image, inactive and unrequested, so the branch's builds"
+                    puts $fd "dockhand: uninstalled $name $image, inactive and unrequested, so MacPorts builds the branch's version"
                     close $fd
                     continue
                 }
@@ -1140,7 +1242,7 @@ proc build {index target} {
     if {$message eq "timed out"} {
         return [{*}$fail $result install $over]
     } elseif {$message ne ""} {
-        return [{*}$fail $result install [why $log $message]]
+        return [{*}$fail $result [installphase $log] [why $log $message]]
     }
     dict set result outcome passed
     set tests [dict get $input tests]
@@ -1321,7 +1423,7 @@ foreach target [dict get $input targets] {
         set unread ""
         if {[catch {consumed [dict get $target name]} inputs]} {
             set log [open $root/[dict get $result log] a]
-            puts $log "dockhand: what this build read wasn't recorded: $inputs"
+            puts $log "dockhand: could not record this build's inputs: $inputs"
             close $log
         } else {
             if {[dict exists $inputs unread]} {
@@ -1340,11 +1442,11 @@ foreach target [dict get $input targets] {
         # _resources as read.
         if {$unread ne ""} {
             set log [open $root/[dict get $result log] a]
-            puts $log "dockhand: which PortGroups the ports built here loaded wasn't recorded: $unread"
+            puts $log "dockhand: could not record the PortGroups loaded by ports built here: $unread"
             close $log
         } elseif {[catch {sourced $portdir [dict get $target name] $variants} files]} {
             set log [open $root/[dict get $result log] a]
-            puts $log "dockhand: which PortGroups this build loaded wasn't recorded: $files"
+            puts $log "dockhand: could not record the PortGroups loaded by this build: $files"
             close $log
         } else {
             dict set result sourced $files
@@ -1363,26 +1465,37 @@ foreach target [dict get $input targets] {
     if {[dict get $result outcome] eq "passed"} {
         if {[catch {contents [dict get $target name]} installed]} {
             set log [open $root/[dict get $result log] a]
-            puts $log "dockhand: what this build installed wasn't read: $installed"
+            puts $log "dockhand: could not read the files installed by this build: $installed"
             close $log
         } else {
             dict set result installed $installed
             if {[catch {path_dependencies $portdir [dict get $target name] $variants} paths]} {
                 set log [open $root/[dict get $result log] a]
-                puts $log "dockhand: this build's path: dependencies weren't read: $paths"
+                puts $log "dockhand: could not resolve this build's path: dependencies: $paths"
                 close $log
                 set paths {}
             }
             if {[catch {links $installed $paths} linked]} {
                 set log [open $root/[dict get $result log] a]
-                puts $log "dockhand: what this build's binaries link wasn't read: $linked"
+                puts $log "dockhand: could not read the libraries linked by this build's binaries: $linked"
                 close $log
             } else {
                 dict set result links $linked
             }
+            # What each declared port installs that a build could link,
+            # and how many Mach-O files this one installed, which the host
+            # reads for a declaration nothing links (protocol 2).
+            if {[catch {lib_dependencies $portdir [dict get $target name] $variants} ports]} {
+                set log [open $root/[dict get $result log] a]
+                puts $log "dockhand: could not read this build's depends_lib declarations: $ports"
+                close $log
+            } else {
+                dict set result declared [declared $ports]
+                dict set result machos [machos $installed]
+            }
             if {[catch {libraries $installed} own]} {
                 set log [open $root/[dict get $result log] a]
-                puts $log "dockhand: this build's libraries' install names weren't read: $own"
+                puts $log "dockhand: could not read the install names of this build's libraries: $own"
                 close $log
             } else {
                 dict set result libraries $own

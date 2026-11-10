@@ -165,7 +165,7 @@ func (d *driver) reusable(ctx context.Context, identity string, targets []reuse.
 		_, kept, err := d.c.Archives.Kept(ctx, c.Result.Archive)
 		return err == nil && kept
 	}
-	judge := reuse.Judge{Blocks: d.blocks(ctx), Inert: d.inert(ctx, revision)}
+	judge := reuse.Judge{Blocks: d.blocks(ctx), Inert: d.inert(ctx, revision), Declared: d.declared(ctx, revision)}
 	if judge.Inert != nil {
 		if judge.Moved, err = d.moved(ctx, revision.Source, targets, trees); err != nil {
 			return reuse.Choice{}, err
@@ -438,6 +438,57 @@ func (d *driver) inert(ctx context.Context, revision model.Revision) reuse.Inert
 		}
 		read[k] = answer{options, ok}
 		return options, ok
+	}
+}
+
+// declared is how a build is carried over a change that only declares
+// dependencies (reuse.Declared): the Portfiles of the tree the build read
+// and the revision's now differ only in the dependencies they declare at
+// their top (portfile.DeclaredChanges), every other entry the same
+// object, and the directory's evaluations at the two find nothing else
+// moved (fidelity.DeclaredBetween). As tidy declares what a passed
+// check's builds linked, the check after it reuses them
+// (docs/designs/declare-linked-libraries.md, part 3). Each judgment is
+// read once; none where nothing evaluates a revision's directory.
+func (d *driver) declared(ctx context.Context, revision model.Revision) reuse.Declared {
+	if d.c.Hooks == nil {
+		return nil
+	}
+	type answer struct {
+		ports []string
+		ok    bool
+	}
+	read := map[[3]string]answer{}
+	return func(origin model.RunID, directory string, then, now model.ObjectID) ([]string, bool) {
+		k := [3]string{string(origin), string(then), string(now)}
+		if a, ok := read[k]; ok {
+			return a.ports, a.ok
+		}
+		var ports []string
+		texts, ok := d.portfiles(ctx, then, now)
+		if ok {
+			ports, ok = portfile.DeclaredChanges(texts[0], texts[1])
+		}
+		if ok {
+			var built model.Revision
+			err := d.c.Store.View(ctx, d.c.Repository, func(r store.Reader) error {
+				run, err := r.Run(origin)
+				if err == nil {
+					built, err = r.Revision(run.Revision)
+				}
+				return err
+			})
+			ok = err == nil && fidelity.DeclaredBetween(func() (macports.Snapshot, macports.Snapshot, error) {
+				before, err := d.c.Hooks.Family(ctx, built, directory)
+				if err != nil {
+					return before, macports.Snapshot{}, err
+				}
+				after, err := d.c.Hooks.Family(ctx, revision, directory)
+				return before, after, err
+			}, directory)
+		}
+		read[k] = answer{ports, ok}
+		return ports, ok
 	}
 }
 
@@ -850,7 +901,11 @@ func staleWords(run string, archives []staleArchive) string {
 			ports = append(ports, archive.port)
 		}
 	}
-	return fmt.Sprintf("%s: %d saved archives, of %s, were built before PortGroups they loaded changed, so the build environment will use MacPorts archives or build them from source", run, len(archives), prose.And(ports))
+	verb := "were"
+	if len(archives) == 1 {
+		verb = "was"
+	}
+	return fmt.Sprintf("%s: %s for %s %s built with PortGroups that have since changed; the build environment will use MacPorts archives or build from source", run, prose.Plural(len(archives), "saved archive"), prose.And(ports), verb)
 }
 
 // gone says the dependencies' kept archives whose files are missing, or
@@ -882,7 +937,11 @@ func goneWords(run string, archives []model.DependencyArchive) string {
 			ports = append(ports, archive.Port)
 		}
 	}
-	return fmt.Sprintf("%s: %d saved archives are missing, of %s. Removing their records; the build environment will use MacPorts archives or build them from source", run, len(archives), prose.And(ports))
+	verb := "are"
+	if len(archives) == 1 {
+		verb = "is"
+	}
+	return fmt.Sprintf("%s: %s for %s %s missing. Removing the missing archive records; the build environment will use MacPorts archives or build from source", run, prose.Plural(len(archives), "saved archive"), prose.And(ports), verb)
 }
 
 // altered says a kept archive that isn't the one it was kept as, by a
@@ -900,7 +959,7 @@ func (d *driver) altered(ctx context.Context, port, digest, instead string) erro
 	}
 	return d.fenced(ctx, func(tx store.Tx) error {
 		_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: model.EventArchiveAltered, Level: model.LevelInfo,
-			Message: fmt.Sprintf("%s: the archive kept of %s isn't the one it was kept as, %s, so %s%s", d.run.Name(), port, digest, instead, aside)})
+			Message: fmt.Sprintf("%s: the saved archive for %s no longer matches its recorded digest, %s, so %s%s", d.run.Name(), port, digest, instead, aside)})
 		return err
 	})
 }

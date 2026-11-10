@@ -44,6 +44,148 @@ func sourceFile(name string) bool {
 	return sourceFiles[path.Ext(name)] && !Manifest(base) && !BuildFile(base)
 }
 
+// testDirectories are the directories whose source files are tests, which
+// a reading doesn't read for host paths: a test's /opt/homebrew/ is a
+// fixture, not where the program looks (atuin 18.24.5, field testing).
+var testDirectories = map[string]bool{"test": true, "tests": true, "Tests": true, "testdata": true, "benches": true}
+
+// testSource reports a source file that's a test's: one in a test
+// directory, a Go _test.go file, or one named *_test.<ext>, *_tests.<ext>,
+// or test_*.<ext>.
+func testSource(name string) bool {
+	dir, base := path.Split(name)
+	for _, part := range strings.Split(strings.Trim(dir, "/"), "/") {
+		if testDirectories[part] {
+			return true
+		}
+	}
+	stem := strings.TrimSuffix(base, path.Ext(base))
+	return strings.HasSuffix(stem, "_test") || strings.HasSuffix(stem, "_tests") || strings.HasPrefix(stem, "test_")
+}
+
+// rustTestAttribute is an attribute that makes the item under it a test's:
+// #[test], #[cfg(test)], or #[cfg(all(test, …))], its spaces taken out.
+var rustTestAttribute = regexp.MustCompile(`^(test|cfg\(test\)|cfg\(all\(test(,.*)?\)\))$`)
+
+// withoutRustTests is a Rust file with each item a test attribute is on
+// taken out, from the attribute to the item's closing brace or its
+// semicolon, braces in strings, character literals, and comments passed
+// over: a mod tests { … } mostly. A file it can't follow to an item's end
+// keeps the rest as it is.
+func withoutRustTests(data []byte) []byte {
+	var out []byte
+	for i := 0; i < len(data); {
+		next := skipRust(data, i)
+		if next > i {
+			out = append(out, data[i:next]...)
+			i = next
+			continue
+		}
+		if data[i] == '#' && i+1 < len(data) && data[i+1] == '[' {
+			end := bytes.IndexByte(data[i:], ']')
+			// An attribute's own brackets nest, as cfg(all(test, x)) doesn't
+			// need, so its first ] closes it.
+			if end > 0 {
+				attribute := strings.Join(strings.Fields(string(data[i+2:i+end])), "")
+				if rustTestAttribute.MatchString(attribute) {
+					if stop := rustItemEnd(data, i+end+1); stop > 0 {
+						i = stop
+						continue
+					}
+				}
+			}
+		}
+		out = append(out, data[i])
+		i++
+	}
+	return out
+}
+
+// rustItemEnd is where the item starting at from ends: after its block's
+// closing brace, or its semicolon where it has no block; 0 where the file
+// ends first.
+func rustItemEnd(data []byte, from int) int {
+	depth := 0
+	for i := from; i < len(data); {
+		if next := skipRust(data, i); next > i {
+			i = next
+			continue
+		}
+		switch data[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		case ';':
+			if depth == 0 {
+				return i + 1
+			}
+		}
+		i++
+	}
+	return 0
+}
+
+// skipRust is where a comment, string, or character literal starting at i
+// ends, or i where none starts there: // and /* */ comments, "…" and b"…"
+// strings with their escapes, r"…" and r#"…"# raw strings, and 'x' and
+// '\n' characters, a lifetime's quote being none.
+func skipRust(data []byte, i int) int {
+	rest := data[i:]
+	switch {
+	case bytes.HasPrefix(rest, []byte("//")):
+		if end := bytes.IndexByte(rest, '\n'); end >= 0 {
+			return i + end
+		}
+		return len(data)
+	case bytes.HasPrefix(rest, []byte("/*")):
+		if end := bytes.Index(rest[2:], []byte("*/")); end >= 0 {
+			return i + 2 + end + 2
+		}
+		return len(data)
+	case rest[0] == 'r' && len(rest) > 1 && (rest[1] == '"' || rest[1] == '#') && (i == 0 || !identifier(data[i-1])):
+		hashes := 0
+		for 1+hashes < len(rest) && rest[1+hashes] == '#' {
+			hashes++
+		}
+		if 1+hashes >= len(rest) || rest[1+hashes] != '"' {
+			return i
+		}
+		closing := append([]byte{'"'}, bytes.Repeat([]byte{'#'}, hashes)...)
+		if end := bytes.Index(rest[2+hashes:], closing); end >= 0 {
+			return i + 2 + hashes + end + len(closing)
+		}
+		return len(data)
+	case rest[0] == '"':
+		for j := 1; j < len(rest); j++ {
+			switch rest[j] {
+			case '\\':
+				j++
+			case '"':
+				return i + j + 1
+			}
+		}
+		return len(data)
+	case rest[0] == '\'':
+		if len(rest) > 3 && rest[1] == '\\' {
+			if end := bytes.IndexByte(rest[3:], '\''); end >= 0 {
+				return i + 3 + end + 1
+			}
+		} else if len(rest) > 2 && rest[2] == '\'' {
+			return i + 3
+		}
+	}
+	return i
+}
+
+// identifier reports a byte that can be part of a Rust identifier.
+func identifier(b byte) bool {
+	return b == '_' || b >= '0' && b <= '9' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z'
+}
+
 // hostPathLiteral is a string literal naming a path under a Homebrew
 // prefix's library directories.
 var hostPathLiteral = regexp.MustCompile(`"((?:/opt/homebrew/|/usr/local/lib/|/usr/local/opt/)[^"\s]*)"`)
@@ -149,8 +291,9 @@ type Reading struct {
 	// have, so the project was read at its top: an archive the port
 	// fetches beside the one it builds in, perhaps.
 	Missing string
-	// HostPaths are the library paths each source file names as string
-	// literals under /opt/homebrew/, /usr/local/lib/, or /usr/local/opt/,
+	// HostPaths are the paths each source file names as string literals
+	// under /opt/homebrew/, /usr/local/lib/, or /usr/local/opt/, a test's
+	// file and a Rust file's test items left out,
 	// a Homebrew prefix's, by its path below Top, sorted: what a program
 	// may dlopen at run time outside ${prefix}, as hashcat 8.0's
 	// src/ext_zlib.c names /opt/homebrew/lib/libz.1.dylib.
@@ -160,6 +303,13 @@ type Reading struct {
 	// manifests, and Cargo.lock, and the package.json of each Node
 	// workspace the root's names, each by its path below Top.
 	Files map[string]File
+	// GoFiles are the Go files of the packages a port's -X arguments name
+	// (Spec.GoPackages), by their path below Top, kept apart from Files:
+	// they're read for the variable an argument sets, and aren't build
+	// files, so a change to one holds nothing. rclone 1.76.0 was held on
+	// twelve changed files of package fs for its fs.Version, which fs
+	// still declared (field testing, macports-ports#36436).
+	GoFiles map[string]File `json:",omitempty"`
 	// Directories are the archive's directories below Top, to
 	// DirectoryDepth deep, sorted: a Portfile's build names some, as
 	// semgrep's ${worksrcpath}/pfff, which a new version may not have.
@@ -347,8 +497,16 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 			if err != nil {
 				return err
 			}
-			if found := hostPathLiterals(data); len(found) > 0 {
-				hostPaths[name] = found
+			// A test's paths are its fixtures, not where the program
+			// looks: atuin's two were in Rust test modules.
+			if !testSource(name) {
+				read := data
+				if path.Ext(name) == ".rs" {
+					read = withoutRustTests(data)
+				}
+				if found := hostPathLiterals(read); len(found) > 0 {
+					hostPaths[name] = found
+				}
 			}
 			if goPackageFile(name, spec.GoPackages) || nested && goPackageFile(rest, spec.GoPackages) {
 				candidates[name] = File{Data: data[:min(len(data), FileLimit)], Truncated: len(data) > FileLimit}
@@ -470,8 +628,14 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 			}
 		}
 		below := strings.TrimPrefix(rest, found.Root+"/")
-		if wanted(rest, found.Root) || buildFileIn(rest, spec.directories(found.Root)) || (found.Root == "" || below != rest) && goPackageFile(below, spec.GoPackages) {
+		switch {
+		case wanted(rest, found.Root) || buildFileIn(rest, spec.directories(found.Root)):
 			found.Files[rest] = file
+		case (found.Root == "" || below != rest) && goPackageFile(below, spec.GoPackages):
+			if found.GoFiles == nil {
+				found.GoFiles = map[string]File{}
+			}
+			found.GoFiles[rest] = file
 		}
 	}
 	for name, versions := range libraries {

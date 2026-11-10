@@ -1,6 +1,7 @@
 package create
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -158,7 +159,7 @@ func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
 	require.Contains(t, out, "  homepage: using HTTPS, as MacPorts recommends (GitHub supplied http://txt.hellman.io/)\n", "the finding 6 of the txt run")
 	require.Contains(t, out, "txt 0.8.1 · Rust (Cargo.toml) · Cargo.toml says MIT OR Apache-2.0 · \"A fast, intuitive terminal text\n  editor\"\n")
 	require.Contains(t, out, "Review these fields and remove their unconfirmed markers: category devel (guessed from the build\n    system; create --category moves it), license (from Cargo.toml), long_description, maintainers")
-	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("  maintainers: nomaintainer (no maintainer configured). set maintainer to you as a Portfile's maintainers line writes you, such as \"@you\" for your GitHub login, or \"{example.org:you @you}\" with your email too, in "+filepath.Join(w.Home, ".dockhand", "config.toml")+"\n"),
+	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("  maintainers: nomaintainer (no maintainer configured). set maintainer in "+filepath.Join(w.Home, ".dockhand", "config.toml")+" to your identity as written in Portfiles, such as \"@you\" for your GitHub login, or \"{example.org:you @you}\" to include your email\n"),
 		"no port at the base names @ada")
 	branch := regexp.MustCompile(`dockhand/(txt-new)`).FindStringSubmatch(out)[1]
 	data, err := os.ReadFile(filepath.Join(w.Home, "Source", "macports-branches", branch, "devel/txt/Portfile"))
@@ -202,7 +203,7 @@ func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
 	out, _, err = cmdtest.Dockhand(t, "create", "https://github.com/ErikHellman/txt", "--new", "--name", "txt-plain")
 	require.NoError(t, err)
 	require.NotContains(t, out, "homepage: over HTTPS")
-	require.Contains(t, out, "MacPorts prefers HTTPS; over plain HTTP:\n  homepage http://txt.hellman.io/: https doesn't answer there\n")
+	require.Contains(t, out, "MacPorts prefers HTTPS; over plain HTTP:\n  homepage http://txt.hellman.io/: HTTPS URL did not respond\n")
 }
 
 // maintainedPort is onePort, with an index whose ports write @ada two ways.
@@ -248,7 +249,7 @@ func TestPlainHTTPURLsAreSaid(t *testing.T) {
 		{PlainURL: macports.PlainURL{Option: "homepage", URL: "http://jqlang.example/"}, HTTPS: "https://jqlang.example/", Answers: true},
 		{PlainURL: macports.PlainURL{Option: "master_sites", URL: "http://dl.example/jq/"}, HTTPS: "https://dl.example/jq/"},
 	})
-	require.Equal(t, "Switched to HTTPS, which answers there:\n  livecheck.url https://jqlang.example/releases\nMacPorts prefers HTTPS; over plain HTTP:\n  homepage http://jqlang.example/: https://jqlang.example/ answers\n  master_sites http://dl.example/jq/: https doesn't answer there\n", out.String())
+	require.Equal(t, "Switched these links to their available HTTPS URLs:\n  livecheck.url https://jqlang.example/releases\nMacPorts prefers HTTPS; over plain HTTP:\n  homepage http://jqlang.example/: https://jqlang.example/ answers\n  master_sites http://dl.example/jq/: HTTPS URL did not respond\n", out.String())
 }
 
 // toolProject stands in for GitHub: a Python project.
@@ -341,4 +342,16 @@ func TestCreateAddsOpenmaintainerUnlessAskedNotTo(t *testing.T) {
 	out, _, err = cmdtest.Dockhand(t, "create", "https://github.com/rift-dev/rift", "--category", "textproc", "--plan", "--no-openmaintainer")
 	require.NoError(t, err)
 	require.Contains(t, out, "maintainers         {@ada example.org:ada}\n")
+}
+
+// create --plan's Portfile is written as it is on a terminal: wrapped at
+// its width, the modeline broke, its second half a Tcl command (#93).
+func TestCreatePlansPortfileIsNotWrapped(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.Stands(t).ProjectReader = riftProject{}
+	var out, errs bytes.Buffer
+	require.NoError(t, cmdtest.RunFor(t, t.Context(), []string{"create", "https://github.com/rift-dev/rift", "--plan", "--category", "textproc"}, term.Streams{Out: &out, Err: &errs}.AsTerminal()))
+	require.Contains(t, out.String(), "\n"+portfile.Modeline+"\n")
 }

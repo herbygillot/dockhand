@@ -52,7 +52,9 @@ dockhand setup
 `setup` checks the tools, registers the checkout, and reports the GitHub login
 and build environments it can use. It finds `port-tclsh`, `tart`, `go2port`, and
 `cargo2port` on `PATH`, then in `/opt/local/bin`, so a shell whose `PATH` lacks
-MacPorts' prefix, as one over SSH can, still finds them. On a terminal it offers
+MacPorts' prefix, as one over SSH can, still finds them, unless `--tool`, a
+variable, or `[tools]` names one: `--tool go2port=…`, `GO2PORT_BIN`, or
+`go2port = "…"`. The report says which chose each. On a terminal it offers
 missing setup steps. You can decline each offer. Creating a Tart image downloads
 macOS and is a separate choice. `dockhand setup -y` skips the offers; it does
 not silently complete every missing dependency.
@@ -92,8 +94,13 @@ Choose a build environment before the first real change:
 
 - **Tart on Apple silicon:** install Tart if needed, then run
   `dockhand setup tart`. This prepares an image of this Mac's release. The
-  default `host` build profile uses a Tart guest; it does not install the port
-  into your everyday prefix.
+  default `minmax` build profile uses Tart guests, this Mac's release alone
+  until `dockhand setup tart <release>` adds others; it does not install the
+  port into your everyday prefix. The first time, macOS asks whether your
+  terminal app may find devices on the local network. Allow it: Tart's
+  guests are on that network, and dockhand can't reach them otherwise. If
+  you declined, turn it on for that app in System Settings › Privacy &
+  Security › Local Network.
 - **GitHub Actions:** enable Actions in your fork. `--on github` pushes a
   temporary check branch and runs MacPorts' workflow there.
 - **A MacPorts prefix on this Mac:** `--on local` builds among the active ports
@@ -173,7 +180,9 @@ Where the release carries its own source archive, one that holds what the
 repository has at the tag (its build files, the paths the Portfile names, and
 for a port cloned with Git, every submodule), the update says so, a notice
 that holds nothing: "release 2.5.0's mindforger_2.5.0_tarball.tgz carries the
-source, doc, and deps/cmark-gfm; update --source releases fetches it".
+source, doc, and deps/cmark-gfm; update --source releases, run instead of this
+update, fetches it". The move belongs to the update that changes the version:
+once the port is at that version, `--source releases` doesn't move it yet.
 `--source releases` makes that move, refusing where the release's archive
 doesn't qualify, and `--source choose` takes it where it qualifies, else
 GitHub's archive for a port on GitHub's tarball, a port cloned for its

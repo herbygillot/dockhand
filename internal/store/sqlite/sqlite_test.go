@@ -393,6 +393,7 @@ func TestExecutionsAndCheckpoints(t *testing.T) {
 	passed := result("libharbor", model.OutcomePassed, "")
 	passed.Links = []model.Link{{Binary: "/opt/local/bin/harbor", Library: "/opt/local/lib/libz.1.dylib", Port: "zlib"}}
 	passed.Lint, passed.Nitpicked = []string{"Line 3 has trailing whitespace"}, true
+	passed.Declared = &model.Declared{Ports: []model.DeclaredPort{{Port: "oniguruma", Libraries: []string{"/opt/local/lib/libonig.5.dylib"}, Modules: []model.PkgConfigModule{{Name: "oniguruma", Libs: []string{"onig"}, Requires: []string{}}}}}, MachOs: 2}
 	passed.Carried = &model.Carried{Check: "check-766", Commit: "3f2a1c9", Ports: []model.InertPort{{Port: "libharbor", Options: []string{"maintainers"}, From: "devel/libharbor"}}, Linted: true}
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.RecordResult(passed) }))
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.RecordResult(result("harbor-cli", model.OutcomeNotRun, "")) }))
@@ -429,9 +430,11 @@ func TestExecutionsAndCheckpoints(t *testing.T) {
 				require.Equal(t, passed.Lint, got.Lint, "what lint warned of (schema 48)")
 				require.True(t, got.Nitpicked)
 				require.Equal(t, passed.Carried, got.Carried, "how it's carried over an inert change (schema 56)")
+				require.Equal(t, passed.Declared, got.Declared, "what its declared ports install (schema 57)")
 			} else {
 				require.Nil(t, got.Links, "not read is nil, never none (schema 39)")
 				require.Nil(t, got.Carried)
+				require.Nil(t, got.Declared)
 			}
 		}
 		executions, err := rd.Executions(run.ID)
@@ -1617,7 +1620,7 @@ func TestADamagedDatabaseIsSaidPlainly(t *testing.T) {
 		_, err := Open(t.Context(), path, Options{})
 		require.ErrorIs(t, err, store.ErrUnavailable, name)
 		require.ErrorContains(t, err, path+" can't be read as dockhand's database", name)
-		require.ErrorContains(t, err, "dockhand left it as it is. Restore it from a backup, such as one sqlite3 "+path+" \".backup <file>\" made, or move it aside", name)
+		require.ErrorContains(t, err, "Dockhand left the file unchanged. Restore a backup, or move this file aside to start a new database", name)
 		require.NotContains(t, err.Error(), "delete")
 		after, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -1657,7 +1660,7 @@ INSERT INTO leases(repository_id, resource, holder, generation, acquired_at) VAL
 			{Kind: "foreground", PID: 101, Build: "v0.3.1", Started: started, Checks: []int{1}},
 			{Kind: "serve", PID: 102, Build: "v0.3.1", Started: started, Leads: true},
 		}}, refused, "each named, with what it does, as status names it (the abook session)")
-	require.ErrorContains(t, err, fmt.Sprintf("2 dockhand processes are working on schema %d (v0.3.1): migrating the database to schema %d would leave them unable to record what they do", schemaVersion-1, schemaVersion))
+	require.ErrorContains(t, err, fmt.Sprintf("2 dockhand processes are using schema %d (v0.3.1); migrating this database to schema %d would prevent them from recording further work", schemaVersion-1, schemaVersion))
 
 	s, err := Open(t.Context(), path, Options{MigrateUnderLive: true})
 	require.NoError(t, err, "a person's answer migrates")
@@ -1927,5 +1930,5 @@ func TestANewerSchemasRefusalNamesItsBuildAndTheCopy(t *testing.T) {
 	require.ErrorContains(t, err, "newer than this dockhand supports")
 	require.ErrorContains(t, err, "dockhand v0.5.1-0.20261024120000-0123456789ab opened it last")
 	require.ErrorContains(t, err, "it was built from commit 0123456789ab of "+buildinfo.ProjectURL)
-	require.ErrorContains(t, err, fmt.Sprintf("Its schema %d form is kept at %s.schema-%d; put back, what was recorded since it was kept is lost", schemaVersion, f.path, schemaVersion))
+	require.ErrorContains(t, err, fmt.Sprintf("A schema %d backup is kept at %s.schema-%d; restoring it loses changes recorded after that backup was made", schemaVersion, f.path, schemaVersion))
 }

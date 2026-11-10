@@ -125,9 +125,12 @@ const (
 	EventBranchState         EventKind = "branch.state"
 	EventBranchSubmit        EventKind = "branch.submit"
 	EventBranchRerequest     EventKind = "branch.rerequest"
-	EventBranchReady         EventKind = "branch.ready"
-	EventBranchRestore       EventKind = "branch.restore"
-	EventBranchClean         EventKind = "branch.clean"
+	// EventBranchPush is a submission that pushed, at the time it did,
+	// which a reviewer's re-request is due after (Engine.RerequestDue).
+	EventBranchPush    EventKind = "branch.push"
+	EventBranchReady   EventKind = "branch.ready"
+	EventBranchRestore EventKind = "branch.restore"
+	EventBranchClean   EventKind = "branch.clean"
 )
 
 // ChangesStatus reports whether an event of the kind can change what

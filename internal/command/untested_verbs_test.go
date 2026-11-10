@@ -30,7 +30,7 @@ func TestDecideWaitingHoldsTheBranch(t *testing.T) {
 	require.Contains(t, listed, "the author's answer on the license")
 	planned, errs, err := cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
 	require.ErrorContains(t, err, "nothing was submitted")
-	require.Contains(t, cmdtest.Flat(planned+errs), "✗ jq license-changed: you're awaiting the author's answer on the license. Decide it once you have it", "submit holds it, saying what for")
+	require.Contains(t, cmdtest.Flat(planned+errs), "✗ jq license-changed: you're awaiting the author's answer on the license. Once you have it, run dockhand decide", "submit holds it, saying what for")
 }
 
 // start --here starts a branch in the checkout it's run in, switching it,
@@ -46,7 +46,7 @@ func TestStartHereAndFrom(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "dockhand/jq-here", testsupport.Git(t, w.Clone, "branch", "--show-current"), "the checkout it ran in")
 	_, _, err = cmdtest.Dockhand(t, "start", "--from", "jq-here", "jq-followup")
-	require.ErrorContains(t, err, "start --from takes a merged branch's commits past its merge, and jq-here is open; dockhand path jq-here works in it")
+	require.ErrorContains(t, err, "start --from requires a merged branch with follow-up commits; jq-here is open. dockhand path jq-here shows its worktree path")
 	require.NoDirExists(t, filepath.Join(w.Home, "Source", "macports-branches", "jq-followup"))
 }
 

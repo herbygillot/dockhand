@@ -74,6 +74,32 @@ func TestStatusReadsALatestChecksEvidenceOnce(t *testing.T) {
 	require.Equal(t, overview+1, counter.loads[run.ID], "the latest check's own evidence, read once for its links, lint, and installs")
 }
 
+// The overview reads one branch in detail where it's asked to, in the same
+// report, its extras as a report of that branch alone has them, and no
+// other's: the console's pane read the branch and a report of its own
+// again at each refresh (#12).
+func TestTheOverviewReadsTheDetailedBranchInTheSameReport(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}, readsLinks: true}, identity: "origin a"}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	queued := queuedHarborRun(t, e, tahoeArm)
+	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, run.State, run.Detail)
+
+	plain, err := e.StatusReport(t.Context(), session(t, e), StatusRequest{States: []model.BranchState{model.BranchOpen}, Overview: true})
+	require.NoError(t, err)
+	require.NotContains(t, plain.Lint, run.ID, "no branch in detail")
+	detailed, err := e.StatusReport(t.Context(), session(t, e), StatusRequest{States: []model.BranchState{model.BranchOpen}, Overview: true, Detail: run.Branch})
+	require.NoError(t, err)
+	require.Contains(t, detailed.Lint, run.ID)
+	require.Contains(t, detailed.Installed, run.ID)
+	require.Contains(t, detailed.Links, run.ID)
+	require.Equal(t, len(plain.Statuses), len(detailed.Statuses))
+}
+
 // Status quotes a Portfile's update instructions only where the branch
 // changes the port's version, as update does: a branch changing curl's
 // variants alone was told to increase p5-www-curl's revision "whenever

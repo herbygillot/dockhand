@@ -1,0 +1,545 @@
+{
+  "image": "aws-mac1-monterey",
+  "slug": "clt",
+  "profile": "clt",
+  "source": "host",
+  "developer": "/Library/Developer/CommandLineTools",
+  "date": "2026-11-09T09:21:58Z",
+  "host": {},
+  "probe_output": "",
+  "driver_errors": null,
+  "facts": {
+    "probe_started": "2026-11-09T09:21:58Z",
+    "probe_finished": "2026-11-09T09:21:59Z",
+    "shell": {
+      "sw_vers_productVersion": {
+        "value": "12.7.6",
+        "error": null
+      },
+      "sw_vers_buildVersion": {
+        "value": "21H1320",
+        "error": null
+      },
+      "sw_vers_raw": {
+        "value": "ProductName:\tmacOS\nProductVersion:\t12.7.6\nBuildVersion:\t21H1320",
+        "error": null
+      },
+      "uname_r": {
+        "value": "21.6.0",
+        "error": null
+      },
+      "uname_m": {
+        "value": "x86_64",
+        "error": null
+      },
+      "whoami": {
+        "value": "ec2-user",
+        "error": null
+      },
+      "xcode_select_p": {
+        "value": "/Library/Developer/CommandLineTools",
+        "error": null
+      },
+      "xcrun_show_sdk_path": {
+        "value": "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "error": null
+      },
+      "xcrun_show_sdk_version": {
+        "value": "12.3",
+        "error": null
+      },
+      "xcrun_show_sdk_build_version": {
+        "value": "21E226",
+        "error": null
+      },
+      "xcrun_sdk_macosx_show_sdk_path": {
+        "value": "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "error": null
+      },
+      "xcrun_find_clang": {
+        "value": "/Library/Developer/CommandLineTools/usr/bin/clang",
+        "error": null
+      },
+      "xcodebuild_version": {
+        "value": null,
+        "error": "exit 1: xcode-select: error: tool 'xcodebuild' requires Xcode, but active developer directory '/Library/Developer/CommandLineTools' is a command line tools instance\nchild process exited abnormally"
+      },
+      "pkgutil_pkgs_clt": {
+        "value": "com.apple.pkg.CLTools_Executables",
+        "error": null
+      },
+      "pkgutil_CLTools_Executables_raw": {
+        "value": "package-id: com.apple.pkg.CLTools_Executables\nversion: 13.4.0.0.1.1651278267\nvolume: /\nlocation: /\ninstall-time: 1794214751\ngroups: com.apple.FindSystemFiles.pkg-group ",
+        "error": null
+      },
+      "pkgutil_CLTools_Executables_version": {
+        "value": "13.4.0.0.1.1651278267",
+        "error": null
+      },
+      "clt_sdks": {
+        "value": [
+          "MacOSX.sdk -\u003e MacOSX12.3.sdk",
+          "MacOSX11.3.sdk",
+          "MacOSX11.sdk -\u003e MacOSX11.3.sdk",
+          "MacOSX12.3.sdk",
+          "MacOSX12.sdk -\u003e MacOSX12.3.sdk"
+        ],
+        "error": null
+      },
+      "xcode_apps": {
+        "value": [
+          "/Applications/Xcode.app"
+        ],
+        "error": null
+      },
+      "xcode_sdks": {
+        "value": [
+          "/Applications/Xcode.app: MacOSX.sdk",
+          "/Applications/Xcode.app: MacOSX12.3.sdk -\u003e MacOSX.sdk"
+        ],
+        "error": null
+      },
+      "usr_bin_clang_version": {
+        "value": "Apple clang version 13.1.6 (clang-1316.0.21.2.5)\nTarget: x86_64-apple-darwin21.6.0\nThread model: posix\nInstalledDir: /Library/Developer/CommandLineTools/usr/bin",
+        "error": null
+      },
+      "usr_bin_clang_version_first_line": {
+        "value": "Apple clang version 13.1.6 (clang-1316.0.21.2.5)",
+        "error": null
+      },
+      "usr_bin_clang_v": {
+        "value": "Apple clang version 13.1.6 (clang-1316.0.21.2.5)\nTarget: x86_64-apple-darwin21.6.0\nThread model: posix\nInstalledDir: /Library/Developer/CommandLineTools/usr/bin",
+        "error": null
+      },
+      "usr_bin_gcc_version_first_line": {
+        "value": "Apple clang version 13.1.6 (clang-1316.0.21.2.5)",
+        "error": null
+      },
+      "clt_clang_version_first_line": {
+        "value": "Apple clang version 13.1.6 (clang-1316.0.21.2.5)",
+        "error": null
+      }
+    },
+    "host_checks": {
+      "file_exists_usr_lib_libxcselect_dylib": {
+        "value": false,
+        "error": null
+      },
+      "file_executable_clt_usr_bin_make": {
+        "value": true,
+        "error": null
+      },
+      "file_executable_usr_bin_clang": {
+        "value": true,
+        "error": null
+      },
+      "file_executable_usr_bin_clangxx": {
+        "value": true,
+        "error": null
+      },
+      "file_executable_usr_bin_gcc": {
+        "value": true,
+        "error": null
+      },
+      "file_exists_usr_include_sys_cdefs_h": {
+        "value": false,
+        "error": null
+      }
+    },
+    "base": {
+      "mportinit": {
+        "value": "ok",
+        "error": null
+      },
+      "macports_version": {
+        "value": "2.12.7",
+        "error": null
+      },
+      "os_platform": {
+        "value": "darwin",
+        "error": null
+      },
+      "os_subplatform": {
+        "value": "macosx",
+        "error": null
+      },
+      "os_major": {
+        "value": "21",
+        "error": null
+      },
+      "os_arch": {
+        "value": "i386",
+        "error": null
+      },
+      "os_version": {
+        "value": "21.6.0",
+        "error": null
+      },
+      "macos_version": {
+        "value": "12.7.6",
+        "error": null
+      },
+      "macos_version_major": {
+        "value": "12",
+        "error": null
+      },
+      "macosx_version": {
+        "value": "12",
+        "error": null
+      },
+      "build_arch": {
+        "value": "x86_64",
+        "error": null
+      },
+      "universal_archs": {
+        "value": [
+          "arm64",
+          "x86_64"
+        ],
+        "error": null
+      },
+      "macosx_sdk_version": {
+        "value": "12",
+        "error": null
+      },
+      "macosx_deployment_target": {
+        "value": "12.0",
+        "error": null
+      },
+      "xcodeversion": {
+        "value": "none",
+        "error": null
+      },
+      "xcodecltversion": {
+        "value": "13.4.0.0.1.1651278267",
+        "error": null
+      },
+      "developer_dir": {
+        "value": "/Library/Developer/CommandLineTools",
+        "error": null
+      },
+      "xcodebuildcmd": {
+        "value": "/usr/bin/xcodebuild",
+        "error": null
+      },
+      "xcode_license_unaccepted": {
+        "value": "no",
+        "error": null
+      },
+      "cxx_stdlib": {
+        "value": "libc++",
+        "error": null
+      },
+      "delete_la_files": {
+        "value": "yes",
+        "error": null
+      },
+      "prefix": {
+        "value": "/opt/local",
+        "error": null
+      },
+      "sysinfo_header": {
+        "value": "DEBUG: macOS 12.7.6 (darwin/21.6.0) arch i386\nDEBUG: MacPorts 2.12.7\nDEBUG: Xcode none, CLT 13.4.0.0.1.1651278267\nDEBUG: SDK 12\nDEBUG: MACOSX_DEPLOYMENT_TARGET: 12.0",
+        "error": null
+      }
+    },
+    "base_tools": {
+      "get_tool_path(clang)": {
+        "value": "/usr/bin/clang",
+        "error": null
+      },
+      "get_tool_path(clang++)": {
+        "value": "/usr/bin/clang++",
+        "error": null
+      },
+      "get_tool_path(gcc)": {
+        "value": "/usr/bin/gcc",
+        "error": null
+      },
+      "get_tool_path(g++)": {
+        "value": "/usr/bin/g++",
+        "error": null
+      },
+      "get_tool_path(cc)": {
+        "value": "/usr/bin/cc",
+        "error": null
+      },
+      "get_tool_path(c++)": {
+        "value": "/usr/bin/c++",
+        "error": null
+      },
+      "get_tool_path(llvm-gcc-4.2)": {
+        "value": "",
+        "error": null
+      },
+      "get_tool_path(gcc-4.2)": {
+        "value": "",
+        "error": null
+      },
+      "get_compiler_version(clang)": {
+        "value": "1316.0.21.2.5",
+        "error": null
+      },
+      "get_compiler_version(clang++)": {
+        "value": null,
+        "error": "don't know how to determine build number of compiler \"/usr/bin/clang++\""
+      },
+      "get_compiler_version(gcc)": {
+        "value": null,
+        "error": "don't know how to determine build number of compiler \"/usr/bin/gcc\""
+      },
+      "get_compiler_version(g++)": {
+        "value": null,
+        "error": "don't know how to determine build number of compiler \"/usr/bin/g++\""
+      },
+      "get_compiler_version(cc)": {
+        "value": null,
+        "error": "don't know how to determine build number of compiler \"/usr/bin/cc\""
+      },
+      "get_compiler_version(c++)": {
+        "value": null,
+        "error": "don't know how to determine build number of compiler \"/usr/bin/c++\""
+      },
+      "get_compiler_version(llvm-gcc-4.2)": {
+        "value": null,
+        "error": "get_tool_path returned empty"
+      },
+      "get_compiler_version(gcc-4.2)": {
+        "value": null,
+        "error": "get_tool_path returned empty"
+      },
+      "get_compiler_version(CLT/clang)": {
+        "value": "1316.0.21.2.5",
+        "error": null
+      }
+    },
+    "worker": {
+      "mportopen": {
+        "value": "ok",
+        "error": null
+      },
+      "os.platform": {
+        "value": "darwin",
+        "error": null
+      },
+      "os.subplatform": {
+        "value": "macosx",
+        "error": null
+      },
+      "os.major": {
+        "value": "21",
+        "error": null
+      },
+      "os.arch": {
+        "value": "i386",
+        "error": null
+      },
+      "os.version": {
+        "value": "21.6.0",
+        "error": null
+      },
+      "xcodeversion": {
+        "value": "none",
+        "error": null
+      },
+      "developer_dir": {
+        "value": "/Library/Developer/CommandLineTools",
+        "error": null
+      },
+      "use_xcode": {
+        "value": "0",
+        "error": null
+      },
+      "compiler.blacklist": {
+        "value": [],
+        "error": null
+      },
+      "compiler.whitelist": {
+        "value": [],
+        "error": null
+      },
+      "compiler.fallback": {
+        "value": [
+          "clang",
+          "macports-clang-16",
+          "macports-clang-15",
+          "macports-clang-14",
+          "macports-clang-13",
+          "macports-clang-12",
+          "macports-clang-11",
+          "macports-clang-10",
+          "macports-clang-9.0"
+        ],
+        "error": null
+      },
+      "configure.compiler": {
+        "value": "clang",
+        "error": null
+      },
+      "configure.cc": {
+        "value": "/usr/bin/clang",
+        "error": null
+      },
+      "configure.cxx": {
+        "value": "/usr/bin/clang++",
+        "error": null
+      },
+      "configure.objc": {
+        "value": "/usr/bin/clang",
+        "error": null
+      },
+      "configure.objcxx": {
+        "value": "/usr/bin/clang++",
+        "error": null
+      },
+      "configure.cpp": {
+        "value": "/usr/bin/cpp",
+        "error": null
+      },
+      "configure.cxx_stdlib": {
+        "value": "libc++",
+        "error": null
+      },
+      "configure.build_arch": {
+        "value": "x86_64",
+        "error": null
+      },
+      "configure.sdk_version": {
+        "value": "12",
+        "error": null
+      },
+      "configure.sdkroot": {
+        "value": "/Library/Developer/CommandLineTools/SDKs/MacOSX12.sdk",
+        "error": null
+      },
+      "configure.developer_dir": {
+        "value": "/Library/Developer/CommandLineTools",
+        "error": null
+      },
+      "configure.cc_archflags": {
+        "value": "-arch x86_64",
+        "error": null
+      },
+      "configure.ld_archflags": {
+        "value": "-arch x86_64",
+        "error": null
+      },
+      "configure.cflags": {
+        "value": "-Os",
+        "error": null
+      },
+      "configure.cxxflags": {
+        "value": "-Os -stdlib=libc++",
+        "error": null
+      },
+      "configure.cppflags": {
+        "value": "-I/opt/local/include",
+        "error": null
+      },
+      "configure.ldflags": {
+        "value": "-L/opt/local/lib -Wl,-headerpad_max_install_names",
+        "error": null
+      },
+      "compiler.cpath": {
+        "value": "/opt/local/include",
+        "error": null
+      },
+      "compiler.library_path": {
+        "value": "/opt/local/lib",
+        "error": null
+      },
+      "compiler.c_standard": {
+        "value": "1989",
+        "error": null
+      },
+      "compiler.cxx_standard": {
+        "value": "1998",
+        "error": null
+      },
+      "macosx_deployment_target": {
+        "value": "12.0",
+        "error": null
+      },
+      "build_arch": {
+        "value": "x86_64",
+        "error": null
+      },
+      "get_compiler_fallback()": {
+        "value": [
+          "clang",
+          "macports-clang-16",
+          "macports-clang-15",
+          "macports-clang-14",
+          "macports-clang-13",
+          "macports-clang-12",
+          "macports-clang-11",
+          "macports-clang-10",
+          "macports-clang-9.0"
+        ],
+        "error": null
+      },
+      "configure_get_default_compiler()": {
+        "value": "clang",
+        "error": null
+      },
+      "no_default_compiler_allowed": {
+        "value": "0",
+        "error": null
+      },
+      "get_apple_compilers_xcode_version()": {
+        "value": [
+          "apple-gcc-4.2",
+          "gcc-4.0"
+        ],
+        "error": null
+      },
+      "get_apple_compilers_os_version()": {
+        "value": [
+          "clang"
+        ],
+        "error": null
+      },
+      "get_min_command_line(clang)": {
+        "value": "1.0",
+        "error": null
+      },
+      "get_min_clang()": {
+        "value": "1.0",
+        "error": null
+      },
+      "get_min_gcc()": {
+        "value": "none",
+        "error": null
+      },
+      "compiler.command_line_tools_version(clang)": {
+        "value": "1316.0.21.2.5",
+        "error": null
+      },
+      "find_developer_tool(clang)": {
+        "value": "/usr/bin/clang",
+        "error": null
+      },
+      "configure_get_compiler(cc,clang)": {
+        "value": "/usr/bin/clang",
+        "error": null
+      },
+      "configure_get_compiler(cxx,clang)": {
+        "value": "/usr/bin/clang++",
+        "error": null
+      },
+      "get_clang_compilers()": {
+        "value": [
+          "macports-clang-16",
+          "macports-clang-15",
+          "macports-clang-14",
+          "macports-clang-13",
+          "macports-clang-12",
+          "macports-clang-11",
+          "macports-clang-10",
+          "macports-clang-9.0"
+        ],
+        "error": null
+      }
+    }
+  }
+}

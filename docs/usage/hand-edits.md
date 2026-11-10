@@ -55,6 +55,20 @@ of their own. The plan writes no edit and starts no branch; it can still
 download files. It exits 3 when a distfile differs from its declared checksums,
 so a nonzero plan result can be the difference you came to inspect.
 
+**Other macOS releases and architectures.** A Portfile can fetch different
+files on different releases or architectures, such as an older version kept for
+macOS 10.13 and earlier, or a separate binary for Intel. When `update` or
+`checksums` edits such a Portfile, Dockhand reads it as MacPorts would on each
+side of every release or architecture boundary the Portfile names. It does this
+on this Mac, without a build, and writes the checksums for every file those
+readings fetch. Those readings use that release's version and architecture, and
+its developer tools as Dockhand's facts table records them. Where a reading
+depends on anything else about a Mac running that release, `checksums` leaves
+that release's checksums as they were and names them, and `update` stops and
+says which release it couldn't read. Checks build only on the releases you have
+images for, or GitHub's. MacPorts' builders cover the rest after the pull
+request is merged.
+
 For ports with `cargo.crates` or `go.vendors`, an ordinary refresh preserves
 those lists byte for byte while refreshing the port's own archives. An empty
 declared dependency block can be filled from the source. A declaration or
@@ -79,8 +93,7 @@ defines keepassxc now and not keepassxc-devel, which master has there too.
 Restore the subport, or ask for keepassxc`. A Portfile the branch doesn't
 change that still doesn't parse is said with where to look: `... doesn't parse
 in keepassxc-2.8.0's index, though the branch doesn't change it: portindex says
-... What the branch changes that the Portfile reads, as a PortGroup, is where to
-look`.
+... Check changes on the branch that this Portfile reads, such as PortGroups`.
 
 A changed archive under the same name, with the branch's version unchanged, is a
 **stealth update**. A homepage or comment edit does not turn it into a version
@@ -96,17 +109,30 @@ numbers the mirror directory instead. If the revision or directory change would
 affect other subports unexpectedly, Dockhand refreshes the checksums and leaves
 that part for you, explaining why.
 
-For a port on the github PortGroup, `update` can move the source itself. By
-default it leaves the source where it is, and says, as a notice that holds
-nothing, when a release carries its own source archive: `release 2.5.0's
-mindforger_2.5.0_tarball.tgz carries the source, doc, and deps/cmark-gfm;
-update --source releases fetches it`. `update --source releases` makes that
-move, refusing where the archive doesn't qualify: it writes `distname`,
-`extract.suffix`, a `use_` option, and `worksrcdir` where the archive needs
-them, drops `fetch.type git` and the submodule hook, and fills the checksums;
-the commit's body and the pull request say the move. `--source choose` takes
-it where it qualifies, `--source keep` moves nothing, `--source archive` asks
-for GitHub's archive of the tag, and `[update] source` sets any of these for
+For a port using the github PortGroup, `update` can also change the source.
+The default `--source suggest` reports suitable release assets for legacy
+tarball or Git sources. It preserves the source, except that legacy tarballs
+move to GitHub's archive format for the tag. For example, a notice may say
+`release 2.5.0's mindforger_2.5.0_tarball.tgz carries the source, doc, and
+deps/cmark-gfm; update --source releases, run instead of this update, fetches
+it`. The move belongs to the update that changes the version: once the port is
+at that version, `--source releases` doesn't move it yet.
+
+`--source releases` requests a release asset and refuses one that does not
+qualify. `--source choose` can move legacy tarballs or Git checkouts to a
+suitable release asset; an asset replacing a Git checkout must contain every
+submodule. Existing archive sources stay unless `--source releases` is
+requested. `--source keep` preserves the source, and `--source archive`
+requests GitHub's archive of the tag. Update doesn't move a port that already
+fetches a release asset back to the archive, so `--source archive` there is
+refused before anything changes: `--source archive: mindforger fetches a
+release asset, and update doesn't move a port back to GitHub's archive of the
+tag`.
+
+When switching source, Dockhand sets `distname`, `extract.suffix`, a `use_`
+option, and `worksrcdir` as needed, removes `fetch.type git` and the submodule
+hook when replacing a Git checkout, and fills in checksums. The commit body
+and pull request explain the move. `[update] source` sets the policy for
 every update; see `dockhand usage configuration`.
 
 ## Request a rebuild without changing the version
@@ -136,6 +162,9 @@ dockhand rename jq jqlang --plan
 dockhand rename jq jqlang
 dockhand update jqlang
 ```
+
+`--plan` starts no branch: with `--new`, or where no branch is checked out
+here or changes the port, it plans on master as fetched now.
 
 The new name is set on the Portfile's `name` line, or, where the name comes
 from a setup such as `github.setup` or `go.setup`, on a `name` line below it, so
@@ -216,7 +245,9 @@ dockhand check
 dockhand submit --plan
 ```
 
-Replace the sample message with your reason. `tidy` includes the uncommitted
+Replace the sample message with your reason. Where the plan is one commit, as
+it is for edits not yet committed to one port, `--message` alone does the same.
+`tidy` includes the uncommitted
 edit and may fix deterministic lint issues on lines you touched; inspect its
 plan before applying it. A passing check supports the committed files you are
 about to publish. Follow `dockhand usage publishing` for the submission itself,

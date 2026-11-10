@@ -18,11 +18,16 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "shell <check> [-- <command>...]",
 		Short: "Run a command or open a shell in a retained check VM",
-		Long: `Starts the VM a check retained with check --keep and runs the command in
-the port's work directory, or in its staged directory if MacPorts' work
-directory is gone. The command's output is streamed, Dockhand exits with
-its exit code, and the VM is stopped afterward but stays retained. With
-no command, on a terminal, it opens a shell there.
+		Long: `Starts a VM retained after a failed check or by check --keep, and runs
+the command in the port's work directory. If MacPorts' work directory is
+gone, it uses the staged port directory. Command output is streamed, and
+Dockhand returns the command's exit code. The VM is stopped afterward and
+retained for later use. With no command, opens an interactive shell when
+running in a terminal.
+
+While a Tart check is running, enters its VM without stopping the check.
+Results completed before the shell opened remain valid; later builds do
+not count as evidence, because the shell may have changed their inputs.
 
 If the check retained VMs for several releases, use --on to choose one.
 For a check of several ports, the command runs in the first changed
@@ -61,7 +66,8 @@ evidence.`,
 			if test {
 				fmt.Fprintln(streams.Err, "Rerunning the test phase using the current port files and the existing build. Changes outside the test phase are not applied. This run does not count as a check result.")
 			}
-			code, err := e.Shell(ctx, engine.ShellRequest{Run: run, Release: on, Port: port, Command: command, Test: test, Input: streams.In, Output: streams.Out, Terminal: len(command) == 0 && !test})
+			code, err := e.Shell(ctx, engine.ShellRequest{Run: run, Release: on, Port: port, Command: command, Test: test, Input: streams.In, Output: streams.Out, Terminal: len(command) == 0 && !test,
+				Notice: func(words string) { fmt.Fprintln(streams.Err, words) }})
 			if err != nil {
 				return err
 			}

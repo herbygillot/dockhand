@@ -13,7 +13,9 @@ dockhand config
 dockhand config --json
 ```
 
-The report names the configuration file, database, and effective settings. The
+The report names the configuration file, database, and effective settings, each
+marked `(default)` unless the file sets it; a value the file sets is the file's
+even where it equals the default, an explicit `false` included. The
 default file is `~/.dockhand/config.toml`; `DOCKHAND_CONFIG` selects another. An
 absent file is allowed. An unknown key or malformed value is refused rather than
 silently ignored.
@@ -83,7 +85,8 @@ The built-in Tart profiles are `host`, `minmax`, `macports-ci`, and `all`.
 `minmax` selects each port's oldest and newest eligible available releases, with
 macOS 12 as its floor. `macports-ci` reads the releases from MacPorts' workflow
 at master; it is not a permanently fixed release list. With no explicit default,
-ordinary checks use `host`, or `command` when a command provider is configured.
+ordinary checks use `minmax`, which is this Mac's release alone where only its
+image is set up, or `command` when a command provider is configured.
 Unattended publication paths fall back to `minmax` when Tart is available,
 otherwise the ordinary default.
 
@@ -105,9 +108,16 @@ combine its keys. Repeating a TOML table declaration is invalid.
 [providers.tart]
 test_timeout = "30m"
 build_timeout = "6h"
+stall_timeout = "30m"  # a target's log growing by nothing this long; "0" never
+keep_failed = true   # keep a failed check's clone for dockhand shell
 ```
 
 These bound tests and build work per target. Lint has its own 10-minute bound.
+A target whose log grows by nothing for `stall_timeout` is taken as stalled: the
+attempt ends as infrastructure trouble and is tried again, where a hung guest
+once held a Tart slot for the six hours of `build_timeout`. The check says so
+at half of it, as "libharbor's log has grown by nothing for 15m; at 30m its
+build is taken as stalled".
 A target ended at a bound says which, and the key that set it, as "the tests
 ran past their 30m bound (providers.tart.test_timeout), so they were ended",
 with its log's last lines; a local check names providers.local's.
@@ -202,9 +212,12 @@ after = ["harfbuzz-devel"]
 major-version updates on those paths. `holds.allow` lists specific rule names
 whose concerns remain visible but no longer hold unattended work. It does not
 accept failed builds or waive every submission blocker. Archives that could not
-be compared remain a hold. An unrecognized rule is refused with the known rule
+be compared remain a hold. `link-undeclared` holds only where tidy couldn't
+write the declaration a check's link finding names; elsewhere tidy writes it.
+An unrecognized rule is refused with the known rule
 names; the rule for a GitHub port's source is `source`, and its earlier name,
-`github-tarball`, is refused like any other.
+`github-tarball`, is refused like any other. `not-distributable`, a change that
+makes a port one MacPorts' builders keep no archive of, is among them.
 
 The `holds.ports."<port>"` table can set that port's `majors` and `allow`,
 overriding global choices where supplied. It also accepts:
@@ -254,7 +267,7 @@ an installed agent. Accepted check plans remain frozen. Read
 | `check.tests` | `declared` | `declared`, `required`, or `skip`; see the checks topic |
 | `check.baseline` | `false` | Automatically run an applicable baseline after a failed check; it still accepts no failure by itself |
 | `update.keep_http` | `false` | Leave plain-HTTP `homepage`, `master_sites`, and `livecheck.url` links as they are, asking nothing; otherwise update, create, and a checksums refresh switch each that answers over HTTPS. `--keep-http` does the same for one command |
-| `update.source` | `suggest` | What a version update does about a port on the github PortGroup: `suggest` leaves its source as it is, but for a `github.tarball_from tarball` port's move to GitHub's archive, and says, as a notice, where a release's own archive is the source; `choose` moves a `tarball` port to a release's own source archive where one is the source, else to GitHub's archive, and a port cloned with Git for its submodules to a release archive holding every one, else leaves it; `keep` moves nothing; `releases` or `archive` asks for that source and refuses where it doesn't qualify. `--source` does the same for one update |
+| `update.source` | `suggest` | What a version update does about a port on the github PortGroup: `suggest` leaves its source as it is, but for a `github.tarball_from tarball` port's move to GitHub's archive, and says, as a notice, where a release's own archive is the source; `choose` moves a `tarball` port to a release's own source archive where one is the source, else to GitHub's archive, and a port cloned with Git for its submodules to a release archive holding every one, else leaves it; `keep` moves nothing; `releases` or `archive` asks for that source and refuses where it doesn't qualify. `--source` on `update`, `ship`, or `bump` does the same for one command |
 | `submit.rerequest_review` | `ask` | `ask`, `always`, or `never` after pushing fixes to a PR with changes requested |
 | `cleanup.automatic` | `true` | Perform eligible background pruning |
 | `cleanup.after` | `15d` | Retention window for eligible history, logs, and caches |
@@ -268,10 +281,47 @@ Durations use values such as `30m`, `6h`, or, for retention, `15d`. Storage
 sizes accept decimal units such as `30GB` and `1.5TB`, or binary units such as
 `64GiB`. `30GB` means 30,000,000,000 bytes.
 
+## Name the programs dockhand runs
+
+Dockhand runs nine programs that you can point at a particular copy:
+
+| Program | Flag | Variable | `[tools]` key |
+| --- | --- | --- | --- |
+| git | `--tool git=…` | `GIT_BIN` | `git` |
+| port-tclsh | `--tool port-tclsh=…` | `PORT_TCLSH_BIN` | `port_tclsh` |
+| tart | `--tool tart=…` | `TART_BIN` | `tart` |
+| go2port | `--tool go2port=…` | `GO2PORT_BIN` | `go2port` |
+| cargo2port | `--tool cargo2port=…` | `CARGO2PORT_BIN` | `cargo2port` |
+| xcodes | `--tool xcodes=…` | `XCODES_BIN` | `xcodes` |
+| gh | `--tool gh=…` | `GH_BIN` | `gh` |
+| patch | `--tool patch=…` | `PATCH_BIN` | `patch` |
+| diff | `--tool diff=…` | `DIFF_BIN` | `diff` |
+
+`--tool` comes first, then the variable, then `[tools]`, then the usual search
+on `PATH` (and `/opt/local/bin` for MacPorts' programs). For example:
+
+```toml
+[tools]
+git = "/opt/homebrew/bin/git"
+go2port = "~/bin/go2port"
+patch = "/opt/local/bin/gpatch"
+```
+
+A program named that isn't there refuses the command before anything runs,
+naming where it was named: `GO2PORT_BIN: /opt/local/bin/go2port isn't
+executable`. There is no fallback to `PATH`.
+
+`--tool name=path` or a variable names a program for one command; `[tools]`
+names it for every command and for serve. A value with a slash is the program's
+file, absolute or under `~`; a bare name is found on `PATH`. `port` and
+`portindex` follow `port_tclsh`; the local provider's prefix keeps its own.
+`--git` is gone: use `--tool git=<path>`. `dockhand config` lists each
+`tools.*` key with its value and where it came from.
+
 ## Paths and limits worth knowing
 
-The main path selections are `MACPORTS_TREE`, `DOCKHAND_DB`, and
-`DOCKHAND_CONFIG`; `--tree` and `--db` override the first two. Worktrees have
+The main path selections are `MACPORTS_TREE`, `DOCKHAND_DB`,
+`DOCKHAND_CONFIG`, and `[tools]`; `--tree` and `--db` override the first two. Worktrees have
 their own `worktrees` setting. A scratch checkout alone does not isolate the
 other three locations. `dockhand usage agents` gives a complete scratch example
 and environment reference.

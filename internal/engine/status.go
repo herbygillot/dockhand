@@ -418,7 +418,8 @@ func (s BranchStatus) Facts() branchstate.Facts {
 // any check of the default variants, a variant whose sources it changed,
 // since every such build takes the defaults. So minmax comes first where
 // an update does both, and its pass names the variant next. serve, bump,
-// and ship --yes build minmax already; host stays the attended default.
+// and ship --yes build minmax already, and minmax is the attended
+// default; this is a check named host, --build host or build.default's.
 // Nil where neither is asked, or the check built it.
 func (e *Engine) wider(ctx context.Context, status BranchStatus, changed []string) *branchstate.Wider {
 	plan := status.Evidence.Plan
@@ -1019,13 +1020,22 @@ type RunLogs struct {
 // before the build reaches the port, or on a provider that copies none.
 // port is a target's ID or its port's name, which a variant build's ID
 // begins with.
-func (e *Engine) LiveLog(ctx context.Context, id model.RunID, port string) (string, error) {
+// only, where set, is the one execution whose directory is read.
+func (e *Engine) LiveLog(ctx context.Context, id model.RunID, port string, only model.ExecutionID) (string, error) {
 	var run model.Run
 	var plan model.Plan
+	directory := "*"
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
 		if run, err = r.Run(id); err != nil {
 			return err
+		}
+		if only != "" {
+			execution, err := r.Execution(only)
+			if err != nil {
+				return err
+			}
+			directory = checks.ExecutionDirectory(execution)
 		}
 		plan, err = r.Plan(run.Plan)
 		return err
@@ -1037,7 +1047,7 @@ func (e *Engine) LiveLog(ctx context.Context, id model.RunID, port string) (stri
 		if string(target.ID) != port && target.Target.Name != port && target.Target.Subport != port {
 			continue
 		}
-		found, err := filepath.Glob(filepath.Join(e.LogDirectory(), run.Name(), "*", buildenv.LogName(target.ID)))
+		found, err := filepath.Glob(filepath.Join(e.LogDirectory(), run.Name(), directory, buildenv.LogName(target.ID)))
 		if err != nil {
 			return "", err
 		}

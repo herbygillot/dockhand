@@ -74,8 +74,22 @@ func TestTidyAsksAboutAPersonsCommits(t *testing.T) {
 	require.Contains(t, out.String(), "Created 1 commit.")
 	require.Equal(t, "jq: describe the b option", testsupport.Git(t, w.Clone, "log", "-1", "--format=%s"))
 
-	_, _, err = cmdtest.Dockhand(t, "tidy", "--message", "x")
-	require.ErrorContains(t, err, "Add --squash")
+}
+
+// --message alone names the one commit a branch of uncommitted edits
+// makes, where it asked for --squash with nothing to squash (field testing
+// on v0.7.0, #53); a plan of several commits asks for --squash still.
+func TestTidyMessageAloneNamesAPlansOneCommit(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.WithBumper(t)
+	testsupport.Git(t, w.Clone, "switch", "-q", "-c", "update-jq")
+	_, _, err := cmdtest.Dockhand(t, "adopt")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(w.Clone, "textproc/jq/Portfile"), []byte("name jq\n# a\n"), 0o644))
+	_, _, err = cmdtest.Dockhand(t, "tidy", "--message", "jq: describe the a option", "--yes")
+	require.NoError(t, err)
+	require.Equal(t, "jq: describe the a option", testsupport.Git(t, w.Clone, "log", "-1", "--format=%s"))
 }
 
 // A plan tidy proposes of a person's own edits, which needs a review on a
@@ -198,4 +212,20 @@ func TestTidySaysWhatTheRulesWarnOfAndSavesTheCommitsToRewrite(t *testing.T) {
 	out, _, err = cmdtest.Dockhand(t, "tidy", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "nothing to tidy", "with nothing left to warn of")
+}
+
+// tidy's review diff is written as it is on a terminal: wrapped at its
+// width, a Portfile's long line broke (#93).
+func TestTidysReviewDiffIsNotWrapped(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.WithBumper(t)
+	testsupport.Git(t, w.Clone, "switch", "-q", "-c", "update-jq")
+	_, _, err := cmdtest.Dockhand(t, "adopt")
+	require.NoError(t, err)
+	long := "long_description    jq is a lightweight and flexible command-line JSON processor, akin to sed for JSON data, written in portable C"
+	require.NoError(t, os.WriteFile(filepath.Join(w.Clone, "textproc/jq/Portfile"), []byte("name jq\n"+long+"\n"), 0o644))
+	var out, errs bytes.Buffer
+	_ = cmdtest.RunFor(t, t.Context(), []string{"tidy"}, term.Streams{In: strings.NewReader("d\nq\n"), Out: &out, Err: &errs}.AsTerminal())
+	require.Contains(t, out.String(), "+"+long+"\n")
 }

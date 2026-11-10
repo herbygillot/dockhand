@@ -48,10 +48,10 @@ func Command(streams term.Streams) *cobra.Command {
 	return &cobra.Command{
 		Use:   "usage [topic]",
 		Short: "Print the guide: setup and the path to a pull request, or a topic",
-		Long: `Prints dockhand's guide, the pages docs/usage keeps, from the binary.
-With no topic, it's the one-time setup and the straight path from an
-update to its pull request. Each topic develops a workflow or a set of
-choices across commands:
+		Long: `Prints the workflow guide included with Dockhand, so it is available
+without a source checkout. With no topic, covers first-time setup and the
+steps from an update to its pull request. Choose a topic for a specific
+workflow or choices spanning several commands:
 
 ` + strings.Join(listed, "\n") + `
 

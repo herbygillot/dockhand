@@ -372,3 +372,26 @@ func TestTheBuildsDirectoriesAreRead(t *testing.T) {
 	require.Equal(t, []string{"LICENSE", "configure.ac"}, names(read(t, files, Spec{})))
 	require.Equal(t, []string{"LICENSE", "build/CMakeLists.txt", "configure.ac"}, names(read(t, files, Spec{Directories: []string{"build", "/build/", "../.."}})))
 }
+
+// A reading kept for one set of Go packages doesn't stand for another's:
+// GoPackages wasn't in the key (Codex's sixth review, #74, its probe).
+func TestAReadingsCacheKeyTakesItsGoPackages(t *testing.T) {
+	t.Parallel()
+	archive := testsupport.Tarball(t, "demo-1", map[string]string{
+		"go.mod":             "module example.test/demo\n\ngo 1.24\n",
+		"version/version.go": "package version\nvar Version = \"dev\"\n",
+	})
+	cache := Cache{Directory: t.TempDir()}
+	digest := strings.Repeat("a", 64)
+	ordinary, err := cache.Read(t.Context(), archive, digest, Spec{})
+	require.NoError(t, err)
+	require.NotContains(t, ordinary.GoFiles, "version/version.go")
+	spec := Spec{GoPackages: []string{"example.test/demo/version"}}
+	fresh, err := Read(t.Context(), archive, spec)
+	require.NoError(t, err)
+	require.Contains(t, fresh.GoFiles, "version/version.go", "fresh reader honors the named package")
+	require.NotContains(t, fresh.Files, "version/version.go", "not a build file")
+	cached, err := cache.Read(t.Context(), archive, digest, spec)
+	require.NoError(t, err)
+	require.Equal(t, fresh.GoFiles, cached.GoFiles, "changing the files a reading asks for must change the cache key")
+}

@@ -47,7 +47,9 @@ import (
 // where it wasn't given: its environment variable then stands, then its
 // default.
 type Options struct {
-	Tree, Database, Git string
+	Tree, Database string
+	// Tools are --tool's programs, by name, each its value as given.
+	Tools map[string]string
 	// MigrateUnderLive migrates the database though a process on the
 	// older schema is working, as the person answered.
 	MigrateUnderLive bool
@@ -91,6 +93,21 @@ func (o Options) Getenv(name string) string {
 // PATH.
 func (o Options) Signin(store credential.Store) github.Signin {
 	signin := github.Signin{Store: store, CLI: o.LookPath("gh")}
+	// gh as --tool, GH_BIN, or the configuration's [tools] names it, for
+	// setup's lines as for the engine's (the roadmap's "Setup's GitHub
+	// lines read [tools] gh"); a file that can't be read names none here,
+	// and Settings refuses it.
+	var file config.File
+	if path, err := o.Places().ConfigPath(o.Getenv(config.PathVariable)); err == nil {
+		if loaded, err := o.Places().Load(path); err == nil {
+			file = loaded
+		}
+	}
+	if named, err := o.NamedPrograms(file, "", func(name string) (string, error) { return subprocess.LookPath(name, o.Env) }); err == nil {
+		if gh, ok := named["gh"]; ok {
+			signin.CLI = gh.Path
+		}
+	}
 	for _, source := range []github.CredentialSource{github.SourceGHEnvironment, github.SourceGitHubEnvironment} {
 		if secret := strings.TrimSpace(o.Getenv(string(source))); secret != "" {
 			signin.Token = github.Token{Secret: secret, Source: source}
@@ -200,6 +217,38 @@ type Dependencies struct {
 	Store        credential.Store
 }
 
+// LookupNamed is Lookup with the programs Settings resolved as named ahead
+// of it (engine.Options.Named).
+func (d Dependencies) LookupNamed(options Options, resolved engine.Options) func(string) (string, error) {
+	named := map[string]NamedProgram{}
+	for _, program := range resolved.Named {
+		named[program.Name] = NamedProgram{Path: program.Path, Source: program.Source}
+	}
+	return lookNamed(named, d.Lookup(options))
+}
+
+// engineNamed are the named programs as the engine keeps them, in
+// Programs' order.
+func engineNamed(named map[string]NamedProgram) []engine.NamedProgram {
+	var programs []engine.NamedProgram
+	for _, program := range config.Programs {
+		if found, ok := named[program.Name]; ok {
+			programs = append(programs, engine.NamedProgram{Name: program.Name, Path: found.Path, Source: found.Source})
+		}
+	}
+	return programs
+}
+
+// namedPath is a named program's path, where one is named.
+func namedPath(options engine.Options, name string) (string, bool) {
+	for _, program := range options.Named {
+		if program.Name == name {
+			return program.Path, true
+		}
+	}
+	return "", false
+}
+
 // Lookup is how compose finds a program: Look, or else the command line's
 // PATH (subprocess.LookPath).
 func (d Dependencies) Lookup(options Options) func(string) (string, error) {
@@ -226,7 +275,6 @@ const PullRequestsVariable = "DOCKHAND_PULL_REQUESTS"
 // environment, and the configuration file, which it reads, with the
 // programs the engine runs found as dependencies find them (Lookup).
 func Settings(ctx context.Context, options Options, dependencies Dependencies) (engine.Options, config.File, string, error) {
-	look := dependencies.Lookup(options)
 	if options.Source != "" && !slices.Contains(config.UpdateSources, options.Source) {
 		return engine.Options{}, config.File{}, "", fmt.Errorf("--source: %q is not suggest, choose, keep, releases, or archive", options.Source)
 	}
@@ -261,7 +309,14 @@ func Settings(ctx context.Context, options Options, dependencies Dependencies) (
 		}
 		portHolds[port] = held
 	}
-	git := cmp.Or(options.Git, options.Getenv("GIT_BIN"))
+	// The programs named, each checked now, a command refused where one
+	// names a program that isn't there, before anything runs.
+	named, err := options.NamedPrograms(file, configPath, dependencies.Lookup(options))
+	if err != nil {
+		return engine.Options{}, config.File{}, "", err
+	}
+	look := lookNamed(named, dependencies.Lookup(options))
+	git := named["git"].Path
 	// A path given is read against the command line's directory, never
 	// the process's, which a test running beside others shares.
 	database, standard, err := places.DatabasePath(cmp.Or(options.Database, options.Getenv("DOCKHAND_DB")))
@@ -291,9 +346,10 @@ func Settings(ctx context.Context, options Options, dependencies Dependencies) (
 	readings, _ := options.cacheDirectory("DOCKHAND_READING_CACHE", "readings")
 	indexes, _ := options.cacheDirectory("DOCKHAND_INDEX_CACHE", "indexes")
 	return engine.Options{
-		Tree: tree,
-		Git:  git,
-		Env:  env,
+		Tree:  tree,
+		Git:   git,
+		Env:   env,
+		Named: engineNamed(named),
 		// port-tclsh on the command line's PATH, else under MacPorts'
 		// default prefix, and the other programs the engine runs.
 		Tclsh:     macports.FindTclsh(look),
@@ -334,10 +390,10 @@ func Settings(ctx context.Context, options Options, dependencies Dependencies) (
 // the command to ask the person, and open again with MigrateUnderLive.
 func Open(ctx context.Context, options Options, dependencies Dependencies) (Assembly, error) {
 	engineOptions, file, configPath, err := Settings(ctx, options, dependencies)
-	look := dependencies.Lookup(options)
 	if err != nil {
 		return Assembly{}, err
 	}
+	look := dependencies.LookupNamed(options, engineOptions)
 	e, err := engine.Open(ctx, engineOptions)
 	if errors.Is(err, engine.ErrNotPortsTree) && options.NamesBranch && options.Tree == "" && options.Getenv("MACPORTS_TREE") == "" {
 		if engineOptions.Tree, err = registeredCheckout(ctx, engineOptions, options.Places(), err); err == nil {
@@ -378,7 +434,11 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 		security, _ := look("security")
 		store = keychain.Store{Executable: security}
 	}
-	e.GitHub = &github.Runtime{Client: client(options.Signin(store))}
+	signin := options.Signin(store)
+	if gh, ok := namedPath(engineOptions, "gh"); ok {
+		signin.CLI = gh
+	}
+	e.GitHub = &github.Runtime{Client: client(signin)}
 	// Reads GitHub answered before are asked again with their ETags, which
 	// cost nothing where nothing moved, in this process and the next
 	// (Then's item 5); where no cache directory can be had, in this one.
@@ -404,7 +464,8 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	if macports.FindProgram(look, "tart") != "" {
 		provider := options.TartProvider(look)
 		provider.Repo, provider.Index = e.Repo, e.PortIndex
-		provider.TestTimeout, provider.BuildTimeout = file.Providers.Tart.Timeout(), file.Providers.Tart.BuildBound()
+		provider.TestTimeout, provider.BuildTimeout, provider.StallTimeout = file.Providers.Tart.Timeout(), file.Providers.Tart.BuildBound(), file.Providers.Tart.StallBound()
+		provider.KeepFailed = file.Providers.Tart.KeepsFailed()
 		e.Providers[buildenv.Tart] = provider
 	}
 	// The local provider builds in a MacPorts prefix wherever there's a

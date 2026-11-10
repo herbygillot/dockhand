@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/model"
@@ -14,7 +15,7 @@ import (
 // Times are stored in milliseconds, so a record read back carries its times
 // truncated to the millisecond.
 
-const branchColumns = "id, name, base, worktree, managed, title, state, pr_repository, pr_number, pr_head, pr_pushed, pr_body, pr_draft, pr_observed, pr_adopted, created_at, origin, note, ended_at, ports, clean_kept, forgotten_at, closes, pr_author"
+const branchColumns = "id, name, base, worktree, managed, title, state, pr_repository, pr_number, pr_head, pr_pushed, pr_body, pr_draft, pr_observed, pr_adopted, created_at, origin, note, ended_at, ports, clean_kept, forgotten_at, closes, pr_author, tested"
 
 func (t *tx) scanBranch(row interface{ Scan(...any) error }) (model.Branch, error) {
 	var b model.Branch
@@ -25,10 +26,11 @@ func (t *tx) scanBranch(row interface{ Scan(...any) error }) (model.Branch, erro
 	var prDraft, prAdopted int
 	var created int64
 	var ended, forgotten sql.NullInt64
-	var ports, closes string
-	if err := row.Scan(&b.ID, &b.Name, &b.Base, &b.Worktree, &managed, &b.Title, &b.State, &prRepository, &prNumber, &prHead, &prPushed, &prBody, &prDraft, &prObserved, &prAdopted, &created, &b.Origin, &b.Note, &ended, &ports, &b.CleanKept, &forgotten, &closes, &prAuthor); err != nil {
+	var ports, closes, tested string
+	if err := row.Scan(&b.ID, &b.Name, &b.Base, &b.Worktree, &managed, &b.Title, &b.State, &prRepository, &prNumber, &prHead, &prPushed, &prBody, &prDraft, &prObserved, &prAdopted, &created, &b.Origin, &b.Note, &ended, &ports, &b.CleanKept, &forgotten, &closes, &prAuthor, &tested); err != nil {
 		return model.Branch{}, storageError(err)
 	}
+	b.TestedBinaries, b.TestedVariants = testedStatements(tested)
 	if closes != "" {
 		b.Closes = strings.Fields(closes)
 	}
@@ -127,8 +129,8 @@ func (t *tx) AddBranch(b model.Branch) error {
 		}
 		ended = millis(b.EndedAt)
 	}
-	_, err := t.exec("INSERT INTO branches(repository_id, "+branchColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		t.repo, b.ID, b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, adopted, millis(b.CreatedAt), b.Origin, b.Note, ended, strings.Join(b.Ports, " "), b.CleanKept, nil, strings.Join(b.Closes, " "), author)
+	_, err := t.exec("INSERT INTO branches(repository_id, "+branchColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		t.repo, b.ID, b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, adopted, millis(b.CreatedAt), b.Origin, b.Note, ended, strings.Join(b.Ports, " "), b.CleanKept, nil, strings.Join(b.Closes, " "), author, testedWords(b))
 	return err
 }
 
@@ -174,8 +176,8 @@ func (t *tx) UpdateBranch(b model.Branch) error {
 		return err
 	}
 	repository, number, head, pushed, body, draft, observed, adopted, author := pullRequestColumns(b.PullRequest)
-	return t.update("branch "+string(b.ID), "UPDATE branches SET name=?, base=?, worktree=?, managed=?, title=?, state=?, pr_repository=?, pr_number=?, pr_head=?, pr_pushed=?, pr_body=?, pr_draft=?, pr_observed=?, pr_adopted=?, note=?, ended_at=?, ports=?, clean_kept=?, closes=?, pr_author=? WHERE repository_id=? AND id=? AND forgotten_at IS NULL",
-		b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, adopted, b.Note, ended, strings.Join(b.Ports, " "), b.CleanKept, strings.Join(b.Closes, " "), author, t.repo, b.ID)
+	return t.update("branch "+string(b.ID), "UPDATE branches SET name=?, base=?, worktree=?, managed=?, title=?, state=?, pr_repository=?, pr_number=?, pr_head=?, pr_pushed=?, pr_body=?, pr_draft=?, pr_observed=?, pr_adopted=?, note=?, ended_at=?, ports=?, clean_kept=?, closes=?, pr_author=?, tested=? WHERE repository_id=? AND id=? AND forgotten_at IS NULL",
+		b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, adopted, b.Note, ended, strings.Join(b.Ports, " "), b.CleanKept, strings.Join(b.Closes, " "), author, testedWords(b), t.repo, b.ID)
 }
 
 const revisionColumns = "id, branch_id, kind, snapshot, commit_id, tree_id, base_id, head_id, created_at"
@@ -277,17 +279,35 @@ func (t *tx) AddPlan(p model.Plan) error {
 	return err
 }
 
-const runColumns = "id, number, branch_id, revision_id, plan_id, origin, state, detail, created_at, finished_at, cancel_requested_at, baseline_of, started_at"
+const runColumns = "id, number, branch_id, revision_id, plan_id, origin, state, detail, created_at, finished_at, cancel_requested_at, baseline_of, started_at, entered"
 
 func scanRun(row interface{ Scan(...any) error }) (model.Run, error) {
 	var r model.Run
 	var created int64
 	var finished, cancel, started sql.NullInt64
-	if err := row.Scan(&r.ID, &r.Number, &r.Branch, &r.Revision, &r.Plan, &r.Origin, &r.State, &r.Detail, &created, &finished, &cancel, &r.BaselineOf, &started); err != nil {
+	var entered sql.NullString
+	if err := row.Scan(&r.ID, &r.Number, &r.Branch, &r.Revision, &r.Plan, &r.Origin, &r.State, &r.Detail, &created, &finished, &cancel, &r.BaselineOf, &started, &entered); err != nil {
 		return model.Run{}, storageError(err)
 	}
 	r.CreatedAt, r.FinishedAt, r.CancelRequested, r.StartedAt = fromMillis(created), fromNullable(finished), fromNullable(cancel), fromNullable(started)
+	if entered.Valid {
+		if err := json.Unmarshal([]byte(entered.String), &r.Entered); err != nil {
+			return model.Run{}, fmt.Errorf("%w: run %s's shells entered: %w", store.ErrUnavailable, r.ID, err)
+		}
+	}
 	return r, nil
+}
+
+func (t *tx) EnterRun(id model.RunID, entry model.Entry) error {
+	run, err := t.Run(id)
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(append(run.Entered, entry))
+	if err != nil {
+		return err
+	}
+	return t.update("run "+string(id), "UPDATE runs SET entered=? WHERE repository_id=? AND id=?", string(data), t.repo, id)
 }
 
 func (t *tx) Run(id model.RunID) (model.Run, error) {
@@ -386,7 +406,7 @@ func (t *tx) AddRun(r model.Run) error {
 	case !plan.Runnable():
 		return fmt.Errorf("%w: run %s's plan has unresolved targets or none at all", model.ErrInvalid, r.ID)
 	}
-	_, err = t.exec("INSERT INTO runs(repository_id, "+runColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+	_, err = t.exec("INSERT INTO runs(repository_id, "+runColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)",
 		t.repo, r.ID, r.Number, r.Branch, r.Revision, r.Plan, r.Origin, r.State, r.Detail, millis(r.CreatedAt), nullableMillis(r.FinishedAt), nullableMillis(r.CancelRequested), r.BaselineOf, nullableMillis(r.StartedAt))
 	return err
 }
@@ -552,7 +572,7 @@ func (t *tx) UpdateExecution(e model.GuestExecution) error {
 		e.State, e.Detail, e.ProviderRef, observed, observed, nullableMillis(e.FinishedAt), t.repo, e.ID)
 }
 
-const resultColumns = "r.execution_id, r.target_id, r.outcome, r.phase, r.tests, r.log, r.steps, r.detail, r.builders, r.inputs, r.archive, r.reused_from, r.dependency, r.dependency_version, r.links, r.installed, r.libraries, r.configure, r.lint, r.nitpicked, r.carried, r.recorded_at"
+const resultColumns = "r.execution_id, r.target_id, r.outcome, r.phase, r.tests, r.log, r.steps, r.detail, r.builders, r.inputs, r.archive, r.reused_from, r.dependency, r.dependency_version, r.links, r.installed, r.libraries, r.configure, r.lint, r.nitpicked, r.carried, r.declared, r.recorded_at"
 
 func (t *tx) Check(id model.RunID) (store.Check, error) {
 	check := store.Check{Results: map[model.ExecutionID][]model.TargetResult{}, Origins: map[model.ExecutionID]store.Origin{}, Inputs: map[string]model.TargetInputs{}}
@@ -636,9 +656,15 @@ func (t *tx) Reusable(target model.TargetID, environment model.Environment, limi
 func resultFields(r *model.TargetResult) ([]any, func() error) {
 	var recorded int64
 	var steps, builders string
-	var links, installed, libraries, configure, lint, carried sql.NullString
-	fields := []any{&r.Execution, &r.Target, &r.Outcome, &r.Phase, &r.Tests, &r.Log, &steps, &r.Detail, &builders, &r.Inputs, &r.Archive, &r.ReusedFrom, &r.Dependency.Name, &r.Dependency.Version, &links, &installed, &libraries, &configure, &lint, &r.Nitpicked, &carried, &recorded}
+	var links, installed, libraries, configure, lint, carried, declared sql.NullString
+	fields := []any{&r.Execution, &r.Target, &r.Outcome, &r.Phase, &r.Tests, &r.Log, &steps, &r.Detail, &builders, &r.Inputs, &r.Archive, &r.ReusedFrom, &r.Dependency.Name, &r.Dependency.Version, &links, &installed, &libraries, &configure, &lint, &r.Nitpicked, &carried, &declared, &recorded}
 	return fields, func() error {
+		if declared.Valid {
+			r.Declared = &model.Declared{}
+			if err := json.Unmarshal([]byte(declared.String), r.Declared); err != nil {
+				return fmt.Errorf("%w: %s's declared libraries in execution %s: %w", store.ErrUnavailable, r.Target, r.Execution, err)
+			}
+		}
 		if carried.Valid {
 			r.Carried = &model.Carried{}
 			if err := json.Unmarshal([]byte(carried.String), r.Carried); err != nil {
@@ -792,12 +818,16 @@ func (t *tx) RecordResult(r model.TargetResult) error {
 	if err != nil {
 		return err
 	}
+	declared, err := nullableJSON(r.Declared != nil, r.Declared)
+	if err != nil {
+		return err
+	}
 	var existing model.TargetResult
 	err = t.conn.QueryRowContext(t.ctx, "SELECT outcome FROM results WHERE repository_id=? AND execution_id=? AND target_id=?", t.repo, r.Execution, r.Target).Scan(&existing.Outcome)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		_, err = t.exec("INSERT INTO results(repository_id, execution_id, target_id, outcome, phase, tests, log, steps, detail, builders, inputs, archive, reused_from, dependency, dependency_version, links, installed, libraries, configure, lint, nitpicked, carried, recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-			t.repo, r.Execution, r.Target, r.Outcome, r.Phase, r.Tests, r.Log, steps, r.Detail, builders, r.Inputs, r.Archive, r.ReusedFrom, r.Dependency.Name, r.Dependency.Version, links, installed, libraries, configure, lint, r.Nitpicked, carried, millis(r.RecordedAt))
+		_, err = t.exec("INSERT INTO results(repository_id, execution_id, target_id, outcome, phase, tests, log, steps, detail, builders, inputs, archive, reused_from, dependency, dependency_version, links, installed, libraries, configure, lint, nitpicked, carried, declared, recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+			t.repo, r.Execution, r.Target, r.Outcome, r.Phase, r.Tests, r.Log, steps, r.Detail, builders, r.Inputs, r.Archive, r.ReusedFrom, r.Dependency.Name, r.Dependency.Version, links, installed, libraries, configure, lint, r.Nitpicked, carried, declared, millis(r.RecordedAt))
 		return err
 	case err != nil:
 		return storageError(err)
@@ -806,8 +836,8 @@ func (t *tx) RecordResult(r model.TargetResult) error {
 	if !existing.ReplacedBy(r) {
 		return fmt.Errorf("%w: %s's result in execution %s is %s and cannot become %s", store.ErrConflict, r.Target, r.Execution, existing.Outcome, r.Outcome)
 	}
-	_, err = t.exec("UPDATE results SET outcome=?, phase=?, tests=?, log=?, steps=?, detail=?, builders=?, inputs=?, archive=?, reused_from=?, dependency=?, dependency_version=?, links=?, installed=?, libraries=?, configure=?, lint=?, nitpicked=?, carried=?, recorded_at=? WHERE repository_id=? AND execution_id=? AND target_id=?",
-		r.Outcome, r.Phase, r.Tests, r.Log, steps, r.Detail, builders, r.Inputs, r.Archive, r.ReusedFrom, r.Dependency.Name, r.Dependency.Version, links, installed, libraries, configure, lint, r.Nitpicked, carried, millis(r.RecordedAt), t.repo, r.Execution, r.Target)
+	_, err = t.exec("UPDATE results SET outcome=?, phase=?, tests=?, log=?, steps=?, detail=?, builders=?, inputs=?, archive=?, reused_from=?, dependency=?, dependency_version=?, links=?, installed=?, libraries=?, configure=?, lint=?, nitpicked=?, carried=?, declared=?, recorded_at=? WHERE repository_id=? AND execution_id=? AND target_id=?",
+		r.Outcome, r.Phase, r.Tests, r.Log, steps, r.Detail, builders, r.Inputs, r.Archive, r.ReusedFrom, r.Dependency.Name, r.Dependency.Version, links, installed, libraries, configure, lint, r.Nitpicked, carried, declared, millis(r.RecordedAt), t.repo, r.Execution, r.Target)
 	return err
 }
 
@@ -951,4 +981,41 @@ func boolInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// tested are a branch's tested statements as its row keeps them, each
+// with the trees it's about (#153).
+type tested struct {
+	Binaries *model.TestedStatement `json:"binaries,omitempty"`
+	Variants *model.TestedStatement `json:"variants,omitempty"`
+}
+
+// testedWords are a branch's tested statements as its row keeps them: none
+// as empty, else JSON.
+func testedWords(b model.Branch) string {
+	if b.TestedBinaries == nil && b.TestedVariants == nil {
+		return ""
+	}
+	data, _ := json.Marshal(tested{Binaries: b.TestedBinaries, Variants: b.TestedVariants})
+	return string(data)
+}
+
+// testedStatements read a row's tested statements: JSON, or the words
+// "binaries variants" a row kept before #153, which are statements with
+// no trees, standing for nothing.
+func testedStatements(words string) (binaries, variants *model.TestedStatement) {
+	if strings.HasPrefix(words, "{") {
+		var kept tested
+		if json.Unmarshal([]byte(words), &kept) == nil {
+			return kept.Binaries, kept.Variants
+		}
+		return nil, nil
+	}
+	if slices.Contains(strings.Fields(words), "binaries") {
+		binaries = &model.TestedStatement{}
+	}
+	if slices.Contains(strings.Fields(words), "variants") {
+		variants = &model.TestedStatement{}
+	}
+	return binaries, variants
 }

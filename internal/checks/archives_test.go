@@ -30,7 +30,7 @@ func TestAnArchiveIsKeptOnlyWholeAndOnce(t *testing.T) {
 		}
 	}
 
-	require.ErrorContains(t, a.Keep(t.Context(), archive, fetch([]byte("damaged")), nil), "arrived as sha256:")
+	require.ErrorContains(t, a.Keep(t.Context(), archive, fetch([]byte("damaged")), nil), "has digest sha256:")
 	_, kept, err := a.Kept(t.Context(), archive.Digest)
 	require.NoError(t, err)
 	require.False(t, kept, "a damaged archive isn't kept")

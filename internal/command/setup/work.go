@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -34,21 +35,21 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 		// v0.3.0's spellings point here, not run as aliases (the UX
 		// thread's answer on the hidden aliases, 2026-10-15).
 		SuggestFor: []string{"init", "auth", "providers"},
-		Short:      "Set up dockhand for this ports checkout, and report its health; safe to rerun",
+		Short:      "Set up this ports checkout and check its configuration",
 		Long: `Registers this ports checkout, finds its remote for macports/macports-ports,
 and chooses where branch worktrees go: ~/Source/macports-branches unless
 --worktrees or the configuration file says otherwise. Then it reports what
 dockhand runs with: Git, MacPorts, the places a check can build, the GitHub
 login, and its records.
 
-On a terminal it offers what's missing, each in turn and each declined by
-answering no: the GitHub login, and the maintainers line the ports naming
-your GitHub login write, which it writes to the configuration file. The
-Tart image is offered last, since making one takes a large download;
-setup tart makes it any time. Rerun, it's the health check.
+On a terminal it offers missing setup steps, which you can decline:
+GitHub login, a maintainer identity based on ports naming your GitHub
+login, and a Tart image. The maintainer identity is saved in the
+configuration file. The Tart image is offered last because it requires a
+large download; setup tart can create it later. Run setup again to check
+your configuration.
 
-It first checks the Git dockhand runs, git on PATH or $GIT_BIN, and refuses
-one older than 2.40, which rebase needs.`,
+Requires Git 2.40 or newer for rebase, using the configured Git executable.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runSetup(cmd, s, streams, worktrees, yes)
@@ -93,7 +94,7 @@ func runSetup(cmd *cobra.Command, s *settings.Settings, streams term.Streams, wo
 			return err
 		}
 		if strings.HasPrefix(strings.ToLower(answer), "n") {
-			where, err := streams.Ask("Where, then? ")
+			where, err := streams.Ask("Worktree directory: ")
 			if err != nil {
 				return err
 			}
@@ -117,11 +118,23 @@ func runSetup(cmd *cobra.Command, s *settings.Settings, streams term.Streams, wo
 	field := func(label, text string) {
 		fmt.Fprintln(out, streams.Hanging(fmt.Sprintf("  %-12s ", label), text))
 	}
-	field("Git", fmt.Sprintf("✓ %s at %s", report.Git.Version, s.Places().Tilde(report.Git.Path)))
+	// What named a program, where something did (the roadmap's
+	// "--tool"): ", from --tool git".
+	from := func(source string) string {
+		if source == "" || source == "PATH" {
+			return ""
+		}
+		return ", from " + source
+	}
+	field("Git", fmt.Sprintf("✓ %s at %s%s", report.Git.Version, s.Places().Tilde(report.Git.Path), from(report.Git.Source)))
 	field("Branches", "worktrees in "+s.Places().Tilde(report.Worktrees))
-	if report.MacPorts != "" {
+	switch {
+	case report.MacPorts != "" && report.MacPortsSource != "":
+		// Named, port-tclsh's own path says which.
+		field("Authoring", "✓ MacPorts at "+s.Places().Tilde(filepath.Join(report.MacPorts, "bin", "port-tclsh"))+from(report.MacPortsSource))
+	case report.MacPorts != "":
 		field("Authoring", "✓ MacPorts at "+s.Places().Tilde(report.MacPorts))
-	} else {
+	default:
 		field("Authoring", "! port-tclsh is not on PATH or in /opt/local/bin; install MacPorts to update ports")
 	}
 	for i, tool := range report.Vendoring {
@@ -130,10 +143,17 @@ func runSetup(cmd *cobra.Command, s *settings.Settings, streams term.Streams, wo
 			label = "Vendoring"
 		}
 		if tool.Path != "" {
-			field(label, fmt.Sprintf("✓ %s at %s, for %s", tool.Name, s.Places().Tilde(tool.Path), tool.For))
+			field(label, fmt.Sprintf("✓ %s at %s%s, for %s", tool.Name, s.Places().Tilde(tool.Path), from(tool.Source), tool.For))
 		} else {
 			field(label, fmt.Sprintf("! %s is not on PATH; %s need it, as create and update write them: sudo port install %s", tool.Name, tool.For, tool.Name))
 		}
+	}
+	if len(report.Programs) > 0 {
+		var named []string
+		for _, program := range report.Programs {
+			named = append(named, fmt.Sprintf("%s at %s%s", program.Name, s.Places().Tilde(program.Path), from(program.Source)))
+		}
+		field("Programs", strings.Join(named, "; "))
 	}
 	for i, line := range providerLines(cmd.Context(), s, file) {
 		report.Providers = append(report.Providers, line)
@@ -188,11 +208,11 @@ port, with a short ID, as an edit's is. With --here, the branch is created
 in this checkout instead, which must have no uncommitted changes to
 tracked files.
 
---from takes a merged branch's commits past what its pull request merged,
-the follow-up status names, and picks them onto the new branch, from
-master fetched just now, as git rebase would replay them; a commit master
-has the change of is dropped, and a conflict starts nothing. With no name,
-it's the merged branch's with a short ID.`,
+--from replays a merged branch's follow-up commits onto freshly fetched
+master: the commits not included in its merged pull request, as shown by
+status. Commits whose changes are already on master are dropped. A
+conflict starts no branch. With no name, uses the merged branch's name
+with a short ID.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()

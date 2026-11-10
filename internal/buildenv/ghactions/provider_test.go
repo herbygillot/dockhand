@@ -119,6 +119,59 @@ func TestTheRunnersReleasesAreReported(t *testing.T) {
 	require.Empty(t, build.observed)
 }
 
+// headerAPI is a run whose runners wrote MacPorts Base's -d header, as
+// macports/macports-ports run 42565046877's did, macos-26's without its
+// MacPorts line, and one that failed installing dependencies wrote none.
+type headerAPI struct{ matrixAPI }
+
+func (headerAPI) Jobs(context.Context, string, int64, int) ([]RunnerJob, error) {
+	return []RunnerJob{
+		{ID: 1, Name: "macos-15", Conclusion: "success", RunnerName: "runner-1", Labels: []string{"macos-15"}},
+		{ID: 2, Name: "macos-26", Conclusion: "success", RunnerName: "runner-2", Labels: []string{"macos-26"}},
+		{ID: 3, Name: "macos-latest", Conclusion: "failure", RunnerName: "runner-3", Labels: []string{"macos-latest"}},
+	}, nil
+}
+
+func (headerAPI) JobLog(_ context.Context, _ string, job int64) ([]byte, error) {
+	const at = "2026-11-08T21:14:03.1234567Z "
+	listing := at + "::group::Listing subports\n" + at + "jq\n" + at + "::endgroup::\n" + at + "::group::Installing jq\n"
+	switch job {
+	case 1:
+		return []byte(listing + at + "DEBUG: macOS 15.8.2 (darwin/24.6.0) arch arm\n" + at + "DEBUG: MacPorts 2.12.7\n" + at + "DEBUG: Xcode 16.4, CLT 16.4.0.0.1.1747106510\n" + at + "DEBUG: SDK 15\n" + at + "::endgroup::\n"), nil
+	case 2:
+		return []byte(listing + at + "DEBUG: macOS 26.7.2 (darwin/25.6.0) arch arm\n" + at + "DEBUG: Xcode 26.4.1, CLT 26.6.0.0.1781586589\n" + at + "DEBUG: SDK 26\n" + at + "::endgroup::\n"), nil
+	}
+	return []byte(at + "::group::Listing subports\n" + at + "jq\n" + at + "::endgroup::\n" + at + "::error::Failed to install dependencies of jq\n"), nil
+}
+
+// Each runner's macOS version, architecture, Xcode, Command Line Tools,
+// and MacPorts are recorded from Base's header in its timestamped log,
+// and one that wrote none gives its release alone (#100).
+func TestTheRunnersToolsAreReadFromBasesHeader(t *testing.T) {
+	t.Parallel()
+	build := &observingRecord{}
+	job := buildenv.Job{Directory: t.TempDir(), Targets: []buildenv.Target{{PlanTarget: model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}}}}}
+	run := Run{ID: 1, Attempt: 1, Status: "completed", Conclusion: "failure", URL: "https://example.invalid/run/1"}
+	_ = (&Provider{API: headerAPI{}}).read(t.Context(), job, build, "example/macports-ports", run, "")
+	require.Equal(t, []model.Observed{{Builders: []model.BuilderObserved{
+		{Builder: "macos-15", MacOS: "15", Version: "15.8.2", Architecture: "arm64", Xcode: "16.4", Tools: "16.4.0.0.1.1747106510", MacPorts: "2.12.7"},
+		{Builder: "macos-26", MacOS: "26", Version: "26.7.2", Architecture: "arm64", Xcode: "26.4.1", Tools: "26.6.0.0.1781586589"},
+		{Builder: "macos-latest"},
+	}}}, build.observed)
+}
+
+// observingRecord is a recording build that keeps what it was told the
+// environment is.
+type observingRecord struct {
+	recordingBuild
+	observed []model.Observed
+}
+
+func (b *observingRecord) Observe(observed model.Observed) error {
+	b.observed = append(b.observed, observed)
+	return nil
+}
+
 // observing is a build that keeps what it was told the environment is.
 type observing struct {
 	buildenv.Build

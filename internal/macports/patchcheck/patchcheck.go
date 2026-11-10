@@ -209,6 +209,9 @@ func Summary(results []Result) string {
 		}
 	}
 	if len(parts) == 0 {
+		if len(results) == 1 {
+			return "1 patch applies"
+		}
 		return fmt.Sprintf("%d patches apply", len(results))
 	}
 	return strings.Join(parts, "; ")
@@ -220,6 +223,10 @@ var (
 	stripArg   = regexp.MustCompile(`^-p([0-9]+)$`)
 	allowedArg = map[string]bool{"-t": true, "-N": true, "-l": true, "-E": true, "-f": true, "-u": true, "-c": true, "--binary": true}
 	problems   = regexp.MustCompile(`(?i)hunks? (?:failed|ignored)|No file to patch|can't find file|malformed patch|Reversed|Only garbage|Skipping patch`)
+	// failedHunk is a hunk's own failure, "Hunk #1 FAILED at 29." in GNU
+	// patch's words and "Hunk #1 failed at 29." in Apple's (with
+	// --verbose), which says where.
+	failedHunk = regexp.MustCompile(`(?i)^Hunk #[0-9]+ failed at [0-9]+`)
 )
 
 // Check runs every patch in check mode against the files it names.
@@ -434,7 +441,7 @@ func decompress(patch Patch) ([]byte, error) {
 		return nil, err
 	}
 	if len(data) > maxPatchedFile {
-		return nil, fmt.Errorf("decompresses to more than the %d MiB dockhand checks of a patch", maxPatchedFile>>20)
+		return nil, fmt.Errorf("the decompressed patch exceeds the %d MiB read limit", maxPatchedFile>>20)
 	}
 	return data, nil
 }
@@ -706,7 +713,12 @@ func describe(output []byte) string {
 	var lines []string
 	for _, line := range strings.Split(string(output), "\n") {
 		line = strings.TrimSpace(line)
-		if problems.MatchString(line) && !slices.Contains(lines, line) {
+		if failedHunk.MatchString(line) {
+			line = strings.TrimSuffix(line, ".")
+		} else if !problems.MatchString(line) {
+			continue
+		}
+		if !slices.Contains(lines, line) {
 			lines = append(lines, line)
 		}
 	}

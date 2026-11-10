@@ -48,6 +48,16 @@ func TestTestedOnSaysWhatTheEnvironmentWas(t *testing.T) {
 			model.Observed{Builders: []model.BuilderObserved{{Builder: "macos-14", MacOS: "14"}, {Builder: "macos-15", MacOS: "15"}, {Builder: "macos-15-intel", MacOS: "15"}, {Builder: "macos-latest"}}},
 			[]Run{{ID: "github_q2w8e4r6t1y3u5i7", Ref: "https://github.com/ada/macports-ports/actions/runs/123", Check: "check-11"}}),
 			"macOS 14, 15\nDeveloper tools not recorded · github: MacPorts' CI workflow in the author's fork (Run ID: https://github.com/ada/macports-ports/actions/runs/123 - checked in check-11)\n\n"},
+		{"a workflow run, its runners' tools reported", with(workflow,
+			model.Observed{Builders: []model.BuilderObserved{
+				{Builder: "macos-15", MacOS: "15", Version: "15.8.2", Architecture: "arm64", Xcode: "16.4", Tools: "16.4.0.0.1.1747106510", MacPorts: "2.12.7"},
+				{Builder: "macos-26", MacOS: "26"},
+				{Builder: "macos-26-intel", Version: "26.7.2", Architecture: "x86_64", Tools: "26.6.0.0.1781586589"},
+				{Builder: "macos-latest"},
+			}},
+			[]Run{{ID: "github_q2w8e4r6t1y3u5i7", Ref: "https://github.com/ada/macports-ports/actions/runs/123", Check: "check-11"}}),
+			"macOS 15.8.2 arm64 · Xcode 16.4 · MacPorts 2.12.7 (macos-15)\nmacOS 26 · Developer tools not recorded (macos-26)\nmacOS 26.7.2 x86_64 · Command Line Tools 26.6.0.0.1781586589 (macos-26-intel)\nDeveloper tools not recorded (macos-latest)\n" +
+				"github: MacPorts' CI workflow in the author's fork (Run ID: https://github.com/ada/macports-ports/actions/runs/123 - checked in check-11)\n\n"},
 		{"a workflow run whose runners named no release", with(workflow, model.Observed{Builders: []model.BuilderObserved{{Builder: "macos-latest"}}}, nil),
 			"Developer tools not recorded · github: MacPorts' CI workflow in the author's fork\n\n"},
 		{"a run reused in another check", with(tahoe(model.DeveloperToolsXcode), model.Observed{}, []Run{{ID: "tart_a", Check: "check-3", ReusedIn: "check-4"}}),

@@ -314,6 +314,12 @@ func acceptedFor(facts bodyFacts, port string) AcceptedFailure {
 // failed, "(Dockhand built curl with +gnutls +sectrust, which passed, and
 // with +ssl +sectrust, which failed in check-775)".
 func VariantsNote(builds []VariantBuild, each bool) string {
+	return "(" + VariantsWords(builds, each) + ")"
+}
+
+// VariantsWords are VariantsNote's words without its parentheses, which
+// submit's preview says beneath its Checks row.
+func VariantsWords(builds []VariantBuild, each bool) string {
 	var ports []string
 	byPort := map[string][]VariantBuild{}
 	for _, build := range builds {
@@ -361,9 +367,9 @@ func VariantsNote(builds []VariantBuild, each bool) string {
 			parts = append(parts, port+" "+strings.Join(withs, " and ")+" added to the default variants")
 		}
 	}
-	note := "(Dockhand built " + strings.Join(parts, "; ")
+	words := "Dockhand built " + strings.Join(parts, "; ")
 	if !failed && !each {
-		note += ", in " + prose.And(checks)
+		words += ", in " + prose.And(checks)
 	}
-	return note + ")"
+	return words
 }

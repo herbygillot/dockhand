@@ -19,5 +19,5 @@ func TestTheShippedPlanKeepsTheFetchPolicy(t *testing.T) {
 	}}}
 	_, err := shippedPlan(t.Context(), input)
 	require.ErrorIs(t, err, ErrUnsupported)
-	require.ErrorContains(t, err, "requires a dedicated preparer")
+	require.ErrorContains(t, err, "cannot be prepared automatically here")
 }

@@ -20,11 +20,11 @@ func TestPlatformVariablesFollowMacPortsBase(t *testing.T) {
 		platform model.Platform
 		want     string
 	}{
-		{model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}, "os_platform darwin os_subplatform macosx os_major 24 os_version 24.0.0 os_arch arm build_arch arm64 macos_version 15 macos_version_major 15 macosx_version 15 macosx_deployment_target 15.0 universal_archs {arm64 x86_64} cxx_stdlib libc++"},
-		{model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"}, "os_platform darwin os_subplatform macosx os_major 25 os_version 25.0.0 os_arch i386 build_arch x86_64 macos_version 26 macos_version_major 26 macosx_version 26 macosx_deployment_target 26.0 universal_archs {arm64 x86_64} cxx_stdlib libc++"},
-		{model.Platform{OS: "darwin", Version: "19", Architecture: "x86_64"}, "os_platform darwin os_subplatform macosx os_major 19 os_version 19.0.0 os_arch i386 build_arch x86_64 macos_version 10.15 macos_version_major 10.15 macosx_version 10.15 macosx_deployment_target 10.15 universal_archs x86_64 cxx_stdlib libc++"},
-		{model.Platform{OS: "darwin", Version: "12", Architecture: "i386"}, "os_platform darwin os_subplatform macosx os_major 12 os_version 12.0.0 os_arch i386 build_arch i386 macos_version 10.8 macos_version_major 10.8 macosx_version 10.8 macosx_deployment_target 10.8 universal_archs {x86_64 i386} cxx_stdlib libc++"},
-		{model.Platform{OS: "darwin", Version: "9", Architecture: "ppc"}, "os_platform darwin os_subplatform macosx os_major 9 os_version 9.0.0 os_arch powerpc build_arch ppc macos_version 10.5 macos_version_major 10.5 macosx_version 10.5 macosx_deployment_target 10.5 universal_archs {i386 ppc} cxx_stdlib libstdc++"},
+		{model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}, "os_platform darwin os_subplatform macosx os_major 24 os_minor 0 os_version 24.0.0 os_arch arm build_arch arm64 macos_version 15 macos_version_major 15 macosx_version 15 macosx_deployment_target 15.0 universal_archs {arm64 x86_64} cxx_stdlib libc++"},
+		{model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"}, "os_platform darwin os_subplatform macosx os_major 25 os_minor 0 os_version 25.0.0 os_arch i386 build_arch x86_64 macos_version 26 macos_version_major 26 macosx_version 26 macosx_deployment_target 26.0 universal_archs {arm64 x86_64} cxx_stdlib libc++"},
+		{model.Platform{OS: "darwin", Version: "19", Architecture: "x86_64"}, "os_platform darwin os_subplatform macosx os_major 19 os_minor 0 os_version 19.0.0 os_arch i386 build_arch x86_64 macos_version 10.15 macos_version_major 10.15 macosx_version 10.15 macosx_deployment_target 10.15 universal_archs x86_64 cxx_stdlib libc++"},
+		{model.Platform{OS: "darwin", Version: "12", Architecture: "i386"}, "os_platform darwin os_subplatform macosx os_major 12 os_minor 0 os_version 12.0.0 os_arch i386 build_arch i386 macos_version 10.8 macos_version_major 10.8 macosx_version 10.8 macosx_deployment_target 10.8 universal_archs {x86_64 i386} cxx_stdlib libc++"},
+		{model.Platform{OS: "darwin", Version: "9", Architecture: "ppc"}, "os_platform darwin os_subplatform macosx os_major 9 os_minor 0 os_version 9.0.0 os_arch powerpc build_arch ppc macos_version 10.5 macos_version_major 10.5 macosx_version 10.5 macosx_deployment_target 10.5 universal_archs {i386 ppc} cxx_stdlib libstdc++"},
 	} {
 		got, err := macports.PlatformVariables(test.platform)
 		require.NoError(t, err)
@@ -37,9 +37,9 @@ func TestPlatformVariablesFollowMacPortsBase(t *testing.T) {
 }
 
 // A modelled context that states the Command Line Tools takes them from
-// the facts table: an image's row where there is one, else a buildbot's
-// made tools-only, with what it doesn't tell from an image with the same
-// tools package, and the host where no source tells.
+// the facts table: an image's, a runner's, or an installer reading's row
+// where there is one, else a buildbot's made tools-only, and the host where
+// no source tells.
 func TestToolchainComesFromTheFactsTable(t *testing.T) {
 	t.Parallel()
 	image, ok := macos.Table().Lookup(25, "arm64", macos.ProfileTools)
@@ -54,17 +54,31 @@ func TestToolchainComesFromTheFactsTable(t *testing.T) {
 	require.Equal(t, image.SDKs, got.SDKs)
 	require.False(t, got.XCSelect)
 
-	builder, ok := macos.Table().Lookup(25, "x86_64", macos.ProfileXcode)
-	require.True(t, ok)
-	require.Equal(t, image.Tools, builder.Tools, "the harvest found the same tools package on both")
+	// Intel Tahoe's tools are a runner's row, probed with the tools
+	// selected, which agrees with the arm64 image's of the same package.
 	got, err = macports.Toolchain(model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"}, model.DeveloperToolsCommandLine)
 	require.NoError(t, err)
-	require.True(t, got.Derived)
-	require.Equal(t, "none", got.Xcode, "a buildbot's Xcode row is modelled without Xcode")
+	require.False(t, got.Derived)
+	require.Equal(t, macos.SourceRunner, got.Source.Kind)
+	require.Equal(t, "none", got.Xcode)
+	require.Equal(t, image.Tools, got.Tools)
+	require.Equal(t, macports.CommandLineTools, got.DeveloperDir)
+	require.Equal(t, image.Clang, got.Clang)
+	require.Equal(t, image.SDKs, got.SDKs)
+
+	// High Sierra's tools are its builder's, with the SDK and clang their
+	// installer gives them.
+	builder, ok := macos.Table().Lookup(17, "x86_64", macos.ProfileXcode)
+	require.True(t, ok)
+	got, err = macports.Toolchain(model.Platform{OS: "darwin", Version: "17", Architecture: "x86_64"}, model.DeveloperToolsCommandLine)
+	require.NoError(t, err)
+	require.False(t, got.Derived)
+	require.Equal(t, macos.SourceInstaller, got.Source.Kind)
+	require.Equal(t, "none", got.Xcode)
 	require.Equal(t, builder.Tools, got.Tools)
 	require.Equal(t, macports.CommandLineTools, got.DeveloperDir)
-	require.Equal(t, image.Clang, got.Clang, "the arm64 image with the same tools gives clang")
-	require.Equal(t, image.SDKs, got.SDKs)
+	require.Equal(t, "902.0.39.2", got.Clang)
+	require.Equal(t, []string{"MacOSX.sdk", "MacOSX10.13.sdk -> MacOSX.sdk"}, got.SDKs)
 
 	got, err = macports.Toolchain(model.Platform{OS: "darwin", Version: "19", Architecture: "x86_64"}, model.DeveloperToolsCommandLine)
 	require.NoError(t, err)
@@ -111,8 +125,13 @@ func TestAnXcodeToolchainComesFromItsProfile(t *testing.T) {
 
 	builder, err := macports.Toolchain(model.Platform{OS: "darwin", Version: "20", Architecture: "arm64"}, model.DeveloperToolsXcode)
 	require.NoError(t, err)
-	require.Equal(t, macos.SourceBuildbot, builder.Source.Kind, "Big Sur has no Tart image; its builder has Xcode")
+	require.Equal(t, macos.SourceInstaller, builder.Source.Kind, "Big Sur has no Tart image; its builder's Xcode is read from its installer")
 	require.Equal(t, macports.XcodeDeveloper, builder.DeveloperDir)
+
+	snowLeopard, err := macports.Toolchain(model.Platform{OS: "darwin", Version: "10", Architecture: "x86_64"}, model.DeveloperToolsXcode)
+	require.NoError(t, err)
+	require.Equal(t, "/Developer", snowLeopard.DeveloperDir, "Xcode 3 is installed in /Developer")
+	require.Equal(t, []string{"MacOSX10.4u.sdk", "MacOSX10.5.sdk", "MacOSX10.6.sdk"}, snowLeopard.XcodeSDKs)
 
 	_, err = macports.Toolchain(model.Platform{OS: "darwin", Version: "9", Architecture: "x86_64"}, model.DeveloperToolsXcode)
 	require.ErrorIs(t, err, macports.ErrNoToolchain)
@@ -143,6 +162,21 @@ func TestModelVariablesAddTheModelledTools(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, "/usr/bin/clang++", paths["clang++"])
 	require.Equal(t, "", paths["llvm-gcc-4.2"])
+
+	// The release's versions are the row's, standing over the 22.0.0
+	// PlatformVariables gives (#105).
+	got, err = macports.ModelVariables(model.Platform{OS: "darwin", Version: "22", Architecture: "x86_64"}, "")
+	require.NoError(t, err)
+	pairs, errs = syntax.DictValues(got)
+	require.Empty(t, errs)
+	require.Equal(t, []string{"22.6.0", "6", "13.7.8"}, []string{pairs["os_version"], pairs["os_minor"], pairs["macos_version"]})
+	// Base asks clang's version under configure.developer_dir, the tools'
+	// where they're installed beside Xcode, so the cache answers there too
+	// (#106).
+	ventura, err := macports.Toolchain(model.Platform{OS: "darwin", Version: "22", Architecture: "x86_64"}, "")
+	require.NoError(t, err)
+	versions := "{/usr/bin/clang " + ventura.Clang + " /Library/Developer/CommandLineTools/usr/bin/clang " + ventura.Clang + "}"
+	require.Equal(t, "versions {"+macports.XcodeDeveloper+" "+versions+" "+macports.CommandLineTools+" "+versions+"}", pairs["compiler_version_cache"])
 
 	old := model.Platform{OS: "darwin", Version: "9", Architecture: "x86_64"}
 	described, err := macports.PlatformVariables(old)

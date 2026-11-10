@@ -24,7 +24,7 @@ type Login struct {
 
 // ErrOldLogin is a saved value that isn't a login this dockhand keeps,
 // as the bare token earlier dockhands saved.
-var ErrOldLogin = errors.New("credential: the saved value isn't a login this dockhand keeps")
+var ErrOldLogin = errors.New("credential: the saved login has an unsupported format")
 
 func (l Login) String() string {
 	return fmt.Sprintf("login for %s, renewable until %s", l.Account, l.RefreshExpiry.Format(time.DateOnly))
@@ -55,7 +55,7 @@ const loginVersion = 1
 // Encode is the login as the store keeps it.
 func (l Login) Encode() (string, error) {
 	if !l.Complete() {
-		return "", errors.New("credential: an incomplete login isn't kept")
+		return "", errors.New("credential: cannot save an incomplete login")
 	}
 	data, err := json.Marshal(savedLogin{Version: loginVersion, Access: l.Access, AccessExpiry: l.AccessExpiry.UTC(), Refresh: l.Refresh,
 		RefreshExpiry: l.RefreshExpiry.UTC(), Account: l.Account, ClientID: l.ClientID})

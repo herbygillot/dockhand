@@ -36,7 +36,7 @@ var (
 	portfileCommands = []string{
 		"name", "version", "revision", "epoch", "categories", "maintainers", "license", "platforms", "supported_archs", "homepage",
 		"description", "long_description", "master_sites", "distname", "distfiles", "checksums", "patchfiles", "worksrcdir",
-		"use_configure", "use_autoreconf", "use_xz", "use_bzip2", "use_zip", "use_parallel_build", "universal_variant",
+		"use_configure", "use_autoreconf", "use_bzip2", "use_lzma", "use_tar", "use_xz", "use_zip", "use_7z", "use_lzip", "use_dmg", "use_parallel_build", "universal_variant",
 		"variant", "default_variants", "platform", "subport", "conflicts", "replaced_by", "notes", "installs_libs",
 		"reinplace", "xinstall", "system", "delete", "copy", "move", "file", "ln",
 	}

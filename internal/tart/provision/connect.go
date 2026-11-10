@@ -80,7 +80,7 @@ func (n *native) keys() (guestssh.Keys, error) {
 		return n.sshKeys, nil
 	}
 	if n.config.Keys == "" {
-		return guestssh.Keys{}, errors.New("setup: no folder for the SSH keys guests are reached with was given")
+		return guestssh.Keys{}, errors.New("setup: no SSH key directory was provided")
 	}
 	return guestssh.Keys{Directory: n.config.Keys}, nil
 }

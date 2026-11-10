@@ -160,7 +160,7 @@ func TestCredentialsStopPreparationBeforeDownload(t *testing.T) {
 		}
 		_, err := (Client{}).fetchOne(t.Context(), info)
 		require.ErrorIs(t, err, portfile.ErrUnsupported)
-		require.ErrorContains(t, err, "prepare this update manually with MacPorts")
+		require.ErrorContains(t, err, "fetch this port's sources with MacPorts instead")
 	}
 	require.Zero(t, requests)
 }
@@ -229,6 +229,18 @@ func TestALocalPatchMayBeInASubdirectoryOfFiles(t *testing.T) {
 	for _, patches := range []string{"../escape.patch", "5.16/../../escape.patch", "remote.patch:patches", "/etc/passwd"} {
 		require.ErrorContains(t, LocalPatches(port(patches), portdir), "is not in the port's files directory", patches)
 	}
+}
+
+// A files directory or a patch that isn't in the files evaluated, as a
+// new port's files/ not yet added to Git, says so and what adds it:
+// shader-slang's checksums read "local patch directory is unavailable"
+// (field testing, #65).
+func TestAPatchNotTrackedSaysToAddIt(t *testing.T) {
+	portdir := t.TempDir()
+	port := macports.PortInfo{Name: "shader-slang", Options: map[string]string{"patchfiles": "patch-cmake.diff"}}
+	require.ErrorContains(t, LocalPatches(port, portdir), "the port's files directory isn't among the files Git tracks, which dockhand reads; git add it")
+	require.NoError(t, os.MkdirAll(filepath.Join(portdir, "files"), 0o755))
+	require.ErrorContains(t, LocalPatches(port, portdir), "patchfile patch-cmake.diff isn't among the files Git tracks")
 }
 
 // A 404 says what it means where it was asked: a GitHub release's asset a

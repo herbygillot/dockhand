@@ -250,6 +250,9 @@ type TargetReport struct {
 	// so an unknown stops no reuse. Nil where the provider couldn't read
 	// them, empty where nothing links.
 	Links []model.Link
+	// Declared is what the target's declared ports install that a build
+	// could link (model.TargetResult.Declared); nil where unread.
+	Declared *model.Declared
 	// Installed are the files a passed target installed, and Libraries its
 	// own dynamic libraries' install names (model.TargetResult's): an
 	// observation, which a later check of its next version compares. Nil
@@ -269,6 +272,16 @@ func Reported(result model.TargetResult) TargetReport { return TargetReport{Resu
 // (TargetReport.Links), as Tart's guest does: where its results' links
 // are nil, they couldn't be read, where another provider's are nil
 // because it never reads them.
+// Stopper is a provider whose work can outlive its driver, as GitHub's
+// workflow runs on when a resumable driver stops, so the next can find it
+// again: Stop ends the work an execution recorded (ProviderRef), and is
+// nil where there is none left to end. A cancel no driver attends asks it
+// before settling the check (#115).
+type Stopper interface {
+	Provider
+	Stop(ctx context.Context, execution model.GuestExecution) error
+}
+
 type LinkReader interface {
 	ReadsLinks() bool
 }
@@ -492,7 +505,10 @@ type Leftover struct {
 	What     string
 	// KeptAt is when a check asked to keep it (model.Plan.Keep) kept it,
 	// for dockhand shell; zero for one left by a process that died.
+	// Failed is a clone kept unasked, for a target's failure in it
+	// (providers.tart.keep_failed).
 	KeptAt time.Time
+	Failed bool
 }
 
 // ShellProvider starts a clone a check kept (Leftover.KeptAt) for a person
@@ -508,6 +524,10 @@ type ShellProvider interface {
 type ShellJob struct {
 	Ref, Portfile string
 	Command       []string
+	// Running is a running check's guest, Environment's, which the check
+	// owns: reached as it is, never started or stopped.
+	Running     bool
+	Environment model.Environment
 	// Test, where it's set, is the port's directory as it is now, which
 	// replaces the staged one, and the test phase alone runs again, on
 	// the build as it stands (port -o), with Variants: the command then.

@@ -8,27 +8,44 @@ import "strings"
 // Portfile names in extract.suffix only where the archive's differs.
 type Extraction struct {
 	Suffix string
-	// UseOption is use_bzip2, use_xz, use_lzip, or use_zip; empty for
-	// gzip.
+	// UseOption is one of ExtractOptions; empty for gzip, and for one
+	// Base 2.12 has no option for, which Command extracts.
 	UseOption string
 	// Implied is the suffix the use_ option, or gzip, gives by default.
 	Implied string
+	// Command is the extract.cmd an archive no use_ option extracts takes,
+	// zstd, with Depends its extract dependency, bin:zstd:zstd, both
+	// written with its extract.suffix, as devel/libhx writes them; empty
+	// for the rest.
+	Command, Depends string
 }
 
-// Extractions are the archive suffixes Base 2.12 extracts with a use_
-// option or its default, the longest first, so .tar.gz is read before
-// .gz would be. A .tar.zst isn't one: Base has no use_zstd, and a port
-// fetching one sets its own extract.cmd.
+// ExtractOptions are Base 2.12's use_ options, each a compressor or a
+// container its extract phase picks (portextract.tcl): gzip, the default,
+// has none.
+var ExtractOptions = []string{"use_bzip2", "use_lzma", "use_tar", "use_xz", "use_zip", "use_7z", "use_lzip", "use_dmg"}
+
+// Extractions are the archive suffixes Base extracts, the longest first,
+// so .tar.gz is read before .gz would be: Base 2.12's, by a use_ option or
+// its default, and .tar.zst and .tzst, which Base's master extracts by
+// suffix and 2.12 by an explicit extract.cmd (Command).
 var Extractions = []Extraction{
 	{Suffix: ".tar.bz2", UseOption: "use_bzip2", Implied: ".tar.bz2"},
 	{Suffix: ".tar.gz", Implied: ".tar.gz"},
 	{Suffix: ".tar.xz", UseOption: "use_xz", Implied: ".tar.xz"},
+	{Suffix: ".tar.lzma", UseOption: "use_lzma", Implied: ".tar.lzma"},
 	{Suffix: ".tar.lz", UseOption: "use_lzip", Implied: ".tar.lz"},
+	{Suffix: ".tar.zst", Implied: ".tar.zst", Command: "zstd", Depends: "bin:zstd:zstd"},
 	{Suffix: ".tbz2", UseOption: "use_bzip2", Implied: ".tar.bz2"},
 	{Suffix: ".tbz", UseOption: "use_bzip2", Implied: ".tar.bz2"},
 	{Suffix: ".tgz", Implied: ".tar.gz"},
 	{Suffix: ".txz", UseOption: "use_xz", Implied: ".tar.xz"},
+	{Suffix: ".tlz", UseOption: "use_lzma", Implied: ".tar.lzma"},
+	{Suffix: ".tzst", Implied: ".tar.zst", Command: "zstd", Depends: "bin:zstd:zstd"},
+	{Suffix: ".tar", UseOption: "use_tar", Implied: ".tar"},
 	{Suffix: ".zip", UseOption: "use_zip", Implied: ".zip"},
+	{Suffix: ".7z", UseOption: "use_7z", Implied: ".7z"},
+	{Suffix: ".dmg", UseOption: "use_dmg", Implied: ".dmg"},
 }
 
 // ExtractionOf is how MacPorts extracts a file by its name; false for a

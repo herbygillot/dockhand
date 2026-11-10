@@ -48,7 +48,7 @@ func TestAResultWhoseTestsFailedNamesThem(t *testing.T) {
 func TestTheOfferSaysItsArchivesWhereAPortHasTwo(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, "the guest may install up to 2 dependencies from archives earlier checks kept", offeredWords(2, 2))
-	require.Equal(t, "the guest may install up to 221 dependencies from archives earlier checks kept (223 archives, the newest two of some)", offeredWords(221, 223))
+	require.Equal(t, "the guest may install up to 221 dependencies from archives earlier checks kept (223 archives, up to two recent archives per dependency)", offeredWords(221, 223))
 	require.Equal(t, "the guest may install up to 1 dependency from archives earlier checks kept", offeredWords(1, 1))
 }
 
