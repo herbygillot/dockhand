@@ -59,9 +59,10 @@ func rootForReference(t *testing.T) *cobra.Command {
 	streams := term.Begin(term.Streams{Out: io.Discard, Err: io.Discard}, nil)
 	s.Streams = streams
 	root := newRoot(&s, streams)
-	// Cobra adds --help and --version as it executes.
+	// Cobra adds --help, --version, and completion as it executes.
 	root.InitDefaultHelpFlag()
 	root.InitDefaultVersionFlag()
+	root.InitDefaultCompletionCmd()
 	return root
 }
 
