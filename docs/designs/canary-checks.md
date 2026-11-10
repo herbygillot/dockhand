@@ -1,6 +1,6 @@
 # Canary checks: `check --also a,b --set name=value` builds unchanged ports against the branch under a Portfile or PortGroup option
 
-A feature for v0.10.0. Its issue, and the roadmap's entry, say where it stands; this file is the design, moved here from docs/roadmap.md at 56e8045e on 2026-11-04.
+A feature for v0.10.0. Its issue says where it stands; this file is the design, moved here from docs/roadmap.md at 56e8045e on 2026-11-04.
 
 Where it came from: the openssl4 new-port session's note 5, macports/macports-ports#36375 on v0.7.0, sent here through field testing on 2026-11-04 at 02:53Z, from Later; the person's "As shown" on prioritization's triage card at 02:58Z; architecture's design, sent here by the coordinator on 2026-11-04 at 03:14Z, /mnt/project-files/plan/canary-checks-set-2026-11-04.md, aimed at v0.9.0; not harm; about a batch, inferred.
 

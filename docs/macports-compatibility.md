@@ -65,7 +65,7 @@ Beyond those, dockhand alone relies on these, each guarded so that a change disa
 
 ## Isolating evaluation
 
-Evaluation still starts from the host's configuration. The oracle's bootstrap phase ([oracle.md](oracle.md), phase 6) and the roadmap's environment contract would start it from dockhand's own, and rest on these observations of 2.12.6 and master (2026-09-24):
+Evaluation still starts from the host's configuration. The oracle's bootstrap phase ([oracle.md](oracle.md), phase 6) and the evaluator's clean launch environment ([#21](https://github.com/herbygillot/dockhand/issues/21)) would start it from dockhand's own, and rest on these observations of 2.12.6 and master (2026-09-24):
 
 - `PORTSRC` is read after the installation's and the user's `macports.conf`: an overlay, so a key it doesn't restate keeps their value.
 - `HOME` set to an empty directory hides `~/.macports/macports.conf`. Unsetting `HOME` breaks `mportinit`, whose fallback through `dscl` is misquoted.
