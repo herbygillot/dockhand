@@ -21,8 +21,10 @@ import (
 // "none" where Base found none.
 type Header struct {
 	MacOS string `json:"macos"`
-	// Darwin is the kernel's major version, 25.
-	Darwin int `json:"darwin"`
+	// Darwin is the kernel's major version, 25, and DarwinVersion its
+	// whole version, 25.6.0, Base's os_version.
+	Darwin        int    `json:"darwin"`
+	DarwinVersion string `json:"darwin_version,omitempty"`
 	// Arch is Base's os.arch, "arm" or "i386" (Architecture).
 	Arch     string `json:"arch,omitempty"`
 	MacPorts string `json:"macports"`
@@ -34,7 +36,7 @@ type Header struct {
 var (
 	// Base names the release as Apple did when it shipped: Mac OS X 10.6,
 	// OS X 10.11, macOS 10.12 and on.
-	headerMacOS    = regexp.MustCompile(`^DEBUG: (?:macOS|OS X|Mac OS X) (\S+) \(darwin/(\d+)\.\S*\)(?: arch (\S+))?`)
+	headerMacOS    = regexp.MustCompile(`^DEBUG: (?:macOS|OS X|Mac OS X) (\S+) \(darwin/((\d+)\.[^)\s]*)\)(?: arch (\S+))?`)
 	headerMacPorts = regexp.MustCompile(`^DEBUG: MacPorts (\S+)$`)
 	headerXcode    = regexp.MustCompile(`^DEBUG: Xcode (\S+), CLT (\S+)$`)
 	headerSDK      = regexp.MustCompile(`^DEBUG: SDK (\S+)$`)
@@ -50,8 +52,8 @@ func ReadHeader(log io.Reader) (Header, bool) {
 	for scanner.Scan() {
 		line := strings.TrimRight(scanner.Text(), "\r")
 		if m := headerMacOS.FindStringSubmatch(line); m != nil {
-			h.MacOS, h.Arch = m[1], m[3]
-			h.Darwin, _ = strconv.Atoi(m[2])
+			h.MacOS, h.DarwinVersion, h.Arch = m[1], m[2], m[4]
+			h.Darwin, _ = strconv.Atoi(m[3])
 		} else if m := headerMacPorts.FindStringSubmatch(line); m != nil {
 			h.MacPorts = m[1]
 		} else if m := headerXcode.FindStringSubmatch(line); m != nil {

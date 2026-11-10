@@ -122,10 +122,22 @@ namespace eval ::dockhand {
                         set directory [xcode_sdk_directory]
                         set sdks [dict get $toolchain xcode_sdks]
                         set links [dict get $toolchain xcode_links]
+                    } elseif {$developer eq [dict get $toolchain developer_dir]} {
+                        # The row's own developer directory, which isn't
+                        # where the model keeps Xcode's SDKs, as Darwin
+                        # 10's /Developer (#104): it lists none there.
+                        set sdks {}
                     } else {
                         return
                     }
-                    if {![llength $sdks]} { return }
+                    # Where the row lists no SDKs, xcrun finds none, the
+                    # table's lack marked as the answer's subject, and the
+                    # host's xcrun isn't run: it ran 8,059 times in Darwin
+                    # 10 to 12 contexts, and gave a Darwin 10 context the
+                    # host's own SDK (#108).
+                    if {![llength $sdks]} {
+                        return [list sdks-unlisted 1 "child process exited abnormally" {-code 1 -errorcode {CHILDSTATUS 0 1}}]
+                    }
                     # Each SDK's directory, by its version: the tools' a
                     # directory named for it, Xcode's MacOSX.sdk, whose
                     # version its links name.
@@ -276,8 +288,16 @@ namespace eval ::dockhand {
                             set sdks [dict get $toolchain xcode_sdks]
                         } \
                         default { return }
-                    if {![llength $sdks]} { return }
                     set patterns [lrange $arguments $i end]
+                    # Where the row lists no SDKs, the glob finds none,
+                    # marked as the table's lack (#108).
+                    if {![llength $sdks]} {
+                        if {$complain} {
+                            set noun [expr {[llength $patterns] == 1 ? "pattern" : "patterns"}]
+                            return [list sdks-unlisted 1 "no files matched glob $noun \"[join $patterns]\"" {-code 1 -errorcode {TCL OPERATION GLOB NOMATCH}}]
+                        }
+                        return [list sdks-unlisted 0 {} {-code 0}]
+                    }
                     set found {}
                     foreach sdk $sdks {
                         foreach pattern $patterns {

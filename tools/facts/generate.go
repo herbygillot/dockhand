@@ -187,14 +187,15 @@ func probeRow(data []byte) (macos.Facts, bool, error) {
 		return s
 	}
 	row := macos.Facts{
-		Architecture: text("base.build_arch"),
-		MacOS:        text("shell.sw_vers_productVersion"),
-		Xcode:        text("base.xcodeversion"),
-		Tools:        cmp.Or(text("base.xcodecltversion"), "none"),
-		DeveloperDir: text("base.developer_dir"),
-		SDK:          text("base.macosx_sdk_version"),
-		Clang:        text("worker.compiler.command_line_tools_version(clang)"),
-		Source:       macos.Source{Kind: macos.SourceTart, From: doc.Image, MacPorts: text("base.macports_version")},
+		Architecture:  text("base.build_arch"),
+		MacOS:         text("shell.sw_vers_productVersion"),
+		DarwinVersion: text("base.os_version"),
+		Xcode:         text("base.xcodeversion"),
+		Tools:         cmp.Or(text("base.xcodecltversion"), "none"),
+		DeveloperDir:  text("base.developer_dir"),
+		SDK:           text("base.macosx_sdk_version"),
+		Clang:         text("worker.compiler.command_line_tools_version(clang)"),
+		Source:        macos.Source{Kind: macos.SourceTart, From: doc.Image, MacPorts: text("base.macports_version")},
 	}
 	switch doc.Source {
 	case sourceRunner:
@@ -263,12 +264,13 @@ func buildbotRow(builder builderFacts) macos.Facts {
 		Darwin:       h.Darwin,
 		Architecture: builder.Architecture,
 		// The buildbots carry full Xcode, with the tools on most releases.
-		Profile: macos.ProfileXcode,
-		MacOS:   h.MacOS,
-		Xcode:   h.Xcode,
-		Tools:   h.Tools,
-		SDK:     h.SDK,
-		Source:  macos.Source{Kind: macos.SourceBuildbot, From: fmt.Sprintf("%s build %d", builder.Builder, builder.Build), Date: builder.Started, MacPorts: h.MacPorts},
+		Profile:       macos.ProfileXcode,
+		MacOS:         h.MacOS,
+		DarwinVersion: h.DarwinVersion,
+		Xcode:         h.Xcode,
+		Tools:         h.Tools,
+		SDK:           h.SDK,
+		Source:        macos.Source{Kind: macos.SourceBuildbot, From: fmt.Sprintf("%s build %d", builder.Builder, builder.Build), Date: builder.Started, MacPorts: h.MacPorts},
 	}
 }
 

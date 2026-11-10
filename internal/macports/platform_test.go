@@ -20,11 +20,11 @@ func TestPlatformVariablesFollowMacPortsBase(t *testing.T) {
 		platform model.Platform
 		want     string
 	}{
-		{model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}, "os_platform darwin os_subplatform macosx os_major 24 os_version 24.0.0 os_arch arm build_arch arm64 macos_version 15 macos_version_major 15 macosx_version 15 macosx_deployment_target 15.0 universal_archs {arm64 x86_64} cxx_stdlib libc++"},
-		{model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"}, "os_platform darwin os_subplatform macosx os_major 25 os_version 25.0.0 os_arch i386 build_arch x86_64 macos_version 26 macos_version_major 26 macosx_version 26 macosx_deployment_target 26.0 universal_archs {arm64 x86_64} cxx_stdlib libc++"},
-		{model.Platform{OS: "darwin", Version: "19", Architecture: "x86_64"}, "os_platform darwin os_subplatform macosx os_major 19 os_version 19.0.0 os_arch i386 build_arch x86_64 macos_version 10.15 macos_version_major 10.15 macosx_version 10.15 macosx_deployment_target 10.15 universal_archs x86_64 cxx_stdlib libc++"},
-		{model.Platform{OS: "darwin", Version: "12", Architecture: "i386"}, "os_platform darwin os_subplatform macosx os_major 12 os_version 12.0.0 os_arch i386 build_arch i386 macos_version 10.8 macos_version_major 10.8 macosx_version 10.8 macosx_deployment_target 10.8 universal_archs {x86_64 i386} cxx_stdlib libc++"},
-		{model.Platform{OS: "darwin", Version: "9", Architecture: "ppc"}, "os_platform darwin os_subplatform macosx os_major 9 os_version 9.0.0 os_arch powerpc build_arch ppc macos_version 10.5 macos_version_major 10.5 macosx_version 10.5 macosx_deployment_target 10.5 universal_archs {i386 ppc} cxx_stdlib libstdc++"},
+		{model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}, "os_platform darwin os_subplatform macosx os_major 24 os_minor 0 os_version 24.0.0 os_arch arm build_arch arm64 macos_version 15 macos_version_major 15 macosx_version 15 macosx_deployment_target 15.0 universal_archs {arm64 x86_64} cxx_stdlib libc++"},
+		{model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"}, "os_platform darwin os_subplatform macosx os_major 25 os_minor 0 os_version 25.0.0 os_arch i386 build_arch x86_64 macos_version 26 macos_version_major 26 macosx_version 26 macosx_deployment_target 26.0 universal_archs {arm64 x86_64} cxx_stdlib libc++"},
+		{model.Platform{OS: "darwin", Version: "19", Architecture: "x86_64"}, "os_platform darwin os_subplatform macosx os_major 19 os_minor 0 os_version 19.0.0 os_arch i386 build_arch x86_64 macos_version 10.15 macos_version_major 10.15 macosx_version 10.15 macosx_deployment_target 10.15 universal_archs x86_64 cxx_stdlib libc++"},
+		{model.Platform{OS: "darwin", Version: "12", Architecture: "i386"}, "os_platform darwin os_subplatform macosx os_major 12 os_minor 0 os_version 12.0.0 os_arch i386 build_arch i386 macos_version 10.8 macos_version_major 10.8 macosx_version 10.8 macosx_deployment_target 10.8 universal_archs {x86_64 i386} cxx_stdlib libc++"},
+		{model.Platform{OS: "darwin", Version: "9", Architecture: "ppc"}, "os_platform darwin os_subplatform macosx os_major 9 os_minor 0 os_version 9.0.0 os_arch powerpc build_arch ppc macos_version 10.5 macos_version_major 10.5 macosx_version 10.5 macosx_deployment_target 10.5 universal_archs {i386 ppc} cxx_stdlib libstdc++"},
 	} {
 		got, err := macports.PlatformVariables(test.platform)
 		require.NoError(t, err)
@@ -162,6 +162,21 @@ func TestModelVariablesAddTheModelledTools(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, "/usr/bin/clang++", paths["clang++"])
 	require.Equal(t, "", paths["llvm-gcc-4.2"])
+
+	// The release's versions are the row's, standing over the 22.0.0
+	// PlatformVariables gives (#105).
+	got, err = macports.ModelVariables(model.Platform{OS: "darwin", Version: "22", Architecture: "x86_64"}, "")
+	require.NoError(t, err)
+	pairs, errs = syntax.DictValues(got)
+	require.Empty(t, errs)
+	require.Equal(t, []string{"22.6.0", "6", "13.7.8"}, []string{pairs["os_version"], pairs["os_minor"], pairs["macos_version"]})
+	// Base asks clang's version under configure.developer_dir, the tools'
+	// where they're installed beside Xcode, so the cache answers there too
+	// (#106).
+	ventura, err := macports.Toolchain(model.Platform{OS: "darwin", Version: "22", Architecture: "x86_64"}, "")
+	require.NoError(t, err)
+	versions := "{/usr/bin/clang " + ventura.Clang + " /Library/Developer/CommandLineTools/usr/bin/clang " + ventura.Clang + "}"
+	require.Equal(t, "versions {"+macports.XcodeDeveloper+" "+versions+" "+macports.CommandLineTools+" "+versions+"}", pairs["compiler_version_cache"])
 
 	old := model.Platform{OS: "darwin", Version: "9", Architecture: "x86_64"}
 	described, err := macports.PlatformVariables(old)

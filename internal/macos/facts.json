@@ -6,14 +6,15 @@
       "architecture": "i386",
       "profile": "xcode",
       "macos": "10.6.8",
+      "darwin_version": "10.8.0",
       "xcode": "3.2.6",
       "tools": "none",
       "sdk": "10.6",
       "source": {
         "kind": "buildbot",
-        "from": "ports-10.6_i386-builder build 248338",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-10.6_i386-builder build 256901",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
@@ -21,6 +22,7 @@
       "architecture": "i386",
       "profile": "xcode",
       "macos": "10.6.8",
+      "darwin_version": "10.8.0",
       "xcode": "3.2.6",
       "tools": "none",
       "developer_dir": "/Developer",
@@ -42,14 +44,15 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "10.6.8",
+      "darwin_version": "10.8.0",
       "xcode": "3.2.6",
       "tools": "none",
       "sdk": "10.6",
       "source": {
         "kind": "buildbot",
-        "from": "ports-10.6_x86_64-builder build 285165",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-10.6_x86_64-builder build 293960",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
@@ -57,6 +60,7 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "10.6.8",
+      "darwin_version": "10.8.0",
       "xcode": "3.2.6",
       "tools": "none",
       "developer_dir": "/Developer",
@@ -78,14 +82,15 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "10.7.5",
+      "darwin_version": "11.4.2",
       "xcode": "4.6.3",
       "tools": "none",
       "sdk": "10.7",
       "source": {
         "kind": "buildbot",
-        "from": "ports-10.7_x86_64-builder build 267482",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-10.7_x86_64-builder build 272046",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
@@ -93,6 +98,7 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "10.7.5",
+      "darwin_version": "11.4.2",
       "xcode": "4.6.3",
       "tools": "none",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -113,14 +119,15 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "10.8.5",
+      "darwin_version": "12.6.0",
       "xcode": "5.1.1",
       "tools": "none",
       "sdk": "10.8",
       "source": {
         "kind": "buildbot",
-        "from": "ports-10.8_x86_64-builder build 250971",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-10.8_x86_64-builder build 259666",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
@@ -128,6 +135,7 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "10.8.5",
+      "darwin_version": "12.6.0",
       "xcode": "5.1.1",
       "tools": "none",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -148,6 +156,7 @@
       "architecture": "x86_64",
       "profile": "clt",
       "macos": "10.9.5",
+      "darwin_version": "13.4.0",
       "xcode": "none",
       "tools": "6.2.0.0.1.1424975374",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -164,14 +173,15 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "10.9.5",
+      "darwin_version": "13.4.0",
       "xcode": "6.2",
       "tools": "6.2.0.0.1.1424975374",
       "sdk": "10.9",
       "source": {
         "kind": "buildbot",
-        "from": "ports-10.9_x86_64-builder build 354777",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-10.9_x86_64-builder build 360107",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
@@ -179,6 +189,7 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "10.9.5",
+      "darwin_version": "13.4.0",
       "xcode": "6.2",
       "tools": "6.2.0.0.1.1424975374",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -199,6 +210,7 @@
       "architecture": "x86_64",
       "profile": "clt",
       "macos": "10.10.5",
+      "darwin_version": "14.5.0",
       "xcode": "none",
       "tools": "7.2.0.0.1.1447826929",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -215,14 +227,15 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "10.10.5",
+      "darwin_version": "14.5.0",
       "xcode": "7.2.1",
       "tools": "7.2.0.0.1.1447826929",
       "sdk": "10.10",
       "source": {
         "kind": "buildbot",
-        "from": "ports-10.10_x86_64-builder build 344056",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-10.10_x86_64-builder build 349994",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
@@ -230,6 +243,7 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "10.10.5",
+      "darwin_version": "14.5.0",
       "xcode": "7.2.1",
       "tools": "7.2.0.0.1.1447826929",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -249,6 +263,7 @@
       "architecture": "x86_64",
       "profile": "clt",
       "macos": "10.11.6",
+      "darwin_version": "15.6.0",
       "xcode": "none",
       "tools": "8.2.0.0.1.1480973914",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -269,14 +284,15 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "10.11.6",
+      "darwin_version": "15.6.0",
       "xcode": "8.2.1",
       "tools": "8.2.0.0.1.1480973914",
       "sdk": "10.11",
       "source": {
         "kind": "buildbot",
-        "from": "ports-10.11_x86_64-builder build 334066",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-10.11_x86_64-builder build 339840",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
@@ -284,6 +300,7 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "10.11.6",
+      "darwin_version": "15.6.0",
       "xcode": "8.2.1",
       "tools": "8.2.0.0.1.1480973914",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -308,6 +325,7 @@
       "architecture": "x86_64",
       "profile": "clt",
       "macos": "10.12.6",
+      "darwin_version": "16.7.0",
       "xcode": "none",
       "tools": "9.2.0.0.1.1510905681",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -328,14 +346,15 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "10.12.6",
+      "darwin_version": "16.7.0",
       "xcode": "9.2",
       "tools": "9.2.0.0.1.1510905681",
       "sdk": "10.12",
       "source": {
         "kind": "buildbot",
-        "from": "ports-10.12_x86_64-builder build 345474",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-10.12_x86_64-builder build 350637",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
@@ -343,6 +362,7 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "10.12.6",
+      "darwin_version": "16.7.0",
       "xcode": "9.2",
       "tools": "9.2.0.0.1.1510905681",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -367,6 +387,7 @@
       "architecture": "x86_64",
       "profile": "clt",
       "macos": "10.13.6",
+      "darwin_version": "17.7.0",
       "xcode": "none",
       "tools": "9.4.1.0.1.1528165917",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -387,14 +408,15 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "10.13.6",
+      "darwin_version": "17.7.0",
       "xcode": "9.4.1",
       "tools": "9.4.1.0.1.1528165917",
       "sdk": "10.13",
       "source": {
         "kind": "buildbot",
-        "from": "ports-10.13_x86_64-builder build 298658",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-10.13_x86_64-builder build 303582",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
@@ -402,6 +424,7 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "10.13.6",
+      "darwin_version": "17.7.0",
       "xcode": "9.4.1",
       "tools": "9.4.1.0.1.1528165917",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -426,6 +449,7 @@
       "architecture": "x86_64",
       "profile": "clt",
       "macos": "10.14.6",
+      "darwin_version": "18.7.0",
       "xcode": "none",
       "tools": "10.3.0.0.1.1562985497",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -448,6 +472,7 @@
       "architecture": "x86_64",
       "profile": "clt",
       "macos": "10.14.6",
+      "darwin_version": "18.7.0",
       "xcode": "none",
       "tools": "10.3.0.0.1.1562985497",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -468,14 +493,15 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "10.14.6",
+      "darwin_version": "18.7.0",
       "xcode": "10.3",
       "tools": "10.3.0.0.1.1562985497",
       "sdk": "10.14",
       "source": {
         "kind": "buildbot",
-        "from": "ports-10.14_x86_64-builder build 271251",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-10.14_x86_64-builder build 275796",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
@@ -483,6 +509,7 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "10.14.6",
+      "darwin_version": "18.7.0",
       "xcode": "10.3",
       "tools": "10.3.0.0.1.1562985497",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -509,6 +536,7 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "10.14.6",
+      "darwin_version": "18.7.0",
       "xcode": "10.3",
       "tools": "10.3.0.0.1.1562985497",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -533,14 +561,15 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "10.15.8",
+      "darwin_version": "19.6.0",
       "xcode": "11.7",
       "tools": "none",
       "sdk": "10.15",
       "source": {
         "kind": "buildbot",
-        "from": "ports-10.15_x86_64-builder build 247255",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-10.15_x86_64-builder build 251876",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
@@ -548,6 +577,7 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "10.15.7",
+      "darwin_version": "19.6.0",
       "xcode": "11.7",
       "tools": "none",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -571,6 +601,7 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "10.15.8",
+      "darwin_version": "19.6.0",
       "xcode": "11.7",
       "tools": "none",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -592,6 +623,7 @@
       "architecture": "arm64",
       "profile": "clt",
       "macos": "11.7.10",
+      "darwin_version": "20.6.0",
       "xcode": "none",
       "tools": "13.0.0.0.1.1630607135",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -613,6 +645,7 @@
       "architecture": "arm64",
       "profile": "xcode",
       "macos": "11.7.10",
+      "darwin_version": "20.6.0",
       "xcode": "13.0",
       "tools": "13.0.0.0.1.1630607135",
       "sdk": "11",
@@ -628,6 +661,7 @@
       "architecture": "arm64",
       "profile": "xcode",
       "macos": "11.7.10",
+      "darwin_version": "20.6.0",
       "xcode": "13.0",
       "tools": "13.0.0.0.1.1630607135",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -654,6 +688,7 @@
       "architecture": "x86_64",
       "profile": "clt",
       "macos": "11.7.10",
+      "darwin_version": "20.6.0",
       "xcode": "none",
       "tools": "13.0.0.0.1.1630607135",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -677,6 +712,7 @@
       "architecture": "x86_64",
       "profile": "clt",
       "macos": "11.7.11",
+      "darwin_version": "20.6.0",
       "xcode": "none",
       "tools": "13.0.0.0.1.1630607135",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -698,14 +734,15 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "11.7.11",
+      "darwin_version": "20.6.0",
       "xcode": "13.0",
       "tools": "13.0.0.0.1.1630607135",
       "sdk": "11",
       "source": {
         "kind": "buildbot",
-        "from": "ports-11_x86_64-builder build 221670",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-11_x86_64-builder build 226017",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
@@ -713,6 +750,7 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "11.7.10",
+      "darwin_version": "20.6.0",
       "xcode": "13.0",
       "tools": "13.0.0.0.1.1630607135",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -741,6 +779,7 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "11.7.11",
+      "darwin_version": "20.6.0",
       "xcode": "13.0",
       "tools": "13.0.0.0.1.1630607135",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -767,6 +806,7 @@
       "architecture": "arm64",
       "profile": "clt",
       "macos": "12.7.6",
+      "darwin_version": "21.6.0",
       "xcode": "none",
       "tools": "14.2.0.0.1.1668646533",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -794,14 +834,15 @@
       "architecture": "arm64",
       "profile": "xcode",
       "macos": "12.7.6",
+      "darwin_version": "21.6.0",
       "xcode": "14.0.1",
       "tools": "14.2.0.0.1.1668646533",
       "sdk": "12",
       "source": {
         "kind": "buildbot",
-        "from": "ports-12_arm64-builder build 174581",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-12_arm64-builder build 179869",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
@@ -809,6 +850,7 @@
       "architecture": "arm64",
       "profile": "xcode",
       "macos": "12.7.6",
+      "darwin_version": "21.6.0",
       "xcode": "14.0.1",
       "tools": "14.2.0.0.1.1668646533",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -829,6 +871,7 @@
       "architecture": "arm64",
       "profile": "xcode",
       "macos": "12.7.6",
+      "darwin_version": "21.6.0",
       "xcode": "14.0.1",
       "tools": "14.2.0.0.1.1668646533",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -861,6 +904,7 @@
       "architecture": "x86_64",
       "profile": "clt",
       "macos": "12.7.6",
+      "darwin_version": "21.6.0",
       "xcode": "none",
       "tools": "13.4.0.0.1.1651278267",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -886,6 +930,7 @@
       "architecture": "x86_64",
       "profile": "clt",
       "macos": "12.7.6",
+      "darwin_version": "21.6.0",
       "xcode": "none",
       "tools": "13.4.0.0.1.1651278267",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -909,14 +954,15 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "12.7.6",
+      "darwin_version": "21.6.0",
       "xcode": "13.4.1",
       "tools": "13.4.0.0.1.1651278267",
       "sdk": "12",
       "source": {
         "kind": "buildbot",
-        "from": "ports-12_x86_64-builder build 167943",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-12_x86_64-builder build 173027",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
@@ -924,6 +970,7 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "12.7.6",
+      "darwin_version": "21.6.0",
       "xcode": "13.4.1",
       "tools": "13.4.0.0.1.1651278267",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -953,6 +1000,7 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "12.7.6",
+      "darwin_version": "21.6.0",
       "xcode": "13.4.1",
       "tools": "13.4.0.0.1.1651278267",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -980,6 +1028,7 @@
       "architecture": "arm64",
       "profile": "clt",
       "macos": "13.7.8",
+      "darwin_version": "22.6.0",
       "xcode": "none",
       "tools": "14.3.1.0.1.1683849156",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -1003,6 +1052,7 @@
       "architecture": "arm64",
       "profile": "clt",
       "macos": "13.7.4",
+      "darwin_version": "22.6.0",
       "xcode": "none",
       "tools": "14.3.1.0.1.1683849156",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -1028,14 +1078,15 @@
       "architecture": "arm64",
       "profile": "xcode",
       "macos": "13.7.8",
+      "darwin_version": "22.6.0",
       "xcode": "14.3.1",
       "tools": "14.3.1.0.1.1683849156",
       "sdk": "13",
       "source": {
         "kind": "buildbot",
-        "from": "ports-13_arm64-builder build 112706",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-13_arm64-builder build 117969",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
@@ -1043,6 +1094,7 @@
       "architecture": "arm64",
       "profile": "xcode",
       "macos": "13.7.8",
+      "darwin_version": "22.6.0",
       "xcode": "14.3.1",
       "tools": "14.3.1.0.1.1683849156",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -1071,6 +1123,7 @@
       "architecture": "arm64",
       "profile": "xcode",
       "macos": "13.7.4",
+      "darwin_version": "22.6.0",
       "xcode": "14.3.1",
       "tools": "14.3.1.0.1.1683849156",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -1101,6 +1154,7 @@
       "architecture": "x86_64",
       "profile": "clt",
       "macos": "13.7.8",
+      "darwin_version": "22.6.0",
       "xcode": "none",
       "tools": "14.3.1.0.1.1683849156",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -1126,6 +1180,7 @@
       "architecture": "x86_64",
       "profile": "clt",
       "macos": "13.7.8",
+      "darwin_version": "22.6.0",
       "xcode": "none",
       "tools": "14.3.1.0.1.1683849156",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -1149,14 +1204,15 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "13.7.8",
+      "darwin_version": "22.6.0",
       "xcode": "14.3.1",
       "tools": "14.3.1.0.1.1683849156",
       "sdk": "13",
       "source": {
         "kind": "buildbot",
-        "from": "ports-13_x86_64-builder build 117500",
-        "date": "2026-09-10",
-        "macports": "2.12.6"
+        "from": "ports-13_x86_64-builder build 120947",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
@@ -1164,6 +1220,7 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "13.7.8",
+      "darwin_version": "22.6.0",
       "xcode": "14.3.1",
       "tools": "14.3.1.0.1.1683849156",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -1194,6 +1251,7 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "13.7.8",
+      "darwin_version": "22.6.0",
       "xcode": "14.3.1",
       "tools": "14.3.1.0.1.1683849156",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -1222,6 +1280,7 @@
       "architecture": "arm64",
       "profile": "clt",
       "macos": "14.8.7",
+      "darwin_version": "23.6.0",
       "xcode": "none",
       "tools": "16.2.0.0.1.1733547573",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -1247,14 +1306,15 @@
       "architecture": "arm64",
       "profile": "xcode",
       "macos": "14.8.9",
+      "darwin_version": "23.6.0",
       "xcode": "15.4",
       "tools": "16.2.0.0.1.1733547573",
       "sdk": "14",
       "source": {
         "kind": "buildbot",
-        "from": "ports-14_arm64-builder build 86902",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-14_arm64-builder build 93653",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
@@ -1262,6 +1322,7 @@
       "architecture": "arm64",
       "profile": "xcode",
       "macos": "14.8.9",
+      "darwin_version": "23.6.0",
       "xcode": "15.4",
       "tools": "16.2.0.0.1.1733547573",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -1282,6 +1343,7 @@
       "architecture": "arm64",
       "profile": "xcode",
       "macos": "14.8.7",
+      "darwin_version": "23.6.0",
       "xcode": "15.4",
       "tools": "16.2.0.0.1.1733547573",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -1312,6 +1374,7 @@
       "architecture": "x86_64",
       "profile": "clt",
       "macos": "14.8.9",
+      "darwin_version": "23.6.0",
       "xcode": "none",
       "tools": "15.3.0.0.1.1708487402",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -1337,6 +1400,7 @@
       "architecture": "x86_64",
       "profile": "clt",
       "macos": "14.8.9",
+      "darwin_version": "23.6.0",
       "xcode": "none",
       "tools": "15.3.0.0.1.1708646388",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -1360,14 +1424,15 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "14.8.9",
+      "darwin_version": "23.6.0",
       "xcode": "15.4",
       "tools": "15.3.0.0.1.1708646388",
       "sdk": "14",
       "source": {
         "kind": "buildbot",
-        "from": "ports-14_x86_64-builder build 91859",
-        "date": "2026-09-21",
-        "macports": "2.12.6"
+        "from": "ports-14_x86_64-builder build 95638",
+        "date": "2026-11-09",
+        "macports": "2.12.7"
       }
     },
     {
@@ -1375,6 +1440,7 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "14.8.9",
+      "darwin_version": "23.6.0",
       "xcode": "15.4",
       "tools": "15.3.0.0.1.1708487402",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -1405,6 +1471,7 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "14.8.9",
+      "darwin_version": "23.6.0",
       "xcode": "15.4",
       "tools": "15.3.0.0.1.1708646388",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -1433,6 +1500,7 @@
       "architecture": "arm64",
       "profile": "clt",
       "macos": "15.8.2",
+      "darwin_version": "24.6.0",
       "xcode": "none",
       "tools": "16.4.0.0.1.1747106510",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -1458,6 +1526,7 @@
       "architecture": "arm64",
       "profile": "clt",
       "macos": "15.7.7",
+      "darwin_version": "24.6.0",
       "xcode": "none",
       "tools": "16.4.0.0.1.1747106510",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -1482,22 +1551,24 @@
       "darwin": 24,
       "architecture": "arm64",
       "profile": "xcode",
-      "macos": "15.8",
+      "macos": "15.8.2",
+      "darwin_version": "24.6.0",
       "xcode": "16.4",
       "tools": "16.4.0.0.1.1747106510",
       "sdk": "15",
       "source": {
         "kind": "buildbot",
-        "from": "ports-15_arm64-builder build 52095",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-15_arm64-builder build 59170",
+        "date": "2026-11-09",
+        "macports": "2.12.7"
       }
     },
     {
       "darwin": 24,
       "architecture": "arm64",
       "profile": "xcode",
-      "macos": "15.8",
+      "macos": "15.8.2",
+      "darwin_version": "24.6.0",
       "xcode": "16.4",
       "tools": "16.4.0.0.1.1747106510",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -1518,6 +1589,7 @@
       "architecture": "arm64",
       "profile": "xcode",
       "macos": "15.8.2",
+      "darwin_version": "24.6.0",
       "xcode": "16.4",
       "tools": "16.4.0.0.1.1747106510",
       "developer_dir": "/Applications/Xcode_16.4.app/Contents/Developer",
@@ -1548,6 +1620,7 @@
       "architecture": "arm64",
       "profile": "xcode",
       "macos": "15.7.7",
+      "darwin_version": "24.6.0",
       "xcode": "16.4",
       "tools": "16.4.0.0.1.1747106510",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -1578,6 +1651,7 @@
       "architecture": "x86_64",
       "profile": "clt",
       "macos": "15.8",
+      "darwin_version": "24.6.0",
       "xcode": "none",
       "tools": "26.0.0.0.1.1756965055",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -1602,7 +1676,8 @@
       "darwin": 24,
       "architecture": "x86_64",
       "profile": "clt",
-      "macos": "15.7.9",
+      "macos": "15.8.2",
+      "darwin_version": "24.6.0",
       "xcode": "none",
       "tools": "26.0.0.0.1.1757719676",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -1625,15 +1700,16 @@
       "darwin": 24,
       "architecture": "x86_64",
       "profile": "xcode",
-      "macos": "15.7.9",
+      "macos": "15.8.2",
+      "darwin_version": "24.6.0",
       "xcode": "16.4",
       "tools": "26.0.0.0.1.1757719676",
       "sdk": "15",
       "source": {
         "kind": "buildbot",
-        "from": "ports-15_x86_64-builder build 67543",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-15_x86_64-builder build 70833",
+        "date": "2026-11-05",
+        "macports": "2.12.7"
       }
     },
     {
@@ -1641,6 +1717,7 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "15.8",
+      "darwin_version": "24.6.0",
       "xcode": "16.4",
       "tools": "26.0.0.0.1.1756965055",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -1670,7 +1747,8 @@
       "darwin": 24,
       "architecture": "x86_64",
       "profile": "xcode",
-      "macos": "15.7.9",
+      "macos": "15.8.2",
+      "darwin_version": "24.6.0",
       "xcode": "16.4",
       "tools": "26.0.0.0.1.1757719676",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -1699,6 +1777,7 @@
       "architecture": "arm64",
       "profile": "clt",
       "macos": "26.6.2",
+      "darwin_version": "25.6.0",
       "xcode": "none",
       "tools": "26.6.0.0.1781586589",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -1724,6 +1803,7 @@
       "architecture": "arm64",
       "profile": "clt",
       "macos": "26.6.2",
+      "darwin_version": "25.6.0",
       "xcode": "none",
       "tools": "26.6.0.0.1781586589",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -1748,22 +1828,24 @@
       "darwin": 25,
       "architecture": "arm64",
       "profile": "xcode",
-      "macos": "26.6.2",
+      "macos": "26.7.2",
+      "darwin_version": "25.6.0",
       "xcode": "26.6",
       "tools": "26.6.0.0.1781586589",
       "sdk": "26",
       "source": {
         "kind": "buildbot",
-        "from": "ports-26_arm64-builder build 44429",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-26_arm64-builder build 52005",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
       "darwin": 25,
       "architecture": "arm64",
       "profile": "xcode",
-      "macos": "26.6.2",
+      "macos": "26.7.2",
+      "darwin_version": "25.6.0",
       "xcode": "26.6",
       "tools": "26.6.0.0.1781586589",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -1784,6 +1866,7 @@
       "architecture": "arm64",
       "profile": "xcode",
       "macos": "26.6.2",
+      "darwin_version": "25.6.0",
       "xcode": "26.6",
       "tools": "26.6.0.0.1781586589",
       "developer_dir": "/Applications/Xcode_26.6.app/Contents/Developer",
@@ -1814,6 +1897,7 @@
       "architecture": "arm64",
       "profile": "xcode",
       "macos": "26.6.2",
+      "darwin_version": "25.6.0",
       "xcode": "26.6",
       "tools": "26.6.0.0.1781586589",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -1844,6 +1928,7 @@
       "architecture": "x86_64",
       "profile": "clt",
       "macos": "26.6.1",
+      "darwin_version": "25.6.0",
       "xcode": "none",
       "tools": "26.6.0.0.1781586589",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -1868,15 +1953,16 @@
       "darwin": 25,
       "architecture": "x86_64",
       "profile": "xcode",
-      "macos": "26.7",
+      "macos": "26.7.2",
+      "darwin_version": "25.6.0",
       "xcode": "26.6",
       "tools": "26.6.0.0.1781586589",
       "sdk": "26",
       "source": {
         "kind": "buildbot",
-        "from": "ports-26_x86_64-builder build 5287",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-26_x86_64-builder build 11331",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
@@ -1884,6 +1970,7 @@
       "architecture": "x86_64",
       "profile": "xcode",
       "macos": "26.6.1",
+      "darwin_version": "25.6.0",
       "xcode": "26.6",
       "tools": "26.6.0.0.1781586589",
       "developer_dir": "/Applications/Xcode_26.6.app/Contents/Developer",
@@ -1914,6 +2001,7 @@
       "architecture": "arm64",
       "profile": "clt",
       "macos": "27.0",
+      "darwin_version": "27.0.0",
       "xcode": "none",
       "tools": "27.0.0.0.1788430756",
       "developer_dir": "/Library/Developer/CommandLineTools",
@@ -1938,22 +2026,24 @@
       "darwin": 27,
       "architecture": "arm64",
       "profile": "xcode",
-      "macos": "27.0",
+      "macos": "27.2",
+      "darwin_version": "27.2.0",
       "xcode": "27.0",
       "tools": "27.0.0.0.1788430756",
       "sdk": "27",
       "source": {
         "kind": "buildbot",
-        "from": "ports-27_arm64-builder build 14459",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-27_arm64-builder build 20810",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
       "darwin": 27,
       "architecture": "arm64",
       "profile": "xcode",
-      "macos": "27.0",
+      "macos": "27.2",
+      "darwin_version": "27.2.0",
       "xcode": "27.0",
       "tools": "27.0.0.0.1788430756",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -1974,6 +2064,7 @@
       "architecture": "arm64",
       "profile": "xcode",
       "macos": "27.0",
+      "darwin_version": "27.0.0",
       "xcode": "27.0",
       "tools": "27.0.0.0.1788430756",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
@@ -2016,9 +2107,9 @@
       "tools": 14,
       "source": {
         "kind": "buildbot",
-        "from": "ports-12_arm64-builder build 174581",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-12_arm64-builder build 179869",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
@@ -2026,9 +2117,9 @@
       "tools": 14,
       "source": {
         "kind": "buildbot",
-        "from": "ports-13_arm64-builder build 112706",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-13_arm64-builder build 117969",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
@@ -2036,9 +2127,9 @@
       "tools": 16,
       "source": {
         "kind": "buildbot",
-        "from": "ports-14_arm64-builder build 86902",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-14_arm64-builder build 93653",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
@@ -2046,9 +2137,9 @@
       "tools": 16,
       "source": {
         "kind": "buildbot",
-        "from": "ports-15_arm64-builder build 52095",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-15_arm64-builder build 59170",
+        "date": "2026-11-09",
+        "macports": "2.12.7"
       }
     },
     {
@@ -2056,9 +2147,9 @@
       "tools": 26,
       "source": {
         "kind": "buildbot",
-        "from": "ports-26_arm64-builder build 44429",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-26_arm64-builder build 52005",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     },
     {
@@ -2066,9 +2157,9 @@
       "tools": 27,
       "source": {
         "kind": "buildbot",
-        "from": "ports-27_arm64-builder build 14459",
-        "date": "2026-09-27",
-        "macports": "2.12.6"
+        "from": "ports-27_arm64-builder build 20810",
+        "date": "2026-11-10",
+        "macports": "2.12.7"
       }
     }
   ]

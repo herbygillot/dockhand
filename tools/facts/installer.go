@@ -113,7 +113,7 @@ func installerRows(installers []installer, date string, others []macos.Facts, re
 			fmt.Fprintf(report, "reported: %s: no installer read\n", said)
 			continue
 		}
-		row := macos.Facts{Darwin: builder.Darwin, Architecture: builder.Architecture, MacOS: builder.MacOS, Xcode: builder.Xcode, Tools: builder.Tools, SDK: builder.SDK,
+		row := macos.Facts{Darwin: builder.Darwin, Architecture: builder.Architecture, MacOS: builder.MacOS, DarwinVersion: builder.DarwinVersion, Xcode: builder.Xcode, Tools: builder.Tools, SDK: builder.SDK,
 			Source: macos.Source{Kind: macos.SourceInstaller, Date: date}}
 		var from []string
 		if tools != nil {

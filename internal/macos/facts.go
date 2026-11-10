@@ -32,8 +32,11 @@ type Facts struct {
 	Darwin       int     `json:"darwin"`
 	Architecture string  `json:"architecture"`
 	Profile      Profile `json:"profile"`
-	// MacOS is the release's product version the source ran, 26.6.2.
-	MacOS string `json:"macos,omitempty"`
+	// MacOS is the release's product version the source ran, 26.6.2, and
+	// DarwinVersion its kernel's, 25.6.0: Base's macos_version and
+	// os_version, whose minor some Portfiles test.
+	MacOS         string `json:"macos,omitempty"`
+	DarwinVersion string `json:"darwin_version,omitempty"`
 	// Xcode is Base's xcodeversion: Xcode's version, or none.
 	Xcode string `json:"xcode"`
 	// Tools is Base's xcodecltversion: the Command Line Tools package's
