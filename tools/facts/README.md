@@ -29,8 +29,12 @@ gh run download --repo herbygillot/dockhand --name facts-macos-15 --dir $dir/run
 # in a directory, so pass each of those as its own -runner.
 
 # Hosts: Macs probed once, kept in tools/facts/probes, one directory each.
-# The table, from all four.
+# Installers: readings of Xcode and Command Line Tools installers, kept in
+# tools/facts/installers.
+# The table, from all five.
 /tmp/facts generate -tart $dir/tart -runner $dir/runner -host tools/facts/probes/aws-mac1 \
+  -installer tools/facts/installers/legacy-2026-11-10.json \
+  -installer tools/facts/installers/xcode-archives-2026-11-10.json \
   -buildbot $dir/buildbot.json -out internal/macos/facts.json
 ```
 
@@ -82,9 +86,28 @@ gh run download --repo herbygillot/dockhand --name facts-macos-15 --dir $dir/run
   beside it. A host is billed for 24 hours at least, and AWS scrubs it for
   about an hour between instances.
 
+- **Installers** (`generate -installer`): Xcode and Command Line Tools
+  installers, .dmg and .xip, read without installing them or running
+  anything in them: each Xcode's SDKs (`xcode_sdks`), the tools' SDKs,
+  each one's clang build, read from the clang binary's version string, and
+  the developer directory, /Developer for Xcode 3. They give no live Base
+  view, so an installer's row stands on a buildbot's: the builder's
+  release, macOS, Xcode, tools, and SDK, with the facts of the installers
+  of that Xcode and those tools, the tools by version as a runner's are.
+  The builder's tools give the clang Base reads, Xcode's where it runs
+  none. [installers](installers) holds two readings made on 2026-11-10 on
+  the person's Mac, from its archive of Apple's downloads:
+  `legacy-2026-11-10.json`, Xcode 3.2.6 to 9.4.1 and the tools 6.2 to
+  9.4.1, the builders' from Darwin 10 to 17, and
+  `xcode-archives-2026-11-10.json`, Xcode 10.3 to 27 and the tools 10.3 to
+  26, which gave the same SDKs and clang as the hosts' and the Tart images'
+  probes for every version both have. The tools 6.2 and 7.2 install no SDK,
+  their headers going to /usr/include. Each installer's own file, with its
+  packages and the installer's OS checks, stays with the archive.
+
 Where more than one describes a release, architecture, and profile, the
-Tart image wins, then the runner, then the host (`macos.FactsTable.Lookup`), and the
-buildbot's row stays as a cross-check. Darwin 8 and 9 have no builder, and Base's own tables are
+Tart image wins, then the runner, then the host, then the installers
+(`macos.FactsTable.Lookup`), and the buildbot's row stays as a cross-check. Darwin 8 and 9 have no builder, and Base's own tables are
 not read yet.
 
 ## The Xcode setup installs

@@ -1,0 +1,782 @@
+{
+ "date": "2026-11-10",
+ "source": "~/Downloads/xcode_archives",
+ "method": "read-only expansion in ~/xcode-legacy-scratch (hdiutil -readonly + pkgutil --expand-full for CLT dmgs, xip --expand for Xcode xips); clang build read with a byte regex over usr/bin/clang, no binary executed",
+ "notes": [
+  "ProductBuildVersion for SDKs comes from the SDK's System/Library/CoreServices/SystemVersion.plist; SDKSettings.plist has none in these SDKs",
+  "per-installer files keep fuller detail (package ids, clang binary path, Distribution volume-check)"
+ ],
+ "installers": [
+  {
+   "installer": "Xcode_10.3.xip",
+   "kind": "xcode",
+   "xcode_version": "10.3",
+   "xcode_build": "10G8",
+   "DTXcode": "1030",
+   "DTXcodeBuild": "10G7a",
+   "min_macos": "10.14.3",
+   "developer_dir_layout": "Xcode.app/Contents/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "10.14",
+     "ProductBuildVersion": "18G74"
+    },
+    {
+     "entry": "MacOSX10.14.sdk -> MacOSX.sdk",
+     "Version": "10.14",
+     "ProductBuildVersion": "18G74"
+    }
+   ],
+   "clang": {
+    "clang": "1001.0.46.4",
+    "method": "strings on bin/clang, matched (clang-N)"
+   }
+  },
+  {
+   "installer": "Xcode_11.7.xip",
+   "kind": "xcode",
+   "xcode_version": "11.7",
+   "xcode_build": "11E801a",
+   "DTXcode": "1170",
+   "DTXcodeBuild": "11E800d",
+   "min_macos": "10.15.2",
+   "developer_dir_layout": "Xcode.app/Contents/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "DriverKit19.0.sdk",
+     "Version": "19.0"
+    },
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "10.15.6",
+     "ProductBuildVersion": "19G68"
+    },
+    {
+     "entry": "MacOSX10.15.sdk -> MacOSX.sdk",
+     "Version": "10.15.6",
+     "ProductBuildVersion": "19G68"
+    }
+   ],
+   "clang": {
+    "clang": "1103.0.32.62",
+    "method": "strings on bin/clang, matched (clang-N)"
+   }
+  },
+  {
+   "installer": "Xcode_13.xip",
+   "kind": "xcode",
+   "xcode_version": "13.0",
+   "xcode_build": "13A233",
+   "DTXcode": "1300",
+   "DTXcodeBuild": "13A229",
+   "min_macos": "11.3",
+   "developer_dir_layout": "Xcode.app/Contents/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "DriverKit20.4.sdk",
+     "Version": "20.4"
+    },
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "11.3",
+     "ProductBuildVersion": "20E214"
+    },
+    {
+     "entry": "MacOSX11.3.sdk -> MacOSX.sdk",
+     "Version": "11.3",
+     "ProductBuildVersion": "20E214"
+    }
+   ],
+   "clang": {
+    "clang": "1300.0.29.3",
+    "method": "strings on bin/clang, matched (clang-N)"
+   }
+  },
+  {
+   "installer": "Xcode_13.4.1.xip",
+   "kind": "xcode",
+   "xcode_version": "13.4.1",
+   "xcode_build": "13F100",
+   "DTXcode": "1340",
+   "DTXcodeBuild": "13F17a",
+   "min_macos": "12.0",
+   "developer_dir_layout": "Xcode.app/Contents/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "12.3",
+     "ProductBuildVersion": "21E226"
+    },
+    {
+     "entry": "MacOSX12.3.sdk -> MacOSX.sdk",
+     "Version": "12.3",
+     "ProductBuildVersion": "21E226"
+    }
+   ],
+   "clang": {
+    "clang": "1316.0.21.2.5",
+    "method": "strings on bin/clang, matched (clang-N)"
+   }
+  },
+  {
+   "installer": "Xcode-14.0.1+14A400.xip",
+   "kind": "xcode",
+   "xcode_version": "14.0.1",
+   "xcode_build": "14A400",
+   "DTXcode": "1400",
+   "DTXcodeBuild": "14Z11308b",
+   "min_macos": "12.5",
+   "developer_dir_layout": "Xcode.app/Contents/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "12.3",
+     "ProductBuildVersion": "21E226"
+    },
+    {
+     "entry": "MacOSX12.3.sdk -> MacOSX.sdk",
+     "Version": "12.3",
+     "ProductBuildVersion": "21E226"
+    },
+    {
+     "entry": "MacOSX12.sdk -> MacOSX.sdk",
+     "Version": "12.3",
+     "ProductBuildVersion": "21E226"
+    }
+   ],
+   "clang": {
+    "clang": "1400.0.29.102",
+    "method": "strings on bin/clang, matched (clang-N)"
+   }
+  },
+  {
+   "installer": "Xcode_14.2.xip",
+   "kind": "xcode",
+   "xcode_version": "14.2",
+   "xcode_build": "14C18",
+   "DTXcode": "1420",
+   "DTXcodeBuild": "14C11a",
+   "min_macos": "12.5",
+   "developer_dir_layout": "Xcode.app/Contents/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "13.1",
+     "ProductBuildVersion": "22C55"
+    },
+    {
+     "entry": "MacOSX13.1.sdk -> MacOSX.sdk",
+     "Version": "13.1",
+     "ProductBuildVersion": "22C55"
+    },
+    {
+     "entry": "MacOSX13.sdk -> MacOSX.sdk",
+     "Version": "13.1",
+     "ProductBuildVersion": "22C55"
+    }
+   ],
+   "clang": {
+    "clang": "1400.0.29.202",
+    "method": "strings on bin/clang, matched (clang-N)"
+   }
+  },
+  {
+   "installer": "Xcode-14.3.1+14E300c.xip",
+   "kind": "xcode",
+   "xcode_version": "14.3.1",
+   "xcode_build": "14E300c",
+   "DTXcode": "1431",
+   "DTXcodeBuild": "14E300b",
+   "min_macos": "13.0",
+   "developer_dir_layout": "Xcode.app/Contents/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "13.3",
+     "ProductBuildVersion": "22E245"
+    },
+    {
+     "entry": "MacOSX13.3.sdk -> MacOSX.sdk",
+     "Version": "13.3",
+     "ProductBuildVersion": "22E245"
+    },
+    {
+     "entry": "MacOSX13.sdk -> MacOSX.sdk",
+     "Version": "13.3",
+     "ProductBuildVersion": "22E245"
+    }
+   ],
+   "clang": {
+    "clang": "1403.0.22.14.1",
+    "method": "strings on bin/clang, matched (clang-N)"
+   }
+  },
+  {
+   "installer": "Xcode_15.2.xip",
+   "kind": "xcode",
+   "xcode_version": "15.2",
+   "xcode_build": "15C500b",
+   "DTXcode": "1520",
+   "DTXcodeBuild": "15C500",
+   "min_macos": "13.5",
+   "developer_dir_layout": "Xcode.app/Contents/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "14.2",
+     "ProductBuildVersion": "23C53"
+    },
+    {
+     "entry": "MacOSX14.2.sdk -> MacOSX.sdk",
+     "Version": "14.2",
+     "ProductBuildVersion": "23C53"
+    },
+    {
+     "entry": "MacOSX14.sdk -> MacOSX.sdk",
+     "Version": "14.2",
+     "ProductBuildVersion": "23C53"
+    }
+   ],
+   "clang": {
+    "clang": "1500.1.0.2.5",
+    "method": "strings on bin/clang, matched bare clang-N"
+   }
+  },
+  {
+   "installer": "Xcode-15.4.0+15F31d.xip",
+   "kind": "xcode",
+   "xcode_version": "15.4",
+   "xcode_build": "15F31d",
+   "DTXcode": "1540",
+   "DTXcodeBuild": "15F31c",
+   "min_macos": "14.0",
+   "developer_dir_layout": "Xcode.app/Contents/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "14.5",
+     "ProductBuildVersion": "23F73"
+    },
+    {
+     "entry": "MacOSX14.5.sdk -> MacOSX.sdk",
+     "Version": "14.5",
+     "ProductBuildVersion": "23F73"
+    },
+    {
+     "entry": "MacOSX14.sdk -> MacOSX.sdk",
+     "Version": "14.5",
+     "ProductBuildVersion": "23F73"
+    }
+   ],
+   "clang": {
+    "clang": "1500.3.9.4",
+    "method": "strings on bin/clang, matched bare clang-N"
+   }
+  },
+  {
+   "installer": "Xcode_16.2.xip",
+   "kind": "xcode",
+   "xcode_version": "16.2",
+   "xcode_build": "16C5032a",
+   "DTXcode": "1620",
+   "DTXcodeBuild": "16C5032",
+   "min_macos": "14.5",
+   "developer_dir_layout": "Xcode.app/Contents/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "15.2",
+     "ProductBuildVersion": "24C94"
+    },
+    {
+     "entry": "MacOSX15.2.sdk -> MacOSX.sdk",
+     "Version": "15.2",
+     "ProductBuildVersion": "24C94"
+    },
+    {
+     "entry": "MacOSX15.sdk -> MacOSX.sdk",
+     "Version": "15.2",
+     "ProductBuildVersion": "24C94"
+    }
+   ],
+   "clang": {
+    "clang": "1600.0.26.6",
+    "method": "strings on bin/clang, matched (clang-N)"
+   }
+  },
+  {
+   "installer": "Xcode-16.4.0+16F6.xip",
+   "kind": "xcode",
+   "xcode_version": "16.4",
+   "xcode_build": "16F6",
+   "DTXcode": "1640",
+   "DTXcodeBuild": "16F5",
+   "min_macos": "15.3",
+   "developer_dir_layout": "Xcode.app/Contents/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "15.5",
+     "ProductBuildVersion": "24F74"
+    },
+    {
+     "entry": "MacOSX15.5.sdk -> MacOSX.sdk",
+     "Version": "15.5",
+     "ProductBuildVersion": "24F74"
+    },
+    {
+     "entry": "MacOSX15.sdk -> MacOSX.sdk",
+     "Version": "15.5",
+     "ProductBuildVersion": "24F74"
+    }
+   ],
+   "clang": {
+    "clang": "1700.0.13.5",
+    "method": "strings on bin/clang, matched bare clang-N"
+   }
+  },
+  {
+   "installer": "Xcode_26.3_Apple_silicon.xip",
+   "kind": "xcode",
+   "xcode_version": "26.3",
+   "xcode_build": "17C529",
+   "DTXcode": "2630",
+   "DTXcodeBuild": "17C528",
+   "min_macos": "15.6",
+   "developer_dir_layout": "Xcode.app/Contents/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "26.2",
+     "ProductBuildVersion": "25C58"
+    },
+    {
+     "entry": "MacOSX26.2.sdk -> MacOSX.sdk",
+     "Version": "26.2",
+     "ProductBuildVersion": "25C58"
+    },
+    {
+     "entry": "MacOSX26.sdk -> MacOSX.sdk",
+     "Version": "26.2",
+     "ProductBuildVersion": "25C58"
+    }
+   ],
+   "clang": {
+    "clang": "1700.6.4.2",
+    "method": "strings on bin/clang, matched bare clang-N"
+   }
+  },
+  {
+   "installer": "Xcode_26.3_Universal.xip",
+   "kind": "xcode",
+   "xcode_version": "26.3",
+   "xcode_build": "17C529",
+   "DTXcode": "2630",
+   "DTXcodeBuild": "17C528",
+   "min_macos": "15.6",
+   "developer_dir_layout": "Xcode.app/Contents/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "26.2",
+     "ProductBuildVersion": "25C58"
+    },
+    {
+     "entry": "MacOSX26.2.sdk -> MacOSX.sdk",
+     "Version": "26.2",
+     "ProductBuildVersion": "25C58"
+    },
+    {
+     "entry": "MacOSX26.sdk -> MacOSX.sdk",
+     "Version": "26.2",
+     "ProductBuildVersion": "25C58"
+    }
+   ],
+   "clang": {
+    "clang": "1700.6.4.2",
+    "method": "strings on bin/clang, matched bare clang-N"
+   }
+  },
+  {
+   "installer": "Xcode_26.6_Apple_silicon.xip",
+   "kind": "xcode",
+   "xcode_version": "26.6",
+   "xcode_build": "17F113",
+   "DTXcode": "2660",
+   "DTXcodeBuild": "17F112",
+   "min_macos": "26.2",
+   "developer_dir_layout": "Xcode.app/Contents/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "26.5",
+     "ProductBuildVersion": "25F70"
+    },
+    {
+     "entry": "MacOSX26.5.sdk -> MacOSX.sdk",
+     "Version": "26.5",
+     "ProductBuildVersion": "25F70"
+    },
+    {
+     "entry": "MacOSX26.sdk -> MacOSX.sdk",
+     "Version": "26.5",
+     "ProductBuildVersion": "25F70"
+    }
+   ],
+   "clang": {
+    "clang": "2100.1.1.101",
+    "method": "strings on bin/clang, matched bare clang-N"
+   }
+  },
+  {
+   "installer": "Xcode_27.xip",
+   "kind": "xcode",
+   "xcode_version": "27.0",
+   "xcode_build": "27A266a",
+   "DTXcode": "2700",
+   "DTXcodeBuild": "27A266",
+   "min_macos": "26.6",
+   "developer_dir_layout": "Xcode.app/Contents/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "27.0",
+     "ProductBuildVersion": "26A425"
+    },
+    {
+     "entry": "MacOSX27.0.sdk -> MacOSX.sdk",
+     "Version": "27.0",
+     "ProductBuildVersion": "26A425"
+    },
+    {
+     "entry": "MacOSX27.sdk -> MacOSX.sdk",
+     "Version": "27.0",
+     "ProductBuildVersion": "26A425"
+    }
+   ],
+   "clang": {
+    "clang": "2100.3.34.2",
+    "method": "strings on bin/clang, matched bare clang-N"
+   }
+  },
+  {
+   "installer": "Command_Line_Tools_macOS_10.14_for_Xcode_10.3.dmg",
+   "kind": "clt",
+   "product_pkg": [
+    "Command Line Tools (macOS Mojave version 10.14).pkg"
+   ],
+   "tools_version": "10.3.0.0.1.1562985497",
+   "tools_version_source": "CLTools_Executables PackageInfo version",
+   "developer_dir": "/Library/Developer/CommandLineTools",
+   "sdks": [
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "10.14",
+     "ProductBuildVersion": "18G74",
+     "from_pkg": "CLTools_SDK_macOS1014.pkg"
+    },
+    {
+     "entry": "MacOSX10.14.sdk -> MacOSX.sdk",
+     "Version": "10.14",
+     "ProductBuildVersion": "18G74",
+     "from_pkg": [
+      "CLTools_SDK_macOS1014.pkg",
+      "CLTools_macOS_SDK_Remove_1013.pkg",
+      "CLTools_macOS_SDK_Remove_1014.pkg"
+     ]
+    }
+   ],
+   "bundled_packages": [
+    "macOS_SDK_headers_for_macOS_10.14.pkg"
+   ],
+   "clang": {
+    "clang": "1001.0.46.4",
+    "method": "strings on bin/clang, matched (clang-N)"
+   },
+   "gcc": {
+    "path_size_bytes": 18672,
+    "note": "clang driver shim (xcrun-style), not GNU gcc"
+   },
+   "target_os": {
+    "from_dmg_name": "Command_Line_Tools_macOS_10.14_for_Xcode_10.3.dmg",
+    "allowed_os_versions": [
+     "before=\"10.15\" min=\"10.14\""
+    ]
+   }
+  },
+  {
+   "installer": "Command_Line_Tools_for_Xcode_13.dmg",
+   "kind": "clt",
+   "product_pkg": [
+    "Command Line Tools.pkg"
+   ],
+   "tools_version": "13.0.0.0.1.1630607135",
+   "tools_version_source": "CLTools_Executables PackageInfo version",
+   "developer_dir": "/Library/Developer/CommandLineTools",
+   "sdks": [
+    {
+     "entry": "MacOSX11.3.sdk",
+     "Version": "11.3",
+     "ProductBuildVersion": "20E214",
+     "from_pkg": "CLTools_macOSNMOS_SDK.pkg"
+    },
+    {
+     "entry": "MacOSX11.sdk -> MacOSX11.3.sdk",
+     "Version": "11.3",
+     "ProductBuildVersion": "20E214",
+     "from_pkg": "CLTools_macOSNMOS_SDK.pkg"
+    },
+    {
+     "entry": "MacOSX.sdk -> MacOSX11.3.sdk",
+     "from_pkg": "CLTools_macOS_SDK.pkg",
+     "Version": "11.3",
+     "ProductBuildVersion": "20E214"
+    }
+   ],
+   "bundled_packages": null,
+   "clang": {
+    "clang": "1300.0.29.3",
+    "method": "strings on bin/clang, matched (clang-N)"
+   },
+   "gcc": {
+    "path_size_bytes": 167120,
+    "note": "clang driver shim (xcrun-style), not GNU gcc"
+   },
+   "target_os": {
+    "from_dmg_name": "Command_Line_Tools_for_Xcode_13.dmg",
+    "allowed_os_versions": [
+     "before=\"13.0\" min=\"11.3\""
+    ]
+   }
+  },
+  {
+   "installer": "Command_Line_Tools_for_Xcode_13.4.dmg",
+   "kind": "clt",
+   "product_pkg": [
+    "Command Line Tools.pkg"
+   ],
+   "tools_version": "13.4.0.0.1.1651278267",
+   "tools_version_source": "CLTools_Executables PackageInfo version",
+   "developer_dir": "/Library/Developer/CommandLineTools",
+   "sdks": [
+    {
+     "entry": "MacOSX11.3.sdk",
+     "Version": "11.3",
+     "ProductBuildVersion": "20E241",
+     "from_pkg": "CLTools_macOSLMOS_SDK.pkg"
+    },
+    {
+     "entry": "MacOSX11.sdk -> MacOSX11.3.sdk",
+     "Version": "11.3",
+     "ProductBuildVersion": "20E241",
+     "from_pkg": "CLTools_macOSLMOS_SDK.pkg"
+    },
+    {
+     "entry": "MacOSX12.3.sdk",
+     "Version": "12.3",
+     "ProductBuildVersion": "21E226",
+     "from_pkg": "CLTools_macOSNMOS_SDK.pkg"
+    },
+    {
+     "entry": "MacOSX12.sdk -> MacOSX12.3.sdk",
+     "Version": "12.3",
+     "ProductBuildVersion": "21E226",
+     "from_pkg": "CLTools_macOSNMOS_SDK.pkg"
+    },
+    {
+     "entry": "MacOSX.sdk -> MacOSX12.3.sdk",
+     "from_pkg": "CLTools_macOS_SDK.pkg",
+     "Version": "12.3",
+     "ProductBuildVersion": "21E226"
+    }
+   ],
+   "bundled_packages": null,
+   "clang": {
+    "clang": "1316.0.21.2.5",
+    "method": "strings on bin/clang, matched (clang-N)"
+   },
+   "gcc": {
+    "path_size_bytes": 166752,
+    "note": "clang driver shim (xcrun-style), not GNU gcc"
+   },
+   "target_os": {
+    "from_dmg_name": "Command_Line_Tools_for_Xcode_13.4.dmg",
+    "allowed_os_versions": [
+     "before=\"13.0\" min=\"12.0\""
+    ]
+   }
+  },
+  {
+   "installer": "Command_Line_Tools_for_Xcode_14.3.1.dmg",
+   "kind": "clt",
+   "product_pkg": [
+    "Command Line Tools.pkg"
+   ],
+   "tools_version": "14.3.1.0.1.1683849156",
+   "tools_version_source": "CLTools_Executables PackageInfo version",
+   "developer_dir": "/Library/Developer/CommandLineTools",
+   "sdks": [
+    {
+     "entry": "MacOSX12.3.sdk",
+     "Version": "12.3",
+     "ProductBuildVersion": "21E226",
+     "from_pkg": "CLTools_macOSLMOS_SDK.pkg"
+    },
+    {
+     "entry": "MacOSX12.sdk -> MacOSX12.3.sdk",
+     "Version": "12.3",
+     "ProductBuildVersion": "21E226",
+     "from_pkg": "CLTools_macOSLMOS_SDK.pkg"
+    },
+    {
+     "entry": "MacOSX13.3.sdk",
+     "Version": "13.3",
+     "ProductBuildVersion": "22E245",
+     "from_pkg": "CLTools_macOSNMOS_SDK.pkg"
+    },
+    {
+     "entry": "MacOSX13.sdk -> MacOSX13.3.sdk",
+     "Version": "13.3",
+     "ProductBuildVersion": "22E245",
+     "from_pkg": "CLTools_macOSNMOS_SDK.pkg"
+    },
+    {
+     "entry": "MacOSX.sdk -> MacOSX13.3.sdk",
+     "from_pkg": "CLTools_macOS_SDK.pkg",
+     "Version": "13.3",
+     "ProductBuildVersion": "22E245"
+    }
+   ],
+   "bundled_packages": null,
+   "clang": {
+    "clang": "1403.0.22.14.1",
+    "method": "strings on bin/clang, matched (clang-N)"
+   },
+   "gcc": {
+    "path_size_bytes": 150224,
+    "note": "clang driver shim (xcrun-style), not GNU gcc"
+   },
+   "target_os": {
+    "from_dmg_name": "Command_Line_Tools_for_Xcode_14.3.1.dmg",
+    "allowed_os_versions": [
+     "before=\"14.0\" min=\"13.0\""
+    ]
+   }
+  },
+  {
+   "installer": "Command_Line_Tools_for_Xcode_15.3.dmg",
+   "kind": "clt",
+   "product_pkg": [
+    "Command Line Tools.pkg"
+   ],
+   "tools_version": "15.3.0.0.1.1708487402",
+   "tools_version_source": "CLTools_Executables PackageInfo version",
+   "developer_dir": "/Library/Developer/CommandLineTools",
+   "sdks": [
+    {
+     "entry": "MacOSX13.3.sdk",
+     "Version": "13.3",
+     "ProductBuildVersion": "22E230",
+     "from_pkg": "CLTools_macOSLMOS_SDK.pkg"
+    },
+    {
+     "entry": "MacOSX13.sdk -> MacOSX13.3.sdk",
+     "Version": "13.3",
+     "ProductBuildVersion": "22E230",
+     "from_pkg": "CLTools_macOSLMOS_SDK.pkg"
+    },
+    {
+     "entry": "MacOSX14.4.sdk",
+     "Version": "14.4",
+     "ProductBuildVersion": "23E5196c",
+     "from_pkg": "CLTools_macOSNMOS_SDK.pkg"
+    },
+    {
+     "entry": "MacOSX14.sdk -> MacOSX14.4.sdk",
+     "Version": "14.4",
+     "ProductBuildVersion": "23E5196c",
+     "from_pkg": "CLTools_macOSNMOS_SDK.pkg"
+    },
+    {
+     "entry": "MacOSX.sdk -> MacOSX14.4.sdk",
+     "from_pkg": "CLTools_macOS_SDK.pkg",
+     "Version": "14.4",
+     "ProductBuildVersion": "23E5196c"
+    }
+   ],
+   "bundled_packages": null,
+   "clang": {
+    "clang": "1500.3.9.4",
+    "method": "strings on bin/clang, matched bare clang-N"
+   },
+   "gcc": {
+    "path_size_bytes": 101088,
+    "note": "clang driver shim (xcrun-style), not GNU gcc"
+   },
+   "target_os": {
+    "from_dmg_name": "Command_Line_Tools_for_Xcode_15.3.dmg",
+    "allowed_os_versions": [
+     "before=\"15.4\" min=\"14.0\""
+    ]
+   }
+  },
+  {
+   "installer": "Command_Line_Tools_for_Xcode_26.dmg",
+   "kind": "clt",
+   "product_pkg": [
+    "Command Line Tools.pkg"
+   ],
+   "tools_version": "26.0.0.0.1.1756965055",
+   "tools_version_source": "CLTools_Executables PackageInfo version",
+   "developer_dir": "/Library/Developer/CommandLineTools",
+   "sdks": [
+    {
+     "entry": "MacOSX15.5.sdk",
+     "Version": "15.5",
+     "ProductBuildVersion": "24F74",
+     "from_pkg": "CLTools_macOSLMOS_SDK.pkg"
+    },
+    {
+     "entry": "MacOSX15.sdk -> MacOSX15.5.sdk",
+     "Version": "15.5",
+     "ProductBuildVersion": "24F74",
+     "from_pkg": "CLTools_macOSLMOS_SDK.pkg"
+    },
+    {
+     "entry": "MacOSX26.0.sdk",
+     "Version": "26.0",
+     "ProductBuildVersion": "25A352",
+     "from_pkg": "CLTools_macOSNMOS_SDK.pkg"
+    },
+    {
+     "entry": "MacOSX26.sdk -> MacOSX26.0.sdk",
+     "Version": "26.0",
+     "ProductBuildVersion": "25A352",
+     "from_pkg": "CLTools_macOSNMOS_SDK.pkg"
+    },
+    {
+     "entry": "MacOSX.sdk -> MacOSX26.0.sdk",
+     "from_pkg": "CLTools_macOS_SDK.pkg",
+     "Version": "26.0",
+     "ProductBuildVersion": "25A352"
+    }
+   ],
+   "bundled_packages": null,
+   "clang": {
+    "clang": "1700.3.19.1",
+    "method": "strings on bin/clang, matched bare clang-N"
+   },
+   "gcc": {
+    "path_size_bytes": 101088,
+    "note": "clang driver shim (xcrun-style), not GNU gcc"
+   },
+   "target_os": {
+    "from_dmg_name": "Command_Line_Tools_for_Xcode_26.dmg",
+    "allowed_os_versions": [
+     "before=\"27.0\" min=\"15.6\""
+    ]
+   }
+  }
+ ]
+}

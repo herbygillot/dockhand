@@ -1,0 +1,776 @@
+{
+ "date": "2026-11-10",
+ "source": "~/Downloads/xcode_archives (installers added 2026-11-10)",
+ "method": "read-only: hdiutil -readonly; Xcode 4.3+ dmgs read straight off the mount; xip --expand for Xcode 8/9 xips; pkgutil --expand-full for CLT dmgs and the Xcode 3.2.6 mpkg packages; clang build and gcc versions read with byte regexes, no binary executed",
+ "notes": [
+  "ProductBuildVersion for SDKs comes from the SDK's System/Library/CoreServices/SystemVersion.plist; SDKSettings.plist has none in these SDKs",
+  "gcc_cc1 holds GCC version strings read from cc1 (the gcc/llvm-gcc drivers carry none)",
+  "CLT include_dirs lists payloads that install headers; has_stdio.h marks the libc headers",
+  "per-installer files keep fuller detail (package ids, clang binary path, toolchain Info.plist)"
+ ],
+ "installers": [
+  {
+   "installer": "xcode_3.2.6_and_ios_sdk_4.3.dmg",
+   "kind": "xcode",
+   "xcode_version": "3.2.6",
+   "xcode_build": "10M2518",
+   "xcode_build_source": "Packages/.hidden/version.plist ProductBuildVersion (Xcode.app version.plist has none)",
+   "CFBundleVersion": "1761",
+   "min_macos": "10.6.4",
+   "installer_os_checks": [
+    "system.compareVersions(my.target.systemVersion.ProductVersion, '10.6.6')  >= 0",
+    "system.compareVersions(my.target.systemVersion.ProductVersion, '10.6.6') == -1",
+    "system.compareVersions(my.target.systemVersion.ProductVersion, '10.6.6') >= 0",
+    "system.compareVersions(my.target.systemVersion.ProductVersion, '10.7') < 0",
+    "system.compareVersions(system.version.ProductVersion, '10.6.6') >= 0"
+   ],
+   "developer_dir_layout": "/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "MacOSX10.4u.sdk",
+     "Version": "10.4",
+     "ProductBuildVersion": "8S2167",
+     "from_pkg": "MacOSX10.4.Universal.pkg"
+    },
+    {
+     "entry": "MacOSX10.5.sdk",
+     "Version": "10.5",
+     "ProductBuildVersion": "9L31a",
+     "from_pkg": "MacOSX10.5.pkg"
+    },
+    {
+     "entry": "MacOSX10.6.sdk",
+     "Version": "10.6",
+     "ProductBuildVersion": "10M2518",
+     "from_pkg": "MacOSX10.6.pkg"
+    }
+   ],
+   "xcode_sdks_installed_to": "/Developer/SDKs",
+   "clang": {
+    "clang": "77",
+    "version_line": "clang version 1.7 (tags/Apple/clang-77)",
+    "method": "strings on usr/bin/clang from clang.pkg: SVN tag path \".../tags/Apple/clang-N/...\" and \"clang version X (\""
+   },
+   "gcc": [
+    {
+     "binary": "gcc",
+     "symlink_to": "gcc-4.2",
+     "from_pkg": "DeveloperToolsCLI.pkg"
+    }
+   ],
+   "gcc_cc1": [
+    {
+     "cc1": "libexec/gcc/i686-apple-darwin10/4.0.1/cc1",
+     "prefix": "usr",
+     "version": "4.0.1 (Apple Inc. build 5494)",
+     "from_pkg": "gcc4.0.pkg"
+    },
+    {
+     "cc1": "libexec/gcc/powerpc-apple-darwin10/4.0.1/cc1",
+     "prefix": "usr",
+     "version": "4.0.1 (Apple Inc. build 5494)",
+     "from_pkg": "gcc4.0.pkg"
+    },
+    {
+     "cc1": "libexec/gcc/i686-apple-darwin10/4.2.1/cc1",
+     "prefix": "usr",
+     "version": "4.2.1 (Apple Inc. build 5666) (dot 3)",
+     "from_pkg": "gcc4.2.pkg"
+    },
+    {
+     "cc1": "libexec/gcc/powerpc-apple-darwin10/4.2.1/cc1",
+     "prefix": "usr",
+     "version": "4.2.1 (Apple Inc. build 5666) (dot 3)",
+     "from_pkg": "gcc4.2.pkg"
+    },
+    {
+     "cc1": "libexec/gcc/i686-apple-darwin10/4.2.1/cc1",
+     "prefix": "llvm-gcc-4.2",
+     "version": "4.2.1 (Based on Apple Inc. build 5658) (LLVM build 2335.6)",
+     "from_pkg": "llvm-gcc4.2.pkg"
+    },
+    {
+     "cc1": "libexec/gcc/powerpc-apple-darwin10/4.2.1/cc1",
+     "prefix": "llvm-gcc-4.2",
+     "version": "4.2.1 (Based on Apple Inc. build 5658) (LLVM build 2335.6)",
+     "from_pkg": "llvm-gcc4.2.pkg"
+    }
+   ],
+   "unix_dev_note": "gcc4.0, gcc4.2 and llvm-gcc4.2 each also have a ROOT pkg-ref with customLocation \"/\" (the UNIX Development choice), so the same compilers land in /usr too"
+  },
+  {
+   "installer": "Xcode_4.6.3.dmg",
+   "kind": "xcode",
+   "xcode_version": "4.6.3",
+   "xcode_build": "4H1503",
+   "DTXcode": "0463",
+   "DTXcodeBuild": "",
+   "min_macos": "10.7.4",
+   "developer_dir_layout": "Xcode.app/Contents/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "MacOSX10.7.sdk",
+     "Version": "10.7",
+     "ProductBuildVersion": "11E52"
+    },
+    {
+     "entry": "MacOSX10.8.sdk",
+     "Version": "10.8",
+     "ProductBuildVersion": "12D75"
+    }
+   ],
+   "clang": {
+    "clang": "425.0.28",
+    "method": "strings on bin/clang, matched bare clang-N"
+   },
+   "gcc": [
+    {
+     "binary": "gcc",
+     "size_bytes": 117168,
+     "symlink_to": "llvm-gcc-4.2",
+     "version": null,
+     "note": "GCC driver; its version string lives in cc1 (see gcc_cc1)"
+    }
+   ],
+   "gcc_cc1": [
+    {
+     "cc1": "libexec/gcc/i686-apple-darwin11/4.2.1/cc1",
+     "prefix": "llvm-gcc-4.2",
+     "version": "4.2.1 (Based on Apple Inc. build 5658) (LLVM build 2336.11.00)"
+    }
+   ]
+  },
+  {
+   "installer": "Xcode_5.1.1.dmg",
+   "kind": "xcode",
+   "xcode_version": "5.1.1",
+   "xcode_build": "5B1008",
+   "DTXcode": "0510",
+   "DTXcodeBuild": "",
+   "min_macos": "10.8.4",
+   "developer_dir_layout": "Xcode.app/Contents/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "MacOSX10.8.sdk",
+     "Version": "10.8",
+     "ProductBuildVersion": "12F37"
+    },
+    {
+     "entry": "MacOSX10.9.sdk",
+     "Version": "10.9",
+     "ProductBuildVersion": "13C64"
+    }
+   ],
+   "clang": {
+    "clang": "503.0.40",
+    "method": "strings on bin/clang, matched bare clang-N"
+   },
+   "gcc": [
+    {
+     "binary": "gcc",
+     "size_bytes": 35456,
+     "version": null,
+     "note": "no GCC version string; likely a clang driver or xcrun shim"
+    }
+   ],
+   "gcc_cc1": null
+  },
+  {
+   "installer": "Xcode_6.2.dmg",
+   "kind": "xcode",
+   "xcode_version": "6.2",
+   "xcode_build": "6C131e",
+   "DTXcode": "0620",
+   "DTXcodeBuild": "6C130",
+   "min_macos": "10.9.4",
+   "developer_dir_layout": "Xcode.app/Contents/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "MacOSX10.10.sdk",
+     "Version": "10.10",
+     "ProductBuildVersion": "14A383"
+    },
+    {
+     "entry": "MacOSX10.9.sdk",
+     "Version": "10.9",
+     "ProductBuildVersion": "13F26"
+    }
+   ],
+   "clang": {
+    "clang": "600.0.57",
+    "method": "strings on bin/clang, matched bare clang-N"
+   },
+   "gcc": [
+    {
+     "binary": "gcc",
+     "size_bytes": 18608,
+     "version": null,
+     "note": "no GCC version string; likely a clang driver or xcrun shim"
+    }
+   ],
+   "gcc_cc1": null
+  },
+  {
+   "installer": "Xcode_7.2.1.dmg",
+   "kind": "xcode",
+   "xcode_version": "7.2.1",
+   "xcode_build": "7C1002",
+   "DTXcode": "0721",
+   "DTXcodeBuild": "7C1001",
+   "min_macos": "10.10.5",
+   "developer_dir_layout": "Xcode.app/Contents/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "MacOSX10.11.sdk",
+     "Version": "10.11",
+     "ProductBuildVersion": "15C43"
+    }
+   ],
+   "clang": {
+    "clang": "700.1.81",
+    "method": "strings on bin/clang, matched (clang-N)"
+   },
+   "gcc": [
+    {
+     "binary": "gcc",
+     "size_bytes": 18576,
+     "version": null,
+     "note": "no GCC version string; likely a clang driver or xcrun shim"
+    }
+   ],
+   "gcc_cc1": null
+  },
+  {
+   "installer": "Xcode_8.2.1.xip",
+   "kind": "xcode",
+   "xcode_version": "8.2.1",
+   "xcode_build": "8C1002",
+   "DTXcode": "0820",
+   "DTXcodeBuild": "",
+   "min_macos": "10.11.5",
+   "developer_dir_layout": "Xcode.app/Contents/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "10.12",
+     "ProductBuildVersion": "16C58"
+    },
+    {
+     "entry": "MacOSX10.12.sdk -> MacOSX.sdk",
+     "Version": "10.12",
+     "ProductBuildVersion": "16C58"
+    }
+   ],
+   "clang": {
+    "clang": "800.0.42.1",
+    "method": "strings on bin/clang, matched (clang-N)"
+   },
+   "gcc": [
+    {
+     "binary": "gcc",
+     "size_bytes": 18560,
+     "version": null,
+     "note": "no GCC version string; likely a clang driver or xcrun shim"
+    }
+   ],
+   "gcc_cc1": null
+  },
+  {
+   "installer": "Xcode_9.2.xip",
+   "kind": "xcode",
+   "xcode_version": "9.2",
+   "xcode_build": "9C40b",
+   "DTXcode": "0920",
+   "DTXcodeBuild": "9C40a",
+   "min_macos": "10.12.6",
+   "developer_dir_layout": "Xcode.app/Contents/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "10.13",
+     "ProductBuildVersion": "17C76"
+    },
+    {
+     "entry": "MacOSX10.13.sdk -> MacOSX.sdk",
+     "Version": "10.13",
+     "ProductBuildVersion": "17C76"
+    }
+   ],
+   "clang": {
+    "clang": "900.0.39.2",
+    "method": "strings on bin/clang, matched (clang-N)"
+   },
+   "gcc": [
+    {
+     "binary": "gcc",
+     "size_bytes": 18656,
+     "version": null,
+     "note": "no GCC version string; likely a clang driver or xcrun shim"
+    }
+   ],
+   "gcc_cc1": null
+  },
+  {
+   "installer": "Xcode_9.4.1.xip",
+   "kind": "xcode",
+   "xcode_version": "9.4.1",
+   "xcode_build": "9F2000",
+   "DTXcode": "0940",
+   "DTXcodeBuild": "9F1027a",
+   "min_macos": "10.13.2",
+   "developer_dir_layout": "Xcode.app/Contents/Developer",
+   "xcode_sdks": [
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "10.13",
+     "ProductBuildVersion": "17E189"
+    },
+    {
+     "entry": "MacOSX10.13.sdk -> MacOSX.sdk",
+     "Version": "10.13",
+     "ProductBuildVersion": "17E189"
+    }
+   ],
+   "clang": {
+    "clang": "902.0.39.2",
+    "method": "strings on bin/clang, matched (clang-N)"
+   },
+   "gcc": [
+    {
+     "binary": "gcc",
+     "size_bytes": 18656,
+     "version": null,
+     "note": "no GCC version string; likely a clang driver or xcrun shim"
+    }
+   ],
+   "gcc_cc1": null
+  },
+  {
+   "installer": "Command_Line_Tools_OS_X_10.10_for_Xcode__Xcode_6.2.dmg",
+   "kind": "clt",
+   "product_pkg": [
+    "Command Line Tools (OS X 10.10).pkg"
+   ],
+   "tools_version": "6.2.0.0.1.1424975374",
+   "tools_version_source": "CLTools_Executables PackageInfo version",
+   "developer_dir": "/Library/Developer/CommandLineTools",
+   "sdks": [],
+   "sdks_note": "no CommandLineTools/SDKs in any payload; headers install to /usr/include (see include_dirs)",
+   "bundled_packages": null,
+   "include_dirs": [
+    {
+     "pkg": "CLTools_Executables.pkg",
+     "installs": "/Library/Developer/CommandLineTools/usr/include",
+     "has_stdio.h": false
+    },
+    {
+     "pkg": "DevSDK_OSX1010.pkg",
+     "installs": "/usr/include",
+     "has_stdio.h": true
+    }
+   ],
+   "clang": {
+    "clang": "600.0.57",
+    "method": "strings on bin/clang, matched bare clang-N"
+   },
+   "gcc": {
+    "path_size_bytes": 18608,
+    "note": "clang driver shim (xcrun-style), not GNU gcc"
+   },
+   "target_os": {
+    "from_dmg_name": "Command_Line_Tools_OS_X_10.10_for_Xcode__Xcode_6.2.dmg",
+    "allowed_os_versions": [],
+    "version_script_lines": [
+     "system.compareVersions(system.version.ProductVersion, '10.10') < 0 || system.compareVersions(system.version.ProductVersion, '10.11') >= 0) {",
+     "system.compareVersions(my.target.systemVersion.ProductVersion, '10.10') < 0 || system.compareVersions(my.target.systemVersion.ProductVersion, '10.11') >= 0) {"
+    ]
+   }
+  },
+  {
+   "installer": "Command_Line_Tools_OS_X_10.9_for_Xcode__Xcode_6.2.dmg",
+   "kind": "clt",
+   "product_pkg": [
+    "Command Line Tools (OS X 10.9).pkg"
+   ],
+   "tools_version": "6.2.0.0.1.1424975374",
+   "tools_version_source": "CLTools_Executables PackageInfo version",
+   "developer_dir": "/Library/Developer/CommandLineTools",
+   "sdks": [],
+   "sdks_note": "no CommandLineTools/SDKs in any payload; headers install to /usr/include (see include_dirs)",
+   "bundled_packages": null,
+   "include_dirs": [
+    {
+     "pkg": "CLTools_Executables_OSX109.pkg",
+     "installs": "/Library/Developer/CommandLineTools/usr/include",
+     "has_stdio.h": false
+    },
+    {
+     "pkg": "DevSDK_OSX109.pkg",
+     "installs": "/usr/include",
+     "has_stdio.h": true
+    }
+   ],
+   "clang": {
+    "clang": "600.0.57",
+    "method": "strings on bin/clang, matched bare clang-N"
+   },
+   "gcc": {
+    "path_size_bytes": 18608,
+    "note": "clang driver shim (xcrun-style), not GNU gcc"
+   },
+   "target_os": {
+    "from_dmg_name": "Command_Line_Tools_OS_X_10.9_for_Xcode__Xcode_6.2.dmg",
+    "allowed_os_versions": [],
+    "version_script_lines": [
+     "system.compareVersions(system.version.ProductVersion, '10.9') < 0 || system.compareVersions(system.version.ProductVersion, '10.10') >= 0) {",
+     "system.compareVersions(my.target.systemVersion.ProductVersion, '10.9') < 0 || system.compareVersions(my.target.systemVersion.ProductVersion, '10.10') >= 0) {"
+    ]
+   }
+  },
+  {
+   "installer": "Command_Line_Tools_OS_X_10.10_for_Xcode_7.2.dmg",
+   "kind": "clt",
+   "product_pkg": [
+    "Command Line Tools (OS X 10.10).pkg"
+   ],
+   "tools_version": "7.2.0.0.1.1447826929",
+   "tools_version_source": "CLTools_Executables PackageInfo version",
+   "developer_dir": "/Library/Developer/CommandLineTools",
+   "sdks": [],
+   "sdks_note": "no CommandLineTools/SDKs in any payload; headers install to /usr/include (see include_dirs)",
+   "bundled_packages": null,
+   "include_dirs": [
+    {
+     "pkg": "CLTools_Executables.pkg",
+     "installs": "/Library/Developer/CommandLineTools/usr/include",
+     "has_stdio.h": false
+    },
+    {
+     "pkg": "DevSDK_OSX1010.pkg",
+     "installs": "/usr/include",
+     "has_stdio.h": true
+    }
+   ],
+   "clang": {
+    "clang": "700.1.81",
+    "method": "strings on bin/clang, matched (clang-N)"
+   },
+   "gcc": {
+    "path_size_bytes": 18576,
+    "note": "clang driver shim (xcrun-style), not GNU gcc"
+   },
+   "target_os": {
+    "from_dmg_name": "Command_Line_Tools_OS_X_10.10_for_Xcode_7.2.dmg",
+    "allowed_os_versions": [
+     "min=\"10.10\""
+    ]
+   }
+  },
+  {
+   "installer": "Command_Line_Tools_OS_X_10.11_for_Xcode_7.2.dmg",
+   "kind": "clt",
+   "product_pkg": [
+    "Command Line Tools (OS X 10.11).pkg"
+   ],
+   "tools_version": "7.2.0.0.1.1447826929",
+   "tools_version_source": "CLTools_Executables PackageInfo version",
+   "developer_dir": "/Library/Developer/CommandLineTools",
+   "sdks": [],
+   "sdks_note": "no CommandLineTools/SDKs in any payload; headers install to /usr/include (see include_dirs)",
+   "bundled_packages": null,
+   "include_dirs": [
+    {
+     "pkg": "CLTools_Executables.pkg",
+     "installs": "/Library/Developer/CommandLineTools/usr/include",
+     "has_stdio.h": false
+    },
+    {
+     "pkg": "DevSDK_OSX1011.pkg",
+     "installs": "/usr/include",
+     "has_stdio.h": true
+    }
+   ],
+   "clang": {
+    "clang": "700.1.81",
+    "method": "strings on bin/clang, matched (clang-N)"
+   },
+   "gcc": {
+    "path_size_bytes": 18576,
+    "note": "clang driver shim (xcrun-style), not GNU gcc"
+   },
+   "target_os": {
+    "from_dmg_name": "Command_Line_Tools_OS_X_10.11_for_Xcode_7.2.dmg",
+    "allowed_os_versions": [
+     "min=\"10.11\""
+    ]
+   }
+  },
+  {
+   "installer": "Command_Line_Tools_macOS_10.11_for_Xcode_8.2.dmg",
+   "kind": "clt",
+   "product_pkg": [
+    "Command Line Tools (macOS El Capitan version 10.11).pkg"
+   ],
+   "tools_version": "8.2.0.0.1.1480973914",
+   "tools_version_source": "CLTools_Executables PackageInfo version",
+   "developer_dir": "/Library/Developer/CommandLineTools",
+   "sdks": [
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "10.12",
+     "ProductBuildVersion": "16C58",
+     "from_pkg": "CLTools_SDK_OSX1012.pkg"
+    },
+    {
+     "entry": "MacOSX10.12.sdk -> MacOSX.sdk",
+     "Version": "10.12",
+     "ProductBuildVersion": "16C58",
+     "from_pkg": "CLTools_SDK_OSX1012.pkg"
+    }
+   ],
+   "bundled_packages": null,
+   "include_dirs": [
+    {
+     "pkg": "CLTools_Executables.pkg",
+     "installs": "/Library/Developer/CommandLineTools/usr/include",
+     "has_stdio.h": false
+    },
+    {
+     "pkg": "DevSDK_OSX1011.pkg",
+     "installs": "/usr/include",
+     "has_stdio.h": true
+    }
+   ],
+   "clang": {
+    "clang": "800.0.42.1",
+    "method": "strings on bin/clang, matched (clang-N)"
+   },
+   "gcc": {
+    "path_size_bytes": 18560,
+    "note": "clang driver shim (xcrun-style), not GNU gcc"
+   },
+   "target_os": {
+    "from_dmg_name": "Command_Line_Tools_macOS_10.11_for_Xcode_8.2.dmg",
+    "allowed_os_versions": [
+     "min=\"10.11\""
+    ]
+   }
+  },
+  {
+   "installer": "Command_Line_Tools_macOS_10.12_for_Xcode_8.2.dmg",
+   "kind": "clt",
+   "product_pkg": [
+    "Command Line Tools (macOS Sierra version 10.12).pkg"
+   ],
+   "tools_version": "8.2.0.0.1.1480973914",
+   "tools_version_source": "CLTools_Executables PackageInfo version",
+   "developer_dir": "/Library/Developer/CommandLineTools",
+   "sdks": [
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "10.12",
+     "ProductBuildVersion": "16C58",
+     "from_pkg": "CLTools_SDK_OSX1012.pkg"
+    },
+    {
+     "entry": "MacOSX10.12.sdk -> MacOSX.sdk",
+     "Version": "10.12",
+     "ProductBuildVersion": "16C58",
+     "from_pkg": "CLTools_SDK_OSX1012.pkg"
+    }
+   ],
+   "bundled_packages": null,
+   "include_dirs": [
+    {
+     "pkg": "CLTools_Executables.pkg",
+     "installs": "/Library/Developer/CommandLineTools/usr/include",
+     "has_stdio.h": false
+    },
+    {
+     "pkg": "DevSDK_OSX1012.pkg",
+     "installs": "/usr/include",
+     "has_stdio.h": true
+    }
+   ],
+   "clang": {
+    "clang": "800.0.42.1",
+    "method": "strings on bin/clang, matched (clang-N)"
+   },
+   "gcc": {
+    "path_size_bytes": 18560,
+    "note": "clang driver shim (xcrun-style), not GNU gcc"
+   },
+   "target_os": {
+    "from_dmg_name": "Command_Line_Tools_macOS_10.12_for_Xcode_8.2.dmg",
+    "allowed_os_versions": [
+     "min=\"10.12\""
+    ]
+   }
+  },
+  {
+   "installer": "Command_Line_Tools_macOS_10.12_for_Xcode_9.2.dmg",
+   "kind": "clt",
+   "product_pkg": [
+    "Command Line Tools (macOS Sierra version 10.12).pkg"
+   ],
+   "tools_version": "9.2.0.0.1.1510905681",
+   "tools_version_source": "CLTools_Executables PackageInfo version",
+   "developer_dir": "/Library/Developer/CommandLineTools",
+   "sdks": [
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "10.13",
+     "ProductBuildVersion": "17C76",
+     "from_pkg": "CLTools_SDK_macOS1013.pkg"
+    },
+    {
+     "entry": "MacOSX10.13.sdk -> MacOSX.sdk",
+     "Version": "10.13",
+     "ProductBuildVersion": "17C76",
+     "from_pkg": [
+      "CLTools_SDK_macOS1013.pkg",
+      "CLTools_macOS_SDK_Remove_1012.pkg",
+      "CLTools_macOS_SDK_Remove_1013.pkg"
+     ]
+    }
+   ],
+   "bundled_packages": null,
+   "include_dirs": [
+    {
+     "pkg": "CLTools_Executables.pkg",
+     "installs": "/Library/Developer/CommandLineTools/usr/include",
+     "has_stdio.h": false
+    },
+    {
+     "pkg": "DevSDK_OSX1012.pkg",
+     "installs": "/usr/include",
+     "has_stdio.h": true
+    }
+   ],
+   "clang": {
+    "clang": "900.0.39.2",
+    "method": "strings on bin/clang, matched (clang-N)"
+   },
+   "gcc": {
+    "path_size_bytes": 18656,
+    "note": "clang driver shim (xcrun-style), not GNU gcc"
+   },
+   "target_os": {
+    "from_dmg_name": "Command_Line_Tools_macOS_10.12_for_Xcode_9.2.dmg",
+    "allowed_os_versions": [
+     "before=\"10.13\" min=\"10.12\""
+    ]
+   }
+  },
+  {
+   "installer": "Command_Line_Tools_macOS_10.13_for_Xcode_9.2.dmg",
+   "kind": "clt",
+   "product_pkg": [
+    "Command Line Tools (macOS High Sierra version 10.13).pkg"
+   ],
+   "tools_version": "9.2.0.0.1.1510905681",
+   "tools_version_source": "CLTools_Executables PackageInfo version",
+   "developer_dir": "/Library/Developer/CommandLineTools",
+   "sdks": [
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "10.13",
+     "ProductBuildVersion": "17C76",
+     "from_pkg": "CLTools_SDK_macOS1013.pkg"
+    },
+    {
+     "entry": "MacOSX10.13.sdk -> MacOSX.sdk",
+     "Version": "10.13",
+     "ProductBuildVersion": "17C76",
+     "from_pkg": [
+      "CLTools_SDK_macOS1013.pkg",
+      "CLTools_macOS_SDK_Remove_1012.pkg",
+      "CLTools_macOS_SDK_Remove_1013.pkg"
+     ]
+    }
+   ],
+   "bundled_packages": null,
+   "include_dirs": [
+    {
+     "pkg": "CLTools_Executables.pkg",
+     "installs": "/Library/Developer/CommandLineTools/usr/include",
+     "has_stdio.h": false
+    },
+    {
+     "pkg": "DevSDK_macOS1013_Public.pkg",
+     "installs": "/usr/include",
+     "has_stdio.h": true
+    }
+   ],
+   "clang": {
+    "clang": "900.0.39.2",
+    "method": "strings on bin/clang, matched (clang-N)"
+   },
+   "gcc": {
+    "path_size_bytes": 18656,
+    "note": "clang driver shim (xcrun-style), not GNU gcc"
+   },
+   "target_os": {
+    "from_dmg_name": "Command_Line_Tools_macOS_10.13_for_Xcode_9.2.dmg",
+    "allowed_os_versions": [
+     "before=\"10.14\" min=\"10.13\""
+    ]
+   }
+  },
+  {
+   "installer": "Command_Line_Tools_macOS_10.13_for_Xcode_9.4.1.dmg",
+   "kind": "clt",
+   "product_pkg": [
+    "Command Line Tools (macOS High Sierra version 10.13).pkg"
+   ],
+   "tools_version": "9.4.1.0.1.1528165917",
+   "tools_version_source": "CLTools_Executables PackageInfo version",
+   "developer_dir": "/Library/Developer/CommandLineTools",
+   "sdks": [
+    {
+     "entry": "MacOSX.sdk",
+     "Version": "10.13",
+     "ProductBuildVersion": "17E189",
+     "from_pkg": "CLTools_SDK_macOS1013.pkg"
+    },
+    {
+     "entry": "MacOSX10.13.sdk -> MacOSX.sdk",
+     "Version": "10.13",
+     "ProductBuildVersion": "17E189",
+     "from_pkg": [
+      "CLTools_SDK_macOS1013.pkg",
+      "CLTools_macOS_SDK_Remove_1012.pkg",
+      "CLTools_macOS_SDK_Remove_1013.pkg"
+     ]
+    }
+   ],
+   "bundled_packages": null,
+   "include_dirs": [
+    {
+     "pkg": "CLTools_Executables.pkg",
+     "installs": "/Library/Developer/CommandLineTools/usr/include",
+     "has_stdio.h": false
+    },
+    {
+     "pkg": "DevSDK_macOS1013_Public.pkg",
+     "installs": "/usr/include",
+     "has_stdio.h": true
+    }
+   ],
+   "clang": {
+    "clang": "902.0.39.2",
+    "method": "strings on bin/clang, matched (clang-N)"
+   },
+   "gcc": {
+    "path_size_bytes": 18656,
+    "note": "clang driver shim (xcrun-style), not GNU gcc"
+   },
+   "target_os": {
+    "from_dmg_name": "Command_Line_Tools_macOS_10.13_for_Xcode_9.4.1.dmg",
+    "allowed_os_versions": [
+     "min=\"10.13\""
+    ]
+   }
+  }
+ ]
+}
