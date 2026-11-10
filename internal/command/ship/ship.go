@@ -134,6 +134,7 @@ need review.`,
 				answered = model.AnsweredAsked
 			}
 			version.Linked.NoteSet = cmd.Flags().Changed("note")
+			version.Withdrawn(cmd)
 			return ShipAll(ctx, s, streams, whole, targets, stage, answered, version)
 		},
 	}
@@ -673,12 +674,12 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 	lines.done(commit, "committed", strings.Join(tidied.Subjects, "; "), "")
 	// A title and note for the pull request, where ship stops before it,
 	// are kept for the submit that follows.
-	if stage != engine.ShipSubmit && (linked.Title != "" || linked.NoteSet || linked.TestedBinaries || linked.TestedVariants) {
+	if stage != engine.ShipSubmit && (linked.Title != "" || linked.NoteSet || linked.TestedBinaries || linked.TestedVariants || linked.WithdrawBinaries || linked.WithdrawVariants) {
 		var note *string
 		if linked.NoteSet {
 			note = &linked.Note
 		}
-		if err := e.KeepForSubmit(ctx, tidied.Branch.ID, linked.Title, note, linked.TestedBinaries, linked.TestedVariants); err != nil {
+		if err := e.KeepForSubmit(ctx, tidied.Branch.ID, linked.Title, note, engine.TestedSaid{Binaries: linked.TestedBinaries, Variants: linked.TestedVariants, WithdrawBinaries: linked.WithdrawBinaries, WithdrawVariants: linked.WithdrawVariants}); err != nil {
 			return nil, err
 		}
 	}
@@ -708,7 +709,7 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 	// Its submission is previewed, and held where it would be, before its
 	// check is queued.
 	lines.begin("submitted")
-	request := engine.SubmitRequest{Branch: branch, TestedBinaries: linked.TestedBinaries, TestedVariants: linked.TestedVariants, Title: linked.Title, SkipNotification: linked.SkipNotification, Types: linked.Types, Draft: linked.Draft}
+	request := engine.SubmitRequest{Branch: branch, TestedBinaries: linked.TestedBinaries, TestedVariants: linked.TestedVariants, WithdrawBinaries: linked.WithdrawBinaries, WithdrawVariants: linked.WithdrawVariants, Title: linked.Title, SkipNotification: linked.SkipNotification, Types: linked.Types, Draft: linked.Draft}
 	if linked.NoteSet {
 		request.Note = &linked.Note
 	}

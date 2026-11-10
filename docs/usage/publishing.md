@@ -225,7 +225,15 @@ keeps its name.
 corresponding manual checks; do not infer them from an install alone. They
 are kept with the branch, as `--note` is, so a later `submit`, `ship`, or
 `bump` of it says them without being told again; `ship --to commit` or
-`--to check` keeps them for the submit that follows. A passing
+`--to check` keeps them for the submit that follows. A statement is about
+the files you made it for, each port directory the branch changes: any change
+under one, a comment in the Portfile included, or a new port joining the
+branch, unticks it, and the plan says your statement was about an earlier
+state of the files and names the flag that says it again; on a terminal,
+submit asks again. A new commit message, a squash or a rebase that leaves those
+directories as they were, or a new title or note keeps it. The statement isn't
+lost: it stands again if the files return to what it was about.
+`--tested-binaries=false` or `--tested-variants=false` withdraws it. A passing
 variant build of a changed port answers the variants item from what was built:
 `check --variants each`, or chosen variants, in any finished check of the same
 files; the item's note names each build and its check, `(Dockhand built curl

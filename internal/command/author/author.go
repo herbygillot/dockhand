@@ -376,8 +376,8 @@ func (v *VersionUpdate) StageFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&v.Linked.Tests, "tests", "", "the check's tests: declared (advisory), required, or skip (default check.tests)")
 	cmd.Flags().StringSliceVar(&v.Linked.Types, "type", nil, "the template's Type(s): bugfix, enhancement, security fix (default: enhancement for an update dockhand made)")
 	cmd.Flags().BoolVar(&v.Linked.Draft, "draft", false, "open the pull request as a draft, even where its check fails")
-	cmd.Flags().BoolVar(&v.Linked.TestedBinaries, "tested-binaries", false, "state that you tested the basic functionality of all binary files")
-	cmd.Flags().BoolVar(&v.Linked.TestedVariants, "tested-variants", false, "state that you checked the most important variants")
+	cmd.Flags().BoolVar(&v.Linked.TestedBinaries, "tested-binaries", false, "state that you tested the basic functionality of all binary files, for these files; =false withdraws it")
+	cmd.Flags().BoolVar(&v.Linked.TestedVariants, "tested-variants", false, "state that you checked the most important variants, for these files; =false withdraws it")
 	cmd.Flags().StringVar(&v.Linked.Title, "title", "", "the pull request's title (default: the commit subject)")
 	cmd.Flags().StringVar(&v.Linked.Note, "note", "", "your own note in the pull request's description")
 	cmd.Flags().BoolVar(&v.Linked.SkipNotification, "skip-notification", false, "add [skip notification], so maintainers are not mentioned")
@@ -429,6 +429,9 @@ type LinkedOptions struct {
 	On                             []string
 	Build                          string
 	TestedBinaries, TestedVariants bool
+	// WithdrawBinaries and WithdrawVariants are --tested-binaries=false and
+	// --tested-variants=false, which remove a kept statement (#153).
+	WithdrawBinaries, WithdrawVariants bool
 	// tests is the check's --tests; types and draft the submission's
 	// --type and --draft (the second look's §6: bump lacked them).
 	Tests      string
@@ -954,4 +957,11 @@ func writeLeft(out io.Writer, left []engine.ChecksumLeft) {
 	for _, l := range left {
 		fmt.Fprintf(out, "Left as it was: %s, %s\n", l.What, l.Reason)
 	}
+}
+
+// Withdrawn reads --tested-binaries=false and --tested-variants=false,
+// said rather than left out, into the update's request.
+func (v *VersionUpdate) Withdrawn(cmd *cobra.Command) {
+	v.Linked.WithdrawBinaries = cmd.Flags().Changed("tested-binaries") && !v.Linked.TestedBinaries
+	v.Linked.WithdrawVariants = cmd.Flags().Changed("tested-variants") && !v.Linked.TestedVariants
 }
