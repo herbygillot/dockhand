@@ -189,7 +189,7 @@ type ActiveRunError struct {
 // Uncovering says why an uncovered run doesn't stand for the new check.
 func (a *ActiveRunError) Uncovering() string {
 	if a.OtherSource {
-		return "but builds another source than this request: a tag or branch a port fetches moved since it was planned"
+		return "but its planned source differs from this request's; an upstream tag or branch may have moved since the check was planned"
 	}
 	return "but does not cover this request's builds, environments, variants, test policy, freshness, or guest retention"
 }
@@ -277,7 +277,7 @@ func (c *Service) stopUnfinished(ctx context.Context, id model.RunID) error {
 		}
 		asked[execution.ProviderRef] = true
 		if err := stopper.Stop(ctx, execution); err != nil {
-			return refusal.New(refusal.Infrastructure, "%s's cancel is recorded, but %s couldn't stop %s: %v; dockhand cancel %s tries again", name, execution.Environment.Provider, cmp.Or(execution.ProviderRef, "its work"), err, name)
+			return refusal.New(refusal.Infrastructure, "%s: cancellation is recorded, but %s could not stop %s: %v; run dockhand cancel %s to try again", name, execution.Environment.Provider, cmp.Or(execution.ProviderRef, "its work"), err, name)
 		}
 	}
 	return nil

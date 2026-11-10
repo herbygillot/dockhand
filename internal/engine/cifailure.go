@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports/cilog"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/outward"
 	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -162,7 +163,7 @@ func (e *Engine) RerunCI(ctx context.Context, branch model.Branch) ([]int64, err
 			Then(refusal.Next{Verb: refusal.VerbRefresh})
 	}
 	for i, run := range runs {
-		err := e.forge().RerunFailed(ctx, pr.Repository, run)
+		err := outward.RerunFailed(ctx, e.pullRequests(), outward.Named, pr.Repository, run)
 		switch {
 		case errors.Is(err, forge.ErrRejected):
 			return runs[:i], refusal.Wrap(refusal.Auth, err, "running #%d's failed CI again needs write access to %s, which a maintainer has", pr.Number, pr.Repository).

@@ -127,7 +127,7 @@ func portMergeWords(port macports.PortMerge) string {
 // basisWords name the reading a port's maintainers were taken from where
 // it isn't master's newest cached port index: "maintainers as of master,
 // 2026-10-28" for the branch's base, newer than any cached index or with
-// none cached, and "maintainers as the branch adds it" for a new port.
+// none cached, and "maintainers declared by this new port" for a new port.
 func basisWords(port macports.PortMerge) string {
 	switch {
 	case port.Basis == macports.MaintainersOfBase && !port.As.IsZero():

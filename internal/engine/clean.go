@@ -20,6 +20,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/outward"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -48,10 +49,12 @@ type CleanStep struct {
 	// pr-34539's was on every clean (field testing).
 	Said bool
 
-	path     string
-	remote   string
-	name     string
-	expected string
+	path   string
+	remote string
+	// repository is the fork a fork's or a check's branch is removed from.
+	repository string
+	name       string
+	expected   string
 }
 
 // CleanKind is what a step of clean removes.
@@ -295,7 +298,7 @@ func (e *Engine) planCleanFork(ctx context.Context, branch model.Branch, pushed 
 	if pr := branch.PullRequest; ownedHead(pr) {
 		repository, name := pr.HeadParts()
 		repositories = append(repositories, repository)
-		step := CleanStep{What: pr.Head, Kind: CleanFork, expected: string(pushed)}
+		step := CleanStep{What: pr.Head, Kind: CleanFork, expected: string(pushed), repository: repository}
 		remote, err := e.remoteFor(ctx, repository)
 		switch {
 		case pushed == "":
@@ -424,7 +427,7 @@ func (e *Engine) planCleanChecks(ctx context.Context, branch model.Branch, repos
 		}
 		seen[commit] = true
 		name := buildenv.CheckBranchPrefix + commit[:12]
-		step := CleanStep{What: repository + ":" + name, Kind: CleanCheck, name: name, expected: commit}
+		step := CleanStep{What: repository + ":" + name, Kind: CleanCheck, name: name, expected: commit, repository: repository}
 		if remoteErr != nil {
 			step.Kept = remoteErr.Error()
 			steps = append(steps, step)
@@ -631,10 +634,10 @@ func (e *Engine) ApplyClean(ctx context.Context, plans []CleanBranch) ([]CleanBr
 					step.Kept = "it is the pull request's author's, not yours"
 					continue
 				}
-				_, name := plan.Branch.PullRequest.HeadParts()
-				err = e.Repo.DeleteRemoteBranch(ctx, step.remote, name, git.RefValue{Exists: true, Object: step.expected})
+				repository, name := plan.Branch.PullRequest.HeadParts()
+				err = outward.Delete(ctx, e.Repo, outward.Made, repository, step.remote, name, git.RefValue{Exists: true, Object: step.expected})
 			case "check":
-				err = e.Repo.DeleteRemoteBranch(ctx, step.remote, step.name, git.RefValue{Exists: true, Object: step.expected})
+				err = outward.Delete(ctx, e.Repo, outward.Made, step.repository, step.remote, step.name, git.RefValue{Exists: true, Object: step.expected})
 			}
 			if err != nil {
 				var conflict *git.RefConflict

@@ -40,6 +40,6 @@ func TestAModuleGo2portCouldntFetchIsNamed(t *testing.T) {
 	require.ErrorAs(t, err, &missing)
 	require.Equal(t, MissingChecksum{Module: "github.com/chigopher/pathlib", Lock: "v0.15.0"}, *missing)
 	stderr := []byte("WARNING: Could not calculate checksums for package: github.com/chigopher/pathlib\nCould not retrieve tarball for github.com/chigopher/pathlib; HTTP status=404\nExpected at: https://github.com/chigopher/pathlib/tarball/v0.15.0\n")
-	require.EqualError(t, unfetched(*missing, stderr), "dependency: go2port couldn't fetch github.com/chigopher/pathlib v0.15.0's archive (HTTP 404); its repository may be gone, so it wrote the module no checksum")
-	require.EqualError(t, unfetched(*missing, nil), "dependency: go2port wrote github.com/chigopher/pathlib v0.15.0 no checksum")
+	require.EqualError(t, unfetched(*missing, stderr), "dependency: go2port couldn't fetch github.com/chigopher/pathlib v0.15.0's archive (HTTP 404); its repository may be gone, so it wrote the module without a checksum")
+	require.EqualError(t, unfetched(*missing, nil), "dependency: go2port wrote github.com/chigopher/pathlib v0.15.0 without a checksum")
 }

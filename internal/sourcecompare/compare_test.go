@@ -251,7 +251,7 @@ func TestALicenseChangeSaysWhatItsTextIs(t *testing.T) {
 	require.Equal(t, []string{"MIT"}, relicensed[0].Licenses[0].IDs)
 	require.Equal(t, []string{"ISC"}, relicensed[0].Licenses[1].IDs)
 
-	require.Equal(t, []string{"upstream's LICENSE is still MIT by its text, and changed beside it"},
+	require.Equal(t, []string{"upstream's LICENSE is still MIT by its text, with other text changed"},
 		messages(compare(map[string]string{"LICENSE": mit}, map[string]string{"LICENSE": strings.Replace(mit, "Ann Author", "Bea Builder", 1)})))
 	clause := "The above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n"
 	require.Equal(t, []string{"upstream's LICENSE was MIT, now MIT-0, by its text"},
@@ -277,7 +277,7 @@ func TestALicenseThatAddsTermsQuotesThem(t *testing.T) {
 		testsupport.Tarball(t, "libxkbcommon-1.13.2", map[string]string{"LICENSE": read("1.13.2")}), Versions{})
 	require.NoError(t, err)
 	require.Len(t, changes, 1)
-	require.Equal(t, `upstream's LICENSE is still MIT, HPND and HPND-sell-variant by what its text matches, and adds terms no license that's known has: "This software may be used, modified, copied, distributed, and sold"`,
+	require.Equal(t, `upstream's LICENSE still matches MIT, HPND and HPND-sell-variant, but adds terms that do not match a recognized license: "This software may be used, modified, copied, distributed, and sold"`,
 		changes[0].Message)
 }
 

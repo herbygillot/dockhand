@@ -57,7 +57,7 @@ func TestAStillRunningCheckSaysWhatItsDoing(t *testing.T) {
 	require.EqualError(t, stillRunning(queued, &journal{waited: "waiting for a slot on tart (check-41 is using it)"}, bound),
 		"check-42 is still queued after 9m, waiting for a slot on tart (check-41 is using it); it continues")
 
-	for value, want := range map[string]string{"9": "--for 9: name a duration with its unit, as 9m or 1h", "-1m": "--for -1m: the bound is above zero", "nine": "--for nine: name a duration with its unit, as 9m or 1h"} {
+	for value, want := range map[string]string{"9": "--for 9: name a duration with its unit, as 9m or 1h", "-1m": "--for -1m: duration must be greater than zero", "nine": "--for nine: name a duration with its unit, as 9m or 1h"} {
 		_, err := ParseBound(value)
 		require.EqualError(t, err, want)
 	}

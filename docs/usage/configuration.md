@@ -108,10 +108,16 @@ combine its keys. Repeating a TOML table declaration is invalid.
 [providers.tart]
 test_timeout = "30m"
 build_timeout = "6h"
+stall_timeout = "30m"  # a target's log growing by nothing this long; "0" never
 keep_failed = true   # keep a failed check's clone for dockhand shell
 ```
 
 These bound tests and build work per target. Lint has its own 10-minute bound.
+A target whose log grows by nothing for `stall_timeout` is taken as stalled: the
+attempt ends as infrastructure trouble and is tried again, where a hung guest
+once held a Tart slot for the six hours of `build_timeout`. The check says so
+at half of it, as "libharbor's log has grown by nothing for 15m; at 30m its
+build is taken as stalled".
 A target ended at a bound says which, and the key that set it, as "the tests
 ran past their 30m bound (providers.tart.test_timeout), so they were ended",
 with its log's last lines; a local check names providers.local's.

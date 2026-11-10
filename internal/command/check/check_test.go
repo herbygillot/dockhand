@@ -353,7 +353,7 @@ func TestABaselineSaysWhatTheTestsDidAtTheBase(t *testing.T) {
 	}{
 		{model.TestsFailed, model.TestsFailed, "✓ builds at the base, as it does on the branch; tests fail at the base and in check-38; the failure also occurs without this branch's changes."},
 		{model.TestsPassed, model.TestsTimedOut, "✓ builds at the base, as it does on the branch; its tests pass at the base, and time out in check-38; the cause isn't established."},
-		{model.TestsSkipped, model.TestsFailed, "✓ builds at the base, as it does on the branch; its tests fail in check-38, and weren't run at the base (skipped), so there's nothing to set beside them."},
+		{model.TestsSkipped, model.TestsFailed, "✓ builds at the base, as it does on the branch; its tests fail in check-38, and weren't run at the base (skipped), so the test results cannot be compared."},
 		{model.TestsFailed, model.TestsPassed, "✓ builds at the base, as it does on the branch; its tests fail at the base, and pass in check-38."},
 		{model.TestsTimedOut, model.TestsNone, "✓ builds at the base, as it does on the branch; its tests time out at the base, and weren't run in check-38 (none)."},
 		{model.TestsPassed, model.TestsPassed, "✓ builds at the base, as it does on the branch."},
@@ -680,7 +680,7 @@ func TestForFollowsACheckForABoundedTime(t *testing.T) {
 		"--for 9m -d":     "-d returns at once and --for follows for a while; use one",
 		"--for 9m --plan": "--plan builds nothing and waits for nothing",
 		"--for 9":         "--for 9: name a duration with its unit, as 9m or 1h",
-		"--for 0s":        "--for 0s: the bound is above zero",
+		"--for 0s":        "--for 0s: duration must be greater than zero",
 	} {
 		_, _, err := cmdtest.Dockhand(t, append([]string{"check"}, strings.Fields(args)...)...)
 		require.EqualError(t, err, refused, args)

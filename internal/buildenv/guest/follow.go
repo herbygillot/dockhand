@@ -83,6 +83,13 @@ type Follower struct {
 	// installed from, for a later guest to install (batch 90): a clone's,
 	// never the person's own ports'.
 	KeepDependencies bool
+	// Stall ends the program as infrastructure trouble, to be tried again,
+	// where the log of the target it's building grows by nothing for that
+	// long, and says so at half of it; never when zero. A guest hung in
+	// MacPorts' check_supported_archs held a Tart slot, and the heavy
+	// lock, for the six hours of its build timeout, saying nothing, where
+	// a rerun went past at once (field testing, rmlint, 2026-11-08).
+	Stall time.Duration
 }
 
 func (f *Follower) poll() time.Duration {
@@ -353,6 +360,14 @@ func (f *Follower) Follow(ctx context.Context, g Guest, started Run, job builden
 	// again only once it changes: at most a line a read, and one a step
 	// (SQL-S4's coalescing).
 	building, said := "", ""
+	// quiet is the target whose log last grew, its size then, and when,
+	// for Stall, and warned whether its half was said.
+	var quiet struct {
+		target string
+		size   int64
+		since  time.Time
+		warned bool
+	}
 	// A lost guest's partial log of what it was building is fetched where
 	// it still answers, as when its program stopped or errored; a stopped
 	// VM's isn't asked for.
@@ -434,6 +449,21 @@ func (f *Follower) Follow(ctx context.Context, g Guest, started Run, job builden
 		// the target ended (the gnome-voice session's notes, 2026-10-20).
 		if building != "" {
 			f.liveLog(ctx, g, job, model.TargetID(building))
+			if f.Stall > 0 {
+				size := int64(-1)
+				if info, err := os.Stat(filepath.Join(job.Directory, buildenv.LogName(model.TargetID(building)))); err == nil {
+					size = info.Size()
+				}
+				switch {
+				case building != quiet.target || size != quiet.size:
+					quiet.target, quiet.size, quiet.since, quiet.warned = building, size, time.Now(), false
+				case time.Since(quiet.since) >= f.Stall:
+					return lost(buildenv.Infrastructure("%s's log grew by nothing for %s, so its build is taken as stalled, and tried again (providers.tart.stall_timeout)", building, f.Stall))
+				case !quiet.warned && time.Since(quiet.since) >= f.Stall/2:
+					quiet.warned = true
+					build.Progress(fmt.Sprintf("%s's log has grown by nothing for %s; at %s its build is taken as stalled", building, time.Since(quiet.since).Round(time.Minute), f.Stall))
+				}
+			}
 		}
 		if line := buildingWords(job, release, results); line != said {
 			said = line

@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/outward"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -413,7 +414,7 @@ func (e *Engine) PostReview(ctx context.Context, report ReviewReport, body strin
 	if requestChanges && !report.CanRequestChanges() {
 		return "", fmt.Errorf("requesting changes is left to people with write or triage access to %s; you have %s, so post it as a comment", report.Ref.Repository, Access(report.Permission))
 	}
-	url, err := e.forge().PostReview(ctx, forge.ReviewInput{Ref: report.Ref, Commit: report.Head, RequestChanges: requestChanges, Body: body, Comments: report.Comments()})
+	url, err := outward.Review(ctx, e.pullRequests(), outward.Named, forge.ReviewInput{Ref: report.Ref, Commit: report.Head, RequestChanges: requestChanges, Body: body, Comments: report.Comments()})
 	if err != nil {
 		return "", fmt.Errorf("posting the review on #%d: %w", report.Ref.Number, err)
 	}

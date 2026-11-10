@@ -62,5 +62,5 @@ func TestARawFileIsReadOnlyToItsLimit(t *testing.T) {
 	repository, err := (&forgegitlab.Client{HTTP: server.Client()}).Repository(server.URL, "group/project")
 	require.NoError(t, err)
 	_, err = repository.(forge.FileRepository).File(t.Context(), commit, "package.json", 1<<20)
-	require.EqualError(t, err, "gitlab: package.json is larger than the 1024 KiB dockhand reads of it")
+	require.EqualError(t, err, "gitlab: package.json exceeds the 1024 KiB file read limit")
 }

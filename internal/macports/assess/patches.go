@@ -38,7 +38,7 @@ func (a *assessment) patches() []model.UpstreamChange {
 		switch {
 		case patch.Dropped && patch.Applies:
 			change.Rule = PatchDropped
-			change.Message = fmt.Sprintf("%s, which the base applied, is dropped, though it still applies to %s: what it fixed may need it still", patch.Name, source)
+			change.Message = fmt.Sprintf("%s, which the base applied, is dropped, though it still applies to %s: its fix may still be needed", patch.Name, source)
 		case patch.Dropped:
 			change.Rule = PatchDropped
 			change.Message = fmt.Sprintf("%s, which the base applied, is dropped, and no longer applies to %s: %s", patch.Name, source, patch.Detail)

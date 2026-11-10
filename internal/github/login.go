@@ -128,7 +128,7 @@ func (s SystemCredentials) login(ctx context.Context, rejected Token) (Token, bo
 	waiting, cancel := context.WithTimeout(ctx, lockWait)
 	defer cancel()
 	if s.Lock == "" {
-		return Token{}, true, errors.New("github: no lock file was given to renew the GitHub login under")
+		return Token{}, true, errors.New("github: no lock file was provided for renewing the GitHub login")
 	}
 	lock, err := filelock.Acquire(waiting, s.Lock, filelock.Exclusive)
 	if err != nil {

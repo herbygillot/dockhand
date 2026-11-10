@@ -21,11 +21,11 @@ func ArchiveCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "archive [branch]",
 		Short: "Set aside a branch you are not working on",
-		Long: `Sets a branch aside: status leaves it out, and its worktree is removed
-where it holds nothing the branch's commits don't. The Git branch, your
-fork's branch, the checkpoints, the record, and the pull request stay, so
---undo brings it back, and the worktree is checked out again when a command
-next needs it; status --all still shows it.
+		Long: `Sets a branch aside so status leaves it out. Removes its worktree when
+it has no uncommitted edits or untracked files. Keeps the Git branch,
+your fork's branch, checkpoints, record, and pull request. --undo restores
+it to open work; a command needing its worktree checks it out again.
+status --all includes archived branches.
 
 A worktree with uncommitted edits or untracked files is asked about on a
 terminal: commit them, as tidy would, where its plan needs no words from

@@ -28,7 +28,7 @@ func (c CLI) Login(ctx context.Context) (string, error) {
 	}
 	login := strings.TrimSpace(string(out))
 	if login == "" || strings.ContainsAny(login, " \t\r\n") {
-		return "", fmt.Errorf("the GitHub CLI named no account it's signed in as")
+		return "", fmt.Errorf("the GitHub CLI did not report a valid signed-in account")
 	}
 	return login, nil
 }

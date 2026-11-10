@@ -92,7 +92,7 @@ func (a *Archives) Keep(ctx context.Context, archive model.Archive, fetch func(p
 		return err
 	}
 	if digest != archive.Digest {
-		return fmt.Errorf("%s arrived as %s, not the %s its build reported", archive.Name, digest, archive.Digest)
+		return fmt.Errorf("%s has digest %s, but its build reported %s", archive.Name, digest, archive.Digest)
 	}
 	if err := atomicfile.Place(fetched, a.Path(archive.Digest)); err != nil {
 		return err
@@ -190,7 +190,7 @@ func (b *build) Keep(target model.TargetID, name string, fetch func(path string)
 // so.
 func (b *build) KeepDependency(port model.ActivePort, name string, fetch func(path string) error) error {
 	if port.Name == "" || !strings.HasPrefix(port.Archive, "sha256:") {
-		return fmt.Errorf("%s was active from no archive to keep", port.Name)
+		return fmt.Errorf("%s has no recorded archive digest to keep", port.Name)
 	}
 	for _, target := range b.d.plan.Targets {
 		if strings.EqualFold(target.Target.Name, port.Name) || strings.EqualFold(target.Target.Subport, port.Name) {

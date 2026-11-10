@@ -209,12 +209,11 @@ func ImpactCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 		Short: "Show ports affected by the branch's changes",
 		Long: `Lists the ports the branch changes, the other ports that depend on them
 directly, and the shared files it changes with the ports that load them.
-Dependents come from the port index at the branch's base, and are looked
-for of each port changed beyond its revision, or of the ports named. They
-are candidates to look at, not proof of anything: check --also builds
-some against the branch. Where ports.macports.org answers, it also says
-whether each changed port built on each macOS release on MacPorts'
-builders, by each builder's latest build of it.`,
+Looks up direct dependents in the port index at the branch's base. With
+no ports named, looks up each port changed beyond its revision. These are
+candidates for investigation; use check --also to build them against the
+branch. When ports.macports.org is available, also reports each changed
+port's latest build result on each MacPorts builder.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			e, err := s.Open(ctx)

@@ -24,6 +24,7 @@ var engineImports = map[string]string{
 	"internal/checks":                 "the check-execution service, which the engine composes from its fields and drives",
 	"internal/buildenv":               "the contract the providers meet; the command layer composes them",
 	"internal/git":                    "the checkout, captures, and history",
+	"internal/outward":                "every remote write, by the ownership rules (#128)",
 	"internal/history":                "tidy, rebase, and restore as complete transitions",
 	"internal/reuse":                  "what each target's build read, for reuse",
 	"internal/planning":               "what a check builds, where, and in what order, from the ports it evaluates",

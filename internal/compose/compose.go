@@ -464,7 +464,7 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	if macports.FindProgram(look, "tart") != "" {
 		provider := options.TartProvider(look)
 		provider.Repo, provider.Index = e.Repo, e.PortIndex
-		provider.TestTimeout, provider.BuildTimeout = file.Providers.Tart.Timeout(), file.Providers.Tart.BuildBound()
+		provider.TestTimeout, provider.BuildTimeout, provider.StallTimeout = file.Providers.Tart.Timeout(), file.Providers.Tart.BuildBound(), file.Providers.Tart.StallBound()
 		provider.KeepFailed = file.Providers.Tart.KeepsFailed()
 		e.Providers[buildenv.Tart] = provider
 	}

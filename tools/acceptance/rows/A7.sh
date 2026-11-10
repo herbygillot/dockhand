@@ -21,7 +21,7 @@ act() {
 	# A candidate's serve refuses to migrate a release's database, which
 	# would lock the release out, until a person answers at the terminal:
 	# rc1's did, as designed (the Prime-time session's A7 on rc1).
-	if wait_for_line "$A7_LOG" "a release, last opened this database" 120 "$(cat "$ROW_DIR/log.before")"; then
+	if wait_for_line "$A7_LOG" "a release, last opened this database|this database was last opened by dockhand" 120 "$(cat "$ROW_DIR/log.before")"; then
 		touch "$ROW_DIR/release-refused"
 		checkpoint "the new dockhand refuses to migrate the release's database unasked: at dhtest's terminal, run dockhand status and answer y to migrate it" || return 0
 	fi

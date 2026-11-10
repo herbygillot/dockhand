@@ -73,23 +73,55 @@ exec 3>&1
 # Rows go in their IDs' numeric order, A2 before A10, as the plan lists
 # them: in glob order A12's Xcode image ran before A2 made the base image
 # it needs (the rc3 full run, 2026-10-06).
+# A row marked "# order: last", as D-N4's spent GitHub budget, runs after
+# every other, so its wait for the budget's reset holds none (#134).
 alone=""
+named=$rows
 if [ -z "$rows" ]; then
+	last=""
 	for id in $(find "$rowdir" -maxdepth 1 -name '*.sh' -type f -exec basename {} .sh \; | sort -V); do
 		file="$rowdir/$id.sh"
 		grep -qE "^# stages:(.* )?$stage( |\$)" "$file" || continue
 		if grep -q '^# order: alone' "$file"; then
 			alone="$alone $(basename "$file" .sh)"
+		elif grep -q '^# order: last' "$file"; then
+			last="$last $(basename "$file" .sh)"
 		else
 			rows="$rows $(basename "$file" .sh)"
 		fi
 	done
+	rows="$rows$last"
 fi
 
 results="$ACCEPT_STATE/results/$candidate"
 mkdir -p "$results"
 failed=0
 notrun=0
+pending=0
+stage_started=$(date +%s)
+
+# On the test host the quick stage runs first, and the full stage starts
+# only once it has no fail or blocker; a quick row that passed on the
+# same candidate isn't run again, unless full-reruns.txt names it, a row
+# whose result depends on the full stage's world (#135). Rows named with
+# --rows run whatever the quick stage said, and a dry run reads none.
+quick_results=${ACCEPT_QUICK_RESULTS:-$HOME/.dockhand-acceptance/quick/results}/$candidate
+quick_gated=0
+if [ "$stage" = full ] && [ -z "$named" ] && [ "${ACCEPT_DRY:-0}" != 1 ]; then
+	quick_gated=1
+fi
+
+if [ "$quick_gated" = 1 ] && [ "${ACCEPT_NO_QUICK_GATE:-0}" != 1 ]; then
+	if [ ! -d "$quick_results" ]; then
+		echo "run.sh: the quick stage hasn't run on $candidate here ($quick_results); run tools/acceptance/quick.sh --candidate $candidate first, or set ACCEPT_NO_QUICK_GATE=1" >&2
+		exit 2
+	fi
+	blocking=$(jq -r 'select(.result == "fail" or .result == "blocker") | .row' "$quick_results"/*.json 2>/dev/null | sort -V | tr '\n' ' ')
+	if [ -n "$blocking" ]; then
+		echo "run.sh: the quick stage on $candidate has a fail or a blocker ($blocking), so the full stage waits for it" >&2
+		exit 2
+	fi
+fi
 
 # The full stage's pull requests are approved before any row runs: the
 # list goes to the person, who leaves the lines they approve.
@@ -101,6 +133,11 @@ if [ "$stage" = full ]; then
 	if [ -s "$ACCEPT_STATE/prs.intended" ] && protocol_live; then
 		echo "The pull requests the rows mean to open, row, port, and test or real:"
 		sed 's/^/  /' "$ACCEPT_STATE/prs.intended"
+	fi
+	# Test pull requests go to the sandbox, the test account's own fork,
+	# which the person allows standing (2026-10-05), so only a real one,
+	# to MacPorts, waits for their approval (#132).
+	if grep -q ' real$' "$ACCEPT_STATE/prs.intended" 2>/dev/null && protocol_live; then
 		ROW_ID=approval ROW_DIR="$results/approval"
 		mkdir -p "$ROW_DIR"
 		say() { printf '%s\n' "$*"; }
@@ -162,6 +199,19 @@ for row in $rows; do
 	fi
 	ROW_DIR="$results/$row"
 	rm -rf "$ROW_DIR"
+	started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+	row_started=$(date +%s)
+	# A quick row that passed on this candidate stands, but for the rows
+	# the full stage's world decides.
+	if [ "$quick_gated" = 1 ] && [ -f "$quick_results/$row.json" ] && ! grep -qE "^$row( |\$)" "$here/full-reruns.txt" &&
+		jq -e '.result == "pass" or .result == "refused well" or .result == "known issue"' "$quick_results/$row.json" >/dev/null 2>&1; then
+		result=$(jq -r .result "$quick_results/$row.json")
+		why="passed in the quick stage on $candidate: $(jq -r .why "$quick_results/$row.json")"
+		jq -n --arg row "$row" --arg stage "$stage" --arg candidate "$candidate" --arg result "$result" --arg why "$why" --arg started "$started" \
+			--arg from "$quick_results/$row.json" '{row: $row, stage: $stage, candidate: $candidate, result: $result, why: $why, started: $started, seconds: 0, from_quick: $from}' >"$results/$row.json"
+		printf '%-8s %-14s %s\n' "$row" "$result" "$why"
+		continue
+	fi
 	# A row starts from the stage's environment as made, where the stage
 	# says how to make it again.
 	if [ -n "${ACCEPT_RESET:-}" ]; then
@@ -233,18 +283,22 @@ for row in $rows; do
 		--arg log "$ROW_DIR/out.log" --argjson harm "$(for v in "$ROW_DIR"/harm/H*; do [ -f "$v" ] && jq -n --arg k "$(basename "$v")" --arg v "$(cat "$v")" '{($k): $v}'; done | jq -s 'add // {}')" \
 		--argjson exits "$(for e in "$ROW_DIR"/json/*.json.exit; do [ -f "$e" ] && cat "$e"; done | jq -s '.')" \
 		--argjson spent "${spent:-0}" --argjson used "${used:-0}" \
+		--arg started "$started" --argjson seconds "$(($(date +%s) - row_started))" \
 		'{row: $row, stage: $stage, candidate: $candidate, result: $result, why: $why, harm: $harm, exit_codes: $exits, log: $log,
-		  github_requests: $spent, github_used_after: $used}' >"$results/$row.json"
+		  github_requests: $spent, github_used_after: $used, started: $started, seconds: $seconds}' >"$results/$row.json"
 	printf '%-8s %-14s %s\n' "$row" "$result" "$why"
 	case "$result" in
 	pass | "refused well" | "known issue") ;;
 	"not run") notrun=$((notrun + 1)) ;;
+	"judge pending") pending=$((pending + 1)) ;;
 	*) failed=$((failed + 1)) ;;
 	esac
 done
 [ "$notrun" -eq 0 ] || echo "$notrun not run: each stopped at a step for the host or a person, as its row says"
+[ "$pending" -eq 0 ] || echo "$pending wait on a person's judgment: tools/acceptance/judge.sh --candidate $candidate answers them"
 for row in $alone; do
 	echo "$row runs alone, after this run: run it with --rows $row"
 done
-echo "Results: $results"
+elapsed=$(($(date +%s) - stage_started))
+echo "Results: $results ($stage stage, $((elapsed / 3600))h $((elapsed % 3600 / 60))m $((elapsed % 60))s)"
 [ "$failed" -eq 0 ]

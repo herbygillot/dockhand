@@ -73,7 +73,7 @@ serve or a background worker after wait exits.`,
 			return checkrun.Wait(ctx, e, run, streams, s.Places())
 		},
 	}
-	cmd.Flags().StringVar(&bound, "for", "", "follow for at most this long, then exit 4 if the check is still running; it continues")
+	cmd.Flags().StringVar(&bound, "for", "", "follow for at most this long, then exit 4 if the check is still queued or running; it continues")
 	where.Register(cmd, s, "follow the latest check of")
 	settings.SupportsJSON(cmd)
 	return cmd
