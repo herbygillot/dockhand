@@ -95,6 +95,9 @@ type SubmitPlan struct {
 	Ports   []string
 	// recorded is Ports read from every directory's change record.
 	recorded bool
+	// served is a submission serve makes by itself, whose serve.submit
+	// event, which serve.submit_limit counts, is written with its record.
+	served bool
 	// moved are the versions the change records move ports to, by port.
 	moved    map[string]string
 	Findings []commitrules.Finding
@@ -1274,8 +1277,20 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 			verb = "opened"
 		}
 		if _, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchSubmit, Level: model.LevelInfo,
-			Message: fmt.Sprintf("%s #%d with %s", verb, observed.PullRequest.Ref.Number, model.ObjectID(plan.Commit).Short())}); err != nil || !pushed {
+			Message: fmt.Sprintf("%s #%d with %s", verb, observed.PullRequest.Ref.Number, model.ObjectID(plan.Commit).Short())}); err != nil {
 			return err
+		}
+		// Serve's count lands with the pull request's record: written after
+		// it, a failed write left a pull request open and uncounted, and
+		// serve opened two under a limit of one (#118).
+		if plan.served {
+			if _, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventServeSubmit, Level: model.LevelInfo,
+				Message: fmt.Sprintf("serve opened #%d for %s, which passed its check", observed.PullRequest.Ref.Number, plan.Branch.ShortName())}); err != nil {
+				return err
+			}
+		}
+		if !pushed {
+			return nil
 		}
 		_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchPush, Level: model.LevelVerbose,
 			Message: fmt.Sprintf("pushed %s to #%d", model.ObjectID(plan.Commit).Short(), observed.PullRequest.Ref.Number)})
