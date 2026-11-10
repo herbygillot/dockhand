@@ -465,6 +465,10 @@ type TartProvider struct {
 	// fetch, and its own install, as a duration such as "8h"; 6 hours,
 	// GitHub's cap on a job, when unset (D16).
 	BuildTimeout string `toml:"build_timeout"`
+	// StallTimeout ends a target's build, to be tried again, where its log
+	// grows by nothing for that long, as a duration such as "45m"; 30
+	// minutes when unset, and never where it's "0".
+	StallTimeout string `toml:"stall_timeout"`
 	// Xcode is the Xcode each release's Xcode image installs, by release
 	// name or number: tahoe = "26.6". A release it doesn't name gets what
 	// MacPorts' arm64 builder for the release runs.
@@ -521,6 +525,25 @@ func (t TartProvider) Timeout() time.Duration {
 // BuildBound is the build timeout the configuration sets, or zero.
 func (t TartProvider) BuildBound() time.Duration {
 	timeout, _ := time.ParseDuration(t.BuildTimeout)
+	return timeout
+}
+
+// DefaultStallTimeout is how long a target's log may grow by nothing
+// before its build is taken as stalled, where the configuration sets
+// none.
+const DefaultStallTimeout = 30 * time.Minute
+
+// StallBound is how long a target's log may grow by nothing before its
+// build is taken as stalled: the configuration's, DefaultStallTimeout
+// where it sets none, and zero, never, where it sets "0".
+func (t TartProvider) StallBound() time.Duration {
+	if t.StallTimeout == "" {
+		return DefaultStallTimeout
+	}
+	timeout, err := time.ParseDuration(t.StallTimeout)
+	if err != nil || timeout < 0 {
+		return DefaultStallTimeout
+	}
 	return timeout
 }
 
@@ -600,6 +623,7 @@ func Defaults() map[string]string {
 		"serve.not_maintainers":          "(none)",
 		"providers.tart.test_timeout":    ageWords(buildenv.DefaultTestTimeout),
 		"providers.tart.build_timeout":   ageWords(buildenv.DefaultBuildTimeout),
+		"providers.tart.stall_timeout":   ageWords(DefaultStallTimeout),
 		"providers.tart.keep_failed":     "true",
 		"providers.command":              "(not set up)",
 		"providers.command.run":          "",

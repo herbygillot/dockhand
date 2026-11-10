@@ -90,6 +90,10 @@ type Provider struct {
 	// BuildTimeout bounds a target's build, its dependencies' installs,
 	// fetch, checksum, and install, 6 hours when zero (D16).
 	BuildTimeout time.Duration
+	// StallTimeout ends a target's build, to be tried again, where its log
+	// grows by nothing for that long; never when zero
+	// (providers.tart.stall_timeout).
+	StallTimeout time.Duration
 	// Poll is how often a guest's results are read, 10 seconds when zero.
 	Poll time.Duration
 	// KeepFailed keeps a clone a target failed in, stopped, for dockhand
@@ -123,7 +127,7 @@ type Provider struct {
 // guestRoot, its end launchd's job's, its tools compared with the facts
 // table's, and its dependencies' archives kept for later guests.
 func (p *Provider) follower() *guestprogram.Follower {
-	return &guestprogram.Follower{Prefix: macports.DefaultPrefix, Root: guestRoot, Poll: p.poll(), Stopped: stopped, Drift: true, KeepDependencies: true}
+	return &guestprogram.Follower{Prefix: macports.DefaultPrefix, Root: guestRoot, Poll: p.poll(), Stopped: stopped, Drift: true, KeepDependencies: true, Stall: p.StallTimeout}
 }
 
 func (p *Provider) Name() string { return buildenv.Tart }
