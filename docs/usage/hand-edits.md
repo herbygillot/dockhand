@@ -55,6 +55,20 @@ of their own. The plan writes no edit and starts no branch; it can still
 download files. It exits 3 when a distfile differs from its declared checksums,
 so a nonzero plan result can be the difference you came to inspect.
 
+**Other macOS releases and architectures.** A Portfile can fetch different
+files on different releases or architectures, such as an older version kept for
+macOS 10.13 and earlier, or a separate binary for Intel. When `update` or
+`checksums` edits such a Portfile, Dockhand reads it as MacPorts would on each
+side of every release or architecture boundary the Portfile names. It does this
+on this Mac, without a build, and writes the checksums for every file those
+readings fetch. Those readings use that release's version and architecture, and
+its developer tools as Dockhand's facts table records them. Where a reading
+depends on anything else about a Mac running that release, `checksums` leaves
+that release's checksums as they were and names them, and `update` stops and
+says which release it couldn't read. Checks build only on the releases you have
+images for, or GitHub's. MacPorts' builders cover the rest after the pull
+request is merged.
+
 For ports with `cargo.crates` or `go.vendors`, an ordinary refresh preserves
 those lists byte for byte while refreshing the port's own archives. An empty
 declared dependency block can be filled from the source. A declaration or

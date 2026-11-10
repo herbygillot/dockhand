@@ -136,8 +136,12 @@ type console struct {
 	all     bool
 	command runner
 	model   Model
-	// gathered is when the rows were last gathered.
+	// gathered is when the rows were last gathered, report what was read
+	// then, and detailed the branch it read in detail, where the pane
+	// showed one.
 	gathered time.Time
+	report   engine.StatusReport
+	detailed model.BranchID
 }
 
 // live draws the table on the terminal until q, Esc, or Ctrl-C. Its
@@ -247,18 +251,23 @@ func live(parent context.Context, e *engine.Engine, streams term.Streams, all bo
 }
 
 // gather reads every branch's status in one report, the rows from it, and
-// the selected branch's detail where the pane shows it.
+// the selected branch's detail where the pane shows it, in the same read.
 func (c *console) gather(ctx context.Context) {
 	c.gathered = time.Now()
 	states := []model.BranchState{model.BranchOpen}
 	if c.all {
 		states = []model.BranchState{model.BranchOpen, model.BranchMerged, model.BranchClosed, model.BranchArchived}
 	}
-	report, err := c.e.StatusReport(ctx, c.session, engine.StatusRequest{States: states, Overview: true})
+	var detail model.BranchID
+	if row, ok := c.model.Row(); ok && c.model.Pane == paneDetail {
+		detail = row.ID
+	}
+	report, err := c.e.StatusReport(ctx, c.session, engine.StatusRequest{States: states, Overview: true, Detail: detail})
 	if err != nil {
 		c.model.Problem = "status: " + err.Error()
 		return
 	}
+	c.report, c.detailed = report, detail
 	c.model.Problem = ""
 	var rows []view.Row
 	for _, status := range report.Statuses {
@@ -269,19 +278,25 @@ func (c *console) gather(ctx context.Context) {
 	c.detail(ctx)
 }
 
-// detail gathers the selected branch's detail, where the pane shows it.
+// detail is the selected branch's detail, where the pane shows it: from
+// the gather's read where it read that branch in detail, else, the
+// selection having moved since, read for it alone.
 func (c *console) detail(ctx context.Context) {
 	row, ok := c.model.Row()
 	if c.model.Pane != paneDetail || !ok {
 		c.model.Detail = nil
 		return
 	}
-	branch, err := c.e.Branch(ctx, row.ID)
-	if err != nil {
-		c.model.Detail = []string{view.Look + " " + err.Error()}
+	at := slices.IndexFunc(c.report.Statuses, func(s engine.BranchStatus) bool { return s.Branch.ID == row.ID })
+	if at < 0 {
+		c.model.Detail = nil
 		return
 	}
-	report, err := c.e.StatusReport(ctx, c.session, engine.StatusRequest{Branches: []model.Branch{branch}})
+	if c.detailed == row.ID {
+		c.model.Detail = detailLines(c.report.Statuses[at], c.report)
+		return
+	}
+	report, err := c.e.StatusReport(ctx, c.session, engine.StatusRequest{Branches: []model.Branch{c.report.Statuses[at].Branch}})
 	if err != nil {
 		c.model.Detail = []string{view.Look + " " + err.Error()}
 		return

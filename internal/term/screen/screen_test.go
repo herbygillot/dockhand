@@ -99,8 +99,10 @@ func TestASuspendedScreenReadsNoKeys(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, <-done)
 	mu.Lock()
-	require.True(t, strings.HasSuffix(out.String(), leaveView+"\r\nPress any key to return."+enterView), "the screen is left, and entered again after the key")
+	written := out.String()
 	mu.Unlock()
+	// Cleared for the command, its output never over the table's rows.
+	require.True(t, strings.HasSuffix(written, leaveView+clearView+"\r\nPress any key to return."+enterView), "the screen is left, and entered again after the key")
 
 	_, err = io.WriteString(typing, "q")
 	require.NoError(t, err)
