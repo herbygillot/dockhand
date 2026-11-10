@@ -2,10 +2,13 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -153,4 +156,79 @@ func TestASubmitRefusesABranchThatMovedAfterItsPlan(t *testing.T) {
 	require.ErrorIs(t, err, ErrStaleSubmit)
 	require.Empty(t, string(fake.ForkHead("dockhand/jq-update")), "nothing was pushed")
 	require.Empty(t, fake.PRs)
+}
+
+// lostReply is a forge whose pull request update GitHub takes, while its
+// reply is lost, as long as lose is set.
+type lostReply struct {
+	*forgetest.GitHub
+	lose bool
+}
+
+func (g *lostReply) Update(ctx context.Context, in forge.PullRequestInput) (forge.PullRequestObservation, error) {
+	observed, err := g.GitHub.Update(ctx, in)
+	if err == nil && g.lose {
+		return forge.PullRequestObservation{}, errors.New("the reply was lost")
+	}
+	return observed, err
+}
+
+// A submit whose record failed after GitHub took its description, or whose
+// update's reply was lost, leaves the description dockhand's: the next
+// submit finishes the record, and a later one still refreshes it. The
+// retry read its own text as a person's edit, GitHub's differing from the
+// record a submit behind, and never wrote the description again (#127).
+func TestADescriptionWrittenButNotRecordedStaysDockhands(t *testing.T) {
+	t.Parallel()
+	for _, lost := range []bool{false, true} {
+		f := setup(t)
+		e, _ := f.withPreparer(t)
+		fake := f.withFork(t, e)
+		forgeDouble := &lostReply{GitHub: fake}
+		e.Forge = forgeDouble
+		branch := committedUpdate(t, e)
+		plan := func() SubmitPlan {
+			t.Helper()
+			current, err := e.Branch(t.Context(), branch.ID)
+			require.NoError(t, err)
+			plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: current, NoCheck: true})
+			require.NoError(t, err)
+			return plan
+		}
+		commit := func(lines, subject string) {
+			t.Helper()
+			testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n" + lines})
+			testsupport.Git(t, branch.Worktree, "commit", "-qam", subject)
+		}
+		_, err := e.ApplySubmit(t.Context(), plan(), model.AnsweredAsked)
+		require.NoError(t, err)
+
+		commit("# drop the patch\n", "jq: drop the patch")
+		second := plan()
+		if lost {
+			forgeDouble.lose = true
+			_, err = e.ApplySubmit(t.Context(), second, model.AnsweredAsked)
+			require.ErrorContains(t, err, "the reply was lost")
+			forgeDouble.lose = false
+		} else {
+			kept := e.Store
+			e.Store = refusingStore{kept}
+			_, err = e.ApplySubmit(t.Context(), second, model.AnsweredAsked)
+			require.ErrorContains(t, err, "but dockhand could not save its record")
+			e.Store = kept
+		}
+		require.Contains(t, fake.PRs[34901].Body, "drop the patch", "GitHub took the description")
+
+		again := plan()
+		require.Equal(t, SectionCurrent, again.Sections.Description, "lost %v: its own text, already there", lost)
+		_, err = e.ApplySubmit(t.Context(), again, model.AnsweredAsked)
+		require.NoError(t, err)
+
+		commit("# drop the patch\n# and the docs\n", "jq: and the docs")
+		third := plan()
+		require.Equal(t, SectionRefreshed, third.Sections.Description, "lost %v", lost)
+		_, err = e.ApplySubmit(t.Context(), third, model.AnsweredAsked)
+		require.NoError(t, err)
+		require.Contains(t, fake.PRs[34901].Body, "and the docs")
+	}
 }
