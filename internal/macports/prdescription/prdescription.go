@@ -978,6 +978,13 @@ func mergeDescription(body, lastWritten, fresh string) (string, Outcome) {
 	}
 	was, wasEnd, written := sectionSpan(lastWritten, descriptionHeading)
 	start, end, ok := sectionSpan(fresh, descriptionHeading)
+	// One that already reads as dockhand writes it now is dockhand's,
+	// whatever was last recorded: a submit whose record failed after
+	// GitHub took the description, or whose reply was lost, left the
+	// record a submit behind, and its own text read as a person's (#127).
+	if written && ok && normalize(body[from:to]) == normalize(fresh[start:end]) {
+		return body, Current
+	}
 	if !written || !ok || normalize(body[from:to]) != normalize(lastWritten[was:wasEnd]) {
 		return body, Kept
 	}
@@ -1001,6 +1008,9 @@ func mergeTestedOn(existing, lastWritten, fresh string) (string, Outcome) {
 	}
 	last, lastOK := ownedSpan(lastWritten)
 	next, nextOK := ownedSpan(fresh)
+	if lastOK && nextOK && normalize(existing[at:]) == normalize(fresh[next:]) {
+		return existing, Current
+	}
 	if !lastOK || !nextOK || normalize(existing[at:]) != normalize(lastWritten[last:]) {
 		return existing, Kept
 	}
@@ -1025,6 +1035,9 @@ func mergeTypes(body, lastWritten, fresh string, named bool) (string, Outcome) {
 		case written && normalize(body[from:to]) == normalize(lastWritten[was:wasEnd]):
 			section := typesSection(append(tickedTypes(body[from:to]), tickedTypes(types)...))
 			return body[:from] + section + body[to:], rewritten(body[from:to], section)
+		case written && normalize(body[from:to]) == normalize(typesSection(append(tickedTypes(lastWritten[was:wasEnd]), tickedTypes(types)...))):
+			// As dockhand would have written them from its last record.
+			return body, Current
 		}
 		return body, Kept
 	}
