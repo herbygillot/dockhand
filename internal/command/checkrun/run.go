@@ -184,7 +184,7 @@ func ParseBound(value string) (Bound, error) {
 		return Bound{}, fmt.Errorf("--for %s: name a duration with its unit, as 9m or 1h", value)
 	}
 	if bound <= 0 {
-		return Bound{}, fmt.Errorf("--for %s: the bound is above zero", value)
+		return Bound{}, fmt.Errorf("--for %s: duration must be greater than zero", value)
 	}
 	return Bound{For: bound, Said: value}, nil
 }
@@ -705,7 +705,7 @@ func baselineTestWords(base, branch model.TestOutcome, check string) string {
 	case branch.Failed() && base == model.TestsPassed:
 		return fmt.Sprintf("its tests pass at the base, and %s in %s; the cause isn't established.", verb(branch), check)
 	case branch.Failed():
-		return fmt.Sprintf("its tests %s in %s, and weren't run at the base (%s), so there's nothing to set beside them.", verb(branch), check, base)
+		return fmt.Sprintf("its tests %s in %s, and weren't run at the base (%s), so the test results cannot be compared.", verb(branch), check, base)
 	case branch == model.TestsPassed:
 		return fmt.Sprintf("its tests %s at the base, and pass in %s.", verb(base), check)
 	}

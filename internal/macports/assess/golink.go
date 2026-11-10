@@ -86,7 +86,7 @@ func declaresVariable(reading project.Reading, dir string, target macports.GoLin
 			continue
 		}
 		if file.Truncated {
-			return false, name + " is larger than the comparison reads"
+			return false, name + " exceeds the comparison's per-file read limit"
 		}
 		parsed, err := parser.ParseFile(files, name, file.Data, parser.SkipObjectResolution)
 		if err != nil {

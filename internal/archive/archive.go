@@ -321,7 +321,7 @@ func walkSevenZip(ctx context.Context, filename string, fn func(Member) error) e
 // macOS's hdiutil reads one.
 func walkDiskImage(ctx context.Context, filename string, fn func(Member) error) error {
 	if runtime.GOOS != "darwin" {
-		return fmt.Errorf("archive: %s is a disk image, which only macOS's hdiutil reads", path.Base(filename))
+		return fmt.Errorf("archive: reading the disk image %s requires macOS's hdiutil", path.Base(filename))
 	}
 	mount, err := os.MkdirTemp("", "dockhand-dmg-")
 	if err != nil {
@@ -414,7 +414,7 @@ func Extract(ctx context.Context, filename, directory string) (int, error) {
 			if root := strings.TrimSuffix(strings.TrimPrefix(member.Name, "./"), "/"); root == "" || root == "." {
 				return nil
 			}
-			return fmt.Errorf("archive: %s has a member outside it: %s", path.Base(filename), member.Name)
+			return fmt.Errorf("archive: %s contains an unsafe member path: %s", path.Base(filename), member.Name)
 		}
 		if shared && top != "" {
 			name = strings.TrimPrefix(strings.TrimPrefix(name, top), "/")

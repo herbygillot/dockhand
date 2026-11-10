@@ -692,7 +692,7 @@ func TestCancellingAStoppedGitHubCheckStopsItsWorkflow(t *testing.T) {
 	f.unreachable = errors.New("GitHub answered 503")
 	_, _, err = cmdtest.Dockhand(t, "cancel", "check-1")
 	require.Error(t, err)
-	require.ErrorContains(t, err, "check-1's cancel is recorded, but github couldn't stop https://github.com/ada/macports-ports/actions/runs/7: GitHub answered 503; dockhand cancel check-1 tries again")
+	require.ErrorContains(t, err, "check-1: cancellation is recorded, but github could not stop https://github.com/ada/macports-ports/actions/runs/7: GitHub answered 503; run dockhand cancel check-1 to try again")
 	pending, err := e.RunNamed(ctx, "check-1")
 	require.NoError(t, err)
 	require.Equal(t, model.RunRunning, pending.State)

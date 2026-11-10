@@ -160,7 +160,7 @@ func TestCredentialsStopPreparationBeforeDownload(t *testing.T) {
 		}
 		_, err := (Client{}).fetchOne(t.Context(), info)
 		require.ErrorIs(t, err, portfile.ErrUnsupported)
-		require.ErrorContains(t, err, "prepare this update manually with MacPorts")
+		require.ErrorContains(t, err, "fetch this port's sources with MacPorts instead")
 	}
 	require.Zero(t, requests)
 }

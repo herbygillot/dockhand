@@ -134,10 +134,10 @@ func (l *Local) prefix() string { return cmp.Or(l.Prefix, macports.DefaultPrefix
 func (l *Local) Environments(ctx context.Context, prefix string) ([]model.Environment, error) {
 	prefix = filepath.Clean(cmp.Or(prefix, l.prefix()))
 	if !filepath.IsAbs(prefix) {
-		return nil, fmt.Errorf("--on local:%s: a prefix is a path from the root, such as /opt/local", prefix)
+		return nil, fmt.Errorf("--on local:%s: the prefix must be an absolute path, such as /opt/local", prefix)
 	}
 	if _, err := os.Stat(filepath.Join(prefix, "bin", "port")); err != nil {
-		return nil, fmt.Errorf("--on local:%s: no MacPorts is installed there; dockhand builds in a prefix MacPorts' own installer or source install made", prefix)
+		return nil, fmt.Errorf("--on local:%s: no MacPorts installation was found here; use a prefix created by the MacPorts installer or a source installation", prefix)
 	}
 	facts, err := installation.Inspect(ctx, l.command, prefix)
 	if err != nil {
@@ -147,7 +147,7 @@ func (l *Local) Environments(ctx context.Context, prefix string) ([]model.Enviro
 		return nil, fmt.Errorf("--on local:%s: %s", prefix, strings.Join(facts.Problems, "; "))
 	}
 	if !macports.BaseAtLeast(facts.Version, SnapshotSince) {
-		return nil, fmt.Errorf("--on local:%s: its MacPorts is %s, which predates port snapshot (2.9), so a check there couldn't put the prefix back; port selfupdate brings a newer one", prefix, facts.Version)
+		return nil, fmt.Errorf("--on local:%s: MacPorts %s cannot restore the prefix after a check; port snapshot requires 2.9 or later. Run port selfupdate to upgrade it", prefix, facts.Version)
 	}
 	return []model.Environment{{Provider: buildenv.Local, Platform: facts.Platform, Prefix: prefix}}, nil
 }
@@ -304,13 +304,13 @@ func (l *Local) settle(ctx context.Context, follower *guest.Follower, dir, prefi
 			}
 		}
 		if err := l.restore(restoring, dir, prefix, check, sudo); err != nil {
-			build.Progress(fmt.Sprintf("%s wasn't put back as it was: %v; dockhand undo %s tries again, or the next check there does. %s", prefix, err, check, l.byHand(dir, check, snapshot)))
+			build.Progress(fmt.Sprintf("could not restore %s: %v. Run dockhand undo %s to retry; the next check in this prefix also retries restoration. %s", prefix, err, check, l.byHand(dir, check, snapshot)))
 			return
 		}
 		remove(dir, build)
 		build.Progress("put " + prefix + " back as it was")
 	default:
-		build.Progress(fmt.Sprintf("%s wasn't put back as it was: %s; dockhand undo %s tries again, or the next check there does. %s", prefix, strings.TrimPrefix(restored, "no: "), check, l.byHand(dir, check, snapshot)))
+		build.Progress(fmt.Sprintf("could not restore %s: %s. Run dockhand undo %s to retry; the next check in this prefix also retries restoration. %s", prefix, strings.TrimPrefix(restored, "no: "), check, l.byHand(dir, check, snapshot)))
 	}
 }
 
@@ -571,7 +571,7 @@ type leftDirectory struct {
 // unreadableWords say a check whose record of how it left a prefix can't
 // be read, and how the prefix is looked at by hand.
 func unreadableWords(check, prefix, dir string, err error) string {
-	return fmt.Sprintf("%s's record of how it left %s can't be read (%v), so the prefix may be changed: compare its active ports with those %s lists, put back any that differ, then remove %s", check, prefix, err, filepath.Join(dir, "before.txt"), dir)
+	return fmt.Sprintf("could not read %s's restoration record for %s (%v). The prefix may still contain changes from that check. Compare its active ports with %s, restore any differences, then remove %s", check, prefix, err, filepath.Join(dir, "before.txt"), dir)
 }
 
 // awaitOrphans waits for the guest programs a crashed dockhand left
@@ -591,7 +591,7 @@ func (l *Local) awaitOrphans(ctx context.Context, prefix string, build buildenv.
 		for _, orphan := range orphans {
 			if !said[orphan.dir] {
 				said[orphan.dir] = true
-				build.Progress(fmt.Sprintf("waiting for %s's program (pid %d), which its dockhand left running, to finish in %s", orphan.owner.Check, orphan.program, prefix))
+				build.Progress(fmt.Sprintf("waiting for %s's build process (pid %d) to finish in %s; it outlived the dockhand process that started it", orphan.owner.Check, orphan.program, prefix))
 			}
 		}
 		select {
@@ -732,7 +732,7 @@ func (l *Local) restoreLeft(ctx context.Context, prefix string, build buildenv.B
 		if err != nil {
 			return err
 		}
-		build.Progress(fmt.Sprintf("putting %s back as it was before an earlier check, which ended before it could", prefix))
+		build.Progress(fmt.Sprintf("restoring %s after an earlier check ended without restoring it", prefix))
 		if err := l.restore(ctx, left.dir, prefix, left.owner.Check, sudo); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()

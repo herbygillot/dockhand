@@ -507,7 +507,7 @@ func (a Attention) Words(v Vocabulary) string {
 		}
 		return fmt.Sprintf("#%d: changes requested%s", pr.Number, age(at))
 	case ReviewerCommented:
-		return fmt.Sprintf("#%d: @%s commented, and the conversation waits on you%s", pr.Number, pr.Observed.CommentedBy, age(pr.Observed.At))
+		return fmt.Sprintf("#%d: @%s commented; awaiting your response%s", pr.Number, pr.Observed.CommentedBy, age(pr.Observed.At))
 	case CIFailing:
 		// A failure no reading named says its log's first error line,
 		// where there is one (Then's item 7: xapian-core's said nothing).

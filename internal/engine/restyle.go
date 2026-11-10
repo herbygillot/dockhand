@@ -93,7 +93,7 @@ func (e *Engine) restyleTidy(ctx context.Context, plan *TidyPlan) error {
 // evaluated; empty where it evaluates the same.
 func (e *Engine) restyleEvaluates(ctx context.Context, families FamilyReader, worktree *git.Repository, tree, directory string, edit git.FileEdit) string {
 	if families == nil {
-		return "nothing here evaluates it, to show restyling changes nothing"
+		return "no Portfile evaluator is available to verify that restyling preserves behavior"
 	}
 	restyled, err := worktree.EditTree(ctx, tree, []git.FileEdit{edit})
 	if err != nil {
@@ -101,11 +101,11 @@ func (e *Engine) restyleEvaluates(ctx context.Context, families FamilyReader, wo
 	}
 	before, err := families.Family(ctx, model.Source{Tree: model.ObjectID(tree)}, directory)
 	if err != nil {
-		return "it couldn't be evaluated: " + err.Error()
+		return "the original Portfile could not be evaluated: " + err.Error()
 	}
 	after, err := families.Family(ctx, model.Source{Tree: model.ObjectID(restyled)}, directory)
 	if err != nil {
-		return "it couldn't be evaluated restyled: " + err.Error()
+		return "the restyled Portfile could not be evaluated: " + err.Error()
 	}
 	for _, change := range fidelity.SubportChanges(directory, &before, &after, nil) {
 		if change.Kind != model.SubportUnchanged {
@@ -225,7 +225,7 @@ func pathStyled(text []byte, providers commitrules.Providers) ([]byte, []string)
 // alone, or it can't be evaluated; empty where it evaluates the same.
 func (e *Engine) pathStyleEvaluates(ctx context.Context, families FamilyReader, worktree *git.Repository, tree, directory string, edit git.FileEdit) string {
 	if families == nil {
-		return "nothing here evaluates it, to show writing it path-style changes nothing"
+		return "no Portfile evaluator is available to verify that path-style dependencies preserve behavior"
 	}
 	styled, err := worktree.EditTree(ctx, tree, []git.FileEdit{edit})
 	if err != nil {
@@ -233,11 +233,11 @@ func (e *Engine) pathStyleEvaluates(ctx context.Context, families FamilyReader, 
 	}
 	before, err := families.Family(ctx, model.Source{Tree: model.ObjectID(tree)}, directory)
 	if err != nil {
-		return "it couldn't be evaluated: " + err.Error()
+		return "the original Portfile could not be evaluated: " + err.Error()
 	}
 	after, err := families.Family(ctx, model.Source{Tree: model.ObjectID(styled)}, directory)
 	if err != nil {
-		return "it couldn't be evaluated path-style: " + err.Error()
+		return "the Portfile with path-style dependencies could not be evaluated: " + err.Error()
 	}
 	for _, change := range fidelity.SubportChanges(directory, fidelity.DependenciesByPort(&before), fidelity.DependenciesByPort(&after), nil) {
 		if change.Kind != model.SubportUnchanged {

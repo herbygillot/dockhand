@@ -48,7 +48,7 @@ func (e *Engine) PastMerge(ctx context.Context, branch model.Branch, head string
 func (e *Engine) StartFrom(ctx context.Context, name string, from model.Branch) (FollowUp, error) {
 	result := FollowUp{From: from}
 	if from.State != model.BranchMerged {
-		return result, fmt.Errorf("start --from takes a merged branch's commits past its merge, and %s is %s; dockhand path %s works in it", from.ShortName(), from.State, from.ShortName())
+		return result, fmt.Errorf("start --from requires a merged branch with follow-up commits; %s is %s. dockhand path %s shows its worktree path", from.ShortName(), from.State, from.ShortName())
 	}
 	head, _, err := e.Repo.Branch(ctx, from.Name)
 	if errors.Is(err, git.ErrBranchMissing) {

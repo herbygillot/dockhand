@@ -42,10 +42,10 @@ act() {
 assert() {
 	[ -n "${G4_BRANCH:-}" ] || return 0
 	[ -n "${G4_RUN:-}" ] || { row_fail "status didn't name the dockhand undo that puts /opt/local back: $(grep -i 'local' "$ROW_DIR/status.txt" | head -2 | tr '\n' ' ')"; return; }
-	grep -q 'stopped before it could restore /opt/local' "$ROW_DIR/status.txt" || { row_fail "status didn't say the check left /opt/local changed"; return; }
-	grep -q "first needs dockhand wait $G4_RUN, check --replace, or dockhand cancel $G4_RUN" "$ROW_DIR/status.txt" || { row_fail "status didn't say a check of the branch first needs $G4_RUN settled"; return; }
+	grep -q 'stopped before restoring /opt/local' "$ROW_DIR/status.txt" || { row_fail "status didn't say the check left /opt/local changed"; return; }
+	grep -q "Before checking the same branch, use dockhand wait $G4_RUN, check --replace, or dockhand cancel $G4_RUN" "$ROW_DIR/status.txt" || { row_fail "status didn't say a check of the branch first needs $G4_RUN settled"; return; }
 	local_same /opt/local "$ROW_DIR/active.before" "dockhand undo $G4_RUN didn't put /opt/local back exactly" || return
-	! grep -q 'stopped before it could restore /opt/local' "$ROW_DIR/status.after" || { row_fail "status still said /opt/local was changed once it was put back"; return; }
+	! grep -q 'stopped before restoring /opt/local' "$ROW_DIR/status.after" || { row_fail "status still said /opt/local was changed once it was put back"; return; }
 	# Its directory goes once the prefix is put back: the guest program,
 	# root, gives what it wrote there back (G4 on rc8 left one).
 	if grep -ls '"check":"'"$G4_RUN"'"' /var/tmp/dockhand-local-*/owner.json >/dev/null 2>&1; then

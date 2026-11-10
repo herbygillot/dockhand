@@ -164,7 +164,7 @@ func (p *markerParser) expression() (Applies, error) {
 			return Unknown, err
 		}
 		if p.peek() != ")" {
-			return Unknown, fmt.Errorf("a ( without its )")
+			return Unknown, fmt.Errorf("missing ')' after '('")
 		}
 		p.at++
 		return inner, nil
@@ -178,7 +178,7 @@ func (p *markerParser) expression() (Applies, error) {
 	p.at++
 	if operator == "not" {
 		if p.peek() != "in" {
-			return Unknown, fmt.Errorf("not without in")
+			return Unknown, fmt.Errorf("expected 'in' after 'not'")
 		}
 		p.at++
 		operator = "not in"
@@ -206,7 +206,7 @@ func (p *markerParser) value() (string, bool, error) {
 	p.at++
 	switch {
 	case token == "":
-		return "", false, fmt.Errorf("a comparison without its value")
+		return "", false, fmt.Errorf("comparison is missing a value")
 	case token[0] == '\'' || token[0] == '"':
 		return token[1 : len(token)-1], true, nil
 	case markerVariables[token]:

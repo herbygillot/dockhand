@@ -42,14 +42,14 @@ and chooses where branch worktrees go: ~/Source/macports-branches unless
 dockhand runs with: Git, MacPorts, the places a check can build, the GitHub
 login, and its records.
 
-On a terminal it offers what's missing, each in turn and each declined by
-answering no: the GitHub login, and the maintainers line the ports naming
-your GitHub login write, which it writes to the configuration file. The
-Tart image is offered last, since making one takes a large download;
-setup tart makes it any time. Rerun, it's the health check.
+On a terminal it offers missing setup steps, which you can decline:
+GitHub login, a maintainer identity based on ports naming your GitHub
+login, and a Tart image. The maintainer identity is saved in the
+configuration file. The Tart image is offered last because it requires a
+large download; setup tart can create it later. Run setup again to check
+your configuration.
 
-It first checks the Git dockhand runs, git on PATH or $GIT_BIN, and refuses
-one older than 2.40, which rebase needs.`,
+Requires Git 2.40 or newer for rebase, using the configured Git executable.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runSetup(cmd, s, streams, worktrees, yes)
@@ -208,11 +208,11 @@ port, with a short ID, as an edit's is. With --here, the branch is created
 in this checkout instead, which must have no uncommitted changes to
 tracked files.
 
---from takes a merged branch's commits past what its pull request merged,
-the follow-up status names, and picks them onto the new branch, from
-master fetched just now, as git rebase would replay them; a commit master
-has the change of is dropped, and a conflict starts nothing. With no name,
-it's the merged branch's with a short ID.`,
+--from replays a merged branch's follow-up commits onto freshly fetched
+master: the commits not included in its merged pull request, as shown by
+status. Commits whose changes are already on master are dropped. A
+conflict starts no branch. With no name, uses the merged branch's name
+with a short ID.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()

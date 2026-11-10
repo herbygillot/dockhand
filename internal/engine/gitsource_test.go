@@ -686,7 +686,7 @@ func TestAdmissionHonoursTheResolvedSource(t *testing.T) {
 			require.Nil(t, got.Passed, "the old commit's pass doesn't stand for the new one")
 		} else {
 			require.Error(t, err, "a queued check of another source isn't followed")
-			require.ErrorContains(t, err, "but builds another source than this request: a tag or branch a port fetches moved since it was planned")
+			require.ErrorContains(t, err, "but its planned source differs from this request's; an upstream tag or branch may have moved since the check was planned")
 			require.False(t, got.Followed)
 		}
 	}

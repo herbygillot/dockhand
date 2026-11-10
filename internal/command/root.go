@@ -326,7 +326,7 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 // foldedCommands are the commands folded into another, each with where
 // it went and what does its work now.
 var foldedCommands = map[string]string{
-	"queue": "queue is part of status now: dockhand status lists the checks queued and running",
+	"queue": "queue is part of status now: dockhand status -v lists the checks queued and running",
 	"watch": "watch is dockhand console now: it keeps the branches current",
 }
 

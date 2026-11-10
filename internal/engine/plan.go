@@ -209,7 +209,7 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	if len(request.Variants) > 0 || request.EachVariant {
 		// MacPorts' workflow builds each port's default variants alone.
 		if slices.ContainsFunc(request.Environments, func(environment model.Environment) bool { return environment.Provider == buildenv.GitHub }) {
-			return plan, errors.New("--variants builds on tart or your command: GitHub's workflow builds default variants only")
+			return plan, errors.New("--variants is not supported by GitHub's workflow, which builds default variants only; use tart, local, or a command provider")
 		}
 	}
 	if plan.Tests == "" {
