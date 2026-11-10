@@ -322,3 +322,40 @@ func TestAModelledCxx20PortTakesTheTablesClang(t *testing.T) {
 		require.False(t, port.ModeledHostAccess, "%v", port.Problems)
 	}
 }
+
+// Where the row lists no SDKs, as the Command Line Tools before 10.14
+// have none and Darwin 10's /Developer is no directory the model keeps
+// Xcode's SDKs in, xcrun finds none and the SDK glob is empty, the
+// table's lack marked, and the host's xcrun isn't run: it ran 8,059 times
+// in Darwin 10 to 12 contexts in the M1 survey, and gave Darwin 10 the
+// host's own SDK (#108).
+func TestAnUnlistedSDKIsAbsentWithoutTheHost(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		platform model.Platform
+		tools    model.DeveloperTools
+		glob     string
+	}{
+		{model.Platform{OS: "darwin", Version: "13", Architecture: "x86_64"}, model.DeveloperToolsCommandLine, macports.CommandLineTools + "/SDKs"},
+		{model.Platform{OS: "darwin", Version: "10", Architecture: "x86_64"}, model.DeveloperToolsXcode, ""},
+	} {
+		lines := "lappend results [catch {exec xcrun --sdk macosx --show-sdk-path 2> /dev/null}] [catch {exec xcrun --sdk macosx10.9 --show-sdk-path 2> /dev/null}]"
+		if c.glob != "" {
+			lines += "\nlappend results [llength [glob -nocomplain -directory " + c.glob + " MacOSX*.sdk]] [catch {glob -directory " + c.glob + " MacOSX*.sdk}]"
+		}
+		got, port := observedDescription(t, c.platform, c.tools, lines)
+		want := []string{"1", "1"}
+		if c.glob != "" {
+			want = append(want, "0", "1")
+		}
+		require.Equal(t, want, got, "%+v", c.platform)
+		require.False(t, port.ModeledHostAccess, "%+v: %v", c.platform, port.Problems)
+		unlisted := 0
+		for _, entry := range port.Ledger {
+			if entry.Source == "table" && entry.Subject == "sdks-unlisted" {
+				unlisted += entry.Count
+			}
+		}
+		require.Positive(t, unlisted, "%+v: %v", c.platform, port.Ledger)
+	}
+}
