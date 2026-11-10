@@ -77,10 +77,11 @@ passes --yes. archive hides a branch; clean removes a merged one's files;
 cancel stops a check. None means another.
 
 --delete permanently removes the named merged, closed, or archived
-branches: their Git branches, including any unmerged commits listed in the
-preview, their worktrees, eligible fork branches, and retained check VMs.
-It also deletes their records, except for check results reused by other
-branches. It asks before proceeding; without a terminal, pass --yes.
+branches: their Git branches, including any unmerged commits listed in
+the preview, their worktrees, eligible fork branches, and the clones
+their checks kept. It also deletes their records, except for check
+results reused by other branches. It asks before proceeding; without a
+terminal, pass --yes.
 
 --plan shows what it would remove, or forget, and removes nothing.`,
 		RunE: func(cmd *cobra.Command, args []string) error {

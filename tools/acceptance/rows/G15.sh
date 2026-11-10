@@ -2,9 +2,9 @@
 # G15: a local check whose dockhand is killed mid-build, its guest program
 # left building, and another check on the same prefix (272e968b): the
 # second waits for the first's program to end, saying "waiting for
-# check-N's program (pid P), which its dockhand left running, to finish in
-# <prefix>", puts back what the first left changed, then builds; it
-# passes, and the prefix's ports are as they were. It builds in
+# check-N's build process (pid P) to finish in <prefix>; it outlived the
+# dockhand process that started it", puts back what the first left changed,
+# then builds and passes. The prefix's ports are as they were. It builds in
 # ACCEPT_LOCAL_PREFIX, installed without root, so no sudo asks, with
 # ACCEPT_LOCAL_SLEEP_PORT's build long enough to be caught in, a port
 # whose dependencies the prefix has already: ACCEPT_SLEEP_PORT's, rc1's
@@ -44,7 +44,7 @@ assert() {
 	[ -n "${G15_PREFIX:-}" ] || return 0
 	local second
 	second=$(sed -n "/^\\\$ dockhand check -b $G15_SECOND/,/^\\[exit/p" "$ROW_DIR/out.log")
-	printf '%s\n' "$second" | matches -E "waiting for check-[0-9]+'s build process \\(pid [0-9]+\\) to finish in $G15_PREFIX; the process outlived dockhand" ||
+	printf '%s\n' "$second" | matches -E "waiting for check-[0-9]+'s build process \\(pid [0-9]+\\) to finish in $G15_PREFIX; it outlived the dockhand process that started it" ||
 		{ row_fail "the second check didn't say it waited for the killed check's program in $G15_PREFIX: $(printf '%s\n' "$second" | grep -i wait | head -2 | tr '\n' ' ')"; return; }
 	printf '%s\n' "$second" | matches -F "[exit 0]" || { row_fail "the second check failed: $(printf '%s\n' "$second" | tail -3 | tr '\n' ' ')"; return; }
 	local_same "$G15_PREFIX" "$ROW_DIR/active.before" "the checks left $G15_PREFIX's active ports changed" || return

@@ -142,7 +142,7 @@ close $fd
 	require.Eventually(t, func() bool {
 		waiting.mu.Lock()
 		defer waiting.mu.Unlock()
-		return strings.Contains(strings.Join(waiting.progress, "\n"), fmt.Sprintf("waiting for check-12's build process (pid %d) to finish in %s; the process outlived dockhand", child.Process.Pid, prefix))
+		return strings.Contains(strings.Join(waiting.progress, "\n"), fmt.Sprintf("waiting for check-12's build process (pid %d) to finish in %s; it outlived the dockhand process that started it", child.Process.Pid, prefix))
 	}, 5*time.Second, 10*time.Millisecond)
 	time.Sleep(200 * time.Millisecond)
 	require.NoFileExists(t, entries, "no snapshot while the orphan builds")

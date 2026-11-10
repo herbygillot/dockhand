@@ -591,7 +591,7 @@ func (l *Local) awaitOrphans(ctx context.Context, prefix string, build buildenv.
 		for _, orphan := range orphans {
 			if !said[orphan.dir] {
 				said[orphan.dir] = true
-				build.Progress(fmt.Sprintf("waiting for %s's build process (pid %d) to finish in %s; the process outlived dockhand", orphan.owner.Check, orphan.program, prefix))
+				build.Progress(fmt.Sprintf("waiting for %s's build process (pid %d) to finish in %s; it outlived the dockhand process that started it", orphan.owner.Check, orphan.program, prefix))
 			}
 		}
 		select {

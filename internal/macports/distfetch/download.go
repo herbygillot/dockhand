@@ -310,10 +310,10 @@ func notFoundWords(info macports.PortInfo, address string) string {
 func CheckFetchCredentials(info macports.PortInfo) error {
 	credentials, err := info.FetchCredentials()
 	if err != nil {
-		return portfile.ErrUnsupported.Because("cannot determine applicable MacPorts fetch credentials; prepare this update manually with MacPorts")
+		return portfile.ErrUnsupported.Because("cannot determine applicable MacPorts fetch credentials; fetch this port's sources with MacPorts instead")
 	}
 	if credentials {
-		return portfile.ErrUnsupported.Because("MacPorts credentials apply to the selected source downloads; authenticated fetching is not supported by the direct downloader; prepare this update manually with MacPorts")
+		return portfile.ErrUnsupported.Because("MacPorts credentials apply to the selected source downloads; authenticated fetching is not supported by the direct downloader; fetch this port's sources with MacPorts instead")
 	}
 	return nil
 }
@@ -342,7 +342,7 @@ func CheckPolicy(info macports.PortInfo, portdir string) error {
 	_, evaluated := info.Options["fetch.ignore_sslcert"]
 	ignoreCertificate, err := info.Bool("fetch.ignore_sslcert")
 	if info.Options["fetch.type"] != "standard" || !evaluated || err != nil || ignoreCertificate || info.Options["go.vendors"] != "" || info.Options["cargo.crates"] != "" || info.Options["cargo.crates_github"] != "" {
-		return portfile.ErrUnsupported.Because("custom fetching or vendored source cannot be prepared automatically here; prepare this update manually with MacPorts")
+		return portfile.ErrUnsupported.Because("custom fetching or vendored source cannot be prepared automatically here; fetch this port's sources with MacPorts instead")
 	}
 	if err := LocalPatches(info, portdir); err != nil {
 		return err

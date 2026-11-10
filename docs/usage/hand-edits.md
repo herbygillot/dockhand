@@ -93,8 +93,7 @@ defines keepassxc now and not keepassxc-devel, which master has there too.
 Restore the subport, or ask for keepassxc`. A Portfile the branch doesn't
 change that still doesn't parse is said with where to look: `... doesn't parse
 in keepassxc-2.8.0's index, though the branch doesn't change it: portindex says
-... What the branch changes that the Portfile reads, as a PortGroup, is where to
-look`.
+... Check changes on the branch that this Portfile reads, such as PortGroups`.
 
 A changed archive under the same name, with the branch's version unchanged, is a
 **stealth update**. A homepage or comment edit does not turn it into a version

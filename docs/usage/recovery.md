@@ -202,7 +202,7 @@ nothing is said. An earlier baseline of the branch answers a failure again while
 what it read still stands; where that changed, as after a rebase, the offer says
 so instead, `master's build of exiv2 reads libheif's directory, changed since
 check-490's baseline`, naming the PortGroup where one the build loaded changed,
-`the cmake 1.1 PortGroup, which gettext, built from source, loaded`.
+`the cmake 1.1 PortGroup loaded by gettext when it was built from source`.
 
 Read both outcomes and their phases. A baseline failure is an observation, not
 an automatic acceptance. If the same eligible failure is reproduced, direct

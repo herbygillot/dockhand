@@ -26,11 +26,11 @@ func RenameCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 		Short: "Rename a port, leaving an obsolete stub at its old name",
 		Long: `Moves a port's Portfile and files/ to the new name's directory, keeping
 its category unless --category names another. Sets the name explicitly,
-adding a name line after its setup, such as github.setup or go.setup,
-if needed to preserve the source. The old Portfile becomes an obsolete stub with replaced_by
-set to the new name, its version unchanged, and its revision increased.
-Tidy commits the pair as "<new>: rename from <old>"; check and submit treat
-it as one change.
+adding a name line after its setup, such as github.setup or go.setup, if
+needed to preserve the source. The old Portfile becomes an obsolete stub
+with replaced_by set to the new name, its version unchanged, and its
+revision increased. Tidy commits the pair as "<new>: rename from <old>";
+check and submit treat it as one change.
 
 Reports remaining references to the old name, uses of ${name}, and ports
 that depend on it. Review these and make any changes needed to module

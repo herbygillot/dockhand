@@ -123,8 +123,8 @@ type TidyPlan struct {
 	// Keep is true when the history already has a good shape and nothing
 	// is uncommitted.
 	Keep bool
-	// Findings are problems in the files, for the person to fix; tidy
-	// never changes files.
+	// Findings are problems in the files that the plan leaves for the
+	// person to fix.
 	Findings []commitrules.Finding
 	// Warnings are what MacPorts' commit rules warn of in the commits as
 	// they are, as submit says them: a plan that would keep the commits

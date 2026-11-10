@@ -137,7 +137,7 @@ func WriteFindings(out io.Writer, plan engine.TidyPlan) {
 	if len(plan.Findings) == 0 {
 		return
 	}
-	fmt.Fprintln(out, "File issues to resolve manually:")
+	fmt.Fprintln(out, "Issues to resolve by hand in these files:")
 	for _, finding := range plan.Findings {
 		fmt.Fprintf(out, "  %s\n", finding)
 	}

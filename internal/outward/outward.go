@@ -7,10 +7,10 @@
 // (Permit), with two absolutes: branch pushes/deletions and changes to
 // workflow runs managed by checks never target MacPorts' repository, and a
 // deletion needs a record that dockhand made what it deletes. Explicit
-// pull-request CI retries use RerunChecks, which is permitted there. "dockhand changes only what
-// is yours or what it made" was written seven ways in seven places, and
-// #112 deleted an adopted pull request's branch in a repository that
-// wasn't the person's (#128; docs/principles.md).
+// pull-request CI retries use RerunChecks, which is permitted there.
+// "dockhand changes only what is yours or what it made" was written seven
+// ways in seven places, and #112 deleted an adopted pull request's branch
+// in a repository that wasn't the person's (#128; docs/principles.md).
 package outward
 
 import (
