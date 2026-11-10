@@ -2,7 +2,7 @@
 
 A core item for v0.9.0, [#110](https://github.com/herbygillot/dockhand/issues/110), placed at the person's word ("I'm fine with A-F", 2026-11-10 13:17Z, in the architecture thread, on architecture's model-from-snapshots assessment, its item F). It joins two of architecture's designs into one step: the assessment's section 4, "Fail closed" (2026-11-10, read at main 2a472cde9), and step 2 of the modelled context on Linux (2026-11-07, read at main d6b2f506), "Off a Mac, the model is closed", made the rule in every modelled context, on a Mac too. The issue says where it stands; this file is the design.
 
-The rest of the Linux design (CI's newest as the home context off a Mac, the `[model]` section and its line, the weekly Linux survey) isn't placed: it waits on the person's three questions to it, the first of which bears on this item (below).
+Adjusted 2026-11-10, at the person's adoption of architecture's right-sizing of the modelled context (2026-11-10 17:07Z): the gate is lighter and #109 is no longer a prerequisite (below), and the rest of the Linux design (CI's newest as the home context off a Mac, the pins, the `[model]` section, the stated-context line, the weekly Linux survey) is cut until someone runs dockhand on Linux; its first question is answered by this design's rule, and the other two are moot. Off a Mac, `DefaultModel()` stays as it is: Linux's only consumer is dockhand's own tests, which need the same answers on any host, and this gives them that.
 
 ## Why
 
@@ -20,21 +20,22 @@ The Mac's own native context is untouched: it is the Mac, and reads the Mac.
 
 ## Order, and the gate
 
-So that closing loses no coverage, it comes last, after:
+It comes after:
 
 - [#101](https://github.com/herbygillot/dockhand/issues/101), a program neither the host nor the fresh installation has, which runs on the host today and is counted `host-in-model` (the false count);
-- [#108](https://github.com/herbygillot/dockhand/issues/108), the absent SDK answer where a row lists none, no spawn, marked;
-- [#109](https://github.com/herbygillot/dockhand/issues/109), `java_home`, `uname -m` and the `sysctl` keys recorded per release and answered from the row (decision 18's remainder).
+- [#108](https://github.com/herbygillot/dockhand/issues/108), the absent SDK answer where a row lists none, no spawn, marked.
 
-The switch is gated on a whole-tree survey whose unexplained host reads are only what the table lacks by design. [#107](https://github.com/herbygillot/dockhand/issues/107)'s probe-as-oracle test, in v0.9.0 too, holds the answers the model does give to real Macs; this item decides what it does with the rest.
+#109 (`java_home`, `uname -m` and the `sysctl` keys from the row) was a prerequisite and closes with the right-sizing: `java_home` reaches dependencies, not a fetch field, and `build.jobs` is build-only, so `Tolerate` explaining those reads, a small improvement, does what the facts would, and an absent JDK is what a fresh guest has.
+
+The switch is gated on one before-and-after survey that counts outcome changes in update and checksums contexts: the contexts the close newly turns inconclusive, each read by its cause, since those are the plans a person accepts from the model. It is no longer gated on every unexplained host read being one the table lacks by design: every further survey finds new gaps, and almost none reach a fetch field. [#107](https://github.com/herbygillot/dockhand/issues/107)'s probe test, in v0.9.0 too, holds the platform variables and toolchain answers the model does give to real Macs; this item decides what it does with the rest.
 
 ## Decision 1, settled
 
 Recorded in docs/decisions.md now, as adopted and not yet built: a modelled context takes no host answer; what the table lacks is absent and marked `closed`. The implementing commit gives docs/oracle.md's decision 1 its settlement, beside the comment at dispatcher.tcl:430 that cites it.
 
-## Open for the person
+## Answered by the person
 
-The Linux design's first question: the closed model answers as an empty Mac rather than raising an error. This design takes that answer, for the reason above; if the person would rather it raised, the rule changes here and nowhere else.
+The Linux design's first question, whether the closed model answers as an empty Mac or raises an error: as an empty Mac, as this design has it (2026-11-10 17:07Z, with the right-sizing).
 
 ## Tests
 
@@ -42,4 +43,4 @@ The dispatcher's closed answers for each call kind (`file`, `open`, `glob` with 
 
 ## Size and docs
 
-About a tenth of a batch, Tcl and its tests (the Linux design's estimate), plus the gating survey, inferred. Usage docs: none. The modelled-context notice a person sees is unchanged; `closed` appears in the record and the ledger only. docs/oracle.md's decision 1 paragraph gains its settlement; docs/decisions.md's entry moves from adopted to built.
+About a tenth of a batch, Tcl and its tests (the Linux design's estimate), plus the gating survey, inferred. Usage docs: the paragraph on other macOS releases in docs/usage/hand-edits.md, which lands before this in its pre-#110 wording, gains its "never with this Mac's answer" clause in the implementing commit. The modelled-context notice a person sees is unchanged; `closed` appears in the record and the ledger only. docs/oracle.md's decision 1 paragraph gains its settlement; docs/decisions.md's entry moves from adopted to built.
