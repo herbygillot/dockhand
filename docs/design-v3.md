@@ -1,6 +1,6 @@
 # Dockhand Design v3
 
-Accepted direction, 2026-09-25, and built on `main` since. [The roadmap](roadmap.md) says what remains, [architecture](architecture.md) where each part lives in the code, and [usage](usage.md) how to use it.
+Accepted direction, 2026-09-25, and built on `main` since. The [issues](https://github.com/herbygillot/dockhand/issues) say what remains, each release's under its milestone; [architecture](architecture.md) where each part lives in the code, and [usage](usage.md) how to use it.
 
 ## Sources and status
 

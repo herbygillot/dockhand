@@ -1,6 +1,6 @@
 # The facts table's Xcode key: several toolchains per release, and which one a context models
 
-A small core item for v0.9.0, [#86](https://github.com/herbygillot/dockhand/issues/86), placed at the person's approval of this design ("XCode facts table doc seems fine to me", 2026-11-05 16:56Z, in the architecture thread); designed 2026-11-05 by architecture after the person's "Plan it for 0.9.0. Go ahead with the GitHub Actions capture" (02:46Z). The issue and the roadmap's entry say where it stands; this file is the design. Read on main 543ad194c: internal/macos/facts.go (Facts, Lookup, sourceRank, Check, BuilderXcode), internal/macports/platform.go (Toolchain, xcodeToolchain, fill), tools/facts/generate.go (newest), docs/decisions.md decisions 9 to 13.
+A small core item for v0.9.0, [#86](https://github.com/herbygillot/dockhand/issues/86), placed at the person's approval of this design ("XCode facts table doc seems fine to me", 2026-11-05 16:56Z, in the architecture thread); designed 2026-11-05 by architecture after the person's "Plan it for 0.9.0. Go ahead with the GitHub Actions capture" (02:46Z). The issue says where it stands; this file is the design. Read on main 543ad194c: internal/macos/facts.go (Facts, Lookup, sourceRank, Check, BuilderXcode), internal/macports/platform.go (Toolchain, xcodeToolchain, fill), tools/facts/generate.go (newest), docs/decisions.md decisions 9 to 13.
 
 ## Why now
 

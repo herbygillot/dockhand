@@ -1,6 +1,6 @@
 # A weekly survey on GitHub's Intel runners holds the modelled context to the real Mac
 
-A feature for v0.10.0, [#111](https://github.com/herbygillot/dockhand/issues/111), placed with the canary checks at the person's word ("Ok, do H as well", 2026-11-10 13:23Z, in the architecture thread, after asking whether a CI job like it exists: none does; CI's intel job, facts-runners.yml and the master notices are its pieces). The issue and the roadmap's entry say where it stands; this file is the design, section 3 and item H of architecture's model-from-snapshots assessment of 2026-11-10, read at main 2a472cde9.
+A feature for v0.10.0, [#111](https://github.com/herbygillot/dockhand/issues/111), placed with the canary checks at the person's word ("Ok, do H as well", 2026-11-10 13:23Z, in the architecture thread, after asking whether a CI job like it exists: none does; CI's intel job, facts-runners.yml and the master notices are its pieces). The issue says where it stands; this file is the design, section 3 and item H of architecture's model-from-snapshots assessment of 2026-11-10, read at main 2a472cde9.
 
 ## Why
 

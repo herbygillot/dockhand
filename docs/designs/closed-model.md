@@ -1,6 +1,6 @@
 # A modelled context takes no host answer: what the table lacks is absent, marked `closed`
 
-A core item for v0.9.0, [#110](https://github.com/herbygillot/dockhand/issues/110), placed at the person's word ("I'm fine with A-F", 2026-11-10 13:17Z, in the architecture thread, on architecture's model-from-snapshots assessment, its item F). It joins two of architecture's designs into one step: the assessment's section 4, "Fail closed" (2026-11-10, read at main 2a472cde9), and step 2 of the modelled context on Linux (2026-11-07, read at main d6b2f506), "Off a Mac, the model is closed", made the rule in every modelled context, on a Mac too. The issue and the roadmap's entry say where it stands; this file is the design.
+A core item for v0.9.0, [#110](https://github.com/herbygillot/dockhand/issues/110), placed at the person's word ("I'm fine with A-F", 2026-11-10 13:17Z, in the architecture thread, on architecture's model-from-snapshots assessment, its item F). It joins two of architecture's designs into one step: the assessment's section 4, "Fail closed" (2026-11-10, read at main 2a472cde9), and step 2 of the modelled context on Linux (2026-11-07, read at main d6b2f506), "Off a Mac, the model is closed", made the rule in every modelled context, on a Mac too. The issue says where it stands; this file is the design.
 
 The rest of the Linux design (CI's newest as the home context off a Mac, the `[model]` section and its line, the weekly Linux survey) isn't placed: it waits on the person's three questions to it, the first of which bears on this item (below).
 
