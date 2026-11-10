@@ -1287,3 +1287,24 @@ func TestAFollowedMoveIsInThePreparedTree(t *testing.T) {
 	require.Contains(t, string(treeText), "github.setup newowner jq")
 	require.Empty(t, result.Fidelity, "the evaluation of the files before the move is dropped")
 }
+
+// --with-obsolete added once the port is current still moves the
+// obsolete stub, as the plain update's notice says it does (#122;
+// Codex's review of b2e7b616, its probe).
+func TestWithObsoleteAfterTheUpdateMovesTheStub(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq-old/Portfile": "name jq-old\nversion 1.7.1\n"})
+	testsupport.Git(t, f.upstream, "add", "-A")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "jq-old: obsolete")
+	e, preparer := f.withPreparer(t)
+	preparer.family = map[string]macports.PortInfo{"jq-old": {Name: "jq-old", Version: "1.7.1", Options: map[string]string{"replaced_by": "jq", "distfiles": ""}}}
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
+	require.NoError(t, err)
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
+	require.NoError(t, err)
+	result, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq", WithObsolete: true})
+	require.NoError(t, err)
+	require.True(t, result.Current)
+	require.Contains(t, read(t, filepath.Join(branch.Worktree, "textproc/jq-old/Portfile")), "version 1.8.1")
+}

@@ -315,7 +315,10 @@ func (e *Engine) updateWithObsolete(ctx context.Context, request UpdateRequest) 
 	if limited := new(forge.RateLimitError); errors.As(err, &limited) {
 		return update, fmt.Errorf("%w; nothing was changed", limited)
 	}
-	if err != nil || request.Action != model.EditUpdate || update.Current || update.Port == "" {
+	// A current version completes the version's step, not what else was
+	// asked: the plain update's notice says --with-obsolete moves the
+	// stub, and run again with it, it returned here (#122).
+	if err != nil || request.Action != model.EditUpdate || update.Current && !request.WithObsolete || update.Port == "" {
 		return update, err
 	}
 	update.Obsolete = obsoleteStub(update)
