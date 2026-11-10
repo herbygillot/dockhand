@@ -3,6 +3,7 @@ package comparison
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -81,7 +82,7 @@ func TestARemovedArchiveIsRepresented(t *testing.T) {
 		infos[i], plans[i], err = p.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/demo", "demo")
 		require.NoError(t, err)
 	}
-	pairs, unpaired, _, problem, _ := c.readPlans(t.Context(), infos, plans, true, t.TempDir())
+	pairs, unpaired, _, _, problem, _ := c.readPlans(t.Context(), infos, plans, true, t.TempDir())
 	require.Empty(t, problem)
 	require.Len(t, pairs, 1)
 	require.Equal(t, macports.SourceMatch{Before: "main-1.0.tar.gz", After: "main-1.1.tar.gz", Status: macports.SourceMatched, Basis: macports.ByPattern}, pairs[0].Match)
@@ -115,7 +116,7 @@ func TestADistfileMacPortsDoesntExtractIsComparedAsAFile(t *testing.T) {
 		infos[i], plans[i], err = p.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/bashunit", "bashunit")
 		require.NoError(t, err)
 	}
-	pairs, unpaired, fetched, problem, _ := c.readPlans(t.Context(), infos, plans, true, t.TempDir())
+	pairs, unpaired, fetched, _, problem, _ := c.readPlans(t.Context(), infos, plans, true, t.TempDir())
 	require.Empty(t, problem)
 	require.Empty(t, unpaired)
 	require.Len(t, pairs, 1)
@@ -142,4 +143,35 @@ func TestASubmoduleAddedWithTheMoveIsLeftOutOfTheReading(t *testing.T) {
 	require.Equal(t, map[string]project.File{"CMakeLists.txt": {}, "deps/libfoo/x": {}}, got.Files)
 	require.Equal(t, []string{"deps", "src"}, got.Directories)
 	require.Len(t, reading.Files, 3, "the reading given is left as it was")
+}
+
+// A binary package beside a source archive is set apart, and the source
+// is compared and holds as it would alone: one binary took the whole set
+// as having no source, and a changed LICENSE held nothing (#119; Codex's
+// review of b2e7b616, its probe).
+func TestABinaryBesideTheSourceLeavesTheSourceCompared(t *testing.T) {
+	t.Parallel()
+	for _, binary := range []bool{false, true} {
+		planner := comparisontest.NewPlanner(t)
+		old := map[string]map[string]string{"main-1.0.tar.gz": {"LICENSE": "MIT\n"}}
+		next := map[string]map[string]string{"main-1.1.tar.gz": {"LICENSE": "GPL\n"}}
+		if binary {
+			old["helper.pkg"] = map[string]string{"": "xar!\x00\x1c\x00\x01rest"}
+			next["helper.pkg"] = old["helper.pkg"]
+		}
+		planner.Add("base", comparisontest.PlannedPort{Info: macports.PortInfo{Name: "demo", Version: "1.0"}, Archives: old})
+		planner.Add("head", comparisontest.PlannedPort{Info: macports.PortInfo{Name: "demo", Version: "1.1"}, Archives: next})
+		collector := Collector{Planner: planner, Readings: project.Cache{Directory: t.TempDir()}}
+		result := collector.Revision(t.Context(), macports.PortTransition{
+			Before: macports.PortSide{Source: model.Source{Tree: "base"}, Directory: "devel/demo", Name: "demo"},
+			After:  macports.PortSide{Source: model.Source{Tree: "head"}, Directory: "devel/demo", Name: "demo"},
+		}, []byte("name demo\nversion 1.1\n"))
+		require.Empty(t, result.Problem)
+		require.True(t, result.Held(), "binary %v: %+v", binary, result.Changes)
+		if binary {
+			require.True(t, slices.ContainsFunc(result.Coverage, func(c model.Coverage) bool {
+				return c.Reason == "demo ships helper.pkg, which is a binary package, so it wasn't compared"
+			}), "%+v", result.Coverage)
+		}
+	}
 }
