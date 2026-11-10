@@ -1,6 +1,6 @@
 - Before adding any new code, carefully consider existing package structure and code organization.
-- Commit messages, closed issues, and the release notes carry the record of a change; there are no activity notes. A decision or a decline goes in `docs/decisions.md`, and a measurement in the document it informs.
-- Every piece of work is an issue on herbygillot/dockhand, labelled by its kind (bug, improvement, feature, core, cleanup) and given a release's milestone once placed, and the commit that fixes one closes it with `Fixes #N`; a feature's issue links its design in docs/designs (docs/development.md, "How work gets in"). There is no roadmap file.
+- Commit messages and the roadmap's Done entries carry the record of a change; there are no activity notes. A decision or a decline goes in `docs/decisions.md`, and a measurement in the document it informs.
+- A bug, an improvement, or cleanup is an issue on herbygillot/dockhand, and the commit that fixes one closes it with `Fixes #N`; only features get roadmap entries (docs/roadmap.md, "How work gets in").
 - A code comment that names a review or an activity note refers to `docs/` at tag `docs-archive-2026-10-25`.
 - Use Conventional Commits format for commits: https://www.conventionalcommits.org/en/v1.0.0/
 - LLM agents must not use `Co-Authored-By` trailers to credit themselves or other LLM agents. They may acknowledge AI assistance with `Assisted-By` trailers instead; preserve human authorship.

@@ -1,6 +1,6 @@
 # Dockhand declares what a check found linked: tidy writes the line a passed check's link finding names
 
-A feature for v0.8.0. Its issue says where it stands; this file is the design, moved here from docs/roadmap.md at 56e8045e on 2026-11-04.
+A feature for v0.8.0. Its issue, and the roadmap's entry, say where it stands; this file is the design, moved here from docs/roadmap.md at 56e8045e on 2026-11-04.
 
 **Adjusted 2026-11-05, after macports/macports-ports#36385** (merged 2026-11-04 16:31Z; the person's "have Dockhand adjust accordingly and get that into 0.8.0", 2026-11-05 00:50Z): the rust PortGroup (rust-1.0.tcl, `rust_pg_callback`) now adds `depends_lib port:libiconv` on darwin, unless the port sets `rust.system_libiconv yes`, which links the system's libiconv instead and drops the dependency (only sound where no C code the port builds uses iconv, such as vendored libgit2). So part 1, create declaring libiconv, is dropped: the PortGroup declares it for every Rust port. Part 2 stays for every port and library, with a fifth exclusion for `rust.system_libiconv`; parts 3 and 4 are unchanged. On a tree with #36385, a cargo port's evaluated `depends_lib` holds port:libiconv, so the libiconv finding no longer arises there; on a branch whose base predates it, the finding stands and tidy writes the line, correct for that base and harmless after a rebase, the PortGroup's delete-then-append keeping one entry.
 

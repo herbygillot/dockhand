@@ -66,7 +66,7 @@ func rootForReference(t *testing.T) *cobra.Command {
 }
 
 // referenceDocs are the README and docs/*.md that teach dockhand, apart
-// from the reviews, activity, and v2's, which record what was,
+// from the roadmap, reviews, activity, and v2's, which record what was,
 // and the design records below, which name commands proposed or retired.
 func referenceDocs(t *testing.T) []string {
 	docs := []string{"../../README.md"}
@@ -84,9 +84,10 @@ func referenceDocs(t *testing.T) []string {
 }
 
 // designRecords are docs/*.md that record a design rather than teach the
-// commands: Design v3, whose sketches and v2 table name old
+// commands: the roadmap; Design v3, whose sketches and v2 table name old
 // spellings on purpose; and the decisions, which name what was declined.
 var designRecords = map[string]bool{
+	"roadmap.md":   true,
 	"design-v3.md": true,
 	"decisions.md": true,
 }

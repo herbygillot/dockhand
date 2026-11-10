@@ -1,6 +1,6 @@
 # The oracle: scope for the local Mac work
 
-The previous roadmap's step 8, now run on the Mac as it allows, its remaining phases [#20](https://github.com/herbygillot/dockhand/issues/20). This is the scope settled on 2026-09-25, for a session on a
+The previous roadmap's step 8, now [run alongside Next, on the Mac](roadmap.md#alongside-on-the-mac). This is the scope settled on 2026-09-25, for a session on a
 Mac with MacPorts Base, where the modelling data already collected lives.
 Every phase changes the evaluator's Tcl and is proven by a survey, so none of
 it can be built or checked in a Linux container. The design below was
