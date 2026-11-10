@@ -565,10 +565,10 @@ func (s *Service) chooseSource(ctx context.Context, request Request, input *sour
 // sourceSuggestion is suggest's notice of a release asset that is the
 // source, where the update left the source as it was: "release 2.5.0's
 // mindforger_2.5.0_tarball.tgz carries the source, doc, and
-// deps/cmark-gfm; update --source releases fetches it".
+// deps/cmark-gfm; update --source releases, run instead of this update, fetches it".
 func sourceSuggestion(moved MovedSource) string {
 	carried := append([]string{"the source"}, moved.Submodules...)
-	return fmt.Sprintf("release %s's %s carries %s; update --source releases fetches it", moved.Release, moved.Asset, prose.And(carried))
+	return fmt.Sprintf("release %s's %s carries %s; update --source releases, run instead of this update, fetches it", moved.Release, moved.Asset, prose.And(carried))
 }
 
 // gitMoveBlocked says why a port cloned with Git doesn't qualify for a

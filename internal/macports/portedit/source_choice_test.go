@@ -335,7 +335,7 @@ func TestATarballPortGoesToItsReleasesSourceElseTheArchive(t *testing.T) {
 	result, err := s.Prepare(t.Context(), r)
 	require.NoError(t, err)
 	require.Equal(t, &MovedSource{From: "tarball", To: "archive"}, result.SourceMoved)
-	require.Equal(t, "release v1.2.4's fixture-1.2.4.tar.gz carries the source; update --source releases fetches it", result.SourceNotice)
+	require.Equal(t, "release v1.2.4's fixture-1.2.4.tar.gz carries the source; update --source releases, run instead of this update, fetches it", result.SourceNotice)
 	require.Contains(t, string(result.Files[0].After), "github.tarball_from archive")
 	require.NotContains(t, strings.Join(requested(), "\n"), "darwin-arm64", "the binary bundle is never fetched")
 
@@ -391,7 +391,7 @@ func TestAGitPortGoesToAReleaseAssetHoldingItsSubmodules(t *testing.T) {
 	result, err := s.Prepare(t.Context(), r)
 	require.NoError(t, err)
 	require.Nil(t, result.SourceMoved)
-	require.Equal(t, "release v1.2.4's fixture_1.2.4_tarball.tgz carries the source and deps/lib; update --source releases fetches it", result.SourceNotice)
+	require.Equal(t, "release v1.2.4's fixture_1.2.4_tarball.tgz carries the source and deps/lib; update --source releases, run instead of this update, fetches it", result.SourceNotice)
 	require.Contains(t, string(result.Files[0].After), "fetch.type          git")
 	require.Contains(t, string(result.Files[0].After), "post-fetch")
 	require.Empty(t, result.Downloads)

@@ -32,7 +32,7 @@ func TestAMovedSourceIsSaidInTheFixedLineAndTheCommitBody(t *testing.T) {
 func TestASourceNoticeReplacesTheTarballNotice(t *testing.T) {
 	t.Parallel()
 	for _, notice := range []string{
-		"release 2.5.0's mindforger_2.5.0_tarball.tgz carries the source, doc, and deps/cmark-gfm; update --source releases fetches it",
+		"release 2.5.0's mindforger_2.5.0_tarball.tgz carries the source, doc, and deps/cmark-gfm; update --source releases, run instead of this update, fetches it",
 		"release 2.5.0 carries mindforger-2.5.0.tar.gz, which lacks deps/cmark-gfm, so the port stays on its clone",
 	} {
 		changes := []model.UpstreamChange{{Kind: "source", Rule: assess.SourceChoice, Message: "the port fetches GitHub's tarball"}, {Kind: "license", Rule: assess.LicenseChanged}}
