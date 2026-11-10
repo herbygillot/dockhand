@@ -493,3 +493,16 @@ func TestEveryArchiveBaseExtractsIsASourceCandidate(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, portfile.SourceMove{Mode: "releases", UseOption: "use_7z"}, move, "use_7z's own suffix")
 }
+
+// --source archive on a port that fetches a release asset is refused
+// before anything changes: it updated, fetched the assets, and kept
+// releases mode, saying nothing of the policy it didn't follow (#123;
+// Codex's review of b2e7b616, its probe).
+func TestSourceArchiveOnAReleasesPortIsRefused(t *testing.T) {
+	body := strings.Replace(tarballPort, "github.tarball_from tarball", "github.tarball_from releases", 1)
+	s, r, _ := githubFixture(t, body, fakeRelease{})
+	r.SourceMode = SourceArchive
+	_, err := s.Prepare(t.Context(), r)
+	require.ErrorIs(t, err, ErrUnsupported)
+	require.ErrorContains(t, err, "--source archive: fixture fetches a release asset, and update doesn't move a port back to GitHub's archive of the tag")
+}

@@ -108,7 +108,11 @@ qualify. `--source choose` can move legacy tarballs or Git checkouts to a
 suitable release asset; an asset replacing a Git checkout must contain every
 submodule. Existing archive sources stay unless `--source releases` is
 requested. `--source keep` preserves the source, and `--source archive`
-requests GitHub's archive of the tag.
+requests GitHub's archive of the tag. Update doesn't move a port that already
+fetches a release asset back to the archive, so `--source archive` there is
+refused before anything changes: `--source archive: mindforger fetches a
+release asset, and update doesn't move a port back to GitHub's archive of the
+tag`.
 
 When switching source, Dockhand sets `distname`, `extract.suffix`, a `use_`
 option, and `worksrcdir` as needed, removes `fetch.type git` and the submodule

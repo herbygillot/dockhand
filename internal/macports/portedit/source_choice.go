@@ -433,6 +433,10 @@ func (s *Service) chooseSource(ctx context.Context, request Request, input *sour
 	switch {
 	case mode == SourceKeep:
 		return kept, nil
+	case from == "releases" && mode == SourceArchive:
+		// Kept, it updated, fetched the release's assets, and said nothing
+		// of the policy it didn't follow (#123).
+		return kept, ErrUnsupported.Because("--source archive: %s fetches a release asset, and update doesn't move a port back to GitHub's archive of the tag", input.target.Name)
 	case from == "releases":
 		return kept, nil
 	case from == "git" && mode == SourceArchive:
