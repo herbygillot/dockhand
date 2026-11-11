@@ -520,7 +520,7 @@ func (e *Engine) planTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 				if directory != "" {
 					what = directory
 				}
-				group.needsSubject(fmt.Sprintf("the commit for %s needs a subject: edit it, or use --squash --message", what))
+				group.needsSubject(fmt.Sprintf("the commit for %s needs a subject: name it with --message, or edit it", what))
 			}
 		}
 		chosenBody := ""

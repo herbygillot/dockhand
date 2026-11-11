@@ -90,6 +90,10 @@ func TestTidyMessageAloneNamesAPlansOneCommit(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "tidy", "--message", "jq: describe the a option", "--yes")
 	require.NoError(t, err)
 	require.Equal(t, "jq: describe the a option", testsupport.Git(t, w.Clone, "log", "-1", "--format=%s"))
+	// The flag line says so, where it named --squash's commit alone (#215).
+	help, _, err := cmdtest.Dockhand(t, "tidy", "--help")
+	require.NoError(t, err)
+	require.Contains(t, cmdtest.Flat(help), cmdtest.Flat("the message of the one commit the plan proposes, or of the commit --squash makes"))
 }
 
 // A plan tidy proposes of a person's own edits, which needs a review on a
@@ -107,7 +111,7 @@ func TestTidyYesAppliesAPersonsPlanAsShown(t *testing.T) {
 	require.NoError(t, err)
 
 	_, _, err = cmdtest.Dockhand(t, "tidy", "--yes")
-	require.ErrorContains(t, err, "nothing was applied: the commit for textproc/jq needs a subject")
+	require.ErrorContains(t, err, "nothing was applied: the commit for textproc/jq needs a subject: name it with --message, or edit it", "--message first, which names the one commit alone (#215)")
 	_, _, err = cmdtest.Dockhand(t, "tidy")
 	require.ErrorContains(t, err, "approve the displayed plan with --yes")
 

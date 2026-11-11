@@ -77,6 +77,14 @@ dockhand usage prints the guide, and dockhand status shows where things are.`
 
 // Run executes the command line in args, in the process's environment and
 // working directory.
+
+// Flag lines go through branchflags.FlagUsages, which reads --new's as
+// --new[=name] rather than the stand-in pflag would show (#215). Cobra's
+// template functions are global, so it's added once.
+func init() {
+	cobra.AddTemplateFunc("flagUsages", branchflags.FlagUsages)
+}
+
 func Run(ctx context.Context, args []string, streams term.Streams) error {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -180,7 +188,8 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 	// subcommand's help, read many times a day, doesn't (the person's
 	// "Have Dockhand mention its repo issues page in its help output.",
 	// 2026-11-03).
-	root.SetUsageTemplate(root.UsageTemplate() + "{{if not .HasParent}}\nReport problems at " + buildinfo.ProjectURL + "/issues\n{{end}}")
+	flagLines := strings.NewReplacer(".LocalFlags.FlagUsages", "flagUsages .LocalFlags", ".InheritedFlags.FlagUsages", "flagUsages .InheritedFlags").Replace(root.UsageTemplate())
+	root.SetUsageTemplate(flagLines + "{{if not .HasParent}}\nReport problems at " + buildinfo.ProjectURL + "/issues\n{{end}}")
 	// A removed flag says what replaced it (removedFlags). serve's own
 	// agent naming --git, which dockhand wrote, is rewritten once with
 	// --tool, where it would be refused at every start.

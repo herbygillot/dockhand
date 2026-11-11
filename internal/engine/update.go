@@ -29,6 +29,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
 // HandBranch reports whether a Start request starts its branch for an edit
@@ -153,6 +154,11 @@ var ErrUnsupported = editprep.ErrUnsupported
 // update refuses as it refuses an edit it can't make, with how to make it
 // by hand.
 var ErrFidelity = editprep.ErrFidelity
+
+// ErrReleaseMissing is a version named that upstream's evidence has no
+// release of, which the command words where --new took a branch's name
+// as the version (#216).
+var ErrReleaseMissing = upstream.ErrReleaseMissing
 
 // Unlocated is a checksum declaration dockhand can't find in the Portfile
 // to edit, an unsupported edit that names the archive and why.

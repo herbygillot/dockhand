@@ -50,6 +50,7 @@ var commandImports = map[string]string{
 	"internal/credential":           "setup's, until part 4.2: where the login is kept",
 	"internal/credential/keychain":  "setup's, until part 4.2: the macOS Keychain",
 	"github.com/spf13/cobra":        "the command line itself",
+	"github.com/spf13/pflag":        "cobra's flag sets, whose help lines branchflags writes --new's into",
 	"internal/term":                 "the streams: terminals, questions, the --json envelope, and exit codes",
 	"internal/term/screen":          "the terminal console draws on whole: raw keys, and a frame at its size",
 	// Where a port's own build begins is the result's (model.OwnBuild);

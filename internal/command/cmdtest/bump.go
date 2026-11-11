@@ -2,6 +2,7 @@ package cmdtest
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
+	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,6 +29,11 @@ func (b Bumper) ResolveRelease(ctx context.Context, r editprep.Request) (model.R
 	version := r.Version
 	if version == "" {
 		version = "1.8.1"
+	}
+	// A word with no digit names no release, as upstream's evidence
+	// answers for one it doesn't hold.
+	if !strings.ContainsAny(version, "0123456789") {
+		return model.Release{}, fmt.Errorf("%w: %q", upstream.ErrReleaseMissing, version)
 	}
 	// As discovery does, it says a release the port is at already is no
 	// update.

@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // BranchChoice is the branch an authoring command was pointed at.
@@ -22,8 +23,20 @@ type BranchChoice struct {
 }
 
 // NewNamed is --new given without a name: the branch is named for the
-// port, or the version an update moves to.
-const NewNamed = "\x00"
+// port, or the version an update moves to. It is "..", which no Git
+// branch can be named, and never a NUL byte, which pflag uses to align
+// its help and a pager or a completion script reads (#215).
+const NewNamed = ".."
+
+// FlagUsages is a flag set's lines for help, as pflag writes them, with
+// --new's line read "--new[=name]": pflag would show the stand-in
+// NewNamed as the value --new alone takes (#215). The line keeps its
+// width, so the usages stay aligned.
+func FlagUsages(flags *pflag.FlagSet) string {
+	shown := ` string[="` + NewNamed + `"]`
+	said := "[=name]"
+	return strings.ReplaceAll(flags.FlagUsages(), shown, said+strings.Repeat(" ", len(shown)-len(said)))
+}
 
 // IsNew is whether --new was given; newName is the name it gave, if any.
 func (c BranchChoice) IsNew() bool { return c.New != "" }

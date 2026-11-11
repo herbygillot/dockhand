@@ -47,7 +47,7 @@ key away; the answer is kept for that head, and a new push asks again.
 No, the default, gives a text-only review, which runs the rules that
 read text and says what it left out. In a script, --evaluate answers yes
 and --evaluate=false reviews the text only; without either, a script's
-review is text-only. --yes never answers it.
+review is text-only. Only --evaluate answers it.
 
 --check adopts the pull request as pr-<number>, as adopt --pr does, and
 checks it in Tart or the environments selected with --on. Reports the
