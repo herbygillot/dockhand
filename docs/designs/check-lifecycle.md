@@ -1,6 +1,6 @@
 # A check's lifecycle: how long a command stays, which build it means, what an environment is, and how it stops
 
-A core item for v0.9.0, [#193](https://github.com/herbygillot/dockhand/issues/193). The issue says where it stands; this file is the design. Architecture wrote it on 2026-11-11, Codex reviewed that draft against the code the same day (the person's "I'd like Codex to co-design and help review as well", 2026-11-11 05:48Z, in the architecture thread), and this is the draft revised for that review, for its short second pass and for a third look at "Stopping", read again at main 1fab1150b. "What the review changed" lists each correction. It is built once the person adopts it.
+A core item for v0.9.0, [#193](https://github.com/herbygillot/dockhand/issues/193). The issue says where it stands; this file is the design. Architecture wrote it on 2026-11-11, Codex reviewed that draft against the code the same day (the person's "I'd like Codex to co-design and help review as well", 2026-11-11 05:48Z, in the architecture thread), and this is the design revised for that review, for its short second pass and for a third look at "Stopping", read again at main 1fab1150b. "What the review changed" lists each correction. The person adopted it ("Adopt", 2026-11-11 08:56Z, on the architecture thread's card), while Codex's check of the last revision was still out: anything that check breaks comes back to the person as an amendment to this page.
 
 ## In short
 
@@ -234,6 +234,8 @@ Its third look, at "Stopping" alone, found the earlier points met and four thing
 Reading for the second pass turned up three faults in today's code, each small. Codex's third look ran a probe of each and confirmed all three: a put-back that fails loses its snapshot's name; a guest whose driver died is unseen until after its snapshot, and the next check removes its directory; and a check whose cancel is recorded still holds back a submission of the same files. The first is [#199](https://github.com/herbygillot/dockhand/issues/199), fixed ahead of this item. The other two are fixed by it.
 
 ## Choices the person should see
+
+The person took all five as written, with the page ("Adopt", 2026-11-11 08:56Z).
 
 Each changes something the person will notice. The third is Codex's rule: architecture's first revision finished such a cancel after ten minutes, and the second pass showed why that was wrong.
 
