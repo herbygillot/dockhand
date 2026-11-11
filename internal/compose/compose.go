@@ -182,6 +182,14 @@ func (o Options) TartProvider(look func(string) (string, error)) *tart.Provider 
 	return &tart.Provider{Tart: tartvm.Client{Executable: macports.FindProgram(look, "tart"), Home: places.Home, Env: o.Env}, Personal: places.Personal, Keys: places.Keys, XcodesExecutable: xcodes}
 }
 
+// DatabasePath is the database the command line names: --db, else
+// DOCKHAND_DB, else the default beside the person's home, read against the
+// command line's directory.
+func (o Options) DatabasePath() (string, error) {
+	path, _, err := o.Places().DatabasePath(cmp.Or(o.Database, o.Getenv("DOCKHAND_DB")))
+	return path, err
+}
+
 // Places are the command line's home, $HOME, and working directory.
 func (o Options) Places() config.Places {
 	return config.Places{Home: o.Getenv("HOME"), Dir: o.Dir}

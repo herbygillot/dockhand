@@ -52,6 +52,7 @@ var noPlan = map[string]string{
 	"impact":       "reads only",
 	"logs":         "reads only",
 	"artifacts":    "reads only",
+	"backup":       "writes one new file, never replacing one, and changes nothing else",
 	"open":         "opens a page",
 	"outdated":     "reads only",
 	"path":         "says a branch's directory, checking it out again where it's gone",

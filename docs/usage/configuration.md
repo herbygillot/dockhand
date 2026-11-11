@@ -334,11 +334,27 @@ copy's next check says its kept archives are missing, once, with their count,
 and drops their records. A copy never reads its original's archives, whose
 records a prune of the copy's would delete.
 
+`dockhand backup <file>` makes a consistent copy of the database while serve
+or a check writes to it: one SQLite file, readable only by you. Given a
+directory, `dockhand backup ~/Backups`, the copy is named by the minute it was
+made, `dockhand-2026-11-05-2114.db`; an existing file is never replaced. It
+reads the database without migrating it, so a newer dockhand can back up a
+database before its first migration. The copy is the database alone: kept
+archives and check logs aren't in it, and a check run from it builds again
+what it can't find, and says once which archives it dropped. For a whole copy,
+stop serve and copy the directory, `cp -c -R ~/.dockhand <dir>` on APFS.
+
+To put a backup back, stop serve (quit it, or `dockhand serve --uninstall`,
+then `--install` after), move `dockhand.db`, `dockhand.db-wal`, and
+`dockhand.db-shm` aside together, since a `-wal` left beside a put-back copy
+would be replayed onto it, and copy the backup to `~/.dockhand/dockhand.db`.
+The next command opens it, migrating it forward where the build is newer.
+
 A newer dockhand migrates a database forward the first time it opens it, keeping
 a copy of it as it was beside it, and an older dockhand can't open it after. A
 development or rc build asks, on a terminal, before it migrates the default
-database a release last opened; a copy named with `DOCKHAND_DB` migrates without
-asking.
+database a release last opened; a copy named with `DOCKHAND_DB`, such as one
+`dockhand backup` made, migrates without asking.
 
 Credentials use `GH_TOKEN`, then `GITHUB_TOKEN`, then Dockhand's stored login,
 then the GitHub CLI. Never put a token in the TOML file or a service command

@@ -145,7 +145,7 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 		// What's wrong, what dockhand did with it, which is nothing, and
 		// what a person can do, rather than SQLite's words alone (the rc6
 		// full stage, D-T5): never to delete it, which nothing restores.
-		return nil, fmt.Errorf("%w: %s can't be read as dockhand's database (%v). Dockhand left the file unchanged. Restore a backup, or move this file aside to start a new database. A new database has no record of this one's branches, checks, or kept archives", store.ErrUnavailable, path, err)
+		return nil, fmt.Errorf("%w: %s can't be read as dockhand's database (%v). Dockhand left the file unchanged. Put back a copy dockhand backup made (dockhand usage recovery says how), or move this file aside to start a new database. A new database has no record of this one's branches, checks, or kept archives", store.ErrUnavailable, path, err)
 	}
 	return s, err
 }
@@ -344,7 +344,7 @@ func (s *Store) refuseReleaseMigration(ctx context.Context) error {
 	if app != applicationID || version == 0 || version >= schemaVersion {
 		return nil
 	}
-	last, _, ok := s.lastBuild(ctx, s.db)
+	last, _, ok := lastBuild(ctx, s.db)
 	release, released := buildinfo.Released(last)
 	if !ok || !released {
 		return nil
@@ -435,7 +435,7 @@ type queryer interface {
 
 // lastBuild is the build of the newest session the database records, and
 // when it started: the sessions table is every schema's alike.
-func (s *Store) lastBuild(ctx context.Context, q queryer) (string, time.Time, bool) {
+func lastBuild(ctx context.Context, q queryer) (string, time.Time, bool) {
 	var build string
 	var started int64
 	if err := q.QueryRowContext(ctx, "SELECT version, started_at FROM sessions ORDER BY started_at DESC LIMIT 1").Scan(&build, &started); err != nil {
@@ -452,7 +452,7 @@ func (s *Store) lastBuild(ctx context.Context, q queryer) (string, time.Time, bo
 // note 4, 2026-10-24).
 func (s *Store) newerSchema(ctx context.Context, q queryer, version int) error {
 	words := fmt.Sprintf("%s has schema %d, newer than this dockhand supports (%d)", s.path, version, schemaVersion)
-	if build, started, ok := s.lastBuild(ctx, q); ok {
+	if build, started, ok := lastBuild(ctx, q); ok {
 		words += fmt.Sprintf("; dockhand %s opened it last, at %s", build, started.Local().Format("2006-01-02 15:04"))
 		if way := buildinfo.Way(build); way != "" {
 			words += ", and " + way
@@ -506,24 +506,34 @@ func (s *Store) keepBeforeMigrating(ctx context.Context) error {
 	return nil
 }
 
-// keepCopy copies the database to copy whole, or not at all. VACUUM INTO
-// writes its file as it goes, and one cut short, by a timeout or the
-// process's end, left part of a database, or an empty file, under the
-// copy's name, which the next open took for the copy and migrated past;
-// two processes opening the database at once each copied it to that one
-// name, which VACUUM INTO refuses once it holds a database, failing the
-// later open (the SQL review's rescan). So the copy is made under a name
-// of its own beside the copy's, synced, and renamed into place once whole.
-// Where another process's copy is in place first, it stays and this one
-// goes: that one was made before any migration from this form, and this
-// one may have been made after. One put in place between the check and the
-// rename is replaced by this one, finished before that process migrated.
-func (s *Store) keepCopy(ctx context.Context, copy string) (err error) {
+// keepCopy copies the database to copy whole, or not at all
+// (copyWhole). Where another process's copy is in place first, it stays
+// and this one goes: that one was made before any migration from this
+// form, and this one may have been made after. One put in place between
+// the check and the rename is replaced by this one, finished before that
+// process migrated.
+func (s *Store) keepCopy(ctx context.Context, copy string) error {
+	_, err := copyWhole(ctx, s.db, copy)
+	return err
+}
+
+// copyWhole copies a database to target whole, or not at all, the way the
+// migration's copy and dockhand backup make theirs. VACUUM INTO writes its
+// file as it goes, and one cut short, by a timeout or the process's end,
+// left part of a database, or an empty file, under the copy's name, which
+// the next open took for the copy and migrated past; two processes opening
+// the database at once each copied it to that one name, which VACUUM INTO
+// refuses once it holds a database, failing the later open (the SQL
+// review's rescan). So the copy is made under a name of its own beside
+// target's, readable only by its owner, synced, and renamed into place
+// once whole. Where target is there by then, the copy is removed and
+// placed is false; target is never replaced.
+func copyWhole(ctx context.Context, db *sql.DB, target string) (placed bool, err error) {
 	// VACUUM INTO writes into an empty file as into a new one, so the
 	// file CreateTemp makes, readable only by its owner, takes the copy.
-	partial, err := os.CreateTemp(filepath.Dir(copy), filepath.Base(copy)+partialCopy+"*")
+	partial, err := os.CreateTemp(filepath.Dir(target), filepath.Base(target)+partialCopy+"*")
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer func() {
 		if err != nil {
@@ -531,21 +541,30 @@ func (s *Store) keepCopy(ctx context.Context, copy string) (err error) {
 			_ = os.Remove(partial.Name())
 		}
 	}()
-	if _, err := s.db.ExecContext(ctx, "VACUUM INTO ?", partial.Name()); err != nil {
-		return storageError(err)
+	if _, err := db.ExecContext(ctx, "VACUUM INTO ?", partial.Name()); err != nil {
+		return false, storageError(err)
 	}
 	// A rename can reach the disk before the copy it names, which a power
 	// loss would leave as part of a database under the copy's name again.
 	if err := partial.Sync(); err != nil {
-		return err
+		return false, err
 	}
 	if err := partial.Close(); err != nil {
-		return err
+		return false, err
 	}
-	if _, err := os.Stat(copy); err == nil {
-		return os.Remove(partial.Name())
+	if _, err := os.Stat(target); err == nil {
+		return false, os.Remove(partial.Name())
 	}
-	return os.Rename(partial.Name(), copy)
+	// A link takes the name only where nothing holds it, as rename
+	// wouldn't: another copy put in place since the check stays. A file
+	// system without links, such as a FAT drive's, takes the rename.
+	if err := os.Link(partial.Name(), target); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return false, os.Remove(partial.Name())
+		}
+		return true, os.Rename(partial.Name(), target)
+	}
+	return true, os.Remove(partial.Name())
 }
 
 // prepareSchema checks that the database is dockhand v3's, and brings its

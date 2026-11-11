@@ -239,6 +239,7 @@ dockhand serve --install
 | Review someone else's pull request | `dockhand review <pr>`, or `dockhand review <pr> --check` to build it in Tart |
 | Keep a check's VM and open a shell in it | `dockhand check --keep`, then `dockhand shell check-12` |
 | Remove merged branches and their worktrees | `dockhand clean` |
+| Back up the database | `dockhand backup ~/Backups` |
 
 New Portfiles include `# dockhand: unconfirmed` markers for inferred values. Review and correct those fields, then remove the markers before submitting. For Go and Rust version updates, prefer `update` over editing the version and running `checksums`: `checksums` alone does not regenerate dependency lists.
 

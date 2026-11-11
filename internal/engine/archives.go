@@ -13,7 +13,13 @@ import (
 // checkout the database serves keeps its own, so cleaning one up never
 // weighs another's.
 func (e *Engine) ArchiveDirectory() string {
-	return filepath.Join(filepath.Dir(e.options.Database), "archives", string(e.Repository))
+	return filepath.Join(archivesRoot(e.options.Database), string(e.Repository))
+}
+
+// archivesRoot is where every checkout's kept archives are, beside the
+// database.
+func archivesRoot(database string) string {
+	return filepath.Join(filepath.Dir(database), "archives")
 }
 
 // MasterReadings is the directory the readings of master's archives are

@@ -457,3 +457,14 @@ type Origin struct {
 	Execution model.GuestExecution
 	Run       model.Run
 }
+
+// Backup is a copy of a database dockhand backup made: the database it
+// copied and the copy, the copy's schema, the build that last opened the
+// database and when, where a session records it, and the copy's size.
+type Backup struct {
+	Source, Copy string
+	Schema       int
+	Build        string
+	OpenedAt     time.Time
+	Bytes        int64
+}
