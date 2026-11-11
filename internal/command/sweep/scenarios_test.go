@@ -163,12 +163,17 @@ func TestSweepCleanAfterMerge(t *testing.T) {
 			"store.update@engine.(*Engine).RefreshPullRequests#": "clean's refresh of the pull request's record is a saving; the merge is read from GitHub again",
 		},
 		known: map[string]string{
-			"store.update@coord.(*Session).End#1/!landed-unknown":        "#211: the timeline loses clean's event where its session's end fails",
-			"store.update@engine.(*Engine).keepCleanWords#1/dead":        "#211: the timeline loses clean's event where its record fails",
-			"store.update@engine.(*Engine).ApplyClean#1/!landed-unknown": "#211: the timeline loses clean's event where its record fails",
-			"git update-ref@engine.(*Engine).ApplyClean#1/":              "#211: the timeline loses clean's event where a ref's removal fails",
-			"git push@remotewrite.Delete#1/":                             "#212: a fork branch's failed removal leaves the branch's checkpoints, or clean's event, behind",
-			"git update-ref@engine.(*Engine).dropRefs#1/":                "#212: the branch's checkpoint refs are left behind where their removal fails",
+			// Clean's event can't be recorded where its own record fails:
+			// what it removed is gone, and the next clean finds nothing.
+			"store.update@engine.(*Engine).cleanEvent#1/!landed-unknown": "#211: the timeline loses clean's event where that record fails",
+			// A removal that happened and wasn't seen to, or a stop before
+			// the event: the next clean finds it gone, and says nothing of
+			// what the earlier one removed.
+			"git push@remotewrite.Delete#1/lost":                          "#211: the event leaves out a fork branch removed whose reply was lost",
+			"git update-ref@engine.(*Engine).ApplyClean#1/landed-unknown": "#211: the event leaves out a branch removed whose outcome was unknown",
+			"git push@remotewrite.Delete#1/dead":                          "#211: a stop after a removal loses the event of what was removed",
+			"git update-ref@engine.(*Engine).ApplyClean#1/dead":           "#211: a stop after a removal loses the event of what was removed",
+			"git update-ref@engine.(*Engine).dropRefs#1/dead":             "#211: a stop after a removal loses the event of what was removed",
 		},
 	})
 }

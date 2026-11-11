@@ -502,10 +502,15 @@ var stateEvents = []string{"serve.submit"}
 // (docs/designs/fault-sweep.md, "Events that dockhand reads back as
 // state compare exactly").
 func eventDifferences(clean, recovered []string) []string {
+	// A session's own events are its command's, as its row is (the
+	// sessions table's equivalence): a failed run and its retry each
+	// start and end one.
 	strip := func(lines []string) []string {
-		out := make([]string, len(lines))
-		for i, line := range lines {
-			out[i] = sequence.ReplaceAllString(line, "")
+		var out []string
+		for _, line := range lines {
+			if !strings.Contains(line, `kind="session.`) {
+				out = append(out, sequence.ReplaceAllString(line, ""))
+			}
 		}
 		return out
 	}
