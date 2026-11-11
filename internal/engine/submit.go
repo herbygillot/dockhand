@@ -1406,8 +1406,12 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 				return err
 			}
 		}
+		// A pull request found open with no record of it, as an earlier
+		// submit whose record failed leaves one, is the submission's
+		// opening, recorded now, where the timeline said it was updated
+		// (the fault sweep's first run, #129).
 		verb := "updated"
-		if result.Created {
+		if result.Created || plan.Branch.PullRequest == nil {
 			verb = "opened"
 		}
 		if _, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchSubmit, Level: model.LevelInfo,

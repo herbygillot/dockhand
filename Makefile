@@ -19,7 +19,7 @@ ifneq ($(strip $(VERSION)),)
 GO_LDFLAGS += -X github.com/herbygillot/dockhand/internal/buildinfo.Version=$(strip $(VERSION))
 endif
 
-.PHONY: build test test-race lint fmt-check path-check deadcode mutate vendor vendor-check acceptance acceptance-selftest test-corpus gate clean
+.PHONY: build test test-race lint fmt-check path-check deadcode mutate vendor vendor-check acceptance acceptance-selftest sweep test-corpus gate clean
 
 build:
 	$(GO) build $(if $(strip $(GO_LDFLAGS)),-ldflags "$(GO_LDFLAGS)") -o "$(BINARY)" ./cmd/dockhand
@@ -129,6 +129,11 @@ acceptance-selftest:
 # weekly job replays it. It needs the network. It takes its turn at the
 # Mac's heavy work (tools/heavy).
 CORPUS_RESOURCES ?=
+# The fault sweep in full: every effect of each scenario failed in each of
+# its five ways (docs/designs/fault-sweep.md); the gate fails each once.
+sweep:
+	DOCKHAND_SWEEP_FULL=1 $(GO) test -count=1 ./internal/command/sweep/
+
 test-corpus:
 	@tools/heavy sh -c 'tmp=$$(mktemp -d) && trap "rm -rf \"$$tmp\"" EXIT && \
 	$(GO) build -o "$$tmp/dockhand" ./cmd/dockhand && $(GO) build -o "$$tmp/corpus" ./tools/corpus && \
