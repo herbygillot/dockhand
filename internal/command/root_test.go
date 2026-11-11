@@ -20,6 +20,10 @@ func TestBareDockhandSaysHowToStart(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out.String(), "run dockhand setup")
 	require.Contains(t, out.String(), "dockhand usage prints the guide")
+	// The one command to a pull request comes first, and the steps by
+	// hand under it (the cold-room look of 2026-11-11).
+	require.Less(t, strings.Index(out.String(), "dockhand bump <port>"), strings.Index(out.String(), "dockhand update <port>"))
+	require.NotContains(t, out.String(), "update <port> --new")
 	require.NotContains(t, out.String(), "v2-final")
 	require.True(t, strings.HasSuffix(out.String(), "for more information about a command.\n\nReport problems at "+buildinfo.ProjectURL+"/issues\n"), "the main help's foot names the issues page: %s", out.String())
 }
