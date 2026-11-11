@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/remotewrite"
@@ -70,6 +71,11 @@ type ReviewReport struct {
 	// DependentsUnread why they couldn't be read.
 	Dependents       []treequery.Dependent
 	DependentsUnread string
+	// Evaluated is a full review, which evaluated the pull request's
+	// Portfiles; a text-only review didn't, and LeftOut are what it
+	// didn't run, in words (#162).
+	Evaluated bool
+	LeftOut   []string
 	// Check is the check review --check made of the head reviewed, which
 	// the posted text says in place of "Not checked": a failed check's
 	// review was posted saying Dockhand hadn't built it (Codex's workflow
@@ -144,39 +150,84 @@ func (e *Engine) readingPullRequest(number int, err error) error {
 	return fmt.Errorf("no pull request #%d in %s: %w", number, where, err)
 }
 
-func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
+// ReviewTarget is a pull request fetched for review, before anything of
+// its author's is evaluated: who opened it, its head and base, and the
+// Portfiles and PortGroups it changes, which the person is asked about
+// before a full review evaluates them (#162).
+type ReviewTarget struct {
+	Number                           int
+	Ref                              forge.PullRequestRef
+	Title, Author, Login, Permission string
+	Head, Base, Behind               string
+	Commits                          []git.HistoryCommit
+	Ports                            []string
+	// Own is the person's own pull request, and Allowed one whose head
+	// the person allowed to be evaluated: neither asks.
+	Own, Allowed bool
+	// Since is the newest author's commit the person allowed before this
+	// head, where there is one: the question shows what changed since.
+	Since *model.EvaluationConsent
+	// Portfiles are the Portfiles and PortGroups the pull request
+	// changes, since Since where there is one, else since its base.
+	Portfiles []ChangedFile
+	trees     map[string]string
+	changed   []string
+}
+
+// ChangedFile is a file a change makes, with the lines it adds and
+// removes.
+type ChangedFile struct {
+	Path           string
+	Added, Removed int
+}
+
+// Whose is whose Portfiles the target's are: "@alice's", or "#35174's
+// author's" where the author couldn't be read.
+func (t ReviewTarget) Whose() string { return pullRequestWhose(t.Number, t.Author) }
+
+// Asks reports whether a full review of the target asks first: another
+// person's pull request whose head the person hasn't allowed.
+func (t ReviewTarget) Asks() bool { return !t.Own && !t.Allowed }
+
+// OpenReview fetches pull request number of MacPorts' repository for
+// review, evaluating nothing of its author's: its head, its base, its
+// commits, the ports it changes as master's index names them, and the
+// Portfiles and PortGroups it changes, with whether the person allowed
+// its head to be evaluated.
+func (e *Engine) OpenReview(ctx context.Context, number int) (ReviewTarget, error) {
 	ref := pullRequestRef(e.PullRequestRepository(), number)
-	report := ReviewReport{Ref: ref}
+	target := ReviewTarget{Number: number, Ref: ref}
 	f := e.forge()
 	observed, err := f.Observe(ctx, ref)
 	if err != nil {
-		return report, e.readingPullRequest(number, err)
+		return target, e.readingPullRequest(number, err)
 	}
 	pr := observed.PullRequest
-	report.Title, report.Ref.URL, report.Author = pr.Title, pr.Ref.URL, pr.Author
-	if report.Login, err = f.AuthenticatedUser(ctx); err != nil {
-		return report, loginError("review", err)
+	target.Title, target.Ref.URL, target.Author = pr.Title, pr.Ref.URL, pr.Author
+	if target.Login, err = f.AuthenticatedUser(ctx); err != nil {
+		return target, loginError("review", err)
 	}
+	target.Own = target.Author != "" && target.Author == target.Login
 	// A role the forge won't say, as GitHub won't to a fine-grained
 	// token, is unknown: the review goes on, and only requesting changes,
 	// which needs one, waits (the M1's rerun, E9).
-	if report.Permission, err = f.Permission(ctx, e.PullRequestRepository(), report.Login); errors.Is(err, forge.ErrAccessUnknown) {
-		report.Permission = AccessUnknown
+	if target.Permission, err = f.Permission(ctx, e.PullRequestRepository(), target.Login); errors.Is(err, forge.ErrAccessUnknown) {
+		target.Permission = AccessUnknown
 	} else if err != nil {
-		return report, fmt.Errorf("reading your access to %s: %w", e.PullRequestRepository(), err)
+		return target, fmt.Errorf("reading your access to %s: %w", e.PullRequestRepository(), err)
 	}
-	if report.Head, err = e.Repo.FetchPullRequest(ctx, e.pullRequestRemote(), e.PullRequestRepository(), number); err != nil {
-		return report, fmt.Errorf("fetching #%d: %w", number, err)
+	if target.Head, err = e.Repo.FetchPullRequest(ctx, e.pullRequestRemote(), e.PullRequestRepository(), number); err != nil {
+		return target, fmt.Errorf("fetching #%d: %w", number, err)
 	}
 	master, err := e.fetchMaster(ctx)
 	if err != nil {
-		return report, err
+		return target, err
 	}
-	if report.Base, err = e.Repo.MergeBase(ctx, string(master), report.Head); err != nil {
-		return report, err
+	if target.Base, err = e.Repo.MergeBase(ctx, string(master), target.Head); err != nil {
+		return target, err
 	}
-	if report.Commits, err = e.Repo.History(ctx, report.Base, report.Head); err != nil {
-		return report, err
+	if target.Commits, err = e.Repo.History(ctx, target.Base, target.Head); err != nil {
+		return target, err
 	}
 	// Master here behind the pull request's own base would make what it
 	// changes everything master changed since, each port of it assessed
@@ -184,60 +235,162 @@ func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
 	// minutes against a pinned master (the M1's run at d302e744, E9). The
 	// forge's count of its commits says where it leaves its base, which
 	// is reviewed from instead, and said.
-	if n := pr.Commits; n > 0 && len(report.Commits) > n {
-		own, err := e.Repo.Resolve(ctx, fmt.Sprintf("%s~%d^{commit}", report.Head, n))
+	if n := pr.Commits; n > 0 && len(target.Commits) > n {
+		own, err := e.Repo.Resolve(ctx, fmt.Sprintf("%s~%d^{commit}", target.Head, n))
 		if err != nil {
-			return report, err
+			return target, err
 		}
-		report.Behind = fmt.Sprintf("The local master is behind pull request #%d's base. The pull request has %s, but %s separate the local master from its head. Reviewing from %s, the commit before the pull request's own commits.", number, prose.Plural(n, "commit"), prose.Plural(len(report.Commits), "commit"), model.ObjectID(own).Short())
-		report.Base = own
-		if report.Commits, err = e.Repo.History(ctx, report.Base, report.Head); err != nil {
-			return report, err
+		target.Behind = fmt.Sprintf("The local master is behind pull request #%d's base. The pull request has %s, but %s separate the local master from its head. Reviewing from %s, the commit before the pull request's own commits.", number, prose.Plural(n, "commit"), prose.Plural(len(target.Commits), "commit"), model.ObjectID(own).Short())
+		target.Base = own
+		if target.Commits, err = e.Repo.History(ctx, target.Base, target.Head); err != nil {
+			return target, err
 		}
 	}
-	trees, err := e.Repo.CommitTrees(ctx, []string{report.Base, report.Head})
-	if err != nil {
-		return report, err
+	if target.trees, err = e.Repo.CommitTrees(ctx, []string{target.Base, target.Head}); err != nil {
+		return target, err
 	}
-	changed, err := e.Repo.ChangedPaths(ctx, trees[report.Base], trees[report.Head])
-	if err != nil {
-		return report, err
+	if target.changed, err = e.Repo.ChangedPaths(ctx, target.trees[target.Base], target.trees[target.Head]); err != nil {
+		return target, err
 	}
-	report.Ports = macports.ScopeOf(changed).PortNames()
+	target.Ports = macports.ScopeOf(target.changed).PortNames()
 	// A changed directory's other ports are said too, as the base's index
-	// names them: devel/libuv's libuv-devel.
-	baseSource := model.Source{Commit: model.ObjectID(report.Base), Base: model.ObjectID(report.Base), Tree: model.ObjectID(trees[report.Base])}
-	defined := e.portsDefined(ctx, baseSource, macports.ScopeOf(changed).Ports)
-	for _, directory := range macports.ScopeOf(changed).Ports {
+	// names them: devel/libuv's libuv-devel. The base is master's, merged.
+	baseSource := model.Source{Commit: model.ObjectID(target.Base), Base: model.ObjectID(target.Base), Tree: model.ObjectID(target.trees[target.Base])}
+	defined := e.portsDefined(ctx, baseSource, macports.ScopeOf(target.changed).Ports)
+	for _, directory := range macports.ScopeOf(target.changed).Ports {
 		for _, name := range AlsoDefined(directory, defined) {
-			if !slices.Contains(report.Ports, name) {
-				report.Ports = append(report.Ports, name)
+			if !slices.Contains(target.Ports, name) {
+				target.Ports = append(target.Ports, name)
 			}
 		}
 	}
-	headSource := model.Source{Commit: model.ObjectID(report.Head), Base: model.ObjectID(report.Base), Tree: model.ObjectID(trees[report.Head])}
-	report.Findings = commitrules.CheckCommits(e.ruleCommits(ctx, baseSource, headSource, report.Commits))
-	// The rules that evaluate its Portfiles evaluate its author's, which
-	// the trust rule says once (Then's item 12).
-	if report.Author == "" {
-		sayWhoseOf(ctx, fmt.Sprintf("#%d's author's", number), fmt.Sprintf("#%d", number))
-	} else if report.Author != report.Login {
-		sayWhoseOf(ctx, "@"+report.Author+"'s", fmt.Sprintf("#%d", number))
+	if target.Own {
+		return target, nil
 	}
-	portfiles, err := e.portfileFindings(ctx, e.Repo, trees[report.Base], trees[report.Head], changed)
+	consents, err := e.EvaluationConsents(ctx, number)
 	if err != nil {
-		return report, err
+		return target, err
 	}
-	report.Findings = append(report.Findings, portfiles...)
-	base, head := model.ObjectID(trees[report.Base]), model.ObjectID(trees[report.Head])
-	found, made, err := e.makeAssessments(ctx, "", model.ObjectID(report.Base), base, head, changed, nil, nil)
-	if err != nil {
-		report.UpstreamUnread = err.Error()
-	}
-	for _, a := range append(found, made...) {
-		if !SourceUnchanged(a.Comparison) {
-			report.Upstream = append(report.Upstream, PortComparison{Port: a.Port, Comparison: a.Comparison})
+	for i, consent := range consents {
+		if consent.Head == model.ObjectID(target.Head) {
+			target.Allowed = true
+			break
 		}
+		if target.Since == nil {
+			target.Since = &consents[i]
+		}
+	}
+	since := target.trees[target.Base]
+	if target.Since != nil && !target.Allowed {
+		if trees, err := e.Repo.CommitTrees(ctx, []string{string(target.Since.Head)}); err == nil {
+			since = trees[string(target.Since.Head)]
+		} else {
+			target.Since = nil
+		}
+	}
+	diff, err := e.Repo.DiffTrees(ctx, since, target.trees[target.Head], code(target.changed)...)
+	if err != nil {
+		return target, err
+	}
+	target.Portfiles = changedFiles(diff)
+	return target, nil
+}
+
+// code are the paths of a change that are code MacPorts evaluates: its
+// Portfiles and PortGroups, a changed PortGroup being the author's code
+// too.
+func code(changed []string) []string {
+	var paths []string
+	for _, path := range changed {
+		if strings.HasSuffix(path, "/Portfile") || strings.HasPrefix(path, macports.PortGroupDirectory+"/") {
+			paths = append(paths, path)
+		}
+	}
+	return paths
+}
+
+// changedFiles are the files a unified diff changes, each with the lines
+// it adds and removes, in the diff's order.
+func changedFiles(diff []byte) []ChangedFile {
+	var files []ChangedFile
+	for _, line := range strings.Split(string(diff), "\n") {
+		switch {
+		case strings.HasPrefix(line, "diff --git "):
+			path := line[strings.LastIndex(line, " b/")+3:]
+			files = append(files, ChangedFile{Path: path})
+		case len(files) == 0, strings.HasPrefix(line, "+++ "), strings.HasPrefix(line, "--- "):
+		case strings.HasPrefix(line, "+"):
+			files[len(files)-1].Added++
+		case strings.HasPrefix(line, "-"):
+			files[len(files)-1].Removed++
+		}
+	}
+	return files
+}
+
+// ReviewDiff is the diff the question offers: of the target's Portfiles
+// and PortGroups, since the head the person allowed last where there is
+// one, else since its base.
+func (e *Engine) ReviewDiff(ctx context.Context, target ReviewTarget) ([]byte, error) {
+	since := target.trees[target.Base]
+	if target.Since != nil {
+		if trees, err := e.Repo.CommitTrees(ctx, []string{string(target.Since.Head)}); err == nil {
+			since = trees[string(target.Since.Head)]
+		}
+	}
+	return e.Repo.DiffTrees(ctx, since, target.trees[target.Head], code(target.changed)...)
+}
+
+// textOnlyLeftOut are what a text-only review doesn't run, in its words.
+var textOnlyLeftOut = []string{"restated values", "path-style dependencies", "the upstream comparison"}
+
+// Review reviews a pull request OpenReview fetched: applies the commit
+// rules to its commits and Portfiles, compares the findings with the last
+// review's, and reads the dependents of the ports it changes from master's
+// index, as update finds them for one's own (the libuv run's finding 2).
+// With evaluate, the person's own pull request or one whose head they
+// allowed, it evaluates its Portfiles too, for the rules that evaluate,
+// and assesses each port it changes as a branch's revision is, without
+// recording it. Without, it is a text-only review, which runs no rule
+// that needs the head evaluated and says what it left out (#162). What
+// couldn't be assessed or read is said, never an error. It posts nothing.
+func (e *Engine) Review(ctx context.Context, target ReviewTarget, evaluate bool) (ReviewReport, error) {
+	number := target.Number
+	report := ReviewReport{Ref: target.Ref, Title: target.Title, Author: target.Author, Login: target.Login, Permission: target.Permission,
+		Head: target.Head, Base: target.Base, Behind: target.Behind, Commits: target.Commits, Ports: target.Ports, Evaluated: evaluate}
+	trees, changed := target.trees, target.changed
+	baseSource := model.Source{Commit: model.ObjectID(report.Base), Base: model.ObjectID(report.Base), Tree: model.ObjectID(trees[report.Base])}
+	headSource := model.Source{Commit: model.ObjectID(report.Head), Base: model.ObjectID(report.Base), Tree: model.ObjectID(trees[report.Head])}
+	base, head := model.ObjectID(trees[report.Base]), model.ObjectID(trees[report.Head])
+	if evaluate {
+		// Another person's Portfiles go through the door, which says
+		// whose once.
+		if !target.Own {
+			ctx = workspace.WithOwner(ctx, workspace.Owner{Whose: target.Whose(), Of: fmt.Sprintf("#%d", number)})
+		}
+		report.Findings = commitrules.CheckCommits(e.ruleCommits(ctx, baseSource, headSource, report.Commits))
+		portfiles, err := e.portfileFindings(ctx, e.Repo, trees[report.Base], trees[report.Head], changed)
+		if err != nil {
+			return report, err
+		}
+		report.Findings = append(report.Findings, portfiles...)
+		found, made, err := e.makeAssessments(ctx, "", model.ObjectID(report.Base), base, head, changed, nil, nil)
+		if err != nil {
+			report.UpstreamUnread = err.Error()
+		}
+		for _, a := range append(found, made...) {
+			if !SourceUnchanged(a.Comparison) {
+				report.Upstream = append(report.Upstream, PortComparison{Port: a.Port, Comparison: a.Comparison})
+			}
+		}
+	} else {
+		report.LeftOut = textOnlyLeftOut
+		report.Findings = commitrules.CheckCommits(e.commitsDefining(ctx, baseSource, nil, report.Commits))
+		portfiles, err := e.textFindings(ctx, e.Repo, trees[report.Base], trees[report.Head], changed)
+		if err != nil {
+			return report, err
+		}
+		report.Findings = append(report.Findings, portfiles...)
 	}
 	scope := macports.ScopeOf(changed)
 	if len(scope.Ports) > 0 {
@@ -252,7 +405,7 @@ func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
 		}
 	}
 
-	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		previous, err := r.LastReview(e.PullRequestRepository(), number)
 		if errors.Is(err, store.ErrNotFound) {
 			return nil
@@ -287,10 +440,25 @@ func reviewFindings(findings []commitrules.Finding) []model.ReviewFinding {
 	return all
 }
 
+// TextOnlyWords is a text-only review's first line, which every form of
+// it carries, so the author and other reviewers know what it didn't look
+// at: "Text-only review: #35174's Portfiles were not evaluated. Not run:
+// restated values, path-style dependencies, the upstream comparison."
+// Empty for a full review.
+func (r ReviewReport) TextOnlyWords() string {
+	if r.Evaluated {
+		return ""
+	}
+	return fmt.Sprintf("Text-only review: #%d's Portfiles were not evaluated. Not run: %s.", r.Ref.Number, strings.Join(r.LeftOut, ", "))
+}
+
 // Markdown is the review's text as it would be posted. Findings on a
 // Portfile line are also posted as comments on that line.
 func (r ReviewReport) Markdown() string {
 	var b strings.Builder
+	if words := r.TextOnlyWords(); words != "" {
+		fmt.Fprintf(&b, "%s\n\n", words)
+	}
 	fmt.Fprintf(&b, "Reviewed at %s with [dockhand](https://github.com/herbygillot/dockhand)'s commit rules.\n\n", model.ObjectID(r.Head).Short())
 	fmt.Fprintf(&b, "%s.\n", r.Summary())
 	if len(r.Findings) > 0 {

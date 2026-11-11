@@ -394,7 +394,9 @@ func TestSetupTartRunsTheNamedTart(t *testing.T) {
 	asked := filepath.Join(dir, "asked")
 	named := filepath.Join(dir, "named-tart")
 	require.NoError(t, os.WriteFile(named, []byte("#!/bin/sh\necho \"$@\" >>"+asked+"\nexit 1\n"), 0o755))
-	_, _, err := cmdtest.Dockhand(t, "setup", "tart", "--tool", "tart="+named)
+	// A named release: this Mac's own is read from macOS, which a Linux
+	// runner has none of, and the run stopped before tart was asked.
+	_, _, err := cmdtest.Dockhand(t, "setup", "tart", "tahoe", "--tool", "tart="+named)
 	require.Error(t, err, "the named tart refuses")
 	data, readErr := os.ReadFile(asked)
 	require.NoError(t, readErr, "the named tart was run")

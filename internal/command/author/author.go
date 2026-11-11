@@ -491,6 +491,9 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 			return branch, update, err
 		}
 		branch, started = chosen.Branch, chosen.Started
+		if err := branchflags.MayEvaluate(ctx, e, streams, branch); err != nil {
+			return branch, update, err
+		}
 		if chosen.ForVersion {
 			// The update starts it, named for the version it finds.
 			deferred = true

@@ -115,6 +115,9 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 			if err != nil {
 				return err
 			}
+			if err := branchflags.MayEvaluate(ctx, e, streams, branch); err != nil {
+				return err
+			}
 			// The result is the check's, with a baseline check.baseline runs
 			// inside it.
 			streams.LinkSteps(&view.CheckJSON{})

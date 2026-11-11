@@ -73,6 +73,11 @@ type PullRequest struct {
 	// one, whose Portfiles the trust rule names as theirs (Then's item
 	// 12); empty for one adopted before it was kept.
 	Author string `json:",omitempty"`
+	// AuthorHead is the author's commit an adopted branch was adopted at
+	// or last moved to, which the person's answer to evaluating its
+	// Portfiles is for (EvaluationConsent); Pushed becomes the person's
+	// own push once they submit to it. Empty for the person's own.
+	AuthorHead ObjectID `json:",omitempty"`
 	// Observed is what the forge last reported about it; nil until then.
 	Observed *PullRequestObservation `json:",omitempty"`
 }

@@ -137,6 +137,28 @@ func TestGitHubWritesDistinguishRejectionFromUnknownOutcomesAndDoNotRedirect(t *
 	}
 }
 
+// GitHub refusing a create because a pull request is already open for its
+// head says that one exists, not that nothing was opened: the forge names
+// that answer apart, still a rejection to callers before it, and another
+// 422 isn't it (#191).
+func TestACreateRefusedForAnOpenPullRequestIsNamed(t *testing.T) {
+	for body, exists := range map[string]bool{
+		`{"message":"Validation Failed","errors":[{"resource":"PullRequest","code":"custom","message":"A pull request already exists for author:candidate."}]}`: true,
+		`{"message":"Validation Failed","errors":[{"resource":"PullRequest","field":"base","code":"invalid"}]}`:                                                 false,
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			fmt.Fprint(w, body)
+		}))
+		client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, Token: "fixture-token"}}}
+		_, err := client.Create(t.Context(), forge.PullRequestInput{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main", Desired: forge.PullRequestContent{Title: "update"}})
+		server.Close()
+		require.ErrorIs(t, err, forge.ErrRejected, body)
+		require.Equal(t, exists, errors.Is(err, forge.ErrPullRequestExists), body)
+	}
+}
+
 func TestGitHubRemoteNamesAndForkMetadata(t *testing.T) {
 	client := &github.Client{Client: &githubapi.Client{}}
 	for _, remote := range []string{"git@github.com:Owner/ports.git", "https://github.com/Owner/ports", "ssh://git@github.com/Owner/ports.git"} {

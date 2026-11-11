@@ -190,6 +190,9 @@ func ShipTargets(ctx context.Context, e *engine.Engine, streams term.Streams, po
 		if err != nil {
 			return nil, err
 		}
+		if err := branchflags.MayEvaluate(ctx, e, streams, branch); err != nil {
+			return nil, err
+		}
 		return []shipTarget{{Branch: &branch}}, nil
 	}
 	var targets []shipTarget

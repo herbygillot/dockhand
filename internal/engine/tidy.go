@@ -240,6 +240,12 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 
 func (e *Engine) planTidy(ctx context.Context, request TidyRequest) (TidyPlan, error) {
 	branch := request.Branch
+	// The plan evaluates the branch's Portfiles: another's go through the
+	// door only where the person allowed them.
+	ctx, err := e.evaluating(ctx, branch)
+	if err != nil {
+		return TidyPlan{}, err
+	}
 	// What an earlier tidy left unfinished is finished first, where its
 	// commits were made: the index reset, and its checkpoint recorded as
 	// applied. A tidy whose git reset failed left both, and tidy again
@@ -302,7 +308,6 @@ func (e *Engine) planTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 	if len(changed) == 0 {
 		return TidyPlan{}, fmt.Errorf("%s changes nothing yet; there is nothing to tidy", branch.Name)
 	}
-	e.sayWhose(ctx, branch)
 	if plan.Findings, err = e.portfileFindings(ctx, worktree, trees[base], final, changed); err != nil {
 		return TidyPlan{}, err
 	}
@@ -1170,6 +1175,15 @@ func parseAuthor(value string, when time.Time) (git.Signature, error) {
 // one's index names them, so a subject may name the subport it changes
 // or adds.
 func (e *Engine) ruleCommits(ctx context.Context, base, head model.Source, history []git.HistoryCommit) []commitrules.Commit {
+	return e.commitsDefining(ctx, base, &head, history)
+}
+
+// commitsDefining is ruleCommits, with the ports head defines where head
+// is given; where it isn't, as a text-only review evaluates nothing of
+// the head, a commit that changes a port directory isn't judged by the
+// port its subject names, which a subport only the head defines would
+// misfire (#162).
+func (e *Engine) commitsDefining(ctx context.Context, base model.Source, head *model.Source, history []git.HistoryCommit) []commitrules.Commit {
 	var directories []string
 	for _, commit := range history {
 		for _, directory := range macports.ScopeOf(commit.Paths).Ports {
@@ -1181,7 +1195,11 @@ func (e *Engine) ruleCommits(ctx context.Context, base, head model.Source, histo
 	// A port the branch adds, as a subport, is one its subject may name
 	// (I21): terraform-1.17's commit adding it names its port.
 	defined := e.portsDefined(ctx, base, directories)
-	for directory, names := range e.portsDefined(ctx, head, directories) {
+	var headDefined map[string][]string
+	if head != nil {
+		headDefined = e.portsDefined(ctx, *head, directories)
+	}
+	for directory, names := range headDefined {
 		for _, name := range names {
 			if !slices.Contains(defined[directory], name) {
 				if defined == nil {
@@ -1198,7 +1216,7 @@ func (e *Engine) ruleCommits(ctx context.Context, base, head model.Source, histo
 		for _, directory := range scope.Ports {
 			names = append(names, defined[directory]...)
 		}
-		commits = append(commits, commitrules.Commit{ID: commit.ID, Message: commit.Message, Merge: commit.Merge(), Ports: scope.PortNames(), Defined: names})
+		commits = append(commits, commitrules.Commit{ID: commit.ID, Message: commit.Message, Merge: commit.Merge(), Ports: scope.PortNames(), Defined: names, Unread: head == nil && len(scope.Ports) > 0})
 	}
 	return commits
 }
@@ -1207,6 +1225,30 @@ func (e *Engine) ruleCommits(ctx context.Context, base, head model.Source, histo
 // changes, ordering versions as MacPorts' vercmp does (versionOrder),
 // restated's and path-style's rules evaluating them.
 func (e *Engine) portfileFindings(ctx context.Context, repo *git.Repository, before, after string, changed []string) ([]commitrules.Finding, error) {
+	portfiles, err := portfileTexts(ctx, repo, before, after, changed)
+	if err != nil {
+		return nil, err
+	}
+	findings := commitrules.CheckPortfiles(portfiles, e.versionOrder(ctx))
+	findings = append(findings, commitrules.CheckNotices(portfiles)...)
+	findings = append(findings, commitrules.CheckDependencies(portfiles, e.providers(ctx, after))...)
+	return append(findings, commitrules.CheckRestated(portfiles, e.evaluateText(ctx, repo, after))...), nil
+}
+
+// textFindings are the content rules that read a change's Portfiles as
+// text alone, evaluating none: a text-only review's (#162). Restated
+// values and path-style dependencies, which evaluate, are left out.
+func (e *Engine) textFindings(ctx context.Context, repo *git.Repository, before, after string, changed []string) ([]commitrules.Finding, error) {
+	portfiles, err := portfileTexts(ctx, repo, before, after, changed)
+	if err != nil {
+		return nil, err
+	}
+	return append(commitrules.CheckPortfiles(portfiles, e.versionOrder(ctx)), commitrules.CheckNotices(portfiles)...), nil
+}
+
+// portfileTexts are the Portfiles a change makes, each before and after,
+// with the files it adds under the port's files/.
+func portfileTexts(ctx context.Context, repo *git.Repository, before, after string, changed []string) ([]commitrules.Portfile, error) {
 	// A moved port's Portfile is weighed against the base's at the
 	// directory it moved from, and its removal there is no finding.
 	scope, err := placedScope(ctx, repo, before, after, changed)
@@ -1247,10 +1289,7 @@ func (e *Engine) portfileFindings(ctx context.Context, repo *git.Repository, bef
 		}
 		portfiles = append(portfiles, commitrules.Portfile{Path: path, Before: string(old), After: string(current), Files: added})
 	}
-	findings := commitrules.CheckPortfiles(portfiles, e.versionOrder(ctx))
-	findings = append(findings, commitrules.CheckNotices(portfiles)...)
-	findings = append(findings, commitrules.CheckDependencies(portfiles, e.providers(ctx, after))...)
-	return append(findings, commitrules.CheckRestated(portfiles, e.evaluateText(ctx, repo, after))...), nil
+	return portfiles, nil
 }
 
 // evaluateText evaluates a text of a Portfile in tree, as the tree with

@@ -87,6 +87,9 @@ commits, and its files are as they were when it was saved.`,
 			if err != nil {
 				return err
 			}
+			if err := branchflags.MayEvaluate(ctx, e, streams, branch); err != nil {
+				return err
+			}
 			// --message without --squash names the one commit a plan of
 			// one makes, as a branch of edits alone and no commits yet
 			// has (field testing on v0.7.0, #53); a plan of several asks

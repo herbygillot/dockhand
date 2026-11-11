@@ -15,19 +15,19 @@ import (
 // Times are stored in milliseconds, so a record read back carries its times
 // truncated to the millisecond.
 
-const branchColumns = "id, name, base, worktree, managed, title, state, pr_repository, pr_number, pr_head, pr_pushed, pr_body, pr_draft, pr_observed, pr_adopted, created_at, origin, note, ended_at, ports, clean_kept, forgotten_at, closes, pr_author, tested"
+const branchColumns = "id, name, base, worktree, managed, title, state, pr_repository, pr_number, pr_head, pr_pushed, pr_body, pr_draft, pr_observed, pr_adopted, created_at, origin, note, ended_at, ports, clean_kept, forgotten_at, closes, pr_author, tested, pr_author_head"
 
 func (t *tx) scanBranch(row interface{ Scan(...any) error }) (model.Branch, error) {
 	var b model.Branch
 	var managed int
 	var prRepository, prHead sql.NullString
 	var prNumber sql.NullInt64
-	var prPushed, prBody, prObserved, prAuthor string
+	var prPushed, prBody, prObserved, prAuthor, prAuthorHead string
 	var prDraft, prAdopted int
 	var created int64
 	var ended, forgotten sql.NullInt64
 	var ports, closes, tested string
-	if err := row.Scan(&b.ID, &b.Name, &b.Base, &b.Worktree, &managed, &b.Title, &b.State, &prRepository, &prNumber, &prHead, &prPushed, &prBody, &prDraft, &prObserved, &prAdopted, &created, &b.Origin, &b.Note, &ended, &ports, &b.CleanKept, &forgotten, &closes, &prAuthor, &tested); err != nil {
+	if err := row.Scan(&b.ID, &b.Name, &b.Base, &b.Worktree, &managed, &b.Title, &b.State, &prRepository, &prNumber, &prHead, &prPushed, &prBody, &prDraft, &prObserved, &prAdopted, &created, &b.Origin, &b.Note, &ended, &ports, &b.CleanKept, &forgotten, &closes, &prAuthor, &tested, &prAuthorHead); err != nil {
 		return model.Branch{}, storageError(err)
 	}
 	b.TestedBinaries, b.TestedVariants = testedStatements(tested)
@@ -44,7 +44,7 @@ func (t *tx) scanBranch(row interface{ Scan(...any) error }) (model.Branch, erro
 	}
 	if prNumber.Valid {
 		b.PullRequest = &model.PullRequest{Repository: prRepository.String, Number: int(prNumber.Int64), Head: prHead.String,
-			Pushed: model.ObjectID(prPushed), Body: prBody, Draft: prDraft == 1, Adopted: prAdopted == 1, Author: prAuthor}
+			Pushed: model.ObjectID(prPushed), Body: prBody, Draft: prDraft == 1, Adopted: prAdopted == 1, Author: prAuthor, AuthorHead: model.ObjectID(prAuthorHead)}
 		if prObserved != "" {
 			b.PullRequest.Observed = &model.PullRequestObservation{}
 			if err := json.Unmarshal([]byte(prObserved), b.PullRequest.Observed); err != nil {
@@ -99,16 +99,16 @@ func (t *tx) checkRepository(repository model.RepositoryID) error {
 	return nil
 }
 
-func pullRequestColumns(pr *model.PullRequest) (any, any, any, string, string, int, string, int, string) {
+func pullRequestColumns(pr *model.PullRequest) (any, any, any, string, string, int, string, int, string, string) {
 	if pr == nil {
-		return nil, nil, nil, "", "", 0, "", 0, ""
+		return nil, nil, nil, "", "", 0, "", 0, "", ""
 	}
 	observed := ""
 	if pr.Observed != nil {
 		data, _ := json.Marshal(pr.Observed)
 		observed = string(data)
 	}
-	return pr.Repository, pr.Number, pr.Head, string(pr.Pushed), pr.Body, boolInt(pr.Draft), observed, boolInt(pr.Adopted), pr.Author
+	return pr.Repository, pr.Number, pr.Head, string(pr.Pushed), pr.Body, boolInt(pr.Draft), observed, boolInt(pr.Adopted), pr.Author, string(pr.AuthorHead)
 }
 
 func (t *tx) AddBranch(b model.Branch) error {
@@ -121,7 +121,7 @@ func (t *tx) AddBranch(b model.Branch) error {
 	if b.Origin == "" {
 		b.Origin = model.OriginPerson
 	}
-	repository, number, head, pushed, body, draft, observed, adopted, author := pullRequestColumns(b.PullRequest)
+	repository, number, head, pushed, body, draft, observed, adopted, author, authorHead := pullRequestColumns(b.PullRequest)
 	var ended any
 	if b.State != model.BranchOpen {
 		if b.EndedAt.IsZero() {
@@ -129,8 +129,8 @@ func (t *tx) AddBranch(b model.Branch) error {
 		}
 		ended = millis(b.EndedAt)
 	}
-	_, err := t.exec("INSERT INTO branches(repository_id, "+branchColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		t.repo, b.ID, b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, adopted, millis(b.CreatedAt), b.Origin, b.Note, ended, strings.Join(b.Ports, " "), b.CleanKept, nil, strings.Join(b.Closes, " "), author, testedWords(b))
+	_, err := t.exec("INSERT INTO branches(repository_id, "+branchColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		t.repo, b.ID, b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, adopted, millis(b.CreatedAt), b.Origin, b.Note, ended, strings.Join(b.Ports, " "), b.CleanKept, nil, strings.Join(b.Closes, " "), author, testedWords(b), authorHead)
 	return err
 }
 
@@ -175,9 +175,9 @@ func (t *tx) UpdateBranch(b model.Branch) error {
 	if err != nil {
 		return err
 	}
-	repository, number, head, pushed, body, draft, observed, adopted, author := pullRequestColumns(b.PullRequest)
-	return t.update("branch "+string(b.ID), "UPDATE branches SET name=?, base=?, worktree=?, managed=?, title=?, state=?, pr_repository=?, pr_number=?, pr_head=?, pr_pushed=?, pr_body=?, pr_draft=?, pr_observed=?, pr_adopted=?, note=?, ended_at=?, ports=?, clean_kept=?, closes=?, pr_author=?, tested=? WHERE repository_id=? AND id=? AND forgotten_at IS NULL",
-		b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, adopted, b.Note, ended, strings.Join(b.Ports, " "), b.CleanKept, strings.Join(b.Closes, " "), author, testedWords(b), t.repo, b.ID)
+	repository, number, head, pushed, body, draft, observed, adopted, author, authorHead := pullRequestColumns(b.PullRequest)
+	return t.update("branch "+string(b.ID), "UPDATE branches SET name=?, base=?, worktree=?, managed=?, title=?, state=?, pr_repository=?, pr_number=?, pr_head=?, pr_pushed=?, pr_body=?, pr_draft=?, pr_observed=?, pr_adopted=?, note=?, ended_at=?, ports=?, clean_kept=?, closes=?, pr_author=?, tested=?, pr_author_head=? WHERE repository_id=? AND id=? AND forgotten_at IS NULL",
+		b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, adopted, b.Note, ended, strings.Join(b.Ports, " "), b.CleanKept, strings.Join(b.Closes, " "), author, testedWords(b), authorHead, t.repo, b.ID)
 }
 
 const revisionColumns = "id, branch_id, kind, snapshot, commit_id, tree_id, base_id, head_id, created_at"

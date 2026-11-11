@@ -148,8 +148,11 @@ dockhand status --pr 35174
 Dockhand brings it into a branch such as `pr-35174`. Tracking it does not grant
 permission to push to its author. Submission requires the pull request to allow
 maintainer edits and your account to have the necessary access. Dockhand does
-not rewrite their description. `dockhand usage review` covers inspecting and
-checking adopted pull requests, including where their Portfiles are evaluated.
+not rewrite their description. Adopting evaluates nothing; a command that
+evaluates its Portfiles asks first on a terminal, and `adopt --pr 35174
+--evaluate` allows it for the head adopted, for scripts. `dockhand usage review`
+covers inspecting and checking adopted pull requests, including where their
+Portfiles are evaluated and what the question allows.
 
 ## Work in a sparse directory
 

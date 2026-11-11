@@ -75,8 +75,31 @@ func publicationError(response *gh.Response, err error) error {
 		switch response.StatusCode {
 		case http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden,
 			http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity:
+			if response.StatusCode == http.StatusUnprocessableEntity && alreadyOpen(err) {
+				return fmt.Errorf("%w: %w: %w", forge.ErrPullRequestExists, forge.ErrRejected, err)
+			}
 			return fmt.Errorf("%w: %w", forge.ErrRejected, err)
 		}
 	}
 	return err
+}
+
+// alreadyOpen reports GitHub's refusal of a create because a pull request
+// is already open for its head: "A pull request already exists for
+// owner:branch.", in the error's list or its message.
+func alreadyOpen(err error) bool {
+	var response *gh.ErrorResponse
+	if !errors.As(err, &response) {
+		return false
+	}
+	words := []string{response.Message}
+	for _, e := range response.Errors {
+		words = append(words, e.Message)
+	}
+	for _, w := range words {
+		if strings.Contains(strings.ToLower(w), "a pull request already exists") {
+			return true
+		}
+	}
+	return false
 }

@@ -406,7 +406,7 @@ func TestReviewCheckJSONKeepsTheReview(t *testing.T) {
 	testsupport.Git(t, w.Upstream, "switch", "-q", "master")
 	g.Theirs = map[int]forge.PullRequest{34905: {Ref: forge.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 34905}, HeadRepository: "newcontrib/macports-ports",
 		HeadBranch: "patch-1", Title: "jq: document the options", State: forge.PullRequestOpen, Author: "newcontrib", MaintainerCanModify: true}}
-	result, err := cmdtest.JSONOf(t, "review", "34905", "--check", "--on", "command")
+	result, err := cmdtest.JSONOf(t, "review", "34905", "--check", "--on", "command", "--evaluate")
 	require.NoError(t, err)
 	require.EqualValues(t, 34905, cmdtest.Dig(t, result.Result, "number"), "the review's own result")
 	require.NotNil(t, cmdtest.Dig(t, result.Result, "check", "run"), "with its check inside it")

@@ -384,7 +384,9 @@ func (e *Engine) LoadTidyPlan(ctx context.Context, data []byte) (TidyPlan, error
 	if !slices.Equal(covered, changed) {
 		return TidyPlan{}, fmt.Errorf("the plan's commits don't cover exactly the branch's changes: %s", pathDifference(changed, covered))
 	}
-	e.sayWhose(ctx, plan.Branch)
+	if ctx, err = e.evaluating(ctx, plan.Branch); err != nil {
+		return TidyPlan{}, err
+	}
 	if plan.Findings, err = e.portfileFindings(ctx, worktree, plan.BaseTree, final, changed); err != nil {
 		return TidyPlan{}, err
 	}

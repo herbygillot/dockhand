@@ -515,6 +515,26 @@ type Review struct {
 	At     time.Time
 }
 
+// EvaluationConsent is the person's yes to dockhand evaluating another
+// person's Portfiles on this Mac: for the pull request, at the author's
+// commit it was given for, and when (#162). A new push from the author
+// is another commit, and asks again.
+type EvaluationConsent struct {
+	// Repository is the pull request's base repository, such as
+	// macports/macports-ports.
+	Repository string
+	Number     int
+	Head       ObjectID
+	At         time.Time
+}
+
+func (c EvaluationConsent) Validate() error {
+	if c.Repository == "" || c.Number <= 0 || c.Head == "" || c.At.IsZero() {
+		return invalid("the consent to evaluate %s#%d is incomplete", c.Repository, c.Number)
+	}
+	return nil
+}
+
 // ReviewFinding is one finding of a review, as it was reported.
 type ReviewFinding struct {
 	Code     string `json:"code"`

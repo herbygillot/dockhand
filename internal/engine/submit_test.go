@@ -367,6 +367,7 @@ func TestADockhandTitleFollowsItsCommits(t *testing.T) {
 		_, _, plan := submitted(t, func(e *Engine, _ *forgetest.GitHub, branch model.Branch, _ int) {
 			branch.PullRequest.Adopted = true
 			require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(branch) }))
+			require.NoError(t, e.AllowAdopted(t.Context(), branch))
 		}, SubmitRequest{})
 		require.False(t, plan.Retitled)
 		require.Equal(t, "jq: update to 1.8.1", plan.Title)

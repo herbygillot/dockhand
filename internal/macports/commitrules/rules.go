@@ -86,6 +86,10 @@ type Commit struct {
 	// "terraform-1.16: update to 1.16.5" does, which tidy writes (field
 	// testing, 2026-10-02).
 	Defined []string
+	// Unread is a commit the ports of whose directories weren't read, as
+	// a text-only review reads none of the head's: its subject isn't
+	// judged by the port it names.
+	Unread bool
 }
 
 // MaxSubject is the longest subject the rules let pass without a warning;
@@ -131,7 +135,7 @@ func CheckCommits(commits []Commit) []Finding {
 		subject, body, _ := strings.Cut(strings.TrimRight(commit.Message, "\n"), "\n")
 		subject = strings.TrimSpace(subject)
 		named, rest, ok := strings.Cut(subject, ":")
-		if len(commit.Ports) > 0 && (!ok || !namesPort(named, slices.Concat(commit.Ports, commit.Defined))) {
+		if len(commit.Ports) > 0 && !commit.Unread && (!ok || !namesPort(named, slices.Concat(commit.Ports, commit.Defined))) {
 			add("subject-port", Error, "subject %q should start with the port it changes: %q", subject, commit.Ports[0]+": …")
 		}
 		if ok && slices.Contains(vague, strings.ToLower(strings.TrimSpace(rest))) {

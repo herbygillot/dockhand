@@ -38,21 +38,60 @@ On a terminal, plain `dockhand review 35174` displays the report and asks
 whether to comment, request changes, edit the text first, or post nothing. In a
 script, plain review displays and records its report but exits with failure
 because no review was posted. Use `--markdown` for a deliberate no-post export;
-do not add `--comment` just to make a script's exit status succeed.
+do not add `--comment` just to make a script's exit status succeed. A script's
+review of someone else's pull request is text-only unless it passes
+`--evaluate`, described below.
 
 ## Decide whether to evaluate the contributor's code
 
-Some review rules and the upstream assessment evaluate the pull request's
-Portfiles with MacPorts on this Mac, as your user. Dockhand identifies whose
-Portfiles it is evaluating. A Portfile is executable Tcl; reviewing with
-`--markdown` does not turn that evaluation into an isolated or text-only
-analysis. Read the proposed files first through GitHub or another viewer if you
-have not decided to run their code on your Mac.
+A Portfile is code: MacPorts runs its Tcl as you, on the Mac that holds your
+GitHub login. Some review rules and the upstream comparison need the pull
+request's Portfiles evaluated, so before evaluating someone else's, review asks:
 
-A Tart check isolates the build in a guest, but its planning still evaluates
-Portfiles on the host. Dockhand refuses a local-provider check of an adopted
-pull request because that build would execute the contributor's Portfiles as
-root in your live prefix. Choose Tart or GitHub for that branch instead.
+```
+#35174 is @alice's. A full review evaluates its Portfiles with MacPorts on this
+Mac, as you. A Portfile is code: it runs with your files and your GitHub login
+in reach.
+  devel/foo/Portfile                      +12 -3
+  _resources/port1.0/group/foo-1.0.tcl    +4 -0
+? Evaluate them: y yes · d show the diff first · n review the text only  [n]
+```
+
+The list is the Portfiles and PortGroups the pull request changes, since a
+changed PortGroup is the author's code too, and `d` shows their diff before you
+answer. No, the default, gives a text-only review and isn't kept. Yes is kept
+for the pull request and the author's commit it was given for: a new push from
+the author asks again, showing what changed since the commit you allowed. Your
+own pull requests, and your own commits above an adopted one, ask nothing.
+
+A text-only review runs the commit rules, the Portfile rules that compare text,
+and the dependents from the base's index, and reports what it didn't run on its
+first line, in the displayed text, the posted text, and `--json`
+(`"evaluated": false` and `"left_out"`): restated values, path-style
+dependencies, and the upstream comparison. A rule that needs the head evaluated
+isn't run, never half-run: a subject isn't judged by the port it names where
+the commit changes a port directory, since only the head knows the ports it
+defines.
+
+In a script, `--evaluate` answers yes for the head fetched and records it, and
+`--evaluate=false` asks for a text-only review, on a terminal too. Without
+either, a script's review of someone else's pull request is text-only. `--yes`
+never answers this question. `review --check` needs a yes, since planning a check
+evaluates the Portfiles on this Mac: a script without `--evaluate` is refused
+before anything is adopted, and there is no text-only check.
+
+On an adopted pull request's branch, `check`, `tidy`, `submit`, `diff`, and the
+authoring commands ask the same question on a terminal where the author's commit
+isn't allowed; a script is refused, naming `dockhand adopt --pr 35174
+--evaluate`, which allows it. `status` never asks, and `serve` drives a queued
+check of an adopted branch only where its author's commit is allowed; one that
+isn't stays queued.
+
+This is consent, not a sandbox. A Tart check isolates the build in a guest, but
+its planning still evaluates Portfiles on the host. Dockhand refuses a
+local-provider check of an adopted pull request whatever the answer, because
+that build would execute the contributor's Portfiles as root in your live
+prefix. Choose Tart or GitHub for that branch instead.
 
 ## Build it without taking over its publication
 
@@ -79,6 +118,9 @@ cd "$(dockhand path pr-35174)"
 dockhand check --on tart --plan
 dockhand check --on tart
 ```
+
+The plan asks before it evaluates the author's Portfiles, on a terminal; a
+script adopts with `dockhand adopt --pr 35174 --evaluate` instead.
 
 Use the branch name adoption actually prints if the pull request was already
 tracked under another name. You can inspect or edit the adopted files with the

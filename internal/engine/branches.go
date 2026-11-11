@@ -1002,7 +1002,7 @@ func (e *Engine) AdoptPullRequest(ctx context.Context, number int, at model.Obje
 	adoption.Branch = model.Branch{
 		ID: model.BranchID(store.NewID("br")), Repository: e.Repository, Name: name, Base: model.ObjectID(base), Worktree: directory, Managed: true,
 		Title: pr.Title, State: model.BranchOpen, CreatedAt: e.now(),
-		PullRequest: &model.PullRequest{Repository: e.PullRequestRepository(), Number: number, Head: pr.HeadRepository + ":" + pr.HeadBranch, Pushed: model.ObjectID(head), Body: pr.Body, Adopted: true, Author: pr.Author},
+		PullRequest: &model.PullRequest{Repository: e.PullRequestRepository(), Number: number, Head: pr.HeadRepository + ":" + pr.HeadBranch, Pushed: model.ObjectID(head), Body: pr.Body, Adopted: true, Author: pr.Author, AuthorHead: model.ObjectID(head)},
 	}
 	err = store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
 		if err := tx.AddBranch(adoption.Branch); err != nil {
@@ -1073,7 +1073,7 @@ func (e *Engine) RefreshAdopted(ctx context.Context, branch model.Branch, to mod
 		if err != nil {
 			return err
 		}
-		current.PullRequest.Pushed = to
+		current.PullRequest.Pushed, current.PullRequest.AuthorHead = to, to
 		if err := tx.UpdateBranch(current); err != nil {
 			return err
 		}
