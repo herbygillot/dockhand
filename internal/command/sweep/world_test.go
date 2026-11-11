@@ -488,6 +488,7 @@ func merge(a, b world) world {
 
 var (
 	sequence        = regexp.MustCompile(`^sequence=\d+ `)
+	restoreEvent    = regexp.MustCompile(`^(.*kind="branch\.restore".* )message="restored (\S+)'s history from ((?:tidy|rebase)-[0-9a-z]+)"$`)
 	checkpointEvent = regexp.MustCompile(`^(.*kind="branch\.(tidy|rebase)".* )message=".*\(checkpoint ((?:tidy|rebase)-[0-9a-z]+)\)"$`)
 )
 
@@ -521,6 +522,16 @@ func eventDifferences(clean, recovered []string) []string {
 		if next < 0 {
 			if match := checkpointEvent.FindStringSubmatch(line); match != nil {
 				next = slices.Index(b[at:], match[1]+`message="recorded `+match[3]+`: an earlier Dockhand process applied its change before stopping"`)
+			}
+		}
+		// A restore the next process records says so in its own words,
+		// "recorded the restore of B's history from X: an earlier Dockhand
+		// process restored it before stopping", where the clean run said
+		// "restored B's history from X" (history.settle).
+		if next < 0 {
+			if match := restoreEvent.FindStringSubmatch(line); match != nil {
+				prefix := match[1] + `message="recorded the restore of ` + match[2] + `'s history from ` + match[3] + `: an earlier Dockhand process restored it before stopping`
+				next = slices.IndexFunc(b[at:], func(l string) bool { return strings.HasPrefix(l, prefix) })
 			}
 		}
 		if next < 0 {

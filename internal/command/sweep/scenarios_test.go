@@ -142,12 +142,7 @@ func TestSweepTidy(t *testing.T) {
 // and the checkpoint marked restored (#113).
 func TestSweepUndo(t *testing.T) {
 	t.Parallel()
-	sweep(t, scenario{name: "undo", arrange: tidied, steps: [][]string{{"undo", "-b", "jq-update"}},
-		known: map[string]string{
-			"git update-index@engine.(*Engine).restore#1/":                        "#209: undo half done refuses to finish, and records no restore",
-			"git update-ref@engine.(*Engine).restore#1/landed-unknown":            "#209: undo half done refuses to finish, and records no restore",
-			"store.update@history.(*Transitions).RecordRestore#1/!landed-unknown": "#210: the history restored, its record failed: undo again refuses, and the timeline never says it",
-		}})
+	sweep(t, scenario{name: "undo", arrange: tidied, steps: [][]string{{"undo", "-b", "jq-update"}}})
 }
 
 // A clean after the pull request merged: the branch, its worktree and its
