@@ -478,3 +478,60 @@ func TestShipsPlanSaysItCommitsTheEditsFirst(t *testing.T) {
 	require.Contains(t, out, "commits textproc/jq/Portfile first, as tidy would; the preview follows the commit\n")
 	require.NotContains(t, out, "✗ these edits are not committed")
 }
+
+// A branch whose update master has since taken by another commit isn't
+// pushed or submitted: with no fetch between, ship asked GitHub for a
+// pull request that duplicated master's (#164). A master change to the
+// port another way stops it too, offering the rebase; one elsewhere stops
+// nothing.
+func TestShipStopsWhereMasterChangedTheBranchsPorts(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name, path, content, said string
+	}{
+		{name: "the same change", path: "textproc/jq/Portfile", said: "jq-1.8.1's changes are already on master "},
+		{name: "another change", path: "textproc/jq/Portfile", content: "name jq\nversion 1.8.0\n", said: "master changed textproc/jq since this branch's base ("},
+		{name: "elsewhere", path: "textproc/yq/Portfile", content: "name yq\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			w := cmdtest.NewWorld(t)
+			cmdtest.Versioned(t, w)
+			cmdtest.WithBumper(t)
+			cmdtest.WithScript(t, w, "passed")
+			g := cmdtest.WithGitHub(t, w)
+			g.Others = nil
+			_, errs, err := cmdtest.Dockhand(t, "ship", "jq", "--to", "commit")
+			require.NoError(t, err, errs)
+
+			content := c.content
+			if content == "" {
+				content = testsupport.Git(t, filepath.Join(w.Home, "Source", "macports-branches", "jq-1.8.1"), "show", "HEAD:textproc/jq/Portfile") + "\n"
+			}
+			testsupport.WriteFiles(t, w.Upstream, map[string]string{c.path: content})
+			testsupport.Git(t, w.Upstream, "add", "-A")
+			testsupport.Git(t, w.Upstream, "commit", "-q", "-m", "someone else's commit")
+
+			out, errs, err := cmdtest.Dockhand(t, "ship", "-b", "jq-1.8.1", "--yes")
+			if c.said == "" {
+				require.NoError(t, err, errs)
+				require.Len(t, g.PRs, 1)
+				return
+			}
+			require.Error(t, err, out)
+			require.Contains(t, err.Error(), c.said)
+			require.Contains(t, err.Error(), "The check ran; nothing was pushed or submitted.")
+			require.Empty(t, g.PRs, "no pull request was asked for")
+			require.Empty(t, testsupport.Git(t, filepath.Join(filepath.Dir(w.Upstream), "fork.git"), "branch", "--list", "jq-1.8.1"), "nothing was pushed")
+			if c.content != "" {
+				require.Contains(t, err.Error(), "Review dockhand rebase -b jq-1.8.1 --plan before continuing.")
+			}
+
+			// submit, which ran no check, says so.
+			_, _, err = cmdtest.Dockhand(t, "submit", "-b", "jq-1.8.1", "--no-check", "--yes")
+			require.ErrorContains(t, err, c.said)
+			require.ErrorContains(t, err, "This run started no check and submitted nothing.")
+			require.Empty(t, g.PRs)
+		})
+	}
+}

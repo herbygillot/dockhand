@@ -775,6 +775,12 @@ func finishCarried(ctx context.Context, s *settings.Settings, streams term.Strea
 	submitted, err := submitPassed(ctx, s, e, submits, *done.submit)
 	if err != nil {
 		submission.Say()
+		// The stop is said as this run met it: after the check it ran, or
+		// with none (#164).
+		var changed *engine.MasterChanged
+		if errors.As(err, &changed) {
+			return errors.New(changed.Said(done.run != nil))
+		}
 		return err
 	}
 	done.lines.done(submission, "submitted", submit.StageWords(submitted, done.submit.request.Draft), fmt.Sprintf("#%d", submitted.PullRequest.Ref.Number))

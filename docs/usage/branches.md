@@ -170,7 +170,9 @@ dependency, see `dockhand usage hand-edits`.
 ## Move onto newer master, or undo a history change
 
 A branch does not need a rebase merely because master advanced. Rebase when its
-work needs the newer base or when review requires it:
+work needs the newer base or when review requires it, or when a submission
+stops because master changed a port directory the branch changes (see
+`dockhand usage publishing`):
 
 ```sh
 dockhand tidy -b jq-update
