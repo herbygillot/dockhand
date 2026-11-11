@@ -114,15 +114,18 @@ namespace eval ::dockhand {
                 # programs answers a command line's programs from the fresh
                 # installation: the words to run, a bare name the prefix
                 # would have shadowed replaced by the path the fresh
-                # installation runs instead, and a program the host has
-                # and the fresh installation doesn't, if there is one.
+                # installation runs instead, and a program the fresh
+                # installation doesn't have, if there is one, whether the
+                # host has it or not: running one neither has only learns
+                # it isn't there, and was counted as the host's answer
+                # (#101).
                 proc programs {words} {
                     foreach stage [lindex [parse $words] 0] {
                         if {[llength $stage] == 0} { continue }
                         set i [lindex $stage 0]
                         set program [lindex $words $i]
                         lassign [locate $program] host fresh
-                        if {$fresh eq "" && $host ne ""} { return [list $words $program] }
+                        if {$fresh eq ""} { return [list $words $program] }
                         if {$fresh ne $host && [string first / $program] < 0} { lset words $i $fresh }
                     }
                     return [list $words ""]
