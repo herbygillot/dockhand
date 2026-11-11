@@ -70,8 +70,10 @@ func PushWords(plan engine.SubmitPlan) string {
 func CheckWords(plan engine.SubmitPlan) string {
 	evidence := plan.Evidence
 	switch {
+	case plan.Request.NoCheck && len(plan.CIReleases) > 0:
+		return "none (--no-check); MacPorts CI builds on macOS " + prose.And(plan.CIReleases) + ", and the pull request says nothing covers any other release"
 	case plan.Request.NoCheck:
-		return "none (--no-check); the pull request says MacPorts CI is its only check"
+		return "none (--no-check); the pull request says so"
 	case plan.CheckNeeded:
 		return "runs first; it is submitted only if it passes"
 	case evidence == nil:

@@ -392,3 +392,25 @@ func TestInstalledFindingsAreSaidUnderTestedOn(t *testing.T) {
 		Installed: []string{"exiv2: libexiv2.27.dylib is libexiv2.28.dylib now on macOS 26 arm64 against check-12; darktable, gpsbabel link it, and this branch rebuilds each"}}})
 	require.Contains(t, body, "\nAgainst the port's earlier build:\n\n- exiv2: libexiv2.27.dylib is libexiv2.28.dylib now on macOS 26 arm64 against check-12; darktable, gpsbabel link it, and this branch rebuilds each\n")
 }
+
+// A submission with no finished check names the releases MacPorts CI
+// builds on, where they were read, and claims nothing for the others,
+// where it said CI would build and test the change: nodejs22's fix for
+// macOS 12 went out saying so, and CI builds on 15 and 26 (#204).
+func TestNoCheckNamesTheReleasesCIBuildsOn(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		tested TestedOn
+		want   string
+	}{
+		{TestedOn{NoCheck: true, CIReleases: "15 and 26"}, "Submitted with `dockhand submit --no-check`; no Dockhand check result is included. MacPorts CI builds on macOS 15 and 26; nothing here covers any other release.\n"},
+		{TestedOn{NoCheck: true}, "Submitted with `dockhand submit --no-check`; no Dockhand check result is included.\n"},
+		{TestedOn{Pending: true, CIReleases: "15 and 26"}, "No Dockhand check has finished for this commit. This draft lets MacPorts CI run, which builds on macOS 15 and 26; nothing here covers any other release.\n"},
+		{TestedOn{Pending: true}, "No Dockhand check has finished for this commit. This draft lets MacPorts CI run.\n"},
+	} {
+		owned := Owned(Facts{TestedOn: c.tested})
+		require.Contains(t, owned, "###### Tested on\n\n"+c.want)
+		require.NotContains(t, owned, "will build and test")
+		require.NotContains(t, owned, "before a Dockhand check is complete")
+	}
+}

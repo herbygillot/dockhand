@@ -160,7 +160,7 @@ write, keeping your --note.
 	cmd.Flags().BoolVar(&preview, "plan", false, "show what would be pushed and opened, and change nothing")
 	cmd.Flags().BoolVar(&request.Head, "head", false, "submit the committed head, leaving uncommitted edits out")
 	cmd.Flags().BoolVar(&request.Draft, "draft", false, "open a draft pull request, even if checks are incomplete or failing")
-	cmd.Flags().BoolVar(&request.NoCheck, "no-check", false, "submit without a check; the pull request says no local build ran")
+	cmd.Flags().BoolVar(&request.NoCheck, "no-check", false, "submit without a check; the pull request says no check result is included")
 	cmd.Flags().BoolVar(&ready, "ready", false, "take the pull request out of draft once it is submitted")
 	cmd.Flags().StringSliceVar(&request.Accept, "accept", nil, "accept an eligible failed extra, revision-only port, or changed port with the same baseline failure for this commit")
 	cmd.Flags().BoolVar(&request.Standing, "standing", false, "with --accept, accept an eligible dependency install failure across branches until the dependency version or image changes")

@@ -57,3 +57,14 @@ func TestThePreviewSaysWhatTheEvidenceCouldntSettle(t *testing.T) {
 	require.Contains(t, out.String(), "           ! "+problem+"\n")
 	require.Equal(t, problem, checksProblem(plan))
 }
+
+// The preview of a submission with no check names the releases MacPorts
+// CI builds on, where they were read, and what the pull request says; it
+// said CI was its only check (#204).
+func TestNoChecksWordsNameTheReleasesCIBuildsOn(t *testing.T) {
+	t.Parallel()
+	plan := engine.SubmitPlan{Request: engine.SubmitRequest{NoCheck: true}, CIReleases: []string{"15", "26"}}
+	require.Equal(t, "none (--no-check); MacPorts CI builds on macOS 15 and 26, and the pull request says nothing covers any other release", CheckWords(plan))
+	plan.CIReleases = nil
+	require.Equal(t, "none (--no-check); the pull request says so", CheckWords(plan))
+}

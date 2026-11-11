@@ -127,6 +127,11 @@ type TestedOn struct {
 	// check here built on, in words, "14 and 15", which a note under the
 	// table says.
 	UncoveredCI string
+	// CIReleases are the macOS releases MacPorts' CI builds on, in words,
+	// "15 and 26", which a submission with no finished check names, and
+	// claims nothing for the others; empty where they couldn't be read
+	// (#204).
+	CIReleases string
 	// Installed are what the check's builds installed and configure found
 	// against the port's earlier build, a line each, as the check's
 	// report says them (Then's item 9): a moved library with its
@@ -450,10 +455,18 @@ func Owned(facts Facts) string {
 	fmt.Fprintf(&b, "%s\n\n", testedOnHeading)
 	tested := facts.TestedOn
 	switch {
+	// What's said is what was read, MacPorts CI's releases, and nothing is
+	// promised of the change: "MacPorts CI will build and test this change"
+	// went out for a fix only macOS 12 builds, where CI builds on 15 and 26
+	// (#204, in architecture's words).
+	case tested.NoCheck && tested.CIReleases != "":
+		fmt.Fprintf(&b, "Submitted with `dockhand submit --no-check`; no Dockhand check result is included. MacPorts CI builds on macOS %s; nothing here covers any other release.\n", tested.CIReleases)
 	case tested.NoCheck:
-		fmt.Fprintln(&b, "Submitted with `dockhand submit --no-check`; no Dockhand check result is included. MacPorts CI will build and test this change.")
+		fmt.Fprintln(&b, "Submitted with `dockhand submit --no-check`; no Dockhand check result is included.")
+	case tested.Pending && tested.CIReleases != "":
+		fmt.Fprintf(&b, "No Dockhand check has finished for this commit. This draft lets MacPorts CI run, which builds on macOS %s; nothing here covers any other release.\n", tested.CIReleases)
 	case tested.Pending:
-		fmt.Fprintln(&b, "No Dockhand check has finished for this commit. This draft lets MacPorts CI run before a Dockhand check is complete.")
+		fmt.Fprintln(&b, "No Dockhand check has finished for this commit. This draft lets MacPorts CI run.")
 	default:
 		for _, report := range tested.Reports {
 			b.WriteString(report.lines())

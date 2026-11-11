@@ -599,7 +599,7 @@ Trailers go last: `Closes:`, then `See:`, then dockhand's `Generated-By:`.
 - **`submit`** needs committed source and results that apply to its tree, under the publication rule in §3. If the worktree has edits, it commits them first, as `tidy` would: a plan of dockhand's own edits goes unasked, and one with yours is reviewed on a terminal and held without one. `--head` leaves them out. Evidence from the working tree never authorizes pushing a different committed tree.
 - **`submit --draft`** allows unfinished or failing checks, and shows them in a draft PR, which gets MacPorts CI started early. The source must still be committed. `submit --ready` takes the PR out of draft.
 - **`submit --accept <port>`** acknowledges a failed revision-only target, or a failed extra from `--also`, for this exact revision. It's recorded, and shown in the PR as "cause not established". A failed substantive target can be accepted only where `check --baseline` failed it the same way at the base, and the PR names that baseline; otherwise the way to share one is `--draft`.
-- **`submit --no-check`** publishes without any check. The PR says no local build ran, and MacPorts CI becomes its only check.
+- **`submit --no-check`** publishes without any check. The PR says it includes no check result, names the releases MacPorts CI builds on, and says nothing covers any other release (#204).
 - **`ship -b <branch>`** checks the branch and submits that exact commit once its check passes, and **`ship --passing`** is the batch review from §6.12.
 
 The PR body is written in the template's own sections, and ticks only what dockhand has evidence for.
