@@ -63,8 +63,9 @@ type bodyFacts struct {
 	// Description gives after what dockhand wrote there.
 	Note string
 	// UncoveredCI are the releases MacPorts' CI builds on that no check
-	// built on.
-	UncoveredCI []string
+	// built on, and CIReleases those it builds on, which a submission with
+	// no finished check names (#204).
+	UncoveredCI, CIReleases []string
 	// HandEdits are the branch's hand edits, as its submitted tree has
 	// them (Engine.handEdits).
 	HandEdits []HandEdit
@@ -160,8 +161,10 @@ func (facts bodyFacts) description() prdescription.Facts {
 	switch {
 	case facts.NoCheck:
 		described.TestedOn.NoCheck = true
+		described.TestedOn.CIReleases = prose.And(facts.CIReleases)
 	case evidence == nil:
 		described.TestedOn.Pending = true
+		described.TestedOn.CIReleases = prose.And(facts.CIReleases)
 	default:
 		described.TestedOn.UncoveredCI = prose.And(facts.UncoveredCI)
 		described.TestedOn.Installed = facts.Installed

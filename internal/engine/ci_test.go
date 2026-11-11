@@ -84,3 +84,30 @@ func TestAPlanSaysWhatGitHubWontBuild(t *testing.T) {
 	require.Equal(t, []string{"gojq"}, GitHubWontBuild(model.Plan{Environments: []model.Environment{tart, github}, Targets: targets}))
 	require.Empty(t, GitHubWontBuild(model.Plan{Environments: []model.Environment{tart}, Targets: targets}), "Tart builds what it's asked")
 }
+
+// A submission with no check carries the releases MacPorts CI builds on,
+// read from its tree's workflow, which its description names; a tree
+// with none carries none (#204).
+func TestANoCheckSubmissionReadsTheReleasesCIBuildsOn(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	require.Empty(t, plan.CIReleases)
+	require.Contains(t, plan.Body, "no Dockhand check result is included.\n")
+
+	f = setup(t)
+	testsupport.WriteFiles(t, f.upstream, map[string]string{".github/workflows/main.yml": "jobs:\n  build:\n    strategy:\n      matrix:\n        os: [macos-15, macos-26]\n"})
+	testsupport.Git(t, f.upstream, "add", ".")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "CI")
+	e, _ = f.withPreparer(t)
+	f.withFork(t, e)
+	branch = committedUpdate(t, e)
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	require.Equal(t, []string{"15", "26"}, plan.CIReleases)
+	require.Contains(t, plan.Body, "MacPorts CI builds on macOS 15 and 26; nothing here covers any other release.\n")
+}

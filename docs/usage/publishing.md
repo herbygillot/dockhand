@@ -289,9 +289,11 @@ These choices answer different questions:
   review is returned to draft before anything is pushed to it; where GitHub
   refuses that, nothing is pushed, and `gh pr ready <number> --undo` does it.
 - `submit --no-check`: Publish without a check. The description says it was
-  submitted with `dockhand submit --no-check` and includes no check result,
-  leaving the build to MacPorts CI. It cannot be combined with `--draft`,
-  `--accept`, or `--standing`.
+  submitted with `dockhand submit --no-check` and includes no check result.
+  It names the releases MacPorts CI builds on and says nothing covers any
+  other, so a change for another release goes out unbuilt unless a check
+  built it there. It cannot be combined with `--draft`, `--accept`, or
+  `--standing`.
 - `submit --accept <port>`: Accept an eligible recorded failure, or a new port's
   lint warnings, for this commit.
 - `submit --accept '<port> +variant'`: Accept a variant build's failure by the

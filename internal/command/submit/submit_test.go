@@ -69,7 +69,7 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 		"  As       ada, from GH_TOKEN\n"+
 		"  To       macports/macports-ports:master\n"+
 		"  Commits  1, follows MacPorts' commit rules\n")
-	require.Contains(t, out, "  Checks   none (--no-check); the pull request says MacPorts CI is its only check\n")
+	require.Contains(t, out, "  Checks   none (--no-check); the pull request says so\n")
 	require.Contains(t, out, "  Other PRs  #34777 jq: update to 1.8.0\n")
 	require.Contains(t, out, "  PR       opens a new one\n")
 	require.Empty(t, g.PRs)

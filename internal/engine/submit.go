@@ -184,6 +184,10 @@ type SubmitPlan struct {
 	// decision accepts, recorded or asked for.
 	Standing         []model.Decision
 	StandingAccepted map[string]AcceptedFailure
+	// CIReleases are the releases MacPorts' CI builds on, as the tree's
+	// workflow names them, read for a submission with no finished check,
+	// whose description names them (#204).
+	CIReleases []string
 	// UncoveredCI are the releases MacPorts' CI builds on that the check
 	// built on none of, which the preview and the pull request say.
 	UncoveredCI []string
@@ -634,7 +638,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		Updated:     len(plan.moved) > 0,
 		RulesPassed: !errorsFound, Squashed: squashed, Searched: plan.SearchProblem == "", Others: plan.Others,
 		TestedBinaries: request.TestedBinaries, TestedVariants: request.TestedVariants, SkipNotification: request.SkipNotification, NewPorts: newPorts,
-		Note: plan.Note, UncoveredCI: plan.UncoveredCI, HandEdits: e.submittedHandEdits(ctx, branch, plan.Tree), LeftOut: leftOut(edits), HTTPS: httpsSwitches(edits), Sources: sourceMoves(edits),
+		Note: plan.Note, UncoveredCI: plan.UncoveredCI, CIReleases: plan.CIReleases, HandEdits: e.submittedHandEdits(ctx, branch, plan.Tree), LeftOut: leftOut(edits), HTTPS: httpsSwitches(edits), Sources: sourceMoves(edits),
 		Installed: e.installedLines(ctx, plan.Evidence, edits), Reviewed: reviewed}
 	plan.facts = facts
 	plan.allowed = e.allowedFor
@@ -667,6 +671,7 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 		if request.Standing {
 			return errors.New("--standing accepts a failure a check found, and cannot be combined with --no-check")
 		}
+		plan.CIReleases = e.ciReleases(ctx, plan.Tree)
 		return nil
 	}
 	evidence, found, err := e.EvidenceFor(ctx, plan.Branch.ID, model.ObjectID(plan.Tree))
@@ -679,6 +684,7 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 			return nil
 		}
 		if request.Draft {
+			plan.CIReleases = e.ciReleases(ctx, plan.Tree)
 			return nil
 		}
 		// A check of these files still to finish is the one to wait for,
