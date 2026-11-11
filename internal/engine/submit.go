@@ -23,10 +23,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portcreate"
 	"github.com/herbygillot/dockhand/internal/macports/prdescription"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/outward"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/refusal"
+	"github.com/herbygillot/dockhand/internal/remotewrite"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -374,32 +374,32 @@ func (e *Engine) unchangedSince(ctx context.Context, plan *SubmitPlan) error {
 // Head is the fork's head as "owner/repo:branch".
 func (p SubmitPlan) Head() string { return p.HeadRepository + ":" + p.RemoteBranch() }
 
-// pushBasis is what lets a submission push its branch (outward): an
+// pushBasis is what lets a submission push its branch (remotewrite): an
 // invitation to someone's, which mayPushTheirs established, else your own
 // fork.
-func (p SubmitPlan) pushBasis() outward.Basis {
+func (p SubmitPlan) pushBasis() remotewrite.Basis {
 	if p.Theirs {
-		return outward.Invited
+		return remotewrite.Invited
 	}
-	return outward.OwnFork
+	return remotewrite.OwnFork
 }
 
 // editBasis is what lets a submission edit its open pull request: an
 // invitation to someone's, else that dockhand made it.
-func (p SubmitPlan) editBasis() outward.Basis {
+func (p SubmitPlan) editBasis() remotewrite.Basis {
 	if p.Theirs {
-		return outward.Invited
+		return remotewrite.Invited
 	}
-	return outward.Made
+	return remotewrite.Made
 }
 
 // pullRequestBasis is what lets dockhand change a branch's recorded pull
 // request: one it made, or, adopted, someone's it was invited to.
-func pullRequestBasis(pr *model.PullRequest) outward.Basis {
+func pullRequestBasis(pr *model.PullRequest) remotewrite.Basis {
 	if pr != nil && pr.Adopted {
-		return outward.Invited
+		return remotewrite.Invited
 	}
-	return outward.Made
+	return remotewrite.Made
 }
 
 // ToDraft reports whether a draft submission returns its open pull request
@@ -1311,7 +1311,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 	if !plan.RemoteHead.Exists || plan.RemoteHead.Object != plan.Commit {
 		// A fork's branch that holds the commit already, as a submit
 		// racing this one leaves it, is pushed (git.Push).
-		if err := outward.Push(ctx, worktree, plan.pushBasis(), plan.HeadRepository, git.Push{Remote: plan.PushURL, Branch: plan.RemoteBranch(), Commit: plan.Commit, ExpectedRemote: plan.RemoteHead}); err != nil {
+		if err := remotewrite.Push(ctx, worktree, plan.pushBasis(), plan.HeadRepository, git.Push{Remote: plan.PushURL, Branch: plan.RemoteBranch(), Commit: plan.Commit, ExpectedRemote: plan.RemoteHead}); err != nil {
 			var conflict *git.RefConflict
 			if errors.As(err, &conflict) {
 				return Submitted{}, fmt.Errorf("%w: %s changed on %s since submit looked; nothing was pushed", ErrStaleSubmit, plan.RemoteBranch(), plan.HeadRepository)
@@ -1326,7 +1326,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 		Desired: forge.PullRequestContent{Head: model.ObjectID(plan.Commit), Title: plan.Title, Body: plan.Body}, Draft: plan.Request.Draft}
 	var observed forge.PullRequestObservation
 	if plan.Existing == nil {
-		observed, err = outward.Open(ctx, e.pullRequests(), outward.OwnFork, input)
+		observed, err = remotewrite.Open(ctx, e.pullRequests(), remotewrite.OwnFork, input)
 		result.Created = true
 		if err != nil {
 			observed, err = e.createdAnyway(ctx, plan, err)
@@ -1339,7 +1339,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 			result.Edited = SubmitEdits{Title: plan.Title != plan.Existing.PullRequest.Title, Body: plan.Body != plan.Existing.PullRequest.Body}
 		}
 		if result.Edited.Title || result.Edited.Body {
-			observed, err = outward.Edit(ctx, e.pullRequests(), plan.editBasis(), input)
+			observed, err = remotewrite.Edit(ctx, e.pullRequests(), plan.editBasis(), input)
 		}
 	}
 	if err != nil {
@@ -1455,14 +1455,14 @@ func (e *Engine) createdAnyway(ctx context.Context, plan SubmitPlan, failed erro
 // is pushed, and the refusal names the command that does it.
 func (e *Engine) draftFirst(ctx context.Context, plan SubmitPlan) error {
 	ref := plan.Existing.PullRequest.Ref
-	_, err := outward.Draft(ctx, e.pullRequests(), plan.editBasis(), ref)
+	_, err := remotewrite.Draft(ctx, e.pullRequests(), plan.editBasis(), ref)
 	if err == nil {
 		return nil
 	}
 	why := ""
 	if errors.Is(err, forge.ErrAppRestricted) {
 		var byCLI bool
-		if byCLI, why = e.byCLI(ctx, func() error { return outward.DraftByCLI(ctx, e.GitHubCLI, plan.editBasis(), ref) }, "return it to draft"); byCLI {
+		if byCLI, why = e.byCLI(ctx, func() error { return remotewrite.DraftByCLI(ctx, e.GitHubCLI, plan.editBasis(), ref) }, "return it to draft"); byCLI {
 			return nil
 		}
 	}
@@ -1476,8 +1476,8 @@ func (e *Engine) draftFirst(ctx context.Context, plan SubmitPlan) error {
 // readyByCLI marks a pull request ready with the GitHub CLI, when it's
 // signed in as the account dockhand acts for, since the change is then
 // made by the same person through another app; why it didn't, otherwise.
-func (e *Engine) readyByCLI(ctx context.Context, ref forge.PullRequestRef, basis outward.Basis) (bool, string) {
-	return e.byCLI(ctx, func() error { return outward.ReadyByCLI(ctx, e.GitHubCLI, basis, ref) }, "mark it ready")
+func (e *Engine) readyByCLI(ctx context.Context, ref forge.PullRequestRef, basis remotewrite.Basis) (bool, string) {
+	return e.byCLI(ctx, func() error { return remotewrite.ReadyByCLI(ctx, e.GitHubCLI, basis, ref) }, "mark it ready")
 }
 
 // byCLI does what the GitHub CLI does for the account dockhand acts for,
@@ -1518,7 +1518,7 @@ func (e *Engine) Ready(ctx context.Context, branch model.Branch) (_ model.Branch
 		return branch, false, fmt.Errorf("%s has no pull request yet; dockhand submit opens one", branch.Name)
 	}
 	ref := pullRequestRef(pr.Repository, pr.Number)
-	if _, err := outward.Ready(ctx, e.pullRequests(), pullRequestBasis(pr), ref); err != nil {
+	if _, err := remotewrite.Ready(ctx, e.pullRequests(), pullRequestBasis(pr), ref); err != nil {
 		// GitHub may refuse dockhand's app what it allows another, as an
 		// organization that restricts which apps may act for its members
 		// does (the hugo exercise's sshuttle run, finding 2).
@@ -1565,7 +1565,7 @@ func (e *Engine) RequestReview(ctx context.Context, branch model.Branch) ([]stri
 		return nil, nil
 	}
 	logins := pr.Observed.ChangesRequestedBy
-	if err := outward.Ask(ctx, e.pullRequests(), pullRequestBasis(pr), pullRequestRef(pr.Repository, pr.Number), logins); err != nil {
+	if err := remotewrite.Ask(ctx, e.pullRequests(), pullRequestBasis(pr), pullRequestRef(pr.Repository, pr.Number), logins); err != nil {
 		return nil, fmt.Errorf("asking %s to review #%d again: %w", strings.Join(logins, ", "), pr.Number, err)
 	}
 	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {

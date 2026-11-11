@@ -1,4 +1,4 @@
-package outward
+package remotewrite
 
 import (
 	"fmt"
@@ -70,7 +70,7 @@ func TestEachEffectTakesOnlyItsBases(t *testing.T) {
 func TestNothingElseCallsARemoteWrite(t *testing.T) {
 	t.Parallel()
 	const module = "github.com/herbygillot/dockhand/"
-	implementations := []string{"internal/git", "internal/forge", "internal/github", "internal/outward"}
+	implementations := []string{"internal/git", "internal/forge", "internal/github", "internal/remotewrite"}
 	files := token.NewFileSet()
 	// Each package's export data, from one go list of the build cache,
 	// rather than type-checking every import from source, which took a
@@ -103,7 +103,7 @@ func TestNothingElseCallsARemoteWrite(t *testing.T) {
 		methods    []string
 	}
 	remotes := []remote{
-		{"internal/outward", "PullRequests", []string{"Create", "Update", "MarkReady", "MarkDraft", "PostReview", "RequestReviewers", "RerunFailed"}},
+		{"internal/remotewrite", "PullRequests", []string{"Create", "Update", "MarkReady", "MarkDraft", "PostReview", "RequestReviewers", "RerunFailed"}},
 		{"internal/engine", "GitHubCLI", []string{"MarkReady", "MarkDraft"}},
 		{"internal/buildenv/ghactions", "API", []string{"Rerun", "Cancel"}},
 	}
@@ -177,5 +177,5 @@ func TestNothingElseCallsARemoteWrite(t *testing.T) {
 			})
 		}
 	}
-	require.Empty(t, found, "a remote write outside outward")
+	require.Empty(t, found, "a remote write outside remotewrite")
 }

@@ -213,6 +213,8 @@ harm_h1() {
 }
 
 # H2: nothing pushed but what the row says it pushes.
+# It checks remotewrite's rule, lines 1 and 2 (internal/remotewrite), by
+# what the row says it pushes, never by the rule's table (#144).
 harm_h2() {
 	local before=$1 after=$2 repo id line ref broken="" read=""
 	for repo in $ACCEPT_WATCH; do
@@ -244,7 +246,9 @@ harm_h2() {
 	fi
 }
 
-# H3: no pull request opened but those the row may open.
+# H3: no pull request opened but those the row may open. It checks
+# remotewrite's rule, line 1's pull requests, by the row's own count
+# (#144).
 harm_h3() {
 	local before=$1 after=$2 opened allowed=0
 	if [ -z "${ACCEPT_GH_LOGIN:-}" ]; then
