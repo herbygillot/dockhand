@@ -79,6 +79,16 @@ type PullRequestStatus struct {
 	// ReviewedAt is when the latest review that sets Review was
 	// submitted; zero where none does.
 	ReviewedAt time.Time `json:",omitempty"`
+	// Requested are the logins whose review is requested and still
+	// pending, sorted, and RequestedRead whether that list is complete: a
+	// reading that couldn't take it, or took it cut short, says so, and an
+	// absent login then settles nothing (docs/designs/publication-record.md).
+	Requested     []string `json:",omitempty"`
+	RequestedRead bool     `json:",omitempty"`
+	// LatestReview is when each login last reviewed it, a review of any
+	// kind, a comment-only one included: the time a reviewer's own answer
+	// is for, where ReviewedAt is the verdict's.
+	LatestReview map[string]time.Time `json:",omitempty"`
 	// CommentedBy is who wrote the conversation's latest word, where that
 	// is someone other than the pull request's author, a bot, and after
 	// its head was committed: a reviewer waiting on the author, as

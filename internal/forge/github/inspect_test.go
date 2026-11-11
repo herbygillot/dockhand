@@ -21,7 +21,9 @@ func TestInspectSummarizesMergeabilityReviewsAndChecks(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/pulls/7/reviews"):
-			fmt.Fprint(w, `[{"state":"CHANGES_REQUESTED","user":{"login":"alice"}},{"state":"APPROVED","user":{"login":"alice"}},{"state":"COMMENTED","user":{"login":"bob"}},{"state":"APPROVED","user":{"login":"carol"}},{"state":"DISMISSED","user":{"login":"carol"}}]`)
+			fmt.Fprint(w, `[{"state":"CHANGES_REQUESTED","user":{"login":"alice"},"submitted_at":"2026-11-01T10:00:00Z"},{"state":"APPROVED","user":{"login":"alice"},"submitted_at":"2026-11-02T10:00:00Z"},{"state":"COMMENTED","user":{"login":"bob"},"submitted_at":"2026-11-03T10:00:00Z"},{"state":"APPROVED","user":{"login":"carol"}},{"state":"DISMISSED","user":{"login":"carol"}}]`)
+		case strings.HasSuffix(r.URL.Path, "/pulls/7/requested_reviewers"):
+			fmt.Fprint(w, `{"users":[{"login":"dave"},{"login":"bob"}],"teams":[{"slug":"ports"}]}`)
 		case strings.HasSuffix(r.URL.Path, "/pulls/7"):
 			fmt.Fprintf(w, `{"number":7,"state":"open","draft":false,"mergeable":false,"mergeable_state":"dirty","head":{"sha":%q}}`, head)
 		case strings.HasSuffix(r.URL.Path, "/check-runs"):
@@ -41,6 +43,11 @@ func TestInspectSummarizesMergeabilityReviewsAndChecks(t *testing.T) {
 	require.Equal(t, "approved", status.Review, "the latest review per reviewer counts, and dismissed reviews do not")
 	require.Equal(t, 1, status.Approvals)
 	require.Equal(t, forge.CheckSummary{Total: 4, Passed: 1, Failed: 2, Pending: 1, Failing: []string{"Build ports (macos-14)", "buildbot/ports-13"}}, status.Checks)
+	// The reviews still requested, the whole list, and each login's own
+	// latest review of any kind, a comment-only one included (#191).
+	require.True(t, status.RequestedRead)
+	require.Equal(t, []string{"bob", "dave"}, status.Requested)
+	require.Equal(t, map[string]time.Time{"alice": time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC), "bob": time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)}, status.LatestReview)
 	_, err = client.Inspect(t.Context(), forge.PullRequestRef{Forge: "gitlab", Repository: "x/y", Number: 1})
 	require.Error(t, err)
 }
@@ -55,6 +62,8 @@ func TestCIAwaitingApprovalReadsAsWaiting(t *testing.T) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/pulls/8/reviews"):
 			fmt.Fprint(w, `[]`)
+		case strings.HasSuffix(r.URL.Path, "/pulls/8/requested_reviewers"):
+			fmt.Fprint(w, `{"users":[],"teams":[]}`)
 		case strings.HasSuffix(r.URL.Path, "/pulls/8"):
 			fmt.Fprintf(w, `{"number":8,"state":"open","draft":false,"head":{"sha":%q}}`, head)
 		case strings.HasSuffix(r.URL.Path, "/check-runs"):
@@ -82,6 +91,8 @@ func TestInspectNamesWhoRequestedChangesAndReviewCanBeRequestedAgain(t *testing.
 			assert.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
 			requested = payload["reviewers"].([]any)
 			fmt.Fprint(w, `{"number":7}`)
+		case strings.HasSuffix(r.URL.Path, "/pulls/7/requested_reviewers"):
+			fmt.Fprint(w, `{"users":[],"teams":[]}`)
 		case strings.HasSuffix(r.URL.Path, "/pulls/7/reviews"):
 			fmt.Fprint(w, `[{"state":"CHANGES_REQUESTED","user":{"login":"ryandesign"},"submitted_at":"2026-10-01T03:00:00Z"},{"state":"CHANGES_REQUESTED","user":{"login":"herbygillot"},"submitted_at":"2026-10-01T05:00:00Z"},{"state":"APPROVED","user":{"login":"carol"},"submitted_at":"2026-10-01T09:00:00Z"}]`)
 		case strings.HasSuffix(r.URL.Path, "/pulls/7"):

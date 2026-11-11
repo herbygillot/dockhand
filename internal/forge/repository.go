@@ -39,6 +39,13 @@ var ErrNotFound = errors.New("the requested object was not found")
 var ErrAppRestricted = errors.New("the organization restricts which apps may act for it")
 var ErrIncomplete = errors.New("the repository returned incomplete information")
 
+// ErrPullRequestExists is a create the forge refused because a pull request
+// is already open for its head: it says one exists, not that nothing was
+// opened, so a create whose earlier answer was lost reads it back rather
+// than taking it as a refusal (docs/designs/publication-record.md). It is
+// returned wrapping ErrRejected too, which every caller before it handled.
+var ErrPullRequestExists = errors.New("a pull request is already open for this head")
+
 // ErrAccessUnknown is a role on a repository the forge wouldn't say, as
 // GitHub won't to a fine-grained token not granted the repository
 // (403 "Resource not accessible by personal access token").

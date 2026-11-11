@@ -43,6 +43,15 @@ func (c *Client) Inspect(ctx context.Context, ref forge.PullRequestRef) (forge.P
 		if err != nil {
 			return forge.PullRequestStatus{}, githubapi.RateLimitError(err)
 		}
+		// Each login's own latest review, of any kind.
+		if login, at := review.GetUser().GetLogin(), review.GetSubmittedAt().Time; login != "" && !at.IsZero() {
+			if status.LatestReview == nil {
+				status.LatestReview = map[string]time.Time{}
+			}
+			if at.After(status.LatestReview[login]) {
+				status.LatestReview[login] = at.UTC()
+			}
+		}
 		switch review.GetState() {
 		case "APPROVED", "CHANGES_REQUESTED":
 			latest[review.GetUser().GetLogin()] = review.GetState()
@@ -56,6 +65,19 @@ func (c *Client) Inspect(ctx context.Context, ref forge.PullRequestRef) (forge.P
 		opinions = append(opinions, opinion{Login: login, State: state, At: submitted[login]})
 	}
 	review(&status, opinions)
+	// The reviews still requested: GitHub's whole list, which the endpoint
+	// gives in one page. A team requested is named by its slug.
+	requested, _, err := client.PullRequests.ListReviewers(ctx, owner, repo, ref.Number)
+	if err != nil {
+		return forge.PullRequestStatus{}, githubapi.RateLimitError(err)
+	}
+	for _, user := range requested.Users {
+		if login := user.GetLogin(); login != "" {
+			status.Requested = append(status.Requested, login)
+		}
+	}
+	slices.Sort(status.Requested)
+	status.RequestedRead = true
 	head := row.Head.GetSHA()
 	for run, err := range client.Checks.ListCheckRunsForRefIter(ctx, owner, repo, head, nil) {
 		if err != nil {
