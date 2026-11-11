@@ -38,6 +38,18 @@ Engine's tests run in parallel (`t.Parallel`), and `make test` runs the command 
 
 New tests follow two rules, so the suite stays parallel. A new engine test runs beside any other, and calls `t.Parallel`: it calls no `t.Setenv` or `t.Chdir` and writes no package-level variable, and what differs per test goes in through the engine it builds. A new command-line test adds no package-level seam of its own, such as another `testForge` or `testHTTPS`; it uses the ones there. Tests share their stand-ins rather than writing their own: GitHub is `forgetest.GitHub`, one stateful fake whose fork is a local bare repository, which tests set up and read rather than script call by call; fixture repositories are made with `testsupport.Git`, which keeps the person's git configuration, hooks, and signing out; and asking a URL over HTTPS is `testsupport.HTTPSAnswers`. Nothing generates mocks.
 
+## The fault sweep
+
+`internal/command/sweep` runs each workflow once clean, then once for each of its outside effects with that effect failing, recovers as a person would, and compares the world with the clean run's (docs/designs/fault-sweep.md, #129). The gate fails each effect once; `make sweep` fails each in all five ways (fail, dead, a remote reply lost, and a store transaction or ref update whose outcome is unknown, landed or not), and runs for each release.
+
+A scenario is a function in `scenarios_test.go`: the world it starts in (`arrange`, whose command lines aren't swept), the command lines that are the workflow (`steps`), and declarations beside it rather than code:
+
+- `recover`, where recovery isn't the steps again;
+- `bestEffort`, effects by address whose failure the command may not report, each with why; one that names no effect the scenario makes fails;
+- `known`, findings not yet fixed, by address and mode, each with its issue; one that stops reproducing fails, so the list only shrinks.
+
+An effect's address is its boundary, its first call site outside the boundary's package, and which call of that site it is: `store.update@engine.(*Engine).ApplySubmit#1`. A failure prints the address, and how to list it as known. A new git subcommand in `internal/git` is classed a write or a read in `plan_test.go`, which `TestEveryGitSubcommandIsClassed` requires.
+
 ## Real VM acceptance test
 
 The opt-in acceptance test builds two ports of a real ports tree in a real clone of dockhand's Tahoe image, `dockhand-base-tahoe`, in dockhand's Tart home: `tree`, with no dependencies, and `pv`, whose dependency the guest installs first. It needs a Mac with that image, made by `dockhand setup tart tahoe`, and a free VM slot, and it takes several minutes. It checks that both pass, that each left a log, and that the clone is deleted:
