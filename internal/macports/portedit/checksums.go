@@ -51,7 +51,7 @@ func (s *Service) prepareChecksums(ctx context.Context, request Request, input *
 
 // staleVendored refuses a checksum refresh of a port whose version was
 // edited by hand since its base while its crates or Go modules are still
-// the base's: they're the old version's, which the refresh doesn't touch,
+// the base's: the refresh doesn't revalidate them against the new lock,
 // and nothing said so (v0.4.0's known issues). It changes nothing, and
 // says the way on.
 func staleVendored(request Request, input *sourceInput, plan *depblock.Plan) error {
@@ -63,9 +63,14 @@ func staleVendored(request Request, input *sourceInput, plan *depblock.Plan) err
 	if base.Version == input.info.Version || base.Options[plan.Kind] != input.info.Options[plan.Kind] {
 		return nil
 	}
-	name := input.target.Name
-	return refusal.New(refusal.Unsupported, "%s's version was edited from %s to %s, and its %s are still %s's, which checksums doesn't refresh; nothing was changed. Undo the version edit, then dockhand update %s %s regenerates them",
-		name, base.Version, input.info.Version, plan.Kind, base.Version, name, input.info.Version)
+	// It reads neither lock, so it says what wasn't done, not that they're
+	// the old version's (#163).
+	name, lock, what := input.target.Name, "Cargo.lock", "crates"
+	if plan.Kind == depblock.Go {
+		lock, what = "go.sum", "modules"
+	}
+	return refusal.New(refusal.Unsupported, "The version changed from %s to %s, but %s was not revalidated against the new %s. checksums refreshes distfile checksums only; use dockhand update %s %s to validate the %s.",
+		base.Version, input.info.Version, plan.Kind, lock, name, input.info.Version, what)
 }
 
 // vendoredSources are a port's crates or Go modules, as its Portfile
