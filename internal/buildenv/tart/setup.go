@@ -212,10 +212,7 @@ const DefaultMacPorts = macports.DefaultBaseVersion
 // newMacPorts is the MacPorts an image made now installs: this Mac's,
 // where it's newer than DefaultMacPorts, else DefaultMacPorts.
 func (p *Provider) newMacPorts(ctx context.Context) string {
-	host := p.macPorts
-	if host == "" {
-		host = HostMacPorts(ctx, p.tclsh(), p.Tart.Env)
-	}
+	host := p.hostVersion(ctx)
 	if host != "" && !macports.BaseAtLeast(DefaultMacPorts, host) {
 		return host
 	}
@@ -304,7 +301,7 @@ func (p *Provider) Setup(ctx context.Context, options SetupOptions, progress io.
 	}
 	made := SetupResult{Image: result.Image, Release: release, MacPorts: result.MacPortsVersion,
 		CommandLineTools: result.CommandLineTools, Xcode: result.XcodeVersion, Reused: result.Reused}
-	if host := HostMacPorts(ctx, p.tclsh(), p.Tart.Env); host != result.MacPortsVersion {
+	if host := p.hostVersion(ctx); host != result.MacPortsVersion {
 		made.HostMacPorts = host
 	}
 	return made, nil

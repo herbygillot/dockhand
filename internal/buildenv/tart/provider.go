@@ -117,8 +117,9 @@ type Provider struct {
 	host int
 	// starting lets one clone start at a time (start).
 	starting sync.Mutex
-	// hostMacPorts is this Mac's MacPorts version, read once; macPorts
-	// stands in for it in tests.
+	// hostMacPorts is this Mac's MacPorts version, read once for the
+	// provider's life (hostVersion); macPorts set beforehand stands in for
+	// it in tests.
 	hostMacPorts sync.Once
 	macPorts     string
 }
@@ -294,15 +295,23 @@ func (p *Provider) MacPortsBehind(ctx context.Context, environment model.Environ
 // behind is an image's MacPorts version and this Mac's, where the image's
 // is older.
 func (p *Provider) behind(ctx context.Context, version string) (imageVersion, hostVersion string) {
+	host := p.hostVersion(ctx)
+	if version == "" || host == "" || macports.BaseAtLeast(version, host) {
+		return "", ""
+	}
+	return version, host
+}
+
+// hostVersion is this Mac's MacPorts version (HostMacPorts), read once
+// for the provider's life: a first read that fails is kept as empty, as
+// running port version again would most likely fail the same way.
+func (p *Provider) hostVersion(ctx context.Context) string {
 	p.hostMacPorts.Do(func() {
 		if p.macPorts == "" {
 			p.macPorts = HostMacPorts(ctx, p.tclsh(), p.Tart.Env)
 		}
 	})
-	if version == "" || p.macPorts == "" || macports.BaseAtLeast(version, p.macPorts) {
-		return "", ""
-	}
-	return version, p.macPorts
+	return p.macPorts
 }
 
 // Identity is an environment's identity by origin

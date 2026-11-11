@@ -191,3 +191,22 @@ func TestANewImageInstallsThisMacsMacPorts(t *testing.T) {
 	require.Equal(t, DefaultMacPorts, (&Provider{macPorts: "2.11.5"}).newMacPorts(t.Context()), "never older than the floor")
 	require.Equal(t, DefaultMacPorts, (&Provider{macPorts: DefaultMacPorts}).newMacPorts(t.Context()))
 }
+
+// This Mac's MacPorts is read once for the provider's life, whichever
+// asks first: a setup that makes an image ran port version twice, and
+// behind kept a failed first read while the others asked again (#16).
+func TestThisMacsMacPortsIsReadOnce(t *testing.T) {
+	t.Parallel()
+	bin := t.TempDir()
+	count := filepath.Join(t.TempDir(), "count")
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "port-tclsh"), []byte("#!/bin/sh\n"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "port"), []byte("#!/bin/sh\necho run >> "+count+"\necho 'Version: 2.12.7'\n"), 0o755))
+	provider := &Provider{Tart: tartvm.Client{Env: []string{"PATH=" + bin + ":/usr/bin:/bin"}}}
+	require.Equal(t, "2.12.7", provider.newMacPorts(t.Context()))
+	image, host := provider.behind(t.Context(), "2.11.5")
+	require.Equal(t, []string{"2.11.5", "2.12.7"}, []string{image, host})
+	require.Equal(t, "2.12.7", provider.hostVersion(t.Context()))
+	runs, err := os.ReadFile(count)
+	require.NoError(t, err)
+	require.Equal(t, "run\n", string(runs), "port version ran once")
+}
