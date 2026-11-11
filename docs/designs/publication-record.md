@@ -1,17 +1,17 @@
 # The publication record: what a submission set out to do, and what it still owes
 
-A core item for v0.9.0, [#191](https://github.com/herbygillot/dockhand/issues/191). The issue says where it stands; this file is the design. Architecture merged it on 2026-11-11 from two proposals written apart from one problem statement, architecture's and Codex's (the person's "I'd like Codex to co-design and help review as well", 2026-11-11 05:48Z, in the architecture thread). Codex then reviewed the merge against the code and said to revise it before adoption. This is that revision, read again at main 3cb1dc8d7. "What the review changed" lists each of its points and what was taken. It is built once the person adopts it.
+A core item for v0.9.0, [#191](https://github.com/herbygillot/dockhand/issues/191). The issue says where it stands; this file is the design. Architecture merged it on 2026-11-11 from two proposals written apart from one problem statement, architecture's and Codex's (the person's "I'd like Codex to co-design and help review as well", 2026-11-11 05:48Z, in the architecture thread). Codex then reviewed the merge against the code and said to revise it before adoption, and gave that revision a short second pass. This is the page revised for both, read again at main 1fab1150b. "What the review changed" lists each point and what was taken. It is built once the person adopts it.
 
 ## In short
 
 - Today a submission records nothing until its push and its pull-request write are both done. After a failure in between, the next run works out what happened from the fork, a search and the description's text. It gets three things wrong: serve's daily count ([#155](https://github.com/herbygillot/dockhand/issues/155)), whose text the description is ([#157](https://github.com/herbygillot/dockhand/issues/157)), and a reviewer request that failed.
 - A branch gets one **publication**: the commit a submission set out to publish, where, what it meant to write, what the person asked of it, and the steps it still owes. It is recorded before the first remote effect and ended when nothing is owed.
 - A step that is owed may have happened. Nothing is done again until the fork or GitHub has been read and shows it isn't done.
-- Two calls can't be read back: a reviewer request, and a create whose answer was lost. Each is marked before it is sent. A reviewer request that may have been sent is never sent again. A create serve may have sent stays counted.
+- Two calls can't be read back: a reviewer request, and a create whose answer was lost. Each is marked before it is sent. A reviewer request that may have been sent is never sent again. A create serve may have sent keeps its place, every day, until GitHub shows what became of it. No length of time settles either.
 - There is no separate "resume". A later submit settles the old publication by reading, plans as always from what it found, and records a new one. For the same commit and destination, what the person asked the first time stands unless this run says otherwise.
 - serve's count moves from events, which `clean --delete` removes with a branch, to a small table. A place is taken in the transaction that records the publication.
 - One dockhand at a time submits to a branch on the fork. An operating-system lock says so, and it is never taken from a process that is still alive.
-- What a person sees change: "ask them to review again?" is asked before the push, with the plan. A pull request is marked ready before its reviewers are asked, where today it is after. A submit that follows a failed one says what the failed one did. `status` names a submission that isn't finished. On the day of the upgrade serve opens nothing. No command or flag is added.
+- What a person sees change: "ask them to review again?" is asked before the push, with the plan. A pull request is marked ready before its reviewers are asked, where today it is after. A submit that follows a failed one says what the failed one did. `status` names a submission that isn't finished. The upgrade waits until every dockhand from before it has stopped, and on that day serve opens nothing. No command or flag is added.
 
 ## Today
 
@@ -114,6 +114,7 @@ A step leaves `Owes` only in a transaction that also writes its result:
 - `draft`, `push`, and `open` or `edit` leave together, in today's one transaction after the pull request is written.
 - `ready` and `rerequest` each leave in the transaction that follows them, as `Ready` and `RequestReview` write today.
 - Where that transaction fails after the effect, the step stays owed and the next read finds it done. Nothing goes on to the next effect past a record that failed.
+- Each of them is a transaction dockhand has seen recorded (`store.Recorded`), as the first one is. That holds for a mark's outcome and for the receipt too.
 
 So a plain submission costs one store write more than today: the first one.
 
@@ -123,15 +124,15 @@ So a plain submission costs one store write more than today: the first one.
 
 **A create GitHub refuses.** GitHub answering the create with a refusal means nothing was opened. `open` ends as refused: the push and anything else done are folded, the refusal is returned and said, and the publication ends with nothing owed. The next submit is a new attempt. One answer is not a refusal: "a pull request already exists for this head" says that one exists, so `open` stays owed until the read finds it. The forge names that answer apart from the others.
 
-**One read before the pull request is written.** `unchangedSince` reads before the push, and a push can be long. Just before the edit dockhand reads the description once more. Where it is no longer what the plan merged against, the edit is not made: the step stays owed, the command says the description changed on GitHub during the submission, and `dockhand submit` plans against the new text. The window that remains is one request wide.
+**One read before the pull request is written.** `unchangedSince` reads before the push, and a push can be long. Just before the edit dockhand reads the title and the description once more. Where either is no longer what the plan saw, the edit is not made: the step stays owed, the command says which of them changed on GitHub during the submission, and `dockhand submit` plans against the new text. The window that remains is one request wide.
 
-**Follow-ups are for the commit.** `ready` and `rerequest` are made only while the head branch is at `Commit`. In a straight run the guarded push is that reading. In a continuation settling reads the branch itself, not the pull request's copy of it. Where the branch is at another commit, the publication ends and those steps are dropped and said.
+**Follow-ups are for the commit.** `ready` and `rerequest` are made only while the head is at `Commit`, and each reads for that itself, just before its call. Both read the pull request anyway: marking ready reads its draft state (`setDraft`, internal/forge/github/pullrequests.go:199), and the reviewer step reads the pending requests. The push can be minutes earlier and isn't taken as that reading. In a continuation settling also reads the branch itself, not only the pull request's copy of it. Where the head is at another commit, the publication ends and those steps are dropped and said. GitHub has no write that is conditional on the head, so a push that lands between that read and the call isn't caught; the window is one request wide.
 
 ## The reviewer request
 
 What the step promises: after it, each reviewer named has a review request pending on the pull request, or dockhand says who doesn't and why. It does not promise that a particular notification was delivered. A request already pending, whoever made it and whenever, satisfies it.
 
-GitHub lists a pull request's pending review requests, and a reviewer leaves that list when they review or when someone removes the request. dockhand reads none of it today: `forge.PullRequestStatus` (internal/forge/pullrequest.go:63) has the reviews and no requests, and its `ReviewedAt` is the time of the review that sets the overall verdict, not of each person's. The status read gains the complete list of pending requests, with a sign of whether it is complete, and each login's own latest review time.
+GitHub lists a pull request's pending review requests, and a reviewer leaves that list when they review or when someone removes the request. dockhand reads none of it today: `forge.PullRequestStatus` (internal/forge/pullrequest.go:63) has the reviews and no requests, and its `ReviewedAt` is the time of the review that sets the overall verdict, not of each person's. The status read gains the complete list of pending requests, with a sign of whether it is complete, and the time of each login's own latest review of any kind, a comment-only one included.
 
 For an owed `rerequest` with a yes, each login apart, one call a login:
 
@@ -142,6 +143,8 @@ For an owed `rerequest` with a yes, each login apart, one call a login:
 | A request is pending | satisfied; nothing is sent |
 | None pending, not sent | the mark "may have been sent" is recorded, then the request is sent |
 | None pending, may have been sent | **not sent again.** Said: a request may have been sent, GitHub shows none pending, and dockhand doesn't send one twice |
+| None pending, sent | nothing is sent, and the mark stays. Said: they were asked, and the request is no longer pending |
+| None pending, refused | nothing is sent, and the refusal stays, with GitHub's words |
 
 And what the call's own outcome does to the mark:
 
@@ -154,7 +157,9 @@ And what the call's own outcome does to the mark:
 
 When no login is left to send to, the step leaves `Owes` and the receipt is written to `PullRequest.Rerequested`. `status` shows a reviewer who may have been asked and one GitHub refused, beside who requested changes. A person who wants to be sure asks on GitHub.
 
-An absent request is not read as a request that failed. Two histories look the same to a read: the process died before the call; or the call landed, its answer was lost, and someone removed the request. Only the mark tells them apart.
+An absent request is not read as a request that failed. Once the mark is recorded, three histories look the same to a read and to the mark: the process died before it made the call; the call went out and never arrived; the call landed, its answer was lost, and someone removed the request. Nothing tells them apart, so none of them is sent again. The only history that is sent is the one with no mark: the process died before the mark was recorded.
+
+A receipt is a record and never a list to work through. A later publication asks only what its own question and answer cover, with marks of its own.
 
 ## When settling runs
 
@@ -190,21 +195,27 @@ That is one rule for every way a publication ends: it finished; a new submit rep
 
 ## serve's count
 
-One table, `serve_openings`, replaces the count of `serve.submit` events. A row is one pull request serve opened, may have opened, or holds a place to open: the base repository, the head, and three things that may be empty: when a create was sent (`tried`), the pull request's number, and GitHub's time for its creation (`opened`). It is not deleted with a branch.
+One table, `serve_openings`, replaces the count of `serve.submit` events. A row is one pull request serve opened, may have opened, or holds a place to open: the base repository, the head, and four things that may be empty: when a create was first marked (`tried`), whether a create of it went unanswered, the pull request's number, and GitHub's time for its creation (`opened`). It is not deleted with a branch.
 
 | The row | Counts on | Leaves when |
 | --- | --- | --- |
 | A place held: no `tried`, no `opened` | every day, while its publication owes `open` | a person takes the branch over, the branch ends, or serve can no longer submit it |
-| A create that may have landed: `tried`, no `opened` | the day it was tried and the day after | GitHub answers that create with a refusal. Otherwise never |
+| A create that may have landed: `tried`, no `opened` | every day | GitHub answers with a refusal the only create the row ever sent; or the head branch is gone from the fork. A pull request found for it makes it an opening |
 | An opening: `opened` | the day GitHub says it was created | never; old rows are pruned |
 
-- **The limit check and the place are one transaction**, the first one: the day's count must be under the limit, or nothing is written and nothing is pushed. SQLite has one writer, so a second pass or a second process can't interleave.
+- **The limit check and the place are one transaction**, the first one: the rows that count today must be fewer than the limit, or nothing is written and nothing is pushed. SQLite has one writer, so a second pass or a second process can't interleave.
 - **`tried` is written before the create is sent**, and seen recorded. From then on the place can't be given up by anything dockhand reads, because a read that finds no pull request doesn't show that the create didn't land.
-- **A pull request found** for a row that was tried is charged to it: the row takes its number and GitHub's creation time. One found with no creation time leaves the row as it is. This may charge serve for a pull request a person opened in between, which errs toward opening fewer.
+- **No length of time ends a tried row.** A request whose connection was lost may have been applied, and HTTP gives no time by which it has been or never will be (RFC 9110, 9.2.2). So nothing is concluded from a day passing. The earlier draft let the row go after two days; that is withdrawn.
+- **It doesn't matter when the create goes out.** A process that pauses between the mark and the call, for a minute or for three days, finds its place still counted when it wakes. Nothing else can settle or release the row meanwhile, because every write of it is made under the head's lock, which that process holds ("One submission at a time").
+- **A pull request found** for a row that was tried is charged to it: the row takes its number and GitHub's creation time, and counts on that day alone. One found with no creation time leaves the row as it is. This may charge serve for a pull request a person opened in between, which errs toward opening fewer.
+- **A refusal ends a row only where nothing else of it is unanswered.** A second try that GitHub refuses says nothing of a first try that got no answer. Such a row stays, though its publication ends as refused.
+- **The head gone from the fork ends it.** GitHub opens no pull request for a head branch that isn't there, so a create that arrives after the branch was deleted is refused. If a branch of that name is pushed again later, it has a publication and a place of its own, and a pull request that then appears is found and charged there.
+- **Every try of a row shares its place.** GitHub keeps one open pull request for a head and base, so a first try and a second can open one between them.
+- **A create is sent only for a row among the first that count today**, oldest first, as many as the limit. In the usual case that is every row, since a row is only written under the limit. It matters where the limit was lowered, and after the upgrade.
 - **A person's takeover.** Of a place never tried: the place is released, and the person's opening isn't counted. Of a create that was tried: the row stays, whatever the person's submit then does.
-- **The pass settles first.** Before any candidate, serve settles every publication it recorded, whatever the branches' order. One that still owes `open` goes first, under the place it holds. A second try is a new `tried`, and where its row no longer counts today it passes the limit check again.
+- **The pass settles first.** Before any candidate, serve settles every publication it recorded, whatever the branches' order, and every tried row whose publication has ended: it reads for the pull request and for the head branch. One that still owes `open` goes first, under the place it holds.
 - **The day** is worked out at each count with `dayStart`, as today. The limit is read from the settings at each admission.
-- **Two days for a create with no answer.** A create is one request: GitHub has either made the pull request by the time the connection is gone, or it never will. The day after is there for a create sent just before midnight. This is the one place the design takes time as evidence, and it only ever stops counting something, never sends something.
+- **What it costs.** A create with no answer, no pull request found and its branch still on the fork takes one of each day's places until one of those changes. `status` and serve's own lines name the branch, the day of the create, and what ends it: finding the pull request, or removing the branch from the fork (`dockhand clean --delete`). In the usual case the next pass ends it by trying again and opening the pull request.
 - `serve.submit` stays as a line in the journal. Nothing reads it as state, and cleanup's rule that keeps the day's events for the count goes.
 - Nothing but serve opening a pull request counts, as today.
 
@@ -227,13 +238,14 @@ Where the head repository is someone else's, dockhand writes no title or descrip
 
 An operating-system lock, from `internal/filelock`, keyed by the publication's `Head`: the repository and branch on the fork, so two local branches aimed at one remote branch share it. It lives beside the branch locks under the repository's common directory.
 
-- `ApplySubmit` takes it before the first transaction and holds it to the end, follow-ups included. The file is handed to `git push` as the branch lock's is (`withLock`, internal/git/branch.go:41), so a push still running after dockhand died keeps it.
+- `ApplySubmit` takes it before the first transaction and holds it to the end, follow-ups included. The file is handed to each child that writes for the submission, as the branch lock's is to `git` (`withLock`, internal/git/branch.go:41): `git push`, and `gh pr ready` where dockhand marks a pull request ready or draft through the GitHub CLI (internal/github/cli.go:37, :46). A child still running after dockhand died keeps the lock. Every other write is a call from dockhand's own process.
+- The key is the head in one spelling: the owner and repository in lower case, and the branch. The lock's file is never removed, so two waiters can't hold two files for one head.
 - A second caller is refused with nothing done. The holder writes its process and its start time into the file, and the refusal names them.
 - **It is never taken from a live process.** A dockhand that hangs keeps the lock until it is stopped, and the refusal says which process to stop. The system releases it when the process and any `git` it started have exited.
 - Settling's writes take it too. Where a live process is submitting the branch, a plan is refused and `status` shows what is stored.
 - Between a plan and its `ApplySubmit`, another process may have settled or replaced the publication. Under the lock, `ApplySubmit` checks that the branch's publication is the one the plan saw, and otherwise refuses as it does for a head that moved.
-- Every write of the publication checks `Publication.ID` in its own transaction.
-- It is not the branch's history lock. The publication publishes the literal commit it recorded, whatever the local branch does afterwards; that is intended, and `status` then shows the branch ahead of what was published.
+- Every write of the publication checks `Publication.ID` in its own transaction. The first transaction writes one only where the branch has none, and that test is in the transaction itself.
+- It is not the branch's history lock. The publication publishes the literal commit it recorded, whatever the local branch does afterwards; that is intended, and `status` then says how the branch stands to what was published: ahead of it, behind it, or diverged from it.
 
 The first draft used a lease from `internal/coord`. A lease is taken from a holder that is alive but silent for two minutes (`Judge`, internal/coord/coord.go:282), and `Fenced` guards a store write, not a call made after a lease was read. A process paused just before its edit would wake and write its old text over a successor's.
 
@@ -253,27 +265,29 @@ No message names `Owes` or a step's internal name.
 
 ## Existing databases and branches
 
-- The schema adds the column, the two fields on the pull request's record, and the table. No branch row changes. A branch recorded before has no publication and owes nothing, and its pull request's `Provenance` is empty, which is read as today: no right is gained or lost by the upgrade.
-- **On the day of the upgrade serve opens nothing.** A pull request serve opened before the upgrade whose record was lost has no event and no row, and nothing in the old database can count it. The migration writes its own time into the table, and for the rest of that day the count answers that the limit is reached, and says why. From the next midnight every opening is in the table. Nothing is imported from `serve.submit` events, whose times are when dockhand recorded and not when GitHub created.
+- The schema adds the column, the two fields on the pull request's record, and the table. No branch row changes. A branch recorded before has no publication and owes nothing, and its pull request's `Provenance` is empty.
+- **An old record doesn't show who opened its pull request.** The old plan attached any open pull request it found for the head and recorded it like one it had opened (`Find`, submit.go:829-851). So an empty `Provenance` proves nothing, and the page doesn't say it does. Such a record keeps the rights it has today, with one thing added: where GitHub names another author than the account dockhand acts as, it is recorded as `found` at its next read. The author's login is only ever used to withdraw `Made`, never to state it.
+- **The migration waits for quiet.** It is refused while any session in the database names a process that is still running, by the PID and start time every session has recorded since the first schema, whether or not it has been heard from. Today's guard counts only sessions with a recent heartbeat and leaves out those it finds silent (`refuseUnderLive`, internal/store/sqlite/sqlite.go:594, with `watchHeartbeats`, :267), and "migrate anyway" lifts even that (`MigrateUnderLive`). Neither applies to this migration. The refusal names each process to stop. So once the schema has changed, no dockhand from before it is running, paused or not, and none can send anything later.
+- **What an old submit may have left on its way.** The old code sent its create only after its push, and recorded neither until both were done. So a create of serve's whose answer was never recorded leaves one trace: a branch serve prepared that is on the fork with no pull request recorded. Only a submit pushes a branch under its own name (submit.go:1314; a check on GitHub pushes `dockhand-check/…`, provider.go:236). serve's first pass after the upgrade lists the fork's branches once. For each such branch it records a tried row with a create unanswered, and reads for its pull request. One found is charged to the day GitHub made it. One not found stays a tried row, by the rules above. Until that pass has run, serve opens nothing; where its read fails, the next pass runs it again.
+- **On the day of the upgrade serve opens nothing.** The pull requests serve opened earlier that day are counted only by events, which this design stops trusting. The migration writes its own time into the table, and for the rest of that day the count answers that the limit is reached, and says why. From the next midnight every opening is in the table. Nothing is imported from `serve.submit` events, whose times are when dockhand recorded and not when GitHub created.
 - A branch whose last submit failed part-way before the upgrade takes the path it takes today: `PlanSubmit` finds its pull request by head (`destination`, submit.go:776). It is attached as `found`.
 - **Old reviewer left-overs are said once and never sent.** The migration applies `RerequestDue`'s test one last time, in one statement: where a branch's pull request has changes requested, a push recorded after that review, and no request recorded since, it writes a receipt saying the reviewers may not have been asked. `status` shows it. Then `RerequestDue` goes. A left-over whose events were already pruned can't be found, and isn't guessed.
-- The migration runs under the store's existing guard, which refuses while another dockhand's session is live (`refuseUnderLive`, internal/store/sqlite/sqlite.go:565).
 - `clean` refuses an open branch, as today. Archiving and forgetting end the publication first, by the rule above, and refuse if they can't.
 - `undo` moves a branch's history and removes nothing remote (`Restore`, internal/engine/restore.go:23). Where it moves the head off `Commit`, the next submit treats the publication as one for another commit.
-- The publication is on the branch's row and is never pruned. Rows of `serve_openings` older than two days may be.
+- The publication is on the branch's row and is never pruned. An opening's row older than two days may be. A tried row is never pruned.
 
 ## The gate
 
 Each step states a basis to the gate (`internal/remotewrite`), built from evidence when the step is made. `By` says who recorded a publication. It is never a basis.
 
 - Push: `OwnFork`, or `Invited` where the head repository is someone else's, as today. Open: `OwnFork`.
-- Edit, draft and ready state `Made` where the record's `Provenance` is `opened`, or is empty on a record from before that isn't adopted, which is what `pullRequestBasis` answers today. `Made` is never stated from a publication's intent or from the author's login.
+- Edit, draft and ready state `Made` where the record's `Provenance` is `opened`. They also state it where `Provenance` is empty on a record from before that isn't adopted, which is what `pullRequestBasis` answers today: that is today's right kept, not a proof that dockhand opened it ("Existing databases and branches"). `Made` is never stated from a publication's intent or from the author's login.
 - A `found` pull request: a person's submit of that branch names the action, so its writes state `Named`, and the plan says the pull request was found. serve leaves it.
 - Someone else's, or adopted: `Invited`, as today.
 - A reviewer request states `Made` on a pull request dockhand opened, and otherwise `Named` where the person answered yes. The yes is recorded with what it covers: the pull request, the head, the logins with their reviews, and who answered. Today an adopted pull request's request states `Invited`, which the gate refuses (`AskReviewers` takes `Made` and `Named`, internal/remotewrite/remotewrite.go:91).
 - `clean`'s test for deleting a head branch (`ownedHead`, internal/engine/clean.go:379) reads neither `Provenance` nor the publication, and gains nothing from them.
 
-#144's adopted comment says a basis should become something only evidence can build if a new caller ever states `Made` with no record behind it. Here `Made` comes only from GitHub's answer to a create, or from a record that already had it.
+#144's adopted comment says a basis should become something only evidence can build if a new caller ever states `Made` with no record behind it. Here a new `Made` comes only from GitHub's answer to a create. An old record keeps the one it had, unproved, and loses it where GitHub names another author.
 
 ## What the review changed
 
@@ -282,11 +296,11 @@ Codex's review made seven objections, each with a counterexample, and six correc
 | Its point | What was wrong in the merge | Taken |
 | --- | --- | --- |
 | R1. An absent pending request is not a failed notification | It sent again wherever GitHub showed no request pending, and took one review time for every reviewer | A mark for each login, recorded before the call. "May have been sent" is never sent again. Each login's own review time. A receipt on the pull request's record |
-| R2. Ordering doesn't make a released place safe | A person's takeover, an ended branch or a later read released serve's place although its create could still land | `tried`, recorded before the create. A tried row leaves only on GitHub's refusal of that create |
+| R2. Ordering doesn't make a released place safe | A person's takeover, an ended branch or a later read released serve's place although its create could still land | `tried`, recorded before the create. A tried row counts every day and leaves only on evidence: see the second pass below |
 | R3. A terminal state doesn't erase accounting | "Merged or closed: the publication is cleared", and a third commit ended it at once | "Ending a publication": folding first, in the same transaction, for every way it ends |
 | R4. A stale edit doesn't write the same text | A lease, which is taken from a live process that is silent | The operating-system lock, never taken from a live process. The lease goes |
 | R5. An intent and the author's login are not evidence of creation | "An open one by `By` is the one this publication opened", and `Found` only where there was no publication | `Provenance`: `opened` only from GitHub's answer to the create. Everything read is `found`. `ownedHead` unchanged |
-| R6. The upgrade kept #155 | No account of an opening lost before the upgrade, and an import from events | serve opens nothing on the day of the upgrade; nothing is imported |
+| R6. The upgrade kept #155 | No account of an opening lost before the upgrade, and an import from events | The migration waits for quiet; the first pass records what an old submit may have left; serve opens nothing that day; nothing is imported |
 | R7. A permanent refusal needs an end | A refused create was tried first on every pass under its place; a refused reviewer just left the step | A refused create ends `open` and releases the place. A refused reviewer is recorded as refused, shown, and not asked again |
 | `coord` knows a dead process by its PID | It also judges a live, silent one dead | See R4 |
 | A changed `ReviewedAt` shows someone reviewed since | It is the verdict's review, not each person's | Each login's own review time |
@@ -303,10 +317,27 @@ Codex's review made seven objections, each with a counterexample, and six correc
 | What callers are told | One list of reasons | Five reasons told apart, and what fails the command |
 | Six commits, each activating a part | The record was live before its lock, its cleanup and its gate | Pieces first, with tests and no caller. Then one activation |
 
-Two things were taken in a smaller form than the review's, and it should say if either is too small:
+**The second pass** (Codex, 2026-11-11, at main 1fab1150b) found most of that met and left these. All are taken but the last, which is put to the person.
 
-- For R6 it offered a pass over old branches, or holding serve until old state is resolved. The day's pause is the second, resolved by midnight, with no read and no import.
-- A refused reviewer isn't sorted into "can never be asked" and "can't be asked now", beyond the rate limit and the login. Every other refusal ends that login for this publication and is shown.
+| Its point | What was wrong in the revision | Taken |
+| --- | --- | --- |
+| No two days | A tried row stopped counting after the day it was tried and the next. HTTP gives no time by which a lost request has been applied or dropped | No age ends a tried row. It counts every day until a pull request is found, its only create is refused, or its head is gone from the fork |
+| A create marked, then sent days later | Once the row stopped counting, another branch took the limit, and the first then opened | Covered by the same rule. The row is also written only under the head's lock, which the paused process holds |
+| A later refusal doesn't answer an earlier try | A second try's refusal released the place | A row with a create unanswered stays through any later refusal |
+| A dockhand paused across the upgrade | The page admitted it, and the day's pause didn't confine it. The store's guard leaves out silent sessions and can be overridden | The migration waits until no session's process is running, silent or not, with no override |
+| An old create still on its way | Midnight was taken to settle it | The first pass records a tried row for each of serve's branches on the fork with no pull request recorded |
+| An old record's `Made` proves no creation | "Read as today" was presented as if it lost nothing | Said plainly, and the old plan's `Find` cited. Withdrawn where GitHub names another author. Whether to go further is choice 7 |
+| A kill after the mark and before the call | Case G called it "not sent, so sent now", and the page said the mark tells the histories apart | It reads "may have been sent" and is not sent. Three histories, not told apart |
+| A `sent` or `refused` mark with none pending | No row | Two rows: neither is sent again, and neither becomes "not sent" |
+| The `gh` child | Only `git push` was handed the lock | `gh pr ready` is handed it too. It is the one other child that writes |
+| The title | The read before the edit named the description alone | The title and the description |
+| A reading before `ready` and the reviewers | The push was taken as that reading | Each reads the head itself, just before its call |
+| `status` says "ahead" | The branch can also be behind or diverged | Says which |
+| A comment-only review | Not named | Each login's latest review of any kind |
+| Case D | Said the earlier submit opened the pull request | Says it was found, and may have been opened by it |
+| The migration's statements | To be proved | Tested against a database made at schema 059 |
+
+One thing is still taken in a smaller form than the review's, and it should say if it is too small: a refused reviewer isn't sorted into "can never be asked" and "can't be asked now", beyond the rate limit and the login. Every other refusal ends that login for this publication and is shown.
 
 ## Where the two proposals differed
 
@@ -318,7 +349,7 @@ Two things were taken in a smaller form than the review's, and it should say if 
 | 4. Resuming | settle and plan afresh; only `ready` and a yes carry | no flags resumes the saved choices; other flags make a fresh acceptance | One path, with Codex's rule on choices, for the same commit and destination |
 | 5. A no to the reviewers | not kept | kept for the head and the review | Codex's |
 | 6. serve's count | `serve.submit` events and reservations | a ledger with states, limits, days and zones | A small table of its own; the limit and the day read at each count |
-| 7. Giving up a place | released when a read shows no pull request | one read isn't proof | Codex's. A place whose create was tried is never released by a read |
+| 7. Giving up a place | released when a read shows no pull request | one read isn't proof | Codex's. A place whose create was tried is never released by a read that finds nothing, nor by time |
 | 8. Settling the description | the whole description compared | each owned part | Both: the whole first, then each part |
 | 9. Texts kept | title, body, written | every text of every revision | `Title`, `Body` and `Written` of the one publication |
 | 10. A second read just before the edit | no | yes | Yes |
@@ -329,7 +360,7 @@ Two things were taken in a smaller form than the review's, and it should say if 
 | 15. The account | not recorded | recorded; another login inherits nothing | `By` |
 | 16. Evidence for the gate | `Made` from the record and the publication | grants built from stored receipts | `Provenance`, set only from GitHub's answer. No grant type |
 | 17. Accepted failures and standing decisions | recorded with the publication | held pending, written when it is confirmed | Recorded with the first transaction, each with its own evidence |
-| 18. Existing databases | add a column | import associations and charges, a marker and a pass for possible old openings | No import. serve waits out the day of the upgrade |
+| 18. Existing databases | add a column | import associations and charges, a marker and a pass for possible old openings | No import from events. A quiet migration, a first pass for what an old submit may have left, and the day's pause |
 | 19. Old reviewer left-overs | dropped | classified once as an old uncertainty | Said once by the migration, never sent |
 | 20. Commits | six | one cut-over | Pieces, then one activation |
 
@@ -342,14 +373,14 @@ Two things were taken in a smaller form than the review's, and it should say if 
 | A. The create's reply is lost | owes `push`, `open`; serve's row is tried | submit: settling finds the push and the pull request, folds, attaches it as found, and charges serve's row | #N was found open for this branch; the earlier submit may have opened it |
 | B. GitHub refuses the create | `open` ends as refused; serve's place is released | the next submit, or serve's next pass, is a new attempt | GitHub's refusal |
 | C. The edit failed after the push | owes `push`, `edit`, and `rerequest` if asked | submit: folds the push, edits, asks the reviewers as answered | what the earlier submit did, then this one |
-| D. All done, the record failed | owes all it did | submit: settling finds all of it and folds | the earlier submit opened or updated #N |
+| D. All done, the record failed | owes all it did | submit: settling finds all of it and folds; a pull request it set out to open is attached as found | #N was found open for this branch; the earlier submit may have opened it |
 | E. Killed between two steps | owes from that step on | as A, C, D, F or G by where it stopped. After the return to draft: settling finds the draft, and the plan pushes | what was found, what was done |
 | F. `--ready` asked, lost before it | owes `ready` | (i) submit and (ii) ship mark it ready, saying it was asked earlier; `--draft` drops it. (iii) serve never acts on a person's | "marking #N ready, as the earlier submit asked" |
-| G. The reviewer request | owes `rerequest`, a mark for each login | (i) died before the call: not sent, so sent now. (ii) the answer was lost: may have been sent; pending, satisfied; not pending, not sent again. (iii) a no: not owed, not asked again. (iv) no answer: an attended run asks, an unattended one leaves it. (v) a yes: asked by the next run of that commit | who was asked, who may have been, who GitHub refused |
+| G. The reviewer request | owes `rerequest`, a mark for each login | (i) died before the mark was recorded: not sent, so sent now. (ii) died after the mark, before or during the call, or the answer was lost: may have been sent; pending, satisfied; not pending, not sent again. (iii) a no: not owed, not asked again. (iv) no answer: an attended run asks, an unattended one leaves it. (v) a yes: asked by the next run of that commit | who was asked, who may have been, who GitHub refused |
 | H. An old-dated commit pushed after the review | `Review` in the publication | owed because the plan pushed to a pull request with changes requested. No commit date and no event is read | |
 | I. #155 | serve's row is tried | the pass settles first, finds the pull request, charges the row; the limit of one is reached | today's limit is reached |
 | J. A second ready branch sorts first | as I, unsettled | settling comes before candidates; a tried row counts whether or not it is settled | the second branch waits |
-| K. A place at midnight | serve's row | (i) opened before midnight: counted yesterday, today is free. (ii) held, not tried: it goes first today. (iii) opened after midnight: counted today. (iv) tried, nothing found: counted today, free tomorrow | |
+| K. A place at midnight | serve's row | (i) opened before midnight: counted yesterday, today is free. (ii) held, not tried: it goes first today. (iii) opened after midnight: counted today. (iv) tried, nothing found: counted today and every day until it is settled | |
 | L. #157 | `PullRequest.Body` old; `Body` is what GitHub took | settling folds the text that landed; the plan then rewrites it for the new commit | nothing special |
 | M. The person edits on GitHub in between | owes `edit` | their part matches no record and the merge keeps it. During the submission: the read before the edit sees it and the edit isn't made | the description changed on GitHub and was kept |
 | N. A new head over an unknown write | old publication | settle by reads; drop its `ready` and `rerequest` with a word, its marks into the receipt; record the new one. A read that fails refuses the submit | what the earlier submit did, then this one |
@@ -373,32 +404,39 @@ Two things were taken in a smaller form than the review's, and it should say if 
 | AF. A tried create found already merged (R3) | owes `open` | the row takes its number and time, the text that landed is folded, then the publication ends | |
 | AG. Paused just before its edit (R4) | holds the lock | nobody else submits to that branch until it is stopped or wakes; awake, it reads once more before the edit | |
 | AH. A person opened the pull request between the plan and the create (R5) | owes `open` | GitHub answers that one exists; the read finds it; found, not opened | #N was found open for this branch |
-| AI. An opening lost before the upgrade (R6) | no row | serve opens nothing that day | serve counts afresh from tomorrow |
+| AI. An opening lost before the upgrade (R6) | no row | the first pass finds the branch on the fork with no pull request recorded, records a tried row and reads for it; serve opens nothing that day | serve counts afresh from tomorrow |
+| AJ. A create marked, and its process then sleeps three days | serve's row is tried; the process holds the lock | the row counts each of those days and nobody else can settle it. Awake, it sends; the opening is charged to the day GitHub made it | |
+| AK. A first create unanswered, a second refused | tried, one unanswered | the publication ends as refused. The row stays until a pull request is found or the head is gone from the fork | one place is held for that branch, and what ends it |
+| AL. A dockhand from before the upgrade is paused | its session names a running process | the migration is refused, whatever its heartbeat | which process to stop |
+| AM. The limit is lowered below the rows that count | three tried rows, a limit of one | only the oldest row's create is sent today | the others wait |
 
 ## Choices the person should see
 
 1. **A reviewer request that may have been sent is never sent again.** After a lost answer dockhand says who may have been asked and stops. The other way sends twice when someone removed a request that had landed.
 2. **A dockhand that hangs while submitting blocks that branch until it is stopped.** A second one is refused and names the process. The other way lets the second take over, and the first can then write over it when it wakes.
 3. **A pull request found after a lost answer is not treated as dockhand's own.** A person's submit goes on with it, saying it was found. serve charges it to the day and writes nothing more to it.
-4. **On the day of the upgrade serve opens nothing.** The other way is a pass that reads every branch serve prepared before it opens anything.
+4. **The upgrade waits until every dockhand from before it has stopped, and on that day serve opens nothing.** A dockhand that is paused has to be stopped by hand first; the refusal names it. The other way lets a paused one wake after the upgrade and open a pull request nothing counts.
 5. **`--rewrite-description` is not carried** to a continuation, where every other choice of the same commit is.
 6. **A reviewer request on an adopted pull request is made** after a yes, where today the gate refuses it.
+7. **A pull request recorded before the upgrade keeps the rights it has today**, though the old record doesn't show that dockhand opened it. It loses them only where GitHub names another author. The other way treats every old one as found: serve then writes to none of the pull requests it opened before the upgrade until the person has submitted each once.
+8. **A create whose answer was lost keeps one of each day's places** until GitHub shows its pull request or its branch is gone from the fork. Usually the next pass ends that by opening the pull request. The other way lets the place go after two days, and a create that lands later than that puts a day one over the limit.
 
 ## What this does not defend
 
-- A request that had left the process when it died. The push is guarded by `Expected`. GitHub refuses a second open pull request for one head, and serve's row stays charged. An edit could land late; the window is one request.
+- A request that had left the process when it died. The push is guarded by `Expected`. GitHub refuses a second open pull request for one head, and serve's row stays charged for as long as it takes. An edit could land late; the window is one request.
+- A create that lands after its pull request's twin was opened and closed, or after its branch was removed and a person pushed one of the same name by hand. Each needs a request to be on its way for longer than a branch's life.
 - Another machine, or another database, submitting to the same branch.
 - A person acting on GitHub between dockhand's read and its call. GitHub offers no write that is conditional on what was read.
-- A dockhand from before the upgrade that was paused across it and wakes. Its remote calls go out, and its record lands as a record from before. The day's pause covers serve's count for that day.
+- A branch forgotten before the upgrade while its create was still on its way. Nothing records it, and it isn't guessed.
 
 ## Tests
 
 - **Settling**, one table: a publication and what each read answers, complete and cut short, against what is folded, what stays owed and what is said.
 - **The reviewer request**, one table over the two tables above: each reading and mark, and each answer. It includes AC and AD, and a request to several logins where one is acknowledged, one refused and one unanswered.
 - **The description**: a table in `prdescription` for the three parts, each landed, not landed, and edited by a person; the whole text landed, for a rewrite, serve's note and a part left out; with #157's failing case written first.
-- **The count**: two engines on one database at a limit of one; midnight in each of K's four forms; AE and AF; a branch forgotten on the day its pull request opened; a database at schema 059 with `serve.submit` events, upgraded, on that day and the next.
-- **The lock**: a second process refused while the first sleeps before its edit; a `git push` child that outlives its parent; the refusal's words.
-- **The upgrade**: a submit under schema 059 killed after its create, then upgraded and submitted again; an old reviewer left-over, said once.
+- **The count**: two engines on one database at a limit of one; midnight in each of K's four forms; AE, AF, AJ, AK and AM; a create marked and sent three days later while a second branch asks for the place each day; a row ended by its head leaving the fork; a branch forgotten on the day its pull request opened; a database at schema 059 with `serve.submit` events, upgraded, on that day and the next.
+- **The lock**: a second process refused while the first sleeps before its edit; a `git push` child and a `gh pr ready` child that each outlive their parent; two spellings of one head; the refusal's words.
+- **The upgrade**, against a database made by the code at schema 059, not written by hand: a submit killed after its create, then upgraded, the first pass run, and submitted again; a session whose process is running and silent, which refuses the migration; an old reviewer left-over, said once; an old record whose pull request GitHub gives another author.
 - **The cases** A to AI against the GitHub stand-in. It keeps a pull request's draft state and pending review requests, lets a request be removed, keeps each person's reviews apart, answers a request for some logins and not others, and can delay a call past its caller's death. dockhand's own rule is asserted by count: no login is sent two requests by one publication.
 - **The fault sweep** ([#129](https://github.com/herbygillot/dockhand/issues/129)): a failpoint after the first transaction, after each mark, and after each effect and each record. Where every outcome can be read back, a continuation is the same command under the same attendance and clean-run equality holds. Where one can't, the scenario declares it: the expected end state has the mark, the row and the texts exactly, and no second send. Where a read is made to fail, it asserts no remote write and the sentence that names the next command. `serve_openings` is compared exactly; no event of a submission is read as state.
 - The regressions of #76, #118 and #127 stay.
@@ -408,7 +446,7 @@ Two things were taken in a smaller form than the review's, and it should say if 
 1. The forge's status read gains the pending review requests, complete or said not to be, and each login's own latest review. The create's "already exists" gets its own name. The stand-in gains what "Tests" lists.
 2. The question moves before the push. The engine marks ready and then asks the reviewers. The command says which flags were given. `RerequestDue` still serves left-overs. The usage pages change here.
 3. The pieces, each with its tests and no caller: the publication's type and settling as a function from readings to folds; the reviewer table; the description settled whole and by part; `serve_openings` and its count; the lock; `pending`'s reasons.
-4. **One activation.** The schema with its two statements for old databases; the first transaction; the marks; the steps and the reads before them; settling at the plan, serve's pass, `status`, a refresh, archive and forget; serve's place; the lock; the bases from `Provenance`. `RerequestDue`, `servedToday`'s event count, cleanup's rule for it, and `followUp`'s left-over branch go in the same commit. **#157 and #155 close here**, each with its failing case from step 3.
+4. **One activation.** The schema with its two statements for old databases, the migration's wait for quiet, and serve's first pass; the first transaction; the marks; the steps and the reads before them; settling at the plan, serve's pass, `status`, a refresh, archive and forget; serve's place; the lock; the bases from `Provenance`. `RerequestDue`, `servedToday`'s event count, cleanup's rule for it, and `followUp`'s left-over branch go in the same commit. **#157 and #155 close here**, each with its failing case from step 3.
 5. The acceptance rows on the test accounts, and `docs/architecture.md`.
 
 After #129's foundation, [#144](https://github.com/herbygillot/dockhand/issues/144), [#159](https://github.com/herbygillot/dockhand/issues/159), [#94](https://github.com/herbygillot/dockhand/issues/94) and [#178](https://github.com/herbygillot/dockhand/issues/178). [#183](https://github.com/herbygillot/dockhand/issues/183) lands before its last failure cases.
@@ -419,7 +457,9 @@ After #129's foundation, [#144](https://github.com/herbygillot/dockhand/issues/1
 
 - GitHub's behaviour is from its documentation, not from a run: that a reviewer asked again is among the pending requests until they review or the request is removed; whether asking one already pending notifies again; how soon after a request the list shows it. The design is right without any of the three; an acceptance row on the test accounts records what GitHub does.
 - Whether listing pull requests by head can lag behind a create whose reply was lost. A lag only delays the row's number.
-- That GitHub can't complete a create long after the connection is gone, which the two days rest on.
+- Two things GitHub does that the count leans on, neither from a run here: it opens no second pull request for a head and base while one is open (the stand-in does the same, internal/forge/forgetest/github.go:274), and none for a head branch that isn't on the fork.
+- Whether the store can ask if a process is running without reaching into `internal/coord`, whose liveness check `Judge` uses.
+- That the status read already carries the pull request's author for every record (`forge.PullRequest.Author`, internal/forge/pullrequest.go:49).
 - That the migration's one statement can read a review's time out of the stored observation. If it can't, the same test runs once in the engine on a migrated database.
 - `Archive`'s code (internal/engine/verbs.go:353) beyond its signature.
 - Every caller of `pullRequestBasis` and `editBasis`, which `Provenance` changes.
@@ -429,7 +469,7 @@ After #129's foundation, [#144](https://github.com/herbygillot/dockhand/issues/1
 
 - `docs/usage/publishing.md`: the question about reviewers comes with the plan, before the push; ready comes before the reviewers; a submit after a failed one says what the failed one did and finishes it, with the first one's flags standing for the same commit; `--rewrite-description` is asked again; a reviewer request that may have been sent is not sent again, and `status` shows it; a second submit of a branch is refused while one is running.
 - `docs/usage/recovery.md`: the messages for a lost create, edit or record, `dockhand submit` as the one continuation, and what to do when a submission hangs.
-- `docs/usage/unattended.md`: serve settles its own unfinished submissions before it opens anything; a place is held until GitHub answers; serve never finishes a person's submission or writes to a pull request that was found; on the day of an upgrade to this version it opens nothing.
+- `docs/usage/unattended.md`: serve settles its own unfinished submissions before it opens anything; a place whose create got no answer is held every day until the pull request is found or the branch is removed from the fork, and serve says which branch; serve never finishes a person's submission or writes to a pull request that was found; the upgrade to this version is refused while an earlier dockhand is still running, and on its day serve opens nothing.
 - `docs/usage/branches.md`: `status` names a submission that isn't finished; archiving and forgetting settle it first.
 - `docs/usage/agents.md`: `pending` in submit's and ship's JSON, with its reasons.
 - `docs/architecture.md`: the publication, settling, the lock, and `serve_openings`.
