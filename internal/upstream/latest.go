@@ -210,6 +210,19 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 	if err != nil {
 		return result, err
 	}
+	// A regex that matches none of the tags, as each is matched on the
+	// page, its archive link, is one that reads the page some other way:
+	// pinact's {v(\d+\.\d+\.\d+)$} matched its "chore: release v5.0.2"
+	// lines, and dockhand, matching archive links, read nothing where Base
+	// read 5.0.2. It's run on the page as Base runs it, and proven against
+	// the catalog (discoverOverridden).
+	if len(eligible.Indices) == 0 && len(candidates) > 0 {
+		overridden, err := spec.Overridden(port)
+		if err != nil {
+			return result, err
+		}
+		return s.discoverOverridden(ctx, port, overridden, repository)
+	}
 	var eligibleCandidates []macports.VersionCandidate
 	var eligibleTags []string
 	for _, index := range eligible.Indices {

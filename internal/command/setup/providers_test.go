@@ -189,6 +189,7 @@ func TestSetupTart(t *testing.T) {
 	require.Contains(t, out, "Checking Tart images for Sonoma...\n", "the provisioner's progress is shown")
 	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("Made dockhand-base-sonoma: macOS 14 (Sonoma) with Command Line Tools 16.2.0.0.1.1733547573 and MacPorts "+tart.DefaultMacPorts+".\n"))
 	require.Contains(t, out, "To check with this image, use --on tart:sonoma.\n")
+	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("Where the release has no image yet, making one downloads Cirrus Labs' vanilla macOS image the first time and uses up to "+tart.SetupDisk+" of disk.\n"), "said before it starts")
 
 	images.result.Reused = true
 	out, _, err = cmdtest.Dockhand(t, "setup", "tart", "--check")
@@ -381,4 +382,21 @@ func TestAnXcodeRebuildSaysItsBaseKeepsAnOlderMacPorts(t *testing.T) {
 	out, _, err := cmdtest.Dockhand(t, "setup", "tart", "tahoe", "--rebuild", "--xcode", t.TempDir())
 	require.NoError(t, err)
 	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("Its base image has MacPorts 2.12.6, older than this Mac's 2.12.7: dockhand setup tart tahoe --rebuild, without --xcode, makes it again.\n"), "the one sentence (the architecture review of 5897a82, R3-7)")
+}
+
+// setup tart runs the tart --tool names, not PATH's: it checked the named
+// one and then ran PATH's, which pulled a 24 GB image a guard meant to
+// refuse (Codex's new-user walk of release/v0.8.0, finding 1).
+func TestSetupTartRunsTheNamedTart(t *testing.T) {
+	t.Parallel()
+	cmdtest.Hosted(t).TartSupported = func() bool { return true }
+	dir := t.TempDir()
+	asked := filepath.Join(dir, "asked")
+	named := filepath.Join(dir, "named-tart")
+	require.NoError(t, os.WriteFile(named, []byte("#!/bin/sh\necho \"$@\" >>"+asked+"\nexit 1\n"), 0o755))
+	_, _, err := cmdtest.Dockhand(t, "setup", "tart", "--tool", "tart="+named)
+	require.Error(t, err, "the named tart refuses")
+	data, readErr := os.ReadFile(asked)
+	require.NoError(t, readErr, "the named tart was run")
+	require.NotEmpty(t, data)
 }

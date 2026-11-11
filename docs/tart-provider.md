@@ -36,10 +36,10 @@ next attempt builds only the rest.
 | `tahoe` | a bare release name means Tart |
 
 Several releases must all pass. Without `--on`, a check builds where a
-build profile says: `--build`'s, else `build.default`'s, `host`, this Mac's
-release, unless set. dockhand's own profiles all run on Tart: `host`,
-`minmax`, each port's oldest and newest release you have an image of,
-macOS 12 at the earliest, `macports-ci`, and `all`.
+build profile says: `--build`'s, else `build.default`'s, `minmax`, unless set.
+dockhand's own profiles all run on Tart: `host`, this Mac's release alone,
+`minmax`, each port's oldest and newest release you have an image of, macOS 12
+at the earliest, `macports-ci`, and `all`.
 
 ## Images
 

@@ -358,7 +358,7 @@ type VersionUpdate struct {
 func (v *VersionUpdate) Flags(cmd *cobra.Command, s *settings.Settings) {
 	cmd.Flags().BoolVar(&v.KeepOld, "keep-old-checksums", false, "refresh legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size")
 	cmd.Flags().BoolVar(&v.Shared, "shared-release", false, "update every subport that shares the release")
-	cmd.Flags().BoolVar(&v.FollowMoves, "follow-moves", false, "update github.setup when GitHub redirects the repository to a new name")
+	cmd.Flags().BoolVar(&v.FollowMoves, "follow-moves", false, "update github.setup or go.setup when GitHub redirects the repository to a new name")
 	cmd.Flags().BoolVar(&v.Obsolete, "with-obsolete", false, "also update an obsolete stub replaced by this port to the same version; may be added after the update")
 	cmd.Flags().BoolVar(&v.Linked.Revbump, "revbump-dependents", false, "also bump the revision of the ports that link it directly")
 	cmd.Flags().StringSliceVar(&v.Linked.Except, "except", nil, "leave this dependent out of --revbump-dependents")
@@ -376,8 +376,8 @@ func (v *VersionUpdate) StageFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&v.Linked.Tests, "tests", "", "the check's tests: declared (advisory), required, or skip (default check.tests)")
 	cmd.Flags().StringSliceVar(&v.Linked.Types, "type", nil, "the template's Type(s): bugfix, enhancement, security fix (default: enhancement for an update dockhand made)")
 	cmd.Flags().BoolVar(&v.Linked.Draft, "draft", false, "open the pull request as a draft, even where its check fails")
-	cmd.Flags().BoolVar(&v.Linked.TestedBinaries, "tested-binaries", false, "state that you tested the basic functionality of all binary files")
-	cmd.Flags().BoolVar(&v.Linked.TestedVariants, "tested-variants", false, "state that you checked the most important variants")
+	cmd.Flags().BoolVar(&v.Linked.TestedBinaries, "tested-binaries", false, "state that you tested the basic functionality of all binary files, for these files; =false withdraws it")
+	cmd.Flags().BoolVar(&v.Linked.TestedVariants, "tested-variants", false, "state that you checked the most important variants, for these files; =false withdraws it")
 	cmd.Flags().StringVar(&v.Linked.Title, "title", "", "the pull request's title (default: the commit subject)")
 	cmd.Flags().StringVar(&v.Linked.Note, "note", "", "your own note in the pull request's description")
 	cmd.Flags().BoolVar(&v.Linked.SkipNotification, "skip-notification", false, "add [skip notification], so maintainers are not mentioned")
@@ -429,6 +429,9 @@ type LinkedOptions struct {
 	On                             []string
 	Build                          string
 	TestedBinaries, TestedVariants bool
+	// WithdrawBinaries and WithdrawVariants are --tested-binaries=false and
+	// --tested-variants=false, which remove a kept statement (#153).
+	WithdrawBinaries, WithdrawVariants bool
 	// tests is the check's --tests; types and draft the submission's
 	// --type and --draft (the second look's §6: bump lacked them).
 	Tests      string
@@ -532,12 +535,12 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 	if update.Current {
 		switch {
 		case deferred:
-			fmt.Fprintf(out, "%s is already at %s; nothing to change, so no branch was started.\n", update.Port, update.After)
+			fmt.Fprintf(out, "%s is already at %s%s; nothing to change, so no branch was started.\n", update.Port, update.After, currentWhere(branch, update))
 		case request.Action == model.EditUpdate && update.Obsolete != nil && update.Obsolete.Moved:
 			// --with-obsolete added after the update moves the stub (#122).
 			fmt.Fprintf(out, "%s is already at %s; updating obsolete port %s to it.\n", update.Port, update.After, update.Obsolete.Port)
 		case request.Action == model.EditUpdate:
-			fmt.Fprintf(out, "%s is already at %s; nothing to change.\n", update.Port, update.After)
+			fmt.Fprintf(out, "%s is already at %s%s; nothing to change.\n", update.Port, update.After, currentWhere(branch, update))
 		default:
 			fmt.Fprintf(out, "%s %s: %s; nothing to change.\n", update.Port, update.After, matchWords(update.Compared))
 		}
@@ -593,10 +596,14 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 			fmt.Fprintf(out, "%s (obsolete, replaced_by %s) stays at %s; --with-obsolete moves it to %s.\n", stub.Port, update.Port, stub.Version, update.After.Version)
 		}
 		// Where upstream was compared, the move is one of its findings.
-		if update.Followed != "" {
+		setup := cmp.Or(update.Setup, "github.setup")
+		switch {
+		case update.Followed != "" && setup == "go.setup":
+			fmt.Fprintf(out, "Updated go.setup to github.com/%s, the current GitHub location of %s.\n", update.Followed, update.Release.Repository)
+		case update.Followed != "":
 			fmt.Fprintf(out, "Updated github.setup to %s, the current GitHub location of %s.\n", update.Followed, update.Release.Repository)
-		} else if update.Renamed != "" && update.Upstream == nil {
-			fmt.Fprintf(out, "Upstream moved: GitHub redirects %s to %s. Use update --follow-moves to update github.setup.\n", update.Release.Repository, update.Renamed)
+		case update.Renamed != "" && update.Upstream == nil:
+			fmt.Fprintf(out, "Upstream moved: GitHub redirects %s to %s. Use update --follow-moves to update %s.\n", update.Release.Repository, update.Renamed, setup)
 		}
 	} else if update.Stealth != nil {
 		fmt.Fprintf(out, "%s %s · the distfile changed upstream without a new name (stealth update)\n", update.Port, update.Before)
@@ -640,7 +647,24 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 	// A hand edit's attempt is the person's to finish, and said so, with
 	// the refusal it answers and what it couldn't write (Then's item 3).
 	if update.HandEdit != "" {
-		fmt.Fprintf(out, "Wrote dockhand's attempt for you to finish by hand, as the update was refused: %s\nChanged: %s\n", update.HandEdit, strings.Join(update.Files, ", "))
+		// What was written, where, what it left, and the next command
+		// (#166).
+		fmt.Fprintf(out, "The update was refused: %s\n", update.HandEdit)
+		var unrefreshed []string
+		for _, left := range update.Left {
+			if left.What != "the revision" {
+				unrefreshed = append(unrefreshed, left.What)
+			}
+		}
+		fmt.Fprintf(out, "Wrote the version change to branch %s for you to finish.", branch.ShortName())
+		switch len(unrefreshed) {
+		case 0:
+		case 1:
+			fmt.Fprintf(out, " %s was not refreshed.", unrefreshed[0])
+		default:
+			fmt.Fprintf(out, " %s were not refreshed.", prose.And(unrefreshed))
+		}
+		fmt.Fprintf(out, "\nChanged: %s\n", strings.Join(update.Files, ", "))
 		for _, left := range update.Left {
 			fmt.Fprintf(out, "  ! %s not written: %s\n", left.What, left.Reason)
 		}
@@ -648,7 +672,7 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 			view.WriteUpstream(out, update.Upstream)
 		}
 		fmt.Fprintln(out, "It's recorded as your hand edit with that reason, which tidy, status, and the pull request say.")
-		fmt.Fprintln(out, "Next: dockhand edit "+request.Port+", then "+nextAfterEdit(ctx, e, branch))
+		fmt.Fprintf(out, "Next: dockhand edit %s -b %s, then %s\n", request.Port, branch.ShortName(), nextAfterEdit(ctx, e, branch))
 		return branch, update, nil
 	}
 	what := "Updated version and checksums"
@@ -954,4 +978,23 @@ func writeLeft(out io.Writer, left []engine.ChecksumLeft) {
 	for _, l := range left {
 		fmt.Fprintf(out, "Left as it was: %s, %s\n", l.What, l.Reason)
 	}
+}
+
+// Withdrawn reads --tested-binaries=false and --tested-variants=false,
+// said rather than left out, into the update's request.
+func (v *VersionUpdate) Withdrawn(cmd *cobra.Command) {
+	v.Linked.WithdrawBinaries = cmd.Flags().Changed("tested-binaries") && !v.Linked.TestedBinaries
+	v.Linked.WithdrawVariants = cmd.Flags().Changed("tested-variants") && !v.Linked.TestedVariants
+}
+
+// currentWhere is where an update found its port current: the branch it
+// read, or master as just fetched, by commit (#165).
+func currentWhere(branch model.Branch, update engine.Update) string {
+	switch {
+	case branch.Name != "":
+		return " on " + branch.ShortName()
+	case update.Base != "":
+		return " on master " + update.Base.Short()
+	}
+	return ""
 }

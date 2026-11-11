@@ -71,8 +71,11 @@ type SubmitRequest struct {
 	Remote           string
 	SkipNotification bool
 	// TestedBinaries and TestedVariants are the person's statements for
-	// the template's last two items.
-	TestedBinaries, TestedVariants bool
+	// the template's last two items; WithdrawBinaries and WithdrawVariants
+	// are their saying no, --tested-binaries=false, which removes a kept
+	// statement, where saying nothing keeps it (#153).
+	TestedBinaries, TestedVariants     bool
+	WithdrawBinaries, WithdrawVariants bool
 	// Rewrite replaces an open pull request's description with the one
 	// dockhand composes, a person's own included, their note kept: an
 	// adopted branch's description, which nothing recorded dockhand
@@ -96,6 +99,11 @@ type SubmitPlan struct {
 	Ports   []string
 	// recorded is Ports read from every directory's change record.
 	recorded bool
+	// testedTrees are the trees of the port directories the branch
+	// changes, at Commit, which a tested statement is about; TestedStale
+	// says a kept statement about earlier files, which isn't ticked (#153).
+	testedTrees map[string]model.ObjectID
+	TestedStale []string
 	// served is a submission serve makes by itself, whose serve.submit
 	// event, which serve.submit_limit counts, is written with its record.
 	served bool
@@ -446,10 +454,6 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		return SubmitPlan{}, err
 	}
 	request.Branch = branch
-	// The statements the person made before for this branch stand, as its
-	// note does: a later run with --yes had to make them again (#91).
-	request.TestedBinaries = request.TestedBinaries || branch.TestedBinaries
-	request.TestedVariants = request.TestedVariants || branch.TestedVariants
 	plan := SubmitPlan{Request: request, Branch: branch, Repository: e.PullRequestRepository()}
 	if err := e.pullRequestHere(branch); err != nil {
 		return plan, err
@@ -494,6 +498,27 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		return plan, err
 	}
 	changed := analysis.Paths
+	// The statements the person made before for this branch stand, as its
+	// note does, while the files they were about are the same: a later
+	// run with --yes had to make them again (#91), and once made they
+	// ticked the template's items whatever changed after (#153).
+	if plan.testedTrees, err = statementTrees(ctx, worktree, plan.Tree, analysis.Scope.Ports); err != nil {
+		return plan, err
+	}
+	for _, kept := range []struct {
+		statement      *model.TestedStatement
+		said, withdraw *bool
+		flag           string
+	}{{branch.TestedBinaries, &request.TestedBinaries, &request.WithdrawBinaries, "--tested-binaries"}, {branch.TestedVariants, &request.TestedVariants, &request.WithdrawVariants, "--tested-variants"}} {
+		switch {
+		case *kept.withdraw || *kept.said || kept.statement == nil:
+		case kept.statement.Stands(plan.testedTrees):
+			*kept.said = true
+		default:
+			plan.TestedStale = append(plan.TestedStale, fmt.Sprintf("Your %s statement was about an earlier state of the files, so it isn't ticked; %s says it again", kept.flag, kept.flag))
+		}
+	}
+	plan.Request.TestedBinaries, plan.Request.TestedVariants = request.TestedBinaries, request.TestedVariants
 	// The ports are the subports the revision's change records say it
 	// changes: terraform-1.16, where the directory is terraform's.
 	records, err := e.revisionChanges(ctx, branch.ID, branch.Base, model.ObjectID(plan.Tree), true)
@@ -1162,6 +1187,83 @@ type SubmitEdits struct {
 // made.
 var ErrStaleSubmit = errors.New("the branch changed after the submission was prepared")
 
+// MasterChanged is a submission stopped because master, fetched just
+// before it would push, changed a port directory the branch changes since
+// the branch's base: with the same files as the branch's, its changes are
+// on master already, and a pull request would duplicate them (#164); with
+// others, the branch is reviewed against master's first. A change master
+// made elsewhere stops nothing (docs/usage/branches.md).
+type MasterChanged struct {
+	Branch       string
+	Base, Master model.ObjectID
+	Directories  []string
+	OnMaster     bool
+}
+
+func (m *MasterChanged) Error() string { return m.Said(false) }
+
+// Said is the stop in the words of the run that met it: one whose check
+// ran, which nothing was pushed or submitted after, or one that started
+// no check.
+func (m *MasterChanged) Said(checkRan bool) string {
+	after := "This run started no check and submitted nothing."
+	if checkRan {
+		after = "The check ran; nothing was pushed or submitted."
+	}
+	if m.OnMaster {
+		return fmt.Sprintf("%s's changes are already on master %s. %s", m.Branch, m.Master.Short(), after)
+	}
+	return fmt.Sprintf("master changed %s since this branch's base (%s → %s). %s Review dockhand rebase -b %s --plan before continuing.", prose.And(m.Directories), m.Base.Short(), m.Master.Short(), after, m.Branch)
+}
+
+// masterUnchanged fetches master and stops a submission where it changed
+// a port directory the branch changes since the branch's base
+// (MasterChanged); nothing else that master changed stops it. Only master
+// fetched now is "on master": the plan compared with the branch's base,
+// and the duplicate pull request of #164 was opened with no fetch between.
+func (e *Engine) masterUnchanged(ctx context.Context, plan SubmitPlan) error {
+	base := plan.Branch.Base
+	if len(plan.testedTrees) == 0 || base == "" {
+		return nil
+	}
+	master, err := e.fetchMaster(ctx)
+	if err != nil {
+		return fmt.Errorf("%w; nothing was pushed or submitted", err)
+	}
+	if master == base {
+		return nil
+	}
+	trees, err := e.Repo.CommitTrees(ctx, []string{string(base), string(master)})
+	if err != nil {
+		return err
+	}
+	directories := slices.Sorted(maps.Keys(plan.testedTrees))
+	before, err := e.Repo.DirectoryTrees(ctx, trees[string(base)], directories)
+	if err != nil {
+		return err
+	}
+	now, err := e.Repo.DirectoryTrees(ctx, trees[string(master)], directories)
+	if err != nil {
+		return err
+	}
+	var changed []string
+	for _, directory := range directories {
+		was, had := before[directory]
+		is, has := now[directory]
+		if had != has || was != is {
+			changed = append(changed, directory)
+		}
+	}
+	if len(changed) == 0 {
+		return nil
+	}
+	onMaster, err := e.changesOn(ctx, plan.Branch, plan.Commit, master)
+	if err != nil {
+		return err
+	}
+	return &MasterChanged{Branch: plan.Branch.ShortName(), Base: base, Master: master, Directories: changed, OnMaster: onMaster}
+}
+
 // ApplySubmit pushes the planned commit to your fork, only while the fork's
 // branch is as the plan saw it, and opens or updates the pull request.
 func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered model.Answered) (Submitted, error) {
@@ -1192,6 +1294,9 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 	// The title and description it writes are made against them as they
 	// are now, before anything is pushed (unchangedSince).
 	if err := e.unchangedSince(ctx, &plan); err != nil {
+		return Submitted{}, err
+	}
+	if err := e.masterUnchanged(ctx, plan); err != nil {
 		return Submitted{}, err
 	}
 	var result Submitted
@@ -1285,8 +1390,8 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 		if plan.Request.Note != nil {
 			branch.Note = plan.Note
 		}
-		branch.TestedBinaries = branch.TestedBinaries || plan.Request.TestedBinaries
-		branch.TestedVariants = branch.TestedVariants || plan.Request.TestedVariants
+		branch.TestedBinaries = keptStatement(branch.TestedBinaries, plan.Request.TestedBinaries, plan.Request.WithdrawBinaries, plan.testedTrees)
+		branch.TestedVariants = keptStatement(branch.TestedVariants, plan.Request.TestedVariants, plan.Request.WithdrawVariants, plan.testedTrees)
 		if err := tx.UpdateBranch(branch); err != nil {
 			return err
 		}
@@ -1770,7 +1875,35 @@ func changedPatches(ctx context.Context, worktree *git.Repository, base string, 
 // the submit that follows: ship --to
 // commit or --to check took them and dropped them (Codex's workflow review
 // of 1caa6c3d). An empty title, or a nil note, keeps what the branch has.
-func (e *Engine) KeepForSubmit(ctx context.Context, id model.BranchID, title string, note *string, testedBinaries, testedVariants bool) error {
+func (e *Engine) KeepForSubmit(ctx context.Context, id model.BranchID, title string, note *string, tested TestedSaid) error {
+	// A statement is about the files at the branch's head, as submit's is
+	// about the commit it submits (#153).
+	var trees map[string]model.ObjectID
+	if tested.Binaries || tested.Variants {
+		branch, err := e.Branch(ctx, id)
+		if err != nil {
+			return err
+		}
+		worktree, err := e.worktree(ctx, branch)
+		if err != nil {
+			return err
+		}
+		head, _, err := worktree.WorkingTree(ctx)
+		if err != nil {
+			return err
+		}
+		commitTrees, err := worktree.CommitTrees(ctx, []string{head})
+		if err != nil {
+			return err
+		}
+		analysis, err := e.analyze(ctx, branch.Base, model.ObjectID(commitTrees[head]))
+		if err != nil {
+			return err
+		}
+		if trees, err = statementTrees(ctx, worktree, commitTrees[head], analysis.Scope.Ports); err != nil {
+			return err
+		}
+	}
 	return e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		branch, err := tx.Branch(id)
 		if err != nil {
@@ -1779,8 +1912,8 @@ func (e *Engine) KeepForSubmit(ctx context.Context, id model.BranchID, title str
 		if title != "" {
 			branch.Title = title
 		}
-		branch.TestedBinaries = branch.TestedBinaries || testedBinaries
-		branch.TestedVariants = branch.TestedVariants || testedVariants
+		branch.TestedBinaries = keptStatement(branch.TestedBinaries, tested.Binaries, tested.WithdrawBinaries, trees)
+		branch.TestedVariants = keptStatement(branch.TestedVariants, tested.Variants, tested.WithdrawVariants, trees)
 		if note != nil {
 			branch.Note = strings.TrimSpace(strings.ReplaceAll(*note, "\r\n", "\n"))
 		}
@@ -1803,4 +1936,39 @@ func (e *Engine) KeepNote(ctx context.Context, plan SubmitPlan) error {
 		branch.Note = plan.Note
 		return tx.UpdateBranch(branch)
 	})
+}
+
+// TestedSaid is what a person said of the template's last two items: that
+// they tested the binaries and the variants, or, withdrawing, that they
+// didn't (--tested-binaries=false).
+type TestedSaid struct {
+	Binaries, Variants, WithdrawBinaries, WithdrawVariants bool
+}
+
+// keptStatement is a branch's statement once a submission says what it
+// says: removed where it's withdrawn, made anew about the files' trees
+// where it's said, and otherwise kept as it was, standing again should
+// the files return to what it was about (#153).
+func keptStatement(kept *model.TestedStatement, said, withdraw bool, trees map[string]model.ObjectID) *model.TestedStatement {
+	switch {
+	case withdraw:
+		return nil
+	case said:
+		return &model.TestedStatement{Trees: trees}
+	}
+	return kept
+}
+
+// statementTrees are the trees of the port directories a branch changes,
+// in a tree, which a tested statement is about.
+func statementTrees(ctx context.Context, repo *git.Repository, tree string, directories []string) (map[string]model.ObjectID, error) {
+	found, err := repo.DirectoryTrees(ctx, tree, directories)
+	if err != nil {
+		return nil, err
+	}
+	trees := make(map[string]model.ObjectID, len(found))
+	for directory, id := range found {
+		trees[directory] = model.ObjectID(id)
+	}
+	return trees, nil
 }

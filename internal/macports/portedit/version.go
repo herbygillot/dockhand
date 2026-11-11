@@ -39,7 +39,9 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 	if request.Version == "" && release.CurrentVersion != input.info.Version {
 		return archivePlan{}, fmt.Errorf("portedit: automatic selection does not match the input version")
 	}
-	if release.NoUpdate && request.Version != "" {
+	// An explicit selection implies no update only where it names the
+	// version the port is at (#165).
+	if release.NoUpdate && request.Version != "" && release.Version != input.info.Version {
 		return archivePlan{}, fmt.Errorf("portedit: explicit selection cannot imply no update")
 	}
 	if release.NoUpdate {

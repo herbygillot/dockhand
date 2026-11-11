@@ -35,7 +35,7 @@ assert() {
 		row_fail "the refusal didn't name --hand-edit: $(jq -r '.error // empty' "$refused")"
 		return
 	fi
-	if ! grep -q "^Wrote dockhand's attempt for you to finish by hand" "$ROW_DIR/out.log"; then
+	if ! grep -q "^Wrote the version change to branch .* for you to finish" "$ROW_DIR/out.log"; then
 		row_fail "update --hand-edit wrote no attempt: $(sed -n "/^\\$ dockhand update $(port) -b $C14_BRANCH --hand-edit/,/^\\[exit/p" "$ROW_DIR/out.log" | tail -3 | tr '\n' ' ')"
 		return
 	fi

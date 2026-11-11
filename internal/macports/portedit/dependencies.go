@@ -450,10 +450,31 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 			selected.Version, selected.Revision, selected.Epoch, selected.Options["git.branch"], request.Release.Version, input.info.Epoch, request.Release.Tag)
 	}
 	for name, wanted := range values {
+		// The block as written stands where its rows are the new lock's in
+		// another order (depblock.Plan.Apply): omnidiff's crates were
+		// Cargo.lock's, text order against version order, and update
+		// refused them (#163).
 		actual, errs := syntax.ListValues(selected.Options[name])
-		if len(errs) > 0 || !slices.Equal(actual, wanted) {
-			return Result{}, ErrFidelity.Because("evaluated %s differs from regenerated declarations", name)
+		if len(errs) > 0 {
+			return result.versionOnly(name), ErrFidelity.Because("evaluated %s differs from regenerated declarations", name)
 		}
+		if depblock.Equivalent(name, actual, wanted) {
+			continue
+		}
+		mismatch, err := depblock.Mismatched(name, actual, wanted)
+		if err != nil || mismatch.Count == 0 {
+			return result.versionOnly(name), ErrFidelity.Because("evaluated %s differs from regenerated declarations", name)
+		}
+		lock := "Cargo.lock"
+		if name == depblock.Go {
+			lock = "go.sum"
+		}
+		differ := fmt.Sprintf("%d entries differ", mismatch.Count)
+		if mismatch.Count == 1 {
+			differ = "1 entry differs"
+		}
+		return result.versionOnly(name), ErrFidelity.Because("The Portfile's %s entries don't match the new %s: %s; first difference: %s. Review and correct %s before continuing.",
+			name, lock, differ, mismatch.First, name)
 	}
 	family, err := input.familySnapshot(ctx, s.Ports)
 	if err != nil {
@@ -673,4 +694,12 @@ func (s *Service) portGroupChecksums(ctx context.Context, input *sourceInput) er
 		}
 	}
 	return nil
+}
+
+// versionOnly is a refused regeneration's version step, the Portfile with
+// its version written and the block as it was, for a hand edit's attempt
+// to start from: update omnidiff --hand-edit, refused on its crates, had
+// only the version literal to set, couldn't, and wrote nothing (#166).
+func (r *Result) versionOnly(block string) Result {
+	return Result{Versioned: r.portfileAfter(), Left: []ChecksumLeft{{Kind: LeftDeclaration, What: block, Reason: "it wasn't regenerated from the new lock"}}}
 }

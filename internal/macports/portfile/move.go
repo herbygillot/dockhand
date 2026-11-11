@@ -8,11 +8,62 @@ import (
 	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
+// Unrewritable is a setup naming the moved repository in words dockhand
+// doesn't edit in place: its Command, and where it would point it, To, as
+// that command writes it.
+type Unrewritable struct{ Command, To string }
+
+func (u *Unrewritable) Error() string {
+	what := "repository"
+	if u.Command == "go.setup" {
+		what = "module path"
+	}
+	return fmt.Sprintf("Dockhand can't rewrite this %s %s because it uses Tcl substitution. Set it to %s by hand", u.Command, what, u.To)
+}
+
+// SetupCommand is the command that names a GitHub repository, as
+// owner/project, in a Portfile: go.setup where a go.setup's module path
+// is on github.com and names it, else github.setup, which every message
+// about the repository names (#167).
+func SetupCommand(src []byte, repository string) string {
+	script, errs := syntax.Parse(src)
+	if len(errs) > 0 {
+		return "github.setup"
+	}
+	for _, item := range script.Items {
+		cmd, ok := item.(syntax.Command)
+		if !ok {
+			continue
+		}
+		if name, _ := cmd.Name(src); name == "go.setup" && len(cmd.Words) >= 2 {
+			if module, literal := cmd.Words[1].Literal(src); !literal || goRepository(module, repository) {
+				return "go.setup"
+			}
+		}
+	}
+	return "github.setup"
+}
+
+// goRepository reports whether a Go module path is a GitHub repository's,
+// owner/project, or a package within it.
+func goRepository(module, repository string) bool {
+	rest, ok := strings.CutPrefix(module, "github.com/")
+	if !ok {
+		return false
+	}
+	parts := strings.SplitN(rest, "/", 3)
+	return len(parts) >= 2 && strings.EqualFold(parts[0]+"/"+parts[1], repository)
+}
+
 // MoveGitHub points each github.setup naming a GitHub repository, from,
 // as owner/project, at another, to: its first two words, where each is a
 // bare literal, as `github.setup Byron gitoxide 0.45.0 v` becomes
-// `github.setup GitoxideLabs gitoxide 0.45.0 v`. It reports how many it
-// moved, and refuses one naming from in words it can't edit in place.
+// `github.setup GitoxideLabs gitoxide 0.45.0 v`; and each go.setup whose
+// literal module path is the repository's, its owner and project, any
+// package path after them kept, as `go.setup github.com/Tufin/oasdiff`
+// becomes `go.setup github.com/oasdiff/oasdiff` (#167). It reports how many
+// it moved, and refuses one naming from in words it can't edit in place
+// (Unrewritable).
 func MoveGitHub(src []byte, from, to string) ([]byte, int, error) {
 	fromOwner, fromProject, ok := strings.Cut(from, "/")
 	toOwner, toProject, ok2 := strings.Cut(to, "/")
@@ -46,7 +97,21 @@ func MoveGitHub(src []byte, from, to string) ([]byte, int, error) {
 						edits = append(edits, textedit.Edit{Span: cmd.Words[2].Span, New: []byte(toProject)})
 					}
 				case !ownerLiteral || !projectLiteral:
-					refused = ErrUnsupported.Because("a github.setup names its repository by substitution, which dockhand doesn't edit; point it at %s yourself", to)
+					refused = &Unrewritable{Command: "github.setup", To: to}
+				}
+			}
+			if name, _ := cmd.Name(src); name == "go.setup" && len(cmd.Words) >= 2 {
+				module, literal := cmd.Words[1].Literal(src)
+				switch {
+				case literal && goRepository(module, from):
+					moved++
+					parts := strings.SplitN(module, "/", 4)
+					parts[1], parts[2] = toOwner, toProject
+					if next := strings.Join(parts, "/"); next != module {
+						edits = append(edits, textedit.Edit{Span: cmd.Words[1].Span, New: []byte(next)})
+					}
+				case !literal:
+					refused = &Unrewritable{Command: "go.setup", To: "github.com/" + to}
 				}
 			}
 			for _, body := range bodies(src, cmd) {

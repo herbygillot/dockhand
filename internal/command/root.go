@@ -120,6 +120,12 @@ func RunWith(ctx context.Context, line settings.Invocation, streams term.Streams
 			continue
 		}
 		for _, shell := range cmd.Commands() {
+			// Cobra's own help sent a Mac's user to Homebrew, and its zsh
+			// recipe failed without compinit (Codex's new-user walk of
+			// release/v0.8.0).
+			if long, ok := completionHelp[shell.Name()]; ok {
+				shell.Long = long
+			}
 			run := shell.RunE
 			shell.RunE = func(cmd *cobra.Command, args []string) error {
 				streams.Unwrapped()
@@ -366,4 +372,54 @@ func display(env []string) term.Display {
 		}
 	}
 	return d
+}
+
+// completionHelp is each shell's completion help, as a MacPorts install of
+// dockhand and one from source each set it up: the port writes all three
+// scripts under /opt/local/share.
+var completionHelp = map[string]string{
+	"zsh": `Writes dockhand's zsh completion script.
+
+Installed with MacPorts, dockhand's script is already in
+/opt/local/share/zsh/site-functions, where MacPorts' own zsh looks. Apple's
+/bin/zsh doesn't: add the directory to fpath in ~/.zshrc, ahead of compinit:
+
+  fpath=(/opt/local/share/zsh/site-functions $fpath)
+  autoload -U compinit && compinit
+
+Built from source, write the script to a directory of your own and put that
+on fpath the same way:
+
+  mkdir -p ~/.zfunc && dockhand completion zsh > ~/.zfunc/_dockhand
+  fpath=(~/.zfunc $fpath)
+
+Completion takes effect in a new shell.`,
+	"bash": `Writes dockhand's bash completion script.
+
+Installed with MacPorts, dockhand's script is already in
+/opt/local/share/bash-completion/completions, which the bash-completion
+port loads:
+
+  sudo port install bash-completion
+
+then, in ~/.bash_profile:
+
+  [ -f /opt/local/etc/profile.d/bash_completion.sh ] && . /opt/local/etc/profile.d/bash_completion.sh
+
+Built from source, with bash-completion loaded, write the script to your own
+completions directory:
+
+  mkdir -p ~/.local/share/bash-completion/completions
+  dockhand completion bash > ~/.local/share/bash-completion/completions/dockhand
+
+Completion takes effect in a new shell.`,
+	"fish": `Writes dockhand's fish completion script.
+
+Installed with MacPorts, dockhand's script is already in
+/opt/local/share/fish/vendor_completions.d, which fish loads by itself:
+nothing to set up.
+
+Built from source, write the script to your own completions directory:
+
+  dockhand completion fish > ~/.config/fish/completions/dockhand.fish`,
 }

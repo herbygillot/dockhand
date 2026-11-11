@@ -130,6 +130,37 @@ func (r *Repository) CommitTrees(ctx context.Context, commits []string) (map[str
 	return trees, nil
 }
 
+// DirectoryTrees are the tree IDs of directories within a tree, by
+// directory, in one Git invocation; a directory the tree lacks is left
+// out.
+func (r *Repository) DirectoryTrees(ctx context.Context, tree string, directories []string) (map[string]string, error) {
+	found := make(map[string]string, len(directories))
+	if len(directories) == 0 {
+		return found, nil
+	}
+	if !ValidObjectID(tree) {
+		return nil, fmt.Errorf("git: invalid tree ID %q", tree)
+	}
+	queries := make([]string, len(directories))
+	for i, directory := range directories {
+		queries[i] = tree + ":" + directory
+	}
+	out, err := r.run(ctx, []byte(strings.Join(queries, "\n")+"\n"), nil, "cat-file", "--batch-check=%(objectname) %(objecttype)")
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
+	if len(lines) != len(queries) {
+		return nil, fmt.Errorf("git: incomplete directory lookup")
+	}
+	for i, directory := range directories {
+		if fields := strings.Fields(lines[i]); len(fields) == 2 && fields[1] == "tree" && ValidObjectID(fields[0]) {
+			found[directory] = fields[0]
+		}
+	}
+	return found, nil
+}
+
 // SHA1BlobID is the object ID data has as a blob in a repository of
 // Git's SHA-1 object format, macports-ports' among them, worked out
 // without a repository or a process: what one file's contents are where

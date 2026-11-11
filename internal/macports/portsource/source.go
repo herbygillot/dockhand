@@ -159,14 +159,24 @@ func Interpret(port macports.PortInfo, purpose Purpose) (Spec, error) {
 	if trimURL(spec.Livecheck.URL) == trimURL(expected) && spec.Livecheck.Type == "regex" {
 		return spec, nil
 	}
-	if err := readListing(port, &spec.Livecheck); err != nil {
+	return spec.Overridden(port)
+}
+
+// Overridden is the spec with the port's livecheck run as written, the
+// maintainer's own definition of the latest version, read as Base reads
+// it. Discovery takes it for a livecheck that isn't the PortGroup's
+// default, and for a default URL whose regex matched no catalog tag, as
+// pinact's {v(\d+\.\d+\.\d+)$} over the tags page matches its commit
+// lines and never the archive link a tag is matched as (MatchText).
+func (s Spec) Overridden(port macports.PortInfo) (Spec, error) {
+	if err := readListing(port, &s.Livecheck); err != nil {
 		return Spec{}, err
 	}
 	if standard, err := port.LivecheckStandard(); err != nil || !standard {
 		return Spec{}, ErrUnsupported.Because("the port's livecheck has custom hooks; name the version to update to")
 	}
-	spec.Livecheck.Overridden = true
-	return spec, nil
+	s.Livecheck.Overridden = true
+	return s, nil
 }
 
 func (s Spec) MatchText(tag string) (string, error) {

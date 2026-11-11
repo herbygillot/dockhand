@@ -254,6 +254,10 @@ type Update struct {
 	// discovery follows unsaid (field testing, 2026-10-02). Empty where
 	// it's the same, or couldn't be asked.
 	Renamed string
+	// Setup is the command that names the release's repository in the
+	// Portfile, github.setup or go.setup, which what's said of a move
+	// names (#167).
+	Setup string
 	// Followed is the repository github.setup was pointed at, where the
 	// update followed a move (FollowMoves).
 	Followed string
@@ -578,7 +582,7 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		// (field testing's batch 10, finding 1).
 		if update.Renamed != "" && update.Upstream != nil {
 			moved := movedChange(update.Release.Repository, update.Renamed, update.Followed != "", e.oldOwnerNow(ctx, update.Release.Repository, update.Renamed, update.Followed != ""),
-				update.Port, portRename(update.Port, update.Release.Repository, update.Renamed, update.Upstream.Changes))
+				update.Port, portRename(update.Port, update.Release.Repository, update.Renamed, update.Upstream.Changes), update.Setup)
 			// A port's moves = "follow" follows no port rename, which a
 			// renamed project shows only once its archives are read: the
 			// follow made holds for a look (the person's rule, 2026-10-29).
@@ -753,6 +757,11 @@ func (e *Engine) followMoves(ctx context.Context, request UpdateRequest, worktre
 	}
 	if len(result.Files) > 0 {
 		update.Renamed = e.renamed(ctx, *update.Release)
+		for _, file := range result.Files {
+			if update.Renamed != "" && path.Base(file.Path) == "Portfile" && !file.Delete {
+				update.Setup = portfile.SetupCommand(file.After, update.Release.Repository)
+			}
+		}
 		if update.Renamed == "" || !request.FollowMoves || request.standingFollow && portRename(update.Port, update.Release.Repository, update.Renamed, nil) != "" {
 			return false, nil
 		}
@@ -762,7 +771,7 @@ func (e *Engine) followMoves(ctx context.Context, request UpdateRequest, worktre
 			}
 			moved, n, err := portfile.MoveGitHub(file.After, update.Release.Repository, update.Renamed)
 			if err != nil {
-				return false, fmt.Errorf("%s: --follow-moves: %w", request.Port, err)
+				return false, followError(request.Port, err)
 			}
 			if n > 0 {
 				// The tree is made again once every file is final
@@ -783,9 +792,10 @@ func (e *Engine) followMoves(ctx context.Context, request UpdateRequest, worktre
 	if err != nil {
 		return false, err
 	}
+	update.Setup = portfile.SetupCommand(text, update.Release.Repository)
 	moved, n, err := portfile.MoveGitHub(text, update.Release.Repository, renamed)
 	if err != nil {
-		return false, fmt.Errorf("%s: --follow-moves: %w", request.Port, err)
+		return false, followError(request.Port, err)
 	}
 	if !file.Exists || n == 0 {
 		return false, nil
@@ -1064,6 +1074,16 @@ func editRecorded(branch model.BranchID, id model.EditID) func(store.Reader) boo
 // names it otherwise than the release was found by; empty where it's the
 // same, it isn't GitHub's, or GitHub couldn't be asked, which is no
 // reason to stop an update.
+
+// followError is why --follow-moves couldn't point the Portfile at the
+// repository, with the way on where it's a setup to set by hand.
+func followError(port string, err error) error {
+	if words := new(portfile.Unrewritable); errors.As(err, &words) {
+		return refusal.New(refusal.Unsupported, "%s, then run dockhand update %s again.", words, port)
+	}
+	return fmt.Errorf("%s: --follow-moves: %w", port, err)
+}
+
 // movedChange is the comparison's finding that GitHub answers the
 // release's repository by another name. A new owner is said as a transfer,
 // not a rename, since a new owner's release is a person's to trust, more
@@ -1077,28 +1097,34 @@ func editRecorded(branch model.BranchID, id model.EditID) func(store.Reader) boo
 // rename, renamed the port's new name, its line leading with dockhand
 // rename, where any other rename's leads with --follow-moves and names
 // rename after it (the person's rule, 2026-10-29).
-func movedChange(from, to string, followed bool, owner, port, renamed string) model.UpstreamChange {
+func movedChange(from, to string, followed bool, owner, port, renamed, setup string) model.UpstreamChange {
 	change := model.UpstreamChange{Kind: "moved", Rule: upstreamMovedRule, Subject: to, Hold: !followed, Class: model.Introduced}
+	setup = cmp.Or(setup, "github.setup")
 	fromOwner, _, _ := strings.Cut(from, "/")
 	toOwner, toName, _ := strings.Cut(to, "/")
 	if renamed != "" {
 		change.Rule = upstreamRenamedPortRule
 	}
 	switch {
+	case followed && setup == "go.setup":
+		change.Message = fmt.Sprintf("upstream moved: GitHub redirects %s to %s; go.setup now uses github.com/%s (--follow-moves)", from, to, to)
+		if renamed != "" {
+			change.Message += fmt.Sprintf("; the port keeps its name, %s, which dockhand rename %s %s changes", port, port, renamed)
+		}
 	case followed && renamed != "":
 		change.Message = fmt.Sprintf("upstream renamed: GitHub redirects %s to %s, and github.setup now names it (--follow-moves); the port keeps its name, %s, which dockhand rename %s %s changes", from, to, port, port, renamed)
 	case followed:
 		change.Message = fmt.Sprintf("upstream moved: GitHub redirects %s to %s, and github.setup now names it (--follow-moves)", from, to)
 	case renamed != "":
-		change.Message = fmt.Sprintf("upstream renamed: GitHub redirects %s to %s, and the port is named after it. Use dockhand rename %s %s to rename the port; update --follow-moves keeps its name, %s, and updates github.setup", from, to, port, renamed, port)
+		change.Message = fmt.Sprintf("upstream renamed: GitHub redirects %s to %s, and the port is named after it. Use dockhand rename %s %s to rename the port; update --follow-moves keeps its name, %s, and updates %s", from, to, port, renamed, port, setup)
 	case !strings.EqualFold(fromOwner, toOwner):
 		change.Rule = upstreamTransferredRule
-		change.Message = fmt.Sprintf("upstream moved from %s to %s: GitHub redirects %s to %s. Review the new owner before trusting its releases. Use update --follow-moves to update github.setup", fromOwner, toOwner, from, to)
+		change.Message = fmt.Sprintf("upstream moved from %s to %s: GitHub redirects %s to %s. Review the new owner before trusting its releases. After reviewing the new owner, run dockhand update %s --follow-moves to update %s", fromOwner, toOwner, from, to, port, setup)
 		if owner != "" {
 			change.Message += ". " + owner
 		}
 	default:
-		change.Message = fmt.Sprintf("upstream renamed: GitHub redirects %s to %s. Use update --follow-moves to update github.setup, or dockhand rename %s %s to rename the port with it", from, to, port, macports.RenamedAfter(port, toName))
+		change.Message = fmt.Sprintf("upstream renamed: GitHub redirects %s to %s. Use update --follow-moves to update %s, or dockhand rename %s %s to rename the port with it", from, to, setup, port, macports.RenamedAfter(port, toName))
 	}
 	return change
 }

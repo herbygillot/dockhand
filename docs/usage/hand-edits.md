@@ -225,8 +225,16 @@ dockhand update jq --hand-edit
 ```
 
 Where the update can reach its edit attempt, this writes the best version
-change, revision reset, and checksum refresh it can make. Read everything it
-says it left undone. The result is your manual edit to finish, without
+change, revision reset, and checksum refresh it can make, and names the branch
+it wrote to and what it did not refresh, such as `cargo.crates` where the
+crates could not be regenerated from the new lock:
+
+```text
+Wrote the version change to branch omnidiff-0.4.0 for you to finish. cargo.crates and the distfile checksums were not refreshed.
+```
+
+Read everything it says it left undone. If no attempt could be written, it says
+"No branch was started, and no partial update was written." The result is your manual edit to finish, without
 Dockhand's usual fidelity proof. The original refusal is recorded and shown in
 status, the tidy plan, and the pull request description; unattended publication
 holds on it. `ship`, `bump`, and `serve` do not take this path. Stop if you

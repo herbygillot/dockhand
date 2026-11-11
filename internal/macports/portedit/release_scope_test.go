@@ -299,5 +299,22 @@ func TestARefusalAfterTheVersionStartsTheAttemptFromIt(t *testing.T) {
 	attempt, err := s.HandAttempt(t.Context(), r, refused)
 	require.NoError(t, err)
 	require.Contains(t, string(attempt.Files[0].After), "version 1.2.4")
-	require.Equal(t, []ChecksumLeft{{Kind: LeftDeclaration, What: "the checksums", Reason: "calculated checksum algorithm"}}, attempt.Left)
+	require.Equal(t, []ChecksumLeft{{Kind: LeftDeclaration, What: "the distfile checksums", Reason: "calculated checksum algorithm"}}, attempt.Left)
+}
+
+// A regeneration refused after the version step, as omnidiff's crates
+// were, gives the attempt the Portfile with its version written and says
+// the block it left as it was: the refusal came with nothing, and update
+// --hand-edit wrote nothing (#166).
+func TestARefusedRegenerationGivesTheAttemptItsVersion(t *testing.T) {
+	t.Parallel()
+	s, r, _ := archiveFixture(t, "version 1.2.3\nrevision 0\nmaster_sites @SITE@/${version}\nchecksums sha256 aaaa size 2\n")
+	versioned, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	refused := versioned.versionOnly("cargo.crates")
+	require.Contains(t, string(refused.Versioned), "version 1.2.4")
+	attempt, err := s.HandAttempt(t.Context(), r, refused)
+	require.NoError(t, err)
+	require.Contains(t, string(attempt.Files[0].After), "version 1.2.4")
+	require.Equal(t, []ChecksumLeft{{Kind: LeftDeclaration, What: "cargo.crates", Reason: "it wasn't regenerated from the new lock"}}, attempt.Left)
 }

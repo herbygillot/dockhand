@@ -123,8 +123,12 @@ func TestResolveDoesNotHideFailuresOrAmbiguity(t *testing.T) {
 	service := serviceWithCatalog(tagFunc(func(_ context.Context, _ string, tag string) (forge.Tag, error) {
 		return forge.Tag{Name: tag, Commit: strings.Repeat("a", 40)}, nil
 	}))
-	_, err := service.Resolve(t.Context(), githubPort(), "v1.0")
-	require.ErrorContains(t, err, "already at version")
+	// The release the port is at is current, as discovery says it, not an
+	// error (#165).
+	current, err := service.Resolve(t.Context(), githubPort(), "v1.0")
+	require.NoError(t, err)
+	require.True(t, current.NoUpdate)
+	require.Equal(t, githubPort().Version, current.Version)
 	port := githubPort()
 	port.Options["git.branch"] = "different"
 	_, err = service.Resolve(t.Context(), port, "2.0")
@@ -196,8 +200,11 @@ func TestExplicitArchiveReleaseNeedsNoForgeButRetainsSourceChecks(t *testing.T) 
 	require.Error(t, service.Check(t.Context(), changed, release))
 	_, err = service.Resolve(t.Context(), port, "")
 	require.Error(t, err, "archive preparation does not invent automatic discovery")
-	_, err = service.Resolve(t.Context(), port, "1.2.3")
-	require.Error(t, err)
+	// The version the port is at is current, not an error (#165).
+	current, err := service.Resolve(t.Context(), port, "1.2.3")
+	require.NoError(t, err)
+	require.True(t, current.NoUpdate)
+	require.NoError(t, service.Check(t.Context(), port, current))
 	release.Commit = strings.Repeat("a", 40)
 	require.Error(t, service.Check(t.Context(), port, release))
 }

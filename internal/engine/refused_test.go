@@ -24,7 +24,7 @@ func TestAnEditDockhandCantMakeSaysWhyAndWhatWorks(t *testing.T) {
 
 	err := byHand(unlocated, UpdateRequest{Action: model.EditUpdate, Port: "git"}, "dockhand/git-ab12", false)
 	require.EqualError(t, err, `Could not update git automatically: the checksums for git-htmldocs-2.56.0.tar.xz can't be found in the Portfile to edit: no command written in the Portfile makes it, as an eval'd one isn't
-Kept: the branch, unchanged.`)
+Kept: dockhand/git-ab12, unchanged.`)
 	require.Equal(t, refusal.Unsupported, refusal.KindOf(err))
 	require.Equal(t, []refusal.Next{{External: "edit the version, then run dockhand checksums git to print the checksums to copy into the Portfile"}, edit,
 		{External: "or dockhand update git --hand-edit, which writes dockhand's attempt for you to finish by hand"}}, refusal.Of(err).Next, "an attended update names --hand-edit last")
@@ -54,6 +54,15 @@ Kept: dockhand/git-ab12, with nothing changed.`)
 	err = byHand(ErrFidelity.Because("rust-src.revision changed"), UpdateRequest{Action: model.EditRevbump, Port: "rust"}, "dockhand/rust-ab12", true)
 	require.EqualError(t, err, "Could not bump rust's revision automatically: rust-src.revision changed\nKept: dockhand/rust-ab12, with nothing changed.")
 	require.Equal(t, []refusal.Next{{External: "raise rust's revision by one by hand"}, {Verb: refusal.VerbEdit, Args: []string{"rust"}}}, refusal.Of(err).Next)
+
+	// --hand-edit's attempt that couldn't be written started no branch,
+	// and says so, where it named "the branch, unchanged"; one on a branch
+	// that was there names it (#166).
+	crates := ErrFidelity.Because("The Portfile's cargo.crates entries don't match the new Cargo.lock")
+	err = byHand(crates, UpdateRequest{Action: model.EditUpdate, Port: "omnidiff", HandEdit: true, Start: &StartRequest{}}, "", false)
+	require.EqualError(t, err, "Could not update omnidiff automatically: The Portfile's cargo.crates entries don't match the new Cargo.lock\nNo branch was started, and no partial update was written.")
+	err = byHand(crates, UpdateRequest{Action: model.EditUpdate, Port: "omnidiff", HandEdit: true}, "omnidiff-0.4.0", false)
+	require.ErrorContains(t, err, "\nKept: omnidiff-0.4.0, unchanged.")
 
 	// Started, with no edit kept or one kept, an update that failed says
 	// which; one that started nothing is as it came.

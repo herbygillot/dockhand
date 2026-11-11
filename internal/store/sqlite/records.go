@@ -30,7 +30,7 @@ func (t *tx) scanBranch(row interface{ Scan(...any) error }) (model.Branch, erro
 	if err := row.Scan(&b.ID, &b.Name, &b.Base, &b.Worktree, &managed, &b.Title, &b.State, &prRepository, &prNumber, &prHead, &prPushed, &prBody, &prDraft, &prObserved, &prAdopted, &created, &b.Origin, &b.Note, &ended, &ports, &b.CleanKept, &forgotten, &closes, &prAuthor, &tested); err != nil {
 		return model.Branch{}, storageError(err)
 	}
-	b.TestedBinaries, b.TestedVariants = slices.Contains(strings.Fields(tested), "binaries"), slices.Contains(strings.Fields(tested), "variants")
+	b.TestedBinaries, b.TestedVariants = testedStatements(tested)
 	if closes != "" {
 		b.Closes = strings.Fields(closes)
 	}
@@ -983,15 +983,39 @@ func boolInt(b bool) int {
 	return 0
 }
 
-// testedWords are a branch's tested statements as its row keeps them,
-// "binaries variants", either, or none.
+// tested are a branch's tested statements as its row keeps them, each
+// with the trees it's about (#153).
+type tested struct {
+	Binaries *model.TestedStatement `json:"binaries,omitempty"`
+	Variants *model.TestedStatement `json:"variants,omitempty"`
+}
+
+// testedWords are a branch's tested statements as its row keeps them: none
+// as empty, else JSON.
 func testedWords(b model.Branch) string {
-	var words []string
-	if b.TestedBinaries {
-		words = append(words, "binaries")
+	if b.TestedBinaries == nil && b.TestedVariants == nil {
+		return ""
 	}
-	if b.TestedVariants {
-		words = append(words, "variants")
+	data, _ := json.Marshal(tested{Binaries: b.TestedBinaries, Variants: b.TestedVariants})
+	return string(data)
+}
+
+// testedStatements read a row's tested statements: JSON, or the words
+// "binaries variants" a row kept before #153, which are statements with
+// no trees, standing for nothing.
+func testedStatements(words string) (binaries, variants *model.TestedStatement) {
+	if strings.HasPrefix(words, "{") {
+		var kept tested
+		if json.Unmarshal([]byte(words), &kept) == nil {
+			return kept.Binaries, kept.Variants
+		}
+		return nil, nil
 	}
-	return strings.Join(words, " ")
+	if slices.Contains(strings.Fields(words), "binaries") {
+		binaries = &model.TestedStatement{}
+	}
+	if slices.Contains(strings.Fields(words), "variants") {
+		variants = &model.TestedStatement{}
+	}
+	return binaries, variants
 }

@@ -955,18 +955,24 @@ func TestAnUpdateSaysItsRepositoryWasRenamed(t *testing.T) {
 	moved := slices.IndexFunc(update.Upstream.Changes, func(c model.UpstreamChange) bool { return c.Rule == upstreamTransferredRule })
 	require.GreaterOrEqual(t, moved, 0, "%+v", update.Upstream.Changes)
 	require.True(t, update.Upstream.Changes[moved].Hold)
-	require.Equal(t, "upstream moved from returntocorp to semgrep: GitHub redirects returntocorp/semgrep to semgrep/semgrep. Review the new owner before trusting its releases. Use update --follow-moves to update github.setup", update.Upstream.Changes[moved].Message)
+	require.Equal(t, "upstream moved from returntocorp to semgrep: GitHub redirects returntocorp/semgrep to semgrep/semgrep. Review the new owner before trusting its releases. After reviewing the new owner, run dockhand update jq --follow-moves to update github.setup", update.Upstream.Changes[moved].Message)
 
 	// The same owner's rename is said as one, naming rename after
 	// --follow-moves; a port's rename leads with rename (the person's
 	// rule, 2026-10-29).
 	require.Equal(t, model.UpstreamChange{Kind: "moved", Rule: upstreamMovedRule, Subject: "jqlang/jqtools", Hold: true, Class: model.Introduced,
 		Message: "upstream renamed: GitHub redirects jqlang/jq-tools to jqlang/jqtools. Use update --follow-moves to update github.setup, or dockhand rename jq jqtools to rename the port with it"},
-		movedChange("jqlang/jq-tools", "jqlang/jqtools", false, "", "jq", ""))
+		movedChange("jqlang/jq-tools", "jqlang/jqtools", false, "", "jq", "", ""))
 	require.Equal(t, model.UpstreamChange{Kind: "moved", Rule: upstreamRenamedPortRule, Subject: "goplus/xgo", Hold: true, Class: model.Introduced,
 		Message: "upstream renamed: GitHub redirects goplus/gop to goplus/xgo, and the port is named after it. Use dockhand rename goplus xgo to rename the port; update --follow-moves keeps its name, goplus, and updates github.setup"},
-		movedChange("goplus/gop", "goplus/xgo", false, "", "goplus", "xgo"))
-	followed := movedChange("goplus/gop", "goplus/xgo", true, "", "goplus", "xgo")
+		movedChange("goplus/gop", "goplus/xgo", false, "", "goplus", "xgo", ""))
+	// A go.setup is named as the command the Portfile uses, held and
+	// followed (#167).
+	require.Equal(t, "upstream moved from Tufin to oasdiff: GitHub redirects Tufin/oasdiff to oasdiff/oasdiff. Review the new owner before trusting its releases. After reviewing the new owner, run dockhand update oasdiff --follow-moves to update go.setup",
+		movedChange("Tufin/oasdiff", "oasdiff/oasdiff", false, "", "oasdiff", "", "go.setup").Message)
+	require.Equal(t, "upstream moved: GitHub redirects Tufin/oasdiff to oasdiff/oasdiff; go.setup now uses github.com/oasdiff/oasdiff (--follow-moves)",
+		movedChange("Tufin/oasdiff", "oasdiff/oasdiff", true, "", "oasdiff", "", "go.setup").Message)
+	followed := movedChange("goplus/gop", "goplus/xgo", true, "", "goplus", "xgo", "")
 	require.False(t, followed.Hold, "followed, the person's choice, nothing holds")
 	require.Equal(t, "upstream renamed: GitHub redirects goplus/gop to goplus/xgo, and github.setup now names it (--follow-moves); the port keeps its name, goplus, which dockhand rename goplus xgo changes", followed.Message)
 
@@ -1229,8 +1235,8 @@ func TestAMovesOldOwnerNameIsReadNow(t *testing.T) {
 	require.Empty(t, e.oldOwnerNow(t.Context(), "elder/yabai", "asmvik/yabai", false), "an account older than the repository: a transfer, as before")
 	require.Empty(t, e.oldOwnerNow(t.Context(), "koekeishiya/yabai", "asmvik/yabai", true), "followed")
 	require.Empty(t, e.oldOwnerNow(t.Context(), "asmvik/yabai-old", "asmvik/yabai", false), "the same owner's rename")
-	moved := movedChange("koekeishiya/yabai", "asmvik/yabai", false, "The old name, koekeishiya, now belongs to another account", "yabai", "")
-	require.Contains(t, moved.Message, "Use update --follow-moves to update github.setup. The old name, koekeishiya, now belongs to another account")
+	moved := movedChange("koekeishiya/yabai", "asmvik/yabai", false, "The old name, koekeishiya, now belongs to another account", "yabai", "", "")
+	require.Contains(t, moved.Message, "run dockhand update yabai --follow-moves to update github.setup. The old name, koekeishiya, now belongs to another account")
 }
 
 // The lint findings on the lines an update writes are fixed, and said
