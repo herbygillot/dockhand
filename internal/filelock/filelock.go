@@ -196,6 +196,15 @@ func TryAcquire(path string) (*os.File, error) {
 	return file, nil
 }
 
+// Release gives up a lock TryAcquire took, for every holder of its open
+// file, then closes it: a child forked anywhere in the process holds the
+// file until it execs, and a close alone left the lock with it for that
+// moment, so the next taker was refused.
+func Release(file *os.File) error {
+	unlockErr := syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+	return errors.Join(unlockErr, file.Close())
+}
+
 type carriedKey struct{}
 
 // Carry marks a held lock's file to be handed to every child the work

@@ -52,7 +52,9 @@ func (r *Repository) WithHeadLock(ctx context.Context, head string, fn func(cont
 	if err != nil {
 		return err
 	}
-	defer func() { err = errors.Join(err, file.Close()) }()
+	// A normal return releases it for every holder of the file; a holder
+	// killed releases nothing, and a child it started keeps it.
+	defer func() { err = errors.Join(err, filelock.Release(file)) }()
 	// The holder says who it is, for a refusal to name.
 	if self, selfErr := procid.Self(); selfErr == nil {
 		if err := file.Truncate(0); err != nil {
