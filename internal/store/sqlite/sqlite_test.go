@@ -1628,6 +1628,96 @@ func TestADamagedDatabaseIsSaidPlainly(t *testing.T) {
 	}
 }
 
+// A damaged database names the newest copy a migration kept beside it as
+// a candidate, with its date and what putting it back loses; a copy still
+// being made, or a name that isn't a copy, is never named, and none is
+// opened to find out (#214).
+func TestADamagedDatabaseNamesTheCopyKeptBeforeAMigration(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "dockhand.db")
+	require.NoError(t, os.WriteFile(path, []byte(strings.Repeat("not a database at all\n", 400)), 0o600))
+	older, newer := path+".schema-58", path+".schema-59"
+	for i, copy := range []string{older, newer, path + ".schema-59" + partialCopy + "1", path + ".schema-x"} {
+		require.NoError(t, os.WriteFile(copy, []byte("kept"), 0o600))
+		at := time.Date(2026, 11, 1+i, 9, 30, 0, 0, time.Local)
+		require.NoError(t, os.Chtimes(copy, at, at))
+	}
+	_, err := Open(t.Context(), path, Options{})
+	require.ErrorIs(t, err, store.ErrUnavailable)
+	require.ErrorContains(t, err, "Put back a copy dockhand backup made, or the copy kept before a migration, "+newer+", from 2026-11-02 09:30, which loses what was recorded since (dockhand usage recovery says how)")
+	kept, err := os.ReadFile(newer)
+	require.NoError(t, err)
+	require.Equal(t, "kept", string(kept), "the candidate isn't opened")
+}
+
+// What holds the name of the copy a migration keeps has to be a usable
+// copy, made now or found there: an empty file, a directory, a link that
+// loops, and one that dangles each stood as the copy, and the migration
+// went ahead with nothing to go back to. Each now refuses, names the path,
+// leaves it as it is, and migrates nothing (#214).
+func TestAMigrationRefusesACopyItCantGoBackTo(t *testing.T) {
+	t.Parallel()
+	for name, place := range map[string]func(t *testing.T, copy string){
+		"an empty file": func(t *testing.T, copy string) { require.NoError(t, os.WriteFile(copy, nil, 0o600)) },
+		"a directory":   func(t *testing.T, copy string) { require.NoError(t, os.Mkdir(copy, 0o700)) },
+		"a looping link": func(t *testing.T, copy string) {
+			require.NoError(t, os.Symlink(filepath.Base(copy), copy))
+		},
+		"a dangling link": func(t *testing.T, copy string) {
+			require.NoError(t, os.Symlink(filepath.Join(filepath.Dir(copy), "nowhere"), copy))
+		},
+	} {
+		path := schemaAt(t, schemaVersion-1, schema23Records)
+		copy := path + fmt.Sprintf(".schema-%d", schemaVersion-1)
+		place(t, copy)
+		before, err := os.Lstat(copy)
+		require.NoError(t, err)
+
+		_, err = Open(t.Context(), path, Options{})
+		require.ErrorIs(t, err, store.ErrUnavailable, name)
+		require.ErrorContains(t, err, copy+", the copy of "+path+" kept before migrating it", name)
+		require.ErrorContains(t, err, "isn't usable", name)
+		require.ErrorContains(t, err, "nothing was migrated; move it aside and run the command again", name)
+		after, err := os.Lstat(copy)
+		require.NoError(t, err, name)
+		require.Equal(t, before.Mode(), after.Mode(), "%s: left as it is", name)
+		require.NoFileExists(t, filepath.Join(filepath.Dir(copy), "nowhere"), name)
+		db, err := sql.Open("sqlite", path)
+		require.NoError(t, err)
+		version, _, err := schemaOf(t.Context(), db)
+		require.NoError(t, err)
+		require.NoError(t, db.Close())
+		require.Equal(t, schemaVersion-1, version, "%s: nothing migrated", name)
+	}
+}
+
+// A good copy already in place is the migration's, as before: a database
+// put back from it is migrated again, and the copy is reused (#214).
+func TestACopyPutBackIsMigratedAgain(t *testing.T) {
+	t.Parallel()
+	path := schemaAt(t, schemaVersion-1, schema23Records)
+	s, err := Open(t.Context(), path, Options{})
+	require.NoError(t, err)
+	require.NoError(t, s.Close())
+	copy := s.Migration().Copy
+	kept, err := os.ReadFile(copy)
+	require.NoError(t, err)
+
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if err := os.Remove(path + suffix); !errors.Is(err, os.ErrNotExist) {
+			require.NoError(t, err)
+		}
+	}
+	require.NoError(t, os.WriteFile(path, kept, 0o600))
+	again, err := Open(t.Context(), path, Options{})
+	require.NoError(t, err)
+	require.NoError(t, again.Close())
+	require.Equal(t, copy, again.Migration().Copy)
+	still, err := os.ReadFile(copy)
+	require.NoError(t, err)
+	require.Equal(t, kept, still, "the copy in place is reused")
+}
+
 // A migration is refused while a serve or a foreground process that reads
 // the older schema has a fresh heartbeat, naming them, since none of them
 // could record its work after it; an observer, an ended process, or a

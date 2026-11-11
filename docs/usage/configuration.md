@@ -351,7 +351,10 @@ would be replayed onto it, and copy the backup to `~/.dockhand/dockhand.db`.
 The next command opens it, migrating it forward where the build is newer.
 
 A newer dockhand migrates a database forward the first time it opens it, keeping
-a copy of it as it was beside it, and an older dockhand can't open it after. A
+a copy of it as it was beside it, `dockhand.db.schema-<N>` for schema N, and an
+older dockhand can't open it after. Where something already at that name isn't
+a usable copy, such as an empty file, a directory or a link, nothing is
+migrated, and dockhand names the path to move aside. A
 development or rc build asks, on a terminal, before it migrates the default
 database a release last opened; a copy named with `DOCKHAND_DB`, such as one
 `dockhand backup` made, migrates without asking.

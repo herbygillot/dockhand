@@ -419,14 +419,18 @@ and when deleting an ended record also discards unmerged work.
 ## Put back a database from a backup
 
 When dockhand refuses its database as damaged, it leaves the file as it is.
-Put back a copy `dockhand backup` made:
+Put back a copy `dockhand backup` made, or the copy a migration kept beside the
+database, `dockhand.db.schema-<N>`. Where one is there, the refusal names the
+newest, with its date. Putting it back loses what was recorded since it was
+made, and dockhand doesn't open it to say more, since opening it migrates it.
 
-1. Stop serve: quit it, or `dockhand serve --uninstall` for its launchd job,
-   and `dockhand serve --install` after.
+1. Stop every dockhand process, not serve alone: quit serve, or
+   `dockhand serve --uninstall` for its launchd job and
+   `dockhand serve --install` after, and let any check, submit or ship end.
 2. Move `dockhand.db`, `dockhand.db-wal`, and `dockhand.db-shm` aside together.
    A `-wal` left beside the backup would be replayed onto it.
 3. Copy the backup to `~/.dockhand/dockhand.db`, or where `--db` or
-   `DOCKHAND_DB` names.
+   `DOCKHAND_DB` names. Copy it, don't move it, so the copy stays beside it.
 
 The next command opens it, migrating it forward where the build is newer. The
 backup has no record of what happened after it was made. Kept archives it
