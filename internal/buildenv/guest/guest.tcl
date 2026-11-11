@@ -1279,13 +1279,30 @@ proc build {index target} {
 }
 
 # A check in a prefix that ended before it put the prefix back is put
-# back by the next, which runs this program to do only that.
+# back by the next, which runs this program to do only that. What that
+# check found of its environment, its snapshot's name among it, is
+# carried into every save: saved from nothing, a put-back that failed
+# lost the name, and the next check removed the directory as one with
+# nothing to put back (#199). A put-back that succeeds deletes the
+# snapshot, its work done, as a check's own does (finish).
 if {[llength $local] && [dict exists $local restore] && [dict get $local restore]} {
+    if {[file exists $root/results.json]} {
+        catch {
+            set fd [open $root/results.json r]
+            set earlier [json::json2dict [read $fd]]
+            close $fd
+            if {[dict exists $earlier environment]} { set environment [dict get $earlier environment] }
+        }
+    }
     if {[set message [putback]] ne ""} {
+        dict set environment restored "no: $message"
         save errored "putting the prefix back: $message"
         exit 1
     }
     dict set environment restored yes
+    if {[dict exists $environment snapshot]} {
+        run $root/putback.log [list $port -N snapshot --delete [dict get $environment snapshot]]
+    }
     save finished
     exit 0
 }
