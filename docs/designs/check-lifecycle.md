@@ -1,6 +1,6 @@
 # A check's lifecycle: how long a command stays, which build it means, what an environment is, and how it stops
 
-A core item for v0.9.0, [#193](https://github.com/herbygillot/dockhand/issues/193). The issue says where it stands; this file is the design. Architecture wrote it on 2026-11-11, Codex reviewed that draft against the code the same day (the person's "I'd like Codex to co-design and help review as well", 2026-11-11 05:48Z, in the architecture thread), and this is the design revised for that review, for its short second pass and for a third look at "Stopping", read again at main 1fab1150b. "What the review changed" lists each correction. The person adopted it ("Adopt", 2026-11-11 08:56Z, on the architecture thread's card), while Codex's check of the last revision was still out: anything that check breaks comes back to the person as an amendment to this page. That check came back the same day and broke three points of "Stopping"; **the amendment** is "The last look" under "What the review changed", and it waits for the person's word.
+A core item for v0.9.0, [#193](https://github.com/herbygillot/dockhand/issues/193). The issue says where it stands; this file is the design. Architecture wrote it on 2026-11-11, Codex reviewed that draft against the code the same day (the person's "I'd like Codex to co-design and help review as well", 2026-11-11 05:48Z, in the architecture thread), and this is the design revised for that review, for its short second pass and for a third look at "Stopping", read again at main 1fab1150b. "What the review changed" lists each correction. The person adopted it ("Adopt", 2026-11-11 08:56Z, on the architecture thread's card), while Codex's check of the last revision was still out: anything that check breaks comes back to the person as an amendment to this page. That check came back the same day and broke three points of "Stopping"; **the amendment** is "The last look" under "What the review changed". The person holds it until Codex has checked it ("After Codex", 2026-11-11 09:34Z, on the architecture thread's card); until then the page as adopted stands.
 
 ## In short
 
@@ -259,7 +259,7 @@ Reading for the second pass turned up three faults in today's code, each small. 
 
 ## Choices the person should see
 
-The person took all five as written, with the page ("Adopt", 2026-11-11 08:56Z). The last look amends the third and the fifth, each by one case the person can meet; the amendment waits for the person's word.
+The person took all five as written, with the page ("Adopt", 2026-11-11 08:56Z). The last look amends the third and the fifth, each by one case the person can meet; the person holds the amendment until Codex has checked it ("After Codex", 2026-11-11 09:34Z).
 
 Each changes something the person will notice. The third is Codex's rule: architecture's first revision finished such a cancel after ten minutes, and the second pass showed why that was wrong.
 
