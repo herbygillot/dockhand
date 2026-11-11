@@ -1,6 +1,7 @@
 package explain
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -111,11 +112,10 @@ func writeStep(out io.Writer, logs engine.RunLogs, run model.Run, port string) {
 	if err != nil {
 		return
 	}
-	lines, ok := buildlog.Between(data, from, to)
-	if !ok {
-		return
-	}
-	last := prose.LastLines(string(lines), stepLines)
+	// The tail a check's own failure report takes, MacPorts' DEBUG lines
+	// left out, where the last lines of the span were often only those
+	// (#151).
+	last := buildlog.Last(bytes.NewReader(data), from, to, stepLines)
 	if len(last) == 0 {
 		return
 	}
