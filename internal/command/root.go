@@ -59,14 +59,20 @@ const logo = `     _            _    _                     _
 const gettingStarted = `In your ports checkout, run dockhand setup to configure GitHub login,
 your maintainer identity, and a clean macOS image for builds. Then:
 
-  dockhand update <port> --new    a branch with the port at its newest release
-  dockhand check                  build what the branch changes
-  dockhand tidy                   shape its commits for review
-  dockhand submit                 open the pull request from your fork
+  dockhand bump <port>      update a port, check it, and open its pull request
 
-dockhand bump <port> runs all four without prompts, stopping on failures or
-findings requiring review. dockhand usage prints the guide, and dockhand status shows
-where things are.`
+bump asks nothing, and stops on failures or findings requiring review.
+dockhand ship <port> does the same after showing its plan. To take the
+steps yourself:
+
+  dockhand update <port>    a branch with the port at its newest release
+  dockhand check            build what the branch changes
+  dockhand submit           commit, and open the pull request from your fork
+
+update names the branch's directory, where check and submit run, and
+dockhand tidy shapes the commits by hand before submit.
+
+dockhand usage prints the guide, and dockhand status shows where things are.`
 
 // Run executes the command line in args, in the process's environment and
 // working directory.

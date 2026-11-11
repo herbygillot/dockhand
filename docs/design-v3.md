@@ -147,14 +147,20 @@ Prepare, check, and submit changes to MacPorts ports.
 In your ports checkout, dockhand setup sets up, offering the GitHub login,
 your maintainers line, and a clean macOS image for checks to build in. Then:
 
-  dockhand update <port> --new    a branch with the port at its newest release
-  dockhand check                  build what the branch changes
-  dockhand tidy                   shape its commits for review
-  dockhand submit                 open the pull request from your fork
+  dockhand bump <port>      update a port, check it, and open its pull request
 
-dockhand bump <port> does all four asking nothing, and stops where you
-should look. dockhand usage prints the guide, and dockhand status shows
-where things are.
+bump asks nothing, and stops on failures or findings requiring review.
+dockhand ship <port> does the same after showing its plan. To take the
+steps yourself:
+
+  dockhand update <port>    a branch with the port at its newest release
+  dockhand check            build what the branch changes
+  dockhand submit           commit, and open the pull request from your fork
+
+update names the branch's directory, where check and submit run, and
+dockhand tidy shapes the commits by hand before submit.
+
+dockhand usage prints the guide, and dockhand status shows where things are.
 ```
 
 The command groups follow, as the table lists them. Someone else's pull request is taken up with `adopt --pr`, and looked over with `review`. The checks queued and running are listed by `status`, and `console` keeps the branches live.
