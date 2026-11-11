@@ -11,8 +11,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/filelock"
 )
 
-type branchLockKey struct{}
-
 func (r *Repository) Author(ctx context.Context) (Signature, error) {
 	out, err := r.output(ctx, "var", "GIT_AUTHOR_IDENT")
 	if err != nil {
@@ -43,7 +41,7 @@ func withLock(ctx context.Context, directory, key string, fn func(context.Contex
 		return err
 	}
 	return filelock.With(ctx, filelock.Path(directory, key), filelock.Exclusive, func(ctx context.Context, file *os.File) error {
-		return fn(context.WithValue(ctx, branchLockKey{}, file))
+		return fn(filelock.Carry(ctx, file))
 	})
 }
 

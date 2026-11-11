@@ -414,3 +414,40 @@ func TestNoCheckNamesTheReleasesCIBuildsOn(t *testing.T) {
 		require.NotContains(t, owned, "before a Dockhand check is complete")
 	}
 }
+
+// A submission's description whose record was lost: GitHub took the whole
+// text, but dockhand's record is still the last one, so the next commit's
+// merge read every part as a person's and rewrote none (#157). Settled,
+// the record is what landed: whole where GitHub has the whole text, and
+// part by part otherwise, a part a person edited staying as recorded, so
+// the merge keeps it as theirs (#191).
+func TestADescriptionThatLandedIsRecordedAsWritten(t *testing.T) {
+	body := func(description, evidence string) string {
+		return "#### Description\n\n" + description + "\n\n###### Tested on\n\n" + evidence + "\n"
+	}
+	a, b, c := body("jq: update to 1.7", "1.7's evidence"), body("jq: update to 1.8", "1.8's evidence"), body("jq: update to 1.8.1", "1.8.1's evidence")
+
+	// #157: the merge after a lost record keeps B as a person's.
+	merged, sections := Merge(b, a, c, false)
+	require.Equal(t, b, merged, "the failing case: what landed reads as a person's")
+	require.Equal(t, Kept, sections.TestedOn)
+
+	recorded := Landed(strings.ReplaceAll(b, "\n", "\r\n"), b, b, a)
+	require.Equal(t, b, recorded, "the whole text landed")
+	merged, sections = Merge(b, recorded, c, false)
+	require.Equal(t, c, merged, "settled, the next commit's text replaces it")
+	require.Equal(t, Sections{Description: Refreshed, Types: Absent, TestedOn: Refreshed}, sections)
+
+	// A person edited the Description on GitHub after it landed: Tested on
+	// landed, the Description stays as recorded, and the merge keeps the
+	// person's edit.
+	edited := body("my own words", "1.8's evidence")
+	recorded = Landed(edited, b, b, a)
+	require.Equal(t, body("jq: update to 1.7", "1.8's evidence"), recorded)
+	merged, sections = Merge(edited, recorded, c, false)
+	require.Equal(t, body("my own words", "1.8.1's evidence"), merged)
+	require.Equal(t, Kept, sections.Description)
+
+	// Nothing landed: the record stays.
+	require.Equal(t, a, Landed(a, b, b, a))
+}

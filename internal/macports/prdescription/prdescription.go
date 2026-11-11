@@ -1064,3 +1064,45 @@ func mergeTypes(body, lastWritten, fresh string, named bool) (string, Outcome) {
 func normalize(text string) string {
 	return strings.TrimSpace(strings.ReplaceAll(text, "\r\n", "\n"))
 }
+
+// Landed is what dockhand has written of a pull request's description
+// after a submission whose outcome wasn't recorded: what GitHub's
+// description (observed) took of the text it set out to send (sent), whose
+// own parts are written, given what dockhand last recorded (recorded).
+// Where GitHub's whole description is sent, the write landed whole and
+// written is what dockhand wrote. Otherwise each part dockhand writes, the
+// Description, the Type(s), and everything from Tested on down, landed
+// where GitHub's part reads as written's, and is recorded's where it reads
+// otherwise. Merge then keeps a person's edit, made to the old text or the
+// new, as their own: #157's lost record read a part GitHub took as a
+// person's (docs/designs/publication-record.md, "The description").
+func Landed(observed, sent, written, recorded string) string {
+	// GitHub gives a description back with its line endings, which
+	// aren't a person's edit.
+	observed = strings.ReplaceAll(observed, "\r\n", "\n")
+	if observed == sent {
+		return written
+	}
+	landed := recorded
+	take := func(span func(string) (int, int, bool)) {
+		from, to, found := span(observed)
+		wrote, wroteEnd, inWritten := span(written)
+		at, atEnd, inRecorded := span(landed)
+		if !found || !inWritten || observed[from:to] != written[wrote:wroteEnd] {
+			return
+		}
+		if inRecorded {
+			landed = landed[:at] + written[wrote:wroteEnd] + landed[atEnd:]
+		}
+	}
+	take(func(body string) (int, int, bool) { return sectionSpan(body, descriptionHeading) })
+	take(typesSpan)
+	if at, ok := ownedSpan(observed); ok {
+		if wrote, ok := ownedSpan(written); ok && observed[at:] == written[wrote:] {
+			if was, ok := ownedSpan(landed); ok {
+				landed = landed[:was] + written[wrote:]
+			}
+		}
+	}
+	return landed
+}
