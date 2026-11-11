@@ -173,8 +173,11 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // note 4), reads more of what a passed build links, an observation reuse
 // never reads, and builds and judges no verdict otherwise: the protocol
 // stays 3. A failed install naming the phase MacPorts' line names, patch
-// or build, says the same verdict more exactly (#52): it stays 3.
-const guestPin = "856c26ca384cd365585c9a9b213b3e5564439cfbb6aab4e9d904ef67e4840745"
+// or build, says the same verdict more exactly (#52): it stays 3. A
+// put-back of a local check's prefix that carries the snapshot's name
+// into what it saves builds and judges nothing otherwise (#199): it stays
+// 3.
+const guestPin = "9e1fc6b3f19c3ee66e3a4321c4ea17e25e42445df45183b47c9f77174bd06b2f"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this
