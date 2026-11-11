@@ -270,6 +270,12 @@ func ModelVariables(platform model.Platform, developer model.DeveloperTools) (st
 		for _, directory := range directories {
 			entries = append(entries, directory+" {"+versions+"}")
 		}
+		// Without the tools, their clang isn't there, and Base answers
+		// it empty: asked for it, an Xcode context on Catalina ran this
+		// Mac's (#107).
+		if tools.Tools == "none" && tools.DeveloperDir != CommandLineTools {
+			entries = append(entries, CommandLineTools+" {"+CommandLineTools+"/usr/bin/clang {}}")
+		}
 		compilers = "versions {" + strings.Join(entries, " ") + "}"
 	}
 	variables = append(variables, "compiler_version_cache", "{"+compilers+"}")
