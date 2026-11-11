@@ -81,9 +81,17 @@ type GitHub struct {
 	DraftRefused error
 	// Role is what Permission reports; read where empty.
 	Role string
-	// Reviews are those posted, and Rerequested the reviewers asked again.
-	Reviews     []forge.ReviewInput
-	Rerequested []string
+	// Reviews are those posted, and Rerequested the reviewers asked again;
+	// RerequestedOn are those asked again of each pull request, by number.
+	Reviews       []forge.ReviewInput
+	Rerequested   []string
+	RerequestedOn map[int][]string
+	// draft is whether each pull request is a draft now, by number: as it
+	// was opened, then as MarkReady and MarkDraft leave it, which Inspect
+	// reports, so the stand-in is a world the fault sweep compares, where
+	// marking appended to a list and left the pull request as it was
+	// (docs/designs/fault-sweep.md, #129).
+	draft map[int]bool
 	// Statuses are what Inspect reports, by number; Status for any other,
 	// and no review where it's empty.
 	Statuses map[int]forge.PullRequestStatus
@@ -273,6 +281,10 @@ func (g *GitHub) Create(_ context.Context, input forge.PullRequestInput) (forge.
 	g.Drafts = append(g.Drafts, input.Draft)
 	g.next++
 	number := 34900 + g.next
+	if g.draft == nil {
+		g.draft = map[int]bool{}
+	}
+	g.draft[number] = input.Draft
 	g.PRs[number] = &forge.PullRequest{Ref: forge.PullRequestRef{Forge: forge.GitHub, Repository: input.Repository, Number: number, URL: fmt.Sprintf("https://github.com/%s/pull/%d", input.Repository, number)},
 		HeadRepository: input.HeadRepository, HeadBranch: input.HeadBranch, BaseBranch: input.BaseBranch, State: forge.PullRequestOpen, Title: input.Desired.Title, Body: input.Desired.Body, RemoteHead: input.Desired.Head}
 	if g.CreateFails {
@@ -308,6 +320,7 @@ func (g *GitHub) MarkReady(ctx context.Context, ref forge.PullRequestRef) (forge
 		return forge.PullRequestObservation{}, g.ReadyRefused
 	}
 	g.Readied = append(g.Readied, ref.Number)
+	g.setDraft(ref.Number, false)
 	return g.Observe(ctx, ref)
 }
 
@@ -316,6 +329,7 @@ func (g *GitHub) MarkDraft(ctx context.Context, ref forge.PullRequestRef) (forge
 		return forge.PullRequestObservation{}, g.DraftRefused
 	}
 	g.Drafted = append(g.Drafted, ref.Number)
+	g.setDraft(ref.Number, true)
 	return g.Observe(ctx, ref)
 }
 
@@ -331,20 +345,44 @@ func (g *GitHub) PostReview(_ context.Context, input forge.ReviewInput) (string,
 	return fmt.Sprintf("https://github.com/%s/pull/%d#pullrequestreview-%d", input.Ref.Repository, input.Ref.Number, len(g.Reviews)), nil
 }
 
-func (g *GitHub) RequestReviewers(_ context.Context, _ forge.PullRequestRef, logins []string) error {
+func (g *GitHub) RequestReviewers(_ context.Context, ref forge.PullRequestRef, logins []string) error {
 	g.Rerequested = append(g.Rerequested, logins...)
+	if g.RerequestedOn == nil {
+		g.RerequestedOn = map[int][]string{}
+	}
+	g.RerequestedOn[ref.Number] = append(g.RerequestedOn[ref.Number], logins...)
 	return nil
 }
 
+// setDraft is a pull request of the stand-in's own made a draft, or
+// ready.
+func (g *GitHub) setDraft(number int, draft bool) {
+	if _, ok := g.PRs[number]; !ok {
+		return
+	}
+	if g.draft == nil {
+		g.draft = map[int]bool{}
+	}
+	g.draft[number] = draft
+}
+
+// Draft reports whether a pull request the stand-in opened is a draft
+// now.
+func (g *GitHub) Draft(number int) bool { return g.draft[number] }
+
 func (g *GitHub) Inspect(_ context.Context, ref forge.PullRequestRef) (forge.PullRequestStatus, error) {
-	if status, ok := g.Statuses[ref.Number]; ok {
-		return status, nil
+	status, set := g.Statuses[ref.Number]
+	if !set {
+		status = g.Status
+		if status.Review == "" {
+			status.Review = "none"
+		}
 	}
-	if g.Status.Review != "" {
-		return g.Status, nil
+	// A pull request the stand-in opened is a draft as it was opened and
+	// then marked, unless a test said otherwise of it.
+	if draft, ok := g.draft[ref.Number]; ok && !set {
+		status.Draft = draft
 	}
-	status := g.Status
-	status.Review = "none"
 	return status, nil
 }
 
