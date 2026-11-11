@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -119,4 +120,26 @@ func TestTheOracleSeesWhatItShould(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, differences(before, snapshot(t, w, g)))
 	})
+}
+
+// A checkpoint is named by its place among those not abandoned: a retry's
+// tidy-2 after an abandoned tidy-1 reads as the clean run's tidy-1, in its
+// row, its refs and its event, and the abandoned row is allowed; a ref
+// left under the abandoned number still shows (#129).
+func TestCheckpointsAreNamedByTheirPlace(t *testing.T) {
+	t.Parallel()
+	clean := world{
+		"refs clone":        {"refs/dockhand/checkpoints/tidy-1 commit:a", "refs/dockhand/checkpoints/tidy-1-index commit:b"},
+		"table checkpoints": {`number=1 kind="tidy" state="applied"`},
+		"table events":      {`kind="branch.tidy" message="tidied 0 commits into 1 commit (checkpoint tidy-1)"`},
+	}
+	retried := world{
+		"refs clone":        {"refs/dockhand/checkpoints/tidy-2 commit:a", "refs/dockhand/checkpoints/tidy-2-index commit:b"},
+		"table checkpoints": {`number=1 kind="tidy" state="abandoned"`, `number=2 kind="tidy" state="applied"`},
+		"table events":      {`kind="branch.tidy" message="tidied 0 commits into 1 commit (checkpoint tidy-2)"`},
+	}
+	require.Empty(t, differences(renumber(clean), renumber(retried)))
+	left := retried
+	left["refs clone"] = append(slices.Clone(left["refs clone"]), "refs/dockhand/checkpoints/tidy-1 commit:a")
+	require.NotEmpty(t, differences(renumber(clean), renumber(left)), "a ref left under the abandoned number shows")
 }
