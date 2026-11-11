@@ -13,7 +13,7 @@ import (
 
 	forgegithub "github.com/herbygillot/dockhand/internal/forge/github"
 	githubapi "github.com/herbygillot/dockhand/internal/github"
-	"github.com/herbygillot/dockhand/internal/registry"
+	"github.com/herbygillot/dockhand/internal/projectregistry"
 )
 
 // create reads a GitHub project as GitHub's API gives it: its description,
@@ -71,7 +71,7 @@ func TestCreateReadsAGitHubProject(t *testing.T) {
 	require.ErrorContains(t, err, "erik/txt has no release on GitHub")
 	// Named by its registry, it is created at the tag of the version the
 	// registry has (the Vx port's field testing, 2026-10-03).
-	reader.registry = registry.Client{HTTP: server.Client(), PyPI: server.URL + "/pypi/"}
+	reader.registry = projectregistry.Client{HTTP: server.Client(), PyPI: server.URL + "/pypi/"}
 	project, err = reader.Project(t.Context(), "pypi:txt")
 	require.NoError(t, err)
 	require.Equal(t, "v1.2.0", project.Tag)

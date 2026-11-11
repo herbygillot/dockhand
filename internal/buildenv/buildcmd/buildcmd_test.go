@@ -1,4 +1,4 @@
-package script_test
+package buildcmd_test
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
-	"github.com/herbygillot/dockhand/internal/buildenv/script"
+	"github.com/herbygillot/dockhand/internal/buildenv/buildcmd"
 	"github.com/herbygillot/dockhand/internal/buildlog"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/engine"
@@ -112,7 +112,7 @@ func queuedCheckOf(t *testing.T, body string, grace time.Duration, reader ports,
 	if setup != nil && setup.environment != nil {
 		env = append(env, setup.environment(upstream)...)
 	}
-	e.Providers = map[string]buildenv.Provider{"command": &script.Provider{Run: run, Label: "my build box", Repo: e.Repo, Grace: grace, Env: env}}
+	e.Providers = map[string]buildenv.Provider{"command": &buildcmd.Provider{Run: run, Label: "my build box", Repo: e.Repo, Grace: grace, Env: env}}
 	request := engine.PlanRequest{Revision: capture.Revision, Environments: []model.Environment{{Provider: "command"}}}
 	if setup != nil && setup.plan != nil {
 		setup.plan(&request)
@@ -173,11 +173,11 @@ JSON`
 	require.Equal(t, model.RunFailed, run.State, run.Detail)
 	require.Equal(t, "jq-docs did not pass", run.Detail)
 
-	var request script.Request
+	var request buildcmd.Request
 	data, err := os.ReadFile(filepath.Join(dir, "request.json"))
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(data, &request))
-	require.Equal(t, script.Version, request.Version)
+	require.Equal(t, buildcmd.Version, request.Version)
 	require.Equal(t, "check-1", request.Run)
 	require.Regexp(t, `^command_[a-z0-9]{16}$`, request.Execution, "the provider run's ID, to label the script's own logs")
 	// The script's own name for the run is recorded, and finds it.
@@ -236,11 +236,11 @@ JSON`
 
 	run, logs, dir := checked(reporting(commit))
 	require.Equal(t, model.RunPassed, run.State, run.Detail)
-	var request script.Request
+	var request buildcmd.Request
 	data, err := os.ReadFile(filepath.Join(dir, "request.json"))
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(data, &request))
-	require.Equal(t, &script.Git{URL: upstream, Branch: "jq-1.8.1", Commit: commit}, request.Targets[0].Git)
+	require.Equal(t, &buildcmd.Git{URL: upstream, Branch: "jq-1.8.1", Commit: commit}, request.Targets[0].Git)
 	require.Nil(t, request.Targets[1].Git, "a subport fetched otherwise")
 	require.Equal(t, model.ObjectID(commit), logs.Executions[0].Git["jq"].Fetched, "kept with its result")
 
@@ -344,7 +344,7 @@ esac
 	reader := ports{"textproc/jq": {"jq", "jq-docs"}, "git.url": {source}, "variants": {"tests", "x11"}}
 	// checked runs a check through the documented script, the other Mac's
 	// clone, ssh's hosts, and port's calls its own.
-	checked := func(plan func(*engine.PlanRequest)) (model.Run, *engine.Engine, script.Request, string, []string) {
+	checked := func(plan func(*engine.PlanRequest)) (model.Run, *engine.Engine, buildcmd.Request, string, []string) {
 		other := t.TempDir()
 		clone, hosts, calls := filepath.Join(other, "macports-ports"), filepath.Join(other, "hosts"), filepath.Join(other, "port calls")
 		environment := func(upstream string) []string {
@@ -355,7 +355,7 @@ esac
 		e, session, queued := queuedCheckOf(t, documentedScript(t), 0, reader, &checkSetup{environment: environment, plan: plan})
 		run, err := e.Drive(t.Context(), session, queued)
 		require.NoError(t, err)
-		var request script.Request
+		var request buildcmd.Request
 		data, err := os.ReadFile(filepath.Join(e.LogDirectory(), run.Name(), "command-1", "request.json"))
 		require.NoError(t, err)
 		require.NoError(t, json.Unmarshal(data, &request))
@@ -369,8 +369,8 @@ esac
 		require.NoError(t, err)
 		return run, e, request, filepath.Join(clone, "textproc/jq"), strings.Split(strings.TrimSpace(string(data)), "\n")
 	}
-	result := func(request script.Request) script.Result {
-		var result script.Result
+	result := func(request buildcmd.Request) buildcmd.Result {
+		var result buildcmd.Result
 		data, err := os.ReadFile(request.Result)
 		require.NoError(t, err)
 		require.NoError(t, json.Unmarshal(data, &result))
@@ -380,7 +380,7 @@ esac
 	run, e, request, portdir, calls := checked(nil)
 	require.Equal(t, model.RunFailed, run.State, run.Detail)
 	require.Equal(t, "jq-docs did not pass", run.Detail)
-	require.Equal(t, script.Result{Version: script.Version, Targets: []script.TargetResult{
+	require.Equal(t, buildcmd.Result{Version: buildcmd.Version, Targets: []buildcmd.TargetResult{
 		{ID: "jq", Outcome: "passed", Tests: "none", Log: "target-1.log", Fetched: commit},
 		{ID: "jq-docs", Outcome: "failed", Phase: "install", Tests: "none", Log: "target-2.log"},
 	}}, result(request))
@@ -416,7 +416,7 @@ esac
 	require.Equal(t, model.RunPassed, run.State, run.Detail)
 	require.Len(t, request.Targets, 1)
 	require.Equal(t, map[string]bool{"tests": true, "x11": false}, request.Targets[0].Variants)
-	require.Equal(t, script.Result{Version: script.Version, Targets: []script.TargetResult{
+	require.Equal(t, buildcmd.Result{Version: buildcmd.Version, Targets: []buildcmd.TargetResult{
 		{ID: "jq +tests -x11", Outcome: "passed", Tests: "passed", Log: "target-1.log", Fetched: commit},
 	}}, result(request))
 	logs, err = e.Logs(t.Context(), run.ID)

@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/checkplan"
 	"github.com/herbygillot/dockhand/internal/macports/binaryarchive"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/planning"
 )
 
 // An install estimate's lookups: eight ports' listings at once, each within
@@ -69,7 +69,7 @@ type ArchiveVersionReader interface {
 
 // InstallEstimates are what a plan's check will install in each of its
 // environments, by the port index of its source: the closure of its
-// targets' dependencies (planning.Closure), less what the environment has
+// targets' dependencies (checkplan.Closure), less what the environment has
 // installed, none in Tart's or GitHub's, which start from MacPorts with no
 // ports by their setup, and the person's active ports in a local prefix;
 // a command provider's environments get none. wait has the listings looked
@@ -122,7 +122,7 @@ func (e *Engine) InstallEstimates(ctx context.Context, plan model.Plan, source m
 				continue
 			}
 		}
-		closure := planning.Closure(graph, roots, except)
+		closure := checkplan.Closure(graph, roots, except)
 		estimate := InstallEstimate{Environment: environment, Dependencies: len(closure)}
 		darwin, err := strconv.Atoi(environment.Platform.Version)
 		switch {

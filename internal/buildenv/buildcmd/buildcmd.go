@@ -1,9 +1,9 @@
-// Package script is the command provider (Design v3 §7): a person's own
+// Package buildcmd is the command provider (Design v3 §7): a person's own
 // build script. It is given a request file naming the revision, as a Git
 // bundle, the targets in order, the platform, and the test policy; it
 // writes a result file with each target's outcome. Dockhand cannot vouch
 // for how it built, so its results read "reported by <name>".
-package script
+package buildcmd
 
 import (
 	"context"
