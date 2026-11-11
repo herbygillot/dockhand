@@ -358,7 +358,7 @@ type VersionUpdate struct {
 func (v *VersionUpdate) Flags(cmd *cobra.Command, s *settings.Settings) {
 	cmd.Flags().BoolVar(&v.KeepOld, "keep-old-checksums", false, "refresh legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size")
 	cmd.Flags().BoolVar(&v.Shared, "shared-release", false, "update every subport that shares the release")
-	cmd.Flags().BoolVar(&v.FollowMoves, "follow-moves", false, "update github.setup when GitHub redirects the repository to a new name")
+	cmd.Flags().BoolVar(&v.FollowMoves, "follow-moves", false, "update github.setup or go.setup when GitHub redirects the repository to a new name")
 	cmd.Flags().BoolVar(&v.Obsolete, "with-obsolete", false, "also update an obsolete stub replaced by this port to the same version; may be added after the update")
 	cmd.Flags().BoolVar(&v.Linked.Revbump, "revbump-dependents", false, "also bump the revision of the ports that link it directly")
 	cmd.Flags().StringSliceVar(&v.Linked.Except, "except", nil, "leave this dependent out of --revbump-dependents")
@@ -596,10 +596,14 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 			fmt.Fprintf(out, "%s (obsolete, replaced_by %s) stays at %s; --with-obsolete moves it to %s.\n", stub.Port, update.Port, stub.Version, update.After.Version)
 		}
 		// Where upstream was compared, the move is one of its findings.
-		if update.Followed != "" {
+		setup := cmp.Or(update.Setup, "github.setup")
+		switch {
+		case update.Followed != "" && setup == "go.setup":
+			fmt.Fprintf(out, "Updated go.setup to github.com/%s, the current GitHub location of %s.\n", update.Followed, update.Release.Repository)
+		case update.Followed != "":
 			fmt.Fprintf(out, "Updated github.setup to %s, the current GitHub location of %s.\n", update.Followed, update.Release.Repository)
-		} else if update.Renamed != "" && update.Upstream == nil {
-			fmt.Fprintf(out, "Upstream moved: GitHub redirects %s to %s. Use update --follow-moves to update github.setup.\n", update.Release.Repository, update.Renamed)
+		case update.Renamed != "" && update.Upstream == nil:
+			fmt.Fprintf(out, "Upstream moved: GitHub redirects %s to %s. Use update --follow-moves to update %s.\n", update.Release.Repository, update.Renamed, setup)
 		}
 	} else if update.Stealth != nil {
 		fmt.Fprintf(out, "%s %s · the distfile changed upstream without a new name (stealth update)\n", update.Port, update.Before)

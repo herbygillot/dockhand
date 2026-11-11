@@ -57,7 +57,9 @@ look whose only match is a prerelease reads the port current and says so,
 release doesn't take`. A GitHub repository renamed or transferred is said on
 a current port's row under `--current`, and on `outdated <port>`'s one line,
 as `GitHub answers extrawurst/gitui as gitui-org/gitui now, which
-github.setup could name`; `update --follow-moves` writes the new name.
+github.setup could name`; `update --follow-moves` writes the new name, in
+`github.setup`'s words or in a `go.setup` module path on github.com, keeping
+any package path after the repository.
 
 ## Preview a batch, then choose its stopping point
 
