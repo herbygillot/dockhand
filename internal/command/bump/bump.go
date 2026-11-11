@@ -85,6 +85,9 @@ dockhand can't. The check builds where build.unattended's profile says;
 				return nil
 			}
 			version.Linked.NoteSet = cmd.Flags().Changed("note")
+			// A statement said false withdraws the one kept, as ship's and
+			// submit's do, where bump read it as the flag left out (#198).
+			version.Withdrawn(cmd)
 			return ship.ShipAll(ctx, s, streams, whole, targets, engine.ShipSubmit, model.AnsweredYes, version)
 		},
 	}

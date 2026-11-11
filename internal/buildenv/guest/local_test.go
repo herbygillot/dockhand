@@ -181,3 +181,32 @@ func TestALocalCheckTakesItsDirectoryAsItsArgument(t *testing.T) {
 	require.NoError(t, err, "port read the check's macports.conf through PORTSRC")
 	require.Contains(t, string(conf), "file://"+root+"/ports [default]")
 }
+
+// A put-back that fails keeps what the check it puts back left: its
+// results still name the snapshot, and say why it failed, so undo and the
+// next check try again. It saved its results from nothing, the snapshot's
+// name went, and the next check removed the directory (#199). One that
+// succeeds deletes the snapshot, its work done, as a check's own does.
+func TestAPutBackThatFailsKeepsTheSnapshotsName(t *testing.T) {
+	t.Parallel()
+	earlier := `{"protocol":1,"state":"errored","detail":"killed","environment":{"snapshot":"7","active_ports":"2"},"building":"","phase":"","from_source":[],"targets":[]}`
+	left := func(t *testing.T) string {
+		root := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(root, "before.txt"), []byte("  libharbor @3_0 (active)\n"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(root, "results.json"), []byte(earlier), 0o644))
+		return root
+	}
+
+	// Listing the active ports fails, which the fake's own registry
+	// doesn't, so it has none.
+	results, _ := guestRunIn(t, left(t), asIs(Local{Restore: true}), "ACTIVEFAILS=1")
+	require.Equal(t, "errored", results.State)
+	require.Equal(t, "7", results.Environment["snapshot"], "the snapshot's name, kept for the next try")
+	require.Contains(t, results.Environment["restored"], "no: ")
+
+	_, active := registry(t, "  libharbor @4_0 (active)\n")
+	results, commands := guestRunIn(t, left(t), asIs(Local{Restore: true}), active)
+	require.Equal(t, "finished", results.State, results.Detail)
+	require.Equal(t, "yes", results.Environment["restored"])
+	require.Contains(t, commands, "-N snapshot --delete 7")
+}
