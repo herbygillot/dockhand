@@ -386,12 +386,25 @@ type File struct {
 // FileLimit is the most of one file a reading keeps.
 const FileLimit = 1 << 20
 
-// ignorable are what an archive may hold beside its project that says
-// nothing of how it's laid out: macOS's resource forks, as ._name files
-// and a zip's __MACOSX directory.
-func ignorable(name string) bool {
-	first, _, _ := strings.Cut(name, "/")
-	return first == "__MACOSX" || strings.HasPrefix(path.Base(name), "._")
+// walk is the walk of an archive every reading here shares, Read's and
+// ReadInventory's: each member by its cleaned path (archive.Member.Clean),
+// one that isn't safe and macOS's resource forks (archive.ResourceFork)
+// left out, and its regular files counted toward its one top
+// (archive.Tops), which it returns. What each keeps of a member is its
+// own.
+func walk(ctx context.Context, filename string, fn func(member archive.Member, name string) error) (archive.Tops, error) {
+	var tops archive.Tops
+	err := archive.Walk(ctx, filename, func(member archive.Member) error {
+		name, ok := member.Clean()
+		if !ok || archive.ResourceFork(name) {
+			return nil
+		}
+		if member.Regular {
+			tops.Add(name)
+		}
+		return fn(member, name)
+	})
+	return tops, err
 }
 
 // wanted reports a file a reading keeps, by its path below the top and the
@@ -458,17 +471,14 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 	// modules are every .cmake file, which a CMakeLists.txt may include():
 	// kept in this pass too.
 	modules := map[string]File{}
-	tops := map[string]bool{}
 	libraries := map[string]string{}
 	directories := map[string]bool{}
 	programs := map[string]bool{}
 	// hostPaths are each source file's host library paths, by its path.
 	hostPaths := map[string][]string{}
-	flat := false
 	has := map[string]bool{}
-	err := archive.Walk(ctx, filename, func(member archive.Member) error {
-		name, ok := member.Clean()
-		if !ok || !member.Regular || ignorable(name) {
+	tops, err := walk(ctx, filename, func(member archive.Member, name string) error {
+		if !member.Regular {
 			return nil
 		}
 		for dir := path.Dir(name); dir != "." && dir != "/"; dir = path.Dir(dir) {
@@ -478,13 +488,8 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 			programs[program] = true
 		}
 		first, rest, nested := strings.Cut(name, "/")
-		if !nested {
-			flat = true
-		} else {
-			tops[first] = true
-			if subdirectory != "" && strings.HasPrefix(rest, subdirectory+"/") {
-				has[first] = true
-			}
+		if nested && subdirectory != "" && strings.HasPrefix(rest, subdirectory+"/") {
+			has[first] = true
 		}
 		if subdirectory != "" && strings.HasPrefix(name, subdirectory+"/") {
 			has[""] = true
@@ -555,20 +560,14 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 		return Reading{}, err
 	}
 	var found Reading
+	top, one := tops.One()
 	switch {
-	case flat || len(tops) == 0:
+	case tops.Flat():
 		found.Layout = Flat
-	case len(tops) == 1:
-		found.Layout = Enclosed
-		for top := range tops {
-			found.Top = top
-		}
+	case one:
+		found.Layout, found.Top = Enclosed, top
 	default:
-		for top := range tops {
-			found.Tops = append(found.Tops, top)
-		}
-		slices.Sort(found.Tops)
-		return Reading{Layout: Ambiguous, Tops: found.Tops, Files: map[string]File{}}, nil
+		return Reading{Layout: Ambiguous, Tops: tops.Names(), Files: map[string]File{}}, nil
 	}
 	if subdirectory != "" {
 		if has[found.Top] {
@@ -821,9 +820,8 @@ func (r *Reading) readWorkspaces(ctx context.Context, filename string) error {
 	if len(node) == 0 {
 		return nil
 	}
-	return archive.Walk(ctx, filename, func(member archive.Member) error {
-		name, ok := member.Clean()
-		if !ok || !member.Regular || ignorable(name) {
+	_, err := walk(ctx, filename, func(member archive.Member, name string) error {
+		if !member.Regular {
 			return nil
 		}
 		rest, ok := name, true
@@ -849,6 +847,7 @@ func (r *Reading) readWorkspaces(ctx context.Context, filename string) error {
 		r.Files[rest] = File{Data: data}
 		return nil
 	})
+	return err
 }
 
 // workspace reports whether a directory below a Node project's root is one

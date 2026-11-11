@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	githubapi "github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 func (r *repository) Releases(ctx context.Context) ([]forge.Release, error) {
@@ -42,9 +43,10 @@ func (r *repository) Releases(ctx context.Context) ([]forge.Release, error) {
 	return releases, nil
 }
 
-// Assets are the names of the files the release of a tag carries, as
-// GitHub's "Get a release by tag name" gives them.
-func (r *repository) Assets(ctx context.Context, tag string) ([]string, error) {
+// Assets are the files the release of a tag carries, as GitHub's "Get a
+// release by tag name" describes them: the name, the browser download URL
+// GitHub serves each at, and its size.
+func (r *repository) Assets(ctx context.Context, tag string) ([]model.ReleaseAsset, error) {
 	if !git.ValidRefName("refs/tags/" + tag) {
 		return nil, fmt.Errorf("github: invalid tag %q", tag)
 	}
@@ -60,11 +62,24 @@ func (r *repository) Assets(ctx context.Context, tag string) ([]string, error) {
 		}
 		return nil, githubapi.RateLimitError(err)
 	}
-	var names []string
-	for _, asset := range release.Assets {
-		names = append(names, asset.GetName())
+	seen := map[string]bool{}
+	var assets []model.ReleaseAsset
+	for _, row := range release.Assets {
+		name, address := row.GetName(), row.GetBrowserDownloadURL()
+		if !forge.AssetName(name) || !forge.ServedURL(address) {
+			return nil, fmt.Errorf("%w: release %s describes an asset %q at %q", forge.ErrIncomplete, tag, name, address)
+		}
+		if seen[name] {
+			return nil, fmt.Errorf("%w: release %s carries %s twice", forge.ErrIncomplete, tag, name)
+		}
+		seen[name] = true
+		asset := model.ReleaseAsset{Name: name, URL: address}
+		if row.Size != nil {
+			asset.Size, asset.SizeKnown = int64(*row.Size), true
+		}
+		assets = append(assets, asset)
 	}
-	return names, nil
+	return assets, nil
 }
 
 var _ forge.AssetRepository = (*repository)(nil)

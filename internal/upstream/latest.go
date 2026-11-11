@@ -79,8 +79,8 @@ func (s *Service) askAssets(ctx context.Context, port macports.PortInfo, result 
 	if !ok {
 		return
 	}
-	names, err := assets.Assets(ctx, result.Release.Tag)
-	if err == nil && len(names) == 0 || errors.Is(err, forge.ErrNotFound) {
+	described, err := assets.Assets(ctx, result.Release.Tag)
+	if err == nil && len(described) == 0 || errors.Is(err, forge.ErrNotFound) {
 		result.Unpublished = true
 		result.Detail = fmt.Sprintf("release %s has no downloadable assets yet; the update is not ready", result.Release.Tag)
 	}

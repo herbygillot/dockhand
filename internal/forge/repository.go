@@ -5,8 +5,11 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/refusal"
 )
 
@@ -51,9 +54,25 @@ type Release struct {
 	PublishedAt time.Time
 }
 
-// AssetRepository names the files a release carries, by its tag.
+// AssetRepository describes the files a release carries, by its tag: each
+// one's name, the URL the forge serves it at, and its size where known. A
+// name that isn't one file's, a duplicate, or an asset without a URL the
+// forge serves is an incomplete observation, never partly answered.
 type AssetRepository interface {
-	Assets(ctx context.Context, tag string) ([]string, error)
+	Assets(ctx context.Context, tag string) ([]model.ReleaseAsset, error)
+}
+
+// AssetName reports a name a release asset can have: one file's, not
+// empty, with no path in it.
+func AssetName(name string) bool {
+	return name != "" && name != "." && name != ".." && !strings.ContainsAny(name, "/\\\x00")
+}
+
+// ServedURL reports a URL an asset can be downloaded from: absolute,
+// over HTTPS or HTTP, with a host.
+func ServedURL(address string) bool {
+	parsed, err := url.Parse(address)
+	return err == nil && (parsed.Scheme == "https" || parsed.Scheme == "http") && parsed.Host != ""
 }
 
 // Repository binds tag observations to one validated repository.

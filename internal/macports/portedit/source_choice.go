@@ -1,23 +1,18 @@
 package portedit
 
 import (
-	"bufio"
-	"bytes"
 	"context"
+	"errors"
 	"fmt"
-	"io"
-	"maps"
-	"net/url"
 	"os"
-	"path"
 	"slices"
 	"strings"
 
-	"github.com/herbygillot/dockhand/internal/archive"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
+	"github.com/herbygillot/dockhand/internal/macports/sourcechoice"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/project"
@@ -57,11 +52,11 @@ const ChooseMovesGitPorts = true
 func sourceComment(MovedSource) []string { return nil }
 
 // ReleaseFiles reads what choosing a GitHub port's source reads: the
-// names of the files uploaded to its release, and the forge's archive of
+// files uploaded to its release, as the forge describes them, and the forge's archive of
 // a commit, the tag's, which says what the repository holds there
 // (upstream.Service).
 type ReleaseFiles interface {
-	ReleaseAssets(ctx context.Context, port macports.PortInfo, release model.Release) ([]string, error)
+	ReleaseAssets(ctx context.Context, port macports.PortInfo, release model.Release) ([]model.ReleaseAsset, error)
 	SourceArchive(ctx context.Context, port macports.PortInfo, source model.GitSource, directory string) (string, error)
 }
 
@@ -78,267 +73,6 @@ type chosenSource struct {
 	after    macports.Snapshot
 	fetched  []distfetch.Download
 	notice   string
-}
-
-// platformWords are the words a binary bundle's name carries, which a
-// source archive's doesn't.
-var platformWords = []string{"darwin", "macos", "osx", "linux", "windows", "win", "x86_64", "amd64", "arm64", "aarch64", "universal", "musl"}
-
-// sourceCandidates are the release's assets that may be its source, by
-// name: a suffix MacPorts extracts and no platform or architecture word,
-// ${project}-${version}.tar.gz first, the github PortGroup's default.
-// That a candidate is the source is known by its content alone
-// (judgeSources).
-func sourceCandidates(assets []string, project, version string) []string {
-	var candidates []string
-	for _, name := range assets {
-		extraction, ok := macports.ExtractionOf(name)
-		if !ok || binaryName(strings.TrimSuffix(name, extraction.Suffix)) {
-			continue
-		}
-		candidates = append(candidates, name)
-	}
-	preferred := project + "-" + version + ".tar.gz"
-	if i := slices.Index(candidates, preferred); i > 0 {
-		candidates = append([]string{preferred}, slices.Delete(candidates, i, i+1)...)
-	}
-	return candidates
-}
-
-// binaryName reports a file's base that names a platform or architecture:
-// tool-1.0-darwin-arm64, tool_win64.
-func binaryName(base string) bool {
-	lower := strings.ToLower(base)
-	if strings.Contains(lower, "x86_64") || strings.Contains(lower, "x86-64") {
-		return true
-	}
-	for _, token := range strings.FieldsFunc(lower, func(r rune) bool { return r == '-' || r == '_' || r == '.' || r == ' ' }) {
-		for _, word := range platformWords {
-			if rest, ok := strings.CutPrefix(token, word); ok && strings.Trim(rest, "0123456789") == "" {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// sourceTree is what an archive holds below its one top directory: its
-// regular files, each with its contents' digest (archive.Member.Digest),
-// its symbolic links, each with its target, each directory with how many
-// regular files are under it, and .gitmodules' text where it has one.
-// top is empty where the archive doesn't extract to one directory. A
-// link counts as a directory for has, as it did before links were kept.
-type sourceTree struct {
-	top        string
-	files      map[string]string
-	links      map[string]string
-	dirs       map[string]int
-	gitmodules []byte
-}
-
-// gitmodulesLimit bounds the .gitmodules text a tree keeps.
-const gitmodulesLimit = 1 << 20
-
-// readSourceTree walks an archive (archive.Walk).
-func readSourceTree(ctx context.Context, filename string) (sourceTree, error) {
-	tree := sourceTree{files: map[string]string{}, links: map[string]string{}, dirs: map[string]int{}}
-	shared := true
-	err := archive.Walk(ctx, filename, func(member archive.Member) error {
-		name, ok := member.Clean()
-		if !ok {
-			return nil
-		}
-		first, rest, nested := strings.Cut(name, "/")
-		switch {
-		case tree.top == "":
-			tree.top = first
-		case first != tree.top:
-			shared = false
-		}
-		if !nested {
-			if member.Regular {
-				shared = false
-			}
-			return nil
-		}
-		if !member.Regular {
-			if member.Link != "" {
-				tree.links[rest] = member.Link
-			}
-			if _, ok := tree.dirs[rest]; !ok {
-				tree.dirs[rest] = 0
-			}
-			return nil
-		}
-		var gitmodules *cappedBuffer
-		if rest == ".gitmodules" {
-			gitmodules = &cappedBuffer{limit: gitmodulesLimit}
-			member.Body = io.TeeReader(member.Body, gitmodules)
-		}
-		digest, err := member.Digest()
-		if err != nil {
-			return err
-		}
-		tree.files[rest] = digest
-		for dir := path.Dir(rest); dir != "."; dir = path.Dir(dir) {
-			tree.dirs[dir]++
-		}
-		if gitmodules != nil {
-			tree.gitmodules = gitmodules.Bytes()
-		}
-		return nil
-	})
-	if err != nil {
-		return sourceTree{}, err
-	}
-	if !shared {
-		tree.top = ""
-	}
-	return tree, nil
-}
-
-// cappedBuffer keeps the first limit bytes written to it and takes the
-// rest unkept.
-type cappedBuffer struct {
-	bytes.Buffer
-	limit int
-}
-
-func (c *cappedBuffer) Write(p []byte) (int, error) {
-	if room := c.limit - c.Len(); room > 0 {
-		c.Buffer.Write(p[:min(room, len(p))])
-	}
-	return len(p), nil
-}
-
-// has reports a file or directory below the top.
-func (t sourceTree) has(name string) bool {
-	_, file := t.files[name]
-	_, dir := t.dirs[name]
-	return file || dir
-}
-
-// submodules are the paths .gitmodules names, in its order.
-func (t sourceTree) submodules() []string {
-	var paths []string
-	scanner := bufio.NewScanner(bytes.NewReader(t.gitmodules))
-	for scanner.Scan() {
-		key, value, ok := strings.Cut(strings.TrimSpace(scanner.Text()), "=")
-		if ok && strings.TrimSpace(key) == "path" {
-			if name := strings.Trim(strings.TrimSpace(value), "/"); name != "" && !slices.Contains(paths, name) {
-				paths = append(paths, name)
-			}
-		}
-	}
-	return paths
-}
-
-// sourceNeeds are what a release asset must hold to be the source: the
-// root build and manifest files the repository has at the tag, the paths
-// the Portfile names under ${worksrcpath} that the repository or a
-// submodule has there, and, for a Git port, every submodule as a
-// non-empty directory.
-type sourceNeeds struct {
-	files      []string
-	submodules []string
-}
-
-// needsOf are what the tag's tree and the Portfile ask of an asset. A
-// path the Portfile names that neither the tag nor a submodule has is the
-// build's own, such as a build directory, and asked of no asset.
-func needsOf(tag sourceTree, data []byte, git bool) sourceNeeds {
-	var needs sourceNeeds
-	if git {
-		needs.submodules = tag.submodules()
-	}
-	for name := range tag.files {
-		if !strings.Contains(name, "/") && (project.BuildFile(name) || project.Manifest(name)) {
-			needs.files = append(needs.files, name)
-		}
-	}
-	for _, named := range portfile.WorksrcPaths(data) {
-		inSubmodule := slices.ContainsFunc(needs.submodules, func(sub string) bool { return named == sub || strings.HasPrefix(named, sub+"/") })
-		if (tag.has(named) || inSubmodule) && !slices.Contains(needs.files, named) {
-			needs.files = append(needs.files, named)
-		}
-	}
-	slices.Sort(needs.files)
-	return needs
-}
-
-// lacks is the first thing an asset's tree doesn't hold of what's needed,
-// in words: "extracts to more than one directory", or a path; empty where
-// it holds everything.
-func (n sourceNeeds) lacks(tree sourceTree) string {
-	if tree.top == "" {
-		return "extracts to more than one directory"
-	}
-	for _, sub := range n.submodules {
-		if tree.dirs[sub] == 0 {
-			return "lacks " + sub
-		}
-	}
-	for _, name := range n.files {
-		if !tree.has(name) {
-			return "lacks " + name
-		}
-	}
-	return ""
-}
-
-// judgedAsset is one candidate as downloaded and read.
-type judgedAsset struct {
-	name     string
-	tree     sourceTree
-	download distfetch.Download
-	lacks    string
-}
-
-// compressionOrder is which of one source in several compressions is
-// taken: gzip, then those a use_ option extracts, bzip2, xz, lzip, lzma,
-// plain tar, and zip, then zstd, which takes extract.cmd and a dependency,
-// and 7z and a disk image last, a .dmg rarely holding source.
-var compressionOrder = []string{".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lz", ".tar.lzma", ".tar", ".zip", ".tar.zst", ".7z", ".dmg"}
-
-// judgeSources is the asset that is the source, among those judged:
-// passing ones with the same files and contents (sameFiles) are one
-// source in several compressions, the first in compressionOrder taken;
-// passing ones with different files, or the same files with different
-// contents, are ambiguous, named, and none is chosen.
-func judgeSources(judged []judgedAsset) (*judgedAsset, []string) {
-	var passing []judgedAsset
-	for _, asset := range judged {
-		if asset.lacks == "" {
-			passing = append(passing, asset)
-		}
-	}
-	if len(passing) == 0 {
-		return nil, nil
-	}
-	for _, other := range passing[1:] {
-		if !sameFiles(passing[0].tree, other.tree) {
-			var names []string
-			for _, asset := range passing {
-				names = append(names, asset.name)
-			}
-			return nil, names
-		}
-	}
-	rank := func(name string) int {
-		extraction, _ := macports.ExtractionOf(name)
-		return slices.Index(compressionOrder, extraction.Implied)
-	}
-	chosen := slices.MinFunc(passing, func(a, b judgedAsset) int { return rank(a.name) - rank(b.name) })
-	return &chosen, nil
-}
-
-// sameFiles reports two trees holding the same regular files with the
-// same contents, by digest, and the same symbolic links to the same
-// targets: one source in two compressions. Directories aren't compared,
-// a tree's files and links saying what it holds, nor are other members,
-// such as hard links, which Extract leaves out.
-func sameFiles(a, b sourceTree) bool {
-	return maps.Equal(a.files, b.files) && maps.Equal(a.links, b.links)
 }
 
 // templated is a name with the port's name or GitHub project and its
@@ -373,9 +107,9 @@ func templated(value string, info macports.PortInfo) (string, bool) {
 // ${project}-${version}, the use_ option and extract.suffix its
 // compression and name take, and worksrcdir where its top directory isn't
 // its base. False where a name can't be written as a word.
-func sourceMoveFor(asset judgedAsset, info macports.PortInfo, fromGit bool) (portfile.SourceMove, bool) {
-	extraction, _ := macports.ExtractionOf(asset.name)
-	base := strings.TrimSuffix(asset.name, extraction.Suffix)
+func sourceMoveFor(asset sourcechoice.Judged, info macports.PortInfo, fromGit bool) (portfile.SourceMove, bool) {
+	extraction, _ := macports.ExtractionOf(asset.Asset.Name)
+	base := strings.TrimSuffix(asset.Asset.Name, extraction.Suffix)
 	move := portfile.SourceMove{Mode: "releases", UseOption: extraction.UseOption, Command: extraction.Command, Depends: extraction.Depends, FromGit: fromGit}
 	// zstd's suffix is written always: Base 2.12's default is gzip's.
 	if extraction.Suffix != extraction.Implied || extraction.Command != "" {
@@ -386,8 +120,8 @@ func sourceMoveFor(asset judgedAsset, info macports.PortInfo, fromGit bool) (por
 	if base != defaultBase {
 		move.Distname, ok = templated(base, info)
 	}
-	if ok && asset.tree.top != base {
-		move.Worksrcdir, ok = templated(asset.tree.top, info)
+	if ok && asset.Inventory.Top != base {
+		move.Worksrcdir, ok = templated(asset.Inventory.Top, info)
 	}
 	return move, ok
 }
@@ -482,7 +216,7 @@ func (s *Service) chooseSource(ctx context.Context, request Request, input *sour
 		}
 		return refuse(fmt.Sprintf("release %s's files couldn't be listed (%v)", release.Tag, err))
 	}
-	candidates := sourceCandidates(assets, next.Options["github.project"], next.Options["github.version"])
+	candidates := sourcechoice.Candidates(assets, next.Options["github.project"], next.Options["github.version"])
 	if len(candidates) == 0 {
 		return refuse(fmt.Sprintf("release %s carries no source archive", release.Tag))
 	}
@@ -490,7 +224,7 @@ func (s *Service) chooseSource(ctx context.Context, request Request, input *sour
 	if err != nil {
 		return kept, err
 	}
-	progress.Report(ctx, "Reading release %s's %s for %s's source", release.Tag, prose.And(candidates), input.target.Name)
+	progress.Report(ctx, "Reading release %s's %s for %s's source", release.Tag, prose.And(model.AssetNames(candidates)), input.target.Name)
 	tagPath, err := s.Releases.SourceArchive(ctx, next, model.GitSource{URL: next.Options["git.url"], Ref: release.Tag, Commit: model.ObjectID(release.Commit)}, directory)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -498,58 +232,64 @@ func (s *Service) chooseSource(ctx context.Context, request Request, input *sour
 		}
 		return refuse(fmt.Sprintf("GitHub's archive of %s couldn't be read while checking release %s's files (%v)", release.Tag, release.Tag, err))
 	}
-	tag, err := readSourceTree(ctx, tagPath)
+	tag, err := project.ReadInventory(ctx, tagPath)
 	_ = os.Remove(tagPath)
 	if err != nil {
 		return refuse(fmt.Sprintf("GitHub's archive of %s couldn't be read (%v)", release.Tag, err))
 	}
-	needs := needsOf(tag, input.data, from == "git")
+	needs := sourcechoice.NeedsOf(tag, portfile.WorksrcPaths(input.data), from == "git")
 	store := s.Archives.Store(directory)
-	var judged []judgedAsset
-	for _, name := range candidates {
-		download, err := store.Fetch(ctx, next, distfetch.Source{Name: name, URL: releaseAssetURL(*release, name)})
+	var judged []sourcechoice.Judged
+	downloads := map[string]distfetch.Download{}
+	for _, asset := range candidates {
+		download, err := store.Fetch(ctx, next, distfetch.Source{Name: asset.Name, URL: asset.URL})
 		if err != nil {
 			if ctx.Err() != nil {
 				return kept, ctx.Err()
 			}
-			judged = append(judged, judgedAsset{name: name, lacks: fmt.Sprintf("couldn't be downloaded (%v)", err)})
+			judged = append(judged, sourcechoice.Judged{Asset: asset, Lacks: fmt.Sprintf("couldn't be downloaded (%v)", err)})
 			continue
 		}
-		tree, err := readSourceTree(ctx, download.Path)
-		asset := judgedAsset{name: name, tree: tree, download: download}
+		downloads[asset.Name] = download
+		inventory, err := project.ReadInventory(ctx, download.Path)
+		candidate := sourcechoice.Judged{Asset: asset, Inventory: inventory}
 		if err != nil {
-			asset.lacks = "isn't an archive dockhand reads"
+			candidate.Lacks = "isn't an archive dockhand reads"
 		} else {
-			asset.lacks = needs.lacks(tree)
+			candidate.Lacks = needs.Lacks(inventory)
 		}
-		judged = append(judged, asset)
+		judged = append(judged, candidate)
 	}
-	chosen, ambiguous := judgeSources(judged)
-	if len(ambiguous) > 0 {
-		return refuse(fmt.Sprintf("release %s has multiple qualifying source archives (%s) with different contents; none was chosen", release.Tag, prose.And(ambiguous)))
+	chosen, err := sourcechoice.Choose(judged)
+	var ambiguous sourcechoice.Ambiguous
+	var none sourcechoice.NoneHolds
+	switch {
+	case errors.As(err, &ambiguous):
+		return refuse(fmt.Sprintf("release %s has multiple qualifying source archives (%s) with different contents; none was chosen", release.Tag, prose.And(ambiguous.Names)))
+	case errors.As(err, &none):
+		return refuse(fmt.Sprintf("release %s carries %s, which %s", release.Tag, none.First.Asset.Name, none.First.Lacks))
+	case err != nil:
+		return kept, err
 	}
-	if chosen == nil {
-		return refuse(fmt.Sprintf("release %s carries %s, which %s", release.Tag, judged[0].name, judged[0].lacks))
-	}
-	move, ok := sourceMoveFor(*chosen, next, from == "git")
+	move, ok := sourceMoveFor(chosen, next, from == "git")
 	if !ok {
-		return refuse(fmt.Sprintf("release %s's %s has a filename or top-level directory that dockhand can't write into the Portfile automatically", release.Tag, chosen.name))
+		return refuse(fmt.Sprintf("release %s's %s has a filename or top-level directory that dockhand can't write into the Portfile automatically", release.Tag, chosen.Asset.Name))
 	}
-	moved := &MovedSource{From: from, To: "releases", Release: release.Tag, Asset: chosen.name, Submodules: needs.submodules}
+	moved := &MovedSource{From: from, To: "releases", Release: release.Tag, Asset: chosen.Asset.Name, Submodules: needs.Submodules}
 	move.Comment = sourceComment(*moved)
 	edited, ok := portfile.MoveSource(contents, move)
 	if !ok {
-		return refuse(fmt.Sprintf("release %s carries %s, but the Portfile's github.tarball_from, fetch.type, or hook isn't one literal line at its top", release.Tag, chosen.name))
+		return refuse(fmt.Sprintf("release %s carries %s, but the Portfile's github.tarball_from, fetch.type, or hook isn't one literal line at its top", release.Tag, chosen.Asset.Name))
 	}
 	evaluated, err := s.evaluateEdit(ctx, input, edited)
 	if err != nil {
 		if ctx.Err() != nil {
 			return kept, ctx.Err()
 		}
-		return refuse(fmt.Sprintf("release %s carries %s, but the Portfile couldn't be evaluated after switching to it (%v)", release.Tag, chosen.name, err))
+		return refuse(fmt.Sprintf("release %s carries %s, but the Portfile couldn't be evaluated after switching to it (%v)", release.Tag, chosen.Asset.Name, err))
 	}
-	if why := movedAsWritten(evaluated.after.Ports[input.target.Name], *chosen); why != "" {
-		return refuse(fmt.Sprintf("release %s carries %s, but the Portfile moved to it %s", release.Tag, chosen.name, why))
+	if why := movedAsWritten(evaluated.after.Ports[input.target.Name], chosen); why != "" {
+		return refuse(fmt.Sprintf("release %s carries %s, but the Portfile moved to it %s", release.Tag, chosen.Asset.Name, why))
 	}
 	if mode == SourceSuggest {
 		kept.notice = sourceSuggestion(*moved)
@@ -559,7 +299,7 @@ func (s *Service) chooseSource(ctx context.Context, request Request, input *sour
 		moved.Lines = append(moved.Lines, line.Text)
 	}
 	progress.Report(ctx, "%s", moved.Words())
-	return chosenSource{moved: moved, contents: edited, after: evaluated.after, fetched: []distfetch.Download{chosen.download}}, nil
+	return chosenSource{moved: moved, contents: edited, after: evaluated.after, fetched: []distfetch.Download{downloads[chosen.Asset.Name]}}, nil
 }
 
 // sourceSuggestion is suggest's notice of a release asset that is the
@@ -593,24 +333,19 @@ func gitMoveBlocked(input *sourceInput, next macports.PortInfo, release model.Re
 // movedAsWritten says how the moved port's evaluation isn't the move: it
 // still clones, or fetches another file, or extracts to another
 // directory; empty where it is.
-func movedAsWritten(port macports.PortInfo, asset judgedAsset) string {
+func movedAsWritten(port macports.PortInfo, asset sourcechoice.Judged) string {
 	files, errs := syntax.ListValues(port.Options["distfiles"])
 	switch {
 	case port.GitFetched():
 		return "still clones with Git"
 	case port.Options["github.tarball_from"] != "releases":
 		return "evaluates github.tarball_from " + port.Options["github.tarball_from"]
-	case len(errs) > 0 || !slices.Equal(files, []string{asset.name}):
+	case len(errs) > 0 || !slices.Equal(files, []string{asset.Asset.Name}):
 		return fmt.Sprintf("fetches %s", prose.And(files))
-	case port.Options["worksrcdir"] != asset.tree.top:
-		return "extracts to " + port.Options["worksrcdir"] + ", not " + asset.tree.top
+	case port.Options["worksrcdir"] != asset.Inventory.Top:
+		return "extracts to " + port.Options["worksrcdir"] + ", not " + asset.Inventory.Top
 	}
 	return ""
-}
-
-// releaseAssetURL is where GitHub serves a release's file.
-func releaseAssetURL(release model.Release, name string) string {
-	return fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", release.Repository, url.PathEscape(release.Tag), url.PathEscape(name))
 }
 
 // scratchDir is where an update's source choice keeps what it downloads:

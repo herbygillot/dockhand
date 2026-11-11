@@ -32,8 +32,9 @@ type Project struct {
 	// License is the forge's detection, as an SPDX identifier.
 	License string
 	Tag     string
-	// Assets are the files the release carries.
-	Assets []string
+	// Assets are the files the release carries, as its forge describes
+	// them.
+	Assets []model.ReleaseAsset
 	Files  map[string][]byte
 	// Directory is where a Go module is below the repository's root, its
 	// files read there and its port built there, and Package the module
@@ -611,7 +612,7 @@ func (e *Engine) createSpec(ctx context.Context, repo *git.Repository, observed 
 	project, build, version := observed.Project, observed.Build, observed.Version
 	spec := portcreate.Spec{Name: name, Category: request.Category, Owner: project.Owner, Project: project.Name, Version: version, TagPrefix: prefix,
 		Description: observed.Description, Homepage: project.Homepage, License: observed.License, LicenseFrom: observed.LicenseFrom, LicenseGuess: observed.LicenseGuess, Maintainer: request.maintainers(), Build: build,
-		Binaries: portcreate.Binaries(project.Files, build), ReleaseAsset: portcreate.HasReleaseArchive(project.Assets, project.Name, version),
+		Binaries: portcreate.Binaries(project.Files, build), ReleaseAsset: portcreate.HasReleaseArchive(model.AssetNames(project.Assets), project.Name, version),
 		Directory: project.Directory, Package: project.Package}
 	if spec.Category == "" {
 		categories, err := treeCategories(ctx, repo)
