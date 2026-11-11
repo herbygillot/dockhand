@@ -18,7 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portcreate"
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/registry"
+	"github.com/herbygillot/dockhand/internal/projectregistry"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -454,7 +454,7 @@ func (e *Engine) refuseExisting(ctx context.Context, worktree *git.Repository, n
 
 func (e *Engine) projectReader() (ProjectReader, error) {
 	return assemble(e, &e.ProjectReader, func() (ProjectReader, error) {
-		return githubProjects{client: e.github(), registry: registry.Client{HTTP: fetch.Client}}, nil
+		return githubProjects{client: e.github(), registry: projectregistry.Client{HTTP: fetch.Client}}, nil
 	})
 }
 
@@ -463,7 +463,7 @@ type githubProjects struct {
 	client *forgegithub.Client
 	// registry reads a project named in a registry, pypi:, crates:, or
 	// go:, as the repository its registry names.
-	registry registry.Client
+	registry projectregistry.Client
 }
 
 // projectFileLimit bounds each build file read at the release.
@@ -471,7 +471,7 @@ const projectFileLimit = 4 << 20
 
 func (g githubProjects) Project(ctx context.Context, address string) (Project, error) {
 	var published, directory, pkg string
-	if registry.Named(address) {
+	if projectregistry.Named(address) {
 		found, err := g.registry.Find(ctx, address)
 		if err != nil {
 			return Project{}, err

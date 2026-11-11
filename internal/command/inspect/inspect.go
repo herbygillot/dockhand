@@ -1,4 +1,4 @@
-package understand
+package inspect
 
 import (
 	"context"
@@ -41,8 +41,6 @@ checked against its Portfile's checksums; when upstream no longer serves an
 archive as declared, as after a stealth update, the old one comes from
 MacPorts' distfiles mirror.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// A diff is read as it is (term.Streams.Unwrapped).
-			streams.Unwrapped()
 			ctx := cmd.Context()
 			e, err := s.Open(ctx)
 			if err != nil {
@@ -61,20 +59,21 @@ MacPorts' distfiles mirror.`,
 				return err
 			}
 			streams.Emit(view.DiffView(diff, !stat))
-			writeDiffSummary(streams.Out, diff)
+			writeDiffSummary(streams.Prose(), diff)
 			if len(diff.Files) == 0 {
 				if len(args) > 0 {
-					fmt.Fprintln(streams.Out, "Nothing changed under those paths.")
+					fmt.Fprintln(streams.Prose(), "Nothing changed under those paths.")
 				}
 				return nil
 			}
-			fmt.Fprintln(streams.Out)
+			fmt.Fprintln(streams.Prose())
 			if stat {
 				for _, path := range diff.Files {
-					fmt.Fprintln(streams.Out, "  "+path)
+					fmt.Fprintln(streams.Prose(), "  "+path)
 				}
 				return nil
 			}
+			// A diff is read as it is: written raw.
 			_, err = streams.Out.Write(diff.Patch)
 			return err
 		},
@@ -102,7 +101,7 @@ func diffArchives(ctx context.Context, e *engine.Engine, streams term.Streams, b
 		views = append(views, viewed)
 	}
 	streams.Emit(map[string]any{"branch": view.BranchRef(branch), "archives": view.NonNil(views)})
-	out := streams.Out
+	out := streams.Prose()
 	if len(diffs) == 0 {
 		fmt.Fprintln(out, "No changed port has archives to compare.")
 		return nil
@@ -156,7 +155,7 @@ func diffArchives(ctx context.Context, e *engine.Engine, streams term.Streams, b
 		}
 		if !stat && len(diff.Patch) > 0 {
 			fmt.Fprintln(out)
-			if _, err := out.Write(diff.Patch); err != nil {
+			if _, err := streams.Out.Write(diff.Patch); err != nil {
 				return err
 			}
 		}
@@ -230,7 +229,7 @@ port's latest build result on each MacPorts builder.`,
 				return err
 			}
 			streams.Emit(view.ImpactView(impact))
-			writeImpact(streams.Out, impact, branchflags.NextIn(ctx, e, branch, ""))
+			writeImpact(streams.Prose(), impact, branchflags.NextIn(ctx, e, branch, ""))
 			return nil
 		},
 	}
@@ -351,7 +350,7 @@ checked out here, in your browser, and prints its address.`,
 				return fmt.Errorf("%s has no pull request yet; dockhand submit -b %s opens one", branch.ShortName(), branch.ShortName())
 			}
 			address := github.PullRequestURL(pr.Repository, pr.Number)
-			fmt.Fprintln(streams.Out, address)
+			fmt.Fprintln(streams.Prose(), address)
 			return s.Host.OpenBrowser(ctx, address)
 		},
 	}

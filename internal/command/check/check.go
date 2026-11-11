@@ -140,7 +140,7 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 				return err
 			}
 			capture, proposed := proposal.Capture, proposal.Plan
-			out := streams.Out
+			out := streams.Prose()
 			what := "checking " + checks.Describe(capture.Revision)
 			if capture.Revision.Kind == model.RevisionSnapshot && !capture.Reused {
 				what = "captured working files as " + checks.Describe(capture.Revision)
@@ -236,7 +236,7 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 			}
 			if err != nil {
 				for _, words := range replaced {
-					fmt.Fprintf(streams.Out, "%s.\n", prose.Sentence(words))
+					fmt.Fprintf(streams.Prose(), "%s.\n", prose.Sentence(words))
 				}
 				return besideWords(err, capture.Revision)
 			}
@@ -244,7 +244,7 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 			if len(replaced) > 0 {
 				// One line names each, where a line said each stopped and
 				// another what replaced them (part 5, item 3).
-				fmt.Fprintf(streams.Out, "Replaced %s.\n", strings.Join(replaced, "; "))
+				fmt.Fprintf(streams.Prose(), "Replaced %s.\n", strings.Join(replaced, "; "))
 			}
 			if bound != "" {
 				// Queued as -d queues it, then followed for the bound,
@@ -252,12 +252,12 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 				err = checkrun.QueuedFor(ctx, e, run, streams, s.Places(), limit, s.Drain)
 				if err == nil {
 					if status, nextErr := e.BranchStatusOf(ctx, branch.ID); nextErr == nil {
-						view.WriteNext(streams.Out, status)
+						view.WriteNext(streams.Prose(), status)
 					}
 				}
 				if s.File.Check.Baseline {
 					if queued, _, ok := e.QueuedBaseline(ctx, run.ID); ok {
-						fmt.Fprintf(streams.Out, "%s · baseline queued, since check.baseline is on: dockhand wait %s --for %s follows it\n", run.Name(), queued.Name(), limit.Said)
+						fmt.Fprintf(streams.Prose(), "%s · baseline queued, since check.baseline is on: dockhand wait %s --for %s follows it\n", run.Name(), queued.Name(), limit.Said)
 					}
 				}
 				return err
@@ -269,7 +269,7 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 				if status, nextErr := e.BranchStatusOf(ctx, branch.ID); nextErr != nil {
 					fmt.Fprintf(streams.Err, "next: %v\n", nextErr)
 				} else {
-					view.WriteNext(streams.Out, status)
+					view.WriteNext(streams.Prose(), status)
 				}
 			}
 			// check.baseline runs the baseline the failed check pointed to,
@@ -285,7 +285,7 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 					for _, target := range plan.Targets {
 						names = append(names, string(target.ID))
 					}
-					fmt.Fprintf(streams.Out, "%s · baseline, since check.baseline is on: %s\n", branch.ShortName(), strings.Join(names, ", "))
+					fmt.Fprintf(streams.Prose(), "%s · baseline, since check.baseline is on: %s\n", branch.ShortName(), strings.Join(names, ", "))
 					if baselineErr := checkrun.RunQueued(ctx, e, queued, streams, false, s.Places(), s.Drain); baselineErr != nil {
 						fmt.Fprintf(streams.Err, "baseline: %v\n", baselineErr)
 					}
@@ -412,8 +412,8 @@ func previewBaseline(ctx context.Context, e *engine.Engine, streams term.Streams
 	if err != nil {
 		return err
 	}
-	writeBaselineHeader(streams.Out, branch, baseline)
-	view.WritePlan(streams.Out, baseline.Plan, e.PlanNotes(ctx, baseline.Plan), nil, e.Remedy, view.ListShown(streams))
+	writeBaselineHeader(streams.Prose(), branch, baseline)
+	view.WritePlan(streams.Prose(), baseline.Plan, e.PlanNotes(ctx, baseline.Plan), nil, e.Remedy, view.ListShown(streams))
 	planned := view.PlanView(baseline.Plan)
 	streams.Emit(view.CheckJSON{Branch: branch.ShortName(), Plan: &planned, Targets: []view.TargetJSON{}})
 	return nil
@@ -430,7 +430,7 @@ func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, re
 	if err != nil {
 		return err
 	}
-	writeBaselineHeader(streams.Out, branch, baseline)
+	writeBaselineHeader(streams.Prose(), branch, baseline)
 	run, err := e.EnqueueBaseline(ctx, branch, baseline, model.OriginPerson)
 	if err != nil {
 		return err

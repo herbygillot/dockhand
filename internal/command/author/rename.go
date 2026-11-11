@@ -102,7 +102,7 @@ func renamePort(cmd *cobra.Command, s *settings.Settings, streams term.Streams, 
 	// A plan with no branch to plan in, or with --new, is planned on
 	// master and starts none, as update's is: a plan started the branch
 	// --new named (Codex's workflow review of 1caa6c3d, finding 3).
-	out := streams.Out
+	out := streams.Prose()
 	fromMaster := request.Plan && where.IsNew()
 	var beside string
 	if request.Plan && !fromMaster {

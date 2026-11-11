@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/checkplan"
 	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macos"
@@ -18,7 +19,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/planning"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -182,7 +182,7 @@ type PlanRequest struct {
 	alone bool
 	// where builds Also ports only in some environments, as a baseline
 	// rebuilds a port only where it failed; elsewhere they are left out.
-	where map[model.TargetID]planning.Limited
+	where map[model.TargetID]checkplan.Limited
 	// variants are the Also targets built with variants, by the ID Also
 	// names them by ("jq +x11"), as a baseline builds a variant build
 	// that failed: each evaluated with its own variants.
@@ -231,12 +231,12 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	// Each environment evaluates the ports for itself: a port may be
 	// defined, eligible, need Xcode, or need a changed library on one
 	// platform and not another.
-	evaluations := make([]planning.Evaluation, len(plan.Environments))
+	evaluations := make([]checkplan.Evaluation, len(plan.Environments))
 	// infos are the ports as each environment read them, for the variants
 	// they declare.
 	infos := make([]map[model.TargetID]macports.PortInfo, len(plan.Environments))
 	for i := range evaluations {
-		evaluations[i], infos[i] = planning.Evaluation{}, map[model.TargetID]macports.PortInfo{}
+		evaluations[i], infos[i] = checkplan.Evaluation{}, map[model.TargetID]macports.PortInfo{}
 	}
 	// candidates are every port some environment defined, as the branch
 	// sees it, in the order the scope and --also name them.
@@ -257,7 +257,7 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 				if i > 0 {
 					target.Subport = port.Name
 				}
-				evaluated, err := planning.Evaluate(port, environment.Platform)
+				evaluated, err := checkplan.Evaluate(port, environment.Platform)
 				if err != nil {
 					plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: target, Reason: err.Error()})
 					return
@@ -328,7 +328,7 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	for i, environment := range plan.Environments {
 		releases[i] = macos.ReleaseName(environment.Platform)
 	}
-	decision, err := planning.Decide(planning.Input{Environments: plan.Environments, Candidates: candidates, Evaluations: evaluations, Only: request.Only, Where: request.where, Span: request.Span, Releases: releases})
+	decision, err := checkplan.Decide(checkplan.Input{Environments: plan.Environments, Candidates: candidates, Evaluations: evaluations, Only: request.Only, Where: request.where, Span: request.Span, Releases: releases})
 	if err != nil {
 		return plan, err
 	}
@@ -429,7 +429,7 @@ const gitResolveTimeout = time.Minute
 // every environment expects the same commit. One that can't be read is
 // said to be, and its build expected to fetch nothing in particular: its
 // result says what it fetched, and stands for no later check's. A target
-// --only left out is resolved too (planning.OmittedSources): nothing
+// --only left out is resolved too (checkplan.OmittedSources): nothing
 // builds it, but an earlier check's result of it stands only for the
 // commit its tag names now, and that is read now or never, since evidence
 // is judged from the store alone.
@@ -617,7 +617,7 @@ func (e *Engine) loadsChangedSharedCode(ctx context.Context, tree, start string,
 // with its variants in each environment, since what planning reads of a
 // port can change with them, and is left out where the port doesn't
 // declare them. A variant the port doesn't declare is refused.
-func planVariants(ctx context.Context, reader checks.PortReader, source model.Source, request PlanRequest, plan *model.Plan, candidates []model.PlanTarget, evaluations []planning.Evaluation, infos []map[model.TargetID]macports.PortInfo) ([]model.PlanTarget, error) {
+func planVariants(ctx context.Context, reader checks.PortReader, source model.Source, request PlanRequest, plan *model.Plan, candidates []model.PlanTarget, evaluations []checkplan.Evaluation, infos []map[model.TargetID]macports.PortInfo) ([]model.PlanTarget, error) {
 	selected, err := variantsTarget(candidates, request)
 	if err != nil {
 		return candidates, err
@@ -668,7 +668,7 @@ func planVariants(ctx context.Context, reader checks.PortReader, source model.So
 				plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: target.Target, Reason: "with " + target.Target.VariantSpec() + " it isn't defined"})
 				continue
 			}
-			evaluated, err := planning.Evaluate(ports[i], environment.Platform)
+			evaluated, err := checkplan.Evaluate(ports[i], environment.Platform)
 			if err != nil {
 				plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: target.Target, Reason: err.Error()})
 				continue
@@ -694,7 +694,7 @@ func planVariants(ctx context.Context, reader checks.PortReader, source model.So
 // Each is evaluated with its variants, as planVariants evaluates one; an
 // environment whose port doesn't declare them leaves that build out
 // there, since it would be the defaults'.
-func alsoVariants(ctx context.Context, reader checks.PortReader, source model.Source, request PlanRequest, plan *model.Plan, candidates []model.PlanTarget, evaluations []planning.Evaluation, infos []map[model.TargetID]macports.PortInfo) []model.PlanTarget {
+func alsoVariants(ctx context.Context, reader checks.PortReader, source model.Source, request PlanRequest, plan *model.Plan, candidates []model.PlanTarget, evaluations []checkplan.Evaluation, infos []map[model.TargetID]macports.PortInfo) []model.PlanTarget {
 	for _, name := range request.Also {
 		target, ok := request.variants[model.TargetID(name)]
 		if !ok {
@@ -720,7 +720,7 @@ func alsoVariants(ctx context.Context, reader checks.PortReader, source model.So
 			if len(macports.Undeclared(target.Variants, declared)) > 0 {
 				continue // not there: the build would be its defaults'
 			}
-			evaluated, err := planning.Evaluate(ports[i], environment.Platform)
+			evaluated, err := checkplan.Evaluate(ports[i], environment.Platform)
 			if err != nil {
 				plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: target, Reason: err.Error()})
 				continue
@@ -794,13 +794,13 @@ func VariantBuilds(declared []macports.Variant) []map[string]bool {
 }
 
 // throughUnchanged orders the candidates through the ports the plan
-// doesn't build (planning.ThroughUnchanged), from the port index's graph,
+// doesn't build (checkplan.ThroughUnchanged), from the port index's graph,
 // read once, and only where there are two candidates to order. A guest
 // resolving from the branch's tree builds the changed one as it goes, but
 // where the port between comes from a published archive, the order is
 // what makes the build use the branch's. Where the graph can't be read,
 // the plan orders by direct dependencies alone, and says so with -v.
-func throughUnchanged(ctx context.Context, graphs checks.DependencyGraphReader, source model.Source, candidates []model.PlanTarget, evaluations []planning.Evaluation) {
+func throughUnchanged(ctx context.Context, graphs checks.DependencyGraphReader, source model.Source, candidates []model.PlanTarget, evaluations []checkplan.Evaluation) {
 	if len(candidates) < 2 {
 		return
 	}
@@ -813,5 +813,5 @@ func throughUnchanged(ctx context.Context, graphs checks.DependencyGraphReader, 
 		progress.VerboseReport(ctx, "ordering by direct dependencies alone: %v", err)
 		return
 	}
-	planning.ThroughUnchanged(graph, candidates, evaluations)
+	checkplan.ThroughUnchanged(graph, candidates, evaluations)
 }

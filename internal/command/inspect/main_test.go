@@ -1,4 +1,4 @@
-package understand_test
+package inspect_test
 
 import (
 	"testing"

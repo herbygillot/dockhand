@@ -151,9 +151,9 @@ terminal, pass --yes.
 				}
 			}
 			streams.Emit(map[string]any{"branches": view.CleanView(plans), "leftovers": view.LeftoversView(leftovers), "applied": false})
-			removable := writeClean(streams.Out, plans, false, s.Places()) + writeLeftovers(streams.Out, leftovers, false)
+			removable := writeClean(streams.Prose(), plans, false, s.Places()) + writeLeftovers(streams.Prose(), leftovers, false)
 			if removable == 0 {
-				fmt.Fprintln(streams.Out, "Nothing to remove.")
+				fmt.Fprintln(streams.Prose(), "Nothing to remove.")
 				// Archived branches keep their Git branches, which no
 				// clean removes: said, with what forgets them (the
 				// outdated-ports session's note 24).
@@ -167,12 +167,12 @@ terminal, pass --yes.
 					})
 				}
 				if words := archivedKeptWords(kept); words != "" {
-					fmt.Fprintln(streams.Out, words)
+					fmt.Fprintln(streams.Prose(), words)
 				}
 				return nil
 			}
 			if plan {
-				fmt.Fprintln(streams.Out, "Nothing was removed (--plan).")
+				fmt.Fprintln(streams.Prose(), "Nothing was removed (--plan).")
 				return nil
 			}
 			ok, _, err := streams.Decide(yes, term.Decision{Question: fmt.Sprintf("? Remove %s? [y/N] ", prose.Plural(removable, "item")), Undone: "nothing was removed", ByYes: "--yes removes these"})
@@ -180,7 +180,7 @@ terminal, pass --yes.
 				return err
 			}
 			if !ok {
-				fmt.Fprintln(streams.Out, "Nothing was removed.")
+				fmt.Fprintln(streams.Prose(), "Nothing was removed.")
 				return nil
 			}
 			done, err := e.ApplyClean(ctx, plans)
@@ -190,12 +190,12 @@ terminal, pass --yes.
 			// full: thirty branches' blocks printed twice were a lot to
 			// read (field testing's cleanup, af03bbab); -v lists it, a
 			// line a branch (part 5, item 4).
-			fmt.Fprintln(streams.Out)
+			fmt.Fprintln(streams.Prose())
 			if streams.Verbose() > 0 {
-				writeCleanDone(streams.Out, done, s.Places())
-				writeLeftovers(streams.Out, removed, true)
+				writeCleanDone(streams.Prose(), done, s.Places())
+				writeLeftovers(streams.Prose(), removed, true)
 			} else {
-				fmt.Fprintln(streams.Out, cleanedWords(done, removed))
+				fmt.Fprintln(streams.Prose(), cleanedWords(done, removed))
 			}
 			return errors.Join(err, leftoverErr)
 		},
@@ -236,15 +236,15 @@ func cleanAutomatically(ctx context.Context, e *engine.Engine, streams term.Stre
 	}
 	defer session.End(context.WithoutCancel(ctx))
 	report, ran, err := e.CleanupIfDue(ctx, session, engine.CleanupEvery, file.Cleanup.Free(), file.Cleanup.Age(), func(why engine.CleanupReason) {
-		fmt.Fprintf(streams.Out, "%s cleaning up: %s\n", time.Now().Format(time.RFC3339), why.Words)
+		fmt.Fprintf(streams.Prose(), "%s cleaning up: %s\n", time.Now().Format(time.RFC3339), why.Words)
 	})
 	if !ran {
 		return err
 	}
 	for _, line := range report.Words(file.Cleanup.Age()) {
-		fmt.Fprintf(streams.Out, "  %s\n", line)
+		fmt.Fprintf(streams.Prose(), "  %s\n", line)
 	}
-	fmt.Fprintf(streams.Out, "  removed %s\n", prose.Plural(report.Removed(), "item"))
+	fmt.Fprintf(streams.Prose(), "  removed %s\n", prose.Plural(report.Removed(), "item"))
 	return err
 }
 
@@ -466,7 +466,7 @@ func forgetBranches(ctx context.Context, e *engine.Engine, streams term.Streams,
 		}
 		plans = append(plans, plan)
 	}
-	out := streams.Out
+	out := streams.Prose()
 	for _, plan := range plans {
 		fmt.Fprintf(out, "%s · %s\n", plan.Branch.ShortName(), plan.Branch.State)
 		if plan.Worktree != "" {

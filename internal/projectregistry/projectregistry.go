@@ -1,4 +1,4 @@
-// Package registry finds where a project named in a language's registry
+// Package projectregistry finds where a project named in a language's registry
 // keeps its source, so create can start from "crates:ripgrep" as from a
 // repository's address. Each registry is asked by its documented interface
 // alone: PyPI's JSON API (https://docs.pypi.org/api/json/), crates.io's
@@ -6,7 +6,7 @@
 // and Go's remote import paths, a module path that names its host or a
 // go-import meta tag the path answers ?go-get=1 with
 // (https://go.dev/ref/mod#vcs-find).
-package registry
+package projectregistry
 
 import (
 	"context"

@@ -65,7 +65,7 @@ and go:MODULE uses the module path or its go-get response.`,
 			if name == "" {
 				name = observed.Name
 			}
-			out := streams.Out
+			out := streams.Prose()
 			project := observed.Project
 			license := "no license detected"
 			switch {
@@ -98,11 +98,10 @@ and go:MODULE uses the module path or its go-get response.`,
 					return err
 				}
 				streams.Emit(map[string]any{"directory": planned.Directory, "portfile": string(planned.Portfile), "unconfirmed": view.NonNil(planned.Unconfirmed)})
-				// The Portfile is written as it is: wrapped at the
-				// terminal's width, its modeline broke into a Tcl command
-				// (#93).
-				streams.Unwrapped()
-				fmt.Fprintf(out, "Would write %s/Portfile:\n\n%s\n", planned.Directory, planned.Portfile)
+				// The Portfile is written raw: wrapped at the terminal's
+				// width, its modeline broke into a Tcl command (#93, #94).
+				fmt.Fprintf(out, "Would write %s/Portfile:\n\n", planned.Directory)
+				fmt.Fprintf(streams.Out, "%s\n", planned.Portfile)
 				fmt.Fprintln(out, "Nothing was written (--plan); create writes it, then fills in its checksums.")
 				return nil
 			}

@@ -80,13 +80,13 @@ each; ship --mine --to check also checks them.`,
 			if err != nil {
 				if looked.cutShort(ctx, report) {
 					streams.Emit(view.OutdatedView(report))
-					fmt.Fprintf(streams.Out, "Interrupted after looking up %d of %d ports. Results so far:\n", len(report.Ports), looked.total.Load())
-					_ = writeOutdated(context.WithoutCancel(ctx), e, streams.Out, report, all)
+					fmt.Fprintf(streams.Prose(), "Interrupted after looking up %d of %d ports. Results so far:\n", len(report.Ports), looked.total.Load())
+					_ = writeOutdated(context.WithoutCancel(ctx), e, streams.Prose(), report, all)
 				}
 				return err
 			}
 			streams.Emit(view.OutdatedView(report))
-			return writeOutdated(ctx, e, streams.Out, report, all)
+			return writeOutdated(ctx, e, streams.Prose(), report, all)
 		},
 	}
 	selectors.Register(cmd, "look up")
@@ -401,8 +401,8 @@ func Batch(ctx context.Context, s *settings.Settings, e *engine.Engine, streams 
 	looked.stop()
 	if err != nil {
 		if looked.cutShort(ctx, report) {
-			fmt.Fprintf(streams.Out, "Interrupted after looking up %d of %d ports; no updates were started. Results so far:\n", len(report.Ports), looked.total.Load())
-			_ = writeOutdated(context.WithoutCancel(ctx), e, streams.Out, report, false)
+			fmt.Fprintf(streams.Prose(), "Interrupted after looking up %d of %d ports; no updates were started. Results so far:\n", len(report.Ports), looked.total.Load())
+			_ = writeOutdated(context.WithoutCancel(ctx), e, streams.Prose(), report, false)
 		}
 		return engine.OutdatedPlan{}, err
 	}
@@ -415,12 +415,12 @@ func Batch(ctx context.Context, s *settings.Settings, e *engine.Engine, streams 
 	}
 	skipped := []view.SkippedJSON{}
 	for _, skip := range plan.Skipped {
-		fmt.Fprintf(streams.Out, "  %s: skipped: %s\n", skip.Port, skip.Reason)
+		fmt.Fprintf(streams.Prose(), "  %s: skipped: %s\n", skip.Port, skip.Reason)
 		skipped = append(skipped, view.SkippedJSON{Port: skip.Port, Reason: skip.Reason})
 	}
 	streams.Emit(skipped)
 	if line := restWords(report, plan, selectors.flags()); line != "" {
-		fmt.Fprintln(streams.Out, line)
+		fmt.Fprintln(streams.Prose(), line)
 	}
 	return plan, nil
 }

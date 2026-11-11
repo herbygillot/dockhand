@@ -13,8 +13,8 @@ import (
 // past the line's own (part 5, item 4: about 300 lines of the command
 // tests ran past 100 columns). A table's line, its cells set apart by two
 // spaces or more, isn't wrapped, nor a line with no space to break at, a
-// path or a URL, nor one a terminal's escape codes draw, nor a log's or
-// a document's (Unwrapped). A write that ends without a newline, as
+// path or a URL, nor one a terminal's escape codes draw. A log, a
+// diff or a document is written to Out, which this never wraps. A write that ends without a newline, as
 // a prompt's, is written at once, and what ends its line isn't wrapped.
 type wrapWriter struct {
 	w     io.Writer
@@ -134,15 +134,4 @@ func breakAt(text string, start, width int, hang string) string {
 		started = true
 	}
 	return strings.Join(append(lines, strings.TrimRight(current, " ")), "\n")
-}
-
-// Unwrapped turns the wrap off for the rest of the command line, whose
-// output is a log or a document read line by line, as serve's log, a
-// build's log, a diff, or text for pasting.
-func (s Streams) Unwrapped() {
-	if held, ok := s.Out.(*switchWriter); ok {
-		if wrap, ok := held.w.(*wrapWriter); ok {
-			wrap.width = 0
-		}
-	}
 }

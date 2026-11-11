@@ -70,8 +70,6 @@ Every Portfile serve's updates write gets MacPorts' modeline as its first
 line, unless --keep-modeline.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			// serve's output is a log, read a line an event (term.Streams.Unwrapped).
-			streams.Unwrapped()
 			ctx := cmd.Context()
 			switch shipTo {
 			case "", "list", "commit", "check", "submit":
@@ -99,7 +97,7 @@ line, unless --keep-modeline.`,
 				if now == nil {
 					now = time.Now
 				}
-				streams.Out = &stampWriter{w: streams.Out, now: now}
+				streams = streams.Stamped(func(w io.Writer) io.Writer { return &stampWriter{w: w, now: now} })
 			}
 			// Nobody answers git's ssh under serve, at a terminal or not.
 			s.Unattended = true
@@ -113,6 +111,7 @@ line, unless --keep-modeline.`,
 				return err
 			}
 			defer session.End(context.WithoutCancel(ctx))
+			// serve's output is a log, read a line an event: written raw.
 			err = e.Serve(ctx, session, serveOptions(s.Host, e, s.File, streams.Out, drain, cmp.Or(shipTo, s.File.Serve.Stage()), s.File.Serve.Notifies() && !noNotify, s.Getenv(settings.HeapProfileVariable)))
 			// Being stopped is how serve ends, not a failure.
 			if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
@@ -188,7 +187,7 @@ func serveAgent(ctx context.Context, s *settings.Settings, streams term.Streams,
 		if err := agent.Remove(ctx); err != nil {
 			return err
 		}
-		fmt.Fprintln(streams.Out, "Removed the serve agent; serve no longer starts at login.")
+		fmt.Fprintln(streams.Prose(), "Removed the serve agent; serve no longer starts at login.")
 		return nil
 	}
 	e, err := s.Open(ctx)
@@ -228,27 +227,27 @@ func serveAgent(ctx context.Context, s *settings.Settings, streams term.Streams,
 	if err := agent.Install(ctx, agentJob(append(arguments, flags...), environment, logs)); err != nil {
 		return err
 	}
-	fmt.Fprintf(streams.Out, "serve now starts at login and restarts if it stops.\n  Agent  %s\n  Log    %s\n", s.Places().Tilde(plist), s.Places().Tilde(logs))
+	fmt.Fprintf(streams.Prose(), "serve now starts at login and restarts if it stops.\n  Agent  %s\n  Log    %s\n", s.Places().Tilde(plist), s.Places().Tilde(logs))
 	var carried []string
 	for _, variable := range environment[1:] {
 		carried = append(carried, variable[0])
 	}
 	if len(carried) > 0 {
-		fmt.Fprintf(streams.Out, "  With   %s, as set now\n", strings.Join(carried, ", "))
+		fmt.Fprintf(streams.Prose(), "  With   %s, as set now\n", strings.Join(carried, ", "))
 	}
 	if len(options.Named) > 0 {
 		var tools []string
 		for _, program := range options.Named {
 			tools = append(tools, program.Name+" "+s.Places().Tilde(program.Path))
 		}
-		fmt.Fprintf(streams.Out, "  Tools  %s, as set now\n", strings.Join(tools, ", "))
+		fmt.Fprintf(streams.Prose(), "  Tools  %s, as set now\n", strings.Join(tools, ", "))
 	}
 	for _, token := range []string{"GH_TOKEN", "GITHUB_TOKEN"} {
 		if s.Getenv(token) != "" {
-			fmt.Fprintf(streams.Out, "%s is omitted from the agent file because that file is readable by other users on this Mac. serve uses the GitHub credentials saved in the Keychain; run dockhand setup github to save them.\n", token)
+			fmt.Fprintf(streams.Prose(), "%s is omitted from the agent file because that file is readable by other users on this Mac. serve uses the GitHub credentials saved in the Keychain; run dockhand setup github to save them.\n", token)
 		}
 	}
-	fmt.Fprintln(streams.Out, "Run dockhand serve --install again after changing these settings. After an upgrade, serve restarts automatically with the new version.")
+	fmt.Fprintln(streams.Prose(), "Run dockhand serve --install again after changing these settings. After an upgrade, serve restarts automatically with the new version.")
 	return nil
 }
 

@@ -66,7 +66,7 @@ evidence.`,
 			if test {
 				fmt.Fprintln(streams.Err, "Rerunning the test phase using the current port files and the existing build. Changes outside the test phase are not applied. This run does not count as a check result.")
 			}
-			code, err := e.Shell(ctx, engine.ShellRequest{Run: run, Release: on, Port: port, Command: command, Test: test, Input: streams.In, Output: streams.Out, Terminal: len(command) == 0 && !test,
+			code, err := e.Shell(ctx, engine.ShellRequest{Run: run, Release: on, Port: port, Command: command, Test: test, Input: streams.In, Output: streams.Prose(), Terminal: len(command) == 0 && !test,
 				Notice: func(words string) { fmt.Fprintln(streams.Err, words) }})
 			if err != nil {
 				return err

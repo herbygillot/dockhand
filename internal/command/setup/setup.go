@@ -52,7 +52,7 @@ authorized until you revoke it on GitHub's page for it, which it names.`,
 // It says the maintainers line it wrote, or nothing.
 func offerSetup(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams, file config.File, configPath string) (string, error) {
 	written := ""
-	fmt.Fprintln(streams.Out)
+	fmt.Fprintln(streams.Prose())
 	if github.LoginSource(ctx, s.Signin()) == "" {
 		login, err := streams.AskYes("? Log in to GitHub to submit pull requests and run checks in your fork? [Y/n] ", true)
 		if err != nil {
@@ -77,10 +77,10 @@ func offerSetup(ctx context.Context, s *settings.Settings, e *engine.Engine, str
 					return "", err
 				}
 				written = line
-				fmt.Fprintf(streams.Out, "Saved maintainer = %q for --mine, create, and serve's daily lookup of new releases.\n", line)
+				fmt.Fprintf(streams.Prose(), "Saved maintainer = %q for --mine, create, and serve's daily lookup of new releases.\n", line)
 			}
 		} else {
-			fmt.Fprintf(streams.Out, "  maintainer: %s, for --mine, create, and serve's daily lookup of new releases\n", engine.MaintainerWords(suggestion, s.Places().Tilde(configPath)))
+			fmt.Fprintf(streams.Prose(), "  maintainer: %s, for --mine, create, and serve's daily lookup of new releases\n", engine.MaintainerWords(suggestion, s.Places().Tilde(configPath)))
 		}
 	}
 	if images := imagesOf(ctx, s); images != nil {

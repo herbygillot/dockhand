@@ -1,4 +1,4 @@
-package runcmd
+package checkverbs
 
 import (
 	"fmt"
@@ -68,7 +68,7 @@ branch's worktree, lists that branch's latest check.`,
 			}
 			streams.Emit(viewed)
 			if len(artifacts) == 0 {
-				fmt.Fprintf(streams.Out, "%s built no archive: no port passed.\n", run.Name())
+				fmt.Fprintf(streams.Prose(), "%s built no archive: no port passed.\n", run.Name())
 				return nil
 			}
 			for _, artifact := range viewed.Artifacts {
@@ -76,7 +76,7 @@ branch's worktree, lists that branch's latest check.`,
 				if artifact.Missing != "" {
 					where = artifact.Missing
 				}
-				fmt.Fprintf(streams.Out, "%s  %s  %s\n", artifact.Port, artifact.Platform, where)
+				fmt.Fprintf(streams.Prose(), "%s  %s  %s\n", artifact.Port, artifact.Platform, where)
 			}
 			return nil
 		},

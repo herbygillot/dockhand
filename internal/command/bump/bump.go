@@ -74,14 +74,14 @@ dockhand can't. The check builds where build.unattended's profile says;
 				targets[0].Version = args[1]
 			}
 			if err == nil {
-				ship.WriteShipPlan(ctx, e, streams.Out, targets, engine.ShipSubmit)
+				ship.WriteShipPlan(ctx, e, streams.Prose(), targets, engine.ShipSubmit)
 			}
 			e.Close()
 			if err != nil {
 				return err
 			}
 			if plan {
-				fmt.Fprintln(streams.Out, "Nothing was shipped (--plan).")
+				fmt.Fprintln(streams.Prose(), "Nothing was shipped (--plan).")
 				return nil
 			}
 			version.Linked.NoteSet = cmd.Flags().Changed("note")

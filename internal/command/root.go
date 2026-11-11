@@ -16,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/bump"
 	"github.com/herbygillot/dockhand/internal/command/check"
+	"github.com/herbygillot/dockhand/internal/command/checkverbs"
 	"github.com/herbygillot/dockhand/internal/command/clean"
 	"github.com/herbygillot/dockhand/internal/command/config"
 	"github.com/herbygillot/dockhand/internal/command/console"
@@ -23,9 +24,9 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/decide"
 	"github.com/herbygillot/dockhand/internal/command/explain"
 	"github.com/herbygillot/dockhand/internal/command/host"
+	"github.com/herbygillot/dockhand/internal/command/inspect"
 	"github.com/herbygillot/dockhand/internal/command/outdated"
 	"github.com/herbygillot/dockhand/internal/command/review"
-	"github.com/herbygillot/dockhand/internal/command/runcmd"
 	"github.com/herbygillot/dockhand/internal/command/serve"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/setup"
@@ -34,7 +35,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/status"
 	"github.com/herbygillot/dockhand/internal/command/submit"
 	"github.com/herbygillot/dockhand/internal/command/tidy"
-	"github.com/herbygillot/dockhand/internal/command/understand"
 	"github.com/herbygillot/dockhand/internal/command/usage"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/compose"
@@ -109,12 +109,14 @@ func RunWith(ctx context.Context, line settings.Invocation, streams term.Streams
 	// so a test binary's own flags never reach a command.
 	root.SetArgs(append([]string{}, args...))
 	root.SetIn(streams.In)
-	root.SetOut(streams.Out)
 	root.SetErr(streams.Err)
-	// Cobra's completion scripts are code, written as they are: wrapped at
-	// the terminal's width, fish's and bash's broke where a line split
-	// (#88). It's made once the output is set, which it takes then.
+	// Cobra's completion scripts are code, written raw: wrapped at the
+	// terminal's width, fish's and bash's broke where a line split (#88).
+	// The completion command takes the output set as it's made, raw, and
+	// every other command's is prose, cobra's help among it (#94).
+	root.SetOut(streams.Out)
 	root.InitDefaultCompletionCmd()
+	root.SetOut(streams.Prose())
 	for _, cmd := range root.Commands() {
 		if cmd.Name() != "completion" {
 			continue
@@ -125,11 +127,6 @@ func RunWith(ctx context.Context, line settings.Invocation, streams term.Streams
 			// release/v0.8.0).
 			if long, ok := completionHelp[shell.Name()]; ok {
 				shell.Long = long
-			}
-			run := shell.RunE
-			shell.RunE = func(cmd *cobra.Command, args []string) error {
-				streams.Unwrapped()
-				return run(cmd, args)
 			}
 		}
 	}
@@ -187,7 +184,7 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 				return rewriteErr
 			}
 			if rewritten {
-				fmt.Fprintln(streams.Out, said)
+				fmt.Fprintln(streams.Prose(), said)
 				return &term.ExitError{Code: 0}
 			}
 		}
@@ -273,9 +270,9 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 	for _, command := range []*cobra.Command{
 		status.Command(shared, streams),
 		console.Command(shared, streams),
-		understand.DiffCommand(shared, streams),
-		understand.OpenCommand(shared, streams),
-		understand.ImpactCommand(shared, streams),
+		inspect.DiffCommand(shared, streams),
+		inspect.OpenCommand(shared, streams),
+		inspect.ImpactCommand(shared, streams),
 		outdated.Command(shared, streams),
 	} {
 		command.GroupID = "understand"
@@ -284,10 +281,10 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 	root.AddGroup(&cobra.Group{ID: "check", Title: "Check:"})
 	for _, command := range []*cobra.Command{
 		check.Command(shared, streams),
-		runcmd.LogsCommand(shared, streams),
-		runcmd.ArtifactsCommand(shared, streams),
+		checkverbs.LogsCommand(shared, streams),
+		checkverbs.ArtifactsCommand(shared, streams),
 		shell.Command(shared, streams),
-		runcmd.RetryCommand(shared, streams),
+		checkverbs.RetryCommand(shared, streams),
 	} {
 		command.GroupID = "check"
 		root.AddCommand(command)
@@ -304,8 +301,8 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 	}
 	root.AddGroup(&cobra.Group{ID: "queue", Title: "Keep work moving:"})
 	for _, command := range []*cobra.Command{
-		runcmd.WaitCommand(shared, streams),
-		runcmd.CancelCommand(shared, streams),
+		checkverbs.WaitCommand(shared, streams),
+		checkverbs.CancelCommand(shared, streams),
 		serve.Command(shared, streams),
 	} {
 		command.GroupID = "queue"

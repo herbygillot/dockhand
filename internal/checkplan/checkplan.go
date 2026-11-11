@@ -1,9 +1,9 @@
-// Package planning decides what a check builds, where, and in what order,
+// Package checkplan decides what a check builds, where, and in what order,
 // from what each environment's evaluation says of the ports it could build
 // (Design v3 §3). It reads nothing itself: the engine evaluates the ports
 // and decides which directories changed and how, and planning decides the
 // rest, in named phases, each a function of the ones before it.
-package planning
+package checkplan
 
 import (
 	"fmt"

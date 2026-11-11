@@ -1,6 +1,6 @@
 //go:build darwin || linux
 
-package script
+package buildcmd
 
 import (
 	"errors"

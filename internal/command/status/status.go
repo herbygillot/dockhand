@@ -110,7 +110,7 @@ func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 			viewed.Detail = view.BranchDetail(status, report)
 			streams.Emit(view.StatusJSON{Attention: view.AttentionView(view.AttentionFor(status)), Branches: []view.BranchJSON{viewed}})
 		}
-		showBranch(streams.Out, places, status, report)
+		showBranch(streams.Prose(), places, status, report)
 		return nil
 	}
 	// A read reaches a merged branch's record, as path does.
@@ -149,7 +149,7 @@ func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 		case len(statuses) == 1 && !attentionOnly:
 			return one(statuses[0].Branch)
 		case len(statuses) == 0 && !attentionOnly && !streams.JSON():
-			fmt.Fprintf(streams.Out, "No open branch touches %s yet. dockhand update %s starts one.\n", port, port)
+			fmt.Fprintf(streams.Prose(), "No open branch touches %s yet. dockhand update %s starts one.\n", port, port)
 			return nil
 		}
 	}
@@ -158,7 +158,7 @@ func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 		rows = append(rows, view.AttentionFor(status)...)
 	}
 	serve, queue, processes, changes := report.Serve, report.Queue, report.Processes, report.Changes
-	out := streams.Out
+	out := streams.Prose()
 	if streams.JSON() {
 		result := view.StatusJSON{Attention: view.AttentionView(rows)}
 		if !attentionOnly {

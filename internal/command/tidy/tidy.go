@@ -110,7 +110,7 @@ commits, and its files are as they were when it was saved.`,
 				}
 			}
 			streams.Emit(view.TidyView(proposal))
-			out := streams.Out
+			out := streams.Prose()
 			fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), view.DescribeWork(proposal))
 			if proposal.Keep && len(proposal.Warnings) > 0 {
 				// What the rules warn of is said, as submit says it, with
@@ -202,8 +202,8 @@ func applySaved(ctx context.Context, e *engine.Engine, streams term.Streams, fil
 		return fmt.Errorf("%s: %w", file, err)
 	}
 	streams.Emit(view.TidyView(proposal))
-	fmt.Fprintf(streams.Out, "%s · the plan saved in %s\n", proposal.Branch.ShortName(), file)
-	view.WriteTidyPlan(streams.Out, proposal, true)
+	fmt.Fprintf(streams.Prose(), "%s · the plan saved in %s\n", proposal.Branch.ShortName(), file)
+	view.WriteTidyPlan(streams.Prose(), proposal, true)
 	if blocking := proposal.Blocking(); len(blocking) > 0 {
 		return fmt.Errorf("the plan can't be applied yet: %s", strings.Join(blocking, "; "))
 	}
@@ -282,7 +282,7 @@ func putBack(ctx context.Context, e *engine.Engine, streams term.Streams, name s
 	}
 	streams.Emit(map[string]any{"check": run.Name(), "put_back": places})
 	for _, place := range places {
-		fmt.Fprintf(streams.Out, "Put %s back as it was before %s.\n", place, run.Name())
+		fmt.Fprintf(streams.Prose(), "Put %s back as it was before %s.\n", place, run.Name())
 	}
 	return nil
 }
@@ -296,9 +296,9 @@ func restoreCheckpoint(ctx context.Context, e *engine.Engine, streams term.Strea
 	}
 	streams.Emit(map[string]any{"checkpoint": checkpoint.Name(), "branch": branch.ShortName(), "head": checkpoint.Before, "base": branch.Base})
 	if checkpoint.Kind != model.CheckpointRebase {
-		fmt.Fprintf(streams.Out, "Restored %s to its history before %s (%s). The files are unchanged.\n", branch.Name, checkpoint.Name(), checkpoint.Before.Short())
+		fmt.Fprintf(streams.Prose(), "Restored %s to its history before %s (%s). The files are unchanged.\n", branch.Name, checkpoint.Name(), checkpoint.Before.Short())
 		return nil
 	}
-	fmt.Fprintf(streams.Out, "Restored %s to its history and files before %s (%s), on master %s again.\n", branch.Name, checkpoint.Name(), checkpoint.Before.Short(), branch.Base.Short())
+	fmt.Fprintf(streams.Prose(), "Restored %s to its history and files before %s (%s), on master %s again.\n", branch.Name, checkpoint.Name(), checkpoint.Before.Short(), branch.Base.Short())
 	return nil
 }

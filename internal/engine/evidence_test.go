@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/checkplan"
 	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/planning"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -580,11 +580,11 @@ func TestAPlanCoversAnotherCellByCell(t *testing.T) {
 	plan := func(profile string) model.Plan {
 		where, err := e.Where(t.Context(), WhereRequest{Build: profile})
 		require.NoError(t, err)
-		var evaluations []planning.Evaluation
+		var evaluations []checkplan.Evaluation
 		for range where.Environments {
-			evaluations = append(evaluations, planning.Evaluation{"jq": {}})
+			evaluations = append(evaluations, checkplan.Evaluation{"jq": {}})
 		}
-		decision, err := planning.Decide(planning.Input{Environments: where.Environments, Span: where.Span,
+		decision, err := checkplan.Decide(checkplan.Input{Environments: where.Environments, Span: where.Span,
 			Candidates:  []model.PlanTarget{{ID: "jq", Target: model.Target{Name: "jq", Portfile: "textproc/jq/Portfile"}, Directory: "textproc/jq", Kind: model.Substantive, Role: model.Changed}},
 			Evaluations: evaluations})
 		require.NoError(t, err)

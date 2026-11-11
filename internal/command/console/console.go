@@ -93,7 +93,7 @@ func watchPlain(ctx context.Context, e *engine.Engine, streams term.Streams, all
 	if err := command(ctx, args, streams); err != nil {
 		return err
 	}
-	fmt.Fprintln(streams.Out, "\nWatching for changes. Press Ctrl-C to stop watching.")
+	fmt.Fprintln(streams.Prose(), "\nWatching for changes. Press Ctrl-C to stop watching.")
 	names := newEventNames(e)
 	for {
 		select {
@@ -110,7 +110,7 @@ func watchPlain(ctx context.Context, e *engine.Engine, streams term.Streams, all
 			return err
 		}
 		for _, event := range events {
-			fmt.Fprintln(streams.Out, names.line(ctx, event))
+			fmt.Fprintln(streams.Prose(), names.line(ctx, event))
 		}
 	}
 }
@@ -371,7 +371,7 @@ func (c *console) verb(ctx context.Context, key rune) ([]string, bool) {
 // terminal as it was: an interrupt meanwhile stops the command and is
 // reported, as is a termination, which ends the console too.
 func (c *console) run(ctx context.Context, args []string, signals <-chan os.Signal) (interrupted, terminated bool) {
-	fmt.Fprintf(c.streams.Out, "$ dockhand %s\n", strings.Join(args, " "))
+	fmt.Fprintf(c.streams.Prose(), "$ dockhand %s\n", strings.Join(args, " "))
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
 	done, watched := make(chan struct{}), make(chan struct{})

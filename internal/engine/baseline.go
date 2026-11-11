@@ -7,10 +7,10 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/checkplan"
 	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/planning"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/reuse"
@@ -160,7 +160,7 @@ func (e *Engine) planBaseline(ctx context.Context, request BaselineRequest, reco
 	baseline.New = added
 	var also []string
 	directories := map[string]string{}
-	where := map[model.TargetID]planning.Limited{}
+	where := map[model.TargetID]checkplan.Limited{}
 	// A variant build is built with its variants at master too (I6).
 	variants := map[model.TargetID]model.Target{}
 	for _, target := range targets {
@@ -442,7 +442,7 @@ func NewTestsWords(ports []string) string {
 // the check failed it at install or test, or its tests failed, or, for one
 // named that failed nowhere there, every environment the check built it
 // in.
-func rebuildWhere(evidence Evidence, id model.TargetID) planning.Limited {
+func rebuildWhere(evidence Evidence, id model.TargetID) checkplan.Limited {
 	i := slices.IndexFunc(evidence.Targets, func(target TargetEvidence) bool { return target.Target.ID == id })
 	var failed, built []model.Environment
 	for n, result := range evidence.Targets[i].Outcomes {
@@ -455,9 +455,9 @@ func rebuildWhere(evidence Evidence, id model.TargetID) planning.Limited {
 		}
 	}
 	if len(failed) > 0 {
-		return planning.Limited{Environments: failed, Elsewhere: evidence.Run.Name() + " didn't fail there"}
+		return checkplan.Limited{Environments: failed, Elsewhere: evidence.Run.Name() + " didn't fail there"}
 	}
-	return planning.Limited{Environments: built, Elsewhere: evidence.Run.Name() + " didn't build there"}
+	return checkplan.Limited{Environments: built, Elsewhere: evidence.Run.Name() + " didn't build there"}
 }
 
 // latestCheck is a branch's newest finished check, not a baseline: the

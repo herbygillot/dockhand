@@ -1,4 +1,4 @@
-package planning
+package checkplan
 
 import (
 	"testing"

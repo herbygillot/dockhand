@@ -1,4 +1,4 @@
-package runcmd
+package checkverbs
 
 import (
 	"context"
@@ -58,7 +58,7 @@ useful for temporary failures, such as a mirror refusing an archive.`,
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(streams.Out, "%s repeats %s: %s\n", run.Name(), previous.Name(), checks.Describe(revision))
+			fmt.Fprintf(streams.Prose(), "%s repeats %s: %s\n", run.Name(), previous.Name(), checks.Describe(revision))
 			return checkrun.RunQueued(ctx, e, run, streams, enqueue, s.Places(), s.Drain)
 		},
 	}
@@ -92,6 +92,6 @@ func retryCI(ctx context.Context, e *engine.Engine, streams term.Streams, where 
 	}
 	number := branch.PullRequest.Number
 	streams.Emit(retryCIJSON{PullRequest: number, Runs: runs})
-	fmt.Fprintf(streams.Out, "Asked GitHub to run #%d's failed CI again (%s); dockhand status --refresh reads how it went.\n", number, prose.Plural(len(runs), "workflow run"))
+	fmt.Fprintf(streams.Prose(), "Asked GitHub to run #%d's failed CI again (%s); dockhand status --refresh reads how it went.\n", number, prose.Plural(len(runs), "workflow run"))
 	return nil
 }

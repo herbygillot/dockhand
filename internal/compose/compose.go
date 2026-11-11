@@ -17,9 +17,9 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/buildenv/buildcmd"
 	"github.com/herbygillot/dockhand/internal/buildenv/ghactions"
 	"github.com/herbygillot/dockhand/internal/buildenv/local"
-	"github.com/herbygillot/dockhand/internal/buildenv/script"
 	"github.com/herbygillot/dockhand/internal/buildenv/tart"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/credential"
@@ -429,7 +429,7 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	}
 	e.Providers = map[string]buildenv.Provider{}
 	if command := file.Providers.Command; command != nil {
-		e.Providers[buildenv.Command] = &script.Provider{Run: command.Run, Label: command.Name, Repo: e.Repo, Env: options.Env}
+		e.Providers[buildenv.Command] = &buildcmd.Provider{Run: command.Run, Label: command.Name, Repo: e.Repo, Env: options.Env}
 	}
 	// One GitHub runtime, which the engine's forge, discovery, and project
 	// inspection share with Actions (CX-11).

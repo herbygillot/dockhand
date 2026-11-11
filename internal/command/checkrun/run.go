@@ -51,13 +51,13 @@ func RunQueued(ctx context.Context, e *engine.Engine, run model.Run, streams ter
 		// its tool's timeout, and a session's end killed one run here.
 		pid, err := drain()
 		if err != nil {
-			fmt.Fprintf(streams.Out, "%s was queued, but Dockhand could not start a background worker (%v). Run dockhand serve to process it.\n", run.Name(), err)
+			fmt.Fprintf(streams.Prose(), "%s was queued, but Dockhand could not start a background worker (%v). Run dockhand serve to process it.\n", run.Name(), err)
 			return nil
 		}
-		fmt.Fprintf(streams.Out, "%s is queued; a background worker (PID %d) will run it. Follow it with dockhand wait %s.\n", run.Name(), pid, run.Name())
+		fmt.Fprintf(streams.Prose(), "%s is queued; a background worker (PID %d) will run it. Follow it with dockhand wait %s.\n", run.Name(), pid, run.Name())
 		return nil
 	case enqueue:
-		fmt.Fprintf(streams.Out, "%s is queued; serve (PID %d) will run it. Follow it with dockhand wait %s.\n", run.Name(), leader.PID, run.Name())
+		fmt.Fprintf(streams.Prose(), "%s is queued; serve (PID %d) will run it. Follow it with dockhand wait %s.\n", run.Name(), leader.PID, run.Name())
 		return nil
 	}
 	return Follow(ctx, e, session, run, streams, places, true, func(lead checks.Lead) {
@@ -243,11 +243,11 @@ func QueuedFor(ctx context.Context, e *engine.Engine, run model.Run, streams ter
 		if err != nil {
 			return refusal.New(refusal.Failed, "%s is queued and nothing runs it: Dockhand could not start a background worker (%v). Run dockhand serve, or dockhand wait %s without --for runs it here", run.Name(), err, run.Name())
 		}
-		fmt.Fprintf(streams.Out, "%s is queued; a background worker (PID %d) will run it.\n", run.Name(), pid)
+		fmt.Fprintf(streams.Prose(), "%s is queued; a background worker (PID %d) will run it.\n", run.Name(), pid)
 	} else {
-		fmt.Fprintf(streams.Out, "%s is queued; serve (PID %d) will run it.\n", run.Name(), leader.PID)
+		fmt.Fprintf(streams.Prose(), "%s is queued; serve (PID %d) will run it.\n", run.Name(), leader.PID)
 	}
-	fmt.Fprintf(streams.Out, "Following it for %s.\n", bound.Said)
+	fmt.Fprintf(streams.Prose(), "Following it for %s.\n", bound.Said)
 	return FollowFor(ctx, e, run, streams, places, true, bound)
 }
 
@@ -365,7 +365,7 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 	if run.BaselineOf != "" {
 		return reportBaseline(ctx, e, run, streams)
 	}
-	out := streams.Out
+	out := streams.Prose()
 	evidence, err := e.RunEvidence(ctx, run.ID)
 	if err != nil {
 		return err
@@ -645,7 +645,7 @@ func checkResult(ctx context.Context, e *engine.Engine, run model.Run) (view.Che
 // the check the baseline looks into. It says what happened in each run and
 // nothing more: a baseline never establishes a cause, and never fails.
 func reportBaseline(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams) error {
-	out := streams.Out
+	out := streams.Prose()
 	base, err := e.RunEvidence(ctx, run.ID)
 	if err != nil {
 		return err

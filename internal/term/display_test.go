@@ -29,8 +29,8 @@ func TestTheMarksAreColouredAndNothingElse(t *testing.T) {
 	require.Equal(t, green+"✓"+reset+" done\n", out.String())
 
 	out.Reset()
-	streams := Streams{Out: &switchWriter{w: marks}}.Plain()
-	_, err = streams.Out.Write([]byte("✗ plain\n"))
+	streams := Streams{Out: &switchWriter{w: &out}, prose: &wrapWriter{w: marks}}.Plain()
+	_, err = streams.Prose().Write([]byte("✗ plain\n"))
 	require.NoError(t, err)
 	require.Equal(t, "✗ plain\n", out.String())
 }
