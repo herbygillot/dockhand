@@ -188,3 +188,24 @@ func TestBumpPlanChangesNothing(t *testing.T) {
 	require.Empty(t, testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/*"))
 	require.Empty(t, g.PRs)
 }
+
+// A tested statement said false withdraws the one kept on the branch, as
+// ship's and submit's do: bump read --tested-binaries=false as the flag
+// left out, and the pull request it opened ticked the box (#198).
+func TestBumpWithdrawsATestedStatementSaidFalse(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithScript(t, w, "passed")
+	g := cmdtest.WithGitHub(t, w)
+	g.Others = nil
+	_, errs, err := cmdtest.Dockhand(t, "ship", "jq", "--to", "commit", "--tested-binaries", "--tested-variants")
+	require.NoError(t, err, errs)
+
+	_, errs, err = cmdtest.Dockhand(t, "bump", "jq", "--tested-binaries=false", "--tested-variants=false")
+	require.NoError(t, err, errs)
+	require.Len(t, g.PRs, 1)
+	require.Contains(t, g.PRs[34901].Body, "- [ ] tested basic functionality of all binary files?")
+	require.Contains(t, g.PRs[34901].Body, "- [ ] checked that the Portfile's most important [variants]")
+}
