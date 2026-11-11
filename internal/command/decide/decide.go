@@ -62,7 +62,7 @@ Deciding again replaces the previous decision.`,
 				return err
 			}
 			streams.Emit(map[string]any{"branch": branch.ShortName(), "subject": decision.Subject, "answer": string(decision.Answer), "words": decision.Words})
-			fmt.Fprintf(streams.Out, "%s: %s\n", branch.ShortName(), engine.DecisionWords(decision))
+			fmt.Fprintf(streams.Prose(), "%s: %s\n", branch.ShortName(), engine.DecisionWords(decision))
 			return nil
 		},
 	}

@@ -67,8 +67,8 @@ dockhand <command> --help is the reference for any one command.`,
 			if err != nil {
 				return err
 			}
-			// Preserve Markdown and copyable shell examples verbatim.
-			streams.Unwrapped()
+			// A page is a document: Markdown and copyable shell examples,
+			// written as they are.
 			_, err = fmt.Fprint(streams.Out, text)
 			return err
 		},

@@ -227,7 +227,7 @@ func TestAnUpdatesPlanSaysWhatUpstreamChanged(t *testing.T) {
 	out, _, err := cmdtest.Dockhand(t, "update", "jq", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "Plan, nothing changed:")
-	require.Contains(t, out, "! held: upstream archives not compared: the current version's archives could not be fetched: HTTP 404", "unwrapped after the plan's diff (#93)")
+	require.Contains(t, cmdtest.Flat(out), "! held: upstream archives not compared: the current version's archives could not be fetched: HTTP 404")
 }
 
 // ship's submission reports its result wherever it stops, with its check

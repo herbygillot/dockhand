@@ -20,7 +20,7 @@ import (
 // or with --yes, a plan made only of dockhand's own edits applies too,
 // and anything else needs review. It reports whether the plan applied.
 func Decide(ctx context.Context, e *engine.Engine, streams term.Streams, proposal engine.TidyPlan, explicit, yes bool, author string) (bool, error) {
-	out := streams.Out
+	out := streams.Prose()
 	// --yes applies the plan as shown, whosever its edits are, as --yes
 	// does elsewhere: a hand edit's plan tidy proposed itself had no way
 	// to be taken without a terminal (field testing's seventh report).
@@ -45,9 +45,8 @@ func Decide(ctx context.Context, e *engine.Engine, streams term.Streams, proposa
 			if err != nil {
 				return false, err
 			}
-			// The diff is written as it is (#93).
-			streams.Unwrapped()
-			fmt.Fprint(out, string(diff))
+			// The diff is written raw, from a stage too (#93, #94).
+			fmt.Fprint(streams.Out, string(diff))
 		case "g":
 			spec, err := streams.Ask("Enter commit numbers in order; use + to combine them (for example, 2 1+3): ")
 			if err != nil {
@@ -111,14 +110,14 @@ func Apply(ctx context.Context, e *engine.Engine, streams term.Streams, plan eng
 		}
 		made = fmt.Sprintf("Kept %s as %s, and created %d", prose.Plural(result.Kept, "commit"), as, len(result.Commits)-result.Kept)
 	}
-	fmt.Fprintf(streams.Out, "%s. The files are unchanged.\n", made)
+	fmt.Fprintf(streams.Prose(), "%s. The files are unchanged.\n", made)
 	// The checkpoint is said where tidy rewrote commits someone might want
 	// back; one that only committed edits is -v's (part 5, item 3).
 	if result.Kept < len(plan.History) || streams.Verbose() > 0 {
-		fmt.Fprintf(streams.Out, "Checkpoint %s keeps the old history (dockhand undo %s).\n", name, name)
+		fmt.Fprintf(streams.Prose(), "Checkpoint %s keeps the old history (dockhand undo %s).\n", name, name)
 	}
 	if len(result.Narrowed) > 0 {
-		fmt.Fprintf(streams.Out, "Removed %s from the sparse checkout; the branch has no changes there.\n", strings.Join(result.Narrowed, ", "))
+		fmt.Fprintf(streams.Prose(), "Removed %s from the sparse checkout; the branch has no changes there.\n", strings.Join(result.Narrowed, ", "))
 	}
 	if warning := view.ModifiedBuildWarning(plan, name); warning != "" {
 		fmt.Fprintln(streams.Err, warning)
@@ -127,9 +126,9 @@ func Apply(ctx context.Context, e *engine.Engine, streams term.Streams, plan eng
 	case plan.Branch.PullRequest == nil || len(plan.History) == 0:
 	case result.Kept == len(plan.History):
 		// Every commit it has stays, so submitting adds the rest to it.
-		fmt.Fprintf(streams.Out, "#%d gains %s when you submit, on top of the %s it has.\n", plan.Branch.PullRequest.Number, prose.Plural(len(result.Commits)-result.Kept, "commit"), prose.Plural(len(plan.History), "commit"))
+		fmt.Fprintf(streams.Prose(), "#%d gains %s when you submit, on top of the %s it has.\n", plan.Branch.PullRequest.Number, prose.Plural(len(result.Commits)-result.Kept, "commit"), prose.Plural(len(plan.History), "commit"))
 	default:
-		fmt.Fprintf(streams.Out, "#%d still shows %s until you submit; submit will replace its history, if no one else has pushed.\n", plan.Branch.PullRequest.Number, prose.Plural(len(plan.History), "commit"))
+		fmt.Fprintf(streams.Prose(), "#%d still shows %s until you submit; submit will replace its history, if no one else has pushed.\n", plan.Branch.PullRequest.Number, prose.Plural(len(plan.History), "commit"))
 	}
 	return nil
 }
@@ -149,7 +148,7 @@ type Tidied struct {
 // An unambiguous plan applies without asking (Decide). It's the tidy
 // stage ship and submit each take (Design v3 §3's chaining).
 func Stage(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, undone string) (Tidied, error) {
-	out := streams.Out
+	out := streams.Prose()
 	tidied := Tidied{Branch: branch}
 	proposal, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch})
 	if err != nil {

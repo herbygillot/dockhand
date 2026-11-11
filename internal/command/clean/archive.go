@@ -64,7 +64,7 @@ closes it.`,
 			branch = archived.Branch
 			streams.Emit(map[string]any{"branch": branch.ShortName(), "state": branch.State, "worktree_removed": archived.Removed != "", "worktree_kept": archived.Kept,
 				"ignored_removed": view.NonNil(archived.IgnoredRemoved)})
-			out := streams.Out
+			out := streams.Prose()
 			if undo {
 				fmt.Fprintf(out, "%s is back among your open branches.\n", branch.ShortName())
 				return nil

@@ -39,9 +39,17 @@ func (s Streams) Staged(under string) (Streams, *Stage) {
 	if s.ErrTerminal() {
 		stage.status.Show("⋯ " + under)
 	}
+	// What's held is held of both writers, Out and Prose, in the order
+	// written; the stage's own lines go through the Prose it was begun
+	// with, wrapped and coloured.
 	held := &stageWriter{to: s.Out}
-	stage.held = held
+	stage.held, stage.prose = held, s.Prose()
+	colour := false
+	if wrap, ok := s.Prose().(*wrapWriter); ok {
+		_, colour = wrap.w.(*markWriter)
+	}
 	s.Out = held
+	s.prose = s.proseOver(held, colour)
 	return s, stage
 }
 
@@ -55,7 +63,10 @@ func (s Streams) Held() bool {
 
 // Stage is a stage's report held back (Staged).
 type Stage struct {
-	held   *stageWriter
+	held *stageWriter
+	// prose is the Prose the stage was begun with, which its own lines
+	// are written through.
+	prose  io.Writer
 	status *StatusLine
 }
 
@@ -77,7 +88,7 @@ func (st *Stage) Done(format string, args ...any) {
 	}
 	st.status.Clear()
 	st.held.buf.Reset()
-	fmt.Fprintf(st.held.to, format+"\n", args...)
+	fmt.Fprintf(st.prose, format+"\n", args...)
 }
 
 // Drop drops a stage's report held back, said elsewhere in a line of

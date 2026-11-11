@@ -42,7 +42,7 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 				return err
 			}
 			if started {
-				fmt.Fprintf(streams.Out, "Started %s from master %s (fetched just now)\n", branch.Name, branch.Base.Short())
+				fmt.Fprintf(streams.Prose(), "Started %s from master %s (fetched just now)\n", branch.Name, branch.Base.Short())
 			}
 			directory, err := e.Edit(ctx, branch, args[0])
 			if err != nil {
@@ -55,14 +55,14 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 			// the person's own, where EDITOR=true stood in for it (field
 			// testing's batch 13).
 			if noOpen || !streams.Terminal() || editor == "" {
-				fmt.Fprintln(streams.Out, portfile)
+				fmt.Fprintln(streams.Prose(), portfile)
 				return nil
 			}
 			fmt.Fprintf(streams.Err, "%s · %s\n", branch.ShortName(), s.Places().Tilde(portfile))
 			if err := settings.RunEditor(ctx, editor, portfile); err != nil {
 				return err
 			}
-			fmt.Fprintln(streams.Out, "Next: "+branchflags.NextIn(ctx, e, branch, "dockhand checksums "+args[0]+" (if you changed the version)", "dockhand check"))
+			fmt.Fprintln(streams.Prose(), "Next: "+branchflags.NextIn(ctx, e, branch, "dockhand checksums "+args[0]+" (if you changed the version)", "dockhand check"))
 			return nil
 		},
 	}
@@ -117,7 +117,7 @@ since a rebuild has its own reason.`,
 			if err != nil {
 				return err
 			}
-			out := streams.Out
+			out := streams.Prose()
 			switch {
 			case fromMaster:
 				// Said with the master the first port's plan read.
@@ -143,9 +143,8 @@ since a rebuild has its own reason.`,
 				result.Ports = append(result.Ports, view.RevbumpedJSON{Port: update.Port, Before: update.Before.Revision, After: update.After.Revision})
 				fmt.Fprintf(out, "  %-*s  revision %d → %d\n", width, update.Port, update.Before.Revision, update.After.Revision)
 				if plan {
-					// The diff is written as it is (#93).
-					streams.Unwrapped()
-					fmt.Fprint(out, update.Diff)
+					// The diff is written raw (#93, #94).
+					fmt.Fprint(streams.Out, update.Diff)
 				}
 			}
 			if plan {

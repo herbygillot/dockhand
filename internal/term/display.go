@@ -33,7 +33,7 @@ func (s Streams) WithDisplay(display Display) Streams {
 // console's --plain: line output a script or a log reads.
 func (s Streams) Plain() Streams {
 	s.display.NoColour = true
-	if w, ok := s.Out.(*switchWriter); ok {
+	if w, ok := s.Prose().(*wrapWriter); ok {
 		if marks, ok := w.w.(*markWriter); ok {
 			marks.plain = true
 		}

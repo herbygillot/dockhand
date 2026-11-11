@@ -37,7 +37,7 @@ waiting for.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			out := streams.Out
+			out := streams.Prose()
 			named := len(args) > 0 && model.IsRunName(args[0])
 			if where.Explicit() || named {
 				if where.Explicit() && len(args) > 0 {

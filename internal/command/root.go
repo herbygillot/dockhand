@@ -109,12 +109,14 @@ func RunWith(ctx context.Context, line settings.Invocation, streams term.Streams
 	// so a test binary's own flags never reach a command.
 	root.SetArgs(append([]string{}, args...))
 	root.SetIn(streams.In)
-	root.SetOut(streams.Out)
 	root.SetErr(streams.Err)
-	// Cobra's completion scripts are code, written as they are: wrapped at
-	// the terminal's width, fish's and bash's broke where a line split
-	// (#88). It's made once the output is set, which it takes then.
+	// Cobra's completion scripts are code, written raw: wrapped at the
+	// terminal's width, fish's and bash's broke where a line split (#88).
+	// The completion command takes the output set as it's made, raw, and
+	// every other command's is prose, cobra's help among it (#94).
+	root.SetOut(streams.Out)
 	root.InitDefaultCompletionCmd()
+	root.SetOut(streams.Prose())
 	for _, cmd := range root.Commands() {
 		if cmd.Name() != "completion" {
 			continue
@@ -125,11 +127,6 @@ func RunWith(ctx context.Context, line settings.Invocation, streams term.Streams
 			// release/v0.8.0).
 			if long, ok := completionHelp[shell.Name()]; ok {
 				shell.Long = long
-			}
-			run := shell.RunE
-			shell.RunE = func(cmd *cobra.Command, args []string) error {
-				streams.Unwrapped()
-				return run(cmd, args)
 			}
 		}
 	}
@@ -187,7 +184,7 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 				return rewriteErr
 			}
 			if rewritten {
-				fmt.Fprintln(streams.Out, said)
+				fmt.Fprintln(streams.Prose(), said)
 				return &term.ExitError{Code: 0}
 			}
 		}

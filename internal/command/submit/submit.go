@@ -98,7 +98,7 @@ write, keeping your --note.
 				return err
 			}
 			streams.Emit(view.SubmitView(plan))
-			view.WriteSubmitPlan(streams.Out, plan, preview || streams.Terminal())
+			view.WriteSubmitPlan(streams.Prose(), plan, preview || streams.Terminal())
 			// A --note is kept with the branch before the gate, so a
 			// submit refused there or cancelled keeps it (field testing's
 			// notes from the curl fix, note 9); --plan changes nothing.
@@ -115,9 +115,9 @@ write, keeping your --note.
 				return errors.New(undone)
 			}
 			if preview {
-				writeReadyPreview(streams.Out, plan, ready)
+				writeReadyPreview(streams.Prose(), plan, ready)
 				writeDescription(streams, plan)
-				fmt.Fprintln(streams.Out, "Nothing was submitted (--plan).")
+				fmt.Fprintln(streams.Prose(), "Nothing was submitted (--plan).")
 				return nil
 			}
 			if !streams.Terminal() {
@@ -136,9 +136,8 @@ write, keeping your --note.
 				}
 				switch strings.ToLower(answer) {
 				case "p":
-					// The title and Markdown body are written as they are,
-					// code blocks and all (#93).
-					streams.Unwrapped()
+					// The title and Markdown body are written raw, code
+					// blocks and all (#93, #94).
 					fmt.Fprintf(streams.Out, "\n%s\n\n%s\n", plan.Title, plan.Body)
 				case "e":
 					edited, err := settings.EditText(ctx, settings.EditorCommand(s), plan.Body)
@@ -150,7 +149,7 @@ write, keeping your --note.
 				case "s":
 					return finishSubmit(ctx, e, streams, plan, ready, s.File.Submit.RerequestReview)
 				case "q", "":
-					fmt.Fprintf(streams.Out, "%s.\n", strings.ToUpper(undone[:1])+undone[1:])
+					fmt.Fprintf(streams.Prose(), "%s.\n", strings.ToUpper(undone[:1])+undone[1:])
 					return nil
 				}
 			}
@@ -223,11 +222,10 @@ func writeReadyPreview(out io.Writer, plan engine.SubmitPlan, ready bool) {
 // writeDescription shows the pull request's description as the submission
 // would leave it, which a preview otherwise shows only in its JSON.
 func writeDescription(streams term.Streams, plan engine.SubmitPlan) {
-	// The description's lines are written as they are, code blocks and
-	// all (#93).
-	streams.Unwrapped()
+	// The description's lines are written raw, code blocks and all
+	// (#93, #94); what's said of them is prose.
+	fmt.Fprintln(streams.Prose(), "\nProposed pull request description:")
 	out := streams.Out
-	fmt.Fprintln(out, "\nProposed pull request description:")
 	lines := strings.Split(strings.TrimRight(plan.Body, "\n"), "\n")
 	// Its first lines at the default level, and how to see the rest (part
 	// 5, item 3: the whole description made submit --plan's 53 lines).
@@ -239,9 +237,9 @@ func writeDescription(streams term.Streams, plan engine.SubmitPlan) {
 		fmt.Fprintln(out, strings.TrimRight("    "+line, " "))
 	}
 	if more := len(lines) - len(shown); more > 0 {
-		fmt.Fprintf(out, "    +%s (dockhand submit --plan -v shows it all)\n", prose.Plural(more, "line"))
+		fmt.Fprintf(streams.Prose(), "    +%s (dockhand submit --plan -v shows it all)\n", prose.Plural(more, "line"))
 	}
-	fmt.Fprintln(out)
+	fmt.Fprintln(streams.Prose())
 }
 
 // descriptionLines are how many of a description's lines submit --plan
@@ -264,10 +262,10 @@ func finishSubmit(ctx context.Context, e *engine.Engine, streams term.Streams, p
 	}
 	if byCLI {
 		organization, _, _ := strings.Cut(branch.PullRequest.Repository, "/")
-		fmt.Fprintf(streams.Out, "Marked #%d ready for review with the GitHub CLI: the %s organization refuses dockhand's app.\n", branch.PullRequest.Number, organization)
+		fmt.Fprintf(streams.Prose(), "Marked #%d ready for review with the GitHub CLI: the %s organization refuses dockhand's app.\n", branch.PullRequest.Number, organization)
 		return nil
 	}
-	fmt.Fprintf(streams.Out, "Marked #%d ready for review.\n", branch.PullRequest.Number)
+	fmt.Fprintf(streams.Prose(), "Marked #%d ready for review.\n", branch.PullRequest.Number)
 	return nil
 }
 
@@ -323,15 +321,15 @@ func followUp(ctx context.Context, e *engine.Engine, streams term.Streams, plan 
 	defer func() { streams.Emit(result) }()
 	switch {
 	case submitted.Created && plan.Request.Draft:
-		fmt.Fprintf(streams.Out, "Opened draft #%d  %s\n", pr.Ref.Number, pr.Ref.URL)
+		fmt.Fprintf(streams.Prose(), "Opened draft #%d  %s\n", pr.Ref.Number, pr.Ref.URL)
 	case submitted.Created:
-		fmt.Fprintf(streams.Out, "Opened #%d  %s\n", pr.Ref.Number, pr.Ref.URL)
+		fmt.Fprintf(streams.Prose(), "Opened #%d  %s\n", pr.Ref.Number, pr.Ref.URL)
 	case submitted.Pushed && plan.Replaces:
-		fmt.Fprintf(streams.Out, "Updated #%d: replaced the remote branch history with %s after confirming the remote had not changed.\n", pr.Ref.Number, prose.Plural(len(plan.Commits), "commit"))
+		fmt.Fprintf(streams.Prose(), "Updated #%d: replaced the remote branch history with %s after confirming the remote had not changed.\n", pr.Ref.Number, prose.Plural(len(plan.Commits), "commit"))
 	case submitted.Pushed:
-		fmt.Fprintf(streams.Out, "Updated #%d: pushed through commit %s\n", pr.Ref.Number, model.ObjectID(plan.Commit).Short())
+		fmt.Fprintf(streams.Prose(), "Updated #%d: pushed through commit %s\n", pr.Ref.Number, model.ObjectID(plan.Commit).Short())
 	default:
-		fmt.Fprintln(streams.Out, updatedWords(submitted.Edited, pr.Ref.Number))
+		fmt.Fprintln(streams.Prose(), updatedWords(submitted.Edited, pr.Ref.Number))
 	}
 	observed := plan.Branch.PullRequest
 	if submitted.Created || observed == nil || observed.Observed == nil {
@@ -357,7 +355,7 @@ func followUp(ctx context.Context, e *engine.Engine, streams term.Streams, plan 
 	if rerequest != "always" {
 		again, how, err := streams.Decide(false, term.Decision{Question: fmt.Sprintf("? ask %s to review again? [Y/n] ", who), Yes: true, Nobody: term.Answer(false)})
 		if how == model.AnsweredNobody {
-			fmt.Fprintf(streams.Out, "%s requested changes; ask them to review again on GitHub, or set submit.rerequest_review = \"always\"\n", who)
+			fmt.Fprintf(streams.Prose(), "%s requested changes; ask them to review again on GitHub, or set submit.rerequest_review = \"always\"\n", who)
 		}
 		if err != nil || !again {
 			return err
@@ -370,7 +368,7 @@ func followUp(ctx context.Context, e *engine.Engine, streams term.Streams, plan 
 	for i, requested := range result.PullRequest.ChangesRequestedBy {
 		result.PullRequest.ChangesRequestedBy[i].Rerequested = slices.Contains(asked, requested.Login)
 	}
-	fmt.Fprintf(streams.Out, "Asked %s to review again%s.\n", who, leftOver)
+	fmt.Fprintf(streams.Prose(), "Asked %s to review again%s.\n", who, leftOver)
 	return nil
 }
 
@@ -383,9 +381,9 @@ func previewTidy(ctx context.Context, e *engine.Engine, streams term.Streams, br
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(streams.Out, "%s · commits first, %s\n", branch.ShortName(), view.DescribeWork(proposal))
+	fmt.Fprintf(streams.Prose(), "%s · commits first, %s\n", branch.ShortName(), view.DescribeWork(proposal))
 	streams.Emit(view.TidyView(proposal))
-	view.WriteTidyPlan(streams.Out, proposal, false)
-	fmt.Fprintln(streams.Out, "Nothing was committed or submitted (--plan). dockhand submit makes these commits, then shows what it submits.")
+	view.WriteTidyPlan(streams.Prose(), proposal, false)
+	fmt.Fprintln(streams.Prose(), "Nothing was committed or submitted (--plan). dockhand submit makes these commits, then shows what it submits.")
 	return nil
 }

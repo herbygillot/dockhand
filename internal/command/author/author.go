@@ -161,7 +161,7 @@ func updateSeveral(ctx context.Context, s *settings.Settings, streams term.Strea
 	for i, port := range args {
 		whole.Next()
 		if i > 0 {
-			fmt.Fprintln(streams.Out)
+			fmt.Fprintln(streams.Prose())
 		}
 		request, err := version.Request([]string{port}, plan)
 		if err == nil {
@@ -196,7 +196,7 @@ func updateMine(ctx context.Context, s *settings.Settings, streams term.Streams,
 	if err != nil {
 		return err
 	}
-	out := streams.Out
+	out := streams.Prose()
 	if len(outdated.Updates) == 0 {
 		fmt.Fprintln(out, "Nothing to update: no newer releases remain outside your existing branches.")
 		return nil
@@ -471,7 +471,7 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 		}
 	}
 	var started bool
-	out := streams.Out
+	out := streams.Prose()
 	// A version update with --new starts its branch once there is an edit
 	// to make, so a port already current starts nothing.
 	// It's named for the version it moves to, which the update finds.
@@ -612,12 +612,12 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 		fmt.Fprintf(out, "%s %s\n", update.Port, update.After)
 	}
 	if request.Plan {
-		// The diff is written as it is, and the short lines after it
-		// with it: wrapped, a Portfile's long lines broke (#93).
-		streams.Unwrapped()
-		fmt.Fprintf(out, "Plan, nothing changed:\n\n%s", update.Diff)
+		// The diff is written raw: wrapped, a Portfile's long lines broke
+		// (#93, #94).
+		fmt.Fprint(out, "Plan, nothing changed:\n\n")
+		fmt.Fprint(streams.Out, update.Diff)
 		if !strings.HasSuffix(update.Diff, "\n") {
-			fmt.Fprintln(out)
+			fmt.Fprintln(streams.Out)
 		}
 		if update.DistSubdirRemoved {
 			fmt.Fprintln(out, "Removes "+distSubdirRemoved)

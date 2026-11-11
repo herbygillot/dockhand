@@ -82,7 +82,7 @@ func runSetup(cmd *cobra.Command, s *settings.Settings, streams term.Streams, wo
 		return err
 	}
 	defer e.Close()
-	out := streams.Out
+	out := streams.Prose()
 	if remote := report.Upstream.Remote; remote != "" {
 		fmt.Fprintf(out, "Using %s; upstream is %s (remote %s).\n\n", s.Places().Tilde(report.Checkout), report.Upstream.Repository, remote)
 	} else {
@@ -253,7 +253,7 @@ with a short ID.`,
 					if renameErr != nil {
 						return renameErr
 					}
-					fmt.Fprintf(streams.Out, "Renamed the archived %s to %s; dockhand archive --undo %s brings it back.\n", taken.Branch.ShortName(), renamed.ShortName(), renamed.ShortName())
+					fmt.Fprintf(streams.Prose(), "Renamed the archived %s to %s; dockhand archive --undo %s brings it back.\n", taken.Branch.ShortName(), renamed.ShortName(), renamed.ShortName())
 					branch, err = e.Start(ctx, engine.StartRequest{Name: name, Here: here, Ports: ports})
 				}
 			}
@@ -278,15 +278,15 @@ with a short ID.`,
 			}
 			streams.Emit(result)
 			if here {
-				fmt.Fprintf(streams.Out, "Created %s from master %s (fetched just now) in this checkout, and switched to it.\n", branch.Name, branch.Base.Short())
+				fmt.Fprintf(streams.Prose(), "Created %s from master %s (fetched just now) in this checkout, and switched to it.\n", branch.Name, branch.Base.Short())
 			} else {
-				fmt.Fprintf(streams.Out, "Created %s from master %s (fetched just now)\nDirectory: %s\n", branch.Name, branch.Base.Short(), s.Places().Tilde(branch.Worktree))
+				fmt.Fprintf(streams.Prose(), "Created %s from master %s (fetched just now)\nDirectory: %s\n", branch.Name, branch.Base.Short(), s.Places().Tilde(branch.Worktree))
 			}
 			for _, port := range ports {
-				view.WriteOthers(streams.Out, port, found[port])
+				view.WriteOthers(streams.Prose(), port, found[port])
 			}
 			if !here {
-				fmt.Fprintf(streams.Out, "Next: cd \"$(dockhand path %s)\"\n", branch.ShortName())
+				fmt.Fprintf(streams.Prose(), "Next: cd \"$(dockhand path %s)\"\n", branch.ShortName())
 			}
 			return nil
 		},
@@ -321,11 +321,11 @@ func startFrom(ctx context.Context, s *settings.Settings, streams term.Streams, 
 		return err
 	}
 	streams.Emit(map[string]any{"branch": view.BranchRef(done.Branch), "from": view.BranchRef(done.From), "picked": len(done.Picked)})
-	fmt.Fprintf(streams.Out, "Created %s from master %s (fetched just now), with %s past #%d's merge from %s:\n", done.Branch.Name, done.Branch.Base.Short(), prose.Plural(len(done.Picked), "commit"), done.From.PullRequest.Number, done.From.ShortName())
+	fmt.Fprintf(streams.Prose(), "Created %s from master %s (fetched just now), with %s past #%d's merge from %s:\n", done.Branch.Name, done.Branch.Base.Short(), prose.Plural(len(done.Picked), "commit"), done.From.PullRequest.Number, done.From.ShortName())
 	for _, commit := range done.Picked {
-		fmt.Fprintf(streams.Out, "  %s %s\n", model.ObjectID(commit.ID).Short(), prose.FirstLine(commit.Message))
+		fmt.Fprintf(streams.Prose(), "  %s %s\n", model.ObjectID(commit.ID).Short(), prose.FirstLine(commit.Message))
 	}
-	fmt.Fprintf(streams.Out, "Directory: %s\nNext: dockhand check --branch %s\n", s.Places().Tilde(done.Branch.Worktree), done.Branch.ShortName())
+	fmt.Fprintf(streams.Prose(), "Directory: %s\nNext: dockhand check --branch %s\n", s.Places().Tilde(done.Branch.Worktree), done.Branch.ShortName())
 	return nil
 }
 
@@ -367,19 +367,19 @@ edit and you have write access, and never rewrites their description.`,
 			streams.Emit(map[string]any{"branch": view.BranchRef(adoption.Branch), "already": adoption.Already, "renamed_from": adoption.Renamed, "commits": adoption.Commits, "ports": view.NonNil(adoption.Scope.PortNames()),
 				"uncommitted": view.NonNil(adoption.Uncommitted), "placed": adoption.Placed, "unplaced": adoption.Unplaced})
 			if adoption.Already {
-				fmt.Fprintf(streams.Out, "%s is already tracked.\n", adoption.Branch.Name)
-				writePlaced(streams.Out, adoption)
+				fmt.Fprintf(streams.Prose(), "%s is already tracked.\n", adoption.Branch.Name)
+				writePlaced(streams.Prose(), adoption)
 				return nil
 			}
 			if adoption.Renamed != "" {
-				fmt.Fprintf(streams.Out, "Recognized %s as a Git rename of %s; retained its record, checks, and history.\n", adoption.Branch.Name, adoption.Renamed)
+				fmt.Fprintf(streams.Prose(), "Recognized %s as a Git rename of %s; retained its record, checks, and history.\n", adoption.Branch.Name, adoption.Renamed)
 				if pr := adoption.Branch.PullRequest; pr != nil {
-					fmt.Fprintf(streams.Out, "Pull request #%d keeps its original source branch; submit will continue pushing to %s.\n", pr.Number, pr.Head)
+					fmt.Fprintf(streams.Prose(), "Pull request #%d keeps its original source branch; submit will continue pushing to %s.\n", pr.Number, pr.Head)
 				}
 				return nil
 			}
-			fmt.Fprintf(streams.Out, "Adopted %s: %s above master %s%s.\n", adoption.Branch.Name, prose.Plural(adoption.Commits, "commit"), adoption.Branch.Base.Short(), describeScope(adoption.Scope, adoption.Uncommitted))
-			writePlaced(streams.Out, adoption)
+			fmt.Fprintf(streams.Prose(), "Adopted %s: %s above master %s%s.\n", adoption.Branch.Name, prose.Plural(adoption.Commits, "commit"), adoption.Branch.Base.Short(), describeScope(adoption.Scope, adoption.Uncommitted))
+			writePlaced(streams.Prose(), adoption)
 			return nil
 		},
 	}
@@ -409,14 +409,14 @@ func adoptPullRequest(ctx context.Context, e *engine.Engine, streams term.Stream
 	streams.Emit(map[string]any{"branch": view.BranchRef(adoption.Branch), "already": adoption.Already, "number": number, "title": adoption.Title,
 		"author": adoption.Author, "commits": adoption.Commits, "ports": view.NonNil(adoption.Scope.PortNames()), "maintainers_can_edit": adoption.MaintainerCanModify})
 	if adoption.Already {
-		fmt.Fprintf(streams.Out, "#%d is already tracked, as %s.\n", number, adoption.Branch.ShortName())
+		fmt.Fprintf(streams.Prose(), "#%d is already tracked, as %s.\n", number, adoption.Branch.ShortName())
 		return nil
 	}
 	edits := "maintainers can edit"
 	if !adoption.MaintainerCanModify {
 		edits = "maintainers can't push to it; suggest changes with dockhand review " + fmt.Sprint(number)
 	}
-	fmt.Fprintf(streams.Out, "Adopted %s: %q by @%s, %s%s; %s.\nDirectory: %s\n", adoption.Branch.ShortName(), adoption.Title, adoption.Author,
+	fmt.Fprintf(streams.Prose(), "Adopted %s: %q by @%s, %s%s; %s.\nDirectory: %s\n", adoption.Branch.ShortName(), adoption.Title, adoption.Author,
 		prose.Plural(adoption.Commits, "commit"), describeScope(adoption.Scope, nil), edits, places.Tilde(adoption.Branch.Worktree))
 	return nil
 }
@@ -460,7 +460,7 @@ any, the branch checked out here.`,
 				}
 			}
 			streams.Emit(map[string]string{"path": path})
-			fmt.Fprintln(streams.Out, path)
+			fmt.Fprintln(streams.Prose(), path)
 			return nil
 		},
 	}

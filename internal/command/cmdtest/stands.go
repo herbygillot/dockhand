@@ -193,10 +193,10 @@ func RunFor(t testing.TB, ctx context.Context, args []string, streams term.Strea
 	t.Helper()
 	found := standsFor(t)
 	line := invocationFor(t, args)
-	if !saidOnceChecked(args, streams) || streams.Out == nil {
+	if !saidOnceChecked(args, streams) || streams.Prose() == nil {
 		return runner(ctx, line, streams, found.Deps, hostFor(found, line.Env))
 	}
-	out := &saidOnceOut{to: streams.Out}
+	out := &saidOnceOut{to: streams.Prose()}
 	streams.Out = out
 	err := runner(ctx, line, streams, found.Deps, hostFor(found, line.Env))
 	checkSaidOnce(t, args, out)

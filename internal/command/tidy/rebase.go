@@ -54,17 +54,17 @@ rebase that conflicts is abandoned with the branch as it was.`,
 			}
 			streams.Emit(result)
 			if rebased.UpToDate {
-				fmt.Fprintf(streams.Out, "%s already starts from master %s (fetched just now).\n", branch.ShortName(), rebased.To.Short())
+				fmt.Fprintf(streams.Prose(), "%s already starts from master %s (fetched just now).\n", branch.ShortName(), rebased.To.Short())
 				return nil
 			}
 			name := rebased.Checkpoint.Name()
-			fmt.Fprintf(streams.Out, "Rebased %s (%s) from master %s onto %s.\nCheckpoint %s keeps the old history (dockhand undo %s).\n",
+			fmt.Fprintf(streams.Prose(), "Rebased %s (%s) from master %s onto %s.\nCheckpoint %s keeps the old history (dockhand undo %s).\n",
 				branch.ShortName(), prose.Plural(rebased.Commits, "commit"), rebased.From.Short(), rebased.To.Short(), name, name)
 			if len(rebased.OlderBuilds) > 0 {
-				fmt.Fprintf(streams.Out, "The rebased commits retain Generated-By values for older Dockhand builds: %s. A commit rewritten by tidy will name this build.\n", strings.Join(rebased.OlderBuilds, ", "))
+				fmt.Fprintf(streams.Prose(), "The rebased commits retain Generated-By values for older Dockhand builds: %s. A commit rewritten by tidy will name this build.\n", strings.Join(rebased.OlderBuilds, ", "))
 			}
 			if branch.PullRequest != nil {
-				fmt.Fprintf(streams.Out, "Pull request #%d still has the old commits. dockhand submit will replace them only if no one else has pushed.\n", branch.PullRequest.Number)
+				fmt.Fprintf(streams.Prose(), "Pull request #%d still has the old commits. dockhand submit will replace them only if no one else has pushed.\n", branch.PullRequest.Number)
 			}
 			// A check of the rebased files can already stand, as one does
 			// after a second rebase onto the same master: status says what
@@ -78,11 +78,11 @@ rebase that conflicts is abandoned with the branch as it was.`,
 				return err
 			}
 			if status.Current {
-				fmt.Fprintf(streams.Out, "%s checked these files already: %s.\n", status.Latest.Name(), view.CheckState(status))
-				view.WriteNext(streams.Out, status)
+				fmt.Fprintf(streams.Prose(), "%s checked these files already: %s.\n", status.Latest.Name(), view.CheckState(status))
+				view.WriteNext(streams.Prose(), status)
 				return nil
 			}
-			fmt.Fprintln(streams.Out, "Next: "+branchflags.NextIn(ctx, e, branch, "dockhand check (the files it builds on have changed)"))
+			fmt.Fprintln(streams.Prose(), "Next: "+branchflags.NextIn(ctx, e, branch, "dockhand check (the files it builds on have changed)"))
 			return nil
 		},
 	}
@@ -111,41 +111,41 @@ func writeRebasePlan(streams term.Streams, branch model.Branch, rebased engine.R
 	name := branch.ShortName()
 	switch {
 	case rebased.UpToDate:
-		fmt.Fprintf(streams.Out, "%s already starts from master %s (fetched just now).\n", name, rebased.To.Short())
+		fmt.Fprintf(streams.Prose(), "%s already starts from master %s (fetched just now).\n", name, rebased.To.Short())
 		return
 	case len(rebased.Replay) == 0:
-		fmt.Fprintf(streams.Out, "%s.\nNothing moved.\n", rebased.Refused)
+		fmt.Fprintf(streams.Prose(), "%s.\nNothing moved.\n", rebased.Refused)
 		return
 	}
-	fmt.Fprintf(streams.Out, "Rebase %s (%s) from master %s onto %s (fetched just now):\n", name, prose.Plural(len(rebased.Replay), "commit"), rebased.From.Short(), rebased.To.Short())
+	fmt.Fprintf(streams.Prose(), "Rebase %s (%s) from master %s onto %s (fetched just now):\n", name, prose.Plural(len(rebased.Replay), "commit"), rebased.From.Short(), rebased.To.Short())
 	conflict := false
 	for _, made := range rebased.Replay {
 		short := model.ObjectID(made.Commit.ID).Short()
 		switch made.Outcome {
 		case engine.ReplayDropped:
-			fmt.Fprintf(streams.Out, "  drop     %s %s (master %s has this change)\n", short, made.Commit.Subject(), rebased.To.Short())
+			fmt.Fprintf(streams.Prose(), "  drop     %s %s (master %s has this change)\n", short, made.Commit.Subject(), rebased.To.Short())
 		case engine.ReplayConflict:
 			conflict = true
-			fmt.Fprintf(streams.Out, "  conflict %s %s, in %s\n", short, made.Commit.Subject(), strings.Join(made.Paths, ", "))
+			fmt.Fprintf(streams.Prose(), "  conflict %s %s, in %s\n", short, made.Commit.Subject(), strings.Join(made.Paths, ", "))
 		case engine.ReplayUntried:
-			fmt.Fprintf(streams.Out, "  untried  %s %s\n", short, made.Commit.Subject())
+			fmt.Fprintf(streams.Prose(), "  untried  %s %s\n", short, made.Commit.Subject())
 		default:
-			fmt.Fprintf(streams.Out, "  replay   %s %s\n", short, made.Commit.Subject())
+			fmt.Fprintf(streams.Prose(), "  replay   %s %s\n", short, made.Commit.Subject())
 		}
 	}
 	switch {
 	case conflict:
-		fmt.Fprintf(streams.Out, "dockhand rebase would stop here, with %s as it is; resolve it by hand with git rebase %s, or ask for help on the PR.\n", name, rebased.To.Short())
+		fmt.Fprintf(streams.Prose(), "dockhand rebase would stop here, with %s as it is; resolve it by hand with git rebase %s, or ask for help on the PR.\n", name, rebased.To.Short())
 		return
 	case rebased.Refused != "":
-		fmt.Fprintf(streams.Out, "%s; dockhand clean %s removes it once its pull request is merged.\nNothing moved.\n", rebased.Refused, name)
+		fmt.Fprintf(streams.Prose(), "%s; dockhand clean %s removes it once its pull request is merged.\nNothing moved.\n", rebased.Refused, name)
 		return
 	}
 	if len(rebased.OlderBuilds) > 0 {
-		fmt.Fprintf(streams.Out, "The rebased commits would retain Generated-By values for older Dockhand builds: %s.\n", strings.Join(rebased.OlderBuilds, ", "))
+		fmt.Fprintf(streams.Prose(), "The rebased commits would retain Generated-By values for older Dockhand builds: %s.\n", strings.Join(rebased.OlderBuilds, ", "))
 	}
 	if branch.PullRequest != nil {
-		fmt.Fprintf(streams.Out, "Pull request #%d would still have the old commits, which dockhand submit replaces only if no one else has pushed.\n", branch.PullRequest.Number)
+		fmt.Fprintf(streams.Prose(), "Pull request #%d would still have the old commits, which dockhand submit replaces only if no one else has pushed.\n", branch.PullRequest.Number)
 	}
-	fmt.Fprintln(streams.Out, "Nothing moved. dockhand rebase replays them and keeps a checkpoint.")
+	fmt.Fprintln(streams.Prose(), "Nothing moved. dockhand rebase replays them and keeps a checkpoint.")
 }

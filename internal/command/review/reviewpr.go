@@ -73,12 +73,11 @@ whose files they are; the builds run in the selected environments.`,
 			streams.LinkSteps(&view.ReviewJSON{})
 			streams.Emit(view.ReviewView(report))
 			if markdown {
-				// Text for pasting is written as it is.
-				streams.Unwrapped()
+				// Text for pasting is written raw.
 				fmt.Fprint(streams.Out, body)
 				return e.RecordReview(ctx, report, "")
 			}
-			writeReview(streams.Out, report)
+			writeReview(streams.Prose(), report)
 			// --check adopts it and builds it, and a script that posts
 			// nothing ends with the check's answer (Then's item 12).
 			// The text posted says the check, rendered after it, and the
@@ -137,7 +136,7 @@ whose files they are; the builds run in the selected environments.`,
 					}
 					body = edited
 				default:
-					fmt.Fprintln(streams.Out, "Nothing was posted.")
+					fmt.Fprintln(streams.Prose(), "Nothing was posted.")
 					return errors.Join(e.RecordReview(ctx, report, ""), checked)
 				}
 			}
@@ -169,14 +168,14 @@ func checkPullRequest(ctx context.Context, e *engine.Engine, s *settings.Setting
 	branch := adoption.Branch
 	switch {
 	case !adoption.Already:
-		fmt.Fprintf(streams.Out, "Adopted #%d at %s as %s; checking it.\n", number, head.Short(), branch.ShortName())
+		fmt.Fprintf(streams.Prose(), "Adopted #%d at %s as %s; checking it.\n", number, head.Short(), branch.ShortName())
 	case adoption.Head != head:
 		if branch, err = e.RefreshAdopted(ctx, branch, head); err != nil {
 			return model.Run{}, nil, fmt.Errorf("nothing was checked: %w", err)
 		}
-		fmt.Fprintf(streams.Out, "#%d is tracked as %s; moved it from %s to the head reviewed, %s, and checking it.\n", number, branch.ShortName(), adoption.Head.Short(), head.Short())
+		fmt.Fprintf(streams.Prose(), "#%d is tracked as %s; moved it from %s to the head reviewed, %s, and checking it.\n", number, branch.ShortName(), adoption.Head.Short(), head.Short())
 	default:
-		fmt.Fprintf(streams.Out, "#%d is tracked as %s, at the head reviewed, %s; checking it.\n", number, branch.ShortName(), head.Short())
+		fmt.Fprintf(streams.Prose(), "#%d is tracked as %s, at the head reviewed, %s; checking it.\n", number, branch.ShortName(), head.Short())
 	}
 	if len(on) == 0 {
 		on = []string{"tart"}
@@ -192,7 +191,7 @@ func checkPullRequest(ctx context.Context, e *engine.Engine, s *settings.Setting
 	if captured := proposal.Capture.Revision.Source.Commit; captured != head {
 		return model.Run{}, nil, fmt.Errorf("%s moved to %s while review --check ran; nothing was checked", branch.ShortName(), captured.Short())
 	}
-	view.WritePlan(streams.Out, proposal.Plan, e.PlanNotes(ctx, proposal.Plan), e.PlanSiblings(ctx, proposal.Plan), e.Remedy, view.ListShown(streams))
+	view.WritePlan(streams.Prose(), proposal.Plan, e.PlanNotes(ctx, proposal.Plan), e.PlanSiblings(ctx, proposal.Plan), e.Remedy, view.ListShown(streams))
 	if err := checks.Runnable(proposal.Plan); err != nil {
 		return model.Run{}, nil, fmt.Errorf("nothing was checked: %w", err)
 	}
@@ -228,7 +227,7 @@ func postReview(ctx context.Context, e *engine.Engine, streams term.Streams, rep
 	if requestChanges {
 		how = "changes requested"
 	}
-	fmt.Fprintf(streams.Out, "✓ review posted on #%d: %s, %s\n  %s\n", report.Ref.Number, how, prose.Plural(len(report.Comments()), "inline comment"), url)
+	fmt.Fprintf(streams.Prose(), "✓ review posted on #%d: %s, %s\n  %s\n", report.Ref.Number, how, prose.Plural(len(report.Comments()), "inline comment"), url)
 	return nil
 }
 

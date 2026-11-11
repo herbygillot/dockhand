@@ -160,7 +160,7 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			set("providers.github.capacity", positive(file.Providers.GitHub.Capacity))
 			set("providers.github.build_timeout", file.Providers.GitHub.BuildTimeout)
 			streams.Emit(map[string]any{"file": path, "database": options.Database, "settings": all})
-			fmt.Fprintf(streams.Out, "File      %s\nDatabase  %s\n\n", s.Places().Tilde(path), s.Places().Tilde(options.Database))
+			fmt.Fprintf(streams.Prose(), "File      %s\nDatabase  %s\n\n", s.Places().Tilde(path), s.Places().Tilde(options.Database))
 			width := 0
 			for _, setting := range all {
 				width = max(width, len(setting.Key))
@@ -175,7 +175,7 @@ it is refused by name. Flags, then the environment, come before the file.`,
 					// A program named by --tool or its variable.
 					mark = "  (" + setting.Source + ")"
 				}
-				fmt.Fprintf(streams.Out, "%-*s  %s%s\n", width, setting.Key, setting.Value, mark)
+				fmt.Fprintf(streams.Prose(), "%-*s  %s%s\n", width, setting.Key, setting.Value, mark)
 			}
 			return nil
 		},

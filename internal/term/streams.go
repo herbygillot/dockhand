@@ -9,11 +9,20 @@ import (
 	"strings"
 )
 
-// Streams are the standard streams a command reads and writes.
+// Streams are the standard streams a command reads and writes. Out is
+// standard output raw, beneath it only --json's switch, for what comes
+// from a file, a tool or a template: a Portfile, a diff, a log, a
+// completion script, a usage page, a Markdown body. Dockhand's own
+// sentences, tables and views write to Prose, which wraps at the width
+// and colours the marks. The name typed by habit is the safe one: a
+// payload written to Out by mistake for Prose costs a long line, where a
+// wrapped Portfile was a broken one (#94, docs/designs/prose-stream.md).
 type Streams struct {
 	In  io.Reader
 	Out io.Writer
 	Err io.Writer
+	// prose is Prose's writer, built over Out by Begin and Staged.
+	prose io.Writer
 	// interactive stands in for a terminal in tests (AsTerminal).
 	interactive bool
 	// lines reads answers from In; one reader for the whole command, so
@@ -42,18 +51,52 @@ func Begin(streams Streams, args []string) Streams {
 	if streams.lines == nil && streams.In != nil {
 		streams.lines = bufio.NewReader(streams.In)
 	}
-	streams.mode = &outputMode{json: asksForJSON(args), stdout: streams.Out}
-	out := streams.Out
-	if streams.colourMarks() {
-		out = &markWriter{w: out}
+	// Streams begun already, as the console hands its own to a command it
+	// runs, are begun again over their raw output, with no second wrap.
+	if begun, ok := streams.Out.(*switchWriter); ok {
+		streams.Out = begun.w
 	}
-	// Prose wraps at the width, a terminal's or COLUMNS (wrapWriter).
-	out = &wrapWriter{w: out, width: streams.Width(), cut: streams.OutTerminal(), mode: streams.mode}
-	streams.Out = &switchWriter{w: out}
+	streams.mode = &outputMode{json: asksForJSON(args), stdout: streams.Out}
+	colour := streams.colourMarks()
+	streams.Out = &switchWriter{w: streams.Out}
+	streams.prose = streams.proseOver(streams.Out, colour)
 	if streams.status == nil {
 		streams.status = &StatusLine{w: streams.Err}
 	}
 	return streams
+}
+
+// Prose is the writer for dockhand's own sentences, tables and views: it
+// wraps at the width, a terminal's or COLUMNS (wrapWriter), and colours
+// the marks on a terminal. Streams never begun, as a test's, write prose
+// to Out as it is.
+func (s Streams) Prose() io.Writer {
+	if s.prose == nil {
+		return s.Out
+	}
+	return s.prose
+}
+
+// proseOver is Prose's writer over w: the marks coloured where colour
+// says, then wrapped.
+func (s Streams) proseOver(w io.Writer, colour bool) io.Writer {
+	if colour {
+		w = &markWriter{w: w}
+	}
+	return &wrapWriter{w: w, width: s.Width(), cut: s.OutTerminal(), mode: s.mode}
+}
+
+// Stamped are the streams with each line of standard output, prose and
+// raw alike, passed through stamp first, beneath --json's switch: serve's
+// time stamp off a terminal, which "serve: stopped" lost where Prose was
+// built before it.
+func (s Streams) Stamped(stamp func(io.Writer) io.Writer) Streams {
+	if out, ok := s.Out.(*switchWriter); ok {
+		out.w = stamp(out.w)
+		return s
+	}
+	s.Out = stamp(s.Out)
+	return s
 }
 
 // Status is the command's redrawn line on standard error.

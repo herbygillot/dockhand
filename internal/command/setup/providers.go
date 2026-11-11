@@ -101,12 +101,12 @@ the new one passes.`,
 			// setup tart began 24 GB unannounced (Codex's new-user walk of
 			// release/v0.8.0, finding 7).
 			if !options.Check {
-				fmt.Fprintf(streams.Out, "Where the release has no image yet, making one downloads Cirrus Labs' vanilla macOS image the first time and uses up to %s of disk.\n", tart.SetupDisk)
+				fmt.Fprintf(streams.Prose(), "Where the release has no image yet, making one downloads Cirrus Labs' vanilla macOS image the first time and uses up to %s of disk.\n", tart.SetupDisk)
 			}
-			result, err := images.Setup(cmd.Context(), options, streams.Out)
+			result, err := images.Setup(cmd.Context(), options, streams.Prose())
 			if missing := (*tart.MissingXcode)(nil); errors.As(err, &missing) {
 				if err = offerXcode(cmd.Context(), images, streams, missing); err == nil {
-					result, err = images.Setup(cmd.Context(), options, streams.Out)
+					result, err = images.Setup(cmd.Context(), options, streams.Prose())
 				}
 			}
 			if err != nil {
@@ -118,12 +118,12 @@ the new one passes.`,
 				made = fmt.Sprintf("%s with Xcode %s, Command Line Tools %s, and MacPorts %s", release, result.Xcode, result.CommandLineTools, result.MacPorts)
 			}
 			if result.Reused {
-				fmt.Fprintf(streams.Out, "Ready: %s, %s, checked in a disposable clone.\n", result.Image, made)
+				fmt.Fprintf(streams.Prose(), "Ready: %s, %s, checked in a disposable clone.\n", result.Image, made)
 			} else {
-				fmt.Fprintf(streams.Out, "Made %s: %s.\n", result.Image, made)
+				fmt.Fprintf(streams.Prose(), "Made %s: %s.\n", result.Image, made)
 			}
 			if mac := result.HostMacPorts; mac != "" {
-				fmt.Fprintf(streams.Out, "This Mac has MacPorts %s; the image has %s. Dockhand evaluates ports with the host version and builds them with the image version. To match them, run setup with --rebuild --macports-version %s.\n",
+				fmt.Fprintf(streams.Prose(), "This Mac has MacPorts %s; the image has %s. Dockhand evaluates ports with the host version and builds them with the image version. To match them, run setup with --rebuild --macports-version %s.\n",
 					mac, result.MacPorts, mac)
 			}
 			// An Xcode image is an add-on beside the release's base image,
@@ -135,14 +135,14 @@ the new one passes.`,
 					for _, behind := range status.Behind {
 						if !behind.Xcode && behind.Release.Slug == result.Release.Slug {
 							base := engine.MacPortsBehind{Name: "Its base image", Image: behind.MacPorts, Host: behind.Host, Remedy: engine.RemakeWords(behind.Release, false) + ", without --xcode, makes it again"}
-							fmt.Fprintln(streams.Out, engine.OlderMacPorts([]engine.MacPortsBehind{base}, false)[0]+".")
+							fmt.Fprintln(streams.Prose(), engine.OlderMacPorts([]engine.MacPortsBehind{base}, false)[0]+".")
 						}
 					}
 				}
 			}
 			// Not a Next: line, which names only what the branch as it
 			// stands would accept, and setup has no branch.
-			fmt.Fprintf(streams.Out, "To check with this image, use --on tart:%s.\n", result.Release.Slug)
+			fmt.Fprintf(streams.Prose(), "To check with this image, use --on tart:%s.\n", result.Release.Slug)
 			return nil
 		},
 	}
@@ -387,7 +387,7 @@ func offerXcode(ctx context.Context, images host.TartImages, streams term.Stream
 	case !installed:
 		return fmt.Errorf("%w; or install xcodes (sudo port install xcodes), and setup downloads it with your Apple ID", missing)
 	}
-	fmt.Fprintf(streams.Out, "%s's Xcode is %s, and %s has no archive of it.\n", missing.Release.Name, missing.Version, missing.Folder)
+	fmt.Fprintf(streams.Prose(), "%s's Xcode is %s, and %s has no archive of it.\n", missing.Release.Name, missing.Version, missing.Folder)
 	var path string
 	var err error
 	if streams.Terminal() {
@@ -398,12 +398,12 @@ func offerXcode(ctx context.Context, images host.TartImages, streams term.Stream
 		if !download {
 			return missing
 		}
-		path, err = images.DownloadXcode(ctx, missing, streams.In, streams.Out, streams.Err)
+		path, err = images.DownloadXcode(ctx, missing, streams.In, streams.Prose(), streams.Err)
 		if err != nil {
 			return err
 		}
 	} else {
-		fmt.Fprintf(streams.Out, "Downloading Xcode %s with xcodes...\n", missing.Version)
+		fmt.Fprintf(streams.Prose(), "Downloading Xcode %s with xcodes...\n", missing.Version)
 		var said bytes.Buffer
 		path, err = images.DownloadXcode(ctx, missing, nil, &said, &said)
 		if errors.Is(err, tart.ErrXcodes) {
@@ -414,6 +414,6 @@ func offerXcode(ctx context.Context, images host.TartImages, streams term.Stream
 			return err
 		}
 	}
-	fmt.Fprintf(streams.Out, "Downloaded %s.\n", filepath.Base(path))
+	fmt.Fprintf(streams.Prose(), "Downloaded %s.\n", filepath.Base(path))
 	return nil
 }

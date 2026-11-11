@@ -119,10 +119,10 @@ check. Use -b, -p, or --pr to select a branch from another directory.`,
 			}
 			streams.Emit(map[string]any{"run": view.RunView(run), "canceled": run.State == model.RunCanceled})
 			if run.State == model.RunCanceled {
-				fmt.Fprintln(streams.Out, checkrun.StopWords(run, wasQueued))
+				fmt.Fprintln(streams.Prose(), checkrun.StopWords(run, wasQueued))
 				return nil
 			}
-			fmt.Fprintf(streams.Out, "%s: cancellation requested; the check will stop at the next step.\n", run.Name())
+			fmt.Fprintf(streams.Prose(), "%s: cancellation requested; the check will stop at the next step.\n", run.Name())
 			return nil
 		},
 	}
@@ -155,8 +155,8 @@ the whole log. --phase prints one step, for example logs check-42 jq
 provider supports it, then prints any remaining output when the build ends.`,
 		Args: cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// A log is read as it is (term.Streams.Unwrapped).
-			streams.Unwrapped()
+			// A log is read as it is: logs writes raw, its headings with
+			// it.
 			// A port named as an argument (field testing, 2026-10-02: logs
 			// semgrep, and logs check-76 semgrep); with a branch named, the
 			// one argument is the port, and -p's port is the default. -p

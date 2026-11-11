@@ -33,7 +33,7 @@ func githubLogin(ctx context.Context, s *settings.Settings, streams term.Streams
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(streams.Out, "Logged in to github.com as %s. Credentials are saved in the macOS Keychain and renew automatically if you use dockhand at least once every six months.\n", login.Account)
+	fmt.Fprintf(streams.Prose(), "Logged in to github.com as %s. Credentials are saved in the macOS Keychain and renew automatically if you use dockhand at least once every six months.\n", login.Account)
 	if name := s.Signin().Token.Source; name != "" {
 		fmt.Fprintf(streams.Err, "%s is set and overrides this login. Unset it to use the credentials saved in the Keychain.\n", name)
 	}
@@ -46,12 +46,12 @@ func githubLogout(ctx context.Context, s *settings.Settings, streams term.Stream
 	revoke, err := github.Logout(ctx, s.Host.AuthStore)
 	switch {
 	case errors.Is(err, credential.ErrNotFound):
-		fmt.Fprintln(streams.Out, "No dockhand GitHub credentials are saved in the Keychain.")
+		fmt.Fprintln(streams.Prose(), "No dockhand GitHub credentials are saved in the Keychain.")
 	case err != nil:
 		return err
 	default:
-		fmt.Fprintln(streams.Out, "Removed dockhand's GitHub login from the Keychain. GH_TOKEN, GITHUB_TOKEN, and the GitHub CLI's login are unchanged.")
-		fmt.Fprintf(streams.Out, "To also revoke dockhand’s access on GitHub, visit %s\n", revoke)
+		fmt.Fprintln(streams.Prose(), "Removed dockhand's GitHub login from the Keychain. GH_TOKEN, GITHUB_TOKEN, and the GitHub CLI's login are unchanged.")
+		fmt.Fprintf(streams.Prose(), "To also revoke dockhand’s access on GitHub, visit %s\n", revoke)
 	}
 	return nil
 }

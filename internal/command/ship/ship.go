@@ -105,18 +105,18 @@ need review.`,
 				targets, err = ShipTargets(ctx, e, streams, args, where)
 			}
 			if err == nil && len(targets) > 0 {
-				WriteShipPlan(ctx, e, streams.Out, targets, stage)
+				WriteShipPlan(ctx, e, streams.Prose(), targets, stage)
 			}
 			e.Close()
 			if err != nil {
 				return err
 			}
 			if len(targets) == 0 {
-				fmt.Fprintln(streams.Out, "Nothing to ship.")
+				fmt.Fprintln(streams.Prose(), "Nothing to ship.")
 				return nil
 			}
 			if plan {
-				fmt.Fprintln(streams.Out, "Nothing was shipped (--plan).")
+				fmt.Fprintln(streams.Prose(), "Nothing was shipped (--plan).")
 				return nil
 			}
 			answered := model.AnsweredNobody
@@ -129,7 +129,7 @@ need review.`,
 					return err
 				}
 				if !ok {
-					fmt.Fprintln(streams.Out, "Nothing was shipped.")
+					fmt.Fprintln(streams.Prose(), "Nothing was shipped.")
 					return nil
 				}
 				answered = model.AnsweredAsked
@@ -429,7 +429,7 @@ func ShipAll(ctx context.Context, s *settings.Settings, streams term.Streams, wh
 			if target.row != nil {
 				target.row.note = words
 			} else {
-				fmt.Fprintf(streams.Out, "%s  %s\n", target.Name(), words)
+				fmt.Fprintf(streams.Prose(), "%s  %s\n", target.Name(), words)
 			}
 			continue
 		}
@@ -594,13 +594,13 @@ func writeRows(streams term.Streams, rows []*shipRow, stages []string) {
 		for i, cell := range cells {
 			text += "  " + cell + strings.Repeat(" ", widths[i]-utf8.RuneCountInString(cell))
 		}
-		fmt.Fprintln(streams.Out, strings.TrimRight(text, " "))
+		fmt.Fprintln(streams.Prose(), strings.TrimRight(text, " "))
 	}
 	line("", stages)
 	var stopped []*shipRow
 	for _, row := range rows {
 		if row.note != "" {
-			fmt.Fprintf(streams.Out, "  %-*s  %s\n", width, row.name, row.note)
+			fmt.Fprintf(streams.Prose(), "  %-*s  %s\n", width, row.name, row.note)
 			continue
 		}
 		var cells []string
@@ -615,9 +615,9 @@ func writeRows(streams term.Streams, rows []*shipRow, stages []string) {
 	if len(stopped) == 0 {
 		return
 	}
-	fmt.Fprintln(streams.Out, "Needs attention")
+	fmt.Fprintln(streams.Prose(), "Needs attention")
 	for _, row := range stopped {
-		fmt.Fprintf(streams.Out, "  %-*s  %v\n", width, row.name, view.SayNext(row.why))
+		fmt.Fprintf(streams.Prose(), "  %-*s  %v\n", width, row.name, view.SayNext(row.why))
 	}
 }
 
@@ -788,7 +788,7 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 		done.run = run
 		return done, nil
 	}
-	fmt.Fprintln(queues.Out)
+	fmt.Fprintln(queues.Prose())
 	// Its submission is previewed, and held where it would be, before its
 	// check is queued.
 	lines.begin("submitted")
@@ -889,7 +889,7 @@ func prepareSubmit(ctx context.Context, s *settings.Settings, e *engine.Engine, 
 		return pendingSubmit{}, nil, err
 	}
 	streams.Emit(view.SubmitView(plan))
-	view.WriteSubmitPlan(streams.Out, plan, streams.Terminal())
+	view.WriteSubmitPlan(streams.Prose(), plan, streams.Terminal())
 	if len(plan.Blocking) > 0 {
 		return pendingSubmit{}, nil, errors.New("nothing was checked or submitted")
 	}
@@ -927,7 +927,7 @@ func submitPassed(ctx context.Context, s *settings.Settings, e *engine.Engine, s
 		return engine.Submitted{}, err
 	}
 	streams.Emit(view.SubmitView(plan))
-	fmt.Fprintln(streams.Out)
+	fmt.Fprintln(streams.Prose())
 	submitted, err := submit.Apply(ctx, e, streams, plan, s.File.Submit.RerequestReview, pending.answered)
 	// The gate is the engine's (branchstate.Publish); ship words what it
 	// refused as ship says it.
@@ -936,7 +936,7 @@ func submitPassed(ctx context.Context, s *settings.Settings, e *engine.Engine, s
 	case refused == nil:
 		return submitted, err
 	case len(plan.Blocks) > 0:
-		view.WriteSubmitPlan(streams.Out, plan, false)
+		view.WriteSubmitPlan(streams.Prose(), plan, false)
 		return submitted, errors.New("nothing was submitted")
 	case refused.Kind() == refusal.Attention:
 		held := engine.HoldLines(plan.Held())
@@ -991,12 +991,12 @@ func queueHead(ctx context.Context, s *settings.Settings, e *engine.Engine, stre
 	// files still to finish is followed where it would stand for this one.
 	queued, err := e.QueueCheck(ctx, checks.QueueRequest{Branch: branch, Revision: proposal.Capture.Revision, Plan: proposal.Plan, Origin: model.OriginPerson, Covered: true, Beside: checks.BesideFollow})
 	if queued.Passed != nil {
-		fmt.Fprintf(streams.Out, "%s: %s passed for this commit already; nothing to check.\n", branch.ShortName(), queued.Passed.Name())
+		fmt.Fprintf(streams.Prose(), "%s: %s passed for this commit already; nothing to check.\n", branch.ShortName(), queued.Passed.Name())
 		return nil, nil
 	}
-	fmt.Fprintf(streams.Out, "\n%s · checking %s%s\n", branch.ShortName(), checks.Describe(proposal.Capture.Revision), then)
-	view.WritePlan(streams.Out, proposal.Plan, e.PlanNotes(ctx, proposal.Plan), e.PlanSiblings(ctx, proposal.Plan), e.Remedy, view.ListShown(streams))
-	view.WritePushes(streams.Out, proposal.Plan)
+	fmt.Fprintf(streams.Prose(), "\n%s · checking %s%s\n", branch.ShortName(), checks.Describe(proposal.Capture.Revision), then)
+	view.WritePlan(streams.Prose(), proposal.Plan, e.PlanNotes(ctx, proposal.Plan), e.PlanSiblings(ctx, proposal.Plan), e.Remedy, view.ListShown(streams))
+	view.WritePushes(streams.Prose(), proposal.Plan)
 	if unrunnable := new(checks.UnrunnableError); errors.As(err, &unrunnable) {
 		return nil, fmt.Errorf("nothing was checked: %w", err)
 	}
@@ -1004,7 +1004,7 @@ func queueHead(ctx context.Context, s *settings.Settings, e *engine.Engine, stre
 		return nil, err
 	}
 	if queued.Followed {
-		fmt.Fprintf(streams.Out, "%s is already %s for these files; following it.\n", queued.Run.Name(), queued.Run.State)
+		fmt.Fprintf(streams.Prose(), "%s is already %s for these files; following it.\n", queued.Run.Name(), queued.Run.State)
 	}
 	return &queued.Run, nil
 }
