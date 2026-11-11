@@ -143,6 +143,34 @@ func TestTheLedgerNamesWhatTheInstallationWasAsked(t *testing.T) {
 	require.Contains(t, asked, "_portnameactive dockhand-too")
 }
 
+// A program neither this Mac nor the fresh installation has is answered
+// missing from the fresh installation, as one only the host has is, never
+// run on the host: perl5.30 and php-config7x, which the Mac hadn't, were
+// run there and counted host-in-model, 9,855 of a whole-tree survey's
+// modelled evaluations (#101).
+func TestAProgramNeitherHasIsAnsweredWithoutRunningIt(t *testing.T) {
+	t.Parallel()
+	got, err := evaluateLines(t, strings.Join([]string{
+		"set results {}",
+		"lappend results [catch {exec dockhand-absent-101 -V:archname} message] $message",
+		"lappend results [catch {exec ${prefix}/bin/dockhand-absent-101 --extension-dir} message] $message",
+		"description {*}$results",
+	}, "\n"), true)
+	require.NoError(t, err)
+	values, errs := syntax.ListValues(got.Snapshot.Ports["effects"].Options["description"])
+	require.Empty(t, errs)
+	prefix := findHostInstallation(t).prefix
+	require.Equal(t, []string{
+		"1", `couldn't execute "dockhand-absent-101": no such file or directory`,
+		"1", `couldn't execute "` + prefix + `/bin/dockhand-absent-101": no such file or directory`,
+	}, values)
+	for _, entry := range got.Ports["effects"].Ledger {
+		if entry.Command == "exec" {
+			require.NotContains(t, []string{"process", "host", "host-in-model"}, entry.Source, "nothing ran: %+v", entry)
+		}
+	}
+}
+
 func TestFileStatSetsItsCallersArray(t *testing.T) {
 	t.Parallel()
 	got := evaluatedDescription(t, "file stat /etc/hosts info\nlappend results [info exists info(size)]")

@@ -415,3 +415,20 @@ Do not use archive or clean as a generic reset after a failure. Archive pauses a
 branch; clean removes ended work and unused build resources.
 `dockhand usage branches` explains the previews, what each operation retains,
 and when deleting an ended record also discards unmerged work.
+
+## Put back a database from a backup
+
+When dockhand refuses its database as damaged, it leaves the file as it is.
+Put back a copy `dockhand backup` made:
+
+1. Stop serve: quit it, or `dockhand serve --uninstall` for its launchd job,
+   and `dockhand serve --install` after.
+2. Move `dockhand.db`, `dockhand.db-wal`, and `dockhand.db-shm` aside together.
+   A `-wal` left beside the backup would be replayed onto it.
+3. Copy the backup to `~/.dockhand/dockhand.db`, or where `--db` or
+   `DOCKHAND_DB` names.
+
+The next command opens it, migrating it forward where the build is newer. The
+backup has no record of what happened after it was made. Kept archives it
+doesn't name go at the next cleanup, and the next check says once which
+archives it dropped.

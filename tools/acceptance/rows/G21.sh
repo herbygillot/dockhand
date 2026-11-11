@@ -43,6 +43,6 @@ assert() {
 		row_result "not run" "serve's look prepared nothing for $ACCEPT_SERVE_MAINTAINER, so nothing was committed to stop at"
 		return
 	fi
-	[ -n "${G21_RUN:-}" ] || { row_fail "the next serve didn't say a prepared branch was never checked and queue it: $(grep -E '^serve:' "$ROW_DIR/out.log" | tail -4 | tr '\n' ';')"; return; }
+	[ -n "${G21_RUN:-}" ] || { row_fail "the next serve didn't say a prepared branch was never checked and queue it: $(grep -E "${SERVE_LINE}" "$ROW_DIR/out.log" | tail -4 | tr '\n' ';')"; return; }
 	row_pass "serve, stopped after committing a prepared branch, was followed by one that said the branch was never checked and queued $G21_RUN"
 }

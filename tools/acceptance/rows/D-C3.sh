@@ -18,7 +18,7 @@ act() {
 	# stage).
 	# serve's words since 4a33af6d; the row waited 12 minutes for the old
 	# ones, and the first device code expired (the rc5 full stage).
-	wait_for_line "$log" '^serve: GitHub rejected (its login|the credentials)' 720 "${before:-0}" || :
+	wait_for_line "$log" "${SERVE_LINE}GitHub rejected (its login|the credentials)" 720 "${before:-0}" || :
 	local rejected
 	rejected=$(log_size "$log")
 	dh_json status --all || :
@@ -27,7 +27,7 @@ act() {
 	# A login that never came in is the harness's, not serve's: waiting
 	# for serve to say it's back would only fail the row.
 	if device_login "D-C3 logs dockhand in again after the revocation"; then
-		wait_for_line "$log" '^serve: logged in again as ' 180 "${rejected:-0}" || :
+		wait_for_line "$log" "${SERVE_LINE}logged in again as " 180 "${rejected:-0}" || :
 	else
 		row_result "not run" "the new login never came in, so serve's return to it wasn't seen: $(grep -m1 -E 'expired|error' "$DH_BG_LOG" 2>/dev/null)"
 	fi
@@ -49,11 +49,11 @@ assert() {
 		{ row_fail "not said as rejected: $(jq -r '.error // empty' "${status%.args}")"; return; }
 	[ "$(grep -c 'rejected the credential' "$ROW_DIR/out.log")" -le 2 ] ||
 		{ row_fail "the rejection was said more than once"; return; }
-	[ "$(grep -cE '^serve: GitHub rejected (its login|the credentials)' "$ROW_DIR/serve.log")" = 1 ] ||
+	[ "$(grep -cE "${SERVE_LINE}GitHub rejected (its login|the credentials)" "$ROW_DIR/serve.log")" = 1 ] ||
 		{ row_fail "serve didn't say once that GitHub rejected its login"; return; }
 	jq -r '.result.serve_state.not_acting // empty' "${queue%.args}" | matches 'rejected' ||
 		{ row_fail "status didn't say serve wasn't acting on GitHub"; return; }
-	grep -q '^serve: logged in again as ' "$ROW_DIR/serve.log" ||
+	grep -qE "${SERVE_LINE}logged in again as " "$ROW_DIR/serve.log" ||
 		{ row_fail "serve didn't say its login was back"; return; }
 	cmp -s "$ROW_DIR/pid.before" "$ROW_DIR/pid.after" ||
 		{ row_fail "serve didn't run on as one process: pid $(cat "$ROW_DIR/pid.before") before, $(cat "$ROW_DIR/pid.after") after"; return; }

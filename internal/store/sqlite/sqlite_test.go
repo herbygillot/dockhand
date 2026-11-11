@@ -1620,7 +1620,7 @@ func TestADamagedDatabaseIsSaidPlainly(t *testing.T) {
 		_, err := Open(t.Context(), path, Options{})
 		require.ErrorIs(t, err, store.ErrUnavailable, name)
 		require.ErrorContains(t, err, path+" can't be read as dockhand's database", name)
-		require.ErrorContains(t, err, "Dockhand left the file unchanged. Restore a backup, or move this file aside to start a new database", name)
+		require.ErrorContains(t, err, "Dockhand left the file unchanged. Put back a copy dockhand backup made (dockhand usage recovery says how), or move this file aside to start a new database", name)
 		require.NotContains(t, err.Error(), "delete")
 		after, err := os.ReadFile(path)
 		require.NoError(t, err)

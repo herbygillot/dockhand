@@ -13,6 +13,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/command/author"
+	"github.com/herbygillot/dockhand/internal/command/backup"
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/bump"
 	"github.com/herbygillot/dockhand/internal/command/check"
@@ -316,6 +317,7 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 		explain.Command(shared, streams),
 		decide.Command(shared, streams),
 		config.Command(shared, streams),
+		backup.Command(shared, streams),
 	} {
 		command.GroupID = "occasional"
 		root.AddCommand(command)
