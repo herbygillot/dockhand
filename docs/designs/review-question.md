@@ -108,7 +108,7 @@ A rule that needs the head evaluated is not run, never half-run. The report says
 
 ## Size and placement
 
-About a third of a batch, inferred from the list above. It needs none of v0.9.0's core items, and comes after the package moves so it lands once in the new layout.
+About a third of a batch, inferred from the list above. It needs none of v0.9.0's core items. It comes after [#152](https://github.com/herbygillot/dockhand/issues/152)'s renames, so it lands once under the new names, and before [#184](https://github.com/herbygillot/dockhand/issues/184), which adds evaluation on adopted branches. Its issue carries the rest of the order.
 
 ## Not checked
 
