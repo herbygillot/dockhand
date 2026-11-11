@@ -29,10 +29,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/selection"
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/outward"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/refusal"
+	"github.com/herbygillot/dockhand/internal/remotewrite"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/store/sqlite"
 	"github.com/herbygillot/dockhand/internal/upstream"
@@ -43,7 +43,7 @@ import (
 const UpstreamURL = "https://github.com/macports/macports-ports.git"
 
 // UpstreamRepository is MacPorts' ports repository on GitHub.
-const UpstreamRepository = outward.Upstream
+const UpstreamRepository = remotewrite.Upstream
 
 // Options selects what an engine works on.
 type Options struct {

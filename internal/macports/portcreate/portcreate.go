@@ -340,11 +340,14 @@ func Write(s Spec) []byte {
 		b.WriteString("\n")
 		// The PortGroup's default, as MacPorts evaluates it, where it
 		// wrote 313 after the PortGroup moved on (the library survey).
+		// Whether it fetches from PyPI is a line of its own, beside the
+		// versions read or not (#171).
+		mark("say whether it fetches from PyPI instead")
 		if s.PythonVersion != "" {
-			mark("the python PortGroup's default; add the other versions it supports, and say whether it fetches from PyPI instead")
+			mark("the python PortGroup's default; add the other versions it supports")
 			line("python.versions", s.PythonVersion)
 		} else {
-			mark("the python PortGroup's default couldn't be read; set the Python versions, and say whether it fetches from PyPI instead")
+			mark("Dockhand couldn't read the python PortGroup's default Python version. Set python.versions before submitting this port.")
 		}
 	case "go":
 		b.WriteString("\n")

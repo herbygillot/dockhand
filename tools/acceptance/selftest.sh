@@ -32,7 +32,7 @@ check() {
 	fi
 	echo "selftest: $row $got${harm:+ ($harm)}: $(jq -r '[.harm | to_entries[] | .key + " " + (.value | split(":")[0])] | join(", ")' "$state/results/selftest/$row.json")"
 }
-for spec in ok:pass h1allowed:pass h2allowed:pass h1:blocker:H1 h2:blocker:H2 h3:blocker:H3 h4:blocker:H4 h4present:pass h4added:blocker:H4 h5:blocker:H5 h6:blocker:H6 h6closed:pass h6cleaned:pass h6otherbranch:blocker:H6 h6wrapped:blocker:H6 h7:blocker:H7 h7teardown:blocker:H7 h7cut:not_run h7stopped:fail h8:blocker:H8 h9:blocker:H9; do
+for spec in ok:pass h1allowed:pass h2allowed:pass h1:blocker:H1 h2:blocker:H2 h2upstream:blocker:H2 h3:blocker:H3 h4:blocker:H4 h4present:pass h4added:blocker:H4 h5:blocker:H5 h6:blocker:H6 h6closed:pass h6cleaned:pass h6otherbranch:blocker:H6 h6wrapped:blocker:H6 h7:blocker:H7 h7teardown:blocker:H7 h7cut:not_run h7stopped:fail h8:blocker:H8 h9:blocker:H9; do
 	row=${spec%%:*}
 	rest=${spec#*:}
 	want=${rest%%:*}
@@ -46,8 +46,11 @@ for spec in ok:pass h1allowed:pass h2allowed:pass h1:blocker:H1 h2:blocker:H2 h3
 	git init -q --bare "$tmp/fork.git"
 	git -C "$tmp/clone" remote add fork "$tmp/fork.git"
 	git -C "$tmp/clone" push -q fork master
+	git init -q --bare "$tmp/upstream.git"
+	git -C "$tmp/clone" remote add upstream "$tmp/upstream.git"
+	git -C "$tmp/clone" push -q upstream master
 	(
-		export ACCEPT_STATE="$tmp/state" ACCEPT_WATCH="$tmp/clone" ACCEPT_UPSTREAM="" ACCEPT_RUN_DIR="$tmp/clone"
+		export ACCEPT_STATE="$tmp/state" ACCEPT_WATCH="$tmp/clone" ACCEPT_UPSTREAM="upstream" ACCEPT_RUN_DIR="$tmp/clone"
 		export SELFTEST_CLONE="$tmp/clone" FAKE_DH_STATE="$tmp/fake" DH_BIN="$here/selftest/bin/dockhand"
 		export DOCKHAND_DB="$tmp/state/db" DOCKHAND_CONFIG="$tmp/state/config.toml" MACPORTS_TREE="$tmp/state/clone"
 		export DOCKHAND_UPSTREAM="$tmp/state/upstream.git" DOCKHAND_INDEX_CACHE="$tmp/state/index" DOCKHAND_READING_CACHE="$tmp/state/readings" DOCKHAND_GITHUB_CACHE="$tmp/state/github"

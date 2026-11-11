@@ -10,6 +10,17 @@
 set -eu
 package=$1 shards=$2 timeout=$3
 shift 3
+# A count of 0 ran no shard and printed ok (Codex's workflows review,
+# #188); anything but a whole number of 1 or more is refused before the
+# binary is built.
+case $shards in
+'' | *[!0-9]*) ok=no ;;
+*) [ "$shards" -ge 1 ] && ok=yes || ok=no ;;
+esac
+if [ "$ok" != yes ]; then
+	printf 'shard-test.sh: the shard count must be 1 or more, got %s\n' "$shards" >&2
+	exit 2
+fi
 go=${GO:-go}
 directory=$("$go" list -f '{{.Dir}}' "$package")
 work=$(mktemp -d)

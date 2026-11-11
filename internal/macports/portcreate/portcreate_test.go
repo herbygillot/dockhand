@@ -126,10 +126,11 @@ func TestWhatCantBeObservedIsMarked(t *testing.T) {
 	require.Contains(t, out, "# dockhand: unconfirmed, guessed from the build system\ncategories          python\n")
 	require.Contains(t, out, "license             unknown\n")
 	require.Contains(t, out, "maintainers         nomaintainer\n")
-	require.NotContains(t, out, "python.versions", "no version guessed where the PortGroup's default couldn't be read")
-	require.Contains(t, out, "the python PortGroup's default couldn't be read; set the Python versions")
+	require.NotContains(t, out, "\npython.versions ", "no version guessed where the PortGroup's default couldn't be read")
+	require.Contains(t, out, "# dockhand: unconfirmed, Dockhand couldn't read the python PortGroup's default Python version. Set python.versions before submitting this port.\n")
+	require.Contains(t, out, "# dockhand: unconfirmed, say whether it fetches from PyPI instead\n", "a line of its own")
 	spec.PythonVersion = "314"
-	require.Contains(t, string(Write(spec)), "# dockhand: unconfirmed, the python PortGroup's default; add the other versions it supports, and say whether it fetches from PyPI instead\npython.versions     314\n")
+	require.Contains(t, string(Write(spec)), "# dockhand: unconfirmed, the python PortGroup's default; add the other versions it supports\npython.versions     314\n")
 	require.Equal(t, []string{"category", "license", "long_description", "maintainers", "build"}, spec.Unconfirmed())
 
 	prefix, version, ok := SplitTag("rift-0.4.2")

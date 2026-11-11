@@ -106,11 +106,14 @@ harm_work_files() {
 		done
 }
 
-# harm_remote_refs lists each fork remote's refs, as the fork has them.
+# harm_remote_refs lists each fork remote's refs, as the fork has them,
+# and in the quick stage the upstream's too: a local bare repository
+# there, which a push lands in and fresh's reset of master hid (#147). The
+# full stage's upstream is MacPorts', which others push to.
 harm_remote_refs() {
 	local repo=$1 remote
 	for remote in $(git -C "$repo" remote); do
-		case " ${ACCEPT_UPSTREAM:-} " in *" $remote "*) continue ;; esac
+		case " ${ACCEPT_UPSTREAM:-} " in *" $remote "*) [ "${ACCEPT_STAGE:-}" = quick ] || continue ;; esac
 		git -C "$repo" ls-remote --heads --tags "$remote" | sed "s|^|$remote |" || return 1
 	done
 }
@@ -210,6 +213,8 @@ harm_h1() {
 }
 
 # H2: nothing pushed but what the row says it pushes.
+# It checks remotewrite's rule, lines 1 and 2 (internal/remotewrite), by
+# what the row says it pushes, never by the rule's table (#144).
 harm_h2() {
 	local before=$1 after=$2 repo id line ref broken="" read=""
 	for repo in $ACCEPT_WATCH; do
@@ -241,7 +246,9 @@ harm_h2() {
 	fi
 }
 
-# H3: no pull request opened but those the row may open.
+# H3: no pull request opened but those the row may open. It checks
+# remotewrite's rule, line 1's pull requests, by the row's own count
+# (#144).
 harm_h3() {
 	local before=$1 after=$2 opened allowed=0
 	if [ -z "${ACCEPT_GH_LOGIN:-}" ]; then

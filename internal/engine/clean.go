@@ -20,7 +20,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/outward"
+	"github.com/herbygillot/dockhand/internal/remotewrite"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -645,9 +645,9 @@ func (e *Engine) ApplyClean(ctx context.Context, plans []CleanBranch) ([]CleanBr
 					continue
 				}
 				repository, name := plan.Branch.PullRequest.HeadParts()
-				err = outward.Delete(ctx, e.Repo, outward.Made, repository, step.remote, name, git.RefValue{Exists: true, Object: step.expected})
+				err = remotewrite.Delete(ctx, e.Repo, remotewrite.Made, repository, step.remote, name, git.RefValue{Exists: true, Object: step.expected})
 			case "check":
-				err = outward.Delete(ctx, e.Repo, outward.Made, step.repository, step.remote, step.name, git.RefValue{Exists: true, Object: step.expected})
+				err = remotewrite.Delete(ctx, e.Repo, remotewrite.Made, step.repository, step.remote, step.name, git.RefValue{Exists: true, Object: step.expected})
 			}
 			if err != nil {
 				var conflict *git.RefConflict
