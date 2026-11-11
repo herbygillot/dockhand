@@ -462,6 +462,12 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	if err := e.pullRequestHere(branch); err != nil {
 		return plan, err
 	}
+	// The plan evaluates the branch's Portfiles, its head's index first:
+	// another's go through the door only where the person allowed them.
+	ctx, err := e.evaluating(ctx, branch)
+	if err != nil {
+		return plan, err
+	}
 	worktree, err := e.worktree(ctx, branch)
 	if err != nil {
 		return plan, err
@@ -536,7 +542,6 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	newPorts := e.newPorts(ctx, worktree, model.Source{Commit: model.ObjectID(head), Tree: model.ObjectID(plan.Tree), Base: branch.Base}, trees[string(branch.Base)], changed, analysis.Scope)
 	plan.Findings = commitrules.CheckCommits(e.ruleCommits(ctx, model.Source{Commit: branch.Base, Base: branch.Base, Tree: model.ObjectID(trees[string(branch.Base)])},
 		model.Source{Commit: model.ObjectID(head), Base: branch.Base, Tree: model.ObjectID(plan.Tree)}, plan.Commits))
-	e.sayWhose(ctx, branch)
 	portfiles, err := e.portfileFindings(ctx, worktree, trees[string(branch.Base)], plan.Tree, changed)
 	if err != nil {
 		return plan, err
@@ -1377,7 +1382,8 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 		}
 		// What the record knows of the same pull request stays: what the
 		// forge last said of it, and, of one adopted, that it was and
-		// whose it is, which the trust rule reads (OthersPortfiles), where
+		// whose it is and the author's commit allowed, which the trust rule
+		// reads (OthersPortfiles, EvaluationAllowed), where
 		// a submit to it made it the person's (the rc6 full stage's G22).
 		next := model.PullRequest{Repository: plan.Repository, Number: observed.PullRequest.Ref.Number, Head: plan.Head(),
 			Pushed: model.ObjectID(plan.Commit), Body: body, Draft: draft}
@@ -1387,7 +1393,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 		// for changes weren't asked again (#117).
 		pushed := result.Pushed || branch.PullRequest == nil || branch.PullRequest.Pushed != next.Pushed
 		if old := branch.PullRequest; old != nil && old.Number == next.Number {
-			next.Observed, next.Adopted, next.Author = old.Observed, old.Adopted, old.Author
+			next.Observed, next.Adopted, next.Author, next.AuthorHead = old.Observed, old.Adopted, old.Author, old.AuthorHead
 		}
 		branch.PullRequest = &next
 		if plan.Request.Title != "" {

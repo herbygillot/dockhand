@@ -149,3 +149,40 @@ func offerToTrack(ctx context.Context, e *engine.Engine, streams term.Streams, e
 	}
 	return model.Branch{}, false, nil
 }
+
+// MayEvaluate asks, on a terminal, before a command evaluates an adopted
+// pull request's Portfiles at an author's commit the person hasn't
+// allowed (#162), listing what the branch changes, with its diff one key
+// away; yes is kept for that commit. No, or a script, is left to the
+// engine's door, which refuses the evaluation, naming dockhand adopt --pr
+// <n> --evaluate. The person's own branch asks nothing.
+func MayEvaluate(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch) error {
+	whose, others := engine.OthersPortfiles(branch)
+	if !others || !streams.Terminal() {
+		return nil
+	}
+	if allowed, err := e.EvaluationAllowed(ctx, branch); err != nil || allowed {
+		return err
+	}
+	pr := branch.PullRequest
+	fmt.Fprintf(streams.Prose(), "#%d is %s. This evaluates its Portfiles with MacPorts on this Mac, as you. A Portfile is code: it runs with your files and your GitHub login in reach.\n", pr.Number, whose)
+	for {
+		answer, err := streams.Ask("? Evaluate them: y yes · d show the diff first · n no  [n] ")
+		if err != nil {
+			return err
+		}
+		switch strings.ToLower(strings.TrimSpace(answer)) {
+		case "y", "yes":
+			return e.AllowAdopted(ctx, branch)
+		case "d":
+			diff, err := e.AdoptedDiff(ctx, branch)
+			if err != nil {
+				return err
+			}
+			// The diff is written raw, as tidy's is (#94).
+			fmt.Fprint(streams.Out, string(diff))
+		default:
+			return nil
+		}
+	}
+}

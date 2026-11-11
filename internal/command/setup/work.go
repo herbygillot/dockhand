@@ -331,6 +331,7 @@ func startFrom(ctx context.Context, s *settings.Settings, streams term.Streams, 
 
 func AdoptCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var pr int
+	var evaluate bool
 	cmd := &cobra.Command{
 		Use:   "adopt [branch]",
 		Short: "Track an existing branch without changing it",
@@ -342,7 +343,11 @@ its worktree or its pull request's last push, and keeps its record.
 --pr <number> brings someone's macports-ports pull request into a branch of
 its own, pr-<number>, to inspect and work on. It assumes no permission to
 push to their branch: submit pushes there only when they let maintainers
-edit and you have write access, and never rewrites their description.`,
+edit and you have write access, and never rewrites their description.
+Adopting evaluates nothing. A command that evaluates its Portfiles on this
+Mac, such as check, tidy, or submit, asks first on a terminal, since a
+Portfile is code; --evaluate answers yes for the head adopted, for
+scripts, and a new head from the author asks again.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := s.Open(cmd.Context())
@@ -354,7 +359,7 @@ edit and you have write access, and never rewrites their description.`,
 				if len(args) > 0 {
 					return errors.New("--pr names the pull request; adopt takes a branch or --pr, not both")
 				}
-				return adoptPullRequest(cmd.Context(), e, streams, s.Places(), pr)
+				return adoptPullRequest(cmd.Context(), e, streams, s.Places(), pr, evaluate)
 			}
 			request := engine.AdoptRequest{}
 			if len(args) == 1 {
@@ -384,6 +389,7 @@ edit and you have write access, and never rewrites their description.`,
 		},
 	}
 	cmd.Flags().IntVar(&pr, "pr", 0, "bring someone's pull request, by number, into a branch of its own")
+	cmd.Flags().BoolVar(&evaluate, "evaluate", false, "with --pr, allow dockhand to evaluate the pull request's Portfiles on this Mac at the head adopted")
 	settings.SupportsJSON(cmd)
 	return cmd
 }
@@ -401,10 +407,15 @@ func writePlaced(out io.Writer, adoption engine.Adoption) {
 	}
 }
 
-func adoptPullRequest(ctx context.Context, e *engine.Engine, streams term.Streams, places config.Places, number int) error {
+func adoptPullRequest(ctx context.Context, e *engine.Engine, streams term.Streams, places config.Places, number int, evaluate bool) error {
 	adoption, err := e.AdoptPullRequest(ctx, number, "")
 	if err != nil {
 		return err
+	}
+	if evaluate {
+		if err := e.AllowAdopted(ctx, adoption.Branch); err != nil {
+			return err
+		}
 	}
 	streams.Emit(map[string]any{"branch": view.BranchRef(adoption.Branch), "already": adoption.Already, "number": number, "title": adoption.Title,
 		"author": adoption.Author, "commits": adoption.Commits, "ports": view.NonNil(adoption.Scope.PortNames()), "maintainers_can_edit": adoption.MaintainerCanModify})

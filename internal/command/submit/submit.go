@@ -78,6 +78,9 @@ write, keeping your --note.
 			if request.Branch, err = where.Resolve(ctx, e, streams); err != nil {
 				return err
 			}
+			if err := branchflags.MayEvaluate(ctx, e, streams, request.Branch); err != nil {
+				return err
+			}
 			plan, err := e.PlanSubmit(ctx, request)
 			// Edits not committed are committed as tidy would, shown as tidy
 			// shows them, and then submitted, where submit refused and named

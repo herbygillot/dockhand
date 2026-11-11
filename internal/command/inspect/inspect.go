@@ -51,6 +51,9 @@ MacPorts' distfiles mirror.`,
 			if err != nil {
 				return err
 			}
+			if err := branchflags.MayEvaluate(ctx, e, streams, branch); err != nil {
+				return err
+			}
 			if archives {
 				return diffArchives(ctx, e, streams, branch, args, stat)
 			}

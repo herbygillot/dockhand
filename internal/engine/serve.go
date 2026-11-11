@@ -628,6 +628,12 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 				failure = err
 				break
 			}
+			// Nothing unattended asks: another person's branch is driven
+			// only where its author's commit is allowed, and stays queued
+			// otherwise, which status says (#162).
+			if allowed, err := e.EvaluationAllowed(running, branch); err != nil || !allowed {
+				continue
+			}
 			lease, full, err := service.Reserve(running, session, run, needs)
 			if held := new(coord.HeldError); errors.As(err, &held) {
 				continue

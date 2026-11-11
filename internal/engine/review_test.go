@@ -46,7 +46,7 @@ func TestReviewAppliesTheRulesAndRemembersWhatItFound(t *testing.T) {
 	fake := f.withFork(t, e)
 	contribution(t, f, fake)
 
-	report, err := e.Review(t.Context(), 34905)
+	report, err := fullReview(t.Context(), e, 34905)
 	require.NoError(t, err)
 	require.Equal(t, "Update jq", report.Title)
 	require.Len(t, report.Commits, 2)
@@ -61,7 +61,7 @@ func TestReviewAppliesTheRulesAndRemembersWhatItFound(t *testing.T) {
 	_, err = e.PostReview(t.Context(), report, report.Markdown(), true)
 	require.ErrorContains(t, err, "requesting changes is left to people with write or triage access")
 	fake.Role = "triage"
-	report, err = e.Review(t.Context(), 34905)
+	report, err = fullReview(t.Context(), e, 34905)
 	require.NoError(t, err)
 	url, err := e.PostReview(t.Context(), report, report.Markdown(), true)
 	require.NoError(t, err)
@@ -75,7 +75,7 @@ func TestReviewAppliesTheRulesAndRemembersWhatItFound(t *testing.T) {
 	commitAs(t, f.upstream, "New newcontrib@example.org", "jq: update to 1.8.1")
 	testsupport.Git(t, f.upstream, "update-ref", "refs/pull/34905/head", "contrib-2")
 	testsupport.Git(t, f.upstream, "switch", "-q", "master")
-	again, err := e.Review(t.Context(), 34905)
+	again, err := fullReview(t.Context(), e, 34905)
 	require.NoError(t, err)
 	require.Empty(t, again.Findings)
 	require.Equal(t, report.Head, string(again.Previous.Head))
@@ -110,7 +110,7 @@ func TestReviewStartsAtThePullRequestsOwnBase(t *testing.T) {
 	read := &readDirectories{}
 	useDependents(e, read)
 
-	report, err := e.Review(t.Context(), 34905)
+	report, err := fullReview(t.Context(), e, 34905)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"jq", "jqx"}, report.Ports, "php is a change ahead of master, not the pull request's")
 	require.Equal(t, [][]string{{"textproc/jq"}, {"textproc/jq"}, {"sysutils/jqx", "textproc/jq"}, {"textproc/jq"}}, read.asked,
@@ -158,6 +158,14 @@ func TestAdoptSomeonesPullRequestAndPushOnlyWhereGitHubAllows(t *testing.T) {
 
 	testsupport.WriteFiles(t, adopted.Branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 0\n# docs\n"})
 	testsupport.Git(t, adopted.Branch.Worktree, "commit", "-q", "-am", "jq: reset revision")
+	// Its Portfiles are the author's: nothing evaluates them until the
+	// person allows the author's commit, and the person's own commit
+	// above it asks nothing more (#162).
+	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: adopted.Branch, NoCheck: true})
+	var refused *NotAllowedError
+	require.ErrorAs(t, err, &refused)
+	require.ErrorContains(t, err, "dockhand adopt --pr 34905 --evaluate allows it")
+	require.NoError(t, e.AllowAdopted(t.Context(), adopted.Branch))
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: adopted.Branch, NoCheck: true})
 	require.NoError(t, err)
 	require.Equal(t, "newcontrib/macports-ports:patch-1", plan.Head())
@@ -219,7 +227,7 @@ func TestReviewSaysWhatUpdateWouldOfSomeonesPullRequest(t *testing.T) {
 		"textproc/jaq": {{Name: "jaq", Dependencies: []macports.Dependency{{Port: "jq", Phase: "lib"}}}},
 	}})
 
-	report, err := e.Review(t.Context(), 34905)
+	report, err := fullReview(t.Context(), e, 34905)
 	require.NoError(t, err)
 	require.Equal(t, "assessing a revision needs MacPorts' evaluator", report.UpstreamUnread, "a reader that can't plan archives")
 	require.Contains(t, report.Markdown(), "Could not assess upstream changes: assessing a revision needs MacPorts' evaluator.")
@@ -231,7 +239,7 @@ func TestReviewSaysWhatUpdateWouldOfSomeonesPullRequest(t *testing.T) {
 	p.Add(model.ObjectID(trees[report.Base]), plannedPort{Info: macports.PortInfo{Name: "jq", Version: "1.7.1"}, Archives: map[string]map[string]string{"jq-1.7.1.tar.gz": {"COPYING": "MIT\n"}}})
 	p.Add(model.ObjectID(trees[report.Head]), plannedPort{Info: macports.PortInfo{Name: "jq", Version: "1.8.1"}, Archives: map[string]map[string]string{"jq-1.8.1.tar.gz": {"COPYING": "GPL\n"}}})
 
-	report, err = e.Review(t.Context(), 34905)
+	report, err = fullReview(t.Context(), e, 34905)
 	require.NoError(t, err)
 	require.Empty(t, report.UpstreamUnread)
 	require.Len(t, report.Upstream, 1)
@@ -283,7 +291,7 @@ func TestReviewNamesADirectorysOtherPorts(t *testing.T) {
 	contribution(t, f, fake)
 	useDependents(e, definedPorts{})
 
-	report, err := e.Review(t.Context(), 34905)
+	report, err := fullReview(t.Context(), e, 34905)
 	require.NoError(t, err)
 	require.Equal(t, []string{"jq", "jq-devel"}, report.Ports)
 	require.Contains(t, report.Summary(), "2 commits changing jq, jq-devel")
@@ -310,7 +318,7 @@ func TestAMissingPullRequestSaysWhereItWasLookedFor(t *testing.T) {
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	f.withFork(t, e)
-	_, err := e.Review(t.Context(), 999)
+	_, err := fullReview(t.Context(), e, 999)
 	require.ErrorIs(t, err, forge.ErrNotFound)
 	require.ErrorContains(t, err, "no pull request #999 in macports/macports-ports")
 	e.options.PullRequests = "ada/macports-ports"
@@ -327,7 +335,7 @@ func TestAPullRequestIsAdoptedAtTheCommitReviewed(t *testing.T) {
 	e := f.open(t)
 	fake := f.withFork(t, e)
 	contribution(t, f, fake)
-	report, err := e.Review(t.Context(), 34905)
+	report, err := fullReview(t.Context(), e, 34905)
 	require.NoError(t, err)
 	reviewed := model.ObjectID(report.Head)
 
@@ -365,7 +373,7 @@ func TestAnUntouchedAdoptedBranchIsRefreshed(t *testing.T) {
 	commitAs(t, f.upstream, "New newcontrib@example.org", "jq: update to 1.8.2")
 	testsupport.Git(t, f.upstream, "update-ref", "refs/pull/34905/head", "contrib")
 	testsupport.Git(t, f.upstream, "switch", "-q", "master")
-	report, err := e.Review(t.Context(), 34905)
+	report, err := fullReview(t.Context(), e, 34905)
 	require.NoError(t, err)
 	head := model.ObjectID(report.Head)
 	require.NotEqual(t, old, head)
@@ -443,7 +451,7 @@ func TestASandboxsPullRequestIsFetchedFromTheSandbox(t *testing.T) {
 	testsupport.Git(t, f.clone, "update-ref", "refs/dockhand/reviews/34905", "HEAD")
 
 	e.options.PullRequests, e.options.PullRequestsURL = "ada/macports-ports", sandbox
-	report, err := e.Review(t.Context(), 34905)
+	report, err := fullReview(t.Context(), e, 34905)
 	require.NoError(t, err)
 	require.Equal(t, sandboxed, report.Head, "the sandbox's #34905")
 	require.Len(t, report.Commits, 1)
@@ -451,7 +459,7 @@ func TestASandboxsPullRequestIsFetchedFromTheSandbox(t *testing.T) {
 	require.Equal(t, testsupport.Git(t, f.clone, "rev-parse", "HEAD"), testsupport.Git(t, f.clone, "rev-parse", "refs/dockhand/reviews/34905"), "the ref of the number alone is neither read nor moved")
 
 	e.options.PullRequests = ""
-	report, err = e.Review(t.Context(), 34905)
+	report, err = fullReview(t.Context(), e, 34905)
 	require.NoError(t, err)
 	require.Equal(t, macports, report.Head, "MacPorts' #34905, from master's upstream")
 	require.Equal(t, macports, testsupport.Git(t, f.clone, "rev-parse", "refs/dockhand/reviews/macports/macports-ports/34905"))
@@ -529,4 +537,14 @@ func TestABranchOfAnotherRepositorysPullRequestIsRefused(t *testing.T) {
 			require.NoError(t, e.pullRequestHere(adopted.Branch))
 		})
 	}
+}
+
+// fullReview opens pull request number and reviews it evaluating its
+// Portfiles, as a person who allowed them does.
+func fullReview(ctx context.Context, e *Engine, number int) (ReviewReport, error) {
+	target, err := e.OpenReview(ctx, number)
+	if err != nil {
+		return ReviewReport{Ref: target.Ref}, err
+	}
+	return e.Review(ctx, target, true)
 }

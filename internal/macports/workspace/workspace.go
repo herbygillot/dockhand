@@ -63,6 +63,9 @@ func Open(ctx context.Context, repo *git.Repository, source model.Source) (*Work
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if err := admit(ctx); err != nil {
+		return nil, err
+	}
 	directory, err := scratch.Dir("workspace-")
 	if err != nil {
 		return nil, err

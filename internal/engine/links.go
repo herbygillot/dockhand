@@ -53,11 +53,14 @@ func (e *Engine) linkFindings(ctx context.Context, checked Evidence) ([]evidence
 	if err != nil {
 		return nil, err
 	}
-	// What each target declares is its Portfile's evaluation, which says
-	// whose where another wrote them (the trust rule).
+	// What each target declares is its Portfile's evaluation: another's
+	// go through the door only where the person allowed them (the trust
+	// rule).
 	if run.Branch != "" {
 		if branch, err := e.Branch(ctx, run.Branch); err == nil {
-			e.sayWhose(ctx, branch)
+			if ctx, err = e.evaluating(ctx, branch); err != nil {
+				return nil, err
+			}
 		}
 	}
 	reader, err := e.portReader()

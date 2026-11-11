@@ -225,6 +225,10 @@ type Reader interface {
 	// LastReview is the newest review of a pull request; ErrNotFound when
 	// there is none.
 	LastReview(repository string, number int) (model.Review, error)
+	// EvaluationConsents are the person's answers allowing a pull
+	// request's Portfiles to be evaluated, newest first, one for each of
+	// the author's commits they were given for (#162).
+	EvaluationConsents(repository string, number int) ([]model.EvaluationConsent, error)
 }
 
 // Tx reads and writes records within a transaction.
@@ -348,6 +352,10 @@ type Tx interface {
 	SetNetworkHolds(branch model.BranchID, tree model.ObjectID, at time.Time, holds []model.Concern) error
 	// AddReview records a review of a pull request.
 	AddReview(review model.Review) error
+	// AllowEvaluation records the person's yes to evaluating a pull
+	// request's Portfiles at the author's commit; one given again is kept
+	// once, at its first time.
+	AllowEvaluation(consent model.EvaluationConsent) error
 }
 
 // NewID returns a random identifier with a readable prefix, such as

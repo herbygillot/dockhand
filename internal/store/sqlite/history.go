@@ -358,6 +358,35 @@ func (t *tx) AddReview(r model.Review) error {
 	return err
 }
 
+func (t *tx) AllowEvaluation(c model.EvaluationConsent) error {
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	_, err := t.exec("INSERT INTO evaluation_consents(repository_id, pr_repository, number, head, at) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING",
+		t.repo, c.Repository, c.Number, c.Head, millis(c.At))
+	return err
+}
+
+func (t *tx) EvaluationConsents(repository string, number int) ([]model.EvaluationConsent, error) {
+	rows, err := t.conn.QueryContext(t.ctx, "SELECT head, at FROM evaluation_consents WHERE repository_id=? AND pr_repository=? AND number=? ORDER BY at DESC, head",
+		t.repo, repository, number)
+	if err != nil {
+		return nil, storageError(err)
+	}
+	defer rows.Close()
+	var consents []model.EvaluationConsent
+	for rows.Next() {
+		c := model.EvaluationConsent{Repository: repository, Number: number}
+		var at int64
+		if err := rows.Scan(&c.Head, &at); err != nil {
+			return nil, storageError(err)
+		}
+		c.At = fromMillis(at)
+		consents = append(consents, c)
+	}
+	return consents, storageError(rows.Err())
+}
+
 func (t *tx) LastReview(repository string, number int) (model.Review, error) {
 	r := model.Review{Repository: repository, Number: number}
 	var findings string

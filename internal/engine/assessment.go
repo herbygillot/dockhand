@@ -73,9 +73,12 @@ func (e *Engine) revisionAssessments(ctx context.Context, branch model.BranchID,
 	if !collect {
 		return recorded, nil
 	}
-	// Assessing evaluates the revision's Portfiles, which says whose where
-	// another wrote them (the trust rule).
-	e.sayWhose(ctx, owner)
+	// Assessing evaluates the revision's Portfiles: another's go through
+	// the door only where the person allowed them (the trust rule).
+	ctx, err = e.evaluating(ctx, owner)
+	if err != nil {
+		return nil, err
+	}
 	read := maps.Clone(records)
 	changes, err := e.makeChanges(ctx, owner, base, tree, records)
 	if err != nil {

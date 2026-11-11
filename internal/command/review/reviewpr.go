@@ -24,7 +24,7 @@ import (
 )
 
 func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
-	var comment, requestChanges, markdown, check bool
+	var comment, requestChanges, markdown, check, evaluateFlag bool
 	var on []string
 	cmd := &cobra.Command{
 		Use:   "review <pr>",
@@ -39,11 +39,21 @@ It posts nothing unless asked: on a terminal it shows the text and asks;
 changes, which MacPorts honors only from people with write or triage
 access. --markdown prints the text for pasting.
 
+A full review evaluates the pull request's Portfiles with MacPorts on
+this Mac, as you, for the rules that evaluate and the comparison with
+upstream. A Portfile is code: before evaluating another person's, review
+asks, listing the Portfiles and PortGroups it changes, with their diff one
+key away; the answer is kept for that head, and a new push asks again.
+No, the default, gives a text-only review, which runs the rules that
+read text and says what it left out. In a script, --evaluate answers yes
+and --evaluate=false reviews the text only; without either, a script's
+review is text-only. --yes never answers it.
+
 --check adopts the pull request as pr-<number>, as adopt --pr does, and
 checks it in Tart or the environments selected with --on. Reports the
 result as check does and includes it in any posted review. Planning
-evaluates the author's Portfiles with MacPorts on this Mac and reports
-whose files they are; the builds run in the selected environments.`,
+evaluates the author's Portfiles with MacPorts on this Mac, so --check
+needs the answer yes; the builds run in the selected environments.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -63,7 +73,15 @@ whose files they are; the builds run in the selected environments.`,
 					return err
 				}
 			}
-			report, err := e.Review(ctx, number)
+			target, err := e.OpenReview(ctx, number)
+			if err != nil {
+				return err
+			}
+			evaluate, err := decideEvaluation(ctx, e, streams, target, evaluation{asked: evaluateFlag, given: cmd.Flags().Changed("evaluate"), check: check})
+			if err != nil {
+				return err
+			}
+			report, err := e.Review(ctx, target, evaluate)
 			if err != nil {
 				return err
 			}
@@ -147,10 +165,97 @@ whose files they are; the builds run in the selected environments.`,
 	cmd.Flags().BoolVar(&markdown, "markdown", false, "print the review's text, for pasting, and post nothing")
 	cmd.Flags().BoolVar(&check, "check", false, "adopt the pull request and check it in Tart, as check does")
 	cmd.Flags().StringArrayVar(&on, "on", nil, "with --check, select build environments as for check --on (default: tart)")
+	cmd.Flags().BoolVar(&evaluateFlag, "evaluate", false, "evaluate another person's Portfiles on this Mac without asking, for this head; --evaluate=false reviews the text only")
 	cmd.MarkFlagsMutuallyExclusive("comment", "request-changes", "markdown")
 	cmd.MarkFlagsMutuallyExclusive("check", "markdown")
 	settings.SupportsJSON(cmd)
 	return cmd
+}
+
+// evaluation is what the command line says of evaluating another
+// person's Portfiles: --evaluate's value, whether it was given, and
+// whether --check needs it.
+type evaluation struct {
+	asked, given, check bool
+}
+
+// decideEvaluation decides whether a review evaluates the pull request's
+// Portfiles (#162): the person's own, or a head the person allowed, as
+// --evaluate=false doesn't say otherwise; another's, at --evaluate's word,
+// kept for the head, or the person's answer on a terminal, kept where it
+// is yes; and in a script without --evaluate, a text-only review, which
+// review --check refuses before anything is adopted.
+func decideEvaluation(ctx context.Context, e *engine.Engine, streams term.Streams, target engine.ReviewTarget, asked evaluation) (bool, error) {
+	refuseCheck := func() (bool, error) {
+		return false, fmt.Errorf("review --check plans the check by evaluating #%d's Portfiles on this Mac, which needs your yes; nothing was checked. In a script, add --evaluate", target.Number)
+	}
+	if asked.given && !asked.asked {
+		if asked.check {
+			return refuseCheck()
+		}
+		return false, nil
+	}
+	if !target.Asks() {
+		return true, nil
+	}
+	if asked.given {
+		return true, e.AllowEvaluation(ctx, target.Number, model.ObjectID(target.Head))
+	}
+	if !streams.Terminal() {
+		if asked.check {
+			return refuseCheck()
+		}
+		return false, nil
+	}
+	writeQuestion(streams.Prose(), target)
+	for {
+		choices := "y yes · d show the diff first · n review the text only  [n] "
+		if target.Since != nil {
+			choices = "y yes · d show what changed · n review the text only  [n] "
+		}
+		answer, err := streams.Ask("? Evaluate them: " + choices)
+		if err != nil {
+			return false, err
+		}
+		switch strings.ToLower(strings.TrimSpace(answer)) {
+		case "y", "yes":
+			return true, e.AllowEvaluation(ctx, target.Number, model.ObjectID(target.Head))
+		case "d":
+			diff, err := e.ReviewDiff(ctx, target)
+			if err != nil {
+				return false, err
+			}
+			// The diff is written raw, as tidy's is (#94).
+			fmt.Fprint(streams.Out, string(diff))
+		default:
+			if asked.check {
+				return refuseCheck()
+			}
+			return false, nil
+		}
+	}
+}
+
+// writeQuestion says what the question is about: whose the pull request
+// is, what evaluating it does, and the Portfiles and PortGroups it
+// changes, since the head allowed last where there is one.
+func writeQuestion(w io.Writer, target engine.ReviewTarget) {
+	if target.Since != nil {
+		fmt.Fprintf(w, "#%d has a new head, %s. You allowed %s on %s.\n", target.Number, model.ObjectID(target.Head).Short(), target.Since.Head.Short(), target.Since.At.Local().Format("2006-01-02"))
+	} else {
+		fmt.Fprintf(w, "#%d is %s. A full review evaluates its Portfiles with MacPorts on this Mac, as you. A Portfile is code: it runs with your files and your GitHub login in reach.\n", target.Number, target.Whose())
+	}
+	width := 0
+	for _, file := range target.Portfiles {
+		width = max(width, len(file.Path))
+	}
+	for _, file := range target.Portfiles {
+		since := ""
+		if target.Since != nil {
+			since = "   (since " + target.Since.Head.Short() + ")"
+		}
+		fmt.Fprintf(w, "  %-*s  +%d -%d%s\n", width, file.Path, file.Added, file.Removed, since)
+	}
 }
 
 // checkPullRequest adopts a pull request at head, the commit the review
@@ -233,6 +338,9 @@ func postReview(ctx context.Context, e *engine.Engine, streams term.Streams, rep
 
 func writeReview(out io.Writer, report engine.ReviewReport) {
 	access := engine.Access(report.Permission)
+	if words := report.TextOnlyWords(); words != "" {
+		fmt.Fprintln(out, words)
+	}
 	fmt.Fprintf(out, "review of #%d %q, as @%s (%s to %s)\n", report.Ref.Number, report.Title, report.Login, access, report.Ref.Repository)
 	fmt.Fprintf(out, "  %s\n", report.Summary())
 	if report.Behind != "" {

@@ -471,3 +471,37 @@ func TestNetworkHoldsAreKeptByTree(t *testing.T) {
 		return nil
 	}))
 }
+
+// The person's answers to evaluating a pull request's Portfiles are kept
+// for each author's commit, newest first, one given again kept once at
+// its first time (#162).
+func TestEvaluationConsentsAreKeptByCommit(t *testing.T) {
+	t.Parallel()
+	f := open(t)
+	a, b := model.ObjectID(strings.Repeat("a", 40)), model.ObjectID(strings.Repeat("b", 40))
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		for _, c := range []model.EvaluationConsent{
+			{Repository: "macports/macports-ports", Number: 34905, Head: a, At: at},
+			{Repository: "macports/macports-ports", Number: 34905, Head: b, At: at.Add(time.Hour)},
+			{Repository: "macports/macports-ports", Number: 34905, Head: a, At: at.Add(2 * time.Hour)},
+			{Repository: "macports/macports-ports", Number: 1, Head: a, At: at},
+		} {
+			if err := tx.AllowEvaluation(c); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	require.Error(t, f.update(t, func(tx store.Tx) error {
+		return tx.AllowEvaluation(model.EvaluationConsent{Repository: "macports/macports-ports", Number: 34905, At: at})
+	}), "a consent without its commit is refused")
+	require.NoError(t, f.store.View(t.Context(), f.repo, func(r store.Reader) error {
+		consents, err := r.EvaluationConsents("macports/macports-ports", 34905)
+		require.NoError(t, err)
+		require.Equal(t, []model.EvaluationConsent{
+			{Repository: "macports/macports-ports", Number: 34905, Head: b, At: at.Add(time.Hour)},
+			{Repository: "macports/macports-ports", Number: 34905, Head: a, At: at},
+		}, consents)
+		return nil
+	}))
+}

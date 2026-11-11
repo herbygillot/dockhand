@@ -45,6 +45,11 @@ func (r *Registry) Acquire(ctx context.Context, repo *git.Repository, source mod
 	if repo == nil {
 		return nil, nil, errors.New("workspace: a repository is required")
 	}
+	// A workspace another holder opened is staged already; the door is
+	// asked for each holder's work all the same.
+	if err := admit(ctx); err != nil {
+		return nil, nil, err
+	}
 	key := holdingKey{repo: repo.CommonDir, source: source}
 	r.mu.Lock()
 	defer r.mu.Unlock()

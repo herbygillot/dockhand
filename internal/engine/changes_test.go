@@ -308,11 +308,19 @@ func TestARenameInPlaceIsRecordedAndTidiedAsOne(t *testing.T) {
 func TestAnAdoptedPullRequestsRecordSaysWhose(t *testing.T) {
 	t.Parallel()
 	e, branch, _, tree := revisionFixture(t, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
-	branch.PullRequest = &model.PullRequest{Repository: UpstreamRepository, Number: 4711, Head: "alice:feature", Adopted: true, Author: "alice"}
+	branch.PullRequest = &model.PullRequest{Repository: UpstreamRepository, Number: 4711, Head: "alice:feature", Adopted: true, Author: "alice", AuthorHead: model.ObjectID(strings.Repeat("c", 40))}
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(branch) }))
 	var said []string
 	ctx := progress.WithReporter(t.Context(), func(update progress.Update) { said = append(said, update.Message) })
+	// Not allowed, nothing is evaluated, and nothing recorded as an
+	// evaluation that failed (#162).
 	records, err := e.revisionChanges(ctx, branch.ID, branch.Base, tree, true)
+	var refused *NotAllowedError
+	require.ErrorAs(t, err, &refused)
+	require.Empty(t, records)
+	require.Empty(t, said)
+	require.NoError(t, e.AllowAdopted(t.Context(), branch))
+	records, err = e.revisionChanges(ctx, branch.ID, branch.Base, tree, true)
 	require.NoError(t, err)
 	require.Contains(t, records, "devel/libharbor")
 	require.Equal(t, []string{"Evaluating @alice's Portfiles on this Mac, for assessed"}, said)

@@ -31,9 +31,9 @@ type FamilyReader interface {
 // recorded. Without collect, nothing is evaluated: a record that couldn't
 // be made is read as it is, saying why. A directory with no record keeps its text
 // scope: every subport of it reads as changed, as before records. An
-// adopted pull request's branch gets them where the trust rule lets the
-// work says whose Portfiles it evaluates (sayWhose), and a revision no
-// evaluator can read gets none.
+// adopted pull request's branch gets them where the person allowed its
+// author's commit, the work going through the door (evaluating), and a
+// revision no evaluator can read gets none.
 func (e *Engine) revisionChanges(ctx context.Context, id model.BranchID, base, tree model.ObjectID, collect bool) (map[string]model.ChangeRecord, error) {
 	var branch model.Branch
 	var records map[string]model.ChangeRecord
@@ -99,6 +99,10 @@ func recordChanges(tx store.Tx, id model.BranchID, base, tree model.ObjectID, re
 // evaluates a port's family, or the trust rule keeps the work from
 // evaluating the branch's Portfiles (mayEvaluate).
 func (e *Engine) makeChanges(ctx context.Context, branch model.Branch, base, tree model.ObjectID, records map[string]model.ChangeRecord) ([]model.ChangeRecord, error) {
+	ctx, err := e.evaluating(ctx, branch)
+	if err != nil {
+		return nil, err
+	}
 	id := branch.ID
 	ports, err := e.capabilities()
 	if err != nil {
@@ -122,7 +126,6 @@ func (e *Engine) makeChanges(ctx context.Context, branch model.Branch, base, tre
 		if recorded, ok := records[directory]; ok && recorded.Problem == "" {
 			continue
 		}
-		e.sayWhose(ctx, branch)
 		var sides [2]*macports.Snapshot
 		var texts [2][]byte
 		problem := ""
@@ -168,8 +171,8 @@ func (e *Engine) makeChanges(ctx context.Context, branch model.Branch, base, tre
 
 // revisionFamily is a port directory evaluated as a revision holds it,
 // every subport of it, on this Mac, as a change record's revision side is
-// (makeChanges), saying whose Portfiles they are where another wrote them
-// (sayWhose). A tree this Mac doesn't hold, a directory the revision has
+// (makeChanges), another's only where the person allowed them
+// (evaluating). A tree this Mac doesn't hold, a directory the revision has
 // no Portfile in, and nothing here evaluating a port's family are errors,
 // as an evaluation that fails is.
 func (e *Engine) revisionFamily(ctx context.Context, revision model.Revision, directory string) (macports.Snapshot, error) {
@@ -195,7 +198,10 @@ func (e *Engine) revisionFamily(ctx context.Context, revision model.Revision, di
 	}); err != nil {
 		return macports.Snapshot{}, err
 	}
-	e.sayWhose(ctx, branch)
+	ctx, err = e.evaluating(ctx, branch)
+	if err != nil {
+		return macports.Snapshot{}, err
+	}
 	return ports.Families.Family(ctx, model.Source{Tree: revision.Source.Tree, Base: revision.Source.Base}, directory)
 }
 
