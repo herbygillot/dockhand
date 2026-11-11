@@ -305,6 +305,14 @@ func writeClean(out io.Writer, plans []engine.CleanBranch, done bool, places con
 				count++
 			}
 		}
+		if plan.KeptRefs > 0 {
+			verb := "remove "
+			if done {
+				verb = "removed"
+			}
+			fmt.Fprintf(out, "  %s  %s an earlier clean left\n", verb, prose.Plural(plan.KeptRefs, "ref dockhand kept"))
+			count++
+		}
 		// An unmerged branch's Git branch stays, but for one with nothing
 		// master lacks, which goes with its worktree; one master
 		// supersedes is said whether or not it has a worktree.

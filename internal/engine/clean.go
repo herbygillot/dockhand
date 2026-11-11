@@ -77,6 +77,10 @@ type CleanBranch struct {
 	// unmerged branch with work of its own started from, which a person
 	// may look at before removing it.
 	Superseded string
+	// KeptRefs counts the refs dockhand kept for a merged branch with
+	// nothing else left to remove, as an earlier clean that failed past
+	// its last step leaves them, which this one removes (#212).
+	KeptRefs int
 }
 
 // PlanClean previews removing what merged branches leave behind (Design
@@ -129,6 +133,16 @@ func (e *Engine) PlanCleanBranches(ctx context.Context, branches []model.Branch)
 		}
 		if slices.ContainsFunc(plan.Steps, func(step CleanStep) bool { return !step.Said }) || plan.Superseded != "" {
 			plans = append(plans, plan)
+			continue
+		}
+		// A merged branch with nothing left to remove but the refs dockhand
+		// kept for it, which an earlier clean that failed past its last
+		// step left behind, is cleaned of those (the fault sweep, #212).
+		if branch.State == model.BranchMerged && len(plan.Steps) == 0 {
+			if left, err := e.keptRefs(ctx, branch); err == nil && len(left) > 0 {
+				plan.KeptRefs = len(left)
+				plans = append(plans, plan)
+			}
 		}
 	}
 	return plans, nil
@@ -655,7 +669,9 @@ func (e *Engine) ApplyClean(ctx context.Context, plans []CleanBranch) ([]CleanBr
 					step.Kept = "it moved while clean ran"
 					continue
 				}
-				return plans, fmt.Errorf("removing %s: %w", step.What, err)
+				// What was removed before it is said, where the timeline
+				// lost it (#211).
+				return plans, errors.Join(fmt.Errorf("removing %s: %w", step.What, err), e.cleanEvent(ctx, *plan))
 			}
 			step.Done = step.Kept == ""
 		}
@@ -671,15 +687,11 @@ func (e *Engine) ApplyClean(ctx context.Context, plans []CleanBranch) ([]CleanBr
 		// for merged work: kept work may still want a restore.
 		if everything && plan.Branch.State == model.BranchMerged {
 			if err := e.dropRefs(ctx, plan.Branch); err != nil {
-				return plans, err
+				return plans, errors.Join(err, e.cleanEvent(ctx, *plan))
 			}
 		}
 		if len(removed) > 0 {
-			if err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-				_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: plan.Branch.ID, Kind: model.EventBranchClean, Level: model.LevelInfo,
-					Message: "removed " + strings.Join(removed, ", ")})
-				return err
-			}); err != nil {
+			if err := e.cleanEvent(ctx, *plan); err != nil {
 				return plans, err
 			}
 		}
@@ -690,6 +702,25 @@ func (e *Engine) ApplyClean(ctx context.Context, plans []CleanBranch) ([]CleanBr
 		}
 	}
 	return plans, nil
+}
+
+// cleanEvent records what clean removed of a branch, where it removed
+// anything.
+func (e *Engine) cleanEvent(ctx context.Context, plan CleanBranch) error {
+	var removed []string
+	for _, step := range plan.Steps {
+		if step.Done {
+			removed = append(removed, step.What)
+		}
+	}
+	if len(removed) == 0 {
+		return nil
+	}
+	return e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: plan.Branch.ID, Kind: model.EventBranchClean, Level: model.LevelInfo,
+			Message: "removed " + strings.Join(removed, ", ")})
+		return err
+	})
 }
 
 // cleanKindWords say what a step of clean is, for what clean kept.
@@ -724,6 +755,16 @@ func (e *Engine) keepCleanWords(ctx context.Context, plan *CleanBranch) error {
 // checkpoints, with the indexes they kept, where they hold what each
 // kept, and its snapshots' commits.
 func (e *Engine) dropRefs(ctx context.Context, branch model.Branch) error {
+	changes, err := e.keptRefs(ctx, branch)
+	if err != nil || len(changes) == 0 {
+		return err
+	}
+	return e.Repo.UpdateRefs(ctx, changes)
+}
+
+// keptRefs are the deletions of the refs dockhand kept for a branch, its
+// checkpoints' and its snapshots', that are still there.
+func (e *Engine) keptRefs(ctx context.Context, branch model.Branch) ([]git.RefChange, error) {
 	var names []string
 	var checkpoints []model.Checkpoint
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
@@ -737,29 +778,26 @@ func (e *Engine) dropRefs(ctx context.Context, branch model.Branch) error {
 		}
 		return err
 	}); err != nil {
-		return err
+		return nil, err
 	}
 	var changes []git.RefChange
 	for _, checkpoint := range checkpoints {
 		kept, err := history.KeptRefs(ctx, e.Repo, checkpoint)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		changes = append(changes, kept...)
 	}
 	for _, name := range names {
 		value, err := e.Repo.ReadRef(ctx, name)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if value.Exists {
 			changes = append(changes, git.RefChange{Name: name, Expected: value})
 		}
 	}
-	if len(changes) == 0 {
-		return nil
-	}
-	return e.Repo.UpdateRefs(ctx, changes)
+	return changes, nil
 }
 
 // Leftover is an environment a provider made for a check that is still
