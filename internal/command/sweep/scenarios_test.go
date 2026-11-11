@@ -109,11 +109,11 @@ func TestSweepResubmitAfterReview(t *testing.T) {
 			// The sweep's first run (#129): the reviewer asked again only on
 			// the run that pushed, so a submit that failed after its push, or
 			// whose ask failed, never asks again; #117's family.
-			"store.update@engine.(*Engine).ApplySubmit#1/":                  "finding 1: the reviewer isn't asked again after the submit's record fails",
-			"git push@remotewrite.Push#1/lost":                              "finding 1: the reviewer isn't asked again after the push's reply is lost",
-			"forge.Update@remotewrite.Edit#1/":                              "finding 1: the reviewer isn't asked again after the pull request's edit fails",
-			"forge.RequestReviewers@remotewrite.Ask#1/":                     "finding 1: a failed ask of the reviewer isn't made again",
-			"store.update@engine.(*Engine).RequestReview#1/!landed-unknown": "finding 2: the ask made, its record failed, the timeline never says it",
+			"store.update@engine.(*Engine).ApplySubmit#1/":                  "#205: the reviewer isn't asked again after the submit's record fails",
+			"git push@remotewrite.Push#1/lost":                              "#205: the reviewer isn't asked again after the push's reply is lost",
+			"forge.Update@remotewrite.Edit#1/":                              "#205: the reviewer isn't asked again after the pull request's edit fails",
+			"forge.RequestReviewers@remotewrite.Ask#1/":                     "#205: a failed ask of the reviewer isn't made again",
+			"store.update@engine.(*Engine).RequestReview#1/!landed-unknown": "#206: the ask made, its record failed, the timeline never says it",
 		},
 	})
 }
@@ -137,12 +137,9 @@ func TestSweepTidy(t *testing.T) {
 	t.Parallel()
 	sweep(t, scenario{name: "tidy", arrange: edited, steps: [][]string{{"tidy", "-b", "jq-update", "-y"}},
 		known: map[string]string{
-			"git reset@engine.(*Engine).applyTidy.func2#1/":                        "finding 3: the index is left as it was before tidy, and the checkpoint unsettled",
-			"git update-ref@engine.(*Engine).applyTidy.func1#1/landed-unknown":     "finding 3: the index is left as it was before tidy, and the checkpoint unsettled",
-			"store.update@history.(*Transitions).Settle#1/!landed-unknown":         "finding 4: the checkpoint stays unsettled, and tidy again says nothing of it",
-			"git update-ref@engine.(*Engine).applyTidy.func1#1/fail":               "an equivalence to declare: the checkpoint is tidy-2 after an abandoned attempt",
-			"git update-ref@engine.(*Engine).applyTidy.func1#1/dead":               "an equivalence to declare: the checkpoint is tidy-2 after an abandoned attempt",
-			"git update-ref@engine.(*Engine).applyTidy.func1#1/not-landed-unknown": "an equivalence to declare: the checkpoint is tidy-2 after an abandoned attempt",
+			"git reset@engine.(*Engine).applyTidy.func2#1/":                    "#207: the index is left as it was before tidy, and the checkpoint unsettled",
+			"git update-ref@engine.(*Engine).applyTidy.func1#1/landed-unknown": "#207: the index is left as it was before tidy, and the checkpoint unsettled",
+			"store.update@history.(*Transitions).Settle#1/!landed-unknown":     "#208: the checkpoint stays unsettled, and tidy again says nothing of it",
 		}})
 }
 
@@ -152,9 +149,9 @@ func TestSweepUndo(t *testing.T) {
 	t.Parallel()
 	sweep(t, scenario{name: "undo", arrange: tidied, steps: [][]string{{"undo", "-b", "jq-update"}},
 		known: map[string]string{
-			"git update-index@engine.(*Engine).restore#1/":                        "finding 5: undo half done refuses to finish, and records no restore",
-			"git update-ref@engine.(*Engine).restore#1/landed-unknown":            "finding 5: undo half done refuses to finish, and records no restore",
-			"store.update@history.(*Transitions).RecordRestore#1/!landed-unknown": "finding 6: the history restored, its record failed: undo again refuses, and the timeline never says it",
+			"git update-index@engine.(*Engine).restore#1/":                        "#209: undo half done refuses to finish, and records no restore",
+			"git update-ref@engine.(*Engine).restore#1/landed-unknown":            "#209: undo half done refuses to finish, and records no restore",
+			"store.update@history.(*Transitions).RecordRestore#1/!landed-unknown": "#210: the history restored, its record failed: undo again refuses, and the timeline never says it",
 		}})
 }
 
@@ -176,12 +173,12 @@ func TestSweepCleanAfterMerge(t *testing.T) {
 			"store.update@engine.(*Engine).RefreshPullRequests#": "clean's refresh of the pull request's record is a saving; the merge is read from GitHub again",
 		},
 		known: map[string]string{
-			"store.update@coord.(*Session).End#1/!landed-unknown":        "finding 7: the timeline loses clean's event where its session's end fails",
-			"store.update@engine.(*Engine).keepCleanWords#1/dead":        "finding 7: the timeline loses clean's event where its record fails",
-			"store.update@engine.(*Engine).ApplyClean#1/!landed-unknown": "finding 7: the timeline loses clean's event where its record fails",
-			"git update-ref@engine.(*Engine).ApplyClean#1/":              "finding 7: the timeline loses clean's event where a ref's removal fails",
-			"git push@remotewrite.Delete#1/":                             "finding 8: a fork branch's failed removal leaves the branch's checkpoints, or clean's event, behind",
-			"git update-ref@engine.(*Engine).dropRefs#1/":                "finding 8: the branch's checkpoint refs are left behind where their removal fails",
+			"store.update@coord.(*Session).End#1/!landed-unknown":        "#211: the timeline loses clean's event where its session's end fails",
+			"store.update@engine.(*Engine).keepCleanWords#1/dead":        "#211: the timeline loses clean's event where its record fails",
+			"store.update@engine.(*Engine).ApplyClean#1/!landed-unknown": "#211: the timeline loses clean's event where its record fails",
+			"git update-ref@engine.(*Engine).ApplyClean#1/":              "#211: the timeline loses clean's event where a ref's removal fails",
+			"git push@remotewrite.Delete#1/":                             "#212: a fork branch's failed removal leaves the branch's checkpoints, or clean's event, behind",
+			"git update-ref@engine.(*Engine).dropRefs#1/":                "#212: the branch's checkpoint refs are left behind where their removal fails",
 		},
 	})
 }

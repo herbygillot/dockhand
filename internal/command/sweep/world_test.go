@@ -57,7 +57,69 @@ func snapshot(t *testing.T, w cmdtest.World, g *forgetest.GitHub) world {
 	for table, rows := range database(t, filepath.Join(w.Home, ".dockhand", "dockhand.db")) {
 		out["table "+table] = rows
 	}
-	return normalize(nameCommits(t, out, names, w.Clone), filepath.Dir(w.Home))
+	return normalize(renumber(nameCommits(t, out, names, w.Clone)), filepath.Dir(w.Home))
+}
+
+var (
+	checkpointRow  = regexp.MustCompile(`(?:^| )number=(\d+) .* state="([a-z]+)"`)
+	checkpointName = regexp.MustCompile(`\b(tidy|rebase)-(\d+)\b`)
+	checkpointCell = regexp.MustCompile(`(^| )number=(\d+) `)
+)
+
+// renumber names each checkpoint by its place among the repository's
+// checkpoints that aren't abandoned, wherever its number appears: its
+// row, its refs, an event's words, a rebase's base. An abandoned attempt
+// rightly takes a number, so the retry's is tidy-2 where the clean run's
+// is tidy-1, and giving it 1 again would be the bug; the abandoned row is
+// an allowed extra (differences) and takes a name outside the sequence,
+// so a ref left under it still shows. Tidy's and rebase's are one
+// sequence (architecture, #129).
+func renumber(w world) world {
+	var kept []int
+	abandoned := map[int]bool{}
+	for _, line := range w["table checkpoints"] {
+		match := checkpointRow.FindStringSubmatch(line)
+		if match == nil {
+			continue
+		}
+		n, _ := strconv.Atoi(match[1])
+		if match[2] == "abandoned" {
+			abandoned[n] = true
+		} else {
+			kept = append(kept, n)
+		}
+	}
+	slices.Sort(kept)
+	name := func(n int) string {
+		if abandoned[n] {
+			return fmt.Sprintf("abandoned%d", n)
+		}
+		if at, found := slices.BinarySearch(kept, n); found {
+			return strconv.Itoa(at + 1)
+		}
+		return strconv.Itoa(n)
+	}
+	out := world{}
+	for section, lines := range w {
+		renamed := make([]string, len(lines))
+		for i, line := range lines {
+			line = checkpointName.ReplaceAllStringFunc(line, func(m string) string {
+				match := checkpointName.FindStringSubmatch(m)
+				n, _ := strconv.Atoi(match[2])
+				return match[1] + "-" + name(n)
+			})
+			if section == "table checkpoints" {
+				line = checkpointCell.ReplaceAllStringFunc(line, func(m string) string {
+					match := checkpointCell.FindStringSubmatch(m)
+					n, _ := strconv.Atoi(match[2])
+					return match[1] + "number=" + name(n) + " "
+				})
+			}
+			renamed[i] = line
+		}
+		out[section] = renamed
+	}
+	return out
 }
 
 var (
@@ -388,6 +450,13 @@ func differences(clean, recovered world) []string {
 		// gone; a named equivalence for the sessions table alone.
 		if section == "table sessions" {
 			continue
+		}
+		// An abandoned attempt's checkpoint is the retry's allowed extra
+		// (renumber).
+		if section == "table checkpoints" {
+			b = slices.DeleteFunc(slices.Clone(b), func(line string) bool {
+				return strings.Contains(line, `state="abandoned"`) && !slices.Contains(a, line)
+			})
 		}
 		for _, line := range a {
 			if !slices.Contains(b, line) {
