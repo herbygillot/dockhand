@@ -1,6 +1,6 @@
 # One judgment of a check's resolved source
 
-A core item for v0.9.0, [#192](https://github.com/herbygillot/dockhand/issues/192). The issue says where it stands; this file is the design. Architecture wrote it on 2026-11-11, Codex reviewed that draft against the code the same day (the person's "I'd like Codex to co-design and help review as well", 2026-11-11 05:48Z, in the architecture thread), and this is the draft revised for that review and for its short second pass, read again at main f45d5b7a3. "What the review changed" lists each correction. It is built once the person adopts it.
+A core item for v0.9.0, [#192](https://github.com/herbygillot/dockhand/issues/192). The issue says where it stands; this file is the design. Architecture wrote it on 2026-11-11, Codex reviewed that draft against the code the same day (the person's "I'd like Codex to co-design and help review as well", 2026-11-11 05:48Z, in the architecture thread), and this is the design revised for that review and for its short second pass, read again at main f45d5b7a3. "What the review changed" lists each correction. The person adopted it ("Adopt", 2026-11-11 08:23Z, on the architecture thread's card).
 
 ## In short
 
