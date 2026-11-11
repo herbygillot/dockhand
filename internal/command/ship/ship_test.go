@@ -3,6 +3,7 @@ package ship
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -534,4 +536,58 @@ func TestShipStopsWhereMasterChangedTheBranchsPorts(t *testing.T) {
 			require.Empty(t, g.PRs)
 		})
 	}
+}
+
+// jqWithCLI stands in for MacPorts with jq's Portfile defining jq-cli
+// beside it, sharing its release.
+type jqWithCLI struct{}
+
+func (jqWithCLI) Ports(_ context.Context, _ model.Source, directory string, _ model.Environment, _ map[string]bool) ([]macports.PortInfo, error) {
+	if filepath.Base(directory) == "jq" {
+		return []macports.PortInfo{{Name: "jq", Options: map[string]string{}}, {Name: "jq-cli", Options: map[string]string{}}}, nil
+	}
+	return []macports.PortInfo{{Name: filepath.Base(directory), Options: map[string]string{}}}, nil
+}
+
+func (jqWithCLI) Directory(_ context.Context, _ model.Source, name string) (string, error) {
+	if name == "jq-cli" {
+		return "textproc/jq", nil
+	}
+	return "", errors.New("no such port")
+}
+
+// cliBumper is the bumper, whose update of jq moves jq-cli with it, as a
+// subport sharing its release moves.
+type cliBumper struct{ cmdtest.Bumper }
+
+func (b cliBumper) Prepare(ctx context.Context, r editprep.Request) (editprep.Result, error) {
+	result, err := b.Bumper.Prepare(ctx, r)
+	for i := range result.Fidelity {
+		for _, snapshot := range []*macports.Snapshot{&result.Fidelity[i].Before, &result.Fidelity[i].After} {
+			if jq, ok := snapshot.Ports["jq"]; ok {
+				snapshot.Ports["jq-cli"] = jq
+			}
+		}
+	}
+	return result, err
+}
+
+// A port named beside the port whose release it shares, from the same
+// Portfile, is included in that port's branch, whichever was named
+// first: tree-sitter-cli was refused as a subport and listed under "Needs
+// attention", and the batch exited 3 (#168).
+func TestShipIncludesASubportWithThePortItMovesWith(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithScript(t, w, "passed")
+	cmdtest.UsePorts(cmdtest.Stands(t), jqWithCLI{})
+	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return cliBumper{cmdtest.Bumper{Repo: e.Repo}} }
+	g := cmdtest.WithGitHub(t, w)
+	g.Others = nil
+	out, errs, err := cmdtest.Dockhand(t, "ship", "jq-cli", "jq", "--to", "commit")
+	require.NoError(t, err, errs)
+	require.Contains(t, out, "  jq-cli  included with jq on jq-1.8.1.\n")
+	require.NotContains(t, out, "Needs attention")
 }

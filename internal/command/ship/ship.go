@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -199,7 +200,8 @@ func ShipTargets(ctx context.Context, e *engine.Engine, streams term.Streams, po
 		// written here again the day after Select took it).
 		selection, err := e.Select(ctx, engine.Selector{Port: port, Policy: engine.SelectExisting}, engine.WorkUpdate)
 		if errors.Is(err, engine.ErrNoBranch) {
-			targets = append(targets, shipTarget{Port: port})
+			directory, _ := e.PortDirectory(ctx, port)
+			targets = append(targets, shipTarget{Port: port, Directory: directory})
 			continue
 		}
 		if err != nil {
@@ -210,12 +212,60 @@ func ShipTargets(ctx context.Context, e *engine.Engine, streams term.Streams, po
 		case err != nil:
 			return nil, err
 		case chosen.ForVersion:
-			targets = append(targets, shipTarget{Port: port})
+			directory, _ := e.PortDirectory(ctx, port)
+			targets = append(targets, shipTarget{Port: port, Directory: directory})
 		default:
 			targets = append(targets, shipTarget{Port: port, Branch: &chosen.Branch})
 		}
 	}
-	return targets, nil
+	return ownersFirst(targets), nil
+}
+
+// ownersFirst puts the port a Portfile's directory is named for ahead of
+// the other ports of it the arguments name, each update from master, so
+// its update, which moves the subports that share its release, runs first
+// and they're included in its branch (sharedWith): tree-sitter-cli, named
+// alone, is refused as a subport whose release another port moves (#168).
+func ownersFirst(targets []shipTarget) []shipTarget {
+	fresh := func(t shipTarget) bool {
+		return t.Port != "" && t.Branch == nil && len(t.Also) == 0 && t.Directory != ""
+	}
+	for i := range targets {
+		if !fresh(targets[i]) || targets[i].Port == path.Base(targets[i].Directory) {
+			continue
+		}
+		for j := i + 1; j < len(targets); j++ {
+			if fresh(targets[j]) && targets[j].Directory == targets[i].Directory && targets[j].Port == path.Base(targets[j].Directory) {
+				owner := targets[j]
+				copy(targets[i+1:j+1], targets[i:j])
+				targets[i] = owner
+				break
+			}
+		}
+	}
+	return targets
+}
+
+// sharedWith is the earlier target of a batch whose branch, started in
+// this run, already changes a port named beside it, from the same
+// Portfile: the port moved with its release, and is checked on its
+// branch, where its own update was refused as a subport's and the batch
+// exited 3 (#168).
+func sharedWith(ctx context.Context, s *settings.Settings, target shipTarget, earlier map[string]shipTarget) (shipTarget, model.Branch, bool) {
+	owner, ok := earlier[target.Directory]
+	if !ok || target.Port == "" || target.Branch != nil || len(target.Also) > 0 {
+		return shipTarget{}, model.Branch{}, false
+	}
+	e, err := s.Open(ctx)
+	if err != nil {
+		return shipTarget{}, model.Branch{}, false
+	}
+	defer e.Close()
+	selection, err := e.Select(ctx, engine.Selector{Port: target.Port, Policy: engine.SelectExisting}, engine.WorkUpdate)
+	if err != nil || selection.Branch.Name == "" {
+		return shipTarget{}, model.Branch{}, false
+	}
+	return owner, selection.Branch, true
 }
 
 // mineTargets are the selection's ports with newer releases, as outdated
@@ -366,8 +416,28 @@ func ShipAll(ctx context.Context, s *settings.Settings, streams term.Streams, wh
 		}
 	}
 	var all []carried
+	earlier := map[string]shipTarget{}
+	folded := map[string]string{}
 	for _, target := range targets {
 		whole.Next()
+		if owner, branch, ok := sharedWith(ctx, s, target, earlier); ok {
+			words := fmt.Sprintf("included with %s on %s.", owner.Name(), branch.ShortName())
+			if stage != engine.ShipCommit {
+				words = fmt.Sprintf("moves with %s in this run; both are checked on the same branch.", owner.Name())
+			}
+			folded[target.Name()] = owner.Name()
+			if target.row != nil {
+				target.row.note = words
+			} else {
+				fmt.Fprintf(streams.Out, "%s  %s\n", target.Name(), words)
+			}
+			continue
+		}
+		if target.Port != "" && target.Branch == nil && target.Directory != "" {
+			if _, ok := earlier[target.Directory]; !ok {
+				earlier[target.Directory] = target
+			}
+		}
 		done, err := shipOne(ctx, s, streams, target, stage, unattended, len(targets) > 1, version)
 		if err != nil {
 			if err := stopped(target, err); err != nil {
@@ -431,6 +501,12 @@ func ShipAll(ctx context.Context, s *settings.Settings, streams term.Streams, wh
 			return first
 		}
 	}
+	// A port included with another's branch went as far as it did.
+	for port, owner := range folded {
+		if slices.Contains(failed, owner) {
+			failed = append(failed, port)
+		}
+	}
 	writeRows(streams, rows, rowStages(stage))
 	return view.BatchExit(failed, len(targets), "shipped")
 }
@@ -446,6 +522,9 @@ type shipRow struct {
 	at    string
 	// why is what stopped it, which "Needs you" says.
 	why error
+	// note is the row's line in place of its cells, for a port included
+	// with another's branch (sharedWith).
+	note string
 }
 
 // stopped marks the stage the change stopped at: what wants a look, or
@@ -520,6 +599,10 @@ func writeRows(streams term.Streams, rows []*shipRow, stages []string) {
 	line("", stages)
 	var stopped []*shipRow
 	for _, row := range rows {
+		if row.note != "" {
+			fmt.Fprintf(streams.Out, "  %-*s  %s\n", width, row.name, row.note)
+			continue
+		}
 		var cells []string
 		for _, stage := range stages {
 			cells = append(cells, cmp.Or(row.cells[stage], view.NotRun))
