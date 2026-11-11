@@ -283,6 +283,15 @@ func TestCreateTakesThePythonPortGroupsDefault(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(w.Home, "Source", "macports-branches", branch, "textproc/py-tool/Portfile"))
 	require.NoError(t, err)
 	require.Contains(t, string(data), "python.versions     314\n")
+
+	// The plan reads it as create does, writing nothing, where it said it
+	// couldn't be read, never having read it (#171).
+	out, _, err = cmdtest.Dockhand(t, "create", "https://github.com/o/tool", "--name", "py-tool2", "--category", "textproc", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "python.versions     314\n")
+	require.NotContains(t, out, "couldn't read the python PortGroup's default")
+	_, err = os.Stat(filepath.Join(w.Clone, "textproc/py-tool2"))
+	require.True(t, os.IsNotExist(err), "nothing written")
 }
 
 // refusingChecksums stands in for MacPorts refusing a new port's
