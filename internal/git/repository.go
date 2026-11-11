@@ -22,6 +22,12 @@ import (
 type Program struct {
 	Executable string
 	Env        []string
+	// Hook, where set, is asked before each git command a repository
+	// runs, with the command's arguments and the run itself, which it may
+	// make, skip, or follow with an error of its own: the fault sweep's
+	// seam (docs/designs/fault-sweep.md, #129). A repository and its
+	// worktrees keep the Program they were opened with.
+	Hook func(ctx context.Context, args []string, run func() error) error
 }
 
 // path is the git executable to run, found on Env's PATH where it's a bare
@@ -109,7 +115,11 @@ func (r *Repository) run(ctx context.Context, input []byte, env []string, args .
 		return nil, err
 	}
 	command := r.command(ctx, env, args...)
-	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "git", Command: args[0], Path: command.Path, Args: command.Args[1:], Dir: command.Dir, Env: command.Env, Stdin: bytes.NewReader(input), ExtraFiles: command.ExtraFiles, WaitDelay: command.WaitDelay})
+	var result subprocess.Result
+	err := r.hooked(ctx, args, func() (err error) {
+		result, err = subprocess.Run(ctx, subprocess.Spec{Tool: "git", Command: args[0], Path: command.Path, Args: command.Args[1:], Dir: command.Dir, Env: command.Env, Stdin: bytes.NewReader(input), ExtraFiles: command.ExtraFiles, WaitDelay: command.WaitDelay})
+		return err
+	})
 	if err != nil {
 		return nil, httpsUnauthenticated(args[0], sshRefused(args[0], err))
 	}
@@ -124,7 +134,11 @@ func (r *Repository) run(ctx context.Context, input []byte, env []string, args .
 // status for 0 and 1, and an error, with the status, for anything else.
 func (r *Repository) runStatus(ctx context.Context, args ...string) ([]byte, int, error) {
 	command := r.command(ctx, nil, args...)
-	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "git", Command: args[0], Path: command.Path, Args: command.Args[1:], Dir: command.Dir, Env: command.Env, ExtraFiles: command.ExtraFiles, WaitDelay: command.WaitDelay})
+	var result subprocess.Result
+	err := r.hooked(ctx, args, func() (err error) {
+		result, err = subprocess.Run(ctx, subprocess.Spec{Tool: "git", Command: args[0], Path: command.Path, Args: command.Args[1:], Dir: command.Dir, Env: command.Env, ExtraFiles: command.ExtraFiles, WaitDelay: command.WaitDelay})
+		return err
+	})
 	if err == nil {
 		return result.Output, 0, nil
 	}
@@ -227,4 +241,12 @@ func sshRefused(command string, err error) error {
 		return err
 	}
 	return fmt.Errorf("%w (git %s); is your key loaded? ssh-add -l lists the agent's keys, and ssh -T git@github.com tries them: %w", ErrSSHRefused, command, err)
+}
+
+// hooked runs a command through the Program's Hook, where it has one.
+func (p Program) hooked(ctx context.Context, args []string, run func() error) error {
+	if p.Hook == nil {
+		return run()
+	}
+	return p.Hook(ctx, args, run)
 }

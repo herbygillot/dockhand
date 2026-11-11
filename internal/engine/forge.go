@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/herbygillot/dockhand/internal/forge"
-	"github.com/herbygillot/dockhand/internal/outward"
+	"github.com/herbygillot/dockhand/internal/remotewrite"
 )
 
 // Forge is what submit needs of GitHub: who you are, which repositories
@@ -37,8 +37,8 @@ type Forge interface {
 	// FailedJobs are a head's CI jobs that failed, of each run's latest
 	// attempt, and JobLog a job's log, forge.ErrNotFound where the forge no
 	// longer keeps it or won't give it. Its writes, a pull request's
-	// creation and edits, reviews, and CI run again, are outward's alone
-	// (outward.PullRequests, #128).
+	// creation and edits, reviews, and CI run again, are remotewrite's alone
+	// (remotewrite.PullRequests, #128).
 	FailedJobs(ctx context.Context, repository, head string) ([]forge.CIJob, error)
 	JobLog(ctx context.Context, repository string, job int64) ([]byte, error)
 }
@@ -55,10 +55,10 @@ type GitHubCLI interface {
 	MarkDraft(ctx context.Context, ref forge.PullRequestRef) error
 }
 
-// pullRequests are the engine's Forge's writes, which only outward calls
+// pullRequests are the engine's Forge's writes, which only remotewrite calls
 // (#128).
-func (e *Engine) pullRequests() outward.PullRequests {
-	if writes, ok := e.forge().(outward.PullRequests); ok {
+func (e *Engine) pullRequests() remotewrite.PullRequests {
+	if writes, ok := e.forge().(remotewrite.PullRequests); ok {
 		return writes
 	}
 	return readOnly{}

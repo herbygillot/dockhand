@@ -1,4 +1,4 @@
-// Package outward is dockhand's only caller of what changes something
+// Package remotewrite is dockhand's only caller of what changes something
 // remote: a branch pushed or deleted, a pull request opened, edited,
 // returned to draft or marked ready, reviewers asked, a review posted, a
 // pull request's checks run again, and a workflow run canceled or run
@@ -11,7 +11,7 @@
 // "dockhand changes only what is yours or what it made" was written seven
 // ways in seven places, and #112 deleted an adopted pull request's branch
 // in a repository that wasn't the person's (#128; docs/principles.md).
-package outward
+package remotewrite
 
 import (
 	"context"
@@ -64,6 +64,22 @@ const (
 	RerunRun         Effect = "run a workflow run again"
 )
 
+// The rule, in the form an observer outside dockhand can check, which
+// the acceptance harness's H2 and H3 and the fault sweep's ownership
+// invariant check against, each citing its line, without reading this
+// table: a check that asked the table couldn't catch it being wrong
+// (#144).
+//
+//  1. In MacPorts' repository no branch or tag changes and no workflow
+//     run is canceled or run again. Pull requests are opened and edited
+//     there.
+//  2. In another person's repository nothing changes but a push to the
+//     head branch of a pull request they opened with maintainer edits
+//     on. Nothing is deleted there.
+//  3. A branch is deleted only where a record says dockhand made it.
+//  4. A pull request someone else opened is edited, marked or reviewed
+//     only where the person was invited or named that action.
+//
 // rules are the bases each effect may act on.
 var rules = map[Effect][]Basis{
 	PushBranch:       {OwnFork, Made, Invited},

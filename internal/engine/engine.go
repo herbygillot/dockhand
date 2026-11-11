@@ -29,10 +29,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/selection"
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/outward"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/refusal"
+	"github.com/herbygillot/dockhand/internal/remotewrite"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/store/sqlite"
 	"github.com/herbygillot/dockhand/internal/upstream"
@@ -43,7 +43,7 @@ import (
 const UpstreamURL = "https://github.com/macports/macports-ports.git"
 
 // UpstreamRepository is MacPorts' ports repository on GitHub.
-const UpstreamRepository = outward.Upstream
+const UpstreamRepository = remotewrite.Upstream
 
 // Options selects what an engine works on.
 type Options struct {
@@ -59,6 +59,14 @@ type Options struct {
 	// port-tclsh, Tart, and ssh among them: the command line's, as compose
 	// builds it.
 	Env []string
+	// GitHook and WrapStore are the fault sweep's two seams
+	// (docs/designs/fault-sweep.md, #129): GitHook is asked before each
+	// git command a repository the engine opens runs (git.Program.Hook),
+	// and WrapStore wraps the store once it's open and migrated, before
+	// the repository is registered, so every service the engine makes
+	// reads the wrap. Nil in production.
+	GitHook   func(ctx context.Context, args []string, run func() error) error
+	WrapStore func(store.Store) store.Store
 	// Database is the store's path.
 	Database string
 	// Worktrees is the directory managed worktrees live in; when empty,
@@ -183,7 +191,9 @@ func (o Options) ToolArgs() []string {
 }
 
 // git is the git dockhand runs, in Env.
-func (o Options) git() git.Program { return git.Program{Executable: o.Git, Env: o.Env} }
+func (o Options) git() git.Program {
+	return git.Program{Executable: o.Git, Env: o.Env, Hook: o.GitHook}
+}
 
 // Engine is bound to one ports checkout and its registered repository.
 type Engine struct {
@@ -421,12 +431,16 @@ func Open(ctx context.Context, options Options) (*Engine, error) {
 			return nil, err
 		}
 	}
-	id, err := s.Register(ctx, repo.CommonDir)
+	var opened store.Store = s
+	if options.WrapStore != nil {
+		opened = options.WrapStore(s)
+	}
+	id, err := opened.Register(ctx, repo.CommonDir)
 	if err != nil {
-		s.Close()
+		opened.Close()
 		return nil, err
 	}
-	e := &Engine{Repo: repo, Store: s, Repository: id, options: options}
+	e := &Engine{Repo: repo, Store: opened, Repository: id, options: options}
 	e.began = e.now()
 	return e, nil
 }

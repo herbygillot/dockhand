@@ -38,6 +38,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/subprocess"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/upstream"
@@ -215,6 +216,10 @@ type Dependencies struct {
 	// is nil.
 	GitHubClient func(github.Signin) *github.Client
 	Store        credential.Store
+	// GitHook and WrapStore are the fault sweep's seams on the engine
+	// (engine.Options), unset but in its tests (#129).
+	GitHook   func(ctx context.Context, args []string, run func() error) error
+	WrapStore func(store.Store) store.Store
 }
 
 // LookupNamed is Lookup with the programs Settings resolved as named ahead
@@ -355,6 +360,8 @@ func Settings(ctx context.Context, options Options, dependencies Dependencies) (
 		Tclsh:     macports.FindTclsh(look),
 		Programs:  engine.FindPrograms(look),
 		Database:  database,
+		GitHook:   dependencies.GitHook,
+		WrapStore: dependencies.WrapStore,
 		Worktrees: file.Worktrees,
 		// holds.majors = "allow" lets bump and serve move a major version.
 		AllowMajors: !file.Holds.HoldMajors(),
