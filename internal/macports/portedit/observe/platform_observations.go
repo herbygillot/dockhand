@@ -63,7 +63,7 @@ func (s *Session) Profiles(ctx context.Context, candidate []byte) ([]model.Platf
 				if err != nil {
 					return nil, err
 				}
-				for _, port := range observed.Ports {
+				for name, port := range observed.Ports {
 					if port, inconclusive := Tolerate(ctx, port, contents, observed.Snapshot.Root); inconclusive {
 						return nil, ErrInconclusive.Because("platform boundary depends on host state%s", HostInputs(port))
 					}
@@ -72,7 +72,14 @@ func (s *Session) Profiles(ctx context.Context, candidate []byte) ([]model.Platf
 							continue
 						}
 						if !sourceBoundOperand(observed.Snapshot.Root, fact.Frames) {
-							return nil, ErrInconclusive.Because("platform operand %s has no captured source", fact.Name)
+							where := ""
+							for _, frame := range fact.Frames {
+								if frame.File != "" {
+									where = fmt.Sprintf(" (read at %s:%d)", filepath.Base(frame.File), frame.Line)
+									break
+								}
+							}
+							return nil, ErrInconclusive.Because("Dockhand couldn't verify the source of %s%s while checking %s for different macOS versions, so it couldn't prepare the update. No update was written.", strings.TrimPrefix(fact.Name, "option:"), where, name)
 						}
 						value, err := strconv.Atoi(fact.Value)
 						if err != nil {
@@ -108,9 +115,20 @@ func (s *Session) Profiles(ctx context.Context, candidate []byte) ([]model.Platf
 	}
 }
 
+// sourceBoundOperand reports whether a value was read from a file of the
+// observation's own workspace: under its root, or under the resources the
+// root names, which a candidate overlay links to the base workspace's
+// rather than copying (workspace.Overlay): bazel's update was refused
+// because legacysupport's own callbacks read the option there, while the
+// same files copied into the overlay passed (#170). A file anywhere else
+// still isn't evidence.
 func sourceBoundOperand(root string, frames []macports.SourceFrame) bool {
+	roots := []string{root}
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {
-		root = resolved
+		roots[0] = resolved
+	}
+	if resources, err := filepath.EvalSymlinks(filepath.Join(roots[0], macports.ResourcesDirectory)); err == nil {
+		roots = append(roots, resources)
 	}
 	for _, frame := range frames {
 		if frame.File == "" {
@@ -120,9 +138,11 @@ func sourceBoundOperand(root string, frames []macports.SourceFrame) bool {
 		if resolved, err := filepath.EvalSymlinks(file); err == nil {
 			file = resolved
 		}
-		rel, err := filepath.Rel(root, file)
-		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel) {
-			return true
+		for _, root := range roots {
+			rel, err := filepath.Rel(root, file)
+			if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel) {
+				return true
+			}
 		}
 	}
 	return false
