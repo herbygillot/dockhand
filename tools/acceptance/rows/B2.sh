@@ -97,11 +97,25 @@ assert() {
 			row_fail "the second check's log of $ACCEPT_RUST_PORT couldn't be read, so whether its guest built rust again isn't known"
 			return
 		fi
-		if ! grep -q 'from the archive an earlier guest installed it from' "$ROW_DIR/out.log"; then
-			row_fail "the second check gave its guest no kept dependency archive"
+		# What the second check's guest installed from kept archives, as
+		# its own line says: one archive given is named, several are a
+		# count, so the row read the one-archive line alone and failed
+		# rc3's pass, whose guest installed 23 (prime-time, 2026-11-11).
+		local took
+		took=$(sed -n '/^\$ dockhand --json check .*--fresh/,/^\$ dockhand logs /p' "$ROW_DIR/out.log" | grep -oE 'installed [0-9]+ dependenc(y|ies) from archives earlier checks kept: .*' | tail -1)
+		if [ -z "$took" ]; then
+			row_fail "the second check's guest installed nothing from the archives earlier checks kept"
 			return
 		fi
-		B2_REUSED="its second check, --fresh, installed rust and cargo from the archives the first kept ($(grep -c 'from the archive an earlier guest installed it from' "$ROW_DIR/out.log") given)"
+		local missing="" port
+		for port in rust cargo; do
+			printf '%s\n' "${took#*kept: }" | tr ',' '\n' | sed 's/^ *//; s/ *$//' | grep -qx "$port" || missing="$missing $port"
+		done
+		if [ -n "$missing" ]; then
+			row_fail "the second check's guest didn't install$missing from kept archives: $took"
+			return
+		fi
+		B2_REUSED="its second check, --fresh, $took"
 	fi
 	# With a fork, bump goes through its check and stops at the push,
 	# which the quick stage refuses (lib/ssh-read-only.sh): that is the
