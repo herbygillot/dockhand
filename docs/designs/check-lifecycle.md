@@ -6,7 +6,7 @@ A core item for v0.9.0, [#193](https://github.com/herbygillot/dockhand/issues/19
 
 Four things about a check are each decided in several places today. Each gets one value or one rule, made once and passed.
 
-- **Staying.** How long a command stays with a check is chosen by which of five helpers it calls. It becomes one value, `Stay`, and one function.
+- **Staying.** How long a command stays with a check is chosen by which of four helpers it calls, and how. It becomes one value, `Stay`, and one function.
 - **Selection.** `logs`, `artifacts` and `shell` each work out which check, attempt, port and phase they mean. One resolver answers, and a command refuses by name what it can't serve.
 - **Identity.** An environment whose identity couldn't be read is treated as one that has none ([#190](https://github.com/herbygillot/dockhand/issues/190)). It becomes one of three: known, none, or unread with its cause. An unread one holds a submission nobody attends.
 - **Stopping.** In every provider the work can outlive a driver that is killed, and only GitHub's is ever stopped. A cancel is finished only when each provider has seen its work end, by whichever of three paths the cancel is applied.
@@ -44,7 +44,7 @@ func See(ctx context.Context, e *engine.Engine, queued checks.Queued, streams te
 `See` takes what admission answered, so it knows a joined check from a new one. `wait` asks for nothing new and passes its run as joined.
 
 - To its end: drive it here where nobody leads it; follow whoever does.
-- Detached, a new check: start a worker where nobody leads, and return. Detached, a joined check: the refusal above, as today.
+- Detached: start a worker where nobody leads, and return. `check -d` keeps its refusal of a joined check where it is today, in the command and ahead of `See`, so `See` never turns it into a line that says queued.
 - Bounded: never drive it here. Start a worker where nobody leads, follow for the bound, and refuse as still running.
 - A check that had already ended is reported, whatever the stay.
 - Detached and bounded together is refused by `See`, as the flags refuse it.
