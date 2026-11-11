@@ -29,7 +29,7 @@ tools/acceptance/judge.sh           # answer the run's pending judgments: pass o
   - `row_pass`, `row_refused_well`, `row_known`, and `row_fail` give its result.
 - **The harm sweep** (`lib/harm.sh`) snapshots between `setup` and `act` and again after `act`, then checks prime-time.md's invariants, H1 to H8, and the quick stage's H9:
   - H1, no work lost;
-  - H2, nothing pushed that the row didn't say;
+  - H2, nothing pushed that the row didn't say, to a fork or, in the quick stage, to its local upstream;
   - H3, no pull request it didn't say;
   - H4, no token written;
   - H5, status matching Git;

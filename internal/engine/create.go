@@ -232,7 +232,11 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 	// A Python project's versions start from the python PortGroup's
 	// default, as MacPorts evaluates the Portfile just written.
 	if build.System == "python" {
-		if spec.PythonVersion = e.pythonDefault(ctx, worktree, directory, name); spec.PythonVersion != "" {
+		_, tree, err := worktree.WorkingTree(ctx)
+		if err != nil {
+			return Created{}, err
+		}
+		if spec.PythonVersion = e.pythonDefault(ctx, tree, directory, name); spec.PythonVersion != "" {
 			contents = portcreate.Write(spec)
 			if err := os.WriteFile(path, contents, 0o644); err != nil {
 				return Created{}, err
@@ -664,7 +668,19 @@ func (e *Engine) PlanCreate(ctx context.Context, request CreateRequest) (Planned
 	if err != nil {
 		return PlannedCreate{}, err
 	}
-	return PlannedCreate{Directory: spec.Category + "/" + name, Portfile: portcreate.Write(spec), Unconfirmed: spec.Unconfirmed()}, nil
+	directory := spec.Category + "/" + name
+	// The python PortGroup's default, read as create reads it, from the
+	// Portfile in a tree of its own, nothing written to the checkout: the
+	// plan said it couldn't be read, never having read it (#171).
+	if spec.Build.System == "python" {
+		if base, err := e.Repo.Resolve(ctx, "HEAD^{tree}"); err == nil {
+			candidate := []git.FileEdit{{Path: directory + "/Portfile", After: portcreate.Write(spec), Mode: 0o100644}}
+			if tree, err := e.Repo.EditTree(ctx, base, candidate); err == nil {
+				spec.PythonVersion = e.pythonDefault(ctx, tree, directory, name)
+			}
+		}
+	}
+	return PlannedCreate{Directory: directory, Portfile: portcreate.Write(spec), Unconfirmed: spec.Unconfirmed()}, nil
 }
 
 // directoryTag is what a module below its repository's root's tags begin
@@ -688,14 +704,10 @@ func githubName(address string) (string, error) {
 }
 
 // pythonDefault is the Python the python PortGroup defaults to for a new
-// port, as MacPorts evaluates its Portfile in the working tree; empty
+// port, as MacPorts evaluates its Portfile in a tree that has it; empty
 // where it can't be read, which the Portfile then marks.
-func (e *Engine) pythonDefault(ctx context.Context, worktree *git.Repository, directory, name string) string {
+func (e *Engine) pythonDefault(ctx context.Context, tree, directory, name string) string {
 	reader, err := e.portReader()
-	if err != nil {
-		return ""
-	}
-	_, tree, err := worktree.WorkingTree(ctx)
 	if err != nil {
 		return ""
 	}

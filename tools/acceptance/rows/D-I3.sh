@@ -12,6 +12,9 @@ act() {
 	DOCKHAND_FAILPOINT=tidy.prepared:kill DH_BIN="${DH_FAILPOINT_BIN:?}" dh tidy -b "$DI3_BRANCH" -y || :
 	dh_json status "$DI3_BRANCH" || :
 	dh_json tidy -b "$DI3_BRANCH" -y || :
+	# The row's own move of upstream's master, which H2 watches in the
+	# quick stage (#147).
+	allow_push "* refs/heads/master"
 	# The pinned upstream moves on one commit, so the rebase has somewhere
 	# to go. rev-list's -1 limits before --reverse, which gave the tip of
 	# the person's tree, where dust's update had landed (the M1's rerun).
