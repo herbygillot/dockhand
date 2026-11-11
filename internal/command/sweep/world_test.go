@@ -486,7 +486,10 @@ func merge(a, b world) world {
 	return out
 }
 
-var sequence = regexp.MustCompile(`^sequence=\d+ `)
+var (
+	sequence        = regexp.MustCompile(`^sequence=\d+ `)
+	checkpointEvent = regexp.MustCompile(`^(.*kind="branch\.(tidy|rebase)".* )message=".*\(checkpoint ((?:tidy|rebase)-[0-9a-z]+)\)"$`)
+)
 
 // stateEvents are the events dockhand reads back as state, which compare
 // exactly: serve's daily limit counts serve.submit.
@@ -510,6 +513,16 @@ func eventDifferences(clean, recovered []string) []string {
 	at := 0
 	for _, line := range a {
 		next := slices.Index(b[at:], line)
+		// A change an earlier process made and didn't record is recorded
+		// by the next in its own words: "recorded tidy-1: an earlier
+		// Dockhand process applied its change before stopping" stands for
+		// the clean run's "tidied ... (checkpoint tidy-1)", a named
+		// equivalence (history.settle).
+		if next < 0 {
+			if match := checkpointEvent.FindStringSubmatch(line); match != nil {
+				next = slices.Index(b[at:], match[1]+`message="recorded `+match[3]+`: an earlier Dockhand process applied its change before stopping"`)
+			}
+		}
 		if next < 0 {
 			found = append(found, "table events: clean has, recovered lacks in order: "+line)
 			continue
