@@ -106,11 +106,14 @@ harm_work_files() {
 		done
 }
 
-# harm_remote_refs lists each fork remote's refs, as the fork has them.
+# harm_remote_refs lists each fork remote's refs, as the fork has them,
+# and in the quick stage the upstream's too: a local bare repository
+# there, which a push lands in and fresh's reset of master hid (#147). The
+# full stage's upstream is MacPorts', which others push to.
 harm_remote_refs() {
 	local repo=$1 remote
 	for remote in $(git -C "$repo" remote); do
-		case " ${ACCEPT_UPSTREAM:-} " in *" $remote "*) continue ;; esac
+		case " ${ACCEPT_UPSTREAM:-} " in *" $remote "*) [ "${ACCEPT_STAGE:-}" = quick ] || continue ;; esac
 		git -C "$repo" ls-remote --heads --tags "$remote" | sed "s|^|$remote |" || return 1
 	done
 }
