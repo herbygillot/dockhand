@@ -45,7 +45,14 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 		return archivePlan{}, fmt.Errorf("portedit: explicit selection cannot imply no update")
 	}
 	if release.NoUpdate {
-		return archivePlan{result: Result{Target: input.target, Release: release}}, nil
+		// The family as it stands, so what a current version leaves to do
+		// beside it is found: an obsolete stub that --with-obsolete moves,
+		// which nothing found where the family was empty (#156).
+		result := Result{Target: input.target, Release: release}
+		if family, err := input.familySnapshot(ctx, s.Ports); err == nil {
+			result.Fidelity = []Fidelity{{Before: family, After: family}}
+		}
+		return archivePlan{result: result}, nil
 	}
 	spec, err := portsource.Interpret(input.info, portsource.Edit)
 	if err != nil {

@@ -44,6 +44,37 @@ func (p Prediction) Port(name string) macports.PortInfo {
 	return port
 }
 
+// fetchFields are the options that say what a port fetches and from
+// where, which a port that fetches nothing has to no effect.
+var fetchFields = []string{"distname", "distfiles", "dist_subdir", "master_sites", "checksums", "git.branch", "git.url", "worksrcdir", "extract.suffix", "extract.only", "patch_sites", "patchfiles"}
+
+// leaveFetchless predicts, of each port but those named that keeps its
+// version and fetches nothing before the edit and after, its fetch fields
+// as the edit leaves them: an obsolete stub with a version of its own,
+// netdata-dashboard beside netdata, inherits the port's distname,
+// git.branch, master_sites, and checksums, which move with its release,
+// and update and checksums refused them (#169). A port that still fetches
+// keeps every field it had.
+func (p *Prediction) leaveFetchless(before, after macports.Snapshot, except ...string) {
+	for _, name := range slices.Sorted(maps.Keys(before.Ports)) {
+		old, next := before.Ports[name], after.Ports[name]
+		if slices.Contains(except, name) || old.Version != next.Version || !fetchesNothing(old, next) {
+			continue
+		}
+		observed := ComparablePort(next, after.Root)
+		port := p.Port(name)
+		moved := false
+		for _, key := range fetchFields {
+			if port.Options[key] != observed.Options[key] {
+				port.Options[key], moved = observed.Options[key], true
+			}
+		}
+		if moved {
+			p.Expect(name, port, name+"'s fetch fields, as it fetches nothing")
+		}
+	}
+}
+
 // Expect predicts a port's state, saying why.
 func (p *Prediction) Expect(name string, port macports.PortInfo, why ...string) {
 	p.Ports[name] = port

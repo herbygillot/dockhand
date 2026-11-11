@@ -568,3 +568,26 @@ func TestAnUpdateToTheCurrentVersionIsCurrent(t *testing.T) {
 		})
 	}
 }
+
+// A current version reads the family as it stands, so --with-obsolete
+// finds the stub beside it: the family was empty there, and it found none
+// (#156).
+func TestACurrentVersionReadsItsFamily(t *testing.T) {
+	t.Parallel()
+	service, request := versionFixture(t, "setup", "subport fixture-old {}\n", func(w http.ResponseWriter, r *http.Request) {})
+	service.Upstream.Catalogs[portsource.GitHub] = releaseTagFunc(func(_ context.Context, _, tag string) (forge.Tag, error) {
+		if tag != "v1.0" {
+			return forge.Tag{}, forge.ErrNotFound
+		}
+		return forge.Tag{Name: tag, Commit: strings.Repeat("a", 40)}, nil
+	})
+	request.Version, request.Release = "1.0", nil
+	release, err := service.ResolveRelease(t.Context(), request)
+	require.NoError(t, err)
+	request.Release = &release
+	result, err := service.Prepare(t.Context(), request)
+	require.NoError(t, err)
+	require.Empty(t, result.Files)
+	require.NotEmpty(t, result.Fidelity)
+	require.Contains(t, result.Fidelity[0].Before.Ports, "fixture-old")
+}
