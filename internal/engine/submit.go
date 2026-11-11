@@ -70,6 +70,11 @@ type SubmitRequest struct {
 	// Remote names the Git remote of your fork when more than one could be.
 	Remote           string
 	SkipNotification bool
+	// Ready marks the pull request ready for review once the submission is
+	// made, and Rerequest is the person's yes, given before the push, to
+	// asking the reviewers who requested changes to review again
+	// (SubmitPlan.Rerequests). Both are steps of ApplySubmit, ready first.
+	Ready, Rerequest bool
 	// TestedBinaries and TestedVariants are the person's statements for
 	// the template's last two items; WithdrawBinaries and WithdrawVariants
 	// are their saying no, --tested-binaries=false, which removes a kept
@@ -1185,6 +1190,12 @@ type Submitted struct {
 	Edited      SubmitEdits
 	// Drafted is an open pull request returned to draft before the push.
 	Drafted bool
+	// Ready is the pull request marked ready, as --ready asked, and
+	// ReadyByCLI marked so by the GitHub CLI where an organization refuses
+	// dockhand's app.
+	Ready, ReadyByCLI bool
+	// Asked are the reviewers asked to review again after the push.
+	Asked []string
 }
 
 // SubmitEdits are what a submission rewrote of an existing pull request:
@@ -1449,7 +1460,50 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 	if err != nil {
 		return result, fmt.Errorf("pull request #%d is open with commit %s, but dockhand could not save its record: %w; run dockhand submit again to find and record it", observed.PullRequest.Ref.Number, model.ObjectID(plan.Commit).Short(), err)
 	}
-	return result, nil
+	return result, e.followUps(ctx, plan, &result)
+}
+
+// followUps are a submission's last steps, in their order: the pull
+// request marked ready where --ready asked, then, after a push to one
+// whose reviewers requested changes, those reviewers asked to review again
+// where the person said yes before the push (docs/designs/
+// publication-record.md, "How it is built" 2). Ready comes first, where
+// the command marked it after asking the reviewers.
+func (e *Engine) followUps(ctx context.Context, plan SubmitPlan, result *Submitted) error {
+	if plan.Request.Ready {
+		_, byCLI, err := e.Ready(ctx, plan.Branch)
+		if err != nil {
+			return err
+		}
+		result.Ready, result.ReadyByCLI = true, byCLI
+	}
+	if !plan.Request.Rerequest || !result.Pushed || len(plan.Rerequests()) == 0 {
+		return nil
+	}
+	branch, err := e.Branch(ctx, plan.Branch.ID)
+	if err != nil {
+		return err
+	}
+	result.Asked, err = e.RequestReview(ctx, branch)
+	return err
+}
+
+// Pushes reports whether the plan pushes: the fork's branch isn't at its
+// commit.
+func (p SubmitPlan) Pushes() bool {
+	return !p.RemoteHead.Exists || p.RemoteHead.Object != p.Commit
+}
+
+// Rerequests are the reviewers the plan's push calls on to review again:
+// those whose latest review on the pull request it pushes to requests
+// changes, as GitHub last reported them; none where it opens one or
+// pushes nothing. The person is asked before the push.
+func (p SubmitPlan) Rerequests() []string {
+	pr := p.Branch.PullRequest
+	if p.Existing == nil || !p.Pushes() || pr == nil || pr.Observed == nil {
+		return nil
+	}
+	return pr.Observed.ChangesRequestedBy
 }
 
 // createdAnyway reads back whether a pull request is open for the fork's

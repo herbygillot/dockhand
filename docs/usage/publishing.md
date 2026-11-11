@@ -359,7 +359,8 @@ dockhand submit -b jq-update --ready
 ```
 
 `--draft` and `--ready` are separate invocations. Ready submission requires the
-evidence ordinary submit requires. If GitHub's organization policy refuses
+evidence ordinary submit requires. The pull request is marked ready after the
+push, before any reviewers are asked to review again. If GitHub's organization policy refuses
 dockhand's app, dockhand can use an installed GitHub CLI signed in as the same
 account to mark it ready, or prints the remaining action when it cannot.
 
@@ -376,8 +377,10 @@ latest word, after your last commit, is said as a reviewer waiting, `#36300
 @reneeotten commented`, and puts the branch under Needs attention, though GitHub
 counts no review for it. Edit the same tracked branch, inspect the diff, tidy and check the
 new work, and submit again. The existing pull request is updated. Where a
-reviewer requested changes, submit can ask to request their review again after
-pushing. `submit.rerequest_review` controls that behavior; see
+reviewer requested changes, submit asks whether to request their review again
+with the plan, before it pushes, and makes the request as the submission's last
+step, after marking the pull request ready where `--ready` asked.
+`submit.rerequest_review` controls that behavior; see
 `dockhand usage configuration`. If the request fails after the push, the next
 `submit` makes it, even though it pushes nothing, and says it was left over from
 the last submit.
