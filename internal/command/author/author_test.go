@@ -57,7 +57,7 @@ func TestUpdateInTheBranchCheckedOutHere(t *testing.T) {
 
 	out, _, err = cmdtest.Dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	require.Contains(t, out, "jq is already at 1.8.1; nothing to change.")
+	require.Contains(t, out, "jq is already at 1.8.1 on jq-update; nothing to change.")
 
 	out, _, err = cmdtest.Dockhand(t, "checksums", "jq")
 	require.NoError(t, err)

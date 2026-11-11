@@ -61,7 +61,7 @@ func TestShipCarriesAPortToItsPullRequest(t *testing.T) {
 	out, _, err = cmdtest.Dockhand(t, "ship", "jq", "--to", "check")
 	require.NoError(t, err)
 	require.Contains(t, out, "  jq-1.8.1  existing branch; update if needed to the newest release, to check\n", "resumed, not started again")
-	require.Contains(t, out, "jq is already at 1.8.1; nothing to change.\n")
+	require.Contains(t, out, "jq is already at 1.8.1 on jq-1.8.1; nothing to change.\n")
 	require.Contains(t, out, "passed for this commit already; nothing to check")
 }
 

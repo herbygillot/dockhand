@@ -39,7 +39,7 @@ func TestBumpGoesFromUpdateToPullRequestAskingNothing(t *testing.T) {
 	out, errs, err = cmdtest.BumpOn(t, "jq")
 	require.NoError(t, err, errs)
 	require.Contains(t, out, "  jq-1.8.1  existing branch; update if needed to the newest release, to submit\n")
-	require.Contains(t, out, "jq is already at 1.8.1; nothing to change.\n")
+	require.Contains(t, out, "jq is already at 1.8.1 on jq-1.8.1; nothing to change.\n")
 	require.Contains(t, out, "#34901 has nothing new")
 	require.Len(t, g.PRs, 1)
 }
@@ -75,10 +75,10 @@ func TestBumpChangesNothingWhenItHasNothingToDo(t *testing.T) {
 
 	out, _, err := cmdtest.BumpOn(t, "jq")
 	require.NoError(t, err)
-	require.Equal(t, "  jq  a version update from master, to submit\njq is already at 1.8.1; nothing to change, so no branch was started.\n", out)
+	require.Regexp(t, `^  jq  a version update from master, to submit\njq is already at 1\.8\.1 on master [0-9a-f]{7,}; nothing to change, so no branch was started\.\n$`, out)
 	out, _, err = cmdtest.BumpOn(t, "jq", "1.8.1")
 	require.NoError(t, err)
-	require.Equal(t, "  jq  a version update from master, to submit\njq is already at 1.8.1; nothing to change, so no branch was started.\n", out)
+	require.Regexp(t, `^  jq  a version update from master, to submit\njq is already at 1\.8\.1 on master [0-9a-f]{7,}; nothing to change, so no branch was started\.\n$`, out)
 
 	_, _, err = cmdtest.BumpOn(t, "jq", "1.9", "--on", "nowhere")
 	require.EqualError(t, err, `--on nowhere: no provider "nowhere" is set up; nothing was changed`)

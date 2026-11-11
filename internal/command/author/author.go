@@ -535,12 +535,12 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 	if update.Current {
 		switch {
 		case deferred:
-			fmt.Fprintf(out, "%s is already at %s; nothing to change, so no branch was started.\n", update.Port, update.After)
+			fmt.Fprintf(out, "%s is already at %s%s; nothing to change, so no branch was started.\n", update.Port, update.After, currentWhere(branch, update))
 		case request.Action == model.EditUpdate && update.Obsolete != nil && update.Obsolete.Moved:
 			// --with-obsolete added after the update moves the stub (#122).
 			fmt.Fprintf(out, "%s is already at %s; updating obsolete port %s to it.\n", update.Port, update.After, update.Obsolete.Port)
 		case request.Action == model.EditUpdate:
-			fmt.Fprintf(out, "%s is already at %s; nothing to change.\n", update.Port, update.After)
+			fmt.Fprintf(out, "%s is already at %s%s; nothing to change.\n", update.Port, update.After, currentWhere(branch, update))
 		default:
 			fmt.Fprintf(out, "%s %s: %s; nothing to change.\n", update.Port, update.After, matchWords(update.Compared))
 		}
@@ -643,7 +643,24 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 	// A hand edit's attempt is the person's to finish, and said so, with
 	// the refusal it answers and what it couldn't write (Then's item 3).
 	if update.HandEdit != "" {
-		fmt.Fprintf(out, "Wrote dockhand's attempt for you to finish by hand, as the update was refused: %s\nChanged: %s\n", update.HandEdit, strings.Join(update.Files, ", "))
+		// What was written, where, what it left, and the next command
+		// (#166).
+		fmt.Fprintf(out, "The update was refused: %s\n", update.HandEdit)
+		var unrefreshed []string
+		for _, left := range update.Left {
+			if left.What != "the revision" {
+				unrefreshed = append(unrefreshed, left.What)
+			}
+		}
+		fmt.Fprintf(out, "Wrote the version change to branch %s for you to finish.", branch.ShortName())
+		switch len(unrefreshed) {
+		case 0:
+		case 1:
+			fmt.Fprintf(out, " %s was not refreshed.", unrefreshed[0])
+		default:
+			fmt.Fprintf(out, " %s were not refreshed.", prose.And(unrefreshed))
+		}
+		fmt.Fprintf(out, "\nChanged: %s\n", strings.Join(update.Files, ", "))
 		for _, left := range update.Left {
 			fmt.Fprintf(out, "  ! %s not written: %s\n", left.What, left.Reason)
 		}
@@ -651,7 +668,7 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 			view.WriteUpstream(out, update.Upstream)
 		}
 		fmt.Fprintln(out, "It's recorded as your hand edit with that reason, which tidy, status, and the pull request say.")
-		fmt.Fprintln(out, "Next: dockhand edit "+request.Port+", then "+nextAfterEdit(ctx, e, branch))
+		fmt.Fprintf(out, "Next: dockhand edit %s -b %s, then %s\n", request.Port, branch.ShortName(), nextAfterEdit(ctx, e, branch))
 		return branch, update, nil
 	}
 	what := "Updated version and checksums"
@@ -964,4 +981,16 @@ func writeLeft(out io.Writer, left []engine.ChecksumLeft) {
 func (v *VersionUpdate) Withdrawn(cmd *cobra.Command) {
 	v.Linked.WithdrawBinaries = cmd.Flags().Changed("tested-binaries") && !v.Linked.TestedBinaries
 	v.Linked.WithdrawVariants = cmd.Flags().Changed("tested-variants") && !v.Linked.TestedVariants
+}
+
+// currentWhere is where an update found its port current: the branch it
+// read, or master as just fetched, by commit (#165).
+func currentWhere(branch model.Branch, update engine.Update) string {
+	switch {
+	case branch.Name != "":
+		return " on " + branch.ShortName()
+	case update.Base != "":
+		return " on master " + update.Base.Short()
+	}
+	return ""
 }
