@@ -1,12 +1,20 @@
 name: CI
 
-# A commit that touches only the design records runs no CI: no test reads
-# them, and the docs workflow checks them for local paths. Each branch, pull
-# request and tag keeps one run at a time: a newer push cancels the older
-# run on the same ref, so a busy hour on main tests its last commit rather
-# than queueing every one behind GitHub's few macOS runners.
+# A push runs CI on main, a release branch or a version tag; any other
+# branch is tested through its pull request, since a thread's branch lands
+# on main after make gate, or holds docs. A commit that touches only the
+# design records runs no CI: no test reads them, and the docs workflow
+# checks them for local paths. Each branch, pull request and tag keeps one
+# run at a time: a newer push cancels the older run on the same ref, so a
+# busy hour on main tests its last commit rather than queueing every one
+# behind GitHub's few macOS runners.
 on:
   push:
+    branches:
+      - main
+      - release/**
+    tags:
+      - v*
     paths-ignore:
       - docs/designs/**
       - docs/decisions.md
@@ -97,8 +105,10 @@ jobs:
   # of macports-ports, so a PortGroup's model in a unit test can't stand
   # in for the real one. It reaches GitHub, the archives, and the Go
   # proxy, and runs go2port and cargo2port, installed from MacPorts' own
-  # archives; field testing builds from a main this has passed.
+  # archives; field testing builds from a main this has passed. A pull
+  # request leaves it to main, as it does intel.
   corpus:
+    if: github.event_name != 'pull_request'
     runs-on: macos-latest
     timeout-minutes: 30
 
@@ -136,6 +146,7 @@ jobs:
   # plans an update as x86_64 evaluates it, and says a check has nowhere
   # to build here but GitHub.
   intel:
+    if: github.event_name != 'pull_request'
     runs-on: macos-15-intel
     # The suite takes about 20 minutes here, and Prepare's update builds
     # a PortIndex of the whole tree, about 20 more: 40 cancelled one run
