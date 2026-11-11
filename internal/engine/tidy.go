@@ -240,6 +240,14 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 
 func (e *Engine) planTidy(ctx context.Context, request TidyRequest) (TidyPlan, error) {
 	branch := request.Branch
+	// What an earlier tidy left unfinished is finished first, where its
+	// commits were made: the index reset, and its checkpoint recorded as
+	// applied. A tidy whose git reset failed left both, and tidy again
+	// found nothing to do and never reached the history lock, which
+	// finishes them (the fault sweep, #207).
+	if err := e.history().With(ctx, branch, func(context.Context) error { return nil }); err != nil {
+		return TidyPlan{}, err
+	}
 	worktree, err := e.worktree(ctx, branch)
 	if err != nil {
 		return TidyPlan{}, err
@@ -1525,6 +1533,14 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 				{Name: checkpoint.IndexRef(), Desired: git.RefValue{Exists: true, Object: keptIndex}},
 				{Name: "refs/heads/" + plan.Branch.Name, Expected: git.RefValue{Exists: true, Object: plan.Head}, Desired: git.RefValue{Exists: true, Object: parent}},
 			}); err != nil {
+				// An update whose outcome is unknown is read back: the
+				// branch at the tidied commit is the change made, which was
+				// recorded as abandoned and left the index stale (#207).
+				if errors.Is(err, git.ErrRefUpdateUncertain) {
+					if moved, readErr := worktree.ReadRef(ctx, "refs/heads/"+plan.Branch.Name); readErr == nil && moved.Exists && moved.Object == parent {
+						return nil
+					}
+				}
 				if taken := history.TakenName(checkpoint, err); taken != nil {
 					return taken
 				}

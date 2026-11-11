@@ -156,9 +156,11 @@ func TestARestoreStoppedAfterItsGitChangeIsFinished(t *testing.T) {
 	require.Equal(t, string(rebased.Checkpoint.Before), testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"))
 	require.Equal(t, f.upstreamMaster(t), baseOf(t, e, branch), "the base wasn't put back")
 
+	// The next restore finishes the stopped one's record, which is its
+	// work done, where it refused, saying it was already restored (#209).
 	restarted, _ := f.withPreparer(t)
 	_, _, err = restarted.Restore(t.Context(), rebased.Checkpoint.Name())
-	require.ErrorContains(t, err, "was already restored", "the stopped restore was recorded first")
+	require.NoError(t, err, "the stopped restore was recorded first")
 	require.NotNil(t, checkpointNumbered(t, restarted, rebased.Checkpoint.Number).RestoredAt)
 	require.Equal(t, oldMaster, baseOf(t, restarted, branch), "with the base it started from")
 }
@@ -473,7 +475,7 @@ func TestARestoreWhoseRecordFailsSaysSo(t *testing.T) {
 
 	e.Store = stored
 	_, _, err = e.Restore(t.Context(), "tidy-1")
-	require.ErrorContains(t, err, "tidy-1 was already restored", "the next restore finished the record first")
+	require.NoError(t, err, "the next restore finished the record, its work done (#210)")
 	require.NotNil(t, checkpointNumbered(t, e, 1).RestoredAt)
 }
 

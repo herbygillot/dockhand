@@ -135,24 +135,14 @@ func TestSweepUpdate(t *testing.T) {
 // index left as the commit has them.
 func TestSweepTidy(t *testing.T) {
 	t.Parallel()
-	sweep(t, scenario{name: "tidy", arrange: edited, steps: [][]string{{"tidy", "-b", "jq-update", "-y"}},
-		known: map[string]string{
-			"git reset@engine.(*Engine).applyTidy.func2#1/":                    "#207: the index is left as it was before tidy, and the checkpoint unsettled",
-			"git update-ref@engine.(*Engine).applyTidy.func1#1/landed-unknown": "#207: the index is left as it was before tidy, and the checkpoint unsettled",
-			"store.update@history.(*Transitions).Settle#1/!landed-unknown":     "#208: the checkpoint stays unsettled, and tidy again says nothing of it",
-		}})
+	sweep(t, scenario{name: "tidy", arrange: edited, steps: [][]string{{"tidy", "-b", "jq-update", "-y"}}})
 }
 
 // An undo of a tidy: the history put back, the edits uncommitted again,
 // and the checkpoint marked restored (#113).
 func TestSweepUndo(t *testing.T) {
 	t.Parallel()
-	sweep(t, scenario{name: "undo", arrange: tidied, steps: [][]string{{"undo", "-b", "jq-update"}},
-		known: map[string]string{
-			"git update-index@engine.(*Engine).restore#1/":                        "#209: undo half done refuses to finish, and records no restore",
-			"git update-ref@engine.(*Engine).restore#1/landed-unknown":            "#209: undo half done refuses to finish, and records no restore",
-			"store.update@history.(*Transitions).RecordRestore#1/!landed-unknown": "#210: the history restored, its record failed: undo again refuses, and the timeline never says it",
-		}})
+	sweep(t, scenario{name: "undo", arrange: tidied, steps: [][]string{{"undo", "-b", "jq-update"}}})
 }
 
 // A clean after the pull request merged: the branch, its worktree and its

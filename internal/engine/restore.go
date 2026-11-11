@@ -30,10 +30,18 @@ func (e *Engine) Restore(ctx context.Context, name string) (model.Checkpoint, mo
 	if err != nil {
 		return checkpoint, branch, err
 	}
+	pending := checkpoint.State == model.CheckpointApplied && checkpoint.RestoredAt == nil
 	err = e.history().With(ctx, branch, func(ctx context.Context) error {
 		// What a stopped dockhand left is settled now; read it again.
 		if checkpoint, branch, err = e.checkpointNamed(ctx, name, kind, number); err != nil {
 			return err
+		}
+		// A restore an earlier undo made and didn't finish, its record or
+		// its index, was finished as the lock was taken: that's this
+		// undo's work done, where it refused, saying it was already
+		// restored (the fault sweep, #209, #210).
+		if pending && checkpoint.RestoredAt != nil {
+			return nil
 		}
 		checkpoint, branch, err = e.restore(ctx, checkpoint, branch)
 		return err
