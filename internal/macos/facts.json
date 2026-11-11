@@ -1,5 +1,5 @@
 {
-  "generated": "2026-11-10",
+  "generated": "2026-11-11",
   "facts": [
     {
       "darwin": 10,
@@ -33,6 +33,7 @@
       ],
       "sdk": "10.6",
       "clang": "77",
+      "xcode_clang": "77",
       "source": {
         "kind": "installer",
         "from": "xcode_3.2.6_and_ios_sdk_4.3.dmg",
@@ -71,6 +72,7 @@
       ],
       "sdk": "10.6",
       "clang": "77",
+      "xcode_clang": "77",
       "source": {
         "kind": "installer",
         "from": "xcode_3.2.6_and_ios_sdk_4.3.dmg",
@@ -108,6 +110,7 @@
       ],
       "sdk": "10.7",
       "clang": "425.0.28",
+      "xcode_clang": "425.0.28",
       "source": {
         "kind": "installer",
         "from": "Xcode_4.6.3.dmg",
@@ -145,6 +148,7 @@
       ],
       "sdk": "10.8",
       "clang": "503.0.40",
+      "xcode_clang": "503.0.40",
       "source": {
         "kind": "installer",
         "from": "Xcode_5.1.1.dmg",
@@ -199,6 +203,7 @@
       ],
       "sdk": "10.9",
       "clang": "600.0.57",
+      "xcode_clang": "600.0.57",
       "source": {
         "kind": "installer",
         "from": "Xcode_6.2.dmg, Command_Line_Tools_OS_X_10.9_for_Xcode__Xcode_6.2.dmg",
@@ -252,6 +257,7 @@
       ],
       "sdk": "10.10",
       "clang": "700.1.81",
+      "xcode_clang": "700.1.81",
       "source": {
         "kind": "installer",
         "from": "Xcode_7.2.1.dmg, Command_Line_Tools_OS_X_10.10_for_Xcode_7.2.dmg",
@@ -314,6 +320,7 @@
       ],
       "sdk": "10.11",
       "clang": "800.0.42.1",
+      "xcode_clang": "800.0.42.1",
       "source": {
         "kind": "installer",
         "from": "Xcode_8.2.1.xip, Command_Line_Tools_macOS_10.11_for_Xcode_8.2.dmg",
@@ -376,6 +383,7 @@
       ],
       "sdk": "10.12",
       "clang": "900.0.39.2",
+      "xcode_clang": "900.0.39.2",
       "source": {
         "kind": "installer",
         "from": "Xcode_9.2.xip, Command_Line_Tools_macOS_10.12_for_Xcode_9.2.dmg",
@@ -438,6 +446,7 @@
       ],
       "sdk": "10.13",
       "clang": "902.0.39.2",
+      "xcode_clang": "902.0.39.2",
       "source": {
         "kind": "installer",
         "from": "Xcode_9.4.1.xip, Command_Line_Tools_macOS_10.13_for_Xcode_9.4.1.dmg",
@@ -523,6 +532,7 @@
       ],
       "sdk": "10.14",
       "clang": "1001.0.46.4",
+      "xcode_clang": "1001.0.46.4",
       "xcselect": true,
       "source": {
         "kind": "host",
@@ -550,6 +560,7 @@
       ],
       "sdk": "10.14",
       "clang": "1001.0.46.4",
+      "xcode_clang": "1001.0.46.4",
       "source": {
         "kind": "installer",
         "from": "Xcode_10.3.xip, Command_Line_Tools_macOS_10.14_for_Xcode_10.3.dmg",
@@ -588,6 +599,7 @@
       ],
       "sdk": "10.15",
       "clang": "1103.0.32.62",
+      "xcode_clang": "1103.0.32.62",
       "xcselect": true,
       "source": {
         "kind": "host",
@@ -612,6 +624,7 @@
       ],
       "sdk": "10.15",
       "clang": "1103.0.32.62",
+      "xcode_clang": "1103.0.32.62",
       "source": {
         "kind": "installer",
         "from": "Xcode_11.7.xip",
@@ -677,6 +690,7 @@
       ],
       "sdk": "11",
       "clang": "1300.0.29.3",
+      "xcode_clang": "1300.0.29.3",
       "source": {
         "kind": "installer",
         "from": "Xcode_13.xip, Command_Line_Tools_for_Xcode_13.dmg",
@@ -766,6 +780,7 @@
       ],
       "sdk": "11",
       "clang": "1300.0.29.3",
+      "xcode_clang": "1300.0.29.3",
       "xcselect": false,
       "source": {
         "kind": "host",
@@ -795,6 +810,7 @@
       ],
       "sdk": "11",
       "clang": "1300.0.29.3",
+      "xcode_clang": "1300.0.29.3",
       "source": {
         "kind": "installer",
         "from": "Xcode_13.xip, Command_Line_Tools_for_Xcode_13.dmg",
@@ -860,6 +876,7 @@
         "MacOSX12.sdk -\u003e MacOSX.sdk"
       ],
       "sdk": "12",
+      "xcode_clang": "1400.0.29.102",
       "source": {
         "kind": "installer",
         "from": "Xcode-14.0.1+14A400.xip",
@@ -891,6 +908,7 @@
       ],
       "sdk": "12",
       "clang": "1400.0.29.202",
+      "xcode_clang": "1400.0.29.102",
       "xcselect": false,
       "source": {
         "kind": "tart",
@@ -987,6 +1005,7 @@
       ],
       "sdk": "12",
       "clang": "1316.0.21.2.5",
+      "xcode_clang": "1316.0.21.2.5",
       "xcselect": false,
       "source": {
         "kind": "host",
@@ -1017,6 +1036,7 @@
       ],
       "sdk": "12",
       "clang": "1316.0.21.2.5",
+      "xcode_clang": "1316.0.21.2.5",
       "source": {
         "kind": "installer",
         "from": "Xcode_13.4.1.xip, Command_Line_Tools_for_Xcode_13.4.dmg",
@@ -1112,6 +1132,7 @@
       ],
       "sdk": "13",
       "clang": "1403.0.22.14.1",
+      "xcode_clang": "1403.0.22.14.1",
       "source": {
         "kind": "installer",
         "from": "Xcode-14.3.1+14E300c.xip, Command_Line_Tools_for_Xcode_14.3.1.dmg",
@@ -1141,6 +1162,7 @@
       ],
       "sdk": "13",
       "clang": "1403.0.22.14.1",
+      "xcode_clang": "1403.0.22.14.1",
       "xcselect": false,
       "source": {
         "kind": "tart",
@@ -1238,6 +1260,7 @@
       ],
       "sdk": "13",
       "clang": "1403.0.22.14.1",
+      "xcode_clang": "1403.0.22.14.1",
       "xcselect": false,
       "source": {
         "kind": "host",
@@ -1269,6 +1292,7 @@
       ],
       "sdk": "13",
       "clang": "1403.0.22.14.1",
+      "xcode_clang": "1403.0.22.14.1",
       "source": {
         "kind": "installer",
         "from": "Xcode-14.3.1+14E300c.xip, Command_Line_Tools_for_Xcode_14.3.1.dmg",
@@ -1332,6 +1356,7 @@
         "MacOSX14.sdk -\u003e MacOSX.sdk"
       ],
       "sdk": "14",
+      "xcode_clang": "1500.3.9.4",
       "source": {
         "kind": "installer",
         "from": "Xcode-15.4.0+15F31d.xip",
@@ -1361,6 +1386,7 @@
       ],
       "sdk": "14",
       "clang": "1600.0.26.6",
+      "xcode_clang": "1500.3.9.4",
       "xcselect": false,
       "source": {
         "kind": "tart",
@@ -1458,6 +1484,7 @@
       ],
       "sdk": "14",
       "clang": "1500.3.9.4",
+      "xcode_clang": "1500.3.9.4",
       "xcselect": false,
       "source": {
         "kind": "host",
@@ -1489,6 +1516,7 @@
       ],
       "sdk": "14",
       "clang": "1500.3.9.4",
+      "xcode_clang": "1500.3.9.4",
       "source": {
         "kind": "installer",
         "from": "Xcode-15.4.0+15F31d.xip, Command_Line_Tools_for_Xcode_15.3.dmg",
@@ -1578,6 +1606,7 @@
         "MacOSX15.sdk -\u003e MacOSX.sdk"
       ],
       "sdk": "15",
+      "xcode_clang": "1700.0.13.5",
       "source": {
         "kind": "installer",
         "from": "Xcode-16.4.0+16F6.xip",
@@ -1607,6 +1636,7 @@
       ],
       "sdk": "15",
       "clang": "1700.0.13.5",
+      "xcode_clang": "1700.0.13.5",
       "xcselect": false,
       "source": {
         "kind": "runner",
@@ -1638,6 +1668,7 @@
       ],
       "sdk": "15",
       "clang": "1700.0.13.5",
+      "xcode_clang": "1700.0.13.5",
       "xcselect": false,
       "source": {
         "kind": "tart",
@@ -1735,6 +1766,7 @@
       ],
       "sdk": "15",
       "clang": "1700.3.19.1",
+      "xcode_clang": "1700.0.13.5",
       "xcselect": false,
       "source": {
         "kind": "host",
@@ -1766,6 +1798,7 @@
       ],
       "sdk": "15",
       "clang": "1700.3.19.1",
+      "xcode_clang": "1700.0.13.5",
       "source": {
         "kind": "installer",
         "from": "Xcode-16.4.0+16F6.xip, Command_Line_Tools_for_Xcode_26.dmg",
@@ -1855,6 +1888,7 @@
         "MacOSX26.sdk -\u003e MacOSX.sdk"
       ],
       "sdk": "26",
+      "xcode_clang": "2100.1.1.101",
       "source": {
         "kind": "installer",
         "from": "Xcode_26.6_Apple_silicon.xip",
@@ -1884,6 +1918,7 @@
       ],
       "sdk": "26",
       "clang": "2100.1.1.101",
+      "xcode_clang": "2100.1.1.101",
       "xcselect": false,
       "source": {
         "kind": "runner",
@@ -1915,6 +1950,7 @@
       ],
       "sdk": "26",
       "clang": "2100.1.1.101",
+      "xcode_clang": "2100.1.1.101",
       "xcselect": false,
       "source": {
         "kind": "tart",
@@ -1988,6 +2024,7 @@
       ],
       "sdk": "26",
       "clang": "2100.1.1.101",
+      "xcode_clang": "2100.1.1.101",
       "xcselect": false,
       "source": {
         "kind": "runner",
@@ -2053,6 +2090,7 @@
         "MacOSX27.sdk -\u003e MacOSX.sdk"
       ],
       "sdk": "27",
+      "xcode_clang": "2100.3.34.2",
       "source": {
         "kind": "installer",
         "from": "Xcode_27.xip",
@@ -2082,6 +2120,7 @@
       ],
       "sdk": "27",
       "clang": "2100.3.34.2",
+      "xcode_clang": "2100.3.34.2",
       "xcselect": false,
       "source": {
         "kind": "tart",

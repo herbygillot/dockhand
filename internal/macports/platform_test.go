@@ -177,6 +177,20 @@ func TestModelVariablesAddTheModelledTools(t *testing.T) {
 	require.NoError(t, err)
 	versions := "{/usr/bin/clang " + ventura.Clang + " /Library/Developer/CommandLineTools/usr/bin/clang " + ventura.Clang + "}"
 	require.Equal(t, "versions {"+macports.XcodeDeveloper+" "+versions+" "+macports.CommandLineTools+" "+versions+"}", pairs["compiler_version_cache"])
+	// Under Xcode's developer_dir /usr/bin/clang is Xcode's own, which
+	// can be another than the tools': Sequoia's Xcode 16.4 is 1700.0.13.5
+	// beside the 26.0 tools' 1700.3.19.1, and the model answered the
+	// tools' (#213).
+	sequoia := model.Platform{OS: "darwin", Version: "24", Architecture: "x86_64"}
+	xcode, err := macports.Toolchain(sequoia, model.DeveloperToolsXcode)
+	require.NoError(t, err)
+	require.Equal(t, []string{"16.4", "1700.0.13.5", "1700.3.19.1"}, []string{xcode.Xcode, xcode.XcodeClang, xcode.Clang})
+	got, err = macports.ModelVariables(sequoia, model.DeveloperToolsXcode)
+	require.NoError(t, err)
+	pairs, errs = syntax.DictValues(got)
+	require.Empty(t, errs)
+	tools16 := "/Library/Developer/CommandLineTools/usr/bin/clang 1700.3.19.1"
+	require.Equal(t, "versions {"+macports.XcodeDeveloper+" {/usr/bin/clang 1700.0.13.5 "+tools16+"} "+macports.CommandLineTools+" {/usr/bin/clang 1700.3.19.1 "+tools16+"}}", pairs["compiler_version_cache"])
 
 	old := model.Platform{OS: "darwin", Version: "9", Architecture: "x86_64"}
 	described, err := macports.PlatformVariables(old)

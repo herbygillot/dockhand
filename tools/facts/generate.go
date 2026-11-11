@@ -218,6 +218,11 @@ func probeRow(data []byte) (macos.Facts, bool, error) {
 	// Xcode's own SDKs, the probe's listing of each Xcode*.app, for the
 	// one Base's developer_dir names: /Applications/Xcode.app on an image,
 	// the Xcode selected on a runner.
+	// Xcode's own clang, as Base reads /usr/bin/clang under Xcode's
+	// developer_dir, where it can differ from the tools' (#213).
+	if row.Profile == macos.ProfileXcode && row.DeveloperDir != "" && row.DeveloperDir != "/Library/Developer/CommandLineTools" {
+		row.XcodeClang = text("base_tools.get_compiler_version(clang)")
+	}
 	if f, ok := facts["shell.xcode_sdks"]; ok && f.Error == nil && row.Profile == macos.ProfileXcode {
 		app := xcodeApp
 		if dir, ok := strings.CutSuffix(row.DeveloperDir, "/Contents/Developer"); ok {

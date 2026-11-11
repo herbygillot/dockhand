@@ -81,7 +81,9 @@ const runnerDoc = `{
     "base": {"os_major": {"value": "24", "error": null}, "build_arch": {"value": "x86_64", "error": null},
              "xcodeversion": {"value": "16.4", "error": null}, "xcodecltversion": {"value": "16.4.0.0.1.1747106510", "error": null},
              "developer_dir": {"value": "/Applications/Xcode_16.4.app/Contents/Developer", "error": null},
-             "macosx_sdk_version": {"value": "15", "error": null}, "macports_version": {"value": "2.12.7", "error": null}}
+             "macosx_sdk_version": {"value": "15", "error": null}, "macports_version": {"value": "2.12.7", "error": null}},
+    "base_tools": {"get_compiler_version(clang)": {"value": "1700.0.13.5", "error": null}},
+    "worker": {"compiler.command_line_tools_version(clang)": {"value": "1700.0.13.5", "error": null}}
   }
 }`
 
@@ -95,6 +97,7 @@ func TestARunnerProbeIsARowOfItsSelectedXcode(t *testing.T) {
 	require.Equal(t, macos.ProfileXcode, row.Profile)
 	require.Equal(t, macos.Source{Kind: macos.SourceRunner, From: "macos-15-intel run 123, Xcode_16.4.app", Date: "2026-11-05", MacPorts: "2.12.7"}, row.Source)
 	require.Equal(t, []string{"MacOSX.sdk", "MacOSX15.5.sdk -> MacOSX.sdk"}, row.XcodeSDKs)
+	require.Equal(t, "1700.0.13.5", row.XcodeClang, "Xcode's own clang, as Base reads it under Xcode's developer_dir (#213)")
 
 	clt := strings.NewReplacer(`"profile": "xcode"`, `"profile": "clt"`, `"developer": "/Applications/Xcode_16.4.app/Contents/Developer"`, `"developer": "/Library/Developer/CommandLineTools"`).Replace(runnerDoc)
 	row, ok, err = probeRow([]byte(clt))
@@ -102,6 +105,7 @@ func TestARunnerProbeIsARowOfItsSelectedXcode(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, macos.ProfileTools, row.Profile)
 	require.Equal(t, "macos-15-intel run 123, Command Line Tools", row.Source.From)
+	require.Empty(t, row.XcodeClang, "the tools profile has no Xcode clang")
 
 	host := strings.NewReplacer(`"source": "runner"`, `"source": "host"`, `"image": "macos-15-intel"`, `"image": "aws-mac1-sequoia"`).Replace(runnerDoc)
 	host = regexp.MustCompile(`"run": "[^"]*"`).ReplaceAllString(host, `"macos": "15.8"`)
@@ -225,10 +229,10 @@ func TestInstallersFillTheBuildersToolchains(t *testing.T) {
 	}
 	require.Equal(t, []macos.Facts{
 		{Darwin: 10, Architecture: "x86_64", Profile: macos.ProfileXcode, MacOS: "10.6.8", Xcode: "3.2.6", Tools: "none", DeveloperDir: "/Developer", SDK: "10.6",
-			XcodeSDKs: []string{"MacOSX10.4u.sdk", "MacOSX10.5.sdk", "MacOSX10.6.sdk"}, Clang: "77", Source: source("xcode_3.2.6_and_ios_sdk_4.3.dmg")},
+			XcodeSDKs: []string{"MacOSX10.4u.sdk", "MacOSX10.5.sdk", "MacOSX10.6.sdk"}, Clang: "77", XcodeClang: "77", Source: source("xcode_3.2.6_and_ios_sdk_4.3.dmg")},
 		{Darwin: 17, Architecture: "x86_64", Profile: macos.ProfileXcode, MacOS: "10.13.6", Xcode: "9.2", Tools: "9.2.0.0.1.1510905681", DeveloperDir: "/Applications/Xcode.app/Contents/Developer", SDK: "10.13",
 			SDKs: []string{"MacOSX.sdk", "MacOSX10.13.sdk -> MacOSX.sdk"}, XcodeSDKs: []string{"MacOSX.sdk", "MacOSX10.13.sdk -> MacOSX.sdk"}, Clang: "900.0.39.2",
-			Source: source("Xcode_9.2.xip, Command_Line_Tools_macOS_10.13_for_Xcode_9.2.dmg")},
+			XcodeClang: "900.0.39.2", Source: source("Xcode_9.2.xip, Command_Line_Tools_macOS_10.13_for_Xcode_9.2.dmg")},
 		{Darwin: 17, Architecture: "x86_64", Profile: macos.ProfileTools, MacOS: "10.13.6", Xcode: "none", Tools: "9.2.0.0.1.1510905681", DeveloperDir: "/Library/Developer/CommandLineTools", SDK: "10.13",
 			SDKs: []string{"MacOSX.sdk", "MacOSX10.13.sdk -> MacOSX.sdk"}, Clang: "900.0.39.2", Source: source("Command_Line_Tools_macOS_10.13_for_Xcode_9.2.dmg")},
 	}, rows, "the tools' installer named for the builder's release")

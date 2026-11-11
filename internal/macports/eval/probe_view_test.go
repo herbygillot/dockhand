@@ -120,15 +120,6 @@ func TestTheModelAnswersAsEachProbedMacsBase(t *testing.T) {
 				want = append(want, probe.Facts.BaseTools["get_tool_path("+tool+")"].answer(), probe.Facts.BaseTools["get_compiler_version("+tool+")"].answer())
 			}
 			want = append(want, probe.Facts.BaseTools["get_compiler_version(CLT/clang)"].answer())
-			// The facts table keeps one clang, the tools'; an Xcode whose
-			// own clang is another, as Sequoia's Xcode 16.4 beside the
-			// 26.0 tools, answers /usr/bin/clang with the tools' until the
-			// table keeps Xcode's own, which this test found (#107). Only
-			// that answer, the tools' clang exactly, is let stand.
-			if i := len(probedGlobals) + 1; developer == model.DeveloperToolsXcode && tools.Tools != "none" && want[i] != got[i] && got[i] == tools.Clang {
-				t.Logf("known: Xcode's own clang is %s, and the model answers the tools' %s", want[i], got[i])
-				want[i] = got[i]
-			}
 			labels := append(append([]string{}, probedGlobals...), "tools...")
 			require.Equal(t, want, got, "the model's Base view, in the order %v, against %s's", labels, probe.Image)
 		})

@@ -1,6 +1,7 @@
 package macports
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"strconv"
@@ -102,8 +103,9 @@ type ModelledToolchain struct {
 	// Xcode, Tools, DeveloperDir, and SDK are Base's xcodeversion,
 	// xcodecltversion, developer_dir, and macosx_sdk_version.
 	Xcode, Tools, DeveloperDir, SDK string
-	// Clang is the tools' clang's build number.
-	Clang string
+	// Clang is the tools' clang's build number, and XcodeClang Xcode's
+	// own, empty where no source tells.
+	Clang, XcodeClang string
 	// SDKs are the SDKs in the tools, by name, and XcodeSDKs those in
 	// Xcode's macOS platform, empty where no source lists them.
 	SDKs, XcodeSDKs []string
@@ -193,8 +195,13 @@ func fill(table macos.FactsTable, facts *macos.Facts) {
 				facts.SDKs = other.SDKs
 			}
 		}
-		if facts.Xcode != "none" && other.Xcode == facts.Xcode && len(facts.XcodeSDKs) == 0 {
-			facts.XcodeSDKs = other.XcodeSDKs
+		if facts.Xcode != "none" && other.Xcode == facts.Xcode {
+			if len(facts.XcodeSDKs) == 0 {
+				facts.XcodeSDKs = other.XcodeSDKs
+			}
+			if facts.XcodeClang == "" {
+				facts.XcodeClang = other.XcodeClang
+			}
 		}
 	}
 }
@@ -207,7 +214,7 @@ func modelled(darwin int, facts macos.Facts, derived bool) ModelledToolchain {
 		xcselect = *facts.XCSelect
 	}
 	return ModelledToolchain{Darwin: darwin, DarwinVersion: facts.DarwinVersion, MacOS: facts.MacOS, Xcode: facts.Xcode, Tools: facts.Tools, DeveloperDir: facts.DeveloperDir, SDK: facts.SDK,
-		Clang: facts.Clang, SDKs: facts.SDKs, XcodeSDKs: facts.XcodeSDKs, XCSelect: xcselect, Source: facts.Source, Derived: derived}
+		Clang: facts.Clang, XcodeClang: facts.XcodeClang, SDKs: facts.SDKs, XcodeSDKs: facts.XcodeSDKs, XCSelect: xcselect, Source: facts.Source, Derived: derived}
 }
 
 // shims are the programs /usr/bin holds for the developer tools from OS X
@@ -261,14 +268,20 @@ func ModelVariables(platform model.Platform, developer model.DeveloperTools) (st
 	// it down (#106).
 	compilers := ""
 	if tools.Clang != "" {
-		versions := "/usr/bin/clang " + tools.Clang + " " + CommandLineTools + "/usr/bin/clang " + tools.Clang
-		directories := []string{tools.DeveloperDir}
-		if tools.Tools != "none" && tools.DeveloperDir != CommandLineTools {
-			directories = append(directories, CommandLineTools)
+		versions := func(usrBin string) string {
+			return "/usr/bin/clang " + usrBin + " " + CommandLineTools + "/usr/bin/clang " + tools.Clang
 		}
 		var entries []string
-		for _, directory := range directories {
-			entries = append(entries, directory+" {"+versions+"}")
+		if tools.DeveloperDir == CommandLineTools {
+			entries = append(entries, CommandLineTools+" {"+versions(tools.Clang)+"}")
+		} else {
+			// Under Xcode's developer_dir, /usr/bin/clang is Xcode's own,
+			// which the table keeps where a source tells it: Sequoia's
+			// Xcode 16.4 beside the 26.0 tools answered the tools' (#213).
+			entries = append(entries, tools.DeveloperDir+" {"+versions(cmp.Or(tools.XcodeClang, tools.Clang))+"}")
+			if tools.Tools != "none" {
+				entries = append(entries, CommandLineTools+" {"+versions(tools.Clang)+"}")
+			}
 		}
 		// Without the tools, their clang isn't there, and Base answers
 		// it empty: asked for it, an Xcode context on Catalina ran this
