@@ -1,6 +1,6 @@
 # One judgment of a check's resolved source
 
-A core item for v0.9.0, [#192](https://github.com/herbygillot/dockhand/issues/192). The issue says where it stands; this file is the design. Architecture wrote it on 2026-11-11, Codex reviewed that draft against the code the same day (the person's "I'd like Codex to co-design and help review as well", 2026-11-11 05:48Z, in the architecture thread), and this is the draft revised for that review, read again at main f45d5b7a3. "What the review changed" lists each correction. It is built once the person adopts it.
+A core item for v0.9.0, [#192](https://github.com/herbygillot/dockhand/issues/192). The issue says where it stands; this file is the design. Architecture wrote it on 2026-11-11, Codex reviewed that draft against the code the same day (the person's "I'd like Codex to co-design and help review as well", 2026-11-11 05:48Z, in the architecture thread), and this is the draft revised for that review and for its short second pass, read again at main f45d5b7a3. "What the review changed" lists each correction. It is built once the person adopts it.
 
 ## In short
 
@@ -74,8 +74,10 @@ func (s GitSource) AgainstFetched(fetched ObjectID) SourceStanding
 | A whole commit | a whole commit | same where equal, moved where not |
 | An abbreviation | a whole commit | same where the commit begins with it, moved where not, as `BuiltBy` has it |
 | A commit or an abbreviation | nothing it reported | not known |
-| Nothing | anything, or nothing | unresolved |
+| Nothing | a whole commit | not known |
+| Nothing | nothing it reported | unresolved |
 
+- Unresolved means the same in both tables: neither side names a commit. A plan that names nothing against a build that names its commit is not known, as a commit against nothing is in the first table. `BuiltBy` and `Moved` are both false there today, and stay so.
 - "Not fetched this way" is what a plan recorded, not a fact about its build. A plan recorded before plans kept tags has no tag. So a tag reader's "other" column is written knowing the record may only be old.
 - It reads nothing but its arguments. Reading a repository's refs stays in the engine (`resolveGit`, `resolveTag`), and following a moved source through the builds that had its archive active stays in `reuse.AgainstOtherSources`.
 - Every reader compares per environment, as `SourcesCover` does. One freshly made plan reads each repository and ref once (engine/plan.go:436-449, :461-479), so its environments agree; the merged plan evidence is judged against need not (change 4).
@@ -95,7 +97,7 @@ The readers differ for a reason the code holds and nowhere states:
 | Count a finished check for another request, tag | counts | doesn't | doesn't | counts | doesn't |
 | Take an earlier check's result into evidence, Git (`Counts`) | counts | doesn't | **doesn't, where the newest plan builds the target another way (change 3)** | doesn't | doesn't |
 | Take an earlier check's result into evidence, tag | counts | **doesn't (change 2)** | counts | counts | counts, unless another build of the target shows the tag moved |
-| Take a whole environment from an earlier check | counts | **doesn't (change 4)** | counts | counts | counts |
+| Take a result on a release that only an earlier check planned, the newest plan's reading against the earlier one's | counts | **doesn't (change 4)** | counts | counts | counts |
 | Reuse a build, Git (`Carry`) | reuses | builds | builds | builds | builds |
 | Reuse a build, tag (`Choose`) | reuses | builds | reuses | reuses | reuses, unless another build of the target shows the tag moved |
 | A build that had the source's archive active, in reuse and in evidence | follows it | builds, or doesn't count | | Git: builds. Tag: follows it | Git: builds. Tag: follows it |
@@ -112,7 +114,10 @@ Each is a place where two readers disagree today.
 1. **A finished check whose Git source couldn't be resolved no longer stands for another request.** Two requests whose plans both failed to read the repository join one running check, and that stays: joining shares a request and claims nothing of the source. But `Covered` then counts the finished check for a second request the same way, because the two empty readings compare as equal and the check's own results are never asked what they fetched. The comment on `resolveGitSources` already says such a result "stands for no later check's" (engine/plan.go:430-431). Finished coverage asks for same, and asks each Git result what it fetched, as `Counts` asks an earlier check's. The check's own report is untouched: it stands for its own check and says what wasn't known. Codex's probe showed the pass through `QueueCheck`.
 2. **An earlier result built when a tag named another commit no longer fills in evidence.** Reuse builds again for a moved tag (`TagMoved`), and the plan says so. Evidence assembled from several checks compares no tag, so the old pass fills a cell the newest check left empty. Evidence takes the tag row above, and `readSources` gives the reuse rule its tags, so a dependent built against the old archive is found there as it is in reuse. Codex's probe showed the fill.
 3. **A result built with Git no longer counts where the newest plan builds that target another way.** `Carry` refuses it; `Counts` skips the question. It is reachable through `EvidenceFor`, which groups checks by tree and takes older cells with no `SourcesCover` between their plans. A target the newest plan doesn't build at all (an earlier check's variant build, which evidence shows beside it) is not this case: nothing newer asks anything of it, and it is judged against its own plan as today.
-4. **An environment taken from an earlier check doesn't count where that check resolved the ref to another commit than the newest one did.** A check narrowed to one release leaves the others' results to an earlier check, with that check's resolutions. If the ref moved between the two, the evidence holds two commits for one repository and ref, and submit compares what it reads now with the newest alone (`plannedBy`, servesubmit.go:415, keeps one reading per target, repository and ref). Only a shown move unseats the environment: where the newest check couldn't resolve the ref at all, the earlier environment stands as it does today. Architecture found this while checking the review; it is read in the code and not run, and it is not in Codex's review.
+4. **An environment taken from an earlier check doesn't count where that check resolved the ref to another commit than the newest one did.** A check narrowed to one release leaves the others' results to an earlier check, with that check's resolutions. If the ref moved between the two, the evidence holds two commits for one repository and ref, and submit compares what it reads now with the newest alone (`plannedBy`, servesubmit.go:415, keeps one reading per target, repository and ref). Only a shown move unseats anything: where the newest check couldn't resolve the ref at all, the earlier environment stands as it does today.
+   - **What stops counting is a result, not the environment.** On the earlier release, the result of the target whose ref moved, and the results of targets built against it there (the dependents' row above). Every other result on that release stands.
+   - **Nothing leaves what the evidence requires.** The release stays in the plan the evidence is judged against. A result that no longer counts reads as not checked, as it does where no check built it: `status` shows it, and submit judges it as it judges any missing result. A new check of that release resolves the ref afresh.
+   - Architecture found this while checking the review. Codex's second pass confirmed it by running it: a pass on macOS 15 at one commit, the tag moved, a pass on macOS 26 at the other. `EvidenceFor` kept both releases with their two commits, and `movedSources` raised no concern. It held for a Git source and for an archive fetched by a tag.
 
 ## Submit's adapters
 
@@ -136,18 +141,20 @@ Each is a place where two readers disagree today.
 | Section 3 | nil against nil undefined; one "not known" for two cases; abbreviations in one order only | Five answers, and both tables |
 | "Every reader keeps its outcome" | Not true of the changes | Said in "In short" |
 | The line about v0.9.0 not being open | Stale | Gone |
+| Second pass: `SourceUnresolved` | Defined as "neither side names a commit", and returned for a plan that names nothing against a build that names its commit | That row answers not known. No reader's outcome changes: the Git readers treat the two answers alike, and `BuiltBy` and `Moved` stay false there |
+| Second pass: change 4's unit | "An environment doesn't count" didn't say whether unrelated results there fall too, or whether the release leaves what is required | The unit is the result and its dependents; the release stays required and the result reads as not checked |
 
 ## Tests
 
 - **The judgment**, a table in `internal/model` with every row of the two tables above, in both argument orders, and a record from before plans kept the commit or the tag.
-- **The old methods equal it**: `Same` is same or unresolved; `BuiltBy` is `AgainstFetched` same; `Moved` is `AgainstFetched` moved; `TagMoved` is moved between two whole commits. This lands with the judgment and goes with the methods.
+- **The old methods equal it**: `Same` is same or unresolved; `BuiltBy` is `AgainstFetched` same; `Moved` is `AgainstFetched` moved, and both are false for a plan that names nothing, whatever the build reported; `TagMoved` is moved between two whole commits. This lands with the judgment and goes with the methods.
 - **The readers agree**, one table that calls the readers themselves, each row a pair of plans or a plan and a build. A reader that answers otherwise than this file's table fails by name. It includes:
   - joining against finished coverage: two unresolved Git requests join, and a finished unresolved check doesn't stand for another request, through `QueueCheck` both ways;
   - evidence from several checks through `EvidenceFor`: a newer check missing a cell and an older Git pass, an older pass at a moved tag, a plan with no Git source anywhere and one with a Git source elsewhere, so both branches of `ReadsSources` run;
   - a fetch-mode change named apart from another repository and another ref, and an earlier check's variant build the newest plan lacks;
   - dependents of a moved tag, through one build and through two, with the archive recorded and with it unrecorded and another build showing the move, in evidence and in `reuse.Choose`;
   - presence: both absent, one absent, an old record with no fetched commit, an old record with no tag, and an unmet need, each with its reader's own outcome;
-  - change 4: one check on one release, the ref moved, a second check on another release, and what status and submit say;
+  - change 4, for a Git source and for a tag: one check on one release, the ref moved, a second check on another release. On the earlier release the moved target's result and a dependent's read as not checked, an unrelated target's still counts, the release is still required, and `status` and submit say so. Codex's probe is its failing case;
   - submit: an unreadable current source, a shown move, an abbreviation, another release's tag, a release matched by its commit, and an assessment's commit, each by its concern and by what an attended and an unattended submission do.
 - The regressions of #71 and #114, and `TagMoved`'s test that another release's tag is not a moved tag, stay as they are.
 - A last search for `Same`, `BuiltBy`, `Moved`, `TagMoved` and commits compared in place (servesubmit.go:294, :312, :354, :381; policy.go:117-122) leaves each one gone or explained. It is a check on the work, not a test.
@@ -164,7 +171,7 @@ After the publication record ([#191](https://github.com/herbygillot/dockhand/iss
 
 ## Not checked
 
-- Change 4 is read in `evidence.Plan` and `plannedBy` and not run.
+- Change 4 was run by Codex through `EvidenceFor` and `movedSources` on test fixtures. A whole submit and a real Portfile were not run.
 - Codex's probes used test fixtures. They show the engine accepts differing source maps for one tree; they don't show a real Portfile changing how it fetches with no edit. Changes 1 and 2 don't rest on that.
 - Every caller of `coversPlan` beyond `Covered`, and `preparedSources` line by line.
 
