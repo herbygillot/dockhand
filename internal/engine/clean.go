@@ -172,7 +172,17 @@ func (e *Engine) ArchivedKept(ctx context.Context) ([]model.Branch, error) {
 // so removing the branch loses nothing; false where no master was fetched.
 func (e *Engine) changesOnMaster(ctx context.Context, branch model.Branch, head string) (bool, error) {
 	master, ok := e.lastMaster(ctx)
-	if !ok || branch.Base == "" {
+	if !ok {
+		return false, nil
+	}
+	return e.changesOn(ctx, branch, head, master)
+}
+
+// changesOn reports whether every path a branch's commits change, from its
+// base to head, is at head as master has it; false where the branch has no
+// base.
+func (e *Engine) changesOn(ctx context.Context, branch model.Branch, head string, master model.ObjectID) (bool, error) {
+	if branch.Base == "" {
 		return false, nil
 	}
 	trees, err := e.Repo.CommitTrees(ctx, []string{string(branch.Base), head, string(master)})

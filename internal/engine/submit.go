@@ -1158,6 +1158,83 @@ type SubmitEdits struct {
 // made.
 var ErrStaleSubmit = errors.New("the branch changed after the submission was prepared")
 
+// MasterChanged is a submission stopped because master, fetched just
+// before it would push, changed a port directory the branch changes since
+// the branch's base: with the same files as the branch's, its changes are
+// on master already, and a pull request would duplicate them (#164); with
+// others, the branch is reviewed against master's first. A change master
+// made elsewhere stops nothing (docs/usage/branches.md).
+type MasterChanged struct {
+	Branch       string
+	Base, Master model.ObjectID
+	Directories  []string
+	OnMaster     bool
+}
+
+func (m *MasterChanged) Error() string { return m.Said(false) }
+
+// Said is the stop in the words of the run that met it: one whose check
+// ran, which nothing was pushed or submitted after, or one that started
+// no check.
+func (m *MasterChanged) Said(checkRan bool) string {
+	after := "This run started no check and submitted nothing."
+	if checkRan {
+		after = "The check ran; nothing was pushed or submitted."
+	}
+	if m.OnMaster {
+		return fmt.Sprintf("%s's changes are already on master %s. %s", m.Branch, m.Master.Short(), after)
+	}
+	return fmt.Sprintf("master changed %s since this branch's base (%s → %s). %s Review dockhand rebase -b %s --plan before continuing.", prose.And(m.Directories), m.Base.Short(), m.Master.Short(), after, m.Branch)
+}
+
+// masterUnchanged fetches master and stops a submission where it changed
+// a port directory the branch changes since the branch's base
+// (MasterChanged); nothing else that master changed stops it. Only master
+// fetched now is "on master": the plan compared with the branch's base,
+// and the duplicate pull request of #164 was opened with no fetch between.
+func (e *Engine) masterUnchanged(ctx context.Context, plan SubmitPlan) error {
+	base := plan.Branch.Base
+	if len(plan.testedTrees) == 0 || base == "" {
+		return nil
+	}
+	master, err := e.fetchMaster(ctx)
+	if err != nil {
+		return fmt.Errorf("%w; nothing was pushed or submitted", err)
+	}
+	if master == base {
+		return nil
+	}
+	trees, err := e.Repo.CommitTrees(ctx, []string{string(base), string(master)})
+	if err != nil {
+		return err
+	}
+	directories := slices.Sorted(maps.Keys(plan.testedTrees))
+	before, err := e.Repo.DirectoryTrees(ctx, trees[string(base)], directories)
+	if err != nil {
+		return err
+	}
+	now, err := e.Repo.DirectoryTrees(ctx, trees[string(master)], directories)
+	if err != nil {
+		return err
+	}
+	var changed []string
+	for _, directory := range directories {
+		was, had := before[directory]
+		is, has := now[directory]
+		if had != has || was != is {
+			changed = append(changed, directory)
+		}
+	}
+	if len(changed) == 0 {
+		return nil
+	}
+	onMaster, err := e.changesOn(ctx, plan.Branch, plan.Commit, master)
+	if err != nil {
+		return err
+	}
+	return &MasterChanged{Branch: plan.Branch.ShortName(), Base: base, Master: master, Directories: changed, OnMaster: onMaster}
+}
+
 // ApplySubmit pushes the planned commit to your fork, only while the fork's
 // branch is as the plan saw it, and opens or updates the pull request.
 func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered model.Answered) (Submitted, error) {
@@ -1188,6 +1265,9 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 	// The title and description it writes are made against them as they
 	// are now, before anything is pushed (unchangedSince).
 	if err := e.unchangedSince(ctx, &plan); err != nil {
+		return Submitted{}, err
+	}
+	if err := e.masterUnchanged(ctx, plan); err != nil {
 		return Submitted{}, err
 	}
 	var result Submitted

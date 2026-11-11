@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // A port that may have a newer release is named once for what was set
@@ -348,4 +350,33 @@ func TestServesDailyLimitSurvivesALostCreate(t *testing.T) {
 	s := newServer(e, ServeOptions{SubmitLimit: 1, Now: e.now, Say: func(line string) { said = append(said, line) }})
 	(&passingSubmitter{s: s}).maybe(t.Context())
 	require.Len(t, g.PRs, 1, "%q", said)
+}
+
+// serve submits through the gate every submission passes, which fetches
+// master and stops where master took the branch's change already: serve
+// would have opened a duplicate pull request as ship did (#164).
+func TestServeSubmitsNothingMasterHasAlready(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	g := f.withFork(t, e)
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}})
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
+	where := Where{Environments: []model.Environment{{Provider: "command"}}}
+	release := &model.Release{ReleaseSelection: model.ReleaseSelection{Requested: "1.8.1", CurrentVersion: "1.7.1"}, Version: "1.8.1", Forge: "github", Tag: "v1.8.1"}
+	prepared := e.ship(t.Context(), shipTarget{Port: "jq", Version: "1.8.1", Release: release, Name: "jq-auto-update"}, shipOptions{Origin: model.OriginServe, To: ShipCheck, Where: where, Answered: model.AnsweredNobody})
+	require.Empty(t, prepared.Problem)
+	run, err := e.Drive(t.Context(), session(t, e), prepared.Run.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, run.State)
+
+	updated := testsupport.Git(t, filepath.Join(filepath.Dir(f.clone), "macports-branches", "jq-auto-update"), "show", "HEAD:textproc/jq/Portfile")
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": updated + "\n"})
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.1")
+
+	var said []string
+	s := newServer(e, ServeOptions{SubmitLimit: 1, Now: e.now, Say: func(line string) { said = append(said, line) }})
+	(&passingSubmitter{s: s}).maybe(t.Context())
+	require.Empty(t, g.PRs, "%q", said)
+	require.Contains(t, strings.Join(said, "\n"), "jq-auto-update's changes are already on master ")
 }
