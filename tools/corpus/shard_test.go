@@ -32,3 +32,18 @@ func TestShardTestFailsABinaryThatCantListItsTests(t *testing.T) {
 	require.Contains(t, string(output), "fixture init failed")
 	require.Contains(t, string(output), "listing its tests failed")
 }
+
+// A shard count below one is refused before anything is built, where 0
+// ran no shard and printed ok (#188).
+func TestShardTestRefusesACountBelowOne(t *testing.T) {
+	t.Parallel()
+	repo, err := filepath.Abs("../..")
+	require.NoError(t, err)
+	for _, count := range []string{"0", "-1", "two", ""} {
+		sharded := exec.Command("/bin/sh", filepath.Join(repo, "tools/shard-test.sh"), "example.invalid/none", count, "30s")
+		sharded.Env = append(os.Environ(), "GO=/nonexistent/go")
+		output, err := sharded.CombinedOutput()
+		require.Error(t, err, string(output))
+		require.Equal(t, "shard-test.sh: the shard count must be 1 or more, got "+count+"\n", string(output))
+	}
+}
