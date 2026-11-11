@@ -50,6 +50,8 @@ It comes after:
 
 The switch is gated on one before-and-after survey that counts outcome changes in update and checksums contexts, each read by its cause, since those are the plans a person accepts from the model. It reports three things: the contexts that move between conclusive and inconclusive, either way; the fetch plans whose values change while the context stays conclusive, which a count of the newly inconclusive would miss and which matter most; and evaluations that now fail. Its inputs are fixed and written down with the result, in this file: the ports tree's commit, Base's version, the rows, the variants, and the evaluator's settings, so the same survey can be run again. It is no longer gated on every unexplained host read being one the table lacks by design: every further survey finds new gaps, and almost none reach a fetch field. [#107](https://github.com/herbygillot/dockhand/issues/107)'s probe test, in v0.9.0 too, holds the platform variables and toolchain answers the model does give to real Macs; this item decides what it does with the rest.
 
+The plan filed on 2026-11-11 takes #107 just before this item, since both change internal/macports/platform.go first. It takes one part of [#39](https://github.com/herbygillot/dockhand/issues/39) with it: the one test table for exec admission, which today is tested twice (macports/programs_test.go:69 and eval/refusal_test.go:73). This item changes what admission answers in a modelled context, so the table is written here, with the native context's answers and the closed ones as its rows.
+
 ## Decision 1, settled
 
 Recorded in docs/decisions.md now, as adopted and not yet built: a modelled context takes no host answer; what the table lacks is absent and marked `closed`. The implementing commit gives docs/oracle.md's decision 1 its settlement, beside the comment at dispatcher.tcl:430 that cites it.
@@ -70,6 +72,7 @@ With the contract, these too:
 - **A cache hit beside the cache miss.** The table's clang version and path are still answered once the helpers are copied; the tests that hold this today (eval/installation_test.go:183, :302) keep passing.
 - **Contexts in turn in one interpreter:** native, modelled, native, and the reverse, with neither the closure nor a cache carried over. Each `Observe` starts its own interpreter today, so only tests share one, and an empty set of overrides doesn't undo an earlier one (observation.tcl:167).
 - **The verdict:** a closed read Base owns that reaches a fetch field leaves the context inconclusive; a build-only one is explained; both keep their ledger entries.
+- **Exec admission as one table** ([#39](https://github.com/herbygillot/dockhand/issues/39)'s first item): each program kind admitted, refused or closed, native and modelled, replacing the two copies above.
 
 ## Size and docs
 
