@@ -1,8 +1,23 @@
 name: CI
 
+# A commit that touches only the design records runs no CI: no test reads
+# them, and the docs workflow checks them for local paths. Each branch, pull
+# request and tag keeps one run at a time: a newer push cancels the older
+# run on the same ref, so a busy hour on main tests its last commit rather
+# than queueing every one behind GitHub's few macOS runners.
 on:
   push:
+    paths-ignore:
+      - docs/designs/**
+      - docs/decisions.md
   pull_request:
+    paths-ignore:
+      - docs/designs/**
+      - docs/decisions.md
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -45,9 +60,6 @@ jobs:
 
       - name: Format
         run: make fmt-check
-
-      - name: Local paths
-        run: make path-check
 
       - name: Lint
         run: make lint

@@ -1,0 +1,41 @@
+name: Docs
+
+# The docs and the acceptance harness name no path on someone's own Mac
+# (make path-check). It runs here, on Linux, rather than in CI, which a
+# commit touching only the design records skips.
+on:
+  push:
+    paths:
+      - docs/**
+      - tools/**
+      - README.md
+      - AGENTS.md
+      - Makefile
+      - .github/workflows/docs.yml
+  pull_request:
+    paths:
+      - docs/**
+      - tools/**
+      - README.md
+      - AGENTS.md
+      - Makefile
+      - .github/workflows/docs.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  paths:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Local paths
+        run: make path-check
