@@ -6,6 +6,8 @@ The scratch run's test, its two seams as a diff, and its reports at b2e7b616 and
 
 Revised 2026-11-10, at the person's word ("Revise all", 23:24Z, in the architecture thread), after Codex's design read of this file at main 9a0214ab and architecture's check of it: the seams are where the code has them, uncertain local outcomes are fault modes, a stopped run's session is made dead, an effect is addressed by call site and occurrence, the oracle is stricter and tested against itself, and the stand-ins get contract tests. The scratch run below stands as what it found; its oracle does not.
 
+Amended 2026-11-11: invariant 5 takes the wording of the rule on remote writes, the correction noted on #129 on 2026-11-10. As first written it forbade any write to another person's repository, and a rightful submit to an adopted pull request pushes to its author's branch.
+
 ## The two shapes
 
 1. **Acts, then records.** An outside effect (a commit, a push, a pull request update, a restore) is recorded afterwards or in a second transaction, so a failure in between loses state: #113, #116, #117, #118, and W5 to W7 of the review of 2ad896d2.
@@ -78,7 +80,12 @@ The named failpoints stay for what only a real kill of the real binary shows (ac
 2. **Nothing done twice.** Recovery performs no effect more often than the clean run did, for effects GitHub does not treat as repeatable: Create, PostReview, RerunFailed, Cancel. This is read from the effect log, and it counts effects that happened, one whose reply was lost included, apart from attempts that failed.
 3. **An unresolved operation says so.** With an effect failed, the command returns an error, unless that effect is declared best-effort, or the code resolved it. A write whose commit was unknown, read back and found (`store.Recorded`), is done, and success is the right answer.
 4. **Recovery ends.** The rerun finishes, or refuses with a Next, and the world still equals the clean one.
-5. **Ownership holds under every fault.** No write in the effect log, at any point of any run, names MacPorts' repository or another person's. The final state alone would miss a change made and then undone.
+5. **Ownership holds under every fault.** No write in the effect log, at any point of any run, breaks the first three lines of the rule on remote writes ([#144](https://github.com/herbygillot/dockhand/issues/144)). The final state alone would miss a change made and then undone.
+   - In MacPorts' repository no branch or tag changes and no workflow run is canceled or run again.
+   - In another person's repository nothing changes but a push to the head branch of a pull request they opened with maintainer edits on. Nothing is deleted there.
+   - A branch is deleted only where a record says dockhand made it.
+
+   It is checked from the stand-in world's own records, never by asking the gate (`internal/outward`) what is allowed: the sweep is a check on the gate, and a check that read the gate's table couldn't catch the table being wrong.
 
 **How two worlds are compared:**
 
