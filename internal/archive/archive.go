@@ -380,31 +380,21 @@ func walkDirectory(ctx context.Context, root string, fn func(Member) error) erro
 }
 
 // Extract writes an archive's regular files under a directory, less the one
-// top directory every file shares, if they share one, which names the
+// top directory they're in, where there's one (Tops), which names the
 // version. Links and other special members are left out, as the pax
 // header GitHub's tarballs begin with is, and a member whose path would
 // leave the directory is refused. It returns how many files it wrote.
 func Extract(ctx context.Context, filename, directory string) (int, error) {
-	top := ""
-	shared := true
+	var tops Tops
 	if err := Walk(ctx, filename, func(member Member) error {
-		name, ok := member.Clean()
-		if !ok || !member.Regular {
-			return nil
-		}
-		first, _, nested := strings.Cut(name, "/")
-		switch {
-		case !nested:
-			shared = false
-		case top == "":
-			top = first
-		case first != top:
-			shared = false
+		if name, ok := member.Clean(); ok && member.Regular {
+			tops.Add(name)
 		}
 		return nil
 	}); err != nil {
 		return 0, err
 	}
+	top, shared := tops.One()
 	written := 0
 	err := Walk(ctx, filename, func(member Member) error {
 		name, ok := member.Clean()
@@ -416,8 +406,12 @@ func Extract(ctx context.Context, filename, directory string) (int, error) {
 			}
 			return fmt.Errorf("archive: %s contains an unsafe member path: %s", path.Base(filename), member.Name)
 		}
-		if shared && top != "" {
-			name = strings.TrimPrefix(strings.TrimPrefix(name, top), "/")
+		if shared {
+			if rest, ok := strings.CutPrefix(name, top+"/"); ok {
+				name = rest
+			} else if name == top {
+				name = ""
+			}
 		}
 		if !member.Regular || name == "" {
 			return nil

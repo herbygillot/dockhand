@@ -2,7 +2,6 @@ package portedit
 
 import (
 	"archive/tar"
-	"bytes"
 	"compress/gzip"
 	"context"
 	"fmt"
@@ -10,13 +9,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -24,138 +21,12 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/macports/sourcechoice"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/project"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
-
-// The candidates are a release's assets MacPorts extracts that name no
-// platform, the PortGroup's default name first.
-func TestSourceCandidatesLeaveOutBinaryBundles(t *testing.T) {
-	assets := []string{"tool-1.0-darwin-arm64.tar.gz", "tool_1.0_tarball.tgz", "tool-1.0-x86_64-linux-musl.tar.xz", "tool-1.0.tar.gz", "tool-win64.zip",
-		"tool-1.0.tar.zst", "checksums.txt", "tool-1.0.tar.gz.sig", "tool-1.0-universal2.zip", "tool-1.0.tbz"}
-	require.Equal(t, []string{"tool-1.0.tar.gz", "tool_1.0_tarball.tgz", "tool-1.0.tar.zst", "tool-1.0.tbz"}, sourceCandidates(assets, "tool", "1.0"), "a .tar.zst is one too, as Base extracts it")
-}
-
-// tree is an archive's tree of files, each with its name for its digest.
-func tree(top string, files ...string) sourceTree {
-	t := sourceTree{top: top, files: map[string]string{}, links: map[string]string{}, dirs: map[string]int{}}
-	for _, name := range files {
-		t.files[name] = name
-		for dir := filepath.Dir(name); dir != "."; dir = filepath.Dir(dir) {
-			t.dirs[dir]++
-		}
-	}
-	return t
-}
-
-// One source in two compressions is one, gzip taken; two passing with
-// different files are ambiguous; one lacking a submodule doesn't pass.
-func TestJudgingSourcesByTheirFiles(t *testing.T) {
-	needs := sourceNeeds{files: []string{"CMakeLists.txt"}, submodules: []string{"deps/lib"}}
-	full := tree("tool-1.0", "CMakeLists.txt", "deps/lib/a.c")
-	require.Empty(t, needs.lacks(full))
-	require.Equal(t, "lacks deps/lib", needs.lacks(tree("tool-1.0", "CMakeLists.txt")))
-	require.Equal(t, "lacks CMakeLists.txt", needs.lacks(tree("tool-1.0", "deps/lib/a.c")))
-	require.Equal(t, "extracts to more than one directory", needs.lacks(tree("", "CMakeLists.txt")))
-
-	chosen, ambiguous := judgeSources([]judgedAsset{{name: "tool-1.0.tar.xz", tree: full}, {name: "tool-1.0.tar.gz", tree: full}, {name: "tool-1.0-bin.zip", lacks: "lacks deps/lib"}})
-	require.Empty(t, ambiguous)
-	require.Equal(t, "tool-1.0.tar.gz", chosen.name)
-
-	chosen, ambiguous = judgeSources([]judgedAsset{{name: "a.tar.gz", tree: full}, {name: "b.tar.gz", tree: tree("b", "CMakeLists.txt", "deps/lib/a.c", "extra")}})
-	require.Nil(t, chosen)
-	require.Equal(t, []string{"a.tar.gz", "b.tar.gz"}, ambiguous)
-}
-
-// Two passing assets with the same paths and different contents are two
-// candidates, ambiguous, not one source in two compressions (Codex's
-// review of 03b380f1, F2a, its probe).
-func TestSourcesWithTheSameNamesButDifferentContentsAreAmbiguous(t *testing.T) {
-	t.Parallel()
-	read := func(name, contents string) sourceTree {
-		filename := filepath.Join(t.TempDir(), name)
-		require.NoError(t, os.WriteFile(filename, tarGz(t, map[string]string{
-			"tool-1.0/CMakeLists.txt": "project(tool)\n",
-			"tool-1.0/src/main.c":     contents,
-		}), 0o600))
-		got, err := readSourceTree(t.Context(), filename)
-		require.NoError(t, err)
-		return got
-	}
-	a := read("a.tar.gz", "int main() { return 0; }\n")
-	b := read("b.tar.gz", "int main() { return 1; }\n")
-	chosen, ambiguous := judgeSources([]judgedAsset{{name: "a.tar.gz", tree: a}, {name: "b.tar.gz", tree: b}})
-	require.Nil(t, chosen)
-	require.Equal(t, []string{"a.tar.gz", "b.tar.gz"}, ambiguous)
-}
-
-// The same files with the same contents in .tar.gz and .tar.bz2 are one
-// source, gzip taken, though their members' times differ.
-func TestTheSameContentsInTwoCompressionsAreOneSource(t *testing.T) {
-	t.Parallel()
-	bzip, err := exec.LookPath("bzip2")
-	if err != nil {
-		t.Skip("no bzip2 to pack an archive with")
-	}
-	dir := t.TempDir()
-	files := map[string]string{"tool-1.0/CMakeLists.txt": "project(tool)\n", "tool-1.0/src/main.c": "int main() { return 0; }\n"}
-	gzipped := filepath.Join(dir, "tool-1.0.tar.gz")
-	require.NoError(t, os.WriteFile(gzipped, tarGz(t, files), 0o600))
-	var plain bytes.Buffer
-	tw := tar.NewWriter(&plain)
-	for _, name := range slices.Sorted(maps.Keys(files)) {
-		require.NoError(t, tw.WriteHeader(&tar.Header{Name: name, Mode: 0o600, Size: int64(len(files[name])), Typeflag: tar.TypeReg, ModTime: time.Unix(1700000000, 0)}))
-		_, err := tw.Write([]byte(files[name]))
-		require.NoError(t, err)
-	}
-	require.NoError(t, tw.Close())
-	command := exec.CommandContext(t.Context(), bzip, "-c")
-	command.Stdin = &plain
-	packed, err := command.Output()
-	require.NoError(t, err)
-	bzipped := filepath.Join(dir, "tool-1.0.tar.bz2")
-	require.NoError(t, os.WriteFile(bzipped, packed, 0o600))
-	var judged []judgedAsset
-	for _, filename := range []string{bzipped, gzipped} {
-		got, err := readSourceTree(t.Context(), filename)
-		require.NoError(t, err)
-		judged = append(judged, judgedAsset{name: filepath.Base(filename), tree: got})
-	}
-	chosen, ambiguous := judgeSources(judged)
-	require.Empty(t, ambiguous)
-	require.Equal(t, "tool-1.0.tar.gz", chosen.name)
-}
-
-// A symbolic link is compared by its target; a directory member is not
-// compared, its files saying what it holds.
-func TestSourcesCompareLinksByTargetAndIgnoreDirectories(t *testing.T) {
-	t.Parallel()
-	read := func(name, target string, dir bool) sourceTree {
-		var data bytes.Buffer
-		gz := gzip.NewWriter(&data)
-		tw := tar.NewWriter(gz)
-		if dir {
-			require.NoError(t, tw.WriteHeader(&tar.Header{Name: "tool-1.0/include/", Mode: 0o755, Typeflag: tar.TypeDir}))
-		}
-		require.NoError(t, tw.WriteHeader(&tar.Header{Name: "tool-1.0/include/tool.h", Mode: 0o644, Size: 2, Typeflag: tar.TypeReg}))
-		_, err := tw.Write([]byte("x\n"))
-		require.NoError(t, err)
-		require.NoError(t, tw.WriteHeader(&tar.Header{Name: "tool-1.0/tool.h", Typeflag: tar.TypeSymlink, Linkname: target}))
-		require.NoError(t, tw.Close())
-		require.NoError(t, gz.Close())
-		filename := filepath.Join(t.TempDir(), name)
-		require.NoError(t, os.WriteFile(filename, data.Bytes(), 0o600))
-		got, err := readSourceTree(t.Context(), filename)
-		require.NoError(t, err)
-		return got
-	}
-	with := read("a.tar.gz", "include/tool.h", true)
-	require.Equal(t, map[string]string{"tool.h": "include/tool.h"}, with.links)
-	require.True(t, with.has("tool.h"))
-	require.True(t, sameFiles(with, read("b.tar.gz", "include/tool.h", false)), "a directory member alone is no difference")
-	require.False(t, sameFiles(with, read("c.tar.gz", "include/other.h", true)), "a link to another target is a difference")
-}
 
 // A name is written with the port's name and version put back.
 func TestAnAssetsNameIsWrittenWithTheVariables(t *testing.T) {
@@ -230,21 +101,26 @@ func tarGz(t *testing.T, files map[string]string) []byte {
 	return data
 }
 
-// fakeRelease is a GitHub release's files: its assets, by name, and the
-// forge's archive of its tag.
+// fakeRelease is a GitHub release's files: its assets, by name, as the
+// forge describes them, and the forge's archive of its tag.
 type fakeRelease struct {
 	assets map[string][]byte
 	tag    []byte
+	// servedAt is where the forge says it serves each asset, by a prefix
+	// of its name; GitHub's release download route where empty.
+	servedAt string
 }
 
-func (f fakeRelease) ReleaseAssets(context.Context, macports.PortInfo, model.Release) ([]string, error) {
-	return slices.Sorted(func(yield func(string) bool) {
-		for name := range f.assets {
-			if !yield(name) {
-				return
-			}
+func (f fakeRelease) ReleaseAssets(context.Context, macports.PortInfo, model.Release) ([]model.ReleaseAsset, error) {
+	var assets []model.ReleaseAsset
+	for _, name := range slices.Sorted(maps.Keys(f.assets)) {
+		address := "https://github.com/owner/fixture/releases/download/v1.2.4/" + name
+		if f.servedAt != "" {
+			address = f.servedAt + name
 		}
-	}), nil
+		assets = append(assets, model.ReleaseAsset{Name: name, URL: address, Size: int64(len(f.assets[name])), SizeKnown: true})
+	}
+	return assets, nil
 }
 
 func (f fakeRelease) SourceArchive(_ context.Context, _ macports.PortInfo, source model.GitSource, directory string) (string, error) {
@@ -273,7 +149,7 @@ func githubFixture(t *testing.T, body string, release fakeRelease) (*Service, Re
 		requested = append(requested, r.URL.Path)
 		mu.Unlock()
 		w.Header().Set("Content-Type", "application/octet-stream")
-		if data, ok := release.assets[filepath.Base(r.URL.Path)]; ok && strings.Contains(r.URL.Path, "/releases/download/") {
+		if data, ok := release.assets[filepath.Base(r.URL.Path)]; ok && (strings.Contains(r.URL.Path, "/releases/download/") || strings.HasPrefix(r.URL.Path, "/served/")) {
 			_, _ = w.Write(data)
 			return
 		}
@@ -363,6 +239,22 @@ func TestATarballPortGoesToItsReleasesSourceElseTheArchive(t *testing.T) {
 	r.SourceMode = SourceReleases
 	_, err = s.Prepare(t.Context(), r)
 	require.ErrorIs(t, err, ErrUnsupported)
+}
+
+// An asset is judged from where its forge says it serves it, not a route
+// rebuilt from the release's tag and the asset's name (#16). Its download
+// is reused only from the URL MacPorts fetches, so where the two differ
+// the update fetches that too, its checksums written from what MacPorts
+// gets.
+func TestAnAssetIsFetchedWhereTheForgeServesIt(t *testing.T) {
+	t.Parallel()
+	release := fakeRelease{tag: tarGz(t, tagArchive), assets: map[string][]byte{"fixture-1.2.4.tar.gz": tarGz(t, sourceTarball)}, servedAt: "https://objects.example.com/served/"}
+	s, r, requested := githubFixture(t, tarballPort, release)
+	r.SourceMode = SourceChoose
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Equal(t, "fixture-1.2.4.tar.gz", result.SourceMoved.Asset)
+	require.Equal(t, []string{"/served/fixture-1.2.4.tar.gz", "/owner/fixture/releases/download/v1.2.4/fixture-1.2.4.tar.gz"}, requested())
 }
 
 // --source keep moves nothing: the port stays on GitHub's tarball.
@@ -465,31 +357,19 @@ func TestAGitPortWithAHookOfItsOwnOrAPinStays(t *testing.T) {
 	require.Empty(t, requested())
 }
 
-// Every archive Base extracts is a candidate, gzip first among one
-// source's compressions, then those a use_ option extracts, zstd after
-// them and .7z and .dmg last; a .tar.zst asset is written as devel/libhx
-// writes one, its suffix, extract.cmd zstd, and its extract dependency.
-func TestEveryArchiveBaseExtractsIsASourceCandidate(t *testing.T) {
-	full := tree("tool-1.0", "CMakeLists.txt")
-	order := func(names ...string) string {
-		var judged []judgedAsset
-		for _, name := range names {
-			judged = append(judged, judgedAsset{name: name, tree: full})
-		}
-		chosen, ambiguous := judgeSources(judged)
-		require.Empty(t, ambiguous)
-		return chosen.name
-	}
-	require.Equal(t, "tool-1.0.tar.gz", order("tool-1.0.tar.zst", "tool-1.0.7z", "tool-1.0.tar.gz"))
-	require.Equal(t, "tool-1.0.tar.lzma", order("tool-1.0.tar.zst", "tool-1.0.tar.lzma", "tool-1.0.dmg"))
-	require.Equal(t, "tool-1.0.tar.zst", order("tool-1.0.dmg", "tool-1.0.7z", "tool-1.0.tar.zst"))
-	require.Equal(t, "tool-1.0.7z", order("tool-1.0.dmg", "tool-1.0.7z"))
-
+// A .tar.zst asset is written as devel/libhx writes one, its suffix,
+// extract.cmd zstd, and its extract dependency; a .7z takes use_7z's own
+// suffix.
+func TestAnAssetsCompressionIsWrittenAsBaseExtractsIt(t *testing.T) {
+	t.Parallel()
+	full := sourcechoice.Judged{Inventory: project.Inventory{Top: "tool-1.0"}}
 	info := macports.PortInfo{Options: map[string]string{"github.project": "tool", "github.version": "1.0"}}
-	move, ok := sourceMoveFor(judgedAsset{name: "tool-1.0.tar.zst", tree: full}, info, false)
+	full.Asset.Name = "tool-1.0.tar.zst"
+	move, ok := sourceMoveFor(full, info, false)
 	require.True(t, ok)
 	require.Equal(t, portfile.SourceMove{Mode: "releases", Suffix: ".tar.zst", Command: "zstd", Depends: "bin:zstd:zstd"}, move)
-	move, ok = sourceMoveFor(judgedAsset{name: "tool-1.0.7z", tree: full}, info, false)
+	full.Asset.Name = "tool-1.0.7z"
+	move, ok = sourceMoveFor(full, info, false)
 	require.True(t, ok)
 	require.Equal(t, portfile.SourceMove{Mode: "releases", UseOption: "use_7z"}, move, "use_7z's own suffix")
 }

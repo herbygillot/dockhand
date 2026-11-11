@@ -65,11 +65,16 @@ func (c *catalog) HasCommit(_ context.Context, commit string) (bool, error) {
 
 func (c *catalog) AnswersAs() string { return c.answers }
 
-func (c *catalog) Assets(_ context.Context, tag string) ([]string, error) {
-	if c.assets == nil {
-		return []string{"project.tar.gz"}, nil
+func (c *catalog) Assets(_ context.Context, tag string) ([]model.ReleaseAsset, error) {
+	names := []string{"project.tar.gz"}
+	if c.assets != nil {
+		names = c.assets[tag]
 	}
-	return c.assets[tag], nil
+	var assets []model.ReleaseAsset
+	for _, name := range names {
+		assets = append(assets, model.ReleaseAsset{Name: name, URL: "https://example.com/" + tag + "/" + name})
+	}
+	return assets, nil
 }
 
 func (c *catalog) CommitTime(_ context.Context, commit string) (time.Time, error) {

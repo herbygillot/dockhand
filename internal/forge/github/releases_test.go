@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/github"
 	githubapi "github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/stretchr/testify/require"
 )
 
@@ -117,4 +118,51 @@ func TestListedTagsAreNotReadAgain(t *testing.T) {
 	_, err = repository.Tag(t.Context(), "v1.0")
 	require.ErrorIs(t, err, forge.ErrNotFound, "a tag the listing didn't have is still asked for")
 	require.Equal(t, []string{"/repos/owner/project/git/ref/tags/v1.0"}, lookups)
+}
+
+// A release's assets are described as GitHub gives them: each one's name,
+// the URL GitHub serves it at, and its size, an absent size told from an
+// empty file (#16).
+func TestAssetsAreDescribedWithTheirURLAndSize(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/repos/owner/project/releases/tags/v1", r.URL.Path)
+		fmt.Fprint(w, `{"tag_name":"v1","assets":[
+			{"name":"project-1.tar.gz","browser_download_url":"https://objects.example.com/a/project-1.tar.gz","size":120},
+			{"name":"empty.txt","browser_download_url":"https://github.com/owner/project/releases/download/v1/empty.txt","size":0},
+			{"name":"unsized.zip","browser_download_url":"https://github.com/owner/project/releases/download/v1/unsized.zip"}]}`)
+	}))
+	defer server.Close()
+	assets, err := testRepository(t, &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}).(forge.AssetRepository).Assets(t.Context(), "v1")
+	require.NoError(t, err)
+	require.Equal(t, []model.ReleaseAsset{
+		{Name: "project-1.tar.gz", URL: "https://objects.example.com/a/project-1.tar.gz", Size: 120, SizeKnown: true},
+		{Name: "empty.txt", URL: "https://github.com/owner/project/releases/download/v1/empty.txt", SizeKnown: true},
+		{Name: "unsized.zip", URL: "https://github.com/owner/project/releases/download/v1/unsized.zip"},
+	}, assets)
+}
+
+// An asset with a name that isn't one file's, one without a URL GitHub
+// serves, or a name given twice is an incomplete observation, never a
+// partial answer, as a release listing's is.
+func TestAssetsAreCompleteOrRefused(t *testing.T) {
+	t.Parallel()
+	for mode, rows := range map[string]string{
+		"a path":      `{"name":"dir/project.tar.gz","browser_download_url":"https://example.com/x"}`,
+		"no name":     `{"browser_download_url":"https://example.com/x"}`,
+		"no URL":      `{"name":"project.tar.gz"}`,
+		"a local URL": `{"name":"project.tar.gz","browser_download_url":"file:///etc/passwd"}`,
+		"a duplicate": `{"name":"project.tar.gz","browser_download_url":"https://example.com/a"},{"name":"project.tar.gz","browser_download_url":"https://example.com/b"}`,
+	} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				fmt.Fprintf(w, `{"tag_name":"v1","assets":[%s]}`, rows)
+			}))
+			defer server.Close()
+			assets, err := testRepository(t, &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}).(forge.AssetRepository).Assets(t.Context(), "v1")
+			require.ErrorIs(t, err, forge.ErrIncomplete)
+			require.Nil(t, assets)
+		})
+	}
 }

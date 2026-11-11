@@ -7,27 +7,19 @@ import (
 )
 
 // Tree is each regular file an archive holds, by its path below the
-// archive's one top directory, where all of it is under one, with its
+// archive's one top directory, where it has one (Tops), with its
 // SHA-256: what an archive's contents are, apart from its packaging, its
 // compression, its members' times and owners, and the name of its root,
 // which gitea-tea's regenerated archive renamed (the docs dig's I19).
 func Tree(ctx context.Context, filename string) (map[string]string, error) {
 	files := map[string]string{}
-	top, shared := "", true
+	var tops Tops
 	err := Walk(ctx, filename, func(member Member) error {
 		name, ok := member.Clean()
 		if !ok || !member.Regular {
 			return nil
 		}
-		first, _, nested := strings.Cut(name, "/")
-		switch {
-		case !nested:
-			shared = false
-		case top == "":
-			top = first
-		case first != top:
-			shared = false
-		}
+		tops.Add(name)
 		digest, err := member.Digest()
 		if err != nil {
 			return err
@@ -35,12 +27,16 @@ func Tree(ctx context.Context, filename string) (map[string]string, error) {
 		files[name] = digest
 		return nil
 	})
-	if err != nil || !shared || top == "" {
+	top, one := tops.One()
+	if err != nil || !one {
 		return files, err
 	}
 	below := make(map[string]string, len(files))
 	for name, digest := range files {
-		below[strings.TrimPrefix(name, top+"/")] = digest
+		if rest, ok := strings.CutPrefix(name, top+"/"); ok {
+			name = rest
+		}
+		below[name] = digest
 	}
 	return below, nil
 }

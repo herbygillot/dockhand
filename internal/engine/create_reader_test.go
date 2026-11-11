@@ -13,6 +13,7 @@ import (
 
 	forgegithub "github.com/herbygillot/dockhand/internal/forge/github"
 	githubapi "github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/projectregistry"
 )
 
@@ -39,7 +40,7 @@ func TestCreateReadsAGitHubProject(t *testing.T) {
 		case "/api/repos/erik/txt/releases":
 			fmt.Fprint(w, releases)
 		case "/api/repos/erik/txt/releases/tags/v1.2.0":
-			fmt.Fprint(w, `{"tag_name":"v1.2.0","assets":[{"name":"txt-1.2.0.tar.gz"},{"name":"txt-1.2.0-aarch64-apple-darwin.zip"}]}`)
+			fmt.Fprint(w, `{"tag_name":"v1.2.0","assets":[{"name":"txt-1.2.0.tar.gz","browser_download_url":"https://github.com/erik/txt/releases/download/v1.2.0/txt-1.2.0.tar.gz","size":120},{"name":"txt-1.2.0-aarch64-apple-darwin.zip","browser_download_url":"https://github.com/erik/txt/releases/download/v1.2.0/txt-1.2.0-aarch64-apple-darwin.zip"}]}`)
 		case "/api/repos/erik/txt/git/ref/tags/v1.2.0":
 			fmt.Fprintf(w, `{"ref":"refs/tags/v1.2.0","object":{"type":"commit","sha":%q}}`, commit)
 		case "/pypi/txt/json":
@@ -59,7 +60,10 @@ func TestCreateReadsAGitHubProject(t *testing.T) {
 	project, err := reader.Project(t.Context(), "https://github.com/erik/txt")
 	require.NoError(t, err)
 	require.Equal(t, Project{Owner: "erik", Name: "txt", Description: "a text editor", Homepage: "https://txt.example", License: "MIT", Tag: "v1.2.0",
-		Assets: []string{"txt-1.2.0.tar.gz", "txt-1.2.0-aarch64-apple-darwin.zip"}, Files: map[string][]byte{"Cargo.toml": []byte(cargo)}}, project)
+		Assets: []model.ReleaseAsset{
+			{Name: "txt-1.2.0.tar.gz", URL: "https://github.com/erik/txt/releases/download/v1.2.0/txt-1.2.0.tar.gz", Size: 120, SizeKnown: true},
+			{Name: "txt-1.2.0-aarch64-apple-darwin.zip", URL: "https://github.com/erik/txt/releases/download/v1.2.0/txt-1.2.0-aarch64-apple-darwin.zip"},
+		}, Files: map[string][]byte{"Cargo.toml": []byte(cargo)}}, project)
 
 	listed := releases
 	set("someone/else", listed)

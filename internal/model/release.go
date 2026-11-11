@@ -44,6 +44,26 @@ type ReleaseSelection struct {
 	Lowers bool `json:",omitempty"`
 }
 
+// ReleaseAsset is a file uploaded to a forge release, as the forge
+// describes it: its name, where the forge serves it, and its size in
+// bytes, SizeKnown false where the forge gave none, so an unknown size is
+// told from an empty file.
+type ReleaseAsset struct {
+	Name      string
+	URL       string
+	Size      int64
+	SizeKnown bool
+}
+
+// AssetNames are the assets' names, in their order.
+func AssetNames(assets []ReleaseAsset) []string {
+	names := make([]string, 0, len(assets))
+	for _, asset := range assets {
+		names = append(names, asset.Name)
+	}
+	return names
+}
+
 // Release identifies the upstream source selected for a version bump: the
 // frozen fact of forge, repository, tag, and commit, or an archive listing,
 // together with the selection that produced it.
