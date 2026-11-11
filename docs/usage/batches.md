@@ -57,7 +57,9 @@ look whose only match is a prerelease reads the port current and says so,
 release doesn't take`. A GitHub repository renamed or transferred is said on
 a current port's row under `--current`, and on `outdated <port>`'s one line,
 as `GitHub answers extrawurst/gitui as gitui-org/gitui now, which
-github.setup could name`; `update --follow-moves` writes the new name.
+github.setup could name`; `update --follow-moves` writes the new name, in
+`github.setup`'s words or in a `go.setup` module path on github.com, keeping
+any package path after the repository.
 
 ## Preview a batch, then choose its stopping point
 
@@ -118,6 +120,11 @@ dockhand update kubectl-1.34 kubectl-1.35 --new
 ```
 
 This names one branch for their shared directory when they share a Portfile.
+`ship` given a port and a subport that shares its release, as
+`ship tree-sitter tree-sitter-cli`, in either order, updates the port first,
+and the subport moves with it on its branch; the batch says so on the
+subport's line (`tree-sitter-cli  moves with tree-sitter in this run; both are
+checked on the same branch.`) rather than refusing it.
 Where each commit updates one port to the same version, submit titles the pull
 request for them, as `ace, tao: update to 8.0.8`. A version is supplied with a
 lone port: `update jq 1.8.1` means a version update because the second word is

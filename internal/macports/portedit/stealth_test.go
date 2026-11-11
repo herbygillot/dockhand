@@ -188,7 +188,7 @@ func TestARefreshOfAHandEditedVersionWithTheOldCratesIsRefused(t *testing.T) {
 		return Request{Stealth: &StealthRequest{Changed: []string{"devel/fixture/Portfile"}, Base: &macports.PortInfo{Name: "fixture", Version: version, Options: map[string]string{depblock.Cargo: crates}}}}
 	}
 	err := staleVendored(asked("1.2.3", "serde 1.0.0 aaaa"), input, plan)
-	require.EqualError(t, err, "fixture's version was edited from 1.2.3 to 1.2.4, and its cargo.crates are still 1.2.3's, which checksums doesn't refresh; nothing was changed. Undo the version edit, then dockhand update fixture 1.2.4 regenerates them")
+	require.EqualError(t, err, "The version changed from 1.2.3 to 1.2.4, but cargo.crates was not revalidated against the new Cargo.lock. checksums refreshes distfile checksums only; use dockhand update fixture 1.2.4 to validate the crates.")
 	require.NoError(t, staleVendored(asked("1.2.3", "serde 0.9.0 bbbb"), input, plan), "the crates were edited too")
 	require.NoError(t, staleVendored(asked("1.2.4", "serde 1.0.0 aaaa"), input, plan), "the version is the base's")
 	require.NoError(t, staleVendored(asked("1.2.3", "serde 1.0.0 aaaa"), input, nil), "no crates")

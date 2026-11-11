@@ -35,6 +35,8 @@ func (s *Service) HandAttempt(ctx context.Context, request Request, refused Resu
 	}
 	if contents == nil && refused.Versioned != nil {
 		contents = refused.Versioned
+		// What the refused step left as it was, as a dependency block.
+		result.Left = append(result.Left, refused.Left...)
 	}
 	if contents == nil {
 		if contents, err = portfile.SetVersionLiteral(input.data, input.info.Version, request.Version); err != nil {
@@ -58,7 +60,7 @@ func (s *Service) HandAttempt(ctx context.Context, request Request, refused Resu
 		result.Downloads, result.Left = refreshed.Downloads, append(result.Left, refreshed.Left...)
 	}
 	if err != nil {
-		result.Left = append(result.Left, ChecksumLeft{Kind: LeftDeclaration, What: "the checksums", Reason: refusal.WordsOf(err)})
+		result.Left = append(result.Left, ChecksumLeft{Kind: LeftDeclaration, What: "the distfile checksums", Reason: refusal.WordsOf(err)})
 	}
 	result.Files = []portfile.Edit{{Path: input.target.Portfile, After: contents}}
 	return result, nil

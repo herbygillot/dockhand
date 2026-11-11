@@ -751,3 +751,58 @@ go.vendors
 	require.Contains(t, after, "example.com/dep lock v1.0.0 sha256 "+sha, "and its modules written")
 	require.Equal(t, []editprep.Regenerated{{Option: "go.vendors", Count: 1, Changed: 1}}, result.Regenerated)
 }
+
+// The Portfile's crates stand where they're the new Cargo.lock's in
+// another order: omnidiff's were, text order against the lock's version
+// order, and update refused them as differing (#163). A changed checksum
+// still refuses.
+func TestCratesInAnotherOrderAreTheLocks(t *testing.T) {
+	t.Parallel()
+	sha, other := strings.Repeat("b", 64), strings.Repeat("c", 64)
+	for _, scenario := range []string{"reordered", "checksum"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
+			lock := "version = 4\n[[package]]\nname = \"fixture\"\nversion = \"1.0.0\"\n"
+			for _, version := range []string{"0.8.8", "0.10.3"} {
+				lock += fmt.Sprintf("[[package]]\nname = \"rand\"\nversion = %q\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = %q\n", version, sha)
+			}
+			before := manifestArchive(t, "Cargo.lock", lock, "1.0")
+			after := manifestArchive(t, "Cargo.lock", strings.Replace(lock, "\"1.0.0\"", "\"2.0.0\"", 1), "2.0")
+			declared := sha
+			if scenario == "checksum" {
+				declared = other
+			}
+			extra := `options cargo.crates cargo.crates_github cargo.update cargo.dir
+ default cargo.crates {}
+ default cargo.crates_github {}
+ default cargo.update no
+ default cargo.dir {${worksrcpath}}
+ proc fixture_crates {} {
+  foreach {name version checksum} [option cargo.crates] {
+   distfiles-append ${name}-${version}.crate:crate-${name}
+   master_sites-append https://static.crates.io/crates/${name}:crate-${name}
+   checksums-append ${name}-${version}.crate sha256 $checksum
+  }
+ }
+ port::register_callback fixture_crates
+ cargo.crates rand 0.8.8 ` + declared + ` rand 0.10.3 ` + sha + "\n"
+			service, request := versionFixture(t, "setup", extra, func(w http.ResponseWriter, r *http.Request) {
+				if strings.Contains(r.URL.Path, "/1.0/") {
+					_, _ = w.Write(before)
+				} else {
+					_, _ = w.Write(after)
+				}
+			})
+			script := "printf '%s\\n' 'cargo.crates rand 0.10.3 " + sha + " \\' '    rand 0.8.8 " + sha + "'"
+			service.DependencyTools = depblock.Tools{Cargo2Port: dependencyHelper(t, script), Go2Port: "absent"}
+			result, err := service.Prepare(t.Context(), request)
+			if scenario == "reordered" {
+				require.NoError(t, err)
+				require.Contains(t, string(result.Files[0].After), "cargo.crates rand 0.8.8 "+sha+" rand 0.10.3 "+sha+"\n", "kept as written")
+				return
+			}
+			// A changed checksum still refuses, before anything is fetched.
+			require.ErrorContains(t, err, "existing cargo.crates differs from the original manifest/helper output for rand")
+		})
+	}
+}

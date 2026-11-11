@@ -499,6 +499,82 @@ func Differences(kind string, declared, generated []string) ([]Difference, error
 	return differences, nil
 }
 
+// Mismatch is how a block as evaluated differs from the one regenerated
+// from the source's lock: how many entries differ, an entry being a crate
+// or module at a version, and the first of them by name, as "rand 0.8.8,
+// missing", "unexpected", or "checksum differs" where both have it with
+// other checksums. A block that doesn't read as rows is an error.
+type Mismatch struct {
+	Count int
+	First string
+}
+
+// Mismatched compares a block's entries as Equivalent does, in any order,
+// and says how they differ (#163: omnidiff's crates were Cargo.lock's, in
+// another order, and update refused them).
+func Mismatched(kind string, declared, wanted []string) (Mismatch, error) {
+	entries := func(tokens []string) (map[string]string, error) {
+		groups, err := tokenRows(kind, tokens)
+		if err != nil {
+			return nil, err
+		}
+		found := map[string]string{}
+		for _, row := range groups {
+			key, rest := row[0]+" "+row[1], row[2:]
+			if kind == Go {
+				key = row[0] + " " + goField(row, "lock")
+				rest = nil
+				for i := 1; i+1 < len(row); i += 2 {
+					if row[i] != "lock" {
+						rest = append(rest, row[i]+" "+row[i+1])
+					}
+				}
+				slices.Sort(rest)
+			}
+			found[key] = strings.Join(rest, " ")
+		}
+		return found, nil
+	}
+	have, err := entries(declared)
+	if err != nil {
+		return Mismatch{}, err
+	}
+	want, err := entries(wanted)
+	if err != nil {
+		return Mismatch{}, err
+	}
+	keys := slices.Collect(maps.Keys(have))
+	for key := range want {
+		if _, ok := have[key]; !ok {
+			keys = append(keys, key)
+		}
+	}
+	slices.Sort(keys)
+	var mismatch Mismatch
+	for _, key := range keys {
+		ours, declared := have[key]
+		theirs, generated := want[key]
+		why := ""
+		switch {
+		case !declared:
+			why = "missing"
+		case !generated:
+			why = "unexpected"
+		case ours != theirs && kind == Cargo:
+			why = "checksum differs"
+		case ours != theirs:
+			why = "its fields differ"
+		default:
+			continue
+		}
+		if mismatch.Count == 0 {
+			mismatch.First = key + ", " + why
+		}
+		mismatch.Count++
+	}
+	return mismatch, nil
+}
+
 // goMajor is a Go module path's major version suffix, as /v2 or /v13:
 // /v2 to /v9, or two digits or more. [2-9][0-9]* missed /v13, and tfvar's
 // go-textseg, an older go2port's spelling without it, read as an override

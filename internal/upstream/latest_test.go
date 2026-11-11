@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -986,4 +987,43 @@ func TestANewerTagUnderAnotherPrefixIsSaidUnderTheDefaultRegex(t *testing.T) {
 	result, err = service.DiscoverPort(t.Context(), port)
 	require.NoError(t, err)
 	require.Nil(t, result.OtherPrefix, result.Detail)
+}
+
+// A regex over the default tags page that matches none of the tags as
+// they're matched, their archive links, reads the page some other way, and
+// is run on it as Base runs it: pinact's {v(\d+\.\d+\.\d+)$} matched its
+// "chore: release v5.0.2" lines, and dockhand read nothing where Base read
+// 5.0.2 (macports/macports-ports#36574). A series filter that names the
+// archive link keeps the catalog path.
+func TestADefaultPagesOwnRegexIsRunOnThePage(t *testing.T) {
+	t.Parallel()
+	c := &catalog{tags: []forge.Tag{{Name: "v5.0.0"}, {Name: "v5.0.1"}, {Name: "v5.0.2"}}}
+	page := "<a href=\"/suzuki/pinact/commit/abc\">chore: release v5.0.2\n</a>\n<a>chore: release v5.0.1\n</a>\n"
+	c.document = func(url string) ([]byte, bool, error) {
+		if url != "https://github.com/owner/project/tags" {
+			return nil, false, nil
+		}
+		return []byte(page), true, nil
+	}
+	service := automaticService(t, c)
+	service.HTTP = nil
+	port := overridingPort()
+	port.Version, port.Options["github.version"], port.Options["git.branch"], port.Options["livecheck.version"] = "5.0.0", "5.0.0", "v5.0.0", "5.0.0"
+	port.Options["github.tarball_from"] = "archive"
+	port.Options["livecheck.url"] = "https://github.com/owner/project/tags"
+	port.Options["livecheck.regex"] = `{v(\d+\.\d+\.\d+)$}`
+	result, err := service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.UpdateAvailable, result.Assessment)
+	require.Equal(t, "5.0.2", result.Release.Version)
+	require.Equal(t, "v5.0.2", result.Release.Tag)
+
+	series := port
+	series.Options = maps.Clone(port.Options)
+	series.Options["livecheck.type"] = "regex"
+	series.Options["livecheck.regex"] = `{archive/refs/tags/v(5\.0\.[0-9]+)\.tar\.gz}`
+	page = ""
+	result, err = service.DiscoverPort(t.Context(), series)
+	require.NoError(t, err)
+	require.Equal(t, "5.0.2", result.Release.Version, "from the catalog, with nothing on the page")
 }

@@ -540,3 +540,31 @@ func TestAnUpdateMovesGitHubsTarballToTheArchive(t *testing.T) {
 		require.Contains(t, string(result.Files[0].After), "size 21", c.why)
 	}
 }
+
+// An update to the version the port is at says it's current, as one with
+// no version named does: update nvtop 3.4.0 on 3.4.0 evaluated the tag's
+// version, found no version input to set, since the literal holds it, and
+// refused it as an edit it couldn't make (#165).
+func TestAnUpdateToTheCurrentVersionIsCurrent(t *testing.T) {
+	t.Parallel()
+	for _, style := range []string{"setup", "variable"} {
+		t.Run(style, func(t *testing.T) {
+			t.Parallel()
+			service, request := versionFixture(t, style, "", func(w http.ResponseWriter, r *http.Request) {})
+			service.Upstream.Catalogs[portsource.GitHub] = releaseTagFunc(func(_ context.Context, _, tag string) (forge.Tag, error) {
+				if tag != "v1.0" {
+					return forge.Tag{}, forge.ErrNotFound
+				}
+				return forge.Tag{Name: tag, Commit: strings.Repeat("a", 40)}, nil
+			})
+			request.Version, request.Release = "1.0", nil
+			release, err := service.ResolveRelease(t.Context(), request)
+			require.NoError(t, err)
+			require.True(t, release.NoUpdate)
+			request.Release = &release
+			result, err := service.Prepare(t.Context(), request)
+			require.NoError(t, err)
+			require.Empty(t, result.Files, "nothing to change")
+		})
+	}
+}

@@ -80,8 +80,15 @@ func byHand(err error, request UpdateRequest, branch string, started bool) error
 	case request.Plan:
 	case started:
 		kept = branch + ", with nothing changed"
+	case request.Start != nil && request.HandEdit:
+		// The attempt --hand-edit asked for couldn't be written either,
+		// and no branch was started for it: "Kept: the branch, unchanged"
+		// named one that didn't exist (#166).
+		words += "\nNo branch was started, and no partial update was written."
 	case request.Start != nil && !request.HandBranch():
 		words += "\nNo branch was started."
+	case branch != "":
+		kept = branch + ", unchanged"
 	default:
 		kept = "the branch, unchanged"
 	}

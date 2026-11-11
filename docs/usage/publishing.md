@@ -201,6 +201,26 @@ associated with it. It does not merge it. When a rewritten history needs
 publishing, the push is conditional on the remote branch still being where
 dockhand observed it, so someone else's newer push is not overwritten.
 
+Just before it pushes, every submission fetches master: `submit`, `ship`,
+and serve's alike. Where master changed a port directory the branch changes
+since the branch's base, nothing is pushed and no pull request is opened or
+updated. If master has the same files there as the branch, the changes are
+already on master, as another person's commit of the same update leaves it:
+
+```text
+jq-update's changes are already on master 4e1f0a2. This run started no check and submitted nothing.
+```
+
+If master changed them another way, review the rebase before continuing:
+
+```text
+master changed textproc/jq since this branch's base (9b3c5d1 → 4e1f0a2). This run started no check and submitted nothing. Review dockhand rebase -b jq-update --plan before continuing.
+```
+
+After a check that `ship` ran, the middle sentence is "The check ran; nothing
+was pushed or submitted." A change master made only in other directories stops
+nothing.
+
 Use `--note` for context the generated evidence cannot express:
 
 ```sh

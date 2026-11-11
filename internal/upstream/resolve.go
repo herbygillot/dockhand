@@ -67,6 +67,14 @@ func (s *Service) resolve(ctx context.Context, port macports.PortInfo, requested
 		if s.EvaluateVersion == nil {
 			return model.Release{}, fmt.Errorf("upstream: Portfile version evaluation is required")
 		}
+		// The version the port is at is current (#165).
+		if requested == port.Version || editable.SourceVersion != "" && requested == editable.SourceVersion {
+			release := model.Release{ReleaseSelection: model.ReleaseSelection{Requested: requested, CurrentVersion: port.Version, NoUpdate: true}, Archive: true, Version: port.Version}
+			if requested != port.Version {
+				release.SourceVersion = requested
+			}
+			return classified(release, port.Version), nil
+		}
 		// The request is the source's spelling; the port version is what
 		// the Portfile evaluates from it, the same string for most ports.
 		version, err := s.EvaluateVersion(ctx, requested)
@@ -126,15 +134,22 @@ func (s *Service) resolve(ctx context.Context, port macports.PortInfo, requested
 	if s.EvaluateVersion == nil {
 		return model.Release{}, fmt.Errorf("upstream: Portfile version evaluation is required")
 	}
-	version, err = s.EvaluateVersion(ctx, version)
-	if err != nil {
+	// The release the Portfile is at already is the current one, which the
+	// update says it is, as it does with no version named: evaluating it
+	// found no version input to set, since the literal holds it, and update
+	// nvtop 3.4.0 on 3.4.0 refused as an edit it couldn't make and started
+	// an empty branch (#165).
+	if version == port.Version || spec.SourceVersion != "" && version == spec.SourceVersion {
+		version = port.Version
+	} else if version, err = s.EvaluateVersion(ctx, version); err != nil {
 		return model.Release{}, err
 	}
-
+	release := model.Release{ReleaseSelection: model.ReleaseSelection{Requested: requested, CurrentVersion: port.Version}, Version: version, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: selection.Candidate.Tag, Commit: commits[selection.Candidate.Tag]}
 	if version == port.Version {
-		return model.Release{}, fmt.Errorf("upstream: %s is already at version %s", port.Name, port.Version)
+		release.NoUpdate = true
+		return classified(release, port.Version), nil
 	}
-	return s.ordered(ctx, classified(model.Release{ReleaseSelection: model.ReleaseSelection{Requested: requested, CurrentVersion: port.Version}, Version: version, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: selection.Candidate.Tag, Commit: commits[selection.Candidate.Tag]}, port.Version))
+	return s.ordered(ctx, classified(release, port.Version))
 }
 
 // ordered marks a version the person named that vercmp orders below the
