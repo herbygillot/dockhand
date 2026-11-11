@@ -369,6 +369,7 @@ func Checksums(before, after macports.Snapshot, selected, checksums string) Repo
 		next.Options["checksums"] = checksums
 		normalized.Ports[selected] = next
 	}
+	prediction.leaveFetchless(before, after, selected)
 	report := prediction.Observe(before, normalized)
 	report.After = after
 	report.UnexpectedChanges = append(report.UnexpectedChanges, problems...)
@@ -595,6 +596,7 @@ func scopedVersion(shared bool, before, after macports.Snapshot, selected string
 		next.Revision, next.Dependencies = 0, dependencies
 		prediction.Ports[name] = next
 	}
+	prediction.leaveFetchless(before, after, selected)
 	report := prediction.Observe(before, after)
 	report.UnexpectedChanges = append(report.UnexpectedChanges, problems...)
 	slices.Sort(report.UnexpectedChanges)
@@ -634,6 +636,7 @@ func ScopedChecksumsOf(scope *macports.ReleaseScope, before, after macports.Snap
 		port.Options["checksums"] = checksums
 		prediction.Expect(name, port, name+".checksums")
 	}
+	prediction.leaveFetchless(before, after, slices.Collect(maps.Keys(wanted))...)
 	return prediction.Observe(before, after)
 }
 

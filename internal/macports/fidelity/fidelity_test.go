@@ -443,3 +443,31 @@ func TestDependenciesReadByPortCompareAPathStyleRewriteAsTheSame(t *testing.T) {
 	procedures := snapshot(map[string]macports.PortInfo{"main": port("path:bin/pkg-config:pkgconfig", "options 4 variant-docs 5 procedures 9")})
 	require.Equal(t, model.SubportChanged, SubportChanges("devel/main", DependenciesByPort(&before), DependenciesByPort(&procedures), nil)[0].Kind, "a procedure's code still compared")
 }
+
+// An obsolete stub with a version of its own, which fetches nothing,
+// inherits the port's fetch fields, which move with its release: update
+// netdata refused netdata-dashboard's distname, git.branch, and
+// master_sites, and checksums its checksums (#169). A sibling that still
+// fetches keeps its refusal.
+func TestAFetchlessSiblingsFetchFieldsMoveWithTheRelease(t *testing.T) {
+	stub := func(version, distfiles string) macports.PortInfo {
+		return macports.PortInfo{Name: "netdata-dashboard", Version: "1.0", Options: map[string]string{"replaced_by": "netdata", "distfiles": distfiles,
+			"distname": "netdata-v" + version, "git.branch": "v" + version, "master_sites": "https://github.com/netdata/netdata/releases/download/v" + version, "checksums": "sha256 " + version}}
+	}
+	family := func(version, distfiles string) macports.Snapshot {
+		return snapshot(map[string]macports.PortInfo{
+			"netdata":           {Name: "netdata", Version: version, Options: map[string]string{"distfiles": "netdata-v" + version + ".tar.gz", "checksums": "sha256 " + version, "git.branch": "v" + version}},
+			"netdata-dashboard": stub(version, distfiles),
+		})
+	}
+	report := ScopedVersion(false, family("2.0", "{}"), family("2.1", "{}"), "netdata", model.Release{Version: "2.1"}, "sha256 2.1")
+	require.Empty(t, report.UnexpectedChanges)
+	require.Empty(t, Checksums(family("2.1", "{}"), family("2.1", "{}"), "netdata", "sha256 2.1").UnexpectedChanges)
+	moved := family("2.1", "{}")
+	before := family("2.1", "{}")
+	before.Ports["netdata-dashboard"] = stub("2.0", "{}")
+	require.Empty(t, Checksums(before, moved, "netdata", "sha256 2.1").UnexpectedChanges)
+
+	fetching := ScopedVersion(false, family("2.0", "dashboard.tar.gz"), family("2.1", "dashboard.tar.gz"), "netdata", model.Release{Version: "2.1"}, "sha256 2.1")
+	require.NotEmpty(t, fetching.UnexpectedChanges, "one that still fetches keeps its refusal")
+}
