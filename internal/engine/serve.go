@@ -1346,7 +1346,9 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 		// what it opened may be uncounted (#118).
 		if err != nil {
 			pass.say(ctx, fmt.Sprintf("serve: submitting %s: %v", name, err))
-			if submitted.PullRequest.Ref.Number != 0 {
+			// One created and then lost, its readback failing too, has no
+			// number, and opened all the same.
+			if submitted.PullRequest.Ref.Number != 0 || submitted.Created {
 				return
 			}
 			continue

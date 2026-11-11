@@ -13,6 +13,8 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/coord"
+	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -302,5 +304,48 @@ func TestServesDailyLimitSurvivesAFailedCount(t *testing.T) {
 	s := newServer(e, ServeOptions{SubmitLimit: 1, Now: e.now, Say: func(line string) { said = append(said, line) }})
 	(&passingSubmitter{s: s}).maybe(t.Context())
 	e.Store = kept
+	require.Len(t, g.PRs, 1, "%q", said)
+}
+
+// findFailsOnce is a forge whose first Find after a pull request opened
+// fails, as the readback after a lost create did.
+type findFailsOnce struct {
+	*forgetest.GitHub
+	failed bool
+}
+
+func (g *findFailsOnce) Find(ctx context.Context, query forge.PullRequestQuery) (forge.PullRequestObservation, error) {
+	if !g.failed && len(g.PRs) > 0 {
+		g.failed = true
+		return forge.PullRequestObservation{}, errors.New("GitHub didn't answer")
+	}
+	return g.GitHub.Find(ctx, query)
+}
+
+// A serve submission whose create GitHub took, its reply lost and the
+// readback failing too, has no pull request number, and stops the pass
+// all the same: it continued, and opened a second over a limit of one
+// (#118's remainder, architecture's check of 2026-11-10).
+func TestServesDailyLimitSurvivesALostCreate(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	g := f.withFork(t, e)
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}})
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
+	where := Where{Environments: []model.Environment{{Provider: "command"}}}
+	release := &model.Release{ReleaseSelection: model.ReleaseSelection{Requested: "1.8.1", CurrentVersion: "1.7.1"}, Version: "1.8.1", Forge: "github", Tag: "v1.8.1"}
+	for _, name := range []string{"first-auto-update", "second-auto-update"} {
+		prepared := e.ship(t.Context(), shipTarget{Port: "jq", Version: "1.8.1", Release: release, Name: name}, shipOptions{Origin: model.OriginServe, To: ShipCheck, Where: where, Answered: model.AnsweredNobody})
+		require.Empty(t, prepared.Problem)
+		run, err := e.Drive(t.Context(), session(t, e), prepared.Run.ID)
+		require.NoError(t, err)
+		require.Equal(t, model.RunPassed, run.State)
+	}
+	g.CreateFails, g.Lost = true, true
+	e.Forge = &findFailsOnce{GitHub: g}
+	var said []string
+	s := newServer(e, ServeOptions{SubmitLimit: 1, Now: e.now, Say: func(line string) { said = append(said, line) }})
+	(&passingSubmitter{s: s}).maybe(t.Context())
 	require.Len(t, g.PRs, 1, "%q", said)
 }
