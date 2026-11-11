@@ -270,6 +270,13 @@ dh_bg_wait() {
 	return "$status"
 }
 
+# SERVE_LINE is the start of a line serve writes, for an extended regular
+# expression: "serve: ", after the RFC 3339 time each line starts with
+# where serve's output isn't a terminal, as its launchd agent's log
+# (0a3ea46e): "2026-11-01T08:25:16-05:00 serve: …". Rows anchored on
+# "^serve: " stopped matching serve.log in rc4, and D-C2 false-failed.
+SERVE_LINE='^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(Z|[+-][0-9]{2}:[0-9]{2}) )?serve: '
+
 # wait_for_line waits until a file has a line matching a pattern, for up
 # to some seconds; it fails where none comes.
 #

@@ -51,9 +51,9 @@ teardown() {
 	"$DH_BIN" serve --uninstall >/dev/null 2>&1 || :
 }
 assert() {
-	[ "$(grep -c '^serve: no GitHub credentials are available' "$ROW_DIR/serve.log")" = 1 ] ||
-		{ row_fail "serve didn't say once that it had no GitHub login: $(grep -c '^serve: no GitHub credentials are available' "$ROW_DIR/serve.log") times"; return; }
-	grep -q '^serve: logged in again as ' "$ROW_DIR/serve.log" ||
+	[ "$(grep -cE "${SERVE_LINE}no GitHub credentials are available" "$ROW_DIR/serve.log")" = 1 ] ||
+		{ row_fail "serve didn't say once that it had no GitHub login: $(grep -cE "${SERVE_LINE}no GitHub credentials are available" "$ROW_DIR/serve.log") times"; return; }
+	grep -qE "${SERVE_LINE}logged in again as " "$ROW_DIR/serve.log" ||
 		{ row_fail "serve didn't say its login was back"; return; }
 	grep -qE "#[0-9]+ is closed" "$ROW_DIR/serve.log" ||
 		{ row_fail "serve didn't say the pull request closed while dockhand was logged out: $(tail -3 "$ROW_DIR/serve.log" | tr '\n' ';')"; return; }

@@ -54,9 +54,9 @@ assert() {
 		{ row_fail "status failed after the upgrade: the database may be stuck"; return; }
 	# serve's words since 4a33af6d, "upgrade detected", or before them; the
 	# row read rc1's passing upgrade as a fail (the M1's rc1 run).
-	grep -qE '^serve: (upgrade detected|dockhand was upgraded)' "$ROW_DIR/serve.log" ||
+	grep -qE "${SERVE_LINE}(upgrade detected|dockhand was upgraded)" "$ROW_DIR/serve.log" ||
 		{ row_fail "serve's log says nothing of the upgrade: $(tail -3 "$ROW_DIR/serve.log" | tr '\n' ';')"; return; }
-	grep -q '^serve: stopped for the upgrade' "$ROW_DIR/serve.log" ||
+	grep -qE "${SERVE_LINE}stopped for the upgrade" "$ROW_DIR/serve.log" ||
 		{ row_fail "serve noticed the upgrade but didn't stop for it"; return; }
 	if [ ! -s "$ROW_DIR/pid.after" ] || cmp -s "$ROW_DIR/pid.before" "$ROW_DIR/pid.after"; then
 		row_fail "no new serve leads after the upgrade: pid $(cat "$ROW_DIR/pid.before") before, $(cat "$ROW_DIR/pid.after" 2>/dev/null) after"

@@ -173,4 +173,14 @@ if picked=$(grep -nE "branch --list 'dockhand/\*'.*\| *head" "$here"/rows/*.sh);
 else
 	echo "selftest: no row takes the first dockhand/* branch for its own"
 fi
+# A serve line is matched through SERVE_LINE, which allows the time serve
+# starts each line with where its output isn't a terminal (0a3ea46e): rows
+# anchored on "^serve: " missed every line of serve.log in rc4.
+if anchored=$(grep -nE "\^serve:" "$here"/rows/*.sh); then
+	echo "selftest: rows anchor serve's lines on ^serve: rather than SERVE_LINE:"
+	printf '%s\n' "$anchored"
+	fail=1
+else
+	echo "selftest: rows match serve's lines through SERVE_LINE"
+fi
 exit "$fail"
