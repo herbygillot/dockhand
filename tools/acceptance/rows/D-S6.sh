@@ -8,17 +8,19 @@ act() {
 	# At the default level, as an agent reads it: off a terminal a
 	# check says each step (34fa8f65), where rc5 needed -v (the docs
 	# dig's I29).
-	dh_bg check -p "$(port)"
+	# --fresh for both, so each builds: rc4's two checks reused
+	# check-1023, and nothing overlapped.
+	dh_bg check -p "$(port)" --fresh
 	DS6_FIRST=$DH_BG_PID
 	DS6_FIRST_LOG=$DH_BG_LOG
 	# The overlap is shown only where the first check was building, and
 	# still was, when each of the others started: a readiness wait that
 	# timed out was ignored, and the two could run one after the other
 	# (Codex's cold read at 2cdaf571, #232).
-	if wait_for_line "$DH_BG_LOG" 'running here|building' 600 && kill -0 "$DS6_FIRST" 2>/dev/null; then
+	if wait_for_line "$DH_BG_LOG" 'building in' 600 && kill -0 "$DS6_FIRST" 2>/dev/null; then
 		DS6_OVERLAP=1
 	fi
-	dh_json check -p "$(port)" </dev/null || :
+	dh_json check -p "$(port)" --fresh </dev/null || :
 	kill -0 "$DS6_FIRST" 2>/dev/null || DS6_OVERLAP=""
 	dh_json tidy -p "$(port)" -y </dev/null || :
 	DH_BG_PID=$DS6_FIRST DH_BG_LOG=$DS6_FIRST_LOG dh_bg_wait || :

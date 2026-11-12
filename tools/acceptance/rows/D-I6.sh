@@ -19,9 +19,23 @@ di6_worker() {
 		jq -r --arg run "$DI6_RUN" '.result.processes[]? | select(.runs | index($run)) | .pid' 2>/dev/null | head -1
 }
 
+# The row's own worker must be the one working the check: where dhtest's
+# serve agent is loaded, it would take the check, and rc4's kill hit an
+# idle process. The agent is set aside for the row and put back after.
+setup() {
+	if launchctl list 2>/dev/null | awk '$3 == "io.github.herbygillot.dockhand.serve"' | grep -q .; then
+		"$DH_BIN" serve --uninstall >>"$ROW_DIR/out.log" 2>&1 || :
+		touch "$ROW_DIR/agent-was-loaded"
+	fi
+	return 0
+}
+teardown() {
+	[ ! -f "$ROW_DIR/agent-was-loaded" ] || "$DH_BIN" serve --install >>"$ROW_DIR/out.log" 2>&1 || :
+	return 0
+}
 act() {
 	dh_setup update "$(port)" --new || return 0
-	dh_json check -p "$(port)" -d || return 0
+	dh_json check -p "$(port)" -d --fresh || return 0
 	DI6_RUN=$(jq -r '.result.run.name // empty' "$ROW_DIR/json/1.json")
 	[ -n "$DI6_RUN" ] || return 0
 	local waited=0 pid=""
@@ -32,8 +46,22 @@ act() {
 		waited=$((waited + 2))
 	done
 	[ -n "$pid" ] || { row_result "not exercised" "no dockhand was working $DI6_RUN within 900s, so none could be killed mid-check"; return 0; }
-	# Some building first, so the kill falls inside the check.
-	sleep 10
+	# The kill falls inside a build: status says the run is building
+	# before it's sent (rc4's evidence read: a kill timed by a sleep hit
+	# an idle process).
+	local building=""
+	waited=0
+	while [ "$waited" -lt 900 ]; do
+		if "$DH_BIN" --json status --all 2>/dev/null | jq -e --arg run "$DI6_RUN" '.result.queue[]? | select(.name == $run and ((.progress // "") | test("building in")))' >/dev/null 2>&1; then
+			building=1
+			break
+		fi
+		sleep 2
+		waited=$((waited + 2))
+	done
+	[ -n "$building" ] || { row_result "not exercised" "$DI6_RUN never said it was building in 900s, so no kill fell inside a build"; return 0; }
+	pid=$(di6_worker)
+	[ -n "$pid" ] || { row_result "not exercised" "no dockhand was working $DI6_RUN once it was building"; return 0; }
 	printf '%s\n' "$pid" >"$ROW_DIR/killed.pid"
 	printf '# killing %s, the dockhand working %s\n' "$pid" "$DI6_RUN" >>"$ROW_DIR/out.log"
 	kill -9 "$pid" 2>/dev/null && echo killed >"$ROW_DIR/killed"

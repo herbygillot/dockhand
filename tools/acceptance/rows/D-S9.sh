@@ -9,8 +9,12 @@ act() {
 	# At the default level, as an agent reads it: off a terminal a
 	# check says each step (34fa8f65), where rc5 needed -v (the docs
 	# dig's I29).
-	dh_bg check -p "$(port)"
-	wait_for_line "$DH_BG_LOG" 'building in' 900 || :
+	# --fresh, so the check builds through the person's gc and fetch, and
+	# they run only once it is building: rc4's check reused results.
+	dh_bg check -p "$(port)" --fresh
+	if wait_for_line "$DH_BG_LOG" 'building in' 900 && kill -0 "$DH_BG_PID" 2>/dev/null; then
+		DS9_BUILDING=1
+	fi
 	git -C "$MACPORTS_TREE" gc -q --prune=now 2>>"$ROW_DIR/git.log" || :
 	# The prune is the row's own, the person's: the remote-tracking refs it
 	# removes for fork branches gone are no work dockhand lost (the rc6
@@ -30,6 +34,7 @@ act() {
 	dh_json status $(run_name ds9-gone) || :
 }
 assert() {
+	[ -n "${DS9_BUILDING:-}" ] || { row_result "not exercised" "the check wasn't building when the person's gc and fetch ran"; return; }
 	case "$(cat "$ROW_DIR/ds9.check" 2>/dev/null)" in
 	0 | 2) ;;
 	*) row_fail "the check under the person's gc and fetch ended $(cat "$ROW_DIR/ds9.check" 2>/dev/null)"; return ;;
