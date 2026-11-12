@@ -229,6 +229,9 @@ type Dependencies struct {
 	// (engine.Options), unset but in its tests (#129).
 	GitHook   func(ctx context.Context, args []string, run func() error) error
 	WrapStore func(store.Store) store.Store
+	// OtherDockhands stands in for this Mac's other dockhand processes,
+	// which a migration waits on (engine.Options.OtherDockhands).
+	OtherDockhands func() ([]int, error)
 }
 
 // LookupNamed is Lookup with the programs Settings resolved as named ahead
@@ -371,7 +374,9 @@ func Settings(ctx context.Context, options Options, dependencies Dependencies) (
 		Database:  database,
 		GitHook:   dependencies.GitHook,
 		WrapStore: dependencies.WrapStore,
-		Worktrees: file.Worktrees,
+		// A test's world counts its own dockhands, not this Mac's.
+		OtherDockhands: dependencies.OtherDockhands,
+		Worktrees:      file.Worktrees,
 		// holds.majors = "allow" lets bump and serve move a major version.
 		AllowMajors: !file.Holds.HoldMajors(),
 		AllowHolds:  file.Holds.Allow,

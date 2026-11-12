@@ -68,6 +68,11 @@ type Options struct {
 	// reads the wrap. Nil in production.
 	GitHook   func(ctx context.Context, args []string, run func() error) error
 	WrapStore func(store.Store) store.Store
+	// OtherDockhands are the other dockhand processes on this Mac, which a
+	// migration that waits for quiet waits on; this Mac's own, by name
+	// (otherDockhands), where nil. A test's own world counts none, so it
+	// doesn't read the person's running dockhands as its own.
+	OtherDockhands func() ([]int, error)
 	// Database is the store's path.
 	Database string
 	// Worktrees is the directory managed worktrees live in; when empty,
@@ -563,7 +568,11 @@ func otherDockhands() ([]int, error) {
 // migration's refusals, and this build, which a release's database is
 // refused to unasked where it isn't one.
 func (o Options) storeOptions() sqlite.Options {
-	return sqlite.Options{MigrateUnderLive: o.MigrateUnderLive, MigrateRelease: o.MigrateRelease || o.NamedDatabase, Build: buildinfo.Current().String(), LiveWithin: coord.DefaultHungAfter, Heartbeat: coord.DefaultHeartbeat, Quiet: otherDockhands}
+	quiet := o.OtherDockhands
+	if quiet == nil {
+		quiet = otherDockhands
+	}
+	return sqlite.Options{MigrateUnderLive: o.MigrateUnderLive, MigrateRelease: o.MigrateRelease || o.NamedDatabase, Build: buildinfo.Current().String(), LiveWithin: coord.DefaultHungAfter, Heartbeat: coord.DefaultHeartbeat, Quiet: quiet}
 }
 
 // ReleaseUnderMigrationError is a migration Open refused, since a release

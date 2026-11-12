@@ -47,7 +47,9 @@ func standingOf(t testing.TB) *standing {
 	if found, ok := standIns.Load(t.Name()); ok {
 		return found.(*standing)
 	}
-	made := &standing{Deps: compose.Dependencies{GitHubCLI: SignedIn{}}, Host: testHost(), Env: map[string]string{}}
+	// The person's own dockhands running on this Mac aren't the test's: a
+	// migration that waits for quiet counts none (#129's gate met two).
+	made := &standing{Deps: compose.Dependencies{GitHubCLI: SignedIn{}, OtherDockhands: func() ([]int, error) { return nil, nil }}, Host: testHost(), Env: map[string]string{}}
 	if parent, ok := parentStanding(t.Name()); ok {
 		mac := *parent.Host
 		made = &standing{Deps: parent.Deps, Host: &mac, Env: maps.Clone(parent.Env), Dir: parent.Dir}
