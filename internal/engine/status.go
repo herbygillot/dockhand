@@ -939,14 +939,32 @@ func (s BuildSelection) Stands(execution model.ExecutionID) bool {
 // SelectRequest is what a command names: a check, an attempt's ID or a
 // provider run's reference (Name); else a branch (Branch), whose latest
 // check it means; else nothing, the branch checked out here; with the
-// port, the release and the phase it asks for.
+// port, the release and the phase it asks for. Else is what a Name that
+// is none of those is taken for, so a command's lone argument is resolved
+// once, here (the confirmation of #193's fixes, A4).
 type SelectRequest struct {
 	Name    string
+	Else    NameElse
 	Branch  *model.Branch
 	Port    string
 	Release string
 	Phase   model.Step
 }
+
+// NameElse is what a name that is no check, attempt or provider run is
+// taken for (SelectRequest.Else).
+type NameElse int
+
+const (
+	// ElseNothing refuses it, as neither.
+	ElseNothing NameElse = iota
+	// ElseBranch takes it for a branch's name, whose latest check it
+	// means: artifacts' argument.
+	ElseBranch
+	// ElsePort takes it for a port of the latest check of the branch
+	// checked out here: logs' lone argument.
+	ElsePort
+)
 
 // SelectBuild resolves what a command names once, in one place
 // (docs/designs/check-lifecycle.md, "Selection"; Codex's review of #193,
@@ -958,7 +976,27 @@ func (e *Engine) SelectBuild(ctx context.Context, request SelectRequest) (BuildS
 	var selection BuildSelection
 	var err error
 	if request.Name != "" {
-		if selection, err = e.selectNamed(ctx, request.Name); err != nil {
+		selection, err = e.selectNamed(ctx, request.Name)
+		if errors.Is(err, errNotABuild) && request.Else != ElseNothing {
+			switch request.Else {
+			case ElseBranch:
+				found, err := e.Select(ctx, Selector{Branch: request.Name, Policy: SelectExisting}, WorkNone)
+				if err != nil {
+					return selection, err
+				}
+				request.Branch = &found.Branch
+			case ElsePort:
+				request.Port = request.Name
+			}
+			lone := request.Else == ElsePort
+			request.Name, request.Else = "", ElseNothing
+			selection, err = e.SelectBuild(ctx, request)
+			if unbuilt := (*UnbuiltPortError)(nil); lone && errors.As(err, &unbuilt) {
+				unbuilt.Lone = true
+			}
+			return selection, err
+		}
+		if err != nil {
 			return selection, err
 		}
 	} else {
@@ -976,7 +1014,7 @@ func (e *Engine) SelectBuild(ctx context.Context, request SelectRequest) (BuildS
 			return selection, err
 		}
 		if !ok {
-			return selection, fmt.Errorf("%s has no check yet: dockhand check -b %s", branch.ShortName(), branch.ShortName())
+			return selection, &NoCheckError{Branch: *branch}
 		}
 		selection.Run = run
 	}
@@ -997,16 +1035,40 @@ func (e *Engine) SelectBuild(ctx context.Context, request SelectRequest) (BuildS
 	return selection, nil
 }
 
+// errNotABuild marks a name that is no check, attempt or provider run,
+// which SelectRequest.Else may take for something else. It says nothing
+// of its own.
+var errNotABuild = notABuild{}
+
+type notABuild struct{}
+
+func (notABuild) Error() string { return "" }
+
+// NoCheckError is a branch named, or checked out here, that has no check
+// yet: logs says there's no log of a port it names.
+type NoCheckError struct{ Branch model.Branch }
+
+func (err *NoCheckError) Error() string {
+	return fmt.Sprintf("%s has no check yet: dockhand check -b %s", err.Branch.ShortName(), err.Branch.ShortName())
+}
+
 // UnbuiltPortError is a port named of a check that doesn't build it,
 // refused by name (SelectBuild).
 type UnbuiltPortError struct {
 	Run   model.Run
 	Port  string
 	Built []string
+	// Lone is a lone name taken for a port (ElsePort), which was no check
+	// or provider run either, as it says.
+	Lone bool
 }
 
 func (u *UnbuiltPortError) Error() string {
-	return fmt.Sprintf("%s builds no port named %s; it builds %s", u.Run.Name(), u.Port, prose.And(u.Built))
+	unbuilt := fmt.Sprintf("%s builds no port named %s; it builds %s", u.Run.Name(), u.Port, prose.And(u.Built))
+	if u.Lone {
+		return fmt.Sprintf("%s is neither a check, such as check-42, nor a provider run, such as tart_7y62p4sigena6xlr or a workflow run's URL, and %s", u.Port, unbuilt)
+	}
+	return unbuilt
 }
 
 // selectNamed resolves a name: a check, check-42; one attempt, by its ID;
@@ -1018,7 +1080,7 @@ func (e *Engine) selectNamed(ctx context.Context, name string) (BuildSelection, 
 	}
 	executions, runErr := e.executionsNamed(ctx, name)
 	if runErr != nil {
-		return BuildSelection{}, fmt.Errorf("%s is neither a check, such as check-42, nor a provider run, such as tart_7y62p4sigena6xlr or a workflow run's URL", name)
+		return BuildSelection{}, fmt.Errorf("%s is neither a check, such as check-42, nor a provider run, such as tart_7y62p4sigena6xlr or a workflow run's URL%w", name, errNotABuild)
 	}
 	if run, err = e.Run(ctx, executions[0].Run); err != nil {
 		return BuildSelection{}, err

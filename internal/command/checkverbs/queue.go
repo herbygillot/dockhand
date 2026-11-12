@@ -207,6 +207,11 @@ provider supports it, then prints any remaining output when the build ends.`,
 			}
 			if len(args) == 1 {
 				request.Name = args[0]
+				// Not a check or a provider run: a port, of the latest check
+				// of the branch checked out here.
+				if port == "" && !engine.IsCheckName(args[0]) {
+					request.Else = engine.ElsePort
+				}
 			} else if where.Explicit() {
 				branch, err := where.Resolve(ctx, e, streams)
 				if err != nil {
@@ -215,21 +220,14 @@ provider supports it, then prints any remaining output when the build ends.`,
 				request.Branch = &branch
 			}
 			selection, err := e.SelectBuild(ctx, request)
-			if err != nil && len(args) == 1 && port == "" && !engine.IsCheckName(args[0]) && !errors.As(err, new(*engine.UnbuiltPortError)) {
-				// Not a check or a provider run: a port, in the latest check
-				// of the branch checked out here, where there's one.
-				if latest, ok, unchecked := latestLogging(ctx, e, args[0]); ok {
-					selection, err = e.SelectBuild(ctx, engine.SelectRequest{Port: args[0], Phase: model.Step(phase)})
-					if err == nil && selection.Run.ID != latest.ID {
-						selection.Run = latest
-					}
-				} else if unchecked != "" {
-					err = fmt.Errorf("%s has no check yet, so no log of %s: dockhand check runs one", unchecked, args[0])
-				} else {
-					err = fmt.Errorf("%w; for a port's log outside its branch's worktree, name its check too: logs check-42 %s", err, args[0])
-				}
-			}
-			if errors.Is(err, engine.ErrNoBranch) {
+			var unchecked *engine.NoCheckError
+			switch {
+			case request.Else == engine.ElsePort && errors.As(err, &unchecked):
+				err = fmt.Errorf("%s has no check yet, so no log of %s: dockhand check runs one", unchecked.Branch.ShortName(), args[0])
+			case request.Else == engine.ElsePort && errors.Is(err, engine.ErrNoBranch):
+				// A port named outside any branch's worktree.
+				err = fmt.Errorf("%s is neither a check, such as check-42, nor a provider run, such as tart_7y62p4sigena6xlr or a workflow run's URL; for a port's log outside its branch's worktree, name its check too: logs check-42 %s", args[0], args[0])
+			case errors.Is(err, engine.ErrNoBranch):
 				err = errors.New("name a check, such as check-42, a provider run, or a branch with -b or -p; in a branch's worktree, logs shows the branch's latest check")
 			}
 			if err != nil {
@@ -442,30 +440,6 @@ func stepNames(steps []model.Step) string {
 		names[i] = string(step)
 	}
 	return strings.Join(names, ", ")
-}
-
-// latestLogging is the latest check of the branch checked out here, where
-// it recorded a log for port. unchecked is that branch where it has no
-// check yet, for logs to say so rather than to name a check "outside its
-// branch's worktree" (the rc5 rerun's A10).
-func latestLogging(ctx context.Context, e *engine.Engine, port string) (run model.Run, ok bool, unchecked string) {
-	branch, err := e.Current(ctx)
-	if err != nil {
-		return model.Run{}, false, ""
-	}
-	run, found, err := e.LatestCheck(ctx, branch.ID)
-	if err != nil {
-		return model.Run{}, false, ""
-	}
-	if !found {
-		return model.Run{}, false, branch.ShortName()
-	}
-	logs, err := e.Logs(ctx, run.ID)
-	if err != nil {
-		return model.Run{}, false, ""
-	}
-	_, _, ok = logs.ForPort(port)
-	return run, ok, ""
 }
 
 // stoppedRun reports whether a run recorded as running stopped when the

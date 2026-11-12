@@ -195,4 +195,15 @@ func TestAPortTheCheckDoesntBuildIsRefusedByName(t *testing.T) {
 	require.NoError(t, err)
 	_, _, err = cmdtest.Dockhand(t, "logs", run.Name(), "never-built-port")
 	require.EqualError(t, err, run.Name()+" builds no port named never-built-port; it builds jq")
+
+	// A port named alone, in the branch's worktree, is resolved by the
+	// same one selection: refused by the check it means, where it was
+	// said to be neither a check nor a provider run, to be named
+	// "outside its branch's worktree" (the confirmation of #193's fixes,
+	// A4); and a port the running check builds and hasn't logged yet is
+	// that check's, where it was refused the same way.
+	_, _, err = cmdtest.Dockhand(t, "logs", "never-built-port")
+	require.EqualError(t, err, "never-built-port is neither a check, such as check-42, nor a provider run, such as tart_7y62p4sigena6xlr or a workflow run's URL, and "+run.Name()+" builds no port named never-built-port; it builds jq")
+	_, _, err = cmdtest.Dockhand(t, "logs", "jq")
+	require.EqualError(t, err, run.Name()+" is running and hasn't recorded a log for jq yet; dockhand wait "+run.Name()+" follows it")
 }

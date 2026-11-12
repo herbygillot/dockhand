@@ -49,18 +49,14 @@ branch's worktree, lists that branch's latest check.`,
 			switch {
 			case check && where.Explicit():
 				return fmt.Errorf("name a check or a branch, not both")
-			case check:
-				request.Name = args[0]
+			case len(args) == 1 && where.Explicit():
+				return fmt.Errorf("name a branch once, as the argument or with -b, -p, or --pr")
 			case len(args) == 1:
-				if selection, err := e.SelectBuild(ctx, engine.SelectRequest{Name: args[0]}); err == nil && selection.Kind != engine.SelectedCheck {
-					return fmt.Errorf("artifacts lists a check's passed builds; %s is one %s of %s. Run dockhand artifacts %s", args[0], selection.Kind, selection.Run.Name(), selection.Run.Name())
-				}
-				if where.Explicit() {
-					return fmt.Errorf("name a branch once, as the argument or with -b, -p, or --pr")
-				}
-				where.Branch = args[0]
-			}
-			if request.Name == "" && where.Explicit() {
+				// A check, an attempt or a provider run, refused below, or
+				// else a branch: resolved once (the confirmation of #193's
+				// fixes, A4).
+				request.Name, request.Else = args[0], engine.ElseBranch
+			case where.Explicit():
 				branch, err := where.Resolve(ctx, e, streams)
 				if err != nil {
 					return err
@@ -68,11 +64,23 @@ branch's worktree, lists that branch's latest check.`,
 				request.Branch = &branch
 			}
 			selection, err := e.SelectBuild(ctx, request)
-			if errors.Is(err, engine.ErrNoBranch) {
+			if errors.Is(err, engine.ErrNoBranch) && request.Name == "" {
 				return errors.New("name a branch or a check, or run this in a branch's worktree")
 			}
 			if err != nil {
 				return err
+			}
+			switch selection.Kind {
+			case engine.SelectedAttempt, engine.SelectedProviderRun:
+				return fmt.Errorf("artifacts lists a check's passed builds; %s is one %s of %s. Run dockhand artifacts %s", args[0], selection.Kind, selection.Run.Name(), selection.Run.Name())
+			case engine.SelectedBranch:
+				// A branch named, as -b names one, says which where it isn't
+				// the one checked out here.
+				if here, err := e.Current(ctx); err == nil && here.ID != selection.Run.Branch && len(args) == 1 {
+					if named, err := e.Branch(ctx, selection.Run.Branch); err == nil {
+						fmt.Fprintf(streams.Err, "%s (not %s, checked out here)\n", named.ShortName(), here.ShortName())
+					}
+				}
 			}
 			run := selection.Run
 			artifacts, err := e.Artifacts(ctx, run)
