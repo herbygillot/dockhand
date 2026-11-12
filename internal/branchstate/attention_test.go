@@ -17,8 +17,11 @@ func (words) Environment(e model.Environment) string { return e.Provider }
 func (words) Revision(model.Revision) string         { return "snapshot 1" }
 func (words) Ago(time.Time) string                   { return "1 hour ago" }
 func (words) Remade(evidence.TargetEvidence) string  { return "the image changed" }
-func (words) Unmet(u model.Unmet) string             { return "needs " + string(u.Needs) }
-func (words) CIFailure(f model.CIFailure) string     { return "fetching " + f.File + " on " + f.Check }
+func (words) Refused(r evidence.Refusal) string {
+	return "built by " + r.Check + ", which doesn't count"
+}
+func (words) Unmet(u model.Unmet) string         { return "needs " + string(u.Needs) }
+func (words) CIFailure(f model.CIFailure) string { return "fetching " + f.File + " on " + f.Check }
 func (words) CIPorts(f []model.CIFailure) string {
 	var ports []string
 	for _, failure := range f {
@@ -122,6 +125,11 @@ func TestAnUncheckedTargetsBlockSaysWhere(t *testing.T) {
 		{Environment: model.Environment{Provider: "macOS 13"}, PlannedIn: "check-4"},
 	}}
 	require.Equal(t, "ufraw has changed, but these files haven't been built on macOS 26; macOS 13, planned by check-4, but the check stopped before building it. Run dockhand check, or share the branch with --draft", block.Words(words{}))
+
+	// One whose check built it, and whose result doesn't count, says why,
+	// never that the check stopped (#192).
+	block.Unbuilt[1].Refused = &evidence.Refusal{Check: "check-4", Kind: evidence.RefusedMoved}
+	require.Equal(t, "ufraw has changed, but these files haven't been built on macOS 26; macOS 13: built by check-4, which doesn't count. Run dockhand check, or share the branch with --draft", block.Words(words{}))
 }
 
 // A pull request whose CI failed fetching an archive says so, and runs

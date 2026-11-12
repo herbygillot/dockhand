@@ -159,6 +159,10 @@ func (b Block) Words(v Vocabulary) string {
 				// runner took, is checked elsewhere or again later (rc8's
 				// GitHub rows).
 				place += ": " + u.Unrun + "; check that release with Tart, local, or a command provider, or try again later"
+			case u.Refused != nil:
+				// An earlier check built it, and its result doesn't count:
+				// said as status's cell says it, never as a stop (#192).
+				place += ": " + v.Refused(*u.Refused)
 			case u.PlannedIn != "":
 				place += ", planned by " + u.PlannedIn + ", but the check stopped before building it"
 			case u.Entered:
@@ -213,6 +217,9 @@ type Place struct {
 	// isn't evidence (evidence.CellEntered).
 	Entered bool
 	Run     string
+	// Refused is why an earlier check's result there doesn't count
+	// (evidence.Cell.Refused).
+	Refused *evidence.Refusal
 }
 
 // unbuilt are where a target wasn't built, as its cells say.
@@ -221,7 +228,7 @@ func unbuilt(target evidence.TargetEvidence) []Place {
 	for _, cell := range target.Outcomes {
 		switch cell.Kind {
 		case evidence.CellNotRun:
-			where = append(where, Place{Environment: cell.Environment, PlannedIn: cell.PlannedIn, Unrun: cell.Unrun})
+			where = append(where, Place{Environment: cell.Environment, PlannedIn: cell.PlannedIn, Unrun: cell.Unrun, Refused: cell.Refused})
 		case evidence.CellEntered:
 			where = append(where, Place{Environment: cell.Environment, Entered: true})
 		}

@@ -40,6 +40,7 @@ func TestAResultCountsWhereItsCheckPlannedTheTarget(t *testing.T) {
 	require.False(t, Counts(recorded, in(arm), "harbor-intel", "origin a", nil, "", false), "excluded there")
 	require.True(t, Counts(recorded, in(tahoeX86), "harbor-intel", "origin a", nil, "", false))
 	require.False(t, Counts(recorded, in(tahoeX86), "harbor-cli", "origin a", nil, "", false), "not planned there: --only left it out")
+	require.Equal(t, &Refusal{Kind: RefusedNotPlanned}, countsRefusal(recorded, in(tahoeX86), "harbor-cli", "origin a", nil, "", false), "and said so (TestATurnedDownResultSaysWhy)")
 	require.False(t, Counts(recorded, in(xcode), "libharbor", "origin a", nil, "", false), "the same release with other tools is another environment")
 
 	// And the environment is still the one it ran in: made from the same
@@ -725,6 +726,121 @@ func TestAnEarlierExtraGitResultIsJudgedAgainstItsOwnPlan(t *testing.T) {
 	for _, te := range judged.Targets {
 		if te.Target.ID == "libharbor" {
 			require.NotEqual(t, CellRecorded, te.Outcomes[0].Kind, "a result that fetched another commit than its own plan named counts for nothing")
+		}
+	}
+}
+
+// Each way an earlier check's result is turned down is kept on the cell it
+// leaves unbuilt (Cell.Refused), with what its words name, so status's
+// cell and submit's hold say why it doesn't count, never that the check
+// stopped before building it, as they said once the source comparison
+// turned results down (#192's change-4 test). One row a refusal; a
+// result its plan didn't build there is Counts' own row.
+func TestATurnedDownResultSaysWhy(t *testing.T) {
+	a, b := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	source := func(commit string) model.GitSource {
+		s := model.GitSource{URL: "https://github.com/ada/harbor", Ref: "v4", Commit: model.ObjectID(commit), ResolvedAt: time.Now()}
+		if commit == "" {
+			s.Unresolved = "the repository couldn't be read"
+		}
+		return s
+	}
+	harbor := func(commit string) map[model.TargetID]model.GitSource {
+		return map[model.TargetID]model.GitSource{"harbor": source(commit)}
+	}
+	target := func(id model.TargetID) model.PlanTarget {
+		return model.PlanTarget{ID: id, Target: model.Target{Name: string(id)}, Kind: model.Substantive, Role: model.Changed}
+	}
+	// checkOf is a check on tahoeArm of harbor, cli built against it, and
+	// app built against cli, with the results and inputs given.
+	checkOf := func(number int, git, tags map[model.TargetID]model.GitSource, results []model.TargetResult, inputs map[string]model.TargetInputs) Check {
+		run := model.Run{ID: model.RunID(fmt.Sprint("run_", number)), Number: number}
+		execution := model.ExecutionID(fmt.Sprint("x", number))
+		for i := range results {
+			results[i].Execution = execution
+		}
+		build := model.EnvironmentPlan{Environment: tahoeArm, Order: []model.TargetID{"harbor", "cli", "app"},
+			Dependencies: map[model.TargetID][]model.TargetID{"cli": {"harbor"}, "app": {"cli"}}, Git: git, Tags: tags}
+		return Check{Run: run, Plan: model.Plan{Targets: []model.PlanTarget{target("harbor"), target("cli"), target("app")}, Environments: []model.Environment{tahoeArm}, Builds: []model.EnvironmentPlan{build}},
+			Executions: []model.GuestExecution{{ID: execution, Run: run.ID, Environment: tahoeArm}},
+			Results:    map[model.ExecutionID][]model.TargetResult{execution: results}, Inputs: inputs}
+	}
+	passed := func(fetched string) ([]model.TargetResult, map[string]model.TargetInputs) {
+		return []model.TargetResult{
+			{Target: "harbor", Outcome: model.OutcomePassed, Inputs: "h", Archive: "sha256:harbor"},
+			{Target: "cli", Outcome: model.OutcomePassed, Inputs: "c", Archive: "sha256:cli"},
+			{Target: "app", Outcome: model.OutcomePassed, Inputs: "p"},
+		}, map[string]model.TargetInputs{
+			"h": {Fetched: model.ObjectID(fetched)},
+			"c": {Active: []model.ActivePort{{Name: "harbor", Archive: "sha256:harbor"}}},
+			"p": {Active: []model.ActivePort{{Name: "cli", Archive: "sha256:cli"}}},
+		}
+	}
+	for _, c := range []struct {
+		name             string
+		then, now        map[model.TargetID]model.GitSource
+		tagged           bool
+		fetched          string
+		results          []model.TargetResult
+		harbor, cli, app *Refusal
+	}{
+		{name: "the Git ref moved", then: harbor(a), now: harbor(b), fetched: a,
+			harbor: &Refusal{Kind: RefusedMoved, Ref: "v4", Then: a, Now: b},
+			cli:    &Refusal{Kind: RefusedDependency, Ref: "v4", Then: a, Now: b, Dependency: "harbor"},
+			app:    &Refusal{Kind: RefusedDependencyRefused, Dependency: "cli"}},
+		{name: "the tag moved", then: harbor(a), now: harbor(b), tagged: true,
+			harbor: &Refusal{Kind: RefusedMoved, Ref: "v4", Then: a, Now: b},
+			cli:    &Refusal{Kind: RefusedDependency, Ref: "v4", Then: a, Now: b, Dependency: "harbor"},
+			app:    &Refusal{Kind: RefusedDependencyRefused, Dependency: "cli"}},
+		{name: "its own check couldn't read the ref", then: harbor(""), now: harbor(""), fetched: a,
+			harbor: &Refusal{Kind: RefusedUnread, Ref: "v4"},
+			cli:    &Refusal{Kind: RefusedDependencyUnshown, Ref: "v4", Dependency: "harbor"},
+			app:    &Refusal{Kind: RefusedDependencyRefused, Dependency: "cli"}},
+		{name: "the newest check couldn't read the ref", then: harbor(a), now: harbor(""), fetched: a,
+			harbor: &Refusal{Kind: RefusedUnreadNow, Ref: "v4", Then: a},
+			cli:    &Refusal{Kind: RefusedDependencyUnshown, Ref: "v4", Dependency: "harbor"},
+			app:    &Refusal{Kind: RefusedDependencyRefused, Dependency: "cli"}},
+		{name: "the build didn't say what it fetched", then: harbor(a), now: harbor(a),
+			harbor: &Refusal{Kind: RefusedUnrecorded, Ref: "v4", Now: a},
+			cli:    &Refusal{Kind: RefusedDependencyUnshown, Ref: "v4", Now: a, Dependency: "harbor"},
+			app:    &Refusal{Kind: RefusedDependencyRefused, Dependency: "cli"}},
+		{name: "its own check found the ref moved", then: harbor(a), now: harbor(b), fetched: b,
+			harbor: &Refusal{Kind: RefusedOwnMove, Ref: "v4", Then: a, Now: b}},
+		{name: "built with Git, fetched another way now", then: harbor(a), now: nil, fetched: a,
+			harbor: &Refusal{Kind: RefusedFetchMode}},
+		{name: "blocked by a result that doesn't count", then: harbor(a), now: harbor(b), fetched: a,
+			results: []model.TargetResult{
+				{Target: "harbor", Outcome: model.OutcomeFailed, Inputs: "h"},
+				{Target: "cli", Outcome: model.OutcomeBlocked},
+				{Target: "app", Outcome: model.OutcomeBlocked},
+			},
+			harbor: &Refusal{Kind: RefusedMoved, Ref: "v4", Then: a, Now: b},
+			cli:    &Refusal{Kind: RefusedBlocked, Dependency: "harbor"},
+			app:    &Refusal{Kind: RefusedBlocked, Dependency: "cli"}},
+	} {
+		results, inputs := passed(c.fetched)
+		if c.results != nil {
+			results = c.results
+		}
+		var earlier, newest Check
+		if c.tagged {
+			earlier, newest = checkOf(1, nil, c.then, results, inputs), checkOf(2, nil, c.now, nil, nil)
+		} else {
+			earlier, newest = checkOf(1, c.then, nil, results, inputs), checkOf(2, c.now, nil, nil, nil)
+		}
+		required := []model.Environment{tahoeArm}
+		judged := Judge(newest, Plan(newest.Plan, []model.Plan{earlier.Plan}, required), []Check{earlier}, Identities{}, required)
+		for id, want := range map[model.TargetID]*Refusal{"harbor": c.harbor, "cli": c.cli, "app": c.app} {
+			i := slices.IndexFunc(judged.Targets, func(t TargetEvidence) bool { return t.Target.ID == id })
+			cell := judged.Targets[i].Outcomes[0]
+			if want == nil {
+				require.Nil(t, cell.Refused, "%s: %s", c.name, id)
+				continue
+			}
+			want.Check = "check-1"
+			require.Equal(t, CellNotRun, cell.Kind, "%s: %s", c.name, id)
+			require.Equal(t, want, cell.Refused, "%s: %s", c.name, id)
+			require.Empty(t, cell.PlannedIn, "%s: %s isn't said as a check that stopped", c.name, id)
 		}
 	}
 }

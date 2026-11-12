@@ -379,7 +379,7 @@ retry, replacement, and cancellation.
 | `failed` | Read the named port's failed phase and log |
 | `blocked` | Fix the changed prerequisite that prevented this target building |
 | `unmet` | Provide the requested environment capability, such as Xcode, or choose a suitable environment explicitly |
-| Not run or interrupted | Determine whether work is still queued, resumable, excluded by plan, or needs another check |
+| Not run or interrupted | Determine whether work is still queued, resumable, excluded by plan, or needs another check; a result that no longer counts says why |
 
 ```sh
 dockhand logs check-12
@@ -438,6 +438,18 @@ source couldn't be read stands for itself alone, never for a later request. A
 result built before a GitHub tag moved, or on a release an earlier check built
 from another commit of the same ref, is built again; on that release, results
 of other ports still count, and the release is still required.
+
+Where an earlier check's result no longer counts, `status` shows the port as
+not run there and submit holds, both saying why in the same words:
+`built by check-1 from v4 at 1a2b3c4, which now names 5d6e7f8, so it doesn't
+count; dockhand check builds it again`. A port built against a dependency whose
+source moved names that dependency: `built by check-1 against libharbor from v4
+at 1a2b3c4, which has moved`. Other reasons are a source that couldn't be read
+when the check was planned (`stands for that check alone`) or can't be read now,
+a Git build that didn't record the commit it fetched, a port fetched with Git
+then and another way now, a dependency whose own result doesn't count, and a
+blocked port whose blocker's result no longer stands. Only a port no check built
+says `planned by check-4, but the check stopped before building it`.
 
 A change that builds nothing differently is carried over: a Portfile edit to
 `maintainers`, `categories`, `description`, `long_description`, `homepage`, or

@@ -194,6 +194,9 @@ type Vocabulary interface {
 	Revision(model.Revision) string
 	Ago(time.Time) string
 	Remade(evidence.TargetEvidence) string
+	// Refused is why an earlier check's result doesn't count
+	// (evidence.Refusal), ending in what to do.
+	Refused(evidence.Refusal) string
 	Holds([]model.Concern) []string
 	Unmet(model.Unmet) string
 	// CIFailure is a classified CI failure, as "fetching

@@ -1,13 +1,49 @@
 package engine
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/checks"
+	"github.com/herbygillot/dockhand/internal/evidence"
 	"github.com/herbygillot/dockhand/internal/model"
 )
+
+// Each way an earlier check's result is turned down has its words, which
+// say what built it and why it doesn't count, and end in what to do:
+// status's cell and submit's hold both read them (architecture's words
+// for #192).
+func TestATurnedDownResultsWordsSayWhy(t *testing.T) {
+	t.Parallel()
+	a, b := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	for _, c := range []struct {
+		refusal Refusal
+		words   string
+	}{
+		{Refusal{Kind: evidence.RefusedMoved, Ref: "v4", Then: a, Now: b}, "built by check-1 from v4 at aaaaaaa, which now names bbbbbbb, so it doesn't count"},
+		{Refusal{Kind: evidence.RefusedMoved, Ref: "v4", Then: a}, "built by check-1 from v4 at aaaaaaa, which has moved since, so it doesn't count"},
+		{Refusal{Kind: evidence.RefusedUnread, Ref: "v4"}, "built by check-1, whose source couldn't be read, so it stands for that check alone"},
+		{Refusal{Kind: evidence.RefusedUnreadNow, Ref: "v4", Then: a}, "built by check-1 from v4 at aaaaaaa, which couldn't be read now to show it still names that commit, so it doesn't count"},
+		{Refusal{Kind: evidence.RefusedUnreadNow, Ref: "v4"}, "built by check-1 from v4, which couldn't be read now to show which commit it names, so it doesn't count"},
+		{Refusal{Kind: evidence.RefusedUnrecorded, Ref: "v4", Now: a}, "built by check-1, whose build didn't say which commit of v4 it fetched, so it doesn't count"},
+		{Refusal{Kind: evidence.RefusedOwnMove, Ref: "v4", Then: a, Now: b}, "built by check-1, which found v4 at bbbbbbb, not the aaaaaaa it planned, so it stands for no check"},
+		{Refusal{Kind: evidence.RefusedFetchMode}, "built by check-1 with Git, and it's fetched another way now, so it doesn't count"},
+		{Refusal{Kind: evidence.RefusedDependency, Ref: "v4", Then: a, Now: b, Dependency: "libharbor"}, "built by check-1 against libharbor from v4 at aaaaaaa, which has moved, so it doesn't count"},
+		{Refusal{Kind: evidence.RefusedDependencyUnshown, Ref: "v4", Now: a, Dependency: "libharbor"}, "built by check-1 against libharbor, which it can't be shown to have had at aaaaaaa, so it doesn't count"},
+		{Refusal{Kind: evidence.RefusedDependencyUnshown, Ref: "v4", Dependency: "libharbor"}, "built by check-1 against libharbor, which it can't be shown to have had as it is now, so it doesn't count"},
+		{Refusal{Kind: evidence.RefusedDependencyRefused, Dependency: "harbor-cli"}, "built by check-1 against harbor-cli's build there, which doesn't count either, so it doesn't count"},
+		{Refusal{Kind: evidence.RefusedBlocked, Dependency: "libharbor"}, "check-1 found it blocked by libharbor, whose result there no longer stands"},
+		{Refusal{Kind: evidence.RefusedNotPlanned}, "check-1's result there doesn't count, since its plan didn't build it there"},
+	} {
+		c.refusal.Check = "check-1"
+		require.Equal(t, c.words+"; dockhand check builds it again", RefusedWords(c.refusal), c.refusal.Kind)
+	}
+	cell := Cell{TargetResult: model.TargetResult{Outcome: model.OutcomeNotRun}, Kind: CellNotRun, Refused: &Refusal{Check: "check-1", Kind: evidence.RefusedFetchMode}}
+	require.Equal(t, "! not run: built by check-1 with Git, and it's fetched another way now, so it doesn't count; dockhand check builds it again", targetWords(model.Plan{}, cell, "", AcceptedFailure{}),
+		"status's cell says it")
+}
 
 // A result reads the same on the terminal and in the pull request, in
 // Design v3 §7's words.

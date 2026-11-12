@@ -120,8 +120,14 @@ type Cell struct {
 	NotReusable string
 	// PlannedIn is the check that planned a target not run in an
 	// environment outside build.default's profile, which asks for it there
-	// only because that check did; empty in the profile's own.
+	// only because that check did; empty in the profile's own, and where
+	// a check's result there was turned down (Refused).
 	PlannedIn string
+	// Refused is why an earlier check's result for a target not run here
+	// doesn't count, as fill found it: that check built it, so its words
+	// say why it no longer stands, never that the check stopped before it
+	// (#192's change-4 test). Nil where no check's result was turned down.
+	Refused *Refusal
 	// Unrun is why the environment's build never ran, in its provider's
 	// words, for a target not run where its execution finished building
 	// nothing: a GitHub job no runner took, "the job never ran: GitHub
@@ -152,6 +158,66 @@ func recorded(environment model.Environment, result model.TargetResult) Cell {
 func noResult(kind CellKind, environment model.Environment, target model.TargetID) Cell {
 	return Cell{TargetResult: model.TargetResult{Target: target, Outcome: model.OutcomeNotRun}, Kind: kind, Environment: environment}
 }
+
+// Refusal is what the judgment found of an earlier check's result that
+// doesn't count (Counts, sourceRefusal, standing), for a cell it leaves
+// unbuilt: status's cell and submit's hold read it alike.
+type Refusal struct {
+	// Check is the earlier check whose result it was.
+	Check string
+	Kind  RefusalKind
+	// Ref is the source's tag or Git ref, Then the commit the result's
+	// build had and Now the one the ref names now, where the kind has
+	// them, either empty where it isn't known; Dependency is the target
+	// whose build or result it rested on, for a dependency's or a
+	// blocker's kind.
+	Ref, Then, Now string
+	Dependency     model.TargetID
+}
+
+// RefusalKind is why an earlier check's result doesn't count.
+type RefusalKind string
+
+const (
+	// RefusedMoved is a result built from a tag or Git ref that names
+	// another commit now.
+	RefusedMoved RefusalKind = "moved"
+	// RefusedUnread is one whose source couldn't be read when it was
+	// planned, so it stands for that check alone.
+	RefusedUnread RefusalKind = "unread"
+	// RefusedUnreadNow is one built from a commit (Then) of a ref that
+	// couldn't be read now, so whether it still names that commit isn't
+	// known.
+	RefusedUnreadNow RefusalKind = "unread-now"
+	// RefusedUnrecorded is a Git-fetched result whose build didn't say
+	// which commit it fetched.
+	RefusedUnrecorded RefusalKind = "unrecorded"
+	// RefusedOwnMove is one whose own check found its source naming
+	// another commit than it planned (Now, not Then): that fetch built
+	// nothing that stands.
+	RefusedOwnMove RefusalKind = "own-move"
+	// RefusedFetchMode is a result built with Git, where the target is
+	// now fetched another way.
+	RefusedFetchMode RefusalKind = "fetch-mode"
+	// RefusedDependency is one built against a dependency whose source
+	// has moved since (Ref, Then, Now).
+	RefusedDependency RefusalKind = "dependency"
+	// RefusedDependencyUnshown is one built against a Git-fetched or
+	// tagged dependency that can't be shown to have been the commit it
+	// names now (Now, where it's known).
+	RefusedDependencyUnshown RefusalKind = "dependency-unshown"
+	// RefusedDependencyRefused is one built against a dependency's build
+	// that doesn't count itself.
+	RefusedDependencyRefused RefusalKind = "dependency-refused"
+	// RefusedBlocked is a blocked result whose blocker's result doesn't
+	// count.
+	RefusedBlocked RefusalKind = "blocked"
+	// RefusedNotPlanned is one its check's plan didn't build there.
+	RefusedNotPlanned RefusalKind = "not-planned"
+	// refusedRemade is one built in an environment made again since,
+	// which fill marks CellRemade.
+	refusedRemade RefusalKind = "remade"
+)
 
 // Reason is why a recorded result didn't wholly pass, in its provider's
 // words, where it said: for a build that failed, or one that passed with
@@ -292,11 +358,12 @@ type Evidence struct {
 
 // readSource is what an earlier result's build read of the sources a
 // newer check expects to fetch with Git: the commit it fetched, where it
-// said, and whether it was built against another source of a Git-fetched
-// target than the newer check expects (reuse.AgainstOtherSources).
+// said, and the dependency through which it was built against another
+// source of a Git-fetched target than the newer check expects, where it
+// was (reuse.AgainstOtherSources).
 type readSource struct {
 	fetched model.ObjectID
-	other   bool
+	against *reuse.Against
 }
 
 // OfNow is Of with the environments' identities as they read now, so the
@@ -567,7 +634,7 @@ func (e *Evidence) outsideProfile(required []model.Environment, checks []Check) 
 		for t := range e.Targets {
 			cell := &e.Targets[t].Outcomes[i]
 			switch {
-			case asked && cell.Kind == CellNotRun:
+			case asked && cell.Kind == CellNotRun && cell.Refused == nil:
 				cell.PlannedIn = planned(environment, e.Targets[t].Target.ID)
 			case !asked && (cell.Kind == CellNotRun || cell.Kind == CellRemade || cell.Kind == CellEntered):
 				skipped := noResult(CellExcluded, environment, e.Targets[t].Target.ID)
@@ -1021,10 +1088,43 @@ func (e Evidence) missing() bool {
 // its test policy: a result keeps the policy of the check that recorded it,
 // and reads under it (decision D1, Evidence.Words).
 func Counts(recorded model.Plan, execution model.GuestExecution, id model.TargetID, now string, git *model.GitSource, fetched model.ObjectID, other bool) bool {
+	return countsRefusal(recorded, execution, id, now, git, fetched, other) == nil
+}
+
+// countsRefusal is Counts' rule, saying which part of it a result fails:
+// nil where it counts. A dependency's kind is said without the dependency,
+// which the caller knows (readSource).
+func countsRefusal(recorded model.Plan, execution model.GuestExecution, id model.TargetID, now string, git *model.GitSource, fetched model.ObjectID, other bool) *Refusal {
 	planned, ok := recorded.In(execution.Environment)
-	own, fetchedWithGit := recorded.GitIn(execution.Environment, id)
-	return ok && planned.Builds(id) && current(execution, now) && (git == nil || execution.ID == "" || git.AgainstFetched(fetched) == model.SourceSame) && !other &&
-		!(fetchedWithGit && own.AgainstFetched(fetched) == model.SourceMoved)
+	switch {
+	case !ok || !planned.Builds(id):
+		return &Refusal{Kind: RefusedNotPlanned}
+	case !current(execution, now):
+		return &Refusal{Kind: refusedRemade}
+	case git != nil && execution.ID != "":
+		switch git.AgainstFetched(fetched) {
+		case model.SourceSame:
+		case model.SourceMoved:
+			return &Refusal{Kind: RefusedMoved, Ref: git.Ref, Then: string(fetched), Now: git.Expected()}
+		default:
+			if fetched == "" && git.Expected() != "" {
+				return &Refusal{Kind: RefusedUnrecorded, Ref: git.Ref, Now: git.Expected()}
+			}
+			// The reading judged against couldn't be resolved: the result's
+			// own check's, where it couldn't either, else the newest's.
+			if own, ok := recorded.GitIn(execution.Environment, id); ok && own.Expected() == "" {
+				return &Refusal{Kind: RefusedUnread, Ref: git.Ref}
+			}
+			return &Refusal{Kind: RefusedUnreadNow, Ref: git.Ref, Then: string(fetched)}
+		}
+	}
+	if other {
+		return &Refusal{Kind: RefusedDependency}
+	}
+	if own, fetchedWithGit := recorded.GitIn(execution.Environment, id); fetchedWithGit && own.AgainstFetched(fetched) == model.SourceMoved {
+		return &Refusal{Kind: RefusedOwnMove, Ref: own.Ref, Then: own.Expected(), Now: string(fetched)}
+	}
+	return nil
 }
 
 // newestReadings is the merged plan with each environment the newest
@@ -1091,30 +1191,40 @@ func shownMoves(checks []Check, readings model.Plan) map[model.TargetID]bool {
 	return shown
 }
 
-// sourceStands reports whether an earlier check's plan fetched a target the
-// way the newest plan does, where the newest builds it there: a tag that
-// named another commit then than now unseats the result, as reuse builds
-// again for it (change 2), and a result built with Git counts for no plan
-// that builds the target another way (change 3). An archive's tag that
-// wasn't known on one side stands, the Portfile's checksums saying what was
-// built, unless another build of the target shows the tag moved
-// (shownMoved); another release's tag stands. A target the newest plan
-// doesn't build there is judged against its own plan alone (Counts).
-func sourceStands(earlier, newest model.Plan, environment model.Environment, id model.TargetID, built, shownMoved bool) bool {
+// sourceRefusal says whether an earlier check's plan fetched a target the
+// way the newest plan does, where the newest builds it there, and if not,
+// how not; nil where the result stands. A tag that named another commit
+// then than now unseats the result, as reuse builds again for it (change
+// 2), and a result built with Git counts for no plan that builds the
+// target another way (change 3). An archive's tag that wasn't known on one
+// side stands, the Portfile's checksums saying what was built, unless
+// another build of the target shows the tag moved (shownMoved); another
+// release's tag stands. A target the newest plan doesn't build there is
+// judged against its own plan alone (Counts).
+func sourceRefusal(earlier, newest model.Plan, environment model.Environment, id model.TargetID, built, shownMoved bool) *Refusal {
 	if !built {
-		return true
+		return nil
 	}
-	switch model.SourceAgainst(earlier.TagIn(environment, id), newest.TagIn(environment, id)) {
+	then, now := earlier.TagIn(environment, id), newest.TagIn(environment, id)
+	switch model.SourceAgainst(then, now) {
 	case model.SourceMoved:
-		return false
+		return &Refusal{Kind: RefusedMoved, Ref: now.Ref, Then: then.Expected(), Now: now.Expected()}
 	case model.SourceUnknown:
-		if shownMoved {
-			return false
+		switch {
+		case !shownMoved:
+		case then.Expected() == "":
+			return &Refusal{Kind: RefusedUnread, Ref: then.Ref}
+		default:
+			// Its tag isn't known now, and another check shows it moved.
+			return &Refusal{Kind: RefusedMoved, Ref: then.Ref, Then: then.Expected()}
 		}
 	}
 	_, earlierGit := earlier.GitIn(environment, id)
 	_, newestGit := newest.GitIn(environment, id)
-	return !earlierGit || newestGit
+	if earlierGit && !newestGit {
+		return &Refusal{Kind: RefusedFetchMode}
+	}
+	return nil
 }
 
 // UnreadIdentities are the environments whose results the evidence rests
@@ -1279,12 +1389,48 @@ func (e *Evidence) readSources(primary model.Plan) {
 				targets = append(targets, reuse.Target{PlanTarget: model.PlanTarget{ID: id}, Git: &source})
 			}
 		}
-		for id := range reuse.AgainstOtherSources(targets, built) {
+		for id, against := range reuse.AgainstOtherSources(targets, built) {
 			read := e.sources[keys[id]]
-			read.other = true
+			read.against = &against
 			e.sources[keys[id]] = read
 		}
 	}
+}
+
+// refuse marks a cell not run with why an earlier check's result there
+// doesn't count: the first check's fill tried, newest first, that had one.
+// A dependency's kind is given the dependency it rested on and how that
+// dependency's source reads then and now (readings).
+func (earlier Evidence) refuse(cell *Cell, why Refusal, against *reuse.Against, readings model.Plan) {
+	if cell.Kind != CellNotRun || cell.Refused != nil {
+		return
+	}
+	why.Check = earlier.Run.Name()
+	if why.Kind == RefusedDependency && against != nil {
+		why.Dependency = against.Dependency
+		then, now := sourceReading(earlier.Plan, cell.Environment, against.Dependency), sourceReading(readings, cell.Environment, against.Dependency)
+		switch {
+		case against.Indirect:
+			why.Kind = RefusedDependencyRefused
+		case model.SourceAgainst(then, now) == model.SourceMoved:
+			why.Ref, why.Then, why.Now = now.Ref, then.Expected(), now.Expected()
+		default:
+			why.Kind = RefusedDependencyUnshown
+			if now != nil {
+				why.Ref, why.Now = now.Ref, now.Expected()
+			}
+		}
+	}
+	cell.Refused = &why
+}
+
+// sourceReading is how a plan reads a target's source in an environment:
+// its Git source, else its GitHub tag; nil where it has neither.
+func sourceReading(plan model.Plan, environment model.Environment, id model.TargetID) *model.GitSource {
+	if source, ok := plan.GitIn(environment, id); ok {
+		return &source
+	}
+	return plan.TagIn(environment, id)
 }
 
 // fill takes an earlier check's results for what this evidence lacks,
@@ -1314,6 +1460,9 @@ func (e *Evidence) fill(earlier Evidence) bool {
 				continue
 			}
 			cell := earlier.Targets[k].Outcomes[j]
+			if cell.Kind != CellRecorded && cell.Kind != CellUnmet {
+				continue
+			}
 			execution, recorded := earlier.Executions[cell.Execution]
 			if !recorded {
 				// An unmet result is the plan's, with no execution behind it.
@@ -1329,10 +1478,15 @@ func (e *Evidence) fill(earlier Evidence) bool {
 			}
 			read := earlier.sources[resultKey(cell.TargetResult)]
 			newest, builds := e.Plan.In(environment)
-			if cell.Kind != CellRecorded && cell.Kind != CellUnmet || !Counts(earlier.Plan, execution, target.Target.ID, e.now[environment].Value, git, read.fetched, read.other) ||
-				cell.Kind == CellRecorded && !sourceStands(earlier.Plan, readings, environment, target.Target.ID, builds && newest.Builds(target.Target.ID), earlier.shown[target.Target.ID]) {
+			why := countsRefusal(earlier.Plan, execution, target.Target.ID, e.now[environment].Value, git, read.fetched, read.against != nil)
+			if why == nil && cell.Kind == CellRecorded {
+				why = sourceRefusal(earlier.Plan, readings, environment, target.Target.ID, builds && newest.Builds(target.Target.ID), earlier.shown[target.Target.ID])
+			}
+			if why != nil {
 				if cell.Kind == CellRecorded && !current(execution, e.now[environment].Value) {
 					target.Outcomes[i].Kind, target.Outcomes[i].Recorded = CellRemade, execution.Identity
+				} else {
+					earlier.refuse(&target.Outcomes[i], *why, read.against, readings)
 				}
 				continue
 			}
@@ -1345,10 +1499,15 @@ func (e *Evidence) fill(earlier Evidence) bool {
 			stands[resultKey(p.cell.TargetResult)] = true
 		}
 	}
-	standing(stands, earlier.blockers())
+	blockers := earlier.blockers()
+	standing(stands, blockers)
 	took := false
 	for _, p := range found {
-		if p.cell.Kind == CellRecorded && !stands[resultKey(p.cell.TargetResult)] {
+		if key := resultKey(p.cell.TargetResult); p.cell.Kind == CellRecorded && !stands[key] {
+			// A blocked result goes with the blocker's that doesn't stand.
+			if i := slices.IndexFunc(blockers[key], func(by [2]string) bool { return !stands[by] }); i >= 0 {
+				earlier.refuse(&e.Targets[p.t].Outcomes[p.i], Refusal{Kind: RefusedBlocked, Dependency: model.TargetID(blockers[key][i][1])}, nil, e.Plan)
+			}
 			continue
 		}
 		e.Targets[p.t].Outcomes[p.i] = p.cell

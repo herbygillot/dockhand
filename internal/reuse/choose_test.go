@@ -168,8 +168,8 @@ func TestWhatWasBuiltAgainstAnotherSourceIsOneRule(t *testing.T) {
 		lib.Git = &model.GitSource{URL: "https://github.com/harbor/lib.git", Ref: "v4", Commit: expected, ResolvedAt: time.Now()}
 		return []Target{lib, target("cli", "lib"), target("app"), target("tools", "lib"), target("docs")}
 	}
-	require.Equal(t, map[model.TargetID]bool{"tools": true}, AgainstOtherSources(targets(a), chosen), "tools didn't say what it had active")
-	require.Equal(t, map[model.TargetID]bool{"cli": true, "app": true, "tools": true}, AgainstOtherSources(targets(b), chosen),
+	require.Equal(t, map[model.TargetID]Against{"tools": {Dependency: "lib"}}, AgainstOtherSources(targets(a), chosen), "tools didn't say what it had active")
+	require.Equal(t, map[model.TargetID]Against{"cli": {Dependency: "lib"}, "app": {Dependency: "cli", Indirect: true}, "tools": {Dependency: "lib"}}, AgainstOtherSources(targets(b), chosen),
 		"the tag moved: cli was built against lib's build of a, and app against that cli")
 }
 

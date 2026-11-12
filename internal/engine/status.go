@@ -525,6 +525,7 @@ func (Vocabulary) Environment(environment model.Environment) string {
 func (Vocabulary) Revision(revision model.Revision) string   { return checks.Describe(revision) }
 func (Vocabulary) Ago(at time.Time) string                   { return Ago(at) }
 func (Vocabulary) Remade(target TargetEvidence) string       { return RemadeWords(target) }
+func (Vocabulary) Refused(refusal Refusal) string            { return RefusedWords(refusal) }
 func (Vocabulary) Holds(concerns []model.Concern) []string   { return HoldLines(concerns) }
 func (Vocabulary) Unmet(unmet model.Unmet) string            { return checks.UnmetWords(unmet) }
 func (Vocabulary) CIFailure(failure model.CIFailure) string  { return CIFailureWords(failure) }

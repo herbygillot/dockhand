@@ -195,30 +195,40 @@ func needs(dependsOn []model.TargetID, active []model.ActivePort, among []model.
 // commit expected. The same tree of a Git-fetched port isn't the same
 // port, as the same tree of any other is, so such a build stands for none
 // now: reuse builds it again (Choose), and an earlier check's result of it
-// isn't evidence for the commit expected now.
-func AgainstOtherSources(targets []Target, chosen map[model.TargetID]Candidate) map[model.TargetID]bool {
+// isn't evidence for the commit expected now. Each is given with the
+// dependency it was found against (Against), for its words.
+func AgainstOtherSources(targets []Target, chosen map[model.TargetID]Candidate) map[model.TargetID]Against {
 	ids := make([]model.TargetID, len(targets))
 	byID := map[model.TargetID]Target{}
 	for i, target := range targets {
 		ids[i], byID[target.ID] = target.ID, target
 	}
-	against := map[model.TargetID]bool{}
+	against := map[model.TargetID]Against{}
 	for taken := true; taken; {
 		taken = false
 		for _, target := range targets {
 			c, ok := chosen[target.ID]
-			if !ok || against[target.ID] {
+			if _, found := against[target.ID]; !ok || found {
 				continue
 			}
 			for _, need := range needs(target.DependsOn, c.Inputs.Active, ids) {
-				if dependency := byID[need]; against[need] || dependency.Git != nil && !builtAgainst(c, dependency) || builtAgainstMovedTag(c, dependency) {
-					against[target.ID], taken = true, true
+				_, indirect := against[need]
+				if dependency := byID[need]; indirect || dependency.Git != nil && !builtAgainst(c, dependency) || builtAgainstMovedTag(c, dependency) {
+					against[target.ID], taken = Against{Dependency: need, Indirect: indirect}, true
 					break
 				}
 			}
 		}
 	}
 	return against
+}
+
+// Against is the dependency an earlier build was found built against
+// another source of (AgainstOtherSources): Dependency, and Indirect where
+// it was the dependency's own build that was, which this one read in turn.
+type Against struct {
+	Dependency model.TargetID
+	Indirect   bool
 }
 
 // builtAgainst reports whether an earlier build had active an archive of a

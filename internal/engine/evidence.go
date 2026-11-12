@@ -24,6 +24,7 @@ type (
 	Cell           = evidence.Cell
 	CellKind       = evidence.CellKind
 	VariantBuild   = evidence.VariantBuild
+	Refusal        = evidence.Refusal
 )
 
 const (
@@ -84,6 +85,50 @@ func RemadeWords(target TargetEvidence) string {
 		return checks.DescribeEnvironment(c.Environment) + " was made again, from another source or with other tools"
 	}
 	return ""
+}
+
+// RefusedWords say why an earlier check's result doesn't count, ending in
+// what to do, as status's cell and submit's hold both say it: "built by
+// check-1 from v4 at 1a2b3c4, which now names 5d6e7f8, so it doesn't
+// count; dockhand check builds it again" (architecture's words for #192,
+// where the hold said the check stopped before building it).
+func RefusedWords(r Refusal) string {
+	short := func(commit string) string { return model.ObjectID(commit).Short() }
+	const again = "; dockhand check builds it again"
+	switch r.Kind {
+	case evidence.RefusedMoved:
+		if r.Now == "" {
+			return fmt.Sprintf("built by %s from %s at %s, which has moved since, so it doesn't count%s", r.Check, r.Ref, short(r.Then), again)
+		}
+		return fmt.Sprintf("built by %s from %s at %s, which now names %s, so it doesn't count%s", r.Check, r.Ref, short(r.Then), short(r.Now), again)
+	case evidence.RefusedUnread:
+		return fmt.Sprintf("built by %s, whose source couldn't be read, so it stands for that check alone%s", r.Check, again)
+	case evidence.RefusedUnreadNow:
+		if r.Then == "" {
+			return fmt.Sprintf("built by %s from %s, which couldn't be read now to show which commit it names, so it doesn't count%s", r.Check, r.Ref, again)
+		}
+		return fmt.Sprintf("built by %s from %s at %s, which couldn't be read now to show it still names that commit, so it doesn't count%s", r.Check, r.Ref, short(r.Then), again)
+	case evidence.RefusedUnrecorded:
+		return fmt.Sprintf("built by %s, whose build didn't say which commit of %s it fetched, so it doesn't count%s", r.Check, r.Ref, again)
+	case evidence.RefusedOwnMove:
+		return fmt.Sprintf("built by %s, which found %s at %s, not the %s it planned, so it stands for no check%s", r.Check, r.Ref, short(r.Now), short(r.Then), again)
+	case evidence.RefusedFetchMode:
+		return fmt.Sprintf("built by %s with Git, and it's fetched another way now, so it doesn't count%s", r.Check, again)
+	case evidence.RefusedDependency:
+		return fmt.Sprintf("built by %s against %s from %s at %s, which has moved, so it doesn't count%s", r.Check, r.Dependency, r.Ref, short(r.Then), again)
+	case evidence.RefusedDependencyUnshown:
+		if r.Now != "" {
+			return fmt.Sprintf("built by %s against %s, which it can't be shown to have had at %s, so it doesn't count%s", r.Check, r.Dependency, short(r.Now), again)
+		}
+		return fmt.Sprintf("built by %s against %s, which it can't be shown to have had as it is now, so it doesn't count%s", r.Check, r.Dependency, again)
+	case evidence.RefusedDependencyRefused:
+		return fmt.Sprintf("built by %s against %s's build there, which doesn't count either, so it doesn't count%s", r.Check, r.Dependency, again)
+	case evidence.RefusedBlocked:
+		return fmt.Sprintf("%s found it blocked by %s, whose result there no longer stands%s", r.Check, r.Dependency, again)
+	case evidence.RefusedNotPlanned:
+		return fmt.Sprintf("%s's result there doesn't count, since its plan didn't build it there%s", r.Check, again)
+	}
+	return fmt.Sprintf("%s's result there doesn't count%s", r.Check, again)
 }
 
 // EvidenceWords is how one target's result in one environment reads, on the
