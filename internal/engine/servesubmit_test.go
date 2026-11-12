@@ -245,6 +245,34 @@ func TestAnUpdatesHeldFindingOutlivesTheTreeItLeft(t *testing.T) {
 	}
 }
 
+// An archived branch keeps its update's held finding: archive --undo
+// brings it back holding, since archiving drops no edit record; only
+// clean --delete forgets them, once the branch can't be submitted (#242).
+func TestAnArchivedBranchComesBackWithItsHold(t *testing.T) {
+	t.Parallel()
+	words := "The source for 1.8.1 ships no Cargo.lock, so cargo.crates is left as 1.7.1 had it and may not match what 1.8.1 builds; Cargo.toml is in jq-1.8.1/cli."
+	f := setup(t)
+	e, p := f.withPreparer(t)
+	f.withFork(t, e)
+	p.cratesUnlocked = words
+	branch := committedUpdate(t, e)
+	_, err := e.ArchiveBranch(t.Context(), ArchiveRequest{Branch: branch})
+	require.NoError(t, err)
+	archived, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.BranchArchived, archived.State)
+	back, err := e.ArchiveBranch(t.Context(), ArchiveRequest{Branch: archived, Undo: true})
+	require.NoError(t, err)
+	require.Equal(t, model.BranchOpen, back.Branch.State)
+
+	status, err := e.BranchStatus(t.Context(), back.Branch)
+	require.NoError(t, err)
+	require.Equal(t, []string{words}, unlockedHolds(status.Held), "status")
+	submit, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: back.Branch, NoCheck: true})
+	require.NoError(t, err)
+	require.Equal(t, []string{words}, unlockedHolds(submit.Held()), "the submit preview")
+}
+
 // Archives the update couldn't compare hold serve's submission as a
 // finding would (D4): nobody looks, and the comparison couldn't.
 func TestServeHoldsAnUpdateWhoseArchivesCouldNotBeCompared(t *testing.T) {
