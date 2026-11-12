@@ -150,6 +150,33 @@ close_test_pr() {
 	git -C "$MACPORTS_TREE" update-ref -d "refs/remotes/origin/dockhand/$branch" 2>/dev/null || :
 }
 
+# close_leftover_test_prs closes the test pull requests an earlier row of
+# the stage left open in the sandbox for a port, with their branches, so a
+# row that takes the port up again starts as on a fresh account: B3's ship
+# was rightly refused in rc4 for A4's open test pull request of the same
+# port (#224). Only the test login's [testing] pull requests whose head is
+# a dockhand branch go; the row is told what it may see change.
+close_leftover_test_prs() {
+	local port url head branch
+	[ -n "${DOCKHAND_PULL_REQUESTS:-}" ] && [ -n "${ACCEPT_GH_LOGIN:-}" ] && command -v gh >/dev/null || return 0
+	for port in "$@"; do
+		while IFS=$'\t' read -r url head; do
+			[ -n "$url" ] || continue
+			branch=${head#dockhand/}
+			printf '# closing %s, an earlier row'"'"'s test pull request for %s left open\n' "$url" "$port" >>"$ROW_DIR/out.log"
+			gh pr close "$url" --comment "Closed: a dockhand release candidate's test, left open by an earlier row." >/dev/null 2>&1 || :
+			allow_change "*"
+			allow_ref_gone "*$branch*"
+			next_superseded_for "$branch" "an earlier row's test pull request, closed"
+			dh_json clean "$branch" -y || :
+			git -C "$MACPORTS_TREE" update-ref -d "refs/remotes/origin/$head" 2>/dev/null || :
+		done <<EOT
+$(gh pr list --repo "$DOCKHAND_PULL_REQUESTS" --author "$ACCEPT_GH_LOGIN" --state open --limit 100 --json url,title,headRefName \
+			--jq ".[] | select((.title | startswith(\"[testing]\")) and (.headRefName | startswith(\"dockhand/\")) and (.headRefName | contains(\"$port\"))) | [.url, .headRefName] | @tsv" 2>/dev/null)
+EOT
+	done
+}
+
 # dh_quiet runs dockhand for a value a row reads, not for the row's log.
 dh_quiet() { "$DH_BIN" "$@" 2>/dev/null; }
 

@@ -30,6 +30,13 @@ ENV
 	branch=$(own_branch)
 	[ -z "$branch" ] || close_test_pr "$ACCEPT_GO_PORT" "$branch"
 }
+# teardown closes the row's test pull request where act didn't reach its
+# close, as when the person skipped the row after submitting, so B3 finds
+# none of A4's open (#224).
+teardown() {
+	[ "${ACCEPT_STAGE:-}" = full ] && [ "${ACCEPT_DRY:-0}" != 1 ] || return 0
+	close_leftover_test_prs "${ACCEPT_GO_PORT:?}"
+}
 # disagreements are the lines a person wrote of the README and the tool
 # disagreeing, a line saying there were none aside: the row once read
 # the notes file, where the runner's own notes go too, and graded the

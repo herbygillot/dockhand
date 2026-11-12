@@ -12,6 +12,10 @@ act() {
 		row_result "not run" "a dry run builds no toolchain; ACCEPT_B3_BUILD=1 runs it"
 		return 0
 	fi
+	# A test pull request an earlier row left open for either port would
+	# rightly refuse the ship (rc4's full stage: A4's); the row starts as
+	# on a fresh account (#224).
+	[ "${ACCEPT_STAGE:-}" != full ] || close_leftover_test_prs "${ACCEPT_GO_PORT:?}" "${ACCEPT_RUST_PORT:?}"
 	dh_json ship "${ACCEPT_GO_PORT:?}" "${ACCEPT_RUST_PORT:?}" --to check -y || :
 	dh serve --drain || :
 	local branch
