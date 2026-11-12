@@ -370,7 +370,7 @@ func knownGapVerdict(t *testing.T, platform model.Platform, setup func(string), 
 	return inconclusive, got.Snapshot.Ports["effects"].Options["distfiles"], got.Ports["effects"]
 }
 
-// Known gap, pinned as it stands, not fixed in #110's round (architecture's
+// Known gap, filed as #247, pinned as it stands, not fixed in #110's round (architecture's
 // ruling): a Portfile calling Base's portconfigure procedure itself, as
 // hdhomerun calls configure_get_universal_archflags, is taken for Base's
 // compiler selection, so on Darwin 10 the SDK the host's files would
@@ -392,7 +392,7 @@ func TestKnownGapAPortfilesOwnCallOfBasesToolchainProcedureIsExplained(t *testin
 	require.False(t, inconclusive, "known gap: explained today")
 }
 
-// Known gap, pinned as it stands, not fixed in #110's round (architecture's
+// Known gap, filed as #247, pinned as it stands, not fixed in #110's round (architecture's
 // ruling): following a Base lookup's value reads the Portfile and only the
 // PortGroups on the read's stack. A PortGroup the Portfile includes reads
 // build.cmd into distfiles while it is sourced, which leaves no frame of
