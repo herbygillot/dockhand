@@ -3,6 +3,8 @@ package engine
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -259,4 +261,171 @@ func submitConcern(t *testing.T, planned *model.GitSource, tag bool) string {
 		return concerns[0].Rule
 	}
 	return fmt.Sprintf("%d concerns", len(concerns))
+}
+
+// The reader table's rows beyond one earlier check (Codex's review of #192,
+// finding 4): a reading that isn't known, beside another earlier check that
+// shows the tag moved, stands for nothing through EvidenceFor and is reused
+// by nothing through reuse.Choose; and an earlier extra built with Git,
+// which the newest plan doesn't build, is judged against its own plan
+// through EvidenceFor.
+func TestTheReadersAgreeAcrossSeveralEarlierChecks(t *testing.T) {
+	t.Parallel()
+	url, first, move := harborRepository(t)
+	a, b := model.ObjectID(first), model.ObjectID(move())
+	at := time.Now().UTC().Truncate(time.Millisecond)
+	reading := func(commit model.ObjectID) *model.GitSource {
+		s := &model.GitSource{URL: url, Ref: "v4", Commit: commit, ResolvedAt: at}
+		if commit == "" {
+			s.Unresolved = "the repository couldn't be read"
+		}
+		return s
+	}
+
+	// Through EvidenceFor: an unresolved check's pass, then one at A, then
+	// the newest at B, built nothing.
+	e, branch, revision := readerBranch(t)
+	for _, have := range []*model.GitSource{reading(""), reading(a)} {
+		run, err := e.Enqueue(t.Context(), branch, readerPlan(revision.ID, have, true), model.OriginPerson)
+		require.NoError(t, err)
+		finish(t, e, run, "", true)
+	}
+	newest, err := e.Enqueue(t.Context(), branch, readerPlan(revision.ID, reading(b), true), model.OriginPerson)
+	require.NoError(t, err)
+	finish(t, e, newest, "", false)
+	judged, found, err := e.EvidenceFor(t.Context(), branch.ID, revision.Source.Tree)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.NotEqual(t, CellRecorded, judged.Targets[0].Outcomes[0].Kind, "the unresolved check's pass doesn't fill in once another shows the tag moved")
+
+	// Through reuse.Choose: an unresolved candidate beside one at A, for a
+	// target at B.
+	trees := map[string]model.ObjectID{"devel/libharbor": "1", macports.ResourcesDirectory: "2"}
+	inputs := model.NewTargetInputs("origin a", "devel/libharbor", "1", "2", nil, []model.ActivePort{})
+	candidate := func(tagged *model.GitSource) reuse.Candidate {
+		return reuse.Candidate{Result: model.TargetResult{Target: "libharbor", Outcome: model.OutcomePassed, Execution: "command_1"}, Inputs: inputs, Tagged: tagged}
+	}
+	target := reuse.Target{PlanTarget: libharborTarget, Tag: reading(b), Earlier: []reuse.Candidate{candidate(reading(a)), candidate(reading(""))}}
+	choice := reuse.Choose([]reuse.Target{target}, "origin a", trees, reuse.Judge{}, func(model.TargetResult) bool { return true }, func(reuse.Candidate) bool { return false })
+	require.Empty(t, choice.Reused, "nothing stands for B")
+}
+
+// An earlier --also Git build the newest plan lacks, planned at A and
+// having fetched B, counts for nothing through EvidenceFor, though the
+// newest plan fetches nothing with Git (Codex's review of #192, findings 3
+// and 4).
+func TestAnEarlierExtraGitBuildCountsAgainstItsOwnPlan(t *testing.T) {
+	t.Parallel()
+	url, first, move := harborRepository(t)
+	a, b := model.ObjectID(first), model.ObjectID(move())
+	e, branch, revision := readerBranch(t)
+	earlier := readerPlan(revision.ID, &model.GitSource{URL: url, Ref: "v4", Commit: a, ResolvedAt: time.Now()}, false)
+	earlier.Targets[0].Role, earlier.Targets[0].Kind = model.Also, model.Unchanged
+	zlib := model.PlanTarget{ID: "zlib", Target: model.Target{Name: "zlib"}, Directory: "archivers/zlib", Kind: model.Substantive, Role: model.Changed}
+	earlier.Targets = append([]model.PlanTarget{zlib}, earlier.Targets...)
+	earlier.Builds[0].Order = []model.TargetID{"zlib", "libharbor"}
+	run, err := e.Enqueue(t.Context(), branch, earlier, model.OriginPerson)
+	require.NoError(t, err)
+	finish(t, e, run, b, true)
+	newest := readerPlan(revision.ID, nil, false)
+	newest.Targets = []model.PlanTarget{zlib}
+	newest.Builds[0].Order = []model.TargetID{"zlib"}
+	later, err := e.Enqueue(t.Context(), branch, newest, model.OriginPerson)
+	require.NoError(t, err)
+	finish(t, e, later, "", false)
+	judged, found, err := e.EvidenceFor(t.Context(), branch.ID, revision.Source.Tree)
+	require.NoError(t, err)
+	require.True(t, found)
+	for _, target := range judged.Targets {
+		if target.Target.ID == "libharbor" {
+			require.NotEqual(t, CellRecorded, target.Outcomes[0].Kind, "a build that fetched B for a plan that named A counts for nothing")
+		}
+	}
+}
+
+// Change 1 through QueueCheck, both ways: two requests whose Git source
+// couldn't be resolved join one queued check, and a finished check of an
+// unresolved source doesn't stand for another request (Codex's review of
+// #192, finding 4).
+func TestAnUnresolvedGitSourceThroughQueueCheck(t *testing.T) {
+	t.Parallel()
+	gone := filepath.Join(t.TempDir(), "gone")
+	unresolved := &model.GitSource{URL: gone, Ref: "v4", Unresolved: "the repository couldn't be read", ResolvedAt: time.Now()}
+
+	e, branch, revision := readerBranch(t)
+	_, err := e.Enqueue(t.Context(), branch, readerPlan(revision.ID, unresolved, false), model.OriginPerson)
+	require.NoError(t, err)
+	joined, err := e.QueueCheck(t.Context(), checks.QueueRequest{Branch: branch, Revision: revision, Plan: readerPlan(revision.ID, unresolved, false), Origin: model.OriginPerson, Beside: checks.BesideFollow})
+	require.NoError(t, err)
+	require.True(t, joined.Followed, "two unresolved requests join one check")
+
+	e, branch, revision = readerBranch(t)
+	run, err := e.Enqueue(t.Context(), branch, readerPlan(revision.ID, unresolved, false), model.OriginPerson)
+	require.NoError(t, err)
+	finish(t, e, run, model.ObjectID(strings.Repeat("a", 40)), true)
+	queued, err := e.QueueCheck(t.Context(), checks.QueueRequest{Branch: branch, Revision: revision, Plan: readerPlan(revision.ID, unresolved, false), Origin: model.OriginPerson, Covered: true})
+	require.NoError(t, err)
+	require.Nil(t, queued.Passed, "a finished check of an unresolved source stands for no other request")
+	require.NotEmpty(t, queued.Run.ID, "a check is queued instead")
+}
+
+// Change 4 through EvidenceFor and status: a release only an earlier check
+// planned, at tag A, judged against the newest check's reading B, leaves
+// the moved target and its dependents missing there, and the earlier
+// release still required (Codex's review of #192, finding 4).
+func TestChange4ThroughEvidenceAndStatus(t *testing.T) {
+	t.Parallel()
+	url, first, move := harborRepository(t)
+	a, b := model.ObjectID(first), model.ObjectID(move())
+	e, branch, revision := readerBranch(t)
+	sequoia := model.Environment{Provider: "command", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}
+	// build.default's profile requires both releases.
+	e.required.mu.Lock()
+	e.required.at, e.required.profile, e.required.environments = time.Now(), e.defaultProfile(), []model.Environment{tahoeArm, sequoia}
+	e.required.mu.Unlock()
+	onSequoia := readerPlan(revision.ID, &model.GitSource{URL: url, Ref: "v4", Commit: a, ResolvedAt: time.Now()}, true)
+	onSequoia.Environments, onSequoia.Builds[0].Environment = []model.Environment{sequoia}, sequoia
+	earlier, err := e.Enqueue(t.Context(), branch, onSequoia, model.OriginPerson)
+	require.NoError(t, err)
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		at := time.Now().UTC().Truncate(time.Millisecond)
+		execution := model.GuestExecution{ID: model.ExecutionID(store.NewID("command")), Run: earlier.ID, Environment: sequoia, Attempt: 1, State: model.ExecutionWaiting, CreatedAt: at}
+		if err := tx.AddExecution(execution); err != nil {
+			return err
+		}
+		key, err := tx.RecordInputs(model.TargetInputs{Environment: "origin a", Tree: "1", Resources: "2", Active: []model.ActivePort{}})
+		if err != nil {
+			return err
+		}
+		if err := tx.RecordResult(model.TargetResult{Execution: execution.ID, Target: "libharbor", Outcome: model.OutcomePassed, Tests: model.TestsNone, Inputs: key, RecordedAt: at}); err != nil {
+			return err
+		}
+		for _, state := range []model.RunState{model.RunRunning, model.RunPassed} {
+			earlier.State = state
+			if state == model.RunPassed {
+				earlier.FinishedAt = &at
+			}
+			if err := tx.UpdateRun(earlier); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	newest, err := e.Enqueue(t.Context(), branch, readerPlan(revision.ID, &model.GitSource{URL: url, Ref: "v4", Commit: b, ResolvedAt: time.Now()}, true), model.OriginPerson)
+	require.NoError(t, err)
+	finish(t, e, newest, "", true)
+
+	judged, found, err := e.EvidenceFor(t.Context(), branch.ID, revision.Source.Tree)
+	require.NoError(t, err)
+	require.True(t, found)
+	on := slices.Index(judged.Plan.Environments, sequoia)
+	require.GreaterOrEqual(t, on, 0, "the earlier release stays required")
+	require.NotEqual(t, CellRecorded, judged.Targets[0].Outcomes[on].Kind, "the moved target is missing there")
+
+	status, err := e.BranchStatus(t.Context(), branch)
+	require.NoError(t, err)
+	require.NotNil(t, status.Evidence)
+	on = slices.Index(status.Evidence.Plan.Environments, sequoia)
+	require.GreaterOrEqual(t, on, 0)
+	require.NotEqual(t, CellRecorded, status.Evidence.Targets[0].Outcomes[on].Kind, "status reads it the same")
 }

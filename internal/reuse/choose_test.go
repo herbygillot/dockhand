@@ -218,6 +218,15 @@ func TestATargetDoesntReuseABuildPastAMovedTag(t *testing.T) {
 	require.Empty(t, Choose(beside, "origin a", now, Judge{}, stands, none).Reused, "beside a moved tag")
 	alone := target(tag("d4c0fdb"), nil)
 	require.Contains(t, Choose(alone, "origin a", now, Judge{}, stands, none).Reused, model.TargetID("lib"), "alone")
+
+	// One whose check recorded the tag and couldn't resolve it can't say
+	// which commit it built either: beside a move shown, it isn't reused
+	// (Codex's review of #192, finding 2).
+	unread := &model.GitSource{URL: "https://github.com/harbor/lib.git", Ref: "v1.0.0", Unresolved: "the repository couldn't be read"}
+	unresolved := target(tag("d4c0fdb"), tag("1d15bc8"))
+	unresolved[0].Earlier = append(unresolved[0].Earlier, Candidate{Result: model.TargetResult{Target: "lib", Outcome: model.OutcomePassed}, Inputs: inputs, Tagged: unread})
+	require.Empty(t, Choose(unresolved, "origin a", now, Judge{}, stands, none).Reused, "an unresolved tag beside a moved one")
+	require.Contains(t, Choose(target(tag("d4c0fdb"), unread), "origin a", now, Judge{}, stands, none).Reused, model.TargetID("lib"), "alone, it counts")
 }
 
 // A build against a dependency's archive fetched by a GitHub tag that has

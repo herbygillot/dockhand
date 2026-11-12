@@ -29,6 +29,10 @@ type Target struct {
 	Git       *model.GitSource
 	Tag       *model.GitSource
 	Earlier   []Candidate
+	// TagShownMoved is a move of the target's tag that a build outside
+	// Earlier shows, as another earlier check's in evidence, which a
+	// reading that isn't known doesn't stand beside (unseated).
+	TagShownMoved bool
 }
 
 // TagMoved reports whether the GitHub tag a target's archive is fetched by
@@ -44,9 +48,24 @@ func (t Target) TagMoved(c Candidate) bool {
 }
 
 // tagMovedAny reports whether any of a target's earlier builds says its
-// tag moved, which a build that recorded no tag can't tell of itself.
+// tag moved, or another build outside them does (TagShownMoved), which a
+// build that recorded no tag, or one whose reading isn't known, can't tell
+// of itself.
 func (t Target) tagMovedAny() bool {
-	return slices.ContainsFunc(t.Earlier, t.TagMoved)
+	return t.TagShownMoved || slices.ContainsFunc(t.Earlier, t.TagMoved)
+}
+
+// unseated reports whether an earlier build's tag reading stands for
+// nothing now: its tag moved (TagMoved), or another build shows the tag
+// moved and this one can't say which commit it built, having recorded no
+// tag or one whose reading against the target's isn't known (the source
+// comparison design's "reuses, unless another build of the target shows the
+// tag moved"; Codex's review of #192, finding 2).
+func (t Target) unseated(c Candidate) bool {
+	if t.TagMoved(c) {
+		return true
+	}
+	return t.tagMovedAny() && (c.Tagged == nil || model.SourceAgainst(c.Tagged, t.Tag) == model.SourceUnknown)
 }
 
 // Choice is what an environment's targets reuse: an earlier build for each
@@ -84,9 +103,8 @@ type Choice struct {
 func Choose(targets []Target, identity string, trees map[string]model.ObjectID, judge Judge, stands func(model.TargetResult) bool, available func(Candidate) bool) Choice {
 	choice := Choice{Reused: map[model.TargetID]Candidate{}, Carried: map[model.TargetID][]model.InertPort{}}
 	for _, target := range targets {
-		moved := target.tagMovedAny()
 		for _, c := range target.Earlier {
-			if !stands(c.Result) || target.TagMoved(c) || moved && c.Tagged == nil {
+			if !stands(c.Result) || target.unseated(c) {
 				continue
 			}
 			if carried, ok := Carry(c.Inputs, c.Origin.Run, identity, target.PlanTarget, target.Git, trees, judge); ok {
@@ -241,7 +259,7 @@ func builtAgainstMovedTag(c Candidate, dependency Target) bool {
 				continue
 			}
 			recorded = true
-			if dependency.TagMoved(earlier) {
+			if dependency.unseated(earlier) {
 				return true
 			}
 		}

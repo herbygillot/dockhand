@@ -160,7 +160,8 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 		// docs/designs/source-comparison.md): loaded without what they
 		// read, every Git result answered "not known", and no check of a
 		// Git-fetched port stood for another request.
-		own, err := checks.LoadCheck(r, primary, evidence.ReadsSources(plan))
+		reads := evidence.AnyReadsSources(append([]model.Plan{plan, own}, others...)...)
+		own, err := checks.LoadCheck(r, primary, reads)
 		if err != nil {
 			return err
 		}
@@ -169,7 +170,7 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 			if run.ID == primary.ID {
 				continue
 			}
-			check, err := checks.LoadCheck(r, run, evidence.ReadsSources(plan))
+			check, err := checks.LoadCheck(r, run, reads)
 			if err != nil {
 				return err
 			}

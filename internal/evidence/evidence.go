@@ -64,6 +64,14 @@ func ReadsSources(plan model.Plan) bool {
 	return slices.ContainsFunc(plan.Builds, func(build model.EnvironmentPlan) bool { return len(build.Git) > 0 || len(build.Tags) > 0 })
 }
 
+// AnyReadsSources reports whether any of plans fetches a target with Git
+// or by a tag: whether the checks of the files must be loaded with what
+// their builds read, an earlier extra's Git build included, which the
+// newest plan may not build at all (Codex's review of #192, finding 3).
+func AnyReadsSources(plans ...model.Plan) bool {
+	return slices.ContainsFunc(plans, ReadsSources)
+}
+
 // CellKind is what a target's cell of the evidence holds in one
 // environment, which its readers take from the cell rather than asking the
 // plan again (the code-organization review, finding 25).
@@ -272,6 +280,10 @@ type Evidence struct {
 	// plan read by the newest check's resolutions, which an earlier
 	// check's results there are judged against (newestReadings).
 	readings model.Plan
+	// shown are the targets whose tag some earlier check's plan shows moved
+	// against the newest reading (shownMoves), which a reading that isn't
+	// known doesn't stand beside.
+	shown map[model.TargetID]bool
 	// Problem is why the environments build.default's profile names, which the evidence
 	// always requires, couldn't be resolved, so it requires only those its
 	// checks planned; empty where they were.
@@ -438,12 +450,13 @@ func Judge(primary Check, plan model.Plan, earlier []Check, now Identities, requ
 		evidence.Targets = append(evidence.Targets, te)
 	}
 	added := evidence.addBuilds(primary, earlier)
+	shown := shownMoves(earlier, readings)
 	for _, check := range earlier {
 		if check.Run.ID == primary.Run.ID || !evidence.missing() {
 			continue
 		}
 		found := Of(check)
-		found.readings = readings
+		found.readings, found.shown = readings, shown
 		found.readSources(readings)
 		if evidence.fill(found) {
 			evidence.Earlier = append(evidence.Earlier, check.Run)
@@ -1059,20 +1072,45 @@ func newestReadings(newest, merged model.Plan) model.Plan {
 	return readings
 }
 
+// shownMoves are the targets whose tag any earlier check's plan shows
+// moved against the newest reading of it, in any environment: the source
+// comparison design's "unless another build of the target shows the tag
+// moved", which one earlier check judged alone forgot when it tried the
+// next (Codex's review of #192, finding 1).
+func shownMoves(checks []Check, readings model.Plan) map[model.TargetID]bool {
+	shown := map[model.TargetID]bool{}
+	for _, check := range checks {
+		for _, build := range check.Plan.Builds {
+			for id := range build.Tags {
+				if model.SourceAgainst(check.Plan.TagIn(build.Environment, id), readings.TagIn(build.Environment, id)) == model.SourceMoved {
+					shown[id] = true
+				}
+			}
+		}
+	}
+	return shown
+}
+
 // sourceStands reports whether an earlier check's plan fetched a target the
 // way the newest plan does, where the newest builds it there: a tag that
 // named another commit then than now unseats the result, as reuse builds
 // again for it (change 2), and a result built with Git counts for no plan
 // that builds the target another way (change 3). An archive's tag that
-// wasn't known on one side, or another release's tag, stands: the
-// Portfile's checksums say what was built. A target the newest plan
+// wasn't known on one side stands, the Portfile's checksums saying what was
+// built, unless another build of the target shows the tag moved
+// (shownMoved); another release's tag stands. A target the newest plan
 // doesn't build there is judged against its own plan alone (Counts).
-func sourceStands(earlier, newest model.Plan, environment model.Environment, id model.TargetID, built bool) bool {
+func sourceStands(earlier, newest model.Plan, environment model.Environment, id model.TargetID, built, shownMoved bool) bool {
 	if !built {
 		return true
 	}
-	if model.SourceAgainst(earlier.TagIn(environment, id), newest.TagIn(environment, id)) == model.SourceMoved {
+	switch model.SourceAgainst(earlier.TagIn(environment, id), newest.TagIn(environment, id)) {
+	case model.SourceMoved:
 		return false
+	case model.SourceUnknown:
+		if shownMoved {
+			return false
+		}
 	}
 	_, earlierGit := earlier.GitIn(environment, id)
 	_, newestGit := newest.GitIn(environment, id)
@@ -1197,7 +1235,10 @@ func standing(stands map[[2]string]bool, blockers map[[2]string][][2]string) {
 // blocked it (standing). Nothing is read where the newer check fetches
 // nothing with Git.
 func (e *Evidence) readSources(primary model.Plan) {
-	if !ReadsSources(primary) {
+	// The earlier check's own Git builds are read too, where the newest
+	// plan fetches nothing with Git, so a result is judged against its own
+	// plan with what it fetched (Codex's review of #192, finding 3).
+	if !ReadsSources(primary) && !ReadsSources(e.Plan) {
 		return
 	}
 	e.sources = map[[2]string]readSource{}
@@ -1217,7 +1258,7 @@ func (e *Evidence) readSources(primary model.Plan) {
 			// docs/designs/source-comparison.md).
 			build := reuse.Candidate{Result: c.TargetResult, Inputs: inputs, Tagged: e.Plan.TagIn(environment, target.Target.ID)}
 			planned := reuse.Target{PlanTarget: target.Target, DependsOn: e.Plan.DependsOnIn(environment, target.Target.ID), Earlier: []reuse.Candidate{build},
-				Tag: primary.TagIn(environment, target.Target.ID)}
+				Tag: primary.TagIn(environment, target.Target.ID), TagShownMoved: e.shown[target.Target.ID]}
 			if source, ok := primary.GitIn(environment, target.Target.ID); ok {
 				planned.Git = &source
 			}
@@ -1289,7 +1330,7 @@ func (e *Evidence) fill(earlier Evidence) bool {
 			read := earlier.sources[resultKey(cell.TargetResult)]
 			newest, builds := e.Plan.In(environment)
 			if cell.Kind != CellRecorded && cell.Kind != CellUnmet || !Counts(earlier.Plan, execution, target.Target.ID, e.now[environment].Value, git, read.fetched, read.other) ||
-				cell.Kind == CellRecorded && !sourceStands(earlier.Plan, readings, environment, target.Target.ID, builds && newest.Builds(target.Target.ID)) {
+				cell.Kind == CellRecorded && !sourceStands(earlier.Plan, readings, environment, target.Target.ID, builds && newest.Builds(target.Target.ID), earlier.shown[target.Target.ID]) {
 				if cell.Kind == CellRecorded && !current(execution, e.now[environment].Value) {
 					target.Outcomes[i].Kind, target.Outcomes[i].Recorded = CellRemade, execution.Identity
 				}

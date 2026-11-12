@@ -649,3 +649,82 @@ func TestAnEarlierReleasesResultIsJudgedAgainstTheNewestReading(t *testing.T) {
 		}
 	}
 }
+
+// A tag reading that isn't known counts unless another build of the target
+// shows the tag moved, and that other build may be any earlier check's: a
+// pass from a check whose tag couldn't be resolved doesn't fill in once a
+// later check shows the tag named A and the newest names B, nor does a
+// dependent built against its archive (Codex's review of #192, finding 1).
+func TestAnUnknownTagReadingStandsForNothingBesideAShownMove(t *testing.T) {
+	commitA, commitB := model.ObjectID(strings.Repeat("a", 40)), model.ObjectID(strings.Repeat("b", 40))
+	target := func(id model.TargetID) model.PlanTarget {
+		return model.PlanTarget{ID: id, Target: model.Target{Name: string(id)}, Kind: model.Substantive, Role: model.Changed}
+	}
+	tag := func(commit model.ObjectID) map[model.TargetID]model.GitSource {
+		s := model.GitSource{URL: "https://github.com/ada/harbor", Ref: "v4", Commit: commit, ResolvedAt: time.Now()}
+		if commit == "" {
+			s.Unresolved = "the repository couldn't be read"
+		}
+		return map[model.TargetID]model.GitSource{"harbor": s}
+	}
+	checkOf := func(number int, commit model.ObjectID, built bool) Check {
+		run := model.Run{ID: model.RunID(fmt.Sprint("run_", number)), Number: number}
+		execution := model.ExecutionID(fmt.Sprint("x", number))
+		var results []model.TargetResult
+		if built {
+			archive := fmt.Sprint("sha256:harbor", number)
+			results = []model.TargetResult{
+				{Execution: execution, Target: "harbor", Outcome: model.OutcomePassed, Inputs: "h", Archive: archive},
+				{Execution: execution, Target: "harbor-cli", Outcome: model.OutcomePassed, Inputs: "c"},
+			}
+		}
+		inputs := map[string]model.TargetInputs{"h": {}, "c": {Active: []model.ActivePort{{Name: "harbor", Archive: fmt.Sprint("sha256:harbor", number)}}}}
+		build := model.EnvironmentPlan{Environment: tahoeArm, Order: []model.TargetID{"harbor", "harbor-cli"}, Dependencies: map[model.TargetID][]model.TargetID{"harbor-cli": {"harbor"}}, Tags: tag(commit)}
+		return Check{Run: run, Plan: model.Plan{Targets: []model.PlanTarget{target("harbor"), target("harbor-cli")}, Environments: []model.Environment{tahoeArm}, Builds: []model.EnvironmentPlan{build}},
+			Executions: []model.GuestExecution{{ID: execution, Run: run.ID, Environment: tahoeArm}},
+			Results:    map[model.ExecutionID][]model.TargetResult{execution: results}, Inputs: inputs}
+	}
+	unresolved, atA, newest := checkOf(1, "", true), checkOf(2, commitA, true), checkOf(3, commitB, false)
+	required := []model.Environment{tahoeArm}
+	judged := Judge(newest, Plan(newest.Plan, []model.Plan{atA.Plan, unresolved.Plan}, required), []Check{atA, unresolved}, Identities{}, required)
+	for _, te := range judged.Targets {
+		require.NotEqual(t, CellRecorded, te.Outcomes[0].Kind, "%s: a check whose tag wasn't known stands for nothing once another shows it moved", te.Target.ID)
+	}
+
+	// Alone, with no other build showing a move, the unknown reading counts.
+	judged = Judge(newest, Plan(newest.Plan, []model.Plan{unresolved.Plan}, required), []Check{unresolved}, Identities{}, required)
+	for _, te := range judged.Targets {
+		require.Equal(t, CellRecorded, te.Outcomes[0].Kind, "%s: no move shown", te.Target.ID)
+	}
+}
+
+// An earlier extra built with Git, which the newest plan doesn't build and
+// which fetches nothing with Git itself, is still judged against its own
+// plan: having planned A and fetched B, its failure counts for nothing
+// (Codex's review of #192, finding 3).
+func TestAnEarlierExtraGitResultIsJudgedAgainstItsOwnPlan(t *testing.T) {
+	commitA, commitB := model.ObjectID(strings.Repeat("a", 40)), model.ObjectID(strings.Repeat("b", 40))
+	earlierRun := model.Run{ID: "run_1", Number: 1}
+	git := map[model.TargetID]model.GitSource{"libharbor": {URL: "https://github.com/ada/libharbor", Ref: "main", Commit: commitA, ResolvedAt: time.Now()}}
+	earlier := Check{Run: earlierRun,
+		Plan: model.Plan{Targets: []model.PlanTarget{{ID: "zlib", Target: model.Target{Name: "zlib"}, Kind: model.Substantive, Role: model.Changed}, {ID: "libharbor", Target: model.Target{Name: "libharbor"}, Kind: model.Substantive, Role: model.Also}},
+			Environments: []model.Environment{tahoeArm}, Builds: []model.EnvironmentPlan{{Environment: tahoeArm, Order: []model.TargetID{"zlib", "libharbor"}, Git: git}}},
+		Executions: []model.GuestExecution{{ID: "x1", Run: earlierRun.ID, Environment: tahoeArm}},
+		Results: map[model.ExecutionID][]model.TargetResult{"x1": {
+			{Execution: "x1", Target: "zlib", Outcome: model.OutcomePassed, Inputs: "z"},
+			{Execution: "x1", Target: "libharbor", Outcome: model.OutcomeFailed, Phase: model.PhaseFetch, Inputs: "l"},
+		}},
+		Inputs: map[string]model.TargetInputs{"z": {}, "l": {Fetched: commitB}}}
+	newestRun := model.Run{ID: "run_2", Number: 2}
+	newest := Check{Run: newestRun,
+		Plan: model.Plan{Targets: []model.PlanTarget{{ID: "zlib", Target: model.Target{Name: "zlib"}, Kind: model.Substantive, Role: model.Changed}},
+			Environments: []model.Environment{tahoeArm}, Builds: []model.EnvironmentPlan{{Environment: tahoeArm, Order: []model.TargetID{"zlib"}}}},
+		Results: map[model.ExecutionID][]model.TargetResult{}}
+	required := []model.Environment{tahoeArm}
+	judged := Judge(newest, Plan(newest.Plan, []model.Plan{earlier.Plan}, required), []Check{earlier}, Identities{}, required)
+	for _, te := range judged.Targets {
+		if te.Target.ID == "libharbor" {
+			require.NotEqual(t, CellRecorded, te.Outcomes[0].Kind, "a result that fetched another commit than its own plan named counts for nothing")
+		}
+	}
+}
