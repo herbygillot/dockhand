@@ -101,6 +101,7 @@ The rest reach something outside the checkout and run only when named:
 | `DOCKHAND_TEST_TART_LIVE` | `buildenv/tart` `TestLiveCheckInATahoeGuest` | the acceptance test above, with `DOCKHAND_TEST_PORTS_TREE` |
 | `DOCKHAND_TEST_TART_IMAGE` | `tart/host` `TestLiveTartContracts`, `tart/guestssh` `TestLiveChannel` | Tart's listing, stop, and delete behavior, and the guest channel, on a clone of the named raw-disk image |
 | `DOCKHAND_TEST_TART_ASIF_SOURCE` | `tart/host` `TestLiveTartListsWhileAnASIFVMRuns` | an ASIF image such as Golden Gate's, cloned and run briefly while Tart lists its VMs; it needs Tart 2.39.0 or newer, and skips on an older one |
+| `DOCKHAND_TEST_SUDO_PREFIX` | `buildenv/local` `TestLiveSudoHandsTheLockToItsCommand` | this Mac's sudo, running the named prefix's `port-tclsh` as root, which needs the sudoers line `<you> ALL=(root) NOPASSWD: <prefix>/bin/port-tclsh`: whether the lock handed to it as standard input reaches its command and stays held, with a terminal and without, and whether a SIGTERM reaches the command; it runs on the M1, never on a Mac whose sudoers nobody chose to change |
 
 ## The notices' measure over a tree
 
