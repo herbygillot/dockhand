@@ -68,6 +68,14 @@ type Options struct {
 	// reads the wrap. Nil in production.
 	GitHook   func(ctx context.Context, args []string, run func() error) error
 	WrapStore func(store.Store) store.Store
+	// Process and Liveness are the sweep's third seam: the process a
+	// session is recorded for, this one where nil, and what says whether
+	// another session's process still runs, the operating system where
+	// nil. A run the sweep stops is a process of its own, which recovery
+	// then finds gone, as it finds a killed one (docs/designs/
+	// fault-sweep.md, "dead"; #129's fix list, 4). Nil in production.
+	Process  func() (coord.Process, error)
+	Liveness coord.Liveness
 	// OtherDockhands are the other dockhand processes on this Mac, which a
 	// migration that waits for quiet waits on; this Mac's own, by name
 	// (otherDockhands), where nil. A test's own world counts none, so it

@@ -493,10 +493,17 @@ func differences(clean, recovered world) []string {
 			found = append(found, eventDifferences(a, b)...)
 			continue
 		}
-		// A session's row is a command's own: a failed run and its retry
-		// rightly leave one the clean run lacks, ended or not, its process
-		// gone; a named equivalence for the sessions table alone.
+		// A session's row is a command's own, so the two runs' rows aren't
+		// matched: each must be in a state a finished command leaves,
+		// ended, or its process gone, the stopped run's, which recovery
+		// found dead (#129's fix list, 4). A session still open whose
+		// process is alive is a finding in either world.
 		if section == "table sessions" {
+			for _, line := range append(slices.Clone(a), b...) {
+				if strings.Contains(line, "ended_at=null") && !strings.Contains(line, `process_start="`+stoppedProcess+`"`) {
+					found = append(found, section+": open, its process alive: "+line)
+				}
+			}
 			continue
 		}
 		// An abandoned attempt's checkpoint is the retry's allowed extra

@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -242,4 +243,49 @@ func TestTheEventsReadAsStateAreListed(t *testing.T) {
 	}))
 	require.NotEmpty(t, read, "the listing found the readers")
 	require.ElementsMatch(t, slices.Sorted(maps.Keys(read)), stateEvents)
+}
+
+// A session left open whose process is alive is a finding, in either
+// world; one ended, or the stopped run's, whose process recovery found
+// gone, is a command's own (#129's fix list, 4, from the outside read's
+// probe).
+func TestAnOpenSessionWithItsProcessAliveDiffers(t *testing.T) {
+	t.Parallel()
+	ended := world{"table sessions": {`id="ses:a" process_start="x" ended_at=time(today)`}}
+	open := world{"table sessions": {`id="ses:a" process_start="x" ended_at=null`, `id="ses:b" process_start="x" ended_at=null`}}
+	require.NotEmpty(t, differences(ended, open), "live sessions left open differ")
+	stopped := world{"table sessions": {`id="ses:c" process_start="` + stoppedProcess + `" ended_at=null`}}
+	require.Empty(t, differences(ended, stopped), "the stopped run's open session, its process gone, is its own")
+}
+
+// A run stopped dead leaves its session open, and recovery finds its
+// process gone, as after a kill: it takes what the session held without
+// waiting it out, and the open row is the stopped run's (#129's fix list,
+// 4; the outside read's diagnostic probe, where the default liveness
+// called the test's process alive).
+func TestADeadRunsSessionIsFoundGone(t *testing.T) {
+	t.Parallel()
+	sc := scenario{arrange: func(t *testing.T, w cmdtest.World) *forgetest.GitHub {
+		g := submitted(t, w)
+		g.PRs[34901].State = forge.PullRequestMerged
+		dockhand(t, "status", "--refresh", "-b", "jq-update")
+		return g
+	}, steps: [][]string{{"clean", "--yes"}}}
+	clean := runOnce(t, sc, nil)
+	r := runOnce(t, sc, &fault{address: "store.update@coord.(*Session).End#1", mode: dead})
+	require.True(t, r.reached)
+	require.Empty(t, r.recovered, "recovery ends")
+	var open []string
+	for _, row := range r.world["table sessions"] {
+		if strings.Contains(row, "ended_at=null") {
+			open = append(open, row)
+		}
+	}
+	require.NotEmpty(t, open, "the stopped run's session stays open")
+	for _, row := range open {
+		require.Contains(t, row, `process_start="`+stoppedProcess+`"`, "and is the stopped run's, its process gone")
+	}
+	for _, difference := range differences(clean.world, r.world) {
+		require.NotContains(t, difference, "table sessions", "no session open with its process alive")
+	}
 }

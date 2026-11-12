@@ -5,11 +5,13 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
+	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -82,6 +84,23 @@ func sweepWorld(t *testing.T, sc scenario, p *plan) (cmdtest.World, *forgetest.G
 	return w, g
 }
 
+// stoppedProcess is the process start the steps' sessions are recorded
+// under: a process of their own, which ends when they do.
+const stoppedProcess = "sweep-stopped-run"
+
+// stoppable says the steps' process gone once they've returned, as a
+// killed run's is, and asks the operating system of any other: a stopped
+// run's session carried the test's own process, which the next command
+// called alive (docs/designs/fault-sweep.md, "dead"; #129's fix list, 4).
+type stoppable struct{ over *atomic.Bool }
+
+func (s stoppable) Alive(p engine.SessionProcess) (bool, error) {
+	if p.Start == stoppedProcess {
+		return !s.over.Load(), nil
+	}
+	return coord.System{}.Alive(p)
+}
+
 // runOnce runs a scenario: its steps, and where a fault was armed, the
 // recovery after it, with nothing failing.
 func runOnce(t *testing.T, sc scenario, armed *fault) run {
@@ -94,6 +113,18 @@ func runOnce(t *testing.T, sc scenario, armed *fault) run {
 	stands.GitHook = p.gitHook
 	stands.WrapStore = func(s store.Store) store.Store { return recordingStore{Store: s, plan: p} }
 	stands.Forge = func(*engine.Engine) engine.Forge { return recordingForge{GitHub: g, plan: p} }
+	// The steps are a process of their own, gone once they return;
+	// recovery is this one.
+	over := &atomic.Bool{}
+	self, err := coord.Self()
+	require.NoError(t, err)
+	stands.Process = func() (engine.SessionProcess, error) {
+		if over.Load() {
+			return self, nil
+		}
+		return engine.SessionProcess{PID: self.PID, Start: stoppedProcess}, nil
+	}
+	stands.Liveness = stoppable{over: over}
 	p.fault = armed
 	var r run
 	for _, args := range sc.steps {
@@ -101,6 +132,7 @@ func runOnce(t *testing.T, sc scenario, armed *fault) run {
 			r.failed = append(r.failed, fmt.Sprintf("%v: %v %s", args, err, strings.TrimSpace(errs)))
 		}
 	}
+	over.Store(true)
 	r.reached = p.reached
 	if armed != nil {
 		p.disarm()

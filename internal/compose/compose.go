@@ -229,6 +229,10 @@ type Dependencies struct {
 	// (engine.Options), unset but in its tests (#129).
 	GitHook   func(ctx context.Context, args []string, run func() error) error
 	WrapStore func(store.Store) store.Store
+	// Process and Liveness are the sweep's seam on sessions
+	// (engine.Options), unset but in its tests (#129).
+	Process  func() (engine.SessionProcess, error)
+	Liveness engine.Liveness
 	// OtherDockhands stands in for this Mac's other dockhand processes,
 	// which a migration waits on (engine.Options.OtherDockhands).
 	OtherDockhands func() ([]int, error)
@@ -374,6 +378,8 @@ func Settings(ctx context.Context, options Options, dependencies Dependencies) (
 		Database:  database,
 		GitHook:   dependencies.GitHook,
 		WrapStore: dependencies.WrapStore,
+		Process:   dependencies.Process,
+		Liveness:  dependencies.Liveness,
 		// A test's world counts its own dockhands, not this Mac's.
 		OtherDockhands: dependencies.OtherDockhands,
 		Worktrees:      file.Worktrees,

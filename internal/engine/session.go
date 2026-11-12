@@ -8,12 +8,27 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
+// SessionProcess and Liveness are a session's process and what judges
+// another's (coord), as the engine's options name them.
+type (
+	SessionProcess = coord.Process
+	Liveness       = coord.Liveness
+)
+
 // Session records this process's session of kind and keeps its heartbeat
 // until ctx ends: the one coordinator built for a command, where command
 // built its own (the command package split's 7b row 2).
 func (e *Engine) Session(ctx context.Context, kind model.SessionKind) (*coord.Session, error) {
-	c := &coord.Coordinator{Store: e.Store, Repository: e.Repository}
-	session, err := c.Start(ctx, kind, buildinfo.Current().String())
+	c := &coord.Coordinator{Store: e.Store, Repository: e.Repository, Liveness: e.options.Liveness}
+	self := coord.Self
+	if e.options.Process != nil {
+		self = e.options.Process
+	}
+	process, err := self()
+	if err != nil {
+		return nil, err
+	}
+	session, err := c.StartFor(ctx, process, kind, buildinfo.Current().String())
 	if err != nil {
 		return nil, err
 	}
