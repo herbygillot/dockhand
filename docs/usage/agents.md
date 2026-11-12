@@ -147,7 +147,10 @@ from its `active_checks`. The first check can still be running while
 `latest_check` is null. `check_standing` gives the verdict for the current
 files: `not-checked`, `checking`, `stopped`, `passed`, `incomplete`, `older`,
 `failed`, or `attention`. Use the reported branch and run names for the next
-inspection. An open pull request's `pull_request.merge` gives each port's
+inspection. A port that was checked only with variants is named by its build,
+as `jq +docs`, wherever the JSON names what to accept or what blocks
+submission, an attention item's `next` among them: pass that name to
+`--accept` as it is. An open pull request's `pull_request.merge` gives each port's
 maintainers, with the `maintainers_basis` and `maintainers_as_of` they were
 read at, whom the description mentions, who approved it, the ports still
 `waiting`, and when MacPorts' maintainer timeout ends; `detail.merge` says the

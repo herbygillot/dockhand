@@ -1460,6 +1460,16 @@ func TestABaselineOfOneVariantBuildAcceptsThatBuildAlone(t *testing.T) {
 
 	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"jq +tests"}})
 	require.ErrorContains(t, err, "can be accepted only if the baseline fails the same way")
+
+	// +tests passes: its build's own name still takes +docs, and the bare
+	// name now names it too, the port's one failed build.
+	recordedRun(t, e, branch, "", []built{{tests, model.OutcomePassed}})
+	for _, name := range []string{"jq +docs", "jq"} {
+		plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{name}})
+		require.NoError(t, err, name)
+		require.Empty(t, plan.Blocking, name)
+		require.Equal(t, AcceptedFailure{Kind: AcceptedAtBase, Baselines: []string{"check-2"}}, plan.Accepted["jq +docs"], name)
+	}
 }
 
 // built is a target recordedRun builds, with its outcome.

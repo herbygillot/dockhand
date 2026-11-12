@@ -259,40 +259,59 @@ type TargetEvidence struct {
 	Unchecked bool
 }
 
-// AcceptName is the name submit --accept takes a target's failure by: its
-// build's, as the Tested on table names it, "curl +ssl +sectrust", a
-// bare port name its default build's, so accepting a variant build
-// doesn't accept the default build (field testing's note 10 from the curl
-// fix). A variant build with no default build beside it goes by the
-// port's name where that names it alone: it's the port's only build, or
-// the only one of the port's builds that failed. Where several builds of
-// the port failed, each goes by its build, so one build's baseline
-// failure doesn't accept another's (#235); BuildsOf names them.
-func (e Evidence) AcceptName(target TargetEvidence) string {
-	name := target.Target.Target.Name
-	if target.Target.Target.VariantSpec() == "" || slices.ContainsFunc(e.Targets, func(t TargetEvidence) bool {
-		return t.Target.Target.Name == name && t.Target.ID != target.Target.ID &&
-			(t.Target.Target.VariantSpec() == "" || t.Failing() || !target.Failing())
-	}) {
-		return string(target.Target.ID)
+// AcceptName is the name a target's failure is accepted, kept, and said
+// by: its build's, as the Tested on table names it, "curl +ssl
+// +sectrust", whatever its sibling builds did, a bare port name its
+// default build's, so accepting a variant build doesn't accept the default
+// build (field testing's note 10 from the curl fix). The port's bare name
+// is another way to name a variant build, where it's the one build of a
+// port with no default build that failed (AcceptTarget, #235).
+func (e Evidence) AcceptName(target TargetEvidence) string { return string(target.Target.ID) }
+
+// AcceptTarget is the build a name given to submit --accept takes: the
+// build it names, or for a port's bare name where the port has no default
+// build, the one build of it that failed. False where it names none, as
+// where several of the port's builds failed (FailedBuildsOf names them).
+func (e Evidence) AcceptTarget(name string) (TargetEvidence, bool) {
+	if i := slices.IndexFunc(e.Targets, func(t TargetEvidence) bool { return string(t.Target.ID) == name }); i >= 0 {
+		return e.Targets[i], true
 	}
-	return name
+	if failed := e.FailedBuildsOf(name); len(failed) == 1 {
+		return failed[0], true
+	}
+	return TargetEvidence{}, false
 }
 
-// BuildsOf are the builds of a port the evidence has, failing ones first,
-// each in the plan's order.
+// Accepts reports whether any of the names given to --accept takes the
+// target (AcceptTarget).
+func (e Evidence) Accepts(names []string, target TargetEvidence) bool {
+	return slices.ContainsFunc(names, func(name string) bool {
+		found, ok := e.AcceptTarget(name)
+		return ok && found.Target.ID == target.Target.ID
+	})
+}
+
+// BuildsOf are the builds of a port the evidence has, in the plan's order.
 func (e Evidence) BuildsOf(port string) []TargetEvidence {
-	var failing, others []TargetEvidence
+	var builds []TargetEvidence
 	for _, target := range e.Targets {
-		switch {
-		case target.Target.Target.Name != port:
-		case target.Failing():
-			failing = append(failing, target)
-		default:
-			others = append(others, target)
+		if target.Target.Target.Name == port {
+			builds = append(builds, target)
 		}
 	}
-	return append(failing, others...)
+	return builds
+}
+
+// FailedBuildsOf are the builds of a port that failed where a check built
+// them, a build never built not one of them.
+func (e Evidence) FailedBuildsOf(port string) []TargetEvidence {
+	var failed []TargetEvidence
+	for _, target := range e.BuildsOf(port) {
+		if target.Failing() && slices.ContainsFunc(target.Outcomes, func(c Cell) bool { return c.Kind == CellRecorded && c.Outcome != model.OutcomePassed }) {
+			failed = append(failed, target)
+		}
+	}
+	return failed
 }
 
 // Remade are the environments where the target's result was recorded
