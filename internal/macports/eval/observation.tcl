@@ -53,7 +53,7 @@ namespace eval ::dockhand {
                     variable ::dockhand_dispatcher::recording
                     if {[llength $cmd] < 2} { return }
                     set name [lindex $cmd 0]
-                    if {$name eq "file" && [lindex $cmd 1] ni {exists isfile isdirectory readable writable executable mtime atime stat lstat size type readlink owned attributes}} { return }
+                    if {$name eq "file" && [::dockhand_dispatcher::subcommand [lindex $cmd 1]] ni {exists isfile isdirectory readable writable executable mtime atime stat lstat size type readlink owned attributes}} { return }
                     # Whether the read reaches outside the tree comes first,
                     # since most don't; the frames, costly to walk, only for
                     # those that do.
@@ -147,8 +147,34 @@ namespace eval ::dockhand {
         variable declarations $trace_declarations
         variable session_modeled
         variable modeled [expr {[llength $overrides] > 0 || $session_modeled}]
+        # What a modelled setup overrides is kept as the Mac had it, and
+        # the native setup after it puts it back, a deferred option's
+        # traces too, so the native context describes this Mac again
+        # (Codex's review of #110 and #125, finding 7).
+        variable native
+        if {![info exists native]} { set native {} }
         if {[llength $overrides]} {
+            foreach {name value} $overrides {
+                if {[dict exists $native $name] || [namespace which -variable ::macports::$name] eq ""} { continue }
+                set traces [trace info variable ::macports::$name]
+                set exists [info exists ::macports::$name]
+                set kept ""
+                if {$exists && $traces eq ""} { set kept [set ::macports::$name] }
+                dict set native $name [list $exists $kept $traces]
+            }
             ::macports::override_vars $overrides
+        } else {
+            dict for {name state} $native {
+                lassign $state exists kept traces
+                if {$exists && $traces eq ""} {
+                    set ::macports::$name $kept
+                    continue
+                }
+                unset -nocomplain ::macports::$name
+                namespace eval ::macports [list variable $name]
+                foreach trace $traces { trace add variable ::macports::$name {*}$trace }
+            }
+            set native {}
         }
 
         if {$declarations} {

@@ -224,6 +224,16 @@ namespace eval ::dockhand {
                     }
                     return
                 }
+                # own reports whether a path is the fresh installation's to
+                # answer: under its prefix or its applications directory.
+                proc own {path} {
+                    variable prefix
+                    variable applications
+                    foreach root [list $prefix $applications] {
+                        if {$root ne "" && ($path eq $root || [string first "$root/" $path] == 0)} { return 1 }
+                    }
+                    return 0
+                }
                 # binaryInPath and findBinary, Base's lookups of a program
                 # along PATH, run in the parent and see the host's prefix;
                 # these are the same, in the worker, over the fresh one.
@@ -337,10 +347,17 @@ namespace eval ::dockhand {
                     }
                     set patterns [lrange $arguments $i end]
                     if {[catch {interp invokehidden {} glob -nocomplain {*}[lrange $arguments 0 $i-1] {*}$patterns} found]} { return }
+                    # A match the host alone supplied, outside the prefix,
+                    # is no answer of the fresh installation's: a modelled
+                    # context judges the whole glob as dispatch does, which
+                    # an empty Mac answers with no match (Codex's review of
+                    # #110 and #125, finding 4).
+                    variable closed
                     set kept {}
                     foreach match $found {
                         set path $match
                         if {$tails && $directory ne ""} { set path $directory/$match }
+                        if {$closed && ![own $path] && [reaches $path]} { return }
                         if {![absent $path]} { lappend kept $match }
                     }
                     if {[llength $kept] == [llength $found]} { return }

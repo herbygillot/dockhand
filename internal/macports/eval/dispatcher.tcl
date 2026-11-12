@@ -132,6 +132,22 @@ namespace eval ::dockhand {
                 # reading are the file subcommands that read the
                 # filesystem; the rest are path arithmetic or refused.
                 variable reading {exists isfile isdirectory readable writable executable mtime atime stat lstat size type readlink owned attributes link}
+                # subcommands are Tcl 8.6's file subcommands, which Tcl
+                # takes by any unique prefix: file exi is file exists.
+                variable subcommands {atime attributes channels copy delete dirname executable exists extension isdirectory isfile join link lstat mkdir mtime nativename normalize owned pathtype readable readlink rename rootname separator size split stat system tail tempfile type volumes writable}
+                # subcommand is the file subcommand a word names, as Tcl
+                # reads it, whole or by a unique prefix; the word itself
+                # where it names none, for Tcl to refuse. Every judgment of
+                # a file call reads it so (Codex's review of #110 and #125,
+                # finding 2): file exi read the host, judged as reading
+                # nothing.
+                proc subcommand {word} {
+                    variable subcommands
+                    if {$word in $subcommands} { return $word }
+                    set whole [tcl::prefix match -error {} $subcommands $word]
+                    if {$whole eq ""} { return $word }
+                    return $whole
+                }
                 # host_path is the one reading of whether a call reaches the
                 # host, which the verdict and the closed model share: why it
                 # does, in the verdict's words, or empty. A process always
@@ -166,6 +182,11 @@ namespace eval ::dockhand {
                                 if {$literal eq ""} { set literal . }
                                 lappend paths $literal
                             }
+                            # And each match, where a link a wildcard
+                            # matched leaves the roots: a link at any step
+                            # leaving them makes the read the host's
+                            # (Codex's review of #110 and #125, finding 3).
+                            lappend paths {*}[matched $arguments]
                         }
                         default { return "" }
                     }
@@ -200,6 +221,35 @@ namespace eval ::dockhand {
                         }
                     }
                     return ""
+                }
+                # matched are what a glob matches, each a path with any
+                # link in it followed, where it can be: the path itself
+                # where a link can't be read. -types aside, which only
+                # narrows the matches, so a link it would leave out is
+                # judged too.
+                proc matched {arguments} {
+                    set join [expr {[lsearch -exact [lmap word $arguments {tcl::prefix match -error {} {-directory -join -nocomplain -path -tails -types --} $word}] -join] >= 0}]
+                    set patterns [patterns $arguments]
+                    if {$join} { set patterns [list [join $patterns /]] }
+                    set paths {}
+                    foreach pattern $patterns {
+                        if {[catch {interp invokehidden {} glob -nocomplain -- $pattern} found]} { continue }
+                        foreach match $found { lappend paths [followed $match] }
+                    }
+                    return $paths
+                }
+                # followed is a path with its final link followed, a few
+                # links deep: normalize follows the links before it.
+                proc followed {path} {
+                    for {set i 0} {$i < 8} {incr i} {
+                        if {[catch {interp invokehidden {} file type $path} kind] || $kind ne "link"} { return $path }
+                        if {[catch {interp invokehidden {} file readlink $path} target]} { return $path }
+                        if {[interp invokehidden {} file pathtype $target] ne "absolute"} {
+                            set target [interp invokehidden {} file join [interp invokehidden {} file dirname $path] $target]
+                        }
+                        set path [interp invokehidden {} file normalize $target]
+                    }
+                    return $path
                 }
                 # closed_answer is what an empty Mac answers a call that
                 # reaches the host: no file, no match, nothing to run.
@@ -274,6 +324,14 @@ namespace eval ::dockhand {
                         interp invokehidden {} dockhand_closed [string range [list $name {*}$asked] 0 199] [lindex $answer 1]
                     }
                     return $answer
+                }
+                # reaches reports whether reading a path reaches the host
+                # (host_path), judged as shut judges it, recording nothing.
+                proc reaches {path} {
+                    variable recording
+                    set recording 1
+                    try { set problem [host_path file [list exists $path]] } finally { set recording 0 }
+                    expr {$problem ne ""}
                 }
                 # sourcing refuses, in a closed context, a source of a host
                 # path, as an empty Mac has no such file. source is traced,
@@ -574,6 +632,8 @@ namespace eval ::dockhand {
                 proc dispatch {name args} {
                     variable recording
                     if {$recording} { return [interp invokehidden {} $name {*}$args] }
+                    # A file subcommand is judged as Tcl reads it, whole.
+                    if {$name eq "file" && [llength $args]} { lset args 0 [subcommand [lindex $args 0]] }
                     set reason [refusal $name $args]
                     if {$reason ne ""} {
                         set command [string range [list $name {*}$args] 0 199]

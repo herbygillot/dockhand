@@ -213,3 +213,64 @@ func TestAnEvaluationAClosedAnswerEndsNamesTheCall(t *testing.T) {
 	require.Equal(t, "exec echo hi", unanswered.Call)
 	require.ErrorIs(t, err, macports.ErrUnanswered)
 }
+
+// A file subcommand abbreviated as Tcl takes it, file exi or file isf, is
+// the read it names, and closed as it is (Codex's review of #110 and #125,
+// finding 2): it read the host, judged as reading nothing.
+func TestAnAbbreviatedFileReadIsClosed(t *testing.T) {
+	t.Parallel()
+	got, port := observedIn(t, monterey, nil, `lappend results [file exi /etc/hosts] [file isf /etc/hosts]`)
+	require.Equal(t, []string{"0", "0"}, got)
+	require.True(t, port.ModeledHostAccess)
+	require.Equal(t, 1, closedCalls(port)["file exists"])
+	require.Equal(t, 1, closedCalls(port)["file isfile"])
+}
+
+// A glob whose wildcard matches a link out of the tree is the host's
+// read: a link at any step leaving the roots makes it so (Codex's review
+// of #110 and #125, finding 3), and an empty Mac answers it with no match,
+// closed.
+func TestAGlobThroughALinkOutOfTheTreeIsClosed(t *testing.T) {
+	t.Parallel()
+	external := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(external, "hostdata"), []byte("host"), 0o600))
+	got, port := observedIn(t, monterey, func(root string) {
+		putFile(t, root, "devel/effects/files/own/hostdata", "x")
+		require.NoError(t, os.Symlink(external, filepath.Join(root, "devel/effects/files/escape")))
+	}, `lappend results [llength [glob -nocomplain ${filespath}/*/hostdata]] [llength [glob -nocomplain ${filespath}/own/*]]`)
+	require.Equal(t, []string{"0", "1"}, got, "the glob through the link is closed; one of the tree alone reads it")
+	require.True(t, port.ModeledHostAccess)
+	require.Equal(t, 1, closedCalls(port)["glob"])
+}
+
+// A glob the fresh installation filters returns nothing the host alone
+// supplied (Codex's review of #110 and #125, finding 4): /etc/hosts came
+// back beside the prefix's programs it kept.
+func TestAFilteredGlobKeepsNothingOfTheHost(t *testing.T) {
+	t.Parallel()
+	got, port := observedIn(t, monterey, nil, `lappend results [expr {[lsearch -exact [glob -nocomplain /etc/hosts ${prefix}/bin/*] /etc/hosts] >= 0}]`)
+	require.Equal(t, []string{"0"}, got)
+	require.True(t, port.ModeledHostAccess)
+	require.NotEmpty(t, closedCalls(port))
+}
+
+// Setting up the native context after a modelled one in the same
+// interpreter restores what the modelled setup changed (Codex's review of
+// #110 and #125, finding 7): native, modelled, native.
+func TestTheNativeContextIsRestoredAfterAModelledOne(t *testing.T) {
+	t.Parallel()
+	_, tcl := tclSession(t)
+	native := tcl("list $::macports::os_major $::macports::build_arch $::macports::macos_version")
+	overrides, err := macports.ModelVariables(monterey, "")
+	require.NoError(t, err)
+	tools, err := macports.ToolchainAnswers(monterey, "")
+	require.NoError(t, err)
+	tcl("::dockhand::observation_setup {" + overrides + "} 0 {} {" + tools + "}")
+	modelled := tcl("list $::macports::os_major $::macports::build_arch $::macports::macos_version")
+	require.Regexp(t, `^21 arm64 12\.`, modelled)
+	tcl("::dockhand::observation_setup {} 0 {} {}")
+	require.Equal(t, native, tcl("list $::macports::os_major $::macports::build_arch $::macports::macos_version"))
+	require.Equal(t, "0", tcl("set ::dockhand::modeled"))
+	tcl("::dockhand::observation_setup {" + overrides + "} 0 {} {" + tools + "}")
+	require.Equal(t, modelled, tcl("list $::macports::os_major $::macports::build_arch $::macports::macos_version"), "and a modelled one after it is modelled again")
+}
