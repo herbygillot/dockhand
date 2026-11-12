@@ -257,6 +257,9 @@ type driver struct {
 	// canceled records that a cancel request, not the driver stopping,
 	// ended the run.
 	canceled atomic.Bool
+	// stop ends the driving, as a cancel request does: a launch that finds
+	// the cancel recorded under its lock calls it (launch).
+	stop context.CancelFunc
 	// estimates are the environments' install estimates being said
 	// (sayEstimate), which the run waits for before it finishes.
 	estimates sync.WaitGroup
@@ -338,6 +341,7 @@ func (d *driver) drive(ctx context.Context, id model.RunID) (model.Run, error) {
 	// A cancel recorded by another command stops this one at its next step.
 	running, stop := context.WithCancel(ctx)
 	defer stop()
+	d.stop = stop
 	go d.watchCancel(running, stop)
 
 	commit, err := c.revisionCommit(ctx, revision)

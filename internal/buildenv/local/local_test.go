@@ -56,7 +56,17 @@ type fakeBuild struct {
 	progress     []string
 	observed     []model.Observed
 	refs         []string
+	launches     []string
 	dependencies []string
+}
+
+// Launch notes what is launched and starts it, with no lock.
+func (b *fakeBuild) Launch(note string, start func(context.Context) (string, error)) error {
+	b.mu.Lock()
+	b.launches = append(b.launches, note)
+	b.mu.Unlock()
+	_, err := start(context.Background())
+	return err
 }
 
 func (b *fakeBuild) Refer(ref string) error {
@@ -196,6 +206,7 @@ func TestTheLocalProviderBuildsInThePrefixAndPutsItBack(t *testing.T) {
 	require.Equal(t, model.OutcomePassed, build.results[1].Outcome)
 	require.Equal(t, 1, build.observed[0].ActivePorts)
 	require.Len(t, build.refs, 1)
+	require.Equal(t, []string{`{"directory":"` + build.refs[0] + `"}`}, build.launches, "the check's directory is noted before the guest starts")
 	require.Contains(t, build.progress, "building in "+prefix+" (as you)")
 	require.NoDirExists(t, build.refs[0], "the check's directory goes once the prefix is put back")
 	require.Equal(t, "  zlib @1.3.2_0 (active)\n", readRegistry(t, path))

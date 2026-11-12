@@ -89,6 +89,12 @@ func (e *Engine) LogDirectory() string {
 	return filepath.Join(filepath.Dir(e.options.Database), "logs")
 }
 
+// LaunchDirectory is where attempts' launch locks are kept, beside the
+// database (checks.Service.Launches).
+func (e *Engine) LaunchDirectory() string {
+	return filepath.Join(filepath.Dir(e.options.Database), "launches")
+}
+
 // Run reads a run.
 func (e *Engine) Run(ctx context.Context, id model.RunID) (model.Run, error) {
 	var run model.Run

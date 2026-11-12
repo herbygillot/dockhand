@@ -236,14 +236,24 @@ func (l *Local) Execute(ctx context.Context, job buildenv.Job, build buildenv.Bu
 		}
 		return fmt.Errorf("staging the revision: %w", err)
 	}
-	if err := build.Refer(dir); err != nil {
-		os.RemoveAll(dir)
-		return err
-	}
-	started, err := l.start(dir, prefix, job.Run.Name(), sudo)
+	// The guest is started under the attempt's launch lock, its directory
+	// noted first (buildenv.Build.Launch). Its program isn't handed the
+	// lock yet: the starter the lifecycle design gives it does that.
+	var started *localRun
+	note := launchNote{Directory: dir}.String()
+	err = build.Launch(note, func(context.Context) (string, error) {
+		if err := build.Refer(dir); err != nil {
+			return note, err
+		}
+		var err error
+		if started, err = l.start(dir, prefix, job.Run.Name(), sudo); err != nil {
+			return note, buildenv.Infrastructure("starting the guest program: %w", err)
+		}
+		return note, nil
+	})
 	if err != nil {
 		os.RemoveAll(dir)
-		return buildenv.Infrastructure("starting the guest program: %w", err)
+		return err
 	}
 	build.Progress(fmt.Sprintf("building in %s (%s)", prefix, map[bool]string{true: "as root", false: "as you"}[len(sudo) > 0]))
 	follower := &guest.Follower{Prefix: prefix, Root: dir, Poll: l.Poll, Ended: func() error { return started.killed(prefix) }}
@@ -478,6 +488,17 @@ func (l *Local) username() string {
 		}
 	}
 	return cmp.Or(name, "<you>")
+}
+
+// launchNote is what an attempt notes before it starts the guest, in the
+// form Stop reads (model.GuestExecution.Launch): the check's directory.
+type launchNote struct {
+	Directory string `json:"directory"`
+}
+
+func (n launchNote) String() string {
+	data, _ := json.Marshal(n)
+	return string(data)
 }
 
 // start runs the guest program in the check's directory under the

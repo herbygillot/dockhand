@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -279,10 +280,19 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 			before = max(before, r.ID)
 		}
 		build.Progress(fmt.Sprintf("pushing to %s on %s", branch, fork.Repository))
-		if err := remotewrite.Push(ctx, p.Repo, remotewrite.OwnFork, fork.Repository, git.Push{Remote: fork.PushURL, Branch: branch, Commit: job.Commit, ExpectedRemote: head}); err != nil {
+		// The push is noted before it is sent, under the attempt's launch
+		// lock, which git push holds as it runs (buildenv.Build.Launch).
+		note := launchNote{Repository: fork.Repository, Workflow: Workflow, Branch: branch, Commit: job.Commit, Check: string(job.Run.ID), Action: launchPush, Before: before}
+		if err := build.Launch(note.String(), func(ctx context.Context) (string, error) {
+			return note.String(), remotewrite.Push(ctx, p.Repo, remotewrite.OwnFork, fork.Repository, git.Push{Remote: fork.PushURL, Branch: branch, Commit: job.Commit, ExpectedRemote: head})
+		}); err != nil {
+			if errors.Is(err, buildenv.ErrNotLaunched) {
+				return err
+			}
 			return buildenv.Infrastructure("pushing to %s: %w", fork.Repository, err)
 		}
 	}
+	pushed := head != (git.RefValue{Exists: true, Object: job.Commit})
 
 	build.Progress("waiting for GitHub to start " + Workflow + " on " + fork.Repository)
 	var run Run
@@ -301,6 +311,14 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 				Workflow, branch, appear, fork.Repository)
 		}
 		if err := p.sleep(ctx, poll); err != nil {
+			return err
+		}
+	}
+	// An attempt that found the branch at its commit pushed nothing, and
+	// keeps the run it takes as its note.
+	if !pushed {
+		note := launchNote{Repository: fork.Repository, Workflow: Workflow, Branch: branch, Commit: job.Commit, Check: string(job.Run.ID), Action: launchAttach, Run: run.ID}
+		if err := build.Launch(note.String(), func(context.Context) (string, error) { return note.String(), nil }); err != nil {
 			return err
 		}
 	}
@@ -340,7 +358,15 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	// again.
 	if ended == "" && run.Status == "completed" && (stoppedShort(run.Conclusion) || job.Execution.Attempt > 1 && run.Conclusion != "success") {
 		build.Progress(fmt.Sprintf("running %s's unsuccessful jobs again", run.URL))
-		if err := remotewrite.Rerun(ctx, p.API, remotewrite.Made, fork.Repository, run.ID); err != nil {
+		// Running it again starts work as a push does: noted first, with
+		// the run and the attempt it had, under the launch lock.
+		note := launchNote{Repository: fork.Repository, Workflow: Workflow, Branch: branch, Commit: job.Commit, Check: string(job.Run.ID), Action: launchRerun, Run: run.ID, Attempt: run.Attempt}
+		if err := build.Launch(note.String(), func(ctx context.Context) (string, error) {
+			return note.String(), remotewrite.Rerun(ctx, p.API, remotewrite.Made, fork.Repository, run.ID)
+		}); err != nil {
+			if errors.Is(err, buildenv.ErrNotLaunched) {
+				return err
+			}
 			return buildenv.Infrastructure("running %s again: %w", run.URL, err)
 		}
 		previous := run.Attempt
@@ -642,7 +668,14 @@ var runURL = regexp.MustCompile(`^https://github\.com/([^/]+/[^/]+)/actions/runs
 // have stopped, and the cancel stays requested. An execution that
 // recorded no run has nothing to cancel; a reference that isn't a run's
 // URL is an error, since what it started can't be found.
-func (p *Provider) Stop(ctx context.Context, execution model.GuestExecution) ([]string, error) {
+func (p *Provider) Stop(ctx context.Context, execution model.GuestExecution, lock buildenv.LaunchLock) ([]string, error) {
+	// Holding the attempt's launch lock, nothing more can be pushed or run
+	// again for it.
+	release, err := lock.Hold(ctx, stopWait)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	if execution.ProviderRef == "" {
 		return nil, nil
 	}
@@ -688,6 +721,36 @@ func (p *Provider) Stop(ctx context.Context, execution model.GuestExecution) ([]
 		}
 	}
 	return nil, fmt.Errorf("GitHub was asked to cancel %s, and it is still %s", execution.ProviderRef, cmp.Or(run.Status, "not completed"))
+}
+
+// launchNote is what an attempt notes before it starts work on GitHub, in
+// the form Stop reads (model.GuestExecution.Launch): the repository, the
+// workflow, the branch, the whole commit and the check's whole ID, and what
+// it is about to do. A push keeps the newest run listed for the branch and
+// commit before it (Before); a rerun the run and the attempt it had; an
+// attach the run it took, having pushed nothing.
+type launchNote struct {
+	Repository string `json:"repository"`
+	Workflow   string `json:"workflow"`
+	Branch     string `json:"branch"`
+	Commit     string `json:"commit"`
+	Check      string `json:"check"`
+	Action     string `json:"action"`
+	Before     int64  `json:"before,omitempty"`
+	Run        int64  `json:"run,omitempty"`
+	Attempt    int    `json:"attempt,omitempty"`
+}
+
+// The actions a launch note names.
+const (
+	launchPush   = "push"
+	launchRerun  = "rerun"
+	launchAttach = "attach"
+)
+
+func (n launchNote) String() string {
+	data, _ := json.Marshal(n)
+	return string(data)
 }
 
 // stopWait is how long Stop reads a run it canceled for GitHub to say it

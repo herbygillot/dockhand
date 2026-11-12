@@ -17,6 +17,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/filelock"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/subprocess"
@@ -112,6 +113,17 @@ type Provider struct {
 	Env []string
 }
 
+// launchNote is what an attempt notes before it starts the script, in the
+// form Stop reads (model.GuestExecution.Launch): the job's directory.
+type launchNote struct {
+	Directory string `json:"directory"`
+}
+
+func (n launchNote) String() string {
+	data, _ := json.Marshal(n)
+	return string(data)
+}
+
 func (p *Provider) Name() string { return buildenv.Command }
 
 var _ buildenv.Provider = (*Provider)(nil)
@@ -179,7 +191,20 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	command.Dir = job.Directory
 	command.Env = append(append([]string{}, p.Env...), "DOCKHAND_REQUEST="+requestPath)
 	command.Stdout, command.Stderr = log, log
-	runErr := command.Run()
+	// The script's shell is started under the attempt's launch lock, its
+	// directory noted first, and holds the lock's file for as long as it
+	// runs (buildenv.Build.Launch).
+	note := launchNote{Directory: job.Directory}.String()
+	if err := build.Launch(note, func(ctx context.Context) (string, error) {
+		command.ExtraFiles = filelock.Carried(ctx)
+		return note, command.Start()
+	}); err != nil {
+		if errors.Is(err, buildenv.ErrNotLaunched) || ctx.Err() != nil {
+			return err
+		}
+		return buildenv.Infrastructure("starting %s: %w", p.Label, err)
+	}
+	runErr := command.Wait()
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}

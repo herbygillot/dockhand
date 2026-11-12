@@ -43,8 +43,10 @@ type Service struct {
 	Capacities map[string]int
 	LocalServe bool
 	TartHome   string
-	// Logs is the directory checks' logs are kept in.
-	Logs string
+	// Logs is the directory checks' logs are kept in, and Launches the one
+	// attempts' launch locks are (launchLockPath).
+	Logs     string
+	Launches string
 	// Checkout is the ports checkout a snapshot is committed in for a
 	// guest to fetch, and whose trees reuse compares.
 	Checkout *git.Repository

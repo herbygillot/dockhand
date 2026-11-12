@@ -140,7 +140,7 @@ func (c *Service) stopUnfinished(ctx context.Context, id model.RunID) (left, unk
 			continue
 		}
 		asked[key] = true
-		gone, err := stopper.Stop(ctx, execution)
+		gone, err := stopper.Stop(ctx, execution, launchLock{path: c.launchLockPath(execution.ID)})
 		if err != nil {
 			what := execution.ProviderRef
 			if what == "" {

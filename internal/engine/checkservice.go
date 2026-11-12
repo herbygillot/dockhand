@@ -16,7 +16,7 @@ import (
 func (e *Engine) checks() *checks.Service {
 	return &checks.Service{Store: e.Store, Repository: e.Repository, Sessions: e,
 		Providers: e.Providers, Capacities: e.Capacity, LocalServe: e.LocalServe, TartHome: e.TartHome,
-		Logs: e.LogDirectory(), Checkout: e.Repo, Ports: e.checkPorts, Archives: e.archives(),
+		Logs: e.LogDirectory(), Launches: e.LaunchDirectory(), Checkout: e.Repo, Ports: e.checkPorts, Archives: e.archives(),
 		Admission: checkAdmission{e}, Hooks: checkHooks{e}, Now: e.now, Poll: e.pollInterval(), Stall: e.stall}
 }
 

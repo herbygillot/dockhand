@@ -28,7 +28,9 @@ type machine interface {
 	Whose(ctx context.Context) (ours []string, theirs int, err error)
 	Clone(ctx context.Context, image, vm string) error
 	// Start runs a VM owned by this process.
-	Start(vm string) (run, error)
+	// Start starts a clone, which keeps hold, lock files handed to it, for
+	// as long as it runs.
+	Start(vm string, hold ...*os.File) (run, error)
 	// Stop stops a VM by name, one an earlier process started.
 	Stop(ctx context.Context, vm string) error
 	Delete(ctx context.Context, vm string) error
@@ -128,8 +130,8 @@ func (n *native) Released(ctx context.Context, pids []int, within time.Duration)
 	host.Released(ctx, pids, within)
 }
 
-func (n *native) Start(vm string) (run, error) {
-	started, err := n.StartForeground(vm)
+func (n *native) Start(vm string, hold ...*os.File) (run, error) {
+	started, err := n.StartForeground(vm, hold...)
 	if err != nil {
 		return nil, err
 	}

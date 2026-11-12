@@ -44,7 +44,7 @@ func service(t *testing.T) *Service {
 	require.NoError(t, err)
 	now := func() time.Time { return at }
 	return &Service{Store: s, Repository: repository, Sessions: sessions{&coord.Coordinator{Store: s, Repository: repository}},
-		Logs: t.TempDir(), Archives: &Archives{Directory: t.TempDir(), Store: s, Repository: repository, Now: now},
+		Logs: t.TempDir(), Launches: t.TempDir(), Archives: &Archives{Directory: t.TempDir(), Store: s, Repository: repository, Now: now},
 		Now: now, Poll: 10 * time.Millisecond}
 }
 

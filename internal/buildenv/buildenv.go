@@ -268,6 +268,21 @@ type TargetReport struct {
 // target that was blocked or never built.
 func Reported(result model.TargetResult) TargetReport { return TargetReport{Result: result} }
 
+// ErrNotLaunched is a launch refused under the lock: the check's cancel is
+// recorded, or it is another driver's now, so nothing was started.
+var ErrNotLaunched = errors.New("nothing was launched: the check's cancel is recorded, or another process drives it now")
+
+// LaunchLock is an attempt's launch lock as Stop takes it, the lock every
+// launch of the attempt and every child that can start work holds: once
+// Stop holds it, nothing more can be launched for the attempt, since a
+// launcher that takes it later reads the cancel and starts nothing.
+type LaunchLock interface {
+	// Hold takes the lock within the bound, and release lets it go. An
+	// error is a lock still held by something alive, named where the
+	// launcher recorded itself; the lock is never taken from it.
+	Hold(ctx context.Context, within time.Duration) (release func(), err error)
+}
+
 // Stopper is a provider whose work can outlive its driver, as GitHub's
 // workflow runs on when a resumable driver stops, so the next can find it
 // again. Stop ends the work an execution recorded and gives one of three
@@ -278,7 +293,7 @@ func Reported(result model.TargetResult) TargetReport { return TargetReport{Resu
 // the check, before the check is called canceled (#115, #193).
 type Stopper interface {
 	Provider
-	Stop(ctx context.Context, execution model.GuestExecution) (left []string, err error)
+	Stop(ctx context.Context, execution model.GuestExecution, lock LaunchLock) (left []string, err error)
 }
 
 // LinkReader is a provider that reads what a passed build's binaries link
@@ -334,6 +349,17 @@ type Build interface {
 	// Refer records the provider's own name for this run: a workflow
 	// run's URL, a VM clone's name. dockhand logs finds the run by it.
 	Refer(ref string) error
+	// Launch starts the attempt's work under its launch lock, the one
+	// call every provider starts work through (the lifecycle design's
+	// "Launching and stopping exclude each other"). Holding the lock, it
+	// reads again that the check is still this driver's and that no
+	// cancel is recorded, saves note as the attempt's Launch, and only
+	// then runs start, whose context carries the lock's file for every
+	// child start forks to hold (filelock.Carried). The note start
+	// returns, where it changed, is saved before the lock is let go.
+	// ErrNotLaunched where the check isn't this driver's any more or its
+	// cancel is recorded: start isn't run.
+	Launch(note string, start func(ctx context.Context) (string, error)) error
 	// Canceled reports, once the context is done, that the run was
 	// canceled or interrupted for good, rather than its driver stopping
 	// with the run left for the next one: only then does a provider stop

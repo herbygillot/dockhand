@@ -500,7 +500,7 @@ func (t *tx) UpdateRun(r model.Run) error {
 		r.State, r.Detail, nullableMillis(r.FinishedAt), nullableMillis(r.CancelRequested), nullableMillis(r.StartedAt), t.repo, r.ID)
 }
 
-const executionColumns = "id, run_id, provider, platform_os, platform_version, platform_architecture, developer_tools, prefix, attempt, state, detail, provider_ref, observed, identity, reused, created_at, finished_at"
+const executionColumns = "id, run_id, provider, platform_os, platform_version, platform_architecture, developer_tools, prefix, attempt, state, detail, provider_ref, launch, observed, identity, reused, created_at, finished_at"
 
 // executionFields are where a row's executionColumns are scanned into e,
 // and what completes e once they are.
@@ -509,7 +509,7 @@ func executionFields(e *model.GuestExecution) ([]any, func() error) {
 	var finished sql.NullInt64
 	var observed string
 	p := &e.Environment.Platform
-	fields := []any{&e.ID, &e.Run, &e.Environment.Provider, &p.OS, &p.Version, &p.Architecture, &e.Environment.DeveloperTools, &e.Environment.Prefix, &e.Attempt, &e.State, &e.Detail, &e.ProviderRef, &observed, &e.Identity, &e.Reused, &created, &finished}
+	fields := []any{&e.ID, &e.Run, &e.Environment.Provider, &p.OS, &p.Version, &p.Architecture, &e.Environment.DeveloperTools, &e.Environment.Prefix, &e.Attempt, &e.State, &e.Detail, &e.ProviderRef, &e.Launch, &observed, &e.Identity, &e.Reused, &created, &finished}
 	return fields, func() error {
 		if observed != "" {
 			if err := json.Unmarshal([]byte(observed), &e.Observed); err != nil {
@@ -598,8 +598,8 @@ func (t *tx) AddExecution(e model.GuestExecution) error {
 	if err != nil {
 		return err
 	}
-	_, err = t.exec("INSERT INTO executions(repository_id, "+executionColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		t.repo, e.ID, e.Run, e.Environment.Provider, p.OS, p.Version, p.Architecture, e.Environment.DeveloperTools, e.Environment.Prefix, e.Attempt, e.State, e.Detail, e.ProviderRef, observed, e.Identity, boolInt(e.Reused), millis(e.CreatedAt), nullableMillis(e.FinishedAt))
+	_, err = t.exec("INSERT INTO executions(repository_id, "+executionColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		t.repo, e.ID, e.Run, e.Environment.Provider, p.OS, p.Version, p.Architecture, e.Environment.DeveloperTools, e.Environment.Prefix, e.Attempt, e.State, e.Detail, e.ProviderRef, e.Launch, observed, e.Identity, boolInt(e.Reused), millis(e.CreatedAt), nullableMillis(e.FinishedAt))
 	return err
 }
 
@@ -633,8 +633,8 @@ func (t *tx) UpdateExecution(e model.GuestExecution) error {
 	if err != nil {
 		return err
 	}
-	return t.update("execution "+string(e.ID), "UPDATE executions SET state=?, detail=?, provider_ref=?, observed=CASE WHEN ?='' THEN observed ELSE ? END, finished_at=? WHERE repository_id=? AND id=?",
-		e.State, e.Detail, e.ProviderRef, observed, observed, nullableMillis(e.FinishedAt), t.repo, e.ID)
+	return t.update("execution "+string(e.ID), "UPDATE executions SET state=?, detail=?, provider_ref=?, launch=?, observed=CASE WHEN ?='' THEN observed ELSE ? END, finished_at=? WHERE repository_id=? AND id=?",
+		e.State, e.Detail, e.ProviderRef, e.Launch, observed, observed, nullableMillis(e.FinishedAt), t.repo, e.ID)
 }
 
 const resultColumns = "r.execution_id, r.target_id, r.outcome, r.phase, r.tests, r.log, r.steps, r.detail, r.builders, r.inputs, r.archive, r.reused_from, r.dependency, r.dependency_version, r.links, r.installed, r.libraries, r.configure, r.lint, r.nitpicked, r.carried, r.declared, r.recorded_at"

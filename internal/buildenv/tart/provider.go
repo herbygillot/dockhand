@@ -33,6 +33,7 @@ import (
 	guestprogram "github.com/herbygillot/dockhand/internal/buildenv/guest"
 	"github.com/herbygillot/dockhand/internal/buildenv/staging"
 	"github.com/herbygillot/dockhand/internal/credential"
+	"github.com/herbygillot/dockhand/internal/filelock"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -857,15 +858,26 @@ func (p *Provider) start(ctx context.Context, m machine, build buildenv.Build, i
 	earlier, _ := m.VirtualMachines(ctx)
 	build.Progress("starting " + vm + " from " + image)
 	// The clone is named on the execution before it exists, so one this
-	// process leaves when it dies is always a known check's (Leftovers).
-	if err := build.Refer(vm); err != nil {
-		return false, nil, nil, err
-	}
-	if err := m.Clone(ctx, image, vm); err != nil {
-		return false, nil, nil, buildenv.Infrastructure("cloning %s: %w", image, err)
-	}
-	if started, err = m.Start(vm); err != nil {
-		return true, nil, nil, buildenv.Infrastructure("starting %s: %w", vm, err)
+	// process leaves when it dies is always a known check's (Leftovers),
+	// and both it and the clone's tart run are made under the attempt's
+	// launch lock, each handed its file: tart run holds it for as long as
+	// the VM runs (buildenv.Build.Launch).
+	note := launchNote{Clone: vm}.String()
+	err = build.Launch(note, func(ctx context.Context) (string, error) {
+		if err := build.Refer(vm); err != nil {
+			return note, err
+		}
+		if err := m.Clone(ctx, image, vm); err != nil {
+			return note, buildenv.Infrastructure("cloning %s: %w", image, err)
+		}
+		cloned = true
+		if started, err = m.Start(vm, filelock.Carried(ctx)...); err != nil {
+			return note, buildenv.Infrastructure("starting %s: %w", vm, err)
+		}
+		return note, nil
+	})
+	if err != nil {
+		return cloned, nil, nil, err
 	}
 	// The next start counts this VM once Tart lists it, which takes a
 	// moment; it waits that long at most.
@@ -886,6 +898,17 @@ func (p *Provider) start(ctx context.Context, m machine, build buildenv.Build, i
 		}
 	}
 	return true, started, vms, nil
+}
+
+// launchNote is what an attempt notes before it clones, in the form Stop
+// reads (model.GuestExecution.Launch): the clone it is about to make.
+type launchNote struct {
+	Clone string `json:"clone"`
+}
+
+func (n launchNote) String() string {
+	data, _ := json.Marshal(n)
+	return string(data)
 }
 
 // releaseWait bounds how long a check's end waits for macOS to let its VM

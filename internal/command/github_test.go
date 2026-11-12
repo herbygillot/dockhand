@@ -21,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -691,6 +692,14 @@ func TestCancellingAStoppedGitHubCheckStopsItsWorkflow(t *testing.T) {
 	require.Len(t, f.runs, 1)
 	require.Equal(t, "in_progress", f.runs[0].Status)
 	require.Zero(t, f.canceled)
+	// The push was noted before it was sent, for a stop to read.
+	require.NoError(t, e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		executions, err := r.Executions(run.ID)
+		require.NotEmpty(t, executions)
+		require.Contains(t, executions[0].Launch, `"action":"push"`)
+		require.Contains(t, executions[0].Launch, `"check":"`+string(run.ID)+`"`)
+		return err
+	}))
 
 	// GitHub out of reach, the cancel stays requested, and says so.
 	f.unreachable = errors.New("GitHub answered 503")
