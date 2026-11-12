@@ -258,7 +258,7 @@ var owed = map[string]string{
 	"store.update@engine.(*Engine).renameForVersion":    "#194: an update naming its branch for the version it finds",
 	"remote@engine.(*Engine).PostReview":                "#129: the review scenario",
 	"remote@engine.(*Engine).Ready":                     "#191: draft and ready, group B",
-	"remote@engine.(*Engine).RerunCI":                   "#129: a pull request's failed CI run again",
+	"remote@engine.(*Engine).RerunCI":                   "#129: a pull request's failed CI run again, waiting on the person's word on rule 1, which the ownership check follows and remotewrite's RerunChecks doesn't",
 	"remote@engine.(*Engine).draftFirst":                "#191: draft and ready, group B, the GitHub CLI's way",
 	"remote@engine.(*Engine).readyByCLI":                "#191: draft and ready, group B, the GitHub CLI's way",
 	"remote@ghactions.(*Provider).Execute":              "#193: a GitHub check launched and canceled",
