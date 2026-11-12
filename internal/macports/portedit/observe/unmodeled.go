@@ -75,18 +75,46 @@ type dimension struct {
 	read    func(name string) bool
 	label   string
 	tainted map[string]bool
+	// seen, where set, is told of every read of the dimension the walk
+	// placed, and sink of every command that takes one as a benign sink,
+	// in its arguments or in a branch the read selects; carried keeps
+	// every variable ever tainted. A value followed through options
+	// (followedReadsBenign) needs all three.
+	seen    func(syntax.VarSub)
+	sink    func(command string)
+	carried map[string]bool
 }
 
 // any reports whether one of the reads is of the dimension, or of a
 // variable a set has tainted with it.
 func (d *dimension) any(src []byte, reads []syntax.VarSub) bool {
+	found := false
 	for _, read := range reads {
 		name := read.Name.Text(src)
 		if d.read(name) || d.tainted[name] {
-			return true
+			if d.seen == nil {
+				return true
+			}
+			d.seen(read)
+			found = true
 		}
 	}
-	return false
+	return found
+}
+
+// taint marks whether a variable carries the dimension.
+func (d *dimension) taint(variable string, carries bool) {
+	d.tainted[variable] = carries
+	if carries && d.carried != nil {
+		d.carried[variable] = true
+	}
+}
+
+// sunk tells sink of a benign sink a read reached.
+func (d *dimension) sunk(command string) {
+	if d.sink != nil {
+		d.sink(command)
+	}
 }
 
 // unmodeledReads refuses reads of unmodeled dimensions that can reach a
@@ -121,12 +149,12 @@ func classifyReads(src []byte, script *syntax.Script, d *dimension) error {
 				// Loop variables bound from the dimension carry it into the body.
 				for i := 0; i < len(controls); i += 2 {
 					if names, ok := controls[i].Literal(src); ok {
-						d.tainted[names] = true
+						d.taint(names, true)
 					} else if len(controls[i].Segments) == 1 {
 						if braced, ok := controls[i].Segments[0].(syntax.Braced); ok {
 							if names, errs := syntax.ListValues(braced.Body.Text(src)); len(errs) == 0 {
 								for _, variable := range names {
-									d.tainted[variable] = true
+									d.taint(variable, true)
 								}
 							}
 						}
@@ -151,7 +179,7 @@ func classifyReads(src []byte, script *syntax.Script, d *dimension) error {
 			// A variable set from the dimension carries it; one set from
 			// anything else stops carrying it.
 			if variable, ok := cmd.Words[1].Literal(src); ok {
-				d.tainted[variable] = d.any(src, cmd.Words[2].Variables(src))
+				d.taint(variable, d.any(src, cmd.Words[2].Variables(src)))
 				continue
 			}
 		}
@@ -162,8 +190,11 @@ func classifyReads(src []byte, script *syntax.Script, d *dimension) error {
 				}
 				continue
 			}
-			if d.any(src, word.Variables(src)) && !benignSink(name) {
-				return ErrInconclusive.Because("%s reads %s", name, d.label)
+			if d.any(src, word.Variables(src)) {
+				if !benignSink(name) {
+					return ErrInconclusive.Because("%s reads %s", name, d.label)
+				}
+				d.sunk(name)
 			}
 		}
 	}
@@ -203,11 +234,12 @@ func benignBody(src []byte, body syntax.Word, d *dimension) error {
 		if !control {
 			if name == "set" && len(cmd.Words) == 3 {
 				if variable, ok := cmd.Words[1].Literal(src); ok {
-					d.tainted[variable] = true
+					d.taint(variable, true)
 					continue
 				}
 			}
 			if benignSink(name) {
+				d.sunk(name)
 				continue
 			}
 			return ErrInconclusive.Because("%s is selected by %s", name, label)

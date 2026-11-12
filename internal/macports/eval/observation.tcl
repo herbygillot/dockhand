@@ -287,7 +287,11 @@ namespace eval ::dockhand {
         }}
         set events [apply $intern $events]
         set operands [apply $intern $operands]
-        return [list $events $artifacts $problems $host_access $operands $any_host_access $ledger $table $reads $execs $hooks]
+        # Where Base's own Tcl is, by the path its frames name it: the
+        # verdict takes a frame as Base's code only under it (#110).
+        set library [base_library]
+        if {$library ne ""} { set library [file normalize $library] }
+        return [list $events $artifacts $problems $host_access $operands $any_host_access $ledger $table $reads $execs $hooks $library]
     }
 }
 ::tclrpc::register observation_setup ::dockhand::observation_setup

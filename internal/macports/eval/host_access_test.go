@@ -286,11 +286,17 @@ func TestEachContextGetsItsOwnCompilerList(t *testing.T) {
 // Portfile in another phase's command, as abella's test.cmd is. One a
 // fetch value reads, one the Portfile reads in an expression, or a
 // Portfile's own lookup, pure-gen's build_getmaketype call among them,
-// stays host state.
+// stays host state. So does one reaching a fetch value through another
+// option, a proc or [set], one a Portfile's callback or a PortGroup's
+// default makes, and one under a Portfile procedure named into portmain
+// or portconfigure (architecture's points 1 to 4 on #110's finding 1).
 func TestBasesOwnLookupForAPhaseOptionIsExplained(t *testing.T) {
 	t.Parallel()
 	group := func(root string) {
 		putFile(t, root, "_resources/port1.0/group/makeargs-1.0.tcl", "default configure.args {-DCMAKE_MAKE_PROGRAM=${build.cmd}}\n")
+	}
+	hostDefault := func(root string) {
+		putFile(t, root, "_resources/port1.0/group/hostdefault-1.0.tcl", "default build.cmd {[catch {findBinary hostonly}]}\n")
 	}
 	for _, c := range []struct {
 		name, lines string
@@ -305,9 +311,40 @@ func TestBasesOwnLookupForAPhaseOptionIsExplained(t *testing.T) {
 		{"a Portfile's own call of Base's make lookup", "build.cmd [portbuild::build_getmaketype]", nil, true, "make, which findBinary"},
 		{"configure.args read by a fetch value", "PortGroup makeargs 1.0\ndistfiles effects-[llength ${configure.args}].tar.gz", group, true, "make, which findBinary"},
 		{"a Portfile's own lookup for configure.args", "catch {configure.args-append [findBinary hostonly]}", nil, true, "hostonly, which findBinary"},
+		{"a Portfile's callback calling Base's make lookup", "proc mine {} { if {[catch {portbuild::build_getmaketype}]} {master_sites a} else {master_sites b} }\nport::register_callback mine", nil, true, "make, which findBinary"},
+		{"a PortGroup's default looking for a program", "PortGroup hostdefault 1.0\nbuild.args ${build.cmd}", hostDefault, true, "hostonly, which findBinary"},
+		{"build.cmd's make, through test.cmd to distfiles", "test.cmd ${build.cmd}\ndistfiles foo-[file tail ${test.cmd}].tgz", nil, true, "make, which findBinary"},
+		{"build.cmd's make, through build.env to master_sites", "build.env MAKE=${build.cmd}\nmaster_sites http://x/${build.env}", nil, true, "make, which findBinary"},
+		{"build.cmd's make, returned by a proc", "proc f {} {global build.cmd; return ${build.cmd}}\ndistfiles [f].tgz", nil, true, "make, which findBinary"},
+		{"build.cmd's make, read by [set]", "distfiles foo-[file tail [set build.cmd]].tar.gz", nil, true, "make, which findBinary"},
+		{"a Portfile procedure named like source_date_epoch's", "proc portmain::get_source_date_epoch_probe {} {return [catch {findBinary hostonly}]}\nif {[portmain::get_source_date_epoch_probe]} {distfiles a} else {distfiles b}", nil, true, "hostonly, which findBinary"},
+		{"a Portfile procedure in portconfigure", "proc portconfigure::mine {} {return [catch {findBinary hostonly}]}\nif {[portconfigure::mine]} {distfiles a} else {distfiles b}", nil, true, "hostonly, which findBinary"},
 	} {
 		_, port := observedIn(t, monterey, c.setup, c.lines)
 		require.True(t, slices.ContainsFunc(port.Problems, func(p string) bool { return strings.Contains(p, c.lookup) }), "%s: the lookup is closed: %v", c.name, port.Problems)
 		require.Equal(t, c.host, hostState(t, port, effects(c.lines)), "%s: %v", c.name, port.Problems)
 	}
+}
+
+// Base's own xcrun, asked for the SDK by configure.sdkroot's default
+// where the table has no answer for the release (Darwin 9), is closed and
+// explained: Base wrote the default and every frame below it is Base's
+// library, and the option shapes the build alone (#110's finding 1,
+// architecture's point 5).
+func TestBasesOwnXcrunForTheSDKIsExplained(t *testing.T) {
+	t.Parallel()
+	leopard := model.Platform{OS: "darwin", Version: "9", Architecture: "i386"}
+	lines := "build.args ${configure.sdkroot}"
+	_, port := observedDescription(t, leopard, model.DeveloperToolsXcode, lines)
+	xcrun := 0
+	for _, declaration := range port.Declarations {
+		if declaration.Command != "dockhand.host-access" || len(declaration.Values) < 4 || !strings.HasPrefix(declaration.Values[3], "exec xcrun ") {
+			continue
+		}
+		xcrun++
+		alone := port
+		alone.Declarations, alone.Problems = []macports.Declaration{declaration}, []string{declaration.Values[0]}
+		require.False(t, hostState(t, alone, effects(lines)), "%v %+v", declaration.Values, declaration.Frames)
+	}
+	require.Positive(t, xcrun, "Base asked xcrun: %v", port.Problems)
 }

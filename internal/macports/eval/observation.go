@@ -21,7 +21,7 @@ func (e *Evaluator) Observe(ctx context.Context, source macports.Context, reques
 func decodeObservation(value string) (macports.PortObservation, error) {
 	var out macports.PortObservation
 	fields, errs := syntax.ListValues(value)
-	if len(errs) > 0 || len(fields) != 11 {
+	if len(errs) > 0 || len(fields) != 12 {
 		return out, fmt.Errorf("macports: invalid observation")
 	}
 	// The source frames, each once; the events name them by index.
@@ -113,6 +113,7 @@ func decodeObservation(value string) (macports.PortObservation, error) {
 	if err := decodeRecord(&out, fields[8], fields[9], fields[10]); err != nil {
 		return out, err
 	}
+	out.BaseLibrary = fields[11]
 	return out, nil
 }
 
