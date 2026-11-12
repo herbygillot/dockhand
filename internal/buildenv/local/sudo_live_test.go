@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 
+	"github.com/herbygillot/dockhand/internal/buildenv/guest"
 	"github.com/herbygillot/dockhand/internal/filelock"
 )
 
@@ -59,17 +60,13 @@ func TestLiveSudoHandsTheLockToItsCommand(t *testing.T) {
 		require.NoError(t, os.WriteFile(path, []byte(script), 0o644))
 		return path
 	}
-	// The command's standard input is read by fstat, through stat(1) with
-	// no file, which reads its own standard input, inherited: a stat of
-	// /dev/fd/0 on macOS gives devfs's device beside the file's number, so
-	// it never equals the lock's (found writing this test, against the
-	// design's "/dev/fd/0 against the lock's path").
-	probe := write("probe.tcl", `set out [lindex $argv 0]
+	// The command reads its standard input the guest's one way
+	// (guest.StdinIs), by fstat, never a stat of /dev/fd/0, which on
+	// macOS gives devfs's device beside the file's number.
+	probe := write("probe.tcl", string(guest.StdinIs)+`set out [lindex $argv 0]
 set lock [lindex $argv 1]
-set in [exec /usr/bin/stat -f "%d %i %HT"]
-file stat $lock held
 set f [open $out.tmp w]
-puts $f "[pid] $held(dev) $held(ino) $in"
+puts $f "[pid] [stdin_is $lock] [exec /usr/bin/stat -f %HT]"
 close $f
 file rename -force $out.tmp $out
 after 600000
@@ -113,11 +110,11 @@ after 600000
 			require.Eventually(t, func() bool {
 				data, err := os.ReadFile(out)
 				said = strings.Fields(string(data))
-				return err == nil && len(said) >= 6
+				return err == nil && len(said) >= 3
 			}, 30*time.Second, 50*time.Millisecond, "the command's report: %s", &log)
 			command, err := strconv.Atoi(said[0])
 			require.NoError(t, err)
-			require.Equal(t, said[1:3], said[3:5], "the command's standard input is the lock's file, not a %s sudo put there", strings.Join(said[5:], " "))
+			require.Equal(t, "1", said[1], "the command's standard input is the lock's file, not a %s sudo put there", strings.Join(said[2:], " "))
 
 			_, err = filelock.TryAcquire(lockPath)
 			require.ErrorIs(t, err, filelock.ErrBusy, "the lock is held while the command lives")
