@@ -29,6 +29,11 @@ func (f recordingForge) write(name string, run func() error) error {
 	if !fires || how == lost {
 		f.plan.atEffect(e)
 	}
+	return f.answer(e, how, fires, run)
+}
+
+// answer runs a forge write or fails it, as the plan says.
+func (f recordingForge) answer(e effect, how mode, fires bool, run func() error) error {
 	if !fires {
 		return run()
 	}
@@ -81,7 +86,15 @@ func (f recordingForge) RequestReviewers(ctx context.Context, ref forge.PullRequ
 }
 
 func (f recordingForge) RerunFailed(ctx context.Context, repository string, run int64) error {
-	return f.write("RerunFailed", func() error { return f.GitHub.RerunFailed(ctx, repository, run) })
+	e := f.plan.record("forge.RerunFailed", repository)
+	how, fires := f.plan.fires(e)
+	if !fires || how == lost {
+		f.plan.atEffect(e)
+		if f.plan.owner != nil {
+			f.plan.breaks(e, f.plan.owner.forge("RerunFailed", repository))
+		}
+	}
+	return f.answer(e, how, fires, func() error { return f.GitHub.RerunFailed(ctx, repository, run) })
 }
 
 // A write whose reply is lost has happened, and its caller gets nothing

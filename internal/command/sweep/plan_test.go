@@ -59,6 +59,30 @@ type plan struct {
 	required map[string]requiredRecord
 	database string
 	missing  []string
+	// owner checks each write the run makes against the rule on remote
+	// writes, and broken are what writes broke of it (#129's fix list,
+	// 1); nil checks nothing.
+	owner  *ownership
+	broken []string
+}
+
+// breaks notes what a write broke of the rule on remote writes.
+func (p *plan) breaks(e effect, broken []string) {
+	if len(broken) == 0 {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, b := range broken {
+		p.broken = append(p.broken, e.address()+": "+b)
+	}
+}
+
+// brokenRules are what the run's writes broke of the rule.
+func (p *plan) brokenRules() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.broken...)
 }
 
 // atEffect reads the records a remote effect requires, as the database
@@ -303,7 +327,12 @@ func (p *plan) gitHook(ctx context.Context, args []string, run func() error) err
 		return run()
 	}
 	e := p.record("git "+subcommand(args), strings.Join(args, " "))
-	switch how, fires := p.fires(e); {
+	how, fires := p.fires(e)
+	// A push that happens is held to the rule where it happens.
+	if p.owner != nil && e.Boundary == "git push" && (!fires || how == lost || how == landedUnknown) {
+		p.breaks(e, p.owner.push(args))
+	}
+	switch {
 	case !fires:
 	case how == lost || how == landedUnknown:
 		if err := run(); err != nil {

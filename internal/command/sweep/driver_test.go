@@ -88,9 +88,11 @@ type run struct {
 	recovered []string
 	reached   bool
 	// steps is how many of effects the steps made, recovery the rest;
-	// missing are the required records an effect ran without.
+	// missing are the required records an effect ran without, and broken
+	// what its writes broke of the rule on remote writes.
 	steps   int
 	missing []string
+	broken  []string
 }
 
 // sweepWorld makes a scenario's World with the plan's seams in place:
@@ -148,6 +150,7 @@ func runOnce(t *testing.T, sc scenario, armed *fault) run {
 	}
 	stands.Liveness = stoppable{over: over}
 	p.required, p.database = sc.required, filepath.Join(w.Home, ".dockhand", "dockhand.db")
+	p.owner = &ownership{github: g, database: p.database}
 	p.fault = armed
 	var r run
 	for _, args := range sc.steps {
@@ -169,7 +172,7 @@ func runOnce(t *testing.T, sc scenario, armed *fault) run {
 			}
 		}
 	}
-	r.effects, r.missing = p.effects(), p.missingRecords()
+	r.effects, r.missing, r.broken = p.effects(), p.missingRecords(), p.brokenRules()
 	r.world = snapshot(t, w, g)
 	return r
 }
@@ -198,6 +201,7 @@ func sweep(t *testing.T, sc scenario) {
 	clean := runOnce(t, sc, nil)
 	require.Empty(t, clean.failed, "the clean run fails")
 	require.Empty(t, clean.missing, "the clean run ran an effect without a record it requires")
+	require.Empty(t, clean.broken, "the clean run broke the rule on remote writes")
 	var addresses []string
 	boundaries := map[string]string{}
 	for _, e := range clean.effects {
@@ -229,6 +233,9 @@ func sweep(t *testing.T, sc scenario) {
 					problems = append(problems, fmt.Sprintf("with %s not landing (its outcome unknown), every step succeeded and the run never made it again", address))
 				}
 				problems = append(problems, r.missing...)
+				// Ownership holds under every fault, at every write
+				// (invariant 5).
+				problems = append(problems, r.broken...)
 				// Recovery ends: it finishes, or refuses, and the world is
 				// still the clean one, which the comparison below holds it
 				// to; a refusal is said beside a difference.

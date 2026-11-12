@@ -35,6 +35,13 @@ func snapshot(t *testing.T, w cmdtest.World, g *forgetest.GitHub) world {
 	out := world{}
 	names := &commitNames{names: map[string]string{}}
 	repositories := map[string]string{"upstream": w.Upstream, "fork": filepath.Join(filepath.Dir(w.Upstream), "fork.git"), "clone": w.Clone}
+	// Every repository the stand-in knows is in the world, another
+	// person's fork among them (#129's fix list, 1).
+	if g != nil {
+		for name, path := range g.Repos {
+			repositories["other "+name] = path
+		}
+	}
 	worktrees, _ := filepath.Glob(filepath.Join(w.Home, "Source", "macports-branches", "*"))
 	for _, worktree := range worktrees {
 		repositories["worktree "+filepath.Base(worktree)] = worktree
@@ -277,6 +284,12 @@ func pullRequests(g *forgetest.GitHub) []string {
 		// commits as everywhere else.
 		lines = append(lines, fmt.Sprintf("pr #%d %s:%s→%s %s draft=%t title=%q body=%q head=%s rerequested=%v",
 			number, pr.HeadRepository, pr.HeadBranch, pr.BaseBranch, pr.State, g.Draft(number), pr.Title, pr.Body, pr.RemoteHead, g.RerequestedOn[number]))
+	}
+	// Other people's pull requests, adopted ones among them, as GitHub
+	// has them: their text is theirs (#129's fix list, 1).
+	for number, pr := range g.Theirs {
+		lines = append(lines, fmt.Sprintf("theirs #%d %s:%s→%s %s title=%q body=%q head=%s maintainer_edits=%t",
+			number, pr.HeadRepository, pr.HeadBranch, pr.BaseBranch, pr.State, pr.Title, pr.Body, pr.RemoteHead, pr.MaintainerCanModify))
 	}
 	for _, review := range g.Reviews {
 		lines = append(lines, fmt.Sprintf("review #%d changes=%t body=%x", review.Ref.Number, review.RequestChanges, sha256.Sum256([]byte(review.Body))))

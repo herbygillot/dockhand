@@ -306,3 +306,25 @@ func TestAnUnknownOutcomeIsResolvedByTheWriteMadeAgain(t *testing.T) {
 	require.False(t, madeAgain(r, "store.update@engine.a#1"), "again only in recovery")
 	require.False(t, madeAgain(r, "store.update@engine.z#1"), "not an effect of the run")
 }
+
+// The world holds every repository the stand-in knows and every pull
+// request, another person's fork and an adopted pull request among them:
+// a ref made in one, or a title overwritten, differs (#129's fix list, 1,
+// the outside read's probes).
+func TestTheWorldHoldsOtherPeoplesRepositoriesAndPullRequests(t *testing.T) {
+	t.Parallel()
+	w, g := updated(t)
+	other := filepath.Join(filepath.Dir(w.Upstream), "other.git")
+	testsupport.Git(t, filepath.Dir(w.Upstream), "clone", "-q", "--bare", w.Upstream, other)
+	g.Repos = map[string]string{"grace/macports-ports": other}
+	g.Theirs = map[int]forge.PullRequest{99: {Ref: forge.PullRequestRef{Repository: forgetest.UpstreamRepository, Number: 99}, HeadRepository: "grace/macports-ports", HeadBranch: "jq", BaseBranch: "master", State: forge.PullRequestOpen, Title: "the person's title"}}
+	before := snapshot(t, w, g)
+	testsupport.Git(t, other, "update-ref", "refs/heads/made-there", "HEAD")
+	require.NotEmpty(t, differences(before, snapshot(t, w, g)), "a ref made in another person's fork")
+	testsupport.Git(t, other, "update-ref", "-d", "refs/heads/made-there")
+	require.Empty(t, differences(before, snapshot(t, w, g)))
+	pr := g.Theirs[99]
+	pr.Title = "overwritten"
+	g.Theirs[99] = pr
+	require.NotEmpty(t, differences(before, snapshot(t, w, g)), "an adopted pull request's text")
+}
