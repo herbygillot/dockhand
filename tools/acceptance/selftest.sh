@@ -157,6 +157,32 @@ else
 	fail=1
 fi
 
+# A pause (pause.sh) stops the run at the next row boundary, with the
+# rows left written for --rows-file (#225).
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/dockhand-selftest.XXXXXX")
+mkdir -p "$tmp/state" "$tmp/fake" "$tmp/home/.dockhand"
+git init -q -b master "$tmp/clone"
+git -C "$tmp/clone" -c user.name=t -c user.email=t@example.org commit -q --allow-empty -m init
+status=0
+(
+	export ACCEPT_STATE="$tmp/state" ACCEPT_WATCH="$tmp/clone" ACCEPT_UPSTREAM="" ACCEPT_RUN_DIR="$tmp/clone"
+	export SELFTEST_CLONE="$tmp/clone" FAKE_DH_STATE="$tmp/fake" DH_BIN="$here/selftest/bin/dockhand"
+	export DOCKHAND_DB="$tmp/state/db" DOCKHAND_CONFIG="$tmp/state/config.toml" MACPORTS_TREE="$tmp/state/clone"
+	export DOCKHAND_UPSTREAM="$tmp/state/upstream.git" DOCKHAND_INDEX_CACHE="$tmp/state/index" DOCKHAND_READING_CACHE="$tmp/state/readings" DOCKHAND_GITHUB_CACHE="$tmp/state/github" DOCKHAND_ARCHIVE_CACHE="$tmp/state/archive-cache" DOCKHAND_BUILD_HISTORY_CACHE="$tmp/state/build-history"
+	export DOCKHAND_TART_HOME="$tmp/state/tart/dockhand" DOCKHAND_SSH_DIR="$tmp/state/tart/ssh" TART_HOME="$tmp/state/tart/tart"
+	export SELFTEST_HOME="$tmp/home" ACCEPT_HOME_DIRS="$tmp/home/.dockhand" PATH="$here/selftest/bin:$PATH"
+	unset ACCEPT_GH_LOGIN ACCEPT_SECRET_DIRS
+	"$here/run.sh" --stage quick --candidate selftest --rows "pauser ok" --row-dir "$here/selftest/rows" >"$tmp/run.out" 2>&1
+) || status=$?
+if [ "$status" = 3 ] && [ -f "$tmp/state/results/selftest/pauser.json" ] && [ ! -f "$tmp/state/results/selftest/ok.json" ] &&
+	grep -qx ok "$tmp/state/results/selftest/remaining.txt"; then
+	echo "selftest: a pause stops the run before its next row, the rows left written for --rows-file"
+else
+	echo "selftest: a pause didn't stop the run as it should (exit $status): $(tail -2 "$tmp/run.out" | tr '\n' ' ')"
+	fail=1
+fi
+rm -rf "$tmp"
+
 # The guard: a quick run with dockhand's state outside the scratch
 # directory, as your own database or Tart home, runs nothing.
 guard_case() {

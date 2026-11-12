@@ -262,8 +262,67 @@ if [ "$stage" = full ] && [ "${ACCEPT_DRY:-0}" != 1 ]; then
 	[ -z "$account" ] || echo "run.sh: the test account: $account; rows that check on GitHub are blocked" >&2
 fi
 
+# The fence (#225): at the full stage's start, the forks' refs as they
+# stand; refs made after it are the run's, which a later row may remove;
+# and before each row, the refs outside the run's namespace must be as the
+# start left them, or the run pauses there, since a row would be judged
+# against changes nobody in it made. A pause asked for with pause.sh, as
+# for an upgrade landing mid-run (rc4's C2 straddled two candidates),
+# stops at the same boundary.
+fence_refs() {
+	(
+		set +e
+		ROW_DIR=$ACCEPT_STATE
+		# shellcheck source=lib/common.sh
+		. "$here/lib/common.sh"
+		# shellcheck source=lib/harm.sh
+		. "$here/lib/harm.sh"
+		for repo in ${ACCEPT_WATCH:-}; do
+			harm_remote_refs "$repo" 2>/dev/null
+		done | sort -u
+	)
+}
+fence_outside() {
+	(
+		# shellcheck source=lib/harm.sh
+		. "$here/lib/harm.sh"
+		while read -r remote object ref; do
+			[ -n "$ref" ] || continue
+			harm_ours "$ref" remote || printf '%s %s %s\n' "$remote" "$object" "$ref"
+		done
+	)
+}
+fenced=0
+rm -f "$ACCEPT_STATE/pause"
+if [ "$stage" = full ] && [ "${ACCEPT_DRY:-0}" != 1 ] && [ -n "${ACCEPT_WATCH:-}" ]; then
+	fence_refs >"$ACCEPT_STATE/stage.refs"
+	fence_outside <"$ACCEPT_STATE/stage.refs" >"$ACCEPT_STATE/fence.refs"
+	fenced=1
+fi
+# stop_before stops the run at a row boundary, writing the rows still to
+# run where --rows-file takes them up again.
+stop_before() {
+	local why=$1 left="" seen=0 r
+	for r in $rows; do
+		[ "$r" = "$row" ] && seen=1
+		[ "$seen" = 1 ] && left="$left$r
+"
+	done
+	printf '%s' "$left" >"$results/remaining.txt"
+	echo "run.sh: paused before $row: $why. The rows left are in $results/remaining.txt; run them with --rows-file $results/remaining.txt once it's settled"
+	exit 3
+}
+
 printf '%-8s %-14s %s\n' ROW RESULT WHY
 for row in $rows; do
+	if [ -f "$ACCEPT_STATE/pause" ]; then
+		rm -f "$ACCEPT_STATE/pause"
+		stop_before "a pause was asked for (pause.sh)"
+	fi
+	if [ "$fenced" = 1 ]; then
+		moved=$(fence_refs | fence_outside | diff "$ACCEPT_STATE/fence.refs" - | sed -n 's/^[<>] //p' | awk '{print $3}' | sort -u | tr '\n' ' ')
+		[ -z "$moved" ] || stop_before "refs outside the run's namespace moved since the stage began: ${moved% }"
+	fi
 	file="$rowdir/$row.sh"
 	if [ ! -f "$file" ]; then
 		echo "run.sh: no row $row" >&2
@@ -418,6 +477,21 @@ EOT
 		result=blocker
 		why="harm:$harmful${why:+; $why}"
 	else
+		# Outside activity during the row, a ref no dockhand of the run
+		# keeps, isn't the row's harm, but leaves it judged against what
+		# nobody in it did: it's rerun (#225).
+		outside=""
+		for verdict in "$ROW_DIR"/harm/H*; do
+			[ -f "$verdict" ] || continue
+			case "$(cat "$verdict")" in outside*) outside="$outside $(basename "$verdict") $(cut -c1-200 "$verdict");" ;; esac
+		done
+		case "$result" in pass | "refused well" | "known issue")
+			if [ -n "$outside" ]; then
+				result="blocked: outside activity"
+				why="refs changed during the row that it didn't make:${outside%;}; the row said: $why"
+			fi
+			;;
+		esac
 		# An invariant that couldn't look never lets a row pass: its push,
 		# pull request or surviving work went unobserved, and the row is
 		# blocked and joins the rerun list (#231).

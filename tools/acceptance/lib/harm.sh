@@ -207,6 +207,34 @@ harm_running() {
 
 harm_write() { printf '%s\n' "$2" >"$ROW_DIR/harm/$1"; }
 
+# harm_ours reports whether a ref is in the run's namespace, a branch
+# dockhand makes (dockhand/, dockhand-check/) or the run's own preflight
+# branch, as a local branch, a remote-tracking ref or a remote's head. A
+# change to any other ref during a row is outside activity, said with the
+# ref, not the row's harm: probe branches pushed to the fork while D-R2,
+# D-R4 and D-S1 ran read as theirs in rc4 (#225).
+harm_ours() {
+	case "$1" in
+	*refs/heads/dockhand/* | *refs/heads/dockhand-check/* | *refs/heads/accept-preflight-*) return 0 ;;
+	refs/remotes/*/dockhand/* | refs/remotes/*/dockhand-check/* | refs/remotes/*/accept-preflight-*) return 0 ;;
+	esac
+	# A remote's ref (from its listing, "remote") outside the namespace is
+	# anyone's; a local ref of the clone's own making, its tags, master
+	# and the rest, only the row's commands touch.
+	[ "${2:-}" != remote ] || return 1
+	case "$1" in refs/remotes/*) return 1 ;; esac
+	return 0
+}
+
+# harm_earlier reports whether a ref was made during this run, by an
+# earlier row: one the stage's start didn't hold. A row may remove what an
+# earlier row of the run left, as D-C2's clean --closed took C7's when the
+# host hung (#225).
+harm_earlier() {
+	[ -f "${ACCEPT_STATE:-/nonexistent}/stage.refs" ] || return 1
+	! awk -v ref="$1" '$3 == ref {found = 1} END {exit !found}' "$ACCEPT_STATE/stage.refs"
+}
+
 # harm_check compares the snapshots and runs what needs running, writing
 # each invariant's verdict.
 harm_check() {
@@ -227,7 +255,7 @@ harm_check() {
 # its content, every commit a ref named is still an object, and no ref
 # went, but where the row says it may.
 harm_h1() {
-	local before=$1 after=$2 repo id wt path hash ref object broken=""
+	local before=$1 after=$2 repo id wt path hash ref object broken="" outside=""
 	for repo in $ACCEPT_WATCH; do
 		id=$(harm_id "$repo")
 		while IFS="$(printf '\t')" read -r wt path hash; do
@@ -241,13 +269,19 @@ harm_h1() {
 		done <"$before/files.$id"
 		while read -r ref object; do
 			if ! grep -q "^$ref " "$after/refs.$id" && ! harm_allowed "$ROW_DIR/allow.refgone" "$ref"; then
-				broken="$broken ref:$ref"
+				if ! harm_ours "$ref"; then
+					outside="$outside $ref"
+				else
+					broken="$broken ref:$ref"
+				fi
 			fi
 			git -C "$repo" cat-file -e "$object" 2>/dev/null || broken="$broken commit:$object"
 		done <"$before/refs.$id"
 	done
 	if [ -n "$broken" ]; then
 		harm_write H1 "broken: lost${broken}"
+	elif [ -n "$outside" ]; then
+		harm_write H1 "outside: refs no row's dockhand keeps went during the row:$outside"
 	else
 		harm_write H1 ok
 	fi
@@ -257,7 +291,7 @@ harm_h1() {
 # It checks remotewrite's rule, lines 1 and 2 (internal/remotewrite), by
 # what the row says it pushes, never by the rule's table (#144).
 harm_h2() {
-	local before=$1 after=$2 repo id line ref broken="" read="" unread="" remote
+	local before=$1 after=$2 repo id line ref broken="" read="" unread="" remote outside=""
 	for repo in $ACCEPT_WATCH; do
 		id=$(harm_id "$repo")
 		# A remote unread before or after is unobserved, and the rest of
@@ -273,6 +307,10 @@ harm_h2() {
 			grep -qxF "$line" "$before/remote.$id" && continue
 			ref=$(printf '%s' "$line" | awk '{print $1 " " $3}')
 			harm_allowed "$ROW_DIR/allow.push" "$ref" && continue
+			if ! harm_ours "$(printf '%s' "$line" | awk '{print $3}')" remote && [ "${ACCEPT_STAGE:-}" = full ]; then
+				outside="$outside $ref"
+				continue
+			fi
 			broken="$broken pushed:$ref"
 		done <"$after/remote.$id"
 		while IFS= read -r line; do
@@ -281,6 +319,15 @@ harm_h2() {
 			ref=$(printf '%s' "$line" | awk '{print $1 " " $3}')
 			awk -v r="$(printf '%s' "$line" | awk '{print $3}')" -v m="$(printf '%s' "$line" | awk '{print $1}')" '$1 == m && $3 == r {found=1} END {exit !found}' "$after/remote.$id" && continue
 			harm_allowed "$ROW_DIR/allow.push" "$ref" && continue
+			if ! harm_ours "$(printf '%s' "$line" | awk '{print $3}')" remote && [ "${ACCEPT_STAGE:-}" = full ]; then
+				outside="$outside $ref"
+				continue
+			fi
+			# What an earlier row of this run left, a row may remove.
+			if harm_earlier "$(printf '%s' "$line" | awk '{print $3}')"; then
+				printf 'H2: %s, an earlier row'"'"'s, removed\n' "$ref" >>"$ROW_DIR/notes"
+				continue
+			fi
 			broken="$broken removed:$ref"
 		done <"$before/remote.$id"
 	done
@@ -290,6 +337,8 @@ harm_h2() {
 		harm_write H2 "broken:$broken"
 	elif [ -n "$unread" ]; then
 		harm_write H2 "unobserved: couldn't read$unread: $(cat "$before"/remote.*.err "$after"/remote.*.err 2>/dev/null | head -1)"
+	elif [ -n "$outside" ]; then
+		harm_write H2 "outside: refs outside the run's namespace changed during the row:$outside"
 	else
 		harm_write H2 ok
 	fi
