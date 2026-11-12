@@ -30,7 +30,10 @@ act() {
 	host_only "a check whose build goes quiet for eleven minutes" || return 0
 	dh_setup update "$(port)" --new || return 0
 	# Off a terminal, at the default level: no -v.
-	dh check -p "$(port)" --on command </dev/null || :
+	# --fresh: another run's passed check on the command provider, E10's or
+	# an earlier D-S11's, would be reused, and the quiet stub never run
+	# (#227).
+	dh check -p "$(port)" --on command --fresh </dev/null || :
 }
 assert() {
 	grep -q "^\$ dockhand check -p" "$ROW_DIR/out.log" || return 0

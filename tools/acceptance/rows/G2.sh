@@ -11,7 +11,9 @@ act() {
 	local_active /opt/local >"$ROW_DIR/active.before"
 	G2_BRANCH=$(run_name g2-keep)
 	dh_setup revbump "${ACCEPT_GO_PORT:?}" --new="$G2_BRANCH" --subject "rebuild to keep in /opt/local" || return 0
-	dh check -b "$G2_BRANCH" --on local --keep </dev/null || :
+	# --fresh: an earlier run's check of the same change on the same master
+	# would be reused, and nothing built (#227).
+	dh check -b "$G2_BRANCH" --on local --keep --fresh </dev/null || :
 	local_active /opt/local >"$ROW_DIR/active.kept"
 	G2_RUN=$(grep -o 'dockhand undo check-[0-9]*' "$ROW_DIR/out.log" | tail -1 | awk '{print $NF}')
 	[ -z "$G2_RUN" ] || { local_root && dh undo "$G2_RUN" </dev/null; } || :

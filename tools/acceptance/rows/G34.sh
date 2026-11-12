@@ -11,7 +11,9 @@ act() {
 	dh_setup update "$(port)" --new || return 0
 	G34_BRANCH=$(own_branch)
 	[ -n "$G34_BRANCH" ] || return 0
-	dh_json check -b "$G34_BRANCH" </dev/null || :
+	# --fresh: an earlier run's check of the same change on the same master
+	# would be reused, and nothing built (#227).
+	dh_json check -b "$G34_BRANCH" --fresh </dev/null || :
 	G34_RUN=$(jq -r '.result.run.name // empty' "$DH_LAST_JSON")
 	[ -n "$G34_RUN" ] || return 0
 	dh logs "$G34_RUN" </dev/null || :

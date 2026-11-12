@@ -30,7 +30,9 @@ act() {
 	# file could credit an earlier check (Codex's cold read at 2cdaf571,
 	# #232).
 	G8_DRAINED=$(log_size "${DOCKHAND_DB%/*}/drain.log")
-	(export DOCKHAND_CONFIG="$ROW_DIR/g8.toml"; dh_json check -b "$G8_BRANCH" --on local -d </dev/null) || :
+	# --fresh: an earlier run's check of the same change on the same master
+	# would be reused, and nothing built (#227).
+	(export DOCKHAND_CONFIG="$ROW_DIR/g8.toml"; dh_json check -b "$G8_BRANCH" --on local -d --fresh </dev/null) || :
 	G8_RUN=$(jq -r '.result.run.name // empty' "$ROW_DIR/json/1.json" 2>/dev/null)
 	[ -n "$G8_RUN" ] || return 0
 	(export DOCKHAND_CONFIG="$ROW_DIR/g8.toml"; dh_json wait "$G8_RUN" </dev/null) || :

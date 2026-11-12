@@ -11,11 +11,13 @@ act() {
 	local_active /opt/local >"$ROW_DIR/active.before"
 	G1_ONE=$(run_name g1-one)
 	dh_setup revbump "${ACCEPT_GO_PORT:?}" --new="$G1_ONE" --subject "rebuild to check in /opt/local" || return 0
-	dh_json check -b "$G1_ONE" --on local </dev/null || :
+	# --fresh: an earlier run's check of the same change on the same master
+	# would be reused, and nothing built (#227).
+	dh_json check -b "$G1_ONE" --on local --fresh </dev/null || :
 	local_active /opt/local >"$ROW_DIR/active.one"
 	G1_TWO=$(run_name g1-two)
 	dh_setup revbump "$ACCEPT_GO_PORT" "${ACCEPT_RUST_PORT:?}" --new="$G1_TWO" --subject "rebuild two to check in /opt/local" || return 0
-	dh_json check -b "$G1_TWO" --on local </dev/null || :
+	dh_json check -b "$G1_TWO" --on local --fresh </dev/null || :
 }
 
 assert() {

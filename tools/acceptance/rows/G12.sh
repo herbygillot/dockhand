@@ -12,7 +12,9 @@ act() {
 	dh_setup update "$(port)" --new || return 0
 	G12_BRANCH=$(own_branch)
 	dh check -b "$G12_BRANCH" --on github:15 --plan || :
-	dh_json check -b "$G12_BRANCH" --on github || :
+	# --fresh: an earlier run's GitHub results for the same change would be
+	# reused, and no job run (#227).
+	dh_json check -b "$G12_BRANCH" --on github --fresh || :
 }
 
 assert() {

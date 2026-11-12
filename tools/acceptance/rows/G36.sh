@@ -40,7 +40,9 @@ act() {
 	dh_json update "$(g36_name)" 1.1.0 -b "$G36_MOVED" --source releases || return 0
 	# --working-tree: the row's edit is uncommitted, and off a terminal a
 	# Tart check rightly refuses a dirty worktree without it (rc4's reruns).
-	dh_json check -b "$G36_MOVED" --on tart --working-tree || :
+	# --fresh: an earlier run's check of the same change on the same master
+	# would be reused, and nothing built (#227).
+	dh_json check -b "$G36_MOVED" --on tart --working-tree --fresh || :
 }
 
 g36_text() {

@@ -34,7 +34,9 @@ act() {
 	# The fork's check branches before, so only one this row's check left
 	# counts: the test fork keeps earlier candidates' leftovers.
 	git -C "$MACPORTS_TREE" ls-remote --heads origin 'dockhand-check/*' >"$ROW_DIR/check-branches.before" 2>>"$ROW_DIR/out.log" || :
-	dh_json check -b "$B9_BRANCH" || :
+	# --fresh: an earlier run's check of the same change on the same master
+	# would be reused, and nothing built (#227).
+	dh_json check -b "$B9_BRANCH" --fresh || :
 	dh tidy -b "$B9_BRANCH" -y || :
 	# The preview with the check, and all of its description: dh writes to
 	# out.log alone, and --no-check's preview says "Checks none" and cuts

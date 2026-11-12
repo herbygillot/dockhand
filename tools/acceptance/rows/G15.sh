@@ -25,7 +25,9 @@ act() {
 	G15_SECOND=$(run_name g15-after)
 	dh_setup revbump "$ACCEPT_LOCAL_SLEEP_PORT" --new="$G15_FIRST" --subject "rebuild to stop mid-build" || return 0
 	dh_setup revbump "${ACCEPT_GO_PORT:?}" --new="$G15_SECOND" --subject "rebuild to check after a killed check" || return 0
-	dh_bg check -b "$G15_FIRST" --on "local:$G15_PREFIX"
+	# --fresh: an earlier run's check of the same change on the same master
+	# would be reused, and nothing built (#227).
+	dh_bg check -b "$G15_FIRST" --on "local:$G15_PREFIX" --fresh
 	if ! wait_for_line "$DH_BG_LOG" "building .*: (fetch|checksum|install)" 1800; then
 		kill "$DH_BG_PID" 2>/dev/null
 		dh_bg_wait || :
@@ -35,7 +37,7 @@ act() {
 	# dockhand alone is killed; its guest program goes on building.
 	kill -9 "$DH_BG_PID" 2>/dev/null
 	dh_bg_wait || :
-	dh check -b "$G15_SECOND" --on "local:$G15_PREFIX" -v </dev/null || :
+	dh check -b "$G15_SECOND" --on "local:$G15_PREFIX" --fresh -v </dev/null || :
 	dh cancel -b "$G15_FIRST" || :
 }
 

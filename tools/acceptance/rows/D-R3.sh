@@ -33,7 +33,9 @@ act() {
 	printf '%s\n' "$DR3_IMAGE" >"$ROW_DIR/image"
 	allow_change "*"
 	dr3_tart delete "$DR3_IMAGE"
-	dh_json check -b "$DR3_BRANCH" || :
+	# --fresh: an earlier run's check of the same change on the same master
+	# would be reused, and nothing built (#227).
+	dh_json check -b "$DR3_BRANCH" --fresh || :
 	local start=$SECONDS
 	dh setup tart "$DR3_RELEASE" </dev/null || :
 	printf '%s\n' "$((SECONDS - start))" >"$ROW_DIR/restore.seconds"
