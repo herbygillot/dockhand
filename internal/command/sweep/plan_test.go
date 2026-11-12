@@ -8,6 +8,7 @@ package sweep
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"runtime"
@@ -52,6 +53,63 @@ type plan struct {
 	fault   *fault
 	reached bool
 	dead    bool
+	// required are the records a remote effect needs written before it
+	// runs, by its boundary, read from database at the effect; missing
+	// are those an effect ran without.
+	required map[string]requiredRecord
+	database string
+	missing  []string
+	// owner checks each write the run makes against the rule on remote
+	// writes, and broken are what writes broke of it (#129's fix list,
+	// 1); nil checks nothing.
+	owner  *ownership
+	broken []string
+}
+
+// breaks notes what a write broke of the rule on remote writes.
+func (p *plan) breaks(e effect, broken []string) {
+	if len(broken) == 0 {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, b := range broken {
+		p.broken = append(p.broken, e.address()+": "+b)
+	}
+}
+
+// brokenRules are what the run's writes broke of the rule.
+func (p *plan) brokenRules() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.broken...)
+}
+
+// atEffect reads the records a remote effect requires, as the database
+// has them when it runs, and notes each missing (#129's fix list, 3).
+func (p *plan) atEffect(e effect) {
+	need, ok := p.required[e.Boundary]
+	if !ok {
+		return
+	}
+	held := ""
+	db, err := sql.Open("sqlite", p.database)
+	if err == nil {
+		err = db.QueryRow(need.Query).Scan(&held)
+		db.Close()
+	}
+	if err != nil || !strings.Contains(held, need.Holds) {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		p.missing = append(p.missing, fmt.Sprintf("%s ran without its record (%s): %s holds %q, not %q (%v)", e.address(), need.Why, need.Query, held, need.Holds, err))
+	}
+}
+
+// missingRecords are the records effects ran without.
+func (p *plan) missingRecords() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.missing...)
 }
 
 // mode is how an effect fails (docs/designs/fault-sweep.md, "Five ways
@@ -133,8 +191,10 @@ func (p *plan) effects() []effect {
 }
 
 // boundaries are the packages a call site is never in: the boundaries'
-// own, and the sweep's.
-var boundaries = []string{"/internal/store.", "/internal/store/", "/internal/git.", "/internal/command/sweep.", "runtime."}
+// own, the remote-write rule's, which every remote write passes through,
+// so a write is addressed by its caller (engine.(*Engine).publish, not
+// remotewrite.Open), as the call-site listing reads it, and the sweep's.
+var boundaries = []string{"/internal/store.", "/internal/store/", "/internal/git.", "/internal/remotewrite.", "/internal/command/sweep.", "runtime."}
 
 // callSite is the first caller outside the boundaries, as its package's
 // last element and its function: "engine.(*Engine).ApplySubmit".
@@ -269,7 +329,12 @@ func (p *plan) gitHook(ctx context.Context, args []string, run func() error) err
 		return run()
 	}
 	e := p.record("git "+subcommand(args), strings.Join(args, " "))
-	switch how, fires := p.fires(e); {
+	how, fires := p.fires(e)
+	// A push that happens is held to the rule where it happens.
+	if p.owner != nil && e.Boundary == "git push" && (!fires || how == lost || how == landedUnknown) {
+		p.breaks(e, p.owner.push(args))
+	}
+	switch {
 	case !fires:
 	case how == lost || how == landedUnknown:
 		if err := run(); err != nil {

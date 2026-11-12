@@ -5,7 +5,10 @@
 # they ran one at a time in input order: a second check starts before the
 # first records a result, and each change is finished as its check ends.
 # ACCEPT_BATCH_PORTS names the three, the day's, since only a person
-# knows which are outdated and small; without it the row isn't run. It
+# knows which are outdated and small; without it the row isn't run, nor
+# where outdated says any of them is current, naming which: a stale list
+# ran ship of one due port and failed the row (rc4's full stage,
+# influx-cli and monolith current). It
 # stops at the checks, opening no pull request; the submissions' order is
 # the command's tests'.
 ports() { printf '%s' "${ACCEPT_BATCH_PORTS:-}"; }
@@ -16,6 +19,12 @@ act() {
 	set -- $(ports)
 	if [ $# -ne 3 ]; then
 		row_result "not run" "ACCEPT_BATCH_PORTS names $# ports, not three small outdated ones of the day"
+		return 0
+	fi
+	local current
+	current=$("$DH_BIN" --json outdated "$@" 2>/dev/null | jq -r '.result.ports[]? | select(.outdated != true) | .port' | tr '\n' ' ' | sed 's/ $//')
+	if [ -n "$current" ]; then
+		row_result "not run" "ACCEPT_BATCH_PORTS is stale: outdated finds no newer release of $current; name three small ports that are due"
 		return 0
 	fi
 	if "$DH_BIN" --json status --all 2>/dev/null | jq -e '.result.serve_state.running == true' >/dev/null; then

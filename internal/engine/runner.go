@@ -59,6 +59,31 @@ func FailureLines(evidence Evidence, target TargetEvidence, environment, n int) 
 	return buildlog.Last(file, from, to, n)
 }
 
+// RunEvidenceNow is RunEvidence with its environments' identities read
+// now, outside any transaction, so it says which couldn't be read, as a
+// check's report and wait's must (evidence.OfNow).
+func (e *Engine) RunEvidenceNow(ctx context.Context, id model.RunID) (Evidence, error) {
+	run, err := e.Run(ctx, id)
+	if err != nil {
+		return Evidence{}, err
+	}
+	plan, err := e.Plan(ctx, run.Plan)
+	if err != nil {
+		return Evidence{}, err
+	}
+	now := e.identitiesNow(ctx, plan.Environments)
+	var found Evidence
+	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		check, err := checks.LoadCheck(r, run, false)
+		if err != nil {
+			return err
+		}
+		found = evidence.OfNow(check, now)
+		return nil
+	})
+	return found, err
+}
+
 // RunEvidence is what a run established for each target in each of its
 // environments.
 func (e *Engine) RunEvidence(ctx context.Context, id model.RunID) (Evidence, error) {
@@ -87,6 +112,12 @@ func runEvidence(r store.Reader, run model.Run) (Evidence, error) {
 // LogDirectory is where check logs are kept: logs beside the database.
 func (e *Engine) LogDirectory() string {
 	return filepath.Join(filepath.Dir(e.options.Database), "logs")
+}
+
+// LaunchDirectory is where attempts' launch locks are kept, beside the
+// database (checks.Service.Launches).
+func (e *Engine) LaunchDirectory() string {
+	return filepath.Join(filepath.Dir(e.options.Database), "launches")
 }
 
 // Run reads a run.

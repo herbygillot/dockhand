@@ -25,29 +25,31 @@ import (
 // callers wait it out as they wait for capacity.
 var ErrListingBlocked = errors.New("tart: a running VM with an ASIF disk keeps Tart from listing its VMs until it stops (openai/tart#1344)")
 
-// ASIFVersion is the first Tart that lists its VMs while one with an ASIF
-// disk runs, as Golden Gate's images have (openai/tart#1344, fixed by #1349
-// in 2.39.0). With it, a listing in an ASIF VM's first seconds no longer
-// fails that VM's start either: eleven of eleven starts listed through
-// their first ten seconds succeeded on 2.39.0, where ten of eleven failed
-// on 2.37.0.
-var ASIFVersion = []int{2, 39, 0}
+// Minimum is the oldest Tart dockhand takes, at setup and before a check
+// starts a VM, 2.41.1 (#38): it lists its VMs while one with an ASIF disk
+// runs, as Golden Gate's images have (openai/tart#1344, fixed by #1349 in
+// 2.39.0; eleven of eleven starts listed through their first ten seconds
+// succeeded on 2.39.0, where ten of eleven failed on 2.37.0); its delete
+// says when it left a running VM, where it said the VM didn't exist
+// (openai/tart#1345, fixed by #1350 in 2.40.0); and a listing no longer
+// fails when a VM is deleted as Tart reads it (openai/tart#1353, fixed by
+// #1354 in 2.41.1).
+var Minimum = []int{2, 41, 1}
 
-// MinimumVersion is ASIFVersion as Tart writes it, "2.39.0": the oldest
-// Tart dockhand takes, at setup and before a check starts a VM.
+// MinimumVersion is Minimum as Tart writes it, "2.41.1".
 func MinimumVersion() string {
-	parts := make([]string, len(ASIFVersion))
-	for i, n := range ASIFVersion {
+	parts := make([]string, len(Minimum))
+	for i, n := range Minimum {
 		parts[i] = strconv.Itoa(n)
 	}
 	return strings.Join(parts, ".")
 }
 
-// HandlesASIF reports whether a Tart version, as `tart --version` prints
-// it, is ASIFVersion or newer.
-func HandlesASIF(version string) bool {
+// NewEnough reports whether a Tart version, as `tart --version` prints it,
+// is Minimum or newer.
+func NewEnough(version string) bool {
 	fields := strings.FieldsFunc(strings.TrimSpace(version), func(r rune) bool { return r == '.' || r == '-' || r == '+' || r == ' ' })
-	for i, minimum := range ASIFVersion {
+	for i, minimum := range Minimum {
 		if i >= len(fields) {
 			return false
 		}
@@ -62,39 +64,22 @@ func HandlesASIF(version string) bool {
 	return true
 }
 
-// TooOld is the refusal of a Tart older than ASIFVersion, as `tart
-// --version` prints it, at setup and before a check starts a VM alike;
-// nil for one new enough. Setup and the provider each worded it (the
-// architecture review of 5897a82, R3-18).
+// TooOld is the refusal of a Tart older than Minimum, as `tart --version`
+// prints it, at setup and before a check starts a VM alike; nil for one
+// new enough. Setup and the provider each worded it (the architecture
+// review of 5897a82, R3-18).
 func TooOld(version string) error {
-	if HandlesASIF(version) {
+	if NewEnough(version) {
 		return nil
 	}
-	return fmt.Errorf("Tart %s is installed; Dockhand requires %s or later to list running VMs with ASIF disks (openai/tart#1344). Upgrade with sudo port upgrade tart", strings.TrimSpace(version), MinimumVersion())
+	return fmt.Errorf("Tart %s is installed; Dockhand requires %s or later, which lists running VMs with ASIF disks, says when a delete left a VM, and lists VMs while one is deleted. Upgrade with sudo port upgrade tart", strings.TrimSpace(version), MinimumVersion())
 }
 
-// ErrListingRaced reports a listing that failed because a VM went while
-// Tart listed (openai/tart#1353): it checks each VM's directory is whole,
-// then reads its config.json again to size it, so a VM another process
-// deletes in between fails the whole listing ("The file “config.json”
-// couldn’t be opened because there is no such file"). It happened to four
-// of eleven images probed two at a time on 2026-09-27, on Tart 2.39.0, and
-// the code is the same in 2.37.0. Listing again, once the delete is done,
-// answers.
-var ErrListingRaced = errors.New("tart: a VM was deleted while Tart was listing VMs")
-
-// listingAttempts bounds how often Images lists again after a raced
-// listing, and listingPause how long it waits between: a delete takes well
-// under a second.
-var (
-	listingAttempts = 5
-	listingPause    = 500 * time.Millisecond
-	// listingWait bounds each listing: Tart asks each image's disk of
-	// diskutil, which can hang on a disk diskimagesiod left attached, and
-	// status hung with it for 22 minutes (the rc8 full stage). A listing
-	// takes about 30 seconds on the M1.
-	listingWait = 2 * time.Minute
-)
+// listingWait bounds each listing: Tart asks each image's disk of
+// diskutil, which can hang on a disk diskimagesiod left attached, and
+// status hung with it for 22 minutes (the rc8 full stage). A listing takes
+// about 30 seconds on the M1.
+var listingWait = 2 * time.Minute
 
 // ErrListingTimedOut is a listing Tart didn't answer in listingWait: what
 // VMs there are, and which run, is unknown.
@@ -145,14 +130,6 @@ func (c Client) Images(ctx context.Context, options RunOptions) ([]Image, error)
 		}
 	}
 	output, err := c.list(ctx, options)
-	for attempt := 1; errors.Is(err, ErrListingRaced) && attempt < listingAttempts; attempt++ {
-		select {
-		case <-ctx.Done():
-			return nil, errors.Join(err, ctx.Err())
-		case <-time.After(listingPause):
-		}
-		output, err = c.list(ctx, options)
-	}
 	if err != nil {
 		return nil, err
 	}
@@ -197,10 +174,9 @@ func (c Client) Get(ctx context.Context, options RunOptions, name string) (VM, e
 	return VM{Running: running, DiskFormat: *row.DiskFormat}, nil
 }
 
-// classify names the Tart failures dockhand acts on. "does not exist" is
-// trusted only where it cannot be the collision Tart's delete has, which
-// reports a running VM that way (openai/tart#1345); a delete's outcome is
-// read from the listing instead.
+// classify names the Tart failures dockhand acts on. Tart's delete reports
+// a VM that "does not exist" truly since 2.40.0 (openai/tart#1345), the
+// oldest Tart taken being newer.
 func classify(err error) error {
 	var failure *subprocess.Error
 	if !errors.As(err, &failure) {
@@ -209,9 +185,7 @@ func classify(err error) error {
 	switch {
 	case strings.Contains(failure.Stderr, "image info") && strings.Contains(failure.Stderr, "Resource temporarily unavailable"):
 		return fmt.Errorf("%w: %w", ErrListingBlocked, err)
-	case failure.Command == "list" && strings.Contains(failure.Stderr, "because there is no such file"):
-		return fmt.Errorf("%w: %w", ErrListingRaced, err)
-	case failure.Command != "delete" && strings.Contains(failure.Stderr, "does not exist"):
+	case strings.Contains(failure.Stderr, "does not exist"):
 		return fmt.Errorf("%w: %w", ErrVMMissing, err)
 	case failure.Command == "stop" && strings.Contains(failure.Stderr, "is not running"):
 		return fmt.Errorf("%w: %w", ErrVMStopped, err)

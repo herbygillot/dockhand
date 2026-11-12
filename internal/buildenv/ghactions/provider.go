@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -24,6 +25,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/atomicfile"
@@ -115,6 +117,9 @@ type API interface {
 	// Runs are the workflow's push runs of the commit on the branch.
 	Runs(ctx context.Context, repository, branch, commit string) ([]Run, error)
 	Run(ctx context.Context, repository string, id int64) (Run, error)
+	// RecentRuns are the workflow's newest runs, one listing call: the
+	// poll every in-flight run of a repository shares (#197).
+	RecentRuns(ctx context.Context, repository string) ([]Run, error)
 	// Rerun runs the run's unsuccessful jobs again, as a new attempt.
 	Rerun(ctx context.Context, repository string, id int64) error
 	// Cancel stops a run that has not finished.
@@ -167,6 +172,71 @@ type Provider struct {
 	// BuildTimeout is how long a run may build before dockhand cancels it,
 	// JobCap when zero, past which GitHub ends each job itself (D16).
 	BuildTimeout time.Duration
+
+	// watch is the listing in-flight runs share (current), and now its
+	// clock, time.Now where nil.
+	watch runWatch
+	now   func() time.Time
+}
+
+// runWatch is the newest listing of a repository's workflow runs, which
+// every run waiting on that repository reads once: N runs in flight cost
+// one listing call a poll, not N calls, and a run older than the listing's
+// page costs only its own read (#197). A listing is served only within the
+// poll it was read in, and a run that read it already, being in its next
+// poll, takes a new one, so a reader never sees a listing twice; a rerun
+// drops its repository's listing (forget), so the attempt it started is
+// never answered by an older one listed before.
+type runWatch struct {
+	mu     sync.Mutex
+	listed map[string]map[int64]Run
+	handed map[string]map[int64]bool
+	at     map[string]time.Time
+}
+
+// current is a run as GitHub says it now, from the repository's shared
+// listing where it is in it, else asked of GitHub by itself, as a run
+// older than the listing's page is.
+func (p *Provider) current(ctx context.Context, repository string, id int64) (Run, error) {
+	w := &p.watch
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.listed == nil {
+		w.listed, w.handed, w.at = map[string]map[int64]Run{}, map[string]map[int64]bool{}, map[string]time.Time{}
+	}
+	now := p.clock()
+	if _, ok := w.listed[repository]; !ok || w.handed[repository][id] || now.Sub(w.at[repository]) >= poll {
+		runs, err := p.API.RecentRuns(ctx, repository)
+		if err != nil {
+			return Run{}, err
+		}
+		listed := map[int64]Run{}
+		for _, run := range runs {
+			listed[run.ID] = run
+		}
+		w.listed[repository], w.handed[repository], w.at[repository] = listed, map[int64]bool{}, now
+	}
+	w.handed[repository][id] = true
+	if run, ok := w.listed[repository][id]; ok {
+		return run, nil
+	}
+	return p.API.Run(ctx, repository, id)
+}
+
+// forget drops a repository's listing, as a rerun does: what it listed
+// was read before the rerun started its attempt.
+func (p *Provider) forget(repository string) {
+	w := &p.watch
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	delete(w.listed, repository)
+}
+
+func (p *Provider) clock() time.Time {
+	if p.now != nil {
+		return p.now()
+	}
+	return time.Now()
 }
 
 // poll is how often the provider asks after a run, and appear how long
@@ -214,17 +284,24 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	if words := WorkflowWords(fork.Repository, state, err); words != "" {
 		return refusal.New(refusal.Environment, "%s", words)
 	}
-	branch := BranchPrefix + job.Commit[:12]
+	// The check's own branch, so every run on it is the check's.
+	branch := buildenv.CheckBranch(job.Commit, job.Run.ID)
 	head, err := p.Repo.RemoteHead(ctx, fork.PushURL, branch)
 	if err != nil {
 		return buildenv.Infrastructure("reading %s on %s: %w", branch, fork.Repository, err)
+	}
+	pushed := head != (git.RefValue{Exists: true, Object: job.Commit})
+	// Nothing else pushes the check's branch, so one at the commit that no
+	// attempt of the check noted pushing is a branch it can't answer for.
+	if !pushed && !launchedOn(job.Launched, branch) {
+		return refusal.New(refusal.Environment, "%s on %s is already at commit %s, and no attempt of %s noted pushing it, so its runs can't be taken as this check's; remove the branch and run the check again", branch, fork.Repository, job.Commit[:12], job.Run.Name())
 	}
 	// GitHub keeps listing a branch's runs once the branch is gone, so a
 	// run of the commit from before the push, an earlier check's whose
 	// branch was removed once it was read, isn't this check's: the push
 	// starts one of its own.
 	var before int64
-	if head != (git.RefValue{Exists: true, Object: job.Commit}) {
+	if pushed {
 		earlier, err := p.API.Runs(ctx, fork.Repository, branch, job.Commit)
 		if err != nil {
 			return buildenv.Infrastructure("finding the workflow's earlier runs: %w", err)
@@ -233,7 +310,28 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 			before = max(before, r.ID)
 		}
 		build.Progress(fmt.Sprintf("pushing to %s on %s", branch, fork.Repository))
-		if err := remotewrite.Push(ctx, p.Repo, remotewrite.OwnFork, fork.Repository, git.Push{Remote: fork.PushURL, Branch: branch, Commit: job.Commit, ExpectedRemote: head}); err != nil {
+		// The push is noted before it is sent, under the attempt's launch
+		// lock, which git push holds as it runs (buildenv.Build.Launch).
+		note := newLaunch(fork.Repository, branch, job, launchPush)
+		note.Before = before
+		if err := build.Launch(note.String(), func(ctx context.Context) (string, error) {
+			report, err := remotewrite.Push(ctx, p.Repo, remotewrite.OwnFork, fork.Repository, git.Push{Remote: fork.PushURL, Branch: branch, Commit: job.Commit, ExpectedRemote: head})
+			// A push known to have started nothing is written down as that,
+			// in these cases and no others: nothing was sent, or git push's
+			// own report says the branch was rejected.
+			switch {
+			case !report.Sent && err == nil:
+				note.Nothing = "the branch was already at the commit, so nothing was sent"
+			case !report.Sent:
+				note.Nothing = "nothing was sent: " + err.Error()
+			case report.Rejected():
+				note.Nothing = "git push reported the branch rejected: " + report.Line
+			}
+			return note.String(), err
+		}); err != nil {
+			if errors.Is(err, buildenv.ErrNotLaunched) {
+				return err
+			}
 			return buildenv.Infrastructure("pushing to %s: %w", fork.Repository, err)
 		}
 	}
@@ -255,6 +353,15 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 				Workflow, branch, appear, fork.Repository)
 		}
 		if err := p.sleep(ctx, poll); err != nil {
+			return err
+		}
+	}
+	// An attempt that found the branch at its commit pushed nothing, and
+	// keeps the run it takes as its note.
+	if !pushed {
+		note := newLaunch(fork.Repository, branch, job, launchAttach)
+		note.Run = run.ID
+		if err := build.Launch(note.String(), func(context.Context) (string, error) { return note.String(), nil }); err != nil {
 			return err
 		}
 	}
@@ -294,15 +401,27 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	// again.
 	if ended == "" && run.Status == "completed" && (stoppedShort(run.Conclusion) || job.Execution.Attempt > 1 && run.Conclusion != "success") {
 		build.Progress(fmt.Sprintf("running %s's unsuccessful jobs again", run.URL))
-		if err := remotewrite.Rerun(ctx, p.API, remotewrite.Made, fork.Repository, run.ID); err != nil {
+		// Running it again starts work as a push does: noted first, with
+		// the run and the attempt it had, under the launch lock.
+		note := newLaunch(fork.Repository, branch, job, launchRerun)
+		note.Run, note.Attempt = run.ID, run.Attempt
+		if err := build.Launch(note.String(), func(ctx context.Context) (string, error) {
+			return note.String(), remotewrite.Rerun(ctx, p.API, remotewrite.Made, fork.Repository, run.ID)
+		}); err != nil {
+			if errors.Is(err, buildenv.ErrNotLaunched) {
+				return err
+			}
 			return buildenv.Infrastructure("running %s again: %w", run.URL, err)
 		}
+		// The attempt the rerun started is one past the attempt it was
+		// launched from; none earlier, listed before it, answers for it.
+		p.forget(fork.Repository)
 		previous := run.Attempt
-		for run.Attempt == previous {
+		for run.Attempt <= previous {
 			if err := p.sleep(ctx, poll); err != nil {
 				return err
 			}
-			if run, err = p.API.Run(ctx, fork.Repository, run.ID); err != nil {
+			if run, err = p.current(ctx, fork.Repository, run.ID); err != nil {
 				return buildenv.Infrastructure("%w", err)
 			}
 		}
@@ -332,7 +451,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		case run.Status == "in_progress":
 			building += poll
 		}
-		if run, err = p.API.Run(ctx, fork.Repository, run.ID); err != nil {
+		if run, err = p.current(ctx, fork.Repository, run.ID); err != nil {
 			return buildenv.Infrastructure("%w", err)
 		}
 	}
@@ -347,6 +466,18 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		p.removeBranch(ctx, build, fork, branch, job.Commit)
 	}
 	return err
+}
+
+// launchedOn reports whether an earlier attempt of the check noted a launch
+// on branch.
+func launchedOn(launched []string, branch string) bool {
+	for _, raw := range launched {
+		var note launchNote
+		if json.Unmarshal([]byte(raw), &note) == nil && note.Branch == branch {
+			return true
+		}
+	}
+	return false
 }
 
 // removeBranch removes the check's branch from your fork, while it still
@@ -588,40 +719,6 @@ func stoppedShort(conclusion string) bool {
 // runURL is a workflow run's URL, as an execution records it: the
 // repository and the run's ID.
 var runURL = regexp.MustCompile(`^https://github\.com/([^/]+/[^/]+)/actions/runs/(\d+)`)
-
-// Stop cancels the workflow run an execution recorded, which a driver that
-// stopped without a cancel left running for the next driver to find
-// (buildenv.Stopper). One already finished, or never started, needs
-// nothing.
-func (p *Provider) Stop(ctx context.Context, execution model.GuestExecution) error {
-	match := runURL.FindStringSubmatch(execution.ProviderRef)
-	if match == nil {
-		return nil
-	}
-	id, err := strconv.ParseInt(match[2], 10, 64)
-	if err != nil {
-		return nil
-	}
-	// Only in the fork: a recorded URL naming another repository is
-	// none of dockhand's to cancel (#128).
-	fork, err := p.Fork(ctx)
-	if err != nil {
-		return err
-	}
-	if !strings.EqualFold(match[1], fork.Repository) {
-		return refusal.New(refusal.Unsupported, "%s is a run in %s, not your fork %s, so dockhand doesn't cancel it", execution.ProviderRef, match[1], fork.Repository)
-	}
-	run, err := p.API.Run(ctx, match[1], id)
-	if err != nil {
-		return err
-	}
-	if run.Status == "completed" {
-		return nil
-	}
-	return remotewrite.Cancel(ctx, p.API, remotewrite.Made, match[1], id)
-}
-
-var _ buildenv.Stopper = (*Provider)(nil)
 
 // RunsOwnTests says the workflow runs a port's declared tests whatever the
 // check's policy: it is MacPorts' own, and dockhand doesn't change it.

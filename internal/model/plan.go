@@ -59,6 +59,12 @@ type PlanTarget struct {
 	MovedFrom string `json:",omitempty"`
 }
 
+// Names reports whether a person's port names the target: its ID, its
+// port's name, or its subport's, as logs and shell take a port.
+func (t PlanTarget) Names(port string) bool {
+	return port != "" && (string(t.ID) == port || t.Target.Name == port || t.Target.Subport == port)
+}
+
 // Exclusion is a port a plan doesn't build in one environment, and needn't
 // pass there, with the reason: as MacPorts CI would exclude it, or because
 // the environment's evaluation doesn't define it.
@@ -389,6 +395,17 @@ func (p Plan) GitIn(environment Environment, id TargetID) (GitSource, bool) {
 	build, _ := p.In(environment)
 	source, ok := build.Git[id]
 	return source, ok
+}
+
+// TagIn is the GitHub tag a target's archive is fetched by in an
+// environment, as the plan resolved it; nil where it isn't fetched that
+// way, or the plan is from before plans kept tags.
+func (p Plan) TagIn(environment Environment, id TargetID) *GitSource {
+	build, _ := p.In(environment)
+	if source, ok := build.Tags[id]; ok {
+		return &source
+	}
+	return nil
 }
 
 // Untested are the plan's targets that declare no tests in some

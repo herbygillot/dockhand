@@ -572,8 +572,14 @@ const (
 	DefaultOutdatedAt  = "07:00"
 	DefaultSubmitLimit = 10
 	// DefaultCapacity is a command's, apart from GitHub's.
-	DefaultCapacity       = 1
-	DefaultGitHubCapacity = 2
+	DefaultCapacity = 1
+	// DefaultGitHubCapacity guards the API budget, not concurrency: GitHub
+	// queues runs past an account's own job limits. A run's time counts
+	// from its first job, so a matrix job still waiting for a runner counts
+	// against providers.github.build_timeout. What the limit protects is
+	// the hourly request budget, which in-flight runs share through one
+	// listing a poll (#197).
+	DefaultGitHubCapacity = 20
 	// TartCapacity is as many checks as the Mac runs VMs, two at most, the
 	// person's own among them, no setting of its own (the person's "Let
 	// macOS be the limit. Not Dockhand.", 2026-10-26): each check's VMs

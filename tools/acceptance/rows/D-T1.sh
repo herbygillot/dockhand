@@ -1,13 +1,14 @@
 # stages: quick full
 # D-T1: a kept archive altered by one byte. A check that would install it
 # catches it by its digest, and builds the port rather than install it,
-# saying so ("the saved archive for X no longer matches its recorded digest").
+# saying so ("the saved archive for X no longer matches its recorded
+# digest").
 #
 # A kept archive is given to a guest only as a dependency of what it
 # builds, reused from an earlier check. So the row revbumps a dependency,
 # ACCEPT_LIB_PORT, and a port that depends on it, ACCEPT_LIB_DEPENDENT, in
 # one branch, checks both, which keeps the dependency's archive, alters
-# that one archive by a byte, edits only the dependent, and checks again:
+# that one archive by a byte, bumps only the dependent again, and checks:
 # the dependency's result is reused, its archive would be given to the
 # guest, and the digest must stop it. The quick stage's ports depend on
 # none, and it doesn't run this; the engine's
@@ -59,8 +60,11 @@ act() {
 		fault_flip "$path"
 		DT1_ALTERED=1
 	fi
-	dir=$("$DH_BIN" path "$(run_name dt1-tamper)") || return 0
-	printf '\n# rebuilt with its dependency reused, to test a tampered archive\n' >>"$dir/$(dh_quiet --json status "$(run_name dt1-tamper)" | jq -r --arg p "$ACCEPT_LIB_DEPENDENT" '.result.branches[0].directories[] | select(endswith("/" + $p))')/Portfile"
+	# The dependent's revision bumped again, which builds it differently,
+	# so its build runs and is given the dependency's kept archive: a
+	# comment line built nothing differently, the whole check was reused,
+	# and no guest ran (rc4's full stage).
+	dh_setup revbump "$ACCEPT_LIB_DEPENDENT" -b "$(run_name dt1-tamper)" --subject "rebuild again to test a tampered archive" || return 0
 	dh_json check -b "$(run_name dt1-tamper)" || :
 	# The check's events, as its record keeps them, read from a copy of the
 	# stage's own database.
@@ -84,8 +88,13 @@ $(find "$(dt1_archives)" -type f ! -name '*.sig' ! -name '*.rmd160' ! -name '*.a
 EOT
 	[ -z "$bad" ] || { row_fail "kept archives that don't match their digests after the row:$bad"; return; }
 	[ "${DT1_ALTERED:-0}" -gt 0 ] || { row_fail "no archive of $ACCEPT_LIB_PORT was kept to alter, so the guard wasn't exercised"; return; }
-	if grep -qi "no longer matches its recorded digest" "$ROW_DIR/out.log"; then
-		row_pass "the altered archive was caught and the dependency built instead: $(grep -i "no longer matches its recorded digest" "$ROW_DIR/out.log" | head -1)"
+	# The words are read wherever the check said them, its output and its
+	# envelope as well as the events copied into out.log, and as a pattern,
+	# not one wording (rc4's full stage, where the row missed a catch).
+	local said
+	said=$(cat "$ROW_DIR/out.log" "$ROW_DIR"/json/*.json 2>/dev/null | grep -oiE "saved archive for $ACCEPT_LIB_PORT[^\"]*(digest|altered)[^\"]*" | head -1)
+	if [ -n "$said" ]; then
+		row_pass "the altered archive was caught and the dependency built instead: $said"
 	else
 		# A harm row: a tamper nothing named is never a known issue.
 		row_fail "the second check didn't say it caught the altered archive (exit $(cat "$ROW_DIR/json/1.json.exit" 2>/dev/null)); whether the guest was given it is in $ROW_DIR/out.log"

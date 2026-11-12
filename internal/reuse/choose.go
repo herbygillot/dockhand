@@ -29,6 +29,10 @@ type Target struct {
 	Git       *model.GitSource
 	Tag       *model.GitSource
 	Earlier   []Candidate
+	// TagShownMoved is a move of the target's tag that a build outside
+	// Earlier shows, as another earlier check's in evidence, which a
+	// reading that isn't known doesn't stand beside (unseated).
+	TagShownMoved bool
 }
 
 // TagMoved reports whether the GitHub tag a target's archive is fetched by
@@ -40,14 +44,28 @@ type Target struct {
 // v1.7.1's having moved, for a revbump at 1.7.1 on another branch
 // (rc7's G16, check-943).
 func (t Target) TagMoved(c Candidate) bool {
-	return t.Tag != nil && c.Tagged != nil && t.Tag.Commit != "" && c.Tagged.Commit != "" &&
-		t.Tag.URL == c.Tagged.URL && t.Tag.Ref == c.Tagged.Ref && t.Tag.Commit != c.Tagged.Commit
+	return model.SourceAgainst(c.Tagged, t.Tag) == model.SourceMoved
 }
 
 // tagMovedAny reports whether any of a target's earlier builds says its
-// tag moved, which a build that recorded no tag can't tell of itself.
+// tag moved, or another build outside them does (TagShownMoved), which a
+// build that recorded no tag, or one whose reading isn't known, can't tell
+// of itself.
 func (t Target) tagMovedAny() bool {
-	return slices.ContainsFunc(t.Earlier, t.TagMoved)
+	return t.TagShownMoved || slices.ContainsFunc(t.Earlier, t.TagMoved)
+}
+
+// unseated reports whether an earlier build's tag reading stands for
+// nothing now: its tag moved (TagMoved), or another build shows the tag
+// moved and this one can't say which commit it built, having recorded no
+// tag or one whose reading against the target's isn't known (the source
+// comparison design's "reuses, unless another build of the target shows the
+// tag moved"; Codex's review of #192, finding 2).
+func (t Target) unseated(c Candidate) bool {
+	if t.TagMoved(c) {
+		return true
+	}
+	return t.tagMovedAny() && (c.Tagged == nil || model.SourceAgainst(c.Tagged, t.Tag) == model.SourceUnknown)
 }
 
 // Choice is what an environment's targets reuse: an earlier build for each
@@ -85,9 +103,8 @@ type Choice struct {
 func Choose(targets []Target, identity string, trees map[string]model.ObjectID, judge Judge, stands func(model.TargetResult) bool, available func(Candidate) bool) Choice {
 	choice := Choice{Reused: map[model.TargetID]Candidate{}, Carried: map[model.TargetID][]model.InertPort{}}
 	for _, target := range targets {
-		moved := target.tagMovedAny()
 		for _, c := range target.Earlier {
-			if !stands(c.Result) || target.TagMoved(c) || moved && c.Tagged == nil {
+			if !stands(c.Result) || target.unseated(c) {
 				continue
 			}
 			if carried, ok := Carry(c.Inputs, c.Origin.Run, identity, target.PlanTarget, target.Git, trees, judge); ok {
@@ -178,30 +195,40 @@ func needs(dependsOn []model.TargetID, active []model.ActivePort, among []model.
 // commit expected. The same tree of a Git-fetched port isn't the same
 // port, as the same tree of any other is, so such a build stands for none
 // now: reuse builds it again (Choose), and an earlier check's result of it
-// isn't evidence for the commit expected now.
-func AgainstOtherSources(targets []Target, chosen map[model.TargetID]Candidate) map[model.TargetID]bool {
+// isn't evidence for the commit expected now. Each is given with the
+// dependency it was found against (Against), for its words.
+func AgainstOtherSources(targets []Target, chosen map[model.TargetID]Candidate) map[model.TargetID]Against {
 	ids := make([]model.TargetID, len(targets))
 	byID := map[model.TargetID]Target{}
 	for i, target := range targets {
 		ids[i], byID[target.ID] = target.ID, target
 	}
-	against := map[model.TargetID]bool{}
+	against := map[model.TargetID]Against{}
 	for taken := true; taken; {
 		taken = false
 		for _, target := range targets {
 			c, ok := chosen[target.ID]
-			if !ok || against[target.ID] {
+			if _, found := against[target.ID]; !ok || found {
 				continue
 			}
 			for _, need := range needs(target.DependsOn, c.Inputs.Active, ids) {
-				if dependency := byID[need]; against[need] || dependency.Git != nil && !builtAgainst(c, dependency) || builtAgainstMovedTag(c, dependency) {
-					against[target.ID], taken = true, true
+				_, indirect := against[need]
+				if dependency := byID[need]; indirect || dependency.Git != nil && !builtAgainst(c, dependency) || builtAgainstMovedTag(c, dependency) {
+					against[target.ID], taken = Against{Dependency: need, Indirect: indirect}, true
 					break
 				}
 			}
 		}
 	}
 	return against
+}
+
+// Against is the dependency an earlier build was found built against
+// another source of (AgainstOtherSources): Dependency, and Indirect where
+// it was the dependency's own build that was, which this one read in turn.
+type Against struct {
+	Dependency model.TargetID
+	Indirect   bool
 }
 
 // builtAgainst reports whether an earlier build had active an archive of a
@@ -213,7 +240,7 @@ func builtAgainst(c Candidate, dependency Target) bool {
 			continue
 		}
 		for _, earlier := range dependency.Earlier {
-			if earlier.Result.Archive == port.Archive && dependency.Git.BuiltBy(earlier.Inputs.Fetched) {
+			if earlier.Result.Archive == port.Archive && dependency.Git.AgainstFetched(earlier.Inputs.Fetched) == model.SourceSame {
 				return true
 			}
 		}
@@ -242,7 +269,7 @@ func builtAgainstMovedTag(c Candidate, dependency Target) bool {
 				continue
 			}
 			recorded = true
-			if dependency.TagMoved(earlier) {
+			if dependency.unseated(earlier) {
 				return true
 			}
 		}

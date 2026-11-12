@@ -620,3 +620,23 @@ func TestCarriedResultsAreSaidOnceForEachEarlierCheck(t *testing.T) {
 	e.Targets = e.Targets[1:]
 	require.Empty(t, CarriedLines(e))
 }
+
+// A finished check stands for another request only where each Git result's
+// own build fetched the commit the request expects: one that fetched
+// another, or didn't say, stands for nothing (change 1 of docs/designs/
+// source-comparison.md).
+func TestAFinishedCheckStandsWhereEachGitResultFetchedTheSource(t *testing.T) {
+	t.Parallel()
+	environment := model.Environment{Provider: "command"}
+	commit, other := model.ObjectID(strings.Repeat("a", 40)), model.ObjectID(strings.Repeat("b", 40))
+	git := map[model.TargetID]model.GitSource{"libharbor": {URL: "https://example.invalid/repo", Ref: "v4", Commit: commit}}
+	plan := model.Plan{Environments: []model.Environment{environment}, Targets: []model.PlanTarget{{ID: "libharbor"}}, Tests: model.TestsDeclared,
+		Builds: []model.EnvironmentPlan{{Environment: environment, Order: []model.TargetID{"libharbor"}, Git: git}}}
+	cell := func(model.TargetID, int) (Cell, bool) {
+		return Cell{Kind: CellRecorded, TargetResult: model.TargetResult{Target: "libharbor", Outcome: model.OutcomePassed, Inputs: "k"}}, true
+	}
+	fetched := func(f model.ObjectID) func(Cell) model.ObjectID { return func(Cell) model.ObjectID { return f } }
+	require.True(t, coversPlan(plan, cell, fetched(commit), plan))
+	require.False(t, coversPlan(plan, cell, fetched(other), plan), "its build fetched another commit")
+	require.False(t, coversPlan(plan, cell, fetched(""), plan), "its build didn't say what it fetched")
+}

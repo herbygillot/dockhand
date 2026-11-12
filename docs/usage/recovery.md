@@ -38,8 +38,11 @@ names other builds when the port ran in more than one place. A recorded step
 lets `--phase` isolate fetch, dependencies, install, test, or another named
 step. `--full` includes dependency-install output otherwise omitted from the
 port's own build. Use the provider-run ID the listing gives when you need a
-specific environment's log. `-p` chooses a branch here as in every command, so
-`logs check-42 -p jq` is refused, naming `logs check-42 jq`.
+specific environment's log; a provider run that built several environments,
+as a GitHub workflow run's URL names, shows those attempts and no others. A
+port the check doesn't build is refused by name, a running check's too. `-p`
+chooses a branch here as in every command, so `logs check-42 -p jq` is refused,
+naming `logs check-42 jq`.
 
 While it runs, `dockhand logs check-42 jq --follow` follows the host's growing
 copy where the provider supports it. GitHub Actions logs arrive differently;
@@ -140,11 +143,20 @@ request. To stop without creating another:
 dockhand cancel check-42
 ```
 
-A GitHub check whose driver stopped leaves MacPorts' workflow running on your
-fork, for `wait` to pick up. Cancelling it first cancels that workflow run.
-Where GitHub can't be reached, the cancel stays requested and the check is not
-reported stopped: `check-42: cancellation is recorded, but github could not stop
-<run URL>: …; run dockhand cancel check-42 to try again`.
+A cancel is finished only when every provider the check built on has said
+its work ended. A GitHub check whose driver stopped leaves MacPorts' workflow
+running on your fork, for `wait` to pick up; cancelling it cancels that
+workflow run and waits briefly for GitHub to report it completed. Where GitHub
+can't be reached, or the run hasn't completed yet, the cancel stays unfinished:
+`check-42: a cancel was asked, and github couldn't see <run URL> stop: …;
+dockhand cancel check-42 asks again`. `status` shows such a check as
+`canceling (check-42): …`, with the work not yet seen to stop, and names
+`dockhand cancel check-42` as the next step; its JSON gives the run's
+`cancel_requested` time and the same words as its `detail`. Each later
+`cancel`, and a serve as it passes, looks again; serve does so no more often
+than every 30 seconds. A submission of the same files doesn't wait on such a
+check. A cancel that finishes says what the ended work left, if anything, and
+what removes it, in the canceled check's detail.
 
 Ctrl-C has two meanings. When the check runs in the foreground here, it stops
 that run and keeps completed results. When another serve process drives the
@@ -257,6 +269,22 @@ you changed the files or need another environment, use a new check with explicit
 selections. The provider-specific setup commands, local-prefix behavior, and
 timeout settings are in `dockhand usage checks` and
 `dockhand usage configuration`.
+
+## A submission that didn't finish
+
+When submit stops partway, as when the push lands and opening the pull request
+fails, or the reply is lost, it says what is still owed and that `dockhand submit`
+finishes it:
+
+```text
+pushed 1a2b3c4 to ada/macports-ports:dockhand/jq-update, but could not create or update the pull request: …; opening the pull request is still owed, and dockhand submit jq-update finishes it
+```
+
+Run that submit; don't open a pull request by hand or start another branch. It
+reads the fork and GitHub first and records what landed, so a pull request
+GitHub opened is found, not opened twice. A submit that seems to hang holds the
+fork branch's lock: another submit of it is refused and names the process to
+stop.
 
 ## A green check can still leave work for review
 
@@ -419,14 +447,18 @@ and when deleting an ended record also discards unmerged work.
 ## Put back a database from a backup
 
 When dockhand refuses its database as damaged, it leaves the file as it is.
-Put back a copy `dockhand backup` made:
+Put back a copy `dockhand backup` made, or the copy a migration kept beside the
+database, `dockhand.db.schema-<N>`. Where one is there, the refusal names the
+newest, with its date. Putting it back loses what was recorded since it was
+made, and dockhand doesn't open it to say more, since opening it migrates it.
 
-1. Stop serve: quit it, or `dockhand serve --uninstall` for its launchd job,
-   and `dockhand serve --install` after.
+1. Stop every dockhand process, not serve alone: quit serve, or
+   `dockhand serve --uninstall` for its launchd job and
+   `dockhand serve --install` after, and let any check, submit or ship end.
 2. Move `dockhand.db`, `dockhand.db-wal`, and `dockhand.db-shm` aside together.
    A `-wal` left beside the backup would be replayed onto it.
 3. Copy the backup to `~/.dockhand/dockhand.db`, or where `--db` or
-   `DOCKHAND_DB` names.
+   `DOCKHAND_DB` names. Copy it, don't move it, so the copy stays beside it.
 
 The next command opens it, migrating it forward where the build is newer. The
 backup has no record of what happened after it was made. Kept archives it

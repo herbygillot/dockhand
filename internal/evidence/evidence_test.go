@@ -40,6 +40,7 @@ func TestAResultCountsWhereItsCheckPlannedTheTarget(t *testing.T) {
 	require.False(t, Counts(recorded, in(arm), "harbor-intel", "origin a", nil, "", false), "excluded there")
 	require.True(t, Counts(recorded, in(tahoeX86), "harbor-intel", "origin a", nil, "", false))
 	require.False(t, Counts(recorded, in(tahoeX86), "harbor-cli", "origin a", nil, "", false), "not planned there: --only left it out")
+	require.Equal(t, &Refusal{Kind: RefusedNotPlanned}, countsRefusal(recorded, in(tahoeX86), "harbor-cli", "origin a", nil, "", false), "and said so (TestATurnedDownResultSaysWhy)")
 	require.False(t, Counts(recorded, in(xcode), "libharbor", "origin a", nil, "", false), "the same release with other tools is another environment")
 
 	// And the environment is still the one it ran in: made from the same
@@ -212,7 +213,7 @@ func TestARemadeCellIsMissing(t *testing.T) {
 		Plan:       model.Plan{Environments: []model.Environment{tahoeArm}, Builds: []model.EnvironmentPlan{{Environment: tahoeArm, Order: []model.TargetID{"harbor-cli"}}}},
 		Executions: map[model.ExecutionID]model.GuestExecution{"tart_b": {ID: "tart_b", Environment: tahoeArm, Identity: "origin b"}},
 		Targets:    []TargetEvidence{{Target: cli, Outcomes: []Cell{recorded(tahoeArm, model.TargetResult{Execution: "tart_b", Target: "harbor-cli", Outcome: model.OutcomePassed})}}},
-		now:        Identities{tahoeArm: "origin a"},
+		now:        Identities{tahoeArm: {Value: "origin a"}},
 	}
 	require.Equal(t, CellNotRun, recorded(tahoeArm, model.TargetResult{Outcome: model.OutcomeNotRun}).Kind, "a checkpoint that never reached it is no result")
 	evidence.dropRemade()
@@ -281,16 +282,16 @@ func TestRequiredEnvironmentsKeepWhatD17Accepted(t *testing.T) {
 
 	plan := Plan(newest.Plan, []model.Plan{mistaken.Plan}, []model.Environment{tahoeArm})
 	require.Equal(t, []model.Environment{tahoeArm, tahoeX86}, plan.Environments, "the Intel check's result is shown")
-	judged := Judge(newest, plan, []Check{mistaken}, Identities{tahoeArm: "arm a", tahoeX86: "intel b"}, []model.Environment{tahoeArm})
+	judged := Judge(newest, plan, []Check{mistaken}, Identities{tahoeArm: {Value: "arm a"}, tahoeX86: {Value: "intel b"}}, []model.Environment{tahoeArm})
 	require.True(t, judged.Targets[0].Passed, "an Intel image made again since holds nothing, as the newest ask didn't name it")
 
 	// Where both are required, the Intel environment takes the earlier
 	// check's plan and its result.
 	plan = Plan(newest.Plan, []model.Plan{mistaken.Plan}, []model.Environment{tahoeArm, tahoeX86})
 	require.Equal(t, []model.Environment{tahoeArm, tahoeX86}, plan.Environments)
-	judged = Judge(newest, plan, []Check{mistaken}, Identities{tahoeArm: "arm a", tahoeX86: "intel a"}, []model.Environment{tahoeArm, tahoeX86})
+	judged = Judge(newest, plan, []Check{mistaken}, Identities{tahoeArm: {Value: "arm a"}, tahoeX86: {Value: "intel a"}}, []model.Environment{tahoeArm, tahoeX86})
 	require.True(t, judged.Targets[0].Passed, "while its result there stands")
-	judged = Judge(newest, plan, []Check{mistaken}, Identities{tahoeArm: "arm a", tahoeX86: "intel b"}, []model.Environment{tahoeArm, tahoeX86})
+	judged = Judge(newest, plan, []Check{mistaken}, Identities{tahoeArm: {Value: "arm a"}, tahoeX86: {Value: "intel b"}}, []model.Environment{tahoeArm, tahoeX86})
 	require.True(t, judged.Targets[0].Missing(), "an Intel image made again since holds the branch until it's checked there again")
 	require.Equal(t, CellRemade, judged.Targets[0].Outcomes[1].Kind)
 
@@ -525,4 +526,321 @@ func TestAResultAShellEnteredIsNoEvidence(t *testing.T) {
 	evidence = Of(Check{Run: run, Plan: plan, Executions: []model.GuestExecution{{ID: "tart_a", Run: run.ID, Environment: tahoeArm, Attempt: 1, State: model.ExecutionFinished}},
 		Results: map[model.ExecutionID][]model.TargetResult{"tart_a": {{Execution: "tart_a", Target: "harbor-cli", Outcome: model.OutcomePassed, RecordedAt: opened.Add(time.Minute)}}}})
 	require.Equal(t, CellRecorded, evidence.Targets[1].Outcomes[0].Kind, "a shell on another release")
+}
+
+// An earlier pass doesn't fill the newest evidence where the GitHub tag
+// its archive was fetched by named another commit then than the newest
+// plan's, as reuse builds again for it (change 2 of docs/designs/
+// source-comparison.md); another release's tag, or a tag one side didn't
+// record, stands. A result built with Git doesn't fill where the newest
+// plan builds that target another way (change 3).
+func TestAnEarlierPassStandsOnlyForTheSourceTheNewestPlanFetches(t *testing.T) {
+	tools := model.Environment{Provider: "command", DeveloperTools: model.DeveloperToolsCommandLine}
+	commit, other := model.ObjectID(strings.Repeat("a", 40)), model.ObjectID(strings.Repeat("b", 40))
+	tag := func(ref string, commit model.ObjectID) map[model.TargetID]model.GitSource {
+		return map[model.TargetID]model.GitSource{"harbor": {URL: "https://github.com/ada/harbor", Ref: ref, Commit: commit}}
+	}
+	execution := model.GuestExecution{ID: "ex_1", Run: "run_1", Environment: tools}
+	earlier := func(build model.EnvironmentPlan) Evidence {
+		build.Environment, build.Order = tools, []model.TargetID{"harbor"}
+		return Evidence{
+			Run:        model.Run{ID: "run_1", Number: 1},
+			Plan:       model.Plan{Environments: []model.Environment{tools}, Builds: []model.EnvironmentPlan{build}},
+			Executions: map[model.ExecutionID]model.GuestExecution{"ex_1": execution},
+			Targets: []TargetEvidence{{Target: model.PlanTarget{ID: "harbor", Target: model.Target{Name: "harbor"}, Role: model.Changed},
+				Outcomes: []Cell{{TargetResult: model.TargetResult{Execution: "ex_1", Target: "harbor", Outcome: model.OutcomePassed}, Kind: CellRecorded, Environment: tools}}}},
+		}
+	}
+	newest := func(build model.EnvironmentPlan) Evidence {
+		build.Environment, build.Order = tools, []model.TargetID{"harbor"}
+		return Evidence{
+			Run:  model.Run{ID: "run_2", Number: 2},
+			Plan: model.Plan{Environments: []model.Environment{tools}, Builds: []model.EnvironmentPlan{build}},
+			Targets: []TargetEvidence{{Target: model.PlanTarget{ID: "harbor", Target: model.Target{Name: "harbor"}, Role: model.Changed},
+				Outcomes: []Cell{noResult(CellNotRun, tools, "harbor")}}},
+		}
+	}
+	for _, c := range []struct {
+		name      string
+		then, now model.EnvironmentPlan
+		fills     bool
+	}{
+		{"the tag named the same commit", model.EnvironmentPlan{Tags: tag("v1.9.2", commit)}, model.EnvironmentPlan{Tags: tag("v1.9.2", commit)}, true},
+		{"the tag moved", model.EnvironmentPlan{Tags: tag("v1.9.2", commit)}, model.EnvironmentPlan{Tags: tag("v1.9.2", other)}, false},
+		{"another release's tag is no moved tag", model.EnvironmentPlan{Tags: tag("v1.7.1", commit)}, model.EnvironmentPlan{Tags: tag("v1.9.2", other)}, true},
+		{"a plan from before plans kept tags", model.EnvironmentPlan{}, model.EnvironmentPlan{Tags: tag("v1.9.2", other)}, true},
+		{"built with Git, the newest builds it from an archive", model.EnvironmentPlan{Git: tag("v1.9.2", commit)}, model.EnvironmentPlan{}, false},
+	} {
+		now := newest(c.now)
+		found := earlier(c.then)
+		require.Equal(t, c.fills, now.fill(found), c.name)
+	}
+}
+
+// A release only an earlier check planned is judged against the newest
+// check's own reading of each source: where the ref moved between the
+// two, the moved target's result there and a dependent's built against
+// it read as not checked, an unrelated target's still counts, and the
+// release stays required. Where the newest couldn't resolve the ref, the
+// earlier result stands (change 4 of docs/designs/source-comparison.md;
+// Codex's probe, a pass on 15 at one commit and on 26 at another).
+func TestAnEarlierReleasesResultIsJudgedAgainstTheNewestReading(t *testing.T) {
+	sequoia := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}
+	commit, other := model.ObjectID(strings.Repeat("a", 40)), model.ObjectID(strings.Repeat("b", 40))
+	target := func(id model.TargetID) model.PlanTarget {
+		return model.PlanTarget{ID: id, Target: model.Target{Name: string(id)}, Kind: model.Substantive, Role: model.Changed}
+	}
+	for _, tagged := range []bool{false, true} {
+		for _, newestResolved := range []bool{true, false} {
+			source := func(commit model.ObjectID) map[model.TargetID]model.GitSource {
+				s := model.GitSource{URL: "https://github.com/ada/harbor", Ref: "v4", Commit: commit, ResolvedAt: time.Now()}
+				if commit == "" {
+					s.Unresolved = "the repository couldn't be read"
+				}
+				return map[model.TargetID]model.GitSource{"harbor": s}
+			}
+			build := func(environment model.Environment, commit model.ObjectID) model.EnvironmentPlan {
+				b := model.EnvironmentPlan{Environment: environment, Order: []model.TargetID{"harbor", "harbor-cli", "zlib"},
+					Dependencies: map[model.TargetID][]model.TargetID{"harbor-cli": {"harbor"}}}
+				if tagged {
+					b.Tags = source(commit)
+				} else {
+					b.Git = source(commit)
+				}
+				return b
+			}
+			checkOf := func(number int, environment model.Environment, commit model.ObjectID) Check {
+				run := model.Run{ID: model.RunID(fmt.Sprint("run_", number)), Number: number}
+				execution := model.ExecutionID(fmt.Sprint("x", number))
+				results := []model.TargetResult{
+					{Execution: execution, Target: "harbor", Outcome: model.OutcomePassed, Inputs: "h", Archive: "sha256:harbor"},
+					{Execution: execution, Target: "harbor-cli", Outcome: model.OutcomePassed, Inputs: "c"},
+					{Execution: execution, Target: "zlib", Outcome: model.OutcomePassed, Inputs: "z"},
+				}
+				inputs := map[string]model.TargetInputs{"h": {}, "c": {Active: []model.ActivePort{{Name: "harbor", Archive: "sha256:harbor"}}}, "z": {}}
+				if !tagged {
+					inputs["h"] = model.TargetInputs{Fetched: commit}
+				}
+				return Check{Run: run, Plan: model.Plan{Targets: []model.PlanTarget{target("harbor"), target("harbor-cli"), target("zlib")}, Environments: []model.Environment{environment},
+					Builds: []model.EnvironmentPlan{build(environment, commit)}},
+					Executions: []model.GuestExecution{{ID: execution, Run: run.ID, Environment: environment}},
+					Results:    map[model.ExecutionID][]model.TargetResult{execution: results}, Inputs: inputs}
+			}
+			newestCommit := other
+			if !newestResolved {
+				newestCommit = ""
+			}
+			earlier, newest := checkOf(1, sequoia, commit), checkOf(2, tahoeArm, newestCommit)
+			required := []model.Environment{tahoeArm, sequoia}
+			judged := Judge(newest, Plan(newest.Plan, []model.Plan{earlier.Plan}, required), []Check{earlier}, Identities{}, required)
+			on := slices.Index(judged.Plan.Environments, sequoia)
+			require.GreaterOrEqual(t, on, 0, "the earlier release stays in the plan")
+			kinds := map[model.TargetID]CellKind{}
+			for _, te := range judged.Targets {
+				kinds[te.Target.ID] = te.Outcomes[on].Kind
+			}
+			name := fmt.Sprintf("tagged %v, newest resolved %v", tagged, newestResolved)
+			require.Equal(t, CellRecorded, kinds["zlib"], "%s: an unrelated target's result stands", name)
+			if newestResolved {
+				require.NotEqual(t, CellRecorded, kinds["harbor"], "%s: the moved target's result reads as not checked", name)
+				require.NotEqual(t, CellRecorded, kinds["harbor-cli"], "%s: and so does a dependent's built against it", name)
+			} else {
+				require.Equal(t, CellRecorded, kinds["harbor"], "%s: only a shown move unseats anything", name)
+			}
+		}
+	}
+}
+
+// A tag reading that isn't known counts unless another build of the target
+// shows the tag moved, and that other build may be any earlier check's: a
+// pass from a check whose tag couldn't be resolved doesn't fill in once a
+// later check shows the tag named A and the newest names B, nor does a
+// dependent built against its archive (Codex's review of #192, finding 1).
+func TestAnUnknownTagReadingStandsForNothingBesideAShownMove(t *testing.T) {
+	commitA, commitB := model.ObjectID(strings.Repeat("a", 40)), model.ObjectID(strings.Repeat("b", 40))
+	target := func(id model.TargetID) model.PlanTarget {
+		return model.PlanTarget{ID: id, Target: model.Target{Name: string(id)}, Kind: model.Substantive, Role: model.Changed}
+	}
+	tag := func(commit model.ObjectID) map[model.TargetID]model.GitSource {
+		s := model.GitSource{URL: "https://github.com/ada/harbor", Ref: "v4", Commit: commit, ResolvedAt: time.Now()}
+		if commit == "" {
+			s.Unresolved = "the repository couldn't be read"
+		}
+		return map[model.TargetID]model.GitSource{"harbor": s}
+	}
+	checkOf := func(number int, commit model.ObjectID, built bool) Check {
+		run := model.Run{ID: model.RunID(fmt.Sprint("run_", number)), Number: number}
+		execution := model.ExecutionID(fmt.Sprint("x", number))
+		var results []model.TargetResult
+		if built {
+			archive := fmt.Sprint("sha256:harbor", number)
+			results = []model.TargetResult{
+				{Execution: execution, Target: "harbor", Outcome: model.OutcomePassed, Inputs: "h", Archive: archive},
+				{Execution: execution, Target: "harbor-cli", Outcome: model.OutcomePassed, Inputs: "c"},
+			}
+		}
+		inputs := map[string]model.TargetInputs{"h": {}, "c": {Active: []model.ActivePort{{Name: "harbor", Archive: fmt.Sprint("sha256:harbor", number)}}}}
+		build := model.EnvironmentPlan{Environment: tahoeArm, Order: []model.TargetID{"harbor", "harbor-cli"}, Dependencies: map[model.TargetID][]model.TargetID{"harbor-cli": {"harbor"}}, Tags: tag(commit)}
+		return Check{Run: run, Plan: model.Plan{Targets: []model.PlanTarget{target("harbor"), target("harbor-cli")}, Environments: []model.Environment{tahoeArm}, Builds: []model.EnvironmentPlan{build}},
+			Executions: []model.GuestExecution{{ID: execution, Run: run.ID, Environment: tahoeArm}},
+			Results:    map[model.ExecutionID][]model.TargetResult{execution: results}, Inputs: inputs}
+	}
+	unresolved, atA, newest := checkOf(1, "", true), checkOf(2, commitA, true), checkOf(3, commitB, false)
+	required := []model.Environment{tahoeArm}
+	judged := Judge(newest, Plan(newest.Plan, []model.Plan{atA.Plan, unresolved.Plan}, required), []Check{atA, unresolved}, Identities{}, required)
+	for _, te := range judged.Targets {
+		require.NotEqual(t, CellRecorded, te.Outcomes[0].Kind, "%s: a check whose tag wasn't known stands for nothing once another shows it moved", te.Target.ID)
+	}
+
+	// Alone, with no other build showing a move, the unknown reading counts.
+	judged = Judge(newest, Plan(newest.Plan, []model.Plan{unresolved.Plan}, required), []Check{unresolved}, Identities{}, required)
+	for _, te := range judged.Targets {
+		require.Equal(t, CellRecorded, te.Outcomes[0].Kind, "%s: no move shown", te.Target.ID)
+	}
+}
+
+// An earlier extra built with Git, which the newest plan doesn't build and
+// which fetches nothing with Git itself, is still judged against its own
+// plan: having planned A and fetched B, its failure counts for nothing
+// (Codex's review of #192, finding 3).
+func TestAnEarlierExtraGitResultIsJudgedAgainstItsOwnPlan(t *testing.T) {
+	commitA, commitB := model.ObjectID(strings.Repeat("a", 40)), model.ObjectID(strings.Repeat("b", 40))
+	earlierRun := model.Run{ID: "run_1", Number: 1}
+	git := map[model.TargetID]model.GitSource{"libharbor": {URL: "https://github.com/ada/libharbor", Ref: "main", Commit: commitA, ResolvedAt: time.Now()}}
+	earlier := Check{Run: earlierRun,
+		Plan: model.Plan{Targets: []model.PlanTarget{{ID: "zlib", Target: model.Target{Name: "zlib"}, Kind: model.Substantive, Role: model.Changed}, {ID: "libharbor", Target: model.Target{Name: "libharbor"}, Kind: model.Substantive, Role: model.Also}},
+			Environments: []model.Environment{tahoeArm}, Builds: []model.EnvironmentPlan{{Environment: tahoeArm, Order: []model.TargetID{"zlib", "libharbor"}, Git: git}}},
+		Executions: []model.GuestExecution{{ID: "x1", Run: earlierRun.ID, Environment: tahoeArm}},
+		Results: map[model.ExecutionID][]model.TargetResult{"x1": {
+			{Execution: "x1", Target: "zlib", Outcome: model.OutcomePassed, Inputs: "z"},
+			{Execution: "x1", Target: "libharbor", Outcome: model.OutcomeFailed, Phase: model.PhaseFetch, Inputs: "l"},
+		}},
+		Inputs: map[string]model.TargetInputs{"z": {}, "l": {Fetched: commitB}}}
+	newestRun := model.Run{ID: "run_2", Number: 2}
+	newest := Check{Run: newestRun,
+		Plan: model.Plan{Targets: []model.PlanTarget{{ID: "zlib", Target: model.Target{Name: "zlib"}, Kind: model.Substantive, Role: model.Changed}},
+			Environments: []model.Environment{tahoeArm}, Builds: []model.EnvironmentPlan{{Environment: tahoeArm, Order: []model.TargetID{"zlib"}}}},
+		Results: map[model.ExecutionID][]model.TargetResult{}}
+	required := []model.Environment{tahoeArm}
+	judged := Judge(newest, Plan(newest.Plan, []model.Plan{earlier.Plan}, required), []Check{earlier}, Identities{}, required)
+	for _, te := range judged.Targets {
+		if te.Target.ID == "libharbor" {
+			require.NotEqual(t, CellRecorded, te.Outcomes[0].Kind, "a result that fetched another commit than its own plan named counts for nothing")
+		}
+	}
+}
+
+// Each way an earlier check's result is turned down is kept on the cell it
+// leaves unbuilt (Cell.Refused), with what its words name, so status's
+// cell and submit's hold say why it doesn't count, never that the check
+// stopped before building it, as they said once the source comparison
+// turned results down (#192's change-4 test). One row a refusal; a
+// result its plan didn't build there is Counts' own row.
+func TestATurnedDownResultSaysWhy(t *testing.T) {
+	a, b := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	source := func(commit string) model.GitSource {
+		s := model.GitSource{URL: "https://github.com/ada/harbor", Ref: "v4", Commit: model.ObjectID(commit), ResolvedAt: time.Now()}
+		if commit == "" {
+			s.Unresolved = "the repository couldn't be read"
+		}
+		return s
+	}
+	harbor := func(commit string) map[model.TargetID]model.GitSource {
+		return map[model.TargetID]model.GitSource{"harbor": source(commit)}
+	}
+	target := func(id model.TargetID) model.PlanTarget {
+		return model.PlanTarget{ID: id, Target: model.Target{Name: string(id)}, Kind: model.Substantive, Role: model.Changed}
+	}
+	// checkOf is a check on tahoeArm of harbor, cli built against it, and
+	// app built against cli, with the results and inputs given.
+	checkOf := func(number int, git, tags map[model.TargetID]model.GitSource, results []model.TargetResult, inputs map[string]model.TargetInputs) Check {
+		run := model.Run{ID: model.RunID(fmt.Sprint("run_", number)), Number: number}
+		execution := model.ExecutionID(fmt.Sprint("x", number))
+		for i := range results {
+			results[i].Execution = execution
+		}
+		build := model.EnvironmentPlan{Environment: tahoeArm, Order: []model.TargetID{"harbor", "cli", "app"},
+			Dependencies: map[model.TargetID][]model.TargetID{"cli": {"harbor"}, "app": {"cli"}}, Git: git, Tags: tags}
+		return Check{Run: run, Plan: model.Plan{Targets: []model.PlanTarget{target("harbor"), target("cli"), target("app")}, Environments: []model.Environment{tahoeArm}, Builds: []model.EnvironmentPlan{build}},
+			Executions: []model.GuestExecution{{ID: execution, Run: run.ID, Environment: tahoeArm}},
+			Results:    map[model.ExecutionID][]model.TargetResult{execution: results}, Inputs: inputs}
+	}
+	passed := func(fetched string) ([]model.TargetResult, map[string]model.TargetInputs) {
+		return []model.TargetResult{
+			{Target: "harbor", Outcome: model.OutcomePassed, Inputs: "h", Archive: "sha256:harbor"},
+			{Target: "cli", Outcome: model.OutcomePassed, Inputs: "c", Archive: "sha256:cli"},
+			{Target: "app", Outcome: model.OutcomePassed, Inputs: "p"},
+		}, map[string]model.TargetInputs{
+			"h": {Fetched: model.ObjectID(fetched)},
+			"c": {Active: []model.ActivePort{{Name: "harbor", Archive: "sha256:harbor"}}},
+			"p": {Active: []model.ActivePort{{Name: "cli", Archive: "sha256:cli"}}},
+		}
+	}
+	for _, c := range []struct {
+		name             string
+		then, now        map[model.TargetID]model.GitSource
+		tagged           bool
+		fetched          string
+		results          []model.TargetResult
+		harbor, cli, app *Refusal
+	}{
+		{name: "the Git ref moved", then: harbor(a), now: harbor(b), fetched: a,
+			harbor: &Refusal{Kind: RefusedMoved, Ref: "v4", Then: a, Now: b},
+			cli:    &Refusal{Kind: RefusedDependency, Ref: "v4", Then: a, Now: b, Dependency: "harbor"},
+			app:    &Refusal{Kind: RefusedDependencyRefused, Dependency: "cli"}},
+		{name: "the tag moved", then: harbor(a), now: harbor(b), tagged: true,
+			harbor: &Refusal{Kind: RefusedMoved, Ref: "v4", Then: a, Now: b},
+			cli:    &Refusal{Kind: RefusedDependency, Ref: "v4", Then: a, Now: b, Dependency: "harbor"},
+			app:    &Refusal{Kind: RefusedDependencyRefused, Dependency: "cli"}},
+		{name: "its own check couldn't read the ref", then: harbor(""), now: harbor(""), fetched: a,
+			harbor: &Refusal{Kind: RefusedUnread, Ref: "v4"},
+			cli:    &Refusal{Kind: RefusedDependencyUnshown, Ref: "v4", Dependency: "harbor"},
+			app:    &Refusal{Kind: RefusedDependencyRefused, Dependency: "cli"}},
+		{name: "the newest check couldn't read the ref", then: harbor(a), now: harbor(""), fetched: a,
+			harbor: &Refusal{Kind: RefusedUnreadNow, Ref: "v4", Then: a},
+			cli:    &Refusal{Kind: RefusedDependencyUnshown, Ref: "v4", Dependency: "harbor"},
+			app:    &Refusal{Kind: RefusedDependencyRefused, Dependency: "cli"}},
+		{name: "the build didn't say what it fetched", then: harbor(a), now: harbor(a),
+			harbor: &Refusal{Kind: RefusedUnrecorded, Ref: "v4", Now: a},
+			cli:    &Refusal{Kind: RefusedDependencyUnshown, Ref: "v4", Now: a, Dependency: "harbor"},
+			app:    &Refusal{Kind: RefusedDependencyRefused, Dependency: "cli"}},
+		{name: "its own check found the ref moved", then: harbor(a), now: harbor(b), fetched: b,
+			harbor: &Refusal{Kind: RefusedOwnMove, Ref: "v4", Then: a, Now: b}},
+		{name: "built with Git, fetched another way now", then: harbor(a), now: nil, fetched: a,
+			harbor: &Refusal{Kind: RefusedFetchMode}},
+		{name: "blocked by a result that doesn't count", then: harbor(a), now: harbor(b), fetched: a,
+			results: []model.TargetResult{
+				{Target: "harbor", Outcome: model.OutcomeFailed, Inputs: "h"},
+				{Target: "cli", Outcome: model.OutcomeBlocked},
+				{Target: "app", Outcome: model.OutcomeBlocked},
+			},
+			harbor: &Refusal{Kind: RefusedMoved, Ref: "v4", Then: a, Now: b},
+			cli:    &Refusal{Kind: RefusedBlocked, Dependency: "harbor"},
+			app:    &Refusal{Kind: RefusedBlocked, Dependency: "cli"}},
+	} {
+		results, inputs := passed(c.fetched)
+		if c.results != nil {
+			results = c.results
+		}
+		var earlier, newest Check
+		if c.tagged {
+			earlier, newest = checkOf(1, nil, c.then, results, inputs), checkOf(2, nil, c.now, nil, nil)
+		} else {
+			earlier, newest = checkOf(1, c.then, nil, results, inputs), checkOf(2, c.now, nil, nil, nil)
+		}
+		required := []model.Environment{tahoeArm}
+		judged := Judge(newest, Plan(newest.Plan, []model.Plan{earlier.Plan}, required), []Check{earlier}, Identities{}, required)
+		for id, want := range map[model.TargetID]*Refusal{"harbor": c.harbor, "cli": c.cli, "app": c.app} {
+			i := slices.IndexFunc(judged.Targets, func(t TargetEvidence) bool { return t.Target.ID == id })
+			cell := judged.Targets[i].Outcomes[0]
+			if want == nil {
+				require.Nil(t, cell.Refused, "%s: %s", c.name, id)
+				continue
+			}
+			want.Check = "check-1"
+			require.Equal(t, CellNotRun, cell.Kind, "%s: %s", c.name, id)
+			require.Equal(t, want, cell.Refused, "%s: %s", c.name, id)
+			require.Empty(t, cell.PlannedIn, "%s: %s isn't said as a check that stopped", c.name, id)
+		}
+	}
 }

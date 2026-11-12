@@ -117,6 +117,13 @@ true, and `replay`, each of the branch's commits in order with its `id`,
 `untried` after a conflict; `refused` says why the rebase wouldn't move the
 branch, and `commits` is the count the replay would make.
 
+`submit --json` and `ship --json` give the pull request under `pull_request`,
+with `pending`: each step the submission still owes when it returns, as `step`,
+`reason` and `detail`. The reasons are `failed` (with the error),
+`awaits-answer`, `may-have-been-sent` (a reviewer request with no answer, never
+sent again), `refused` (GitHub's words), and `unread`. A pending step that
+failed or was refused fails the command; the next `submit` accounts for it.
+
 The process exit codes are:
 
 | Code | Meaning |

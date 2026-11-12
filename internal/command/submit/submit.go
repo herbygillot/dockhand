@@ -249,27 +249,14 @@ func writeDescription(streams term.Streams, plan engine.SubmitPlan) {
 // shows at the default level.
 const descriptionLines = 8
 
-// finishSubmit applies a plan, then takes its pull request out of draft
-// when --ready asked.
+// finishSubmit applies a plan, its pull request marked ready after it
+// where --ready asked, as one of the submission's steps.
 func finishSubmit(ctx context.Context, e *engine.Engine, streams term.Streams, plan engine.SubmitPlan, ready bool, rerequest string) error {
 	// A person's own submission: what holds it is shown, and it goes on.
-	if _, err := Apply(ctx, e, streams, plan, rerequest, model.AnsweredAsked); err != nil {
-		return err
-	}
-	if !ready {
-		return nil
-	}
-	branch, byCLI, err := e.Ready(ctx, plan.Branch)
-	if err != nil {
-		return err
-	}
-	if byCLI {
-		organization, _, _ := strings.Cut(branch.PullRequest.Repository, "/")
-		fmt.Fprintf(streams.Prose(), "Marked #%d ready for review with the GitHub CLI: the %s organization refuses dockhand's app.\n", branch.PullRequest.Number, organization)
-		return nil
-	}
-	fmt.Fprintf(streams.Prose(), "Marked #%d ready for review.\n", branch.PullRequest.Number)
-	return nil
+	// A ready an earlier submission of this commit still owed is carried.
+	plan.Request.Ready = plan.Request.Ready || ready
+	_, err := Apply(ctx, e, streams, plan, rerequest, model.AnsweredAsked)
+	return err
 }
 
 // updatedWords says what submit changed on a pull request it pushed
@@ -292,11 +279,32 @@ func updatedWords(edited engine.SubmitEdits, number int) string {
 // them, and whether each was asked (the rc8 full stage's B4), however it
 // ends once the submission is made.
 func Apply(ctx context.Context, e *engine.Engine, streams term.Streams, plan engine.SubmitPlan, rerequest string, answered model.Answered) (engine.Submitted, error) {
+	// Whether to ask the reviewers who requested changes to review again
+	// is asked before the push, with the plan, and the answer rides with
+	// the submission, whose last step it is (#191).
+	// An answer an earlier submission of this commit recorded stands, and
+	// isn't asked again (#191).
+	if logins := plan.Rerequests(); len(logins) > 0 && rerequest != "never" && !plan.Request.Rerequest {
+		who := "@" + strings.Join(logins, ", @")
+		again := rerequest == "always"
+		if !again {
+			var how model.Answered
+			var err error
+			again, how, err = streams.Decide(false, term.Decision{Question: fmt.Sprintf("? ask %s to review again? [Y/n] ", who), Yes: true, Nobody: term.Answer(false)})
+			if err != nil {
+				return engine.Submitted{}, err
+			}
+			if how == model.AnsweredNobody {
+				fmt.Fprintf(streams.Prose(), "%s requested changes; ask them to review again on GitHub, or set submit.rerequest_review = \"always\"\n", who)
+			}
+		}
+		plan.Request.Rerequest = again
+	}
 	submitted, err := e.ApplySubmit(ctx, plan, answered)
-	if err != nil {
+	if err != nil && submitted.PullRequest.Ref.Number == 0 {
 		return submitted, err
 	}
-	return submitted, followUp(ctx, e, streams, plan, submitted, rerequest)
+	return submitted, errors.Join(err, followUp(ctx, e, streams, plan, submitted, rerequest))
 }
 
 // StageWords are a submission as ship's stage line says it: the pull
@@ -320,7 +328,10 @@ func followUp(ctx context.Context, e *engine.Engine, streams term.Streams, plan 
 	pr := submitted.PullRequest
 	result := view.SubmitView(plan)
 	result.PullRequest = &view.SubmittedJSON{Number: pr.Ref.Number, URL: pr.Ref.URL, Created: submitted.Created, Pushed: submitted.Pushed, Draft: plan.Request.Draft,
-		UpdatedTitle: submitted.Edited.Title, UpdatedDescription: submitted.Edited.Body, ChangesRequestedBy: []view.ChangesRequestedJSON{}}
+		UpdatedTitle: submitted.Edited.Title, UpdatedDescription: submitted.Edited.Body, ChangesRequestedBy: []view.ChangesRequestedJSON{}, Pending: []view.PendingJSON{}}
+	for _, owed := range submitted.Pending {
+		result.PullRequest.Pending = append(result.PullRequest.Pending, view.PendingJSON{Step: string(owed.Step), Reason: string(owed.Reason), Detail: owed.Detail})
+	}
 	defer func() { streams.Emit(result) }()
 	switch {
 	case submitted.Created && plan.Request.Draft:
@@ -334,44 +345,27 @@ func followUp(ctx context.Context, e *engine.Engine, streams term.Streams, plan 
 	default:
 		fmt.Fprintln(streams.Prose(), updatedWords(submitted.Edited, pr.Ref.Number))
 	}
+	// Ready comes before the reviewers, as the submission's steps run.
+	if submitted.Ready {
+		if submitted.ReadyByCLI {
+			organization, _, _ := strings.Cut(plan.Repository, "/")
+			fmt.Fprintf(streams.Prose(), "Marked #%d ready for review with the GitHub CLI: the %s organization refuses dockhand's app.\n", pr.Ref.Number, organization)
+		} else {
+			fmt.Fprintf(streams.Prose(), "Marked #%d ready for review.\n", pr.Ref.Number)
+		}
+	}
 	observed := plan.Branch.PullRequest
 	if submitted.Created || observed == nil || observed.Observed == nil {
 		return nil
 	}
 	for _, login := range observed.Observed.ChangesRequestedBy {
-		result.PullRequest.ChangesRequestedBy = append(result.PullRequest.ChangesRequestedBy, view.ChangesRequestedJSON{Login: login})
-	}
-	if len(observed.Observed.ChangesRequestedBy) == 0 || rerequest == "never" {
-		return nil
-	}
-	// One the last submit's push left due, its request having failed, is
-	// asked now.
-	leftOver := ""
-	if !submitted.Pushed {
-		due, err := e.RerequestDue(ctx, plan.Branch)
-		if err != nil || !due {
-			return err
-		}
-		leftOver = " (left over from the last submit)"
+		result.PullRequest.ChangesRequestedBy = append(result.PullRequest.ChangesRequestedBy, view.ChangesRequestedJSON{Login: login, Rerequested: slices.Contains(submitted.Asked, login)})
 	}
 	who := "@" + strings.Join(observed.Observed.ChangesRequestedBy, ", @")
-	if rerequest != "always" {
-		again, how, err := streams.Decide(false, term.Decision{Question: fmt.Sprintf("? ask %s to review again? [Y/n] ", who), Yes: true, Nobody: term.Answer(false)})
-		if how == model.AnsweredNobody {
-			fmt.Fprintf(streams.Prose(), "%s requested changes; ask them to review again on GitHub, or set submit.rerequest_review = \"always\"\n", who)
-		}
-		if err != nil || !again {
-			return err
-		}
+	if len(submitted.Asked) > 0 {
+		fmt.Fprintf(streams.Prose(), "Asked %s to review again.\n", who)
+		return nil
 	}
-	asked, err := e.RequestReview(ctx, plan.Branch)
-	if err != nil {
-		return err
-	}
-	for i, requested := range result.PullRequest.ChangesRequestedBy {
-		result.PullRequest.ChangesRequestedBy[i].Rerequested = slices.Contains(asked, requested.Login)
-	}
-	fmt.Fprintf(streams.Prose(), "Asked %s to review again%s.\n", who, leftOver)
 	return nil
 }
 

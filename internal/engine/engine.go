@@ -29,6 +29,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/selection"
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/procid"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/refusal"
@@ -67,6 +68,19 @@ type Options struct {
 	// reads the wrap. Nil in production.
 	GitHook   func(ctx context.Context, args []string, run func() error) error
 	WrapStore func(store.Store) store.Store
+	// Process and Liveness are the sweep's third seam: the process a
+	// session is recorded for, this one where nil, and what says whether
+	// another session's process still runs, the operating system where
+	// nil. A run the sweep stops is a process of its own, which recovery
+	// then finds gone, as it finds a killed one (docs/designs/
+	// fault-sweep.md, "dead"; #129's fix list, 4). Nil in production.
+	Process  func() (coord.Process, error)
+	Liveness coord.Liveness
+	// OtherDockhands are the other dockhand processes on this Mac, which a
+	// migration that waits for quiet waits on; this Mac's own, by name
+	// (otherDockhands), where nil. A test's own world counts none, so it
+	// doesn't read the person's running dockhands as its own.
+	OtherDockhands func() ([]int, error)
 	// Database is the store's path.
 	Database string
 	// Worktrees is the directory managed worktrees live in; when empty,
@@ -543,11 +557,30 @@ func (e *Engine) TrackedElsewhere(ctx context.Context, number int) error {
 	return nil
 }
 
+// otherDockhands are the PIDs of the other processes on this Mac running a
+// program named dockhand, which the publication record's migration waits
+// on (store.QuietUnderMigrationError).
+func otherDockhands() ([]int, error) {
+	named, err := procid.Named("dockhand")
+	if err != nil {
+		return nil, err
+	}
+	var pids []int
+	for _, process := range named {
+		pids = append(pids, process.PID)
+	}
+	return pids, nil
+}
+
 // storeOptions are what the store opens with: the person's answers to a
 // migration's refusals, and this build, which a release's database is
 // refused to unasked where it isn't one.
 func (o Options) storeOptions() sqlite.Options {
-	return sqlite.Options{MigrateUnderLive: o.MigrateUnderLive, MigrateRelease: o.MigrateRelease || o.NamedDatabase, Build: buildinfo.Current().String(), LiveWithin: coord.DefaultHungAfter, Heartbeat: coord.DefaultHeartbeat}
+	quiet := o.OtherDockhands
+	if quiet == nil {
+		quiet = otherDockhands
+	}
+	return sqlite.Options{MigrateUnderLive: o.MigrateUnderLive, MigrateRelease: o.MigrateRelease || o.NamedDatabase, Build: buildinfo.Current().String(), LiveWithin: coord.DefaultHungAfter, Heartbeat: coord.DefaultHeartbeat, Quiet: quiet}
 }
 
 // ReleaseUnderMigrationError is a migration Open refused, since a release

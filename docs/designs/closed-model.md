@@ -52,6 +52,19 @@ The switch is gated on one before-and-after survey that counts outcome changes i
 
 The plan filed on 2026-11-11 takes #107 just before this item, since both change internal/macports/platform.go first. It takes one part of [#39](https://github.com/herbygillot/dockhand/issues/39) with it: the one test table for exec admission, which today is tested twice (macports/programs_test.go:69 and eval/refusal_test.go:73). This item changes what admission answers in a modelled context, so the table is written here, with the native context's answers and the closed ones as its rows.
 
+## The gating survey, 2026-11-11
+
+Inputs: the ports tree at 6945bcfaf256; MacPorts Base 2.12.7 at /opt/macports-test; every port, 41,471, in the modelled contexts the survey picks, with default variants; `tools/survey -tree … -prefix /opt/macports-test -db …`. The baseline is main before this item. Records are in ~/.dockhand/surveys, 2026-11-11-110-before and 2026-11-11-110-125c.
+
+The first run of the switch moved 1,654 ports to unknown. Architecture's rework took that to 120: the fetch plan taken before code_fingerprint's walk, java's callback named, an evaluation a closed answer ends naming its call. What remained was build.jobs's sysctl read and old releases' compiler probes. The build.jobs read is explained as a build-only default, through build, test and destroot options and only where nothing reads build.jobs outside a build position. The old releases' contexts are left as the Portfile has them, which [#125](https://github.com/herbygillot/dockhand/issues/125) does for update and the survey's assessment alike. With all three:
+
+- No fetch value changed in a context that stayed conclusive, and no evaluation newly fails.
+- Seven ports move to unknown, each on a read closed by design: gpsd, legacy-support, legacy-support-devel, libgifski and mksh from input-found; hadrian and ophcrack from unsupported. Their reads are a Portfile's own sysctl, build.jobs in an expression, or a compiler read outside a build position.
+- Fourteen ports go from unknown to input-found, and five qt5x-docs ports from own-version to input-found.
+- Eleven fetch guards are lost: pypy's ten (Darwin 8 to 10, the openssl PortGroup's paths) and game-porting-toolkit's (Rosetta detection). All eleven ports were already unknown.
+- 82 contexts are left across 34 ports, all on Darwin 8 to 12 but two (raxml's Darwin 25 x86_64, a Portfile's own CPU-feature read; wine-stable's Darwin 18, /usr/include). No port has every context left. One declaration is kept as written because only left contexts fetch it: apple-gcc42's.
+- The 82 are the survey's own contexts on 6945bcfa, not every context an update leaves on another tree: cmake's Darwin 8 and 9 read conclusively here, and its plan on master d4710e0, where muniversal, legacysupport and compiler_blacklist_versions had changed, left both.
+
 ## Decision 1, settled
 
 Recorded in docs/decisions.md now, as adopted and not yet built: a modelled context takes no host answer; what the table lacks is absent and marked `closed`. The implementing commit gives docs/oracle.md's decision 1 its settlement, beside the comment at dispatcher.tcl:430 that cites it.

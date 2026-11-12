@@ -35,6 +35,13 @@ func snapshot(t *testing.T, w cmdtest.World, g *forgetest.GitHub) world {
 	out := world{}
 	names := &commitNames{names: map[string]string{}}
 	repositories := map[string]string{"upstream": w.Upstream, "fork": filepath.Join(filepath.Dir(w.Upstream), "fork.git"), "clone": w.Clone}
+	// Every repository the stand-in knows is in the world, another
+	// person's fork among them (#129's fix list, 1).
+	if g != nil {
+		for name, path := range g.Repos {
+			repositories["other "+name] = path
+		}
+	}
 	worktrees, _ := filepath.Glob(filepath.Join(w.Home, "Source", "macports-branches", "*"))
 	for _, worktree := range worktrees {
 		repositories["worktree "+filepath.Base(worktree)] = worktree
@@ -278,6 +285,12 @@ func pullRequests(g *forgetest.GitHub) []string {
 		lines = append(lines, fmt.Sprintf("pr #%d %s:%s→%s %s draft=%t title=%q body=%q head=%s rerequested=%v",
 			number, pr.HeadRepository, pr.HeadBranch, pr.BaseBranch, pr.State, g.Draft(number), pr.Title, pr.Body, pr.RemoteHead, g.RerequestedOn[number]))
 	}
+	// Other people's pull requests, adopted ones among them, as GitHub
+	// has them: their text is theirs (#129's fix list, 1).
+	for number, pr := range g.Theirs {
+		lines = append(lines, fmt.Sprintf("theirs #%d %s:%s→%s %s title=%q body=%q head=%s maintainer_edits=%t",
+			number, pr.HeadRepository, pr.HeadBranch, pr.BaseBranch, pr.State, pr.Title, pr.Body, pr.RemoteHead, pr.MaintainerCanModify))
+	}
 	for _, review := range g.Reviews {
 		lines = append(lines, fmt.Sprintf("review #%d changes=%t body=%x", review.Ref.Number, review.RequestChanges, sha256.Sum256([]byte(review.Body))))
 	}
@@ -363,53 +376,101 @@ var (
 
 // normalize makes two runs' worlds comparable: the temporary root a
 // fixed word; a random record id a name for the record it identifies,
-// the same wherever it appears, named in the order the world mentions it
-// once its rows are sorted by what isn't an id; and each time its rank in
-// the run and its day, which attempts' order and serve's daily limit
-// read.
+// the same wherever it appears, covering the names of the records it
+// points at, and named in the order the world mentions it once its rows
+// are sorted by what isn't an id; and each time its day as dockhand reads
+// it, the local one, with its order among its row's times, which
+// attempts' order and serve's daily limit read (#129's fix list, 5 and
+// 6).
+// settledFields are a branch's columns that settling may leave otherwise
+// than a clean run, as a scenario declares (unreadable).
+var settledFields = regexp.MustCompile(`\b(pr_provenance|pr_rerequested|publication)="(?:[^"\\]|\\.)*"`)
+
 func normalize(w world, root string) world {
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {
 		root = resolved
 	}
-	// A time is its day: its rank in the run shifted with every row a
-	// retry rightly adds, so order is read where it's recorded, as an
+	// A time is its day, the local one, and its order among the times of
+	// its own row: a rank in the whole run shifted with every row a retry
+	// rightly adds, and a row's own order, an attempt's start before its
+	// end, a publication's tried before its gone, survives them (#129's
+	// fix list, 6). Order between rows is read where it's recorded, as an
 	// event's or an attempt's number.
-	rank := func(ms int64) string {
-		return "time(" + time.UnixMilli(ms).UTC().Format("2006-01-02") + ")"
+	stamp := func(line string) string {
+		var values []int64
+		read := func(m string) (int64, bool) {
+			if sub := markedTimes.FindStringSubmatch(m); sub != nil {
+				v, err := strconv.ParseInt(sub[1], 10, 64)
+				return v, err == nil
+			}
+			parsed, err := time.Parse(time.RFC3339Nano, m)
+			return parsed.UnixMilli(), err == nil
+		}
+		for _, m := range append(markedTimes.FindAllString(line, -1), writtenTimes.FindAllString(line, -1)...) {
+			if v, ok := read(m); ok && !slices.Contains(values, v) {
+				values = append(values, v)
+			}
+		}
+		slices.Sort(values)
+		rank := func(m string) string {
+			v, ok := read(m)
+			if !ok {
+				return m
+			}
+			day := "time(" + time.UnixMilli(v).Local().Format("2006-01-02")
+			if len(values) > 1 {
+				day += fmt.Sprintf("#%d", slices.Index(values, v)+1)
+			}
+			return day + ")"
+		}
+		return writtenTimes.ReplaceAllStringFunc(markedTimes.ReplaceAllStringFunc(line, rank), rank)
 	}
-	// A record's own id is named by what the record holds, its other ids
-	// and times masked, so a row a retry adds doesn't rename the rest.
-	named := map[string]string{}
+	// A record's own id is named by what the record holds, its times
+	// masked, and the names of the records it points at in place of their
+	// ids, so two records that differ only in their parents differ, and a
+	// row a retry adds, which nothing points at, renames nothing (#129's
+	// fix list, 5). Names are taken in rounds, each reading the last
+	// round's names of what a record points at, as deep as a reference
+	// chain runs.
 	own := regexp.MustCompile(`(?:^| )id="([a-z]{2,8}_[a-z2-7]{16})"`)
+	type record struct{ section, id, line string }
+	var records []record
 	for _, section := range slices.Sorted(maps.Keys(w)) {
 		for _, line := range w[section] {
-			match := own.FindStringSubmatch(line)
-			if match == nil {
-				continue
+			if match := own.FindStringSubmatch(line); match != nil {
+				masked := markedTimes.ReplaceAllString(writtenTimes.ReplaceAllString(strings.ReplaceAll(line, root, "ROOT"), "T"), "T")
+				// How a pull request is known and what became of a reviewer
+				// request are what a scenario may declare (unreadable), not
+				// which branch a row is, so they don't name it.
+				masked = settledFields.ReplaceAllString(masked, `$1="…"`)
+				records = append(records, record{section: section, id: match[1], line: masked})
 			}
-			masked := ids.ReplaceAllString(markedTimes.ReplaceAllString(writtenTimes.ReplaceAllString(strings.ReplaceAll(line, root, "ROOT"), "T"), "T"), "ID")
-			sum := sha256.Sum256([]byte(section + masked))
-			prefix, _, _ := strings.Cut(match[1], "_")
-			named[match[1]] = fmt.Sprintf("%s:%x", prefix, sum[:4])
 		}
+	}
+	named := map[string]string{}
+	for round := 0; round < 6; round++ {
+		next := map[string]string{}
+		for _, r := range records {
+			text := ids.ReplaceAllStringFunc(r.line, func(id string) string {
+				if id == r.id {
+					return "SELF"
+				}
+				if name, ok := named[id]; ok {
+					return name
+				}
+				return "ID"
+			})
+			sum := sha256.Sum256([]byte(r.section + text))
+			prefix, _, _ := strings.Cut(r.id, "_")
+			next[r.id] = fmt.Sprintf("%s:%x", prefix, sum[:4])
+		}
+		named = next
 	}
 	out := world{}
 	for _, section := range slices.Sorted(maps.Keys(w)) {
 		lines := slices.Clone(w[section])
 		for i, line := range lines {
-			line = strings.ReplaceAll(line, root, "ROOT")
-			line = markedTimes.ReplaceAllStringFunc(line, func(m string) string {
-				v, _ := strconv.ParseInt(markedTimes.FindStringSubmatch(m)[1], 10, 64)
-				return rank(v)
-			})
-			line = writtenTimes.ReplaceAllStringFunc(line, func(m string) string {
-				parsed, err := time.Parse(time.RFC3339Nano, m)
-				if err != nil {
-					return m
-				}
-				return rank(parsed.UnixMilli())
-			})
-			lines[i] = line
+			lines[i] = stamp(strings.ReplaceAll(line, root, "ROOT"))
 		}
 		// Sorted by what isn't an id, so ids are named in an order that
 		// doesn't depend on their random letters; events keep theirs, by
@@ -445,10 +506,17 @@ func differences(clean, recovered world) []string {
 			found = append(found, eventDifferences(a, b)...)
 			continue
 		}
-		// A session's row is a command's own: a failed run and its retry
-		// rightly leave one the clean run lacks, ended or not, its process
-		// gone; a named equivalence for the sessions table alone.
+		// A session's row is a command's own, so the two runs' rows aren't
+		// matched: each must be in a state a finished command leaves,
+		// ended, or its process gone, the stopped run's, which recovery
+		// found dead (#129's fix list, 4). A session still open whose
+		// process is alive is a finding in either world.
 		if section == "table sessions" {
+			for _, line := range append(slices.Clone(a), b...) {
+				if strings.Contains(line, "ended_at=null") && !strings.Contains(line, `process_start="`+stoppedProcess+`"`) {
+					found = append(found, section+": open, its process alive: "+line)
+				}
+			}
 			continue
 		}
 		// An abandoned attempt's checkpoint is the retry's allowed extra
@@ -458,17 +526,30 @@ func differences(clean, recovered world) []string {
 				return strings.Contains(line, `state="abandoned"`) && !slices.Contains(a, line)
 			})
 		}
+		// Rows compare by count: a duplicate row is one the clean run
+		// lacks (#129's fix list, 5).
+		count := func(lines []string) map[string]int {
+			counts := map[string]int{}
+			for _, line := range lines {
+				counts[line]++
+			}
+			return counts
+		}
+		inA, inB := count(a), count(b)
+		before := len(found)
 		for _, line := range a {
-			if !slices.Contains(b, line) {
+			if inB[line] < inA[line] {
 				found = append(found, section+": clean has, recovered lacks: "+line)
+				inB[line] = inA[line]
 			}
 		}
 		for _, line := range b {
-			if !slices.Contains(a, line) {
+			if inA[line] < inB[line] {
 				found = append(found, section+": recovered has, clean lacks: "+line)
+				inA[line] = inB[line]
 			}
 		}
-		if len(a) == len(b) && len(found) == 0 && !slices.Equal(a, b) {
+		if len(a) == len(b) && len(found) == before && !slices.Equal(a, b) {
 			found = append(found, section+": the same lines in another order")
 		}
 	}
@@ -493,8 +574,12 @@ var (
 )
 
 // stateEvents are the events dockhand reads back as state, which compare
-// exactly: serve's daily limit counts serve.submit.
-var stateEvents = []string{"serve.submit"}
+// exactly: a run's newest progress or waiting is what status, wait and
+// the check's driver say it's doing (LatestRunEvent). Every kind a store
+// reader is asked for by kind outside tests is here, as
+// TestTheEventsReadAsStateAreListed holds (#129's fix list, 7);
+// serve.submit, which serve's count no longer reads, isn't.
+var stateEvents = []string{"progress", "waiting"}
 
 // eventDifferences hold the recovered run's events to the clean run's:
 // the clean run's appear in order among them, extras allowed, but for

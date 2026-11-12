@@ -156,23 +156,28 @@ func TestCleanupPrunesTheJournal(t *testing.T) {
 	}))
 }
 
-// Cleanup keeps today's events, however short cleanup.after is: serve's
-// daily limit counts the pull requests it opened since midnight from
-// them, and an hour's after pruned the morning's, so serve opened more
-// than its limit. Yesterday's go as after says.
-func TestCleanupKeepsTheEventsTodaysSubmitLimitCounts(t *testing.T) {
+// serve's count reads its own rows, not the journal, so cleanup keeps no
+// event for it: the morning's serve.submit goes as after says. It prunes
+// openings older than two days, and keeps a row that was tried or holds a
+// place, however old, since no length of time settles a create (#191).
+func TestCleanupPrunesOldOpeningsAndKeepsTriedOnes(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	f.options.Indexes = t.TempDir()
 	e := f.open(t)
 	now := e.now()
 	morning := dayStart(now).Add(time.Minute)
+	old := dayStart(now).Add(-72 * time.Hour)
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
-		for _, event := range []model.Event{
-			{At: dayStart(now).Add(-time.Minute), Kind: model.EventServeSubmit, Level: model.LevelInfo, Message: "yesterday's"},
-			{At: morning, Kind: model.EventServeSubmit, Level: model.LevelInfo, Message: "this morning's"},
+		if _, err := tx.AppendEvent(model.Event{At: morning, Kind: model.EventServeSubmit, Level: model.LevelInfo, Message: "this morning's"}); err != nil {
+			return err
+		}
+		for _, row := range []model.ServeOpening{
+			{Base: "macports/macports-ports:master", Head: "ada/macports-ports:old", Number: 1, Opened: old},
+			{Base: "macports/macports-ports:master", Head: "ada/macports-ports:tried", Tried: old, Unanswered: true},
+			{Base: "macports/macports-ports:master", Head: "ada/macports-ports:today", Number: 2, Opened: morning},
 		} {
-			if _, err := tx.AppendEvent(event); err != nil {
+			if _, err := tx.AddServeOpening(row); err != nil {
 				return err
 			}
 		}
@@ -182,10 +187,16 @@ func TestCleanupKeepsTheEventsTodaysSubmitLimitCounts(t *testing.T) {
 
 	report, err := e.Cleanup(t.Context(), session(t, e), time.Hour)
 	require.NoError(t, err)
-	require.Equal(t, 1, report.Events, "yesterday's")
-	opened, err := e.servedToday(t.Context(), now)
-	require.NoError(t, err)
-	require.Equal(t, 1, opened, "this morning's still counts")
+	require.Equal(t, 1, report.Events, "the morning's serve.submit isn't kept for a count")
+	var heads []string
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		rows, err := r.ServeOpenings()
+		for _, row := range rows {
+			heads = append(heads, row.Head)
+		}
+		return err
+	}))
+	require.Equal(t, []string{"ada/macports-ports:tried", "ada/macports-ports:today"}, heads)
 }
 
 // Cleanup removes the kept archives no live result names, with their

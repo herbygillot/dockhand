@@ -25,6 +25,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
+	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
 func TestUpdateInTheBranchCheckedOutHere(t *testing.T) {
@@ -147,6 +148,13 @@ func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 	require.Equal(t, before, testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/*"), "no branch was started")
 	_, _, err = cmdtest.Dockhand(t, "update", "jq", "--new", "--branch", name)
 	require.ErrorContains(t, err, "none of the others can be")
+
+	// --new takes no word of its own: "--new my-branch" is the version,
+	// and where it names no release the refusal says how to name the
+	// branch (#216).
+	_, _, err = cmdtest.Dockhand(t, "update", "jq", "--new", "my-branch", "--plan")
+	require.ErrorIs(t, err, upstream.ErrReleaseMissing)
+	require.ErrorContains(t, err, `"my-branch"; to name the new branch my-branch, write --new=my-branch`)
 }
 
 // A plan in a branch named with --branch is planned there, though the

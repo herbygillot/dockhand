@@ -71,6 +71,8 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 	if s == nil || s.Repo == nil || s.Ports == nil {
 		return Result{}, fmt.Errorf("assess: Git and MacPorts are required")
 	}
+	// A survey evaluates MacPorts' own tree at a revision (#162).
+	ctx = workspace.MacPorts(ctx)
 	platform, err := s.Ports.NativePlatform(ctx)
 	if err != nil {
 		return Result{}, err

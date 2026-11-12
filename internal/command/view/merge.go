@@ -7,6 +7,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
 )
 
@@ -155,3 +156,39 @@ func hours() int { return int(macports.MaintainerTimeout.Hours()) }
 // timeWords are a time as status says one ahead or just past: its day and
 // time in the person's zone.
 func timeWords(at time.Time) string { return at.Local().Format("Mon 2 Jan 15:04 MST") }
+
+// ReviewReceiptWords say what became of the last reviewer request dockhand
+// set out to make: who was asked, who may have been, who GitHub refused,
+// or that an older submit's push may have left them unasked. Empty where
+// there's no receipt.
+func ReviewReceiptWords(pr *model.PullRequest) string {
+	if pr == nil || pr.Rerequested == nil {
+		return ""
+	}
+	receipt := pr.Rerequested
+	if receipt.Unasked {
+		return "the reviewers who requested changes may not have been asked to review again after an earlier push; ask them on GitHub"
+	}
+	var asked, maybe, refused []string
+	for _, reviewer := range receipt.Reviewers {
+		switch reviewer.Sent {
+		case model.SentRequest:
+			asked = append(asked, "@"+reviewer.Login)
+		case model.MaySent:
+			maybe = append(maybe, "@"+reviewer.Login)
+		case model.RefusedToAsk:
+			refused = append(refused, "@"+reviewer.Login)
+		}
+	}
+	var parts []string
+	if len(asked) > 0 {
+		parts = append(parts, "asked "+prose.And(asked)+" to review again")
+	}
+	if len(maybe) > 0 {
+		parts = append(parts, "asking "+prose.And(maybe)+" got no answer, so it may have been sent; ask on GitHub if it wasn't")
+	}
+	if len(refused) > 0 {
+		parts = append(parts, "GitHub refused to ask "+prose.And(refused))
+	}
+	return strings.Join(parts, "; ")
+}

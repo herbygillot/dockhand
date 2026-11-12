@@ -33,6 +33,8 @@ var checksImports = map[string]string{
 	"internal/macports/fidelity": "whether two revisions' change records find an inert change alone, for reuse",
 	"internal/atomicfile":        "kept archives, whole or not at all",
 	"internal/failpoint":         "the acceptance harness's kill steps, which a normal build hasn't",
+	"internal/filelock":          "an attempt's launch lock, which a launch and a stop each take",
+	"internal/procid":            "who took a launch lock, which a stop that can't have it names",
 	"golang.org/x/sync/errgroup": "a check's environments building together",
 }
 

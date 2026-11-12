@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/checks"
@@ -273,47 +274,76 @@ func (e *Engine) movedSources(ctx context.Context, evidence *Evidence) []model.C
 	if evidence == nil {
 		return nil
 	}
-	now := map[[2]string]model.GitSource{}
+	// One traversal over the Git sources, then the tags, each repository
+	// and ref read once, judged by model.SourceAgainst.
 	var concerns []model.Concern
-	for _, p := range plannedSources(evidence.Plan) {
-		target, planned := p.target, p.source
-		key := [2]string{planned.URL, planned.Ref}
-		if _, read := now[key]; !read {
-			now[key] = e.resolveGit(ctx, model.GitSource{URL: planned.URL, Ref: planned.Ref})
+	for _, kind := range []struct {
+		planned func(model.Plan) []plannedSource
+		resolve func(context.Context, model.GitSource) model.GitSource
+		tag     bool
+	}{{plannedSources, e.resolveGit, false}, {plannedTags, e.resolveTag, true}} {
+		read := map[[2]string]model.GitSource{}
+		for _, p := range kind.planned(evidence.Plan) {
+			target, planned := p.target, p.source
+			key := [2]string{planned.URL, planned.Ref}
+			if _, done := read[key]; !done {
+				read[key] = kind.resolve(ctx, model.GitSource{URL: planned.URL, Ref: planned.Ref})
+			}
+			current := read[key]
+			// A current commit that couldn't be read leaves the source's
+			// freshness unknown, which holds serve, as an archive that
+			// couldn't be compared does, and a person's submission says it
+			// and goes on (the person's word, 2026-10-23; Codex's review of
+			// 8c007979, C8-5's gap). A plan that never knew the commit
+			// gains no concern, nor does a tag that is an abbreviated
+			// commit.
+			if planned.Commit != "" && current.Commit == "" && current.Unresolved != "" && !(kind.tag && git.ValidAbbreviation(planned.Ref)) {
+				what := "git.branch " + planned.Ref
+				if kind.tag {
+					what = "tag " + planned.Ref
+				}
+				concerns = append(concerns, unknownSource(target.Target.Name, what, planned.Commit, current.Unresolved, evidence.Run.Name()))
+				continue
+			}
+			if model.SourceAgainst(&planned, &current) != model.SourceMoved {
+				continue
+			}
+			if kind.tag {
+				concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: model.RuleTagMoved, Subject: model.MovedSubject(planned.Commit, current.Commit), Class: model.Introduced,
+					Detail: checks.TagMovedWords(planned, current, evidence.Run.Name(), target.Target.Name)})
+				continue
+			}
+			concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: model.RuleSourceMoved, Subject: model.MovedSubject(planned.Commit, current.Commit), Class: model.Introduced,
+				Detail: fmt.Sprintf("%s: git.branch %s pointed to %s when %s was planned, but now points to %s. The checked source differs from the source this submission would use", target.Target.Name, planned.Ref, planned.Commit.Short(), evidence.Run.Name(), current.Commit.Short())})
 		}
-		current := now[key]
-		// A current commit that couldn't be read leaves the source's
-		// freshness unknown, which holds serve, as an archive that
-		// couldn't be compared does, and a person's submission says it
-		// and goes on (the person's word, 2026-10-23; Codex's review of
-		// 8c007979, C8-5's gap: it was skipped, and serve submitted).
-		if planned.Commit != "" && current.Commit == "" && current.Unresolved != "" {
-			concerns = append(concerns, unknownSource(target.Target.Name, "git.branch "+planned.Ref, planned.Commit, current.Unresolved, evidence.Run.Name()))
-			continue
-		}
-		if planned.Commit == "" || current.Commit == "" || current.Commit == planned.Commit {
-			continue
-		}
-		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: model.RuleSourceMoved, Subject: model.MovedSubject(planned.Commit, current.Commit), Class: model.Introduced,
-			Detail: fmt.Sprintf("%s: git.branch %s pointed to %s when %s was planned, but now points to %s. The checked source differs from the source this submission would use", target.Target.Name, planned.Ref, planned.Commit.Short(), evidence.Run.Name(), current.Commit.Short())})
 	}
-	tags := map[[2]string]model.GitSource{}
-	for _, p := range plannedTags(evidence.Plan) {
-		target, planned := p.target, p.source
-		key := [2]string{planned.URL, planned.Ref}
-		if _, read := tags[key]; !read {
-			tags[key] = e.resolveTag(ctx, model.GitSource{URL: planned.URL, Ref: planned.Ref})
-		}
-		current := tags[key]
-		if planned.Commit != "" && current.Commit == "" && current.Unresolved != "" && !git.ValidAbbreviation(planned.Ref) {
-			concerns = append(concerns, unknownSource(target.Target.Name, "tag "+planned.Ref, planned.Commit, current.Unresolved, evidence.Run.Name()))
+	return concerns
+}
+
+// identityUnreadRule is an environment whose identity couldn't be read
+// now. Like source-unknown it is no rule holds.allow may name: what
+// couldn't be checked holds a submission nobody attends (D4, #190).
+const identityUnreadRule = "identity-unread"
+
+// identitiesUnread are the concerns of the environments the submission's
+// evidence rests on whose identity couldn't be read: whether each is the
+// one its results were built in isn't known. It lifts by itself, since
+// every submission reads the identities again; a person's own submission
+// says it and goes on.
+func identitiesUnread(evidence *Evidence) []model.Concern {
+	if evidence == nil {
+		return nil
+	}
+	unread := evidence.UnreadIdentities()
+	var concerns []model.Concern
+	for _, environment := range evidence.Plan.Environments {
+		why, ok := unread[environment]
+		if !ok {
 			continue
 		}
-		if planned.Commit == "" || current.Commit == "" || current.Commit == planned.Commit {
-			continue
-		}
-		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: model.RuleTagMoved, Subject: model.MovedSubject(planned.Commit, current.Commit), Class: model.Introduced,
-			Detail: checks.TagMovedWords(planned, current, evidence.Run.Name(), target.Target.Name)})
+		where := checks.DescribeEnvironment(environment)
+		concerns = append(concerns, model.Concern{Origin: model.FromSubmission, Rule: identityUnreadRule, Subject: where, Class: model.UnknownBaseline,
+			Detail: fmt.Sprintf("%s: could not read what the environment is now, so whether %s's results there were built in this same environment isn't known: %s", where, evidence.Run.Name(), why)})
 	}
 	return concerns
 }
@@ -351,7 +381,14 @@ func preparedSources(evidence *Evidence, edits []model.Edit) []model.Concern {
 				chosen = edit.Release
 			}
 		}
-		if chosen == nil || chosen.Commit == "" || planned.Commit == "" || model.ObjectID(chosen.Commit) == planned.Commit {
+		if chosen == nil {
+			continue
+		}
+		// The release names the ref by its tag or its commit (Names); its
+		// reading is the plan's ref at the release's commit.
+		released := planned
+		released.Commit, released.Abbreviation = model.ObjectID(chosen.Commit), ""
+		if chosen.Commit == "" || model.SourceAgainst(&released, &planned) != model.SourceMoved {
 			continue
 		}
 		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: model.RuleReleaseMoved, Subject: model.MovedSubject(model.ObjectID(chosen.Commit), planned.Commit), Class: model.Introduced,
@@ -374,11 +411,15 @@ func assessedSources(evidence *Evidence, upstream []PortComparison) []model.Conc
 	for _, p := range plannedSources(evidence.Plan) {
 		target, planned := p.target, p.source
 		at := slices.IndexFunc(upstream, func(found PortComparison) bool { return found.Port == target.Target.Name })
-		if at < 0 || planned.Commit == "" {
+		if at < 0 {
 			continue
 		}
+		// The assessment's whole commit against the plan's reading: a plan
+		// that holds only an abbreviation is not known, and says nothing.
 		read := upstream[at].Comparison.Commit
-		if read == "" || model.ObjectID(read) == planned.Commit {
+		assessed := planned
+		assessed.Commit, assessed.Abbreviation = model.ObjectID(read), ""
+		if read == "" || model.SourceAgainst(&planned, &assessed) != model.SourceMoved {
 			continue
 		}
 		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: model.RuleAssessmentMoved, Subject: model.MovedSubject(model.ObjectID(read), planned.Commit), Class: model.Introduced,
@@ -512,13 +553,21 @@ const (
 
 // SubmitForServe opens the pull request for a candidate serve may submit,
 // saying in its description that no person reviewed it.
-func (e *Engine) SubmitForServe(ctx context.Context, candidate ServeCandidate) (Submitted, error) {
+// ServeAdmission is what serve's count admits a submission by: its limit,
+// serve.submit_limit as read for this admission, and the time serve
+// counts the day from (dayStart).
+type ServeAdmission struct {
+	Limit int
+	Now   time.Time
+}
+
+func (e *Engine) SubmitForServe(ctx context.Context, candidate ServeCandidate, admission ServeAdmission) (Submitted, error) {
 	if len(candidate.Held) > 0 {
 		return Submitted{}, fmt.Errorf("%s needs review before submission: %s", candidate.Branch.ShortName(), strings.Join(HoldLines(candidate.Held), "; "))
 	}
 	plan := candidate.Plan
 	plan.Body = plan.Body + "\n\n" + ServeNote + "\n"
-	plan.served = true
+	plan.served, plan.admission = true, admission
 	return e.ApplySubmit(ctx, plan, model.AnsweredNobody)
 }
 

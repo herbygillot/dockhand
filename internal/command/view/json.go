@@ -30,6 +30,10 @@ type runJSON struct {
 	// Stopped is true for a run recorded as running that no live process
 	// drives; the state says running, as the record does.
 	Stopped bool `json:"stopped,omitempty"`
+	// CancelRequested is when a cancel was asked of the run; with the run
+	// still running, its work isn't known to have stopped, which the
+	// detail says.
+	CancelRequested *time.Time `json:"cancel_requested,omitempty"`
 	// BaselineOf is the ID of the check a baseline looks into; absent for
 	// a check of the branch itself.
 	BaselineOf string `json:"baseline_of,omitempty"`
@@ -37,7 +41,7 @@ type runJSON struct {
 
 func RunView(run model.Run) runJSON {
 	viewed := runJSON{Name: run.Name(), ID: string(run.ID), State: string(run.State), Detail: run.Detail, Origin: string(run.Origin), CreatedAt: run.CreatedAt, FinishedAt: run.FinishedAt,
-		BaselineOf: string(run.BaselineOf)}
+		CancelRequested: run.CancelRequested, BaselineOf: string(run.BaselineOf)}
 	if waited, ok := run.Waited(); ok {
 		viewed.StartedAt, viewed.WaitedSeconds = run.StartedAt, new(int64(waited.Round(time.Second)/time.Second))
 	}
@@ -358,6 +362,10 @@ type CheckJSON struct {
 	// PortfileFindings are the Portfile findings submit would say, which
 	// check says before it builds, in submit's shape.
 	PortfileFindings []findingJSON `json:"portfile_findings,omitempty"`
+	// IdentitiesUnread are the environments whose identity couldn't be
+	// read now, by name, each with the cause: their results are taken as
+	// they were (#190).
+	IdentitiesUnread map[string]string `json:"identities_unread,omitempty"`
 }
 
 // Gather takes a check's result, or the baseline's that looks into it.
@@ -462,6 +470,10 @@ type latestJSON struct {
 	Current  bool         `json:"current"`
 	Included []string     `json:"included,omitempty"`
 	Targets  []TargetJSON `json:"targets"`
+	// IdentitiesUnread are the environments whose identity status read
+	// and couldn't, by their names, with the causes, as text status says
+	// them (Codex's review of #193, finding 3).
+	IdentitiesUnread map[string]string `json:"identities_unread,omitempty"`
 }
 
 type BranchJSON struct {
@@ -590,6 +602,7 @@ func BranchView(status engine.BranchStatus) BranchJSON {
 		latest := latestJSON{Run: RunView(*status.Latest), Revision: RevisionView(*status.LatestRevision), Current: status.Current, Included: status.Included, Targets: []TargetJSON{}}
 		if status.Evidence != nil {
 			latest.Targets = EvidenceView(*status.Evidence)
+			latest.IdentitiesUnread = IdentitiesUnreadView(*status.Evidence)
 		}
 		viewed.Latest = &latest
 	}
@@ -977,4 +990,31 @@ func orEmpty(list []string) []string {
 		return []string{}
 	}
 	return list
+}
+
+// IdentitiesUnreadView are an evidence's environments whose identity
+// couldn't be read, by their names, with the causes; nil where none.
+func IdentitiesUnreadView(evidence engine.Evidence) map[string]string {
+	unread := evidence.UnreadIdentities()
+	if len(unread) == 0 {
+		return nil
+	}
+	viewed := map[string]string{}
+	for environment, why := range unread {
+		viewed[checks.DescribeEnvironment(environment)] = why
+	}
+	return viewed
+}
+
+// IdentityUnreadLines say each environment whose identity couldn't be
+// read, as status and check say it beside the results.
+func IdentityUnreadLines(evidence engine.Evidence) []string {
+	unread := evidence.UnreadIdentities()
+	var lines []string
+	for _, environment := range evidence.Plan.Environments {
+		if why, ok := unread[environment]; ok {
+			lines = append(lines, fmt.Sprintf("%s: its identity couldn't be read now (%s), so its results are taken as they were", checks.DescribeEnvironment(environment), why))
+		}
+	}
+	return lines
 }

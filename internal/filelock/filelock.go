@@ -173,3 +173,51 @@ func With(ctx context.Context, path string, mode Mode, fn func(context.Context, 
 	}
 	return fn(ctx, file)
 }
+
+// TryAcquire takes an exclusive lock without waiting, creating its path
+// where absent: ErrBusy where another process holds it. It is for a lock a
+// second caller is refused rather than made to wait for, as a submission's
+// to its head is: a live holder is never waited out.
+func TryAcquire(path string) (*os.File, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return nil, err
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0600)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		file.Close()
+		if err == syscall.EWOULDBLOCK || err == syscall.EAGAIN {
+			return nil, ErrBusy
+		}
+		return nil, err
+	}
+	return file, nil
+}
+
+// Release gives up a lock TryAcquire took, for every holder of its open
+// file, then closes it: a child forked anywhere in the process holds the
+// file until it execs, and a close alone left the lock with it for that
+// moment, so the next taker was refused.
+func Release(file *os.File) error {
+	unlockErr := syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+	return errors.Join(unlockErr, file.Close())
+}
+
+type carriedKey struct{}
+
+// Carry marks a held lock's file to be handed to every child the work
+// under ctx starts, so a child still running after its parent died keeps
+// the lock, as git push does for the branch lock and a submission's head
+// lock, and gh for the latter.
+func Carry(ctx context.Context, file *os.File) context.Context {
+	carried := append(append([]*os.File(nil), Carried(ctx)...), file)
+	return context.WithValue(ctx, carriedKey{}, carried)
+}
+
+// Carried are the lock files Carry marked under ctx, in the order carried.
+func Carried(ctx context.Context) []*os.File {
+	carried, _ := ctx.Value(carriedKey{}).([]*os.File)
+	return carried
+}

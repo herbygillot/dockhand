@@ -25,8 +25,9 @@ import (
 // test analysis ran Validate through a command function, to test it off
 // a Mac, and the unused-logic step dropped the copy of images a dockhand
 // before v0.3.0 made in the person's Tart home and the guest prefix only
-// /opt/local could take, none of which changes an image.
-const setupPin = "6ee41142b9eb922f8245143081e714e0dfc839e8e6066fd3e4cad21075a3470d"
+// /opt/local could take, and #38's floor of Tart 2.41.1 reworded the
+// comment on ASIFReady, none of which changes an image.
+const setupPin = "196fd9a13681bb0d8d2d4ea097af985cec32a860e5721f19e269127e12bcc4a0"
 
 // What setup puts in an image is identified by tart.SetupProtocol, which
 // evidence's reuse compares (decision 28). A change to the provisioning

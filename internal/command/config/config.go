@@ -23,6 +23,9 @@ type configSetting struct {
 	Key    string `json:"key"`
 	Value  string `json:"value"`
 	Source string `json:"source"`
+	// Note says what a setting is for where its name doesn't: GitHub's
+	// capacity guards the hourly API budget, not concurrency (#197).
+	Note string `json:"note,omitempty"`
 }
 
 func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
@@ -158,6 +161,7 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			}
 			set("providers.github.remote", file.Providers.GitHub.Remote)
 			set("providers.github.capacity", positive(file.Providers.GitHub.Capacity))
+			all[len(all)-1].Note = "guards dockhand's use of your hourly GitHub API budget; GitHub queues runs past your job limits"
 			set("providers.github.build_timeout", file.Providers.GitHub.BuildTimeout)
 			streams.Emit(map[string]any{"file": path, "database": options.Database, "settings": all})
 			fmt.Fprintf(streams.Prose(), "File      %s\nDatabase  %s\n\n", s.Places().Tilde(path), s.Places().Tilde(options.Database))
@@ -174,6 +178,9 @@ it is refused by name. Flags, then the environment, come before the file.`,
 				default:
 					// A program named by --tool or its variable.
 					mark = "  (" + setting.Source + ")"
+				}
+				if setting.Note != "" {
+					mark += " · " + setting.Note
 				}
 				fmt.Fprintf(streams.Prose(), "%-*s  %s%s\n", width, setting.Key, setting.Value, mark)
 			}

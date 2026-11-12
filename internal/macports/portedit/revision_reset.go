@@ -8,6 +8,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/textedit"
 )
@@ -22,10 +23,20 @@ func (s *Service) resetRevision(ctx context.Context, request Request, input *sou
 	for _, profile := range profiles {
 		mode := macports.ObservationRequest{Platform: profile, Declarations: true}
 		before, err := input.observe.One(ctx, input.data, mode, !request.SharedRelease)
+		// A context its plan leaves, as one whose evaluation ended on a
+		// call the model has no answer for, keeps its revision as the
+		// Portfile has it, and the plan says it (Codex's review of #110
+		// and #125, finding 6).
+		if _, left := observe.Left(ctx, before, input.target.Name, input.data); err != nil && left {
+			continue
+		}
 		if err != nil {
 			return nil, errProbeInconclusive.Because("baseline revision evaluation was inconclusive: %w", err)
 		}
 		after, err := input.observe.One(ctx, contents, mode, !request.SharedRelease)
+		if _, left := observe.Left(ctx, after, input.target.Name, contents); err != nil && left {
+			continue
+		}
 		if err != nil {
 			return nil, errProbeInconclusive.Because("candidate revision evaluation was inconclusive: %w", err)
 		}

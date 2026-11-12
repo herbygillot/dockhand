@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/filelock"
 	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
@@ -28,6 +30,8 @@ type RunOptions struct {
 }
 
 // Run invokes one Tart subcommand and returns its captured standard output.
+// The lock files carried under ctx are handed to it beside ExtraFiles, as
+// an attempt's launch lock is to the clone it makes (filelock.Carried).
 // Combined captures and optionally streams both output channels in one buffer.
 // The failures dockhand acts on carry ErrListingBlocked, ErrVMMissing, or
 // ErrVMStopped.
@@ -35,7 +39,7 @@ func (c Client) Run(ctx context.Context, options RunOptions, args ...string) ([]
 	if c.Executable == "" || len(args) == 0 {
 		return nil, fmt.Errorf("tart: executable and command are required")
 	}
-	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "tart", Path: c.Executable, Args: args, Env: c.Environment(), Stdin: options.Input, Stdout: options.Output, Combined: options.Combined, ExtraFiles: options.ExtraFiles})
+	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "tart", Path: c.Executable, Args: args, Env: c.Environment(), Stdin: options.Input, Stdout: options.Output, Combined: options.Combined, ExtraFiles: append(slices.Clone(options.ExtraFiles), filelock.Carried(ctx)...)})
 	return result.Output, classify(err)
 }
 

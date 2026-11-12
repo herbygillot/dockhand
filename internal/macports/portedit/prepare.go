@@ -97,6 +97,14 @@ type ContextCoverage struct {
 	// FetchesNothing is a context where the port has no archive to
 	// download, as a metaport or a _select port has.
 	FetchesNothing bool `json:",omitempty"`
+	// Left is a context modelled on another Mac whose reading depends on
+	// host state, which update leaves as the Portfile has it, and why
+	// (#125).
+	Left string `json:",omitempty"`
+	// Kept are the checksum declarations no context read fetches, kept as
+	// written because a context left may fetch them; said on each context
+	// left.
+	Kept []string `json:",omitempty"`
 }
 
 type Result struct {

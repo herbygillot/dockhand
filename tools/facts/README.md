@@ -95,7 +95,9 @@ gh run download --repo herbygillot/dockhand --name facts-macos-15 --dir $dir/run
   release, macOS, Xcode, tools, and SDK, with the facts of the installers
   of that Xcode and those tools, the tools by version as a runner's are.
   The builder's tools give the clang Base reads, Xcode's where it runs
-  none. [installers](installers) holds two readings made on 2026-11-10 on
+  none, and Xcode's installer gives Xcode's own clang (`xcode_clang`), which
+  Base reads for /usr/bin/clang where developer_dir is Xcode's. A probe
+  gives that one as Base's `get_compiler_version(clang)` under Xcode. [installers](installers) holds two readings made on 2026-11-10 on
   the person's Mac, from its archive of Apple's downloads:
   `legacy-2026-11-10.json`, Xcode 3.2.6 to 9.4.1 and the tools 6.2 to
   9.4.1, the builders' from Darwin 10 to 17, and

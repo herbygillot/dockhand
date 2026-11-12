@@ -86,6 +86,12 @@ func (e *Engine) ProposeCheck(ctx context.Context, request CheckRequest) (Propos
 // check of the branch built the same tree.
 func (e *Engine) BeforeBuilding(ctx context.Context, branch model.Branch, capture Capture, plan bool) ([]commitrules.Finding, error) {
 	revision := capture.Revision
+	// The rules evaluate the revision's Portfiles, as their owner's
+	// (#162).
+	ctx, err := e.evaluatingRevision(ctx, revision)
+	if err != nil {
+		return nil, err
+	}
 	if !plan {
 		earlier, err := e.Runs(ctx, store.RunFilter{Branch: branch.ID, Tree: revision.Source.Tree, Limit: 1})
 		if err != nil || len(earlier) > 0 {
@@ -220,6 +226,12 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	}
 	if len(plan.Environments) == 0 {
 		return plan, fmt.Errorf("a check needs somewhere to build: name a provider with --on")
+	}
+	// Planning evaluates the revision's Portfiles, as their owner's
+	// (#162).
+	ctx, err := e.evaluatingRevision(ctx, revision)
+	if err != nil {
+		return plan, err
 	}
 	reader, err := e.portReader()
 	if err != nil {

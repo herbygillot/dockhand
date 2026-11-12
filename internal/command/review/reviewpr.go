@@ -47,7 +47,7 @@ key away; the answer is kept for that head, and a new push asks again.
 No, the default, gives a text-only review, which runs the rules that
 read text and says what it left out. In a script, --evaluate answers yes
 and --evaluate=false reviews the text only; without either, a script's
-review is text-only. --yes never answers it.
+review is text-only. Only --evaluate answers it.
 
 --check adopts the pull request as pr-<number>, as adopt --pr does, and
 checks it in Tart or the environments selected with --on. Reports the
@@ -312,9 +312,8 @@ func checkPullRequest(ctx context.Context, e *engine.Engine, s *settings.Setting
 	}
 	if queued.Followed {
 		fmt.Fprintf(streams.Err, "%s is already %s and covers this check; following it.\n", queued.Run.Name(), queued.Run.State)
-		return queued.Run, environments, checkrun.Wait(ctx, e, queued.Run, streams, s.Places())
 	}
-	return queued.Run, environments, checkrun.RunQueued(ctx, e, queued.Run, streams, false, s.Places(), s.Drain)
+	return queued.Run, environments, checkrun.See(ctx, e, queued, streams, s.Places(), checkrun.Stay{}, s.Drain)
 }
 
 func postReview(ctx context.Context, e *engine.Engine, streams term.Streams, report engine.ReviewReport, body string, requestChanges bool) error {
@@ -354,6 +353,9 @@ func writeReview(out io.Writer, report engine.ReviewReport) {
 	}
 	for _, finding := range report.Resolved {
 		fmt.Fprintf(out, "  ✓ resolved since %s: %s [%s]\n", report.Previous.Head.Short(), finding.Message, finding.Code)
+	}
+	for _, finding := range report.Carried {
+		fmt.Fprintf(out, "  · found at %s, its rule not run this time: %s [%s]\n", report.Previous.Head.Short(), finding.Message, finding.Code)
 	}
 	switch lines := view.ComparisonLines(report.Upstream); {
 	case report.UpstreamUnread != "":

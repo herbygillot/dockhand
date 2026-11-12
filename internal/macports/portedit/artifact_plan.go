@@ -70,10 +70,11 @@ func (s *Service) bindArchives(ctx context.Context, input *sourceInput, contents
 // A checksum refresh reads cpi's this way, whose qmake5 PortGroup reads
 // the host's Qt paths (field testing at 43949b89).
 func (s *Service) bindArchivesOn(ctx context.Context, input *sourceInput, contents []byte, observed macports.Observation, here bool) (distfiles.Binding, error) {
-	port, inconclusive := observe.Tolerate(ctx, observed.Ports[input.target.Name], contents, observed.Snapshot.Root)
-	if inconclusive && !here {
-		return distfiles.Binding{}, errProbeInconclusive.Because("modeled context depends on host state%s", observe.HostInputs(port))
+	if reason, left := observe.Left(ctx, observed, input.target.Name, contents); left {
+		return distfiles.Binding{}, errProbeInconclusive.Because("%s", reason)
 	}
+	// This Mac's reading is taken as it stands, whatever it read.
+	port, _ := observe.Tolerate(ctx, observed.Ports[input.target.Name], contents, observed.Snapshot.Root)
 	info := observed.Snapshot.Ports[input.target.Name]
 	if err := distfetch.CheckPolicy(info, input.portdirIn(observed.Snapshot.Root)); err != nil {
 		return distfiles.Binding{}, err
@@ -125,6 +126,31 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 	// fetched and its own checksums written.
 	var owners []model.Target
 	observeContext := func(member *sourceInput, profile model.Platform, variant string, session *observe.Session, before, after macports.Observation) error {
+		// A context modelled on another Mac that can't be read
+		// conclusively, before the edit or after it, is left as the
+		// Portfile has it, and said by context, as a checksum refresh
+		// leaves one: nothing read of it reaches the plan, neither a
+		// version nor an archive, and MacPorts' builders check that
+		// release after merge. It refused the whole port (#125).
+		if variant == "" {
+			for _, read := range []struct {
+				observed macports.Observation
+				contents []byte
+			}{{before, input.data}, {after, contents}} {
+				reason, left := observe.Left(ctx, read.observed, member.target.Name, read.contents)
+				if !left {
+					continue
+				}
+				what := contextWords(profile, variant)
+				if member != input {
+					what = member.target.Name + " on " + what
+				}
+				if !slices.ContainsFunc(plan.left, func(l ChecksumLeft) bool { return l.What == what }) {
+					plan.left = append(plan.left, ChecksumLeft{Kind: LeftContext, What: what, Reason: reason})
+				}
+				return nil
+			}
+		}
 		old, next := before.Snapshot.Ports[member.target.Name], after.Snapshot.Ports[member.target.Name]
 		if obsoleteIn(old) && obsoleteIn(next) {
 			// The port is an obsolete follower in this context, with no
@@ -295,8 +321,18 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 			}
 		}
 	}
-	if ids := coverage.uncovered(); len(ids) > 0 {
-		return nil, errProbeInconclusive.Because("checksum declaration %s has no archive in the observed contexts", ids[0])
+	// A declaration only a context left fetches stays as written, and is
+	// said; with no context left, one no context fetches is refused, as
+	// before.
+	for _, id := range coverage.uncovered() {
+		if !slices.ContainsFunc(plan.left, func(l ChecksumLeft) bool { return l.Kind == LeftContext }) {
+			return nil, errProbeInconclusive.Because("checksum declaration %s has no archive in the observed contexts", id)
+		}
+		what := coverage.names[id]
+		if what == "" {
+			what = "checksum declaration " + id
+		}
+		plan.left = append(plan.left, ChecksumLeft{Kind: LeftDeclaration, What: what, Reason: "no context dockhand could read fetches it"})
 	}
 	plan.downloads = coverage.downloads
 	for id := range changed {

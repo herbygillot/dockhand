@@ -57,6 +57,11 @@ type Facts struct {
 	// Clang is the build number of the tools' clang, 2100.1.1.101: what
 	// Base's compiler selection and blacklists compare with.
 	Clang string `json:"clang,omitempty"`
+	// XcodeClang is the build number of Xcode's own clang, 1700.0.13.5 for
+	// Xcode 16.4: what Base reads for /usr/bin/clang where developer_dir is
+	// Xcode's, which can differ from the tools' (#213). Empty where the
+	// source doesn't tell, as a buildbot's log doesn't.
+	XcodeClang string `json:"xcode_clang,omitempty"`
 	// XCSelect is whether /usr/lib/libxcselect.dylib exists, which Base
 	// asks to decide whether /usr/bin's tools are xcode-select's shims.
 	XCSelect *bool  `json:"xcselect,omitempty"`
@@ -208,6 +213,10 @@ func (t FactsTable) Check() error {
 			return fmt.Errorf("macos: %s: the source and its date are required", where)
 		case facts.Clang != "" && strings.Trim(facts.Clang, "0123456789.") != "":
 			return fmt.Errorf("macos: %s: clang %q is not a build number", where, facts.Clang)
+		case facts.XcodeClang != "" && strings.Trim(facts.XcodeClang, "0123456789.") != "":
+			return fmt.Errorf("macos: %s: Xcode's clang %q is not a build number", where, facts.XcodeClang)
+		case facts.XcodeClang != "" && facts.Profile != ProfileXcode:
+			return fmt.Errorf("macos: %s: the tools profile has no Xcode clang", where)
 		}
 	}
 	seen := map[int]bool{}

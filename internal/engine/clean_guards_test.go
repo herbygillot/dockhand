@@ -79,11 +79,14 @@ func TestCleanKeepsCheckBranchesThatMoved(t *testing.T) {
 		require.NoError(t, err)
 		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{{Provider: "github", Platform: tahoeArm.Platform}}})
 		require.NoError(t, err)
-		_, err = e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+		run, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
 		require.NoError(t, err)
 		commit := string(capture.Revision.Source.Commit)
-		name := buildenv.CheckBranchPrefix + commit[:12]
+		name := buildenv.CheckBranch(commit, run.ID)
 		testsupport.Git(t, fake.Fork, "update-ref", "refs/heads/"+name, commit)
+		// A check from before pushed a branch named for the commit alone,
+		// which clean still finds.
+		testsupport.Git(t, fake.Fork, "update-ref", "refs/heads/"+buildenv.LegacyCheckBranch(commit), commit)
 		return e, fake.Fork, f.clone, name
 	}
 
@@ -91,6 +94,7 @@ func TestCleanKeepsCheckBranchesThatMoved(t *testing.T) {
 	plans, err := e.PlanClean(t.Context())
 	require.NoError(t, err)
 	require.Contains(t, whats(plans), "ada/macports-ports:"+name)
+	require.Contains(t, whats(plans), "ada/macports-ports:"+name[:len(buildenv.CheckBranchPrefix)+12], "the branch a check pushed before")
 	require.Empty(t, whats(plans)["ada/macports-ports:"+name], "it still holds the commit checked")
 	other := testsupport.Git(t, fork, "rev-parse", "master")
 	testsupport.Git(t, fork, "update-ref", "refs/heads/"+name, other)

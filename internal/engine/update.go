@@ -22,6 +22,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/version"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -29,6 +30,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
 // HandBranch reports whether a Start request starts its branch for an edit
@@ -153,6 +155,11 @@ var ErrUnsupported = editprep.ErrUnsupported
 // update refuses as it refuses an edit it can't make, with how to make it
 // by hand.
 var ErrFidelity = editprep.ErrFidelity
+
+// ErrReleaseMissing is a version named that upstream's evidence has no
+// release of, which the command words where --new took a branch's name
+// as the version (#216).
+var ErrReleaseMissing = upstream.ErrReleaseMissing
 
 // Unlocated is a checksum declaration dockhand can't find in the Portfile
 // to edit, an unsupported edit that names the archive and why.
@@ -294,6 +301,18 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	// unattended, its standing answer to the move's hold (Then's item 2).
 	if request.Unattended && !request.FollowMoves && e.holdsFor(request.Port).followMoves {
 		request.FollowMoves, request.standingFollow = true, true
+	}
+	// Preparing evaluates the Portfile, as its owner's: master's for one
+	// prepared from master, else the branch's, another's only where the
+	// person allowed them (#162, Codex's confirmation: checksums, update
+	// and revbump reached the door unmarked).
+	if request.FromMaster || request.Start != nil {
+		ctx = workspace.MacPorts(ctx)
+	} else {
+		var err error
+		if ctx, err = e.evaluating(ctx, request.Branch); err != nil {
+			return Update{Port: request.Port}, err
+		}
 	}
 	update, err := e.updateWithObsolete(ctx, request)
 	if err == nil && request.Action == model.EditUpdate && !update.Current && update.Port != "" {
@@ -618,8 +637,12 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		}
 		update.Upstream.Changes = append(update.Upstream.Changes, model.UpstreamChange{Kind: "manifest", Rule: manifestHookRule, Hold: true, Class: model.Introduced, Message: result.ManifestHook})
 	}
+	// What an update or a refresh left as the Portfile has it: a context
+	// it couldn't read, and the declarations only that context fetches
+	// (#125).
+	update.ChecksumsLeft = result.Left
 	if request.Action == model.EditChecksums {
-		update.ChecksumsLeft, update.Differing = result.Left, result.Differing
+		update.Differing = result.Differing
 		for _, conflict := range result.MirrorConflicts {
 			update.ChecksumsLeft = append(update.ChecksumsLeft, editprep.ChecksumLeft{Kind: "mirror", What: conflict.Name, Reason: mirrorConflictWords(conflict)})
 		}

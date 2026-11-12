@@ -2,6 +2,7 @@ package serve
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -108,8 +109,9 @@ func TestServeSubmitsNoMoreThanTheDailyLimit(t *testing.T) {
 	e, err := cmdtest.TestSettings(t).Open(t.Context())
 	require.NoError(t, err)
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
-		for _, at := range []time.Time{morning.Add(-25 * time.Hour), morning.Add(-time.Hour)} {
-			if _, err := tx.AppendEvent(model.Event{At: at, Kind: model.EventServeSubmit, Message: "serve opened a pull request"}); err != nil {
+		// serve's count is its own rows, which outlive their branches (#191).
+		for i, at := range []time.Time{morning.Add(-25 * time.Hour), morning.Add(-time.Hour)} {
+			if _, err := tx.AddServeOpening(model.ServeOpening{Base: "macports/macports-ports:master", Head: fmt.Sprintf("ada/macports-ports:dockhand/earlier-%d", i), Number: 100 + i, Opened: at}); err != nil {
 				return err
 			}
 		}

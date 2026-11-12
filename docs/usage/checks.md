@@ -187,7 +187,10 @@ Tart requires Apple silicon. Dockhand finds `tart` on PATH, then in
 `build profile host requires Tart, which isn't on PATH or in /opt/local/bin`.
 Each execution clones a prepared image and runs the shared build program inside
 it. Ordinary checks remove the clone afterward; the prepared images remain
-available for later checks.
+available for later checks. A cancel stops each clone the check made and
+deletes it once its VM has gone, also for a check whose dockhand was killed;
+until then the cancel stays unfinished and `status` says which clone. A clone
+an attempt kept for `dockhand shell` stays, and the canceled check says so.
 
 ```sh
 dockhand setup tart
@@ -233,10 +236,22 @@ environment will use MacPorts archives or build from source`.
 ### GitHub Actions
 
 `--on github` needs a login, a Git remote that pushes to your fork, and Actions
-enabled there. It pushes a `dockhand-check/` branch and runs MacPorts' own
-workflow. Dockhand reads the results and keeps logs locally, then removes the
-temporary branch when it is done with it. This has external effects even though
-it opens no PR.
+enabled there. It pushes a branch of the check's own,
+`dockhand-check/<the commit's first 12 characters>-<the check's ID>`, and runs
+MacPorts' own workflow. Every run on that branch is the check's, so two checks
+of one commit never share a run, and a cancel of one stops only its own.
+Dockhand reads the results and keeps logs locally, then removes the temporary
+branch when it is done with it; `dockhand clean` removes one a canceled check
+left. This has external effects even though it opens no PR.
+
+A cancel of a GitHub check cancels every run on its branch and is finished
+once each has completed and every push and rerun of the check has a run of
+its own listed. A push GitHub accepted but hasn't listed a run for keeps the
+cancel unfinished, however long ago it was, since its run can still start:
+`status` keeps its line, and each `cancel`, and serve as it passes, looks
+again. A push git reported rejected, or one dockhand refused before sending,
+needs no run. A rerun GitHub refused is not yet read as having started
+nothing, since GitHub doesn't say what its refusals mean.
 
 Each macOS release in the workflow's matrix is its own environment, with its own
 column, and one run builds them all. `--on github` asks for every release;
@@ -276,7 +291,16 @@ active again at its version; MacPorts' `port restore` brings back only the ports
 requested before and what they need. A check that stopped before it could put
 the prefix back is put back the same way, or by the next check there; a check of
 the same branch first needs `dockhand wait`, `check --replace`, or
-`dockhand cancel` of the stopped one. Restoring active versions leaves
+`dockhand cancel` of the stopped one. Dockhand starts the guest program through
+a small process of its own, `dockhand __starter`, which shows as the build's
+parent in `ps`: it records itself in the check's directory and leads the
+build's process group. A cancel, also of a check whose dockhand was killed,
+signals that process, which stops the whole group and kills what remains after
+30 seconds; the cancel finishes once the group is gone, then puts the prefix
+back, or says what is left and that the next check in it, or
+`dockhand undo check-N`, puts it back. A root build isn't stopped this way yet:
+its cancel stays unfinished and names the command to stop it by hand, `sudo
+kill -TERM -<group>`, then `dockhand cancel check-N` again. Restoring active versions leaves
 newly built images inactive and unrequested for MacPorts' `port reclaim`. A
 later check can remove a matching inactive, unrequested image before rebuilding;
 an installed image it cannot safely replace is refused.
@@ -292,6 +316,13 @@ Dockhand supplies a request file and expects a result file; it cannot establish
 how your script built the ports. Results identify the reporting script. This
 provider is for a build environment you already manage, not an automatic
 fallback when Tart is unavailable.
+
+The script's shell runs in a session of its own, under `dockhand __starter`,
+which records itself in the check's log directory. A cancel, also of a check
+whose dockhand was killed, interrupts the shell's whole process group, kills
+what remains after the grace, and finishes once the group is gone. What the
+script started on another machine, or moved out of its process group, is the
+script's own to stop.
 
 ## Run in the foreground or queue it
 
@@ -336,8 +367,8 @@ if it covers the requested files, targets, environments, and policy. Otherwise
 it refuses, as it does where a tag or branch a port fetches moved since the
 active check was planned. `--replace` stops the active request, keeps completed
 results, and queues the new one. `dockhand cancel` of a GitHub check whose
-driver stopped cancels its workflow run on your fork too, and says so where
-GitHub can't be reached. Read `dockhand usage recovery` before choosing between wait,
+driver stopped cancels its workflow run on your fork too, and the check stays
+unfinished, `canceling` in `status`, until GitHub reports the run completed. Read `dockhand usage recovery` before choosing between wait,
 retry, replacement, and cancellation.
 
 ## Read results and reuse
@@ -348,7 +379,7 @@ retry, replacement, and cancellation.
 | `failed` | Read the named port's failed phase and log |
 | `blocked` | Fix the changed prerequisite that prevented this target building |
 | `unmet` | Provide the requested environment capability, such as Xcode, or choose a suitable environment explicitly |
-| Not run or interrupted | Determine whether work is still queued, resumable, excluded by plan, or needs another check |
+| Not run or interrupted | Determine whether work is still queued, resumable, excluded by plan, or needs another check; a result that no longer counts says why |
 
 ```sh
 dockhand logs check-12
@@ -381,7 +412,14 @@ declared port's pkg-config brings in an undeclared library, the finding says so:
 pkg-config Libs`, and `-Wl,-dead_strip_dylibs` as the other way out.
 
 Tart results can be reused when recorded input content and environment identity
-still match, including dependencies and fetched Git commits. A Portfile whose only change declares a port the recorded build had active is
+still match, including dependencies and fetched Git commits. Where an
+environment's identity can't be read, as when Tart doesn't answer, its results
+are taken as they were and status says so, with the cause; serve and `ship
+--yes` hold a submission resting on them (`identity-unread`) until it reads
+again, and your own submit says it and goes on. `check` and `wait` say each
+beside the results, `check --json` and `wait --json` list them under
+`identities_unread`, and `status --json` gives the latest check's under its
+`identities_unread`. A Portfile whose only change declares a port the recorded build had active is
 the same input, so its results carry over, as an edit of metadata no build
 reads does. A result is keyed
 by the PortGroups MacPorts opened each port with, not the whole of
@@ -395,7 +433,23 @@ use a MacPorts archive or build it from source`. `--fresh` requests a rebuild.
 A rebase can preserve valid evidence when those inputs did not change. Results
 from separate checks can jointly cover the same branch files; a narrow rerun
 does not erase other still-valid results. Moved tags or changed inputs can make
-evidence stale even when a version string did not change.
+evidence stale even when a version string did not change. A check whose Git
+source couldn't be read stands for itself alone, never for a later request. A
+result built before a GitHub tag moved, or on a release an earlier check built
+from another commit of the same ref, is built again; on that release, results
+of other ports still count, and the release is still required.
+
+Where an earlier check's result no longer counts, `status` shows the port as
+not run there and submit holds, both saying why in the same words:
+`built by check-1 from v4 at 1a2b3c4, which now names 5d6e7f8, so it doesn't
+count; dockhand check builds it again`. A port built against a dependency whose
+source moved names that dependency: `built by check-1 against libharbor from v4
+at 1a2b3c4, which has moved`. Other reasons are a source that couldn't be read
+when the check was planned (`stands for that check alone`) or can't be read now,
+a Git build that didn't record the commit it fetched, a port fetched with Git
+then and another way now, a dependency whose own result doesn't count, and a
+blocked port whose blocker's result no longer stands. Only a port no check built
+says `planned by check-4, but the check stopped before building it`.
 
 A change that builds nothing differently is carried over: a Portfile edit to
 `maintainers`, `categories`, `description`, `long_description`, `homepage`, or

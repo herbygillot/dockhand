@@ -42,8 +42,10 @@ type Service struct {
 	Capacities map[string]int
 	LocalServe bool
 	TartHome   string
-	// Logs is the directory checks' logs are kept in.
-	Logs string
+	// Logs is the directory checks' logs are kept in, and Launches the one
+	// attempts' launch locks are (launchLockPath).
+	Logs     string
+	Launches string
 	// Checkout is the ports checkout a snapshot is committed in for a
 	// guest to fetch, and whose trees reuse compares.
 	Checkout *git.Repository
@@ -90,8 +92,14 @@ type Admission interface {
 }
 
 // Hooks are what the rest of dockhand does as a check is driven, each at
-// its moment and none failing the check.
+// its moment and none failing the check but Evaluating, which keeps it
+// from being driven at all.
 type Hooks interface {
+	// Evaluating marks the work under ctx as evaluating the run's branch's
+	// Portfiles, where they are another's, so every read a driver makes
+	// carries the run's owner (#162); an error is a branch whose author's
+	// commit the person hasn't allowed, and the run isn't driven.
+	Evaluating(ctx context.Context, run model.Run) (context.Context, error)
 	// BeforeEnvironment is said beside an environment's first clone, never
 	// delaying it, within estimateWait: the lines of what the check will
 	// install there, each said as the environment's progress.
@@ -202,14 +210,19 @@ func (c *Service) Identity(ctx context.Context, environment model.Environment) (
 	return provider.Identity(ctx, environment)
 }
 
-// Identities asks each environment's provider what it is now. It is asked
-// outside any transaction, since a transaction never calls a provider;
-// one that can't say leaves the environment's identity unknown.
+// Identities asks each environment's provider what it is now: known with
+// its value, none where the provider can't say, or unread with the cause,
+// kept apart where they were one (#190). It is asked outside any
+// transaction, since a transaction never calls a provider.
 func (c *Service) Identities(ctx context.Context, environments []model.Environment) evidence.Identities {
 	now := evidence.Identities{}
 	for _, environment := range environments {
-		if identity, err := c.Identity(ctx, environment); err == nil && identity != "" {
-			now[environment] = identity
+		identity, err := c.Identity(ctx, environment)
+		switch {
+		case err != nil:
+			now[environment] = evidence.Identity{Unread: err.Error()}
+		case identity != "":
+			now[environment] = evidence.Identity{Value: identity}
 		}
 	}
 	return now

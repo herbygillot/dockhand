@@ -248,12 +248,24 @@ namespace eval ::dockhand {
 
     # metadata reports a port that attempted a refused effect by its
     # refusals alone, dockhand.refused, whether or not it opened.
+    # metadata evaluates a port, with the master's exec closed where the
+    # context is modelled (closed_for).
     proc metadata {portdir subport args} {
+        return [closed_for [list ::dockhand::evaluate_metadata $portdir $subport {*}$args]]
+    }
+    proc evaluate_metadata {portdir subport args} {
         variable refusals {}
         set opts {}
         if {$subport ne ""} { lappend opts subport $subport }
         if {[catch {mportopen "file://$portdir" $opts $args} handle options]} {
             if {[llength $refusals]} { return [dict create dockhand.refused $refusals] }
+            # An evaluation a closed answer ended is a context the model
+            # has no answer for, named by the call (#110).
+            variable closed_calls
+            foreach closed [lreverse $closed_calls] {
+                lassign $closed call words
+                if {[string first $words $handle] >= 0} { return [dict create dockhand.unanswered $call] }
+            }
             return -options $options $handle
         }
         try {
@@ -551,13 +563,24 @@ namespace eval ::dockhand {
             # The port's code that no option shows: its phases' bodies, its
             # variants' and its own procedures, which a change record
             # compares (fidelity.Changes).
+            # The fetch plan and what the verdict weighs are taken before
+            # the code fingerprint's walk, which reads every option the
+            # port has to checksum its value: every option Go reads by name
+            # and the whole fetch plan are final by then, and what the walk
+            # reads reaches only the checksum, which compares two
+            # evaluations of one context. Its closed reads stay in the
+            # ledger, marked as the fingerprint's, and aren't weighed (#110).
+            if {$::dockhand::observing} {
+                set observed [observation_details $worker]
+                $worker eval {set ::dockhand_dispatcher::walking 1}
+            }
             if {[catch {code_fingerprint $worker} code]} {
                 dict set failures dockhand.code "cannot read the port's procedures: $code"
             } else {
                 dict set out dockhand.code $code
             }
             dict set out option_errors $failures
-            if {$::dockhand::observing} { dict set out dockhand.observation [observation_details $worker] }
+            if {$::dockhand::observing} { dict set out dockhand.observation $observed }
             if {[llength $refusals]} { return [dict create dockhand.refused $refusals] }
             return $out
         } finally {
@@ -574,6 +597,9 @@ namespace eval ::dockhand {
     # which an evaluation's tree hasn't; those lookups answer found, so
     # what is said is the Portfile's own lines and options, not the index.
     proc lint {portdir subport nitpick} {
+        return [closed_for [list ::dockhand::evaluate_lint $portdir $subport $nitpick]]
+    }
+    proc evaluate_lint {portdir subport nitpick} {
         variable refusals {}
         variable lint_said [dict create warn {} error {}]
         set opts {}

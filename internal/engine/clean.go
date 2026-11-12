@@ -399,13 +399,19 @@ func ownedHead(pr *model.PullRequest) bool {
 }
 
 // planCleanChecks finds the branches the github provider pushed to your
-// fork for the branch's checks, one per commit checked, each removed only
-// while it still holds that commit. The provider removes each once its
-// check is done with the run, so these are the ones it left: one it
-// couldn't remove, or a canceled check's. Where it may be one of several
-// forks, absent says nothing of a remote that can't be read.
+// fork for the branch's checks, each check's own (buildenv.CheckBranch),
+// and one for each commit checked by a check from before branches were
+// the check's (buildenv.LegacyCheckBranch), each removed only while it
+// still holds that commit. The provider removes each once its check is
+// done with the run, so these are the ones it left: one it couldn't
+// remove, or a canceled check's. Where it may be one of several forks,
+// absent says nothing of a remote that can't be read.
 func (e *Engine) planCleanChecks(ctx context.Context, branch model.Branch, repository string, maybe bool) ([]CleanStep, error) {
-	var revisions []model.Revision
+	type checked struct {
+		run      model.Run
+		revision model.Revision
+	}
+	var checks []checked
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		runs, err := r.Runs(store.RunFilter{Branch: branch.ID})
 		if err != nil {
@@ -423,16 +429,17 @@ func (e *Engine) planCleanChecks(ctx context.Context, branch model.Branch, repos
 			if err != nil {
 				return err
 			}
-			revisions = append(revisions, revision)
+			checks = append(checks, checked{run, revision})
 		}
 		return nil
-	}); err != nil || len(revisions) == 0 {
+	}); err != nil || len(checks) == 0 {
 		return nil, err
 	}
 	remote, remoteErr := e.remoteFor(ctx, repository)
 	var steps []CleanStep
 	seen := map[string]bool{}
-	for _, revision := range revisions {
+	for _, check := range checks {
+		revision := check.revision
 		commit := string(revision.Source.Commit)
 		if revision.Kind == model.RevisionSnapshot {
 			// A snapshot's commit is kept under refs/dockhand/revisions
@@ -446,30 +453,40 @@ func (e *Engine) planCleanChecks(ctx context.Context, branch model.Branch, repos
 			}
 			commit = value.Object
 		}
-		if len(commit) < 12 || seen[commit] {
+		if len(commit) < 12 {
 			continue
 		}
-		seen[commit] = true
-		name := buildenv.CheckBranchPrefix + commit[:12]
-		step := CleanStep{What: repository + ":" + name, Kind: CleanCheck, name: name, expected: commit, repository: repository}
-		if remoteErr != nil {
-			step.Kept = remoteErr.Error()
+		names := []string{buildenv.CheckBranch(commit, check.run.ID)}
+		if remoteErr == nil {
+			// One a check pushed before is looked for only where the fork
+			// can be read, so a fork that can't isn't said twice.
+			names = append(names, buildenv.LegacyCheckBranch(commit))
+		}
+		for _, name := range names {
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			step := CleanStep{What: repository + ":" + name, Kind: CleanCheck, name: name, expected: commit, repository: repository}
+			if remoteErr != nil {
+				step.Kept = remoteErr.Error()
+				steps = append(steps, step)
+				continue
+			}
+			step.remote = remote
+			value, err := e.Repo.RemoteHead(ctx, remote, name)
+			switch {
+			case err != nil && maybe:
+				continue
+			case err != nil:
+				step.Kept = "it could not be read: " + err.Error()
+			case !value.Exists:
+				continue
+			case value.Object != commit:
+				step.Kept = "it has moved since the check"
+			}
 			steps = append(steps, step)
-			continue
 		}
-		step.remote = remote
-		value, err := e.Repo.RemoteHead(ctx, remote, name)
-		switch {
-		case err != nil && maybe:
-			continue
-		case err != nil:
-			step.Kept = "it could not be read: " + err.Error()
-		case !value.Exists:
-			continue
-		case value.Object != commit:
-			step.Kept = "it has moved since the check"
-		}
-		steps = append(steps, step)
 	}
 	return steps, nil
 }

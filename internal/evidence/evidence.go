@@ -24,8 +24,18 @@ import (
 )
 
 // Identities are environments' identities now, as their providers say
-// (buildenv.IdentityProvider); absent for one whose provider can't say.
-type Identities map[model.Environment]string
+// (buildenv.IdentityProvider): known, with its value; none, where the
+// provider can't say, which is the zero Identity or an absent entry; or
+// unread, with the cause, where it couldn't be read (#190).
+type Identities map[model.Environment]Identity
+
+// Identity is one environment's identity now: Value where it is known,
+// Unread the cause where it couldn't be read; neither where its provider
+// can't say.
+type Identity struct {
+	Value  string
+	Unread string
+}
 
 // Check is one finished check's record, as the engine loads it: its run,
 // its plan, its executions and each one's results, the executions that
@@ -51,7 +61,15 @@ type Origin struct {
 // ReadsSources reports whether judging earlier checks for a plan needs
 // what their builds read: whether it fetches any target with Git.
 func ReadsSources(plan model.Plan) bool {
-	return slices.ContainsFunc(plan.Builds, func(build model.EnvironmentPlan) bool { return len(build.Git) > 0 })
+	return slices.ContainsFunc(plan.Builds, func(build model.EnvironmentPlan) bool { return len(build.Git) > 0 || len(build.Tags) > 0 })
+}
+
+// AnyReadsSources reports whether any of plans fetches a target with Git
+// or by a tag: whether the checks of the files must be loaded with what
+// their builds read, an earlier extra's Git build included, which the
+// newest plan may not build at all (Codex's review of #192, finding 3).
+func AnyReadsSources(plans ...model.Plan) bool {
+	return slices.ContainsFunc(plans, ReadsSources)
 }
 
 // CellKind is what a target's cell of the evidence holds in one
@@ -102,8 +120,14 @@ type Cell struct {
 	NotReusable string
 	// PlannedIn is the check that planned a target not run in an
 	// environment outside build.default's profile, which asks for it there
-	// only because that check did; empty in the profile's own.
+	// only because that check did; empty in the profile's own, and where
+	// a check's result there was turned down (Refused).
 	PlannedIn string
+	// Refused is why an earlier check's result for a target not run here
+	// doesn't count, as fill found it: that check built it, so its words
+	// say why it no longer stands, never that the check stopped before it
+	// (#192's change-4 test). Nil where no check's result was turned down.
+	Refused *Refusal
 	// Unrun is why the environment's build never ran, in its provider's
 	// words, for a target not run where its execution finished building
 	// nothing: a GitHub job no runner took, "the job never ran: GitHub
@@ -134,6 +158,66 @@ func recorded(environment model.Environment, result model.TargetResult) Cell {
 func noResult(kind CellKind, environment model.Environment, target model.TargetID) Cell {
 	return Cell{TargetResult: model.TargetResult{Target: target, Outcome: model.OutcomeNotRun}, Kind: kind, Environment: environment}
 }
+
+// Refusal is what the judgment found of an earlier check's result that
+// doesn't count (Counts, sourceRefusal, standing), for a cell it leaves
+// unbuilt: status's cell and submit's hold read it alike.
+type Refusal struct {
+	// Check is the earlier check whose result it was.
+	Check string
+	Kind  RefusalKind
+	// Ref is the source's tag or Git ref, Then the commit the result's
+	// build had and Now the one the ref names now, where the kind has
+	// them, either empty where it isn't known; Dependency is the target
+	// whose build or result it rested on, for a dependency's or a
+	// blocker's kind.
+	Ref, Then, Now string
+	Dependency     model.TargetID
+}
+
+// RefusalKind is why an earlier check's result doesn't count.
+type RefusalKind string
+
+const (
+	// RefusedMoved is a result built from a tag or Git ref that names
+	// another commit now.
+	RefusedMoved RefusalKind = "moved"
+	// RefusedUnread is one whose source couldn't be read when it was
+	// planned, so it stands for that check alone.
+	RefusedUnread RefusalKind = "unread"
+	// RefusedUnreadNow is one built from a commit (Then) of a ref that
+	// couldn't be read now, so whether it still names that commit isn't
+	// known.
+	RefusedUnreadNow RefusalKind = "unread-now"
+	// RefusedUnrecorded is a Git-fetched result whose build didn't say
+	// which commit it fetched.
+	RefusedUnrecorded RefusalKind = "unrecorded"
+	// RefusedOwnMove is one whose own check found its source naming
+	// another commit than it planned (Now, not Then): that fetch built
+	// nothing that stands.
+	RefusedOwnMove RefusalKind = "own-move"
+	// RefusedFetchMode is a result built with Git, where the target is
+	// now fetched another way.
+	RefusedFetchMode RefusalKind = "fetch-mode"
+	// RefusedDependency is one built against a dependency whose source
+	// has moved since (Ref, Then, Now).
+	RefusedDependency RefusalKind = "dependency"
+	// RefusedDependencyUnshown is one built against a Git-fetched or
+	// tagged dependency that can't be shown to have been the commit it
+	// names now (Now, where it's known).
+	RefusedDependencyUnshown RefusalKind = "dependency-unshown"
+	// RefusedDependencyRefused is one built against a dependency's build
+	// that doesn't count itself.
+	RefusedDependencyRefused RefusalKind = "dependency-refused"
+	// RefusedBlocked is a blocked result whose blocker's result doesn't
+	// count.
+	RefusedBlocked RefusalKind = "blocked"
+	// RefusedNotPlanned is one its check's plan didn't build there.
+	RefusedNotPlanned RefusalKind = "not-planned"
+	// refusedRemade is one built in an environment made again since,
+	// which fill marks CellRemade.
+	refusedRemade RefusalKind = "remade"
+)
 
 // Reason is why a recorded result didn't wholly pass, in its provider's
 // words, where it said: for a build that failed, or one that passed with
@@ -258,6 +342,14 @@ type Evidence struct {
 	// inputs, what its results' builds recorded reading, by key.
 	sources map[[2]string]readSource
 	inputs  map[string]model.TargetInputs
+	// readings are the plan with each environment the newest check didn't
+	// plan read by the newest check's resolutions, which an earlier
+	// check's results there are judged against (newestReadings).
+	readings model.Plan
+	// shown are the targets whose tag some earlier check's plan shows moved
+	// against the newest reading (shownMoves), which a reading that isn't
+	// known doesn't stand beside.
+	shown map[model.TargetID]bool
 	// Problem is why the environments build.default's profile names, which the evidence
 	// always requires, couldn't be resolved, so it requires only those its
 	// checks planned; empty where they were.
@@ -266,11 +358,21 @@ type Evidence struct {
 
 // readSource is what an earlier result's build read of the sources a
 // newer check expects to fetch with Git: the commit it fetched, where it
-// said, and whether it was built against another source of a Git-fetched
-// target than the newer check expects (reuse.AgainstOtherSources).
+// said, and the dependency through which it was built against another
+// source of a Git-fetched target than the newer check expects, where it
+// was (reuse.AgainstOtherSources).
 type readSource struct {
 	fetched model.ObjectID
-	other   bool
+	against *reuse.Against
+}
+
+// OfNow is Of with the environments' identities as they read now, so the
+// evidence says which couldn't be read (UnreadIdentities), as a check's
+// own report and wait's do (Codex's review of #193, finding 2).
+func OfNow(check Check, now Identities) Evidence {
+	evidence := Of(check)
+	evidence.now = now
+	return evidence
 }
 
 // Of is what one check established for each target in each of its
@@ -281,7 +383,7 @@ type readSource struct {
 func Of(check Check) Evidence {
 	plan := check.Plan
 	evidence := Evidence{Run: check.Run, Plan: plan, Executions: map[model.ExecutionID]model.GuestExecution{},
-		policies: map[model.RunID]model.TestPolicy{check.Run.ID: plan.Tests}, inputs: check.Inputs}
+		policies: map[model.RunID]model.TestPolicy{check.Run.ID: plan.Tests}, inputs: maps.Clone(check.Inputs)}
 	byEnvironment := map[model.Environment][]model.GuestExecution{}
 	for _, execution := range check.Executions {
 		evidence.Executions[execution.ID] = execution
@@ -394,6 +496,10 @@ func Merged(executions []model.GuestExecution, results map[model.ExecutionID][]m
 // only where it failed or passed (outsideProfile).
 func Judge(primary Check, plan model.Plan, earlier []Check, now Identities, required []model.Environment) Evidence {
 	checks := append([]Check{primary}, earlier...)
+	// An environment only an earlier check planned is judged against the
+	// newest check's own reading of each source, where it has one
+	// (change 4 of docs/designs/source-comparison.md).
+	readings := newestReadings(primary.Plan, plan)
 	primary.Plan = plan
 	evidence := Of(primary)
 	evidence.now = now
@@ -411,12 +517,14 @@ func Judge(primary Check, plan model.Plan, earlier []Check, now Identities, requ
 		evidence.Targets = append(evidence.Targets, te)
 	}
 	added := evidence.addBuilds(primary, earlier)
+	shown := shownMoves(earlier, readings)
 	for _, check := range earlier {
 		if check.Run.ID == primary.Run.ID || !evidence.missing() {
 			continue
 		}
 		found := Of(check)
-		found.readSources(plan)
+		found.readings, found.shown = readings, shown
+		found.readSources(readings)
 		if evidence.fill(found) {
 			evidence.Earlier = append(evidence.Earlier, check.Run)
 		}
@@ -526,7 +634,7 @@ func (e *Evidence) outsideProfile(required []model.Environment, checks []Check) 
 		for t := range e.Targets {
 			cell := &e.Targets[t].Outcomes[i]
 			switch {
-			case asked && cell.Kind == CellNotRun:
+			case asked && cell.Kind == CellNotRun && cell.Refused == nil:
 				cell.PlannedIn = planned(environment, e.Targets[t].Target.ID)
 			case !asked && (cell.Kind == CellNotRun || cell.Kind == CellRemade || cell.Kind == CellEntered):
 				skipped := noResult(CellExcluded, environment, e.Targets[t].Target.ID)
@@ -980,11 +1088,169 @@ func (e Evidence) missing() bool {
 // its test policy: a result keeps the policy of the check that recorded it,
 // and reads under it (decision D1, Evidence.Words).
 func Counts(recorded model.Plan, execution model.GuestExecution, id model.TargetID, now string, git *model.GitSource, fetched model.ObjectID, other bool) bool {
-	planned, ok := recorded.In(execution.Environment)
-	own, fetchedWithGit := recorded.GitIn(execution.Environment, id)
-	return ok && planned.Builds(id) && current(execution, now) && (git == nil || execution.ID == "" || git.BuiltBy(fetched)) && !other &&
-		!(fetchedWithGit && own.Moved(fetched))
+	return countsRefusal(recorded, execution, id, now, git, fetched, other) == nil
 }
+
+// countsRefusal is Counts' rule, saying which part of it a result fails:
+// nil where it counts. A dependency's kind is said without the dependency,
+// which the caller knows (readSource).
+func countsRefusal(recorded model.Plan, execution model.GuestExecution, id model.TargetID, now string, git *model.GitSource, fetched model.ObjectID, other bool) *Refusal {
+	planned, ok := recorded.In(execution.Environment)
+	switch {
+	case !ok || !planned.Builds(id):
+		return &Refusal{Kind: RefusedNotPlanned}
+	case !current(execution, now):
+		return &Refusal{Kind: refusedRemade}
+	case git != nil && execution.ID != "":
+		switch git.AgainstFetched(fetched) {
+		case model.SourceSame:
+		case model.SourceMoved:
+			return &Refusal{Kind: RefusedMoved, Ref: git.Ref, Then: string(fetched), Now: git.Expected()}
+		default:
+			if fetched == "" && git.Expected() != "" {
+				return &Refusal{Kind: RefusedUnrecorded, Ref: git.Ref, Now: git.Expected()}
+			}
+			// The reading judged against couldn't be resolved: the result's
+			// own check's, where it couldn't either, else the newest's.
+			if own, ok := recorded.GitIn(execution.Environment, id); ok && own.Expected() == "" {
+				return &Refusal{Kind: RefusedUnread, Ref: git.Ref}
+			}
+			return &Refusal{Kind: RefusedUnreadNow, Ref: git.Ref, Then: string(fetched)}
+		}
+	}
+	if other {
+		return &Refusal{Kind: RefusedDependency}
+	}
+	if own, fetchedWithGit := recorded.GitIn(execution.Environment, id); fetchedWithGit && own.AgainstFetched(fetched) == model.SourceMoved {
+		return &Refusal{Kind: RefusedOwnMove, Ref: own.Ref, Then: own.Expected(), Now: string(fetched)}
+	}
+	return nil
+}
+
+// newestReadings is the merged plan with each environment the newest
+// check didn't plan given the newest check's own resolution of each
+// target's Git source and tag, where the newest resolved it: one freshly
+// made plan reads each repository and ref once, so any of its
+// environments says what it read. Where the newest couldn't resolve it,
+// the earlier environment keeps its own reading, and only a shown move
+// unseats anything (change 4).
+func newestReadings(newest, merged model.Plan) model.Plan {
+	readings := merged
+	readings.Builds = slices.Clone(merged.Builds)
+	reading := func(sources func(model.EnvironmentPlan) map[model.TargetID]model.GitSource, id model.TargetID, url, ref string) (model.GitSource, bool) {
+		for _, build := range newest.Builds {
+			if source, ok := sources(build)[id]; ok && source.URL == url && source.Ref == ref && source.Expected() != "" {
+				return source, true
+			}
+		}
+		return model.GitSource{}, false
+	}
+	for i, build := range readings.Builds {
+		if slices.Contains(newest.Environments, build.Environment) {
+			continue
+		}
+		for _, kind := range []struct {
+			get func(model.EnvironmentPlan) map[model.TargetID]model.GitSource
+			set func(*model.EnvironmentPlan, map[model.TargetID]model.GitSource)
+		}{
+			{func(b model.EnvironmentPlan) map[model.TargetID]model.GitSource { return b.Git }, func(b *model.EnvironmentPlan, m map[model.TargetID]model.GitSource) { b.Git = m }},
+			{func(b model.EnvironmentPlan) map[model.TargetID]model.GitSource { return b.Tags }, func(b *model.EnvironmentPlan, m map[model.TargetID]model.GitSource) { b.Tags = m }},
+		} {
+			sources := kind.get(build)
+			if len(sources) == 0 {
+				continue
+			}
+			replaced := maps.Clone(sources)
+			for id, source := range sources {
+				if newer, ok := reading(kind.get, id, source.URL, source.Ref); ok {
+					replaced[id] = newer
+				}
+			}
+			kind.set(&readings.Builds[i], replaced)
+		}
+	}
+	return readings
+}
+
+// shownMoves are the targets whose tag any earlier check's plan shows
+// moved against the newest reading of it, in any environment: the source
+// comparison design's "unless another build of the target shows the tag
+// moved", which one earlier check judged alone forgot when it tried the
+// next (Codex's review of #192, finding 1).
+func shownMoves(checks []Check, readings model.Plan) map[model.TargetID]bool {
+	shown := map[model.TargetID]bool{}
+	for _, check := range checks {
+		for _, build := range check.Plan.Builds {
+			for id := range build.Tags {
+				if model.SourceAgainst(check.Plan.TagIn(build.Environment, id), readings.TagIn(build.Environment, id)) == model.SourceMoved {
+					shown[id] = true
+				}
+			}
+		}
+	}
+	return shown
+}
+
+// sourceRefusal says whether an earlier check's plan fetched a target the
+// way the newest plan does, where the newest builds it there, and if not,
+// how not; nil where the result stands. A tag that named another commit
+// then than now unseats the result, as reuse builds again for it (change
+// 2), and a result built with Git counts for no plan that builds the
+// target another way (change 3). An archive's tag that wasn't known on one
+// side stands, the Portfile's checksums saying what was built, unless
+// another build of the target shows the tag moved (shownMoved); another
+// release's tag stands. A target the newest plan doesn't build there is
+// judged against its own plan alone (Counts).
+func sourceRefusal(earlier, newest model.Plan, environment model.Environment, id model.TargetID, built, shownMoved bool) *Refusal {
+	if !built {
+		return nil
+	}
+	then, now := earlier.TagIn(environment, id), newest.TagIn(environment, id)
+	switch model.SourceAgainst(then, now) {
+	case model.SourceMoved:
+		return &Refusal{Kind: RefusedMoved, Ref: now.Ref, Then: then.Expected(), Now: now.Expected()}
+	case model.SourceUnknown:
+		switch {
+		case !shownMoved:
+		case then.Expected() == "":
+			return &Refusal{Kind: RefusedUnread, Ref: then.Ref}
+		default:
+			// Its tag isn't known now, and another check shows it moved.
+			return &Refusal{Kind: RefusedMoved, Ref: then.Ref, Then: then.Expected()}
+		}
+	}
+	_, earlierGit := earlier.GitIn(environment, id)
+	_, newestGit := newest.GitIn(environment, id)
+	if earlierGit && !newestGit {
+		return &Refusal{Kind: RefusedFetchMode}
+	}
+	return nil
+}
+
+// UnreadIdentities are the environments whose results the evidence rests
+// on and whose identity couldn't be read now, each with the cause: their
+// results are taken as they were, never marked remade, since whether the
+// environment is the one they were built in isn't known (#190).
+func (e Evidence) UnreadIdentities() map[model.Environment]string {
+	unread := map[model.Environment]string{}
+	for i, environment := range e.Plan.Environments {
+		identity, ok := e.now[environment]
+		if !ok || identity.Unread == "" {
+			continue
+		}
+		for _, target := range e.Targets {
+			if i < len(target.Outcomes) && target.Outcomes[i].Kind == CellRecorded && target.Outcomes[i].Execution != "" {
+				unread[environment] = identity.Unread
+				break
+			}
+		}
+	}
+	return unread
+}
+
+// Fetched is the commit a recorded cell's build said it fetched with Git,
+// empty where it said none or fetched no other way.
+func (e Evidence) Fetched(c Cell) model.ObjectID { return e.inputs[c.Inputs].Fetched }
 
 // current reports whether an execution ran in the environment there is
 // now, by its identity. One whose provider can't say what it is now is
@@ -1002,7 +1268,7 @@ func (e *Evidence) dropRemade() {
 		target := &e.Targets[t]
 		for i, result := range target.Outcomes {
 			execution, ok := e.Executions[result.Execution]
-			if !ok || current(execution, e.now[execution.Environment]) {
+			if !ok || current(execution, e.now[execution.Environment].Value) {
 				continue
 			}
 			target.Outcomes[i] = noResult(CellRemade, result.Environment, result.Target)
@@ -1079,7 +1345,10 @@ func standing(stands map[[2]string]bool, blockers map[[2]string][][2]string) {
 // blocked it (standing). Nothing is read where the newer check fetches
 // nothing with Git.
 func (e *Evidence) readSources(primary model.Plan) {
-	if !ReadsSources(primary) {
+	// The earlier check's own Git builds are read too, where the newest
+	// plan fetches nothing with Git, so a result is judged against its own
+	// plan with what it fetched (Codex's review of #192, finding 3).
+	if !ReadsSources(primary) && !ReadsSources(e.Plan) {
 		return
 	}
 	e.sources = map[[2]string]readSource{}
@@ -1093,8 +1362,13 @@ func (e *Evidence) readSources(primary model.Plan) {
 				continue
 			}
 			inputs := e.inputs[c.Inputs]
-			build := reuse.Candidate{Result: c.TargetResult, Inputs: inputs}
-			planned := reuse.Target{PlanTarget: target.Target, DependsOn: e.Plan.DependsOnIn(environment, target.Target.ID), Earlier: []reuse.Candidate{build}}
+			// The tag the earlier check planned beside its build, and the
+			// newest plan's, so a dependent built against a moved tag's old
+			// archive is found here as reuse finds it (change 2 of
+			// docs/designs/source-comparison.md).
+			build := reuse.Candidate{Result: c.TargetResult, Inputs: inputs, Tagged: e.Plan.TagIn(environment, target.Target.ID)}
+			planned := reuse.Target{PlanTarget: target.Target, DependsOn: e.Plan.DependsOnIn(environment, target.Target.ID), Earlier: []reuse.Candidate{build},
+				Tag: primary.TagIn(environment, target.Target.ID), TagShownMoved: e.shown[target.Target.ID]}
 			if source, ok := primary.GitIn(environment, target.Target.ID); ok {
 				planned.Git = &source
 			}
@@ -1115,12 +1389,48 @@ func (e *Evidence) readSources(primary model.Plan) {
 				targets = append(targets, reuse.Target{PlanTarget: model.PlanTarget{ID: id}, Git: &source})
 			}
 		}
-		for id := range reuse.AgainstOtherSources(targets, built) {
+		for id, against := range reuse.AgainstOtherSources(targets, built) {
 			read := e.sources[keys[id]]
-			read.other = true
+			read.against = &against
 			e.sources[keys[id]] = read
 		}
 	}
+}
+
+// refuse marks a cell not run with why an earlier check's result there
+// doesn't count: the first check's fill tried, newest first, that had one.
+// A dependency's kind is given the dependency it rested on and how that
+// dependency's source reads then and now (readings).
+func (earlier Evidence) refuse(cell *Cell, why Refusal, against *reuse.Against, readings model.Plan) {
+	if cell.Kind != CellNotRun || cell.Refused != nil {
+		return
+	}
+	why.Check = earlier.Run.Name()
+	if why.Kind == RefusedDependency && against != nil {
+		why.Dependency = against.Dependency
+		then, now := sourceReading(earlier.Plan, cell.Environment, against.Dependency), sourceReading(readings, cell.Environment, against.Dependency)
+		switch {
+		case against.Indirect:
+			why.Kind = RefusedDependencyRefused
+		case model.SourceAgainst(then, now) == model.SourceMoved:
+			why.Ref, why.Then, why.Now = now.Ref, then.Expected(), now.Expected()
+		default:
+			why.Kind = RefusedDependencyUnshown
+			if now != nil {
+				why.Ref, why.Now = now.Ref, now.Expected()
+			}
+		}
+	}
+	cell.Refused = &why
+}
+
+// sourceReading is how a plan reads a target's source in an environment:
+// its Git source, else its GitHub tag; nil where it has neither.
+func sourceReading(plan model.Plan, environment model.Environment, id model.TargetID) *model.GitSource {
+	if source, ok := plan.GitIn(environment, id); ok {
+		return &source
+	}
+	return plan.TagIn(environment, id)
 }
 
 // fill takes an earlier check's results for what this evidence lacks,
@@ -1150,19 +1460,33 @@ func (e *Evidence) fill(earlier Evidence) bool {
 				continue
 			}
 			cell := earlier.Targets[k].Outcomes[j]
+			if cell.Kind != CellRecorded && cell.Kind != CellUnmet {
+				continue
+			}
 			execution, recorded := earlier.Executions[cell.Execution]
 			if !recorded {
 				// An unmet result is the plan's, with no execution behind it.
 				execution = model.GuestExecution{Environment: environment}
 			}
+			readings := e.Plan
+			if earlier.readings.Builds != nil {
+				readings = earlier.readings
+			}
 			var git *model.GitSource
-			if source, ok := e.Plan.GitIn(environment, target.Target.ID); ok {
+			if source, ok := readings.GitIn(environment, target.Target.ID); ok {
 				git = &source
 			}
 			read := earlier.sources[resultKey(cell.TargetResult)]
-			if cell.Kind != CellRecorded && cell.Kind != CellUnmet || !Counts(earlier.Plan, execution, target.Target.ID, e.now[environment], git, read.fetched, read.other) {
-				if cell.Kind == CellRecorded && !current(execution, e.now[environment]) {
+			newest, builds := e.Plan.In(environment)
+			why := countsRefusal(earlier.Plan, execution, target.Target.ID, e.now[environment].Value, git, read.fetched, read.against != nil)
+			if why == nil && cell.Kind == CellRecorded {
+				why = sourceRefusal(earlier.Plan, readings, environment, target.Target.ID, builds && newest.Builds(target.Target.ID), earlier.shown[target.Target.ID])
+			}
+			if why != nil {
+				if cell.Kind == CellRecorded && !current(execution, e.now[environment].Value) {
 					target.Outcomes[i].Kind, target.Outcomes[i].Recorded = CellRemade, execution.Identity
+				} else {
+					earlier.refuse(&target.Outcomes[i], *why, read.against, readings)
 				}
 				continue
 			}
@@ -1175,10 +1499,15 @@ func (e *Evidence) fill(earlier Evidence) bool {
 			stands[resultKey(p.cell.TargetResult)] = true
 		}
 	}
-	standing(stands, earlier.blockers())
+	blockers := earlier.blockers()
+	standing(stands, blockers)
 	took := false
 	for _, p := range found {
-		if p.cell.Kind == CellRecorded && !stands[resultKey(p.cell.TargetResult)] {
+		if key := resultKey(p.cell.TargetResult); p.cell.Kind == CellRecorded && !stands[key] {
+			// A blocked result goes with the blocker's that doesn't stand.
+			if i := slices.IndexFunc(blockers[key], func(by [2]string) bool { return !stands[by] }); i >= 0 {
+				earlier.refuse(&e.Targets[p.t].Outcomes[p.i], Refusal{Kind: RefusedBlocked, Dependency: model.TargetID(blockers[key][i][1])}, nil, e.Plan)
+			}
 			continue
 		}
 		e.Targets[p.t].Outcomes[p.i] = p.cell
@@ -1198,6 +1527,16 @@ func (e *Evidence) fill(earlier Evidence) bool {
 					e.policies = map[model.RunID]model.TestPolicy{}
 				}
 				e.policies[execution.Run] = policy
+			}
+		}
+		// What the build read comes with its result, so a later question
+		// of it, what it fetched with Git (Fetched), is answered.
+		if inputs, ok := earlier.inputs[p.cell.Inputs]; ok && p.cell.Inputs != "" {
+			if e.inputs == nil {
+				e.inputs = map[string]model.TargetInputs{}
+			}
+			if _, have := e.inputs[p.cell.Inputs]; !have {
+				e.inputs[p.cell.Inputs] = inputs
 			}
 		}
 		took = true

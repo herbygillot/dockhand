@@ -16,7 +16,7 @@ import (
 func (e *Engine) checks() *checks.Service {
 	return &checks.Service{Store: e.Store, Repository: e.Repository, Sessions: e,
 		Providers: e.Providers, Capacities: e.Capacity, LocalServe: e.LocalServe, TartHome: e.TartHome,
-		Logs: e.LogDirectory(), Checkout: e.Repo, Ports: e.checkPorts, Archives: e.archives(),
+		Logs: e.LogDirectory(), Launches: e.LaunchDirectory(), Checkout: e.Repo, Ports: e.checkPorts, Archives: e.archives(),
 		Admission: checkAdmission{e}, Hooks: checkHooks{e}, Now: e.now, Poll: e.pollInterval(), Stall: e.stall}
 }
 
@@ -51,6 +51,17 @@ func (a checkAdmission) ForgetKept(ctx context.Context, branch model.BranchID) e
 // points to, and give reuse a revision's change records and a directory's
 // evaluation at a revision.
 type checkHooks struct{ e *Engine }
+
+// Evaluating marks a run's driving with its owner, refusing a run whose
+// revision's author's commit the person hasn't allowed
+// (evaluatingRevision).
+func (h checkHooks) Evaluating(ctx context.Context, run model.Run) (context.Context, error) {
+	revision, err := h.e.Revision(ctx, run.Revision)
+	if err != nil {
+		return ctx, err
+	}
+	return h.e.evaluatingRevision(ctx, revision)
+}
 
 func (h checkHooks) BeforeEnvironment(ctx context.Context, _ model.Run, plan model.Plan, environment model.Environment, source model.Source) []string {
 	plan.Environments = []model.Environment{environment}

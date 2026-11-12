@@ -28,18 +28,20 @@ var environmentReads = map[string][]string{
 // what's read down as fields, and what's handed on as one Env, so this
 // shrinks to nothing as each package takes them; a count may only fall.
 var readersBelow = map[string]int{
-	"archive":           1,
-	"buildenv/buildcmd": 1,
-	"buildenv/tart":     1,
-	"git":               1,
-	"tart/host":         1,
-	"tcl/shell":         1,
+	"archive":       1,
+	"buildenv/tart": 1,
+	"git":           1,
+	"tart/host":     1,
+	"tcl/shell":     1,
 	// These stay: subprocess is where every program starts, with the Env
 	// it's given; forgetest is a test's GitHub; and the acceptance build's
 	// failpoints are read where they fire.
 	"subprocess":      1,
 	"forge/forgetest": 1,
 	"failpoint":       2,
+	// The starter starts a local or a script build: itself, with the Env
+	// its launcher gives, and the build as its child, which inherits it.
+	"buildenv/starter": 2,
 }
 
 // Nothing below compose reads the process's environment itself

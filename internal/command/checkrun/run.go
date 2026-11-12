@@ -23,11 +23,46 @@ import (
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
-// RunQueued sees a queued run through (Design v3 §11): handed to serve and
+// Stay is how long a command stays with a check it asked for
+// (docs/designs/check-lifecycle.md, "Staying"): to its end, the zero
+// value; Detach, -d, queued and returned; For, --for, followed this long.
+type Stay struct {
+	Detach bool
+	For    Bound
+}
+
+// See stays with a check as stay says, given what admission answered:
+// joined (Followed) or queued new. A check that already ended is reported,
+// whatever the stay. To its end: driven here where nobody leads it, else
+// followed. Detached: a worker started where nobody leads, and returned.
+// Bounded: never driven here; a worker started where nobody leads,
+// followed for the bound, and refused as still running at it. Detached
+// and bounded together are refused. Capacity, leases and who leads stay
+// the engine's.
+func See(ctx context.Context, e *engine.Engine, queued checks.Queued, streams term.Streams, places config.Places, stay Stay, drain func() (int, error)) error {
+	run := queued.Run
+	switch {
+	case stay.Detach && stay.For.For > 0:
+		return fmt.Errorf("-d and --for can't be used together; -d returns at once, --for follows for a while")
+	case run.State.Terminal():
+		return Report(ctx, e, run, streams, places, !queued.Followed)
+	case stay.Detach:
+		return runQueued(ctx, e, run, streams, true, places, drain)
+	case stay.For.For > 0 && queued.Followed:
+		return waitFor(ctx, e, run, streams, places, stay.For, drain)
+	case stay.For.For > 0:
+		return queuedFor(ctx, e, run, streams, places, stay.For, drain)
+	case queued.Followed:
+		return wait(ctx, e, run, streams, places)
+	}
+	return runQueued(ctx, e, run, streams, false, places, drain)
+}
+
+// runQueued sees a queued run through (Design v3 §11): handed to serve and
 // followed when serve leads, otherwise run here; with enqueue, only
 // queued, saying whether anything will run it, by a background drain
 // that drain starts where nothing leads.
-func RunQueued(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams, enqueue bool, places config.Places, drain func() (int, error)) error {
+func runQueued(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams, enqueue bool, places config.Places, drain func() (int, error)) error {
 	session, err := e.Session(ctx, model.SessionForeground)
 	if err != nil {
 		return err
@@ -92,10 +127,10 @@ func quiet(streams term.Streams) bool {
 // Follow shows a run's progress until it ends, driving it here where
 // nobody else sees it through, after before says who does, and reports its
 // outcome; named is where the command named what it checks already.
-// Wait follows a check until it ends and reports it, as dockhand wait does:
+// wait follows a check until it ends and reports it, as dockhand wait does:
 // one that ended is reported; with serve running, this observes; with no
 // serve, it runs here, as a foreground check would.
-func Wait(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams, places config.Places) error {
+func wait(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams, places config.Places) error {
 	if run.State.Terminal() {
 		return Report(ctx, e, run, streams, places, false)
 	}
@@ -189,12 +224,12 @@ func ParseBound(value string) (Bound, error) {
 	return Bound{For: bound, Said: value}, nil
 }
 
-// WaitFor follows a check for at most bound, as dockhand wait --for does,
+// waitFor follows a check for at most bound, as dockhand wait --for does,
 // and never drives it here: where nothing leads it, a background worker
 // is started (drain) and followed. One that ended, or ends within the
 // bound, is reported; one still queued or running at the bound is a
 // StillRunning refusal, the check continuing.
-func WaitFor(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams, places config.Places, bound Bound, drain func() (int, error)) error {
+func waitFor(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams, places config.Places, bound Bound, drain func() (int, error)) error {
 	if run.State.Terminal() {
 		return Report(ctx, e, run, streams, places, false)
 	}
@@ -219,11 +254,11 @@ func WaitFor(ctx context.Context, e *engine.Engine, run model.Run, streams term.
 	return FollowFor(ctx, e, run, streams, places, false, bound)
 }
 
-// QueuedFor follows a run check --for queued, as -d queues it, for at most
+// queuedFor follows a run check --for queued, as -d queues it, for at most
 // bound: said as -d says who runs it, serve or a background worker drain
 // starts, then followed (FollowFor). Where nothing leads and no worker
 // starts, it's refused, the check left queued.
-func QueuedFor(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams, places config.Places, bound Bound, drain func() (int, error)) error {
+func queuedFor(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams, places config.Places, bound Bound, drain func() (int, error)) error {
 	if streams.JSON() {
 		if result, err := checkResult(ctx, e, run); err == nil {
 			streams.Emit(result)
@@ -366,7 +401,10 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 		return reportBaseline(ctx, e, run, streams)
 	}
 	out := streams.Prose()
-	evidence, err := e.RunEvidence(ctx, run.ID)
+	// With the identities as they read now, so an environment whose
+	// identity couldn't be read is said, in the JSON and beside the
+	// results (Codex's review of #193, finding 2).
+	evidence, err := e.RunEvidenceNow(ctx, run.ID)
 	if err != nil {
 		return err
 	}
@@ -385,6 +423,7 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 			return err
 		}
 		result.Targets = view.EvidenceView(evidence)
+		result.IdentitiesUnread = view.IdentitiesUnreadView(evidence)
 		result.Lint = view.DetailLines(view.LintLines(lint))
 		if linksErr == nil {
 			result.Links = view.LinkDetail(links)
@@ -396,6 +435,9 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 	}
 	fmt.Fprintln(out)
 	view.WriteResults(out, "  ", evidence, false)
+	for _, line := range view.IdentityUnreadLines(evidence) {
+		fmt.Fprintln(out, "  ! "+line)
+	}
 	if len(lint) > 0 {
 		fmt.Fprintln(out)
 		view.WriteLint(out, lint)

@@ -25,12 +25,15 @@ type Foreground struct {
 	err     error
 }
 
-// StartForeground starts a VM owned by the caller's provisioning process.
-// The caller must stop it explicitly, including after cancellation.
-func (n Machine) StartForeground(name string) (*Foreground, error) {
+// StartForeground starts a VM owned by the caller's provisioning process,
+// handing it hold, lock files it keeps for as long as it runs, as a check's
+// launch lock. The caller must stop it explicitly, including after
+// cancellation.
+func (n Machine) StartForeground(name string, hold ...*os.File) (*Foreground, error) {
 	command := exec.Command(n.Client.Executable, "run", "--no-graphics", "--no-audio", "--no-clipboard", name)
 	command.Env = n.Client.Environment()
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	command.ExtraFiles = hold
 	var output bytes.Buffer
 	command.Stdout, command.Stderr = &output, &output
 	if err := command.Start(); err != nil {

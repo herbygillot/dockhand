@@ -32,6 +32,11 @@ type GitHub struct {
 	// Upstream and Fork are the local repositories MacPorts' and the
 	// person's fork stand for.
 	Upstream, Fork string
+	// pending are each pull request's review requests still pending,
+	// which RequestReviewers adds and RemoveRequest withdraws; Inspect
+	// reads them whole unless RequestsUnread says the read was cut short.
+	pending        map[int][]string
+	RequestsUnread bool
 	// Renamed are the repositories that answer by another name now, by
 	// the name asked (Describe).
 	Renamed map[string]string
@@ -107,6 +112,37 @@ type GitHub struct {
 	LogsRead int
 	Rerun    []int64
 	RerunErr error
+	// Refuse are the writes GitHub refuses, by name (Create, Update,
+	// MarkReady, MarkDraft, PostReview, RequestReviewers, RerunFailed),
+	// with what it says: forge.ErrRejected, with nothing done, apart from
+	// a failure, as #191's publication cases ask (#129's fix list, 8).
+	Refuse map[string]string
+	// Unrequestable are the logins GitHub won't ask for a review, with
+	// why: a request naming one is refused whole, as GitHub refuses a
+	// login that isn't a collaborator, and each other reviewer has the
+	// outcome it would.
+	Unrequestable map[string]string
+	// Person is the login GitHub knows the person by, ada's where empty,
+	// for a changed account; Clock when GitHub says each pull request was
+	// opened, now where nil.
+	Person string
+	Clock  func() time.Time
+}
+
+// refused is a write's refusal where GitHub refuses it (Refuse).
+func (g *GitHub) refused(write string) error {
+	if words, ok := g.Refuse[write]; ok {
+		return fmt.Errorf("%w: %s", forge.ErrRejected, words)
+	}
+	return nil
+}
+
+// account is the person's login as GitHub has it (Person).
+func (g *GitHub) account() string {
+	if g.Person == "" {
+		return "ada"
+	}
+	return g.Person
 }
 
 // New is GitHub with MacPorts at upstream and the person's fork at fork.
@@ -170,11 +206,11 @@ func (g *GitHub) Repository(_, name string) (forge.Repository, error) {
 	return &g.Dockhand, nil
 }
 
-func (g *GitHub) AuthenticatedUser(context.Context) (string, error) { return "ada", nil }
+func (g *GitHub) AuthenticatedUser(context.Context) (string, error) { return g.account(), nil }
 
-// Login is ada's, from GH_TOKEN.
+// Login is the person's, ada's unless Person says another, from GH_TOKEN.
 func (g *GitHub) Login(context.Context) (forge.Login, error) {
-	return forge.Login{Account: "ada", Source: "GH_TOKEN", From: "GH_TOKEN"}, nil
+	return forge.Login{Account: g.account(), Source: "GH_TOKEN", From: "GH_TOKEN"}, nil
 }
 
 func (g *GitHub) NameFromRemote(url string) (string, error) {
@@ -268,6 +304,9 @@ func (g *GitHub) Create(_ context.Context, input forge.PullRequestInput) (forge.
 		g.CreateFails = false
 		return forge.PullRequestObservation{}, errors.New("github: connection reset before the request was sent")
 	}
+	if err := g.refused("Create"); err != nil {
+		return forge.PullRequestObservation{}, err
+	}
 	// GitHub refuses a second pull request from one head to one base.
 	for _, pr := range g.PRs {
 		if pr.HeadRepository == input.HeadRepository && pr.HeadBranch == input.HeadBranch && pr.BaseBranch == input.BaseBranch && pr.State == forge.PullRequestOpen {
@@ -286,7 +325,8 @@ func (g *GitHub) Create(_ context.Context, input forge.PullRequestInput) (forge.
 	}
 	g.draft[number] = input.Draft
 	g.PRs[number] = &forge.PullRequest{Ref: forge.PullRequestRef{Forge: forge.GitHub, Repository: input.Repository, Number: number, URL: fmt.Sprintf("https://github.com/%s/pull/%d", input.Repository, number)},
-		HeadRepository: input.HeadRepository, HeadBranch: input.HeadBranch, BaseBranch: input.BaseBranch, State: forge.PullRequestOpen, Title: input.Desired.Title, Body: input.Desired.Body, RemoteHead: input.Desired.Head}
+		HeadRepository: input.HeadRepository, HeadBranch: input.HeadBranch, BaseBranch: input.BaseBranch, State: forge.PullRequestOpen, Title: input.Desired.Title, Body: input.Desired.Body, RemoteHead: input.Desired.Head,
+		Author: g.account(), CreatedAt: g.now()}
 	if g.CreateFails {
 		g.CreateFails = false
 		return forge.PullRequestObservation{}, errors.New("github: connection reset after the request was sent")
@@ -294,7 +334,18 @@ func (g *GitHub) Create(_ context.Context, input forge.PullRequestInput) (forge.
 	return g.observe(g.PRs[number]), nil
 }
 
+// now is when GitHub says a pull request is opened (Clock).
+func (g *GitHub) now() time.Time {
+	if g.Clock != nil {
+		return g.Clock()
+	}
+	return time.Now()
+}
+
 func (g *GitHub) Update(_ context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error) {
+	if err := g.refused("Update"); err != nil {
+		return forge.PullRequestObservation{}, err
+	}
 	g.Updated = append(g.Updated, input)
 	pr, ok := g.PRs[input.ExistingPR.Number]
 	if !ok {
@@ -319,6 +370,9 @@ func (g *GitHub) MarkReady(ctx context.Context, ref forge.PullRequestRef) (forge
 	if g.ReadyRefused != nil {
 		return forge.PullRequestObservation{}, g.ReadyRefused
 	}
+	if err := g.refused("MarkReady"); err != nil {
+		return forge.PullRequestObservation{}, err
+	}
 	g.Readied = append(g.Readied, ref.Number)
 	g.setDraft(ref.Number, false)
 	return g.Observe(ctx, ref)
@@ -327,6 +381,9 @@ func (g *GitHub) MarkReady(ctx context.Context, ref forge.PullRequestRef) (forge
 func (g *GitHub) MarkDraft(ctx context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {
 	if g.DraftRefused != nil {
 		return forge.PullRequestObservation{}, g.DraftRefused
+	}
+	if err := g.refused("MarkDraft"); err != nil {
+		return forge.PullRequestObservation{}, err
 	}
 	g.Drafted = append(g.Drafted, ref.Number)
 	g.setDraft(ref.Number, true)
@@ -341,17 +398,42 @@ func (g *GitHub) Permission(context.Context, string, string) (string, error) {
 }
 
 func (g *GitHub) PostReview(_ context.Context, input forge.ReviewInput) (string, error) {
+	if err := g.refused("PostReview"); err != nil {
+		return "", err
+	}
 	g.Reviews = append(g.Reviews, input)
 	return fmt.Sprintf("https://github.com/%s/pull/%d#pullrequestreview-%d", input.Ref.Repository, input.Ref.Number, len(g.Reviews)), nil
 }
 
 func (g *GitHub) RequestReviewers(_ context.Context, ref forge.PullRequestRef, logins []string) error {
+	if err := g.refused("RequestReviewers"); err != nil {
+		return err
+	}
+	for _, login := range logins {
+		if why, ok := g.Unrequestable[login]; ok {
+			return fmt.Errorf("%w: reviews may not be requested from %s: %s", forge.ErrRejected, login, why)
+		}
+	}
 	g.Rerequested = append(g.Rerequested, logins...)
 	if g.RerequestedOn == nil {
 		g.RerequestedOn = map[int][]string{}
 	}
 	g.RerequestedOn[ref.Number] = append(g.RerequestedOn[ref.Number], logins...)
+	if g.pending == nil {
+		g.pending = map[int][]string{}
+	}
+	for _, login := range logins {
+		if !slices.Contains(g.pending[ref.Number], login) {
+			g.pending[ref.Number] = append(g.pending[ref.Number], login)
+		}
+	}
 	return nil
+}
+
+// RemoveRequest withdraws a login's pending review request, as a person
+// can on GitHub.
+func (g *GitHub) RemoveRequest(number int, login string) {
+	g.pending[number] = slices.DeleteFunc(g.pending[number], func(l string) bool { return l == login })
 }
 
 // setDraft is a pull request of the stand-in's own made a draft, or
@@ -383,6 +465,18 @@ func (g *GitHub) Inspect(_ context.Context, ref forge.PullRequestRef) (forge.Pul
 	if draft, ok := g.draft[ref.Number]; ok && !set {
 		status.Draft = draft
 	}
+	// The pending review requests, read whole unless a test says the read
+	// came back cut short (RequestsUnread).
+	if !set {
+		status.Requested = slices.Clone(status.Requested)
+		for _, login := range g.pending[ref.Number] {
+			if !slices.Contains(status.Requested, login) {
+				status.Requested = append(status.Requested, login)
+			}
+		}
+		slices.Sort(status.Requested)
+		status.RequestedRead = !g.RequestsUnread
+	}
 	return status, nil
 }
 
@@ -402,6 +496,9 @@ func (g *GitHub) JobLog(_ context.Context, _ string, job int64) ([]byte, error) 
 func (g *GitHub) RerunFailed(_ context.Context, _ string, run int64) error {
 	if g.RerunErr != nil {
 		return g.RerunErr
+	}
+	if err := g.refused("RerunFailed"); err != nil {
+		return err
 	}
 	g.Rerun = append(g.Rerun, run)
 	return nil

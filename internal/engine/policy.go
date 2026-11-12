@@ -119,7 +119,7 @@ func (e *Engine) tagMovedNotes(ctx context.Context, plan model.Plan) []string {
 					}
 					then, built = tag, run.Name()
 				}
-				if then.Commit != "" && then.Commit != now.Commit {
+				if model.SourceAgainst(&then, &now) == model.SourceMoved {
 					said[id] = true
 					target, _ := plan.Target(id)
 					notes = append(notes, fmt.Sprintf("%s builds again: %s", id, checks.TagMovedWords(then, now, built, target.Target.Name)))

@@ -122,7 +122,7 @@ func installerRows(installers []installer, date string, others []macos.Facts, re
 		}
 		if xcode != nil {
 			xrow := row
-			xrow.Profile, xrow.XcodeSDKs = macos.ProfileXcode, entries(xcode.XcodeSDKs)
+			xrow.Profile, xrow.XcodeSDKs, xrow.XcodeClang = macos.ProfileXcode, entries(xcode.XcodeSDKs), xcode.Clang.Clang
 			xrow.DeveloperDir = "/Applications/Xcode.app/Contents/Developer"
 			if xcode.Layout == "/Developer" {
 				xrow.DeveloperDir = "/Developer"

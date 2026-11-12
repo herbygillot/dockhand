@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -147,6 +148,12 @@ type Job struct {
 	// the Build it records through; the first is the job's Environment,
 	// Execution, and Targets. Empty for any other provider.
 	Matrix []MatrixCell
+	// Launched are the notes the check's earlier attempts on this
+	// provider saved before they started work (model.GuestExecution.Launch),
+	// oldest first: what a provider that reads no store knows of what the
+	// check already launched, as a branch already at the commit that no
+	// attempt of the check pushed.
+	Launched []string
 }
 
 // MatrixCell is one environment of a MatrixProvider's run: its execution,
@@ -268,20 +275,64 @@ type TargetReport struct {
 // target that was blocked or never built.
 func Reported(result model.TargetResult) TargetReport { return TargetReport{Result: result} }
 
+type launchLocksKey struct{}
+
+// WithLaunchLocks marks the attempt's launch locks' files on the context a
+// launch's start runs under (Build.Launch), for a provider that hands one
+// to the process it starts, as the starter is (LaunchLocks).
+func WithLaunchLocks(ctx context.Context, files []*os.File) context.Context {
+	return context.WithValue(ctx, launchLocksKey{}, files)
+}
+
+// LaunchLocks are the launch locks' files of the launch the context's work
+// runs under, one for each attempt it launches; none outside a launch.
+func LaunchLocks(ctx context.Context) []*os.File {
+	files, _ := ctx.Value(launchLocksKey{}).([]*os.File)
+	return files
+}
+
+// ErrNotLaunched is a launch refused under the lock: the check's cancel is
+// recorded, or it is another driver's now, so nothing was started.
+var ErrNotLaunched = errors.New("nothing was launched: the check's cancel is recorded, or another process drives it now")
+
+// LaunchLock is an attempt's launch lock as Stop takes it, the lock every
+// launch of the attempt and every child that can start work holds: once
+// Stop holds it, nothing more can be launched for the attempt, since a
+// launcher that takes it later reads the cancel and starts nothing.
+type LaunchLock interface {
+	// Hold takes the lock within the bound, and release lets it go. An
+	// error is a lock still held by something alive, named where the
+	// launcher recorded itself; the lock is never taken from it.
+	Hold(ctx context.Context, within time.Duration) (release func(), err error)
+}
+
+// StopRequest is what Stop is asked of: one attempt of a check (Execution),
+// every attempt of the check on the provider, that one among them, whose
+// launches a stop answers for together, and the asked attempt's launch
+// lock, which Stop takes before it reads what was launched.
+type StopRequest struct {
+	Execution model.GuestExecution
+	Attempts  []model.GuestExecution
+	Lock      LaunchLock
+}
+
+// Stopper is a provider whose work can outlive its driver, as GitHub's
+// workflow runs on when a resumable driver stops, so the next can find it
+// again. Stop ends the work an execution recorded and gives one of three
+// answers (the lifecycle design's "Stopping"): no error and nothing left
+// is ended; no error and something left is ended, each thing named with
+// what removes it; an error is not known, in the provider's words, and
+// the cancel stays requested. Every cancel asks it, by whoever settles
+// the check, before the check is called canceled (#115, #193).
+type Stopper interface {
+	Provider
+	Stop(ctx context.Context, request StopRequest) (left []string, err error)
+}
+
 // LinkReader is a provider that reads what a passed build's binaries link
 // (TargetReport.Links), as Tart's guest does: where its results' links
 // are nil, they couldn't be read, where another provider's are nil
 // because it never reads them.
-// Stopper is a provider whose work can outlive its driver, as GitHub's
-// workflow runs on when a resumable driver stops, so the next can find it
-// again: Stop ends the work an execution recorded (ProviderRef), and is
-// nil where there is none left to end. A cancel no driver attends asks it
-// before settling the check (#115).
-type Stopper interface {
-	Provider
-	Stop(ctx context.Context, execution model.GuestExecution) error
-}
-
 type LinkReader interface {
 	ReadsLinks() bool
 }
@@ -331,6 +382,17 @@ type Build interface {
 	// Refer records the provider's own name for this run: a workflow
 	// run's URL, a VM clone's name. dockhand logs finds the run by it.
 	Refer(ref string) error
+	// Launch starts the attempt's work under its launch lock, the one
+	// call every provider starts work through (the lifecycle design's
+	// "Launching and stopping exclude each other"). Holding the lock, it
+	// reads again that the check is still this driver's and that no
+	// cancel is recorded, saves note as the attempt's Launch, and only
+	// then runs start, whose context carries the lock's file for every
+	// child start forks to hold (filelock.Carried). The note start
+	// returns, where it changed, is saved before the lock is let go.
+	// ErrNotLaunched where the check isn't this driver's any more or its
+	// cancel is recorded: start isn't run.
+	Launch(note string, start func(ctx context.Context) (string, error)) error
 	// Canceled reports, once the context is done, that the run was
 	// canceled or interrupted for good, rather than its driver stopping
 	// with the run left for the next one: only then does a provider stop
@@ -552,6 +614,25 @@ type Fork struct {
 // github provider does. The provider removes each once the check is done
 // with its run; clean removes a merged branch's that are left.
 const CheckBranchPrefix = "dockhand-check/"
+
+// CheckBranch is a check's own branch in your fork: the first twelve
+// characters of the commit and the whole random part of the check's ID,
+// the same for its matrix and every attempt, so no other check pushes it
+// and every run on it is this check's (the lifecycle design's "GitHub").
+// clean finds a check's branch by it too.
+func CheckBranch(commit string, check model.RunID) string {
+	id := string(check)
+	if i := strings.LastIndex(id, "_"); i >= 0 {
+		id = id[i+1:]
+	}
+	return CheckBranchPrefix + commit[:min(12, len(commit))] + "-" + id
+}
+
+// LegacyCheckBranch is the branch a check pushed before branches were the
+// check's own, named for the commit alone, which clean still removes.
+func LegacyCheckBranch(commit string) string {
+	return CheckBranchPrefix + commit[:min(12, len(commit))]
+}
 
 // LogName is a target's log's name in its build's log directory, and in
 // a Tart guest,

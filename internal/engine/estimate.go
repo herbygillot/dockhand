@@ -77,6 +77,13 @@ type ArchiveVersionReader interface {
 // archives are said where all of them are. Nothing where the index can't
 // be read.
 func (e *Engine) InstallEstimates(ctx context.Context, plan model.Plan, source model.Source, wait bool) []InstallEstimate {
+	// The plan's revision is read as its owner's (#162); a plan with no
+	// revision keeps its caller's mark, and with none the door refuses.
+	if plan.Revision != "" {
+		if revision, err := e.Revision(ctx, plan.Revision); err == nil {
+			ctx, _ = e.evaluatingRevision(ctx, revision)
+		}
+	}
 	capabilities, err := e.capabilities()
 	if err != nil || capabilities.Graphs == nil {
 		return nil

@@ -103,6 +103,11 @@ func (e *Engine) Forget(ctx context.Context, plan *ForgetPlan) (store.Pruned, er
 	if err := e.refuseCheckedOut(ctx, *plan); err != nil {
 		return store.Pruned{}, err
 	}
+	// An unfinished submission ends first, what it left written down; a
+	// read it needs that fails refuses the forget with nothing done.
+	if err := e.endPublicationFor(ctx, plan.Branch, "forgotten"); err != nil {
+		return store.Pruned{}, err
+	}
 	// What its checks left goes first: one that stays, its check running
 	// or its removal failing, keeps the record, which alone claims it.
 	if len(plan.Leftovers) > 0 {

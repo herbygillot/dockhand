@@ -1,10 +1,8 @@
 package tart
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -69,10 +67,10 @@ printf '%s' '[{"VM":"renamed","Source":"local","State":"stopped"}]'
 	require.ErrorContains(t, err, "each entry must include Name, Source, and either Running or State")
 }
 
-// The failures dockhand acts on are named from Tart 2.37.0's own words: the
-// listing a running ASIF VM blocks (openai/tart#1344), a missing VM, and a
-// stop of a stopped one. A delete's "does not exist" is left unnamed, since
-// Tart says it of a running VM it leaves in place (openai/tart#1345).
+// The failures dockhand acts on are named from Tart's own words: the
+// listing a running ASIF VM blocks (openai/tart#1344), a missing VM, a
+// delete's included since Tart says it truly from 2.40.0 (openai/tart#1345,
+// the oldest Tart taken being newer), and a stop of a stopped one.
 func TestTartFailuresAreClassifiedByWhatTartSays(t *testing.T) {
 	executable := filepath.Join(t.TempDir(), "tart")
 	testsupport.WriteExecutable(t, executable, `#!/bin/sh
@@ -92,23 +90,22 @@ esac
 	require.ErrorIs(t, err, ErrVMStopped)
 	_, err = client.Run(t.Context(), RunOptions{Combined: true}, "stop", "idle")
 	require.ErrorIs(t, err, ErrVMStopped, "setup runs Tart with combined output")
-	_, err = client.Run(t.Context(), RunOptions{}, "delete", "running")
-	require.Error(t, err)
-	require.False(t, errors.Is(err, ErrVMMissing))
+	_, err = client.Run(t.Context(), RunOptions{}, "delete", "gone")
+	require.ErrorIs(t, err, ErrVMMissing)
 }
 
-// Golden Gate's ASIF images need a Tart that lists its VMs while one runs.
-func TestHandlesASIFFromTheVersionTartPrints(t *testing.T) {
-	for version, handles := range map[string]bool{
-		"2.39.0": true, "2.39.0\n": true, "2.39.1": true, "2.40.0": true, "3.0.0": true, "2.39.0-3-g27d3e2c": true,
-		"2.38.0": false, "2.37.0": false, "1.99.9": false, "2.39": false, "": false, "unknown": false,
+// The oldest Tart taken is 2.41.1, read from the version Tart prints (#38).
+func TestTheTartFloorIsReadFromTheVersionTartPrints(t *testing.T) {
+	for version, enough := range map[string]bool{
+		"2.41.1": true, "2.41.1\n": true, "2.41.2": true, "2.42.0": true, "3.0.0": true, "2.41.1-3-g27d3e2c": true,
+		"2.41.0": false, "2.40.1": false, "2.39.0": false, "1.99.9": false, "2.41": false, "": false, "unknown": false,
 	} {
-		require.Equal(t, handles, HandlesASIF(version), version)
-		require.Equal(t, handles, TooOld(version) == nil, version)
+		require.Equal(t, enough, NewEnough(version), version)
+		require.Equal(t, enough, TooOld(version) == nil, version)
 	}
 	// One refusal, setup's and a check's alike (the architecture review of
 	// 5897a82, R3-18).
-	require.EqualError(t, TooOld("2.38.0\n"), "Tart 2.38.0 is installed; Dockhand requires 2.39.0 or later to list running VMs with ASIF disks (openai/tart#1344). Upgrade with sudo port upgrade tart")
+	require.EqualError(t, TooOld("2.40.1\n"), "Tart 2.40.1 is installed; Dockhand requires 2.41.1 or later, which lists running VMs with ASIF disks, says when a delete left a VM, and lists VMs while one is deleted. Upgrade with sudo port upgrade tart")
 }
 
 // Tart 2.39.0 lists a running ASIF VM, Golden Gate's, with its disk
@@ -129,39 +126,6 @@ esac
 	vm, err := client.Get(t.Context(), RunOptions{}, "gg")
 	require.NoError(t, err)
 	require.Equal(t, VM{Running: true, DiskFormat: "asif"}, vm)
-}
-
-// A listing that raced a delete is listed again, and answers once the
-// delete is done; one that never answers says why.
-func TestARacedListingIsListedAgain(t *testing.T) {
-	pause := listingPause
-	t.Cleanup(func() { listingPause = pause })
-	listingPause = time.Millisecond
-	dir := t.TempDir()
-	executable, count, races := filepath.Join(dir, "tart"), filepath.Join(dir, "count"), filepath.Join(dir, "races")
-	testsupport.WriteExecutable(t, executable, `#!/bin/sh
-echo x >> `+count+`
-if [ "$(wc -l < `+count+`)" -le "$(cat `+races+`)" ]; then
-  echo 'Error: The file “config.json” couldn’t be opened because there is no such file.' >&2; exit 1
-fi
-printf '%s' '[{"Name":"dockhand-base-tahoe","Source":"local","Running":false}]'
-`)
-	require.NoError(t, os.WriteFile(races, []byte("2"), 0o644))
-	client := Client{Env: os.Environ(), Executable: executable}
-	images, err := client.Images(t.Context(), RunOptions{})
-	require.NoError(t, err)
-	require.Equal(t, []Image{{Name: "dockhand-base-tahoe", Source: "local"}}, images)
-	calls, err := os.ReadFile(count)
-	require.NoError(t, err)
-	require.Equal(t, 3, strings.Count(string(calls), "x"), "two raced listings, then the answer")
-
-	require.NoError(t, os.Remove(count))
-	require.NoError(t, os.WriteFile(races, []byte("99"), 0o644))
-	_, err = client.Images(t.Context(), RunOptions{})
-	require.ErrorIs(t, err, ErrListingRaced)
-	calls, err = os.ReadFile(count)
-	require.NoError(t, err)
-	require.Equal(t, listingAttempts, strings.Count(string(calls), "x"))
 }
 
 // A listing Tart doesn't answer in time is said, where status waited on it

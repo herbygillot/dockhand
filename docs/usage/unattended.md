@@ -203,6 +203,19 @@ tomorrow; today's limit of 2 pull requests has been reached
 started for you to ship. That limit is a serve policy, not a cap on an explicit
 `ship` batch.
 
+Serve counts its own pull requests in rows that outlive their branches. A place
+is taken before the first push, and a create is marked before it is sent. A
+create that got no answer may have opened a pull request, so its place is held
+every day until the pull request is found, or until the branch is gone from the
+fork at two looks ten minutes apart; `dockhand clean --delete` of the branch
+frees it that way. Each pass first accounts for serve's own unfinished
+submissions, then opens anything new. Serve never finishes a person's submission,
+and never writes to a pull request it found rather than opened. The upgrade to
+the version that keeps these rows is refused while any other dockhand runs on
+the Mac, and where the Mac's process list can't be read; on the day of the
+upgrade serve opens nothing, since that day's earlier openings were counted
+another way.
+
 The daily look runs at the configured local time, or after that time when serve
 next has the opportunity, beside serve's loop, so a check that ends while it
 looks is finished and the next started without waiting for it. Restarting

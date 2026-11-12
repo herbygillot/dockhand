@@ -9,8 +9,12 @@
 #    its version 1.4.1: tidy's subject is "ap-utils2: rename from
 #    ap-utils, update to 1.4.1", where it was "ap-utils: update to 1.4.1".
 # The rename's text names check, which the quick stage run without an
-# image can't plan, so it's read as JSON.
+# image can't plan, so it's read as JSON. In the full stage it works on a
+# master of its own at the quick stage's pin (plan_at_pin): MacPorts' own
+# master has ap-utils at 1.4.1 already (rc4's full stage).
+. "${ROW_LIB:?}/plan.sh"
 setup() {
+	plan_at_pin "ap-utils is at 1.3.3" || return 1
 	G28_RENAMED=$(run_name g28-rename)
 	G28_NEW=$(run_name g28-new)
 	G28_INPLACE=$(run_name g28-inplace)

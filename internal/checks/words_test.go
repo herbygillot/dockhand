@@ -78,5 +78,9 @@ func TestACarriedReuseSaysWhatChangedSince(t *testing.T) {
 	declared := model.Carried{Check: "check-12", Commit: "3f2a1c9e0b", Ports: []model.InertPort{{Port: "omnidiff", Declared: []string{"libiconv"}}}, Linted: true}
 	require.Equal(t, "check-13 reused check-12's builds (commit 3f2a1c9): since then only omnidiff declares libiconv, active as that build ran, which builds nothing differently, and lint ran again on this Portfile",
 		CarriedWords("check-13", []model.Carried{declared}))
+	// A comment line changed nothing an option reads, and the line named
+	// nothing: "since then only , which" (D-T1 at rc4's full stage).
+	comment := model.Carried{Check: "check-1029", Ports: []model.InertPort{{Port: "libpng"}}}
+	require.Equal(t, "check-1030 reused check-1029's builds: since then only text in libpng's Portfile that no option reads changed, which builds nothing differently", CarriedWords("check-1030", []model.Carried{comment}))
 	require.Empty(t, CarriedWords("check-768", nil))
 }

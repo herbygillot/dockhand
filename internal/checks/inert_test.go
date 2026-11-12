@@ -31,7 +31,10 @@ func (h *recordHooks) BeforeEnvironment(context.Context, model.Run, model.Plan, 
 	return nil
 }
 func (h *recordHooks) AfterBuild(context.Context, model.Run, model.Revision) error { return nil }
-func (h *recordHooks) AfterFinish(context.Context, model.Run)                      {}
+func (h *recordHooks) Evaluating(ctx context.Context, _ model.Run) (context.Context, error) {
+	return ctx, nil
+}
+func (h *recordHooks) AfterFinish(context.Context, model.Run) {}
 func (h *recordHooks) Changes(_ context.Context, revision model.Revision) (map[string]model.ChangeRecord, error) {
 	h.asked = append(h.asked, revision.ID)
 	if found, ok := h.records[revision.ID]; ok {

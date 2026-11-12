@@ -62,12 +62,14 @@ macOS 10.13 and earlier, or a separate binary for Intel. When `update` or
 side of every release or architecture boundary the Portfile names. It does this
 on this Mac, without a build, and writes the checksums for every file those
 readings fetch. Those readings use that release's version and architecture, and
-its developer tools as Dockhand's facts table records them. Where a reading
-depends on anything else about a Mac running that release, `checksums` leaves
-that release's checksums as they were and names them, and `update` stops and
-says which release it couldn't read. Checks build only on the releases you have
-images for, or GitHub's. MacPorts' builders cover the rest after the pull
-request is merged.
+its developer tools as Dockhand's facts table records them, never with this
+Mac's answer: what the table doesn't record reads as absent, as on an empty Mac.
+Where a reading depends on anything else about a Mac running that release, such
+as a command the Portfile runs there, `checksums` and `update` leave that
+release's checksums and revision as they were, name it with the read it depended
+on, and go on with the releases they could read. Checks
+build only on the releases you have images for, or GitHub's. MacPorts' builders
+cover the rest after the pull request is merged.
 
 For ports with `cargo.crates` or `go.vendors`, an ordinary refresh preserves
 those lists byte for byte while refreshing the port's own archives. An empty

@@ -17,6 +17,7 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 		return contexts, err, nil
 	}
 	coverage := newArchiveCoverage()
+	left := false
 	// Only the selected port is read below, so each context evaluates it
 	// alone; the family is for edits, whose fidelity must see siblings.
 	observations, err := input.observe.Observe(ctx, input.data, profiles, true, true)
@@ -27,6 +28,13 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 		observed := observations[i]
 		info := observed.Snapshot.Ports[input.target.Name]
 		contexts = append(contexts, ContextCoverage{Platform: profile, Modeled: observed.Modeled, Fetch: info.Fetch})
+		// A context modelled on another Mac that can't be read is left, as
+		// update leaves it, and said (#125); this Mac's reading isn't.
+		if reason, leaves := observe.Left(ctx, observed, input.target.Name, input.data); leaves {
+			contexts[len(contexts)-1].Left = reason
+			left = true
+			continue
+		}
 		if obsoleteIn(info) {
 			// An obsolete follower has no archive in this context by design.
 			continue
@@ -56,8 +64,16 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 			coverage.cover(artifact)
 		}
 	}
-	if ids := coverage.uncovered(); len(ids) > 0 {
+	// A declaration only a context left fetches stays as written, as
+	// update leaves it.
+	ids := coverage.uncovered()
+	if len(ids) > 0 && !left {
 		return contexts, nil, errProbeInconclusive.Because("checksum declaration %s is not covered by the observed contexts", ids[0])
+	}
+	for i := range contexts {
+		if contexts[i].Left != "" {
+			contexts[i].Kept = ids
+		}
 	}
 	return contexts, nil, nil
 }

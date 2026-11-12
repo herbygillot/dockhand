@@ -78,6 +78,9 @@ func (s *Service) Observe(ctx context.Context, selection Selection) (_ Result, e
 	if s == nil || s.Repo == nil || s.Ports == nil || s.Upstream == nil {
 		return Result{}, fmt.Errorf("outdated: Git, MacPorts, and upstream discovery are required")
 	}
+	// What outdated evaluates is MacPorts' own tree, its master as fetched
+	// (#162).
+	ctx = workspace.MacPorts(ctx)
 	ports := s.Ports
 	platform, err := ports.NativePlatform(ctx)
 	if err != nil {

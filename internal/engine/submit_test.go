@@ -32,6 +32,9 @@ func (f fixture) withFork(t *testing.T, e *Engine) *forgetest.GitHub {
 	testsupport.Git(t, filepath.Dir(f.upstream), "clone", "-q", "--bare", f.upstream, fork)
 	testsupport.Git(t, f.clone, "remote", "add", "fork", fork)
 	fake := forgetest.New(f.upstream, fork)
+	// GitHub opens a pull request on the engine's day, as the fixture's
+	// clock has it.
+	fake.Clock = e.now
 	e.Forge = fake
 	return fake
 }
@@ -1345,23 +1348,28 @@ func TestAPushWhoseUpdateFailedStillAsksTheReviewersAgain(t *testing.T) {
 	testsupport.Git(t, branch.Worktree, "commit", "-qam", "jq: address review")
 	branch, err = e.Branch(t.Context(), branch.ID)
 	require.NoError(t, err)
-	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Title: "jq: review addressed"})
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Title: "jq: review addressed", Rerequest: true})
 	require.NoError(t, err)
+	require.Equal(t, []string{"reviewer"}, plan.Rerequests())
 	wrapped.fail = true
 	partial, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.ErrorContains(t, err, "GitHub refused the update")
 	require.True(t, partial.Pushed)
+	require.Empty(t, partial.Asked)
 	wrapped.fail = false
+	// The retry, which pushes nothing, settles the publication and carries
+	// the yes it still owed: the reviewer is asked, once (#191).
 	again, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Title: "jq: review addressed"})
 	require.NoError(t, err)
+	require.True(t, again.Request.Rerequest, "the earlier yes is carried")
 	complete, err := e.ApplySubmit(t.Context(), again, model.AnsweredAsked)
 	require.NoError(t, err)
 	require.False(t, complete.Pushed, "the fork had it")
+	require.Equal(t, []string{"reviewer"}, complete.Asked)
 	branch, err = e.Branch(t.Context(), branch.ID)
 	require.NoError(t, err)
-	due, err := e.RerequestDue(t.Context(), branch)
-	require.NoError(t, err)
-	require.True(t, due)
+	require.Nil(t, branch.Publication, "nothing more is owed")
+	require.Equal(t, model.SentRequest, branch.PullRequest.Rerequested.Reviewers[0].Sent, "the receipt")
 }
 
 // A tested statement is about the files it was made for: it stands while

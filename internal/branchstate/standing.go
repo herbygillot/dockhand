@@ -16,6 +16,10 @@ type Check struct {
 	Active []model.Run
 	// Stopped is a check whose process ended before it finished.
 	Stopped *model.Run
+	// Canceling is a check whose cancel was asked and isn't finished, no
+	// process attending it: its work isn't known to have stopped. It's
+	// no check of the branch's, so the verdict reads past it.
+	Canceling *model.Run
 	// Evidence is what the checks of the files as they are establish.
 	Evidence *evidence.Evidence
 	// Accepted are the ports whose failures a person accepted at this

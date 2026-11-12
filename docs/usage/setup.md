@@ -92,8 +92,9 @@ refused for it says so once, making no further attempt.
 
 Choose a build environment before the first real change:
 
-- **Tart on Apple silicon:** install Tart if needed, then run
-  `dockhand setup tart`. This prepares an image of this Mac's release. The
+- **Tart on Apple silicon:** install Tart 2.41.1 or newer if needed, then run
+  `dockhand setup tart`. An older Tart is refused, at setup and before a
+  check starts a VM, with how to upgrade it. This prepares an image of this Mac's release. The
   default `minmax` build profile uses Tart guests, this Mac's release alone
   until `dockhand setup tart <release>` adds others; it does not install the
   port into your everyday prefix. The first time, macOS asks whether your
@@ -102,7 +103,9 @@ Choose a build environment before the first real change:
   you declined, turn it on for that app in System Settings › Privacy &
   Security › Local Network.
 - **GitHub Actions:** enable Actions in your fork. `--on github` pushes a
-  temporary check branch and runs MacPorts' workflow there.
+  temporary branch of the check's own, `dockhand-check/<commit>-<check ID>`,
+  and runs MacPorts' workflow there. Each check of a commit has its own
+  branch, so several can stand in your fork until they are read or cleaned.
 - **A MacPorts prefix on this Mac:** `--on local` builds among the active ports
   in the configured prefix, `/opt/local` by default. It changes that
   installation during the check and restores its active versions afterward. Read

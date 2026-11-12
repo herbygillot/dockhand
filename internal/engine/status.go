@@ -108,6 +108,10 @@ type BranchStatus struct {
 	// Stopped is the active run recorded as running that no live process
 	// drives, once JudgeStopped has looked; nil otherwise.
 	Stopped *model.Run
+	// Canceling is the active run whose cancel was asked and isn't
+	// finished, no live process attending it, once JudgeStopped has
+	// looked: its work isn't known to have stopped.
+	Canceling *model.Run
 	// Releases are the releases the branch's updates chose, each port's
 	// latest, in the order the ports were first updated.
 	Releases []PortRelease
@@ -169,7 +173,11 @@ func (e *Engine) JudgeStopped(ctx context.Context, session *coord.Session, statu
 	}
 	for i := range statuses {
 		for _, run := range statuses[i].Active {
-			if run.State == model.RunRunning && holders[checks.RunResource(run.ID)] == nil {
+			switch {
+			case run.State != model.RunRunning || holders[checks.RunResource(run.ID)] != nil:
+			case run.CancelRequested != nil:
+				statuses[i].Canceling = &run
+			default:
 				statuses[i].Stopped = &run
 			}
 		}
@@ -386,7 +394,7 @@ func (s BranchStatus) Cleaned() bool {
 // Check is what's recorded of the branch's checks, as the verdict reads
 // it (branchstate.Check).
 func (s BranchStatus) Check() branchstate.Check {
-	return branchstate.Check{Latest: s.Latest, Current: s.Current, Active: s.Active, Stopped: s.Stopped, Evidence: s.Evidence,
+	return branchstate.Check{Latest: s.Latest, Current: s.Current, Active: s.Active, Stopped: s.Stopped, Canceling: s.Canceling, Evidence: s.Evidence,
 		Accepted: s.Accepted, AtBase: s.AtBase, Decisions: s.Decisions}
 }
 
@@ -517,6 +525,7 @@ func (Vocabulary) Environment(environment model.Environment) string {
 func (Vocabulary) Revision(revision model.Revision) string   { return checks.Describe(revision) }
 func (Vocabulary) Ago(at time.Time) string                   { return Ago(at) }
 func (Vocabulary) Remade(target TargetEvidence) string       { return RemadeWords(target) }
+func (Vocabulary) Refused(refusal Refusal) string            { return RefusedWords(refusal) }
 func (Vocabulary) Holds(concerns []model.Concern) []string   { return HoldLines(concerns) }
 func (Vocabulary) Unmet(unmet model.Unmet) string            { return checks.UnmetWords(unmet) }
 func (Vocabulary) CIFailure(failure model.CIFailure) string  { return CIFailureWords(failure) }
@@ -598,6 +607,10 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 // branchStatus is BranchStatus, with whether the checkout has a fork
 // remote read already.
 func (e *Engine) branchStatus(ctx context.Context, branch model.Branch, noFork bool, reads *statusReads) (BranchStatus, error) {
+	// What status evaluates of the branch's files is their owner's: an
+	// adopted branch's unallowed Portfiles are refused at the door, and
+	// status, which never asks, says what it couldn't read (#162).
+	ctx = e.marked(ctx, branch)
 	status := BranchStatus{Branch: branch, NoFork: noFork}
 	if reads == nil {
 		var err error
@@ -887,25 +900,199 @@ var checkName = regexp.MustCompile(`^(check-)?[0-9]+$`)
 // IsCheckName reports whether name is spelled as a check's, check-42 or 42.
 func IsCheckName(name string) bool { return checkName.MatchString(name) }
 
-// RunOrExecution is the check a name means, check-42, or the provider run
-// it means, by its ID or its provider's own reference, with that run's
-// check (the command package split's 7a row 11). A reference several
-// environments' executions share, as a GitHub workflow run that built
-// each release of its matrix, means the check, all of them: no execution.
-func (e *Engine) RunOrExecution(ctx context.Context, name string) (model.Run, model.ExecutionID, error) {
+// SelectionKind is the kind of name a build selection was made from
+// (docs/designs/check-lifecycle.md, "Selection").
+type SelectionKind string
+
+const (
+	// SelectedNothing is nothing named: the latest check of the branch
+	// checked out here.
+	SelectedNothing SelectionKind = "nothing named"
+	// SelectedBranch is a branch named: its latest check.
+	SelectedBranch      SelectionKind = "branch"
+	SelectedCheck       SelectionKind = "check"
+	SelectedAttempt     SelectionKind = "attempt"
+	SelectedProviderRun SelectionKind = "provider run"
+)
+
+// BuildSelection is what a command was asked to look at, resolved once
+// (SelectBuild): the kind of name it came from, the check, the attempts it
+// stands for, several where one provider run built several environments
+// and none for a whole check, and the port, the release and the phase
+// asked for. logs, artifacts and shell each read it and refuse by name
+// what they can't serve.
+type BuildSelection struct {
+	Kind       SelectionKind
+	Run        model.Run
+	Executions []model.ExecutionID
+	Port       string
+	Release    string
+	Phase      model.Step
+}
+
+// Stands reports whether an attempt is one the selection stands for: any
+// of a whole check's, else one it names.
+func (s BuildSelection) Stands(execution model.ExecutionID) bool {
+	return len(s.Executions) == 0 || slices.Contains(s.Executions, execution)
+}
+
+// SelectRequest is what a command names: a check, an attempt's ID or a
+// provider run's reference (Name); else a branch (Branch), whose latest
+// check it means; else nothing, the branch checked out here; with the
+// port, the release and the phase it asks for. Else is what a Name that
+// is none of those is taken for, so a command's lone argument is resolved
+// once, here (the confirmation of #193's fixes, A4).
+type SelectRequest struct {
+	Name    string
+	Else    NameElse
+	Branch  *model.Branch
+	Port    string
+	Release string
+	Phase   model.Step
+}
+
+// NameElse is what a name that is no check, attempt or provider run is
+// taken for (SelectRequest.Else).
+type NameElse int
+
+const (
+	// ElseNothing refuses it, as neither.
+	ElseNothing NameElse = iota
+	// ElseBranch takes it for a branch's name, whose latest check it
+	// means: artifacts' argument.
+	ElseBranch
+	// ElsePort takes it for a port of the latest check of the branch
+	// checked out here: logs' lone argument.
+	ElsePort
+)
+
+// SelectBuild resolves what a command names once, in one place
+// (docs/designs/check-lifecycle.md, "Selection"; Codex's review of #193,
+// findings 1 and 4): the check and the attempts, and a port the check
+// doesn't build refused by name, a running check's too, where it was said
+// to have recorded no log yet. With nothing named and no branch checked
+// out here, ErrNoBranch.
+func (e *Engine) SelectBuild(ctx context.Context, request SelectRequest) (BuildSelection, error) {
+	var selection BuildSelection
+	var err error
+	if request.Name != "" {
+		selection, err = e.selectNamed(ctx, request.Name)
+		if errors.Is(err, errNotABuild) && request.Else != ElseNothing {
+			switch request.Else {
+			case ElseBranch:
+				found, err := e.Select(ctx, Selector{Branch: request.Name, Policy: SelectExisting}, WorkNone)
+				if err != nil {
+					return selection, err
+				}
+				request.Branch = &found.Branch
+			case ElsePort:
+				request.Port = request.Name
+			}
+			lone := request.Else == ElsePort
+			request.Name, request.Else = "", ElseNothing
+			selection, err = e.SelectBuild(ctx, request)
+			if unbuilt := (*UnbuiltPortError)(nil); lone && errors.As(err, &unbuilt) {
+				unbuilt.Lone = true
+			}
+			return selection, err
+		}
+		if err != nil {
+			return selection, err
+		}
+	} else {
+		selection.Kind = SelectedBranch
+		branch := request.Branch
+		if branch == nil {
+			here, err := e.Current(ctx)
+			if err != nil {
+				return selection, err
+			}
+			branch, selection.Kind = &here, SelectedNothing
+		}
+		run, ok, err := e.LatestCheck(ctx, branch.ID)
+		if err != nil {
+			return selection, err
+		}
+		if !ok {
+			return selection, &NoCheckError{Branch: *branch}
+		}
+		selection.Run = run
+	}
+	selection.Port, selection.Release, selection.Phase = request.Port, request.Release, request.Phase
+	if request.Port != "" {
+		plan, err := e.Plan(ctx, selection.Run.Plan)
+		if err != nil {
+			return selection, err
+		}
+		if !slices.ContainsFunc(plan.Targets, func(target model.PlanTarget) bool { return target.Names(request.Port) }) {
+			unbuilt := &UnbuiltPortError{Run: selection.Run, Port: request.Port}
+			for _, target := range plan.Targets {
+				unbuilt.Built = append(unbuilt.Built, string(target.ID))
+			}
+			return selection, unbuilt
+		}
+	}
+	return selection, nil
+}
+
+// errNotABuild marks a name that is no check, attempt or provider run,
+// which SelectRequest.Else may take for something else. It says nothing
+// of its own.
+var errNotABuild = notABuild{}
+
+type notABuild struct{}
+
+func (notABuild) Error() string { return "" }
+
+// NoCheckError is a branch named, or checked out here, that has no check
+// yet: logs says there's no log of a port it names.
+type NoCheckError struct{ Branch model.Branch }
+
+func (err *NoCheckError) Error() string {
+	return fmt.Sprintf("%s has no check yet: dockhand check -b %s", err.Branch.ShortName(), err.Branch.ShortName())
+}
+
+// UnbuiltPortError is a port named of a check that doesn't build it,
+// refused by name (SelectBuild).
+type UnbuiltPortError struct {
+	Run   model.Run
+	Port  string
+	Built []string
+	// Lone is a lone name taken for a port (ElsePort), which was no check
+	// or provider run either, as it says.
+	Lone bool
+}
+
+func (u *UnbuiltPortError) Error() string {
+	unbuilt := fmt.Sprintf("%s builds no port named %s; it builds %s", u.Run.Name(), u.Port, prose.And(u.Built))
+	if u.Lone {
+		return fmt.Sprintf("%s is neither a check, such as check-42, nor a provider run, such as tart_7y62p4sigena6xlr or a workflow run's URL, and %s", u.Port, unbuilt)
+	}
+	return unbuilt
+}
+
+// selectNamed resolves a name: a check, check-42; one attempt, by its ID;
+// or a provider's run, by its reference, with the attempts it stands for.
+func (e *Engine) selectNamed(ctx context.Context, name string) (BuildSelection, error) {
 	run, err := e.RunNamed(ctx, name)
 	if err == nil || IsCheckName(name) {
-		return run, "", err
+		return BuildSelection{Kind: SelectedCheck, Run: run}, err
 	}
 	executions, runErr := e.executionsNamed(ctx, name)
 	if runErr != nil {
-		return model.Run{}, "", fmt.Errorf("%s is neither a check, such as check-42, nor a provider run, such as tart_7y62p4sigena6xlr or a workflow run's URL", name)
+		return BuildSelection{}, fmt.Errorf("%s is neither a check, such as check-42, nor a provider run, such as tart_7y62p4sigena6xlr or a workflow run's URL%w", name, errNotABuild)
 	}
-	run, err = e.Run(ctx, executions[0].Run)
-	if len(executions) > 1 {
-		return run, "", err
+	if run, err = e.Run(ctx, executions[0].Run); err != nil {
+		return BuildSelection{}, err
 	}
-	return run, executions[0].ID, err
+	selection := BuildSelection{Kind: SelectedProviderRun, Run: run}
+	if len(executions) == 1 && executions[0].ID == model.ExecutionID(name) {
+		selection.Kind = SelectedAttempt
+	}
+	for _, execution := range executions {
+		selection.Executions = append(selection.Executions, execution.ID)
+	}
+	return selection, nil
 }
 
 // executionsNamed are the provider runs a name means: the one execution of
@@ -1020,22 +1207,26 @@ type RunLogs struct {
 // before the build reaches the port, or on a provider that copies none.
 // port is a target's ID or its port's name, which a variant build's ID
 // begins with.
-// only, where set, is the one execution whose directory is read.
-func (e *Engine) LiveLog(ctx context.Context, id model.RunID, port string, only model.ExecutionID) (string, error) {
+// executions, where any are named, are those whose directories are read,
+// a selection's attempts (BuildSelection).
+func (e *Engine) LiveLog(ctx context.Context, id model.RunID, port string, executions []model.ExecutionID) (string, error) {
 	var run model.Run
 	var plan model.Plan
-	directory := "*"
+	directories := []string{"*"}
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
 		if run, err = r.Run(id); err != nil {
 			return err
 		}
-		if only != "" {
-			execution, err := r.Execution(only)
-			if err != nil {
-				return err
+		if len(executions) > 0 {
+			directories = nil
+			for _, id := range executions {
+				execution, err := r.Execution(id)
+				if err != nil {
+					return err
+				}
+				directories = append(directories, checks.ExecutionDirectory(execution))
 			}
-			directory = checks.ExecutionDirectory(execution)
 		}
 		plan, err = r.Plan(run.Plan)
 		return err
@@ -1044,16 +1235,18 @@ func (e *Engine) LiveLog(ctx context.Context, id model.RunID, port string, only 
 	}
 	newest, at := "", time.Time{}
 	for _, target := range plan.Targets {
-		if string(target.ID) != port && target.Target.Name != port && target.Target.Subport != port {
+		if !target.Names(port) {
 			continue
 		}
-		found, err := filepath.Glob(filepath.Join(e.LogDirectory(), run.Name(), directory, buildenv.LogName(target.ID)))
-		if err != nil {
-			return "", err
-		}
-		for _, path := range found {
-			if info, err := os.Stat(path); err == nil && info.ModTime().After(at) {
-				newest, at = path, info.ModTime()
+		for _, directory := range directories {
+			found, err := filepath.Glob(filepath.Join(e.LogDirectory(), run.Name(), directory, buildenv.LogName(target.ID)))
+			if err != nil {
+				return "", err
+			}
+			for _, path := range found {
+				if info, err := os.Stat(path); err == nil && info.ModTime().After(at) {
+					newest, at = path, info.ModTime()
+				}
 			}
 		}
 	}

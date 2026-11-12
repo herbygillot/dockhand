@@ -2,15 +2,22 @@ package sweep
 
 import (
 	"database/sql"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -87,7 +94,7 @@ func TestTheOracleSeesWhatItShould(t *testing.T) {
 		defer db.Close()
 		_, err = db.Exec(`CREATE TEMP TABLE copied AS SELECT * FROM events ORDER BY sequence DESC LIMIT 1`)
 		require.NoError(t, err)
-		_, err = db.Exec(`UPDATE copied SET sequence = sequence + 1000, kind = 'serve.submit'`)
+		_, err = db.Exec(`UPDATE copied SET sequence = sequence + 1000, kind = 'waiting'`)
 		require.NoError(t, err)
 		result, err := db.Exec(`INSERT INTO events SELECT * FROM copied`)
 		require.NoError(t, err)
@@ -142,4 +149,182 @@ func TestCheckpointsAreNamedByTheirPlace(t *testing.T) {
 	left := retried
 	left["refs clone"] = append(slices.Clone(left["refs clone"]), "refs/dockhand/checkpoints/tidy-1 commit:a")
 	require.NotEmpty(t, differences(renumber(clean), renumber(left)), "a ref left under the abandoned number shows")
+}
+
+// The oracle keeps what normalizing erased (#129's fix list, 5 to 7, from
+// the outside read's probes): a time's order among its row's times, a
+// record's name covering the records it points at, a duplicate row, and
+// an event read back as state.
+func TestTheOracleKeepsWhatTheDesignKeeps(t *testing.T) {
+	t.Parallel()
+	// An attempt ending before it starts, on one day.
+	started := world{"table attempts": {`id="att_aaaaaaaaaaaaaaaa" started_at=«t:1794448800000» ended_at=«t:1794452400000»`}}
+	reversed := world{"table attempts": {`id="att_aaaaaaaaaaaaaaaa" started_at=«t:1794452400000» ended_at=«t:1794448800000»`}}
+	require.NotEmpty(t, differences(normalize(started, "/unused"), normalize(reversed, "/unused")), "an attempt ending before it starts differs")
+	// Evidence pointing at the attempt of another run, whose port is curl.
+	runs := []string{`id="run_cccccccccccccccc" port="jq"`, `id="run_dddddddddddddddd" port="curl"`}
+	attempts := []string{`id="att_aaaaaaaaaaaaaaaa" run_id="run_cccccccccccccccc" state="passed"`, `id="att_bbbbbbbbbbbbbbbb" run_id="run_dddddddddddddddd" state="passed"`}
+	jq := world{"table attempts": attempts, "table runs": runs, "table evidence": {`attempt_id="att_aaaaaaaaaaaaaaaa"`}}
+	curl := world{"table attempts": attempts, "table runs": runs, "table evidence": {`attempt_id="att_bbbbbbbbbbbbbbbb"`}}
+	require.NotEmpty(t, differences(normalize(jq, "/unused"), normalize(curl, "/unused")), "evidence pointing at curl rather than jq differs")
+	require.Empty(t, differences(normalize(jq, "/unused"), normalize(jq, "/unused")))
+	// A duplicate row.
+	require.NotEmpty(t, differences(world{"table holds": {`run_id="run:a" port="jq"`}}, world{"table holds": {`run_id="run:a" port="jq"`, `run_id="run:a" port="jq"`}}), "an extra identical row differs")
+	// A newer waiting event, which LatestRunEvent reads as the run's state.
+	waited := []string{`sequence=1 run_id="run:a" kind="waiting" message="old wait"`}
+	require.NotEmpty(t, eventDifferences(waited, append(slices.Clone(waited), `sequence=2 run_id="run:a" kind="waiting" message="wrong current wait"`)), "an added waiting event changes what the run is said to be doing")
+}
+
+// Every event kind a store reader is asked for by kind outside tests,
+// LatestRunEvent, LatestBranchEvent or CountEvents, is one the oracle
+// compares exactly, and no other is (#129's fix list, 7): the list held
+// serve.submit, which serve's count no longer reads, and not the progress
+// and waiting events status, wait and the driver read.
+func TestTheEventsReadAsStateAreListed(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join("..", "..")
+	kinds := map[string]string{}
+	sources, err := filepath.Glob(filepath.Join(root, "model", "*.go"))
+	require.NoError(t, err)
+	for _, path := range sources {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+		require.NoError(t, err)
+		ast.Inspect(file, func(n ast.Node) bool {
+			spec, ok := n.(*ast.ValueSpec)
+			if !ok || len(spec.Values) != len(spec.Names) {
+				return true
+			}
+			for i, name := range spec.Names {
+				if lit, ok := spec.Values[i].(*ast.BasicLit); ok && lit.Kind == token.STRING && strings.HasPrefix(name.Name, "Event") {
+					kinds[name.Name], _ = strconv.Unquote(lit.Value)
+				}
+			}
+			return true
+		})
+	}
+	read := map[string]bool{}
+	require.NoError(t, filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		// The store's own implementations answer the readers; they ask
+		// nothing of them.
+		if err == nil && d.IsDir() && filepath.Dir(path) == filepath.Join(root, "store") {
+			return filepath.SkipDir
+		}
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return err
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+		if err != nil {
+			return err
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || selector.Sel.Name != "LatestRunEvent" && selector.Sel.Name != "LatestBranchEvent" && selector.Sel.Name != "CountEvents" {
+				return true
+			}
+			for _, arg := range call.Args {
+				kind, ok := arg.(*ast.SelectorExpr)
+				if !ok {
+					continue
+				}
+				if value, ok := kinds[kind.Sel.Name]; ok {
+					read[value] = true
+				}
+			}
+			return true
+		})
+		return nil
+	}))
+	require.NotEmpty(t, read, "the listing found the readers")
+	require.ElementsMatch(t, slices.Sorted(maps.Keys(read)), stateEvents)
+}
+
+// A session left open whose process is alive is a finding, in either
+// world; one ended, or the stopped run's, whose process recovery found
+// gone, is a command's own (#129's fix list, 4, from the outside read's
+// probe).
+func TestAnOpenSessionWithItsProcessAliveDiffers(t *testing.T) {
+	t.Parallel()
+	ended := world{"table sessions": {`id="ses:a" process_start="x" ended_at=time(today)`}}
+	open := world{"table sessions": {`id="ses:a" process_start="x" ended_at=null`, `id="ses:b" process_start="x" ended_at=null`}}
+	require.NotEmpty(t, differences(ended, open), "live sessions left open differ")
+	stopped := world{"table sessions": {`id="ses:c" process_start="` + stoppedProcess + `" ended_at=null`}}
+	require.Empty(t, differences(ended, stopped), "the stopped run's open session, its process gone, is its own")
+}
+
+// A run stopped dead leaves its session open, and recovery finds its
+// process gone, as after a kill: it takes what the session held without
+// waiting it out, and the open row is the stopped run's (#129's fix list,
+// 4; the outside read's diagnostic probe, where the default liveness
+// called the test's process alive).
+func TestADeadRunsSessionIsFoundGone(t *testing.T) {
+	t.Parallel()
+	sc := scenario{arrange: func(t *testing.T, w cmdtest.World) *forgetest.GitHub {
+		g := submitted(t, w)
+		g.PRs[34901].State = forge.PullRequestMerged
+		dockhand(t, "status", "--refresh", "-b", "jq-update")
+		return g
+	}, steps: [][]string{{"clean", "--yes"}}}
+	clean := runOnce(t, sc, nil)
+	r := runOnce(t, sc, &fault{address: "store.update@coord.(*Session).End#1", mode: dead})
+	require.True(t, r.reached)
+	require.Empty(t, r.recovered, "recovery ends")
+	var open []string
+	for _, row := range r.world["table sessions"] {
+		if strings.Contains(row, "ended_at=null") {
+			open = append(open, row)
+		}
+	}
+	require.NotEmpty(t, open, "the stopped run's session stays open")
+	for _, row := range open {
+		require.Contains(t, row, `process_start="`+stoppedProcess+`"`, "and is the stopped run's, its process gone")
+	}
+	for _, difference := range differences(clean.world, r.world) {
+		require.NotContains(t, difference, "table sessions", "no session open with its process alive")
+	}
+}
+
+// A write that didn't land and said its outcome was unknown is resolved by
+// the run that met it only where the run made it again, at the same call
+// site, in its steps: a later write elsewhere, or recovery's, isn't it
+// (#129's fix list, 3).
+func TestAnUnknownOutcomeIsResolvedByTheWriteMadeAgain(t *testing.T) {
+	t.Parallel()
+	write := func(site string, occurrence int) effect {
+		return effect{Boundary: "store.update", Site: site, Occurrence: occurrence}
+	}
+	r := run{effects: []effect{write("engine.a", 1), write("engine.b", 1), write("engine.a", 2), write("engine.c", 1)}, steps: 3}
+	require.True(t, madeAgain(r, "store.update@engine.a#1"), "made again in the steps")
+	require.False(t, madeAgain(r, "store.update@engine.b#1"), "never again")
+	r.steps = 2
+	require.False(t, madeAgain(r, "store.update@engine.a#1"), "again only in recovery")
+	require.False(t, madeAgain(r, "store.update@engine.z#1"), "not an effect of the run")
+}
+
+// The world holds every repository the stand-in knows and every pull
+// request, another person's fork and an adopted pull request among them:
+// a ref made in one, or a title overwritten, differs (#129's fix list, 1,
+// the outside read's probes).
+func TestTheWorldHoldsOtherPeoplesRepositoriesAndPullRequests(t *testing.T) {
+	t.Parallel()
+	w, g := updated(t)
+	other := filepath.Join(filepath.Dir(w.Upstream), "other.git")
+	testsupport.Git(t, filepath.Dir(w.Upstream), "clone", "-q", "--bare", w.Upstream, other)
+	g.Repos = map[string]string{"grace/macports-ports": other}
+	g.Theirs = map[int]forge.PullRequest{99: {Ref: forge.PullRequestRef{Repository: forgetest.UpstreamRepository, Number: 99}, HeadRepository: "grace/macports-ports", HeadBranch: "jq", BaseBranch: "master", State: forge.PullRequestOpen, Title: "the person's title"}}
+	before := snapshot(t, w, g)
+	testsupport.Git(t, other, "update-ref", "refs/heads/made-there", "HEAD")
+	require.NotEmpty(t, differences(before, snapshot(t, w, g)), "a ref made in another person's fork")
+	testsupport.Git(t, other, "update-ref", "-d", "refs/heads/made-there")
+	require.Empty(t, differences(before, snapshot(t, w, g)))
+	pr := g.Theirs[99]
+	pr.Title = "overwritten"
+	g.Theirs[99] = pr
+	require.NotEmpty(t, differences(before, snapshot(t, w, g)), "an adopted pull request's text")
 }

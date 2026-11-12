@@ -88,7 +88,18 @@ type Options struct {
 	// carries its sessions, fresh, and the processes behind them work on
 	// the original (field testing's .backup copy, 2026-10-29).
 	Heartbeat time.Duration
+	// Quiet lists the other dockhand processes on this Mac, which the
+	// engine gives as procid.Named("dockhand"): a migration to the
+	// publication record's schema waits until there are none
+	// (store.QuietUnderMigrationError). Nil checks nothing, as a test's
+	// store does.
+	Quiet func() ([]int, error)
 }
+
+// quietSchema is the first schema whose migration waits for quiet: the
+// publication record's, which a paused older submit could push and write
+// to GitHub past with no record.
+const quietSchema = 61
 
 // Store is a dockhand v3 database.
 type Store struct {
@@ -145,9 +156,37 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 		// What's wrong, what dockhand did with it, which is nothing, and
 		// what a person can do, rather than SQLite's words alone (the rc6
 		// full stage, D-T5): never to delete it, which nothing restores.
-		return nil, fmt.Errorf("%w: %s can't be read as dockhand's database (%v). Dockhand left the file unchanged. Put back a copy dockhand backup made (dockhand usage recovery says how), or move this file aside to start a new database. A new database has no record of this one's branches, checks, or kept archives", store.ErrUnavailable, path, err)
+		return nil, fmt.Errorf("%w: %s can't be read as dockhand's database (%v). Dockhand left the file unchanged. Put back a copy dockhand backup made%s (dockhand usage recovery says how), or move this file aside to start a new database. A new database has no record of this one's branches, checks, or kept archives", store.ErrUnavailable, path, err, keptCandidate(path))
 	}
 	return s, err
+}
+
+// keptCandidate names the newest copy a migration kept beside the
+// database at path, as a candidate to put back, with its date and what
+// putting it back loses; empty where there is none. Only a completed
+// copy, dockhand.db.schema-<N>, is named, never one still being made; it
+// isn't opened to find out more, since opening one migrates it (#214).
+func keptCandidate(path string) string {
+	copies, _ := filepath.Glob(path + ".schema-*")
+	var newest string
+	var at time.Time
+	for _, copy := range copies {
+		n := strings.TrimPrefix(copy, path+".schema-")
+		if _, err := strconv.Atoi(n); err != nil {
+			continue
+		}
+		info, err := os.Lstat(copy)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		if newest == "" || info.ModTime().After(at) {
+			newest, at = copy, info.ModTime()
+		}
+	}
+	if newest == "" {
+		return ""
+	}
+	return fmt.Sprintf(", or the copy kept before a migration, %s, from %s, which loses what was recorded since", newest, at.Local().Format("2006-01-02 15:04"))
 }
 
 // corrupt says whether SQLite found the file damaged, or not a database:
@@ -487,10 +526,16 @@ func (s *Store) keepBeforeMigrating(ctx context.Context) error {
 		return nil
 	}
 	copy := fmt.Sprintf("%s.schema-%d", s.path, version)
-	if _, err := os.Stat(copy); errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Lstat(copy); errors.Is(err, os.ErrNotExist) {
 		if err := s.keepCopy(ctx, copy); err != nil {
 			return fmt.Errorf("%w: keeping a copy of %s before migrating it from schema %d to %d: %w; nothing was migrated", store.ErrUnavailable, s.path, version, schemaVersion, err)
 		}
+	}
+	// Whatever holds the copy's name, made now or found there, is the copy
+	// the migration goes back to, so it has to be one: an empty file, a
+	// directory, or a link there stood as the copy (#214).
+	if err := usableCopy(ctx, copy, version); err != nil {
+		return fmt.Errorf("%w: %s, the copy of %s kept before migrating it from schema %d to %d, isn't usable: %v. Dockhand left it as it is, and nothing was migrated; move it aside and run the command again", store.ErrUnavailable, copy, s.path, version, schemaVersion, err)
 	}
 	s.migration = &Migration{From: version, To: schemaVersion, Copy: copy, Release: s.release}
 	earlier, _ := filepath.Glob(s.path + ".schema-*")
@@ -502,6 +547,62 @@ func (s *Store) keepBeforeMigrating(ctx context.Context) error {
 		if info, err := os.Stat(path); err == nil && path != copy && time.Since(info.ModTime()) > kept {
 			_ = os.Remove(path)
 		}
+	}
+	return nil
+}
+
+// usableCopy checks that copy is a migration's copy of a database at
+// version: a regular file, not a link or a directory, that reads as a
+// dockhand database at that schema and passes SQLite's integrity check.
+// It is opened read-only and immutable, so nothing of it changes.
+func usableCopy(ctx context.Context, copy string, version int) error {
+	info, err := os.Lstat(copy)
+	switch {
+	case err != nil:
+		return err
+	case info.Mode()&os.ModeSymlink != 0:
+		return errors.New("it is a link, not a file")
+	case info.IsDir():
+		return errors.New("it is a directory, not a file")
+	case !info.Mode().IsRegular():
+		return errors.New("it is not a regular file")
+	}
+	params := url.Values{"mode": {"ro"}, "immutable": {"1"}}
+	db, err := sql.Open("sqlite", (&url.URL{Scheme: "file", Path: copy, RawQuery: params.Encode()}).String())
+	if err != nil {
+		return storageError(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	kept, app, err := schemaOf(ctx, db)
+	switch {
+	case err != nil:
+		return err
+	case app != applicationID:
+		return errors.New("it is not a dockhand database")
+	case kept != version:
+		return fmt.Errorf("it has schema %d, not %d", kept, version)
+	}
+	rows, err := db.QueryContext(ctx, "PRAGMA integrity_check")
+	if err != nil {
+		return storageError(err)
+	}
+	defer rows.Close()
+	var problems []string
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			return storageError(err)
+		}
+		if line != "ok" {
+			problems = append(problems, line)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return storageError(err)
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("SQLite's integrity check found it damaged (%s)", problems[0])
 	}
 	return nil
 }
@@ -580,6 +681,19 @@ func (s *Store) prepareSchema(ctx context.Context) error {
 		case app == applicationID && version == schemaVersion:
 			return nil
 		case app == applicationID && version > 0 && version < schemaVersion:
+			// Read once, under the writer lock this transaction holds
+			// through the commit, so a dockhand that starts after the
+			// reading can't open the database until the migration has
+			// committed, and then refuses its newer schema.
+			if version < quietSchema && schemaVersion >= quietSchema && s.options.Quiet != nil {
+				pids, err := s.options.Quiet()
+				switch {
+				case err != nil:
+					return &store.QuietUnderMigrationError{From: version, To: schemaVersion, Unreadable: err}
+				case len(pids) > 0:
+					return &store.QuietUnderMigrationError{From: version, To: schemaVersion, PIDs: pids}
+				}
+			}
 			if !s.options.MigrateUnderLive {
 				if err := t.refuseUnderLive(ctx, s, version, s.options.LiveWithin); err != nil {
 					return err

@@ -76,8 +76,8 @@ func pause(t *testing.T, ctx context.Context, run *Foreground, name string) {
 // The Tart behavior dockhand depends on, against the installed Tart, so an
 // upgrade that changes it fails here: the listing and description fields
 // read, "not running" from a stop, a clone refused onto a listed name, and
-// delete's report that a running VM "does not exist" while leaving it
-// (openai/tart#1345). Run with DOCKHAND_TEST_TART_IMAGE naming a stopped,
+// delete's refusal of a running VM, said as one, where before 2.40.0 it
+// said the VM didn't exist and left it (openai/tart#1345). Run with DOCKHAND_TEST_TART_IMAGE naming a stopped,
 // raw-disk image, e.g. dockhand-base-monterey.
 func TestLiveTartContracts(t *testing.T) {
 	t.Parallel()
@@ -106,8 +106,8 @@ func TestLiveTartContracts(t *testing.T) {
 	require.NoError(t, err)
 	waitRunning(t, ctx, m, run, name)
 	_, err = m.run(ctx, nil, "delete", name)
-	require.ErrorContains(t, err, "does not exist", "Tart still reports a running VM as missing to delete (openai/tart#1345); if this fails, Tart changed")
-	require.False(t, errors.Is(err, tart.ErrVMMissing))
+	require.Error(t, err, "Tart refuses to delete a running VM")
+	require.False(t, errors.Is(err, tart.ErrVMMissing), "and says so, not that it doesn't exist (openai/tart#1345); if this fails, Tart changed")
 	exists, running, err = m.LocalVM(ctx, name)
 	require.NoError(t, err)
 	require.True(t, exists && running, "and leaves it running")
@@ -135,8 +135,8 @@ func TestLiveTartListsWhileAnASIFVMRuns(t *testing.T) {
 	defer cancel()
 	version, err := m.Version(ctx)
 	require.NoError(t, err)
-	if !tart.HandlesASIF(version) {
-		t.Skipf("Tart %s is older than the one that lists its VMs while an ASIF VM runs", version)
+	if !tart.NewEnough(version) {
+		t.Skipf("Tart %s is older than dockhand takes", version)
 	}
 	name := scratchName(t)
 	var run *Foreground

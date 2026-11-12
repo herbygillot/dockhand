@@ -57,10 +57,14 @@ type ReviewReport struct {
 	Commits  []git.HistoryCommit
 	Ports    []string
 	Findings []commitrules.Finding
-	// Previous is the last review of the pull request, if any, and
-	// Resolved its findings that no longer hold.
+	// Previous is the last review of the pull request, if any, Resolved
+	// its findings that no longer hold, and Carried those whose rules this
+	// review didn't run, which it neither found nor resolved: a text-only
+	// review's (textOnlyUnrun). They are recorded with its findings, so the
+	// next comparison still has them.
 	Previous *model.Review
 	Resolved []model.ReviewFinding
+	Carried  []model.ReviewFinding
 	// Upstream is what upstream's change means for each port the pull
 	// request changes, against its base, assessed as a branch's revision
 	// is, its patches included; UpstreamUnread why it couldn't be.
@@ -256,7 +260,7 @@ func (e *Engine) OpenReview(ctx context.Context, number int) (ReviewTarget, erro
 	// A changed directory's other ports are said too, as the base's index
 	// names them: devel/libuv's libuv-devel. The base is master's, merged.
 	baseSource := model.Source{Commit: model.ObjectID(target.Base), Base: model.ObjectID(target.Base), Tree: model.ObjectID(target.trees[target.Base])}
-	defined := e.portsDefined(ctx, baseSource, macports.ScopeOf(target.changed).Ports)
+	defined := e.portsDefined(workspace.MacPorts(ctx), baseSource, macports.ScopeOf(target.changed).Ports)
 	for _, directory := range macports.ScopeOf(target.changed).Ports {
 		for _, name := range AlsoDefined(directory, defined) {
 			if !slices.Contains(target.Ports, name) {
@@ -280,15 +284,12 @@ func (e *Engine) OpenReview(ctx context.Context, number int) (ReviewTarget, erro
 			target.Since = &consents[i]
 		}
 	}
-	since := target.trees[target.Base]
 	if target.Since != nil && !target.Allowed {
-		if trees, err := e.Repo.CommitTrees(ctx, []string{string(target.Since.Head)}); err == nil {
-			since = trees[string(target.Since.Head)]
-		} else {
+		if _, err := e.Repo.CommitTrees(ctx, []string{string(target.Since.Head)}); err != nil {
 			target.Since = nil
 		}
 	}
-	diff, err := e.Repo.DiffTrees(ctx, since, target.trees[target.Head], code(target.changed)...)
+	diff, err := e.ReviewDiff(ctx, target)
 	if err != nil {
 		return target, err
 	}
@@ -331,18 +332,40 @@ func changedFiles(diff []byte) []ChangedFile {
 // ReviewDiff is the diff the question offers: of the target's Portfiles
 // and PortGroups, since the head the person allowed last where there is
 // one, else since its base.
+//
+// Its paths are those changed between the two trees it compares: since an
+// allowed head, a PortGroup that head added and this one removes is code
+// the person hasn't seen go, though the base and the head agree on it
+// (Codex's review of #162, finding 3).
 func (e *Engine) ReviewDiff(ctx context.Context, target ReviewTarget) ([]byte, error) {
-	since := target.trees[target.Base]
+	since, changed := target.trees[target.Base], target.changed
 	if target.Since != nil {
 		if trees, err := e.Repo.CommitTrees(ctx, []string{string(target.Since.Head)}); err == nil {
 			since = trees[string(target.Since.Head)]
+			if changed, err = e.Repo.ChangedPaths(ctx, since, target.trees[target.Head]); err != nil {
+				return nil, err
+			}
 		}
 	}
-	return e.Repo.DiffTrees(ctx, since, target.trees[target.Head], code(target.changed)...)
+	// No path, no diff: an empty selection would diff every file, a
+	// README's edit offered as code (Codex's confirmation of #162's fixes).
+	paths := code(changed)
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	return e.Repo.DiffTrees(ctx, since, target.trees[target.Head], paths...)
 }
 
 // textOnlyLeftOut are what a text-only review doesn't run, in its words.
 var textOnlyLeftOut = []string{"restated values", "path-style dependencies", "the upstream comparison"}
+
+// textOnlyUnrun are the rules a text-only review doesn't run, by their
+// findings' codes: restated values and path-style dependencies evaluate,
+// and a commit's subject isn't judged by its port where only the head
+// defines it (commitsDefining's Unread). An earlier finding of one of them
+// is carried forward, never resolved, since its rule didn't run (Codex's
+// review of #162, finding 2).
+var textOnlyUnrun = []string{"restated", "path-style", "subject-port"}
 
 // Review reviews a pull request OpenReview fetched: applies the commit
 // rules to its commits and Portfiles, compares the findings with the last
@@ -362,12 +385,20 @@ func (e *Engine) Review(ctx context.Context, target ReviewTarget, evaluate bool)
 	baseSource := model.Source{Commit: model.ObjectID(report.Base), Base: model.ObjectID(report.Base), Tree: model.ObjectID(trees[report.Base])}
 	headSource := model.Source{Commit: model.ObjectID(report.Head), Base: model.ObjectID(report.Base), Tree: model.ObjectID(trees[report.Head])}
 	base, head := model.ObjectID(trees[report.Base]), model.ObjectID(trees[report.Head])
+	// The pull request's Portfiles as their owner's: the person's own; or
+	// another's, which the door says once where the review evaluates, and
+	// refuses where it doesn't, so a text-only review evaluates nothing of
+	// the head; the base it reads is MacPorts' tree (#162).
+	switch {
+	case target.Own:
+		ctx = workspace.Yours(ctx, fmt.Sprintf("#%d", number))
+	case evaluate:
+		ctx = workspace.WithOwner(ctx, workspace.Owner{Whose: target.Whose(), Of: fmt.Sprintf("#%d", number)})
+	default:
+		ctx = workspace.WithOwner(ctx, workspace.Owner{Whose: target.Whose(), Of: fmt.Sprintf("#%d", number),
+			Refused: (&NotAllowedError{Number: number, Whose: target.Whose(), Head: model.ObjectID(report.Head)}).refusal()})
+	}
 	if evaluate {
-		// Another person's Portfiles go through the door, which says
-		// whose once.
-		if !target.Own {
-			ctx = workspace.WithOwner(ctx, workspace.Owner{Whose: target.Whose(), Of: fmt.Sprintf("#%d", number)})
-		}
 		report.Findings = commitrules.CheckCommits(e.ruleCommits(ctx, baseSource, headSource, report.Commits))
 		portfiles, err := e.portfileFindings(ctx, e.Repo, trees[report.Base], trees[report.Head], changed)
 		if err != nil {
@@ -394,7 +425,7 @@ func (e *Engine) Review(ctx context.Context, target ReviewTarget, evaluate bool)
 	}
 	scope := macports.ScopeOf(changed)
 	if len(scope.Ports) > 0 {
-		dependents, err := e.dependents(ctx, model.Source{Commit: model.ObjectID(report.Base), Base: model.ObjectID(report.Base), Tree: base}, scope.Ports)
+		dependents, err := e.dependents(workspace.MacPorts(ctx), model.Source{Commit: model.ObjectID(report.Base), Base: model.ObjectID(report.Base), Tree: base}, scope.Ports)
 		if err != nil {
 			report.DependentsUnread = err.Error()
 		}
@@ -418,7 +449,11 @@ func (e *Engine) Review(ctx context.Context, target ReviewTarget, evaluate bool)
 	}
 	now := reviewFindings(report.Findings)
 	for _, finding := range report.Previous.Findings {
-		if !slices.ContainsFunc(now, func(f model.ReviewFinding) bool { return sameFinding(f, finding) }) {
+		switch {
+		case slices.ContainsFunc(now, func(f model.ReviewFinding) bool { return sameFinding(f, finding) }):
+		case !report.Evaluated && slices.Contains(textOnlyUnrun, finding.Code):
+			report.Carried = append(report.Carried, finding)
+		default:
 			report.Resolved = append(report.Resolved, finding)
 		}
 	}
@@ -473,6 +508,12 @@ func (r ReviewReport) Markdown() string {
 		fmt.Fprintf(&b, "\nResolved since the review at %s:\n", r.Previous.Head.Short())
 		for _, finding := range r.Resolved {
 			fmt.Fprintf(&b, "- ~~%s~~ [%s]\n", finding.Message, finding.Code)
+		}
+	}
+	if len(r.Carried) > 0 {
+		fmt.Fprintf(&b, "\nFound by the review at %s, by rules this review didn't run:\n", r.Previous.Head.Short())
+		for _, finding := range r.Carried {
+			fmt.Fprintf(&b, "- %s [%s]\n", finding.Message, finding.Code)
 		}
 	}
 	switch lines := r.UpstreamWords(); {
@@ -564,7 +605,7 @@ func (r ReviewReport) Comments() []forge.ReviewComment {
 func (e *Engine) RecordReview(ctx context.Context, report ReviewReport, posted string) error {
 	return e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		if err := tx.AddReview(model.Review{Repository: report.Ref.Repository, Number: report.Ref.Number, Head: model.ObjectID(report.Head),
-			Findings: reviewFindings(report.Findings), Posted: posted, At: e.now()}); err != nil {
+			Findings: append(reviewFindings(report.Findings), report.Carried...), Posted: posted, At: e.now()}); err != nil {
 			return err
 		}
 		message := fmt.Sprintf("reviewed #%d at %s: %s", report.Ref.Number, model.ObjectID(report.Head).Short(), prose.Plural(len(report.Findings), "finding"))

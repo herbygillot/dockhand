@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/spf13/cobra"
@@ -422,4 +423,45 @@ func held(port, version string) error {
 		problems = append(problems, referenceProblems(root, text, false)...)
 	}
 	require.Equal(t, []string{"dockhand update has no --submit"}, problems)
+}
+
+// No command's help carries a NUL byte: --new's flag line showed the one
+// branchflags used for --new alone, in the bytes help writes, which a
+// pager or a completion script reads; it reads --new[=name] (#215).
+func TestNoHelpCarriesANulByte(t *testing.T) {
+	t.Parallel()
+	root := rootForReference(t)
+	var walk func(*cobra.Command)
+	walk = func(cmd *cobra.Command) {
+		var out strings.Builder
+		cmd.SetOut(&out)
+		require.NoError(t, cmd.Help(), cmd.CommandPath())
+		require.NotContains(t, out.String(), "\x00", cmd.CommandPath())
+		if flag := cmd.Flags().Lookup("new"); flag != nil && flag.NoOptDefVal == branchflags.NewNamed {
+			require.Regexp(t, `\n +--new\[=name\] +start a new branch`, out.String(), cmd.CommandPath())
+		}
+		for _, child := range cmd.Commands() {
+			walk(child)
+		}
+	}
+	walk(root)
+}
+
+// review's help names only flags review has: it said --yes never answers
+// whether to evaluate another person's Portfiles, and review has no --yes
+// (#215).
+func TestReviewsHelpNamesOnlyItsFlags(t *testing.T) {
+	t.Parallel()
+	root := rootForReference(t)
+	review, _, err := root.Find([]string{"review"})
+	require.NoError(t, err)
+	// A flag after another command's name, as "adopt --pr", is that
+	// command's.
+	for _, named := range regexp.MustCompile(`(?:(\w+) )?--([a-z][a-z-]*)`).FindAllStringSubmatch(review.Long, -1) {
+		owner := review
+		if other, _, err := root.Find([]string{named[1]}); named[1] != "" && err == nil && other != root {
+			owner = other
+		}
+		require.NotNil(t, owner.Flags().Lookup(named[2]), "review's help names --%s", named[2])
+	}
 }

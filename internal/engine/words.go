@@ -87,6 +87,11 @@ func targetWords(plan model.Plan, result Cell, reading string, accepted Accepted
 		}
 		words = "✗ blocked by a failed changed dependency"
 	case model.OutcomeNotRun:
+		// An earlier check's result turned down says why, as submit's hold
+		// does (RefusedWords).
+		if result.Refused != nil {
+			return "! not run: " + RefusedWords(*result.Refused)
+		}
 		return "! not run"
 	default:
 		return "! " + string(result.Outcome)

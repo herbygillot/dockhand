@@ -1,7 +1,6 @@
 package checks
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -208,117 +207,6 @@ func (a *ActiveRunError) Error() string {
 	return fmt.Sprintf("%s is %s for %s, and a branch has one check at a time; dockhand cancel %s stops it, keeping what it finished", name, a.Run.State, Describe(a.Checking), name)
 }
 
-// RequestCancel records that a run should stop. A queued run is canceled
-// at once; a running one is stopped by whoever holds it, or by this
-// session when no one does.
-func (c *Service) RequestCancel(ctx context.Context, session *coord.Session, id model.RunID) (model.Run, error) {
-	var run model.Run
-	err := c.Store.Update(ctx, c.Repository, func(tx store.Tx) error {
-		var err error
-		if run, err = tx.Run(id); err != nil {
-			return err
-		}
-		if run.State.Terminal() || run.CancelRequested != nil {
-			return nil
-		}
-		now := c.Now()
-		run.CancelRequested = &now
-		if run.State == model.RunQueued {
-			run.State, run.FinishedAt, run.Detail = model.RunCanceled, &now, "canceled before it started"
-		}
-		if err := tx.UpdateRun(run); err != nil {
-			return err
-		}
-		_, err = tx.AppendEvent(model.Event{At: now, Session: session.ID(), Branch: run.Branch, Run: run.ID, Kind: model.EventRunCancel, Level: model.LevelInfo, Message: run.Name() + ": cancel requested"})
-		return err
-	})
-	if err != nil || run.State.Terminal() {
-		return run, err
-	}
-	// With no one attending the run, this session applies the cancel.
-	lease, holder, err := session.TakeIfUnattended(ctx, RunResource(id))
-	if err != nil || holder != nil {
-		return run, err
-	}
-	defer session.Release(context.WithoutCancel(ctx), lease)
-	if err := c.stopUnfinished(ctx, id); err != nil {
-		return run, err
-	}
-	return c.finishCanceled(ctx, session, lease, id)
-}
-
-// stopUnfinished asks the provider of each execution of a run still to
-// finish to end the work it left, where it can outlive its driver
-// (buildenv.Stopper): a GitHub check whose driver stopped kept its
-// workflow running, and canceling it said it stopped (#115). The
-// execution a stopped driver interrupted is recorded as an attempt that
-// failed, so each is asked, once for each reference; the provider knows
-// whether its work is done. One that can't be reached leaves the cancel
-// requested, and says so.
-func (c *Service) stopUnfinished(ctx context.Context, id model.RunID) error {
-	var executions []model.GuestExecution
-	var name string
-	if err := c.Store.View(ctx, c.Repository, func(r store.Reader) error {
-		run, err := r.Run(id)
-		if err != nil {
-			return err
-		}
-		name = run.Name()
-		executions, err = r.Executions(id)
-		return err
-	}); err != nil {
-		return err
-	}
-	asked := map[string]bool{}
-	for _, execution := range executions {
-		stopper, ok := c.Providers[execution.Environment.Provider].(buildenv.Stopper)
-		if !ok || execution.ProviderRef == "" || asked[execution.ProviderRef] {
-			continue
-		}
-		asked[execution.ProviderRef] = true
-		if err := stopper.Stop(ctx, execution); err != nil {
-			return refusal.New(refusal.Infrastructure, "%s: cancellation is recorded, but %s could not stop %s: %v; run dockhand cancel %s to try again", name, execution.Environment.Provider, cmp.Or(execution.ProviderRef, "its work"), err, name)
-		}
-	}
-	return nil
-}
-
-func (c *Service) finishCanceled(ctx context.Context, session *coord.Session, lease model.Lease, id model.RunID) (model.Run, error) {
-	var run model.Run
-	err := session.Fenced(ctx, lease, func(tx store.Tx) error {
-		var err error
-		if run, err = tx.Run(id); err != nil || run.State.Terminal() {
-			return err
-		}
-		executions, err := tx.Executions(id)
-		if err != nil {
-			return err
-		}
-		now := c.Now()
-		for _, execution := range executions {
-			if !execution.State.Terminal() {
-				execution.State, execution.FinishedAt, execution.Detail = model.ExecutionCanceled, &now, "canceled"
-				if err := tx.UpdateExecution(execution); err != nil {
-					return err
-				}
-			}
-		}
-		if run.State == model.RunQueued {
-			run.State = model.RunRunning
-			if err := tx.UpdateRun(run); err != nil {
-				return err
-			}
-		}
-		run.State, run.FinishedAt, run.Detail = model.RunCanceled, &now, "canceled; finished results are kept"
-		if err := tx.UpdateRun(run); err != nil {
-			return err
-		}
-		_, err = session.Emit(tx, model.Event{Branch: run.Branch, Run: run.ID, Kind: model.EventRunState, Level: model.LevelInfo, Message: run.Name() + " canceled"})
-		return err
-	})
-	return run, err
-}
-
 // Drive runs a run to its end under this session's lease on it (Design v3
 // §7, §11): one guest execution per environment, each target's result
 // checkpointed as it finishes, infrastructure failures tried again up to
@@ -369,6 +257,9 @@ type driver struct {
 	// canceled records that a cancel request, not the driver stopping,
 	// ended the run.
 	canceled atomic.Bool
+	// stop ends the driving, as a cancel request does: a launch that finds
+	// the cancel recorded under its lock calls it (launch).
+	stop context.CancelFunc
 	// estimates are the environments' install estimates being said
 	// (sayEstimate), which the run waits for before it finishes.
 	estimates sync.WaitGroup
@@ -393,7 +284,7 @@ func (d *driver) fenced(ctx context.Context, fn func(store.Tx) error) error {
 // identity, which reuse needs.
 func (d *driver) anotherCanReuse(ctx context.Context, environment model.Environment) bool {
 	for other, identity := range d.c.Identities(ctx, d.plan.Environments) {
-		if other != environment && identity != "" {
+		if other != environment && identity.Value != "" {
 			return true
 		}
 	}
@@ -432,7 +323,19 @@ func (d *driver) drive(ctx context.Context, id model.RunID) (model.Run, error) {
 		return d.run, nil
 	}
 	if d.run.CancelRequested != nil {
-		return c.finishCanceled(ctx, d.session, d.lease, id)
+		return c.settleCancel(ctx, d.session, d.lease, id)
+	}
+	// The run's owner is named once, as it is taken and before its first
+	// read, so every read the driver and its hooks make carries it; a run
+	// of another's Portfiles the person hasn't allowed isn't driven, and a
+	// queued one stays queued, its journal saying why (#162).
+	if c.Hooks != nil {
+		owned, err := c.Hooks.Evaluating(ctx, d.run)
+		if err != nil {
+			d.emit(ctx, model.EventWaiting, d.run.Name()+" isn't driven: "+refusal.WordsOf(err))
+			return d.run, err
+		}
+		ctx = owned
 	}
 	if d.run.State == model.RunQueued {
 		if err := d.fenced(ctx, func(tx store.Tx) error {
@@ -450,6 +353,7 @@ func (d *driver) drive(ctx context.Context, id model.RunID) (model.Run, error) {
 	// A cancel recorded by another command stops this one at its next step.
 	running, stop := context.WithCancel(ctx)
 	defer stop()
+	d.stop = stop
 	go d.watchCancel(running, stop)
 
 	commit, err := c.revisionCommit(ctx, revision)
@@ -509,8 +413,9 @@ func (d *driver) drive(ctx context.Context, id model.RunID) (model.Run, error) {
 		if d.stopped() {
 			return c.run(context.WithoutCancel(ctx), id)
 		}
-		// An interrupt cancels ctx too; the run is still settled.
-		return c.finishCanceled(context.WithoutCancel(ctx), d.session, d.lease, id)
+		// An interrupt cancels ctx too; the run is still settled, by the
+		// one rule every cancel keeps.
+		return c.settleCancel(context.WithoutCancel(ctx), d.session, d.lease, id)
 	}
 	// Beside the build, what upstream's change means for each port it
 	// changes is collected where it isn't recorded, for the submission
@@ -625,10 +530,19 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		}
 		// Before the first attempt, the targets that would build as an
 		// earlier build did reuse its result (decision 28). When every one
-		// does, nothing is built.
-		targets, paths, err := d.earlier(ctx, environment, remaining)
-		if err != nil {
-			return err
+		// does, nothing is built. Earlier builds are loaded only where
+		// reuse can be chosen: before the first attempt of a check that
+		// isn't fresh. Elsewhere the targets come without their history,
+		// which nothing would read (#189).
+		var targets []reuse.Target
+		var paths []string
+		if attempt == 0 && !d.plan.Fresh {
+			var err error
+			if targets, paths, err = d.earlier(ctx, environment, remaining); err != nil {
+				return err
+			}
+		} else {
+			targets = withoutHistory(remaining)
 		}
 		if attempt == 0 && !d.plan.Fresh {
 			d.sayNotReusable(ctx, environment, targets)
@@ -928,10 +842,15 @@ func (d *driver) matrix(ctx context.Context, provider buildenv.Provider, environ
 		failpoint.Hit("check.running")
 		first := job.Matrix[0]
 		job.Run, job.Execution, job.Revision, job.Plan, job.Environment, job.Targets, job.Commit = d.run, first.Execution, revision, d.plan, first.Environment, first.Targets, commit
+		launched, err := d.launched(ctx, provider.Name())
+		if err != nil {
+			return err
+		}
+		job.Launched = launched
 		job.Directory = filepath.Join(c.Logs, d.run.Name(), fmt.Sprintf("%s-%d", provider.Name(), attempt))
 		run := &matrixBuild{build: cells[0].build, name: provider.Name(), cells: cells}
 		stopWatching := watchStalls(ctx, cells[0].build, job.Directory)
-		err := provider.Execute(ctx, job, run)
+		err = provider.Execute(ctx, job, run)
 		stopWatching()
 		_ = os.Remove(job.Directory)
 		var unrun *buildenv.Unrun
@@ -1014,6 +933,22 @@ func (m *matrixBuild) Refer(ref string) error {
 		}
 	}
 	return nil
+}
+
+// launched are the notes the run's attempts on a provider saved before
+// they started work, oldest first (buildenv.Job.Launched).
+func (d *driver) launched(ctx context.Context, provider string) ([]string, error) {
+	var notes []string
+	err := d.c.Store.View(ctx, d.c.Repository, func(r store.Reader) error {
+		executions, err := r.Executions(d.run.ID)
+		for _, execution := range executions {
+			if execution.Environment.Provider == provider && execution.Launch != "" {
+				notes = append(notes, execution.Launch)
+			}
+		}
+		return err
+	})
+	return notes, err
 }
 
 // unreadIdentity records an attempt that ended before it began, since what
@@ -1370,7 +1305,7 @@ func (b *build) judgeSource(result model.TargetResult) model.TargetResult {
 	}
 	fetched, said := b.fetched[result.Target]
 	switch {
-	case source.Moved(fetched):
+	case source.AgainstFetched(fetched) == model.SourceMoved:
 		result.Outcome, result.Phase, result.Detail = model.OutcomeFailed, model.PhaseFetch, movedWords(source, fetched)
 	case !said:
 		b.Progress(fmt.Sprintf("%s: its build didn't say which commit of %s it fetched, so no later check can reuse its result", result.Target, RefWords(source.Ref)))

@@ -17,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portcreate"
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/projectregistry"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -174,6 +175,11 @@ type Created struct {
 // and then fills in the checksums as dockhand checksums does. Nothing is
 // committed.
 func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, error) {
+	// A new port's branch evaluates as its owner's (#162).
+	ctx, err := e.evaluating(ctx, request.Branch)
+	if err != nil {
+		return Created{}, err
+	}
 	worktree, err := e.worktree(ctx, request.Branch)
 	if err != nil {
 		return Created{}, err
@@ -406,6 +412,8 @@ func (e *Engine) moveCreated(ctx context.Context, worktree *git.Repository, bran
 // the index couldn't say whether a subport has the name, unchecked says
 // why, and a directory named for it is still found.
 func (e *Engine) NameTaken(ctx context.Context, name string) (directory string, base model.ObjectID, unchecked string, err error) {
+	// Master's index: MacPorts' tree (#162).
+	ctx = workspace.MacPorts(ctx)
 	if base, err = e.fetchMaster(ctx); err != nil {
 		return "", "", "", err
 	}
@@ -656,6 +664,9 @@ type PlannedCreate struct {
 // branch started, nothing written, and no checksums fetched (create
 // --plan, Then's item 14).
 func (e *Engine) PlanCreate(ctx context.Context, request CreateRequest) (PlannedCreate, error) {
+	// The plan reads the checkout's own tree with dockhand's new Portfile
+	// in it: the person's own (#162).
+	ctx = workspace.Yours(ctx, "a new port")
 	observed, err := observe(request.Project)
 	if err != nil {
 		return PlannedCreate{}, err

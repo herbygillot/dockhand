@@ -462,7 +462,7 @@ func TestIndexGenerationWidensASparseWorkspace(t *testing.T) {
 	f.put("devel/other/Portfile", "PortSystem 1.0\nname other\nversion 1\ncategories devel\n")
 	commit, tree := f.commit()
 	source := model.Source{Commit: model.ObjectID(commit), Tree: model.ObjectID(tree)}
-	ws, err := workspace.Open(t.Context(), f.repo, source)
+	ws, err := workspace.Open(workspace.MacPorts(t.Context()), f.repo, source)
 	require.NoError(t, err)
 	defer ws.Close()
 	require.NoError(t, ws.EnsurePort(t.Context(), model.Target{Name: "working", Portfile: "devel/working/Portfile"}))

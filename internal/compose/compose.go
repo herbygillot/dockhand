@@ -20,6 +20,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv/buildcmd"
 	"github.com/herbygillot/dockhand/internal/buildenv/ghactions"
 	"github.com/herbygillot/dockhand/internal/buildenv/local"
+	"github.com/herbygillot/dockhand/internal/buildenv/starter"
 	"github.com/herbygillot/dockhand/internal/buildenv/tart"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/credential"
@@ -228,6 +229,13 @@ type Dependencies struct {
 	// (engine.Options), unset but in its tests (#129).
 	GitHook   func(ctx context.Context, args []string, run func() error) error
 	WrapStore func(store.Store) store.Store
+	// Process and Liveness are the sweep's seam on sessions
+	// (engine.Options), unset but in its tests (#129).
+	Process  func() (engine.SessionProcess, error)
+	Liveness engine.Liveness
+	// OtherDockhands stands in for this Mac's other dockhand processes,
+	// which a migration waits on (engine.Options.OtherDockhands).
+	OtherDockhands func() ([]int, error)
 }
 
 // LookupNamed is Lookup with the programs Settings resolved as named ahead
@@ -370,7 +378,11 @@ func Settings(ctx context.Context, options Options, dependencies Dependencies) (
 		Database:  database,
 		GitHook:   dependencies.GitHook,
 		WrapStore: dependencies.WrapStore,
-		Worktrees: file.Worktrees,
+		Process:   dependencies.Process,
+		Liveness:  dependencies.Liveness,
+		// A test's world counts its own dockhands, not this Mac's.
+		OtherDockhands: dependencies.OtherDockhands,
+		Worktrees:      file.Worktrees,
 		// holds.majors = "allow" lets bump and serve move a major version.
 		AllowMajors: !file.Holds.HoldMajors(),
 		AllowHolds:  file.Holds.Allow,
@@ -436,8 +448,16 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 		e.Builds.Profiles[name] = engine.Profile{Provider: profile.Provider, Releases: releases, Rule: rule}
 	}
 	e.Providers = map[string]buildenv.Provider{}
+	// A script's shell and a local check's guest are started through
+	// dockhand itself as their starter (starter.Self): this executable, or
+	// a test binary standing in for it.
+	self, selfErr := starter.Self()
+	if selfErr != nil {
+		e.Close()
+		return Assembly{}, fmt.Errorf("finding dockhand's own executable, which starts local and script builds: %w", selfErr)
+	}
 	if command := file.Providers.Command; command != nil {
-		e.Providers[buildenv.Command] = &buildcmd.Provider{Run: command.Run, Label: command.Name, Repo: e.Repo, Env: options.Env}
+		e.Providers[buildenv.Command] = &buildcmd.Provider{Run: command.Run, Label: command.Name, Repo: e.Repo, Env: options.Env, Starter: self}
 	}
 	// One GitHub runtime, which the engine's forge, discovery, and project
 	// inspection share with Actions (CX-11).
@@ -488,7 +508,7 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	if local.Supported() {
 		settings := file.Providers.Local
 		e.Providers[buildenv.Local] = &local.Local{Repo: e.Repo, Index: e.PortIndex, Prefix: settings.Prefix, Keep: settings.Keep, Clean: settings.Clean,
-			TestTimeout: settings.Timeout(), BuildTimeout: settings.BuildBound(), Env: options.Env}
+			TestTimeout: settings.Timeout(), BuildTimeout: settings.BuildBound(), Env: options.Env, Starter: self}
 		e.LocalServe = settings.Serve
 	}
 	if dependencies.Leftovers != nil {

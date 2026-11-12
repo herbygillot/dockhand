@@ -226,16 +226,15 @@ func (e *Engine) cleanup(ctx context.Context, session *coord.Session, after time
 	}
 	// The journal keeps what happened within after, as the index cache
 	// does, and the sessions that ended or went quiet before it go with
-	// their events; one a lease names stays (design v3 §11). It keeps
-	// today's whatever after says, since serve.submit_limit counts the
-	// pull requests opened since midnight from them (servedToday): an
-	// after shorter than the day so far pruned them, and serve opened
-	// more than its limit (the limits sweep, 2026-10-01).
+	// their events; one a lease names stays (design v3 §11). serve's count
+	// reads its own rows, not the journal's serve.submit events, so the
+	// day's events aren't kept for it; its openings older than two days
+	// go, and a row tried or holding a place stays (#191).
 	before := e.now().Add(-after)
-	if today := dayStart(e.now()); before.After(today) {
-		before = today
-	}
 	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		if err := tx.PruneServeOpenings(dayStart(e.now()).Add(-48 * time.Hour)); err != nil {
+			return err
+		}
 		var err error
 		report.Events, report.Sessions, err = tx.PruneJournal(before)
 		if err != nil || report.Events+report.Sessions == 0 {

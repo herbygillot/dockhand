@@ -55,11 +55,13 @@ type fakeMac struct {
 	// slot.
 	beforeStop func()
 	cloneErr   error
-	running    []int // counts Running reports, one per call, the last repeating
-	events     []string
-	guest      *fakeGuest
-	run        *fakeRun
-	// version is Tart's; 2.40.1 when empty.
+	// stopErr and deleteErr are how Tart answers a stop or a delete.
+	stopErr, deleteErr error
+	running            []int // counts Running reports, one per call, the last repeating
+	events             []string
+	guest              *fakeGuest
+	run                *fakeRun
+	// version is Tart's; 2.41.1 when empty.
 	version string
 	// processes are the VMs' processes running, as VirtualMachines says.
 	processes []int
@@ -85,7 +87,7 @@ func (m *fakeMac) Released(_ context.Context, pids []int, _ time.Duration) {
 
 func (m *fakeMac) Version(context.Context) (string, error) {
 	if m.version == "" {
-		return "2.40.1", nil
+		return "2.41.1", nil
 	}
 	return m.version, nil
 }
@@ -130,7 +132,7 @@ func (m *fakeMac) Clone(_ context.Context, image, vm string) error {
 	m.mu.Unlock()
 	return nil
 }
-func (m *fakeMac) Start(vm string) (run, error) {
+func (m *fakeMac) Start(vm string, _ ...*os.File) (run, error) {
 	m.log("start " + vm)
 	m.mu.Lock()
 	m.processes = append(m.processes, 1000+len(m.processes))
@@ -165,9 +167,12 @@ func (r *liveRun) Stop(context.Context, time.Duration) error {
 	})
 	return nil
 }
-func (m *fakeMac) Stop(_ context.Context, vm string) error { m.log("stop " + vm); return nil }
+func (m *fakeMac) Stop(_ context.Context, vm string) error { m.log("stop " + vm); return m.stopErr }
 func (m *fakeMac) Delete(_ context.Context, vm string) error {
 	m.log("delete " + vm)
+	if m.deleteErr != nil {
+		return m.deleteErr
+	}
 	m.mu.Lock()
 	m.images = slices.DeleteFunc(m.images, func(name string) bool { return name == vm })
 	m.mu.Unlock()
@@ -328,10 +333,20 @@ type fakeBuild struct {
 	details  []string
 	observed []model.Observed
 	refs     []string
+	launches []string
 	// kept are the archives fetched, by file name, to what arrived.
 	kept map[string][]byte
 	// dependencies are the ports whose archives KeepDependency kept.
 	dependencies []string
+}
+
+// Launch notes what is launched and starts it, with no lock.
+func (b *fakeBuild) Launch(note string, start func(context.Context) (string, error)) error {
+	b.mu.Lock()
+	b.launches = append(b.launches, note)
+	b.mu.Unlock()
+	_, err := start(context.Background())
+	return err
 }
 
 func (b *fakeBuild) Refer(ref string) error {
@@ -530,6 +545,7 @@ func TestTheProviderRecordsEachTargetAsTheGuestFinishesIt(t *testing.T) {
 	// before the clone is deleted (rc2's staging, check-827).
 	require.Equal(t, []string{"clone dockhand-base-tahoe " + vm, "start " + vm, "reach " + vm + " as dockhand-base-tahoe", "released [1000]", "delete " + vm}, mac.events)
 	require.Equal(t, []string{vm}, build.refs, "the clone is the provider's own name for the run")
+	require.Equal(t, []string{`{"clone":"` + vm + `"}`}, build.launches, "the clone is noted before it is made, for a stop to read")
 	require.True(t, mac.run.stopped)
 	require.Equal(t, "harbor-cli", mac.guest.input.Targets[1].Name, "a subport is built by its own name")
 	require.Equal(t, []string{"libharbor"}, mac.guest.input.Targets[1].DependsOn)
@@ -961,7 +977,7 @@ func TestEnvironmentsAreReleasesWithImages(t *testing.T) {
 	// setup refuses it (the rc9 full stage's F8).
 	mac.version = "2.38.0"
 	_, err = p.Environments(t.Context(), "")
-	require.EqualError(t, err, "Tart 2.38.0 is installed; Dockhand requires 2.39.0 or later to list running VMs with ASIF disks (openai/tart#1344). Upgrade with sudo port upgrade tart")
+	require.EqualError(t, err, "Tart 2.38.0 is installed; Dockhand requires 2.41.1 or later, which lists running VMs with ASIF disks, says when a delete left a VM, and lists VMs while one is deleted. Upgrade with sudo port upgrade tart")
 }
 
 // A guest that finishes between a read and the look at whether it's still

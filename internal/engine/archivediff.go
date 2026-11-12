@@ -53,6 +53,12 @@ func (d ArchiveDiff) Uncertain() bool { return d.Match.Status == macports.Source
 // or of the ports named, as the base declares them and as the branch's
 // files declare them now: what changed inside, file by file.
 func (e *Engine) ArchiveDiff(ctx context.Context, branch model.Branch, ports []string) ([]ArchiveDiff, error) {
+	// The archives are planned by evaluating the branch's Portfiles, as
+	// their owner's (#162).
+	ctx, err := e.evaluating(ctx, branch)
+	if err != nil {
+		return nil, err
+	}
 	changed, err := e.Diff(ctx, branch, nil)
 	if err != nil {
 		return nil, err

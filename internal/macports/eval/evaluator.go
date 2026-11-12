@@ -502,6 +502,9 @@ func decodeMetadata(reply string) (macports.PortInfo, []string, error) {
 	if refused, ok := values["dockhand.refused"]; ok {
 		return macports.PortInfo{}, nil, decodeRefusals(refused)
 	}
+	if call, ok := values["dockhand.unanswered"]; ok {
+		return macports.PortInfo{}, nil, &macports.UnansweredError{Call: call}
+	}
 	value := macports.PortInfo{Name: values["name"], Version: values["version"], Options: values}
 	failures, errs := syntax.DictValues(values["option_errors"])
 	if len(errs) != 0 {

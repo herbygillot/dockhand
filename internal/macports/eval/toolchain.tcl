@@ -31,8 +31,15 @@ namespace eval ::dockhand {
                     if {$path eq "/usr/lib/libxcselect.dylib"} {
                         return [expr {[dict get $toolchain xcselect] ? "file" : "absent"}]
                     }
+                    # Base's sandbox, which every macOS since 10.5 has and
+                    # each worker asks for as it loads (portsandbox.tcl).
+                    if {$path eq "/usr/bin/sandbox-exec"} { return file }
                     if {$path eq $xcode_app || [string first "$xcode_app/" $path] == 0} {
                         if {![dict get $toolchain xcode]} { return absent }
+                        # Xcode itself, and the directories down to its
+                        # SDKs, are there where it is.
+                        set directory [xcode_sdk_directory]
+                        if {$path eq $directory || [string first "$path/" "$directory/"] == 0} { return directory }
                         # Xcode's SDKs are the table's where it lists them
                         # (#17: qt5's PortGroups test them, 367 of the 533
                         # ports a modelled context sent to the host); its
@@ -337,9 +344,12 @@ namespace eval ::dockhand {
         get_clang_compilers portlib::configure::get_clang_compilers
     }
     # lookup_helpers are what those call of Base's own beyond each other,
-    # which 2.12 runs in this interpreter too, aliased into the worker, and
-    # so they stay, answered from the context's caches the table fills.
-    variable lookup_helpers {macports::get_tool_path macports::get_compiler_version macports::getportresourcepath}
+    # which 2.12 runs in this interpreter. The two that run programs are
+    # copied into the worker, as the lookups are, with the caches the table
+    # fills, so what they run is the worker's and the dispatcher answers it
+    # (#110); read_helpers stay aliased, reading only the ports tree.
+    variable lookup_helpers {macports::get_tool_path macports::get_compiler_version}
+    variable read_helpers {macports::getportresourcepath}
     # lookup_state are the values those read of Base's, which in a
     # modelled context are the context's (macports::override_vars); and
     # lookup_caches are their caches of the host's answers, each starting
@@ -347,6 +357,7 @@ namespace eval ::dockhand {
     variable lookup_state {
         macports::macos_version_major macports::macos_version macports::xcodeversion
         macports::developer_dir macports::os_major macports::os_platform macports::prefix_frozen
+        macports::compiler_version_cache macports::tool_path_cache macports::autoconf::xcrun_path
     }
     variable lookup_caches {portlib::configure::file_exists_cache portlib::configure::sdkroot_cache portlib::configure::clang_compilers_cache}
 
@@ -366,23 +377,36 @@ namespace eval ::dockhand {
         # as Darwin 9's hasn't: a host read there is a gap the dispatcher
         # must see, as it does on 2.12.
         if {![dict size $toolchain] && !$::dockhand::modeled && !$::dockhand::session_modeled} { return }
-        set moved {}
-        dict for {name target} $lookups {
-            if {[interp alias $worker portconfigure::$name] ne ""} { lappend moved $name $target }
-        }
-        if {![llength $moved]} { return }
         foreach variable $lookup_state {
             if {[info exists ::$variable]} {
                 $worker eval [list namespace eval ::[namespace qualifiers $variable] [list variable [namespace tail $variable] [set ::$variable]]]
             }
         }
+        # The helpers that run programs are the worker's on every Base, so
+        # what they run, their caches missing, the dispatcher answers.
+        foreach procedure $lookup_helpers {
+            copy_procedure $worker $procedure
+            # Base's worker aliases each by its bare name too, which a
+            # Portfile calls: those go to the copy as well.
+            set alias [namespace tail $procedure]
+            if {[interp alias $worker $alias] ne ""} {
+                interp alias $worker $alias {}
+                interp alias $worker $alias $worker ::$procedure
+            }
+        }
+        set moved {}
+        dict for {name target} $lookups {
+            if {[interp alias $worker portconfigure::$name] ne ""} { lappend moved $name $target }
+        }
+        if {![llength $moved]} { return }
         foreach variable $lookup_caches {
             $worker eval [list namespace eval ::[namespace qualifiers $variable] [list variable [namespace tail $variable] [dict create]]]
         }
         foreach procedure [dict values $lookups] {
             copy_procedure $worker $procedure
         }
-        foreach procedure $lookup_helpers {
+        variable read_helpers
+        foreach procedure $read_helpers {
             interp alias $worker ::$procedure {} ::$procedure
         }
         foreach {name target} $moved {

@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
@@ -51,7 +52,7 @@ func TestPrepareRevisionUsesWholeSnapshotAndPreservesCheckout(t *testing.T) {
 	index, err := os.ReadFile(filepath.Join(service.Repo.CommonDir, "index"))
 	require.NoError(t, err)
 	status := testsupport.Git(t, service.Repo.Root, "status", "--porcelain=v1")
-	result, err := service.Prepare(t.Context(), request)
+	result, err := service.Prepare(yours(t), request)
 	require.NoError(t, err)
 	require.NotEmpty(t, result.PreparedTree)
 	require.Equal(t, "7.2", result.Fidelity[0].Before.Ports["fixture"].Version)
@@ -89,7 +90,7 @@ func TestPrepareRevisionScopesSelectedSubportAndDefaultRevision(t *testing.T) {
 			service, request := preparationFixture(t, fixture.body)
 			request.Source.Commit = ""
 			request.Selection.Subport = fixture.subport
-			result, err := service.Prepare(t.Context(), request)
+			result, err := service.Prepare(yours(t), request)
 			require.NoError(t, err)
 			require.Equal(t, fixture.revision, result.Fidelity[0].After.Ports[result.Target.Name].Revision)
 			if fixture.subport != "" {
@@ -116,7 +117,7 @@ func TestPreparationDeclinesUnintendedEvaluationAndUnsupportedExpressions(t *tes
 	} {
 		t.Run(fixture.detail, func(t *testing.T) {
 			service, request := preparationFixture(t, fixture.body)
-			result, err := service.Prepare(t.Context(), request)
+			result, err := service.Prepare(yours(t), request)
 			require.ErrorContains(t, err, fixture.detail)
 			if fixture.expected != nil {
 				require.ErrorIs(t, err, fixture.expected)
@@ -131,13 +132,18 @@ func TestPreparationRejectsInconsistentSourceAndCancellation(t *testing.T) {
 	t.Parallel()
 	service, request := preparationFixture(t, "revision 0\n")
 	request.Source.Tree = model.ObjectID(strings.Repeat("a", 40))
-	_, err := service.Prepare(t.Context(), request)
+	_, err := service.Prepare(yours(t), request)
 	require.ErrorContains(t, err, "source commit and tree disagree")
 	request.Action = model.EditUpdate
-	_, err = service.Prepare(t.Context(), request)
+	_, err = service.Prepare(yours(t), request)
 	require.ErrorContains(t, err, "resolved release is required")
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	_, err = service.Prepare(ctx, request)
 	require.ErrorIs(t, err, context.Canceled)
 }
+
+// yours is a test's context, its work the person's own Portfiles, as the
+// engine marks what it prepares (#162): the workspace door refuses work
+// that names no owner.
+func yours(t testing.TB) context.Context { return workspace.Yours(t.Context(), "test") }

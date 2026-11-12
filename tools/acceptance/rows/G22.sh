@@ -10,8 +10,23 @@
 # row isn't run. Its heads are fetched from the sandbox, and a pr-<N> this
 # database tracks for MacPorts' #N is refused, naming DOCKHAND_PULL_REQUESTS,
 # rather than taken as the sandbox's (rc6's full stage, where pr-145 was);
-# clean that branch before the row.
+# clean that branch before the row. The row's own local commit is taken
+# off the branch before its first review and after its last: left there,
+# the next run's first review --check was refused for it (rc4's full
+# stage).
 pr() { printf '%s' "${ACCEPT_SANDBOX_PR:-}"; }
+G22_SUBJECT="a local commit beyond the pull request's head"
+
+# g22_drop_own_commit takes the row's local commit off pr-<N>'s tip, where
+# it is there; any other commit stays.
+g22_drop_own_commit() {
+	local worktree
+	worktree=$("$DH_BIN" path "pr-$(pr)" 2>/dev/null) || return 0
+	[ -n "$worktree" ] && [ -d "$worktree" ] || return 0
+	[ "$(git -C "$worktree" log -1 --format=%s 2>/dev/null)" = "$G22_SUBJECT" ] || return 0
+	printf '# the row takes its own commit off pr-%s\n' "$(pr)" >>"$ROW_DIR/out.log"
+	git -C "$worktree" reset -q --keep HEAD~1 >>"$ROW_DIR/out.log" 2>&1
+}
 
 act() {
 	host_only "a sandbox pull request its author pushes to" || return 0
@@ -25,6 +40,7 @@ act() {
 	local head
 	head=$(gh pr view "$(pr)" --repo "${DOCKHAND_PULL_REQUESTS:?}" --json headRefName --jq .headRefName 2>/dev/null)
 	[ -z "$head" ] || allow_push "*$head"
+	g22_drop_own_commit
 	dh review "$(pr)" --check --evaluate </dev/null || :
 	checkpoint "push a new commit to #$(pr)'s branch, as its author" || return 0
 	G22_HEAD=$(gh pr view "$(pr)" --repo "${DOCKHAND_PULL_REQUESTS:?}" --json headRefOid --jq .headRefOid 2>/dev/null)
@@ -32,9 +48,10 @@ act() {
 	local worktree
 	worktree=$("$DH_BIN" path "pr-$(pr)" 2>/dev/null) || :
 	[ -n "$worktree" ] && git -C "$worktree" -c user.name=acceptance -c user.email=acceptance@example.invalid -c commit.gpgsign=false \
-		commit -q --allow-empty -m "a local commit beyond the pull request's head" || :
+		commit -q --allow-empty -m "$G22_SUBJECT" || :
 	checkpoint "push another commit to #$(pr)'s branch, as its author" || return 0
 	dh review "$(pr)" --check --evaluate </dev/null || :
+	g22_drop_own_commit
 }
 
 assert() {

@@ -154,7 +154,12 @@ func (c *Service) slotWords(full Full) []string {
 			names = append(names, name)
 		}
 		limit, it := fmt.Sprintf("providers.%s.capacity is %d", provider, c.Capacity(provider)), "it"
-		if provider == buildenv.Tart {
+		switch provider {
+		case buildenv.GitHub:
+			// Not GitHub's own limit, which queues runs past an account's
+			// jobs: dockhand's guard on its hourly API budget (#197).
+			limit = fmt.Sprintf("providers.github.capacity, which guards the hourly GitHub API budget, is %d", c.Capacity(provider))
+		case buildenv.Tart:
 			limit, it = fmt.Sprintf("Tart takes as many checks as the Mac runs VMs, %d", c.Capacity(provider)), "them"
 		}
 		words = append(words, fmt.Sprintf("%s, and %s %s using %s", limit, prose.And(names), map[bool]string{true: "is", false: "are"}[len(names) == 1], it))

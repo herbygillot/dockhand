@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -62,7 +63,7 @@ func TestARequestThatNeverReachedGitHubIsMadeAgain(t *testing.T) {
 	fake.CreateFails = true
 	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.ErrorContains(t, err, "but could not create or update the pull request")
-	require.ErrorContains(t, err, "run dockhand submit again to finish")
+	require.ErrorContains(t, err, "opening the pull request is still owed, and dockhand submit jq-update finishes it")
 	require.Empty(t, fake.PRs)
 	require.Nil(t, recordedPullRequest(t, e, branch))
 
@@ -79,9 +80,27 @@ func TestARequestThatNeverReachedGitHubIsMadeAgain(t *testing.T) {
 
 // refusingStore records nothing, as a database that fails at the last
 // step would.
-type refusingStore struct{ store.Store }
+// refusingStore refuses every write after the submission's first, which
+// records the publication before any remote effect (#191).
+type refusingStore struct {
+	store.Store
+	writes  *atomic.Int32
+	allowed int32
+}
 
-func (refusingStore) Update(context.Context, model.RepositoryID, func(store.Tx) error) error {
+func refusingAfterFirst(kept store.Store) refusingStore {
+	return refusingAfter(kept, 1)
+}
+
+// refusingAfter lets the first allowed writes through, then refuses.
+func refusingAfter(kept store.Store, allowed int32) refusingStore {
+	return refusingStore{Store: kept, writes: &atomic.Int32{}, allowed: allowed}
+}
+
+func (s refusingStore) Update(ctx context.Context, repository model.RepositoryID, write func(store.Tx) error) error {
+	if s.writes.Add(1) <= s.allowed {
+		return s.Store.Update(ctx, repository, write)
+	}
 	return store.ErrUnavailable
 }
 
@@ -96,7 +115,7 @@ func TestAPullRequestOpenedButNotRecordedIsFoundByTheNextSubmit(t *testing.T) {
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
 	kept := e.Store
-	e.Store = refusingStore{kept}
+	e.Store = refusingAfterFirst(kept)
 	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.ErrorContains(t, err, "#34901 is open with commit ")
 	require.ErrorContains(t, err, "but dockhand could not save its record")
@@ -106,7 +125,7 @@ func TestAPullRequestOpenedButNotRecordedIsFoundByTheNextSubmit(t *testing.T) {
 	again, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
 	require.NotNil(t, again.Existing, "found by its head")
-	require.True(t, again.BodyKept, "what dockhand wrote isn't recorded, so its description is left as it is")
+	require.False(t, again.BodyKept, "the publication recorded what it wrote, and settling found it landed (#157)")
 	_, err = e.ApplySubmit(t.Context(), again, model.AnsweredAsked)
 	require.NoError(t, err)
 	require.Equal(t, 34901, recordedPullRequest(t, e, branch).Number)
@@ -212,7 +231,7 @@ func TestADescriptionWrittenButNotRecordedStaysDockhands(t *testing.T) {
 			forgeDouble.lose = false
 		} else {
 			kept := e.Store
-			e.Store = refusingStore{kept}
+			e.Store = refusingAfterFirst(kept)
 			_, err = e.ApplySubmit(t.Context(), second, model.AnsweredAsked)
 			require.ErrorContains(t, err, "but dockhand could not save its record")
 			e.Store = kept

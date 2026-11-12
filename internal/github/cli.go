@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/filelock"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/subprocess"
 )
@@ -56,7 +57,9 @@ func (c CLI) run(ctx context.Context, args ...string) ([]byte, error) {
 	if c.Path == "" {
 		return nil, errors.New("the GitHub CLI isn't installed")
 	}
-	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "gh", Path: c.Path, Args: args, Limit: 1 << 20})
+	// A lock the work holds, a submission's head lock, is handed to gh, so
+	// a gh pr ready still running after dockhand died keeps it.
+	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "gh", Path: c.Path, Args: args, Limit: 1 << 20, ExtraFiles: filelock.Carried(ctx)})
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()

@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -31,7 +32,7 @@ func TestASurveyOfNamedPortsBringsOnlyThem(t *testing.T) {
 	require.NoError(t, err)
 	t.Setenv("TMPDIR", t.TempDir())
 
-	files, err := Open(t.Context(), repo, nil, model.Platform{}, nil, Selection{Ports: []string{"devel/alpha/Portfile", "beta"}})
+	files, err := Open(workspace.MacPorts(t.Context()), repo, nil, model.Platform{}, nil, Selection{Ports: []string{"devel/alpha/Portfile", "beta"}})
 	require.NoError(t, err)
 	defer func() { require.NoError(t, files.Close()) }()
 	require.False(t, files.Projection.Whole())

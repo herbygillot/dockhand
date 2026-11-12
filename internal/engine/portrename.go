@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -97,6 +98,17 @@ func (e *Engine) RenamePort(ctx context.Context, request PortRenameRequest) (Ren
 	name := cmp.Or(request.Name, request.Port)
 	if !macports.ValidName(name) {
 		return RenamedPort{}, fmt.Errorf("%q is not a port name", name)
+	}
+	// The rename reads the Portfile it moves, as its owner's: master's for
+	// a plan from master, else the branch's, another's only where the
+	// person allowed them (#162, Codex's confirmation).
+	if request.FromMaster {
+		ctx = workspace.MacPorts(ctx)
+	} else {
+		var err error
+		if ctx, err = e.evaluating(ctx, request.Branch); err != nil {
+			return RenamedPort{}, err
+		}
 	}
 	worktree, head, err := e.renameSource(ctx, request)
 	if err != nil {

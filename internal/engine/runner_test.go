@@ -1941,6 +1941,7 @@ func TestServeSaysHowManyChecksAndEnvironmentsAtOnce(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, "tart (as many checks as the Mac runs VMs, 2, each VM waiting for a free one)", capacityWords("tart", &together{}, 2))
 	require.Equal(t, "command (2 checks at a time)", capacityWords("command", &scriptedProvider{}, 2))
+	require.Equal(t, "github (20 checks at a time, guarding the hourly API budget)", capacityWords("github", &scriptedProvider{}, 20))
 }
 
 // A run whose cancel was asked for while another session held it, which

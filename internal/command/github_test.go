@@ -21,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -122,6 +123,10 @@ func (f *fakeActions) find(id int64) *fakeRun {
 	}
 	panic(fmt.Sprintf("no run %d", id))
 }
+
+// RecentRuns lists nothing, so each run is asked of the stand-in by
+// itself, which moves it along as GitHub would.
+func (f *fakeActions) RecentRuns(context.Context, string) ([]ghactions.Run, error) { return nil, nil }
 
 func (f *fakeActions) Run(_ context.Context, _ string, id int64) (ghactions.Run, error) {
 	run := f.find(id)
@@ -283,7 +288,8 @@ func TestGitHubBuildsWithMacPortsWorkflowInYourFork(t *testing.T) {
 	// run was read (the sshuttle run's finding 7); each runner's log is
 	// kept beside the run's, read by the run's ID, not the branch.
 	require.Len(t, f.runs, 1)
-	require.Regexp(t, `^dockhand-check/[0-9a-f]{12}$`, f.runs[0].branch)
+	// The check's own branch: the commit's and the check's ID's.
+	require.Regexp(t, `^dockhand-check/[0-9a-f]{12}-[a-z2-7]{16}$`, f.runs[0].branch)
 	require.Contains(t, errs, "github: removed "+f.runs[0].branch+" from ada/macports-ports\n")
 	require.Empty(t, checkBranches(t, f))
 	logs, _, err := cmdtest.Dockhand(t, "logs", "check-1")
@@ -413,7 +419,7 @@ func TestRetryingAGitHubCheckRunsTheWorkflowAgain(t *testing.T) {
 	require.NotContains(t, errs, "actions/runs/7", "the earlier check's run isn't this one's")
 	require.Contains(t, errs, "github macOS 14 (Sonoma) arm64: jq passed")
 	require.Len(t, f.runs, 2)
-	require.Equal(t, f.runs[0].branch, f.runs[1].branch)
+	require.NotEqual(t, f.runs[0].branch, f.runs[1].branch, "another check of the same commit pushes a branch of its own, so it never shares a run")
 	require.Empty(t, checkBranches(t, f))
 
 	logs, _, err := cmdtest.Dockhand(t, "logs", "check-2")
@@ -687,18 +693,42 @@ func TestCancellingAStoppedGitHubCheckStopsItsWorkflow(t *testing.T) {
 	require.Len(t, f.runs, 1)
 	require.Equal(t, "in_progress", f.runs[0].Status)
 	require.Zero(t, f.canceled)
+	// The push was noted before it was sent, for a stop to read.
+	require.NoError(t, e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		executions, err := r.Executions(run.ID)
+		require.NotEmpty(t, executions)
+		require.Contains(t, executions[0].Launch, `"action":"push"`)
+		require.Contains(t, executions[0].Launch, `"check":"`+string(run.ID)+`"`)
+		return err
+	}))
 
 	// GitHub out of reach, the cancel stays requested, and says so.
 	f.unreachable = errors.New("GitHub answered 503")
 	_, _, err = cmdtest.Dockhand(t, "cancel", "check-1")
 	require.Error(t, err)
-	require.ErrorContains(t, err, "check-1: cancellation is recorded, but github could not stop https://github.com/ada/macports-ports/actions/runs/7: GitHub answered 503; run dockhand cancel check-1 to try again")
+	require.ErrorContains(t, err, "check-1: a cancel was asked, and github couldn't see https://github.com/ada/macports-ports/actions/runs/7 stop: GitHub answered 503; dockhand cancel check-1 asks again")
 	pending, err := e.RunNamed(ctx, "check-1")
 	require.NoError(t, err)
 	require.Equal(t, model.RunRunning, pending.State)
+	require.NotNil(t, pending.CancelRequested)
+	require.Equal(t, "a cancel was asked, and github couldn't see https://github.com/ada/macports-ports/actions/runs/7 stop: GitHub answered 503", pending.Detail, "status reads it")
+
+	// status says the cancel isn't finished, and offers cancel, not wait.
+	out, _, err := cmdtest.Dockhand(t, "status")
+	require.NoError(t, err)
+	require.Contains(t, out, "Checks   canceling (check-1): a cancel was asked, and github couldn't see")
+	require.Contains(t, out, "dockhand cancel check-1")
+	require.NotContains(t, out, "dockhand wait check-1")
+	out, _, err = cmdtest.Dockhand(t, "status", "--json")
+	require.NoError(t, err)
+	require.Contains(t, out, `"cancel_requested"`)
+	// A submission of the same files doesn't wait on it.
+	out, errs, err := cmdtest.Dockhand(t, "submit")
+	require.Error(t, err)
+	require.NotContains(t, out+errs+err.Error(), "check-1 checks this commit")
 
 	f.unreachable = nil
-	_, errs, err := cmdtest.Dockhand(t, "cancel", "check-1")
+	_, errs, err = cmdtest.Dockhand(t, "cancel", "check-1")
 	require.NoError(t, err, errs)
 	after, err := e.RunNamed(ctx, "check-1")
 	require.NoError(t, err)

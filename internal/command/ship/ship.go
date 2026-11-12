@@ -825,8 +825,8 @@ func finishCarried(ctx context.Context, s *settings.Settings, streams term.Strea
 		if ended, err := e.Run(ctx, done.run.ID); err == nil && ended.State.Terminal() {
 			label = ended.Name() + ", " + done.target.Name() + "'s check, " + string(ended.State)
 		}
-		checks, check := streams.Staged(label)
-		checked = checkrun.RunQueued(ctx, e, *done.run, checks, false, s.Places(), s.Drain)
+		staged, check := streams.Staged(label)
+		checked = checkrun.See(ctx, e, checks.Queued{Run: *done.run}, staged, s.Places(), checkrun.Stay{}, s.Drain)
 		if checked != nil {
 			// The check's report alone expands: the plan it was queued
 			// with is -v's (part 5, item 3).

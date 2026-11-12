@@ -92,6 +92,22 @@ func (g GitHub) Runs(ctx context.Context, repository, branch, commit string) ([]
 	}
 }
 
+func (g GitHub) RecentRuns(ctx context.Context, repository string) ([]Run, error) {
+	service, owner, name, err := g.service(ctx, repository)
+	if err != nil {
+		return nil, err
+	}
+	page, _, err := service.ListWorkflowRunsByFileName(ctx, owner, name, Workflow, &gh.ListWorkflowRunsOptions{ListOptions: gh.ListOptions{PerPage: 100}})
+	if err != nil {
+		return nil, githubapi.RateLimitError(err)
+	}
+	var runs []Run
+	for _, r := range page.WorkflowRuns {
+		runs = append(runs, run(r))
+	}
+	return runs, nil
+}
+
 func (g GitHub) Run(ctx context.Context, repository string, id int64) (Run, error) {
 	service, owner, name, err := g.service(ctx, repository)
 	if err != nil {

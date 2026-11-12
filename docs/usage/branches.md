@@ -241,6 +241,11 @@ away is two steps, `archive` then `clean --delete`, and archive's last line,
 like clean's refusal of an open branch, names the second. A clean that removes
 nothing says how many archived branches still keep their Git branches.
 
+Status names a submission that didn't finish, `an earlier submit didn't finish:
+opening the pull request may still be owed`, with `dockhand submit` as its next
+step. Archiving and forgetting first read what it left and write it down; where
+GitHub or the fork can't be read, they refuse with nothing done.
+
 A branch that changes nothing, started plain to check master's port, as
 `check --also curl --variants '+gnutls +sectrust'` does, is an investigation,
 not a change. Once its check passes, status says `check-771 passed; the branch

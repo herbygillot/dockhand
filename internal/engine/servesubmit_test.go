@@ -73,7 +73,7 @@ func TestServeSubmitsOnlyWhatPassedWithNothingToLookAt(t *testing.T) {
 	require.Equal(t, branch.ID, candidates[0].Branch.ID)
 	require.Empty(t, candidates[0].Held)
 
-	submitted, err := e.SubmitForServe(t.Context(), candidates[0])
+	submitted, err := e.SubmitForServe(t.Context(), candidates[0], ServeAdmission{Limit: 1})
 	require.NoError(t, err)
 	require.True(t, submitted.Created)
 	require.Contains(t, fake.Created[0].Desired.Body, ServeNote, "the pull request says no person reviewed it")
@@ -83,15 +83,19 @@ func TestServeSubmitsOnlyWhatPassedWithNothingToLookAt(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, again, "a branch with a pull request is done")
 
-	// serve.submit_limit counts from the journal, so it holds across
-	// restarts, and a new day starts a new count.
+	// serve.submit_limit counts serve's own rows, so it holds across
+	// restarts, and a new day starts a new count (#191).
 	now := e.now()
-	opened, err := e.servedToday(t.Context(), now)
-	require.NoError(t, err)
-	require.Equal(t, 1, opened)
-	opened, err = e.servedToday(t.Context(), now.AddDate(0, 0, 1))
-	require.NoError(t, err)
-	require.Zero(t, opened)
+	var rows []model.ServeOpening
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		var err error
+		rows, err = r.ServeOpenings()
+		return err
+	}))
+	require.Len(t, rows, 1)
+	require.Equal(t, submitted.PullRequest.Ref.Number, rows[0].Number, "the row took the pull request")
+	require.False(t, ServeAdmits(rows, dayStart(now), 1), "today's place is taken")
+	require.True(t, ServeAdmits(rows, dayStart(now.AddDate(0, 0, 1)), 1), "tomorrow's is free")
 }
 
 func TestServeHoldsAnUpdateWhoseUpstreamChangedItsLicense(t *testing.T) {
@@ -113,7 +117,7 @@ func TestServeHoldsAnUpdateWhoseUpstreamChangedItsLicense(t *testing.T) {
 	require.Equal(t, []model.UpstreamChange{
 		{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed; the Portfile's license line may need to follow", Hold: true, Rule: assess.LicenseChanged, Class: model.Introduced}},
 		candidates[0].Plan.Upstream[0].Comparison.Changes, "the plan says what was found, for a person's submission to show")
-	_, err = e.SubmitForServe(t.Context(), candidates[0])
+	_, err = e.SubmitForServe(t.Context(), candidates[0], ServeAdmission{Limit: 1})
 	require.ErrorContains(t, err, "needs review before submission: upstream's LICENSE changed")
 }
 
@@ -137,7 +141,7 @@ func TestServeHoldsAnUpdateWhoseArchivesCouldNotBeCompared(t *testing.T) {
 	require.Equal(t, held, HoldLines(candidates[0].Held))
 	require.Equal(t, []PortComparison{{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{},
 		Problem: "new.tar.gz replaces no archive dockhand could find, so it wasn't compared"}}}, candidates[0].Plan.Upstream)
-	_, err = e.SubmitForServe(t.Context(), candidates[0])
+	_, err = e.SubmitForServe(t.Context(), candidates[0], ServeAdmission{Limit: 1})
 	require.ErrorContains(t, err, "needs review before submission: the upstream archives couldn't be compared")
 	require.Empty(t, fake.Created)
 }
@@ -231,7 +235,7 @@ func TestServeHoldsAnUpdateAnotherPullRequestIsOpenFor(t *testing.T) {
 	candidates, _, err := e.serveCandidates(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []string{"#34777 is open for the same port: jq: update to 1.8.1"}, HoldLines(candidates[0].Held))
-	_, err = e.SubmitForServe(t.Context(), candidates[0])
+	_, err = e.SubmitForServe(t.Context(), candidates[0], ServeAdmission{Limit: 1})
 	require.ErrorContains(t, err, "needs review before submission: #34777 is open")
 	require.Empty(t, fake.Created)
 
@@ -715,7 +719,7 @@ func TestAnUndeclaredLinkHoldsAnUnattendedSubmission(t *testing.T) {
 	require.Len(t, candidates, 1)
 	require.Equal(t, held, HoldLines(candidates[0].Held))
 	require.Equal(t, "xz", candidates[0].Held[0].Subject)
-	_, err = e.SubmitForServe(t.Context(), candidates[0])
+	_, err = e.SubmitForServe(t.Context(), candidates[0], ServeAdmission{Limit: 1})
 	require.ErrorContains(t, err, "needs review before submission: jq links liblzma.5.dylib from xz")
 	require.Empty(t, fake.Created)
 	require.Contains(t, HoldRules(), "link-undeclared")
@@ -827,4 +831,38 @@ func TestADecisionOnAMovingSourceHoldsForTheCommitsLookedAt(t *testing.T) {
 			return tx.SetNetworkHolds(branch.ID, model.ObjectID(status.Tree), at, nil)
 		}))
 	}
+}
+
+// serve's place is held before its first remote effect, and its create
+// marked tried before it's sent: a pass that opened a pull request and
+// couldn't record it, in a process that then ended, still counts it, and
+// the next pass waits for tomorrow under a limit of one (#155).
+func TestServesPlaceCountsAnOpeningItCouldntRecord(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	servePrepared(t, e)
+	candidates, _, err := e.serveCandidates(t.Context())
+	require.NoError(t, err)
+	require.Len(t, candidates, 1)
+	kept := e.Store
+	// The publication and its place, then the create marked tried; the
+	// opening's record fails.
+	e.Store = refusingAfter(kept, 2)
+	_, err = e.SubmitForServe(t.Context(), candidates[0], ServeAdmission{Limit: 1})
+	require.ErrorContains(t, err, "could not save its record")
+	e.Store = kept
+	require.Len(t, fake.Created, 1, "GitHub opened it")
+
+	var rows []model.ServeOpening
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		var err error
+		rows, err = r.ServeOpenings()
+		return err
+	}))
+	require.Len(t, rows, 1)
+	require.False(t, rows[0].Tried.IsZero(), "marked tried before the create was sent")
+	require.False(t, ServeAdmits(rows, dayStart(e.now()), 1), "the next pass waits: the opening counts though it went unrecorded")
+	require.False(t, ServeAdmits(rows, dayStart(e.now().AddDate(0, 0, 3)), 1), "no length of time settles a create that may have landed")
 }

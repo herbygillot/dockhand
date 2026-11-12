@@ -274,11 +274,23 @@ unchanged text. Subsequent submissions refresh the sections dockhand still owns.
 version, preserving your stored note; inspect that preview before choosing it.
 For someone else's adopted pull request, their description stays theirs.
 
-If the command ends during publication, first inspect
-`dockhand status --refresh -b jq-update`, then rerun submit if needed. Dockhand
-looks for the pull request already opened from its branch and can finish
-recording an operation whose reply was lost. Do not create a replacement branch
-merely because the final confirmation did not print.
+Before its first push, submit records what it sets out to do: the commit, the
+fork's branch and the pull request, the title and description it writes, and
+each step it still owes, in order. Each step comes off that record when its
+result is recorded. If the command ends during publication, or a step fails,
+`dockhand status -b jq-update` shows the submission as unfinished, with what is
+still owed, and its next step is `dockhand submit`. That submit first reads the
+fork and GitHub to see what each owed step left: a push that landed, a pull
+request GitHub opened whose reply was lost, a description GitHub took. It
+records what it finds, then plans as usual. It writes nothing to GitHub until a
+read shows a step isn't done. What you asked of the earlier submit for the same
+commit stands: a `--ready` still owed, and your answer about the reviewers. Do
+not create a replacement branch merely because the final confirmation did not
+print. Another submission of the same fork branch, from another terminal, is
+refused while one runs, and names the process; if it hangs, stop that process.
+`--json` lists what is still owed under `pending`, each with why: it failed, it
+awaits your answer, it may have been sent, GitHub refused it, or it couldn't be
+read.
 
 ## Choose the right way through an incomplete or failed check
 
@@ -359,7 +371,8 @@ dockhand submit -b jq-update --ready
 ```
 
 `--draft` and `--ready` are separate invocations. Ready submission requires the
-evidence ordinary submit requires. If GitHub's organization policy refuses
+evidence ordinary submit requires. The pull request is marked ready after the
+push, before any reviewers are asked to review again. If GitHub's organization policy refuses
 dockhand's app, dockhand can use an installed GitHub CLI signed in as the same
 account to mark it ready, or prints the remaining action when it cannot.
 
@@ -376,11 +389,14 @@ latest word, after your last commit, is said as a reviewer waiting, `#36300
 @reneeotten commented`, and puts the branch under Needs attention, though GitHub
 counts no review for it. Edit the same tracked branch, inspect the diff, tidy and check the
 new work, and submit again. The existing pull request is updated. Where a
-reviewer requested changes, submit can ask to request their review again after
-pushing. `submit.rerequest_review` controls that behavior; see
+reviewer requested changes, submit asks whether to request their review again
+with the plan, before it pushes, and makes the request as the submission's last
+step, after marking the pull request ready where `--ready` asked.
+`submit.rerequest_review` controls that behavior; see
 `dockhand usage configuration`. If the request fails after the push, the next
-`submit` makes it, even though it pushes nothing, and says it was left over from
-the last submit.
+`submit` of the same commit makes it, even though it pushes nothing. A request
+that got no answer may have been sent, so it is never sent again; status says
+which reviewers were asked and which may not have been.
 
 While the pull request is open, status says when it may be merged under
 MacPorts' maintainer policy (the MacPorts Guide, section 7.4.1). The branch's

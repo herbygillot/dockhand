@@ -306,7 +306,22 @@ func TestAModelledContextAnswersAnOldXcodesSDKsByVersion(t *testing.T) {
 	}, "\n")
 	got, port := observedDescription(t, lion, model.DeveloperToolsXcode, lines)
 	require.Equal(t, []string{"1", "0", sdks + "/MacOSX10.8.sdk", sdks + "/MacOSX10.7.sdk", "1"}, got)
-	require.False(t, port.ModeledHostAccess, "%v", port.Problems)
+	requireOnlyBaseClosed(t, port)
+}
+
+// requireOnlyBaseClosed requires that a modelled context's host reads are
+// all Base's own, closed: what the table lacks of an old release, such as
+// whether its Xcode put headers in /usr/include, is absent and marked,
+// and the Portfile took no host answer (#110).
+func requireOnlyBaseClosed(t *testing.T, port macports.PortObservation) {
+	t.Helper()
+	for _, declaration := range port.Declarations {
+		if declaration.Command != "dockhand.host-access" {
+			continue
+		}
+		require.GreaterOrEqual(t, len(declaration.Values), 3, "%v", declaration.Values)
+		require.Equal(t, []string{"closed", "base"}, declaration.Values[1:3], "%v", declaration.Values)
+	}
 }
 
 // A modelled release's os.version and macos_version are the table's,
@@ -377,7 +392,7 @@ func TestAnUnlistedSDKIsAbsentWithoutTheHost(t *testing.T) {
 			want = append(want, "0", "1")
 		}
 		require.Equal(t, want, got, "%+v", c.platform)
-		require.False(t, port.ModeledHostAccess, "%+v: %v", c.platform, port.Problems)
+		requireOnlyBaseClosed(t, port)
 		unlisted := 0
 		for _, entry := range port.Ledger {
 			if entry.Source == "table" && entry.Subject == "sdks-unlisted" {

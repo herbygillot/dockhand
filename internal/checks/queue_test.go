@@ -47,3 +47,27 @@ func TestPlanCoverageRequiresTheSameResolvedSources(t *testing.T) {
 		require.True(t, PlanCovers(have, have), "tagged %v", tagged)
 	}
 }
+
+// Two plans that both failed to read a target's Git source join one
+// running check, which shares a request and claims nothing of the source;
+// a finished check like that stands for no other request, since what
+// isn't known of a Git fetch stands for nothing. A tag's unresolved
+// readings stand either way, the Portfile's checksums saying what was
+// built (change 1 of docs/designs/source-comparison.md).
+func TestAnUnresolvedGitSourceJoinsAndDoesntStand(t *testing.T) {
+	t.Parallel()
+	environment := model.Environment{Provider: "command"}
+	unresolved := map[model.TargetID]model.GitSource{"libharbor": {URL: "https://example.invalid/repo", Ref: "v4", Unresolved: "the repository couldn't be read"}}
+	plan := func(git, tags map[model.TargetID]model.GitSource) model.Plan {
+		return model.Plan{Environments: []model.Environment{environment}, Targets: []model.PlanTarget{{ID: "libharbor"}},
+			Builds: []model.EnvironmentPlan{{Environment: environment, Order: []model.TargetID{"libharbor"}, Git: git, Tags: tags}}}
+	}
+	git, tag := plan(unresolved, nil), plan(nil, unresolved)
+	require.True(t, SourcesCover(git, git), "two unresolved Git readings join")
+	require.False(t, FinishedSourcesCover(git, git), "a finished one stands for no other request")
+	require.True(t, SourcesCover(tag, tag))
+	require.True(t, FinishedSourcesCover(tag, tag), "a tag's unresolved readings stand")
+	// A fetch mode changed between Git and an archive by tag is other.
+	require.False(t, SourcesCover(git, tag))
+	require.False(t, FinishedSourcesCover(git, tag))
+}

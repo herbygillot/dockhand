@@ -24,6 +24,7 @@ type (
 	Cell           = evidence.Cell
 	CellKind       = evidence.CellKind
 	VariantBuild   = evidence.VariantBuild
+	Refusal        = evidence.Refusal
 )
 
 const (
@@ -84,6 +85,50 @@ func RemadeWords(target TargetEvidence) string {
 		return checks.DescribeEnvironment(c.Environment) + " was made again, from another source or with other tools"
 	}
 	return ""
+}
+
+// RefusedWords say why an earlier check's result doesn't count, ending in
+// what to do, as status's cell and submit's hold both say it: "built by
+// check-1 from v4 at 1a2b3c4, which now names 5d6e7f8, so it doesn't
+// count; dockhand check builds it again" (architecture's words for #192,
+// where the hold said the check stopped before building it).
+func RefusedWords(r Refusal) string {
+	short := func(commit string) string { return model.ObjectID(commit).Short() }
+	const again = "; dockhand check builds it again"
+	switch r.Kind {
+	case evidence.RefusedMoved:
+		if r.Now == "" {
+			return fmt.Sprintf("built by %s from %s at %s, which has moved since, so it doesn't count%s", r.Check, r.Ref, short(r.Then), again)
+		}
+		return fmt.Sprintf("built by %s from %s at %s, which now names %s, so it doesn't count%s", r.Check, r.Ref, short(r.Then), short(r.Now), again)
+	case evidence.RefusedUnread:
+		return fmt.Sprintf("built by %s, whose source couldn't be read, so it stands for that check alone%s", r.Check, again)
+	case evidence.RefusedUnreadNow:
+		if r.Then == "" {
+			return fmt.Sprintf("built by %s from %s, which couldn't be read now to show which commit it names, so it doesn't count%s", r.Check, r.Ref, again)
+		}
+		return fmt.Sprintf("built by %s from %s at %s, which couldn't be read now to show it still names that commit, so it doesn't count%s", r.Check, r.Ref, short(r.Then), again)
+	case evidence.RefusedUnrecorded:
+		return fmt.Sprintf("built by %s, whose build didn't say which commit of %s it fetched, so it doesn't count%s", r.Check, r.Ref, again)
+	case evidence.RefusedOwnMove:
+		return fmt.Sprintf("built by %s, which found %s at %s, not the %s it planned, so it stands for no check%s", r.Check, r.Ref, short(r.Now), short(r.Then), again)
+	case evidence.RefusedFetchMode:
+		return fmt.Sprintf("built by %s with Git, and it's fetched another way now, so it doesn't count%s", r.Check, again)
+	case evidence.RefusedDependency:
+		return fmt.Sprintf("built by %s against %s from %s at %s, which has moved, so it doesn't count%s", r.Check, r.Dependency, r.Ref, short(r.Then), again)
+	case evidence.RefusedDependencyUnshown:
+		if r.Now != "" {
+			return fmt.Sprintf("built by %s against %s, which it can't be shown to have had at %s, so it doesn't count%s", r.Check, r.Dependency, short(r.Now), again)
+		}
+		return fmt.Sprintf("built by %s against %s, which it can't be shown to have had as it is now, so it doesn't count%s", r.Check, r.Dependency, again)
+	case evidence.RefusedDependencyRefused:
+		return fmt.Sprintf("built by %s against %s's build there, which doesn't count either, so it doesn't count%s", r.Check, r.Dependency, again)
+	case evidence.RefusedBlocked:
+		return fmt.Sprintf("%s found it blocked by %s, whose result there no longer stands%s", r.Check, r.Dependency, again)
+	case evidence.RefusedNotPlanned:
+		return fmt.Sprintf("%s's result there doesn't count, since its plan didn't build it there%s", r.Check, again)
+	}
+	return fmt.Sprintf("%s's result there doesn't count%s", r.Check, again)
 }
 
 // EvidenceWords is how one target's result in one environment reads, on the
@@ -155,7 +200,13 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 	now := e.identitiesNow(ctx, plan.Environments)
 	var judged Evidence
 	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		own, err := checks.LoadCheck(r, primary, false)
+		// The newest check's own results are asked what their builds
+		// fetched too, where finished coverage asks it (change 1 of
+		// docs/designs/source-comparison.md): loaded without what they
+		// read, every Git result answered "not known", and no check of a
+		// Git-fetched port stood for another request.
+		reads := evidence.AnyReadsSources(append([]model.Plan{plan, own}, others...)...)
+		own, err := checks.LoadCheck(r, primary, reads)
 		if err != nil {
 			return err
 		}
@@ -164,7 +215,7 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 			if run.ID == primary.ID {
 				continue
 			}
-			check, err := checks.LoadCheck(r, run, evidence.ReadsSources(plan))
+			check, err := checks.LoadCheck(r, run, reads)
 			if err != nil {
 				return err
 			}
@@ -196,7 +247,7 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 				continue
 			}
 			if explainer, ok := e.Providers[c.Environment.Provider].(buildenv.IdentityExplainer); ok {
-				judged.Targets[t].Outcomes[i].Change = explainer.IdentityChange(c.Environment, c.Recorded, now[c.Environment])
+				judged.Targets[t].Outcomes[i].Change = explainer.IdentityChange(c.Environment, c.Recorded, now[c.Environment].Value)
 			}
 		}
 	}
@@ -414,16 +465,19 @@ func (e *Engine) Covered(ctx context.Context, branch model.BranchID, tree model.
 			}
 		}
 		return Cell{}, false
-	}, want), nil
+	}, judged.Fetched, want), nil
 }
 
 // coversPlan is Covered's judgment: each of want's targets, where want
 // builds it, a cell of the evidence that passed and stands under want's
-// tests, or one the environment can't build (unmet) either way, with
-// the same resolved sources (checks.SourcesCover).
-func coversPlan(have model.Plan, cell func(model.TargetID, int) (Cell, bool), want model.Plan) bool {
+// tests, or one the environment can't build (unmet) either way, with the
+// same resolved sources (checks.FinishedSourcesCover), and each Git
+// result's own fetch the source want expects: a check whose Git source
+// couldn't be read stands for itself alone (change 1 of docs/designs/
+// source-comparison.md).
+func coversPlan(have model.Plan, cell func(model.TargetID, int) (Cell, bool), fetched func(Cell) model.ObjectID, want model.Plan) bool {
 	environments := have.Environments
-	if checks.TestsRank(have.Tests) < checks.TestsRank(want.Tests) || !checks.SourcesCover(have, want) {
+	if checks.TestsRank(have.Tests) < checks.TestsRank(want.Tests) || !checks.FinishedSourcesCover(have, want) {
 		return false
 	}
 	for _, build := range want.Builds {
@@ -439,6 +493,9 @@ func coversPlan(have model.Plan, cell func(model.TargetID, int) (Cell, bool), wa
 			case found.Kind == CellUnmet:
 				// The environment can't build it, for this check as for that.
 			case found.Kind != CellRecorded || !want.Tests.Stands(found.TargetResult):
+				return false
+			}
+			if source, ok := want.GitIn(build.Environment, id); ok && source.AgainstFetched(fetched(found)) != model.SourceSame {
 				return false
 			}
 		}

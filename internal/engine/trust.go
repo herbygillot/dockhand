@@ -70,6 +70,14 @@ func (e *NotAllowedError) Error() string {
 	return fmt.Sprintf("#%d's Portfiles are %s, and you haven't allowed dockhand to evaluate them on this Mac at %s; dockhand adopt --pr %d --evaluate allows it", e.Number, e.Whose, e.Head.Short(), e.Number)
 }
 
+// NotAllowedFor is the refusal of evaluating an adopted branch's Portfiles
+// at its author's commit, as the door gives it: what a command that asked
+// and got a No stops with.
+func NotAllowedFor(branch model.Branch) error {
+	whose, _ := OthersPortfiles(branch)
+	return (&NotAllowedError{Number: branch.PullRequest.Number, Whose: whose, Head: authorHead(branch.PullRequest)}).refusal()
+}
+
 // refusal is the error as a refusal with its Next.
 func (e *NotAllowedError) refusal() error {
 	return refusal.Wrap(refusal.Failed, e, "%s", e.Error()).Then(refusal.Next{Verb: refusal.VerbAdopt, Args: []string{"--pr", strconv.Itoa(e.Number), "--evaluate"}})
@@ -130,16 +138,16 @@ func (e *Engine) AllowAdopted(ctx context.Context, branch model.Branch) error {
 	return e.AllowEvaluation(ctx, branch.PullRequest.Number, authorHead(branch.PullRequest))
 }
 
-// evaluating marks the work under ctx as evaluating a branch's Portfiles,
-// where they are another's: the door says whose once where the person
-// allowed the author's commit, and refuses otherwise. The refusal is
-// returned too, for work that stops before it evaluates, as a change
-// record must, which would otherwise record it as an evaluation that
-// failed. The person's own branch is unmarked.
+// evaluating marks the work under ctx as evaluating a branch's Portfiles:
+// the person's own, marked as theirs, or another's, which the door says
+// once where the person allowed the author's commit and refuses
+// otherwise. The refusal is returned too, for work that stops before it
+// evaluates, as a change record must, which would otherwise record it as
+// an evaluation that failed.
 func (e *Engine) evaluating(ctx context.Context, branch model.Branch) (context.Context, error) {
 	whose, others := OthersPortfiles(branch)
 	if !others {
-		return ctx, nil
+		return workspace.Yours(ctx, branch.ShortName()), nil
 	}
 	owner := workspace.Owner{Whose: whose, Of: branch.ShortName()}
 	allowed, err := e.EvaluationAllowed(ctx, branch)
@@ -150,6 +158,50 @@ func (e *Engine) evaluating(ctx context.Context, branch model.Branch) (context.C
 		owner.Refused = (&NotAllowedError{Number: branch.PullRequest.Number, Whose: whose, Head: authorHead(branch.PullRequest)}).refusal()
 	}
 	return workspace.WithOwner(ctx, owner), owner.Refused
+}
+
+// marked is evaluating for a read that goes on where the branch's
+// Portfiles may not be evaluated, as status and its words do: the context
+// carries the refusal, so the door refuses each evaluation it would make,
+// and the read says what it couldn't. Status never asks (#162).
+func (e *Engine) marked(ctx context.Context, branch model.Branch) context.Context {
+	ctx, _ = e.evaluating(ctx, branch)
+	return ctx
+}
+
+// evaluatingRevision is evaluating for a revision of a branch, as a check's
+// plan and its driver read it: consent is asked for the author's commit
+// behind the revision, not the branch's now. A revision that holds the
+// branch's author's commit now was captured on top of it, so the person's
+// yes for that commit covers it, and the person's own commits above. One
+// that doesn't was captured before the branch was refreshed to another
+// author's commit, whose yes says nothing of the code the revision holds,
+// which the newer push may have taken back (Codex's confirmation of
+// #162's fixes, finding 1): it is refused.
+func (e *Engine) evaluatingRevision(ctx context.Context, revision model.Revision) (context.Context, error) {
+	branch, err := e.Branch(ctx, revision.Branch)
+	if err != nil {
+		return ctx, err
+	}
+	marked, refused := e.evaluating(ctx, branch)
+	whose, others := OthersPortfiles(branch)
+	if refused != nil || !others {
+		return marked, refused
+	}
+	head := authorHead(branch.PullRequest)
+	at := revision.Source.Commit
+	if revision.Kind == model.RevisionSnapshot {
+		at = revision.Head
+	}
+	if at != "" {
+		if holds, err := e.Repo.IsAncestor(ctx, string(head), string(at)); err == nil && holds {
+			return marked, nil
+		}
+	}
+	number := branch.PullRequest.Number
+	refused = refusal.New(refusal.Failed, "these files of #%d, %s, were captured before its author's commit %s, the one you allowed, so the author's commit behind them isn't one you allowed; dockhand check checks the branch as it is now", number, whose, head.Short()).
+		Then(refusal.Next{Verb: refusal.VerbCheck, Args: []string{"--branch", branch.ShortName()}})
+	return workspace.WithOwner(ctx, workspace.Owner{Whose: whose, Of: branch.ShortName(), Refused: refused}), refused
 }
 
 // AdoptedDiff is what an adopted branch's author's commit changes from
