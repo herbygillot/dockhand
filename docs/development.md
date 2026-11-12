@@ -112,6 +112,10 @@ DOCKHAND_MEASURE_TREE=~/Source/macports-ports DOCKHAND_TEST_MACPORTS_TCLSH=/opt/
 
 `DOCKHAND_MEASURE_RESTATED` sets how many Portfiles `restated` evaluates (200 unless given, 0 for all) and `DOCKHAND_MEASURE_COMMITS` how many commits `ticket-trailer` reads (20,000 unless given).
 
+## The survey that gates the model
+
+A change to what the model observes or leaves is judged by `tools/survey -tree … -prefix … -db …` over the whole pinned tree, compared with a baseline run the same way (docs/designs/closed-model.md, "The gating survey"). A narrower check uses `-sample` with `-db`, and is compared with the same ports in a `-db` run of the baseline. A run without `-db` writes only a journal and skips observing each port in every context before assessing it (`Service.Observe` in tools/survey/assess.go), so the assessment makes its own observations, and its outcomes and contexts left don't compare with a `-db` survey. On 2026-11-12 one such run reported 472 contexts left where main's `-db` survey left 82.
+
 | Notice | Matches | Wrong | Narrowed by the measure |
 | --- | --- | --- | --- |
 | A maintainer's instruction in the comments (I7) | 49 of 20,231 Portfiles | 1, cpmtools' "do not update the version number" | nothing |
