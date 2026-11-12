@@ -495,6 +495,14 @@ func TestATreesEvidenceIsEveryBuildItsChecksMade(t *testing.T) {
 	only := judge(checkOf(772, gnutls, model.OutcomePassed))
 	require.Equal(t, []string{"curl +gnutls +sectrust changed run_772"}, rows(only))
 	require.Equal(t, "curl", only.AcceptName(only.Targets[0]))
+
+	// Several variant builds and no default build: the bare name is the
+	// one that failed, and where several failed, none is (#235).
+	one := judge(checkOf(775, ssl, model.OutcomeFailed), checkOf(772, gnutls, model.OutcomePassed))
+	require.Equal(t, []string{"curl", "curl +gnutls +sectrust"}, []string{one.AcceptName(one.Targets[0]), one.AcceptName(one.Targets[1])})
+	both := judge(checkOf(775, ssl, model.OutcomeFailed), checkOf(772, gnutls, model.OutcomeFailed))
+	require.Equal(t, []string{"curl +sectrust +ssl", "curl +gnutls +sectrust"}, []string{both.AcceptName(both.Targets[0]), both.AcceptName(both.Targets[1])})
+	require.Len(t, both.BuildsOf("curl"), 2)
 }
 
 // A result recorded after a shell opened in its running guest isn't

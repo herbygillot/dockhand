@@ -23,7 +23,7 @@ type Check struct {
 	// Evidence is what the checks of the files as they are establish.
 	Evidence *evidence.Evidence
 	// Accepted are the ports whose failures a person accepted at this
-	// commit, AtBase the failed ports a baseline fails alike, with the
+	// commit, AtBase the failed builds a baseline fails alike, by ID, with the
 	// baselines, and Decisions the standing ones that may take a
 	// dependency's failure: what publication reads beside the evidence
 	// (Publishable).

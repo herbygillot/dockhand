@@ -16,12 +16,30 @@ import (
 // port, no check of these files built it, or it's a changed port, whose
 // failure is shared as a draft. A port
 // may have several builds, its variant builds beside its default one: the
-// one to accept is one that failed.
+// one to accept is one that failed. A port's bare name takes a variant
+// build only where it names one failing build (evidence.AcceptName); where
+// several of the port's builds failed, it's refused, naming each by its
+// build (#235). atBase is keyed by build, as failsAtBase makes it.
 func AcceptanceProblem(ev evidence.Evidence, accept []string, atBase map[string][]string, standing bool) error {
 	for _, port := range accept {
 		i := slices.IndexFunc(ev.Targets, func(t evidence.TargetEvidence) bool { return ev.AcceptName(t) == port && t.Failing() })
 		if i < 0 {
 			i = slices.IndexFunc(ev.Targets, func(t evidence.TargetEvidence) bool { return ev.AcceptName(t) == port })
+		}
+		if i < 0 {
+			builds := ev.BuildsOf(port)
+			var failed []string
+			for _, build := range builds {
+				if build.Failing() {
+					failed = append(failed, "--accept '"+ev.AcceptName(build)+"'")
+				}
+			}
+			if len(failed) > 1 {
+				return fmt.Errorf("--accept %s: %s failed in %d builds in %s, and each is accepted by its build's name. Name the builds to accept: %s", port, port, len(failed), ev.Run.Name(), strings.Join(failed, " "))
+			}
+			if len(builds) > 0 {
+				i = slices.IndexFunc(ev.Targets, func(t evidence.TargetEvidence) bool { return t.Target.ID == builds[0].Target.ID })
+			}
 		}
 		switch {
 		case i < 0:
@@ -39,7 +57,7 @@ func AcceptanceProblem(ev evidence.Evidence, accept []string, atBase map[string]
 			if _, ok := EnvironmentFailures(ev, ev.Targets[i]); !ok {
 				return fmt.Errorf("--accept %s --standing: a standing acceptance applies only to a dependency install failure with a recorded dependency version, and %s failed otherwise in %s", port, port, ev.Run.Name())
 			}
-		case !ev.Targets[i].Acceptable() && len(atBase[port]) == 0:
+		case !ev.Targets[i].Acceptable() && len(atBase[string(ev.Targets[i].Target.ID)]) == 0:
 			return fmt.Errorf("--accept %s: %s has changed. Its failure can be accepted only if the baseline fails the same way. Run dockhand check --baseline to compare, or use --draft to share the failing change", port, port)
 		}
 	}
@@ -48,13 +66,14 @@ func AcceptanceProblem(ev evidence.Evidence, accept []string, atBase map[string]
 
 // PublicationBlocks applies the publication rule to the evidence: every
 // changed target checked and every substantive one passed, and every
-// other failure accepted, each refusal a block of its kind.
+// other failure accepted, each refusal a block of its kind. atBase is
+// keyed by build, as AcceptanceProblem reads it.
 func PublicationBlocks(ev evidence.Evidence, accepted []string, atBase map[string][]string, standing map[string]AcceptedFailure) []Block {
 	blocked := BlockedByAccepted(ev, slices.Concat(accepted, slices.Collect(maps.Keys(standing))))
 	var blocks []Block
 	run := ev.Run.Name()
 	for _, target := range ev.Failed() {
-		name, port := ev.AcceptName(target), target.Target.Target.Name
+		name, build := ev.AcceptName(target), string(target.Target.ID)
 		if slices.Contains(blocked, name) {
 			continue
 		}
@@ -70,13 +89,13 @@ func PublicationBlocks(ev evidence.Evidence, accepted []string, atBase map[strin
 			blocks = append(blocks, Block{Kind: BlockUnchecked, Port: name, Unbuilt: unbuilt(target)})
 		case standing[name].Kind != "":
 			// Its every failure is a dependency's accepted standing.
-		case !target.Acceptable() && len(atBase[port]) > 0 && !slices.Contains(accepted, name):
+		case !target.Acceptable() && len(atBase[build]) > 0 && !slices.Contains(accepted, name):
 			// A failure master has too is no regression, the usual case for
 			// a MacPorts pull request: a person accepts it, never bump or
 			// serve, and the pull request says so (pgdog 0.1.62 on macOS 12,
 			// field testing; the person's word, 2026-10-17).
-			blocks = append(blocks, Block{Kind: BlockFailsAtBase, Port: name, Run: run, Baselines: atBase[port]})
-		case !target.Acceptable() && len(atBase[port]) == 0:
+			blocks = append(blocks, Block{Kind: BlockFailsAtBase, Port: name, Run: run, Baselines: atBase[build]})
+		case !target.Acceptable() && len(atBase[build]) == 0:
 			blocks = append(blocks, Block{Kind: BlockFailed, Port: name, Run: run})
 		case !slices.Contains(accepted, name):
 			blocks = append(blocks, Block{Kind: BlockNotAccepted, Port: name, Run: run, Planned: target.Target})
@@ -213,11 +232,11 @@ func StandingAccepted(ev evidence.Evidence, standing []model.Decision) map[strin
 func AcceptedReasons(ev evidence.Evidence, accepted []string, atBase map[string][]string, standing map[string]AcceptedFailure) map[string]AcceptedFailure {
 	reasons := map[string]AcceptedFailure{}
 	for _, target := range ev.Failed() {
-		name, port := ev.AcceptName(target), target.Target.Target.Name
+		name, build := ev.AcceptName(target), string(target.Target.ID)
 		switch {
 		case !slices.Contains(accepted, name):
-		case len(atBase[port]) > 0:
-			reasons[name] = AcceptedFailure{Kind: AcceptedAtBase, Baselines: atBase[port]}
+		case len(atBase[build]) > 0:
+			reasons[name] = AcceptedFailure{Kind: AcceptedAtBase, Baselines: atBase[build]}
 		default:
 			reasons[name] = AcceptedFailure{Kind: AcceptedUnestablished}
 		}

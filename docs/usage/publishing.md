@@ -310,6 +310,8 @@ These choices answer different questions:
   lint warnings, for this commit.
 - `submit --accept '<port> +variant'`: Accept a variant build's failure by the
   name the table gives it; `--accept <port>` is the port's default build.
+  Where a port has only variant builds, `--accept <port>` takes the one that
+  failed; where several failed, it is refused and names each build to accept.
 - `submit --accept <port> --standing`: Accept a specifically identified
   dependency-install failure across branches until its dependency version or
   image changes.
@@ -317,7 +319,8 @@ These choices answer different questions:
   is acceptable for these port files. It is not build evidence.
 
 For a failing changed port, an ordinary `--accept` needs a baseline reproducing
-the same failure at the same phase in the relevant environments. A failed extra
+the same failure at the same phase in the relevant environments, for that
+build: a baseline failing one variant build says nothing of another. A failed extra
 from `--also` or a revision-only target can be accepted without establishing
 that baseline, and a variant build beside the port's default build is an extra
 too; the pull request says the cause was not established. A port that

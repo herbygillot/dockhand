@@ -331,8 +331,8 @@ func Attend(facts Facts) []Attention {
 				// A failure its baseline has alike is the verdict's to say
 				// with --accept, which dockhand never takes itself (Then's
 				// item 4).
-				if _, atBase := check.AtBase[target.Target.Target.Name]; atBase {
-					next = Next{Verb: VerbSubmit, Args: []string{"--accept", target.Target.Target.Name}}
+				if _, atBase := check.AtBase[string(target.Target.ID)]; atBase {
+					next = Next{Verb: VerbSubmit, Args: []string{"--accept", check.Evidence.AcceptName(target)}}
 				}
 				return row(Failed, reason, next, func(a *Attention) {
 					a.Run, a.Port, a.Environment, a.Detail = run, target.Target.Target.Name, check.Evidence.Plan.Environments[i], result.Detail
