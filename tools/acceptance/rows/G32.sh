@@ -7,6 +7,11 @@
 # 2.38.0's source" ahead of its patch's line, where it said only that
 # patch-makefile.diff found no file to patch, and its JSON carries
 # missing_worksrcdir. Fetches 2.38.0's zip, about 2 MB, from angelcode.com.
+# In the full stage it plans against a master of its own at the quick
+# stage's pin (plan_at_pin), as C11 and C13 do: MacPorts' own master has
+# angelscript past 2.33.0 (rc4's full stage).
+. "${ROW_LIB:?}/plan.sh"
+setup() { plan_at_pin "angelscript is at 2.33.0"; }
 act() {
 	dh update angelscript 2.38.0 --plan </dev/null || :
 	dh_json update angelscript 2.38.0 --plan </dev/null || :

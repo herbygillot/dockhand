@@ -5,7 +5,11 @@
 #    refused, exit 1, ending "dockhand clean --delete <branch> then forgets
 #    it for good"; archive's last line says the same; and a clean that
 #    removes nothing while the archived branch keeps its Git branch says
-#    so, naming clean --delete, where it said "Nothing to remove" alone;
+#    so, naming clean --delete, where it said "Nothing to remove" alone.
+#    That plain clean is the quick stage's alone: its line counts every
+#    archived branch the database keeps, which a full stage's database
+#    has hundreds of (dhtest's 954 at rc4's full stage), and it would
+#    remove what earlier rows there left;
 #  - logs <check> -p <port> is refused, exit 1, naming logs <check> <port>,
 #    since -p chooses a branch (02bd5e81, v0.8.0's upgrade notes).
 setup() {
@@ -17,7 +21,7 @@ act() {
 	[ -n "${G27_BRANCH:-}" ] || return 0
 	dh_json clean "$G27_BRANCH" -y </dev/null || :
 	dh archive "$G27_BRANCH" </dev/null || :
-	dh clean -y </dev/null || :
+	[ "${ACCEPT_STAGE:-}" = full ] || dh clean -y </dev/null || :
 	dh_json logs check-1 -p "${ACCEPT_GO_PORT:?}" </dev/null || :
 }
 assert() {
@@ -36,7 +40,7 @@ assert() {
 		row_fail "archive's last line didn't name clean --delete: $(sed -n "/^\\\$ dockhand archive $G27_BRANCH\$/,/^\\[exit/p" "$ROW_DIR/out.log" | tail -3 | tr '\n' ' ')"
 		return
 	fi
-	if ! sed -n '/^\$ dockhand clean -y$/,/^\[exit/p' "$ROW_DIR/out.log" | tr '\n' ' ' | sed 's/  */ /g' | matches -F "1 archived branch, $G27_BRANCH, keeps its Git branch for archive --undo; $words."; then
+	if [ "${ACCEPT_STAGE:-}" != full ] && ! sed -n '/^\$ dockhand clean -y$/,/^\[exit/p' "$ROW_DIR/out.log" | tr '\n' ' ' | sed 's/  */ /g' | matches -F "1 archived branch, $G27_BRANCH, keeps its Git branch for archive --undo; $words."; then
 		row_fail "the clean that removed nothing didn't say the archived branch it keeps: $(sed -n '/^\$ dockhand clean -y$/,/^\[exit/p' "$ROW_DIR/out.log" | sed 1d | tr '\n' ' ')"
 		return
 	fi
@@ -44,5 +48,7 @@ assert() {
 		row_fail "logs check-1 -p ${ACCEPT_GO_PORT} exited $(cat "$logs.exit"), not refused naming logs check-1 ${ACCEPT_GO_PORT}: $(jq -r '.error // empty' "$logs")"
 		return
 	fi
-	row_pass "clean refused the open branch: $(jq -r '.error' "$open"); archive and a clean removing nothing named clean --delete; logs -p refused: $(jq -r '.error' "$logs")"
+	local named="archive and a clean removing nothing"
+	[ "${ACCEPT_STAGE:-}" != full ] || named="archive (the plain clean is the quick stage's)"
+	row_pass "clean refused the open branch: $(jq -r '.error' "$open"); $named named clean --delete; logs -p refused: $(jq -r '.error' "$logs")"
 }

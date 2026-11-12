@@ -21,7 +21,7 @@ g36_branch() {
 	worktree=$("$DH_BIN" path "$name") || { row_fail "dockhand path $name found no worktree"; return 1; }
 	dir="$worktree/devel/$(g36_name)"
 	mkdir -p "$dir" && cp "$(g36_portfile)" "$dir/Portfile" || { row_fail "couldn't put $(g36_portfile) in $dir"; return 1; }
-	git -C "$worktree" add "devel/$(g36_name)/Portfile" &&
+	git -C "$worktree" add --sparse "devel/$(g36_name)/Portfile" &&
 		git -C "$worktree" -c user.name=acceptance -c user.email=acceptance@example.invalid -c commit.gpgsign=false \
 			commit -q -m "$(g36_name): new port, 1.0.0" || { row_fail "couldn't commit the fixture's port on $name"; return 1; }
 }

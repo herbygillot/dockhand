@@ -21,11 +21,14 @@ act() {
 	dh status </dev/null || :
 	dh status "$G33_BRANCH" </dev/null || :
 	dh_json status "$G33_BRANCH" </dev/null || :
+	# submit_pr's envelope comes first, so status's is named, not numbered
+	# (rc4's full stage read submit's as status's).
+	G33_STATUS=$DH_LAST_JSON
 	close_test_pr "$(port)" "$G33_BRANCH"
 }
 assert() {
-	local json=$ROW_DIR/json/1.json merge
-	[ -f "$json" ] || { row_fail "status didn't run after the pull request opened"; return; }
+	local json=${G33_STATUS:-} merge
+	[ -n "$json" ] && [ -f "$json" ] || { row_fail "status didn't run after the pull request opened"; return; }
 	merge=$(jq -c '[.. | objects | .merge? | objects][0] // empty' "$json")
 	[ -n "$merge" ] || { row_fail "status --json gave no pull_request.merge for the open pull request"; return; }
 	if [ "$(printf '%s' "$merge" | jq --arg port "$(port)" '[.ports[]? | select(.port == $port)] | length')" = 0 ]; then
