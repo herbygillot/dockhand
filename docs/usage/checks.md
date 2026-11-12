@@ -187,7 +187,10 @@ Tart requires Apple silicon. Dockhand finds `tart` on PATH, then in
 `build profile host requires Tart, which isn't on PATH or in /opt/local/bin`.
 Each execution clones a prepared image and runs the shared build program inside
 it. Ordinary checks remove the clone afterward; the prepared images remain
-available for later checks.
+available for later checks. A cancel stops each clone the check made and
+deletes it once its VM has gone, also for a check whose dockhand was killed;
+until then the cancel stays unfinished and `status` says which clone. A clone
+an attempt kept for `dockhand shell` stays, and the canceled check says so.
 
 ```sh
 dockhand setup tart

@@ -55,10 +55,12 @@ type fakeMac struct {
 	// slot.
 	beforeStop func()
 	cloneErr   error
-	running    []int // counts Running reports, one per call, the last repeating
-	events     []string
-	guest      *fakeGuest
-	run        *fakeRun
+	// stopErr and deleteErr are how Tart answers a stop or a delete.
+	stopErr, deleteErr error
+	running            []int // counts Running reports, one per call, the last repeating
+	events             []string
+	guest              *fakeGuest
+	run                *fakeRun
 	// version is Tart's; 2.40.1 when empty.
 	version string
 	// processes are the VMs' processes running, as VirtualMachines says.
@@ -165,9 +167,12 @@ func (r *liveRun) Stop(context.Context, time.Duration) error {
 	})
 	return nil
 }
-func (m *fakeMac) Stop(_ context.Context, vm string) error { m.log("stop " + vm); return nil }
+func (m *fakeMac) Stop(_ context.Context, vm string) error { m.log("stop " + vm); return m.stopErr }
 func (m *fakeMac) Delete(_ context.Context, vm string) error {
 	m.log("delete " + vm)
+	if m.deleteErr != nil {
+		return m.deleteErr
+	}
 	m.mu.Lock()
 	m.images = slices.DeleteFunc(m.images, func(name string) bool { return name == vm })
 	m.mu.Unlock()
