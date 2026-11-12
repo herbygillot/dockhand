@@ -325,6 +325,18 @@ func (d *driver) drive(ctx context.Context, id model.RunID) (model.Run, error) {
 	if d.run.CancelRequested != nil {
 		return c.settleCancel(ctx, d.session, d.lease, id)
 	}
+	// The run's owner is named once, as it is taken and before its first
+	// read, so every read the driver and its hooks make carries it; a run
+	// of another's Portfiles the person hasn't allowed isn't driven, and a
+	// queued one stays queued, its journal saying why (#162).
+	if c.Hooks != nil {
+		owned, err := c.Hooks.Evaluating(ctx, d.run)
+		if err != nil {
+			d.emit(ctx, model.EventWaiting, d.run.Name()+" isn't driven: "+refusal.WordsOf(err))
+			return d.run, err
+		}
+		ctx = owned
+	}
 	if d.run.State == model.RunQueued {
 		if err := d.fenced(ctx, func(tx store.Tx) error {
 			d.run.State = model.RunRunning

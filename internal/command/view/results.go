@@ -560,9 +560,12 @@ type ReviewJSON struct {
 	LeftOut   []string      `json:"left_out"`
 	Findings  []findingJSON `json:"findings"`
 	Resolved  []string      `json:"resolved"`
-	Body      string        `json:"body"`
-	Posted    string        `json:"posted"`
-	PostedURL string        `json:"posted_url,omitempty"`
+	// Carried are an earlier review's findings whose rules this review
+	// didn't run, neither found nor resolved (#162).
+	Carried   []string `json:"carried"`
+	Body      string   `json:"body"`
+	Posted    string   `json:"posted"`
+	PostedURL string   `json:"posted_url,omitempty"`
 	// Check is review --check's check, as check reports it, inside the
 	// review, where its result replaced the review's (Codex's review of
 	// 8e314b96, finding 9).
@@ -585,9 +588,12 @@ func (r *ReviewJSON) Result() any { return *r }
 
 func ReviewView(report engine.ReviewReport) ReviewJSON {
 	viewed := ReviewJSON{Number: report.Ref.Number, Title: report.Title, URL: report.Ref.URL, Head: report.Head, Commits: len(report.Commits), Ports: NonNil(report.Ports),
-		Permission: report.Permission, Summary: report.Summary(), Evaluated: report.Evaluated, LeftOut: NonNil(report.LeftOut), Findings: findingsView(report.Findings), Resolved: []string{}, Body: report.Markdown()}
+		Permission: report.Permission, Summary: report.Summary(), Evaluated: report.Evaluated, LeftOut: NonNil(report.LeftOut), Findings: findingsView(report.Findings), Resolved: []string{}, Carried: []string{}, Body: report.Markdown()}
 	for _, finding := range report.Resolved {
 		viewed.Resolved = append(viewed.Resolved, finding.Message+" ["+finding.Code+"]")
+	}
+	for _, finding := range report.Carried {
+		viewed.Carried = append(viewed.Carried, finding.Message+" ["+finding.Code+"]")
 	}
 	return viewed
 }

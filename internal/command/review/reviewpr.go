@@ -354,6 +354,9 @@ func writeReview(out io.Writer, report engine.ReviewReport) {
 	for _, finding := range report.Resolved {
 		fmt.Fprintf(out, "  ✓ resolved since %s: %s [%s]\n", report.Previous.Head.Short(), finding.Message, finding.Code)
 	}
+	for _, finding := range report.Carried {
+		fmt.Fprintf(out, "  · found at %s, its rule not run this time: %s [%s]\n", report.Previous.Head.Short(), finding.Message, finding.Code)
+	}
 	switch lines := view.ComparisonLines(report.Upstream); {
 	case report.UpstreamUnread != "":
 		fmt.Fprintf(out, "  ! Upstream changes could not be assessed: %s\n", report.UpstreamUnread)

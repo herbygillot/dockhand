@@ -98,8 +98,14 @@ type Admission interface {
 }
 
 // Hooks are what the rest of dockhand does as a check is driven, each at
-// its moment and none failing the check.
+// its moment and none failing the check but Evaluating, which keeps it
+// from being driven at all.
 type Hooks interface {
+	// Evaluating marks the work under ctx as evaluating the run's branch's
+	// Portfiles, where they are another's, so every read a driver makes
+	// carries the run's owner (#162); an error is a branch whose author's
+	// commit the person hasn't allowed, and the run isn't driven.
+	Evaluating(ctx context.Context, run model.Run) (context.Context, error)
 	// BeforeEnvironment is said beside an environment's first clone, never
 	// delaying it, within estimateWait: the lines of what the check will
 	// install there, each said as the environment's progress.

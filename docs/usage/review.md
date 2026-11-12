@@ -61,7 +61,9 @@ The list is the Portfiles and PortGroups the pull request changes, since a
 changed PortGroup is the author's code too, and `d` shows their diff before you
 answer. No, the default, gives a text-only review and isn't kept. Yes is kept
 for the pull request and the author's commit it was given for: a new push from
-the author asks again, showing what changed since the commit you allowed. Your
+the author asks again, showing what changed since the commit you allowed, the
+files changed between that commit and the new one, so a PortGroup it added and
+the new push removed is listed too. Your
 own pull requests, and your own commits above an adopted one, ask nothing.
 
 A text-only review runs the commit rules, the Portfile rules that compare text,
@@ -71,7 +73,9 @@ first line, in the displayed text, the posted text, and `--json`
 dependencies, and the upstream comparison. A rule that needs the head evaluated
 isn't run, never half-run: a subject isn't judged by the port it names where
 the commit changes a port directory, since only the head knows the ports it
-defines.
+defines. An earlier review's findings of rules a text-only review didn't run
+aren't reported resolved: they are listed as found by that review, under
+`"carried"` in `--json`, and kept for the next comparison.
 
 In a script, `--evaluate` answers yes for the head fetched and records it, and
 `--evaluate=false` asks for a text-only review, on a terminal too. Without
@@ -83,9 +87,10 @@ before anything is adopted, and there is no text-only check.
 On an adopted pull request's branch, `check`, `tidy`, `submit`, `diff`, and the
 authoring commands ask the same question on a terminal where the author's commit
 isn't allowed; a script is refused, naming `dockhand adopt --pr 35174
---evaluate`, which allows it. `status` never asks, and `serve` drives a queued
-check of an adopted branch only where its author's commit is allowed; one that
-isn't stays queued.
+--evaluate`, which allows it. `status` never asks, and nothing drives a queued
+check of an adopted branch unless its author's commit is allowed, whether
+`serve`, `wait` or a background worker takes it: one that isn't stays queued,
+its journal saying why.
 
 This is consent, not a sandbox. A Tart check isolates the build in a guest, but
 its planning still evaluates Portfiles on the host. Dockhand refuses a
