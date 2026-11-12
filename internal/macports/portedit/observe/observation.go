@@ -20,6 +20,41 @@ type key struct {
 	profile  string
 }
 
+// unanswered is the call a modelled evaluation ended on, where err says it
+// ended on one the model has no answer for.
+func unanswered(err error) (string, bool) {
+	var unanswered *macports.UnansweredError
+	if errors.As(err, &unanswered) {
+		return unanswered.Call, true
+	}
+	return "", false
+}
+
+// unansweredWords say a call the model has no answer for.
+func unansweredWords(call string) string {
+	return fmt.Sprintf("modeled context has no answer for `%s`, which the Portfile needs", call)
+}
+
+// Left says why a context modelled on another Mac is left as the Portfile
+// has it, where it is: its evaluation ended on a call the model has no
+// answer for (Observation.Unanswered), or its reading depends on host
+// state (Tolerate). It is the one rule an update's plan, a checksum
+// refresh, its fallback, an assessment and a revision reset leave a
+// context by (Codex's review of #110 and #125, findings 5 and 6). This
+// Mac's own context is never left: it's read as it stands (#125).
+func Left(ctx context.Context, observed macports.Observation, port string, contents []byte) (string, bool) {
+	if !observed.Modeled {
+		return "", false
+	}
+	if observed.Unanswered != "" {
+		return unansweredWords(observed.Unanswered), true
+	}
+	if read, inconclusive := Tolerate(ctx, observed.Ports[port], contents, observed.Snapshot.Root); inconclusive {
+		return "its reading depends on host state" + HostInputs(read), true
+	}
+	return "", false
+}
+
 // Observe observes one set of contents in every profile at once. The
 // contents are one overlay of the workspace and each profile gets its own
 // interpreter, so the observations run concurrently on an immutable
@@ -68,6 +103,13 @@ func (s *Session) Observe(ctx context.Context, contents []byte, profiles []model
 		}
 		group.Go(func() error {
 			observed, err := observer.Observe(gctx, bound, requests[i])
+			// A modelled context whose evaluation ended on a call the model
+			// has no answer for is one nothing else of was read, for its
+			// readers to leave (Left), not a failure of the rest (Codex's
+			// review of #110 and #125, finding 6).
+			if call, ok := unanswered(err); ok {
+				observed, err = macports.Observation{Modeled: true, Unanswered: call}, nil
+			}
 			if err != nil {
 				return fmt.Errorf("%+v: %w", profiles[i], err)
 			}
@@ -127,9 +169,11 @@ func (s *Session) One(ctx context.Context, contents []byte, profile macports.Obs
 	observed, err := observer.Observe(ctx, bound, profile)
 	// A closed answer that ended the evaluation is a context the model
 	// has no answer for, named by the call: inconclusive, not a failure
-	// (#110).
-	if unanswered := (*macports.UnansweredError)(nil); errors.As(err, &unanswered) {
-		err = ErrInconclusive.Because("modeled context has no answer for `%s`, which the Portfile needs", unanswered.Call)
+	// (#110), and the observation says it, for a reader to leave the
+	// context (Left).
+	if call, ok := unanswered(err); ok {
+		observed = macports.Observation{Modeled: true, Unanswered: call}
+		err = ErrInconclusive.Because("%s", unansweredWords(call))
 	}
 	observed.Snapshot.Source = model.Source{}
 	if err == nil && baseline {

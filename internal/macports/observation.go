@@ -123,6 +123,9 @@ type Observation struct {
 	Snapshot Snapshot
 	Modeled  bool
 	Ports    map[string]PortObservation
+	// Unanswered is the call a modelled context had no answer for, which
+	// ended its evaluation (UnansweredError): nothing else of it was read.
+	Unanswered string
 }
 
 // Observer adds request-scoped source and fetch observations to native metadata.

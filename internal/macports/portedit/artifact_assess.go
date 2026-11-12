@@ -28,6 +28,13 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 		observed := observations[i]
 		info := observed.Snapshot.Ports[input.target.Name]
 		contexts = append(contexts, ContextCoverage{Platform: profile, Modeled: observed.Modeled, Fetch: info.Fetch})
+		// A context modelled on another Mac that can't be read is left, as
+		// update leaves it, and said (#125); this Mac's reading isn't.
+		if reason, leaves := observe.Left(ctx, observed, input.target.Name, input.data); leaves {
+			contexts[len(contexts)-1].Left = reason
+			left = true
+			continue
+		}
 		if obsoleteIn(info) {
 			// An obsolete follower has no archive in this context by design.
 			continue
@@ -36,13 +43,6 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 			return contexts, err, nil
 		}
 		metadata, inconclusive := observe.Tolerate(ctx, observed.Ports[input.target.Name], input.data, observed.Snapshot.Root)
-		// A context modelled on another Mac that can't be read is left, as
-		// update leaves it, and said (#125); this Mac's reading isn't.
-		if inconclusive && observed.Modeled {
-			contexts[len(contexts)-1].Left = "its reading depends on host state" + observe.HostInputs(metadata)
-			left = true
-			continue
-		}
 		if inconclusive {
 			return contexts, errProbeInconclusive.Because("modeled context depends on host state%s", observe.HostInputs(metadata)), nil
 		}

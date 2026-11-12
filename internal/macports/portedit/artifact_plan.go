@@ -70,10 +70,11 @@ func (s *Service) bindArchives(ctx context.Context, input *sourceInput, contents
 // A checksum refresh reads cpi's this way, whose qmake5 PortGroup reads
 // the host's Qt paths (field testing at 43949b89).
 func (s *Service) bindArchivesOn(ctx context.Context, input *sourceInput, contents []byte, observed macports.Observation, here bool) (distfiles.Binding, error) {
-	port, inconclusive := observe.Tolerate(ctx, observed.Ports[input.target.Name], contents, observed.Snapshot.Root)
-	if inconclusive && !here {
-		return distfiles.Binding{}, errProbeInconclusive.Because("modeled context depends on host state%s", observe.HostInputs(port))
+	if reason, left := observe.Left(ctx, observed, input.target.Name, contents); left {
+		return distfiles.Binding{}, errProbeInconclusive.Because("%s", reason)
 	}
+	// This Mac's reading is taken as it stands, whatever it read.
+	port, _ := observe.Tolerate(ctx, observed.Ports[input.target.Name], contents, observed.Snapshot.Root)
 	info := observed.Snapshot.Ports[input.target.Name]
 	if err := distfetch.CheckPolicy(info, input.portdirIn(observed.Snapshot.Root)); err != nil {
 		return distfiles.Binding{}, err
@@ -131,13 +132,13 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 		// leaves one: nothing read of it reaches the plan, neither a
 		// version nor an archive, and MacPorts' builders check that
 		// release after merge. It refused the whole port (#125).
-		if variant == "" && (before.Modeled || after.Modeled) {
+		if variant == "" {
 			for _, read := range []struct {
 				observed macports.Observation
 				contents []byte
 			}{{before, input.data}, {after, contents}} {
-				port, inconclusive := observe.Tolerate(ctx, read.observed.Ports[member.target.Name], read.contents, read.observed.Snapshot.Root)
-				if !inconclusive {
+				reason, left := observe.Left(ctx, read.observed, member.target.Name, read.contents)
+				if !left {
 					continue
 				}
 				what := contextWords(profile, variant)
@@ -145,7 +146,7 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 					what = member.target.Name + " on " + what
 				}
 				if !slices.ContainsFunc(plan.left, func(l ChecksumLeft) bool { return l.What == what }) {
-					plan.left = append(plan.left, ChecksumLeft{Kind: LeftContext, What: what, Reason: "its reading depends on host state" + observe.HostInputs(port)})
+					plan.left = append(plan.left, ChecksumLeft{Kind: LeftContext, What: what, Reason: reason})
 				}
 				return nil
 			}

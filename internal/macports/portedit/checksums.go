@@ -479,6 +479,11 @@ func (s *Service) checksumsToWrite(ctx context.Context, input *sourceInput, refu
 	var sums []portfile.Checksum
 	agree := true
 	for _, observed := range observations {
+		// A context the plan left is left here too: nothing of it is
+		// fetched (Codex's review of #110 and #125, finding 5).
+		if _, left := observe.Left(ctx, observed, input.target.Name, input.data); left {
+			continue
+		}
 		info := observed.Snapshot.Ports[input.target.Name]
 		declared, _ := syntax.ListValues(info.Options["checksums"])
 		plan, err := observed.Ports[input.target.Name].FetchPlan()
