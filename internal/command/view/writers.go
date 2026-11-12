@@ -1,6 +1,7 @@
 package view
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"math"
@@ -478,7 +479,11 @@ func WriteQueue(out io.Writer, queue []checks.QueuedCheck, led bool) {
 		if queued.Progress != "" {
 			detail = queued.Progress
 		}
-		if queued.Stopped {
+		switch {
+		case queued.Stopped && run.CancelRequested != nil:
+			// Its detail says which work isn't known to have stopped.
+			state, detail = "canceling", cmp.Or(run.Detail, "a cancel was asked")+"; dockhand cancel "+run.Name()+" asks again"
+		case queued.Stopped:
 			state, detail = "stopped", "the process running it ended; dockhand wait "+run.Name()+" resumes it, cancel ends it"
 		}
 		// A queued check nothing leads waits for nothing: the session that

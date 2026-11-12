@@ -268,20 +268,23 @@ type TargetReport struct {
 // target that was blocked or never built.
 func Reported(result model.TargetResult) TargetReport { return TargetReport{Result: result} }
 
+// Stopper is a provider whose work can outlive its driver, as GitHub's
+// workflow runs on when a resumable driver stops, so the next can find it
+// again. Stop ends the work an execution recorded and gives one of three
+// answers (the lifecycle design's "Stopping"): no error and nothing left
+// is ended; no error and something left is ended, each thing named with
+// what removes it; an error is not known, in the provider's words, and
+// the cancel stays requested. Every cancel asks it, by whoever settles
+// the check, before the check is called canceled (#115, #193).
+type Stopper interface {
+	Provider
+	Stop(ctx context.Context, execution model.GuestExecution) (left []string, err error)
+}
+
 // LinkReader is a provider that reads what a passed build's binaries link
 // (TargetReport.Links), as Tart's guest does: where its results' links
 // are nil, they couldn't be read, where another provider's are nil
 // because it never reads them.
-// Stopper is a provider whose work can outlive its driver, as GitHub's
-// workflow runs on when a resumable driver stops, so the next can find it
-// again: Stop ends the work an execution recorded (ProviderRef), and is
-// nil where there is none left to end. A cancel no driver attends asks it
-// before settling the check (#115).
-type Stopper interface {
-	Provider
-	Stop(ctx context.Context, execution model.GuestExecution) error
-}
-
 type LinkReader interface {
 	ReadsLinks() bool
 }

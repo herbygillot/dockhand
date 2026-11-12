@@ -1,6 +1,7 @@
 package view
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
@@ -47,7 +48,7 @@ func RenderNext(next branchstate.Next, reason branchstate.Reason) string {
 		return "dockhand adopt <new name> (if you renamed the branch)"
 	case branchstate.VerbStatus, branchstate.VerbArchive:
 		line = "dockhand " + string(next.Verb) + " " + next.Branch
-	case branchstate.VerbWait, branchstate.VerbLogs, branchstate.VerbEdit, refusal.VerbExplain, refusal.VerbStart, refusal.VerbShell:
+	case branchstate.VerbWait, branchstate.VerbLogs, branchstate.VerbEdit, refusal.VerbExplain, refusal.VerbStart, refusal.VerbShell, refusal.VerbCancel:
 		line = "dockhand " + string(next.Verb) + args
 	case refusal.VerbSetup:
 		return "dockhand setup" + args
@@ -74,6 +75,11 @@ func CheckState(s engine.BranchStatus) string {
 	suffix := ""
 	if !s.Current {
 		suffix = ", for older work"
+	}
+	// A cancel that isn't finished is said beside nothing running, with
+	// the work not yet seen to stop.
+	if run := s.Canceling; run != nil && s.Check().Checking() == nil && s.Stopped == nil {
+		return fmt.Sprintf("canceling (%s): %s", run.Name(), cmp.Or(run.Detail, "a cancel was asked"))
 	}
 	switch s.CheckStanding() {
 	case branchstate.CheckStopped:

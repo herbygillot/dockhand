@@ -336,8 +336,8 @@ if it covers the requested files, targets, environments, and policy. Otherwise
 it refuses, as it does where a tag or branch a port fetches moved since the
 active check was planned. `--replace` stops the active request, keeps completed
 results, and queues the new one. `dockhand cancel` of a GitHub check whose
-driver stopped cancels its workflow run on your fork too, and says so where
-GitHub can't be reached. Read `dockhand usage recovery` before choosing between wait,
+driver stopped cancels its workflow run on your fork too, and the check stays
+unfinished, `canceling` in `status`, until GitHub reports the run completed. Read `dockhand usage recovery` before choosing between wait,
 retry, replacement, and cancellation.
 
 ## Read results and reuse

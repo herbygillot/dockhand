@@ -696,13 +696,29 @@ func TestCancellingAStoppedGitHubCheckStopsItsWorkflow(t *testing.T) {
 	f.unreachable = errors.New("GitHub answered 503")
 	_, _, err = cmdtest.Dockhand(t, "cancel", "check-1")
 	require.Error(t, err)
-	require.ErrorContains(t, err, "check-1: cancellation is recorded, but github could not stop https://github.com/ada/macports-ports/actions/runs/7: GitHub answered 503; run dockhand cancel check-1 to try again")
+	require.ErrorContains(t, err, "check-1: a cancel was asked, and github couldn't see https://github.com/ada/macports-ports/actions/runs/7 stop: GitHub answered 503; dockhand cancel check-1 asks again")
 	pending, err := e.RunNamed(ctx, "check-1")
 	require.NoError(t, err)
 	require.Equal(t, model.RunRunning, pending.State)
+	require.NotNil(t, pending.CancelRequested)
+	require.Equal(t, "a cancel was asked, and github couldn't see https://github.com/ada/macports-ports/actions/runs/7 stop: GitHub answered 503", pending.Detail, "status reads it")
+
+	// status says the cancel isn't finished, and offers cancel, not wait.
+	out, _, err := cmdtest.Dockhand(t, "status")
+	require.NoError(t, err)
+	require.Contains(t, out, "Checks   canceling (check-1): a cancel was asked, and github couldn't see")
+	require.Contains(t, out, "dockhand cancel check-1")
+	require.NotContains(t, out, "dockhand wait check-1")
+	out, _, err = cmdtest.Dockhand(t, "status", "--json")
+	require.NoError(t, err)
+	require.Contains(t, out, `"cancel_requested"`)
+	// A submission of the same files doesn't wait on it.
+	out, errs, err := cmdtest.Dockhand(t, "submit")
+	require.Error(t, err)
+	require.NotContains(t, out+errs+err.Error(), "check-1 checks this commit")
 
 	f.unreachable = nil
-	_, errs, err := cmdtest.Dockhand(t, "cancel", "check-1")
+	_, errs, err = cmdtest.Dockhand(t, "cancel", "check-1")
 	require.NoError(t, err, errs)
 	after, err := e.RunNamed(ctx, "check-1")
 	require.NoError(t, err)

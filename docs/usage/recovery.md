@@ -140,11 +140,20 @@ request. To stop without creating another:
 dockhand cancel check-42
 ```
 
-A GitHub check whose driver stopped leaves MacPorts' workflow running on your
-fork, for `wait` to pick up. Cancelling it first cancels that workflow run.
-Where GitHub can't be reached, the cancel stays requested and the check is not
-reported stopped: `check-42: cancellation is recorded, but github could not stop
-<run URL>: …; run dockhand cancel check-42 to try again`.
+A cancel is finished only when every provider the check built on has said
+its work ended. A GitHub check whose driver stopped leaves MacPorts' workflow
+running on your fork, for `wait` to pick up; cancelling it cancels that
+workflow run and waits briefly for GitHub to report it completed. Where GitHub
+can't be reached, or the run hasn't completed yet, the cancel stays unfinished:
+`check-42: a cancel was asked, and github couldn't see <run URL> stop: …;
+dockhand cancel check-42 asks again`. `status` shows such a check as
+`canceling (check-42): …`, with the work not yet seen to stop, and names
+`dockhand cancel check-42` as the next step; its JSON gives the run's
+`cancel_requested` time and the same words as its `detail`. Each later
+`cancel`, and a serve as it passes, looks again; serve does so no more often
+than every 30 seconds. A submission of the same files doesn't wait on such a
+check. A cancel that finishes says what the ended work left, if anything, and
+what removes it, in the canceled check's detail.
 
 Ctrl-C has two meanings. When the check runs in the foreground here, it stops
 that run and keeps completed results. When another serve process drives the

@@ -715,6 +715,10 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 			if pending, err = runsOfTree(r, plan.Branch.ID, model.ObjectID(plan.Tree), model.RunQueued, model.RunRunning); err != nil {
 				return err
 			}
+			// A check whose cancel is recorded is no pending check, as it
+			// is none for queueing (Run.BranchCheck): nothing waits on a
+			// cancel that isn't finished.
+			pending = slices.DeleteFunc(pending, func(run model.Run) bool { return run.CancelRequested != nil })
 			passed, err = r.Runs(store.RunFilter{Branch: plan.Branch.ID, States: []model.RunState{model.RunPassed}, Limit: 1})
 			return err
 		}); err != nil {

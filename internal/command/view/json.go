@@ -30,6 +30,10 @@ type runJSON struct {
 	// Stopped is true for a run recorded as running that no live process
 	// drives; the state says running, as the record does.
 	Stopped bool `json:"stopped,omitempty"`
+	// CancelRequested is when a cancel was asked of the run; with the run
+	// still running, its work isn't known to have stopped, which the
+	// detail says.
+	CancelRequested *time.Time `json:"cancel_requested,omitempty"`
 	// BaselineOf is the ID of the check a baseline looks into; absent for
 	// a check of the branch itself.
 	BaselineOf string `json:"baseline_of,omitempty"`
@@ -37,7 +41,7 @@ type runJSON struct {
 
 func RunView(run model.Run) runJSON {
 	viewed := runJSON{Name: run.Name(), ID: string(run.ID), State: string(run.State), Detail: run.Detail, Origin: string(run.Origin), CreatedAt: run.CreatedAt, FinishedAt: run.FinishedAt,
-		BaselineOf: string(run.BaselineOf)}
+		CancelRequested: run.CancelRequested, BaselineOf: string(run.BaselineOf)}
 	if waited, ok := run.Waited(); ok {
 		viewed.StartedAt, viewed.WaitedSeconds = run.StartedAt, new(int64(waited.Round(time.Second)/time.Second))
 	}

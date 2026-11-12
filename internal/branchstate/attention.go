@@ -32,21 +32,24 @@ const (
 	PullRequestMaybeMerged Reason = "pull-request-maybe-merged"
 	BranchGone             Reason = "branch-gone"
 	StoppedCheck           Reason = "check-stopped"
-	SomeoneElsePushed      Reason = "someone-else-pushed"
-	ChangesRequested       Reason = "changes-requested"
-	ReviewerCommented      Reason = "reviewer-commented"
-	CIFailing              Reason = "ci-failing"
-	OpenedByServe          Reason = "opened-by-serve"
-	OnMaster               Reason = "on-master"
-	HeldBeforeItsCheck     Reason = "held-before-check"
-	FilesChangedSince      Reason = "files-changed-since"
-	DependencyFailed       Reason = "dependency-failed"
-	TargetFailed           Reason = "target-failed"
-	RunFailed              Reason = "check-failed"
-	RunAttention           Reason = "check-attention"
-	BuildAgain             Reason = "build-again"
-	Unbuilt                Reason = "unbuilt"
-	ExtraFailed            Reason = "extra-failed"
+	// CancelUnfinished is a check whose cancel was asked and whose work
+	// isn't known to have stopped (the lifecycle design's "Stopping").
+	CancelUnfinished   Reason = "cancel-unfinished"
+	SomeoneElsePushed  Reason = "someone-else-pushed"
+	ChangesRequested   Reason = "changes-requested"
+	ReviewerCommented  Reason = "reviewer-commented"
+	CIFailing          Reason = "ci-failing"
+	OpenedByServe      Reason = "opened-by-serve"
+	OnMaster           Reason = "on-master"
+	HeldBeforeItsCheck Reason = "held-before-check"
+	FilesChangedSince  Reason = "files-changed-since"
+	DependencyFailed   Reason = "dependency-failed"
+	TargetFailed       Reason = "target-failed"
+	RunFailed          Reason = "check-failed"
+	RunAttention       Reason = "check-attention"
+	BuildAgain         Reason = "build-again"
+	Unbuilt            Reason = "unbuilt"
+	ExtraFailed        Reason = "extra-failed"
 	// LintWarned is a new port lint warned of, which submit asks to fix
 	// or accept (the docs dig's I13).
 	LintWarned      Reason = "lint-warned"
@@ -91,6 +94,7 @@ const (
 	VerbStart      = refusal.VerbStart
 	VerbRebase     = refusal.VerbRebase
 	VerbDecide     = refusal.VerbDecide
+	VerbCancel     = refusal.VerbCancel
 )
 
 // Branch is what's recorded of a branch beside its checks, as attention
@@ -230,6 +234,9 @@ func Attend(facts Facts) []Attention {
 		return row(NeedsYou, BranchGone, Next{Verb: VerbAdopt, Args: []string{"<new name>"}}, nil)
 	}
 	check := facts.Check
+	if run := check.Canceling; run != nil {
+		return row(NeedsYou, CancelUnfinished, Next{Verb: VerbCancel, Args: []string{run.Name()}}, func(a *Attention) { a.Run, a.Detail = run, run.Detail })
+	}
 	if run := check.Stopped; run != nil {
 		return row(NeedsYou, StoppedCheck, Next{Verb: VerbWait, Args: []string{run.Name()}}, func(a *Attention) { a.Run = run })
 	}
@@ -506,6 +513,10 @@ func (a Attention) Words(v Vocabulary) string {
 		return fmt.Sprintf("Git branch not found; pull request #%d may have merged", pr.Number)
 	case BranchGone:
 		return "Git branch not found"
+	case CancelUnfinished:
+		// The row's command asks again (the lifecycle design's
+		// "Stopping"); it no longer offers wait.
+		return a.Run.Name() + ": " + a.Detail
 	case StoppedCheck:
 		// The row's command resumes it, said once (part 5, item 4).
 		return a.Run.Name() + " stopped because its process ended. Use the command below to resume it, or dockhand cancel --branch " + a.Branch + " to cancel it"

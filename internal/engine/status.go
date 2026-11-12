@@ -108,6 +108,10 @@ type BranchStatus struct {
 	// Stopped is the active run recorded as running that no live process
 	// drives, once JudgeStopped has looked; nil otherwise.
 	Stopped *model.Run
+	// Canceling is the active run whose cancel was asked and isn't
+	// finished, no live process attending it, once JudgeStopped has
+	// looked: its work isn't known to have stopped.
+	Canceling *model.Run
 	// Releases are the releases the branch's updates chose, each port's
 	// latest, in the order the ports were first updated.
 	Releases []PortRelease
@@ -169,7 +173,11 @@ func (e *Engine) JudgeStopped(ctx context.Context, session *coord.Session, statu
 	}
 	for i := range statuses {
 		for _, run := range statuses[i].Active {
-			if run.State == model.RunRunning && holders[checks.RunResource(run.ID)] == nil {
+			switch {
+			case run.State != model.RunRunning || holders[checks.RunResource(run.ID)] != nil:
+			case run.CancelRequested != nil:
+				statuses[i].Canceling = &run
+			default:
 				statuses[i].Stopped = &run
 			}
 		}
@@ -386,7 +394,7 @@ func (s BranchStatus) Cleaned() bool {
 // Check is what's recorded of the branch's checks, as the verdict reads
 // it (branchstate.Check).
 func (s BranchStatus) Check() branchstate.Check {
-	return branchstate.Check{Latest: s.Latest, Current: s.Current, Active: s.Active, Stopped: s.Stopped, Evidence: s.Evidence,
+	return branchstate.Check{Latest: s.Latest, Current: s.Current, Active: s.Active, Stopped: s.Stopped, Canceling: s.Canceling, Evidence: s.Evidence,
 		Accepted: s.Accepted, AtBase: s.AtBase, Decisions: s.Decisions}
 }
 

@@ -636,36 +636,66 @@ func stoppedShort(conclusion string) bool {
 var runURL = regexp.MustCompile(`^https://github\.com/([^/]+/[^/]+)/actions/runs/(\d+)`)
 
 // Stop cancels the workflow run an execution recorded, which a driver that
-// stopped without a cancel left running for the next driver to find
-// (buildenv.Stopper). One already finished, or never started, needs
-// nothing.
-func (p *Provider) Stop(ctx context.Context, execution model.GuestExecution) error {
+// stopped without a cancel left running for the next driver to find, and
+// reads it until GitHub says it completed, for stopWait
+// (buildenv.Stopper). A run that hasn't completed by then is not known to
+// have stopped, and the cancel stays requested. An execution that
+// recorded no run has nothing to cancel; a reference that isn't a run's
+// URL is an error, since what it started can't be found.
+func (p *Provider) Stop(ctx context.Context, execution model.GuestExecution) ([]string, error) {
+	if execution.ProviderRef == "" {
+		return nil, nil
+	}
 	match := runURL.FindStringSubmatch(execution.ProviderRef)
 	if match == nil {
-		return nil
+		return nil, fmt.Errorf("%q isn't a workflow run's URL, so which run it started can't be found", execution.ProviderRef)
 	}
 	id, err := strconv.ParseInt(match[2], 10, 64)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("%q isn't a workflow run's URL: %w", execution.ProviderRef, err)
 	}
 	// Only in the fork: a recorded URL naming another repository is
 	// none of dockhand's to cancel (#128).
 	fork, err := p.Fork(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !strings.EqualFold(match[1], fork.Repository) {
-		return refusal.New(refusal.Unsupported, "%s is a run in %s, not your fork %s, so dockhand doesn't cancel it", execution.ProviderRef, match[1], fork.Repository)
+		return nil, refusal.New(refusal.Unsupported, "%s is a run in %s, not your fork %s, so dockhand doesn't cancel it", execution.ProviderRef, match[1], fork.Repository)
 	}
 	run, err := p.API.Run(ctx, match[1], id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if run.Status == "completed" {
-		return nil
+		return nil, nil
 	}
-	return remotewrite.Cancel(ctx, p.API, remotewrite.Made, match[1], id)
+	if err := remotewrite.Cancel(ctx, p.API, remotewrite.Made, match[1], id); err != nil {
+		return nil, err
+	}
+	for waited := time.Duration(0); ; waited += stopPoll {
+		if run, err = p.API.Run(ctx, match[1], id); err != nil {
+			return nil, err
+		}
+		if run.Status == "completed" {
+			return nil, nil
+		}
+		if waited >= stopWait {
+			break
+		}
+		if err := p.sleep(ctx, stopPoll); err != nil {
+			return nil, err
+		}
+	}
+	return nil, fmt.Errorf("GitHub was asked to cancel %s, and it is still %s", execution.ProviderRef, cmp.Or(run.Status, "not completed"))
 }
+
+// stopWait is how long Stop reads a run it canceled for GitHub to say it
+// completed, every stopPoll.
+const (
+	stopWait = 30 * time.Second
+	stopPoll = 5 * time.Second
+)
 
 var _ buildenv.Stopper = (*Provider)(nil)
 
