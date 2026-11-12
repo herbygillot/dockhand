@@ -31,6 +31,9 @@ act() {
 	printf '\n[build]\ndefault = "fork"\nprofiles.fork = { provider = "github" }\n' >>"$DOCKHAND_CONFIG"
 	dh_setup update "$(port)" --new || return 0
 	B9_BRANCH=$(own_branch)
+	# The fork's check branches before, so only one this row's check left
+	# counts: the test fork keeps earlier candidates' leftovers.
+	git -C "$MACPORTS_TREE" ls-remote --heads origin 'dockhand-check/*' >"$ROW_DIR/check-branches.before" 2>>"$ROW_DIR/out.log" || :
 	dh_json check -b "$B9_BRANCH" || :
 	dh tidy -b "$B9_BRANCH" -y || :
 	# The preview with the check, and all of its description: dh writes to
@@ -53,8 +56,11 @@ assert() {
 		row_fail "the fork's branches couldn't be read, so whether a dockhand-check/ branch was left is unknown"
 		return
 	fi
+	# Only a branch this row's check pushed and left: one the fork held
+	# before it, as rc3's dockhand-check/a7ad33435a10, isn't this check's.
+	left=$(printf '%s\n' "$left" | awk '{print $2}' | grep -vxF -f <(awk '{print $2}' "$ROW_DIR/check-branches.before" 2>/dev/null) | grep . || :)
 	if [ -n "$left" ]; then
-		row_fail "a dockhand-check/ branch was left on the fork: $(printf '%s' "$left" | awk '{print $2}' | tr '\n' ' ')"
+		row_fail "this check left its dockhand-check/ branch on the fork: $(printf '%s' "$left" | tr '\n' ' ')"
 		return
 	fi
 	grep -qE 'macOS [0-9.]+ (arm64|x86_64) · (Xcode|Command Line Tools) [0-9.]+ · MacPorts [0-9.]+ \(macos-[0-9]+' "$ROW_DIR/preview.txt" ||
