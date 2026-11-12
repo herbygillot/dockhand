@@ -118,16 +118,14 @@ own_branch() {
 		grep -vxF -f "$ROW_DIR/branches.before" 2>/dev/null | tail -1
 }
 
-# stage_db queries a copy of the stage's database: it's in WAL mode, which
-# a read-only open can't read without its -shm, nor make one, so it's
-# copied with its -wal and -shm, as A5 copies the person's (the rc1 full
-# stage's D-T1: "unable to open database file").
+# stage_db queries a copy of the stage's database, made with SQLite's own
+# backup, which copies one consistent state: copying the main file, its
+# WAL and its SHM one after another could straddle a checkpoint and hold
+# none of the rows committed (Codex's cold read at 2cdaf571, #233).
 stage_db() {
-	local copy="$ROW_DIR/db-copy" part
+	local copy="$ROW_DIR/db-copy"
 	rm -rf "$copy" && mkdir -p "$copy" || return 1
-	for part in "" -wal -shm; do
-		[ ! -f "${DOCKHAND_DB:?}$part" ] || cp "$DOCKHAND_DB$part" "$copy/dockhand.db$part" || return 1
-	done
+	sqlite3 "${DOCKHAND_DB:?}" ".backup '$copy/dockhand.db'" || return 1
 	sqlite3 "$copy/dockhand.db" "$1"
 }
 
@@ -165,6 +163,18 @@ allow_ref_gone() { printf '%s\n' "$@" >>"$ROW_DIR/allow.refgone"; }
 allow_push() { printf '%s\n' "$@" >>"$ROW_DIR/allow.push"; }
 allow_prs() { printf '%s\n' "$1" >"$ROW_DIR/allow.prs"; }
 allow_running() { printf '%s\n' "$@" >>"$ROW_DIR/allow.running"; }
+# allow_handoff says what the row leaves running on purpose for a later
+# half of itself, as D-I5's first half leaves its check and serve to the
+# reboot: allowed past teardown too, where H7 otherwise allows nothing
+# (#234).
+allow_handoff() {
+	printf '%s\n' "$@" >>"$ROW_DIR/allow.running"
+	printf '%s\n' "$@" >>"$ROW_DIR/allow.handoff"
+}
+# after_result is what the run says once the row's result is written,
+# never before: D-I5's "reboot now" asked before it, and a reboot that
+# came sooner could cut the result's write (#234).
+after_result() { printf '%s\n' "$*" >"$ROW_DIR/after-result"; }
 
 # A row's result, prime-time.md's: pass, refused well, known issue, or
 # fail; the harm sweep makes a blocker of any. The first said stands.

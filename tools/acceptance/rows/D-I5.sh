@@ -67,8 +67,18 @@ act() {
 	# and starts the row's results afresh, so the first half's log is kept.
 	printf '%s\n' "$DI5_BRANCH" >>"$ACCEPT_STATE/keep-branches"
 	cp "$ROW_DIR/out.log" "$ACCEPT_STATE/D-I5.first.log"
+	# The check, its VM and serve are left to the reboot on purpose, and
+	# said to H7 as the row's handoff; the reboot is asked for only once
+	# the runner has written this half's result (#234).
+	allow_handoff "run $check"
+	# Only the VMs the check runs in, by name, as status lists them: a VM
+	# an earlier row left still reports under H7.
+	local vm
+	for vm in $("$DH_BIN" --json status --all 2>/dev/null | jq -r --arg check "$check" '.result.queue[]? | select(.name == $check) | .vms[]?' 2>/dev/null); do
+		allow_handoff "vm $vm"
+	done
 	row_result "not run" "the first half ran to the reboot: reboot the Mac now (sudo shutdown -r now), while $check builds, unlock FileVault as the admin driver, log dhtest in, and run full.sh --rows D-I5 again"
-	printf 'WAITING: reboot the Mac now (sudo shutdown -r now), while %s builds; unlock FileVault as the admin driver (dhtest can'"'"'t), log dhtest in, then run full.sh --rows D-I5 again for the second half\n' "$check" >&3
+	after_result "reboot the Mac now (sudo shutdown -r now), while $check builds; unlock FileVault as the admin driver (dhtest can't), log dhtest in, then run full.sh --rows D-I5 again for the second half"
 }
 
 # di5_sleep is the sleep half: a check of the sleep port's own branch,

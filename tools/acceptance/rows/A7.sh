@@ -36,6 +36,13 @@ act() {
 	done
 	tail -c +"$(($(cat "$ROW_DIR/log.before") + 1))" "$A7_LOG" >"$ROW_DIR/serve.log" 2>/dev/null || :
 	dh status || :
+	"$DH_BIN" --version >"$ROW_DIR/upgraded" 2>&1 || :
+	# The newer build leaves with the row: the rows after run the candidate
+	# under its name, and A8's reinstall found A7's build still in the
+	# overlay (#234). With the next candidate staged as the newer build,
+	# that's the candidate itself, and the step is answered done.
+	checkpoint "put the candidate back for the rows after: if dockhand --version already names ${ACCEPT_CANDIDATE:-the candidate}, as when the newer build was the next candidate itself, answer done; otherwise, as the admin, run tools/acceptance/host/stage-candidate.sh ${ACCEPT_CANDIDATE:-<candidate>} --run and sudo port -N install dockhand (sudo port -N activate it where both are installed), then answer done" || return 0
+	"$DH_BIN" --version >"$ROW_DIR/restored" 2>&1 || :
 }
 
 # A7_LOG is the agent's log, beside dhtest's database.
@@ -72,5 +79,12 @@ assert() {
 		row_fail "the migration a person answered kept no copy of the database's older schema beside it"
 		return
 	fi
-	row_pass "serve said the upgrade, stopped, and a new serve (pid $(cat "$ROW_DIR/pid.after")) leads on the new build"
+	case "$(head -1 "$ROW_DIR/restored" 2>/dev/null)" in
+	*"${ACCEPT_CANDIDATE#v}"*) ;;
+	*)
+		row_fail "serve took the upgrade, but the candidate wasn't put back after: --version says \"$(head -1 "$ROW_DIR/restored" 2>/dev/null)\", not ${ACCEPT_CANDIDATE:-}"
+		return
+		;;
+	esac
+	row_pass "serve said the upgrade, stopped, and a new serve (pid $(cat "$ROW_DIR/pid.after")) leads on the new build ($(head -1 "$ROW_DIR/upgraded")); the candidate was put back after"
 }

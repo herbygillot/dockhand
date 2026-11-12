@@ -489,6 +489,7 @@ harm_h7() {
 			[ -n "$line" ] || continue
 			grep -qxF "$line" "$before/running" && continue
 			case "$broken" in *"[$line]"*) continue ;; esac
+			harm_allowed "$ROW_DIR/allow.handoff" "$line" && continue
 			broken="$broken [$line, past teardown]"
 		done <"$after/running.teardown"
 	fi

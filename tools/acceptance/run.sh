@@ -367,6 +367,9 @@ EOT
 		'{row: $row, stage: $stage, candidate: $candidate, result: $result, why: $why, harm: $harm, exit_codes: $exits, log: $log,
 		  github_requests: $spent, github_used_after: $used, started: $started, seconds: $seconds}' >"$results/$row.json"
 	printf '%-8s %-14s %s\n' "$row" "$result" "$why"
+	# What the row asks of a person once its result is written, as D-I5's
+	# reboot, said only now (after_result).
+	[ ! -s "$ROW_DIR/after-result" ] || printf 'WAITING: %s: %s\n' "$row" "$(cat "$ROW_DIR/after-result")"
 	case "$result" in
 	pass | "refused well" | "known issue") ;;
 	"not run") notrun=$((notrun + 1)) ;;
