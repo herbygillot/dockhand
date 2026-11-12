@@ -625,10 +625,19 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		}
 		// Before the first attempt, the targets that would build as an
 		// earlier build did reuse its result (decision 28). When every one
-		// does, nothing is built.
-		targets, paths, err := d.earlier(ctx, environment, remaining)
-		if err != nil {
-			return err
+		// does, nothing is built. Earlier builds are loaded only where
+		// reuse can be chosen: before the first attempt of a check that
+		// isn't fresh. Elsewhere the targets come without their history,
+		// which nothing would read (#189).
+		var targets []reuse.Target
+		var paths []string
+		if attempt == 0 && !d.plan.Fresh {
+			var err error
+			if targets, paths, err = d.earlier(ctx, environment, remaining); err != nil {
+				return err
+			}
+		} else {
+			targets = withoutHistory(remaining)
 		}
 		if attempt == 0 && !d.plan.Fresh {
 			d.sayNotReusable(ctx, environment, targets)

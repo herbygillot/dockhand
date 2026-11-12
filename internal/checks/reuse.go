@@ -24,6 +24,17 @@ import (
 // environment reuse considers, newest first.
 const reuseCandidates = 5
 
+// withoutHistory are the targets an environment has left to build, with
+// what installing their dependencies reads (installs), and none of their
+// earlier builds.
+func withoutHistory(remaining []buildenv.Target) []reuse.Target {
+	targets := make([]reuse.Target, len(remaining))
+	for i, target := range remaining {
+		targets[i] = reuse.Target{PlanTarget: target.PlanTarget, DependsOn: target.DependsOn, Git: target.Git, Tag: target.Tag}
+	}
+	return targets
+}
+
 // earlier are the targets an environment has left to build, each with
 // its newest passed builds there that recorded what they read (Reusable),
 // and the paths those builds read. A target fetched by a GitHub tag has
