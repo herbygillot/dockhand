@@ -143,6 +143,14 @@ func TestOutsideSparseNamesATrackedFileGitAddDeclines(t *testing.T) {
 	none, err := repo.OutsideSparse(t.Context(), changes)
 	require.NoError(t, err)
 	require.Empty(t, none, "a checkout that isn't sparse has nothing outside")
+
+	// Out of cone mode the patterns are gitignore lines, which the cone's
+	// rules don't read: nothing is said, never a wrong "outside" of a file
+	// the person can commit.
+	testsupport.Git(t, dir, "config", "--worktree", "core.sparseCheckoutCone", "false")
+	unsaid, err := worktree.OutsideSparse(t.Context(), changes)
+	require.NoError(t, err)
+	require.Empty(t, unsaid, "a sparse checkout out of cone mode says nothing")
 }
 
 func TestAFailedWorktreeIsRemoved(t *testing.T) {
