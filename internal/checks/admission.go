@@ -45,29 +45,59 @@ func PlanCovers(have, want model.Plan) bool {
 	return SourcesCover(have, want)
 }
 
-// SourcesCover reports whether have's resolved sources are want's: for
-// each target want builds in each environment, the same Git source and
-// the same tag's commit, or neither. A tag a port fetches by that moved
-// between the plans names another source though the Portfile is the same,
-// and a check of the old one stood for the new, queued or finished
-// (#114; #71 fixed the reuse of builds after it).
+// SourcesCover reports whether a queued or running check's resolved
+// sources let another request join it: for each target want builds in
+// each environment, the Git source and the tag judge same, or unresolved
+// on both sides (model.SourceAgainst). Joining shares a request and claims
+// nothing of the source. A tag a port fetches by that moved between the
+// plans names another source though the Portfile is the same, and a check
+// of the old one stood for the new (#114; #71 fixed the reuse of builds
+// after it).
 func SourcesCover(have, want model.Plan) bool {
+	return sourcesStand(have, want, func(standing model.SourceStanding, _ bool) bool {
+		return standing == model.SourceSame || standing == model.SourceUnresolved
+	})
+}
+
+// FinishedSourcesCover reports whether a finished check's resolved sources
+// stand for another request: a Git source judges same, since what isn't
+// known of a Git fetch stands for nothing, and a tag same or unresolved,
+// since the Portfile's checksums say what an archive was (docs/designs/
+// source-comparison.md, change 1). Its caller asks each Git result what
+// it fetched too.
+func FinishedSourcesCover(have, want model.Plan) bool {
+	return sourcesStand(have, want, func(standing model.SourceStanding, git bool) bool {
+		return standing == model.SourceSame || !git && standing == model.SourceUnresolved
+	})
+}
+
+// sourcesStand asks the judgment of each target's Git source and tag in
+// each environment want builds, per environment, and stands only where
+// stands accepts every answer.
+func sourcesStand(have, want model.Plan, stands func(standing model.SourceStanding, git bool) bool) bool {
 	for _, build := range want.Builds {
 		at := slices.IndexFunc(have.Builds, func(b model.EnvironmentPlan) bool { return b.Environment == build.Environment })
 		if at < 0 {
 			return false
 		}
 		for _, id := range build.Order {
-			for _, sources := range [][2]map[model.TargetID]model.GitSource{{have.Builds[at].Git, build.Git}, {have.Builds[at].Tags, build.Tags}} {
-				had, ok := sources[0][id]
-				wanted, wants := sources[1][id]
-				if ok != wants || ok && !had.Same(wanted) {
+			for i, sources := range [][2]map[model.TargetID]model.GitSource{{have.Builds[at].Git, build.Git}, {have.Builds[at].Tags, build.Tags}} {
+				if !stands(model.SourceAgainst(sourceOf(sources[0], id), sourceOf(sources[1], id)), i == 0) {
 					return false
 				}
 			}
 		}
 	}
 	return true
+}
+
+// sourceOf is a target's source in a plan's map, nil where it isn't
+// fetched that way.
+func sourceOf(sources map[model.TargetID]model.GitSource, id model.TargetID) *model.GitSource {
+	if source, ok := sources[id]; ok {
+		return &source
+	}
+	return nil
 }
 
 // TestsRank orders test policies by how much a pass under them shows:

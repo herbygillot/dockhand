@@ -281,7 +281,7 @@ type readSource struct {
 func Of(check Check) Evidence {
 	plan := check.Plan
 	evidence := Evidence{Run: check.Run, Plan: plan, Executions: map[model.ExecutionID]model.GuestExecution{},
-		policies: map[model.RunID]model.TestPolicy{check.Run.ID: plan.Tests}, inputs: check.Inputs}
+		policies: map[model.RunID]model.TestPolicy{check.Run.ID: plan.Tests}, inputs: maps.Clone(check.Inputs)}
 	byEnvironment := map[model.Environment][]model.GuestExecution{}
 	for _, execution := range check.Executions {
 		evidence.Executions[execution.ID] = execution
@@ -986,6 +986,10 @@ func Counts(recorded model.Plan, execution model.GuestExecution, id model.Target
 		!(fetchedWithGit && own.Moved(fetched))
 }
 
+// Fetched is the commit a recorded cell's build said it fetched with Git,
+// empty where it said none or fetched no other way.
+func (e Evidence) Fetched(c Cell) model.ObjectID { return e.inputs[c.Inputs].Fetched }
+
 // current reports whether an execution ran in the environment there is
 // now, by its identity. One whose provider can't say what it is now is
 // taken as it was, and so is a result no execution recorded, such as an
@@ -1198,6 +1202,16 @@ func (e *Evidence) fill(earlier Evidence) bool {
 					e.policies = map[model.RunID]model.TestPolicy{}
 				}
 				e.policies[execution.Run] = policy
+			}
+		}
+		// What the build read comes with its result, so a later question
+		// of it, what it fetched with Git (Fetched), is answered.
+		if inputs, ok := earlier.inputs[p.cell.Inputs]; ok && p.cell.Inputs != "" {
+			if e.inputs == nil {
+				e.inputs = map[string]model.TargetInputs{}
+			}
+			if _, have := e.inputs[p.cell.Inputs]; !have {
+				e.inputs[p.cell.Inputs] = inputs
 			}
 		}
 		took = true
