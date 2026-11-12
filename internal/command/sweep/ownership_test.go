@@ -84,13 +84,22 @@ func (o ownership) made(repository, branch string) bool {
 	return err == nil && n > 0
 }
 
+// workflowVerb names what each workflow write does to a run.
+var workflowVerb = map[string]string{"RerunFailed": "run again", "Cancel": "canceled"}
+
 // forge is what a forge write breaks of the rule: a workflow run run
-// again in MacPorts' repository.
+// again or canceled anywhere but the person's own fork, MacPorts'
+// repository by its first line and another person's by its second.
 func (o ownership) forge(name, repository string) []string {
-	if name == "RerunFailed" && strings.EqualFold(repository, forgetest.UpstreamRepository) {
-		return []string{"rule 1: a workflow run in MacPorts' repository is run again"}
+	verb, workflow := workflowVerb[name]
+	switch {
+	case !workflow || strings.EqualFold(repository, forgetest.ForkRepository):
+		return nil
+	case strings.EqualFold(repository, forgetest.UpstreamRepository):
+		return []string{"rule 1: a workflow run in MacPorts' repository is " + verb}
+	default:
+		return []string{fmt.Sprintf("rule 2: a workflow run in %s, another person's repository, is %s", repository, verb)}
 	}
-	return nil
 }
 
 // Ownership is read from the stand-in world's records: MacPorts'
@@ -124,4 +133,19 @@ func TestOwnershipIsReadFromTheWorldsRecords(t *testing.T) {
 	g = submitted(t, opened)
 	o = ownership{github: g, database: opened.Home + "/.dockhand/dockhand.db"}
 	require.Empty(t, o.push(append([]string{"push", "--porcelain", "--"}, g.Fork, ":refs/heads/dockhand/jq-update")), "a branch dockhand made")
+}
+
+// A workflow run is run again or canceled only in the person's own fork:
+// in MacPorts' repository that breaks the rule's first line, and in
+// another person's, where only a push to an invited head is allowed, its
+// second (#129's second round, 1).
+func TestConfirm129OwnershipForeignWorkflow(t *testing.T) {
+	t.Parallel()
+	o := ownership{github: &forgetest.GitHub{}}
+	for _, write := range []string{"RerunFailed", "Cancel"} {
+		require.Equal(t, []string{"rule 1: a workflow run in MacPorts' repository is " + workflowVerb[write]}, o.forge(write, forgetest.UpstreamRepository), write)
+		require.Equal(t, []string{"rule 2: a workflow run in grace/macports-ports, another person's repository, is " + workflowVerb[write]}, o.forge(write, "grace/macports-ports"), write)
+		require.Empty(t, o.forge(write, forgetest.ForkRepository), "%s in the person's fork", write)
+	}
+	require.Empty(t, o.forge("Create", "grace/macports-ports"), "not a workflow write")
 }
