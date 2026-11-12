@@ -52,3 +52,95 @@ func TestWhatABuildFetchedIsAnInputOnlyWhereItFetchedWithGit(t *testing.T) {
 	other.Fetched = ObjectID(strings.Repeat("b", 40))
 	require.NotEqual(t, fetched.Key(), other.Key(), "another commit fetched is another build")
 }
+
+// One judgment of two readings of a source, every row of the design's two
+// tables in both argument orders where the order can matter, and a record
+// from before plans kept the commit (docs/designs/source-comparison.md).
+func TestTwoReadingsOfASourceAreJudgedOneWay(t *testing.T) {
+	commit, other := ObjectID(strings.Repeat("a", 40)), ObjectID(strings.Repeat("b", 40))
+	at := time.Date(2026, 11, 11, 0, 0, 0, 0, time.UTC)
+	source := func(ref string, commit ObjectID, abbreviation string) *GitSource {
+		s := &GitSource{URL: "https://example.org/harbor.git", Ref: ref, Commit: commit, Abbreviation: abbreviation, ResolvedAt: at}
+		if commit == "" && abbreviation == "" {
+			s.Unresolved = "the repository couldn't be read"
+		}
+		return s
+	}
+	elsewhere := source("v4", commit, "")
+	elsewhere.URL = "https://example.org/other.git"
+	for _, c := range []struct {
+		name       string
+		have, want *GitSource
+		standing   SourceStanding
+	}{
+		{"neither fetches this way", nil, nil, SourceSame},
+		{"only one does", source("v4", commit, ""), nil, SourceOther},
+		{"another repository", source("v4", commit, ""), elsewhere, SourceOther},
+		{"an older release's tag is other, never moved", source("v1.7.1", commit, ""), source("v1.9.2", other, ""), SourceOther},
+		{"two whole commits, equal", source("v4", commit, ""), source("v4", commit, ""), SourceSame},
+		{"two whole commits, apart", source("v4", commit, ""), source("v4", other, ""), SourceMoved},
+		{"two abbreviations", source("a1b2c3d", "", "a1b2c3d"), source("a1b2c3d", "", "a1b2c3d"), SourceSame},
+		{"a whole commit and an abbreviation it begins with", source("v4", commit, ""), source("v4", "", "aaaaaaa"), SourceUnknown},
+		{"one names a commit, the other nothing", source("v4", commit, ""), source("v4", "", ""), SourceUnknown},
+		{"one names an abbreviation, the other nothing", source("v4", "", "aaaaaaa"), source("v4", "", ""), SourceUnknown},
+		{"neither names anything", source("v4", "", ""), source("v4", "", ""), SourceUnresolved},
+	} {
+		require.Equal(t, c.standing, SourceAgainst(c.have, c.want), c.name)
+		require.Equal(t, c.standing, SourceAgainst(c.want, c.have), "%s, the other way", c.name)
+	}
+
+	for _, c := range []struct {
+		name     string
+		plan     *GitSource
+		fetched  ObjectID
+		standing SourceStanding
+	}{
+		{"a whole commit, built", source("v4", commit, ""), commit, SourceSame},
+		{"a whole commit, another built", source("v4", commit, ""), other, SourceMoved},
+		{"an abbreviation the build begins with", source("a1b2", "", "aaaa"), commit, SourceSame},
+		{"an abbreviation the build doesn't", source("a1b2", "", "aaaa"), other, SourceMoved},
+		{"a commit, the build said nothing", source("v4", commit, ""), "", SourceUnknown},
+		{"nothing named, the build said its commit", source("v4", "", ""), commit, SourceUnknown},
+		{"nothing either side", source("v4", "", ""), "", SourceUnresolved},
+	} {
+		require.Equal(t, c.standing, c.plan.AgainstFetched(c.fetched), c.name)
+	}
+
+	// A record from before plans kept the commit names nothing, which is
+	// a reading that couldn't be resolved, not one that moved.
+	old := &GitSource{URL: "https://example.org/harbor.git", Ref: "v4"}
+	require.Equal(t, SourceUnknown, SourceAgainst(old, source("v4", commit, "")))
+	require.Equal(t, SourceUnknown, old.AgainstFetched(commit))
+}
+
+// The methods the readers ask today equal the judgment, until each reader
+// asks it: Same is same or unresolved, BuiltBy is AgainstFetched same,
+// Moved is AgainstFetched moved, and both are false where the plan names
+// nothing, whatever the build said.
+func TestTheOldSourceMethodsEqualTheJudgment(t *testing.T) {
+	commit, other := ObjectID(strings.Repeat("a", 40)), ObjectID(strings.Repeat("b", 40))
+	readings := []GitSource{
+		{URL: "u", Ref: "v4", Commit: commit},
+		{URL: "u", Ref: "v4", Commit: other},
+		{URL: "u", Ref: "v4", Abbreviation: "aaaa"},
+		{URL: "u", Ref: "v4", Abbreviation: "bbbb"},
+		{URL: "u", Ref: "v4"},
+		{URL: "u", Ref: "v5", Commit: commit},
+		{URL: "w", Ref: "v4", Commit: commit},
+	}
+	for _, a := range readings {
+		for _, b := range readings {
+			standing := SourceAgainst(&a, &b)
+			// Same compares the strings, so two different abbreviations
+			// under one ref, which can't be, differ there alone.
+			if a.Commit == "" && b.Commit == "" && a.Abbreviation != "" && b.Abbreviation != "" && a.Abbreviation != b.Abbreviation {
+				continue
+			}
+			require.Equal(t, standing == SourceSame || standing == SourceUnresolved, a.Same(b), "%+v against %+v", a, b)
+		}
+		for _, fetched := range []ObjectID{commit, other, ""} {
+			require.Equal(t, a.AgainstFetched(fetched) == SourceSame, a.BuiltBy(fetched), "%+v built by %q", a, fetched)
+			require.Equal(t, a.AgainstFetched(fetched) == SourceMoved, a.Moved(fetched), "%+v moved from %q", a, fetched)
+		}
+	}
+}

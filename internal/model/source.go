@@ -77,6 +77,69 @@ func (s GitSource) Moved(fetched ObjectID) bool {
 	return s.Expected() != "" && fetched != "" && !s.BuiltBy(fetched)
 }
 
+// SourceStanding is what one reading of a source says of another
+// (docs/designs/source-comparison.md): the one judgment joining, coverage,
+// evidence, reuse, a run's verdict and submit read, each with its own
+// policy for what it isn't told.
+type SourceStanding int
+
+const (
+	// SourceUnknown is one repository and ref, one side naming a commit and
+	// the other none, or a whole commit against an abbreviation.
+	SourceUnknown SourceStanding = iota
+	// SourceUnresolved is one repository and ref, neither side naming a
+	// commit.
+	SourceUnresolved
+	// SourceSame is one repository and ref and one commit, or neither side
+	// fetching this way.
+	SourceSame
+	// SourceMoved is one repository and ref and two commits.
+	SourceMoved
+	// SourceOther is another repository or ref, or only one side fetching
+	// this way. An older release's tag and a newer one's are other, never
+	// moved.
+	SourceOther
+)
+
+// SourceAgainst judges two plans' resolutions of a target's source; nil is
+// a target a plan doesn't fetch this way. Two abbreviations under one ref
+// are that ref, so the same; a whole commit and an abbreviation say
+// nothing of each other, even where one begins with the other.
+func SourceAgainst(have, want *GitSource) SourceStanding {
+	switch {
+	case have == nil && want == nil:
+		return SourceSame
+	case have == nil || want == nil:
+		return SourceOther
+	case have.URL != want.URL || have.Ref != want.Ref:
+		return SourceOther
+	case have.Commit != "" && want.Commit != "":
+		if have.Commit == want.Commit {
+			return SourceSame
+		}
+		return SourceMoved
+	case have.Commit == "" && want.Commit == "" && have.Abbreviation != "" && want.Abbreviation != "":
+		return SourceSame
+	case have.Expected() == "" && want.Expected() == "":
+		return SourceUnresolved
+	}
+	return SourceUnknown
+}
+
+// AgainstFetched judges a resolution and the whole commit a build says it
+// fetched, empty where it said none. It never answers other.
+func (s GitSource) AgainstFetched(fetched ObjectID) SourceStanding {
+	switch {
+	case s.Expected() == "" && fetched == "":
+		return SourceUnresolved
+	case s.Expected() == "" || fetched == "":
+		return SourceUnknown
+	case s.Commit != "" && fetched == s.Commit, s.Commit == "" && strings.HasPrefix(string(fetched), s.Abbreviation):
+		return SourceSame
+	}
+	return SourceMoved
+}
+
 // problem is what's wrong with a stored source, or nothing: it names its
 // repository, and it is resolved, to a commit or an abbreviation, or says
 // why not.
