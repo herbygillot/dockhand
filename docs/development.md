@@ -113,10 +113,6 @@ DOCKHAND_MEASURE_TREE=~/Source/macports-ports DOCKHAND_TEST_MACPORTS_TCLSH=/opt/
 
 `DOCKHAND_MEASURE_RESTATED` sets how many Portfiles `restated` evaluates (200 unless given, 0 for all) and `DOCKHAND_MEASURE_COMMITS` how many commits `ticket-trailer` reads (20,000 unless given).
 
-## The survey that gates the model
-
-A change to what the model observes or leaves is judged by `tools/survey -tree … -prefix … -db …` over the whole pinned tree, compared with a baseline run the same way (docs/designs/closed-model.md, "The gating survey"). A narrower check uses `-sample` with `-db`, and is compared with the same ports in a `-db` run of the baseline. A run without `-db` writes only a journal and skips observing each port in every context before assessing it (`Service.Observe` in tools/survey/assess.go), so the assessment makes its own observations, and its outcomes and contexts left don't compare with a `-db` survey. On 2026-11-12 one such run reported 472 contexts left where main's `-db` survey left 82.
-
 | Notice | Matches | Wrong | Narrowed by the measure |
 | --- | --- | --- | --- |
 | A maintainer's instruction in the comments (I7) | 49 of 20,231 Portfiles | 1, cpmtools' "do not update the version number" | nothing |
@@ -129,6 +125,10 @@ A change to what the model observes or leaves is judged by `tools/survey -tree �
 | `unreferenced-file` | 381 files | none seen: they're patches and select files earlier versions and subports used | a file is named by a word that builds it from variables, by its directory under files/, or by a `${filespath}` word of variables alone |
 
 The first four were measured on macports-ports 324108c8883 (20,231 Portfiles), the last four on 9c3d4bd8a7c (20,233). Those four are what the measure says of a whole tree; a change says one only of the lines and files it adds.
+
+## The survey that gates the model
+
+A change to the version probe or the evaluator is judged by a whole-tree pair: `tools/survey -pair` over the pinned tree, the survey built from main before the change and from the change, each with a record (`-db`), compared (docs/designs/closed-model.md, "The gating survey"; tools/survey/README.md). Any other change replays the five-port set instead (terraform, py-lmdb, qemu, perl5, and terraform's obsolete stub). A narrower look at one set of ports is a pair with `-sample`. `-compare` refuses two runs whose settings differ (the mode, `-db`, recording, the selection, the tree's commit, the prefix) or that record none ([#222](https://github.com/herbygillot/dockhand/issues/222)). A run without `-db` writes only a journal and skips observing each port in every context before assessing it (`Service.Observe` in tools/survey/assess.go), so its outcomes and contexts left never compare with a `-db` survey: on 2026-11-12 one such run reported 472 contexts left where main's `-db` survey left 82.
 
 ## MacPorts' distributable checker
 

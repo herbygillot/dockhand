@@ -19,6 +19,29 @@ git -C ~/src/macports-ports worktree add --detach /tmp/ports-<commit> <commit>
 /tmp/survey -compare ~/.dockhand/surveys/<before>.jsonl ~/.dockhand/surveys/<after>.jsonl
 ```
 
+Two surveys compare only like for like. Each run records the settings
+that decide what it measures in its `run.json`: the mode, whether it
+wrote a record (`-db`), recording, the selection (every port, or how
+many were named with a digest of their names, and any maintainers or
+categories), the tree's commit, and the prefix. `-compare` refuses two
+runs that differ in any of them and names each difference. It also
+refuses a run that records none, one made before they were recorded.
+`-unchecked` compares anyway and says what it couldn't check. A run
+without `-db` doesn't observe each port in every context before
+assessing it, so it never compares with a `-db` run: on 2026-11-12 one
+said 472 contexts left where main's `-db` survey left 82.
+
+A before/after pair is one command. Build each side's survey, then:
+
+```sh
+tools/heavy /tmp/survey -pair -out ~/.dockhand/surveys/<date>-<name> \
+  -tree /tmp/ports-<commit> -prefix /opt/macports-test /tmp/survey-before /tmp/survey-after
+```
+
+It runs the before binary and then the after one, with the same flags
+and a record each (`before.db` and `after.db` in `-out`), and compares
+them. Narrow it with `-sample`, `-port` or `-category` as any run.
+
 The journal is one JSON line per port, the same as `assess --journal`
 wrote, so older baselines compare directly. A rerun with the same journal
 continues it, and it refuses a journal of another commit.
