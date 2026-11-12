@@ -273,7 +273,7 @@ var owed = map[string]string{
 	"store.update@checks.(*Service).drive":              "#193: a check driven",
 	"store.update@checks.(*Service).enqueue":            "#193: a check queued",
 	"store.update@coord.(*Session).Acquire":             "#193: a check's lease taken",
-	"store.update@coord.(*Session).Beat":                "excluded: a heartbeat, which the worlds' coordinator interval keeps out of a run (the design's effect addresses), unless a scenario is about one",
+	"store.update@coord.(*Session).Beat":                "excluded: a heartbeat, which the worlds' session interval (heartbeat, 90 seconds) keeps out of a run, as the design's effect addresses say, unless a scenario is about one",
 	"store.update@coord.(*Session).Fenced":              "#193: a write under a check's lease",
 	"store.update@coord.(*Session).Release":             "#193: a check's lease released",
 	"store.update@engine.(*Engine).Adopt":               "#129: the adopt scenario",
