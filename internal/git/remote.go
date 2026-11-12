@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/scratch"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
 type Remote struct{ Name, FetchURL, PushURL string }
@@ -68,25 +69,65 @@ func (r *Repository) RemoteHead(ctx context.Context, remote, branch string) (Ref
 	return RefValue{Exists: true, Object: fields[0]}, nil
 }
 
+// PushReport is what a push did: whether git push was run at all (Sent),
+// and the line its --porcelain report gave for the branch, as it was read.
+// A push whose own read of the branch failed, found it elsewhere than
+// expected, or found it already at the commit sends nothing.
+type PushReport struct {
+	Sent bool
+	Line string
+}
+
+// Rejected reports whether git push's own report says the branch was
+// rejected, by the remote or before it: "[rejected]" or "[remote
+// rejected]" on the branch's line. "[remote failure]" is not one: the
+// remote may have taken it.
+func (p PushReport) Rejected() bool {
+	return strings.Contains(p.Line, "[rejected]") || strings.Contains(p.Line, "[remote rejected]")
+}
+
 // Push uses a literal destination ref and an explicit expected value, independent
-// of remote-tracking refs. Repeating a confirmed desired head is a no-op.
-func (r *Repository) Push(ctx context.Context, request Push) error {
+// of remote-tracking refs. Repeating a confirmed desired head is a no-op,
+// which sends nothing.
+func (r *Repository) Push(ctx context.Context, request Push) (PushReport, error) {
 	if !validRemoteURL(request.Remote) || !ValidBranchName(request.Branch) || !ValidObjectID(request.Commit) || (request.ExpectedRemote.Exists && !ValidObjectID(request.ExpectedRemote.Object)) || (!request.ExpectedRemote.Exists && request.ExpectedRemote.Object != "") {
-		return fmt.Errorf("git: invalid push request")
+		return PushReport{}, fmt.Errorf("git: invalid push request")
 	}
 	actual, err := r.RemoteHead(ctx, request.Remote, request.Branch)
 	if err != nil {
-		return err
+		return PushReport{}, err
 	}
 	if actual == (RefValue{Exists: true, Object: request.Commit}) {
-		return nil
+		return PushReport{}, nil
 	}
 	if actual != request.ExpectedRemote {
-		return &RefConflict{Name: request.Branch, Expected: request.ExpectedRemote, Actual: actual}
+		return PushReport{}, &RefConflict{Name: request.Branch, Expected: request.ExpectedRemote, Actual: actual}
 	}
 	ref := "refs/heads/" + request.Branch
-	_, err = r.output(ctx, "-c", "push.followTags=false", "push", "--porcelain", "--no-verify", "--no-follow-tags", "--recurse-submodules=no", "--force-with-lease="+ref+":"+request.ExpectedRemote.Object, "--", request.Remote, request.Commit+":"+ref)
-	return err
+	args := []string{"-c", "push.followTags=false", "push", "--porcelain", "--no-verify", "--no-follow-tags", "--recurse-submodules=no", "--force-with-lease=" + ref + ":" + request.ExpectedRemote.Object, "--", request.Remote, request.Commit + ":" + ref}
+	command := r.command(ctx, nil, args...)
+	var result subprocess.Result
+	err = r.hooked(ctx, args, func() (err error) {
+		result, err = subprocess.Run(ctx, subprocess.Spec{Tool: "git", Command: "push", Path: command.Path, Args: command.Args[1:], Dir: command.Dir, Env: command.Env, ExtraFiles: command.ExtraFiles, WaitDelay: command.WaitDelay})
+		return err
+	})
+	report := PushReport{Sent: true, Line: porcelainLine(result.Output, ref)}
+	if err != nil {
+		return report, httpsUnauthenticated("push", sshRefused("push", err))
+	}
+	return report, nil
+}
+
+// porcelainLine is git push --porcelain's line for the ref pushed to:
+// a flag, a tab, "from:to", a tab, and the summary.
+func porcelainLine(output []byte, ref string) string {
+	for _, line := range strings.Split(string(output), "\n") {
+		fields := strings.Split(line, "\t")
+		if len(fields) >= 3 && strings.HasSuffix(fields[1], ":"+ref) {
+			return line
+		}
+	}
+	return ""
 }
 
 // BranchWasAt reports whether a local branch's reflog shows it at an object

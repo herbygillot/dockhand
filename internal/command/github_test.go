@@ -288,7 +288,8 @@ func TestGitHubBuildsWithMacPortsWorkflowInYourFork(t *testing.T) {
 	// run was read (the sshuttle run's finding 7); each runner's log is
 	// kept beside the run's, read by the run's ID, not the branch.
 	require.Len(t, f.runs, 1)
-	require.Regexp(t, `^dockhand-check/[0-9a-f]{12}$`, f.runs[0].branch)
+	// The check's own branch: the commit's and the check's ID's.
+	require.Regexp(t, `^dockhand-check/[0-9a-f]{12}-[a-z2-7]{16}$`, f.runs[0].branch)
 	require.Contains(t, errs, "github: removed "+f.runs[0].branch+" from ada/macports-ports\n")
 	require.Empty(t, checkBranches(t, f))
 	logs, _, err := cmdtest.Dockhand(t, "logs", "check-1")
@@ -418,7 +419,7 @@ func TestRetryingAGitHubCheckRunsTheWorkflowAgain(t *testing.T) {
 	require.NotContains(t, errs, "actions/runs/7", "the earlier check's run isn't this one's")
 	require.Contains(t, errs, "github macOS 14 (Sonoma) arm64: jq passed")
 	require.Len(t, f.runs, 2)
-	require.Equal(t, f.runs[0].branch, f.runs[1].branch)
+	require.NotEqual(t, f.runs[0].branch, f.runs[1].branch, "another check of the same commit pushes a branch of its own, so it never shares a run")
 	require.Empty(t, checkBranches(t, f))
 
 	logs, _, err := cmdtest.Dockhand(t, "logs", "check-2")

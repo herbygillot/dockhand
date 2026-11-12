@@ -130,17 +130,29 @@ func (c *Service) stopUnfinished(ctx context.Context, id model.RunID) (left, unk
 		if !ok {
 			continue
 		}
-		// An attempt that recorded nothing is asked by itself: the
-		// provider says whether anything of it can still be running.
-		key := [2]string{provider, execution.ProviderRef}
-		if execution.ProviderRef == "" {
+		// Once for each provider and launch, so a matrix's cells, which
+		// share one, are asked once; an attempt that noted nothing is asked
+		// by its reference, else by itself: the provider says whether
+		// anything of it can still be running.
+		key := [2]string{provider, execution.Launch}
+		switch {
+		case execution.Launch != "":
+		case execution.ProviderRef != "":
+			key[1] = "reference " + execution.ProviderRef
+		default:
 			key[1] = "execution " + string(execution.ID)
 		}
 		if asked[key] {
 			continue
 		}
 		asked[key] = true
-		gone, err := stopper.Stop(ctx, execution, launchLock{path: c.launchLockPath(execution.ID)})
+		var attempts []model.GuestExecution
+		for _, other := range executions {
+			if other.Environment.Provider == provider {
+				attempts = append(attempts, other)
+			}
+		}
+		gone, err := stopper.Stop(ctx, buildenv.StopRequest{Execution: execution, Attempts: attempts, Lock: launchLock{path: c.launchLockPath(execution.ID)}})
 		if err != nil {
 			what := execution.ProviderRef
 			if what == "" {

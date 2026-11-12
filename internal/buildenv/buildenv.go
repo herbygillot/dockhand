@@ -147,6 +147,12 @@ type Job struct {
 	// the Build it records through; the first is the job's Environment,
 	// Execution, and Targets. Empty for any other provider.
 	Matrix []MatrixCell
+	// Launched are the notes the check's earlier attempts on this
+	// provider saved before they started work (model.GuestExecution.Launch),
+	// oldest first: what a provider that reads no store knows of what the
+	// check already launched, as a branch already at the commit that no
+	// attempt of the check pushed.
+	Launched []string
 }
 
 // MatrixCell is one environment of a MatrixProvider's run: its execution,
@@ -283,6 +289,16 @@ type LaunchLock interface {
 	Hold(ctx context.Context, within time.Duration) (release func(), err error)
 }
 
+// StopRequest is what Stop is asked of: one attempt of a check (Execution),
+// every attempt of the check on the provider, that one among them, whose
+// launches a stop answers for together, and the asked attempt's launch
+// lock, which Stop takes before it reads what was launched.
+type StopRequest struct {
+	Execution model.GuestExecution
+	Attempts  []model.GuestExecution
+	Lock      LaunchLock
+}
+
 // Stopper is a provider whose work can outlive its driver, as GitHub's
 // workflow runs on when a resumable driver stops, so the next can find it
 // again. Stop ends the work an execution recorded and gives one of three
@@ -293,7 +309,7 @@ type LaunchLock interface {
 // the check, before the check is called canceled (#115, #193).
 type Stopper interface {
 	Provider
-	Stop(ctx context.Context, execution model.GuestExecution, lock LaunchLock) (left []string, err error)
+	Stop(ctx context.Context, request StopRequest) (left []string, err error)
 }
 
 // LinkReader is a provider that reads what a passed build's binaries link
@@ -581,6 +597,25 @@ type Fork struct {
 // github provider does. The provider removes each once the check is done
 // with its run; clean removes a merged branch's that are left.
 const CheckBranchPrefix = "dockhand-check/"
+
+// CheckBranch is a check's own branch in your fork: the first twelve
+// characters of the commit and the whole random part of the check's ID,
+// the same for its matrix and every attempt, so no other check pushes it
+// and every run on it is this check's (the lifecycle design's "GitHub").
+// clean finds a check's branch by it too.
+func CheckBranch(commit string, check model.RunID) string {
+	id := string(check)
+	if i := strings.LastIndex(id, "_"); i >= 0 {
+		id = id[i+1:]
+	}
+	return CheckBranchPrefix + commit[:min(12, len(commit))] + "-" + id
+}
+
+// LegacyCheckBranch is the branch a check pushed before branches were the
+// check's own, named for the commit alone, which clean still removes.
+func LegacyCheckBranch(commit string) string {
+	return CheckBranchPrefix + commit[:min(12, len(commit))]
+}
 
 // LogName is a target's log's name in its build's log directory, and in
 // a Tart guest,

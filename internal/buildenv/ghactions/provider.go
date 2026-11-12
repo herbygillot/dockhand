@@ -261,17 +261,24 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	if words := WorkflowWords(fork.Repository, state, err); words != "" {
 		return refusal.New(refusal.Environment, "%s", words)
 	}
-	branch := BranchPrefix + job.Commit[:12]
+	// The check's own branch, so every run on it is the check's.
+	branch := buildenv.CheckBranch(job.Commit, job.Run.ID)
 	head, err := p.Repo.RemoteHead(ctx, fork.PushURL, branch)
 	if err != nil {
 		return buildenv.Infrastructure("reading %s on %s: %w", branch, fork.Repository, err)
+	}
+	pushed := head != (git.RefValue{Exists: true, Object: job.Commit})
+	// Nothing else pushes the check's branch, so one at the commit that no
+	// attempt of the check noted pushing is a branch it can't answer for.
+	if !pushed && !launchedOn(job.Launched, branch) {
+		return refusal.New(refusal.Environment, "%s on %s is already at commit %s, and no attempt of %s noted pushing it, so its runs can't be taken as this check's; remove the branch and run the check again", branch, fork.Repository, job.Commit[:12], job.Run.Name())
 	}
 	// GitHub keeps listing a branch's runs once the branch is gone, so a
 	// run of the commit from before the push, an earlier check's whose
 	// branch was removed once it was read, isn't this check's: the push
 	// starts one of its own.
 	var before int64
-	if head != (git.RefValue{Exists: true, Object: job.Commit}) {
+	if pushed {
 		earlier, err := p.API.Runs(ctx, fork.Repository, branch, job.Commit)
 		if err != nil {
 			return buildenv.Infrastructure("finding the workflow's earlier runs: %w", err)
@@ -282,9 +289,22 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		build.Progress(fmt.Sprintf("pushing to %s on %s", branch, fork.Repository))
 		// The push is noted before it is sent, under the attempt's launch
 		// lock, which git push holds as it runs (buildenv.Build.Launch).
-		note := launchNote{Repository: fork.Repository, Workflow: Workflow, Branch: branch, Commit: job.Commit, Check: string(job.Run.ID), Action: launchPush, Before: before}
+		note := newLaunch(fork.Repository, branch, job, launchPush)
+		note.Before = before
 		if err := build.Launch(note.String(), func(ctx context.Context) (string, error) {
-			return note.String(), remotewrite.Push(ctx, p.Repo, remotewrite.OwnFork, fork.Repository, git.Push{Remote: fork.PushURL, Branch: branch, Commit: job.Commit, ExpectedRemote: head})
+			report, err := remotewrite.Push(ctx, p.Repo, remotewrite.OwnFork, fork.Repository, git.Push{Remote: fork.PushURL, Branch: branch, Commit: job.Commit, ExpectedRemote: head})
+			// A push known to have started nothing is written down as that,
+			// in these cases and no others: nothing was sent, or git push's
+			// own report says the branch was rejected.
+			switch {
+			case !report.Sent && err == nil:
+				note.Nothing = "the branch was already at the commit, so nothing was sent"
+			case !report.Sent:
+				note.Nothing = "nothing was sent: " + err.Error()
+			case report.Rejected():
+				note.Nothing = "git push reported the branch rejected: " + report.Line
+			}
+			return note.String(), err
 		}); err != nil {
 			if errors.Is(err, buildenv.ErrNotLaunched) {
 				return err
@@ -292,7 +312,6 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 			return buildenv.Infrastructure("pushing to %s: %w", fork.Repository, err)
 		}
 	}
-	pushed := head != (git.RefValue{Exists: true, Object: job.Commit})
 
 	build.Progress("waiting for GitHub to start " + Workflow + " on " + fork.Repository)
 	var run Run
@@ -317,7 +336,8 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	// An attempt that found the branch at its commit pushed nothing, and
 	// keeps the run it takes as its note.
 	if !pushed {
-		note := launchNote{Repository: fork.Repository, Workflow: Workflow, Branch: branch, Commit: job.Commit, Check: string(job.Run.ID), Action: launchAttach, Run: run.ID}
+		note := newLaunch(fork.Repository, branch, job, launchAttach)
+		note.Run = run.ID
 		if err := build.Launch(note.String(), func(context.Context) (string, error) { return note.String(), nil }); err != nil {
 			return err
 		}
@@ -360,7 +380,8 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		build.Progress(fmt.Sprintf("running %s's unsuccessful jobs again", run.URL))
 		// Running it again starts work as a push does: noted first, with
 		// the run and the attempt it had, under the launch lock.
-		note := launchNote{Repository: fork.Repository, Workflow: Workflow, Branch: branch, Commit: job.Commit, Check: string(job.Run.ID), Action: launchRerun, Run: run.ID, Attempt: run.Attempt}
+		note := newLaunch(fork.Repository, branch, job, launchRerun)
+		note.Run, note.Attempt = run.ID, run.Attempt
 		if err := build.Launch(note.String(), func(ctx context.Context) (string, error) {
 			return note.String(), remotewrite.Rerun(ctx, p.API, remotewrite.Made, fork.Repository, run.ID)
 		}); err != nil {
@@ -419,6 +440,18 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		p.removeBranch(ctx, build, fork, branch, job.Commit)
 	}
 	return err
+}
+
+// launchedOn reports whether an earlier attempt of the check noted a launch
+// on branch.
+func launchedOn(launched []string, branch string) bool {
+	for _, raw := range launched {
+		var note launchNote
+		if json.Unmarshal([]byte(raw), &note) == nil && note.Branch == branch {
+			return true
+		}
+	}
+	return false
 }
 
 // removeBranch removes the check's branch from your fork, while it still
@@ -660,107 +693,6 @@ func stoppedShort(conclusion string) bool {
 // runURL is a workflow run's URL, as an execution records it: the
 // repository and the run's ID.
 var runURL = regexp.MustCompile(`^https://github\.com/([^/]+/[^/]+)/actions/runs/(\d+)`)
-
-// Stop cancels the workflow run an execution recorded, which a driver that
-// stopped without a cancel left running for the next driver to find, and
-// reads it until GitHub says it completed, for stopWait
-// (buildenv.Stopper). A run that hasn't completed by then is not known to
-// have stopped, and the cancel stays requested. An execution that
-// recorded no run has nothing to cancel; a reference that isn't a run's
-// URL is an error, since what it started can't be found.
-func (p *Provider) Stop(ctx context.Context, execution model.GuestExecution, lock buildenv.LaunchLock) ([]string, error) {
-	// Holding the attempt's launch lock, nothing more can be pushed or run
-	// again for it.
-	release, err := lock.Hold(ctx, stopWait)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	if execution.ProviderRef == "" {
-		return nil, nil
-	}
-	match := runURL.FindStringSubmatch(execution.ProviderRef)
-	if match == nil {
-		return nil, fmt.Errorf("%q isn't a workflow run's URL, so which run it started can't be found", execution.ProviderRef)
-	}
-	id, err := strconv.ParseInt(match[2], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("%q isn't a workflow run's URL: %w", execution.ProviderRef, err)
-	}
-	// Only in the fork: a recorded URL naming another repository is
-	// none of dockhand's to cancel (#128).
-	fork, err := p.Fork(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if !strings.EqualFold(match[1], fork.Repository) {
-		return nil, refusal.New(refusal.Unsupported, "%s is a run in %s, not your fork %s, so dockhand doesn't cancel it", execution.ProviderRef, match[1], fork.Repository)
-	}
-	run, err := p.API.Run(ctx, match[1], id)
-	if err != nil {
-		return nil, err
-	}
-	if run.Status == "completed" {
-		return nil, nil
-	}
-	if err := remotewrite.Cancel(ctx, p.API, remotewrite.Made, match[1], id); err != nil {
-		return nil, err
-	}
-	for waited := time.Duration(0); ; waited += stopPoll {
-		if run, err = p.API.Run(ctx, match[1], id); err != nil {
-			return nil, err
-		}
-		if run.Status == "completed" {
-			return nil, nil
-		}
-		if waited >= stopWait {
-			break
-		}
-		if err := p.sleep(ctx, stopPoll); err != nil {
-			return nil, err
-		}
-	}
-	return nil, fmt.Errorf("GitHub was asked to cancel %s, and it is still %s", execution.ProviderRef, cmp.Or(run.Status, "not completed"))
-}
-
-// launchNote is what an attempt notes before it starts work on GitHub, in
-// the form Stop reads (model.GuestExecution.Launch): the repository, the
-// workflow, the branch, the whole commit and the check's whole ID, and what
-// it is about to do. A push keeps the newest run listed for the branch and
-// commit before it (Before); a rerun the run and the attempt it had; an
-// attach the run it took, having pushed nothing.
-type launchNote struct {
-	Repository string `json:"repository"`
-	Workflow   string `json:"workflow"`
-	Branch     string `json:"branch"`
-	Commit     string `json:"commit"`
-	Check      string `json:"check"`
-	Action     string `json:"action"`
-	Before     int64  `json:"before,omitempty"`
-	Run        int64  `json:"run,omitempty"`
-	Attempt    int    `json:"attempt,omitempty"`
-}
-
-// The actions a launch note names.
-const (
-	launchPush   = "push"
-	launchRerun  = "rerun"
-	launchAttach = "attach"
-)
-
-func (n launchNote) String() string {
-	data, _ := json.Marshal(n)
-	return string(data)
-}
-
-// stopWait is how long Stop reads a run it canceled for GitHub to say it
-// completed, every stopPoll.
-const (
-	stopWait = 30 * time.Second
-	stopPoll = 5 * time.Second
-)
-
-var _ buildenv.Stopper = (*Provider)(nil)
 
 // RunsOwnTests says the workflow runs a port's declared tests whatever the
 // check's policy: it is MacPorts' own, and dockhand doesn't change it.

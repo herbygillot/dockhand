@@ -233,10 +233,22 @@ environment will use MacPorts archives or build from source`.
 ### GitHub Actions
 
 `--on github` needs a login, a Git remote that pushes to your fork, and Actions
-enabled there. It pushes a `dockhand-check/` branch and runs MacPorts' own
-workflow. Dockhand reads the results and keeps logs locally, then removes the
-temporary branch when it is done with it. This has external effects even though
-it opens no PR.
+enabled there. It pushes a branch of the check's own,
+`dockhand-check/<the commit's first 12 characters>-<the check's ID>`, and runs
+MacPorts' own workflow. Every run on that branch is the check's, so two checks
+of one commit never share a run, and a cancel of one stops only its own.
+Dockhand reads the results and keeps logs locally, then removes the temporary
+branch when it is done with it; `dockhand clean` removes one a canceled check
+left. This has external effects even though it opens no PR.
+
+A cancel of a GitHub check cancels every run on its branch and is finished
+once each has completed and every push and rerun of the check has a run of
+its own listed. A push GitHub accepted but hasn't listed a run for keeps the
+cancel unfinished, however long ago it was, since its run can still start:
+`status` keeps its line, and each `cancel`, and serve as it passes, looks
+again. A push git reported rejected, or one dockhand refused before sending,
+needs no run. A rerun GitHub refused is not yet read as having started
+nothing, since GitHub doesn't say what its refusals mean.
 
 Each macOS release in the workflow's matrix is its own environment, with its own
 column, and one run builds them all. `--on github` asks for every release;

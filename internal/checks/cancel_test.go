@@ -40,7 +40,8 @@ func (s *stopping) Execute(ctx context.Context, _ buildenv.Job, build buildenv.B
 	return ctx.Err()
 }
 
-func (s *stopping) Stop(_ context.Context, execution model.GuestExecution, _ buildenv.LaunchLock) ([]string, error) {
+func (s *stopping) Stop(_ context.Context, request buildenv.StopRequest) ([]string, error) {
+	execution := request.Execution
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.asked = append(s.asked, execution.ProviderRef)

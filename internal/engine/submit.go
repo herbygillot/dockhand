@@ -1415,7 +1415,7 @@ func (e *Engine) publish(ctx context.Context, plan SubmitPlan, worktree *git.Rep
 	if slices.Contains(record.Owes, model.StepPush) {
 		// A fork's branch that holds the commit already, as a submit
 		// racing this one leaves it, is pushed (git.Push).
-		if err := remotewrite.Push(ctx, worktree, plan.pushBasis(), plan.HeadRepository, git.Push{Remote: plan.PushURL, Branch: plan.RemoteBranch(), Commit: plan.Commit, ExpectedRemote: plan.RemoteHead}); err != nil {
+		if _, err := remotewrite.Push(ctx, worktree, plan.pushBasis(), plan.HeadRepository, git.Push{Remote: plan.PushURL, Branch: plan.RemoteBranch(), Commit: plan.Commit, ExpectedRemote: plan.RemoteHead}); err != nil {
 			var conflict *git.RefConflict
 			if errors.As(err, &conflict) {
 				// The fork refused the push, so nothing of it landed.

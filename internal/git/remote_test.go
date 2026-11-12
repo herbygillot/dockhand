@@ -22,11 +22,21 @@ func TestPushUsesExplicitExpectedHeadAndNeverPushesTags(t *testing.T) {
 	a := snapshotCommit(t, repo, snapshotTree(t, repo, snapshotBlob(t, repo, "file", "one", 0100644)))
 	b := snapshotCommit(t, repo, snapshotTree(t, repo, snapshotBlob(t, repo, "file", "two", 0100644)))
 	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/tags/unrelated", Desired: git.RefValue{Exists: true, Object: a}}}))
-	require.NoError(t, repo.Push(t.Context(), git.Push{Remote: remote, Branch: "candidate", Commit: a}))
-	// A stale 'absent' precondition may only no-op at the exact desired head.
-	require.NoError(t, repo.Push(t.Context(), git.Push{Remote: remote, Branch: "candidate", Commit: a}))
-	require.ErrorIs(t, repo.Push(t.Context(), git.Push{Remote: remote, Branch: "candidate", Commit: b}), git.ErrRefConflict)
-	require.NoError(t, repo.Push(t.Context(), git.Push{Remote: remote, Branch: "candidate", Commit: b, ExpectedRemote: git.RefValue{Exists: true, Object: a}}))
+	report, err := repo.Push(t.Context(), git.Push{Remote: remote, Branch: "candidate", Commit: a})
+	require.NoError(t, err)
+	require.True(t, report.Sent)
+	require.Contains(t, report.Line, ":refs/heads/candidate", "the branch's line, as git push reported it")
+	require.False(t, report.Rejected())
+	// A stale 'absent' precondition may only no-op at the exact desired
+	// head, which sends nothing.
+	report, err = repo.Push(t.Context(), git.Push{Remote: remote, Branch: "candidate", Commit: a})
+	require.NoError(t, err)
+	require.False(t, report.Sent)
+	report, err = repo.Push(t.Context(), git.Push{Remote: remote, Branch: "candidate", Commit: b})
+	require.ErrorIs(t, err, git.ErrRefConflict)
+	require.False(t, report.Sent, "a branch found elsewhere than expected sends nothing")
+	_, err = repo.Push(t.Context(), git.Push{Remote: remote, Branch: "candidate", Commit: b, ExpectedRemote: git.RefValue{Exists: true, Object: a}})
+	require.NoError(t, err)
 	head, err := repo.RemoteHead(t.Context(), remote, "candidate")
 	require.NoError(t, err)
 	require.Equal(t, b, head.Object)
@@ -126,4 +136,22 @@ func TestUnattendedSSHNeverAsks(t *testing.T) {
 
 	withSSH := git.Program{Env: append(testsupport.GitEnv(t), "GIT_SSH="+ssh)}
 	require.NotContains(t, strings.Join(git.Unattended(t.Context(), withSSH, configured.Root), "\n"), "BatchMode", "GIT_SSH's program is the person's")
+}
+
+// A push the remote rejects says so on the branch's own line of git
+// push's report, which the push returns as it read it: a check's launch
+// that GitHub rejected started nothing (the lifecycle design's "A launch
+// known to have started nothing is written down as that").
+func TestARejectedPushSaysSoOnItsBranchsLine(t *testing.T) {
+	t.Parallel()
+	repo := snapshotRepo(t)
+	// A repository with the branch checked out refuses a push to it.
+	remote := filepath.Join(t.TempDir(), "remote")
+	testsupport.Git(t, filepath.Dir(remote), "init", "-q", "-b", "candidate", remote)
+	a := snapshotCommit(t, repo, snapshotTree(t, repo, snapshotBlob(t, repo, "file", "one", 0100644)))
+	report, err := repo.Push(t.Context(), git.Push{Remote: remote, Branch: "candidate", Commit: a})
+	require.Error(t, err)
+	require.True(t, report.Sent)
+	require.True(t, report.Rejected(), "the line: %q", report.Line)
+	require.Contains(t, report.Line, "[remote rejected]")
 }

@@ -830,10 +830,15 @@ func (d *driver) matrix(ctx context.Context, provider buildenv.Provider, environ
 		failpoint.Hit("check.running")
 		first := job.Matrix[0]
 		job.Run, job.Execution, job.Revision, job.Plan, job.Environment, job.Targets, job.Commit = d.run, first.Execution, revision, d.plan, first.Environment, first.Targets, commit
+		launched, err := d.launched(ctx, provider.Name())
+		if err != nil {
+			return err
+		}
+		job.Launched = launched
 		job.Directory = filepath.Join(c.Logs, d.run.Name(), fmt.Sprintf("%s-%d", provider.Name(), attempt))
 		run := &matrixBuild{build: cells[0].build, name: provider.Name(), cells: cells}
 		stopWatching := watchStalls(ctx, cells[0].build, job.Directory)
-		err := provider.Execute(ctx, job, run)
+		err = provider.Execute(ctx, job, run)
 		stopWatching()
 		_ = os.Remove(job.Directory)
 		var unrun *buildenv.Unrun
@@ -916,6 +921,22 @@ func (m *matrixBuild) Refer(ref string) error {
 		}
 	}
 	return nil
+}
+
+// launched are the notes the run's attempts on a provider saved before
+// they started work, oldest first (buildenv.Job.Launched).
+func (d *driver) launched(ctx context.Context, provider string) ([]string, error) {
+	var notes []string
+	err := d.c.Store.View(ctx, d.c.Repository, func(r store.Reader) error {
+		executions, err := r.Executions(d.run.ID)
+		for _, execution := range executions {
+			if execution.Environment.Provider == provider && execution.Launch != "" {
+				notes = append(notes, execution.Launch)
+			}
+		}
+		return err
+	})
+	return notes, err
 }
 
 // unreadIdentity records an attempt that ended before it began, since what

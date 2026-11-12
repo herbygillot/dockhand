@@ -116,10 +116,11 @@ func Permit(effect Effect, repository string, basis Basis) error {
 // words say a basis as a refusal names it.
 var words = map[Basis]string{OwnFork: "your fork", Made: "a record that it made it", Invited: "an invitation to push", Named: "your naming it"}
 
-// Push pushes a branch to a repository (git.Repository.Push).
-func Push(ctx context.Context, repo *git.Repository, basis Basis, repository string, push git.Push) error {
+// Push pushes a branch to a repository (git.Repository.Push), and says
+// what it did: a push refused here sends nothing.
+func Push(ctx context.Context, repo *git.Repository, basis Basis, repository string, push git.Push) (git.PushReport, error) {
 	if err := Permit(PushBranch, repository, basis); err != nil {
-		return err
+		return git.PushReport{}, err
 	}
 	return repo.Push(ctx, push)
 }
