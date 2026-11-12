@@ -96,7 +96,7 @@ dh_setup() {
 	# the row has nothing to go on with: it isn't run, saying why, where B4
 	# went on to check -b null once MacPorts had updated dblab (the M1's
 	# rc5 full stage).
-	if [ "${1:-}" = update ] && case " $* " in *" --new "*) true ;; *) false ;; esac && [ -z "$(own_branch)" ]; then
+	if [ "${1:-}" = update ] && case " $* " in *" --new "* | *" --new="*) true ;; *) false ;; esac && [ -z "$(own_branch)" ]; then
 		row_result "not run" "its fixture port, $2, is current at the stage's master, so update --new made no branch; name a port that's due, as ACCEPT_GO_PORT or ACCEPT_RUST_PORT"
 		return 1
 	fi

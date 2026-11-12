@@ -2,14 +2,16 @@
 # G5: several ports of one Portfile, one branch and a commit each (field
 # testing's four kubectl subports): update names the day's two outdated
 # subports of one Portfile, ACCEPT_SUBPORTS ("kubectl-1.34 kubectl-1.35"),
-# and starts one branch, named for their directory; tidy -y then commits
+# and starts one branch, named for this run (run_name): an archived branch
+# of an earlier run holds their directory's name, which dockhand rightly
+# refused (rc4's full stage, dockhand/terragrunt). tidy -y then commits
 # each update on its own, titled for its port, in the order made. A
 # selection's grouping, update --mine's and ship's, is engine.PlanOutdated's,
 # which its tests hold. Without ACCEPT_SUBPORTS the row isn't run.
 act() {
 	[ -n "${ACCEPT_SUBPORTS:-}" ] || { row_result "not run" "ACCEPT_SUBPORTS names no two outdated subports of one Portfile"; return 0; }
 	# shellcheck disable=SC2086
-	dh_setup update $ACCEPT_SUBPORTS --new || return 0
+	dh_setup update $ACCEPT_SUBPORTS --new="$(run_name g5-subports)" || return 0
 	dh_json tidy -b "$(own_branch)" -y </dev/null || :
 	"$DH_BIN" --json status 2>/dev/null | jq -r '.result.branches[]?.name' 2>/dev/null |
 		grep -vxF -f "$ROW_DIR/branches.before" >"$ROW_DIR/branches.new" || :
