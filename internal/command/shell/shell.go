@@ -59,6 +59,14 @@ evidence.`,
 				return err
 			}
 			defer e.Close()
+			// shell opens a check's kept clone, chosen by --on; one attempt,
+			// or a provider's run, is refused by name, with its check
+			// (docs/designs/check-lifecycle.md, "Selection").
+			if !engine.IsCheckName(args[0]) {
+				if selection, err := e.SelectBuild(ctx, args[0]); err == nil && selection.Kind != engine.SelectedCheck {
+					return fmt.Errorf("shell opens a check's kept clone; %s is one %s of %s. Run dockhand shell %s, with --on for the release", args[0], selection.Kind, selection.Run.Name(), selection.Run.Name())
+				}
+			}
 			run, err := e.RunNamed(ctx, args[0])
 			if err != nil {
 				return keptHere(ctx, e, err)

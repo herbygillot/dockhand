@@ -185,12 +185,6 @@ provider supports it, then prints any remaining output when the build ends.`,
 			if len(args) == 2 {
 				port, args = args[1], args[:1]
 			}
-			if full && port == "" {
-				return errors.New("--full requires a port name, for example: dockhand logs check-42 jq --full")
-			}
-			if phase != "" && port == "" {
-				return errors.New("--phase requires a port name, for example: dockhand logs check-42 jq --phase fetch")
-			}
 			if phase != "" && !model.Step(phase).Valid() {
 				return fmt.Errorf("--phase takes one of the steps a build takes: %s", stepNames(model.Steps))
 			}
@@ -220,6 +214,16 @@ provider supports it, then prints any remaining output when the build ends.`,
 			}
 			if err != nil {
 				return err
+			}
+			// The name is resolved before the flags are judged, so the lone
+			// argument read as a port serves --phase and --full: logs jq
+			// --phase fetch was refused though logs jq worked
+			// (docs/designs/check-lifecycle.md, "Selection").
+			if full && port == "" {
+				return errors.New("--full requires a port name, for example: dockhand logs check-42 jq --full")
+			}
+			if phase != "" && port == "" {
+				return errors.New("--phase requires a port name, for example: dockhand logs check-42 jq --phase fetch")
 			}
 			if named != "" && !changesPort(ctx, e, run, named) {
 				branch := where.Port

@@ -893,19 +893,56 @@ func IsCheckName(name string) bool { return checkName.MatchString(name) }
 // environments' executions share, as a GitHub workflow run that built
 // each release of its matrix, means the check, all of them: no execution.
 func (e *Engine) RunOrExecution(ctx context.Context, name string) (model.Run, model.ExecutionID, error) {
+	selection, err := e.SelectBuild(ctx, name)
+	if err != nil || len(selection.Executions) != 1 {
+		return selection.Run, "", err
+	}
+	return selection.Run, selection.Executions[0], nil
+}
+
+// SelectionKind is the kind of name a build selection was made from
+// (docs/designs/check-lifecycle.md, "Selection").
+type SelectionKind string
+
+const (
+	SelectedCheck       SelectionKind = "check"
+	SelectedAttempt     SelectionKind = "attempt"
+	SelectedProviderRun SelectionKind = "provider run"
+)
+
+// BuildSelection is what a check's name, an attempt's ID or a provider's
+// run reference means: the check, and the attempts it stands for, several
+// where one provider run built several environments, none for a check.
+// logs, artifacts and shell each read it and refuse by name what they
+// can't serve.
+type BuildSelection struct {
+	Kind       SelectionKind
+	Run        model.Run
+	Executions []model.ExecutionID
+}
+
+// SelectBuild resolves a name once: a check, check-42; one attempt, by
+// its ID; or a provider's run, by its reference.
+func (e *Engine) SelectBuild(ctx context.Context, name string) (BuildSelection, error) {
 	run, err := e.RunNamed(ctx, name)
 	if err == nil || IsCheckName(name) {
-		return run, "", err
+		return BuildSelection{Kind: SelectedCheck, Run: run}, err
 	}
 	executions, runErr := e.executionsNamed(ctx, name)
 	if runErr != nil {
-		return model.Run{}, "", fmt.Errorf("%s is neither a check, such as check-42, nor a provider run, such as tart_7y62p4sigena6xlr or a workflow run's URL", name)
+		return BuildSelection{}, fmt.Errorf("%s is neither a check, such as check-42, nor a provider run, such as tart_7y62p4sigena6xlr or a workflow run's URL", name)
 	}
-	run, err = e.Run(ctx, executions[0].Run)
-	if len(executions) > 1 {
-		return run, "", err
+	if run, err = e.Run(ctx, executions[0].Run); err != nil {
+		return BuildSelection{}, err
 	}
-	return run, executions[0].ID, err
+	selection := BuildSelection{Kind: SelectedProviderRun, Run: run}
+	if len(executions) == 1 && executions[0].ID == model.ExecutionID(name) {
+		selection.Kind = SelectedAttempt
+	}
+	for _, execution := range executions {
+		selection.Executions = append(selection.Executions, execution.ID)
+	}
+	return selection, nil
 }
 
 // executionsNamed are the provider runs a name means: the one execution of

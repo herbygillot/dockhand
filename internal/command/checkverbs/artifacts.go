@@ -34,18 +34,25 @@ branch's worktree, lists that branch's latest check.`,
 			// A check is named as logs names one: artifacts check-781 read
 			// "no tracked branch named check-781" (field testing, #68).
 			check := len(args) == 1 && engine.IsCheckName(args[0])
-			if len(args) == 1 && !check {
-				if where.Explicit() {
-					return fmt.Errorf("name a branch once, as the argument or with -b, -p, or --pr")
-				}
-				where.Branch = args[0]
-			}
 			ctx := cmd.Context()
 			e, err := s.Open(ctx)
 			if err != nil {
 				return err
 			}
 			defer e.Close()
+			if len(args) == 1 && !check {
+				// One attempt, or a provider's run, is refused by name:
+				// artifacts lists a check's judged passes, some reused or
+				// filled from earlier checks, never what one attempt built
+				// (docs/designs/check-lifecycle.md, "Selection").
+				if selection, err := e.SelectBuild(ctx, args[0]); err == nil && selection.Kind != engine.SelectedCheck {
+					return fmt.Errorf("artifacts lists a check's passed builds; %s is one %s of %s. Run dockhand artifacts %s", args[0], selection.Kind, selection.Run.Name(), selection.Run.Name())
+				}
+				if where.Explicit() {
+					return fmt.Errorf("name a branch once, as the argument or with -b, -p, or --pr")
+				}
+				where.Branch = args[0]
+			}
 			var run model.Run
 			switch {
 			case check && where.Explicit():

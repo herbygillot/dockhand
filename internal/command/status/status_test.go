@@ -236,6 +236,17 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	alone, _, err := cmdtest.Dockhand(t, "logs", "jq")
 	require.NoError(t, err)
 	require.Equal(t, out, alone)
+	// The lone argument is read as the port before the flags are judged:
+	// logs jq --full was refused as naming no port (#193's selection).
+	aloneWhole, _, err := cmdtest.Dockhand(t, "logs", "jq", "--full")
+	require.NoError(t, err)
+	require.Equal(t, whole, aloneWhole)
+	// One attempt is refused by name where only a check is served, with
+	// the check to name instead.
+	_, _, err = cmdtest.Dockhand(t, "artifacts", id)
+	require.EqualError(t, err, "artifacts lists a check's passed builds; "+id+" is one attempt of check-3. Run dockhand artifacts check-3")
+	_, _, err = cmdtest.Dockhand(t, "shell", id, "--", "true")
+	require.EqualError(t, err, "shell opens a check's kept clone; "+id+" is one attempt of check-3. Run dockhand shell check-3, with --on for the release")
 	_, _, err = cmdtest.Dockhand(t, "logs", "check-9")
 	require.ErrorContains(t, err, "there is no run check-9")
 
