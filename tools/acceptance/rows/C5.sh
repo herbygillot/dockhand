@@ -18,17 +18,25 @@ act() {
 }
 
 assert() {
-	local port missing="" note
+	local port missing="" single
+	# Each note by its own pattern, which the gate holds to what update
+	# prints (#223): update had come to word all three otherwise, and a
+	# loop over the old words found none in either log, passing on nothing.
 	for port in $(ports); do
-		for note in 'A new major version' 'so the pin is dropped' 'Upstream archives not compared'; do
-			if grep -q "$note" "$ROW_DIR/single.$port" && ! grep -q "$note" "$ROW_DIR/batch.log"; then
-				missing="$missing $port($note)"
-			fi
-		done
+		single=$ROW_DIR/single.$port
+		if said 'New major version: ports that depend on' "$single" && ! said 'New major version: ports that depend on' "$ROW_DIR/batch.log"; then
+			missing="$missing $port(a new major version)"
+		fi
+		if said 'Removed the Portfile pin for ' "$single" && ! said 'Removed the Portfile pin for ' "$ROW_DIR/batch.log"; then
+			missing="$missing $port(a pin dropped)"
+		fi
+		if said 'Upstream not compared: ' "$single" && ! said 'Upstream not compared: ' "$ROW_DIR/batch.log"; then
+			missing="$missing $port(upstream not compared)"
+		fi
 	done
 	if [ -n "$missing" ]; then
 		row_fail "the batch left out notes a single update says:$missing"
-	elif ! grep -qE '^  [^ ]+ +a version update from master, to commit$' "$ROW_DIR/batch.log"; then
+	elif ! said '^  [^ ]+ +a version update from master, to commit$' "$ROW_DIR/batch.log"; then
 		row_fail "the batch printed no plan rows: $(tail -3 "$ROW_DIR/batch.log" | tr '\n' ';')"
 	else
 		row_pass "each port's update says the notes its single update says"

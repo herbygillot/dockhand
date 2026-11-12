@@ -21,16 +21,16 @@ assert() {
 	# With the Keychain locked, setup offers no new login, and its github
 	# line and Next say to unlock it (v0.6.0, 6a5ad0f4): rc5's offered a
 	# device login and named dockhand setup github, as v0.4.0's did.
-	if grep -q 'Keychain is locked' "$ROW_DIR/ssh.log"; then
-		if grep -q 'Log in to GitHub' "$ROW_DIR/ssh.log"; then
+	if said 'Keychain is locked' "$ROW_DIR/ssh.log"; then
+		if said 'Log in to GitHub' "$ROW_DIR/ssh.log"; then
 			row_fail "with the Keychain locked, setup offered a new GitHub login"
 			return
 		fi
-		if ! grep -q '^Next: .*security unlock-keychain' "$ROW_DIR/ssh.log"; then
+		if ! said '^Next: .*security unlock-keychain' "$ROW_DIR/ssh.log"; then
 			row_fail "with the Keychain locked, setup's Next: didn't say to unlock it: $(grep '^Next:' "$ROW_DIR/ssh.log" | head -1)"
 			return
 		fi
-		if grep -q '^Next: dockhand setup github' "$ROW_DIR/ssh.log"; then
+		if said '^Next: dockhand setup github' "$ROW_DIR/ssh.log"; then
 			row_fail "with the Keychain locked, setup's Next: named dockhand setup github"
 			return
 		fi

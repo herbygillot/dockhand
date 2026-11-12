@@ -5,8 +5,9 @@ port() { printf '%s' "${ACCEPT_RUST_PORT:?}"; }
 act() {
 	dh_bg -v update "$(port)" --new
 	# The interrupt counts only where it reached the update still fetching
-	# (#232).
-	if wait_for_line "$DH_BG_LOG" '[Ff]etch|[Dd]ownload' 600; then
+	# (#232): at -v, regenerating the crates' checksums, which fetches each
+	# crate. No line of -v's held "fetch" or "download" to wait on (#223).
+	if wait_for_line "$DH_BG_LOG" 'Regenerating .* for ' 600; then
 		sleep 1
 		kill -INT "$DH_BG_PID" 2>/dev/null && DI1_INTERRUPTED=1
 	fi

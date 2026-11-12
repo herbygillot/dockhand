@@ -48,7 +48,7 @@ g9_kill() {
 	from=$(log_size "$ROW_DIR/out.log")
 	wait_for_line "$ROW_DIR/out.log" 'building in /opt/local \(as root\)' 1800 "$from" || return 0
 	sleep 360
-	grep -q 'put /opt/local back as it was' "$ROW_DIR/out.log" && return 0
+	said 'put /opt/local back as it was' "$ROW_DIR/out.log" && return 0
 	dir=$(ls -dt /var/tmp/dockhand-local-* 2>/dev/null | head -1)
 	pid=$(jq -r '.environment.pid // empty' "$dir/results.json" 2>/dev/null)
 	[ -n "$pid" ] || return 0
@@ -61,17 +61,17 @@ assert() {
 	[ -n "${G9_RAN:-}" ] || return 0
 	[ -f "$ROW_DIR/result" ] && return 0
 	local asked
-	asked=$(grep -c "so sudo asks for your password" "$ROW_DIR/out.log")
+	asked=$(said -c "so sudo asks for your password" "$ROW_DIR/out.log")
 	if [ "$asked" -lt 2 ]; then
 		row_result "not run" "root was asked for once: the build ended before sudo's five minutes, or the program wasn't killed after them; a longer ACCEPT_G9_PORT than $(g9_port) shows it"
 		return
 	fi
-	grep -q 'put /opt/local back as it was' "$ROW_DIR/out.log" || { row_fail "the check didn't put /opt/local back after asking for root again: $(grep "wasn't put back" "$ROW_DIR/out.log" | tail -1)"; return; }
+	said 'put /opt/local back as it was' "$ROW_DIR/out.log" || { row_fail "the check didn't put /opt/local back after asking for root again: $(grep "wasn't put back" "$ROW_DIR/out.log" | tail -1)"; return; }
 	local_same /opt/local "$ROW_DIR/active.before" "the put-back left /opt/local's active ports changed" || return
 	local builds
-	builds=$(grep -c 'building in /opt/local (as root)' "$ROW_DIR/out.log")
+	builds=$(said -c 'building in /opt/local \(as root\)' "$ROW_DIR/out.log")
 	if g9_stops; then
-		grep -q "was killed by a signal dockhand didn't send" "$ROW_DIR/out.log" || { row_fail "the check didn't say the guest program was killed by a signal it didn't send: $(grep -E 'guest program|attempt' "$ROW_DIR/out.log" | tail -2 | tr '\n' ' ')"; return; }
+		said "was killed by a signal dockhand didn't send" "$ROW_DIR/out.log" || { row_fail "the check didn't say the guest program was killed by a signal it didn't send: $(grep -E 'guest program|attempt' "$ROW_DIR/out.log" | tail -2 | tr '\n' ' ')"; return; }
 		[ "$builds" = 1 ] || { row_fail "the check built $builds times; a killed guest program isn't tried again"; return; }
 		row_pass "the check asked for root again at its put-back, past sudo's five minutes, put /opt/local back exactly, said the kill, and made no other attempt"
 		return

@@ -45,7 +45,7 @@ assert() {
 		row_fail "$G8_RUN didn't pass under serve's worker, exit $(cat "$wait.exit" 2>/dev/null): $(jq -r '.error // empty' "$wait" 2>/dev/null)"
 		return
 	fi
-	grep -qF "building in /opt/local (as root)" "$ROW_DIR/drain.log" 2>/dev/null || { row_fail "$G8_RUN didn't say it built in /opt/local as root, in what its worker wrote"; return; }
+	said "building in /opt/local \\(as root\\)" "$ROW_DIR/drain.log" 2>/dev/null || { row_fail "$G8_RUN didn't say it built in /opt/local as root, in what its worker wrote"; return; }
 	local_same /opt/local "$ROW_DIR/active.before" "$G8_RUN left /opt/local's active ports changed" || return
 	row_pass "$G8_RUN passed in /opt/local under serve's worker, as root, with sudo asking no password for /opt/local/bin/port-tclsh alone, and put the ports back"
 }

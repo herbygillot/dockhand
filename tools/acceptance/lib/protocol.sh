@@ -222,7 +222,7 @@ device_login() {
 			}
 		fi
 		dh_bg_wait && return 0
-		grep -q 'expired before it was entered' "$DH_BG_LOG" && [ "$codes" -lt 3 ] || return 1
+		said 'expired before it was entered' "$DH_BG_LOG" && [ "$codes" -lt 3 ] || return 1
 		checkpoint "the code expired before it was entered; say ready for a new one: $*" || return 1
 	done
 }

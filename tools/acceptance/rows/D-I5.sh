@@ -54,7 +54,7 @@ act() {
 	dh check -b "$DI5_BRANCH" --fresh -d || :
 	# serve has the check building before the reboot ends it, said since
 	# this serve began: serve.log keeps earlier runs' lines.
-	wait_for_line "$serve_log" "check-[0-9]+ $DI5_BRANCH: running" 600 "$served" ||
+	wait_for_mark "$serve_log" "check-[0-9]+ $DI5_BRANCH: running" 600 "$served" ||
 		{ row_fail "serve never said the check was running"; return 0; }
 	check=$(tail -c +"$((served + 1))" "$serve_log" | grep -oE "check-[0-9]+ $DI5_BRANCH: running" | tail -1 | cut -d' ' -f1)
 	sleep 30
@@ -95,7 +95,7 @@ di5_sleep() {
 	# check says each step (34fa8f65), where rc5 needed -v (the docs
 	# dig's I29).
 	dh_bg check -b "$DI5_SLEEP_BRANCH" --fresh
-	wait_for_line "$DH_BG_LOG" 'building|running' 900 || { row_fail "the check never started building"; kill "$DH_BG_PID" 2>/dev/null; return 1; }
+	wait_for_line "$DH_BG_LOG" 'is running here|building in [^ ]+ \(dockhand shell ' 900 || { row_fail "the check never started building"; kill "$DH_BG_PID" 2>/dev/null; return 1; }
 	started=$(date '+%Y-%m-%d %H:%M:%S')
 	# Asked only of a check still running: one already done has nothing
 	# for the sleep to interrupt.
@@ -126,10 +126,10 @@ di5_after_reboot() {
 	mv "$ACCEPT_STATE/D-I5.first.log" "$ROW_DIR/first-half.log" 2>/dev/null || :
 	DI5_SECOND=1
 	# serve starts at login, and picks stopped work up.
-	if wait_for_line "$serve_log" "$DI5_CHECK $DI5_BRANCH: resuming" 600 "${served:-0}"; then
+	if wait_for_mark "$serve_log" "$DI5_CHECK $DI5_BRANCH: resuming" 600 "${served:-0}"; then
 		# The resumed build runs to its end, however long the sleep port's
 		# build is; no end came before the reboot, or it wouldn't resume.
-		wait_for_line "$serve_log" "$DI5_CHECK $DI5_BRANCH: (passed|failed|attention|canceled)" 3600 "${served:-0}" || :
+		wait_for_mark "$serve_log" "$DI5_CHECK $DI5_BRANCH: (passed|failed|attention|canceled)" 3600 "${served:-0}" || :
 	fi
 	tail -c +"$((${served:-0} + 1))" "$serve_log" >"$ROW_DIR/serve.log" 2>/dev/null || :
 	dh_json status "$DI5_BRANCH" || :

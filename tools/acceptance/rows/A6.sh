@@ -12,7 +12,7 @@ act() {
 	# The backup is made while serve runs only where serve said it leads
 	# and still runs: a readiness wait that timed out was ignored (Codex's
 	# cold read at 2cdaf571, #232).
-	if wait_for_line "$DH_BG_LOG" 'leading|serve:' 60 && kill -0 "$A6_SERVE" 2>/dev/null; then
+	if wait_for_line "$DH_BG_LOG" 'serve: leading \(pid [0-9]+\)' 60 && kill -0 "$A6_SERVE" 2>/dev/null; then
 		A6_SERVING=1
 	fi
 	dh_json backup "$ROW_DIR/backups" || :

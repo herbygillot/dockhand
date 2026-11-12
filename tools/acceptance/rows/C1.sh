@@ -10,7 +10,7 @@ act() {
 	dh_json status --refresh || :
 }
 assert() {
-	grep -qi 'setup github' <(sed -n '/^\$ dockhand --json status --refresh/,$p' "$ROW_DIR/out.log") &&
+	said 'dockhand setup github signs in|run dockhand setup github to sign in again' <(sed -n '/^\$ dockhand --json status --refresh/,$p' "$ROW_DIR/out.log") &&
 		{ row_fail "it asked for a login it could renew"; return; }
 	judged "setup said until when the login renews, before and after"
 }

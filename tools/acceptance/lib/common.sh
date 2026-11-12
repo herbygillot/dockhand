@@ -156,6 +156,53 @@ dh_json() {
 # pass it silently. matches reads all its input.
 matches() { grep "$@" >/dev/null; }
 
+# said is how a row asserts what dockhand printed: its out.log, a --json
+# envelope's error or messages, serve.log, a drain's or a background
+# dockhand's log (#223). said [-i] [-x] [-h] [-c | -o | -p | -n] [--] ERE
+# [file...] is grep -E with those flags, reading its standard input where
+# no file is named: -p prints the lines that match, as grep alone does, and
+# -n with their numbers. With none of -c, -o, -p, or -n it is quiet,
+# exiting 0 on a match and 1 on none; like matches, it reads all its input. Every row's pattern is one the
+# gate holds to dockhand's source (tools/acceptance/said): it must hold a
+# fixed run of at least 12 literal characters, and match a message some
+# string literal of internal/ or cmd/ can be, or be in said-allow.txt with
+# the Go test that pins the message dockhand assembles. A commit that
+# rewords a message a row says then fails the gate, not the test host
+# (rc3 and rc4's B2, D-T1, and the ^serve: rows).
+#
+# The gap: a literal can match while the message dockhand renders
+# differs, as where a prefix or a wrap comes between, or a verb is filled
+# with what the row didn't expect. A row that reads a --json field (jq) is
+# the only kind that can't go stale on wording, so a row reads one where
+# the envelope carries the fact it checks.
+said() {
+	local fold="" whole="" mode=-q names=""
+	while :; do
+		case "${1:-}" in
+		-i) fold=-i ;;
+		-x) whole=-x ;;
+		-c | -o | -n) mode=$1 ;;
+		-p) mode="" ;;
+		-h) names=-h ;;
+		--)
+			shift
+			break
+			;;
+		*) break ;;
+		esac
+		shift
+	done
+	local pattern=$1
+	shift
+	# The flags are empty or one word each.
+	# shellcheck disable=SC2086
+	if [ "$mode" = -q ]; then
+		grep -E $fold $whole $names -e "$pattern" -- "$@" >/dev/null
+	else
+		grep -E $fold $whole $names $mode -e "$pattern" -- "$@"
+	fi
+}
+
 # The allowances: what a row is meant to change, which the harm sweep
 # then doesn't count. Each is a glob.
 allow_change() { printf '%s\n' "$@" >>"$ROW_DIR/allow.change"; }
@@ -293,7 +340,8 @@ dh_bg_wait() {
 SERVE_LINE='^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(Z|[+-][0-9]{2}:[0-9]{2}) )?serve: '
 
 # wait_for_line waits until a file has a line matching a pattern, for up
-# to some seconds; it fails where none comes.
+# to some seconds; it fails where none comes. The pattern is said's, and
+# the gate holds it to dockhand's source as it holds said's.
 #
 # log_size is a file's size in bytes, 0 where it isn't there: the offset
 # to give wait_for_line before a row's step writes the lines it waits on.
@@ -304,6 +352,23 @@ log_size() { wc -c <"$1" 2>/dev/null | tr -d ' ' || echo 0; }
 # D-C3's waits matched rc9's, so queue ran before rc10's serve had looked
 # (the rc10 full stage). log_size gives the offset to take before acting.
 wait_for_line() {
+	local file=$1 pattern=$2 seconds=${3:-600} from=${4:-0} waited=0
+	while [ "$waited" -lt "$seconds" ]; do
+		tail -c +"$((from + 1))" "$file" 2>/dev/null | said "$pattern" && return 0
+		sleep 2
+		waited=$((waited + 2))
+	done
+	return 1
+}
+
+# wait_for_mark is wait_for_line for a line a row reads by its shape, not
+# dockhand's words: a check's or a branch's state as serve and console
+# print it, "<check> <branch>: <state>" and "<branch> <state>", where the
+# names are the row's and the states model's, as --json carries them. Its
+# pattern is grep -E's, which the gate doesn't hold to dockhand's source,
+# so selftest's lint lets a row use it only where its exemptions list the
+# row (#223).
+wait_for_mark() {
 	local file=$1 pattern=$2 seconds=${3:-600} from=${4:-0} waited=0
 	while [ "$waited" -lt "$seconds" ]; do
 		tail -c +"$((from + 1))" "$file" 2>/dev/null | matches -E "$pattern" && return 0
