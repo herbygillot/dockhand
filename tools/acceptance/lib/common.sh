@@ -406,3 +406,13 @@ end_drains() {
 # and on dhtest's 1,400 a call outlasted the build a row polled for (rc4's
 # D-I6, prime-time's batch).
 dh_queue() { (cd / && "$DH_BIN" --json status 2>/dev/null); }
+
+# needs_command stops a row as "not run" where the candidate has no such
+# command, one a newer build added: rc4 has no backup, which aee12d32
+# added after it, and A6 failed for it rather than saying so (#227). It
+# returns 1 where the row stops.
+needs_command() {
+	"$DH_BIN" "$1" --help >/dev/null 2>&1 && return 0
+	row_result "not run" "needs dockhand $1, which this candidate ($("$DH_BIN" --version 2>/dev/null | head -1)) hasn't"
+	return 1
+}

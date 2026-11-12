@@ -6,6 +6,7 @@
 # of an older schema, which the candidate migrates while the original
 # stays as it was.
 act() {
+	needs_command backup || return 0
 	mkdir -p "$ROW_DIR/backups"
 	dh_bg serve
 	A6_SERVE=$DH_BG_PID A6_SERVE_LOG=$DH_BG_LOG

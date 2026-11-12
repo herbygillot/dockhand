@@ -8,21 +8,21 @@
 # ~/.dockhand-acceptance/g18-fixed.db unless set, never the live one: the
 # live one grows every candidate, and rc4 timed 57 s on 1,400 branches,
 # the same status with more data (#224). The row makes the copy with
-# dockhand backup the first time and keeps it, so each run measures
+# SQLite's backup the first time and keeps it, so each run measures
 # dockhand on the same database. The candidate opens a copy of the copy,
 # with automatic cleanup off, so the fixed one is never migrated or
 # written.
 g18_fixed() { printf '%s' "${ACCEPT_G18_DB:-$HOME/.dockhand-acceptance/g18-fixed.db}"; }
 act() {
 	host_only "dhtest's database, as rc2 measured it" || return 0
-	local fixed made copy config started
+	local fixed copy config started
 	fixed=$(g18_fixed)
 	if [ ! -f "$fixed" ]; then
-		mkdir -p "$ROW_DIR/backup" "$(dirname "$fixed")"
-		dh_json backup "$ROW_DIR/backup" || :
-		made=$(ls "$ROW_DIR"/backup/dockhand-*.db 2>/dev/null | head -1)
-		[ -n "$made" ] || { row_fail "dockhand backup made no copy to fix G18's database with: $(tail -3 "$ROW_DIR/out.log" | tr '\n' ';')"; return 0; }
-		mv "$made" "$fixed"
+		# SQLite's own backup, one consistent state, which any candidate
+		# can open: rc4 has no dockhand backup (#227).
+		mkdir -p "$(dirname "$fixed")"
+		sqlite3 "${DOCKHAND_DB:?}" ".backup '$fixed.new'" 2>>"$ROW_DIR/out.log" && mv "$fixed.new" "$fixed" ||
+			{ row_fail "sqlite3 couldn't back up $DOCKHAND_DB to fix G18's database with: $(tail -2 "$ROW_DIR/out.log" | tr '\n' ';')"; return 0; }
 		printf '# G18 fixed its database at %s, %s branches, from this run\n' "$fixed" "$(sqlite3 "$fixed" 'SELECT count(*) FROM branches' 2>/dev/null)" >>"$ROW_DIR/out.log"
 	fi
 	copy="$ROW_DIR/g18.db"
