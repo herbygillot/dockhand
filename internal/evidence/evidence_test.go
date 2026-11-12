@@ -526,3 +526,126 @@ func TestAResultAShellEnteredIsNoEvidence(t *testing.T) {
 		Results: map[model.ExecutionID][]model.TargetResult{"tart_a": {{Execution: "tart_a", Target: "harbor-cli", Outcome: model.OutcomePassed, RecordedAt: opened.Add(time.Minute)}}}})
 	require.Equal(t, CellRecorded, evidence.Targets[1].Outcomes[0].Kind, "a shell on another release")
 }
+
+// An earlier pass doesn't fill the newest evidence where the GitHub tag
+// its archive was fetched by named another commit then than the newest
+// plan's, as reuse builds again for it (change 2 of docs/designs/
+// source-comparison.md); another release's tag, or a tag one side didn't
+// record, stands. A result built with Git doesn't fill where the newest
+// plan builds that target another way (change 3).
+func TestAnEarlierPassStandsOnlyForTheSourceTheNewestPlanFetches(t *testing.T) {
+	tools := model.Environment{Provider: "command", DeveloperTools: model.DeveloperToolsCommandLine}
+	commit, other := model.ObjectID(strings.Repeat("a", 40)), model.ObjectID(strings.Repeat("b", 40))
+	tag := func(ref string, commit model.ObjectID) map[model.TargetID]model.GitSource {
+		return map[model.TargetID]model.GitSource{"harbor": {URL: "https://github.com/ada/harbor", Ref: ref, Commit: commit}}
+	}
+	execution := model.GuestExecution{ID: "ex_1", Run: "run_1", Environment: tools}
+	earlier := func(build model.EnvironmentPlan) Evidence {
+		build.Environment, build.Order = tools, []model.TargetID{"harbor"}
+		return Evidence{
+			Run:        model.Run{ID: "run_1", Number: 1},
+			Plan:       model.Plan{Environments: []model.Environment{tools}, Builds: []model.EnvironmentPlan{build}},
+			Executions: map[model.ExecutionID]model.GuestExecution{"ex_1": execution},
+			Targets: []TargetEvidence{{Target: model.PlanTarget{ID: "harbor", Target: model.Target{Name: "harbor"}, Role: model.Changed},
+				Outcomes: []Cell{{TargetResult: model.TargetResult{Execution: "ex_1", Target: "harbor", Outcome: model.OutcomePassed}, Kind: CellRecorded, Environment: tools}}}},
+		}
+	}
+	newest := func(build model.EnvironmentPlan) Evidence {
+		build.Environment, build.Order = tools, []model.TargetID{"harbor"}
+		return Evidence{
+			Run:  model.Run{ID: "run_2", Number: 2},
+			Plan: model.Plan{Environments: []model.Environment{tools}, Builds: []model.EnvironmentPlan{build}},
+			Targets: []TargetEvidence{{Target: model.PlanTarget{ID: "harbor", Target: model.Target{Name: "harbor"}, Role: model.Changed},
+				Outcomes: []Cell{noResult(CellNotRun, tools, "harbor")}}},
+		}
+	}
+	for _, c := range []struct {
+		name      string
+		then, now model.EnvironmentPlan
+		fills     bool
+	}{
+		{"the tag named the same commit", model.EnvironmentPlan{Tags: tag("v1.9.2", commit)}, model.EnvironmentPlan{Tags: tag("v1.9.2", commit)}, true},
+		{"the tag moved", model.EnvironmentPlan{Tags: tag("v1.9.2", commit)}, model.EnvironmentPlan{Tags: tag("v1.9.2", other)}, false},
+		{"another release's tag is no moved tag", model.EnvironmentPlan{Tags: tag("v1.7.1", commit)}, model.EnvironmentPlan{Tags: tag("v1.9.2", other)}, true},
+		{"a plan from before plans kept tags", model.EnvironmentPlan{}, model.EnvironmentPlan{Tags: tag("v1.9.2", other)}, true},
+		{"built with Git, the newest builds it from an archive", model.EnvironmentPlan{Git: tag("v1.9.2", commit)}, model.EnvironmentPlan{}, false},
+	} {
+		now := newest(c.now)
+		found := earlier(c.then)
+		require.Equal(t, c.fills, now.fill(found), c.name)
+	}
+}
+
+// A release only an earlier check planned is judged against the newest
+// check's own reading of each source: where the ref moved between the
+// two, the moved target's result there and a dependent's built against
+// it read as not checked, an unrelated target's still counts, and the
+// release stays required. Where the newest couldn't resolve the ref, the
+// earlier result stands (change 4 of docs/designs/source-comparison.md;
+// Codex's probe, a pass on 15 at one commit and on 26 at another).
+func TestAnEarlierReleasesResultIsJudgedAgainstTheNewestReading(t *testing.T) {
+	sequoia := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}
+	commit, other := model.ObjectID(strings.Repeat("a", 40)), model.ObjectID(strings.Repeat("b", 40))
+	target := func(id model.TargetID) model.PlanTarget {
+		return model.PlanTarget{ID: id, Target: model.Target{Name: string(id)}, Kind: model.Substantive, Role: model.Changed}
+	}
+	for _, tagged := range []bool{false, true} {
+		for _, newestResolved := range []bool{true, false} {
+			source := func(commit model.ObjectID) map[model.TargetID]model.GitSource {
+				s := model.GitSource{URL: "https://github.com/ada/harbor", Ref: "v4", Commit: commit, ResolvedAt: time.Now()}
+				if commit == "" {
+					s.Unresolved = "the repository couldn't be read"
+				}
+				return map[model.TargetID]model.GitSource{"harbor": s}
+			}
+			build := func(environment model.Environment, commit model.ObjectID) model.EnvironmentPlan {
+				b := model.EnvironmentPlan{Environment: environment, Order: []model.TargetID{"harbor", "harbor-cli", "zlib"},
+					Dependencies: map[model.TargetID][]model.TargetID{"harbor-cli": {"harbor"}}}
+				if tagged {
+					b.Tags = source(commit)
+				} else {
+					b.Git = source(commit)
+				}
+				return b
+			}
+			checkOf := func(number int, environment model.Environment, commit model.ObjectID) Check {
+				run := model.Run{ID: model.RunID(fmt.Sprint("run_", number)), Number: number}
+				execution := model.ExecutionID(fmt.Sprint("x", number))
+				results := []model.TargetResult{
+					{Execution: execution, Target: "harbor", Outcome: model.OutcomePassed, Inputs: "h", Archive: "sha256:harbor"},
+					{Execution: execution, Target: "harbor-cli", Outcome: model.OutcomePassed, Inputs: "c"},
+					{Execution: execution, Target: "zlib", Outcome: model.OutcomePassed, Inputs: "z"},
+				}
+				inputs := map[string]model.TargetInputs{"h": {}, "c": {Active: []model.ActivePort{{Name: "harbor", Archive: "sha256:harbor"}}}, "z": {}}
+				if !tagged {
+					inputs["h"] = model.TargetInputs{Fetched: commit}
+				}
+				return Check{Run: run, Plan: model.Plan{Targets: []model.PlanTarget{target("harbor"), target("harbor-cli"), target("zlib")}, Environments: []model.Environment{environment},
+					Builds: []model.EnvironmentPlan{build(environment, commit)}},
+					Executions: []model.GuestExecution{{ID: execution, Run: run.ID, Environment: environment}},
+					Results:    map[model.ExecutionID][]model.TargetResult{execution: results}, Inputs: inputs}
+			}
+			newestCommit := other
+			if !newestResolved {
+				newestCommit = ""
+			}
+			earlier, newest := checkOf(1, sequoia, commit), checkOf(2, tahoeArm, newestCommit)
+			required := []model.Environment{tahoeArm, sequoia}
+			judged := Judge(newest, Plan(newest.Plan, []model.Plan{earlier.Plan}, required), []Check{earlier}, Identities{}, required)
+			on := slices.Index(judged.Plan.Environments, sequoia)
+			require.GreaterOrEqual(t, on, 0, "the earlier release stays in the plan")
+			kinds := map[model.TargetID]CellKind{}
+			for _, te := range judged.Targets {
+				kinds[te.Target.ID] = te.Outcomes[on].Kind
+			}
+			name := fmt.Sprintf("tagged %v, newest resolved %v", tagged, newestResolved)
+			require.Equal(t, CellRecorded, kinds["zlib"], "%s: an unrelated target's result stands", name)
+			if newestResolved {
+				require.NotEqual(t, CellRecorded, kinds["harbor"], "%s: the moved target's result reads as not checked", name)
+				require.NotEqual(t, CellRecorded, kinds["harbor-cli"], "%s: and so does a dependent's built against it", name)
+			} else {
+				require.Equal(t, CellRecorded, kinds["harbor"], "%s: only a shown move unseats anything", name)
+			}
+		}
+	}
+}

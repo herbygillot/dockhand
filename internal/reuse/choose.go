@@ -40,8 +40,7 @@ type Target struct {
 // v1.7.1's having moved, for a revbump at 1.7.1 on another branch
 // (rc7's G16, check-943).
 func (t Target) TagMoved(c Candidate) bool {
-	return t.Tag != nil && c.Tagged != nil && t.Tag.Commit != "" && c.Tagged.Commit != "" &&
-		t.Tag.URL == c.Tagged.URL && t.Tag.Ref == c.Tagged.Ref && t.Tag.Commit != c.Tagged.Commit
+	return model.SourceAgainst(c.Tagged, t.Tag) == model.SourceMoved
 }
 
 // tagMovedAny reports whether any of a target's earlier builds says its
@@ -213,7 +212,7 @@ func builtAgainst(c Candidate, dependency Target) bool {
 			continue
 		}
 		for _, earlier := range dependency.Earlier {
-			if earlier.Result.Archive == port.Archive && dependency.Git.BuiltBy(earlier.Inputs.Fetched) {
+			if earlier.Result.Archive == port.Archive && dependency.Git.AgainstFetched(earlier.Inputs.Fetched) == model.SourceSame {
 				return true
 			}
 		}

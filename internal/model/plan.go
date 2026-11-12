@@ -391,6 +391,17 @@ func (p Plan) GitIn(environment Environment, id TargetID) (GitSource, bool) {
 	return source, ok
 }
 
+// TagIn is the GitHub tag a target's archive is fetched by in an
+// environment, as the plan resolved it; nil where it isn't fetched that
+// way, or the plan is from before plans kept tags.
+func (p Plan) TagIn(environment Environment, id TargetID) *GitSource {
+	build, _ := p.In(environment)
+	if source, ok := build.Tags[id]; ok {
+		return &source
+	}
+	return nil
+}
+
 // Untested are the plan's targets that declare no tests in some
 // environment, and Tested those that do somewhere, each named once: what
 // a plan requiring tests asks nothing of, and what it does.
