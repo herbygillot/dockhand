@@ -49,7 +49,13 @@ func TestModeledObservationTracksHostFilesAtAccessTime(t *testing.T) {
 			require.NoError(t, err)
 			got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
 			require.NoError(t, err)
-			require.Equal(t, operation != "captured-open" && operation != "captured-source", got.Ports["host"].ModeledHostAccess, "%v", got.Ports["host"].Problems)
+			// A captured read is no host state, as the verdict weighs it;
+			// a host read is, at the moment it was made.
+			inTree := operation == "captured-open" || operation == "captured-source"
+			require.Equal(t, !inTree, hostState(t, got.Ports["host"], "PortSystem 1.0\nname host\nversion 1\n"+body), "%v", got.Ports["host"].Problems)
+			if !inTree {
+				require.True(t, got.Ports["host"].ModeledHostAccess, "%v", got.Ports["host"].Problems)
+			}
 		})
 	}
 }
@@ -66,12 +72,13 @@ func TestCompilerDependentFetchInputComesFromTheTable(t *testing.T) {
 	t.Parallel()
 	e := liveEvaluator(t)
 	tree := fixtureTree(t)
-	putFile(t, tree.Root(), "devel/host/Portfile", "PortSystem 1.0\nname host\nversion 1\nuse_xcode yes\ndistfiles host-[file tail ${configure.cxx}].tar.gz\n")
+	contents := "PortSystem 1.0\nname host\nversion 1\nuse_xcode yes\ndistfiles host-[file tail ${configure.cxx}].tar.gz\n"
+	putFile(t, tree.Root(), "devel/host/Portfile", contents)
 	bound, err := tree.Select(model.Target{Name: "host", Portfile: "devel/host/Portfile"})
 	require.NoError(t, err)
 	got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
 	require.NoError(t, err)
-	require.False(t, got.Ports["host"].ModeledHostAccess, "%v", got.Ports["host"].Problems)
+	require.False(t, hostState(t, got.Ports["host"], contents), "%v", got.Ports["host"].Problems)
 	require.Equal(t, "host-clang++.tar.gz", got.Snapshot.Ports["host"].Options["distfiles"])
 	got, err = e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "9", Architecture: "x86_64"}, Declarations: true})
 	require.NoError(t, err)
@@ -169,15 +176,16 @@ func TestSourceDateEpochIsReadFromTheCapturedTree(t *testing.T) {
 	t.Parallel()
 	e := liveEvaluator(t)
 	tree := fixtureTree(t)
-	putFile(t, tree.Root(), "devel/host/Portfile", "PortSystem 1.0\nname host\nversion 1\n"+
-		"set built [clock format ${source_date_epoch} -format %Y-%m-%dT%H:%M:%SZ]\ndistfiles host-${source_date_epoch}-${built}.tar.gz\n")
+	contents := "PortSystem 1.0\nname host\nversion 1\n" +
+		"set built [clock format ${source_date_epoch} -format %Y-%m-%dT%H:%M:%SZ]\ndistfiles host-${source_date_epoch}-${built}.tar.gz\n"
+	putFile(t, tree.Root(), "devel/host/Portfile", contents)
 	when := time.Unix(1700000000, 0)
 	require.NoError(t, os.Chtimes(filepath.Join(tree.Root(), "devel/host/Portfile"), when, when))
 	bound, err := tree.Select(model.Target{Name: "host", Portfile: "devel/host/Portfile"})
 	require.NoError(t, err)
 	got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
 	require.NoError(t, err)
-	require.False(t, got.Ports["host"].ModeledHostAccess, "%v", got.Ports["host"].Problems)
+	require.False(t, hostState(t, got.Ports["host"], contents), "%v", got.Ports["host"].Problems)
 	require.Equal(t, "host-1700000000-2023-11-14T22:13:20Z.tar.gz", got.Snapshot.Ports["host"].Options["distfiles"], "the Portfile's time, in UTC")
 
 	// The same question of a directory outside the captured tree.
@@ -185,6 +193,54 @@ func TestSourceDateEpochIsReadFromTheCapturedTree(t *testing.T) {
 	got, err = e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
 	require.NoError(t, err)
 	require.True(t, got.Ports["host"].ModeledHostAccess, "a directory outside the captured tree is the host's")
+}
+
+// Base's source_date_epoch over the captured tree is the same with git
+// found, and asked whether the tree is a work tree, as with git not found:
+// the claim that lets the verdict explain the closed lookup of git Base's
+// get_source_date_epoch makes in a modelled context (architecture's call
+// on #110's finding 1). The Mac's own context finds git and asks it, which
+// the model answers as git does of a snapshot with no .git; the modelled
+// one finds no git. Should a later Base make the two differ, this fails,
+// and the explanation goes with it.
+func TestSourceDateEpochIsTheSameWithGitAndWithout(t *testing.T) {
+	t.Parallel()
+	e := liveEvaluator(t)
+	tree := fixtureTree(t)
+	putFile(t, tree.Root(), "devel/host/Portfile", "PortSystem 1.0\nname host\nversion 1\ndistfiles host-${source_date_epoch}.tar.gz\n")
+	when := time.Unix(1700000000, 0)
+	require.NoError(t, os.Chtimes(filepath.Join(tree.Root(), "devel/host/Portfile"), when, when))
+	bound, err := tree.Select(model.Target{Name: "host", Portfile: "devel/host/Portfile"})
+	require.NoError(t, err)
+	native, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Declarations: true})
+	require.NoError(t, err)
+	modelled, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
+	require.NoError(t, err)
+	asked := func(observed macports.Observation, command, source string) bool {
+		for _, entry := range observed.Ports["host"].Ledger {
+			if entry.Command == command && entry.Source == source && entry.Subject == "git" {
+				return true
+			}
+		}
+		return false
+	}
+	require.True(t, asked(native, "exec", "table"), "the Mac's own context found git and asked it, answered as of a snapshot: %+v", native.Ports["host"].Ledger)
+	require.True(t, asked(modelled, "findBinary", "closed"), "the modelled one found no git: %+v", modelled.Ports["host"].Ledger)
+	require.Equal(t, "host-1700000000.tar.gz", native.Snapshot.Ports["host"].Options["distfiles"])
+	require.Equal(t, native.Snapshot.Ports["host"].Options["distfiles"], modelled.Snapshot.Ports["host"].Options["distfiles"])
+}
+
+// A Portfile's own lookup of git that a fetch value rests on stays host
+// state in a modelled context: only Base's source_date_epoch lookup, by
+// its frame, is explained, never a lookup of git by its name.
+func TestAPortfilesOwnLookupOfGitStaysHostState(t *testing.T) {
+	t.Parallel()
+	lines := "if {[catch {findBinary git}]} { distfiles none-${source_date_epoch}.tar.gz } else { distfiles git-${source_date_epoch}.tar.gz }\nlappend results [lindex ${distfiles} 0]"
+	got, port := observedIn(t, monterey, nil, lines)
+	require.Len(t, got, 1)
+	require.Regexp(t, `^none-[0-9]+\.tar\.gz$`, got[0], "the empty Mac's answer")
+	require.Contains(t, port.Problems, "modeled context depends on git, which findBinary looks for along this Mac's PATH")
+	require.True(t, hostState(t, port, effects(lines)), "%v", port.Problems)
 }
 
 // Base's master keeps the clang compiler list in its parent interpreter,

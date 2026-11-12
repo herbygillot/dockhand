@@ -18,6 +18,31 @@ import (
 // positions, or a read inside a PortGroup whose frame lands on a benign
 // command or the condition of a control whose bodies are benign.
 
+// sourceDateEpochLookup reports whether a recorded host access is a closed
+// lookup Base's portmain::get_source_date_epoch made, by its frame, never
+// by what was looked for: its findBinary git. The tree dockhand evaluates
+// is a snapshot with no .git, and the model answers git's work-tree
+// question of it as git does there (dispatcher's work_tree), so with git
+// found or not the value is the files' times, and the closed lookup can
+// reach no fetch value through it (architecture's call on #110's finding
+// 1; TestSourceDateEpochIsTheSameWithGitAndWithout holds the claim). A
+// Portfile's or PortGroup's own lookup of git has no such frame, and stays
+// a problem.
+func sourceDateEpochLookup(declaration macports.Declaration) bool {
+	if len(declaration.Values) < 4 || declaration.Values[1] != "closed" {
+		return false
+	}
+	if lookup, _, _ := strings.Cut(declaration.Values[3], " "); lookup != "findBinary" && lookup != "binaryInPath" {
+		return false
+	}
+	for _, frame := range declaration.Frames {
+		if strings.HasPrefix(frame.Command, "portmain::get_source_date_epoch") {
+			return true
+		}
+	}
+	return false
+}
+
 // toolchainProbe reports whether a recorded host access came from MacPorts
 // compiler selection. Such probes look for compilers the modeled profile
 // lacks; when the Portfile reads toolchain options only in build positions,
@@ -167,6 +192,8 @@ func Tolerate(ctx context.Context, port macports.PortObservation, contents []byt
 		switch {
 		case buildDefaultReadBenign(root, contents, declaration, groups):
 			progress.DebugReport(ctx, "Host access explained as a build-only option's default: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
+		case sourceDateEpochLookup(declaration):
+			progress.DebugReport(ctx, "Host access explained as Base's source_date_epoch lookup of git: the snapshot has no .git, so the answer doesn't depend on whether git is found: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
 		case callbackExplained(declaration, contents):
 			progress.DebugReport(ctx, "Host access explained as a PortGroup callback's build-only read: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
 		case toolchainProbe(declaration):

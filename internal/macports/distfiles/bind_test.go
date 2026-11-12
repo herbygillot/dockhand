@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -46,7 +47,11 @@ distfiles-append pinned.zip
 	for _, arch := range []string{"arm64", "x86_64"} {
 		observed, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "25", Architecture: arch}, Declarations: true})
 		require.NoError(t, err)
-		binding, err := distfiles.Bind(src, path, observed.Snapshot.Ports["fixture"], observed.Ports["fixture"])
+		// The reading as the verdict leaves it, as update binds it: Base's
+		// build-only lookups a modelled context closes explained (#110).
+		port, inconclusive := observe.Tolerate(t.Context(), observed.Ports["fixture"], src, root)
+		require.False(t, inconclusive, "%v", observed.Ports["fixture"].Problems)
+		binding, err := distfiles.Bind(src, path, observed.Snapshot.Ports["fixture"], port)
 		require.NoError(t, err)
 		require.Len(t, binding.Artifacts, 2)
 		require.Len(t, binding.Groups, 2)

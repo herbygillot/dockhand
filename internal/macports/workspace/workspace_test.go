@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -354,6 +355,11 @@ func TestObservationReadsSharedResourcesThroughTheOverlayLink(t *testing.T) {
 	observed, err := evaluator.Observe(t.Context(), bound, macports.ObservationRequest{Platform: modeled, Declarations: true, Operands: []string{"os.major"}})
 	require.NoError(t, err)
 	require.Equal(t, "2", observed.Snapshot.Ports["a"].Version)
-	require.Empty(t, observed.Ports["a"].Problems, "the PortGroup read resolves into the base, which is the same captured tree")
-	require.False(t, observed.Ports["a"].ModeledHostAccess)
+	// The PortGroup's read declares nothing, and the verdict weighs only
+	// Base's own build-only lookups (#110's finding 1).
+	for _, problem := range observed.Ports["a"].Problems {
+		require.NotContains(t, problem, "outside the captured ports tree", "the PortGroup read resolves into the base, which is the same captured tree")
+	}
+	_, inconclusive := observe.Tolerate(t.Context(), observed.Ports["a"], []byte(grouped), overlay.Root())
+	require.False(t, inconclusive, "%v", observed.Ports["a"].Problems)
 }

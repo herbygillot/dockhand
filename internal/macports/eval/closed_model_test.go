@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
@@ -47,6 +48,24 @@ func closedCalls(port macports.PortObservation) map[string]int {
 }
 
 var monterey = model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}
+
+// hostState is the verdict on a modelled reading (observe.Tolerate):
+// whether host state it read could reach what the Portfile declares.
+// Base's own lookups for a build-only option's default, build.cmd's make,
+// are closed in every modelled context since #110's finding 1 and
+// explained there, so a test's "reads no host state" asks the verdict,
+// not the raw flag (architecture's conditions on finding 1).
+func hostState(t *testing.T, port macports.PortObservation, contents string) bool {
+	t.Helper()
+	// No PortGroup of the tree is read here: an empty tree stands for it.
+	_, inconclusive := observe.Tolerate(t.Context(), port, []byte(contents), t.TempDir())
+	return inconclusive
+}
+
+// effects is the Portfile observedIn and observedDescription write.
+func effects(lines string) string {
+	return "PortSystem 1.0\nname effects\nversion 1\nset results {}\n" + lines + "\ndescription {*}$results\n"
+}
 
 // A modelled context takes no host answer: a call that would reach the
 // host is answered as an empty Mac answers it, file tests false and reads
@@ -273,4 +292,32 @@ func TestTheNativeContextIsRestoredAfterAModelledOne(t *testing.T) {
 	require.Equal(t, "0", tcl("set ::dockhand::modeled"))
 	tcl("::dockhand::observation_setup {" + overrides + "} 0 {} {" + tools + "}")
 	require.Equal(t, modelled, tcl("list $::macports::os_major $::macports::build_arch $::macports::macos_version"), "and a modelled one after it is modelled again")
+}
+
+// Base's lookups of a program along PATH and of a dependency's file along
+// directories, which the fresh installation answers in the worker, take
+// nothing of this Mac's outside the prefix in a modelled context: the
+// table's answer where it has one, else the empty Mac's, each lookup
+// closed once, naming what it looked for and which lookup asked (Codex's
+// review of #110 and #125, finding 1, as architecture chose it). They
+// found /usr/bin/true and /etc/hosts, recorded as the fresh installation's.
+func TestBaseLookupsFindNothingOfTheHostInAModelledContext(t *testing.T) {
+	t.Parallel()
+	got, port := observedIn(t, monterey, nil, `lappend results [catch {findBinary true /usr/bin/true} m] [catch {binaryInPath true} m] [_mportsearchpath hosts /etc 0 1] [findBinary clang]`)
+	require.Equal(t, []string{"1", "1", "", "/usr/bin/clang"}, got, "neither lookup finds a host executable, nor the dependency search a host file; the table answers for clang")
+	closed := map[string]int{}
+	for _, entry := range port.Ledger {
+		if entry.Source == "closed" && entry.Subject != "make" {
+			closed[entry.Command+" "+entry.Subject] += entry.Count
+		}
+	}
+	require.Equal(t, map[string]int{"findBinary true": 1, "binaryInPath true": 1, "_mportsearchpath hosts": 1}, closed, "each lookup that found nothing once, findBinary's own binaryInPath in it; the table's clang is no host read")
+	require.True(t, port.ModeledHostAccess)
+	for _, problem := range []string{
+		"modeled context depends on true, which findBinary looks for along this Mac's PATH",
+		"modeled context depends on true, which binaryInPath looks for along this Mac's PATH",
+		"modeled context depends on hosts, which _mportsearchpath looks for in this Mac's /etc",
+	} {
+		require.Contains(t, port.Problems, problem)
+	}
 }
