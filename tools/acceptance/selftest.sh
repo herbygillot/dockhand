@@ -32,7 +32,7 @@ check() {
 	fi
 	echo "selftest: $row $got${harm:+ ($harm)}: $(jq -r '[.harm | to_entries[] | .key + " " + (.value | split(":")[0])] | join(", ")' "$state/results/selftest/$row.json")"
 }
-for spec in ok:pass h1allowed:pass h2allowed:pass h1:blocker:H1 h2:blocker:H2 h2upstream:blocker:H2 h3:blocker:H3 h4:blocker:H4 h4present:pass h4added:blocker:H4 h5:blocker:H5 h6:blocker:H6 h6closed:pass h6cleaned:pass h6otherbranch:blocker:H6 h6wrapped:blocker:H6 h7:blocker:H7 h7teardown:blocker:H7 h7cut:not_run h7stopped:fail h8:blocker:H8 h9:blocker:H9; do
+for spec in ok:pass h1allowed:pass h2allowed:pass h1:blocker:H1 h2:blocker:H2 h2upstream:blocker:H2 h3:blocker:H3 h4:blocker:H4 h4present:pass h4added:blocker:H4 h5:blocker:H5 h6:blocker:H6 h6closed:pass h6cleaned:pass h6otherbranch:blocker:H6 h6wrapped:blocker:H6 h7:blocker:H7 h7teardown:blocker:H7 h7cut:not_run h7stopped:fail h8:blocker:H8 h9:blocker:H9 exercised:pass unexercised:not_exercised; do
 	row=${spec%%:*}
 	rest=${spec#*:}
 	want=${rest%%:*}
@@ -63,6 +63,39 @@ for spec in ok:pass h1allowed:pass h2allowed:pass h1:blocker:H1 h2:blocker:H2 h2
 	check "$row" "$want" "$harm" "$tmp/state"
 	rm -rf "$tmp"
 done
+# The host's preflight (#226): a host whose tart list hangs blocks a row
+# before it runs, and a row that fails once the host turned bad during it
+# is the host's, each on the rerun list, neither a fail.
+host_case() {
+	local row=$1 before=$2 want=$3 got
+	tmp=$(mktemp -d "${TMPDIR:-/tmp}/dockhand-selftest.XXXXXX")
+	mkdir -p "$tmp/state/tart/dockhand" "$tmp/fake" "$tmp/home/.dockhand"
+	git init -q -b master "$tmp/clone"
+	git -C "$tmp/clone" -c user.name=t -c user.email=t@example.org commit -q --allow-empty -m init
+	[ "$before" = hangs ] && : >"$tmp/fake/tart-hangs"
+	(
+		export ACCEPT_STATE="$tmp/state" ACCEPT_WATCH="$tmp/clone" ACCEPT_UPSTREAM="" ACCEPT_RUN_DIR="$tmp/clone" ACCEPT_TART_WAIT=2
+		export SELFTEST_CLONE="$tmp/clone" FAKE_DH_STATE="$tmp/fake" DH_BIN="$here/selftest/bin/dockhand"
+		export DOCKHAND_DB="$tmp/state/db" DOCKHAND_CONFIG="$tmp/state/config.toml" MACPORTS_TREE="$tmp/state/clone"
+		export DOCKHAND_UPSTREAM="$tmp/state/upstream.git" DOCKHAND_INDEX_CACHE="$tmp/state/index" DOCKHAND_READING_CACHE="$tmp/state/readings" DOCKHAND_GITHUB_CACHE="$tmp/state/github"
+		export DOCKHAND_TART_HOME="$tmp/state/tart/dockhand" DOCKHAND_SSH_DIR="$tmp/state/tart/ssh" TART_HOME="$tmp/state/tart/tart"
+		export SELFTEST_HOME="$tmp/home" ACCEPT_HOME_DIRS="$tmp/home/.dockhand"
+		export PATH="$here/selftest/bin:$PATH"
+		unset ACCEPT_GH_LOGIN ACCEPT_SECRET_DIRS
+		"$here/run.sh" --stage quick --candidate selftest --rows "$row" --row-dir "$here/selftest/rows" >/dev/null || :
+	)
+	got=$(jq -r '.result + ": " + .why' "$tmp/state/results/selftest/$row.json" 2>/dev/null || echo "no result")
+	if [[ "$got" == "$want"* ]] && grep -qx "$row" "$tmp/state/results/selftest/rerun.txt"; then
+		echo "selftest: $row with the host's tart $before gave $got"
+	else
+		echo "selftest: $row with the host's tart $before gave $got, not $want..., or isn't on the rerun list"
+		fail=1
+	fi
+	rm -rf "$tmp"
+}
+host_case ok hangs "blocked: host: tart list in "
+host_case hostbad answering "blocked: host: the host turned bad during the row: tart list in "
+
 # The guard: a quick run with dockhand's state outside the scratch
 # directory, as your own database or Tart home, runs nothing.
 guard_case() {

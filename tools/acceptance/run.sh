@@ -97,6 +97,7 @@ results="$ACCEPT_STATE/results/$candidate"
 mkdir -p "$results"
 failed=0
 notrun=0
+unexercised=0
 pending=0
 stage_started=$(date +%s)
 
@@ -190,6 +191,40 @@ EOT
 	git -C "${MACPORTS_TREE:?}" remote prune origin >>"$ROW_DIR/isolation.log" 2>&1 || :
 }
 
+# preflight runs one of lib/preflight.sh's checks, host or account, with
+# the libraries it needs, printing what's wrong (#226).
+preflight() {
+	(
+		set +e
+		# shellcheck source=lib/common.sh
+		. "$here/lib/common.sh"
+		# shellcheck source=lib/harm.sh
+		. "$here/lib/harm.sh"
+		# shellcheck source=lib/preflight.sh
+		. "$here/lib/preflight.sh"
+		"preflight_$1"
+	)
+}
+# blocked_result records a row the host or the test account kept from
+# running: not a fail, since dockhand didn't fail, and on the rerun list.
+blocked=0
+rerun="$results/rerun.txt"
+: >"$rerun"
+blocked_result() {
+	local result=$1 why=$2
+	jq -n --arg row "$row" --arg stage "$stage" --arg candidate "$candidate" --arg result "$result" --arg why "$why" --arg started "$started" \
+		'{row: $row, stage: $stage, candidate: $candidate, result: $result, why: $why, started: $started, seconds: 0}' >"$results/$row.json"
+	printf '%-8s %-14s %s\n' "$row" "$result" "$why"
+}
+# The test account is checked once, at the full stage's start: a fork
+# whose Actions start no run blocks every row that checks on GitHub, as
+# B9's six attempts waited ten minutes each (the v0.8.0 acceptance).
+account=""
+if [ "$stage" = full ] && [ "${ACCEPT_DRY:-0}" != 1 ]; then
+	account=$(preflight account)
+	[ -z "$account" ] || echo "run.sh: the test account: $account; rows that check on GitHub are blocked" >&2
+fi
+
 printf '%-8s %-14s %s\n' ROW RESULT WHY
 for row in $rows; do
 	file="$rowdir/$row.sh"
@@ -211,6 +246,23 @@ for row in $rows; do
 			--arg from "$quick_results/$row.json" '{row: $row, stage: $stage, candidate: $candidate, result: $result, why: $why, started: $started, seconds: 0, from_quick: $from}' >"$results/$row.json"
 		printf '%-8s %-14s %s\n' "$row" "$result" "$why"
 		continue
+	fi
+	# Each row first repeats the host's cheap checks: a host fault blocks
+	# the row, said as the host's, and the row joins the rerun list (#226).
+	if [ "${ACCEPT_DRY:-0}" != 1 ]; then
+		host=$(preflight host)
+		if [ -n "$host" ]; then
+			blocked_result "blocked: host" "$(printf '%s' "$host" | paste -sd ';' -)"
+			blocked=$((blocked + 1))
+			echo "$row" >>"$rerun"
+			continue
+		fi
+		if [ -n "$account" ] && grep -q -- "--on github" "$file"; then
+			blocked_result "blocked: test account" "$account"
+			blocked=$((blocked + 1))
+			echo "$row" >>"$rerun"
+			continue
+		fi
 	fi
 	# A row starts from the stage's environment as made, where the stage
 	# says how to make it again.
@@ -270,6 +322,34 @@ for row in $rows; do
 		result=fail
 		why="GitHub's rate limit, not a refusal: $(grep -i -m1 "rate limit" "$ROW_DIR/out.log" | cut -c1-200)"
 	fi
+	# A row that names its deciding steps, "# exercises: a, b", and passed
+	# without each recorded as run is "not exercised": the step that
+	# decides it was never reached (#227).
+	case "$result" in pass | "refused well" | "known issue")
+		missing=""
+		while IFS= read -r half; do
+			half=$(printf '%s' "$half" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+			[ -n "$half" ] || continue
+			grep -qxF "$half" "$ROW_DIR/exercised" 2>/dev/null || missing="${missing:+$missing, }$half"
+		done <<EOT
+$(sed -n 's/^# exercises: //p' "$file" | tr ',' '\n')
+EOT
+		if [ -n "$missing" ]; then
+			result="not exercised"
+			why="its deciding step never ran: $missing; the row said: $why"
+		fi
+		;;
+	esac
+	# A row that failed reads the host's checks again: one that turned bad
+	# during it is the host's, said with what the row said (C7's fault
+	# began during C4, about 11:25Z, in the v0.8.0 acceptance).
+	if [ "$result" = fail ] && [ "${ACCEPT_DRY:-0}" != 1 ]; then
+		host=$(preflight host)
+		if [ -n "$host" ]; then
+			result="blocked: host"
+			why="the host turned bad during the row: $(printf '%s' "$host" | paste -sd ';' -); the row said: $why"
+		fi
+	fi
 	harmful=""
 	for verdict in "$ROW_DIR"/harm/H*; do
 		[ -f "$verdict" ] || continue
@@ -290,10 +370,14 @@ for row in $rows; do
 	case "$result" in
 	pass | "refused well" | "known issue") ;;
 	"not run") notrun=$((notrun + 1)) ;;
+	"not exercised") unexercised=$((unexercised + 1)); echo "$row" >>"$rerun" ;;
 	"judge pending") pending=$((pending + 1)) ;;
+	"blocked: "*) blocked=$((blocked + 1)); echo "$row" >>"$rerun" ;;
 	*) failed=$((failed + 1)) ;;
 	esac
 done
+[ "$unexercised" -eq 0 ] || echo "$unexercised not exercised: each passed without its deciding step running, as its row's # exercises: line names"
+[ "$blocked" -eq 0 ] || echo "$blocked blocked by the host or the test account, not dockhand: once it's put right, rerun them with --rows-file $rerun"
 [ "$notrun" -eq 0 ] || echo "$notrun not run: each stopped at a step for the host or a person, as its row says"
 [ "$pending" -eq 0 ] || echo "$pending wait on a person's judgment: tools/acceptance/judge.sh --candidate $candidate answers them"
 for row in $alone; do
@@ -301,4 +385,4 @@ for row in $alone; do
 done
 elapsed=$(($(date +%s) - stage_started))
 echo "Results: $results ($stage stage, $((elapsed / 3600))h $((elapsed % 3600 / 60))m $((elapsed % 60))s)"
-[ "$failed" -eq 0 ]
+[ "$failed" -eq 0 ] && [ "$blocked" -eq 0 ] && [ "$unexercised" -eq 0 ]

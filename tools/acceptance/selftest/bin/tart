@@ -1,3 +1,8 @@
 #!/usr/bin/env bash
-# A stand-in for tart, so the self-test never lists the Mac's own VMs.
+# A stand-in for tart, so the self-test never lists the Mac's own VMs. It
+# hangs where the self-test makes the host's fault, as C7's hung disk-image
+# probe held every tart list after it (#226).
+if [ -n "${FAKE_DH_STATE:-}" ] && [ -f "$FAKE_DH_STATE/tart-hangs" ]; then
+	sleep 60
+fi
 echo '[]'

@@ -173,6 +173,11 @@ row_result() {
 	printf '%s\n' "$1" >"$ROW_DIR/result"
 	printf '%s\n' "${2:-}" >"$ROW_DIR/why"
 }
+# exercised records that a deciding step the row's "# exercises:" header
+# names ran: a row whose deciding step never ran reports "not exercised",
+# not pass, as G36's build half and D-T1's guest went unreached in rc4
+# (#227).
+exercised() { printf '%s\n' "$*" >>"$ROW_DIR/exercised"; }
 row_pass() { row_result pass "${1:-}"; }
 row_refused_well() { row_result "refused well" "$1"; }
 row_known() { row_result "known issue" "$1"; }
