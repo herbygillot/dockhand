@@ -8,6 +8,7 @@ package sweep
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"runtime"
@@ -52,6 +53,39 @@ type plan struct {
 	fault   *fault
 	reached bool
 	dead    bool
+	// required are the records a remote effect needs written before it
+	// runs, by its boundary, read from database at the effect; missing
+	// are those an effect ran without.
+	required map[string]requiredRecord
+	database string
+	missing  []string
+}
+
+// atEffect reads the records a remote effect requires, as the database
+// has them when it runs, and notes each missing (#129's fix list, 3).
+func (p *plan) atEffect(e effect) {
+	need, ok := p.required[e.Boundary]
+	if !ok {
+		return
+	}
+	held := ""
+	db, err := sql.Open("sqlite", p.database)
+	if err == nil {
+		err = db.QueryRow(need.Query).Scan(&held)
+		db.Close()
+	}
+	if err != nil || !strings.Contains(held, need.Holds) {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		p.missing = append(p.missing, fmt.Sprintf("%s ran without its record (%s): %s holds %q, not %q (%v)", e.address(), need.Why, need.Query, held, need.Holds, err))
+	}
+}
+
+// missingRecords are the records effects ran without.
+func (p *plan) missingRecords() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.missing...)
 }
 
 // mode is how an effect fails (docs/designs/fault-sweep.md, "Five ways

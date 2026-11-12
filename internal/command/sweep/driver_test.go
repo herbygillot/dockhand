@@ -3,6 +3,7 @@ package sweep
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -45,6 +46,23 @@ type scenario struct {
 	// "Tests": a pull request found rather than opened, a reviewer marked
 	// "may have been sent").
 	unreadable map[string]declaredEnd
+	// unresolved are the writes, by address prefix, whose outcome the
+	// run may leave unknown with every step succeeding, each with why:
+	// elsewhere a write that didn't land and said its outcome was
+	// unknown must be made again (#129's fix list, 3).
+	unresolved map[string]string
+	// required are records that must exist when a remote effect runs,
+	// by the effect's boundary, which the final world can't show: a
+	// request sent with no mark recorded looks, once later writes land,
+	// like one marked (#129's fix list, 3).
+	required map[string]requiredRecord
+}
+
+// requiredRecord is a record a remote effect needs written before it
+// runs: a query of the database at the effect, a text its first row
+// holds, and why.
+type requiredRecord struct {
+	Query, Holds, Why string
 }
 
 // declaredEnd is a fault's declared end: Replace are pairs of a recovered
@@ -69,6 +87,10 @@ type run struct {
 	// recovered are the recovery steps that failed, with why.
 	recovered []string
 	reached   bool
+	// steps is how many of effects the steps made, recovery the rest;
+	// missing are the required records an effect ran without.
+	steps   int
+	missing []string
 }
 
 // sweepWorld makes a scenario's World with the plan's seams in place:
@@ -125,6 +147,7 @@ func runOnce(t *testing.T, sc scenario, armed *fault) run {
 		return engine.SessionProcess{PID: self.PID, Start: stoppedProcess}, nil
 	}
 	stands.Liveness = stoppable{over: over}
+	p.required, p.database = sc.required, filepath.Join(w.Home, ".dockhand", "dockhand.db")
 	p.fault = armed
 	var r run
 	for _, args := range sc.steps {
@@ -133,7 +156,7 @@ func runOnce(t *testing.T, sc scenario, armed *fault) run {
 		}
 	}
 	over.Store(true)
-	r.reached = p.reached
+	r.reached, r.steps = p.reached, len(p.effects())
 	if armed != nil {
 		p.disarm()
 		recovery := sc.recover
@@ -146,9 +169,21 @@ func runOnce(t *testing.T, sc scenario, armed *fault) run {
 			}
 		}
 	}
-	r.effects = p.effects()
+	r.effects, r.missing = p.effects(), p.missingRecords()
 	r.world = snapshot(t, w, g)
 	return r
+}
+
+// madeAgain reports whether a write at an address was made again later
+// in the steps, at the same call site: how a write that didn't land is
+// resolved by the run that met it.
+func madeAgain(r run, address string) bool {
+	at := slices.IndexFunc(r.effects, func(e effect) bool { return e.address() == address })
+	if at < 0 {
+		return false
+	}
+	site := r.effects[at].Boundary + "@" + r.effects[at].Site
+	return slices.ContainsFunc(r.effects[at+1:r.steps], func(e effect) bool { return e.Boundary+"@"+e.Site == site })
 }
 
 // unrepeatable are the forge's effects GitHub doesn't take twice as
@@ -162,6 +197,7 @@ func sweep(t *testing.T, sc scenario) {
 	t.Helper()
 	clean := runOnce(t, sc, nil)
 	require.Empty(t, clean.failed, "the clean run fails")
+	require.Empty(t, clean.missing, "the clean run ran an effect without a record it requires")
 	var addresses []string
 	boundaries := map[string]string{}
 	for _, e := range clean.effects {
@@ -186,6 +222,13 @@ func sweep(t *testing.T, sc scenario) {
 				if len(r.failed) == 0 && !resolvable(how) && !declared(sc.bestEffort, address) {
 					problems = append(problems, fmt.Sprintf("with %s failing (%s), every step succeeded", address, how))
 				}
+				// An unknown outcome is resolved: a write that didn't land
+				// and said so, with every step succeeding, was made again
+				// (#129's fix list, 3).
+				if how == notLandedUnknown && len(r.failed) == 0 && !madeAgain(r, address) && !declared(sc.bestEffort, address) && !declared(sc.unresolved, address) {
+					problems = append(problems, fmt.Sprintf("with %s not landing (its outcome unknown), every step succeeded and the run never made it again", address))
+				}
+				problems = append(problems, r.missing...)
 				// Recovery ends: it finishes, or refuses, and the world is
 				// still the clean one, which the comparison below holds it
 				// to; a refusal is said beside a difference.

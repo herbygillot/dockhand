@@ -289,3 +289,20 @@ func TestADeadRunsSessionIsFoundGone(t *testing.T) {
 		require.NotContains(t, difference, "table sessions", "no session open with its process alive")
 	}
 }
+
+// A write that didn't land and said its outcome was unknown is resolved by
+// the run that met it only where the run made it again, at the same call
+// site, in its steps: a later write elsewhere, or recovery's, isn't it
+// (#129's fix list, 3).
+func TestAnUnknownOutcomeIsResolvedByTheWriteMadeAgain(t *testing.T) {
+	t.Parallel()
+	write := func(site string, occurrence int) effect {
+		return effect{Boundary: "store.update", Site: site, Occurrence: occurrence}
+	}
+	r := run{effects: []effect{write("engine.a", 1), write("engine.b", 1), write("engine.a", 2), write("engine.c", 1)}, steps: 3}
+	require.True(t, madeAgain(r, "store.update@engine.a#1"), "made again in the steps")
+	require.False(t, madeAgain(r, "store.update@engine.b#1"), "never again")
+	r.steps = 2
+	require.False(t, madeAgain(r, "store.update@engine.a#1"), "again only in recovery")
+	require.False(t, madeAgain(r, "store.update@engine.z#1"), "not an effect of the run")
+}

@@ -25,6 +25,10 @@ type recordingForge struct {
 func (f recordingForge) write(name string, run func() error) error {
 	e := f.plan.record("forge."+name, "")
 	how, fires := f.plan.fires(e)
+	// What it requires is read where it runs: unfailed, or lost after.
+	if !fires || how == lost {
+		f.plan.atEffect(e)
+	}
 	if !fires {
 		return run()
 	}

@@ -139,6 +139,15 @@ func TestSweepResubmitAfterReview(t *testing.T) {
 		// The sweep's first run found the reviewer asked again only on the
 		// run that pushed (#205, #206, #117's family): the publication
 		// record carries the request to the next submit of the commit.
+		// The ask is marked before it is sent, which only the database at
+		// the call can show (#129's fix list, 3; #191's finding 1).
+		required: map[string]requiredRecord{
+			"forge.RequestReviewers": {Query: `SELECT publication FROM branches WHERE publication <> '' LIMIT 1`, Holds: `"Sent":"may-have-been-sent"`,
+				Why: "a reviewer is marked as maybe sent before the request goes"},
+		},
+		known: map[string]string{
+			"store.update@engine.(*Engine).rewritePublication#2/not-landed-unknown": "#191: the mark's write didn't land and said so, and the ask went anyway",
+		},
 	})
 }
 
