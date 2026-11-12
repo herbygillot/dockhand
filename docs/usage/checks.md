@@ -291,7 +291,16 @@ active again at its version; MacPorts' `port restore` brings back only the ports
 requested before and what they need. A check that stopped before it could put
 the prefix back is put back the same way, or by the next check there; a check of
 the same branch first needs `dockhand wait`, `check --replace`, or
-`dockhand cancel` of the stopped one. Restoring active versions leaves
+`dockhand cancel` of the stopped one. Dockhand starts the guest program through
+a small process of its own, `dockhand __starter`, which shows as the build's
+parent in `ps`: it records itself in the check's directory and leads the
+build's process group. A cancel, also of a check whose dockhand was killed,
+signals that process, which stops the whole group and kills what remains after
+30 seconds; the cancel finishes once the group is gone, then puts the prefix
+back, or says what is left and that the next check in it, or
+`dockhand undo check-N`, puts it back. A root build isn't stopped this way yet:
+its cancel stays unfinished and names the command to stop it by hand, `sudo
+kill -TERM -<group>`, then `dockhand cancel check-N` again. Restoring active versions leaves
 newly built images inactive and unrequested for MacPorts' `port reclaim`. A
 later check can remove a matching inactive, unrequested image before rebuilding;
 an installed image it cannot safely replace is refused.
@@ -307,6 +316,13 @@ Dockhand supplies a request file and expects a result file; it cannot establish
 how your script built the ports. Results identify the reporting script. This
 provider is for a build environment you already manage, not an automatic
 fallback when Tart is unavailable.
+
+The script's shell runs in a session of its own, under `dockhand __starter`,
+which records itself in the check's log directory. A cancel, also of a check
+whose dockhand was killed, interrupts the shell's whole process group, kills
+what remains after the grace, and finishes once the group is gone. What the
+script started on another machine, or moved out of its process group, is the
+script's own to stop.
 
 ## Run in the foreground or queue it
 

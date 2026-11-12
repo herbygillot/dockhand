@@ -20,6 +20,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv/buildcmd"
 	"github.com/herbygillot/dockhand/internal/buildenv/ghactions"
 	"github.com/herbygillot/dockhand/internal/buildenv/local"
+	"github.com/herbygillot/dockhand/internal/buildenv/starter"
 	"github.com/herbygillot/dockhand/internal/buildenv/tart"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/credential"
@@ -436,8 +437,16 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 		e.Builds.Profiles[name] = engine.Profile{Provider: profile.Provider, Releases: releases, Rule: rule}
 	}
 	e.Providers = map[string]buildenv.Provider{}
+	// A script's shell and a local check's guest are started through
+	// dockhand itself as their starter (starter.Self): this executable, or
+	// a test binary standing in for it.
+	self, selfErr := starter.Self()
+	if selfErr != nil {
+		e.Close()
+		return Assembly{}, fmt.Errorf("finding dockhand's own executable, which starts local and script builds: %w", selfErr)
+	}
 	if command := file.Providers.Command; command != nil {
-		e.Providers[buildenv.Command] = &buildcmd.Provider{Run: command.Run, Label: command.Name, Repo: e.Repo, Env: options.Env}
+		e.Providers[buildenv.Command] = &buildcmd.Provider{Run: command.Run, Label: command.Name, Repo: e.Repo, Env: options.Env, Starter: self}
 	}
 	// One GitHub runtime, which the engine's forge, discovery, and project
 	// inspection share with Actions (CX-11).
@@ -488,7 +497,7 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	if local.Supported() {
 		settings := file.Providers.Local
 		e.Providers[buildenv.Local] = &local.Local{Repo: e.Repo, Index: e.PortIndex, Prefix: settings.Prefix, Keep: settings.Keep, Clean: settings.Clean,
-			TestTimeout: settings.Timeout(), BuildTimeout: settings.BuildBound(), Env: options.Env}
+			TestTimeout: settings.Timeout(), BuildTimeout: settings.BuildBound(), Env: options.Env, Starter: self}
 		e.LocalServe = settings.Serve
 	}
 	if dependencies.Leftovers != nil {

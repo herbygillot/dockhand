@@ -109,7 +109,7 @@ func (d *driver) launch(ctx context.Context, builds []*build, note string, start
 		}
 		return buildenv.ErrNotLaunched
 	}
-	carried := ctx
+	carried := buildenv.WithLaunchLocks(ctx, files)
 	for _, file := range files {
 		carried = filelock.Carry(carried, file)
 	}

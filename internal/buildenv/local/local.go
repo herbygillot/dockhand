@@ -29,6 +29,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildenv/guest"
 	"github.com/herbygillot/dockhand/internal/buildenv/staging"
+	"github.com/herbygillot/dockhand/internal/buildenv/starter"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -79,6 +80,9 @@ type Local struct {
 	// process on the Mac, whatever its user or database: dockhand-locks
 	// in Temp when empty (own).
 	Locks string
+	// Starter is the program the guest program is started through
+	// (starter.Self, as compose gives it).
+	Starter starter.Program
 
 	workspaces workspace.Registry
 	// sudo runs the guest program as root where the prefix's registry
@@ -169,6 +173,9 @@ type owner struct {
 	Start  string `json:"start,omitempty"`
 	Check  string `json:"check"`
 	Prefix string `json:"prefix"`
+	// Root is a build run as root under sudo, which a stop doesn't signal
+	// on a Mac whose sudo hasn't passed the lifecycle design's test.
+	Root bool `json:"root,omitempty"`
 }
 
 // Execute builds the job's targets in the environment's prefix. A prefix
@@ -236,17 +243,21 @@ func (l *Local) Execute(ctx context.Context, job buildenv.Job, build buildenv.Bu
 		}
 		return fmt.Errorf("staging the revision: %w", err)
 	}
-	// The guest is started under the attempt's launch lock, its directory
-	// noted first (buildenv.Build.Launch). Its program isn't handed the
-	// lock yet: the starter the lifecycle design gives it does that.
+	// The guest is started through the starter, under the attempt's launch
+	// lock, its directory noted first (buildenv.Build.Launch): the starter
+	// holds the lock from its fork and records itself in the directory.
 	var started *localRun
 	note := launchNote{Directory: dir}.String()
-	err = build.Launch(note, func(context.Context) (string, error) {
+	err = build.Launch(note, func(ctx context.Context) (string, error) {
 		if err := build.Refer(dir); err != nil {
 			return note, err
 		}
+		locks := buildenv.LaunchLocks(ctx)
+		if len(locks) == 0 {
+			return note, buildenv.ErrDockhandFault.Because("the guest's launch held no lock")
+		}
 		var err error
-		if started, err = l.start(dir, prefix, job.Run.Name(), sudo); err != nil {
+		if started, err = l.start(dir, prefix, job.Run.Name(), sudo, locks[0]); err != nil {
 			return note, buildenv.Infrastructure("starting the guest program: %w", err)
 		}
 		return note, nil
@@ -503,12 +514,13 @@ func (n launchNote) String() string {
 
 // start runs the guest program in the check's directory under the
 // prefix's port-tclsh, with MacPorts reading the check's macports.conf,
-// as root where sudo is given, its output in runner.log. It's a process
-// group of its own, so a terminal's interrupt reaches dockhand, which
-// stops it.
-func (l *Local) start(dir, prefix, check string, sudo []string) (*localRun, error) {
+// as root where sudo is given, its output in runner.log, through the
+// starter (starter.Start): it leads a session of its own, so a terminal's
+// interrupt reaches dockhand, which stops it, and it holds the attempt's
+// launch lock, lock, for as long as it lives.
+func (l *Local) start(dir, prefix, check string, sudo []string, lock *os.File) (*localRun, error) {
 	self, _ := procid.Self()
-	owned, err := json.Marshal(owner{PID: os.Getpid(), Start: self.Start, Check: check, Prefix: prefix})
+	owned, err := json.Marshal(owner{PID: os.Getpid(), Start: self.Start, Check: check, Prefix: prefix, Root: len(sudo) > 0})
 	if err != nil {
 		return nil, err
 	}
@@ -522,17 +534,24 @@ func (l *Local) start(dir, prefix, check string, sudo []string) (*localRun, erro
 	// One command, the prefix's port-tclsh, which one sudoers line names;
 	// the program sets MacPorts' PORTSRC and PATH from its directory.
 	args := append(slices.Clone(sudo), filepath.Join(prefix, "bin", macports.TclShell), filepath.Join(dir, "guest.tcl"), dir)
-	ctx, stop := context.WithCancel(context.Background())
-	run := &localRun{done: make(chan struct{}), stop: stop}
-	spec := subprocess.Spec{Tool: macports.TclShell, Command: "guest", Path: args[0], Args: args[1:], Env: l.Env, Stdout: log, StdoutOnly: true, Combined: true, Group: true,
-		WaitDelay: 30 * time.Second}
+	started, err := starter.Start(starter.Spec{Program: l.Starter, Directory: dir, Signal: syscall.SIGTERM, Grace: stopGrace, Lock: lock,
+		Command: args, Env: l.Env, Stdout: log, Stderr: log})
+	if err != nil {
+		log.Close()
+		return nil, err
+	}
+	run := &localRun{done: make(chan struct{}), starter: started}
 	go func() {
 		defer log.Close()
 		defer close(run.done)
-		_, run.err = subprocess.Run(ctx, spec)
+		run.err = started.Wait()
 	}()
 	return run, nil
 }
+
+// stopGrace is how long a stopped guest program's group has, after its
+// stop, before its starter kills what still runs.
+const stopGrace = 30 * time.Second
 
 // restore puts back the prefix a check's directory says was changed, with
 // the guest program run to do only that, by the check that changed it.
@@ -553,16 +572,28 @@ func (l *Local) restore(ctx context.Context, dir, prefix, check string, sudo []s
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return err
 	}
-	run, err := l.start(dir, prefix, check, sudo)
+	// The put-back builds nothing and launches nothing a stop must find:
+	// it runs here, in a group of its own, its record the check's
+	// directory's results, and not through the starter, whose record is
+	// the build's. The directory says this process is the one in it.
+	self, _ := procid.Self()
+	if owned, err := json.Marshal(owner{PID: os.Getpid(), Start: self.Start, Check: check, Prefix: prefix, Root: len(sudo) > 0}); err == nil {
+		if err := os.WriteFile(filepath.Join(dir, "owner.json"), owned, 0o644); err != nil {
+			return err
+		}
+	}
+	log, err := os.OpenFile(filepath.Join(dir, "runner.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return err
 	}
-	select {
-	case <-run.Done():
-	case <-ctx.Done():
-		_ = run.Stop(context.WithoutCancel(ctx), 30*time.Second)
+	args := append(slices.Clone(sudo), filepath.Join(prefix, "bin", macports.TclShell), filepath.Join(dir, "guest.tcl"), dir)
+	_, runErr := subprocess.Run(ctx, subprocess.Spec{Tool: macports.TclShell, Command: "guest", Path: args[0], Args: args[1:], Env: l.Env, Stdout: log, StdoutOnly: true, Combined: true, Group: true,
+		WaitDelay: 30 * time.Second})
+	log.Close()
+	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	_ = runErr
 	results, err := (&guest.Follower{Root: dir}).Read(ctx, hostGuest{})
 	if err != nil {
 		return err
@@ -652,6 +683,13 @@ func (l *Local) orphans(prefix string) []orphan {
 		if err != nil || json.Unmarshal(data, &made) != nil || made.Prefix != prefix || running(made.PID, made.Start) {
 			continue
 		}
+		// A starter that holds its lock is building, its dockhand gone,
+		// from the moment it was forked: before its program's results carry
+		// a PID, where a directory nobody seemed to build in was removed.
+		if record, ok, _ := starter.ReadRecord(dir); ok && starter.Building(context.Background(), dir) {
+			found = append(found, orphan{dir: dir, owner: made, program: record.PID})
+			continue
+		}
 		results, _ := (&guest.Follower{Root: dir}).Read(context.Background(), hostGuest{})
 		if program, _ := strconv.Atoi(results.Environment["pid"]); alive(program) {
 			found = append(found, orphan{dir: dir, owner: made, program: program})
@@ -681,7 +719,7 @@ func (l *Local) left() []leftDirectory {
 			continue
 		}
 		results, err := (&guest.Follower{Root: dir}).Read(context.Background(), hostGuest{})
-		if building(left.owner, results) {
+		if building(dir, left.owner, results) {
 			continue
 		}
 		if err != nil {
@@ -697,11 +735,12 @@ func (l *Local) left() []leftDirectory {
 }
 
 // building says whether a check's directory is still being built in: by
-// the dockhand that made it, or by its guest program, which goes on where
-// dockhand ended first.
-func building(made owner, results guest.Results) bool {
+// the dockhand that made it, by its starter, which holds the attempt's
+// launch lock from its fork, or by a guest program a dockhand from before
+// the starter left, which goes on where dockhand ended first.
+func building(dir string, made owner, results guest.Results) bool {
 	program, _ := strconv.Atoi(results.Environment["pid"])
-	return running(made.PID, made.Start) || alive(program)
+	return running(made.PID, made.Start) || starter.Building(context.Background(), dir) || alive(program)
 }
 
 // running reports whether the process a record names runs still: by its
@@ -793,7 +832,7 @@ func (l *Local) Changes(ctx context.Context) ([]buildenv.Change, error) {
 			continue
 		}
 		results, err := (&guest.Follower{Root: dir}).Read(ctx, hostGuest{})
-		if err != nil && !building(made, results) {
+		if err != nil && !building(dir, made, results) {
 			changes = append(changes, buildenv.Change{Check: made.Check, Place: made.Prefix, Remedy: unreadableWords(made.Check, made.Prefix, dir, err)})
 			continue
 		}
@@ -804,7 +843,7 @@ func (l *Local) Changes(ctx context.Context) ([]buildenv.Change, error) {
 			changes = append(changes, buildenv.Change{Check: made.Check, Place: made.Prefix, Kept: true, Remedy: "dockhand undo " + made.Check})
 			continue
 		}
-		if _, ours := l.building.Load(dir); ours || building(made, results) {
+		if _, ours := l.building.Load(dir); ours || building(dir, made, results) {
 			changes = append(changes, buildenv.Change{Check: made.Check, Place: made.Prefix, Building: true, Holder: l.holder(made.Prefix)})
 			continue
 		}
@@ -924,11 +963,11 @@ func activePorts(listing string) map[string]string {
 	return active
 }
 
-// localRun is the guest program running on this Mac.
+// localRun is the guest program running on this Mac, through its starter.
 type localRun struct {
-	done chan struct{}
-	err  error
-	stop context.CancelFunc
+	done    chan struct{}
+	err     error
+	starter *exec.Cmd
 	// stopped is dockhand's own Stop, whose signal is its own.
 	stopped atomic.Bool
 }
@@ -937,7 +976,8 @@ type localRun struct {
 // ended it, as kill -9 of its group, sudo dying of it too: someone's
 // choice, which another attempt would only meet again, so none is made
 // (rc7's G9 on the M1, 2026-11-02); nil for one that exited with a
-// status, as a crash, which is tried again, or that dockhand stopped.
+// status, as a crash, which is tried again, or that dockhand stopped. The
+// starter ends as its child did, by its signal raised again.
 func (r *localRun) killed(prefix string) error {
 	var exit *exec.ExitError
 	if r.stopped.Load() || !errors.As(r.err, &exit) {
@@ -952,13 +992,13 @@ func (r *localRun) killed(prefix string) error {
 func (r *localRun) Done() <-chan struct{} { return r.done }
 func (r *localRun) Err() error            { return r.err }
 
-// Stop asks the program to stop, as subprocess's Group does: run as the
-// person, its whole group, port's builds among it; under sudo, sudo
-// passes the signal to the program. It's killed once subprocess's wait is
-// up, and Stop waits for that, or for ctx.
+// Stop asks the starter to stop the program, which sends its whole group
+// SIGTERM, port's builds among it, and kills what still runs after its
+// grace; under sudo, sudo passes the signal to the program. Stop waits for
+// the starter to end, or for ctx.
 func (r *localRun) Stop(ctx context.Context, _ time.Duration) error {
 	r.stopped.Store(true)
-	r.stop()
+	_ = r.starter.Process.Signal(syscall.SIGTERM)
 	select {
 	case <-r.done:
 	case <-ctx.Done():

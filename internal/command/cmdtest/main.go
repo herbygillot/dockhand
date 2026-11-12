@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/buildenv/starter"
 	"github.com/herbygillot/dockhand/internal/command/host"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/compose"
@@ -31,6 +32,9 @@ var runner Runner
 // DOCKHAND_UPSTREAM's neighbours into the agent). It runs the tests with
 // run as their command line.
 func Main(m *testing.M, run Runner) {
+	// The test binary stands in for dockhand as the starter a local or a
+	// script build is started through.
+	starter.RunIfAsked()
 	runner = run
 	for _, name := range []string{"MACPORTS_TREE", "DOCKHAND_DB", "DOCKHAND_CONFIG", "DOCKHAND_UPSTREAM", "DOCKHAND_PULL_REQUESTS", "DOCKHAND_GITHUB_CLIENT_ID", "GH_TOKEN", "GITHUB_TOKEN",
 		"DOCKHAND_INDEX_MIRROR", "DOCKHAND_INDEX_CACHE", "DOCKHAND_READING_CACHE", "DOCKHAND_GITHUB_CACHE", "DOCKHAND_ARCHIVE_CACHE", "DOCKHAND_BUILD_HISTORY_CACHE", "DOCKHAND_TART_HOME", "TART_HOME", "DOCKHAND_SSH_DIR", "GIT_SSH_COMMAND", "HTTPS_PROXY", "HTTP_PROXY"} {

@@ -8,6 +8,7 @@ import (
 	"runtime/pprof"
 	"syscall"
 
+	"github.com/herbygillot/dockhand/internal/buildenv/starter"
 	"github.com/herbygillot/dockhand/internal/command"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/scratch"
@@ -15,6 +16,9 @@ import (
 )
 
 func main() {
+	// dockhand as the starter of a local or a script build runs nothing
+	// else (starter.Command).
+	starter.RunIfAsked()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	stopProfile := startProfile(os.Getenv("DOCKHAND_CPUPROFILE"))

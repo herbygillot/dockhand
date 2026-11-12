@@ -16,6 +16,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildenv/buildcmd"
+	"github.com/herbygillot/dockhand/internal/buildenv/starter"
 	"github.com/herbygillot/dockhand/internal/buildlog"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/engine"
@@ -112,7 +113,9 @@ func queuedCheckOf(t *testing.T, body string, grace time.Duration, reader ports,
 	if setup != nil && setup.environment != nil {
 		env = append(env, setup.environment(upstream)...)
 	}
-	e.Providers = map[string]buildenv.Provider{"command": &buildcmd.Provider{Run: run, Label: "my build box", Repo: e.Repo, Grace: grace, Env: env}}
+	self, err := starter.Self()
+	require.NoError(t, err)
+	e.Providers = map[string]buildenv.Provider{"command": &buildcmd.Provider{Run: run, Label: "my build box", Repo: e.Repo, Grace: grace, Env: env, Starter: self}}
 	request := engine.PlanRequest{Revision: capture.Revision, Environments: []model.Environment{{Provider: "command"}}}
 	if setup != nil && setup.plan != nil {
 		setup.plan(&request)

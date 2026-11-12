@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -273,6 +274,22 @@ type TargetReport struct {
 // Reported is a result as a report with nothing seen beside it, as for a
 // target that was blocked or never built.
 func Reported(result model.TargetResult) TargetReport { return TargetReport{Result: result} }
+
+type launchLocksKey struct{}
+
+// WithLaunchLocks marks the attempt's launch locks' files on the context a
+// launch's start runs under (Build.Launch), for a provider that hands one
+// to the process it starts, as the starter is (LaunchLocks).
+func WithLaunchLocks(ctx context.Context, files []*os.File) context.Context {
+	return context.WithValue(ctx, launchLocksKey{}, files)
+}
+
+// LaunchLocks are the launch locks' files of the launch the context's work
+// runs under, one for each attempt it launches; none outside a launch.
+func LaunchLocks(ctx context.Context) []*os.File {
+	files, _ := ctx.Value(launchLocksKey{}).([]*os.File)
+	return files
+}
 
 // ErrNotLaunched is a launch refused under the lock: the check's cancel is
 // recorded, or it is another driver's now, so nothing was started.

@@ -13,11 +13,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"github.com/herbygillot/dockhand/internal/buildenv"
-	"github.com/herbygillot/dockhand/internal/filelock"
+	"github.com/herbygillot/dockhand/internal/buildenv/starter"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/subprocess"
@@ -111,6 +112,9 @@ type Provider struct {
 	// Env is the environment the command runs in, the command line's,
 	// with DOCKHAND_REQUEST beside it.
 	Env []string
+	// Starter is the program the script's shell is started through
+	// (starter.Self, as compose gives it).
+	Starter starter.Program
 }
 
 // launchNote is what an attempt notes before it starts the script, in the
@@ -182,30 +186,48 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	if err != nil {
 		shell = "/bin/sh"
 	}
-	command := exec.CommandContext(ctx, shell, "-c", p.Run+` "$1"`, "sh", requestPath)
 	grace := p.Grace
 	if grace <= 0 {
 		grace = 30 * time.Second
 	}
-	ownSession(command, grace)
-	command.Dir = job.Directory
-	command.Env = append(append([]string{}, p.Env...), "DOCKHAND_REQUEST="+requestPath)
-	command.Stdout, command.Stderr = log, log
-	// The script's shell is started under the attempt's launch lock, its
-	// directory noted first, and holds the lock's file for as long as it
-	// runs (buildenv.Build.Launch).
+	// The script's shell is started through the starter, under the
+	// attempt's launch lock, its directory noted first: the starter holds
+	// the lock from its fork, leads a session of its own, records itself in
+	// the directory, and stops its group with an interrupt, then kills what
+	// still runs after grace (the lifecycle design's "Local and Script").
+	// Without a terminal, a sudo that would prompt fails at once, saying
+	// so in the log, rather than waiting for input no one can give.
 	note := launchNote{Directory: job.Directory}.String()
+	var started *exec.Cmd
 	if err := build.Launch(note, func(ctx context.Context) (string, error) {
-		command.ExtraFiles = filelock.Carried(ctx)
-		return note, command.Start()
+		locks := buildenv.LaunchLocks(ctx)
+		if len(locks) == 0 {
+			return note, buildenv.ErrDockhandFault.Because("the script's launch held no lock")
+		}
+		var err error
+		started, err = starter.Start(starter.Spec{Program: p.Starter, Directory: job.Directory, Signal: syscall.SIGINT, Grace: grace, Lock: locks[0],
+			Command: []string{shell, "-c", p.Run + ` "$1"`, "sh", requestPath}, Dir: job.Directory,
+			Env: append(append([]string{}, p.Env...), "DOCKHAND_REQUEST="+requestPath), Stdout: log, Stderr: log})
+		return note, err
 	}); err != nil {
 		if errors.Is(err, buildenv.ErrNotLaunched) || ctx.Err() != nil {
 			return err
 		}
 		return buildenv.Infrastructure("starting %s: %w", p.Label, err)
 	}
-	runErr := command.Wait()
-	if ctx.Err() != nil {
+	ended := make(chan error, 1)
+	go func() { ended <- started.Wait() }()
+	var runErr error
+	select {
+	case runErr = <-ended:
+	case <-ctx.Done():
+		// A canceled script is asked to stop through its starter, which
+		// interrupts its whole session and kills what remains after grace.
+		_ = started.Process.Signal(syscall.SIGTERM)
+		select {
+		case <-ended:
+		case <-time.After(grace + 10*time.Second):
+		}
 		return ctx.Err()
 	}
 

@@ -19,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildenv/guest"
 	"github.com/herbygillot/dockhand/internal/buildenv/guest/guesttest"
+	"github.com/herbygillot/dockhand/internal/buildenv/starter"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -51,12 +52,14 @@ func readRegistry(t *testing.T, path string) string {
 
 // fakeBuild records what the provider records.
 type fakeBuild struct {
-	mu           sync.Mutex
-	results      []model.TargetResult
-	progress     []string
-	observed     []model.Observed
-	refs         []string
-	launches     []string
+	mu       sync.Mutex
+	results  []model.TargetResult
+	progress []string
+	observed []model.Observed
+	refs     []string
+	launches []string
+	// lock is the last launch's lock's path.
+	lock         string
 	dependencies []string
 }
 
@@ -65,7 +68,17 @@ func (b *fakeBuild) Launch(note string, start func(context.Context) (string, err
 	b.mu.Lock()
 	b.launches = append(b.launches, note)
 	b.mu.Unlock()
-	_, err := start(context.Background())
+	// The attempt's launch lock, as the checks service takes it, handed to
+	// what the launch starts.
+	lock, err := os.CreateTemp("", "dockhand-launch-*.lock")
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	b.mu.Lock()
+	b.lock = lock.Name()
+	b.mu.Unlock()
+	_, err = start(buildenv.WithLaunchLocks(context.Background(), []*os.File{lock}))
 	return err
 }
 
@@ -154,7 +167,9 @@ source $argv0
 // temporary folder, staging only the guest program, its input, and an
 // empty tree.
 func localProvider(t *testing.T, env []string) *Local {
-	return &Local{Poll: 10 * time.Millisecond, Temp: t.TempDir(), Env: env,
+	self, err := starter.Self()
+	require.NoError(t, err)
+	return &Local{Poll: 10 * time.Millisecond, Temp: t.TempDir(), Env: env, Starter: self,
 		stager: func(_ context.Context, _ buildenv.Job, input guest.Input, dir string) error {
 			data, err := json.Marshal(input)
 			if err != nil {
@@ -401,7 +416,9 @@ func TestRootStepsRunThePrefixsPortTclsh(t *testing.T) {
 	answer := filepath.Join(t.TempDir(), "answer")
 	sudo := filepath.Join(t.TempDir(), "sudo")
 	testsupport.WriteExecutable(t, sudo, "#!/bin/sh\necho \"$*\" >> "+called+"\nexit $(cat "+answer+")\n")
-	l := &Local{sudo: []string{sudo}, Env: []string{"USER=dhtest", "PATH=/usr/bin:/bin"}}
+	self, err := starter.Self()
+	require.NoError(t, err)
+	l := &Local{sudo: []string{sudo}, Env: []string{"USER=dhtest", "PATH=/usr/bin:/bin"}, Starter: self}
 	tclsh := filepath.Join(prefix, "bin", "port-tclsh")
 
 	require.NoError(t, os.WriteFile(answer, []byte("0"), 0o644))
@@ -414,7 +431,10 @@ func TestRootStepsRunThePrefixsPortTclsh(t *testing.T) {
 
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "owner.json"), nil, 0o644))
-	run, err := l.start(dir, prefix, "check-1", as)
+	lock, err := os.Create(filepath.Join(t.TempDir(), "attempt.lock"))
+	require.NoError(t, err)
+	defer lock.Close()
+	run, err := l.start(dir, prefix, "check-1", as, lock)
 	require.NoError(t, err)
 	<-run.Done()
 	said, err = os.ReadFile(called)
