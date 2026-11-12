@@ -197,6 +197,10 @@ func TestAStarterThatCantRecordItselfStartsNothing(t *testing.T) {
 	require.Contains(t, reason, "the starter couldn't record itself")
 	_, ok = Unrecorded(errors.New("exit status 1"), out.Bytes())
 	require.False(t, ok, "only the starter's own exit for it")
+	// A build script that itself exits 70 isn't the starter failing: with
+	// none of the starter's own words it's no unrecorded start (#243).
+	_, ok = Unrecorded(err, []byte("building from x\nmake: *** [all] Error 70\n"))
+	require.False(t, ok, "a script's own exit 70, without the starter's line")
 }
 
 // A directory whose starter holds its lock is being built in, from the
