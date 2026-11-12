@@ -30,7 +30,13 @@ assert() {
 	done
 	[ "$(cat "$ROW_DIR/active.one")" = "$(cat "$ROW_DIR/active.before")" ] || { row_fail "the one-port check left /opt/local's active ports changed"; return; }
 	local_same /opt/local "$ROW_DIR/active.before" "the two-port check left /opt/local's active ports changed" || return
-	grep -q 'with [0-9]* ports* active' <(dh submit -b "$G1_TWO" --plan --no-check 2>&1) ||
+	# The preview is read from the row's log past where it began: dh writes
+	# the command's output to out.log, so a process substitution of dh read
+	# nothing, and G1 always failed here (Codex's cold read at 2cdaf571).
+	local from
+	from=$(log_size "$ROW_DIR/out.log")
+	dh submit -b "$G1_TWO" --plan --no-check || :
+	tail -c +"$((from + 1))" "$ROW_DIR/out.log" | grep -q 'with [0-9]* ports* active' ||
 		{ row_fail "submit's preview's Tested on line didn't say how many ports were active in /opt/local"; return; }
 	row_pass "both branches built in /opt/local among its active ports, put back as they were, and Tested on names how many were active"
 }
