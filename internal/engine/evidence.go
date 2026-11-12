@@ -155,7 +155,12 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 	now := e.identitiesNow(ctx, plan.Environments)
 	var judged Evidence
 	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		own, err := checks.LoadCheck(r, primary, false)
+		// The newest check's own results are asked what their builds
+		// fetched too, where finished coverage asks it (change 1 of
+		// docs/designs/source-comparison.md): loaded without what they
+		// read, every Git result answered "not known", and no check of a
+		// Git-fetched port stood for another request.
+		own, err := checks.LoadCheck(r, primary, evidence.ReadsSources(plan))
 		if err != nil {
 			return err
 		}
