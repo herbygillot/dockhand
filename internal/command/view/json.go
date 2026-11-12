@@ -470,6 +470,10 @@ type latestJSON struct {
 	Current  bool         `json:"current"`
 	Included []string     `json:"included,omitempty"`
 	Targets  []TargetJSON `json:"targets"`
+	// IdentitiesUnread are the environments whose identity status read
+	// and couldn't, by their names, with the causes, as text status says
+	// them (Codex's review of #193, finding 3).
+	IdentitiesUnread map[string]string `json:"identities_unread,omitempty"`
 }
 
 type BranchJSON struct {
@@ -598,6 +602,7 @@ func BranchView(status engine.BranchStatus) BranchJSON {
 		latest := latestJSON{Run: RunView(*status.Latest), Revision: RevisionView(*status.LatestRevision), Current: status.Current, Included: status.Included, Targets: []TargetJSON{}}
 		if status.Evidence != nil {
 			latest.Targets = EvidenceView(*status.Evidence)
+			latest.IdentitiesUnread = IdentitiesUnreadView(*status.Evidence)
 		}
 		viewed.Latest = &latest
 	}

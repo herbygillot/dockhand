@@ -38,8 +38,11 @@ names other builds when the port ran in more than one place. A recorded step
 lets `--phase` isolate fetch, dependencies, install, test, or another named
 step. `--full` includes dependency-install output otherwise omitted from the
 port's own build. Use the provider-run ID the listing gives when you need a
-specific environment's log. `-p` chooses a branch here as in every command, so
-`logs check-42 -p jq` is refused, naming `logs check-42 jq`.
+specific environment's log; a provider run that built several environments,
+as a GitHub workflow run's URL names, shows those attempts and no others. A
+port the check doesn't build is refused by name, a running check's too. `-p`
+chooses a branch here as in every command, so `logs check-42 -p jq` is refused,
+naming `logs check-42 jq`.
 
 While it runs, `dockhand logs check-42 jq --follow` follows the host's growing
 copy where the provider supports it. GitHub Actions logs arrive differently;

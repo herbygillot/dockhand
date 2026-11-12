@@ -401,7 +401,10 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 		return reportBaseline(ctx, e, run, streams)
 	}
 	out := streams.Prose()
-	evidence, err := e.RunEvidence(ctx, run.ID)
+	// With the identities as they read now, so an environment whose
+	// identity couldn't be read is said, in the JSON and beside the
+	// results (Codex's review of #193, finding 2).
+	evidence, err := e.RunEvidenceNow(ctx, run.ID)
 	if err != nil {
 		return err
 	}
@@ -432,6 +435,9 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 	}
 	fmt.Fprintln(out)
 	view.WriteResults(out, "  ", evidence, false)
+	for _, line := range view.IdentityUnreadLines(evidence) {
+		fmt.Fprintln(out, "  ! "+line)
+	}
 	if len(lint) > 0 {
 		fmt.Fprintln(out)
 		view.WriteLint(out, lint)

@@ -416,7 +416,9 @@ still match, including dependencies and fetched Git commits. Where an
 environment's identity can't be read, as when Tart doesn't answer, its results
 are taken as they were and status says so, with the cause; serve and `ship
 --yes` hold a submission resting on them (`identity-unread`) until it reads
-again, and your own submit says it and goes on. `check --json` lists them under
+again, and your own submit says it and goes on. `check` and `wait` say each
+beside the results, `check --json` and `wait --json` list them under
+`identities_unread`, and `status --json` gives the latest check's under its
 `identities_unread`. A Portfile whose only change declares a port the recorded build had active is
 the same input, so its results carry over, as an edit of metadata no build
 reads does. A result is keyed

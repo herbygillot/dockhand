@@ -59,6 +59,12 @@ type PlanTarget struct {
 	MovedFrom string `json:",omitempty"`
 }
 
+// Names reports whether a person's port names the target: its ID, its
+// port's name, or its subport's, as logs and shell take a port.
+func (t PlanTarget) Names(port string) bool {
+	return port != "" && (string(t.ID) == port || t.Target.Name == port || t.Target.Subport == port)
+}
+
 // Exclusion is a port a plan doesn't build in one environment, and needn't
 // pass there, with the reason: as MacPorts CI would exclude it, or because
 // the environment's evaluation doesn't define it.

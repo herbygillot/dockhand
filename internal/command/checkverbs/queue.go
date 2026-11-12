@@ -194,26 +194,52 @@ provider supports it, then prints any remaining output when the build ends.`,
 				return err
 			}
 			defer e.Close()
-			var run model.Run
-			var only model.ExecutionID
-			if len(args) == 0 {
-				run, err = branchflags.LatestOf(ctx, e, streams, where, "name a check, such as check-42, a provider run, or a branch with -b or -p; in a branch's worktree, logs shows the branch's latest check")
-			} else {
-				run, only, err = e.RunOrExecution(ctx, args[0])
-				if err != nil && port == "" && !engine.IsCheckName(args[0]) {
-					// Not a check or a provider run: a port, in the
-					// branch's latest check, where there's one here.
-					if latest, ok, unchecked := latestLogging(ctx, e, args[0]); ok {
-						run, only, port, err = latest, "", args[0], nil
-					} else if unchecked != "" {
-						err = fmt.Errorf("%s has no check yet, so no log of %s: dockhand check runs one", unchecked, args[0])
-					} else {
-						err = fmt.Errorf("%w; for a port's log outside its branch's worktree, name its check too: logs check-42 %s", err, args[0])
-					}
+			// What's named is resolved once, in the engine: the check, the
+			// attempts it stands for, a provider run's several where it built
+			// several environments, and the port, refused by name where the
+			// check doesn't build it (docs/designs/check-lifecycle.md,
+			// "Selection"; Codex's review of #193, findings 1 and 4).
+			// The one argument beside -p, a port the branch may not change, is
+			// judged as that, with the command that names it, below.
+			request := engine.SelectRequest{Port: port, Phase: model.Step(phase)}
+			if named != "" {
+				request.Port = ""
+			}
+			if len(args) == 1 {
+				request.Name = args[0]
+			} else if where.Explicit() {
+				branch, err := where.Resolve(ctx, e, streams)
+				if err != nil {
+					return err
 				}
+				request.Branch = &branch
+			}
+			selection, err := e.SelectBuild(ctx, request)
+			if err != nil && len(args) == 1 && port == "" && !engine.IsCheckName(args[0]) && !errors.As(err, new(*engine.UnbuiltPortError)) {
+				// Not a check or a provider run: a port, in the latest check
+				// of the branch checked out here, where there's one.
+				if latest, ok, unchecked := latestLogging(ctx, e, args[0]); ok {
+					selection, err = e.SelectBuild(ctx, engine.SelectRequest{Port: args[0], Phase: model.Step(phase)})
+					if err == nil && selection.Run.ID != latest.ID {
+						selection.Run = latest
+					}
+				} else if unchecked != "" {
+					err = fmt.Errorf("%s has no check yet, so no log of %s: dockhand check runs one", unchecked, args[0])
+				} else {
+					err = fmt.Errorf("%w; for a port's log outside its branch's worktree, name its check too: logs check-42 %s", err, args[0])
+				}
+			}
+			if errors.Is(err, engine.ErrNoBranch) {
+				err = errors.New("name a check, such as check-42, a provider run, or a branch with -b or -p; in a branch's worktree, logs shows the branch's latest check")
 			}
 			if err != nil {
 				return err
+			}
+			run := selection.Run
+			if named == "" {
+				port = selection.Port
+			} else {
+				selection.Port = port
 			}
 			// The name is resolved before the flags are judged, so the lone
 			// argument read as a port serves --phase and --full: logs jq
@@ -236,15 +262,15 @@ provider supports it, then prints any remaining output when the build ends.`,
 				if port == "" {
 					return errors.New("--follow follows one port's log: name it, as dockhand logs check-42 jq --follow")
 				}
-				return followPortLog(ctx, e, streams, run, only, port, s.Host.Timings.FollowPoll)
+				return followPortLog(ctx, e, streams, selection, s.Host.Timings.FollowPoll)
 			}
 			logs, err := e.Logs(ctx, run.ID)
 			if err != nil {
 				return err
 			}
-			if only != "" {
-				logs.Executions = slices.DeleteFunc(logs.Executions, func(execution engine.ExecutionLogs) bool { return execution.Execution.ID != only })
-			}
+			// Only the attempts the selection stands for: a provider run
+			// shared by several environments shows those, and no others.
+			logs.Executions = slices.DeleteFunc(logs.Executions, func(execution engine.ExecutionLogs) bool { return !selection.Stands(execution.Execution.ID) })
 			if port == "" {
 				streams.Emit(view.LogsView(logs))
 				return view.WriteLogs(streams.Out, s.Places(), logs, stoppedRun(ctx, e, logs.Run))
@@ -321,7 +347,8 @@ provider supports it, then prints any remaining output when the build ends.`,
 // target said it recorded no log until the target ended (the gnome-voice
 // session's notes, 2026-10-20). A check on GitHub Actions, whose log
 // comes back only with its run, says so, with the run's page.
-func followPortLog(ctx context.Context, e *engine.Engine, streams term.Streams, run model.Run, only model.ExecutionID, port string, poll time.Duration) error {
+func followPortLog(ctx context.Context, e *engine.Engine, streams term.Streams, selection engine.BuildSelection, poll time.Duration) error {
+	run, port := selection.Run, selection.Port
 	out := streams.Out
 	var printed int
 	rest := func(data []byte) {
@@ -336,12 +363,10 @@ func followPortLog(ctx context.Context, e *engine.Engine, streams term.Streams, 
 		if err != nil {
 			return err
 		}
-		// The execution named is the one followed, as an ordinary read
-		// takes it: --follow printed another release's log (Codex's
+		// The attempts named are the ones followed, as an ordinary read
+		// takes them: --follow printed another release's log (Codex's
 		// workflow review of 1caa6c3d, finding 5).
-		if only != "" {
-			logs.Executions = slices.DeleteFunc(logs.Executions, func(execution engine.ExecutionLogs) bool { return execution.Execution.ID != only })
-		}
+		logs.Executions = slices.DeleteFunc(logs.Executions, func(execution engine.ExecutionLogs) bool { return !selection.Stands(execution.Execution.ID) })
 		if chosen, _, ok := logs.ForPort(port); ok {
 			data, err := buildlog.ReadFile(chosen.Result.Log)
 			if err != nil {
@@ -356,7 +381,7 @@ func followPortLog(ctx context.Context, e *engine.Engine, streams term.Streams, 
 		if stoppedRun(ctx, e, logs.Run) {
 			return fmt.Errorf("%s stopped before %s's build ended; dockhand wait %s resumes it", logs.Run.Name(), port, logs.Run.Name())
 		}
-		path, err := e.LiveLog(ctx, run.ID, port, only)
+		path, err := e.LiveLog(ctx, run.ID, port, selection.Executions)
 		if err != nil {
 			return err
 		}

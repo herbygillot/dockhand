@@ -287,6 +287,15 @@ type readSource struct {
 	other   bool
 }
 
+// OfNow is Of with the environments' identities as they read now, so the
+// evidence says which couldn't be read (UnreadIdentities), as a check's
+// own report and wait's do (Codex's review of #193, finding 2).
+func OfNow(check Check, now Identities) Evidence {
+	evidence := Of(check)
+	evidence.now = now
+	return evidence
+}
+
 // Of is what one check established for each target in each of its
 // environments, as its own record says: its executions' results merged,
 // an earlier attempt's complete result standing over a later one's, and

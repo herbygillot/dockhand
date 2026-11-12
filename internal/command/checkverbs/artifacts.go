@@ -1,6 +1,7 @@
 package checkverbs
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -9,7 +10,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/engine"
-	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
@@ -40,12 +40,19 @@ branch's worktree, lists that branch's latest check.`,
 				return err
 			}
 			defer e.Close()
-			if len(args) == 1 && !check {
-				// One attempt, or a provider's run, is refused by name:
-				// artifacts lists a check's judged passes, some reused or
-				// filled from earlier checks, never what one attempt built
-				// (docs/designs/check-lifecycle.md, "Selection").
-				if selection, err := e.SelectBuild(ctx, args[0]); err == nil && selection.Kind != engine.SelectedCheck {
+			// What's named is resolved once, the check or a branch's latest
+			// (docs/designs/check-lifecycle.md, "Selection"): one attempt,
+			// or a provider's run, is refused by name, since artifacts lists
+			// a check's judged passes, some reused or filled from earlier
+			// checks, never what one attempt built.
+			var request engine.SelectRequest
+			switch {
+			case check && where.Explicit():
+				return fmt.Errorf("name a check or a branch, not both")
+			case check:
+				request.Name = args[0]
+			case len(args) == 1:
+				if selection, err := e.SelectBuild(ctx, engine.SelectRequest{Name: args[0]}); err == nil && selection.Kind != engine.SelectedCheck {
 					return fmt.Errorf("artifacts lists a check's passed builds; %s is one %s of %s. Run dockhand artifacts %s", args[0], selection.Kind, selection.Run.Name(), selection.Run.Name())
 				}
 				if where.Explicit() {
@@ -53,18 +60,21 @@ branch's worktree, lists that branch's latest check.`,
 				}
 				where.Branch = args[0]
 			}
-			var run model.Run
-			switch {
-			case check && where.Explicit():
-				return fmt.Errorf("name a check or a branch, not both")
-			case check:
-				run, _, err = e.RunOrExecution(ctx, args[0])
-			default:
-				run, err = branchflags.LatestOf(ctx, e, streams, where, "name a branch or a check, or run this in a branch's worktree")
+			if request.Name == "" && where.Explicit() {
+				branch, err := where.Resolve(ctx, e, streams)
+				if err != nil {
+					return err
+				}
+				request.Branch = &branch
+			}
+			selection, err := e.SelectBuild(ctx, request)
+			if errors.Is(err, engine.ErrNoBranch) {
+				return errors.New("name a branch or a check, or run this in a branch's worktree")
 			}
 			if err != nil {
 				return err
 			}
+			run := selection.Run
 			artifacts, err := e.Artifacts(ctx, run)
 			if err != nil {
 				return err
