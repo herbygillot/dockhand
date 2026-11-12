@@ -172,6 +172,38 @@ if {${os.major} < 15} {
 	}
 }
 
+// The same, with the boundary written through a variable: finding the
+// boundary observes each context for the operand, and one that ends on a
+// call the model has no answer for is left and named there too, as the
+// plan leaves it, rather than refusing the whole update (the outside
+// reader's point 7 on #110).
+func TestAnUpdateLeavesAContextTheModelCantAnswerPastAVariableBoundary(t *testing.T) {
+	t.Parallel()
+	s, r, requests := archiveFixture(t, `version 1.2.3
+revision 0
+set minimum 15
+master_sites @SITE@/${version}
+if {${os.major} < $minimum} {
+    set probe [exec /usr/bin/true]
+    distfiles old-${version}.tar.gz
+    checksums sha256 bbbb size 3
+} else {
+    checksums sha256 aaaa size 2
+}
+`)
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err, "a source-bound boundary operand doesn't stop an unreadable modelled context being left")
+	require.Len(t, *requests, 1, "only the context it could read is fetched")
+	after := string(result.Files[0].After)
+	require.Contains(t, after, "checksums sha256 bbbb size 3", "the context left keeps its checksums as written")
+	require.NotEmpty(t, result.Left)
+	for _, left := range result.Left {
+		require.Equal(t, LeftContext, left.Kind, "%+v", left)
+		require.Regexp(t, `^darwin (8|9|1[0-4]) `, left.What)
+		require.Equal(t, "modeled context has no answer for `exec /usr/bin/true`, which the Portfile needs", left.Reason, left.What)
+	}
+}
+
 // A checksum refresh that can't locate a declaration offers the values to
 // write from the contexts it reads, and fetches nothing of a context it
 // left: the fallback asks the one rule the plan does (Codex's review of
