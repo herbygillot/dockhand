@@ -58,9 +58,12 @@ assert() {
 	[ "$(printf '%s\n' "$rows" | grep -c '|')" -ge 3 ] || { row_fail "the stage's database has $(printf '%s\n' "$rows" | grep -c '|') of the three checks' executions: $rows"; return; }
 	# How many started before the first to finish ended. An execution is
 	# recorded before it waits for a slot or one of the Mac's VMs, which
-	# the batch says (ec5a4846), so a check said waiting doesn't count.
+	# the batch says (ec5a4846), so a check said waiting doesn't count:
+	# the line's first check, the one waiting, not the checks it names as
+	# holding the slots, which counted all three as waiting (rc4's reruns,
+	# check-1084 waiting on check-1085 and check-1086).
 	local waited
-	waited=$(grep -E "waiting for the Mac's VMs|waits for a slot" "$ROW_DIR/ship.log" | grep -oE 'check-[0-9]+' | sed 's/check-//' | sort -un | tr '\n' ' ')
+	waited=$(grep -E "waiting for the Mac's VMs|waits for a slot" "$ROW_DIR/ship.log" | awk 'match($0, /check-[0-9]+/) { print substr($0, RSTART + 6, RLENGTH - 6) }' | sort -un | tr '\n' ' ')
 	started=$(printf '%s\n' "$rows" | awk -F'|' -v waited=" $waited " '
 		$3 > 0 && (end == 0 || $3 < end) { end = $3 }
 		index(waited, " " $1 " ") == 0 { start[NR] = $2 }
