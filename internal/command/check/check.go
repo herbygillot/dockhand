@@ -232,10 +232,7 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 					return fmt.Errorf("%s is already %s for these files; dockhand wait %s follows it", queued.Run.Name(), queued.Run.State, queued.Run.Name())
 				}
 				fmt.Fprintf(streams.Err, "%s is already %s and covers this check; following it.\n", queued.Run.Name(), queued.Run.State)
-				if bound != "" {
-					return checkrun.WaitFor(ctx, e, queued.Run, streams, s.Places(), limit, s.Drain)
-				}
-				return checkrun.Wait(ctx, e, queued.Run, streams, s.Places())
+				return checkrun.See(ctx, e, queued, streams, s.Places(), checkrun.Stay{For: limit}, s.Drain)
 			}
 			if err != nil {
 				for _, words := range replaced {
@@ -252,7 +249,7 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 			if bound != "" {
 				// Queued as -d queues it, then followed for the bound,
 				// driving nothing: returning at it stops nothing.
-				err = checkrun.QueuedFor(ctx, e, run, streams, s.Places(), limit, s.Drain)
+				err = checkrun.See(ctx, e, queued, streams, s.Places(), checkrun.Stay{For: limit}, s.Drain)
 				if err == nil {
 					if status, nextErr := e.BranchStatusOf(ctx, branch.ID); nextErr == nil {
 						view.WriteNext(streams.Prose(), status)
@@ -265,7 +262,7 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 				}
 				return err
 			}
-			err = checkrun.RunQueued(ctx, e, run, streams, enqueue, s.Places(), s.Drain)
+			err = checkrun.See(ctx, e, queued, streams, s.Places(), checkrun.Stay{Detach: enqueue}, s.Drain)
 			// A check that passed says what moves the branch on now, as
 			// status would; one run for submit leaves that to submit.
 			if err == nil && !enqueue {
@@ -289,7 +286,7 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 						names = append(names, string(target.ID))
 					}
 					fmt.Fprintf(streams.Prose(), "%s · baseline, since check.baseline is on: %s\n", branch.ShortName(), strings.Join(names, ", "))
-					if baselineErr := checkrun.RunQueued(ctx, e, queued, streams, false, s.Places(), s.Drain); baselineErr != nil {
+					if baselineErr := checkrun.See(ctx, e, checks.Queued{Run: queued}, streams, s.Places(), checkrun.Stay{}, s.Drain); baselineErr != nil {
 						fmt.Fprintf(streams.Err, "baseline: %v\n", baselineErr)
 					}
 				}
@@ -438,10 +435,7 @@ func runBaseline(ctx context.Context, e *engine.Engine, streams term.Streams, re
 	if err != nil {
 		return err
 	}
-	if limit.Said != "" {
-		return checkrun.QueuedFor(ctx, e, run, streams, s.Places(), limit, s.Drain)
-	}
-	return checkrun.RunQueued(ctx, e, run, streams, enqueue, s.Places(), s.Drain)
+	return checkrun.See(ctx, e, checks.Queued{Run: run}, streams, s.Places(), checkrun.Stay{Detach: enqueue, For: limit}, s.Drain)
 }
 
 // writeBaselineHeader says what a baseline builds, and what it leaves out.

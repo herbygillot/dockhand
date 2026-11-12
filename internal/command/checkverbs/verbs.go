@@ -59,7 +59,7 @@ useful for temporary failures, such as a mirror refusing an archive.`,
 				return err
 			}
 			fmt.Fprintf(streams.Prose(), "%s repeats %s: %s\n", run.Name(), previous.Name(), checks.Describe(revision))
-			return checkrun.RunQueued(ctx, e, run, streams, enqueue, s.Places(), s.Drain)
+			return checkrun.See(ctx, e, checks.Queued{Run: run}, streams, s.Places(), checkrun.Stay{Detach: enqueue}, s.Drain)
 		},
 	}
 	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "queue it and return")

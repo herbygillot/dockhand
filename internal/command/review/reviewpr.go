@@ -312,9 +312,8 @@ func checkPullRequest(ctx context.Context, e *engine.Engine, s *settings.Setting
 	}
 	if queued.Followed {
 		fmt.Fprintf(streams.Err, "%s is already %s and covers this check; following it.\n", queued.Run.Name(), queued.Run.State)
-		return queued.Run, environments, checkrun.Wait(ctx, e, queued.Run, streams, s.Places())
 	}
-	return queued.Run, environments, checkrun.RunQueued(ctx, e, queued.Run, streams, false, s.Places(), s.Drain)
+	return queued.Run, environments, checkrun.See(ctx, e, queued, streams, s.Places(), checkrun.Stay{}, s.Drain)
 }
 
 func postReview(ctx context.Context, e *engine.Engine, streams term.Streams, report engine.ReviewReport, body string, requestChanges bool) error {

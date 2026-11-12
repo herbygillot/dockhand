@@ -68,9 +68,9 @@ serve or a background worker after wait exits.`,
 						streams.Emit(result)
 					}
 				}
-				return checkrun.WaitFor(ctx, e, run, streams, s.Places(), limit, s.Drain)
 			}
-			return checkrun.Wait(ctx, e, run, streams, s.Places())
+			// wait asks for nothing new: its run is joined.
+			return checkrun.See(ctx, e, checks.Queued{Run: run, Followed: true}, streams, s.Places(), checkrun.Stay{For: limit}, s.Drain)
 		},
 	}
 	cmd.Flags().StringVar(&bound, "for", "", "follow for at most this long, then exit 4 if the check is still queued or running; it continues")
