@@ -998,7 +998,7 @@ func queueHead(ctx context.Context, s *settings.Settings, e *engine.Engine, stre
 		return nil, nil
 	}
 	fmt.Fprintf(streams.Prose(), "\n%s · checking %s%s\n", branch.ShortName(), checks.Describe(proposal.Capture.Revision), then)
-	view.WritePlan(streams.Prose(), proposal.Plan, e.PlanNotes(ctx, proposal.Plan), e.PlanSiblings(ctx, proposal.Plan), e.Remedy, view.ListShown(streams))
+	view.WritePlan(streams.Prose(), proposal.Plan, e.PlanNotes(ctx, proposal.Plan), e.PlanSiblings(ctx, proposal.Capture.Revision, proposal.Plan), e.Remedy, view.ListShown(streams))
 	view.WritePushes(streams.Prose(), proposal.Plan)
 	if unrunnable := new(checks.UnrunnableError); errors.As(err, &unrunnable) {
 		return nil, fmt.Errorf("nothing was checked: %w", err)

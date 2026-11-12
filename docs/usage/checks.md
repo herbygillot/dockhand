@@ -70,6 +70,13 @@ directory under MacPorts CI's rules. Its eligible subports are separate targets.
 Each environment evaluates them for itself, omits unsupported or otherwise
 excluded targets with reasons, and uses its own dependency order.
 
+The plan lists on `Changed` the subports the change alters, as dockhand's
+evaluation of the base and the revision finds them, and on `Siblings` the
+untouched subports of the same Portfile, which are built too because MacPorts
+CI builds every subport of a changed Portfile. Where the subports can't be told
+apart, for instance because the Portfile couldn't be evaluated, every subport is
+listed on `Changed`, and the line below it says so and why.
+
 For each target, the build follows MacPorts CI's stages: lint, dependency
 installation, fetch, checksum, install from source, then declared tests. Tart
 builds with the target's dependencies active; a local prefix normally builds

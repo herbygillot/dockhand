@@ -18,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/config"
+	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
@@ -251,7 +252,7 @@ func TestThePlanSaysWhatWontBeBuilt(t *testing.T) {
 				{Target: "harbor-cli", Environment: tahoe, Needs: model.RequiresXcode, Through: "libharbor"},
 			}}}}
 	var out bytes.Buffer
-	view.WritePlan(&out, plan, nil, nil, func(model.Unmet) string { return "make an Xcode image" }, 8)
+	view.WritePlan(&out, plan, nil, engine.Siblings{}, func(model.Unmet) string { return "make an Xcode image" }, 8)
 	require.Contains(t, out.String(), "Provider    tart macOS 26 (Tahoe) arm64 with the Command Line Tools · tests where declared\n")
 	require.Contains(t, out.String(), "Not built   libharbor on tart macOS 26 (Tahoe) arm64 with the Command Line Tools: needs Xcode\n"+
 		"Not built   harbor-cli on tart macOS 26 (Tahoe) arm64 with the Command Line Tools: needs Xcode, through libharbor\n"+

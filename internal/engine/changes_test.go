@@ -120,7 +120,14 @@ func TestARecordKeepsTheSubportsItCantSee(t *testing.T) {
 		return model.PlanTarget{ID: model.TargetID(name), Target: model.Target{Name: name}, Directory: "devel/zdemo", Kind: model.Substantive, Role: model.Changed}
 	}
 	plan := model.Plan{Targets: []model.PlanTarget{target("zdemo"), target("zdemo-devel"), target("zdemo-legacy")}}
-	require.Equal(t, map[model.TargetID]bool{"zdemo": true}, planSiblings(plan, records))
+	require.Equal(t, Siblings{Targets: map[model.TargetID]bool{"zdemo": true}}, planSiblings(plan, records, "not evaluated"))
+	// A directory no record narrows is said, with why, not listed whole
+	// in silence (#228).
+	require.Equal(t, Siblings{Targets: map[model.TargetID]bool{}, Unnarrowed: []Unnarrowed{{Directory: "devel/zdemo", Reason: "not evaluated"}}}, planSiblings(plan, nil, "not evaluated"))
+	failed := map[string]model.ChangeRecord{"devel/zdemo": {Directory: "devel/zdemo", Problem: "the revision couldn't be evaluated: boom"}}
+	require.Equal(t, []Unnarrowed{{Directory: "devel/zdemo", Reason: "the revision couldn't be evaluated: boom"}}, planSiblings(plan, failed, "not evaluated").Unnarrowed)
+	// One changed target has nothing to narrow.
+	require.Empty(t, planSiblings(model.Plan{Targets: []model.PlanTarget{target("zdemo")}}, nil, "not evaluated").Unnarrowed)
 
 	everywhere := zdemo("0", "2.1") + "if {${os.major} < 20} {\n    depends_build-append port:cctools\n}\n"
 	tree = editTree(t, e, base, map[string]string{"devel/zdemo/Portfile": everywhere})
@@ -392,7 +399,33 @@ func TestAPlanOfNewFilesNamesItsSiblings(t *testing.T) {
 		return model.PlanTarget{ID: model.TargetID(name), Target: model.Target{Name: name}, Directory: "devel/zdemo", Kind: model.Substantive, Role: model.Changed}
 	}
 	plan := model.Plan{Revision: capture.Revision.ID, Targets: []model.PlanTarget{target("zdemo"), target("zdemo-devel"), target("zdemo-legacy")}}
-	require.Equal(t, map[model.TargetID]bool{"zdemo": true, "zdemo-legacy": true}, e.PlanSiblings(t.Context(), plan))
+	require.Equal(t, Siblings{Targets: map[model.TargetID]bool{"zdemo": true, "zdemo-legacy": true}}, e.PlanSiblings(t.Context(), capture.Revision, plan))
+}
+
+// A plan's capture records nothing, so a tree no check has seen has a
+// revision only in memory: its siblings are read from that revision, not
+// looked up by its ID, where apache-arrow's py subports were all listed as
+// Changed "(revision only)" on a plan of its main port's revision bump
+// (#228).
+func TestAPlansCaptureNamesItsSiblings(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	f.options.Tclsh = testsupport.MacPortsTclsh(t)
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"devel/zdemo/Portfile": zdemo("0", "2.0")})
+	testsupport.Git(t, f.upstream, "add", ".")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "zdemo: new port")
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "devel"})
+	require.NoError(t, err)
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"devel/zdemo/Portfile": zdemo("1", "2.0")})
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking, Plan: true})
+	require.NoError(t, err)
+	require.False(t, capture.Reused)
+	target := func(name string) model.PlanTarget {
+		return model.PlanTarget{ID: model.TargetID(name), Target: model.Target{Name: name}, Directory: "devel/zdemo", Kind: model.RevisionOnly, Role: model.Changed}
+	}
+	plan := model.Plan{Revision: capture.Revision.ID, Targets: []model.PlanTarget{target("zdemo"), target("zdemo-devel"), target("zdemo-legacy")}}
+	require.Equal(t, Siblings{Targets: map[model.TargetID]bool{"zdemo-devel": true, "zdemo-legacy": true}}, e.PlanSiblings(t.Context(), capture.Revision, plan))
 }
 
 // A change record another process recorded after this one read none

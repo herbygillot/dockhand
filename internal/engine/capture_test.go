@@ -89,6 +89,38 @@ func TestACaptureOfFilesThatMovedIsRefused(t *testing.T) {
 	require.NoError(t, err, "files at rest are captured")
 }
 
+// A tracked file edited on disk outside a branch worktree's sparse
+// checkout is one git status reports, so the capture holds it, but git add
+// declines it: the capture names it, a plan's too, where one inside the
+// checkout isn't (#228: apache-arrow's Portfile was planned from outside
+// the cone).
+func TestACaptureNamesAFileOutsideTheSparseCheckout(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
+	require.NoError(t, err)
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+	for _, plan := range []bool{true, false} {
+		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking, Plan: plan})
+		require.NoError(t, err)
+		require.Equal(t, []string{"textproc/jq/Portfile"}, capture.OutsideSparse)
+		_, text, err := e.Repo.File(t.Context(), string(capture.Revision.Source.Tree), "textproc/jq/Portfile")
+		require.NoError(t, err)
+		require.Equal(t, "name jq\nversion 1.8.1\n", string(text), "the capture holds it")
+	}
+	committed, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
+	require.NoError(t, err)
+	require.Empty(t, committed.OutsideSparse, "a commit's files aren't read from disk")
+
+	here, err := e.Start(t.Context(), StartRequest{Name: "jq-here", Here: true})
+	require.NoError(t, err)
+	testsupport.WriteFiles(t, here.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+	whole, err := e.Capture(t.Context(), CaptureRequest{Branch: here, Mode: CaptureWorking, Plan: true})
+	require.NoError(t, err)
+	require.Empty(t, whole.OutsideSparse, "a checkout that isn't sparse has nothing outside it")
+}
+
 // A Portfile written by hand in a new port's directory is a new port
 // left out, which check names with the commands that take it (the Vx
 // port's field testing, 2026-10-03).
