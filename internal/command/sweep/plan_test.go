@@ -191,8 +191,10 @@ func (p *plan) effects() []effect {
 }
 
 // boundaries are the packages a call site is never in: the boundaries'
-// own, and the sweep's.
-var boundaries = []string{"/internal/store.", "/internal/store/", "/internal/git.", "/internal/command/sweep.", "runtime."}
+// own, the remote-write rule's, which every remote write passes through,
+// so a write is addressed by its caller (engine.(*Engine).publish, not
+// remotewrite.Open), as the call-site listing reads it, and the sweep's.
+var boundaries = []string{"/internal/store.", "/internal/store/", "/internal/git.", "/internal/remotewrite.", "/internal/command/sweep.", "runtime."}
 
 // callSite is the first caller outside the boundaries, as its package's
 // last element and its function: "engine.(*Engine).ApplySubmit".
