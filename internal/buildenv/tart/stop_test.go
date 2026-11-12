@@ -67,6 +67,7 @@ func TestATartStopRemovesTheClonesWorkAndLeavesAKeptOne(t *testing.T) {
 	mac, p = stopping(t)
 	_, err = p.Stop(t.Context(), buildenv.StopRequest{Execution: attempt(clone), Lock: &lock{}})
 	require.NoError(t, err)
+	require.Equal(t, []string{"stop " + clone, "delete " + clone}, mac.events, "asked, and nothing was there")
 	// Nothing named at all: nothing was cloned, once the lock is had.
 	nothing := &lock{}
 	_, err = p.Stop(t.Context(), buildenv.StopRequest{Execution: model.GuestExecution{ID: "tart_2"}, Lock: nothing})
