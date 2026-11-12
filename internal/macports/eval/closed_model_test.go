@@ -262,6 +262,32 @@ func TestAGlobThroughALinkOutOfTheTreeIsClosed(t *testing.T) {
 	require.Equal(t, 1, closedCalls(port)["glob"])
 }
 
+// A glob joining its patterns, with -directory or -path or neither, takes
+// the prefix once on the joined pattern, as Tcl does, so the check sees
+// the pattern Tcl runs through the link and closes it (the outside
+// reader's point 6 on #110): with each pattern prefixed and then joined it
+// saw one that matches nothing, and the host's answer came back.
+func TestAJoinedGlobThroughALinkOutOfTheTreeIsClosed(t *testing.T) {
+	t.Parallel()
+	external := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(external, "hostdata"), []byte("host"), 0o600))
+	setup := func(root string) {
+		putFile(t, root, "devel/effects/files/own/hostdata", "x")
+		require.NoError(t, os.Symlink(external, filepath.Join(root, "devel/effects/files/escape")))
+	}
+	for _, line := range []string{
+		`lappend results [llength [glob -nocomplain -join ${filespath} * hostdata]]`,
+		`lappend results [llength [glob -nocomplain -join -directory ${filespath} * hostdata]]`,
+		`lappend results [llength [glob -nocomplain -join -path ${filespath}/ * hostdata]]`,
+		`lappend results [llength [glob -nocomplain -directory ${filespath} -tails */hostdata]]`,
+	} {
+		got, port := observedIn(t, monterey, setup, line)
+		require.Equal(t, []string{"0"}, got, "%s: the glob through the link is closed", line)
+		require.Positive(t, closedCalls(port)["glob"], "%s", line)
+		require.True(t, hostState(t, port, effects(line)), "%s", line)
+	}
+}
+
 // A glob the fresh installation filters returns nothing the host alone
 // supplied (Codex's review of #110 and #125, finding 4): /etc/hosts came
 // back beside the prefix's programs it kept.
@@ -292,6 +318,24 @@ func TestTheNativeContextIsRestoredAfterAModelledOne(t *testing.T) {
 	require.Equal(t, "0", tcl("set ::dockhand::modeled"))
 	tcl("::dockhand::observation_setup {" + overrides + "} 0 {} {" + tools + "}")
 	require.Equal(t, modelled, tcl("list $::macports::os_major $::macports::build_arch $::macports::macos_version"), "and a modelled one after it is modelled again")
+}
+
+// The native context set up after a modelled one has Base's compiler
+// caches and developer directory back as they were (the outside reader's
+// control beside point 6 on #110).
+func TestTheNativeCachesAreRestoredAfterAModelledOne(t *testing.T) {
+	t.Parallel()
+	_, tcl := tclSession(t)
+	tcl(`set ::macports::compiler_version_cache {versions sentinel}; set ::macports::tool_path_cache {clang native-clang}`)
+	read := `list $::macports::compiler_version_cache $::macports::tool_path_cache $::macports::developer_dir`
+	native := tcl(read)
+	overrides, err := macports.ModelVariables(monterey, "")
+	require.NoError(t, err)
+	tools, err := macports.ToolchainAnswers(monterey, "")
+	require.NoError(t, err)
+	tcl("::dockhand::observation_setup {" + overrides + "} 0 {} {" + tools + "}")
+	tcl("::dockhand::observation_setup {} 0 {} {}")
+	require.Equal(t, native, tcl(read))
 }
 
 // Base's lookups of a program along PATH and of a dependency's file along
