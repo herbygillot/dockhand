@@ -138,10 +138,12 @@ capacity = 20
 build_timeout = "6h"
 ```
 
-GitHub queues runs past your account's own job limits, and queued time counts
-against no build timeout, so `capacity` isn't a concurrency limit. It guards
-dockhand's use of your hourly API budget: runs in flight share one listing of
-the fork's workflow runs each poll. The default is 20.
+GitHub queues runs past your account's own job limits, so `capacity` isn't a
+concurrency limit. It guards dockhand's use of your hourly API budget: runs in
+flight share one listing of the fork's workflow runs each poll, and a run older
+than that listing costs one read of its own. The default is 20. A run's time
+counts against `build_timeout` from its first job, so a matrix job still
+waiting for a runner counts while another builds.
 
 `remote` selects a Git remote when more than one pushes to forks you own; omit
 it when the choice is unambiguous. Enable Actions in the fork and establish a

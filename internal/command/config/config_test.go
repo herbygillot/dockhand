@@ -24,6 +24,9 @@ func TestConfigShowsWhatIsInEffect(t *testing.T) {
 	}
 	require.Regexp(t, setting("submit.rerequest_review", "ask  (default)"), out)
 	require.Regexp(t, setting("cleanup.after", "15d  (default)"), out)
+	// GitHub's capacity says what it is for: the hourly API budget, not
+	// concurrency (Codex's review of #197, finding 4).
+	require.Regexp(t, setting("providers.github.capacity", "20  (default) · guards dockhand's use of your hourly GitHub API budget; GitHub queues runs past your job limits"), out)
 	require.Regexp(t, setting("serve.notify", "true  (default)"), out)
 	require.Regexp(t, setting("providers.tart.test_timeout", "30m  (default)"), out)
 	require.Regexp(t, setting("providers.tart.keep_failed", "true  (default)"), out)

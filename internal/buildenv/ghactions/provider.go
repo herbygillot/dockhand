@@ -173,19 +173,25 @@ type Provider struct {
 	// JobCap when zero, past which GitHub ends each job itself (D16).
 	BuildTimeout time.Duration
 
-	// watch is the listing in-flight runs share (current).
+	// watch is the listing in-flight runs share (current), and now its
+	// clock, time.Now where nil.
 	watch runWatch
+	now   func() time.Time
 }
 
 // runWatch is the newest listing of a repository's workflow runs, which
 // every run waiting on that repository reads once: N runs in flight cost
-// one listing call a poll, not N calls (#197). A run read from a listing
-// already is read again from a new one, so a reader never sees a listing
-// twice.
+// one listing call a poll, not N calls, and a run older than the listing's
+// page costs only its own read (#197). A listing is served only within the
+// poll it was read in, and a run that read it already, being in its next
+// poll, takes a new one, so a reader never sees a listing twice; a rerun
+// drops its repository's listing (forget), so the attempt it started is
+// never answered by an older one listed before.
 type runWatch struct {
 	mu     sync.Mutex
 	listed map[string]map[int64]Run
 	handed map[string]map[int64]bool
+	at     map[string]time.Time
 }
 
 // current is a run as GitHub says it now, from the repository's shared
@@ -196,9 +202,10 @@ func (p *Provider) current(ctx context.Context, repository string, id int64) (Ru
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.listed == nil {
-		w.listed, w.handed = map[string]map[int64]Run{}, map[string]map[int64]bool{}
+		w.listed, w.handed, w.at = map[string]map[int64]Run{}, map[string]map[int64]bool{}, map[string]time.Time{}
 	}
-	if _, fresh := w.listed[repository][id]; !fresh || w.handed[repository][id] {
+	now := p.clock()
+	if _, ok := w.listed[repository]; !ok || w.handed[repository][id] || now.Sub(w.at[repository]) >= poll {
 		runs, err := p.API.RecentRuns(ctx, repository)
 		if err != nil {
 			return Run{}, err
@@ -207,13 +214,29 @@ func (p *Provider) current(ctx context.Context, repository string, id int64) (Ru
 		for _, run := range runs {
 			listed[run.ID] = run
 		}
-		w.listed[repository], w.handed[repository] = listed, map[int64]bool{}
+		w.listed[repository], w.handed[repository], w.at[repository] = listed, map[int64]bool{}, now
 	}
+	w.handed[repository][id] = true
 	if run, ok := w.listed[repository][id]; ok {
-		w.handed[repository][id] = true
 		return run, nil
 	}
 	return p.API.Run(ctx, repository, id)
+}
+
+// forget drops a repository's listing, as a rerun does: what it listed
+// was read before the rerun started its attempt.
+func (p *Provider) forget(repository string) {
+	w := &p.watch
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	delete(w.listed, repository)
+}
+
+func (p *Provider) clock() time.Time {
+	if p.now != nil {
+		return p.now()
+	}
+	return time.Now()
 }
 
 // poll is how often the provider asks after a run, and appear how long
@@ -390,8 +413,11 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 			}
 			return buildenv.Infrastructure("running %s again: %w", run.URL, err)
 		}
+		// The attempt the rerun started is one past the attempt it was
+		// launched from; none earlier, listed before it, answers for it.
+		p.forget(fork.Repository)
 		previous := run.Attempt
-		for run.Attempt == previous {
+		for run.Attempt <= previous {
 			if err := p.sleep(ctx, poll); err != nil {
 				return err
 			}

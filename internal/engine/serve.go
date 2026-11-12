@@ -388,6 +388,11 @@ func capacityWords(name string, provider buildenv.Provider, checks int) string {
 		return fmt.Sprintf("%s (as many checks as the Mac runs VMs, %d, each VM waiting for a free one)", name, checks)
 	}
 	words := fmt.Sprintf("%s (%s at a time", name, prose.Plural(checks, "check"))
+	if name == buildenv.GitHub {
+		// GitHub queues runs past an account's job limits: the count
+		// guards the hourly API budget (#197).
+		words += ", guarding the hourly API budget"
+	}
 	if parallel, ok := provider.(buildenv.ParallelProvider); ok && parallel.Parallel() > 1 {
 		words += fmt.Sprintf(", each building up to %d of its environments at once", parallel.Parallel())
 	}

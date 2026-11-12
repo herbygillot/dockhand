@@ -23,6 +23,10 @@ func TestTartsSlotsAreTheMacsVMs(t *testing.T) {
 	require.Equal(t, []string{"providers.command.capacity is 1, and check-3 is using it"},
 		c.slotWords(Full{"command": {holder(3)}}))
 	require.Equal(t, 2, c.Capacity("tart"))
+	// GitHub's says what it guards (Codex's review of #197, finding 4).
+	c.Capacities["github"] = 20
+	require.Equal(t, []string{"providers.github.capacity, which guards the hourly GitHub API budget, is 20, and check-5 is using it"},
+		c.slotWords(Full{"github": {holder(5)}}))
 }
 
 // A check held for a provider's slots says what it waits behind, in its
