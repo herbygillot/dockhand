@@ -45,6 +45,12 @@ func (s ExecutionState) CanBecome(next ExecutionState) bool {
 	return false
 }
 
+// LaunchUnrecorded is the Launch of an attempt that was unfinished when
+// dockhand began noting launches (schema 63): what it started was never
+// noted, so its provider stops it by its reference, or says it isn't known
+// to have stopped, where an empty Launch since says nothing was started.
+const LaunchUnrecorded = "unrecorded: started before dockhand noted launches"
+
 // GuestExecution is one provider run: the one owner of a provider
 // environment for a run, on one environment and attempt. Its targets'
 // results are checkpointed beneath it as each finishes. Its ID is unique,

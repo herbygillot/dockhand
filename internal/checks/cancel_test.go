@@ -237,3 +237,19 @@ func TestTheLiveDriversCancelKeepsTheOneRule(t *testing.T) {
 	require.Equal(t, model.RunRunning, recorded.State)
 	require.NotNil(t, recorded.CancelRequested)
 }
+
+// A provider this dockhand doesn't have, as after [providers.command] is
+// removed while a script's driver is gone, is no evidence its work ended:
+// not known, named. Only a provider present without a Stop is skipped
+// (Codex's review of #193 steps 5 and 6, finding 2).
+func TestAProviderThisDockhandHasntIsNotKnownToHaveStopped(t *testing.T) {
+	t.Parallel()
+	c := service(t)
+	env := model.Environment{Provider: buildenv.Command, Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	run := c.queued(t, "jq-missing-provider", env)
+	c.running(t, run, model.GuestExecution{Environment: env, State: model.ExecutionRunning, Launch: `{"directory":"/a-checks-recorded-directory"}`})
+	c.Providers = map[string]buildenv.Provider{}
+	canceled, err := c.RequestCancel(t.Context(), c.session(t), run.ID)
+	require.ErrorContains(t, err, "command isn't set up in this dockhand, so what attempt 1 launched there isn't known to have stopped")
+	require.Equal(t, model.RunRunning, canceled.State)
+}

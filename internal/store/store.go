@@ -278,6 +278,9 @@ type Tx interface {
 	AddRun(run model.Run) error
 	NextRunNumber() (int, error)
 	UpdateRun(run model.Run) error
+	// SetStopAsked records when a run's providers were last asked to stop
+	// its work (model.Run.StopAsked), which no other update replaces.
+	SetStopAsked(id model.RunID, at time.Time) error
 	// EnterRun records a shell opened in a running run's guest, beside
 	// what its driver writes (model.Run.Entered).
 	EnterRun(id model.RunID, entry model.Entry) error

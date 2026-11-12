@@ -79,6 +79,11 @@ type Run struct {
 	// CancelRequested is when someone asked for the run to stop; whoever
 	// holds the run applies it.
 	CancelRequested *time.Time
+	// StopAsked is when its providers were last asked to stop its work,
+	// for a cancel that isn't finished, which serve's loop and a worker,
+	// any process, ask again no sooner than a provider polls; kept apart
+	// from the run's updates (store.Tx.SetStopAsked).
+	StopAsked *time.Time
 	// BaselineOf is the run whose failed ports a baseline run builds at the
 	// branch's base; empty for the branch's own checks. A baseline is
 	// evidence about that run, never the branch's check.

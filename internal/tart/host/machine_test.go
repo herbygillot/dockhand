@@ -101,30 +101,42 @@ esac
 	}
 }
 
-// A delete is Tart's answer, since 2.40.0 says when it left a VM
-// (openai/tart#1345, #38): one gone already is deleted, and a refusal is
-// said as Tart says it.
+// A delete of a VM the listing shows stopped is Tart's answer, since 2.40.0
+// says when it left a VM (openai/tart#1345, #38): one Tart says is gone is
+// deleted, and a refusal is said as Tart says it; a running VM is refused
+// before Tart is asked; and the removal is confirmed by a listing after.
 func TestADeleteIsTartsAnswer(t *testing.T) {
 	t.Parallel()
-	for _, mode := range []string{"deleted", "gone", "refused"} {
+	for _, mode := range []string{"deleted", "gone", "refused", "running"} {
 		t.Run(mode, func(t *testing.T) {
 			m := fixtureMachine(t, `
 case "$1" in
+ list) if [ -f "$TART_HOME/deleted" ]; then printf '[]'; else cat "$TART_HOME/list.json"; fi ;;
  delete)
-  if [ -f "$TART_HOME/gone" ]; then echo "the specified VM \"$2\" does not exist" >&2; exit 2; fi
   if [ -f "$TART_HOME/refuse" ]; then echo "failed to delete VM \"$2\": it is running" >&2; exit 1; fi
+  touch "$TART_HOME/deleted"
+  if [ -f "$TART_HOME/gone" ]; then echo "the specified VM \"$2\" does not exist" >&2; exit 2; fi
  ;;
 esac
 `)
-			if mode != "deleted" {
+			list := `[{"Name":"candidate","Source":"local","State":"stopped"}]`
+			if mode == "running" {
+				list = `[{"Name":"candidate","Source":"local","State":"running"}]`
+			}
+			require.NoError(t, os.WriteFile(filepath.Join(m.Client.Home, "list.json"), []byte(list), 0600))
+			if mode == "gone" || mode == "refused" {
 				require.NoError(t, os.WriteFile(filepath.Join(m.Client.Home, map[string]string{"gone": "gone", "refused": "refuse"}[mode]), nil, 0600))
 			}
 			err := m.Delete(t.Context(), "candidate")
-			if mode == "refused" {
+			switch mode {
+			case "refused":
 				require.ErrorContains(t, err, "it is running")
-				return
+			case "running":
+				require.ErrorContains(t, err, "cannot delete running VM candidate")
+				require.NoFileExists(t, filepath.Join(m.Client.Home, "deleted"), "Tart wasn't asked")
+			default:
+				require.NoError(t, err)
 			}
-			require.NoError(t, err)
 		})
 	}
 }
@@ -233,4 +245,18 @@ esac
 			}
 		})
 	}
+}
+
+// A delete is Tart's answer, confirmed by a listing after it, as the
+// design keeps: a VM still listed after a delete that said it worked is
+// said (Codex's review of #193 steps 5 and 6, finding 7).
+func TestADeleteIsConfirmedByAListing(t *testing.T) {
+	t.Parallel()
+	m := fixtureMachine(t, `
+case "$1" in
+ delete) exit 0 ;;
+ list) printf '[{"Name":"candidate","Source":"local","State":"stopped"}]' ;;
+esac
+`)
+	require.ErrorContains(t, m.Delete(t.Context(), "candidate"), "still listed after delete")
 }

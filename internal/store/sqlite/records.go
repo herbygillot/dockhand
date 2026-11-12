@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -344,17 +345,17 @@ func (t *tx) AddPlan(p model.Plan) error {
 	return err
 }
 
-const runColumns = "id, number, branch_id, revision_id, plan_id, origin, state, detail, created_at, finished_at, cancel_requested_at, baseline_of, started_at, entered"
+const runColumns = "id, number, branch_id, revision_id, plan_id, origin, state, detail, created_at, finished_at, cancel_requested_at, baseline_of, started_at, entered, stop_asked"
 
 func scanRun(row interface{ Scan(...any) error }) (model.Run, error) {
 	var r model.Run
 	var created int64
-	var finished, cancel, started sql.NullInt64
+	var finished, cancel, started, asked sql.NullInt64
 	var entered sql.NullString
-	if err := row.Scan(&r.ID, &r.Number, &r.Branch, &r.Revision, &r.Plan, &r.Origin, &r.State, &r.Detail, &created, &finished, &cancel, &r.BaselineOf, &started, &entered); err != nil {
+	if err := row.Scan(&r.ID, &r.Number, &r.Branch, &r.Revision, &r.Plan, &r.Origin, &r.State, &r.Detail, &created, &finished, &cancel, &r.BaselineOf, &started, &entered, &asked); err != nil {
 		return model.Run{}, storageError(err)
 	}
-	r.CreatedAt, r.FinishedAt, r.CancelRequested, r.StartedAt = fromMillis(created), fromNullable(finished), fromNullable(cancel), fromNullable(started)
+	r.CreatedAt, r.FinishedAt, r.CancelRequested, r.StartedAt, r.StopAsked = fromMillis(created), fromNullable(finished), fromNullable(cancel), fromNullable(started), fromNullable(asked)
 	if entered.Valid {
 		if err := json.Unmarshal([]byte(entered.String), &r.Entered); err != nil {
 			return model.Run{}, fmt.Errorf("%w: run %s's shells entered: %w", store.ErrUnavailable, r.ID, err)
@@ -471,7 +472,7 @@ func (t *tx) AddRun(r model.Run) error {
 	case !plan.Runnable():
 		return fmt.Errorf("%w: run %s's plan has unresolved targets or none at all", model.ErrInvalid, r.ID)
 	}
-	_, err = t.exec("INSERT INTO runs(repository_id, "+runColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)",
+	_, err = t.exec("INSERT INTO runs(repository_id, "+runColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL)",
 		t.repo, r.ID, r.Number, r.Branch, r.Revision, r.Plan, r.Origin, r.State, r.Detail, millis(r.CreatedAt), nullableMillis(r.FinishedAt), nullableMillis(r.CancelRequested), r.BaselineOf, nullableMillis(r.StartedAt))
 	return err
 }
@@ -498,6 +499,10 @@ func (t *tx) UpdateRun(r model.Run) error {
 	}
 	return t.update("run "+string(r.ID), "UPDATE runs SET state=?, detail=?, finished_at=?, cancel_requested_at=?, started_at=? WHERE repository_id=? AND id=?",
 		r.State, r.Detail, nullableMillis(r.FinishedAt), nullableMillis(r.CancelRequested), nullableMillis(r.StartedAt), t.repo, r.ID)
+}
+
+func (t *tx) SetStopAsked(id model.RunID, at time.Time) error {
+	return t.update("run "+string(id), "UPDATE runs SET stop_asked=? WHERE repository_id=? AND id=?", millis(at), t.repo, id)
 }
 
 const executionColumns = "id, run_id, provider, platform_os, platform_version, platform_architecture, developer_tools, prefix, attempt, state, detail, provider_ref, launch, observed, identity, reused, created_at, finished_at"

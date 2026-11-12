@@ -205,3 +205,16 @@ func TestAGitHubStopSaysWhatItCantSeeEnd(t *testing.T) {
 	require.NoError(t, stop(t, old, []model.GuestExecution{{ID: "github_1", ProviderRef: "https://github.com/ada/macports-ports/actions/runs/4"}}))
 	require.Equal(t, []int64{4}, old.canceled)
 }
+
+// An attempt the migration marked as unfinished before launches were noted
+// is not known where it recorded no run, since a push may have started one;
+// one that recorded a run's URL has that run canceled and read (Codex's
+// review of #193 steps 5 and 6, finding 3).
+func TestAGitHubAttemptFromBeforeNotesIsNotKnownWithoutARun(t *testing.T) {
+	t.Parallel()
+	err := stop(t, &stopAPI{}, []model.GuestExecution{{ID: "github_old", Attempt: 1, State: model.ExecutionRunning, Launch: model.LaunchUnrecorded}})
+	require.ErrorContains(t, err, "attempt 1 was started before dockhand noted its launches, and recorded no run")
+	old := &stopAPI{}
+	old.add(4, "in_progress")
+	require.NoError(t, stop(t, old, []model.GuestExecution{{ID: "github_old", Attempt: 1, Launch: model.LaunchUnrecorded, ProviderRef: "https://github.com/ada/macports-ports/actions/runs/4"}}))
+}

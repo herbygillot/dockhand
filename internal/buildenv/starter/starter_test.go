@@ -176,10 +176,12 @@ func TestAStarterThatCantRecordItselfStartsNothing(t *testing.T) {
 	require.NoError(t, err)
 	marker := filepath.Join(t.TempDir(), "ran")
 	var out bytes.Buffer
-	// A directory under a file can't be made, nor written in.
-	blocked := filepath.Join(t.TempDir(), "a file")
-	require.NoError(t, os.WriteFile(blocked, nil, 0o644))
-	started, err := Start(Spec{Program: program, Directory: filepath.Join(blocked, "deeper"), Signal: syscall.SIGTERM, Grace: time.Second, Lock: file,
+	// A directory where the record can't go: a directory stands in its
+	// place.
+	blocked := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(blocked, RecordName), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(blocked, RecordName, "occupied"), nil, 0o644))
+	started, err := Start(Spec{Program: program, Directory: blocked, Signal: syscall.SIGTERM, Grace: time.Second, Lock: file,
 		Command: []string{"/usr/bin/touch", marker}, Stdout: &out, Stderr: &out})
 	require.NoError(t, err)
 	err = started.Wait()
@@ -200,4 +202,52 @@ func TestADirectoryIsBuiltInWhileItsStarterHoldsTheLock(t *testing.T) {
 	require.NoError(t, Stop(t.Context(), dir, lock, 10*time.Second))
 	require.False(t, Building(t.Context(), dir))
 	require.False(t, Building(t.Context(), t.TempDir()), "no record, no build")
+}
+
+// hookedLock runs before when the stop asks for the lock.
+type hookedLock struct {
+	path   string
+	before func()
+}
+
+func (l hookedLock) Hold(ctx context.Context, bound time.Duration) (func(), error) {
+	l.before()
+	return lockAt(l.path).Hold(ctx, bound)
+}
+
+// A starter forked holding the lock, paused before its first instruction,
+// can record itself and leave a child in its group while the stop waits for
+// the lock: the stop reads the record again once it has the lock, and asks
+// that group, never calling it ended unseen (Codex's review of #193 steps 5
+// and 6, finding 1).
+func TestAStopReadsTheRecordAgainOnceItHasTheLock(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(t.TempDir(), "attempt.lock")
+	file, err := filelock.Acquire(t.Context(), path, filelock.Exclusive)
+	require.NoError(t, err)
+	defer file.Close()
+	program, err := Self()
+	require.NoError(t, err)
+	cmd, err := Start(Spec{Program: Program{Path: "/bin/sh", Args: []string{"-c", `kill -STOP $$; exec "$@"`, "sh", program.Path}},
+		Directory: dir, Signal: syscall.SIGTERM, Grace: time.Second, Lock: file,
+		Command: []string{"/bin/sh", "-c", "/bin/sleep 60 </dev/null >/dev/null 2>&1 &"}})
+	require.NoError(t, err)
+	pid := cmd.Process.Pid
+	t.Cleanup(func() { _ = syscall.Kill(-pid, syscall.SIGKILL); _ = cmd.Process.Kill() })
+	require.NoError(t, file.Close())
+	require.Eventually(t, func() bool {
+		out, err := exec.Command("ps", "-o", "state=", "-p", strconv.Itoa(pid)).Output()
+		return err == nil && strings.Contains(string(out), "T")
+	}, 5*time.Second, time.Millisecond)
+	hook := hookedLock{path: path, before: func() {
+		require.NoError(t, cmd.Process.Signal(syscall.SIGCONT))
+		require.NoError(t, cmd.Wait())
+		_, found, err := ReadRecord(dir)
+		require.NoError(t, err)
+		require.True(t, found)
+	}}
+	err = Stop(t.Context(), dir, hook, time.Second)
+	require.NoError(t, syscall.Kill(-pid, 0), "its child runs still, unsignalled")
+	require.ErrorContains(t, err, "process group "+strconv.Itoa(pid)+" still has processes")
 }

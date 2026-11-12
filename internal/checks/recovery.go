@@ -51,7 +51,7 @@ func (c *Service) Candidates(ctx context.Context, session *coord.Session) ([]mod
 	for _, run := range runs {
 		// A cancel that isn't finished is asked again as serve passes, no
 		// more often than a provider polls.
-		if holders[RunResource(run.ID)] == nil && (run.CancelRequested == nil || !c.askedLately(run.ID)) {
+		if holders[RunResource(run.ID)] == nil && (run.CancelRequested == nil || !c.askedLately(run)) {
 			candidates = append(candidates, run)
 		}
 	}

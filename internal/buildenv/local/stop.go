@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv/guest"
 	"github.com/herbygillot/dockhand/internal/buildenv/starter"
 	"github.com/herbygillot/dockhand/internal/filelock"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // stopBound is how long a stop waits for the attempt's launch lock once the
@@ -33,7 +34,8 @@ const stopBound = stopGrace + 15*time.Second
 // command to stop it by hand.
 func (l *Local) Stop(ctx context.Context, request buildenv.StopRequest) ([]string, error) {
 	dir := request.Execution.ProviderRef
-	if request.Execution.Launch != "" {
+	legacy := request.Execution.Launch == "" || request.Execution.Launch == model.LaunchUnrecorded
+	if !legacy {
 		var note launchNote
 		if err := json.Unmarshal([]byte(request.Execution.Launch), &note); err != nil || note.Directory == "" {
 			return nil, fmt.Errorf("attempt %d's note of what it launched can't be read: %v", request.Execution.Attempt, err)
@@ -61,7 +63,7 @@ func (l *Local) Stop(ctx context.Context, request buildenv.StopRequest) ([]strin
 	if made.Root || syscall.Access(filepath.Join(made.Prefix, "var", "macports", "registry"), 2) != nil {
 		return nil, l.rootStopWords(dir, made)
 	}
-	if request.Execution.Launch == "" {
+	if legacy {
 		// Started before the starter: its guest program's PID, where its
 		// results carry one, is all that names it.
 		results, _ := (&guest.Follower{Root: dir}).Read(ctx, hostGuest{})

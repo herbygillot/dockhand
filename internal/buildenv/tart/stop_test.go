@@ -102,3 +102,16 @@ func TestATartStopRemovesTheClonesWorkAndLeavesAKeptOne(t *testing.T) {
 	_, err = p.Stop(t.Context(), buildenv.StopRequest{Execution: attempt("dockhand-base-tahoe"), Lock: &lock{}})
 	require.ErrorContains(t, err, "dockhand-base-tahoe is not a check's clone")
 }
+
+// A kept marker is no proof the clone's tart run ended: the launch lock is
+// taken first, and a lock still held is not known; the marker only changes
+// what's said as left (Codex's review of #193 steps 5 and 6, finding 4).
+func TestAKeptCloneStillNeedsItsWorkSeenEnded(t *testing.T) {
+	t.Parallel()
+	mac, p := stopping(t)
+	clone := clonePrefix("run-1", "tahoe") + "-1"
+	mac.images = append(mac.images, clone)
+	require.NoError(t, p.keepClone(clone, "dockhand-base-tahoe", tartvm.KeptFailed))
+	_, err := p.Stop(t.Context(), buildenv.StopRequest{Execution: attempt(clone), Lock: &lock{held: errors.New("its launch lock is still held")}})
+	require.ErrorContains(t, err, "its launch lock is still held")
+}

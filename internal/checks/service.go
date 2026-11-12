@@ -11,7 +11,6 @@ package checks
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
@@ -71,11 +70,6 @@ type Service struct {
 	Now   func() time.Time
 	Poll  time.Duration
 	Stall [2]time.Duration
-
-	// stopAsked is when this service last asked each check's providers to
-	// stop, for a cancel that isn't finished (askedLately).
-	stopMu    sync.Mutex
-	stopAsked map[model.RunID]time.Time
 }
 
 // Sessions are this process's sessions, as the engine starts them.

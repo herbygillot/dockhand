@@ -62,7 +62,12 @@ func (c *Service) RequestCancel(ctx context.Context, session *coord.Session, id 
 // error says them with the command that asks again (the lifecycle
 // design's "Stopping").
 func (c *Service) settleCancel(ctx context.Context, session *coord.Session, lease model.Lease, id model.RunID) (model.Run, error) {
-	c.asked(id)
+	// When the providers were asked is kept on the run, where serve's loop
+	// and any other process read it before asking again (Codex's review of
+	// #193 steps 5 and 6, finding 6).
+	if err := session.Fenced(context.WithoutCancel(ctx), lease, func(tx store.Tx) error { return tx.SetStopAsked(id, c.Now()) }); err != nil {
+		return model.Run{}, err
+	}
 	left, unknown, name, err := c.stopUnfinished(ctx, id)
 	if err != nil {
 		return model.Run{}, err
@@ -126,17 +131,29 @@ func (c *Service) stopUnfinished(ctx context.Context, id model.RunID) (left, unk
 	asked := map[[2]string]bool{}
 	for _, execution := range executions {
 		provider := execution.Environment.Provider
-		stopper, ok := c.Providers[provider].(buildenv.Stopper)
+		// A provider this dockhand hasn't, as one whose settings were
+		// removed, is no evidence its work ended: not known. Only one
+		// present without a Stop is skipped, its work ending with its
+		// driver (Codex's review of #193 steps 5 and 6, finding 2).
+		known, present := c.Providers[provider]
+		if !present {
+			if execution.Launch != "" || execution.ProviderRef != "" {
+				unknown = append(unknown, fmt.Sprintf("%s isn't set up in this dockhand, so what attempt %d launched there isn't known to have stopped", provider, execution.Attempt))
+			}
+			continue
+		}
+		stopper, ok := known.(buildenv.Stopper)
 		if !ok {
 			continue
 		}
 		// Once for each provider and launch, so a matrix's cells, which
-		// share one, are asked once; an attempt that noted nothing is asked
-		// by its reference, else by itself: the provider says whether
-		// anything of it can still be running.
+		// share one, are asked once; an attempt that noted nothing, or was
+		// unfinished before launches were noted, is asked by its
+		// reference, else by itself: the provider says whether anything of
+		// it can still be running.
 		key := [2]string{provider, execution.Launch}
 		switch {
-		case execution.Launch != "":
+		case execution.Launch != "" && execution.Launch != model.LaunchUnrecorded:
 		case execution.ProviderRef != "":
 			key[1] = "reference " + execution.ProviderRef
 		default:
@@ -213,21 +230,8 @@ func (c *Service) finishCanceled(ctx context.Context, session *coord.Session, le
 // (the GitHub provider's poll).
 const stopInterval = 30 * time.Second
 
-// asked notes that this service asked a check's providers to stop now.
-func (c *Service) asked(id model.RunID) {
-	c.stopMu.Lock()
-	defer c.stopMu.Unlock()
-	if c.stopAsked == nil {
-		c.stopAsked = map[model.RunID]time.Time{}
-	}
-	c.stopAsked[id] = c.Now()
-}
-
-// askedLately reports whether this service asked a check's providers to
-// stop within stopInterval, which serve's loop leaves until it passes.
-func (c *Service) askedLately(id model.RunID) bool {
-	c.stopMu.Lock()
-	defer c.stopMu.Unlock()
-	at, ok := c.stopAsked[id]
-	return ok && c.Now().Sub(at) < stopInterval
+// askedLately reports whether a run's providers were asked to stop within
+// stopInterval, by any process, which serve's loop leaves until it passes.
+func (c *Service) askedLately(run model.Run) bool {
+	return run.StopAsked != nil && c.Now().Sub(*run.StopAsked) < stopInterval
 }

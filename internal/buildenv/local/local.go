@@ -643,7 +643,11 @@ func (l *Local) awaitOrphans(ctx context.Context, prefix string, build buildenv.
 		for _, orphan := range orphans {
 			if !said[orphan.dir] {
 				said[orphan.dir] = true
-				build.Progress(fmt.Sprintf("waiting for %s's build process (pid %d) to finish in %s; it outlived the dockhand process that started it", orphan.owner.Check, orphan.program, prefix))
+				process := "build process"
+				if orphan.program > 0 {
+					process = fmt.Sprintf("build process (pid %d)", orphan.program)
+				}
+				build.Progress(fmt.Sprintf("waiting for %s's %s to finish in %s; it outlived the dockhand process that started it", orphan.owner.Check, process, prefix))
 			}
 		}
 		select {
@@ -686,7 +690,9 @@ func (l *Local) orphans(prefix string) []orphan {
 		// A starter that holds its lock is building, its dockhand gone,
 		// from the moment it was forked: before its program's results carry
 		// a PID, where a directory nobody seemed to build in was removed.
-		if record, ok, _ := starter.ReadRecord(dir); ok && starter.Building(context.Background(), dir) {
+		// Its starter's PID where it has recorded itself, else none yet.
+		if starter.Building(context.Background(), dir) {
+			record, _, _ := starter.ReadRecord(dir)
 			found = append(found, orphan{dir: dir, owner: made, program: record.PID})
 			continue
 		}

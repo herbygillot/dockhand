@@ -101,13 +101,24 @@ func Start(spec Spec) (*exec.Cmd, error) {
 		command.Env = append(append([]string(nil), spec.Env...), spec.Program.Env...)
 	}
 	command.Stdout, command.Stderr = spec.Stdout, spec.Stderr
-	// The lock is the starter's descriptor 3.
+	// The lock is the starter's descriptor 3. Its path is written in the
+	// directory before the fork, so a reader of the directory finds the
+	// lock, and sees the starter building, from the moment it is forked,
+	// before it has recorded itself (Codex's review of #193 steps 5 and 6,
+	// finding 5).
 	command.ExtraFiles = []*os.File{spec.Lock}
+	if err := atomicfile.Write(filepath.Join(spec.Directory, LockName), []byte(spec.Lock.Name()), 0o644); err != nil {
+		return nil, err
+	}
 	if err := command.Start(); err != nil {
 		return nil, err
 	}
 	return command, nil
 }
+
+// LockName is where a build's directory says the path of the launch lock
+// its starter holds, written by the launcher before the starter's fork.
+const LockName = "launch.lock.path"
 
 // RunIfAsked runs the process as the starter, and exits, where its first
 // argument is Command: dockhand's main asks it first, and a test binary
@@ -253,27 +264,40 @@ func Stop(ctx context.Context, directory string, lock buildenv.LaunchLock, bound
 	if err != nil {
 		return err
 	}
-	if !found {
-		release, err := lock.Hold(ctx, bound)
-		if err != nil {
-			return fmt.Errorf("no starter recorded itself, and %w", err)
+	if found {
+		if boot, err := procid.BootSession(); err == nil && record.Boot != "" && boot != record.Boot {
+			return nil
 		}
-		release()
-		return nil
-	}
-	if boot, err := procid.BootSession(); err == nil && record.Boot != "" && boot != record.Boot {
-		return nil
-	}
-	if alive, err := (procid.System{}).Alive(procid.Process{PID: record.PID, Start: record.Start}); err == nil && alive {
-		if err := syscall.Kill(record.PID, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
-			return fmt.Errorf("its starter, PID %d, couldn't be asked to stop: %w", record.PID, err)
+		if alive, err := (procid.System{}).Alive(procid.Process{PID: record.PID, Start: record.Start}); err == nil && alive {
+			if err := syscall.Kill(record.PID, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
+				return fmt.Errorf("its starter, PID %d, couldn't be asked to stop: %w", record.PID, err)
+			}
 		}
 	}
 	release, err := lock.Hold(ctx, bound)
 	if err != nil {
+		if !found {
+			return fmt.Errorf("no starter recorded itself, and %w", err)
+		}
 		return fmt.Errorf("its starter, PID %d, was asked to stop, and %w", record.PID, err)
 	}
 	defer release()
+	// A starter forked with the lock may have recorded itself, started its
+	// build and ended while the stop waited: its record is read again, and
+	// its group asked, never taken as gone unseen (Codex's review of #193
+	// steps 5 and 6, finding 1).
+	if !found {
+		if record, found, err = ReadRecord(directory); err != nil {
+			return err
+		}
+		if !found {
+			// None recorded itself, and holding the lock, none can.
+			return nil
+		}
+		if boot, err := procid.BootSession(); err == nil && record.Boot != "" && boot != record.Boot {
+			return nil
+		}
+	}
 	// The starter's own end is reaped by its parent a moment after it dies,
 	// and a group whose last member is unreaped still answers: it's asked
 	// again for a moment before what it answers is taken.
@@ -305,15 +329,16 @@ func Stop(ctx context.Context, directory string, lock buildenv.LaunchLock, bound
 // its starter's parent to reap it.
 const groupWait = 2 * time.Second
 
-// Building reports whether a build's directory is still being built in: its
-// starter's record names a launch lock that something holds, from the
-// moment the starter was forked. False where no starter recorded itself.
+// Building reports whether a build's directory is still being built in: the
+// launch lock its launcher named there before the starter's fork is held,
+// from that moment, before the starter has recorded itself. False where no
+// starter was started there.
 func Building(ctx context.Context, directory string) bool {
-	record, found, err := ReadRecord(directory)
-	if err != nil || !found || record.Lock == "" {
+	path, err := os.ReadFile(filepath.Join(directory, LockName))
+	if err != nil || len(path) == 0 {
 		return false
 	}
-	file, err := filelock.TryExisting(ctx, record.Lock, filelock.Exclusive)
+	file, err := filelock.TryExisting(ctx, string(path), filelock.Exclusive)
 	if errors.Is(err, filelock.ErrBusy) {
 		return true
 	}

@@ -2142,3 +2142,35 @@ INSERT INTO events(repository_id, at, session_id, branch_id, run_id, target_id, 
 	require.Equal(t, &model.ReviewReceipt{Head: "abc", Unasked: true}, read("br_1").PullRequest.Rerequested, "pushed after the review, never asked")
 	require.Nil(t, read("br_2").PullRequest.Rerequested, "asked since")
 }
+
+// Schema 63 marks an attempt that was unfinished when dockhand began noting
+// launches as one whose launch was never noted, so a stop doesn't read its
+// empty note as nothing started, and keeps no stop ask yet (Codex's review
+// of #193 steps 5 and 6, findings 3 and 6).
+func TestSchema63MarksTheAttemptsUnfinishedBeforeLaunchesWereNoted(t *testing.T) {
+	t.Parallel()
+	s, err := Open(t.Context(), schemaAt(t, 62, schema23Records), Options{})
+	require.NoError(t, err)
+	defer s.Close()
+	require.NoError(t, s.View(t.Context(), "repo_1", func(r store.Reader) error {
+		executions, err := r.Executions("run_1")
+		require.NoError(t, err)
+		require.Len(t, executions, 2)
+		for _, execution := range executions {
+			require.Equal(t, model.LaunchUnrecorded, execution.Launch, execution.ID)
+		}
+		run, err := r.Run("run_1")
+		require.NoError(t, err)
+		require.Nil(t, run.StopAsked)
+		return nil
+	}))
+	at := time.UnixMilli(1_800_000_000_000)
+	require.NoError(t, s.Update(t.Context(), "repo_1", func(tx store.Tx) error { return tx.SetStopAsked("run_1", at) }))
+	require.NoError(t, s.View(t.Context(), "repo_1", func(r store.Reader) error {
+		run, err := r.Run("run_1")
+		require.NoError(t, err)
+		require.NotNil(t, run.StopAsked)
+		require.True(t, run.StopAsked.Equal(at))
+		return nil
+	}))
+}

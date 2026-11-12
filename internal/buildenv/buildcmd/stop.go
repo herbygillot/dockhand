@@ -8,6 +8,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildenv/starter"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // Stop ends a script's build (buildenv.Stopper): its starter, found by the
@@ -15,18 +16,20 @@ import (
 // script's result later gave, is signalled, and the stop sees its group
 // gone and its launch lock free (starter.Stop). What a script started
 // elsewhere, or moved out of its group, is the script's own (the lifecycle
-// design's "Script"). An attempt from before dockhand noted its directory
-// recorded nothing that names its shell: not known.
+// design's "Script"). An attempt that launched nothing noted nothing, and
+// is ended once the lock is had. One unfinished when dockhand began noting
+// launches (model.LaunchUnrecorded) recorded nothing that names its shell,
+// whatever its reference: not known.
 func (p *Provider) Stop(ctx context.Context, request buildenv.StopRequest) ([]string, error) {
-	if request.Execution.Launch == "" {
-		if request.Execution.ProviderRef == "" {
-			release, err := request.Lock.Hold(ctx, p.stopBound())
-			if err != nil {
-				return nil, err
-			}
-			release()
-			return nil, nil
+	switch request.Execution.Launch {
+	case "":
+		release, err := request.Lock.Hold(ctx, p.stopBound())
+		if err != nil {
+			return nil, err
 		}
+		release()
+		return nil, nil
+	case model.LaunchUnrecorded:
 		return nil, fmt.Errorf("attempt %d was started before dockhand recorded where, so nothing names its shell to stop", request.Execution.Attempt)
 	}
 	var note launchNote

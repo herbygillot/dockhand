@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/remotewrite"
@@ -89,7 +90,13 @@ func (p *Provider) Stop(ctx context.Context, request buildenv.StopRequest) ([]st
 	var legacy []int64
 	for _, attempt := range request.Attempts {
 		switch {
-		case attempt.Launch != "":
+		case attempt.Launch == model.LaunchUnrecorded && attempt.ProviderRef == "":
+			// Unfinished when dockhand began noting launches, its push
+			// came before its run's URL was saved: a run may have started
+			// that nothing names (Codex's review of #193 steps 5 and 6,
+			// finding 3).
+			return nil, fmt.Errorf("attempt %d was started before dockhand noted its launches, and recorded no run: a push of it may have started one that nothing names", attempt.Attempt)
+		case attempt.Launch != "" && attempt.Launch != model.LaunchUnrecorded:
 			var note launchNote
 			if err := json.Unmarshal([]byte(attempt.Launch), &note); err != nil {
 				return nil, fmt.Errorf("attempt %d's note of what it launched can't be read: %w", attempt.Attempt, err)

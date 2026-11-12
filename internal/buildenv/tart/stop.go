@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/model"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
 )
 
@@ -27,8 +28,10 @@ const stopWait = time.Minute
 // fails is not known, with Tart's words, and the next ask tries again (the
 // lifecycle design's "Tart").
 func (p *Provider) Stop(ctx context.Context, request buildenv.StopRequest) ([]string, error) {
+	// An attempt unfinished when dockhand began noting launches named its
+	// clone first, as every attempt did (model.LaunchUnrecorded).
 	vm := request.Execution.ProviderRef
-	if request.Execution.Launch != "" {
+	if request.Execution.Launch != "" && request.Execution.Launch != model.LaunchUnrecorded {
 		var note launchNote
 		if err := json.Unmarshal([]byte(request.Execution.Launch), &note); err != nil {
 			return nil, fmt.Errorf("attempt %d's note of what it launched can't be read: %w", request.Execution.Attempt, err)
@@ -50,6 +53,15 @@ func (p *Provider) Stop(ctx context.Context, request buildenv.StopRequest) ([]st
 	}
 	home, _ := p.home()
 	if _, kept := tartvm.KeptFrom(home, vm); kept && home != "" {
+		// A kept marker is no proof the clone's tart run ended, as one whose
+		// teardown failed: the lock, which tart run holds while it lives,
+		// is had first, and the marker changes only what is said as left
+		// (Codex's review of #193 steps 5 and 6, finding 4).
+		release, err := request.Lock.Hold(ctx, stopWait)
+		if err != nil {
+			return nil, fmt.Errorf("%s is kept for dockhand shell, and %w", vm, err)
+		}
+		release()
 		return []string{fmt.Sprintf("the clone %s, kept for dockhand shell, which dockhand clean removes", vm)}, nil
 	}
 	m, err := p.vms()
