@@ -60,7 +60,20 @@ assert() {
 	# stage, check-820 to 822).
 	local numbers rows
 	numbers=$(grep -oE 'check-[0-9]+: attempt 1 of 3' "$ROW_DIR/ship.log" | sed 's/check-//; s/:.*//' | sort -un | tr '\n' ',' | sed 's/,$//')
-	[ -n "$numbers" ] || { row_fail "ship named no check: $(tail -3 "$ROW_DIR/ship.log" | tr '\n' ' ')"; return; }
+	# ship has no --fresh: where its three checks each reused an earlier
+	# check's results, no build ran, and running together wasn't shown
+	# (rc4: check-1094 to 1096 reused 1084 to 1086 from three hours
+	# before). That's not exercised, with the checks it reused named.
+	if [ -z "$numbers" ]; then
+		local named
+		named=$(grep -oE 'check-[0-9]+' "$ROW_DIR/ship.log" | sort -uV | tr '\n' ' ')
+		if [ -n "$named" ]; then
+			row_result "not exercised" "ship's checks ran no build, each reusing an earlier check's results ($named); set ACCEPT_BATCH_PORTS to three due ports no check has built since"
+		else
+			row_fail "ship named no check: $(tail -3 "$ROW_DIR/ship.log" | tr '\n' ' ')"
+		fi
+		return
+	fi
 	rows=$(stage_db "SELECT r.number, e.created_at, coalesce(e.finished_at, 0) FROM executions e JOIN runs r ON r.repository_id = e.repository_id AND r.id = e.run_id WHERE r.number IN ($numbers) AND e.attempt = 1 ORDER BY e.created_at" 2>>"$ROW_DIR/out.log")
 	printf '%s\n' "$rows" >"$ROW_DIR/executions.txt"
 	[ "$(printf '%s\n' "$rows" | grep -c '|')" -ge 3 ] || { row_fail "the stage's database has $(printf '%s\n' "$rows" | grep -c '|') of the three checks' executions: $rows"; return; }
