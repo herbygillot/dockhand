@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/stretchr/testify/require"
 )
@@ -347,4 +348,64 @@ func TestBasesOwnXcrunForTheSDKIsExplained(t *testing.T) {
 		require.False(t, hostState(t, alone, effects(lines)), "%v %+v", declaration.Values, declaration.Frames)
 	}
 	require.Positive(t, xcrun, "Base asked xcrun: %v", port.Problems)
+}
+
+// knownGapVerdict observes contents as devel/effects/Portfile on the
+// platform, with setup given the tree's root, and returns the verdict
+// Tolerate gives with the tree's own root, so PortGroups it holds are
+// there to read, and the evaluated distfiles.
+func knownGapVerdict(t *testing.T, platform model.Platform, setup func(string), contents string) (bool, string, macports.PortObservation) {
+	t.Helper()
+	e := liveEvaluator(t)
+	tree := fixtureTree(t)
+	if setup != nil {
+		setup(tree.Root())
+	}
+	putFile(t, tree.Root(), "devel/effects/Portfile", contents)
+	bound, err := tree.Select(model.Target{Name: "effects", Portfile: "devel/effects/Portfile"})
+	require.NoError(t, err)
+	got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Declarations: true, Platform: platform})
+	require.NoError(t, err)
+	_, inconclusive := observe.Tolerate(t.Context(), got.Ports["effects"], []byte(contents), tree.Root())
+	return inconclusive, got.Snapshot.Ports["effects"].Options["distfiles"], got.Ports["effects"]
+}
+
+// Known gap, pinned as it stands, not fixed in #110's round (architecture's
+// ruling): a Portfile calling Base's portconfigure procedure itself, as
+// hdhomerun calls configure_get_universal_archflags, is taken for Base's
+// compiler selection, so on Darwin 10 the SDK the host's files would
+// choose reaches distfiles and the context reads as conclusive. When the
+// gap is closed this test fails, and flips.
+func TestKnownGapAPortfilesOwnCallOfBasesToolchainProcedureIsExplained(t *testing.T) {
+	t.Parallel()
+	snowLeopard := model.Platform{OS: "darwin", Version: "10", Architecture: "x86_64"}
+	contents := "PortSystem 1.0\nname effects\nversion 1\ndistfiles x-[file tail [portconfigure::configure_get_sdkroot 10.6]].tar.gz\n"
+	inconclusive, distfiles, port := knownGapVerdict(t, snowLeopard, nil, contents)
+	own := false
+	for _, declaration := range port.Declarations {
+		if declaration.Command == "dockhand.host-access" && len(declaration.Values) > 2 && declaration.Values[1] == "closed" && declaration.Values[2] == "portfile" {
+			own = true
+		}
+	}
+	require.True(t, own, "the Portfile's own call closes a host read: %v", port.Problems)
+	require.Equal(t, "x-.tar.gz", distfiles, "the empty Mac's SDK answer in a fetch field")
+	require.False(t, inconclusive, "known gap: explained today")
+}
+
+// Known gap, pinned as it stands, not fixed in #110's round (architecture's
+// ruling): following a Base lookup's value reads the Portfile and only the
+// PortGroups on the read's stack. A PortGroup the Portfile includes reads
+// build.cmd into distfiles while it is sourced, which leaves no frame of
+// its file, so build.cmd's make reaches a fetch field and the context
+// reads as conclusive. When the gap is closed this test fails, and flips.
+func TestKnownGapAPortGroupOffTheStackIsNotFollowed(t *testing.T) {
+	t.Parallel()
+	setup := func(root string) {
+		putFile(t, root, "_resources/port1.0/group/hostread-1.0.tcl", "distfiles foo-[file tail ${build.cmd}].tar.gz\n")
+	}
+	contents := "PortSystem 1.0\nPortGroup hostread 1.0\nname effects\nversion 1\n"
+	inconclusive, distfiles, port := knownGapVerdict(t, monterey, setup, contents)
+	require.Contains(t, port.Problems, "modeled context depends on make, which findBinary looks for along this Mac's PATH")
+	require.Equal(t, "foo-.tar.gz", distfiles, "make, not found on the empty Mac, in a fetch field")
+	require.False(t, inconclusive, "known gap: explained today")
 }

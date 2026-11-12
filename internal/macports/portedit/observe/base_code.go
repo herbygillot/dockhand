@@ -78,18 +78,52 @@ func (b *baseCode) nobodyElse(frames []macports.SourceFrame) bool {
 	return true
 }
 
-// bodyIsBases reports whether the code frames run is Base's own: the
-// first frame naming a file is Base's library, and not a pass-through,
-// and no frame names a file outside it. A procedure a Portfile defined
-// has its file for its body's frames; one whose body was built as a
-// string has none until Base's catch, which is a pass-through.
+// bodyIsBases reports whether the code frames run is Base's own: no
+// frame names a file outside Base's library, every default evaluated
+// among them is one Base wrote (substitutedBases), and the first frame
+// naming a file is Base's own code or default_check's substitution of
+// such a default, never a pass-through that runs a script its caller
+// gave. A procedure a Portfile defined has its file for its body's
+// frames; one whose body was built as a string has none until Base's
+// catch, which is a pass-through.
 func (b *baseCode) bodyIsBases(frames []macports.SourceFrame) bool {
 	if !b.nobodyElse(frames) {
 		return false
 	}
-	for _, frame := range frames {
-		if frame.File != "" {
-			return !passThrough(frame)
+	first := -1
+	for i, frame := range frames {
+		if substitution(frame) {
+			if !b.substitutedBases(frames, i) {
+				return false
+			}
+		}
+		if frame.File != "" && first < 0 {
+			first = i
+		}
+	}
+	return first >= 0 && (!passThrough(frames[first]) || substitution(frames[first]))
+}
+
+// substitution reports default_check's frame substituting an option's
+// default (portutil.tcl's "uplevel #0 [list subst ...]").
+func substitution(frame macports.SourceFrame) bool {
+	return frame.File != "" && strings.HasPrefix(frame.Command, "uplevel #0 [list subst ")
+}
+
+// substitutedBases reports whether the default substituted at frames[at]
+// is one Base's source writes, by the default_check before it and the
+// subst after it.
+func (b *baseCode) substitutedBases(frames []macports.SourceFrame, at int) bool {
+	option := ""
+	for i := at - 1; i >= 0 && option == ""; i-- {
+		if match := defaultCheck.FindStringSubmatch(frames[i].Command); match != nil {
+			option = match[1]
+		}
+	}
+	for _, frame := range frames[at+1:] {
+		if strings.HasPrefix(frame.Command, "subst ") {
+			words, errs := syntax.ListValues(frame.Command)
+			return option != "" && len(errs) == 0 && len(words) == 2 && slices.Contains(baseDefaults(b.library)[option], words[1])
 		}
 	}
 	return false

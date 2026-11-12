@@ -83,6 +83,19 @@ type dimension struct {
 	seen    func(syntax.VarSub)
 	sink    func(command string)
 	carried map[string]bool
+	// hostAnswer is set where the read is a host answer's value followed
+	// (followedReadsBenign): patchfiles is no benign sink for it, since
+	// dockhand fetches, checksums and rewrites the patch list
+	// (architecture's ruling on #110's finding 1, case n).
+	hostAnswer bool
+}
+
+// benign reports whether a command is a benign sink for this dimension.
+func (d *dimension) benign(name string) bool {
+	if d.hostAnswer && strings.HasPrefix(name, "patchfiles") {
+		return false
+	}
+	return benignSink(name)
 }
 
 // any reports whether one of the reads is of the dimension, or of a
@@ -191,7 +204,7 @@ func classifyReads(src []byte, script *syntax.Script, d *dimension) error {
 				continue
 			}
 			if d.any(src, word.Variables(src)) {
-				if !benignSink(name) {
+				if !d.benign(name) {
 					return ErrInconclusive.Because("%s reads %s", name, d.label)
 				}
 				d.sunk(name)
@@ -238,7 +251,7 @@ func benignBody(src []byte, body syntax.Word, d *dimension) error {
 					continue
 				}
 			}
-			if benignSink(name) {
+			if d.benign(name) {
 				d.sunk(name)
 				continue
 			}

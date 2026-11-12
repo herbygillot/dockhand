@@ -24,7 +24,7 @@ func newBaseFixture(t *testing.T) baseFixture {
 	for name, body := range map[string]string{
 		"port1.0/portbuild.tcl":     "default build.cmd {[portbuild::build_getmaketype]}\ndefault build.jobs {[portbuild::build_getjobs]}\n",
 		"port1.0/portmain.tcl":      "default source_date_epoch {[portmain::get_source_date_epoch]}\n",
-		"port1.0/portconfigure.tcl": "namespace eval portconfigure {}\ndefault configure.sdkroot {[portconfigure::configure_get_sdkroot ${configure.sdk_version}]}\n",
+		"port1.0/portconfigure.tcl": "namespace eval portconfigure {}\ndefault configure.sdkroot {[portconfigure::configure_get_sdkroot ${configure.sdk_version}]}\ndefault configure.compiler {[portconfigure::configure_get_default_compiler]}\ndefault compiler.fallback {[portconfigure::get_compiler_fallback]}\n",
 		"port1.0/portutil.tcl":      "proc default_check {optionName index op} {}\n",
 	} {
 		path := filepath.Join(lib, filepath.FromSlash(name))
@@ -100,7 +100,9 @@ const thePortfile = "/tree/devel/x/Portfile"
 // substitution or a script it doesn't walk, leaves the context
 // inconclusive (#110 finding 1, architecture's points 3 and 5). Only reads
 // in build positions, of options no fetch value reads, are explained:
-// abella's test.cmd ${build.cmd}, and patchfiles, a benign sink by design.
+// abella's test.cmd ${build.cmd}. patchfiles is no benign sink for a host
+// answer: dockhand fetches, checksums and rewrites the patch list
+// (architecture's ruling on case n).
 func TestABaseLookupsValueIsFollowedToEveryFetchValue(t *testing.T) {
 	t.Parallel()
 	b := newBaseFixture(t)
@@ -113,7 +115,8 @@ func TestABaseLookupsValueIsFollowedToEveryFetchValue(t *testing.T) {
 		{"abella's test.cmd", "test.run yes\ntest.cmd ${build.cmd}", false},
 		{"test.cmd, read by the build", "test.cmd ${build.cmd}\nbuild.args ${test.cmd}", false},
 		{"in a phase body", "post-destroot {\n    system \"${build.cmd} install\"\n}", false},
-		{"patchfiles, a benign sink", "patchfiles-append patch-[file tail ${build.cmd}].diff", false},
+		{"patchfiles, which dockhand fetches and checksums", "patchfiles-append patch-[file tail ${build.cmd}].diff", true},
+		{"patchfiles, in a branch the read selects", "set m [file tail ${build.cmd}]\nif {$m eq \"gmake\"} {patchfiles-append patch-gmake.diff}", true},
 		{"a comment naming it", "# build.cmd is make\nbuild.args ${build.cmd}", false},
 		{"distfiles", "distfiles foo-[file tail ${build.cmd}].tar.gz", true},
 		{"[set]", "distfiles foo-[file tail [set build.cmd]].tar.gz", true},
@@ -237,4 +240,21 @@ func TestBasesNamedProbesAreBasesByTheirCode(t *testing.T) {
 	}
 	require.False(t, b.tolerate(t, "build.args ${configure.sdkroot}", xcrun(b.file("port1.0/portconfigure.tcl"))), "Base's own xcrun for the SDK")
 	require.True(t, b.tolerate(t, "build.args ${configure.sdkroot}", xcrun(thePortfile)), "a Portfile's xcrun under a portconfigure name")
+
+	// Base's universal_setup choosing the compiler on Darwin 10: Base's
+	// procedure reads options whose defaults Base wrote, so the first
+	// file below it is default_check's substitution, and the read is in
+	// SDK selection three defaults down.
+	selection := func(fallback string) macports.Declaration {
+		frames := []macports.SourceFrame{frame("universal_setup")}
+		frames = append(frames, b.substitution("configure.compiler", "[portconfigure::configure_get_default_compiler]")...)
+		frames = append(frames, frame("portconfigure::configure_get_default_compiler"))
+		frames = append(frames, b.substitution("compiler.fallback", fallback)...)
+		frames = append(frames, frame("portconfigure::get_compiler_fallback"), macports.SourceFrame{File: b.file("port1.0/portconfigure.tcl"), Line: 1367, Command: "portconfigure::get_apple_compilers_xcode_version"})
+		frames = append(frames, b.substitution("configure.sdkroot", "[portconfigure::configure_get_sdkroot ${configure.sdk_version}]")...)
+		frames = append(frames, frame("portconfigure::configure_get_sdkroot ${configure.sdk_version}"), macports.SourceFrame{File: b.file("port1.0/portconfigure.tcl"), Line: 571, Command: "file exists /usr/include/sys/cdefs.h"})
+		return macports.Declaration{Command: "dockhand.host-access", Values: []string{"modeled context depends on filesystem state outside the captured ports tree", "closed", "base", "file exists /usr/include/sys/cdefs.h"}, Frames: frames}
+	}
+	require.False(t, b.tolerate(t, "", selection("[portconfigure::get_compiler_fallback]")), "Base's compiler selection through its own defaults")
+	require.True(t, b.tolerate(t, "", selection("[catch {portconfigure::get_compiler_fallback}]")), "through a default Base didn't write")
 }

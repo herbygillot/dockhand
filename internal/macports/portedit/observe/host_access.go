@@ -519,11 +519,12 @@ func followedReadsBenign(sources [][]byte, option string) ([]string, bool) {
 		carried, seen = map[string]bool{}, nil
 		for i, src := range sources {
 			d := &dimension{
-				read:    func(name string) bool { return watched[name] },
-				label:   option,
-				tainted: map[string]bool{},
-				carried: carried,
-				seen:    func(read syntax.VarSub) { seen = append(seen, read.Span) },
+				read:       func(name string) bool { return watched[name] },
+				label:      option,
+				tainted:    map[string]bool{},
+				carried:    carried,
+				hostAnswer: true,
+				seen:       func(read syntax.VarSub) { seen = append(seen, read.Span) },
 				sink: func(command string) {
 					if name, ok := optionSink(command); ok && !watched[name] {
 						watched[name], added = true, true
@@ -556,12 +557,13 @@ func followedReadsBenign(sources [][]byte, option string) ([]string, bool) {
 var optionSuffix = regexp.MustCompile(`-(?:append|prepend|delete|replace|strsed)$`)
 
 // optionSink is the option a benign sink command sets, where it sets one:
-// test.cmd, configure.args-append's configure.args, patchfiles. Commands
-// that run or print, as system and ui_msg, set none.
+// test.cmd, configure.args-append's configure.args. Commands that run or
+// print, as system and ui_msg, set none; patchfiles is no sink for a host
+// answer at all (dimension.benign).
 func optionSink(command string) (string, bool) {
 	name := optionSuffix.ReplaceAllString(command, "")
 	switch name {
-	case "use_xcode", "macosx_deployment_target", "patchfiles", "notes":
+	case "use_xcode", "macosx_deployment_target", "notes":
 		return name, true
 	}
 	for _, family := range benignFamilies {
