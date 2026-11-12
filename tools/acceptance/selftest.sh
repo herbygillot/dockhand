@@ -22,6 +22,13 @@ check() {
 			;;
 		esac
 	fi
+	# Each result says what made it: the harness's commit and the binary
+	# the row ran (#230).
+	if ! jq -e '.harness_commit and .binary.path' "$state/results/selftest/$row.json" >/dev/null; then
+		echo "selftest: $row's result doesn't record its harness and binary"
+		fail=1
+		return
+	fi
 	# Only the invariant the row breaks is broken.
 	local others
 	others=$(jq -r --arg h "$harm" '.harm | to_entries[] | select(.key != $h and (.value | startswith("broken"))) | .key + ": " + .value' "$state/results/selftest/$row.json")

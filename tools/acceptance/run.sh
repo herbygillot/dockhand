@@ -95,6 +95,31 @@ fi
 
 results="$ACCEPT_STATE/results/$candidate"
 mkdir -p "$results"
+# What made the results, recorded in each (#230): the candidate's commit,
+# where its label or ACCEPT_CANDIDATE_REF names one, the harness's own
+# commit, and, per row, the binary the row ran.
+candidate_commit=$(git -C "$here" rev-parse -q --verify "${ACCEPT_CANDIDATE_REF:-$candidate}^{commit}" 2>/dev/null || :)
+harness_commit=$(git -C "$here" rev-parse HEAD 2>/dev/null || echo unknown)
+[ -z "$(git -C "$here" status --porcelain -- . 2>/dev/null)" ] || harness_commit="$harness_commit+dirty"
+# The candidate's version as --version names it, ACCEPT_CANDIDATE_VERSION
+# where the label isn't one, as v0.8.0-rc4-reruns.
+candidate_version=${ACCEPT_CANDIDATE_VERSION:-${candidate#v}}
+binary_json() {
+	if [ -x "${DH_BIN:-}" ]; then
+		jq -n --arg path "$DH_BIN" --arg version "$("$DH_BIN" --version 2>/dev/null | head -1)" --arg sha256 "$(shasum -a 256 "$DH_BIN" 2>/dev/null | cut -d' ' -f1)" \
+			'{path: $path, version: $version, sha256: $sha256}'
+	else
+		jq -n --arg path "${DH_BIN:-}" '{path: $path, version: null, sha256: null}'
+	fi
+}
+# write_result writes a row's result whole, never a part: a rerun that's
+# cut leaves the result it marked superseded, not a pass pointing at
+# evidence it deleted (#230).
+write_result() {
+	jq --arg commit "$candidate_commit" --arg harness "$harness_commit" --argjson binary "$(binary_json)" \
+		'. + {candidate_commit: $commit, harness_commit: $harness, binary: $binary}' >"$results/$row.json.new" &&
+		mv "$results/$row.json.new" "$results/$row.json"
+}
 failed=0
 notrun=0
 unexercised=0
@@ -115,6 +140,18 @@ fi
 if [ "$quick_gated" = 1 ] && [ "${ACCEPT_NO_QUICK_GATE:-0}" != 1 ]; then
 	if [ ! -d "$quick_results" ]; then
 		echo "run.sh: the quick stage hasn't run on $candidate here ($quick_results); run tools/acceptance/quick.sh --candidate $candidate first, or set ACCEPT_NO_QUICK_GATE=1" >&2
+		exit 2
+	fi
+	# The quick stage's results stand only for the same candidate, whole:
+	# its manifest, written at the end of a complete quick run, names the
+	# commit it was built from (#230).
+	if ! jq -e '.complete == true' "$quick_results/manifest.json" >/dev/null 2>&1; then
+		echo "run.sh: the quick stage on $candidate has no complete run's manifest ($quick_results/manifest.json); run the whole quick stage on it first, or set ACCEPT_NO_QUICK_GATE=1" >&2
+		exit 2
+	fi
+	quick_commit=$(jq -r '.candidate_commit // ""' "$quick_results/manifest.json")
+	if [ -n "$candidate_commit" ] && [ "$quick_commit" != "$candidate_commit" ]; then
+		echo "run.sh: the quick stage on $candidate was built from ${quick_commit:-an unnamed commit}, not the candidate's $candidate_commit; run it again on the candidate" >&2
 		exit 2
 	fi
 	blocking=$(jq -r 'select(.result == "fail" or .result == "blocker") | .row' "$quick_results"/*.json 2>/dev/null | sort -V | tr '\n' ' ')
@@ -213,7 +250,7 @@ rerun="$results/rerun.txt"
 blocked_result() {
 	local result=$1 why=$2
 	jq -n --arg row "$row" --arg stage "$stage" --arg candidate "$candidate" --arg result "$result" --arg why "$why" --arg started "$started" \
-		'{row: $row, stage: $stage, candidate: $candidate, result: $result, why: $why, started: $started, seconds: 0}' >"$results/$row.json"
+		'{row: $row, stage: $stage, candidate: $candidate, result: $result, why: $why, started: $started, seconds: 0}' | write_result
 	printf '%-8s %-14s %s\n' "$row" "$result" "$why"
 }
 # The test account is checked once, at the full stage's start: a fork
@@ -233,6 +270,12 @@ for row in $rows; do
 		exit 2
 	fi
 	ROW_DIR="$results/$row"
+	# An earlier result is marked superseded before its evidence goes, so
+	# a rerun cut short leaves no pass pointing at deleted evidence (#230).
+	if [ -f "$results/$row.json" ]; then
+		jq --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.superseded = {at: $at, was: .result, why: .why} | .result = "superseded" | .why = "a rerun began at \($at) and hasn'"'"'t written its result"' \
+			"$results/$row.json" >"$results/$row.json.new" 2>/dev/null && mv "$results/$row.json.new" "$results/$row.json"
+	fi
 	rm -rf "$ROW_DIR"
 	started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 	row_started=$(date +%s)
@@ -243,9 +286,25 @@ for row in $rows; do
 		result=$(jq -r .result "$quick_results/$row.json")
 		why="passed in the quick stage on $candidate: $(jq -r .why "$quick_results/$row.json")"
 		jq -n --arg row "$row" --arg stage "$stage" --arg candidate "$candidate" --arg result "$result" --arg why "$why" --arg started "$started" \
-			--arg from "$quick_results/$row.json" '{row: $row, stage: $stage, candidate: $candidate, result: $result, why: $why, started: $started, seconds: 0, from_quick: $from}' >"$results/$row.json"
+			--arg from "$quick_results/$row.json" '{row: $row, stage: $stage, candidate: $candidate, result: $result, why: $why, started: $started, seconds: 0, from_quick: $from}' | write_result
 		printf '%-8s %-14s %s\n' "$row" "$result" "$why"
 		continue
+	fi
+	# The binary a full-stage row runs is the candidate's, by --version, but
+	# for a row that installs it, as A1: a label is only a label, and every
+	# row after A7 could otherwise run its newer build under the
+	# candidate's name (#230, #234).
+	if [ "$stage" = full ] && [ "${ACCEPT_DRY:-0}" != 1 ] && [ -x "${DH_BIN:-}" ] && ! grep -q '^# installs:' "$file"; then
+		installed=$("$DH_BIN" --version 2>/dev/null | head -1)
+		case "$installed" in
+		*"$candidate_version"*) ;;
+		*)
+			blocked_result "blocked: wrong binary" "$DH_BIN says \"$installed\", not $candidate_version; install the candidate, or set ACCEPT_CANDIDATE_VERSION where the label isn't its version"
+			blocked=$((blocked + 1))
+			echo "$row" >>"$rerun"
+			continue
+			;;
+		esac
 	fi
 	# Each row first repeats the host's cheap checks: a host fault blocks
 	# the row, said as the host's, and the row joins the rerun list (#226).
@@ -381,7 +440,7 @@ EOT
 		--argjson spent "${spent:-0}" --argjson used "${used:-0}" \
 		--arg started "$started" --argjson seconds "$(($(date +%s) - row_started))" \
 		'{row: $row, stage: $stage, candidate: $candidate, result: $result, why: $why, harm: $harm, exit_codes: $exits, log: $log,
-		  github_requests: $spent, github_used_after: $used, started: $started, seconds: $seconds}' >"$results/$row.json"
+		  github_requests: $spent, github_used_after: $used, started: $started, seconds: $seconds}' | write_result
 	printf '%-8s %-14s %s\n' "$row" "$result" "$why"
 	# What the row asks of a person once its result is written, as D-I5's
 	# reboot, said only now (after_result).
@@ -402,6 +461,14 @@ done
 for row in $alone; do
 	echo "$row runs alone, after this run: run it with --rows $row"
 done
+# A whole quick run writes its manifest, which the full stage's gate
+# reads (#230); one of named rows leaves it as it was.
+if [ "$stage" = quick ] && [ -z "$named" ] && [ "${ACCEPT_DRY:-0}" != 1 ]; then
+	jq -n --arg candidate "$candidate" --arg commit "$candidate_commit" --arg harness "$harness_commit" --argjson binary "$(binary_json)" \
+		--arg rows "$rows" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+		'{candidate: $candidate, candidate_commit: $commit, harness_commit: $harness, binary: $binary, rows: ($rows | split(" ") | map(select(. != ""))), finished: $at, complete: true}' \
+		>"$results/manifest.json.new" && mv "$results/manifest.json.new" "$results/manifest.json"
+fi
 elapsed=$(($(date +%s) - stage_started))
 echo "Results: $results ($stage stage, $((elapsed / 3600))h $((elapsed % 3600 / 60))m $((elapsed % 60))s)"
 [ "$failed" -eq 0 ] && [ "$blocked" -eq 0 ] && [ "$unexercised" -eq 0 ]

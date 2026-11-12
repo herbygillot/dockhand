@@ -1,4 +1,5 @@
 # stages: full
+# installs: the candidate
 # A1: install from a local copy of the dockhand Portfile at the candidate
 # commit, which host/stage-candidate.sh put in the overlay. It builds, and
 # dockhand --version names the candidate's version, which tests the

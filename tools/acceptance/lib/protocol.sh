@@ -232,8 +232,14 @@ device_login() {
 # the release binary can't stop at a named step: the candidate's tag
 # where it is one, else the harness's own checkout. It says the binary.
 failpoint_bin() {
-	local rev=${ACCEPT_CANDIDATE:-HEAD} out source
-	git -C "${ACCEPT_REPO:?}" rev-parse -q --verify "$rev^{commit}" >/dev/null 2>&1 || rev=HEAD
+	local rev=${ACCEPT_CANDIDATE_REF:-${ACCEPT_CANDIDATE:-HEAD}} out source
+	# A label that names no commit, as v0.8.0-rc4-reruns, is refused, never
+	# read as HEAD, which built the kill rows from the harness's main
+	# (Codex's cold read at 2cdaf571, #230); ACCEPT_CANDIDATE_REF names it.
+	if ! git -C "${ACCEPT_REPO:?}" rev-parse -q --verify "$rev^{commit}" >/dev/null 2>&1; then
+		printf 'failpoint_bin: %s names no commit in %s; set ACCEPT_CANDIDATE_REF to the candidate'"'"'s tag or commit\n' "$rev" "$ACCEPT_REPO" >>"$ROW_DIR/out.log"
+		return 1
+	fi
 	out="${ACCEPT_STATE:?}/bin/dockhand-failpoints-$(git -C "$ACCEPT_REPO" rev-parse --short "$rev^{commit}")"
 	if [ ! -x "$out" ]; then
 		source=$(mktemp -d "${ACCEPT_STATE}/failpoint-src.XXXXXX") || return 1
