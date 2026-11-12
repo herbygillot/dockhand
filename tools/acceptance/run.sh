@@ -358,6 +358,22 @@ EOT
 	if [ -n "$harmful" ]; then
 		result=blocker
 		why="harm:$harmful${why:+; $why}"
+	else
+		# An invariant that couldn't look never lets a row pass: its push,
+		# pull request or surviving work went unobserved, and the row is
+		# blocked and joins the rerun list (#231).
+		unobserved=""
+		for verdict in "$ROW_DIR"/harm/H*; do
+			[ -f "$verdict" ] || continue
+			case "$(cat "$verdict")" in unobserved*) unobserved="$unobserved $(basename "$verdict") $(cut -c1-160 "$verdict");" ;; esac
+		done
+		case "$result" in pass | "refused well" | "known issue")
+			if [ -n "$unobserved" ]; then
+				result="blocked: unobserved"
+				why="harm couldn't observe:${unobserved%;}; the row said: $why"
+			fi
+			;;
+		esac
 	fi
 	jq -n --arg row "$row" --arg stage "$stage" --arg candidate "$candidate" --arg result "$result" --arg why "$why" \
 		--arg log "$ROW_DIR/out.log" --argjson harm "$(for v in "$ROW_DIR"/harm/H*; do [ -f "$v" ] && jq -n --arg k "$(basename "$v")" --arg v "$(cat "$v")" '{($k): $v}'; done | jq -s 'add // {}')" \
