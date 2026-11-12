@@ -4,8 +4,12 @@
 # PortGroup appends had the block's whole command on its stack, sent once
 # for each, and the evaluation's 18.5 MB went past the RPC frame limit
 # (field testing, 2026-10-23). Any refusal fails. --plan only.
+# In the full stage it plans against a master of its own at the quick
+# stage's pin (plan_at_pin): on MacPorts' own master the port is current,
+# and the row tested nothing (rc4's full stage).
 . "${ROW_LIB:?}/plan.sh"
 port() { printf '%s' opkssh; }
+setup() { plan_at_pin "opkssh is at 0.16.0"; }
 act() { C13_PLAN=$(plan_update "$(port)"); }
 assert() {
 	if ! plan_ok "$C13_PLAN"; then

@@ -214,9 +214,15 @@ func CarriedWords(reusing string, carried []model.Carried) string {
 			kept = c.LintKept
 		}
 	}
-	var changed, declared, moved []string
+	var changed, declared, moved, text []string
 	for _, port := range ports {
 		found := byPort[port]
+		// A port judged with nothing named changed text no option reads,
+		// as a comment: said so, where the line named nothing (D-T1 at
+		// rc4's full stage).
+		if len(found.options) == 0 && len(found.declared) == 0 && found.from == "" {
+			text = append(text, port+"'s Portfile")
+		}
 		if len(found.options) > 0 {
 			changed = append(changed, port+"'s "+prose.And(found.options))
 		}
@@ -238,6 +244,9 @@ func CarriedWords(reusing string, carried []model.Carried) string {
 	}
 	if len(moved) > 0 {
 		parts = append(parts, prose.And(moved))
+	}
+	if len(text) > 0 {
+		parts = append(parts, "text in "+prose.And(text)+" that no option reads changed")
 	}
 	since := strings.Join(parts, ", and ")
 	words := reusing + " reused " + carried[0].Check + "'s builds"

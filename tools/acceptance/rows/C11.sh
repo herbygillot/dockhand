@@ -6,8 +6,12 @@
 # planned these ports, and v0.5.0-rc4 refused every one: "the checksums
 # are set by the golang 1.0 PortGroup" (field testing, 2026-10-23). Any
 # refusal fails. --plan only.
+# In the full stage it plans against a master of its own at the quick
+# stage's pin (plan_at_pin): on MacPorts' own master the port is current,
+# and the row tested nothing (rc4's full stage).
 . "${ROW_LIB:?}/plan.sh"
 port() { printf '%s' git-credential-oauth; }
+setup() { plan_at_pin "git-credential-oauth is at 0.17.2"; }
 act() { C11_PLAN=$(plan_update "$(port)"); }
 assert() {
 	if ! plan_ok "$C11_PLAN"; then
