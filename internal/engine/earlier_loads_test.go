@@ -71,3 +71,35 @@ func TestEarlierBuildsAreLoadedOnlyWhereReuseCanBeChosen(t *testing.T) {
 	c.check(false)
 	require.LessOrEqual(t, counting.reusable.Load(), firstAttempt, "the second and third attempts load nothing more")
 }
+
+// An environment whose identity couldn't be read is kept apart from one
+// that has none: its results stand as they were, never marked remade, and
+// a submission resting on them is held where nobody attends, by
+// identity-unread, which names the environment and the cause and lifts
+// once the identity reads again (#190).
+func TestAnUnreadIdentityHoldsASubmissionNobodyAttends(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	url, first, _ := harborRepository(t)
+	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}, fetches: map[model.TargetID]string{"libharbor": first}}, identity: "origin a"}
+	c := newHarborChecks(t, e, gitHarbor(url, "v4"), provider)
+	run, _ := c.check(false)
+	require.Equal(t, model.RunPassed, run.State)
+
+	provider.unreadable = 100
+	judged, found, err := e.EvidenceFor(t.Context(), c.branch.ID, c.revision.Source.Tree)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Empty(t, judged.Missing(), "its results stand as they were")
+	concerns := identitiesUnread(&judged)
+	require.Len(t, concerns, 1)
+	require.Equal(t, identityUnreadRule, concerns[0].Rule)
+	require.Contains(t, concerns[0].Detail, "could not read what the environment is now")
+	require.Contains(t, HoldLines(SubmitPlan{Moved: concerns}.Held()), concerns[0].Detail, "it holds a submission nobody looks over")
+
+	provider.unreadable = 0
+	judged, _, err = e.EvidenceFor(t.Context(), c.branch.ID, c.revision.Source.Tree)
+	require.NoError(t, err)
+	require.Empty(t, identitiesUnread(&judged), "it lifts once the identity reads again")
+}

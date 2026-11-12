@@ -469,6 +469,9 @@ func showBranch(out io.Writer, places config.Places, status engine.BranchStatus,
 			if status.Evidence.Problem != "" {
 				fmt.Fprintf(out, "           ! %s\n", status.Evidence.Problem)
 			}
+			for _, line := range view.IdentityUnreadLines(*status.Evidence) {
+				fmt.Fprintf(out, "           ! %s\n", line)
+			}
 		}
 		// Every hold, where the attention row says the first (C2).
 		for i, line := range engine.HoldRuleLines(status.Held) {

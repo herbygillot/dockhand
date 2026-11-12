@@ -201,7 +201,7 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 				continue
 			}
 			if explainer, ok := e.Providers[c.Environment.Provider].(buildenv.IdentityExplainer); ok {
-				judged.Targets[t].Outcomes[i].Change = explainer.IdentityChange(c.Environment, c.Recorded, now[c.Environment])
+				judged.Targets[t].Outcomes[i].Change = explainer.IdentityChange(c.Environment, c.Recorded, now[c.Environment].Value)
 			}
 		}
 	}

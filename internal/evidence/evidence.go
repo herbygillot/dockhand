@@ -24,8 +24,18 @@ import (
 )
 
 // Identities are environments' identities now, as their providers say
-// (buildenv.IdentityProvider); absent for one whose provider can't say.
-type Identities map[model.Environment]string
+// (buildenv.IdentityProvider): known, with its value; none, where the
+// provider can't say, which is the zero Identity or an absent entry; or
+// unread, with the cause, where it couldn't be read (#190).
+type Identities map[model.Environment]Identity
+
+// Identity is one environment's identity now: Value where it is known,
+// Unread the cause where it couldn't be read; neither where its provider
+// can't say.
+type Identity struct {
+	Value  string
+	Unread string
+}
 
 // Check is one finished check's record, as the engine loads it: its run,
 // its plan, its executions and each one's results, the executions that
@@ -1060,6 +1070,27 @@ func sourceStands(earlier, newest model.Plan, environment model.Environment, id 
 	return !earlierGit || newestGit
 }
 
+// UnreadIdentities are the environments whose results the evidence rests
+// on and whose identity couldn't be read now, each with the cause: their
+// results are taken as they were, never marked remade, since whether the
+// environment is the one they were built in isn't known (#190).
+func (e Evidence) UnreadIdentities() map[model.Environment]string {
+	unread := map[model.Environment]string{}
+	for i, environment := range e.Plan.Environments {
+		identity, ok := e.now[environment]
+		if !ok || identity.Unread == "" {
+			continue
+		}
+		for _, target := range e.Targets {
+			if i < len(target.Outcomes) && target.Outcomes[i].Kind == CellRecorded && target.Outcomes[i].Execution != "" {
+				unread[environment] = identity.Unread
+				break
+			}
+		}
+	}
+	return unread
+}
+
 // Fetched is the commit a recorded cell's build said it fetched with Git,
 // empty where it said none or fetched no other way.
 func (e Evidence) Fetched(c Cell) model.ObjectID { return e.inputs[c.Inputs].Fetched }
@@ -1080,7 +1111,7 @@ func (e *Evidence) dropRemade() {
 		target := &e.Targets[t]
 		for i, result := range target.Outcomes {
 			execution, ok := e.Executions[result.Execution]
-			if !ok || current(execution, e.now[execution.Environment]) {
+			if !ok || current(execution, e.now[execution.Environment].Value) {
 				continue
 			}
 			target.Outcomes[i] = noResult(CellRemade, result.Environment, result.Target)
@@ -1248,9 +1279,9 @@ func (e *Evidence) fill(earlier Evidence) bool {
 			}
 			read := earlier.sources[resultKey(cell.TargetResult)]
 			newest, builds := e.Plan.In(environment)
-			if cell.Kind != CellRecorded && cell.Kind != CellUnmet || !Counts(earlier.Plan, execution, target.Target.ID, e.now[environment], git, read.fetched, read.other) ||
+			if cell.Kind != CellRecorded && cell.Kind != CellUnmet || !Counts(earlier.Plan, execution, target.Target.ID, e.now[environment].Value, git, read.fetched, read.other) ||
 				cell.Kind == CellRecorded && !sourceStands(earlier.Plan, readings, environment, target.Target.ID, builds && newest.Builds(target.Target.ID)) {
-				if cell.Kind == CellRecorded && !current(execution, e.now[environment]) {
+				if cell.Kind == CellRecorded && !current(execution, e.now[environment].Value) {
 					target.Outcomes[i].Kind, target.Outcomes[i].Recorded = CellRemade, execution.Identity
 				}
 				continue

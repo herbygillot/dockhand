@@ -212,7 +212,7 @@ func TestARemadeCellIsMissing(t *testing.T) {
 		Plan:       model.Plan{Environments: []model.Environment{tahoeArm}, Builds: []model.EnvironmentPlan{{Environment: tahoeArm, Order: []model.TargetID{"harbor-cli"}}}},
 		Executions: map[model.ExecutionID]model.GuestExecution{"tart_b": {ID: "tart_b", Environment: tahoeArm, Identity: "origin b"}},
 		Targets:    []TargetEvidence{{Target: cli, Outcomes: []Cell{recorded(tahoeArm, model.TargetResult{Execution: "tart_b", Target: "harbor-cli", Outcome: model.OutcomePassed})}}},
-		now:        Identities{tahoeArm: "origin a"},
+		now:        Identities{tahoeArm: {Value: "origin a"}},
 	}
 	require.Equal(t, CellNotRun, recorded(tahoeArm, model.TargetResult{Outcome: model.OutcomeNotRun}).Kind, "a checkpoint that never reached it is no result")
 	evidence.dropRemade()
@@ -281,16 +281,16 @@ func TestRequiredEnvironmentsKeepWhatD17Accepted(t *testing.T) {
 
 	plan := Plan(newest.Plan, []model.Plan{mistaken.Plan}, []model.Environment{tahoeArm})
 	require.Equal(t, []model.Environment{tahoeArm, tahoeX86}, plan.Environments, "the Intel check's result is shown")
-	judged := Judge(newest, plan, []Check{mistaken}, Identities{tahoeArm: "arm a", tahoeX86: "intel b"}, []model.Environment{tahoeArm})
+	judged := Judge(newest, plan, []Check{mistaken}, Identities{tahoeArm: {Value: "arm a"}, tahoeX86: {Value: "intel b"}}, []model.Environment{tahoeArm})
 	require.True(t, judged.Targets[0].Passed, "an Intel image made again since holds nothing, as the newest ask didn't name it")
 
 	// Where both are required, the Intel environment takes the earlier
 	// check's plan and its result.
 	plan = Plan(newest.Plan, []model.Plan{mistaken.Plan}, []model.Environment{tahoeArm, tahoeX86})
 	require.Equal(t, []model.Environment{tahoeArm, tahoeX86}, plan.Environments)
-	judged = Judge(newest, plan, []Check{mistaken}, Identities{tahoeArm: "arm a", tahoeX86: "intel a"}, []model.Environment{tahoeArm, tahoeX86})
+	judged = Judge(newest, plan, []Check{mistaken}, Identities{tahoeArm: {Value: "arm a"}, tahoeX86: {Value: "intel a"}}, []model.Environment{tahoeArm, tahoeX86})
 	require.True(t, judged.Targets[0].Passed, "while its result there stands")
-	judged = Judge(newest, plan, []Check{mistaken}, Identities{tahoeArm: "arm a", tahoeX86: "intel b"}, []model.Environment{tahoeArm, tahoeX86})
+	judged = Judge(newest, plan, []Check{mistaken}, Identities{tahoeArm: {Value: "arm a"}, tahoeX86: {Value: "intel b"}}, []model.Environment{tahoeArm, tahoeX86})
 	require.True(t, judged.Targets[0].Missing(), "an Intel image made again since holds the branch until it's checked there again")
 	require.Equal(t, CellRemade, judged.Targets[0].Outcomes[1].Kind)
 

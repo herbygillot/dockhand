@@ -381,7 +381,12 @@ declared port's pkg-config brings in an undeclared library, the finding says so:
 pkg-config Libs`, and `-Wl,-dead_strip_dylibs` as the other way out.
 
 Tart results can be reused when recorded input content and environment identity
-still match, including dependencies and fetched Git commits. A Portfile whose only change declares a port the recorded build had active is
+still match, including dependencies and fetched Git commits. Where an
+environment's identity can't be read, as when Tart doesn't answer, its results
+are taken as they were and status says so, with the cause; serve and `ship
+--yes` hold a submission resting on them (`identity-unread`) until it reads
+again, and your own submit says it and goes on. `check --json` lists them under
+`identities_unread`. A Portfile whose only change declares a port the recorded build had active is
 the same input, so its results carry over, as an edit of metadata no build
 reads does. A result is keyed
 by the PortGroups MacPorts opened each port with, not the whole of

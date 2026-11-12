@@ -420,6 +420,7 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 			return err
 		}
 		result.Targets = view.EvidenceView(evidence)
+		result.IdentitiesUnread = view.IdentitiesUnreadView(evidence)
 		result.Lint = view.DetailLines(view.LintLines(lint))
 		if linksErr == nil {
 			result.Links = view.LinkDetail(links)

@@ -685,7 +685,7 @@ func (e *Engine) standingBaseline(ctx context.Context, branch model.BranchID, ba
 		return err
 	})
 	slices.SortFunc(runs, func(a, b model.Run) int { return b.Number - a.Number })
-	identity := e.identitiesNow(ctx, []model.Environment{environment})[environment]
+	identity := e.identitiesNow(ctx, []model.Environment{environment})[environment].Value
 	for _, run := range runs {
 		if run.BaselineOf == "" {
 			continue

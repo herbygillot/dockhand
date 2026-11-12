@@ -358,6 +358,10 @@ type CheckJSON struct {
 	// PortfileFindings are the Portfile findings submit would say, which
 	// check says before it builds, in submit's shape.
 	PortfileFindings []findingJSON `json:"portfile_findings,omitempty"`
+	// IdentitiesUnread are the environments whose identity couldn't be
+	// read now, by name, each with the cause: their results are taken as
+	// they were (#190).
+	IdentitiesUnread map[string]string `json:"identities_unread,omitempty"`
 }
 
 // Gather takes a check's result, or the baseline's that looks into it.
@@ -977,4 +981,31 @@ func orEmpty(list []string) []string {
 		return []string{}
 	}
 	return list
+}
+
+// IdentitiesUnreadView are an evidence's environments whose identity
+// couldn't be read, by their names, with the causes; nil where none.
+func IdentitiesUnreadView(evidence engine.Evidence) map[string]string {
+	unread := evidence.UnreadIdentities()
+	if len(unread) == 0 {
+		return nil
+	}
+	viewed := map[string]string{}
+	for environment, why := range unread {
+		viewed[checks.DescribeEnvironment(environment)] = why
+	}
+	return viewed
+}
+
+// IdentityUnreadLines say each environment whose identity couldn't be
+// read, as status and check say it beside the results.
+func IdentityUnreadLines(evidence engine.Evidence) []string {
+	unread := evidence.UnreadIdentities()
+	var lines []string
+	for _, environment := range evidence.Plan.Environments {
+		if why, ok := unread[environment]; ok {
+			lines = append(lines, fmt.Sprintf("%s: its identity couldn't be read now (%s), so its results are taken as they were", checks.DescribeEnvironment(environment), why))
+		}
+	}
+	return lines
 }

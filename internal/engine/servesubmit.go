@@ -320,6 +320,34 @@ func (e *Engine) movedSources(ctx context.Context, evidence *Evidence) []model.C
 	return concerns
 }
 
+// identityUnreadRule is an environment whose identity couldn't be read
+// now. Like source-unknown it is no rule holds.allow may name: what
+// couldn't be checked holds a submission nobody attends (D4, #190).
+const identityUnreadRule = "identity-unread"
+
+// identitiesUnread are the concerns of the environments the submission's
+// evidence rests on whose identity couldn't be read: whether each is the
+// one its results were built in isn't known. It lifts by itself, since
+// every submission reads the identities again; a person's own submission
+// says it and goes on.
+func identitiesUnread(evidence *Evidence) []model.Concern {
+	if evidence == nil {
+		return nil
+	}
+	unread := evidence.UnreadIdentities()
+	var concerns []model.Concern
+	for _, environment := range evidence.Plan.Environments {
+		why, ok := unread[environment]
+		if !ok {
+			continue
+		}
+		where := checks.DescribeEnvironment(environment)
+		concerns = append(concerns, model.Concern{Origin: model.FromSubmission, Rule: identityUnreadRule, Subject: where, Class: model.UnknownBaseline,
+			Detail: fmt.Sprintf("%s: could not read what the environment is now, so whether %s's results there were built in this same environment isn't known: %s", where, evidence.Run.Name(), why)})
+	}
+	return concerns
+}
+
 // sourceUnknownRule is a source whose current commit couldn't be read.
 // It's no rule holds.allow may name: what couldn't be checked holds (D4).
 const sourceUnknownRule = "source-unknown"

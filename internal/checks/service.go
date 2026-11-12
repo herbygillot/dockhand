@@ -202,14 +202,19 @@ func (c *Service) Identity(ctx context.Context, environment model.Environment) (
 	return provider.Identity(ctx, environment)
 }
 
-// Identities asks each environment's provider what it is now. It is asked
-// outside any transaction, since a transaction never calls a provider;
-// one that can't say leaves the environment's identity unknown.
+// Identities asks each environment's provider what it is now: known with
+// its value, none where the provider can't say, or unread with the cause,
+// kept apart where they were one (#190). It is asked outside any
+// transaction, since a transaction never calls a provider.
 func (c *Service) Identities(ctx context.Context, environments []model.Environment) evidence.Identities {
 	now := evidence.Identities{}
 	for _, environment := range environments {
-		if identity, err := c.Identity(ctx, environment); err == nil && identity != "" {
-			now[environment] = identity
+		identity, err := c.Identity(ctx, environment)
+		switch {
+		case err != nil:
+			now[environment] = evidence.Identity{Unread: err.Error()}
+		case identity != "":
+			now[environment] = evidence.Identity{Value: identity}
 		}
 	}
 	return now

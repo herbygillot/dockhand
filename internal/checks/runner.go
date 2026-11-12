@@ -393,7 +393,7 @@ func (d *driver) fenced(ctx context.Context, fn func(store.Tx) error) error {
 // identity, which reuse needs.
 func (d *driver) anotherCanReuse(ctx context.Context, environment model.Environment) bool {
 	for other, identity := range d.c.Identities(ctx, d.plan.Environments) {
-		if other != environment && identity != "" {
+		if other != environment && identity.Value != "" {
 			return true
 		}
 	}

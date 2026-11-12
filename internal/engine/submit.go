@@ -609,7 +609,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	if err := e.evidence(ctx, &plan, accepted, standing); err != nil {
 		return plan, err
 	}
-	plan.Moved = e.movedSources(ctx, plan.Evidence)
+	plan.Moved = append(e.movedSources(ctx, plan.Evidence), identitiesUnread(plan.Evidence)...)
 	moved := plan.Moved
 	if err := e.destination(ctx, worktree, &plan); err != nil {
 		return plan, err
