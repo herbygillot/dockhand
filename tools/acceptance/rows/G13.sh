@@ -37,6 +37,14 @@ act() {
 	sed -n '/^\$ dockhand ship /,/^\[exit/p' "$ROW_DIR/out.log" >"$ROW_DIR/ship.log"
 }
 
+# g13_waiters names each check a ship.log says is waiting, by the prefix
+# ship gives its line, "<branch or check>: waits for a slot on ..." or
+# "<branch or check>: waiting for the Mac's VMs: ...", never a holder the
+# line names after it.
+g13_waiters() {
+	grep -E "^[^ :]+: (waiting for the Mac's VMs|waits for a slot)" "$1" | sed -E 's/^([^ :]+): .*/\1/' | sort -u
+}
+
 assert() {
 	[ -f "$ROW_DIR/result" ] && return 0
 	[ -s "$ROW_DIR/ship.log" ] || return 0
@@ -58,12 +66,22 @@ assert() {
 	[ "$(printf '%s\n' "$rows" | grep -c '|')" -ge 3 ] || { row_fail "the stage's database has $(printf '%s\n' "$rows" | grep -c '|') of the three checks' executions: $rows"; return; }
 	# How many started before the first to finish ended. An execution is
 	# recorded before it waits for a slot or one of the Mac's VMs, which
-	# the batch says (ec5a4846), so a check said waiting doesn't count:
-	# the line's first check, the one waiting, not the checks it names as
-	# holding the slots, which counted all three as waiting (rc4's reruns,
-	# check-1084 waiting on check-1085 and check-1086).
-	local waited
-	waited=$(grep -E "waiting for the Mac's VMs|waits for a slot" "$ROW_DIR/ship.log" | awk 'match($0, /check-[0-9]+/) { print substr($0, RSTART + 6, RLENGTH - 6) }' | sort -un | tr '\n' ' ')
+	# the batch says (ec5a4846), so a check said waiting doesn't count. The
+	# waiter is the line's prefix, what ship names the check by, a branch
+	# or a check: the first check-N in the line can be a holder, as both
+	# wordings name the holders after the waiter (rc4's reruns counted
+	# all three as waiting).
+	local waited="" waiter number
+	while IFS= read -r waiter; do
+		[ -n "$waiter" ] || continue
+		case "$waiter" in
+		check-[0-9]*) number=${waiter#check-} ;;
+		*) number=$(stage_db "SELECT r.number FROM runs r JOIN branches b ON b.repository_id = r.repository_id AND b.id = r.branch_id WHERE r.number IN ($numbers) AND (b.name = '$waiter' OR b.name = 'dockhand/$waiter')" 2>>"$ROW_DIR/out.log") ;;
+		esac
+		waited="$waited $number"
+	done <<EOT
+$(g13_waiters "$ROW_DIR/ship.log")
+EOT
 	started=$(printf '%s\n' "$rows" | awk -F'|' -v waited=" $waited " '
 		$3 > 0 && (end == 0 || $3 < end) { end = $3 }
 		index(waited, " " $1 " ") == 0 { start[NR] = $2 }

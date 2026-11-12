@@ -183,6 +183,26 @@ else
 fi
 rm -rf "$tmp"
 
+# G13 takes a waiting line's waiter from its prefix, never a holder the
+# line names after it, in both wordings ship gives a wait (#237).
+waiters=$(
+	ROW_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dockhand-selftest.XXXXXX")
+	# shellcheck disable=SC1091
+	. "$here/rows/G13.sh"
+	printf '%s\n' \
+		"jq-update: waits for a slot on tart: check-1085 holds one; check-1086 holds the other" \
+		"check-1084: waiting for the Mac's VMs: 2 are running, and macOS runs two at most: check-1085's dockhand-check-run-9-tahoe-1 and check-1086's dockhand-check-run-10-tahoe-1" \
+		"check-1085: attempt 1 of 3" >"$ROW_DIR/ship.log"
+	g13_waiters "$ROW_DIR/ship.log" | tr '\n' ' '
+	rm -rf "$ROW_DIR"
+)
+if [ "$waiters" = "check-1084 jq-update " ]; then
+	echo "selftest: G13 names each waiting line's waiter, not its holders"
+else
+	echo "selftest: G13 read the waiters as \"$waiters\", not \"check-1084 jq-update \""
+	fail=1
+fi
+
 # The guard: a quick run with dockhand's state outside the scratch
 # directory, as your own database or Tart home, runs nothing.
 guard_case() {
