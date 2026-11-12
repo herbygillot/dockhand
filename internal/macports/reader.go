@@ -18,7 +18,22 @@ var (
 	// refuses: a write, the network, or a program not in HostPrograms.
 	// Its result is not trusted, whatever the Portfile did with the refusal.
 	ErrRefused = errors.New("macports: evaluation attempted a refused effect")
+	// ErrUnanswered is an evaluation in a modelled context that a closed
+	// answer ended: a call the model has no answer for, which an empty Mac
+	// answers as missing, and the Portfile didn't catch. The context is
+	// inconclusive, never failed (UnansweredError).
+	ErrUnanswered = errors.New("macports: the modelled context has no answer for a call the evaluation needed")
 )
+
+// UnansweredError names the call a modelled context had no answer for,
+// whose closed answer ended the evaluation.
+type UnansweredError struct{ Call string }
+
+func (e *UnansweredError) Error() string {
+	return fmt.Sprintf("the modelled context has no answer for `%s`, which the evaluation needed", e.Call)
+}
+
+func (e *UnansweredError) Unwrap() error { return ErrUnanswered }
 
 type Selection struct {
 	Selector string

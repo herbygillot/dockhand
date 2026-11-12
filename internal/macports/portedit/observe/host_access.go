@@ -167,6 +167,8 @@ func Tolerate(ctx context.Context, port macports.PortObservation, contents []byt
 		switch {
 		case buildDefaultReadBenign(root, contents, declaration, groups):
 			progress.DebugReport(ctx, "Host access explained as a build-only option's default: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
+		case callbackExplained(declaration, contents):
+			progress.DebugReport(ctx, "Host access explained as a PortGroup callback's build-only read: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
 		case toolchainProbe(declaration):
 			if !toolchainChecked {
 				toolchainBenign, toolchainChecked = toolchainReadsBenign(contents), true
@@ -188,9 +190,17 @@ func Tolerate(ctx context.Context, port macports.PortObservation, contents []byt
 	}
 	var remaining []string
 	for _, problem := range port.Problems {
-		if !explained[problem] {
-			remaining = append(remaining, problem)
+		if explained[problem] {
+			continue
 		}
+		// A modelled context's host problem no declaration explains, as
+		// the master's closed answers to Base's developer-tools questions
+		// before the plan, leaves the context inconclusive, never a
+		// refusal of the port (#110, #125).
+		if strings.HasPrefix(problem, "modeled context ") {
+			return port, true
+		}
+		remaining = append(remaining, problem)
 	}
 	port.Problems = remaining
 	port.HostAccess, port.ModeledHostAccess = false, false
@@ -212,9 +222,40 @@ var defaultCheck = regexp.MustCompile(`^default_check\s+(\S+)\s`)
 
 // buildOnlyDefault names the options whose defaults Base computes from the
 // host and which shape only how a port builds: use_xcode, whose default
-// asks whether /usr/lib/libxcselect.dylib is there, and the toolchain's.
+// asks whether /usr/lib/libxcselect.dylib is there, the toolchain's, and
+// build.jobs, whose default reads the kernel's CPU count and memory
+// (buildJobsRead).
 func buildOnlyDefault(name string) bool {
-	return name == "use_xcode" || toolchainRead(name)
+	return name == "use_xcode" || name == "build.jobs" || toolchainRead(name) || phaseOption(name)
+}
+
+// phaseOption names a build, test or destroot phase's own option, which a
+// default may take build.jobs into, as cargo's build.pre_args and
+// legacy-support's test.jobs do: it shapes how the port builds, tests or
+// stages, never what it fetches.
+func phaseOption(name string) bool {
+	for _, phase := range []string{"build.", "test.", "destroot."} {
+		if strings.HasPrefix(name, phase) {
+			return true
+		}
+	}
+	return false
+}
+
+// buildJobsRead reports a read under build.jobs's default that is Base's
+// own: build_getjobs asking sysctl for hw.activecpu and hw.memsize
+// (portbuild.tcl:152), which a modelled context closes (#110). Any other
+// read under that default isn't explained by it.
+func buildJobsRead(declaration macports.Declaration) bool {
+	if !strings.Contains(declaration.Values[0], "sysctl") {
+		return false
+	}
+	for _, frame := range declaration.Frames {
+		if strings.TrimSpace(frame.Command) == "portbuild::build_getjobs" {
+			return true
+		}
+	}
+	return false
 }
 
 // buildDefaultReadBenign reports a host read Base made computing the
@@ -233,7 +274,7 @@ func buildDefaultReadBenign(root string, contents []byte, declaration macports.D
 	var options []string
 	for _, frame := range declaration.Frames {
 		if match := defaultCheck.FindStringSubmatch(frame.Command); match != nil {
-			if !buildOnlyDefault(match[1]) {
+			if !buildOnlyDefault(match[1]) || match[1] == "build.jobs" && !buildJobsRead(declaration) {
 				return false
 			}
 			options = append(options, match[1])
@@ -261,6 +302,12 @@ func optionReadBenign(root string, contents []byte, option string, declaration m
 	// counts too: the Portfile reading the option at all, by $name,
 	// [option name], or [tbool name], keeps it inconclusive.
 	readsAtAll := regexp.MustCompile(`\$\{?` + regexp.QuoteMeta(option) + `\b|\[(?:option|tbool|istrue)\s+` + regexp.QuoteMeta(option) + `\b`)
+	if option == "build.jobs" {
+		// Portfiles pass build.jobs to the build by name, -j${build.jobs},
+		// in positions the walk sees; only one in an expression it can't
+		// see, or asked for by [option], counts (#110).
+		readsAtAll = regexp.MustCompile(`(?:\bif|\belseif|\bexpr|\bwhile)\s*\{[^}\n]*\$\{?build\.jobs\b|\[(?:option|tbool|istrue)\s+build\.jobs\b`)
+	}
 	if !reads(contents) || readsAtAll.Match(contents) {
 		return false
 	}
@@ -297,4 +344,12 @@ func optionReadBenign(root string, contents []byte, option string, declaration m
 		}
 	}
 	return true
+}
+
+// callbackExplained reports a host read made under a PortGroup callback
+// buildCallbacks names, whose option the Portfile reads only in build
+// positions (callbackProbe, optionReadsBenign).
+func callbackExplained(declaration macports.Declaration, contents []byte) bool {
+	callback, ok := callbackProbe(declaration)
+	return ok && optionReadsBenign(contents, callback.Option)
 }

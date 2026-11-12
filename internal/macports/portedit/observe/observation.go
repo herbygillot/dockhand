@@ -1,6 +1,7 @@
 package observe
 
 import (
+	"errors"
 	"runtime"
 
 	"bytes"
@@ -124,6 +125,12 @@ func (s *Session) One(ctx context.Context, contents []byte, profile macports.Obs
 		return macports.Observation{}, err
 	}
 	observed, err := observer.Observe(ctx, bound, profile)
+	// A closed answer that ended the evaluation is a context the model
+	// has no answer for, named by the call: inconclusive, not a failure
+	// (#110).
+	if unanswered := (*macports.UnansweredError)(nil); errors.As(err, &unanswered) {
+		err = ErrInconclusive.Because("modeled context has no answer for `%s`, which the Portfile needs", unanswered.Call)
+	}
 	observed.Snapshot.Source = model.Source{}
 	if err == nil && baseline {
 		if s.cache == nil {

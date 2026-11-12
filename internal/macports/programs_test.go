@@ -65,28 +65,16 @@ func words(line string) []Argument {
 
 // The rules the evaluator's dispatcher applies in Tcl (dispatcher.tcl),
 // applied to source text: a substituted word, $ here, is admitted only as
-// an option's value.
-func TestCommandLineRefusalAdmitsOnlyProgramsThatReport(t *testing.T) {
+// an option's value. A literal command line's rows are the one admission
+// table, eval's TestExecAdmissionIsOneTable, which runs each too (#39).
+func TestCommandLineRefusalAdmitsComputedWordsOnlyAsValues(t *testing.T) {
 	for line, want := range map[string]string{
-		"/usr/libexec/java_home -f -v $version":                         "",
-		"/usr/libexec/java_home -V":                                     "",
-		"-ignorestderr xcrun --sdk macosx --show-sdk-path 2> /dev/null": "",
-		"env DEVELOPER_DIR=/x xcrun --find clang":                       "",
-		"git -C $dir log -1 --pretty=%ct":                               "",
-		"sysctl -n hw.ncpu | echo":                                      "",
-		"uname -m 2>@1":                                                 "",
-		"/usr/libexec/java_home --exec /usr/bin/touch x":                "runs java_home with --exec",
-		"/usr/libexec/java_home $flag":                                  "runs java_home with a computed argument",
-		"$program -v":                                                   "runs a computed program",
-		"xcrun --sdk macosx clang":                                      "runs xcrun with clang",
-		"git config user.name x":                                        "runs git config",
-		"git log --output=x":                                            "runs git with --output=x",
-		"echo hi > /tmp/x":                                              "writes /tmp/x",
-		"echo hi > $file":                                               "writes to a computed file",
-		"echo hi | /usr/bin/tee /tmp/x":                                 "runs tee, which is not known to only report",
-		"env A=1 /usr/bin/touch x":                                      "runs touch, which is not known to only report",
-		"/usr/bin/true &":                                               "leaves a process running",
-		"ruby1.8 -e $code":                                              "runs ruby1.8 with -e",
+		"/usr/libexec/java_home -f -v $version": "",
+		"git -C $dir log -1 --pretty=%ct":       "",
+		"/usr/libexec/java_home $flag":          "runs java_home with a computed argument",
+		"$program -v":                           "runs a computed program",
+		"echo hi > $file":                       "writes to a computed file",
+		"ruby1.8 -e $code":                      "runs ruby1.8 with -e",
 	} {
 		require.Equal(t, want, CommandLineRefusal(words(line)), line)
 	}

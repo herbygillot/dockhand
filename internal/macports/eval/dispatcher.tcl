@@ -49,6 +49,8 @@ namespace eval ::dockhand {
         }
         interp alias $worker dockhand_refused {} ::dockhand::refused
         interp hide $worker dockhand_refused
+        interp alias $worker dockhand_closed {} ::dockhand::closed
+        interp hide $worker dockhand_closed
         $worker eval {
             namespace eval ::dockhand_dispatcher {
                 # recording is set while dockhand's own code in the worker
@@ -115,6 +117,177 @@ namespace eval ::dockhand {
                         if {$found eq ""} { set found $at }
                     }
                     return $found
+                }
+                # closed is set in a modelled context (docs/designs/
+                # closed-model.md, #110): a call that would reach the host is
+                # answered as an empty Mac answers it, marked closed, and no
+                # host answer enters the evaluation. The Mac's own context
+                # reads the Mac.
+                variable closed 0
+                # walking is set once the plan and its events are taken and
+                # the code fingerprint reads the port's every option: a
+                # closed read then is the fingerprint's, kept in the ledger
+                # and not weighed.
+                variable walking 0
+                # reading are the file subcommands that read the
+                # filesystem; the rest are path arithmetic or refused.
+                variable reading {exists isfile isdirectory readable writable executable mtime atime stat lstat size type readlink owned attributes link}
+                # host_path is the one reading of whether a call reaches the
+                # host, which the verdict and the closed model share: why it
+                # does, in the verdict's words, or empty. A process always
+                # does. A path is resolved in the worker's directory, and
+                # stays open where it is the captured tree's, Base's, or
+                # Tcl's library; a final symbolic link is the host's, as
+                # normalize leaves it unresolved. A glob is judged by where
+                # its patterns start, with their -directory or -path.
+                proc host_path {name arguments} {
+                    variable source_root
+                    variable base_root
+                    variable reading
+                    switch -- $name {
+                        exec { return "modeled context depends on a host process executed while evaluating the Portfile" }
+                        sysctl { return "modeled context depends on this Mac's kernel, read with sysctl, while evaluating the Portfile" }
+                        open {
+                            set path [lindex $arguments 0]
+                            if {[string index $path 0] eq "|"} {
+                                return "modeled context depends on a host process opened while evaluating the Portfile"
+                            }
+                            set paths [list $path]
+                        }
+                        source { set paths [list [lindex $arguments end]] }
+                        file {
+                            if {[lindex $arguments 0] ni $reading} { return "" }
+                            set paths [list [lindex $arguments 1]]
+                        }
+                        glob {
+                            set paths {}
+                            foreach pattern [patterns $arguments] {
+                                set literal [regsub {[*?\[\{\\].*$} $pattern ""]
+                                if {$literal eq ""} { set literal . }
+                                lappend paths $literal
+                            }
+                        }
+                        default { return "" }
+                    }
+                    variable base_library
+                    set root [file normalize $source_root]
+                    set base [file normalize $base_root]
+                    set libraries [list [file normalize [info library]]]
+                    if {$base_library ne ""} { lappend libraries [file normalize $base_library] }
+                    foreach path $paths {
+                        if {[catch {file normalize $path} normalized]} {
+                            return "modeled context has an unresolved filesystem dependency"
+                        }
+                        # Tcl's own library, as clock format loads clock.tcl
+                        # and its messages from it, and Base's, the port1.0 a
+                        # worker loads, are the interpreter's code, not the
+                        # host's state.
+                        set code 0
+                        foreach library $libraries {
+                            if {$normalized eq $library || [string first "${library}/" $normalized] == 0} { set code 1 }
+                        }
+                        if {$code} { continue }
+                        if {$normalized ne $root && [string first "${root}/" $normalized] != 0
+                            && $normalized ne $base && [string first "${base}/" $normalized] != 0} {
+                            if {$name eq "glob"} { return "modeled context depends on directory enumeration while evaluating the Portfile" }
+                            return "modeled context depends on filesystem state outside the captured ports tree"
+                        }
+                        # normalize does not resolve a final symlink on all
+                        # Tcl versions. An opaque link must not certify
+                        # captured input.
+                        if {![catch {interp invokehidden {} file type $normalized} kind] && $kind eq "link"} {
+                            return "modeled context depends on a symbolic link while evaluating the Portfile"
+                        }
+                    }
+                    return ""
+                }
+                # closed_answer is what an empty Mac answers a call that
+                # reaches the host: no file, no match, nothing to run.
+                proc closed_answer {name arguments} {
+                    set missing {-code 1 -errorcode {POSIX ENOENT {no such file or directory}}}
+                    switch -- $name {
+                        sysctl {
+                            # Base's sysctl reads this Mac's kernel: a
+                            # modelled release has no answer for it.
+                            return [list 1 "sysctl failed: no answer for [lindex $arguments 0] in a modelled context" {-code 1 -errorcode {POSIX ENOENT {no such file or directory}}}]
+                        }
+                        exec - open {
+                            set words $arguments
+                            if {$name eq "open"} {
+                                if {[string index [lindex $arguments 0] 0] ne "|"} {
+                                    return [list 1 "couldn't open \"[lindex $arguments 0]\": no such file or directory" $missing]
+                                }
+                                set words [string range [lindex $arguments 0] 1 end]
+                            }
+                            set stages [lindex [parse $words] 0]
+                            set program [lindex $words [lindex $stages 0 0]]
+                            return [list 1 "couldn't execute \"$program\": no such file or directory" $missing]
+                        }
+                        glob {
+                            set patterns {}
+                            set complain 1
+                            set i 0
+                            while {$i < [llength $arguments]} {
+                                switch -- [tcl::prefix match -error {} {-directory -join -nocomplain -path -tails -types --} [lindex $arguments $i]] {
+                                    -directory - -path - -types { incr i 2 }
+                                    -nocomplain { set complain 0; incr i }
+                                    -join - -tails { incr i }
+                                    -- { incr i; break }
+                                    default { break }
+                                }
+                            }
+                            set patterns [lrange $arguments $i end]
+                            if {!$complain} { return [list 0 {} {-code 0}] }
+                            set noun [expr {[llength $patterns] == 1 ? "pattern" : "patterns"}]
+                            return [list 1 "no files matched glob $noun \"[join $patterns]\"" {-code 1 -errorcode {TCL OPERATION GLOB NOMATCH}}]
+                        }
+                        file {
+                            lassign $arguments subcommand path
+                            switch -- $subcommand {
+                                exists - isfile - isdirectory - readable - writable - executable - owned { return [list 0 0 {-code 0}] }
+                                readlink - link { return [list 1 "could not read link \"$path\": no such file or directory" $missing] }
+                                default { return [list 1 "could not read \"$path\": no such file or directory" $missing] }
+                            }
+                        }
+                    }
+                    return [list 1 "couldn't read file \"[lindex $arguments end]\": no such file or directory" $missing]
+                }
+                # shut answers a call the closed model closes, if it is
+                # one: the empty Mac's answer, marked closed in the ledger
+                # and the record, and an event the verdict weighs, whoever
+                # asked. Empty where the call doesn't reach the host.
+                proc shut {name arguments asked {skip 4}} {
+                    variable recording
+                    set recording 1
+                    try { set problem [host_path $name $arguments] } finally { set recording 0 }
+                    if {$problem eq ""} { return "" }
+                    variable ledger
+                    variable record_paths
+                    variable walking
+                    dict incr ledger [list $name [expr {$name eq "file" ? [lindex $arguments 0] : ""}] closed [expr {$walking ? "fingerprint" : ""}]]
+                    if {$record_paths} { note $name $asked closed }
+                    if {!$walking && [namespace exists ::dockhand_observation]} {
+                        ::dockhand_observation::closed $skip $problem [string range [list $name {*}$asked] 0 199]
+                    }
+                    set answer [closed_answer $name $arguments]
+                    if {[lindex $answer 0]} {
+                        interp invokehidden {} dockhand_closed [string range [list $name {*}$asked] 0 199] [lindex $answer 1]
+                    }
+                    return $answer
+                }
+                # sourcing refuses, in a closed context, a source of a host
+                # path, as an empty Mac has no such file. source is traced,
+                # not dispatched, so the Portfile's frame owns the reads
+                # beneath a source that runs; an error in the trace stops
+                # the source.
+                proc sourcing {cmd op} {
+                    variable closed
+                    variable recording
+                    if {!$closed || $recording} { return }
+                    set answer [shut source [lrange $cmd 1 end] [lrange $cmd 1 end] 3]
+                    if {$answer eq ""} { return }
+                    lassign $answer code result options
+                    return -options $options $result
                 }
                 proc source_of {name arguments} {
                     variable source_root
@@ -238,11 +411,21 @@ namespace eval ::dockhand {
                 # refusal is why a call is refused, or empty if it isn't.
                 proc refusal {name arguments} {
                     variable outright
+                    # In a closed context no program runs, so which programs
+                    # are admitted is moot: the closed model answers
+                    # (::dockhand_dispatcher::shut).
+                    variable closed
                     switch -- $name {
-                        exec { return [pipeline $arguments] }
+                        exec {
+                            if {$closed} { return "" }
+                            return [pipeline $arguments]
+                        }
                         open {
                             set path [lindex $arguments 0]
-                            if {[string index $path 0] eq "|"} { return [pipeline [string range $path 1 end]] }
+                            if {[string index $path 0] eq "|"} {
+                                if {$closed} { return "" }
+                                return [pipeline [string range $path 1 end]]
+                            }
                             if {[llength $arguments] > 1 && [writes [lindex $arguments 1]]} { return "opens $path for writing" }
                         }
                         file {
@@ -426,8 +609,18 @@ namespace eval ::dockhand {
                         dict set options -level 1
                         return -options $options $result
                     }
-                    # In a modelled context, the host answering is a gap in
-                    # the model, host-in-model (docs/oracle.md, decision 1).
+                    # In a modelled context, the host doesn't answer: what
+                    # the table lacks is absent, marked closed (docs/oracle.md,
+                    # decision 1, settled by #110).
+                    variable closed
+                    if {$closed} {
+                        set answer [shut $name $args $asked]
+                        if {$answer ne ""} {
+                            lassign $answer code result options
+                            dict set options -level 1
+                            return -options $options $result
+                        }
+                    }
                     set source [source_of $name $args]
                     variable toolchain
                     if {$source eq "host" && [dict size $toolchain]} { set source host-in-model }
@@ -490,7 +683,7 @@ namespace eval ::dockhand {
         install_fresh $worker
         install_toolchain $worker
         $worker eval {
-            ::dockhand_dispatcher::guard [list exec file open glob findBinary binaryInPath \
+            ::dockhand_dispatcher::guard [list exec file open glob findBinary binaryInPath sysctl \
                 {*}$::dockhand_dispatcher::registry_reads {*}$::dockhand_dispatcher::searches {*}$::dockhand_dispatcher::port_reads \
                 {*}[dict keys $::dockhand_dispatcher::outright]]
             trace add execution ::PortSystem leave ::dockhand_dispatcher::loaded
@@ -500,6 +693,8 @@ namespace eval ::dockhand {
         $worker eval [list set ::dockhand_dispatcher::base_root $::dockhand::base_root]
         $worker eval [list set ::dockhand_dispatcher::base_library [base_library]]
         $worker eval [list set ::dockhand_dispatcher::record_paths $recording_paths]
+        $worker eval [list set ::dockhand_dispatcher::closed [expr {$::dockhand::modeled || $::dockhand::session_modeled}]]
+        $worker eval {trace add execution ::source enter ::dockhand_dispatcher::sourcing}
         set kinds {}
         set roots {}
         foreach name {source_root base_root source_given base_given} {
@@ -509,6 +704,50 @@ namespace eval ::dockhand {
             if {$root ne "" && ![dict exists $kinds $root]} { dict set kinds $root $kind }
         }
         $worker eval [list set ::dockhand_dispatcher::kinds $kinds]
+    }
+
+    # closing is set while a modelled context's port is evaluated: the
+    # master's own exec answers as an empty Mac's, marked closed, so an
+    # alias into the master this design didn't name can't run a host
+    # program on the worker's behalf (#110; #106's host clang was one).
+    # master_closed counts them, by command line, for the ledger.
+    variable closing 0
+    variable master_closed [dict create]
+    # closed_calls are the calls the closed model answered for the current
+    # port's workers, each the call and the words of its answer, kept here
+    # where a failed mportopen, which deletes the worker, doesn't take
+    # them: an evaluation a closed answer ended is an inconclusive context
+    # naming the call, not a failure (#110).
+    variable closed_calls {}
+    proc closed {call words} {
+        variable closed_calls
+        lappend closed_calls [list $call $words]
+        return
+    }
+    if {[info commands ::dockhand::host_exec] eq ""} {
+        rename ::exec ::dockhand::host_exec
+        proc ::exec {args} {
+            if {!$::dockhand::closing} { return [uplevel 1 [list ::dockhand::host_exec {*}$args]] }
+            set words $args
+            while {[lindex $words 0] in {-ignorestderr -keepnewline --}} {
+                set words [lrange $words 1 end]
+                if {[lindex $args [expr {[llength $args] - [llength $words] - 1}]] eq "--"} { break }
+            }
+            dict incr ::dockhand::master_closed [string range $args 0 199]
+            return -code error -errorcode {POSIX ENOENT {no such file or directory}} "couldn't execute \"[lindex $words 0]\": no such file or directory"
+        }
+    }
+    # closed_for runs a script with the master's exec closed where the
+    # context is modelled, as a port's evaluation is.
+    proc closed_for {script} {
+        variable closing [expr {$::dockhand::modeled || $::dockhand::session_modeled}]
+        variable master_closed [dict create]
+        variable closed_calls {}
+        try {
+            return [uplevel 1 $script]
+        } finally {
+            set closing 0
+        }
     }
 
     # base_library is where MacPorts Base's own Tcl lives, the port1.0 and

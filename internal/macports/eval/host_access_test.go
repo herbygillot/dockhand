@@ -23,15 +23,22 @@ func TestModeledObservationTracksHostFilesAtAccessTime(t *testing.T) {
 			require.NoError(t, os.WriteFile(external, []byte("set host_version 1.2.3"), 0600))
 			captured := filepath.Join(tree.Root(), "devel/host/files/data")
 			putFile(t, tree.Root(), "devel/host/files/data", "set host_version 1.2.3")
+			// The link is only the symlink case's: Base reads what the
+			// port's files directory holds, and a closed read is seen
+			// whoever makes it (#110).
 			link := filepath.Join(tree.Root(), "devel/host/files/link")
-			require.NoError(t, os.Symlink(external, link))
+			if operation == "symlink" {
+				require.NoError(t, os.Symlink(external, link))
+			}
 			paths := map[string]string{"open": external, "captured-open": captured, "symlink": link}
-			body := fmt.Sprintf("set handle [open {%s} r]\nset value [read $handle]\nclose $handle\n", paths[operation])
+			// A probe that catches takes its absent branch where the
+			// closed model answers, as on an empty Mac.
+			body := fmt.Sprintf("if {[catch {open {%s} r} handle]} { set value absent } else { set value [read $handle]; close $handle }\n", paths[operation])
 			switch operation {
 			case "relative-stat":
 				body = "set exists [file exists ../../../../../../tmp/dockhand-host-state]\n"
 			case "source":
-				body = fmt.Sprintf("source {%s}\n", external)
+				body = fmt.Sprintf("catch {source {%s}}\n", external)
 			case "captured-source":
 				body = fmt.Sprintf("source {%s}\n", captured)
 			}
@@ -52,8 +59,9 @@ func TestModeledObservationTracksHostFilesAtAccessTime(t *testing.T) {
 // which compilers exist. In a modelled context the facts table answers
 // (docs/oracle.md, phase 5), so the port reads no host state and the
 // compiler is the modelled release's. A release the table has no row for,
-// Darwin 9, which no buildbot builds, is answered by the host as before,
-// and the host read is seen.
+// Darwin 9, which no buildbot builds, is modelled all the same: what the
+// table lacks is absent, closed, never this Mac's answer, and the closed
+// read is seen (#110).
 func TestCompilerDependentFetchInputComesFromTheTable(t *testing.T) {
 	t.Parallel()
 	e := liveEvaluator(t)
@@ -68,6 +76,16 @@ func TestCompilerDependentFetchInputComesFromTheTable(t *testing.T) {
 	got, err = e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "9", Architecture: "x86_64"}, Declarations: true})
 	require.NoError(t, err)
 	require.True(t, got.Ports["host"].ModeledHostAccess, "%v", got.Ports["host"].Problems)
+	require.Positive(t, closedCalls(got.Ports["host"])["file executable"]+closedCalls(got.Ports["host"])["exec"], "%v", got.Ports["host"].Ledger)
+	for _, entry := range got.Ports["host"].Ledger {
+		require.NotEqual(t, "host-in-model", entry.Source, "no host answer: %+v", entry)
+	}
+	// With the plan taken before the code fingerprint's walk, what decides
+	// the distfiles here is Base's own questions about the release's
+	// developer tools, which reach the master and are closed there: weighed,
+	// with nothing to explain them by, so the context still isn't
+	// conclusive, and says why.
+	require.Contains(t, strings.Join(got.Ports["host"].Problems, "\n"), "modeled context has no answer for what MacPorts asked of this release's developer tools (xcode-select")
 }
 
 // Eleven ports the 2026-09-24 baseline found reading the host through

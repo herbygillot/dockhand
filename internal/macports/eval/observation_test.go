@@ -98,7 +98,7 @@ func TestModeledObservationReportsHostDependentPortfile(t *testing.T) {
 	putFile(t, tree.Root(), "devel/host/Portfile", `PortSystem 1.0
 name host
 version 1
-set host_value [exec /usr/bin/true]
+if {[catch {exec /usr/bin/true} host_value]} { set host_value absent }
 `)
 	targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: "host"})
 	require.NoError(t, err)
@@ -108,6 +108,12 @@ set host_value [exec /usr/bin/true]
 	require.NoError(t, err)
 	require.True(t, o.Ports["host"].ModeledHostAccess)
 	require.NotEmpty(t, o.Ports["host"].Problems)
+	// Closed, the program isn't run: the empty Mac's answer (#110).
+	var closed bool
+	for _, entry := range o.Ports["host"].Ledger {
+		closed = closed || entry.Command == "exec" && entry.Source == "closed"
+	}
+	require.True(t, closed, "%+v", o.Ports["host"].Ledger)
 }
 
 // Each source frame is sent once: a PortGroup command that appends a

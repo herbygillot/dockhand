@@ -87,8 +87,9 @@ A context picks one source per domain, so the phases move independently:
 A model source is data handed to the worker when it is set up: a row of
 the facts table, or a list of registry entries. The RPC runs from Go to
 Tcl only, so Tcl can't ask Go mid-evaluation. The ledger records which
-source gave each answer, and `host-in-model` is simply a modelled
-context whose toolchain source is still `host`.
+source gave each answer. A modelled context takes no `host` answer:
+what the model lacks is answered as an empty Mac answers it and marked
+`closed` (decision 1, settled).
 
 The name is *facts*, not a registry of them: "registry" is MacPorts' name
 for its database of installed ports.
@@ -365,6 +366,16 @@ The five the scope left open, as settled on 2026-09-25:
    not refused, until phase 5 switches the toolchain source to `table`.
    Phases 1–4 lose no coverage, and the tag counts what phase 5 must
    replace. This falls out of facts by domain and source.
+
+   *Settled by #110 (docs/designs/closed-model.md):* a modelled context
+   takes no host answer, on a Mac or off one. A call that would reach
+   the host, a host path's `file`, `open`, `glob`, or `source`, or any
+   `exec`, is answered as an empty Mac answers it (`file exists` 0, no
+   such file, no match, couldn't execute), tagged `closed` in the ledger
+   and the record, and seen by the verdict as host state whoever asked,
+   inconclusive unless `Tolerate` explains it. Base's helpers that run
+   programs are the worker's, and the master's own `exec` is closed while
+   a modelled port is evaluated. The Mac's own context reads the Mac.
 2. **Phase 4's behaviour change.** Accepted: every context, native
    included, plans against a clean installation, whatever is installed
    on the Mac. Clean means CI's two scenarios, `fresh` by default and

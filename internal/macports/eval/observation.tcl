@@ -14,47 +14,27 @@ namespace eval ::dockhand {
         $worker eval {
             namespace eval ::dockhand_observation {
                 variable events {}
+                # host_event is why a read reaches the host, or empty: the
+                # dispatcher's one reading, which the closed model shares
+                # (::dockhand_dispatcher::host_path).
                 proc host_event {cmd} {
-                    variable ::dockhand_dispatcher::source_root
-                    variable ::dockhand_dispatcher::base_root
-                    set name [lindex $cmd 0]
-                    switch -- $name {
-                        exec { return "modeled context depends on a host process executed while evaluating the Portfile" }
-                        glob { return "modeled context depends on directory enumeration while evaluating the Portfile" }
-                        open {
-                            set path [lindex $cmd 1]
-                            if {[string index $path 0] eq "|"} {
-                                return "modeled context depends on a host process opened while evaluating the Portfile"
-                            }
-                        }
-                        source { set path [lindex $cmd end] }
-                        file { set path [lindex $cmd 2] }
-                        default { return "" }
+                    return [::dockhand_dispatcher::host_path [lindex $cmd 0] [lrange $cmd 1 end]]
+                }
+                # closed keeps a read the closed model answered as an event
+                # the verdict weighs, whoever asked: the Portfile, a
+                # PortGroup, or Base, which a read no Portfile owns left
+                # unseen before (#110), with the call it closed. skip is the
+                # dispatcher's frames.
+                proc closed {skip problem call} {
+                    set frames [::dockhand_dispatcher::frames $skip]
+                    set owner base
+                    foreach frame $frames {
+                        set file [lindex $frame 0]
+                        if {[string match */Portfile $file]} { set owner portfile; break }
+                        if {[string match */_resources/port1.0/group/* $file]} { set owner portgroup }
                     }
-                    # Resolve in the worker while its current directory is still
-                    # the one used by the intercepted operation.
-                    if {[catch {file normalize $path} normalized]} {
-                        return "modeled context has an unresolved filesystem dependency"
-                    }
-                    set root [file normalize $source_root]
-                    set base [file normalize $base_root]
-                    # Tcl's own library, as clock format loads clock.tcl and
-                    # its messages from it, is the interpreter's, not the
-                    # host's state.
-                    set library [file normalize [info library]]
-                    if {$normalized eq $library || [string first "${library}/" $normalized] == 0} {
-                        return ""
-                    }
-                    if {$normalized ne $root && [string first "${root}/" $normalized] != 0
-                        && $normalized ne $base && [string first "${base}/" $normalized] != 0} {
-                        return "modeled context depends on filesystem state outside the captured ports tree"
-                    }
-                    # normalize does not resolve a final symlink on all Tcl
-                    # versions. An opaque link must not certify captured input.
-                    if {![catch {file type $normalized} kind] && $kind eq "link"} {
-                        return "modeled context depends on a symbolic link while evaluating the Portfile"
-                    }
-                    return ""
+                    variable events
+                    lappend events [list [list dockhand.host-access $problem closed $owner $call] $frames]
                 }
                 # record keeps a declaration: checksums and revision, which
                 # execution traces see.
@@ -141,9 +121,12 @@ namespace eval ::dockhand {
         # /etc/localtime, and clock's first use probes the Mac's zoneinfo
         # directories, host state an observation judges, and which a
         # modelled context hasn't.
+        # The probe is dockhand's own setup, uncounted and unclosed: with
+        # TCL_TZ set, where the zoneinfo is changes no answer.
         $worker eval {
             set ::env(TCL_TZ) :UTC
-            catch {clock format 0}
+            set ::dockhand_dispatcher::recording 1
+            try { catch {clock format 0} } finally { set ::dockhand_dispatcher::recording 0 }
         }
     }
     # overrides is the list of variable and value pairs that make this
@@ -173,25 +156,9 @@ namespace eval ::dockhand {
         }
     }
     proc observation_details {worker} {
-        set events {}
-        if {[$worker eval {info exists ::dockhand_observation::events}]} {
-            set events [$worker eval {set ::dockhand_observation::events}]
-        }
         set artifacts {}
-        set problems {}
-        set host_access 0
-        set any_host_access 0
-        foreach event $events {
-            if {[lindex [lindex $event 0] 0] eq "dockhand.host-access"} {set any_host_access 1}
-        }
-        if {$::dockhand::modeled} {
-            foreach event $events {
-                lassign $event cmd frames
-                if {[lindex $cmd 0] eq "dockhand.host-access"} { lappend problems [lindex $cmd 1] }
-            }
-            set problems [lsort -unique $problems]
-            set host_access [expr {[llength $problems] > 0}]
-        }
+        # The fetch plan first, then what the verdict weighs: a closed
+        # read first made inside checkfiles is an event like any other.
         if {[catch {
             load_fetch_target $worker
             $worker eval {
@@ -212,9 +179,45 @@ namespace eval ::dockhand {
                 return $artifacts
             }}
         }} artifacts]} {
-            lappend problems "native fetch plan unavailable: $artifacts"
+            set fetch_problem "native fetch plan unavailable: $artifacts"
             set artifacts {}
         }
+        set events {}
+        if {[$worker eval {info exists ::dockhand_observation::events}]} {
+            set events [$worker eval {set ::dockhand_observation::events}]
+        }
+        set problems {}
+        set host_access 0
+        set any_host_access 0
+        foreach event $events {
+            if {[lindex [lindex $event 0] 0] eq "dockhand.host-access"} {set any_host_access 1}
+        }
+        if {$::dockhand::modeled} {
+            foreach event $events {
+                lassign $event cmd frames
+                if {[lindex $cmd 0] eq "dockhand.host-access"} { lappend problems [lindex $cmd 1] }
+            }
+            set problems [lsort -unique $problems]
+            set host_access [expr {[llength $problems] > 0}]
+        }
+        # What the master's closed exec answered for the worker before the
+        # plan has no frames to explain it by, and is weighed: on a release
+        # the table has no row for, Base's own questions about its
+        # developer tools reach the master, and their answer decided a
+        # fetch field (Darwin 9's distfiles, #110).
+        if {$::dockhand::modeled && [dict size $::dockhand::master_closed]} {
+            set programs {}
+            dict for {line count} $::dockhand::master_closed {
+                set words $line
+                while {[lindex $words 0] in {-ignorestderr -keepnewline --}} { set words [lrange $words 1 end] }
+                set program [file tail [lindex $words 0]]
+                if {$program ni $programs} { lappend programs $program }
+            }
+            lappend problems "modeled context has no answer for what MacPorts asked of this release's developer tools ([join $programs {, }]): the facts table doesn't have them"
+            set problems [lsort -unique $problems]
+            set host_access 1
+        }
+        if {[info exists fetch_problem]} { lappend problems $fetch_problem }
         set operands {}
         if {[$worker eval {info exists ::dockhand_platform::events}]} {
             set operands [$worker eval {set ::dockhand_platform::events}]
@@ -225,6 +228,10 @@ namespace eval ::dockhand {
         set hooks {}
         if {[$worker eval {info exists ::dockhand_dispatcher::ledger}]} {
             set ledger [$worker eval {set ::dockhand_dispatcher::ledger}]
+            # What the master's closed exec answered on the worker's behalf.
+            dict for {line count} $::dockhand::master_closed {
+                dict incr ledger [list exec "" closed master] $count
+            }
             # What a survey records (recording_paths); empty otherwise.
             lassign [$worker eval {list $::dockhand_dispatcher::reads $::dockhand_dispatcher::execs $::dockhand_dispatcher::hooks}] reads execs hooks
         }
