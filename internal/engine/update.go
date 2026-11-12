@@ -624,8 +624,12 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		}
 		update.Upstream.Changes = append(update.Upstream.Changes, model.UpstreamChange{Kind: "manifest", Rule: manifestHookRule, Hold: true, Class: model.Introduced, Message: result.ManifestHook})
 	}
+	// What an update or a refresh left as the Portfile has it: a context
+	// it couldn't read, and the declarations only that context fetches
+	// (#125).
+	update.ChecksumsLeft = result.Left
 	if request.Action == model.EditChecksums {
-		update.ChecksumsLeft, update.Differing = result.Left, result.Differing
+		update.Differing = result.Differing
 		for _, conflict := range result.MirrorConflicts {
 			update.ChecksumsLeft = append(update.ChecksumsLeft, editprep.ChecksumLeft{Kind: "mirror", What: conflict.Name, Reason: mirrorConflictWords(conflict)})
 		}

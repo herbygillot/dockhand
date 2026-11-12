@@ -107,6 +107,11 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 	observed, err := s.planObservedArchives(ctx, request, input, contents)
 	result := Result{Scope: input.scope, Target: input.target, Release: release, SourceMoved: input.sourceMoved, SourceNotice: choice.notice}
 	result.report(scopedVersion(request, input, family, versioned, input.target.Name, versioned.Ports[input.target.Name].Options["checksums"]))
+	if observed != nil {
+		// The contexts it couldn't read, and the declarations only they
+		// fetch, left as the Portfile has them (#125).
+		result.Left = observed.left
+	}
 	return archivePlan{result: result, contents: contents, observed: observed, fetched: choice.fetched, subject: "update to " + release.Version}, err
 }
 

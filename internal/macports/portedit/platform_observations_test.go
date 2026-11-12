@@ -102,3 +102,38 @@ master_sites @SITE@/${version}
 	require.Contains(t, err.Error(), "distfiles is selected by the OS minor version or deployment target")
 	require.Empty(t, *requests)
 }
+
+// A context modelled on another Mac whose reading depends on host state
+// is left as the Portfile has it, and said by context with the read it
+// depended on; the update goes on with the contexts it can read, where it
+// refused the whole port (#125). Nothing read of the context left reaches
+// the plan: its own checksums stay as written.
+func TestAnUpdateLeavesAContextItCantRead(t *testing.T) {
+	t.Parallel()
+	s, r, requests := archiveFixture(t, `version 1.2.3
+revision 0
+master_sites @SITE@/${version}
+if {${os.major} < 15} {
+    if {[file exists /opt/dockhand-absent/sdk]} {
+        configure.args-append --sdk
+    }
+    distfiles old-${version}.tar.gz
+    checksums sha256 bbbb size 3
+} else {
+    checksums sha256 aaaa size 2
+}
+`)
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Len(t, *requests, 1, "only the context it could read is fetched")
+	after := string(result.Files[0].After)
+	require.Contains(t, after, "version 1.2.4\nrevision 0")
+	require.Contains(t, after, "checksums sha256 bbbb size 3", "the context left keeps its checksums as written")
+	require.NotContains(t, after, "checksums sha256 aaaa size 2", "the context read is updated")
+	require.NotEmpty(t, result.Left)
+	for _, left := range result.Left {
+		require.Equal(t, LeftContext, left.Kind, "%+v", left)
+		require.Regexp(t, `^darwin (8|9|1[0-4]) `, left.What, "only a context before Darwin 15 reads the host")
+		require.Contains(t, left.Reason, "host state: filesystem state outside the captured ports tree (Portfile:", left.What)
+	}
+}

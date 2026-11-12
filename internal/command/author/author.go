@@ -620,6 +620,15 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 	} else {
 		fmt.Fprintf(out, "%s %s\n", update.Port, update.After)
 	}
+	// A context the update couldn't read keeps the checksums it has, and
+	// is said by context, with the read it depended on (#125); a refresh
+	// says its own below.
+	if request.Action != model.EditChecksums && len(update.ChecksumsLeft) > 0 {
+		writeLeft(out, update.ChecksumsLeft)
+		if slices.ContainsFunc(update.ChecksumsLeft, engine.ChecksumLeft.Context) {
+			fmt.Fprintln(out, "  MacPorts' builders check those releases after merge.")
+		}
+	}
 	if request.Plan {
 		// The diff is written raw: wrapped, a Portfile's long lines broke
 		// (#93, #94).

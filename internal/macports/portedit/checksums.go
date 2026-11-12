@@ -387,6 +387,10 @@ type ChecksumLeft struct {
 	Reason string   `json:"reason"`
 }
 
+// Context reports a context left whole, a platform or a variant that
+// couldn't be read, as against a declaration or dependency entries.
+func (l ChecksumLeft) Context() bool { return l.Kind == LeftContext }
+
 // LeftKind is what a ChecksumLeft is.
 type LeftKind string
 
