@@ -24,6 +24,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/atomicfile"
@@ -115,6 +116,9 @@ type API interface {
 	// Runs are the workflow's push runs of the commit on the branch.
 	Runs(ctx context.Context, repository, branch, commit string) ([]Run, error)
 	Run(ctx context.Context, repository string, id int64) (Run, error)
+	// RecentRuns are the workflow's newest runs, one listing call: the
+	// poll every in-flight run of a repository shares (#197).
+	RecentRuns(ctx context.Context, repository string) ([]Run, error)
 	// Rerun runs the run's unsuccessful jobs again, as a new attempt.
 	Rerun(ctx context.Context, repository string, id int64) error
 	// Cancel stops a run that has not finished.
@@ -167,6 +171,48 @@ type Provider struct {
 	// BuildTimeout is how long a run may build before dockhand cancels it,
 	// JobCap when zero, past which GitHub ends each job itself (D16).
 	BuildTimeout time.Duration
+
+	// watch is the listing in-flight runs share (current).
+	watch runWatch
+}
+
+// runWatch is the newest listing of a repository's workflow runs, which
+// every run waiting on that repository reads once: N runs in flight cost
+// one listing call a poll, not N calls (#197). A run read from a listing
+// already is read again from a new one, so a reader never sees a listing
+// twice.
+type runWatch struct {
+	mu     sync.Mutex
+	listed map[string]map[int64]Run
+	handed map[string]map[int64]bool
+}
+
+// current is a run as GitHub says it now, from the repository's shared
+// listing where it is in it, else asked of GitHub by itself, as a run
+// older than the listing's page is.
+func (p *Provider) current(ctx context.Context, repository string, id int64) (Run, error) {
+	w := &p.watch
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.listed == nil {
+		w.listed, w.handed = map[string]map[int64]Run{}, map[string]map[int64]bool{}
+	}
+	if _, fresh := w.listed[repository][id]; !fresh || w.handed[repository][id] {
+		runs, err := p.API.RecentRuns(ctx, repository)
+		if err != nil {
+			return Run{}, err
+		}
+		listed := map[int64]Run{}
+		for _, run := range runs {
+			listed[run.ID] = run
+		}
+		w.listed[repository], w.handed[repository] = listed, map[int64]bool{}
+	}
+	if run, ok := w.listed[repository][id]; ok {
+		w.handed[repository][id] = true
+		return run, nil
+	}
+	return p.API.Run(ctx, repository, id)
 }
 
 // poll is how often the provider asks after a run, and appear how long
@@ -302,7 +348,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 			if err := p.sleep(ctx, poll); err != nil {
 				return err
 			}
-			if run, err = p.API.Run(ctx, fork.Repository, run.ID); err != nil {
+			if run, err = p.current(ctx, fork.Repository, run.ID); err != nil {
 				return buildenv.Infrastructure("%w", err)
 			}
 		}
@@ -332,7 +378,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		case run.Status == "in_progress":
 			building += poll
 		}
-		if run, err = p.API.Run(ctx, fork.Repository, run.ID); err != nil {
+		if run, err = p.current(ctx, fork.Repository, run.ID); err != nil {
 			return buildenv.Infrastructure("%w", err)
 		}
 	}

@@ -123,6 +123,10 @@ func (f *fakeActions) find(id int64) *fakeRun {
 	panic(fmt.Sprintf("no run %d", id))
 }
 
+// RecentRuns lists nothing, so each run is asked of the stand-in by
+// itself, which moves it along as GitHub would.
+func (f *fakeActions) RecentRuns(context.Context, string) ([]ghactions.Run, error) { return nil, nil }
+
 func (f *fakeActions) Run(_ context.Context, _ string, id int64) (ghactions.Run, error) {
 	run := f.find(id)
 	switch run.Status {

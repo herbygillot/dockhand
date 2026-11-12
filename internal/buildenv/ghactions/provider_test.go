@@ -296,3 +296,44 @@ func TestAnIncompleteMatrixIsNoPass(t *testing.T) {
 	require.ErrorContains(t, err, "before any runner took it (the run built for its 6h bound (providers.github.build_timeout), and was ended), so the matrix is incomplete")
 	require.Empty(t, build.results)
 }
+
+// listingAPI counts the calls of the one listing every in-flight run
+// shares, and of the run asked by itself.
+type listingAPI struct {
+	matrixAPI
+	listings, runs int
+	listed         []Run
+}
+
+func (a *listingAPI) RecentRuns(context.Context, string) ([]Run, error) {
+	a.listings++
+	return a.listed, nil
+}
+
+func (a *listingAPI) Run(_ context.Context, _ string, id int64) (Run, error) {
+	a.runs++
+	return Run{ID: id, Status: "in_progress"}, nil
+}
+
+// Runs in flight share one listing a poll, where each asked GitHub by
+// itself: two runs read from one listing, a second read of either takes
+// a new listing, and a run older than the listing's page is asked by
+// itself (#197).
+func TestRunsInFlightShareOneListing(t *testing.T) {
+	t.Parallel()
+	api := &listingAPI{listed: []Run{{ID: 1, Status: "queued"}, {ID: 2, Status: "in_progress"}}}
+	p := &Provider{API: api}
+	for _, id := range []int64{1, 2} {
+		run, err := p.current(t.Context(), "example/macports-ports", id)
+		require.NoError(t, err)
+		require.Equal(t, id, run.ID)
+	}
+	require.Equal(t, 1, api.listings, "two runs, one listing")
+	_, err := p.current(t.Context(), "example/macports-ports", 1)
+	require.NoError(t, err)
+	require.Equal(t, 2, api.listings, "a run read from a listing already reads a new one")
+	run, err := p.current(t.Context(), "example/macports-ports", 3)
+	require.NoError(t, err)
+	require.Equal(t, "in_progress", run.Status)
+	require.Equal(t, 1, api.runs, "one not in the listing is asked by itself")
+}

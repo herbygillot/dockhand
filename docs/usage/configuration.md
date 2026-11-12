@@ -134,9 +134,14 @@ capacity, including your other running VMs.
 
 ```toml
 [providers.github]
-capacity = 2
+capacity = 20
 build_timeout = "6h"
 ```
+
+GitHub queues runs past your account's own job limits, and queued time counts
+against no build timeout, so `capacity` isn't a concurrency limit. It guards
+dockhand's use of your hourly API budget: runs in flight share one listing of
+the fork's workflow runs each poll. The default is 20.
 
 `remote` selects a Git remote when more than one pushes to forks you own; omit
 it when the choice is unambiguous. Enable Actions in the fork and establish a
