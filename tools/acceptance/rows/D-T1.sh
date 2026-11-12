@@ -65,10 +65,16 @@ act() {
 	# comment line built nothing differently, the whole check was reused,
 	# and no guest ran (rc4's full stage).
 	dh_setup revbump "$ACCEPT_LIB_DEPENDENT" -b "$(run_name dt1-tamper)" --subject "rebuild again to test a tampered archive" || return 0
+	# Only this check's events: every archive.altered the database ever
+	# held could credit an earlier attempt (Codex's cold read at 2cdaf571,
+	# #232).
+	local since
+	since=$(stage_db "SELECT coalesce(max(sequence), 0) FROM events" 2>>"$ROW_DIR/out.log" || echo 0)
 	dh_json check -b "$(run_name dt1-tamper)" || :
 	# The check's events, as its record keeps them, read from a copy of the
 	# stage's own database.
-	stage_db "SELECT message FROM events WHERE kind = 'archive.altered'" >>"$ROW_DIR/out.log" 2>&1 || :
+	stage_db "SELECT message FROM events WHERE kind = 'archive.altered' AND sequence > ${since:-0}" >"$ROW_DIR/dt1.events" 2>>"$ROW_DIR/out.log" || :
+	cat "$ROW_DIR/dt1.events" >>"$ROW_DIR/out.log" 2>/dev/null || :
 	dt1_restore
 }
 teardown() {
@@ -92,7 +98,7 @@ EOT
 	# envelope as well as the events copied into out.log, and as a pattern,
 	# not one wording (rc4's full stage, where the row missed a catch).
 	local said
-	said=$(cat "$ROW_DIR/out.log" "$ROW_DIR"/json/*.json 2>/dev/null | grep -oiE "saved archive for $ACCEPT_LIB_PORT[^\"]*(digest|altered)[^\"]*" | head -1)
+	said=$(cat "$ROW_DIR/dt1.events" "$ROW_DIR/json/$(($(find "$ROW_DIR/json" -name '*.json' | wc -l | tr -d ' ')))".json 2>/dev/null | grep -oiE "saved archive for $ACCEPT_LIB_PORT[^\"]*(digest|altered)[^\"]*" | head -1)
 	if [ -n "$said" ]; then
 		row_pass "the altered archive was caught and the dependency built instead: $said"
 	else

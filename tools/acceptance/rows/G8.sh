@@ -26,10 +26,15 @@ act() {
 	dh_setup revbump "${ACCEPT_GO_PORT:?}" --new="$G8_BRANCH" --subject "rebuild to check under serve's sudoers line" || return 0
 	# -d with no serve running starts a background worker, serve's, with
 	# no terminal: where sudo would ask, it refuses.
+	# Only what this check's worker writes to drain.log is read: the whole
+	# file could credit an earlier check (Codex's cold read at 2cdaf571,
+	# #232).
+	G8_DRAINED=$(log_size "${DOCKHAND_DB%/*}/drain.log")
 	(export DOCKHAND_CONFIG="$ROW_DIR/g8.toml"; dh_json check -b "$G8_BRANCH" --on local -d </dev/null) || :
 	G8_RUN=$(jq -r '.result.run.name // empty' "$ROW_DIR/json/1.json" 2>/dev/null)
 	[ -n "$G8_RUN" ] || return 0
 	(export DOCKHAND_CONFIG="$ROW_DIR/g8.toml"; dh_json wait "$G8_RUN" </dev/null) || :
+	tail -c +"$((${G8_DRAINED:-0} + 1))" "${DOCKHAND_DB%/*}/drain.log" >"$ROW_DIR/drain.log" 2>/dev/null || :
 }
 
 assert() {
@@ -40,7 +45,7 @@ assert() {
 		row_fail "$G8_RUN didn't pass under serve's worker, exit $(cat "$wait.exit" 2>/dev/null): $(jq -r '.error // empty' "$wait" 2>/dev/null)"
 		return
 	fi
-	grep -q "building in /opt/local (as root)" "$ROW_DIR/out.log" "${DOCKHAND_DB%/*}/drain.log" 2>/dev/null || { row_fail "$G8_RUN didn't say it built in /opt/local as root"; return; }
+	grep -qF "building in /opt/local (as root)" "$ROW_DIR/drain.log" 2>/dev/null || { row_fail "$G8_RUN didn't say it built in /opt/local as root, in what its worker wrote"; return; }
 	local_same /opt/local "$ROW_DIR/active.before" "$G8_RUN left /opt/local's active ports changed" || return
 	row_pass "$G8_RUN passed in /opt/local under serve's worker, as root, with sudo asking no password for /opt/local/bin/port-tclsh alone, and put the ports back"
 }
