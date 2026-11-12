@@ -586,7 +586,7 @@ const afterRule = "after"
 func HoldRules() []string {
 	rules := slices.Concat(assess.Rules(), commitrules.ErrorCodes(), []string{majorRule, darwinFloorRule, deploymentTargetRule,
 		model.RuleSourceMoved, model.RuleTagMoved, model.RuleReleaseMoved, model.RuleAssessmentMoved, "open", "search-failed",
-		upstreamMovedRule, upstreamRenamedPortRule, upstreamTransferredRule, mirrorConflictRule, manifestHookRule, afterRule, linkUndeclaredRule})
+		upstreamMovedRule, upstreamRenamedPortRule, upstreamTransferredRule, mirrorConflictRule, manifestHookRule, cratesUnlockedRule, afterRule, linkUndeclaredRule})
 	slices.Sort(rules)
 	return slices.Compact(rules)
 }

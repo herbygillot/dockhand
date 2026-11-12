@@ -121,6 +121,45 @@ func TestServeHoldsAnUpdateWhoseUpstreamChangedItsLicense(t *testing.T) {
 	require.ErrorContains(t, err, "needs review before submission: upstream's LICENSE changed")
 }
 
+// A crate list an update left as the old version had it, the new source
+// shipping no Cargo.lock, holds an unattended submission after its passing
+// check, as a check builds default variants only; holds.allow naming
+// crates-unlocked lets it go, still said (#229).
+func TestACrateListLeftUnlockedHoldsUntilHoldsAllowNamesIt(t *testing.T) {
+	t.Parallel()
+	words := "The source for 2.0 ships no Cargo.lock, so cargo.crates is left as 1.7.1 had it and may not match what 2.0 builds; Cargo.toml is in jq-2.0/cli."
+	for _, test := range []struct {
+		name  string
+		allow []string
+		held  []string
+	}{
+		{name: "held by default", held: []string{words}},
+		{name: "allowed", allow: []string{"crates-unlocked"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			f := setup(t)
+			e, p := f.withPreparer(t)
+			f.withFork(t, e)
+			p.cratesUnlocked = words
+			e.options.AllowHolds = test.allow
+			branch := servePrepared(t, e)
+
+			status, err := e.BranchStatus(t.Context(), branch)
+			require.NoError(t, err)
+			require.Equal(t, test.held, HoldLines(status.Held))
+			candidates, _, err := e.serveCandidates(t.Context())
+			require.NoError(t, err)
+			require.Len(t, candidates, 1)
+			require.Equal(t, test.held, HoldLines(candidates[0].Held), "a passing check doesn't clear it")
+			require.Equal(t, []string{words}, HoldLines(candidates[0].Plan.Concerns()), "it's said either way")
+			require.Equal(t, []model.UpstreamChange{{Kind: "manifest", Rule: "crates-unlocked", Hold: true, Class: model.Introduced, Message: words}},
+				candidates[0].Plan.Upstream[0].Comparison.Changes, "the submit preview shows it")
+			require.Contains(t, HoldRules(), "crates-unlocked", "holds.allow may name it")
+		})
+	}
+}
+
 // Archives the update couldn't compare hold serve's submission as a
 // finding would (D4): nobody looks, and the comparison couldn't.
 func TestServeHoldsAnUpdateWhoseArchivesCouldNotBeCompared(t *testing.T) {

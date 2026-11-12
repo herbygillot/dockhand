@@ -3,7 +3,10 @@ package portedit
 import (
 	"context"
 	"errors"
+	"fmt"
+	"path"
 	"slices"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
@@ -68,6 +71,7 @@ func originalDependencySource(ctx context.Context, store *distfetch.Store, info 
 
 func selectDependencySource(ctx context.Context, info macports.PortInfo, sources []distfetch.Source, downloads []distfetch.Download, plan *depblock.Plan) (depblock.Input, error) {
 	var selected *depblock.Input
+	var archives []string
 	for _, source := range sources {
 		matches := 0
 		var filename string
@@ -90,6 +94,7 @@ func selectDependencySource(ctx context.Context, info macports.PortInfo, sources
 		}
 		err = depblock.ConfirmSource(ctx, plan.Kind, input, rename)
 		if errors.Is(err, macports.ErrManifestMissing) {
+			archives = append(archives, filename)
 			continue
 		}
 		if err != nil {
@@ -100,8 +105,55 @@ func selectDependencySource(ctx context.Context, info macports.PortInfo, sources
 		}
 		selected = &input
 	}
+	if selected == nil && plan.Kind == depblock.Cargo && len(archives) > 0 {
+		missing := &lockMissing{worksrcdir: info.Options["worksrcdir"]}
+		for _, archive := range archives {
+			files, err := depblock.CargoMembers(ctx, archive)
+			if err != nil {
+				return depblock.Input{}, ErrUnsupported.Because("inspect dependency source: %w", err)
+			}
+			missing.files.Locks = append(missing.files.Locks, files.Locks...)
+			missing.files.Manifests = append(missing.files.Manifests, files.Manifests...)
+		}
+		return depblock.Input{}, ErrUnsupported.Because("%w", missing)
+	}
 	if selected == nil {
 		return depblock.Input{}, ErrUnsupported.Because("no extracted archive contains the dependency manifest at worksrcdir (%w)", macports.ErrManifestMissing)
 	}
 	return *selected, nil
+}
+
+// lockMissing is a Cargo source none of whose candidate archives holds a
+// Cargo.lock where the build at worksrcdir reads one, its own or one
+// above it (depblock.CargoLock), with what they hold of Cargo's instead:
+// no lock at all, as watchman's source ships none, or locks only
+// elsewhere, which nothing in the Portfile points the build at, the rust
+// PortGroup having no cargo.dir (#229). It is a missing manifest
+// (macports.ErrManifestMissing).
+type lockMissing struct {
+	worksrcdir string
+	files      depblock.CargoFiles
+}
+
+func (e *lockMissing) Error() string {
+	if len(e.files.Locks) > 0 {
+		return fmt.Sprintf("no Cargo.lock is at worksrcdir %s or above it, where the build reads one; the source holds %s, and nothing in the Portfile points the build at one, so the crate list can't be regenerated; prepare the update by hand", e.worksrcdir, strings.Join(e.files.Locks, ", "))
+	}
+	return "the source ships no Cargo.lock, so the crate list can't be regenerated from it; " + e.manifests()
+}
+
+func (e *lockMissing) Unwrap() error { return macports.ErrManifestMissing }
+
+// manifests says where the source's Cargo.toml are, by their directories.
+func (e *lockMissing) manifests() string {
+	var dirs []string
+	for _, manifest := range e.files.Manifests {
+		if dir := path.Dir(manifest); !slices.Contains(dirs, dir) {
+			dirs = append(dirs, dir)
+		}
+	}
+	if len(dirs) == 0 {
+		return "it holds no Cargo.toml either"
+	}
+	return "Cargo.toml is in " + strings.Join(dirs, ", ")
 }

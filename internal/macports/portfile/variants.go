@@ -241,3 +241,31 @@ func Instructions(src []byte, subport string) []Instruction {
 	}
 	return found
 }
+
+// EnclosingVariant is the variant whose own body holds the command at span,
+// the innermost where variants nest, or "" where none does: watchman's
+// cargo.crates, declared in +rust (#229). Like ArchiveVariants it reads the
+// text only; a variant a PortGroup defines, or one named other than
+// literally, isn't found.
+func EnclosingVariant(src []byte, span textedit.Span) string {
+	script, errs := syntax.Parse(src)
+	if len(errs) > 0 {
+		return ""
+	}
+	variant, width := "", -1
+	commands(src, script, false, func(cmd syntax.Command, _ bool) {
+		if name, _ := cmd.Name(src); name != "variant" || len(cmd.Words) < 3 {
+			return
+		}
+		name, ok := cmd.Words[1].Literal(src)
+		body := cmd.Words[len(cmd.Words)-1]
+		if _, braced := body.BracedScript(src); !ok || !braced {
+			return
+		}
+		inner := body.Inner()
+		if inner.Start <= span.Start && span.End <= inner.End && (width < 0 || inner.End-inner.Start < width) {
+			variant, width = name, inner.End-inner.Start
+		}
+	})
+	return variant
+}

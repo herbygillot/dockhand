@@ -54,6 +54,14 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 		}
 		return archivePlan{result: result}, nil
 	}
+	// A release at the version the port already evaluates to, which
+	// nothing marked current, as where the version was set by hand on the
+	// branch the update reads (watchman's), has no version input to move:
+	// said so, before any is searched, where it said no version input could
+	// select it (#229). A commit pin moves its commit at the same version.
+	if !release.Pinned && release.Version == input.info.Version {
+		return archivePlan{}, ErrUnsupported.Because("%s is already at %s, so update has no version to move; where the version was set by hand, dockhand checksums %s refreshes its checksums", input.target.Name, release.Version, input.target.Name)
+	}
 	spec, err := portsource.Interpret(input.info, portsource.Edit)
 	if err != nil {
 		return archivePlan{}, err

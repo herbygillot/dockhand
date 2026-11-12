@@ -61,9 +61,16 @@ func inspectDependencies(input *sourceInput) (*depblock.Plan, error) {
 			return nil, ErrUnsupported.Because("cannot evaluate %s", key)
 		}
 	}
-	plan, err := depblock.Inspect(input.data, input.info.Options)
+	// A block in a variant the evaluation didn't select is taken as
+	// written: where the new source ships no Cargo.lock, it's left as it
+	// is, which needs no evaluation of it (#229); where it would be
+	// regenerated, it refuses (unselectedRefusal).
+	plan, err := depblock.InspectVariants(input.data, input.info.Options)
 	if err != nil {
 		return nil, ErrUnsupported.Because("%s: %w", input.target.Name, err)
+	}
+	if plan != nil && plan.Unselected() && plan.Kind == depblock.Go {
+		return nil, unselectedRefusal(input.info, plan)
 	}
 	if plan != nil {
 		if err := dependencyPatches(input, plan.Kind); err != nil {
@@ -274,18 +281,27 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	}
 	cargoUpdate, _ := input.info.Bool("cargo.update")
 	oldInput, previous, previousProblem, err := originalDependencySource(ctx, store, base.info, fetch, sources, plan, kept)
-	if err = unlocked(err, cargoUpdate, input.info.Version); err != nil {
+	oldMissing, err := lockless(err, cargoUpdate, input.info.Version)
+	if err != nil {
 		return Result{}, err
 	}
-	progress.VerboseReport(ctx, "Checking existing %s against the original source", plan.Kind)
-	old, err := depblock.Generate(ctx, plan.Kind, executable, oldInput)
-	err = unlocked(err, cargoUpdate, input.info.Version)
+	var old depblock.GeneratedBlocks
+	if oldMissing == nil {
+		progress.VerboseReport(ctx, "Checking existing %s against the original source", plan.Kind)
+		old, err = depblock.Generate(ctx, plan.Kind, executable, oldInput)
+		err = unlocked(err, cargoUpdate, input.info.Version)
+	}
 	// A module that moved can't be generated at its old version under its
 	// new path: the existing block isn't checked, and that's said, rather
-	// than the update refused (pomo's, field testing, 2026-10-02).
+	// than the update refused (pomo's, field testing, 2026-10-02). A
+	// current source that ships no Cargo.lock has nothing to check the
+	// block against either, and it's said the same way where the new
+	// source's lock regenerates it (#229).
 	var moved *depblock.ModuleMoved
 	unchecked := ""
 	switch {
+	case oldMissing != nil:
+		unchecked = fmt.Sprintf("The source for %s ships no Cargo.lock, so the existing %s wasn't checked against it; it's regenerated whole.", input.info.Version, plan.Kind)
 	case errors.As(err, &moved):
 		unchecked = fmt.Sprintf("The module moved from %s to %s, so the existing %s wasn't checked against %s's source; it's regenerated whole.", moved.From, moved.To, plan.Kind, input.info.Version)
 	case err != nil:
@@ -359,21 +375,40 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 		return Result{}, err
 	}
 	nextInput, err := selectDependencySource(ctx, next, nextSources, result.Downloads, plan)
-	if err = unlocked(err, cargoUpdate, request.Release.Version); err != nil {
-		return Result{}, err
-	}
-	progress.VerboseReport(ctx, "Regenerating %s for %s", plan.Kind, cmp.Or(nextInput.Tag, request.Release.Tag))
-	generated, err := depblock.Generate(ctx, plan.Kind, executable, nextInput)
-	if err = unlocked(err, cargoUpdate, request.Release.Version); err != nil {
-		return Result{}, err
-	}
-	generated = generated.KeepingDeclared(plan.Values[depblock.CargoGit])
-	if len(generated.Online) > 0 {
-		progress.Report(ctx, "Leaving %d Git-pinned crates to Cargo's online resolution at build time, since its build resolves Git sources online: %s", len(generated.Online), depblock.GitSummary(generated.Online))
-	}
-	values, err := s.gitCrateChecksums(ctx, request, input, plan, result.portfileAfter(), generated)
+	nextMissing, err := lockless(err, cargoUpdate, request.Release.Version)
 	if err != nil {
 		return Result{}, err
+	}
+	// A new source that ships no Cargo.lock, cargo.update off, leaves the
+	// crate list as the old version had it, byte for byte, and the update
+	// holds for a look (crates-unlocked): what the version, checksums and
+	// patches need is written (the person's decision on #229, 2026-11-12).
+	var generated depblock.GeneratedBlocks
+	var values map[string][]string
+	unlockedWords := ""
+	switch {
+	case nextMissing != nil:
+		values = maps.Clone(plan.Values)
+		unlockedWords = cratesUnlocked(input.info, plan, nextMissing, input.info.Version, request.Release.Version)
+		// Nothing is regenerated: what a hook does to the block, and
+		// what an override pins, stay as the Portfile has them.
+		overrides, hookUnchecked = nil, ""
+	case plan.Unselected():
+		return Result{}, unselectedRefusal(input.info, plan)
+	default:
+		progress.VerboseReport(ctx, "Regenerating %s for %s", plan.Kind, cmp.Or(nextInput.Tag, request.Release.Tag))
+		generated, err = depblock.Generate(ctx, plan.Kind, executable, nextInput)
+		if err = unlocked(err, cargoUpdate, request.Release.Version); err != nil {
+			return Result{}, err
+		}
+		generated = generated.KeepingDeclared(plan.Values[depblock.CargoGit])
+		if len(generated.Online) > 0 {
+			progress.Report(ctx, "Leaving %d Git-pinned crates to Cargo's online resolution at build time, since its build resolves Git sources online: %s", len(generated.Online), depblock.GitSummary(generated.Online))
+		}
+		values, err = s.gitCrateChecksums(ctx, request, input, plan, result.portfileAfter(), generated)
+		if err != nil {
+			return Result{}, err
+		}
 	}
 	// A module the old version's go2port output left out, which the new
 	// version's has, is the generator's now, not kept, and its go.sum pin
@@ -415,6 +450,9 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	}
 	var regenerated []Regenerated
 	for _, name := range slices.Sorted(maps.Keys(values)) {
+		if nextMissing != nil {
+			break
+		}
 		if count, changed, err := depblock.Entries(name, plan.Values[name], values[name]); err == nil {
 			block := Regenerated{Option: name, Count: count, Changed: changed}
 			if name == depblock.Cargo {
@@ -450,6 +488,11 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 			selected.Version, selected.Revision, selected.Epoch, selected.Options["git.branch"], request.Release.Version, input.info.Epoch, request.Release.Tag)
 	}
 	for name, wanted := range values {
+		// A block left as it was is the Portfile's, byte for byte
+		// (Plan.Apply), where its variant may not even be selected.
+		if nextMissing != nil {
+			break
+		}
 		// The block as written stands where its rows are the new lock's in
 		// another order (depblock.Plan.Apply): omnidiff's crates were
 		// Cargo.lock's, text order against version order, and update
@@ -554,6 +597,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	result.report(final)
 	result.Regenerated = regenerated
 	result.ManifestHook = hookUnchecked
+	result.CratesUnlocked = unlockedWords
 	result.SourceMoved, result.SourceNotice = archivePlan.result.SourceMoved, archivePlan.result.SourceNotice
 	switch {
 	case kept && previousProblem != nil:
@@ -660,6 +704,74 @@ func unlocked(err error, cargoUpdate bool, version string) error {
 		return ErrUnsupported.Because("cargo.update is enabled, but the source for %s contains no Cargo.lock; cannot regenerate crate dependencies: %w", version, err)
 	}
 	return err
+}
+
+// lockless is what a Cargo source with no Cargo.lock the build reads
+// leaves an update (lockMissing): one holding a lock elsewhere refuses,
+// naming each, since nothing in the Portfile points the build at one; one
+// that ships none refuses where cargo.update is on (D19), and is returned
+// where it's off, the crate list then left as it is (#229). Any other
+// error is unlocked's.
+func lockless(err error, cargoUpdate bool, version string) (*lockMissing, error) {
+	var missing *lockMissing
+	switch {
+	case !errors.As(err, &missing):
+		return nil, unlocked(err, cargoUpdate, version)
+	case len(missing.files.Locks) > 0:
+		return nil, ErrUnsupported.Because("the source for %s: %w", version, missing)
+	case cargoUpdate:
+		return nil, unlocked(err, cargoUpdate, version)
+	}
+	return missing, nil
+}
+
+// cratesUnlocked says a crate list left as the old version had it, the new
+// version's source shipping no Cargo.lock: that it may not match, where
+// the source's Cargo.toml are, and, for a list declared in a variant's
+// body, whether a default build, which a check makes, builds it at all.
+func cratesUnlocked(info macports.PortInfo, plan *depblock.Plan, missing *lockMissing, current, version string) string {
+	blocks := depblock.Cargo
+	if len(plan.Values[depblock.CargoGit]) > 0 {
+		blocks = depblock.Cargo + " and " + depblock.CargoGit
+		if len(plan.Values[depblock.Cargo]) == 0 {
+			blocks = depblock.CargoGit
+		}
+	}
+	words := fmt.Sprintf("The source for %s ships no Cargo.lock, so %s is left as %s had it and may not match what %s builds; %s.", version, blocks, current, version, missing.manifests())
+	if variant := declaringVariant(plan); variant != "" {
+		words += " " + variantWords(info, variant)
+	}
+	return words + " Regenerate it by hand from the new source, with a Cargo.lock that source resolves and cargo2port, before submitting; a passing check doesn't settle it."
+}
+
+// declaringVariant is the variant whose body declares the crates, or the
+// Git crates where the Portfile declares no registry crates there.
+func declaringVariant(plan *depblock.Plan) string {
+	return cmp.Or(plan.Variant(depblock.Cargo), plan.Variant(depblock.CargoGit))
+}
+
+// variantWords say the variant a block is declared in, and whether the
+// port's default variants include it.
+func variantWords(info macports.PortInfo, variant string) string {
+	variants, _ := info.Variants()
+	for _, declared := range variants {
+		if declared.Name == variant && declared.Default {
+			return fmt.Sprintf("It's declared in variant %s, which the default variants include, so a check builds it.", variant)
+		}
+	}
+	return fmt.Sprintf("It's declared in variant %s, which no default build includes, so a check doesn't build it.", variant)
+}
+
+// unselectedRefusal refuses a block declared in a variant the evaluation
+// didn't select, where the update would write it: what's written can't
+// be checked against MacPorts' evaluation of it.
+func unselectedRefusal(info macports.PortInfo, plan *depblock.Plan) error {
+	name := plan.Kind
+	variant := plan.Variant(name)
+	if name == depblock.Cargo && variant == "" {
+		name, variant = depblock.CargoGit, plan.Variant(depblock.CargoGit)
+	}
+	return ErrUnsupported.Because("%s is declared in variant %s, which the port's default variants don't include, so a regenerated %s can't be checked against MacPorts' evaluation of it; regenerate it by hand", name, variant, name)
 }
 
 // blockSettings are the options a PortGroup sets where a dependency block

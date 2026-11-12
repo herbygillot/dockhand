@@ -73,6 +73,48 @@ func TestAWorkspaceMembersLockIsTheRoots(t *testing.T) {
 	require.ErrorIs(t, err, macports.ErrManifestMissing)
 }
 
+// Every Cargo.lock and Cargo.toml an archive holds is named, wherever it
+// is, for the words of a source with no lock the build reads (#229).
+func TestCargoMembersAreEveryLockAndManifest(t *testing.T) {
+	t.Parallel()
+	files, err := CargoMembers(t.Context(), sourceArchive(t, map[string]string{
+		"watchman-1/README":                     "",
+		"watchman-1/watchman/cli/Cargo.toml":    "[package]\n",
+		"watchman-1/watchman/rust/Cargo.toml":   "[package]\n",
+		"watchman-1/watchman/rust/x/Cargo.lock": "lock",
+	}))
+	require.NoError(t, err)
+	require.Equal(t, CargoFiles{Locks: []string{"watchman-1/watchman/rust/x/Cargo.lock"}, Manifests: []string{"watchman-1/watchman/cli/Cargo.toml", "watchman-1/watchman/rust/Cargo.toml"}}, files)
+}
+
+// A declaration in the body of a variant the evaluation didn't select is
+// refused by Inspect, as calculated, and taken as written by
+// InspectVariants, which says so; one at the top is neither (#229).
+func TestADeclarationInAnUnselectedVariant(t *testing.T) {
+	t.Parallel()
+	src := []byte("PortSystem 1.0\nvariant rust description {Rust} {\n    cargo.crates foo 1.0 abc\n}\n")
+	options := map[string]string{Cargo: "", CargoGit: ""}
+	_, err := Inspect(src, options)
+	require.ErrorContains(t, err, "calculated or overridden cargo.crates")
+	plan, err := InspectVariants(src, options)
+	require.NoError(t, err)
+	require.True(t, plan.Unselected())
+	require.Equal(t, []string{"foo", "1.0", "abc"}, plan.Values[Cargo])
+	require.Equal(t, "rust", plan.Variant(Cargo))
+
+	selected, err := InspectVariants(src, map[string]string{Cargo: "foo 1.0 abc", CargoGit: ""})
+	require.NoError(t, err)
+	require.False(t, selected.Unselected())
+	require.Equal(t, "rust", selected.Variant(Cargo))
+
+	top := []byte("PortSystem 1.0\ncargo.crates foo 1.0 abc\n")
+	_, err = InspectVariants(top, options)
+	require.ErrorContains(t, err, "calculated or overridden cargo.crates", "only a variant's body is taken as written")
+	plan, err = Inspect(top, map[string]string{Cargo: "foo 1.0 abc", CargoGit: ""})
+	require.NoError(t, err)
+	require.Empty(t, plan.Variant(Cargo))
+}
+
 func TestManifestSelectionAndUnsafeMembers(t *testing.T) {
 	t.Parallel()
 	archive := sourceArchive(t, map[string]string{"root/go.mod": "root", "root/sub/go.mod": "nested"})
