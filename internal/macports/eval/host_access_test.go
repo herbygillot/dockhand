@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -274,5 +275,33 @@ func TestEachContextGetsItsOwnCompilerList(t *testing.T) {
 		got, err := evaluateIn(t.Context(), session, runtime, checked, bound, &request, false)
 		require.NoError(t, err)
 		require.Equal(t, alone[platform], got.Snapshot.Ports["host"].Options["distfiles"], "%+v, observed second in one process", platform)
+	}
+}
+
+// A lookup Base's own default makes, for an option no fetch or checksum
+// value reads, is explained like build.jobs's read, whoever wrote the
+// option's default: build.cmd's make taken by a configure.args a PortGroup
+// writes, as cmake's does, and use_bzip2's lbzip2 taken by extract.cmd
+// (architecture's step 2 on #110's finding 1). One a fetch value reads, or
+// a Portfile's own lookup, stays host state.
+func TestBasesOwnLookupForAPhaseOptionIsExplained(t *testing.T) {
+	t.Parallel()
+	group := func(root string) {
+		putFile(t, root, "_resources/port1.0/group/makeargs-1.0.tcl", "default configure.args {-DCMAKE_MAKE_PROGRAM=${build.cmd}}\n")
+	}
+	for _, c := range []struct {
+		name, lines string
+		setup       func(string)
+		host        bool
+		lookup      string
+	}{
+		{"build.cmd's make, taken by a PortGroup's configure.args", "PortGroup makeargs 1.0", group, false, "make, which findBinary"},
+		{"extract.cmd's lbzip2", "use_bzip2 yes", nil, false, "lbzip2, which findBinary"},
+		{"configure.args read by a fetch value", "PortGroup makeargs 1.0\ndistfiles effects-[llength ${configure.args}].tar.gz", group, true, "make, which findBinary"},
+		{"a Portfile's own lookup for configure.args", "catch {configure.args-append [findBinary hostonly]}", nil, true, "hostonly, which findBinary"},
+	} {
+		_, port := observedIn(t, monterey, c.setup, c.lines)
+		require.True(t, slices.ContainsFunc(port.Problems, func(p string) bool { return strings.Contains(p, c.lookup) }), "%s: the lookup is closed: %v", c.name, port.Problems)
+		require.Equal(t, c.host, hostState(t, port, effects(c.lines)), "%s: %v", c.name, port.Problems)
 	}
 }
