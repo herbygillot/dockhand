@@ -110,6 +110,11 @@ fi
 # is dhtest's, where dockhand reads it by default (the rc1 full stage:
 # A10 died in setup on DOCKHAND_CONFIG unset).
 export DOCKHAND_CONFIG=${DOCKHAND_CONFIG:-$HOME/.dockhand/config.toml}
+# A token exported where the run was started would stand before dockhand's
+# own login, so D-C5's credential source and D-C3's revocation would test
+# another credential than they say (#233); a row that wants one, as D-C4,
+# sets it itself.
+unset GH_TOKEN GITHUB_TOKEN
 # dockhand's database, where it keeps it by default, named for the rows
 # that read beside it, as C9's and D-T1's kept archives: unset, they read
 # "/archives" (the rc6 full stage).

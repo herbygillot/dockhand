@@ -82,6 +82,9 @@ mkdir -p "$state/cache/index"
 export DOCKHAND_INDEX_CACHE="$state/cache/index" DOCKHAND_READING_CACHE="$state/home/readings"
 # GitHub's answers with their ETags (v0.6.0), in the stage, never yours.
 export DOCKHAND_GITHUB_CACHE="$state/home/github"
+# The archive listings and build history too, which otherwise default to
+# your own ~/Library/Caches/dockhand, which H9 doesn't watch (#233).
+export DOCKHAND_ARCHIVE_CACHE="$state/home/archive-cache" DOCKHAND_BUILD_HISTORY_CACHE="$state/home/build-history"
 # The github remote, where there is one, is read, never pushed to: SSH,
 # which a push to it takes, is refused outright, and no key, the agent's
 # included, is offered. H2 watches fork.git.
