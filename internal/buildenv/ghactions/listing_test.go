@@ -128,3 +128,65 @@ func TestARerunIsAnsweredOnlyByTheAttemptItStarted(t *testing.T) {
 	require.Equal(t, 1, api.reruns)
 	require.Equal(t, []int{3}, api.readAttempts, "the attempt the rerun started, never the older one listed before it")
 }
+
+// queuedMatrixAPI is a run in progress whose macOS 15 job built and whose
+// macOS 26 job never got a runner, until it's canceled.
+type queuedMatrixAPI struct {
+	rerunAPI
+	cancelled bool
+}
+
+func (a *queuedMatrixAPI) Runs(ctx context.Context, repository, _, _ string) ([]Run, error) {
+	return a.RecentRuns(ctx, repository)
+}
+func (a *queuedMatrixAPI) RecentRuns(context.Context, string) ([]Run, error) {
+	run := Run{ID: 1, Attempt: 1, Status: "in_progress", URL: "https://github.com/ada/macports-ports/actions/runs/1"}
+	if a.cancelled {
+		run.Status, run.Conclusion = "completed", "cancelled"
+	}
+	return []Run{run}, nil
+}
+func (a *queuedMatrixAPI) Cancel(context.Context, string, int64) error {
+	a.cancelled = true
+	return nil
+}
+func (*queuedMatrixAPI) Jobs(context.Context, string, int64, int) ([]RunnerJob, error) {
+	return matrixAPI{}.Jobs(context.Background(), "", 0, 0)
+}
+
+// A run's time counts from its first job, as the usage page says: a matrix
+// job still waiting for a runner counts while another builds, so the run
+// is canceled at the bound, and the job that never started is named
+// (Codex's review of #197, finding 3, the counting kept and said).
+func TestAMatrixJobWaitingForARunnerCountsAgainstTheBound(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	clone, fork := filepath.Join(root, "clone"), filepath.Join(root, "fork.git")
+	testsupport.Git(t, root, "init", "-q", clone)
+	testsupport.Git(t, clone, "commit", "-q", "--allow-empty", "-m", "checked")
+	commit := testsupport.Git(t, clone, "rev-parse", "HEAD")
+	testsupport.Git(t, root, "init", "-q", "--bare", fork)
+	run := model.Run{ID: "run_abcdefghijklmnop", Number: 3}
+	branch := buildenv.CheckBranch(commit, run.ID)
+	testsupport.Git(t, clone, "push", "-q", fork, commit+":refs/heads/"+branch)
+	repo, err := git.Open(t.Context(), clone, git.Program{Env: testsupport.GitEnv(t)})
+	require.NoError(t, err)
+	api := &queuedMatrixAPI{}
+	sleeps := 0
+	p := &Provider{Repo: repo, API: api, BuildTimeout: 2 * poll,
+		Fork: func(context.Context) (buildenv.Fork, error) {
+			return buildenv.Fork{Repository: "ada/macports-ports", PushURL: fork}, nil
+		},
+		Sleep: func(context.Context, time.Duration) error { sleeps++; return nil },
+	}
+	pushed := newLaunch("ada/macports-ports", branch, buildenv.Job{Run: run, Commit: commit}, launchPush)
+	job := buildenv.Job{Run: run, Launched: []string{pushed.String()}, Directory: t.TempDir(), Commit: commit,
+		Targets: []buildenv.Target{{PlanTarget: model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}}}},
+	}
+	err = p.Execute(t.Context(), job, &rerunBuild{})
+	require.True(t, api.cancelled, "the waiting job's time counted, and the run was canceled at the bound")
+	require.Equal(t, 3, sleeps)
+	require.ErrorContains(t, err, "the run exceeded the 1m0s build timeout")
+	require.ErrorContains(t, err, "macos-26's job before any runner took it", "the job that never started is named")
+	require.ErrorContains(t, err, "the matrix is incomplete")
+}
