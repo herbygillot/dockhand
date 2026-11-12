@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/binaryarchive"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -61,6 +62,11 @@ func (e *Engine) InstallChanges(ctx context.Context, run model.Run, fetch bool) 
 // (Codex's review of 03b380f1, F4). The run's own record it must be, not
 // a tree's combined evidence: only its own builds are compared.
 func (e *Engine) installFindings(ctx context.Context, run model.Run, checked Evidence, fetch bool) ([]InstallFinding, error) {
+	// The run's revision is read as its owner's, refused where the
+	// author's commit behind it isn't allowed (#162).
+	if revision, err := e.Revision(ctx, run.Revision); err == nil {
+		ctx, _ = e.evaluatingRevision(ctx, revision)
+	}
 	var err error
 	var found []InstallFinding
 	type pending struct {
@@ -223,7 +229,8 @@ func (e *Engine) masterArchive(ctx context.Context, target model.PlanTarget, env
 	if err != nil {
 		return model.TargetResult{}, "", false
 	}
-	infos, err := reader.Ports(ctx, model.Source{Commit: master, Base: master, Tree: model.ObjectID(trees[string(master)])}, target.Directory, environment, nil)
+	// Master's Portfile, MacPorts' own tree (#162).
+	infos, err := reader.Ports(workspace.MacPorts(ctx), model.Source{Commit: master, Base: master, Tree: model.ObjectID(trees[string(master)])}, target.Directory, environment, nil)
 	if err != nil {
 		return model.TargetResult{}, "", false
 	}

@@ -175,7 +175,7 @@ func TestGoDependencyPreparation(t *testing.T) {
 				t.Cleanup(mirror.Close)
 				service.Mirror = mirror.URL + "/"
 			}
-			result, err := service.Prepare(t.Context(), request)
+			result, err := service.Prepare(yours(t), request)
 			switch scenario {
 			case "unsupported-context":
 				require.ErrorContains(t, err, "pre-fetch hook 1 ends with `set distfiles changed.tar.gz` rather than return -code error, which writes `distfiles`, at Portfile line 46")
@@ -287,7 +287,7 @@ func TestAKeptGoModuleTheNewOutputHasIsListedOnce(t *testing.T) {
 	})
 	script := "for tag do :; done\nif [ \"$tag\" = v1.0 ]; then\nprintf '%s\\n' 'go.vendors example.com/old lock v1.0.0 sha256 " + sha + "'\nelse\nprintf '%s\\n' 'go.vendors github.com/kr/text lock v0.1.0 sha256 " + sha + " example.com/new/v2 lock v2.0.0 sha256 " + sha + "'\nfi"
 	service.DependencyTools = depblock.Tools{Go2Port: dependencyHelper(t, script), Cargo2Port: "absent"}
-	result, err := service.Prepare(t.Context(), request)
+	result, err := service.Prepare(yours(t), request)
 	require.NoError(t, err)
 	require.Len(t, result.Files, 1)
 	require.Equal(t, 1, strings.Count(string(result.Files[0].After), "github.com/kr/text"), string(result.Files[0].After))
@@ -329,7 +329,7 @@ func TestAnUnprunedGoModuleKeepsWhatGoVendorsKeeps(t *testing.T) {
 	})
 	script := "printf '%s\\n' 'go.vendors github.com/kr/pretty lock v0.1.0 sha256 " + sha + "'"
 	service.DependencyTools = depblock.Tools{Go2Port: dependencyHelper(t, script), Cargo2Port: "absent"}
-	result, err := service.Prepare(t.Context(), request)
+	result, err := service.Prepare(yours(t), request)
 	require.NoError(t, err)
 	require.Len(t, result.Files, 1)
 	require.Equal(t, 1, strings.Count(string(result.Files[0].After), "github.com/kr/text lock v0.1.0"), string(result.Files[0].After))
@@ -424,7 +424,7 @@ extract.rename no
 			if scenario == "shared-unauthorized" {
 				request.Selection.Subport = "fixture-server"
 			}
-			result, err := service.Prepare(t.Context(), request)
+			result, err := service.Prepare(yours(t), request)
 			switch scenario {
 			case "shared-unauthorized":
 				require.ErrorContains(t, err, "fixture, another port of the same Portfile, moves with fixture-server's release")
@@ -509,7 +509,7 @@ source = "git+https://github.com/owner/gitdep?branch=main#%s"
 		}
 	})
 	service.DependencyTools.Cargo2Port = dependencyHelper(t, "exit 0")
-	result, err := service.Prepare(t.Context(), request)
+	result, err := service.Prepare(yours(t), request)
 	require.NoError(t, err)
 	require.NotEmpty(t, result.PreparedTree)
 	require.Equal(t, int64(2), gitDownloads.Load())
@@ -542,14 +542,14 @@ source = "git+https://github.com/owner/pinned?rev=%s#%s"
 	}
 	service, request := versionFixture(t, "setup", extra, handler)
 	service.DependencyTools.Cargo2Port = dependencyHelper(t, "exit 0")
-	_, err := service.Prepare(t.Context(), request)
+	_, err := service.Prepare(yours(t), request)
 	require.ErrorContains(t, err, "pinned is pinned to Git rev "+oldCommit)
 	require.ErrorContains(t, err, "checking existing cargo.crates against the source for current version 1.0", "says whose lock it read (field testing, batch 11: halloy)")
 	require.ErrorContains(t, err, "declares branches only")
 
 	service, request = versionFixture(t, "setup", extra+"# Disable offline mode to work around Git dependencies\ncargo.offline_cmd\n", handler)
 	service.DependencyTools.Cargo2Port = dependencyHelper(t, "exit 0")
-	result, err := service.Prepare(t.Context(), request)
+	result, err := service.Prepare(yours(t), request)
 	require.NoError(t, err)
 	require.NotEmpty(t, result.PreparedTree)
 	require.Len(t, result.Downloads, 1, "no Git crate archive is fetched for an online crate")
@@ -596,7 +596,7 @@ cargo.crates old 1.2.3 ` + sha + "\n"
 				_, _ = w.Write(archive)
 			})
 			request.Action, request.Version, request.Release = model.EditChecksums, "", nil
-			result, err := service.Prepare(t.Context(), request)
+			result, err := service.Prepare(yours(t), request)
 			if order == "before" {
 				require.ErrorContains(t, err, "lists cargo.crates checksums before its source-archive checksums")
 				return
@@ -645,7 +645,7 @@ func TestCargoOverridesAreNamedAndDroppedOnceTheLockPassesThem(t *testing.T) {
 				}
 			})
 			service.DependencyTools = depblock.Tools{Cargo2Port: dependencyHelper(t, helper), Go2Port: "absent"}
-			result, err := service.Prepare(t.Context(), request)
+			result, err := service.Prepare(yours(t), request)
 			if test.err != "" {
 				require.ErrorContains(t, err, test.err)
 				return
@@ -704,7 +704,7 @@ cargo.crates_github scram pgdogdev/scram master ` + oldCommit + " " + checksum +
 		}
 	})
 	service.DependencyTools.Cargo2Port = dependencyHelper(t, "exit 0")
-	result, err := service.Prepare(t.Context(), request)
+	result, err := service.Prepare(yours(t), request)
 	require.NoError(t, err)
 	contents := string(result.Files[0].After)
 	require.Contains(t, contents, "scram pgdogdev/scram master "+newCommit+" "+checksum)
@@ -742,7 +742,7 @@ go.vendors
 	service, request := versionFixture(t, "go-setup", extra, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(source) })
 	service.DependencyTools = depblock.Tools{Go2Port: dependencyHelper(t, "printf '%s\\n' 'go.vendors example.com/dep lock v1.0.0 sha256 "+sha+"'"), Cargo2Port: "absent"}
 	request.Action, request.Version, request.Release = model.EditChecksums, "", nil
-	result, err := service.Prepare(t.Context(), request)
+	result, err := service.Prepare(yours(t), request)
 	require.NoError(t, err)
 	require.Len(t, result.Files, 1)
 	after := string(result.Files[0].After)
@@ -795,7 +795,7 @@ func TestCratesInAnotherOrderAreTheLocks(t *testing.T) {
 			})
 			script := "printf '%s\\n' 'cargo.crates rand 0.10.3 " + sha + " \\' '    rand 0.8.8 " + sha + "'"
 			service.DependencyTools = depblock.Tools{Cargo2Port: dependencyHelper(t, script), Go2Port: "absent"}
-			result, err := service.Prepare(t.Context(), request)
+			result, err := service.Prepare(yours(t), request)
 			if scenario == "reordered" {
 				require.NoError(t, err)
 				require.Contains(t, string(result.Files[0].After), "cargo.crates rand 0.8.8 "+sha+" rand 0.10.3 "+sha+"\n", "kept as written")

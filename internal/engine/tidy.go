@@ -19,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -222,6 +223,12 @@ func (p TidyPlan) Blocking() []string { return p.Gate().Blocking() }
 // wrote or the one the branch's own commits give, and every edit not yet
 // committed included. Nothing is changed.
 func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, error) {
+	// Every step evaluates the branch's Portfiles, declaring and
+	// restyling as planning does, as their owner's (#162).
+	ctx, err := e.evaluating(ctx, request.Branch)
+	if err != nil {
+		return TidyPlan{}, err
+	}
 	plan, err := e.planTidy(ctx, request)
 	if err != nil {
 		return plan, err
@@ -1193,8 +1200,9 @@ func (e *Engine) commitsDefining(ctx context.Context, base model.Source, head *m
 		}
 	}
 	// A port the branch adds, as a subport, is one its subject may name
-	// (I21): terraform-1.17's commit adding it names its port.
-	defined := e.portsDefined(ctx, base, directories)
+	// (I21): terraform-1.17's commit adding it names its port. The base is
+	// MacPorts' tree (#162).
+	defined := e.portsDefined(workspace.MacPorts(ctx), base, directories)
 	var headDefined map[string][]string
 	if head != nil {
 		headDefined = e.portsDefined(ctx, *head, directories)

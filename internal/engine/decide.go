@@ -36,6 +36,11 @@ type DecideRequest struct {
 // the concern status found, so a later move is a new concern
 // (model.MovingSource).
 func (e *Engine) Decide(ctx context.Context, request DecideRequest) (model.Decision, error) {
+	// The decision reads the branch's port as its owner's (#162).
+	ctx, err := e.evaluating(ctx, request.Branch)
+	if err != nil {
+		return model.Decision{}, err
+	}
 	if !slices.Contains(HoldRules(), request.Rule) {
 		return model.Decision{}, fmt.Errorf("%q is not a hold dockhand raises; the rules are %s", request.Rule, strings.Join(HoldRules(), ", "))
 	}

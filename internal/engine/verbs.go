@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/history"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -21,6 +22,12 @@ import (
 // found by name, and added to a sparse worktree's cone. It returns the
 // port's directory.
 func (e *Engine) Edit(ctx context.Context, branch model.Branch, port string) (string, error) {
+	// Finding the port's directory reads the branch's index, as its
+	// owner's (#162).
+	ctx, err := e.evaluating(ctx, branch)
+	if err != nil {
+		return "", err
+	}
 	worktree, err := e.worktree(ctx, branch)
 	if err != nil {
 		return "", err
@@ -48,6 +55,9 @@ func (e *Engine) Edit(ctx context.Context, branch model.Branch, port string) (st
 // port, as for a version: update takes a second word naming no port as
 // the version to update to.
 func (e *Engine) PortDirectory(ctx context.Context, name string) (string, bool) {
+	// Master's index, or the checkout's own commit's: MacPorts' tree
+	// (#162).
+	ctx = workspace.MacPorts(ctx)
 	// Before dockhand has fetched master, the checkout's own commit says.
 	master, ok := e.lastMaster(ctx)
 	if !ok {

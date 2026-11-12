@@ -79,7 +79,7 @@ func exists(root, name string) bool {
 // arrives on request, symlinks as symlinks, and the scope says what is there.
 func TestEnsurePortMaterializesOnlyThePortAndSharedResources(t *testing.T) {
 	f := newFixture(t)
-	w, err := workspace.Open(t.Context(), f.repo, f.source())
+	w, err := workspace.Open(workspace.Yours(t.Context(), "test"), f.repo, f.source())
 	require.NoError(t, err)
 	defer w.Close()
 	require.False(t, exists(w.Root(), "devel/a/Portfile"), "Open materializes nothing")
@@ -122,7 +122,7 @@ func TestEnsurePortMaterializesOnlyThePortAndSharedResources(t *testing.T) {
 // the base's with the edit; and the base is untouched.
 func TestOverlaySharesTrackedFilesAndReplacesTheEdited(t *testing.T) {
 	f := newFixture(t)
-	base, err := workspace.Open(t.Context(), f.repo, f.source())
+	base, err := workspace.Open(workspace.Yours(t.Context(), "test"), f.repo, f.source())
 	require.NoError(t, err)
 	defer base.Close()
 	require.NoError(t, base.EnsurePort(t.Context(), targetA))
@@ -168,7 +168,7 @@ func TestOverlaySharesTrackedFilesAndReplacesTheEdited(t *testing.T) {
 // thousand candidates over a whole tree would link a thousand trees.
 func TestOverlayHoldsOnlyTheEditedPortAndResources(t *testing.T) {
 	f := newFixture(t)
-	base, err := workspace.Open(t.Context(), f.repo, f.source())
+	base, err := workspace.Open(workspace.Yours(t.Context(), "test"), f.repo, f.source())
 	require.NoError(t, err)
 	defer base.Close()
 	require.NoError(t, base.EnsureAll(t.Context()))
@@ -190,7 +190,7 @@ func TestOverlayHoldsOnlyTheEditedPortAndResources(t *testing.T) {
 // shared file gets real entries with the edit in place.
 func TestOverlaySharesResourcesBySymlinkUnlessItEditsThem(t *testing.T) {
 	f := newFixture(t)
-	base, err := workspace.Open(t.Context(), f.repo, f.source())
+	base, err := workspace.Open(workspace.Yours(t.Context(), "test"), f.repo, f.source())
 	require.NoError(t, err)
 	defer base.Close()
 	require.NoError(t, base.EnsurePort(t.Context(), targetA))
@@ -229,7 +229,7 @@ func TestOverlaySharesResourcesBySymlinkUnlessItEditsThem(t *testing.T) {
 // keeping the overlay's edit.
 func TestEnsureOnAnOverlayLinksWhatTheBaseGained(t *testing.T) {
 	f := newFixture(t)
-	base, err := workspace.Open(t.Context(), f.repo, f.source())
+	base, err := workspace.Open(workspace.Yours(t.Context(), "test"), f.repo, f.source())
 	require.NoError(t, err)
 	defer base.Close()
 	require.NoError(t, base.EnsurePort(t.Context(), targetA))
@@ -252,7 +252,7 @@ func TestEnsureOnAnOverlayLinksWhatTheBaseGained(t *testing.T) {
 func TestAnOverlayEvaluatesInTheBaseSession(t *testing.T) {
 	executable := testsupport.MacPortsTclsh(t)
 	f := newFixture(t)
-	base, err := workspace.Open(t.Context(), f.repo, f.source())
+	base, err := workspace.Open(workspace.Yours(t.Context(), "test"), f.repo, f.source())
 	require.NoError(t, err)
 	defer base.Close()
 	require.NoError(t, base.EnsurePort(t.Context(), targetA))
@@ -280,7 +280,7 @@ func TestAnOverlayEvaluatesInTheBaseSession(t *testing.T) {
 	require.Equal(t, "2", after.Ports["a"].Version, "the overlay's Portfile is what the session reads")
 	require.Equal(t, overlay.Root(), after.Root)
 	require.Equal(t, filepath.Join(overlay.Root(), "devel/a/files"), after.Ports["a"].Options["filespath"], "an absolute path names the overlay")
-	stranger, err := workspace.Open(t.Context(), f.repo, f.source())
+	stranger, err := workspace.Open(workspace.Yours(t.Context(), "test"), f.repo, f.source())
 	require.NoError(t, err)
 	defer stranger.Close()
 	require.NoError(t, stranger.EnsurePort(t.Context(), targetA))
@@ -296,14 +296,14 @@ func TestAnOverlayEvaluatesInTheBaseSession(t *testing.T) {
 func TestRegistrySharesOneWorkspacePerSource(t *testing.T) {
 	f := newFixture(t)
 	registry := &workspace.Registry{}
-	first, releaseFirst, err := registry.Acquire(t.Context(), f.repo, f.source())
+	first, releaseFirst, err := registry.Acquire(workspace.Yours(t.Context(), "test"), f.repo, f.source())
 	require.NoError(t, err)
 	require.NoError(t, first.EnsurePort(t.Context(), targetA))
-	second, releaseSecond, err := registry.Acquire(t.Context(), f.repo, f.source())
+	second, releaseSecond, err := registry.Acquire(workspace.Yours(t.Context(), "test"), f.repo, f.source())
 	require.NoError(t, err)
 	require.Same(t, first, second, "one workspace per source")
 	require.True(t, second.Scope().Holds("devel/a"), "the scope the first holder ensured")
-	other, releaseOther, err := registry.Acquire(t.Context(), f.repo, model.Source{Tree: f.source().Tree, Base: "0000000000000000000000000000000000000001"})
+	other, releaseOther, err := registry.Acquire(workspace.Yours(t.Context(), "test"), f.repo, model.Source{Tree: f.source().Tree, Base: "0000000000000000000000000000000000000001"})
 	require.NoError(t, err)
 	require.NotSame(t, first, other, "a different source identity is a different workspace")
 	require.NoError(t, releaseFirst())
@@ -315,9 +315,9 @@ func TestRegistrySharesOneWorkspacePerSource(t *testing.T) {
 	require.NoDirExists(t, other.Root())
 
 	var none *workspace.Registry
-	alone, release, err := none.Acquire(t.Context(), f.repo, f.source())
+	alone, release, err := none.Acquire(workspace.Yours(t.Context(), "test"), f.repo, f.source())
 	require.NoError(t, err)
-	again, releaseAgain, err := none.Acquire(t.Context(), f.repo, f.source())
+	again, releaseAgain, err := none.Acquire(workspace.Yours(t.Context(), "test"), f.repo, f.source())
 	require.NoError(t, err)
 	require.NotSame(t, alone, again, "a nil registry shares nothing")
 	require.NoError(t, release())
@@ -331,7 +331,7 @@ func TestRegistrySharesOneWorkspacePerSource(t *testing.T) {
 func TestObservationReadsSharedResourcesThroughTheOverlayLink(t *testing.T) {
 	executable := testsupport.MacPortsTclsh(t)
 	f := newFixture(t)
-	base, err := workspace.Open(t.Context(), f.repo, f.source())
+	base, err := workspace.Open(workspace.Yours(t.Context(), "test"), f.repo, f.source())
 	require.NoError(t, err)
 	defer base.Close()
 	require.NoError(t, base.EnsurePort(t.Context(), targetA))

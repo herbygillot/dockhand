@@ -7,6 +7,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -32,6 +33,8 @@ type MaintainerSuggestion struct {
 // maintainer. It only suggests: what can't be read, the login or the
 // index, leaves it empty, and nothing is written.
 func (e *Engine) SuggestMaintainer(ctx context.Context, commit model.ObjectID) MaintainerSuggestion {
+	// Master's index, at a commit of MacPorts' (#162).
+	ctx = workspace.MacPorts(ctx)
 	login, err := e.forge().AuthenticatedUser(ctx)
 	if err != nil || login == "" {
 		return MaintainerSuggestion{}

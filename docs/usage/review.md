@@ -85,9 +85,16 @@ evaluates the Portfiles on this Mac: a script without `--evaluate` is refused
 before anything is adopted, and there is no text-only check.
 
 On an adopted pull request's branch, `check`, `tidy`, `submit`, `diff`, and the
-authoring commands ask the same question on a terminal where the author's commit
-isn't allowed; a script is refused, naming `dockhand adopt --pr 35174
---evaluate`, which allows it. `status` never asks, and nothing drives a queued
+authoring commands (`update`, `checksums`, `revbump`, `rename`, `move`) ask the
+same question on a terminal where the author's commit isn't allowed; No stops
+the command there, and a script is refused, naming `dockhand adopt --pr 35174
+--evaluate`, which allows it. Every evaluation passes one door, which refuses
+any that doesn't say whose Portfiles it evaluates, so nothing is evaluated
+unasked. A queued check is driven only where the author's commit behind its
+files is the one you allowed: a check queued before the branch was refreshed
+to a newer push stays queued, and `dockhand check` checks the branch as it is
+now. `status` never asks, and leaves out what it would have to evaluate an unallowed
+author's commit to read; nothing drives a queued
 check of an adopted branch unless its author's commit is allowed, whether
 `serve`, `wait` or a background worker takes it: one that isn't stays queued,
 its journal saying why.

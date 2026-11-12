@@ -260,7 +260,7 @@ func (e *Engine) OpenReview(ctx context.Context, number int) (ReviewTarget, erro
 	// A changed directory's other ports are said too, as the base's index
 	// names them: devel/libuv's libuv-devel. The base is master's, merged.
 	baseSource := model.Source{Commit: model.ObjectID(target.Base), Base: model.ObjectID(target.Base), Tree: model.ObjectID(target.trees[target.Base])}
-	defined := e.portsDefined(ctx, baseSource, macports.ScopeOf(target.changed).Ports)
+	defined := e.portsDefined(workspace.MacPorts(ctx), baseSource, macports.ScopeOf(target.changed).Ports)
 	for _, directory := range macports.ScopeOf(target.changed).Ports {
 		for _, name := range AlsoDefined(directory, defined) {
 			if !slices.Contains(target.Ports, name) {
@@ -347,7 +347,13 @@ func (e *Engine) ReviewDiff(ctx context.Context, target ReviewTarget) ([]byte, e
 			}
 		}
 	}
-	return e.Repo.DiffTrees(ctx, since, target.trees[target.Head], code(changed)...)
+	// No path, no diff: an empty selection would diff every file, a
+	// README's edit offered as code (Codex's confirmation of #162's fixes).
+	paths := code(changed)
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	return e.Repo.DiffTrees(ctx, since, target.trees[target.Head], paths...)
 }
 
 // textOnlyLeftOut are what a text-only review doesn't run, in its words.
@@ -379,12 +385,20 @@ func (e *Engine) Review(ctx context.Context, target ReviewTarget, evaluate bool)
 	baseSource := model.Source{Commit: model.ObjectID(report.Base), Base: model.ObjectID(report.Base), Tree: model.ObjectID(trees[report.Base])}
 	headSource := model.Source{Commit: model.ObjectID(report.Head), Base: model.ObjectID(report.Base), Tree: model.ObjectID(trees[report.Head])}
 	base, head := model.ObjectID(trees[report.Base]), model.ObjectID(trees[report.Head])
+	// The pull request's Portfiles as their owner's: the person's own; or
+	// another's, which the door says once where the review evaluates, and
+	// refuses where it doesn't, so a text-only review evaluates nothing of
+	// the head; the base it reads is MacPorts' tree (#162).
+	switch {
+	case target.Own:
+		ctx = workspace.Yours(ctx, fmt.Sprintf("#%d", number))
+	case evaluate:
+		ctx = workspace.WithOwner(ctx, workspace.Owner{Whose: target.Whose(), Of: fmt.Sprintf("#%d", number)})
+	default:
+		ctx = workspace.WithOwner(ctx, workspace.Owner{Whose: target.Whose(), Of: fmt.Sprintf("#%d", number),
+			Refused: (&NotAllowedError{Number: number, Whose: target.Whose(), Head: model.ObjectID(report.Head)}).refusal()})
+	}
 	if evaluate {
-		// Another person's Portfiles go through the door, which says
-		// whose once.
-		if !target.Own {
-			ctx = workspace.WithOwner(ctx, workspace.Owner{Whose: target.Whose(), Of: fmt.Sprintf("#%d", number)})
-		}
 		report.Findings = commitrules.CheckCommits(e.ruleCommits(ctx, baseSource, headSource, report.Commits))
 		portfiles, err := e.portfileFindings(ctx, e.Repo, trees[report.Base], trees[report.Head], changed)
 		if err != nil {
@@ -411,7 +425,7 @@ func (e *Engine) Review(ctx context.Context, target ReviewTarget, evaluate bool)
 	}
 	scope := macports.ScopeOf(changed)
 	if len(scope.Ports) > 0 {
-		dependents, err := e.dependents(ctx, model.Source{Commit: model.ObjectID(report.Base), Base: model.ObjectID(report.Base), Tree: base}, scope.Ports)
+		dependents, err := e.dependents(workspace.MacPorts(ctx), model.Source{Commit: model.ObjectID(report.Base), Base: model.ObjectID(report.Base), Tree: base}, scope.Ports)
 		if err != nil {
 			report.DependentsUnread = err.Error()
 		}

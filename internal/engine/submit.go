@@ -1321,6 +1321,11 @@ func (e *Engine) masterUnchanged(ctx context.Context, plan SubmitPlan) error {
 // ApplySubmit pushes the planned commit to your fork, only while the fork's
 // branch is as the plan saw it, and opens or updates the pull request.
 func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered model.Answered) (Submitted, error) {
+	// What the submission evaluates of the branch's Portfiles, finding a
+	// port's directory as it publishes, is their owner's (#162): the door
+	// refuses an unallowed author's commit's, after the refusals that come
+	// before anything is read.
+	ctx = e.marked(ctx, plan.Branch)
 	// The one gate of a submission, whoever submits it: what blocks it,
 	// the commit it was bound to, and, where nobody looks, what holds it
 	// (branchstate.Publish; R3-10, where ship and serve each held it).

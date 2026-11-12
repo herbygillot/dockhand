@@ -606,6 +606,10 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 // branchStatus is BranchStatus, with whether the checkout has a fork
 // remote read already.
 func (e *Engine) branchStatus(ctx context.Context, branch model.Branch, noFork bool, reads *statusReads) (BranchStatus, error) {
+	// What status evaluates of the branch's files is their owner's: an
+	// adopted branch's unallowed Portfiles are refused at the door, and
+	// status, which never asks, says what it couldn't read (#162).
+	ctx = e.marked(ctx, branch)
 	status := BranchStatus{Branch: branch, NoFork: noFork}
 	if reads == nil {
 		var err error

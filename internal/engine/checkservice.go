@@ -52,14 +52,15 @@ func (a checkAdmission) ForgetKept(ctx context.Context, branch model.BranchID) e
 // evaluation at a revision.
 type checkHooks struct{ e *Engine }
 
-// Evaluating marks a run's driving with its branch's owner, refusing a
-// branch whose author's commit the person hasn't allowed (evaluating).
+// Evaluating marks a run's driving with its owner, refusing a run whose
+// revision's author's commit the person hasn't allowed
+// (evaluatingRevision).
 func (h checkHooks) Evaluating(ctx context.Context, run model.Run) (context.Context, error) {
-	branch, err := h.e.Branch(ctx, run.Branch)
+	revision, err := h.e.Revision(ctx, run.Revision)
 	if err != nil {
 		return ctx, err
 	}
-	return h.e.evaluating(ctx, branch)
+	return h.e.evaluatingRevision(ctx, revision)
 }
 
 func (h checkHooks) BeforeEnvironment(ctx context.Context, _ model.Run, plan model.Plan, environment model.Environment, source model.Source) []string {

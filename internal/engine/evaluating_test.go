@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"sync/atomic"
 	"testing"
@@ -49,12 +50,17 @@ func TestADriverNamesTheOwnerBeforeItReadsAQueuedRun(t *testing.T) {
 	provider := &scriptedProvider{}
 	e.Providers = map[string]buildenv.Provider{"command": provider}
 	queued := queuedHarborRun(t, e, tahoeArm)
+	revision, err := e.Revision(t.Context(), queued.Revision)
+	require.NoError(t, err)
+	// The author's commit is the one the revision was captured at.
+	head := cmp.Or(revision.Source.Commit, revision.Head)
+	require.NotEmpty(t, head)
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
 		b, err := tx.Branch(queued.Branch)
 		if err != nil {
 			return err
 		}
-		b.PullRequest = &model.PullRequest{Repository: UpstreamRepository, Number: 34905, Head: "contributor:patch", Adopted: true, Author: "contributor", AuthorHead: "1111111111111111111111111111111111111111"}
+		b.PullRequest = &model.PullRequest{Repository: UpstreamRepository, Number: 34905, Head: "contributor:patch", Adopted: true, Author: "contributor", AuthorHead: head}
 		return tx.UpdateBranch(b)
 	}))
 	spy := &markedPorts{fakePorts: harborPorts()}
@@ -75,7 +81,7 @@ func TestADriverNamesTheOwnerBeforeItReadsAQueuedRun(t *testing.T) {
 	require.True(t, said, "the run's journal says why it waits")
 
 	// Allowed, it's driven, every read with its owner.
-	require.NoError(t, e.AllowEvaluation(t.Context(), 34905, "1111111111111111111111111111111111111111"))
+	require.NoError(t, e.AllowEvaluation(t.Context(), 34905, head))
 	run, err = e.Drive(t.Context(), session(t, e), queued.ID)
 	require.NoError(t, err)
 	require.Equal(t, model.RunPassed, run.State, run.Detail)
@@ -149,4 +155,101 @@ func TestTheQuestionSinceAnAllowedHeadShowsWhatChangedBetweenThem(t *testing.T) 
 		files = append(files, file.Path)
 	}
 	require.Contains(t, files, group)
+}
+
+// With no Portfile or PortGroup changed since the head the person allowed,
+// the question has nothing to offer: an empty diff and no files, where an
+// empty selection of paths diffed everything, a README included (Codex's
+// confirmation of #162's fixes, finding 3's edge).
+func TestNothingEvaluatedChangedSinceTheAllowedHeadOffersNothing(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	fake := f.withFork(t, e)
+	contribution(t, f, fake)
+	a := testsupport.Git(t, f.upstream, "rev-parse", "contrib")
+	testsupport.Git(t, f.upstream, "switch", "-q", "contrib")
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"README.md": "only prose changed\n"})
+	testsupport.Git(t, f.upstream, "add", "README.md")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "docs: explain jq")
+	testsupport.Git(t, f.upstream, "update-ref", "refs/pull/34905/head", "HEAD")
+	testsupport.Git(t, f.upstream, "switch", "-q", "master")
+	require.NoError(t, e.AllowEvaluation(t.Context(), 34905, model.ObjectID(a)))
+	target, err := e.OpenReview(t.Context(), 34905)
+	require.NoError(t, err)
+	diff, err := e.ReviewDiff(t.Context(), target)
+	require.NoError(t, err)
+	require.Empty(t, diff, "no Portfile or PortGroup changed since the allowed head")
+	require.Empty(t, target.Portfiles)
+}
+
+// readsAt keeps the sources a reader was asked to read.
+type readsAt struct {
+	markedPorts
+	reads []model.Source
+}
+
+func (p *readsAt) Ports(ctx context.Context, s model.Source, d string, e model.Environment, v map[string]bool) ([]macports.PortInfo, error) {
+	p.reads = append(p.reads, s)
+	return p.markedPorts.Ports(ctx, s, d, e, v)
+}
+
+// The driver asks consent for the author's commit behind the queued run's
+// revision, not the branch's author's commit now: a check queued at head A,
+// before the branch was refreshed to head B and B alone allowed, isn't
+// driven on B's yes, since B may have taken back A's code (Codex's
+// confirmation of #162's fixes, finding 1).
+func TestTheDriverAsksConsentForTheQueuedRevisionsAuthorsCommit(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	fake := f.withFork(t, e)
+	contribution(t, f, fake)
+	adopted, err := e.AdoptPullRequest(t.Context(), 34905, "")
+	require.NoError(t, err)
+	made := adopted
+	old := adopted.Head
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}})
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: adopted.Branch, Mode: CaptureAuto})
+	require.NoError(t, err)
+	// A check queued before #162, when planning asked nothing: planned
+	// with the branch's adoption set aside, then put back.
+	setAside := func(adopted bool) {
+		require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+			b, err := tx.Branch(made.Branch.ID)
+			if err != nil {
+				return err
+			}
+			b.PullRequest.Adopted = adopted
+			return tx.UpdateBranch(b)
+		}))
+	}
+	setAside(false)
+	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
+	require.NoError(t, err)
+	setAside(true)
+	queued, err := e.Enqueue(t.Context(), adopted.Branch, plan, model.OriginPerson)
+	require.NoError(t, err)
+	testsupport.Git(t, f.upstream, "switch", "-q", "contrib")
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\n# retracted old code\n"})
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "jq: retract the update")
+	testsupport.Git(t, f.upstream, "update-ref", "refs/pull/34905/head", "HEAD")
+	testsupport.Git(t, f.upstream, "switch", "-q", "master")
+	target, err := e.OpenReview(t.Context(), 34905)
+	require.NoError(t, err)
+	moved, err := e.RefreshAdopted(t.Context(), adopted.Branch, model.ObjectID(target.Head))
+	require.NoError(t, err)
+	require.NoError(t, e.AllowAdopted(t.Context(), moved))
+	allowed, err := e.Allowed(t.Context(), 34905, old)
+	require.NoError(t, err)
+	require.False(t, allowed, "A itself was never allowed")
+	provider := &scriptedProvider{}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	spy := &readsAt{markedPorts: markedPorts{fakePorts: fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}}}}
+	usePorts(e, spy)
+	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.Error(t, err, "B's yes isn't A's")
+	require.Equal(t, model.RunQueued, run.State)
+	require.Empty(t, provider.jobs)
+	require.Empty(t, spy.reads, "A's tree was never read")
 }

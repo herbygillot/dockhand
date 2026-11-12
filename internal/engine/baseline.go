@@ -83,6 +83,12 @@ func (e *Engine) PreviewBaseline(ctx context.Context, request BaselineRequest) (
 
 func (e *Engine) planBaseline(ctx context.Context, request BaselineRequest, record bool) (Baseline, error) {
 	branch, ports := request.Branch, request.Ports
+	// The base is planned beside what the branch's check read, as its
+	// owner's (#162).
+	ctx, err := e.evaluating(ctx, branch)
+	if err != nil {
+		return Baseline{}, err
+	}
 	var baseline Baseline
 	var checked model.Revision
 	var found bool
@@ -100,7 +106,7 @@ func (e *Engine) planBaseline(ctx context.Context, request BaselineRequest, reco
 		}
 		baseline.Of, found = named, true
 	}
-	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
 		if !found {
 			if baseline.Of, found, err = latestCheck(r, branch.ID); err != nil || !found {
@@ -238,7 +244,9 @@ func (e *Engine) BaselineCandidates(ctx context.Context, run model.Run) (Baselin
 	if worthy, offer.NewTests, err = e.testsNewHere(ctx, checked, evidence, worthy); err != nil || len(worthy) == 0 {
 		return offer, err
 	}
-	if worthy, err = e.readsChanged(ctx, checked, evidence, worthy); err != nil || len(worthy) == 0 {
+	// What the check read is its revision's, as its owner's (#162).
+	owned, _ := e.evaluatingRevision(ctx, checked)
+	if worthy, err = e.readsChanged(owned, checked, evidence, worthy); err != nil || len(worthy) == 0 {
 		return offer, err
 	}
 	// A port an earlier baseline still answers at the base, across a

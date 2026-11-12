@@ -160,7 +160,7 @@ func TestVersionPreparationUpdatesSourceAndChecksumsWithFidelity(t *testing.T) {
 				}
 				fmt.Fprint(w, body)
 			})
-			result, err := service.Prepare(t.Context(), request)
+			result, err := service.Prepare(yours(t), request)
 			require.NoError(t, err)
 			require.Equal(t, int64(1), requests.Load())
 			require.NotEmpty(t, result.PreparedTree)
@@ -205,7 +205,7 @@ func TestVersionPreparationRefusesCollateralChangesBeforeDownloading(t *testing.
 			var requests atomic.Int64
 			service, request := versionFixture(t, test.style, test.extra, func(w http.ResponseWriter, r *http.Request) { requests.Add(1); fmt.Fprint(w, "archive") })
 			request.Selection.Subport = test.subport
-			result, err := service.Prepare(t.Context(), request)
+			result, err := service.Prepare(yours(t), request)
 			require.ErrorIs(t, err, test.expected)
 			require.Empty(t, result.PreparedTree)
 			require.Empty(t, result.Commits)
@@ -224,7 +224,7 @@ func TestVersionPreparationRejectsTagMutationDuringDownload(t *testing.T) {
 		}
 		return forge.Tag{Name: name, Commit: commit}, nil
 	})
-	result, err := service.Prepare(t.Context(), request)
+	result, err := service.Prepare(yours(t), request)
 	require.ErrorIs(t, err, upstream.ErrSourceChanged)
 	require.Empty(t, result.PreparedTree)
 	require.Empty(t, result.Commits)
@@ -245,7 +245,7 @@ func TestVersionPreparationNamedAndMultipleArchives(t *testing.T) {
 			tree, err := service.Repo.EditTree(t.Context(), string(request.Source.Tree), []git.FileEdit{{Path: "devel/fixture/Portfile", Before: before, After: []byte(contents), Mode: before.Mode}})
 			require.NoError(t, err)
 			request.Source = model.Source{Tree: model.ObjectID(tree)}
-			result, err := service.Prepare(t.Context(), request)
+			result, err := service.Prepare(yours(t), request)
 			require.NoError(t, err)
 			count := 1
 			if multiple {
@@ -269,7 +269,7 @@ func TestGitLabPreparationPreservesFrozenLocalPatch(t *testing.T) {
 	tree, err := service.Repo.EditTree(t.Context(), string(request.Source.Tree), []git.FileEdit{{Path: "devel/fixture/files/fix.patch", After: []byte("fixture local patch\n"), Mode: 0o100644}})
 	require.NoError(t, err)
 	request.Source = model.Source{Tree: model.ObjectID(tree)}
-	result, err := service.Prepare(t.Context(), request)
+	result, err := service.Prepare(yours(t), request)
 	require.NoError(t, err)
 	require.Len(t, result.Files, 1)
 	require.Contains(t, string(result.Files[0].After), "patchfiles fix.patch")
@@ -301,13 +301,13 @@ func TestCalendarPreparationEvaluatesPreservedTransformation(t *testing.T) {
 				return forge.Tag{Name: tag, Commit: strings.Repeat("a", 40)}, nil
 			})
 			service.Upstream.Catalogs[portsource.GitHub] = catalog
-			release, err := service.ResolveRelease(t.Context(), request)
+			release, err := service.ResolveRelease(yours(t), request)
 			require.NoError(t, err)
 			if mismatch {
 				release.Version = "20260914"
 			}
 			request.Release = &release
-			result, err := service.Prepare(t.Context(), request)
+			result, err := service.Prepare(yours(t), request)
 			if mismatch {
 				require.ErrorIs(t, err, editprep.ErrFidelity)
 				require.Empty(t, result.PreparedTree)
@@ -343,7 +343,7 @@ func TestAnUpdateOfAPortOnAMirrorGroupIsCompared(t *testing.T) {
 	})
 	request.KeepArchives = t.TempDir()
 	request.Source = shippedChecksums(t, service, request.Source, []byte(shipped))
-	result, err := service.Prepare(t.Context(), request)
+	result, err := service.Prepare(yours(t), request)
 	require.NoError(t, err)
 	require.Equal(t, next, string(fileBytes(t, result.Downloads[0].Path)))
 	require.Empty(t, result.PreviousProblem)
@@ -397,7 +397,7 @@ func TestAnUpdateComparesWithTheArchiveMacPortsShipped(t *testing.T) {
 				t.Cleanup(mirror.Close)
 				service.Mirror = mirror.URL + "/"
 			}
-			result, err := service.Prepare(t.Context(), request)
+			result, err := service.Prepare(yours(t), request)
 			require.NoError(t, err, "the update goes on whatever the comparison can have")
 			require.Equal(t, next, string(fileBytes(t, result.Downloads[0].Path)))
 			if test.problem != "" {
@@ -431,14 +431,14 @@ func TestAReleaseFoundAlreadyIsCheckedNotFoundAgain(t *testing.T) {
 		return forge.Tag{Name: tag, Commit: strings.Repeat("a", 40)}, nil
 	})
 	request.Version, request.Release = "2.0", nil
-	found, err := service.ResolveRelease(t.Context(), request)
+	found, err := service.ResolveRelease(yours(t), request)
 	require.NoError(t, err)
 	require.Equal(t, "v2.0", found.Tag)
 	before := asked.Load()
 	require.NotZero(t, before)
 
 	request.Release = &found
-	again, err := service.ResolveRelease(t.Context(), request)
+	again, err := service.ResolveRelease(yours(t), request)
 	require.NoError(t, err)
 	require.Equal(t, found, again)
 	require.Equal(t, before, asked.Load(), "upstream isn't asked again")
@@ -446,7 +446,7 @@ func TestAReleaseFoundAlreadyIsCheckedNotFoundAgain(t *testing.T) {
 	moved := found
 	moved.Tag = "release-2.0"
 	request.Release = &moved
-	_, err = service.ResolveRelease(t.Context(), request)
+	_, err = service.ResolveRelease(yours(t), request)
 	require.ErrorIs(t, err, editprep.ErrFidelity, "a release the Portfile can't name is refused, found now or before")
 }
 
@@ -459,7 +459,7 @@ func TestAnOptionReadingTheBuildDirectoryIsTheSameInEachEvaluation(t *testing.T)
 	t.Parallel()
 	release := manifestArchive(t, "README", "fixed\n", "2.0")
 	service, request := versionFixture(t, "setup", "build.pre_args --wheel --outdir ${workpath}\n", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(release) })
-	result, err := service.Prepare(t.Context(), request)
+	result, err := service.Prepare(yours(t), request)
 	require.NoError(t, err)
 	require.NotEmpty(t, result.Files)
 	require.Contains(t, string(result.Files[0].After), "github.setup owner fixture 2.0 v")
@@ -479,7 +479,7 @@ func TestAnUpdateDropsAPatchTheReleaseAlreadyHolds(t *testing.T) {
 	tree, err := service.Repo.EditTree(t.Context(), string(request.Source.Tree), []git.FileEdit{{Path: "devel/fixture/files/fix.diff", After: []byte("--- README\n+++ README\n@@ -1 +1 @@\n-broken\n+fixed\n"), Mode: 0o100644}})
 	require.NoError(t, err)
 	request.Source = model.Source{Tree: model.ObjectID(tree)}
-	result, err := service.Prepare(t.Context(), request)
+	result, err := service.Prepare(yours(t), request)
 	require.NoError(t, err)
 	require.Equal(t, []string{"fix.diff"}, result.Dropped)
 	require.Empty(t, result.PatchProblems(), "a patch dropped is no problem")
@@ -503,7 +503,7 @@ func TestAPatchWhoseRemovalChangesMoreStays(t *testing.T) {
 	require.NoError(t, err)
 	request.Source = model.Source{Tree: model.ObjectID(tree)}
 	var said []string
-	ctx := progress.WithReporter(t.Context(), func(update progress.Update) { said = append(said, update.Message) })
+	ctx := progress.WithReporter(yours(t), func(update progress.Update) { said = append(said, update.Message) })
 	result, err := service.Prepare(ctx, request)
 	require.NoError(t, err)
 	require.Empty(t, result.Dropped)
@@ -533,7 +533,7 @@ func TestAnUpdateMovesGitHubsTarballToTheArchive(t *testing.T) {
 			}
 			fmt.Fprint(w, "fixture archive bytes")
 		})
-		result, err := service.Prepare(t.Context(), request)
+		result, err := service.Prepare(yours(t), request)
 		require.NoError(t, err, c.why)
 		require.Equal(t, c.moved, result.SourceMoved != nil, c.why)
 		require.Equal(t, c.moved, strings.Contains(string(result.Files[0].After), "github.tarball_from archive"), c.why)
@@ -558,11 +558,11 @@ func TestAnUpdateToTheCurrentVersionIsCurrent(t *testing.T) {
 				return forge.Tag{Name: tag, Commit: strings.Repeat("a", 40)}, nil
 			})
 			request.Version, request.Release = "1.0", nil
-			release, err := service.ResolveRelease(t.Context(), request)
+			release, err := service.ResolveRelease(yours(t), request)
 			require.NoError(t, err)
 			require.True(t, release.NoUpdate)
 			request.Release = &release
-			result, err := service.Prepare(t.Context(), request)
+			result, err := service.Prepare(yours(t), request)
 			require.NoError(t, err)
 			require.Empty(t, result.Files, "nothing to change")
 		})
@@ -582,10 +582,10 @@ func TestACurrentVersionReadsItsFamily(t *testing.T) {
 		return forge.Tag{Name: tag, Commit: strings.Repeat("a", 40)}, nil
 	})
 	request.Version, request.Release = "1.0", nil
-	release, err := service.ResolveRelease(t.Context(), request)
+	release, err := service.ResolveRelease(yours(t), request)
 	require.NoError(t, err)
 	request.Release = &release
-	result, err := service.Prepare(t.Context(), request)
+	result, err := service.Prepare(yours(t), request)
 	require.NoError(t, err)
 	require.Empty(t, result.Files)
 	require.NotEmpty(t, result.Fidelity)

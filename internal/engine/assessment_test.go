@@ -24,6 +24,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
@@ -630,18 +631,18 @@ port::register_callback demo_crates
 	planner, err := e.archivePlanner()
 	require.NoError(t, err)
 
-	info, plan, err := planner.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/zdemo", "")
+	info, plan, err := planner.ArchivePlan(workspace.Yours(t.Context(), "test"), model.Source{Tree: tree}, "devel/zdemo", "")
 	require.NoError(t, err)
 	require.Len(t, plan, 1)
 	require.Equal(t, "zdemo-1.0.tar.gz", plan[0].Name)
 	require.Contains(t, info.Options["cargo.crates"], "anyhow", "the port is as it is, crates and all")
 	require.Contains(t, info.Options["checksums"], "anyhow-1.0.0.crate")
 
-	_, plan, err = planner.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/zpatched", "")
+	_, plan, err = planner.ArchivePlan(workspace.Yours(t.Context(), "test"), model.Source{Tree: tree}, "devel/zpatched", "")
 	require.NoError(t, err)
 	require.Equal(t, "zpatched-1.0.tar.gz", plan[0].Name)
 
-	_, _, err = planner.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/zgit", "")
+	_, _, err = planner.ArchivePlan(workspace.Yours(t.Context(), "test"), model.Source{Tree: tree}, "devel/zgit", "")
 	require.ErrorIs(t, err, treequery.ErrNoArchives)
 }
 
@@ -712,16 +713,16 @@ func TestASubportsArchivesArePlannedForIt(t *testing.T) {
 	})
 	planner, err := e.archivePlanner()
 	require.NoError(t, err)
-	info, plan, err := planner.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/zdemo", "zdemo-devel")
+	info, plan, err := planner.ArchivePlan(workspace.Yours(t.Context(), "test"), model.Source{Tree: tree}, "devel/zdemo", "zdemo-devel")
 	require.NoError(t, err)
 	require.Equal(t, "zdemo-devel", info.Name)
 	require.Equal(t, "2.0", info.Version)
 	require.Len(t, plan, 1)
 	require.Equal(t, "zdemo-2.0.tar.gz", plan[0].Name, "distname is ${name}-${version}, the main port's name")
-	info, _, err = planner.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/zdemo", "zdemo")
+	info, _, err = planner.ArchivePlan(workspace.Yours(t.Context(), "test"), model.Source{Tree: tree}, "devel/zdemo", "zdemo")
 	require.NoError(t, err)
 	require.Equal(t, "1.0", info.Version)
-	_, _, err = planner.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/zdemo", "zdemo-nightly")
+	_, _, err = planner.ArchivePlan(workspace.Yours(t.Context(), "test"), model.Source{Tree: tree}, "devel/zdemo", "zdemo-nightly")
 	require.ErrorIs(t, err, treequery.ErrNoPort)
 }
 

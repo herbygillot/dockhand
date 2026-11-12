@@ -22,6 +22,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/version"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -300,6 +301,18 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	// unattended, its standing answer to the move's hold (Then's item 2).
 	if request.Unattended && !request.FollowMoves && e.holdsFor(request.Port).followMoves {
 		request.FollowMoves, request.standingFollow = true, true
+	}
+	// Preparing evaluates the Portfile, as its owner's: master's for one
+	// prepared from master, else the branch's, another's only where the
+	// person allowed them (#162, Codex's confirmation: checksums, update
+	// and revbump reached the door unmarked).
+	if request.FromMaster || request.Start != nil {
+		ctx = workspace.MacPorts(ctx)
+	} else {
+		var err error
+		if ctx, err = e.evaluating(ctx, request.Branch); err != nil {
+			return Update{Port: request.Port}, err
+		}
 	}
 	update, err := e.updateWithObsolete(ctx, request)
 	if err == nil && request.Action == model.EditUpdate && !update.Current && update.Port != "" {

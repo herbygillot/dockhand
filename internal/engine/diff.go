@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -240,6 +241,12 @@ func (i Impact) OneOfEachKind() []treequery.Dependent {
 // of the named ports, or else of every port the branch changes beyond its
 // revision, from the index at the branch's base.
 func (e *Engine) Impact(ctx context.Context, branch model.Branch, ports []string) (Impact, error) {
+	// What the change means is read by evaluating the branch's Portfiles,
+	// as their owner's (#162).
+	ctx, err := e.evaluating(ctx, branch)
+	if err != nil {
+		return Impact{}, err
+	}
 	diff, err := e.Diff(ctx, branch, nil)
 	impact := Impact{Diff: diff}
 	if err != nil {
@@ -504,6 +511,16 @@ type LinkedPorts struct {
 // LinkedPorts reads a port's direct library dependents for a branch.
 func (e *Engine) LinkedPorts(ctx context.Context, branch model.Branch, port string, except []string) (LinkedPorts, error) {
 	linked := LinkedPorts{Base: branch.Base}
+	// The branch's Portfiles as their owner's, master's for a look from
+	// master (#162).
+	if branch.ID == "" {
+		ctx = workspace.MacPorts(ctx)
+	} else {
+		var err error
+		if ctx, err = e.evaluating(ctx, branch); err != nil {
+			return linked, err
+		}
+	}
 	// A look from master, before any branch, changes no ports yet.
 	var status BranchStatus
 	if branch.ID != "" {

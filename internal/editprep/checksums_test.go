@@ -29,7 +29,7 @@ func TestRefreshChecksumsPreservesVersionsAndCanBeCurrent(t *testing.T) {
 			service, request := preparationFixture(t, "revision 4\nmaster_sites "+server.URL+"/\n"+declarations)
 			request.Action = model.EditChecksums
 			request.Subject = ""
-			result, err := service.Prepare(t.Context(), request)
+			result, err := service.Prepare(yours(t), request)
 			require.NoError(t, err)
 			require.Len(t, result.Commits, 1)
 			require.Equal(t, "fixture: refresh checksums", result.Commits[0].Subject)
@@ -39,7 +39,7 @@ func TestRefreshChecksumsPreservesVersionsAndCanBeCurrent(t *testing.T) {
 			require.Equal(t, 4, final.Revision)
 			require.Equal(t, int64(len(result.Downloads)), reads.Load())
 			request.Source = model.Source{Tree: result.PreparedTree}
-			again, err := service.Prepare(t.Context(), request)
+			again, err := service.Prepare(yours(t), request)
 			require.NoError(t, err)
 			require.Equal(t, result.PreparedTree, again.PreparedTree)
 			require.Empty(t, again.Files)
@@ -55,7 +55,7 @@ func TestRefreshChecksumsRejectsCustomFetchBeforeDownload(t *testing.T) {
 	defer server.Close()
 	service, request := preparationFixture(t, "master_sites "+server.URL+"/\ndistfiles source.tar.gz\nchecksums sha256 "+strings.Repeat("0", 64)+"\npre-fetch { set distfiles other.tar.gz }\n")
 	request.Action, request.Subject = model.EditChecksums, ""
-	result, err := service.Prepare(t.Context(), request)
+	result, err := service.Prepare(yours(t), request)
 	require.ErrorIs(t, err, editprep.ErrUnsupported)
 	require.Empty(t, result.Commits)
 	require.Zero(t, reads.Load())
@@ -74,7 +74,7 @@ func TestAnEditSwitchesTheLinksThatAnswerOverHTTPS(t *testing.T) {
 	service, request := preparationFixture(t, "homepage http://fixture.example/\nlong_description see ${homepage}docs\nlivecheck.url http://fixture.example/releases\nmaster_sites "+site+"\ndistfiles source.tar.gz\nchecksums sha256 "+strings.Repeat("0", 64)+" size 0\n")
 	request.Action, request.Subject = model.EditChecksums, ""
 	request.HTTPS = testsupport.HTTPSAnswers{"https://fixture.example/": true, "https://" + strings.TrimPrefix(site, "http://") + "source.tar.gz": true}
-	result, err := service.Prepare(t.Context(), request)
+	result, err := service.Prepare(yours(t), request)
 	require.NoError(t, err)
 	after := string(result.Files[0].After)
 	require.Contains(t, after, "homepage https://fixture.example/\n")

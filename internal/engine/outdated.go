@@ -409,6 +409,8 @@ type SkippedUpdate struct {
 // found, is left alone. A port whose newest release is uncertain isn't
 // outdated, and isn't planned: which release it takes is a person's call.
 func (e *Engine) PlanOutdated(ctx context.Context, report OutdatedReport) (OutdatedPlan, error) {
+	// Each port's directory is master's: MacPorts' tree (#162).
+	ctx = workspace.MacPorts(ctx)
 	var plan OutdatedPlan
 	var work *OpenWork
 	for _, port := range report.Ports {

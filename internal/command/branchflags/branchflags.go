@@ -153,9 +153,10 @@ func offerToTrack(ctx context.Context, e *engine.Engine, streams term.Streams, e
 // MayEvaluate asks, on a terminal, before a command evaluates an adopted
 // pull request's Portfiles at an author's commit the person hasn't
 // allowed (#162), listing what the branch changes, with its diff one key
-// away; yes is kept for that commit. No, or a script, is left to the
-// engine's door, which refuses the evaluation, naming dockhand adopt --pr
-// <n> --evaluate. The person's own branch asks nothing.
+// away; yes is kept for that commit. No stops the command with the door's
+// refusal, naming dockhand adopt --pr <n> --evaluate; a script is left to
+// the engine's door, which refuses the same way. The person's own branch
+// asks nothing.
 func MayEvaluate(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch) error {
 	whose, others := engine.OthersPortfiles(branch)
 	if !others || !streams.Terminal() {
@@ -182,7 +183,9 @@ func MayEvaluate(ctx context.Context, e *engine.Engine, streams term.Streams, br
 			// The diff is written raw, as tidy's is (#94).
 			fmt.Fprint(streams.Out, string(diff))
 		default:
-			return nil
+			// A No stops the command here, as the door would (Codex's
+			// confirmation of #162's fixes).
+			return engine.NotAllowedFor(branch)
 		}
 	}
 }
