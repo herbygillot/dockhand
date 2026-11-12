@@ -17,23 +17,19 @@ func TestAGitSourceIsBuiltByTheCommitItsRefNamed(t *testing.T) {
 	commit, other := ObjectID(strings.Repeat("a", 40)), ObjectID(strings.Repeat("b", 40))
 	tag := GitSource{URL: "https://example.org/harbor.git", Ref: "v4", Commit: commit, ResolvedAt: time.Now()}
 	require.Equal(t, string(commit), tag.Expected())
-	require.True(t, tag.BuiltBy(commit))
-	require.False(t, tag.Moved(commit))
-	require.False(t, tag.BuiltBy(other))
-	require.True(t, tag.Moved(other), "the tag named another commit when it was fetched")
-	require.False(t, tag.BuiltBy(""), "a build that didn't say")
-	require.False(t, tag.Moved(""), "isn't said to have moved")
-	require.False(t, tag.BuiltBy(commit[:12]), "a commit is fetched whole")
+	require.Equal(t, SourceSame, tag.AgainstFetched(commit))
+	require.Equal(t, SourceMoved, tag.AgainstFetched(other), "the tag named another commit when it was fetched")
+	require.Equal(t, SourceUnknown, tag.AgainstFetched(""), "a build that didn't say isn't said to have moved")
+	require.Equal(t, SourceMoved, tag.AgainstFetched(commit[:12]), "a commit is fetched whole")
 
 	short := GitSource{URL: tag.URL, Ref: "aaaaaaa", Abbreviation: "aaaaaaa", ResolvedAt: time.Now()}
 	require.Equal(t, "aaaaaaa", short.Expected())
-	require.True(t, short.BuiltBy(commit), "the commit it abbreviates")
-	require.True(t, short.Moved(other))
+	require.Equal(t, SourceSame, short.AgainstFetched(commit), "the commit it abbreviates")
+	require.Equal(t, SourceMoved, short.AgainstFetched(other))
 
 	unresolved := GitSource{URL: tag.URL, Ref: "v4", Unresolved: "its refs couldn't be read", ResolvedAt: time.Now()}
 	require.Empty(t, unresolved.Expected())
-	require.False(t, unresolved.BuiltBy(commit), "nothing establishes what wasn't resolved")
-	require.False(t, unresolved.Moved(commit))
+	require.Equal(t, SourceUnknown, unresolved.AgainstFetched(commit), "nothing establishes what wasn't resolved")
 }
 
 // What a Git-fetched build fetched is one of its inputs, and a key made
@@ -111,36 +107,4 @@ func TestTwoReadingsOfASourceAreJudgedOneWay(t *testing.T) {
 	old := &GitSource{URL: "https://example.org/harbor.git", Ref: "v4"}
 	require.Equal(t, SourceUnknown, SourceAgainst(old, source("v4", commit, "")))
 	require.Equal(t, SourceUnknown, old.AgainstFetched(commit))
-}
-
-// The methods the readers ask today equal the judgment, until each reader
-// asks it: Same is same or unresolved, BuiltBy is AgainstFetched same,
-// Moved is AgainstFetched moved, and both are false where the plan names
-// nothing, whatever the build said.
-func TestTheOldSourceMethodsEqualTheJudgment(t *testing.T) {
-	commit, other := ObjectID(strings.Repeat("a", 40)), ObjectID(strings.Repeat("b", 40))
-	readings := []GitSource{
-		{URL: "u", Ref: "v4", Commit: commit},
-		{URL: "u", Ref: "v4", Commit: other},
-		{URL: "u", Ref: "v4", Abbreviation: "aaaa"},
-		{URL: "u", Ref: "v4", Abbreviation: "bbbb"},
-		{URL: "u", Ref: "v4"},
-		{URL: "u", Ref: "v5", Commit: commit},
-		{URL: "w", Ref: "v4", Commit: commit},
-	}
-	for _, a := range readings {
-		for _, b := range readings {
-			standing := SourceAgainst(&a, &b)
-			// Same compares the strings, so two different abbreviations
-			// under one ref, which can't be, differ there alone.
-			if a.Commit == "" && b.Commit == "" && a.Abbreviation != "" && b.Abbreviation != "" && a.Abbreviation != b.Abbreviation {
-				continue
-			}
-			require.Equal(t, standing == SourceSame || standing == SourceUnresolved, a.Same(b), "%+v against %+v", a, b)
-		}
-		for _, fetched := range []ObjectID{commit, other, ""} {
-			require.Equal(t, a.AgainstFetched(fetched) == SourceSame, a.BuiltBy(fetched), "%+v built by %q", a, fetched)
-			require.Equal(t, a.AgainstFetched(fetched) == SourceMoved, a.Moved(fetched), "%+v moved from %q", a, fetched)
-		}
-	}
 }

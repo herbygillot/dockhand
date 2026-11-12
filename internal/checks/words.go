@@ -86,9 +86,9 @@ func FetchedWords(source model.GitSource, fetched model.ObjectID) string {
 		return fmt.Sprintf("which commit of %s it fetched isn't known, nor which one was expected", RefWords(source.Ref))
 	case fetched == "":
 		return fmt.Sprintf("which commit of %s it fetched isn't known: its provider didn't say; %s was expected", RefWords(source.Ref), expectedWords(source))
-	case source.BuiltBy(fetched):
+	case source.AgainstFetched(fetched) == model.SourceSame:
 		return fmt.Sprintf("fetched %s, the commit %s named when the check was planned", fetched.Short(), RefWords(source.Ref))
-	case source.Moved(fetched):
+	case source.AgainstFetched(fetched) == model.SourceMoved:
 		return fmt.Sprintf("fetched %s, not %s, which %s named when the check was planned", fetched.Short(), expectedWords(source), RefWords(source.Ref))
 	}
 	return fmt.Sprintf("fetched %s of %s, which couldn't be resolved when the check was planned", fetched.Short(), RefWords(source.Ref))

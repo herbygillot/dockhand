@@ -1370,7 +1370,7 @@ func (b *build) judgeSource(result model.TargetResult) model.TargetResult {
 	}
 	fetched, said := b.fetched[result.Target]
 	switch {
-	case source.Moved(fetched):
+	case source.AgainstFetched(fetched) == model.SourceMoved:
 		result.Outcome, result.Phase, result.Detail = model.OutcomeFailed, model.PhaseFetch, movedWords(source, fetched)
 	case !said:
 		b.Progress(fmt.Sprintf("%s: its build didn't say which commit of %s it fetched, so no later check can reuse its result", result.Target, RefWords(source.Ref)))

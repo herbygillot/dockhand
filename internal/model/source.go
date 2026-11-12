@@ -46,37 +46,6 @@ func (s GitSource) Expected() string {
 	return s.Abbreviation
 }
 
-// BuiltBy reports whether a build that checked out fetched built this
-// source: the commit Ref named when it was resolved. No build is
-// established to have built a source that couldn't be resolved, nor is a
-// build that didn't say what it fetched.
-func (s GitSource) BuiltBy(fetched ObjectID) bool {
-	switch {
-	case fetched == "":
-		return false
-	case s.Commit != "":
-		return fetched == s.Commit
-	case s.Abbreviation != "":
-		return strings.HasPrefix(string(fetched), s.Abbreviation)
-	}
-	return false
-}
-
-// Same reports whether two resolutions name one source: the same
-// repository and ref, resolved to the same commit; when each was read
-// doesn't matter.
-func (s GitSource) Same(other GitSource) bool {
-	return s.URL == other.URL && s.Ref == other.Ref && s.Expected() == other.Expected()
-}
-
-// Moved reports whether a build that checked out fetched built another
-// source than this one: Ref named another commit when the build fetched it
-// than when it was resolved, as a tag moved in between does. What isn't
-// known on either side hasn't moved; it is only not established (BuiltBy).
-func (s GitSource) Moved(fetched ObjectID) bool {
-	return s.Expected() != "" && fetched != "" && !s.BuiltBy(fetched)
-}
-
 // SourceStanding is what one reading of a source says of another
 // (docs/designs/source-comparison.md): the one judgment joining, coverage,
 // evidence, reuse, a run's verdict and submit read, each with its own

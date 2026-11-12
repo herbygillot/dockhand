@@ -274,47 +274,48 @@ func (e *Engine) movedSources(ctx context.Context, evidence *Evidence) []model.C
 	if evidence == nil {
 		return nil
 	}
-	now := map[[2]string]model.GitSource{}
+	// One traversal over the Git sources, then the tags, each repository
+	// and ref read once, judged by model.SourceAgainst.
 	var concerns []model.Concern
-	for _, p := range plannedSources(evidence.Plan) {
-		target, planned := p.target, p.source
-		key := [2]string{planned.URL, planned.Ref}
-		if _, read := now[key]; !read {
-			now[key] = e.resolveGit(ctx, model.GitSource{URL: planned.URL, Ref: planned.Ref})
+	for _, kind := range []struct {
+		planned func(model.Plan) []plannedSource
+		resolve func(context.Context, model.GitSource) model.GitSource
+		tag     bool
+	}{{plannedSources, e.resolveGit, false}, {plannedTags, e.resolveTag, true}} {
+		read := map[[2]string]model.GitSource{}
+		for _, p := range kind.planned(evidence.Plan) {
+			target, planned := p.target, p.source
+			key := [2]string{planned.URL, planned.Ref}
+			if _, done := read[key]; !done {
+				read[key] = kind.resolve(ctx, model.GitSource{URL: planned.URL, Ref: planned.Ref})
+			}
+			current := read[key]
+			// A current commit that couldn't be read leaves the source's
+			// freshness unknown, which holds serve, as an archive that
+			// couldn't be compared does, and a person's submission says it
+			// and goes on (the person's word, 2026-10-23; Codex's review of
+			// 8c007979, C8-5's gap). A plan that never knew the commit
+			// gains no concern, nor does a tag that is an abbreviated
+			// commit.
+			if planned.Commit != "" && current.Commit == "" && current.Unresolved != "" && !(kind.tag && git.ValidAbbreviation(planned.Ref)) {
+				what := "git.branch " + planned.Ref
+				if kind.tag {
+					what = "tag " + planned.Ref
+				}
+				concerns = append(concerns, unknownSource(target.Target.Name, what, planned.Commit, current.Unresolved, evidence.Run.Name()))
+				continue
+			}
+			if model.SourceAgainst(&planned, &current) != model.SourceMoved {
+				continue
+			}
+			if kind.tag {
+				concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: model.RuleTagMoved, Subject: model.MovedSubject(planned.Commit, current.Commit), Class: model.Introduced,
+					Detail: checks.TagMovedWords(planned, current, evidence.Run.Name(), target.Target.Name)})
+				continue
+			}
+			concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: model.RuleSourceMoved, Subject: model.MovedSubject(planned.Commit, current.Commit), Class: model.Introduced,
+				Detail: fmt.Sprintf("%s: git.branch %s pointed to %s when %s was planned, but now points to %s. The checked source differs from the source this submission would use", target.Target.Name, planned.Ref, planned.Commit.Short(), evidence.Run.Name(), current.Commit.Short())})
 		}
-		current := now[key]
-		// A current commit that couldn't be read leaves the source's
-		// freshness unknown, which holds serve, as an archive that
-		// couldn't be compared does, and a person's submission says it
-		// and goes on (the person's word, 2026-10-23; Codex's review of
-		// 8c007979, C8-5's gap: it was skipped, and serve submitted).
-		if planned.Commit != "" && current.Commit == "" && current.Unresolved != "" {
-			concerns = append(concerns, unknownSource(target.Target.Name, "git.branch "+planned.Ref, planned.Commit, current.Unresolved, evidence.Run.Name()))
-			continue
-		}
-		if planned.Commit == "" || current.Commit == "" || current.Commit == planned.Commit {
-			continue
-		}
-		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: model.RuleSourceMoved, Subject: model.MovedSubject(planned.Commit, current.Commit), Class: model.Introduced,
-			Detail: fmt.Sprintf("%s: git.branch %s pointed to %s when %s was planned, but now points to %s. The checked source differs from the source this submission would use", target.Target.Name, planned.Ref, planned.Commit.Short(), evidence.Run.Name(), current.Commit.Short())})
-	}
-	tags := map[[2]string]model.GitSource{}
-	for _, p := range plannedTags(evidence.Plan) {
-		target, planned := p.target, p.source
-		key := [2]string{planned.URL, planned.Ref}
-		if _, read := tags[key]; !read {
-			tags[key] = e.resolveTag(ctx, model.GitSource{URL: planned.URL, Ref: planned.Ref})
-		}
-		current := tags[key]
-		if planned.Commit != "" && current.Commit == "" && current.Unresolved != "" && !git.ValidAbbreviation(planned.Ref) {
-			concerns = append(concerns, unknownSource(target.Target.Name, "tag "+planned.Ref, planned.Commit, current.Unresolved, evidence.Run.Name()))
-			continue
-		}
-		if planned.Commit == "" || current.Commit == "" || current.Commit == planned.Commit {
-			continue
-		}
-		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: model.RuleTagMoved, Subject: model.MovedSubject(planned.Commit, current.Commit), Class: model.Introduced,
-			Detail: checks.TagMovedWords(planned, current, evidence.Run.Name(), target.Target.Name)})
 	}
 	return concerns
 }
@@ -352,7 +353,14 @@ func preparedSources(evidence *Evidence, edits []model.Edit) []model.Concern {
 				chosen = edit.Release
 			}
 		}
-		if chosen == nil || chosen.Commit == "" || planned.Commit == "" || model.ObjectID(chosen.Commit) == planned.Commit {
+		if chosen == nil {
+			continue
+		}
+		// The release names the ref by its tag or its commit (Names); its
+		// reading is the plan's ref at the release's commit.
+		released := planned
+		released.Commit, released.Abbreviation = model.ObjectID(chosen.Commit), ""
+		if chosen.Commit == "" || model.SourceAgainst(&released, &planned) != model.SourceMoved {
 			continue
 		}
 		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: model.RuleReleaseMoved, Subject: model.MovedSubject(model.ObjectID(chosen.Commit), planned.Commit), Class: model.Introduced,
@@ -375,11 +383,15 @@ func assessedSources(evidence *Evidence, upstream []PortComparison) []model.Conc
 	for _, p := range plannedSources(evidence.Plan) {
 		target, planned := p.target, p.source
 		at := slices.IndexFunc(upstream, func(found PortComparison) bool { return found.Port == target.Target.Name })
-		if at < 0 || planned.Commit == "" {
+		if at < 0 {
 			continue
 		}
+		// The assessment's whole commit against the plan's reading: a plan
+		// that holds only an abbreviation is not known, and says nothing.
 		read := upstream[at].Comparison.Commit
-		if read == "" || model.ObjectID(read) == planned.Commit {
+		assessed := planned
+		assessed.Commit, assessed.Abbreviation = model.ObjectID(read), ""
+		if read == "" || model.SourceAgainst(&planned, &assessed) != model.SourceMoved {
 			continue
 		}
 		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: model.RuleAssessmentMoved, Subject: model.MovedSubject(model.ObjectID(read), planned.Commit), Class: model.Introduced,
