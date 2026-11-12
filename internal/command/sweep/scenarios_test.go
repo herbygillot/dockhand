@@ -78,6 +78,14 @@ func TestSweepFirstSubmit(t *testing.T) {
 		unreadable: map[string]declaredEnd{
 			"store.update@engine.(*Engine).rewritePublication#1/fail": {Replace: []string{`pr_provenance="found"`, `pr_provenance="opened"`},
 				Why: "the opening's record failed: the next submit finds the pull request, and GitHub's answer to the create, the only proof dockhand opened it, is gone, so it is found (#191)"},
+			// The same state, reached in the other modes, each declared for
+			// itself (#129's fix list, 9).
+			"store.update@engine.(*Engine).rewritePublication#1/not-landed-unknown": {Replace: []string{`pr_provenance="found"`, `pr_provenance="opened"`},
+				Why: "the opening's record didn't land and said nothing: the next submit finds the pull request, GitHub's answer to the create gone, so it is found (#191)"},
+			"store.update@engine.(*Engine).rewritePublication#1/dead": {Replace: []string{`pr_provenance="found"`, `pr_provenance="opened"`},
+				Why: "submit was killed before the opening's record: the next submit finds the pull request, GitHub's answer to the create gone with the process, so it is found (#191)"},
+			"forge.Create@remotewrite.Open#1/lost": {Replace: []string{`pr_provenance="found"`, `pr_provenance="opened"`},
+				Why: "GitHub opened the pull request and its answer was lost: nothing proves dockhand opened it, and the next submit finds it, so it is found (#191)"},
 		},
 	})
 }
@@ -115,6 +123,18 @@ func TestSweepResubmitAfterReview(t *testing.T) {
 			"forge.RequestReviewers@remotewrite.Ask#1/fail": {Replace: []string{`\"Sent\":\"may-have-been-sent\"`, `\"Sent\":\"sent\"`, "rerequested=[]", "rerequested=[ryandesign]"},
 				Unsaid: []string{`kind="branch.rerequest"`},
 				Why:    "an ask with no answer may have landed, so it is never sent again: GitHub may lack the request, and the receipt says it may have been sent rather than the timeline that it was (#191's case AC)"},
+			// The same states, reached in the other modes, each declared
+			// for itself (#129's fix list, 9).
+			"store.update@engine.(*Engine).rewritePublication#3/not-landed-unknown": {Replace: []string{`\"Sent\":\"may-have-been-sent\"`, `\"Sent\":\"sent\"`},
+				Why: "the ask's answer didn't land and said nothing: the mark recorded before the call says it may have been sent, and it is never sent again (#191's case AC)"},
+			"store.update@engine.(*Engine).rewritePublication#3/dead": {Replace: []string{`\"Sent\":\"may-have-been-sent\"`, `\"Sent\":\"sent\"`},
+				Why: "submit was killed before the ask's answer was recorded: the mark recorded before the call says it may have been sent, and it is never sent again (#191's case AC)"},
+			"forge.RequestReviewers@remotewrite.Ask#1/lost": {Replace: []string{`\"Sent\":\"may-have-been-sent\"`, `\"Sent\":\"sent\"`},
+				Unsaid: []string{`kind="branch.rerequest"`},
+				Why:    "GitHub took the ask and its answer was lost: it may have been sent, so it is never sent again, and the receipt says so rather than the timeline that it was (#191's case AC)"},
+			"forge.RequestReviewers@remotewrite.Ask#1/dead": {Replace: []string{`\"Sent\":\"may-have-been-sent\"`, `\"Sent\":\"sent\"`, "rerequested=[]", "rerequested=[ryandesign]"},
+				Unsaid: []string{`kind="branch.rerequest"`},
+				Why:    "submit was killed as it asked, after the mark: the ask may have landed, so it is never sent again, GitHub may lack it, and the receipt says it may have been sent (#191's case AC)"},
 		},
 		// The sweep's first run found the reviewer asked again only on the
 		// run that pushed (#205, #206, #117's family): the publication
