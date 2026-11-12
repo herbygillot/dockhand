@@ -2,6 +2,7 @@ package sweep
 
 import (
 	"database/sql"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -327,4 +328,33 @@ func TestTheWorldHoldsOtherPeoplesRepositoriesAndPullRequests(t *testing.T) {
 	pr.Title = "overwritten"
 	g.Theirs[99] = pr
 	require.NotEmpty(t, differences(before, snapshot(t, w, g)), "an adopted pull request's text")
+}
+
+// Rows of one table that belong to the same record keep their order in
+// time: two attempts of one check that swap places differ, and a
+// checkpoint a retry abandoned, the rule's allowed extra, moves no
+// other's place (#129's second round, 3).
+func TestConfirm129CrossRowTimeOrder(t *testing.T) {
+	t.Parallel()
+	run := `id="run_cccccccccccccccc" port="jq"`
+	attempt := func(id string, n int, at int64) string {
+		return fmt.Sprintf(`id="exe_%s" run_id="run_cccccccccccccccc" attempt=%d created_at=«t:%d»`, strings.Repeat(id, 16), n, at)
+	}
+	inOrder := world{"table runs": {run}, "table executions": {attempt("a", 1, 1794448800000), attempt("b", 2, 1794452400000)}}
+	swapped := world{"table runs": {run}, "table executions": {attempt("a", 1, 1794452400000), attempt("b", 2, 1794448800000)}}
+	require.NotEmpty(t, differences(normalize(inOrder, "/unused"), normalize(swapped, "/unused")), "two attempts of one check swapped in time differ")
+	require.Empty(t, differences(normalize(inOrder, "/unused"), normalize(inOrder, "/unused")))
+	// Another check's attempts are another record's: their times don't
+	// place these.
+	other := world{"table runs": {run, `id="run_dddddddddddddddd" port="curl"`}, "table executions": append(slices.Clone(inOrder["table executions"]),
+		`id="exe_eeeeeeeeeeeeeeee" run_id="run_dddddddddddddddd" attempt=1 created_at=«t:1794450000000»`)}
+	normalized := normalize(other, "/unused")["table executions"]
+	for _, line := range normalize(inOrder, "/unused")["table executions"] {
+		require.Contains(t, normalized, line)
+	}
+	branch := `id="br_bbbbbbbbbbbbbbbb" name="jq-update"`
+	clean := world{"table branches": {branch}, "table checkpoints": {`number=1 branch_id="br_bbbbbbbbbbbbbbbb" at=«t:1794452400000» state="applied"`}}
+	retried := world{"table branches": {branch}, "table checkpoints": {`number=1 branch_id="br_bbbbbbbbbbbbbbbb" at=«t:1794448800000» state="abandoned"`,
+		`number=2 branch_id="br_bbbbbbbbbbbbbbbb" at=«t:1794452400000» state="applied"`}}
+	require.Empty(t, differences(normalize(renumber(clean), "/unused"), normalize(renumber(retried), "/unused")), "an abandoned checkpoint moves no other's place")
 }

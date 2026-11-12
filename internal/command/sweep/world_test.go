@@ -468,7 +468,7 @@ func normalize(w world, root string) world {
 	}
 	out := world{}
 	for _, section := range slices.Sorted(maps.Keys(w)) {
-		lines := slices.Clone(w[section])
+		lines := placeInRecord(section, w[section])
 		for i, line := range lines {
 			lines[i] = stamp(strings.ReplaceAll(line, root, "ROOT"))
 		}
@@ -492,6 +492,67 @@ func normalize(w world, root string) world {
 			})
 		}
 		out[section] = lines
+	}
+	return out
+}
+
+var (
+	// references are a row's columns that hold another record's id.
+	references = regexp.MustCompile(`\b(\w+_id)="([^"]*)"`)
+	// columnTimes are a row's times by their column, as cell marks them.
+	columnTimes = regexp.MustCompile(`\b(\w+)=«t:(\d+)»`)
+)
+
+// placeInRecord marks each row with its place in time among the rows of
+// its table that belong to the same record, those pointing at one record
+// by the same column, an execution's run_id or a checkpoint's branch_id:
+// a row's own times keep their order within it, and two attempts of one
+// check that swap places would otherwise compare equal (#129's second
+// round, 3). A checkpoint a retry abandoned, the rule's allowed extra
+// (differences), takes no place and moves none. Events are ordered by
+// their sequence, and sessions are a command's own, so neither is marked.
+func placeInRecord(section string, lines []string) []string {
+	out := slices.Clone(lines)
+	if section == "table events" || section == "table sessions" {
+		return out
+	}
+	allowed := func(line string) bool {
+		return section == "table checkpoints" && strings.Contains(line, `state="abandoned"`)
+	}
+	type group struct{ reference, value, column string }
+	times := map[group][]int64{}
+	for _, line := range lines {
+		if allowed(line) {
+			continue
+		}
+		for _, ref := range references.FindAllStringSubmatch(line, -1) {
+			for _, at := range columnTimes.FindAllStringSubmatch(line, -1) {
+				v, _ := strconv.ParseInt(at[2], 10, 64)
+				g := group{ref[1], ref[2], at[1]}
+				if !slices.Contains(times[g], v) {
+					times[g] = append(times[g], v)
+				}
+			}
+		}
+	}
+	for i, line := range lines {
+		if allowed(line) {
+			continue
+		}
+		var places []string
+		for _, ref := range references.FindAllStringSubmatch(line, -1) {
+			for _, at := range columnTimes.FindAllStringSubmatch(line, -1) {
+				values := slices.Sorted(slices.Values(times[group{ref[1], ref[2], at[1]}]))
+				if len(values) < 2 {
+					continue
+				}
+				v, _ := strconv.ParseInt(at[2], 10, 64)
+				places = append(places, fmt.Sprintf("%s#%d-by-%s", at[1], slices.Index(values, v)+1, ref[1]))
+			}
+		}
+		if len(places) > 0 {
+			out[i] = line + " place(" + strings.Join(places, ",") + ")"
+		}
 	}
 	return out
 }
