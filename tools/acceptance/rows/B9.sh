@@ -33,7 +33,13 @@ act() {
 	B9_BRANCH=$(own_branch)
 	dh_json check -b "$B9_BRANCH" || :
 	dh tidy -b "$B9_BRANCH" -y || :
-	dh submit -b "$B9_BRANCH" --plan --no-check >"$ROW_DIR/preview.txt" 2>&1 || :
+	# The preview with the check, and all of its description: dh writes to
+	# out.log alone, and --no-check's preview says "Checks none" and cuts
+	# the description to "+26 lines" before Tested on, so preview.txt was
+	# empty and would have had no Tested on (rc4's reruns, check-1080).
+	printf '$ dockhand submit -b %s --plan -v\n' "$B9_BRANCH" >>"$ROW_DIR/out.log"
+	dh_quiet submit -b "$B9_BRANCH" --plan -v >"$ROW_DIR/preview.txt" || :
+	cat "$ROW_DIR/preview.txt" >>"$ROW_DIR/out.log"
 	submit_pr "$(port)" "$B9_BRANCH" || :
 	close_test_pr "$(port)" "$B9_BRANCH"
 }

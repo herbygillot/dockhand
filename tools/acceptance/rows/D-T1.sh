@@ -77,14 +77,15 @@ teardown() {
 }
 assert() {
 	# Every kept archive is whole, the altered one put back included. The
-	# .json records beside them, master/*.tbz2.json, aren't
-	# archives, and were swept as if they were (the M1's rc6 full stage).
+	# .json records beside them, master/*.tbz2.json and *.tbz2.json.none,
+	# aren't archives, and were swept as if they were (the M1's rc6 full
+	# stage, and rc4's reruns for the .none ones).
 	local file bad=""
 	while IFS= read -r file; do
 		[ -n "$file" ] || continue
 		[ "$(shasum -a 256 "$file" | cut -d' ' -f1)" = "$(basename "$file")" ] || bad="$bad $(basename "$file")"
 	done <<EOT
-$(find "$(dt1_archives)" -type f ! -name '*.sig' ! -name '*.rmd160' ! -name '*.altered' ! -name '*.json' 2>/dev/null)
+$(find "$(dt1_archives)" -type f ! -name '*.sig' ! -name '*.rmd160' ! -name '*.altered' ! -name '*.json' ! -name '*.json.*' 2>/dev/null)
 EOT
 	[ -z "$bad" ] || { row_fail "kept archives that don't match their digests after the row:$bad"; return; }
 	[ "${DT1_ALTERED:-0}" -gt 0 ] || { row_fail "no archive of $ACCEPT_LIB_PORT was kept to alter, so the guard wasn't exercised"; return; }
