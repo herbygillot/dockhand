@@ -28,12 +28,11 @@ act() {
 	fi
 	# serve stops once its checks end, and launchd starts the new build:
 	# a new process leads.
-	local waited=0
-	while [ "$waited" -lt 300 ]; do
+	local deadline=$((SECONDS + 300))
+	while [ "$SECONDS" -lt "$deadline" ]; do
 		a7_pid >"$ROW_DIR/pid.after"
 		[ -s "$ROW_DIR/pid.after" ] && ! cmp -s "$ROW_DIR/pid.before" "$ROW_DIR/pid.after" && break
 		sleep 10
-		waited=$((waited + 10))
 	done
 	tail -c +"$(($(cat "$ROW_DIR/log.before") + 1))" "$A7_LOG" >"$ROW_DIR/serve.log" 2>/dev/null || :
 	dh status || :
@@ -50,7 +49,9 @@ act() {
 A7_LOG=$HOME/.dockhand/logs/serve.log
 
 # a7_pid is the leading serve's process, or nothing.
-a7_pid() { dh_quiet --json status --all | jq -r '.result.serve_state.pid // empty'; }
+# Plain status, which carries serve's state: status --all reads every
+# branch the database kept, which on dhtest's took over a minute a call.
+a7_pid() { dh_queue | jq -r '.result.serve_state.pid // empty'; }
 # serve's agent goes when the row does, skipped or not: a skipped A7 left
 # it running through the rows after (the rc3 full stage).
 teardown() {

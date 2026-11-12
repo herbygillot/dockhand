@@ -28,9 +28,9 @@ act() {
 	# By the queue's state for the run, not the word: "running" matched
 	# "running": false (Codex's cold read at 2cdaf571, #232). A first check
 	# never seen running leaves the overlap untested.
-	local i
-	for i in $(seq 1 60); do
-		if "$DH_BIN" --json status --all 2>/dev/null | jq -e --arg run "$G14_RUN" '.result.queue[]? | select(.name == $run and .state == "running")' >/dev/null 2>&1; then
+	local deadline=$((SECONDS + 300))
+	while [ "$SECONDS" -lt "$deadline" ]; do
+		if dh_queue | jq -e --arg run "$G14_RUN" '.result.queue[]? | select(.name == $run and .state == "running")' >/dev/null 2>&1; then
 			G14_OVERLAPPED=1
 			break
 		fi

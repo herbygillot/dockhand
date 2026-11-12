@@ -56,18 +56,18 @@ EOT
 # ACCEPT_SANDBOX or DOCKHAND_PULL_REQUESTS, and MACPORTS_TREE's origin
 # as that fork, as reset-user.sh clones it.
 preflight_account() {
-	local fork=${ACCEPT_SANDBOX:-${DOCKHAND_PULL_REQUESTS:-}} branch tree=${MACPORTS_TREE:-} waited=0 run=""
+	local fork=${ACCEPT_SANDBOX:-${DOCKHAND_PULL_REQUESTS:-}} branch tree=${MACPORTS_TREE:-} deadline run=""
 	[ -n "$fork" ] && [ -n "$tree" ] && command -v gh >/dev/null 2>&1 || return 0
 	branch="accept-preflight-$(date -u +%Y%m%d%H%M%S)-$$"
 	if ! git -C "$tree" push -q origin "refs/remotes/origin/master:refs/heads/$branch" 2>/dev/null; then
 		printf 'a branch could not be pushed to the fork %s\n' "$fork"
 		return 0
 	fi
-	while [ "$waited" -lt "${ACCEPT_ACTIONS_WAIT:-180}" ]; do
+	deadline=$((SECONDS + ${ACCEPT_ACTIONS_WAIT:-180}))
+	while [ "$SECONDS" -lt "$deadline" ]; do
 		run=$(gh api "repos/$fork/actions/runs?branch=$branch&event=push" --jq '.workflow_runs[0].id // empty' 2>/dev/null || :)
 		[ -z "$run" ] || break
 		sleep 10
-		waited=$((waited + 10))
 	done
 	[ -z "$run" ] || gh api -X POST "repos/$fork/actions/runs/$run/cancel" >/dev/null 2>&1 || :
 	git -C "$tree" push -q origin --delete "$branch" 2>/dev/null || :

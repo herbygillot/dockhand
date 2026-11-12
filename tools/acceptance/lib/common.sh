@@ -352,11 +352,12 @@ log_size() { wc -c <"$1" 2>/dev/null | tr -d ' ' || echo 0; }
 # D-C3's waits matched rc9's, so queue ran before rc10's serve had looked
 # (the rc10 full stage). log_size gives the offset to take before acting.
 wait_for_line() {
-	local file=$1 pattern=$2 seconds=${3:-600} from=${4:-0} waited=0
-	while [ "$waited" -lt "$seconds" ]; do
+	local file=$1 pattern=$2 seconds=${3:-600} from=${4:-0} deadline
+	# By the wall clock, not the sleeps: a slow read must not stretch it.
+	deadline=$((SECONDS + seconds))
+	while [ "$SECONDS" -lt "$deadline" ]; do
 		tail -c +"$((from + 1))" "$file" 2>/dev/null | said "$pattern" && return 0
 		sleep 2
-		waited=$((waited + 2))
 	done
 	return 1
 }
@@ -369,11 +370,12 @@ wait_for_line() {
 # so selftest's lint lets a row use it only where its exemptions list the
 # row (#223).
 wait_for_mark() {
-	local file=$1 pattern=$2 seconds=${3:-600} from=${4:-0} waited=0
-	while [ "$waited" -lt "$seconds" ]; do
+	local file=$1 pattern=$2 seconds=${3:-600} from=${4:-0} deadline
+	# By the wall clock, not the sleeps: a slow read must not stretch it.
+	deadline=$((SECONDS + seconds))
+	while [ "$SECONDS" -lt "$deadline" ]; do
 		tail -c +"$((from + 1))" "$file" 2>/dev/null | matches -E "$pattern" && return 0
 		sleep 2
-		waited=$((waited + 2))
 	done
 	return 1
 }
@@ -397,3 +399,10 @@ end_drains() {
 		printf 'a background drain (pid %s) outlived the row, and the runner ended it\n' "$pid" >>"$ROW_DIR/notes"
 	done
 }
+
+# dh_queue reads status's queue and processes for a poll: plain status,
+# from outside any worktree so it isn't one branch's, which lists the open
+# branches only. status --all reads every branch the database ever kept,
+# and on dhtest's 1,400 a call outlasted the build a row polled for (rc4's
+# D-I6, prime-time's batch).
+dh_queue() { (cd / && "$DH_BIN" --json status 2>/dev/null); }

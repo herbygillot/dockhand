@@ -15,8 +15,7 @@ port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 # di6_worker is the pid of the dockhand status says is working the check,
 # or nothing.
 di6_worker() {
-	"$DH_BIN" --json status --all 2>/dev/null |
-		jq -r --arg run "$DI6_RUN" '.result.processes[]? | select(.runs | index($run)) | .pid' 2>/dev/null | head -1
+	dh_queue | jq -r --arg run "$DI6_RUN" '.result.processes[]? | select(.runs | index($run)) | .pid' 2>/dev/null | head -1
 }
 
 # The row's own worker must be the one working the check: where dhtest's
@@ -38,26 +37,27 @@ act() {
 	dh_json check -p "$(port)" -d --fresh || return 0
 	DI6_RUN=$(jq -r '.result.run.name // empty' "$ROW_DIR/json/1.json")
 	[ -n "$DI6_RUN" ] || return 0
-	local waited=0 pid=""
-	while [ "$waited" -lt 900 ]; do
+	# Deadlines by the wall clock, not by the sleeps between calls: on
+	# dhtest's database a status call took up to a minute and a half, and
+	# a limit counting only the sleeps would have spun for hours (rc4).
+	local deadline=$((SECONDS + 900)) pid=""
+	while [ "$SECONDS" -lt "$deadline" ]; do
 		pid=$(di6_worker)
 		[ -n "$pid" ] && break
 		sleep 2
-		waited=$((waited + 2))
 	done
 	[ -n "$pid" ] || { row_result "not exercised" "no dockhand was working $DI6_RUN within 900s, so none could be killed mid-check"; return 0; }
 	# The kill falls inside a build: status says the run is building
 	# before it's sent (rc4's evidence read: a kill timed by a sleep hit
 	# an idle process).
 	local building=""
-	waited=0
-	while [ "$waited" -lt 900 ]; do
-		if "$DH_BIN" --json status --all 2>/dev/null | jq -e --arg run "$DI6_RUN" '.result.queue[]? | select(.name == $run and ((.progress // "") | test("building in")))' >/dev/null 2>&1; then
+	deadline=$((SECONDS + 900))
+	while [ "$SECONDS" -lt "$deadline" ]; do
+		if dh_queue | jq -e --arg run "$DI6_RUN" '.result.queue[]? | select(.name == $run and ((.progress // "") | test("building in")))' >/dev/null 2>&1; then
 			building=1
 			break
 		fi
 		sleep 2
-		waited=$((waited + 2))
 	done
 	[ -n "$building" ] || { row_result "not exercised" "$DI6_RUN never said it was building in 900s, so no kill fell inside a build"; return 0; }
 	pid=$(di6_worker)
@@ -67,8 +67,7 @@ act() {
 	kill -9 "$pid" 2>/dev/null && echo killed >"$ROW_DIR/killed"
 	sleep 2
 	# The check is left unfinished by the kill, as status reads it.
-	"$DH_BIN" --json status --all 2>/dev/null |
-		jq -r --arg run "$DI6_RUN" '.result.queue[]? | select(.name == $run) | .state' >"$ROW_DIR/after-kill.state" 2>/dev/null || :
+	dh_queue | jq -r --arg run "$DI6_RUN" '.result.queue[]? | select(.name == $run) | .state' >"$ROW_DIR/after-kill.state" 2>/dev/null || :
 	DI6_SERVED=$(log_size "$ROW_DIR/out.log")
 	dh serve --drain || :
 	dh_json wait "$DI6_RUN" || :
