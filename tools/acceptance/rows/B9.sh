@@ -39,8 +39,16 @@ act() {
 }
 assert() {
 	[ "$(cat "$ROW_DIR/json/1.json.exit" 2>/dev/null)" = 0 ] || { row_fail "the check on GitHub failed: $(jq -r '.error // empty' "$ROW_DIR/json/1.json")"; return; }
-	if git -C "$MACPORTS_TREE" ls-remote --heads fork 'dockhand-check/*' | matches .; then
-		row_fail "a dockhand-check/ branch was left on the fork"
+	# The fork is origin, as reset-user.sh clones it; there's no remote
+	# named fork, and the failed read counted as nothing left (Codex's
+	# cold read at 2cdaf571, #232). A read that fails says so.
+	local left
+	if ! left=$(git -C "$MACPORTS_TREE" ls-remote --heads origin 'dockhand-check/*' 2>>"$ROW_DIR/out.log"); then
+		row_fail "the fork's branches couldn't be read, so whether a dockhand-check/ branch was left is unknown"
+		return
+	fi
+	if [ -n "$left" ]; then
+		row_fail "a dockhand-check/ branch was left on the fork: $(printf '%s' "$left" | awk '{print $2}' | tr '\n' ' ')"
 		return
 	fi
 	grep -qE 'macOS [0-9.]+ (arm64|x86_64) · (Xcode|Command Line Tools) [0-9.]+ · MacPorts [0-9.]+ \(macos-[0-9]+' "$ROW_DIR/preview.txt" ||

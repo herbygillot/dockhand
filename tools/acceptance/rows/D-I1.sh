@@ -8,8 +8,11 @@ act() {
 		sleep 1
 		kill -INT "$DH_BG_PID" 2>/dev/null
 	fi
-	dh_bg_wait || :
-	echo "$?" >"$ROW_DIR/di1.interrupted"
+	# The background dockhand's own exit: "$?" after "|| :" was always 0
+	# (Codex's cold read at 2cdaf571, #232).
+	local exited=0
+	dh_bg_wait || exited=$?
+	echo "$exited" >"$ROW_DIR/di1.interrupted"
 	dh_json update "$(port)" || :
 }
 assert() {

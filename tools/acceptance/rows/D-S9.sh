@@ -17,8 +17,11 @@ act() {
 	# full stage, where H1 counted two).
 	allow_ref_gone 'refs/remotes/origin/*'
 	git -C "$MACPORTS_TREE" fetch -q --prune origin 2>>"$ROW_DIR/git.log" || :
-	dh_bg_wait || :
-	echo "$?" >"$ROW_DIR/ds9.check"
+	# The background dockhand's own exit: "$?" after "|| :" was always 0
+	# (Codex's cold read at 2cdaf571, #232).
+	local exited=0
+	dh_bg_wait || exited=$?
+	echo "$exited" >"$ROW_DIR/ds9.check"
 	dh_setup start $(run_name ds9-gone) || return 0
 	allow_ref_gone refs/heads/dockhand/$(run_name ds9-gone)
 	git -C "$MACPORTS_TREE" worktree remove --force "$("$DH_BIN" path $(run_name ds9-gone))" 2>>"$ROW_DIR/git.log" || :
