@@ -31,11 +31,15 @@ assert() {
 	jq -e --arg clone "$G38_CLONE" --arg branch "$G38_BRANCH" '.result.branches[$branch].leftovers[]? | select(.ref == $clone)' "$planned" >/dev/null ||
 		{ row_fail "clean --delete --plan didn't list $G38_CLONE: $(jq -c '.result.branches // empty' "$planned" 2>/dev/null)"; return; }
 	# The envelope's own fields: run with --json, clean writes no text line
-	# to grep (rc4's reruns).
+	# to grep (rc4's reruns). The plan names the clone by its check, not yet
+	# removed; kept is empty where the plan removes it (engine/clean.go),
+	# so it isn't asked for (rc4's batch).
 	jq -e --arg clone "$G38_CLONE" --arg branch "$G38_BRANCH" --arg run "${G38_RUN:-}" \
-		'.result.branches[$branch].leftovers[]? | select(.ref == $clone and ($run == "" or .check == $run) and ((.kept // "") | length > 0))' "$planned" >/dev/null ||
+		'.result.branches[$branch].leftovers[]? | select(.ref == $clone and ($run == "" or .check == $run) and .removed == false)' "$planned" >/dev/null ||
 		{ row_fail "the plan didn't name the clone as kept by ${G38_RUN:-its check}: $(jq -c --arg branch "$G38_BRANCH" '.result.branches[$branch].leftovers // empty' "$planned" 2>/dev/null)"; return; }
 	[ "$(cat "$forgot.exit" 2>/dev/null)" = 0 ] || { row_fail "clean --delete exited $(cat "$forgot.exit" 2>/dev/null): $(jq -r '.error // empty' "$forgot")"; return; }
+	jq -e --arg clone "$G38_CLONE" '[.. | objects | select(.ref? == $clone and .removed? == true)] | length > 0' "$forgot" >/dev/null ||
+		say "clean --delete's envelope didn't mark $G38_CLONE removed; tart list decides"
 	if fault_tart list --format json 2>/dev/null | jq -e --arg clone "$G38_CLONE" '.[] | select(.Name == $clone)' >/dev/null; then
 		row_fail "$G38_CLONE is still in tart list after clean --delete"
 		return
