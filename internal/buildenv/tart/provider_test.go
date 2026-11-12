@@ -61,7 +61,7 @@ type fakeMac struct {
 	events             []string
 	guest              *fakeGuest
 	run                *fakeRun
-	// version is Tart's; 2.40.1 when empty.
+	// version is Tart's; 2.41.1 when empty.
 	version string
 	// processes are the VMs' processes running, as VirtualMachines says.
 	processes []int
@@ -87,7 +87,7 @@ func (m *fakeMac) Released(_ context.Context, pids []int, _ time.Duration) {
 
 func (m *fakeMac) Version(context.Context) (string, error) {
 	if m.version == "" {
-		return "2.40.1", nil
+		return "2.41.1", nil
 	}
 	return m.version, nil
 }
@@ -977,7 +977,7 @@ func TestEnvironmentsAreReleasesWithImages(t *testing.T) {
 	// setup refuses it (the rc9 full stage's F8).
 	mac.version = "2.38.0"
 	_, err = p.Environments(t.Context(), "")
-	require.EqualError(t, err, "Tart 2.38.0 is installed; Dockhand requires 2.39.0 or later to list running VMs with ASIF disks (openai/tart#1344). Upgrade with sudo port upgrade tart")
+	require.EqualError(t, err, "Tart 2.38.0 is installed; Dockhand requires 2.41.1 or later, which lists running VMs with ASIF disks, says when a delete left a VM, and lists VMs while one is deleted. Upgrade with sudo port upgrade tart")
 }
 
 // A guest that finishes between a read and the look at whether it's still

@@ -28,7 +28,7 @@ type fakeMachine struct {
 	fail       string
 	failures   map[string]error
 	format     string
-	oldTart    bool   // Tart is older than tart.ASIFVersion
+	oldTart    bool   // Tart is older than tart.Minimum
 	installsAs string // the version the installed Xcode reports, when not the archive's
 	formats    map[string]string
 	validation validation

@@ -64,8 +64,8 @@ func (n *native) DiskFormat(ctx context.Context, name string) (string, error) {
 	return n.vm().DiskFormat(ctx, name)
 }
 
-// ASIFReady refuses a Tart older than tart.ASIFVersion, which can't list
-// its VMs while one with an ASIF disk runs.
+// ASIFReady refuses a Tart older than tart.Minimum, which among else can't
+// list its VMs while one with an ASIF disk runs.
 func (n *native) ASIFReady(ctx context.Context) error {
 	version, err := n.vm().Version(ctx)
 	if err != nil {

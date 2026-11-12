@@ -101,55 +101,30 @@ esac
 	}
 }
 
-// A delete is confirmed by the VM's absence from the listing, never by what
-// `tart delete` says: it reports a running VM as one that "does not exist"
-// and leaves it (openai/tart#1345), and a failed delete can have worked.
-func TestDeleteRequiresStoppedImageAndConfirmedAbsence(t *testing.T) {
+// A delete is Tart's answer, since 2.40.0 says when it left a VM
+// (openai/tart#1345, #38): one gone already is deleted, and a refusal is
+// said as Tart says it.
+func TestADeleteIsTartsAnswer(t *testing.T) {
 	t.Parallel()
-	for _, mode := range []string{"running", "retained", "collision", "removed", "removed despite error", "absent"} {
+	for _, mode := range []string{"deleted", "gone", "refused"} {
 		t.Run(mode, func(t *testing.T) {
 			m := fixtureMachine(t, `
 case "$1" in
- list) cat "$TART_HOME/list.json" ;;
  delete)
-  touch "$TART_HOME/deleted"
-  if [ -f "$TART_HOME/remove" ]; then printf '[]' > "$TART_HOME/list.json"; fi
-  if [ -f "$TART_HOME/fail" ]; then echo "the specified VM \"$2\" does not exist" >&2; exit 2; fi
+  if [ -f "$TART_HOME/gone" ]; then echo "the specified VM \"$2\" does not exist" >&2; exit 2; fi
+  if [ -f "$TART_HOME/refuse" ]; then echo "failed to delete VM \"$2\": it is running" >&2; exit 1; fi
  ;;
 esac
 `)
-			if mode == "collision" || mode == "removed despite error" {
-				require.NoError(t, os.WriteFile(filepath.Join(m.Client.Home, "fail"), nil, 0600))
+			if mode != "deleted" {
+				require.NoError(t, os.WriteFile(filepath.Join(m.Client.Home, map[string]string{"gone": "gone", "refused": "refuse"}[mode]), nil, 0600))
 			}
-			list := `[{"Name":"candidate","Source":"local","State":"stopped"}]`
-			if mode == "running" {
-				list = `[{"Name":"candidate","Source":"local","State":"running"}]`
-			}
-			if mode == "absent" {
-				list = `[]`
-			}
-			if mode == "removed" || mode == "removed despite error" {
-				require.NoError(t, os.WriteFile(filepath.Join(m.Client.Home, "remove"), nil, 0600))
-			}
-			require.NoError(t, os.WriteFile(filepath.Join(m.Client.Home, "list.json"), []byte(list), 0600))
 			err := m.Delete(t.Context(), "candidate")
-			switch mode {
-			case "running":
-				require.ErrorContains(t, err, "running")
-				require.NoFileExists(t, filepath.Join(m.Client.Home, "deleted"))
-			case "retained":
-				require.ErrorContains(t, err, "still listed after delete")
-			case "collision":
-				require.ErrorContains(t, err, "still listed after delete")
-				require.ErrorContains(t, err, "does not exist")
-				require.NotErrorIs(t, err, tart.ErrVMMissing)
-			case "removed", "removed despite error":
-				require.NoError(t, err)
-				require.FileExists(t, filepath.Join(m.Client.Home, "deleted"))
-			case "absent":
-				require.NoError(t, err)
-				require.NoFileExists(t, filepath.Join(m.Client.Home, "deleted"))
+			if mode == "refused" {
+				require.ErrorContains(t, err, "it is running")
+				return
 			}
+			require.NoError(t, err)
 		})
 	}
 }

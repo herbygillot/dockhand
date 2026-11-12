@@ -176,31 +176,14 @@ func (n Machine) absent(ctx context.Context, vm string) error {
 	return nil
 }
 
-// Delete removes a VM the listing shows stopped and confirms the removal by
-// its absence from the listing. What `tart delete` says is not evidence:
-// it reports a running VM as one that "does not exist" and leaves it
-// (openai/tart#1345).
+// Delete removes a VM, one already gone being removed. What `tart delete`
+// says is its answer, a running VM's refusal included, since 2.40.0
+// (openai/tart#1345), the oldest Tart taken being newer (#38): where it
+// was read from the listing before and after, its error discarded.
 func (n Machine) Delete(ctx context.Context, vm string) error {
-	exists, running, err := n.LocalVM(ctx, vm)
-	if err != nil {
-		return err
-	}
-	if !exists {
+	_, err := n.run(ctx, nil, "delete", vm)
+	if errors.Is(err, tart.ErrVMMissing) {
 		return nil
 	}
-	if running {
-		return fmt.Errorf("tart: cannot delete running VM %s", vm)
-	}
-	_, deleted := n.run(ctx, nil, "delete", vm)
-	exists, _, err = n.LocalVM(ctx, vm)
-	if err != nil {
-		return errors.Join(deleted, err)
-	}
-	if exists {
-		if deleted != nil {
-			return fmt.Errorf("tart: VM %s is still listed after delete: %w", vm, deleted)
-		}
-		return fmt.Errorf("tart: VM %s is still listed after delete", vm)
-	}
-	return nil
+	return err
 }
