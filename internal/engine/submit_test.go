@@ -32,6 +32,9 @@ func (f fixture) withFork(t *testing.T, e *Engine) *forgetest.GitHub {
 	testsupport.Git(t, filepath.Dir(f.upstream), "clone", "-q", "--bare", f.upstream, fork)
 	testsupport.Git(t, f.clone, "remote", "add", "fork", fork)
 	fake := forgetest.New(f.upstream, fork)
+	// GitHub opens a pull request on the engine's day, as the fixture's
+	// clock has it.
+	fake.Clock = e.now
 	e.Forge = fake
 	return fake
 }
