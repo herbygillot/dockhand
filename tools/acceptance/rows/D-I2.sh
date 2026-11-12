@@ -8,8 +8,11 @@ act() {
 	# check says each step (34fa8f65), where rc5 needed -v (the docs
 	# dig's I29).
 	dh_bg check -p "$(port)"
-	if wait_for_line "$DH_BG_LOG" 'building in' 900; then
-		kill -9 "$DH_BG_PID" 2>/dev/null
+	# The kill counts only where it met the check building: a wait that
+	# timed out, or a check already ended, tested nothing (Codex's cold
+	# read at 2cdaf571, #232).
+	if wait_for_line "$DH_BG_LOG" 'building in' 900 && kill -9 "$DH_BG_PID" 2>/dev/null; then
+		DI2_KILLED=1
 	fi
 	dh_bg_wait || :
 	DI2_RUN=$(grep -oE 'check-[0-9]+' "$DH_BG_LOG" | head -1)
@@ -18,8 +21,8 @@ act() {
 	dh clean --yes || :
 }
 assert() {
-	if [ -z "${DI2_RUN:-}" ]; then
-		row_known "the check never reached its build to kill"
+	if [ -z "${DI2_RUN:-}" ] || [ -z "${DI2_KILLED:-}" ]; then
+		row_result "not exercised" "the check was never killed while building${DI2_RUN:+: $DI2_RUN ran without it}"
 		return
 	fi
 	if ! jq -e '.result.attention[]? | select((.what // "") | test("stopped"; "i"))' "$ROW_DIR/json/1.json" >/dev/null && ! grep -qi 'stopped' "$ROW_DIR/out.log"; then

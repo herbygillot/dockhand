@@ -25,11 +25,18 @@ act() {
 	G14_RUN=$(jq -r '.result.run.name // empty' "$ROW_DIR/json/1.json" 2>/dev/null)
 	[ -n "$G14_RUN" ] || return 0
 	# The second starts once the first is building there.
+	# By the queue's state for the run, not the word: "running" matched
+	# "running": false (Codex's cold read at 2cdaf571, #232). A first check
+	# never seen running leaves the overlap untested.
 	local i
 	for i in $(seq 1 60); do
-		"$DH_BIN" --json status -b "$G14_FIRST" 2>/dev/null | matches -i running && break
+		if "$DH_BIN" --json status --all 2>/dev/null | jq -e --arg run "$G14_RUN" '.result.queue[]? | select(.name == $run and .state == "running")' >/dev/null 2>&1; then
+			G14_OVERLAPPED=1
+			break
+		fi
 		sleep 5
 	done
+	[ -n "${G14_OVERLAPPED:-}" ] || { row_result "not exercised" "$G14_RUN was never seen running in five minutes, so the second check couldn't start beside it"; return 0; }
 	dh check -b "$G14_SECOND" --on "local:$G14_PREFIX" -v </dev/null || :
 	dh_json wait "$G14_RUN" </dev/null || :
 }

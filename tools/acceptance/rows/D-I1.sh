@@ -4,9 +4,11 @@
 port() { printf '%s' "${ACCEPT_RUST_PORT:?}"; }
 act() {
 	dh_bg -v update "$(port)" --new
+	# The interrupt counts only where it reached the update still fetching
+	# (#232).
 	if wait_for_line "$DH_BG_LOG" '[Ff]etch|[Dd]ownload' 600; then
 		sleep 1
-		kill -INT "$DH_BG_PID" 2>/dev/null
+		kill -INT "$DH_BG_PID" 2>/dev/null && DI1_INTERRUPTED=1
 	fi
 	# The background dockhand's own exit: "$?" after "|| :" was always 0
 	# (Codex's cold read at 2cdaf571, #232).
@@ -17,8 +19,8 @@ act() {
 }
 assert() {
 	local again=$ROW_DIR/json/1.json
-	if ! grep -qE '[Ff]etch|[Dd]ownload' "$ROW_DIR/out.log"; then
-		row_known "the update never reached a fetch to interrupt"
+	if [ -z "${DI1_INTERRUPTED:-}" ]; then
+		row_result "not exercised" "the update was never interrupted mid-fetch: it reached no fetch, or had ended by the interrupt"
 		return
 	fi
 	case "$(cat "$again.exit")" in
