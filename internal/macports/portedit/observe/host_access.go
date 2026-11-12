@@ -85,7 +85,7 @@ func baseLookupBenign(root string, contents []byte, declaration macports.Declara
 		if !(buildOnlyDefault(option) || basePhaseOption(option)) || slices.Contains(fetchInputs, option) {
 			return false
 		}
-		if !optionReadBenign(root, contents, option, declaration, groups) {
+		if !optionReadBenignAs(root, contents, option, declaration, groups, true) {
 			return false
 		}
 	}
@@ -408,6 +408,15 @@ func buildDefaultReadBenign(root string, contents []byte, declaration macports.D
 // optionReadBenign reports whether neither the Portfile nor a PortGroup on
 // the read's stack reads option outside a build-only position.
 func optionReadBenign(root string, contents []byte, option string, declaration macports.Declaration, groups map[string][]byte) bool {
+	return optionReadBenignAs(root, contents, option, declaration, groups, option == "build.jobs")
+}
+
+// optionReadBenignAs is optionReadBenign, where expressionsOnly counts a
+// read the walk can't see only in an expression or by [option], as for
+// build.jobs, which Portfiles pass to the build by name, -j${build.jobs}:
+// a Base lookup's options are judged so (architecture's step 2 on #110's
+// finding 1), as test.cmd ${build.cmd} is a build position.
+func optionReadBenignAs(root string, contents []byte, option string, declaration macports.Declaration, groups map[string][]byte, expressionsOnly bool) bool {
 	reads := func(src []byte) bool {
 		script, errs := syntax.Parse(src)
 		return len(errs) == 0 && classifyReads(src, script, &dimension{read: func(name string) bool { return name == option }, label: option, tainted: map[string]bool{}}) == nil
@@ -416,11 +425,11 @@ func optionReadBenign(root string, contents []byte, option string, declaration m
 	// counts too: the Portfile reading the option at all, by $name,
 	// [option name], or [tbool name], keeps it inconclusive.
 	readsAtAll := regexp.MustCompile(`\$\{?` + regexp.QuoteMeta(option) + `\b|\[(?:option|tbool|istrue)\s+` + regexp.QuoteMeta(option) + `\b`)
-	if option == "build.jobs" {
+	if expressionsOnly {
 		// Portfiles pass build.jobs to the build by name, -j${build.jobs},
 		// in positions the walk sees; only one in an expression it can't
 		// see, or asked for by [option], counts (#110).
-		readsAtAll = regexp.MustCompile(`(?:\bif|\belseif|\bexpr|\bwhile)\s*\{[^}\n]*\$\{?build\.jobs\b|\[(?:option|tbool|istrue)\s+build\.jobs\b`)
+		readsAtAll = regexp.MustCompile(`(?:\bif|\belseif|\bexpr|\bwhile)\s*\{[^}\n]*\$\{?` + regexp.QuoteMeta(option) + `\b|\[(?:option|tbool|istrue)\s+` + regexp.QuoteMeta(option) + `\b`)
 	}
 	if !reads(contents) || readsAtAll.Match(contents) {
 		return false

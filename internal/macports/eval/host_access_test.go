@@ -282,8 +282,11 @@ func TestEachContextGetsItsOwnCompilerList(t *testing.T) {
 // value reads, is explained like build.jobs's read, whoever wrote the
 // option's default: build.cmd's make taken by a configure.args a PortGroup
 // writes, as cmake's does, and use_bzip2's lbzip2 taken by extract.cmd
-// (architecture's step 2 on #110's finding 1). One a fetch value reads, or
-// a Portfile's own lookup, stays host state.
+// (architecture's step 2 on #110's finding 1), and build.cmd's read by a
+// Portfile in another phase's command, as abella's test.cmd is. One a
+// fetch value reads, one the Portfile reads in an expression, or a
+// Portfile's own lookup, pure-gen's build_getmaketype call among them,
+// stays host state.
 func TestBasesOwnLookupForAPhaseOptionIsExplained(t *testing.T) {
 	t.Parallel()
 	group := func(root string) {
@@ -297,6 +300,9 @@ func TestBasesOwnLookupForAPhaseOptionIsExplained(t *testing.T) {
 	}{
 		{"build.cmd's make, taken by a PortGroup's configure.args", "PortGroup makeargs 1.0", group, false, "make, which findBinary"},
 		{"extract.cmd's lbzip2", "use_bzip2 yes", nil, false, "lbzip2, which findBinary"},
+		{"build.cmd's make, in the Portfile's test.cmd", "test.run yes\ntest.cmd ${build.cmd}", nil, false, "make, which findBinary"},
+		{"build.cmd's make, read in the Portfile's expression", "build.args-append [string length ${build.cmd}]\nif {${build.cmd} eq {}} {build.target none}", nil, true, "make, which findBinary"},
+		{"a Portfile's own call of Base's make lookup", "build.cmd [portbuild::build_getmaketype]", nil, true, "make, which findBinary"},
 		{"configure.args read by a fetch value", "PortGroup makeargs 1.0\ndistfiles effects-[llength ${configure.args}].tar.gz", group, true, "make, which findBinary"},
 		{"a Portfile's own lookup for configure.args", "catch {configure.args-append [findBinary hostonly]}", nil, true, "hostonly, which findBinary"},
 	} {
