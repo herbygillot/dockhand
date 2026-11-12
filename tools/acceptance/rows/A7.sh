@@ -1,4 +1,5 @@
 # stages: full
+# installs: a newer build, then the candidate again
 # A7: port upgrade dockhand to the next candidate while serve runs as a
 # launchd agent. The running serve notices its executable was replaced,
 # says so, and stops once its checks end; launchd starts the new build,

@@ -138,11 +138,22 @@ harm_remote_refs() {
 
 # harm_prs lists the pull requests the login has opened, where one's set,
 # at MacPorts and in the sandbox the full stage's test ones go to.
+#
+# It lists with the test account's token, ACCEPT_GH_TOKEN or the file
+# ACCEPT_GH_TOKEN_FILE names (~/.dockhand-acceptance/gh-token unless set),
+# where there is one, and gh's own login otherwise, never a token the run
+# inherited: full.sh unsets GH_TOKEN and GITHUB_TOKEN (#233), and a
+# listing that leaned on them would leave every row unobserved (#231).
 harm_prs() {
 	[ -n "${ACCEPT_GH_LOGIN:-}" ] && command -v gh >/dev/null || return 1
-	local repo
+	local repo token=${ACCEPT_GH_TOKEN:-}
+	[ -n "$token" ] || token=$(cat "${ACCEPT_GH_TOKEN_FILE:-$HOME/.dockhand-acceptance/gh-token}" 2>/dev/null || :)
 	for repo in macports/macports-ports ${DOCKHAND_PULL_REQUESTS:-}; do
-		gh pr list --repo "$repo" --author "$ACCEPT_GH_LOGIN" --state all --limit 200 --json number --jq ".[] | \"$repo#\(.number)\"" || return 1
+		if [ -n "$token" ]; then
+			GH_TOKEN=$token gh pr list --repo "$repo" --author "$ACCEPT_GH_LOGIN" --state all --limit 200 --json number --jq ".[] | \"$repo#\(.number)\"" || return 1
+		else
+			env -u GH_TOKEN -u GITHUB_TOKEN gh pr list --repo "$repo" --author "$ACCEPT_GH_LOGIN" --state all --limit 200 --json number --jq ".[] | \"$repo#\(.number)\"" || return 1
+		fi
 	done | sort
 }
 
