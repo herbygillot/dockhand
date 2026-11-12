@@ -546,6 +546,11 @@ func showBranch(out io.Writer, places config.Places, status engine.BranchStatus,
 		pr += " · CI not read yet (dockhand status --refresh)"
 	}
 	fmt.Fprintf(out, "  PR       %s\n", pr)
+	// What became of the last reviewer request, as its receipt says it
+	// (docs/designs/publication-record.md).
+	if line := view.ReviewReceiptWords(status.Branch.PullRequest); line != "" {
+		fmt.Fprintf(out, "  Review   %s\n", line)
+	}
 	// Its merge by MacPorts' maintainer policy: whose ports, whom the
 	// description mentions, who approved, and when the maintainer timeout
 	// ends, or that it's a draft.

@@ -2022,3 +2022,123 @@ func TestANewerSchemasRefusalNamesItsBuildAndTheCopy(t *testing.T) {
 	require.ErrorContains(t, err, "it was built from commit 0123456789ab of "+buildinfo.ProjectURL)
 	require.ErrorContains(t, err, fmt.Sprintf("A schema %d backup is kept at %s.schema-%d; restoring it loses changes recorded after that backup was made", schemaVersion, f.path, schemaVersion))
 }
+
+// A branch's publication is written only over the one its writer read, by
+// ID: the first only where there is none, and no write of an old one over
+// a successor's; UpdateBranch leaves it as it is. The pull request's
+// provenance and its reviewer receipt are kept with it (#191).
+func TestAPublicationIsWrittenOnlyOverTheOneItsWriterRead(t *testing.T) {
+	t.Parallel()
+	f := open(t)
+	b, _, _ := f.seed(t)
+	read := func() model.Branch {
+		t.Helper()
+		var got model.Branch
+		require.NoError(t, f.store.View(t.Context(), f.repo, func(rd store.Reader) error {
+			var err error
+			got, err = rd.Branch(b.ID)
+			return err
+		}))
+		return got
+	}
+	first := &model.Publication{ID: "pub_1", Commit: "abc123", At: at, By: "alice", Head: "alice/macports-ports:jq", Base: "macports/macports-ports:master",
+		Owes: []model.PublicationStep{model.StepPush, model.StepOpen}, Review: &model.ReviewAsk{Answer: model.ReviewYes, Reviewers: []model.Reviewer{{Login: "bob", Reviewed: at, Sent: model.MaySent}}}}
+	set := func(was string, next *model.Publication) error {
+		return f.update(t, func(tx store.Tx) error { return tx.SetPublication(b.ID, was, next) })
+	}
+	require.NoError(t, set("", first))
+	require.Equal(t, first, read().Publication)
+	require.ErrorIs(t, set("", &model.Publication{ID: "pub_2"}), store.ErrConflict, "a second first write finds one there")
+
+	second := *first
+	second.ID, second.Owes = "pub_2", []model.PublicationStep{model.StepOpen}
+	require.NoError(t, set("pub_1", &second))
+	require.ErrorIs(t, set("pub_1", nil), store.ErrConflict, "the old one's writer can't end its successor")
+
+	got := read()
+	got.Title = "jq: update to 1.8.1"
+	got.PullRequest = &model.PullRequest{Repository: "macports/macports-ports", Number: 7, Head: "alice/macports-ports:jq", Provenance: model.Opened,
+		Rerequested: &model.ReviewReceipt{Head: "abc123", Reviewers: []model.Reviewer{{Login: "bob", Reviewed: at, Sent: model.SentRequest}}}}
+	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(got) }))
+	after := read()
+	require.Equal(t, &second, after.Publication, "UpdateBranch leaves the publication")
+	require.Equal(t, got.PullRequest, after.PullRequest)
+
+	require.NoError(t, set("pub_2", nil))
+	require.Nil(t, read().Publication)
+}
+
+// The publication record's migration waits for quiet: refused, with each
+// process to stop and nothing migrated, while another dockhand runs on
+// this Mac, and where the process list can't be read; it goes ahead with
+// none, and a new database isn't asked (#191).
+func TestThePublicationMigrationWaitsForQuiet(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name  string
+		quiet func() ([]int, error)
+		words string
+	}{
+		{"two running", func() ([]int, error) { return []int{101, 202}, nil }, "2 other dockhand processes are running on this Mac, and migrating this database from schema 60 to"},
+		{"unreadable", func() ([]int, error) { return nil, errors.New("operation not permitted") }, "this Mac's process list can't be read here (operation not permitted)"},
+	} {
+		path := schemaAt(t, quietSchema-1, schema23Records)
+		_, err := Open(t.Context(), path, Options{Quiet: c.quiet})
+		var refused *store.QuietUnderMigrationError
+		require.ErrorAs(t, err, &refused, c.name)
+		require.ErrorContains(t, err, c.words, c.name)
+		require.ErrorContains(t, err, "Nothing was migrated", c.name)
+		if c.name == "two running" {
+			require.ErrorContains(t, err, "stop each (kill 101; kill 202)")
+		}
+		db, err := sql.Open("sqlite", path)
+		require.NoError(t, err)
+		version, _, err := schemaOf(t.Context(), db)
+		require.NoError(t, err)
+		require.NoError(t, db.Close())
+		require.Equal(t, quietSchema-1, version, "%s: nothing migrated", c.name)
+	}
+	asked := false
+	quiet := func() ([]int, error) { asked = true; return nil, nil }
+	s, err := Open(t.Context(), schemaAt(t, quietSchema-1, schema23Records), Options{Quiet: quiet})
+	require.NoError(t, err)
+	require.NoError(t, s.Close())
+	require.True(t, asked)
+	asked = false
+	fresh, err := Open(t.Context(), filepath.Join(t.TempDir(), "dockhand.db"), Options{Quiet: quiet})
+	require.NoError(t, err)
+	require.NoError(t, fresh.Close())
+	require.False(t, asked, "a new database has no older submission to wait for")
+}
+
+// An older submit's reviewer left-over is said once by the migration and
+// never sent: a pull request whose reviewers requested changes, with a
+// push recorded after that review and no request since, gets a receipt
+// saying the reviewers may not have been asked; one asked since, or with
+// no push after, gets none (#191).
+func TestTheMigrationSaysAnOldReviewerLeftOver(t *testing.T) {
+	t.Parallel()
+	setup := schema23Records + `
+INSERT INTO branches(repository_id, id, name, base, worktree, managed, title, state, created_at) VALUES('repo_1','br_2','dockhand/fd','base','/w2',1,'','open',1);
+UPDATE branches SET pr_repository='macports/macports-ports', pr_number=CASE id WHEN 'br_1' THEN 7 ELSE 8 END, pr_head='ada/macports-ports:dockhand/jq-4k2p', pr_pushed='abc',
+ pr_observed='{"State":"open","Review":"changes-requested","ChangesRequestedBy":["bob"],"ReviewedAt":"2026-11-10T12:00:00.5-05:00"}' WHERE id IN ('br_1','br_2');
+INSERT INTO events(repository_id, at, session_id, branch_id, run_id, target_id, kind, level, message) VALUES
+ ('repo_1', 1794336000000, '', 'br_1', '', '', 'branch.push', 'verbose', 'pushed abc to #7'),
+ ('repo_1', 1794336000000, '', 'br_2', '', '', 'branch.push', 'verbose', 'pushed abc to #7'),
+ ('repo_1', 1794336100000, '', 'br_2', '', '', 'branch.rerequest', 'info', 'asked @bob to review #7 again');`
+	path := schemaAt(t, quietSchema-1, setup)
+	s, err := Open(t.Context(), path, Options{})
+	require.NoError(t, err)
+	defer s.Close()
+	read := func(id model.BranchID) model.Branch {
+		var got model.Branch
+		require.NoError(t, s.View(t.Context(), "repo_1", func(r store.Reader) error {
+			var err error
+			got, err = r.Branch(id)
+			return err
+		}))
+		return got
+	}
+	require.Equal(t, &model.ReviewReceipt{Head: "abc", Unasked: true}, read("br_1").PullRequest.Rerequested, "pushed after the review, never asked")
+	require.Nil(t, read("br_2").PullRequest.Rerequested, "asked since")
+}

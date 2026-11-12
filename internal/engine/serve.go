@@ -1296,6 +1296,10 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 	}
 	p.last = time.Now()
 	e := p.s.e
+	// The pass settles first: serve's own earlier submissions, and the
+	// creates that may have landed; until the first pass after the upgrade
+	// has read every branch, serve opens nothing (serve's count, #191).
+	opens, settleErr := e.settleServe(ctx)
 	candidates, yours, err := e.serveCandidates(ctx)
 	// What serve's own stop cancelled is unsaid (D-I5 on rc5).
 	if ctx.Err() != nil {
@@ -1306,6 +1310,14 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 	defer pass.done(ctx)
 	if err != nil {
 		pass.say(ctx, fmt.Sprintf("serve: finding passing updates: %v", err))
+		return
+	}
+	if settleErr != nil {
+		pass.say(ctx, fmt.Sprintf("serve: accounting for its earlier submissions: %v; it opens nothing until it can", settleErr))
+		return
+	}
+	if !opens {
+		pass.say(ctx, "serve: accounting for submissions an older dockhand may have left isn't finished; it opens nothing until it is")
 		return
 	}
 	// The passing branches a person started are theirs to submit, and
@@ -1332,20 +1344,15 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 			pass.say(ctx, fmt.Sprintf("serve: %s needs review before submission: %s", name, strings.Join(HoldLines(candidate.Held), "; ")))
 			continue
 		}
-		opened, err := e.servedToday(ctx, p.s.options.Now())
+		// The admission and the place are the submission's first
+		// transaction, counted by serve's rows (ServeLimitReached).
+		submitted, err := e.SubmitForServe(ctx, candidate, ServeAdmission{Limit: p.s.options.SubmitLimit, Now: p.s.options.Now()})
 		if ctx.Err() != nil {
 			return
 		}
-		if err != nil {
-			pass.say(ctx, fmt.Sprintf("serve: counting today's pull requests: %v", err))
-			return
-		}
-		if opened >= p.s.options.SubmitLimit {
-			pass.say(ctx, fmt.Sprintf("serve: %s will wait until tomorrow; today's limit of %s has been reached (serve.submit_limit)", name, prose.Plural(p.s.options.SubmitLimit, "pull request")))
-			return
-		}
-		submitted, err := e.SubmitForServe(ctx, candidate)
-		if ctx.Err() != nil {
+		var limited *ServeLimitReached
+		if errors.As(err, &limited) {
+			pass.say(ctx, fmt.Sprintf("serve: %s will wait until tomorrow; %s", name, limited.Error()))
 			return
 		}
 		// One that failed after its pull request opened stops the pass:
@@ -1362,18 +1369,6 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 		p.s.say("serve: opened #%d for %s after its check passed", submitted.PullRequest.Ref.Number, name)
 		p.s.notify(name, fmt.Sprintf("Opened pull request #%d after the check passed.", submitted.PullRequest.Ref.Number))
 	}
-}
-
-// servedToday counts the pull requests serve opened by itself since the
-// start of now's day. Cleanup keeps the day's events for it (Cleanup).
-func (e *Engine) servedToday(ctx context.Context, now time.Time) (int, error) {
-	var count int
-	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		var err error
-		count, err = r.CountEvents(model.EventServeSubmit, dayStart(now))
-		return err
-	})
-	return count, err
 }
 
 // dayStart is midnight at the start of t's day, where t is: the day

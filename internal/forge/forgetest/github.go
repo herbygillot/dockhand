@@ -32,6 +32,11 @@ type GitHub struct {
 	// Upstream and Fork are the local repositories MacPorts' and the
 	// person's fork stand for.
 	Upstream, Fork string
+	// pending are each pull request's review requests still pending,
+	// which RequestReviewers adds and RemoveRequest withdraws; Inspect
+	// reads them whole unless RequestsUnread says the read was cut short.
+	pending        map[int][]string
+	RequestsUnread bool
 	// Renamed are the repositories that answer by another name now, by
 	// the name asked (Describe).
 	Renamed map[string]string
@@ -351,7 +356,21 @@ func (g *GitHub) RequestReviewers(_ context.Context, ref forge.PullRequestRef, l
 		g.RerequestedOn = map[int][]string{}
 	}
 	g.RerequestedOn[ref.Number] = append(g.RerequestedOn[ref.Number], logins...)
+	if g.pending == nil {
+		g.pending = map[int][]string{}
+	}
+	for _, login := range logins {
+		if !slices.Contains(g.pending[ref.Number], login) {
+			g.pending[ref.Number] = append(g.pending[ref.Number], login)
+		}
+	}
 	return nil
+}
+
+// RemoveRequest withdraws a login's pending review request, as a person
+// can on GitHub.
+func (g *GitHub) RemoveRequest(number int, login string) {
+	g.pending[number] = slices.DeleteFunc(g.pending[number], func(l string) bool { return l == login })
 }
 
 // setDraft is a pull request of the stand-in's own made a draft, or
@@ -382,6 +401,18 @@ func (g *GitHub) Inspect(_ context.Context, ref forge.PullRequestRef) (forge.Pul
 	// then marked, unless a test said otherwise of it.
 	if draft, ok := g.draft[ref.Number]; ok && !set {
 		status.Draft = draft
+	}
+	// The pending review requests, read whole unless a test says the read
+	// came back cut short (RequestsUnread).
+	if !set {
+		status.Requested = slices.Clone(status.Requested)
+		for _, login := range g.pending[ref.Number] {
+			if !slices.Contains(status.Requested, login) {
+				status.Requested = append(status.Requested, login)
+			}
+		}
+		slices.Sort(status.Requested)
+		status.RequestedRead = !g.RequestsUnread
 	}
 	return status, nil
 }

@@ -258,6 +258,22 @@ selections. The provider-specific setup commands, local-prefix behavior, and
 timeout settings are in `dockhand usage checks` and
 `dockhand usage configuration`.
 
+## A submission that didn't finish
+
+When submit stops partway, as when the push lands and opening the pull request
+fails, or the reply is lost, it says what is still owed and that `dockhand submit`
+finishes it:
+
+```text
+pushed 1a2b3c4 to ada/macports-ports:dockhand/jq-update, but could not create or update the pull request: …; opening the pull request is still owed, and dockhand submit jq-update finishes it
+```
+
+Run that submit; don't open a pull request by hand or start another branch. It
+reads the fork and GitHub first and records what landed, so a pull request
+GitHub opened is found, not opened twice. A submit that seems to hang holds the
+fork branch's lock: another submit of it is refused and names the process to
+stop.
+
 ## A green check can still leave work for review
 
 ```sh

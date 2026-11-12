@@ -29,6 +29,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/selection"
 	"github.com/herbygillot/dockhand/internal/macports/treequery"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/procid"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/refusal"
@@ -543,11 +544,26 @@ func (e *Engine) TrackedElsewhere(ctx context.Context, number int) error {
 	return nil
 }
 
+// otherDockhands are the PIDs of the other processes on this Mac running a
+// program named dockhand, which the publication record's migration waits
+// on (store.QuietUnderMigrationError).
+func otherDockhands() ([]int, error) {
+	named, err := procid.Named("dockhand")
+	if err != nil {
+		return nil, err
+	}
+	var pids []int
+	for _, process := range named {
+		pids = append(pids, process.PID)
+	}
+	return pids, nil
+}
+
 // storeOptions are what the store opens with: the person's answers to a
 // migration's refusals, and this build, which a release's database is
 // refused to unasked where it isn't one.
 func (o Options) storeOptions() sqlite.Options {
-	return sqlite.Options{MigrateUnderLive: o.MigrateUnderLive, MigrateRelease: o.MigrateRelease || o.NamedDatabase, Build: buildinfo.Current().String(), LiveWithin: coord.DefaultHungAfter, Heartbeat: coord.DefaultHeartbeat}
+	return sqlite.Options{MigrateUnderLive: o.MigrateUnderLive, MigrateRelease: o.MigrateRelease || o.NamedDatabase, Build: buildinfo.Current().String(), LiveWithin: coord.DefaultHungAfter, Heartbeat: coord.DefaultHeartbeat, Quiet: otherDockhands}
 }
 
 // ReleaseUnderMigrationError is a migration Open refused, since a release

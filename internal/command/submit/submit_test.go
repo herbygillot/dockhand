@@ -904,6 +904,11 @@ func TestSubmitAsksTheReviewersBack(t *testing.T) {
 	require.Equal(t, []any{map[string]any{"login": "ryandesign", "rerequested": false}}, pullRequest(result)["changes_requested_by"])
 	require.Equal(t, false, pullRequest(result)["updated_title"])
 	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("[submit]\nrerequest_review = \"always\"\n"), 0o644))
+	// Reviewing again clears the request on GitHub; one still pending is
+	// never sent twice (#191).
+	for number := range g.PRs {
+		g.RemoveRequest(number, "ryandesign")
+	}
 	fix("# always")
 	result, err = cmdtest.JSONOf(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
@@ -1274,10 +1279,11 @@ func (g *failingReviewers) RequestReviewers(ctx context.Context, ref forge.PullR
 	return g.GitHub.RequestReviewers(ctx, ref, logins)
 }
 
-// A reviewer request that failed after its push is made by the next
-// submit, which pushes nothing: a rerun skipped it, since it hadn't
-// pushed (Codex's workflow review of 1caa6c3d, finding 8, its probe).
-func TestSubmitFinishesAReviewRequestTheLastOneLeft(t *testing.T) {
+// A reviewer request that got no answer after its push may have landed,
+// and the next submit, which pushes nothing, never sends it again
+// (#191's case AC; earlier, Codex's workflow review of 1caa6c3d, finding
+// 8).
+func TestAReviewRequestThatMayHaveLandedIsNotSentAgain(t *testing.T) {
 	t.Parallel()
 	w := cmdtest.NewWorld(t)
 	cmdtest.Versioned(t, w)
@@ -1307,19 +1313,19 @@ func TestSubmitFinishesAReviewRequestTheLastOneLeft(t *testing.T) {
 	require.ErrorContains(t, err, "temporary review API failure")
 	require.Contains(t, out, "Updated #34901: pushed through commit")
 	require.Equal(t, 1, wrapped.calls)
+	require.ErrorContains(t, err, "so it may have been sent, and isn't sent again")
 	wrapped.fail = nil
-	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
+	// A request that got no answer may have landed: the retry, which
+	// pushes nothing, never sends it again (#191's case AC).
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
-	require.Contains(t, out, "Asked @ryandesign to review again (left over from the last submit).")
-	require.Equal(t, 2, wrapped.calls, "retry should finish the failed post-push reviewer request")
-	require.Equal(t, []string{"ryandesign"}, g.Rerequested)
+	require.Equal(t, 1, wrapped.calls, "a request that may have been sent isn't sent again")
 }
 
-// The re-request a failed reviewer request left is made by the next
-// submit where the commit pushed is older than the review, as one made
-// before it and pushed after is: the push's time decides, not the
-// commit's (Codex's sixth review, #76, its probe).
-func TestAReRequestLeftOverIsDueByThePushNotTheCommit(t *testing.T) {
+// A reviewer request a rate limit stopped wasn't sent, and the next submit
+// of the commit makes it though it pushes nothing, whatever the commit's
+// date, which an older rule read (Codex's sixth review, #76; #191).
+func TestAReviewRequestARateLimitStoppedIsMadeByTheNextSubmit(t *testing.T) {
 	t.Parallel()
 	w := cmdtest.NewWorld(t)
 	cmdtest.Versioned(t, w)
@@ -1348,16 +1354,18 @@ func TestAReRequestLeftOverIsDueByThePushNotTheCommit(t *testing.T) {
 	require.NoError(t, commitErr, string(output))
 	require.NoError(t, os.MkdirAll(filepath.Join(w.Home, ".dockhand"), 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(w.Home, ".dockhand", "config.toml"), []byte("[submit]\nrerequest_review = \"always\"\n"), 0644))
-	wrapped.fail = errors.New("temporary review API failure")
+	wrapped.fail = &forge.RateLimitError{Err: errors.New("temporary review API failure")}
 	out, _, err := cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 	require.ErrorContains(t, err, "temporary review API failure")
 	require.Contains(t, out, "Updated #34901: pushed through commit")
 	require.Equal(t, 1, wrapped.calls)
+	// A rate limit stopped the request before GitHub took it: not sent, so
+	// the retry, which pushes nothing, makes it (#191).
 	wrapped.fail = nil
 	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
-	require.Contains(t, out, "(left over from the last submit)")
-	require.Equal(t, 2, wrapped.calls, "retry should finish the failed post-push reviewer request")
+	require.Contains(t, out, "Asked @ryandesign to review again.")
+	require.Equal(t, 2, wrapped.calls, "retry should finish the request a rate limit stopped")
 	require.Equal(t, []string{"ryandesign"}, g.Rerequested)
 }
 

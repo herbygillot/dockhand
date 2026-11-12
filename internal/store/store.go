@@ -130,6 +130,14 @@ type Build struct {
 // Reader reads records within a transaction.
 type Reader interface {
 	Branch(id model.BranchID) (model.Branch, error)
+	// ServeOpenings are serve's count's rows, oldest first; a row isn't
+	// deleted with its branch (model.ServeOpening).
+	ServeOpenings() ([]model.ServeOpening, error)
+	// ServeUpgrade is when the repository's records took on serve's count
+	// by its rows, and whether serve's first pass after it has read every
+	// branch it prepared that may hold an old create; ok is false for a
+	// repository recorded after it, which has no old create to find.
+	ServeUpgrade() (at time.Time, firstPassDone, ok bool, err error)
 	// BranchNamed finds the branch with a Git name that is not merged.
 	BranchNamed(name string) (model.Branch, error)
 	// MergedBranchNamed finds the newest merged branch with a Git name,
@@ -240,6 +248,24 @@ type Tx interface {
 	// UpdateBranch replaces a branch's fields; a state change must be one
 	// model.BranchState allows.
 	UpdateBranch(branch model.Branch) error
+	// SetPublication replaces a branch's publication, only while the one
+	// recorded is was, by ID: "" where there is none, so the first is
+	// written only where the branch has none, and another write of it
+	// only by the process holding that one. next nil ends it. UpdateBranch
+	// leaves the publication as it is (docs/designs/publication-record.md,
+	// "One submission at a time").
+	SetPublication(branch model.BranchID, was string, next *model.Publication) error
+	// AddServeOpening records a row of serve's count and gives its ID;
+	// UpdateServeOpening replaces one by its ID, and ReleaseServeOpening
+	// removes one the count's rules release. SetServeFirstPassDone
+	// records that the first pass after the upgrade has read every branch.
+	AddServeOpening(opening model.ServeOpening) (int64, error)
+	UpdateServeOpening(opening model.ServeOpening) error
+	ReleaseServeOpening(id int64) error
+	SetServeFirstPassDone() error
+	// PruneServeOpenings removes the openings created before before; a
+	// row tried or holding a place is never pruned.
+	PruneServeOpenings(before time.Time) error
 
 	// AddRevision records a revision. A snapshot's number must be the
 	// branch's next one; NextSnapshot says which that is.
@@ -406,6 +432,37 @@ func (e *LiveUnderMigrationError) Error() string {
 		processes = fmt.Sprintf("%d dockhand processes are", e.Processes)
 	}
 	return fmt.Sprintf("%s using schema %d%s; migrating this database to schema %d would prevent them from recording further work", processes, e.From, builds, e.To)
+}
+
+// QuietUnderMigrationError refuses a migration that waits for quiet: the
+// publication record's (schema 61) is refused while any other process on
+// this Mac runs a program named dockhand, whatever it is doing and whether
+// or not it has a session, or where the process list can't be read, as in
+// a sandbox. A submit, an update or a ship opens no session, and one paused
+// before its push would push and write to GitHub after the migration with
+// no record and no lock (docs/designs/publication-record.md, "Existing
+// databases and branches"). Nothing overrides it.
+type QuietUnderMigrationError struct {
+	From, To int
+	// PIDs are the processes to stop; Unreadable why the list couldn't
+	// be read.
+	PIDs       []int
+	Unreadable error
+}
+
+func (e *QuietUnderMigrationError) Error() string {
+	if e.Unreadable != nil {
+		return fmt.Sprintf("migrating this database to schema %d waits until no other dockhand runs on this Mac, and this Mac's process list can't be read here (%v); run the command where it can be, outside a sandbox. Nothing was migrated", e.To, e.Unreadable)
+	}
+	var kills []string
+	for _, pid := range e.PIDs {
+		kills = append(kills, fmt.Sprintf("kill %d", pid))
+	}
+	processes := "another dockhand process is"
+	if len(e.PIDs) != 1 {
+		processes = fmt.Sprintf("%d other dockhand processes are", len(e.PIDs))
+	}
+	return fmt.Sprintf("%s running on this Mac, and migrating this database from schema %d to %d waits until none is: stop each (%s), then run the command again. Nothing was migrated", processes, e.From, e.To, strings.Join(kills, "; "))
 }
 
 // A LiveProcess is a dockhand process working on a database whose

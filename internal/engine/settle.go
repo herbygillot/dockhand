@@ -1,8 +1,15 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"slices"
+	"strings"
+	"time"
+
+	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/store"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports/prdescription"
@@ -39,6 +46,9 @@ type Settlement struct {
 	// Provenance how it is known: found, where a read found it.
 	Number     int
 	Provenance model.Provenance
+	// Created is GitHub's time for the found pull request's creation,
+	// zero where none was found or GitHub didn't give it.
+	Created time.Time
 	// Body is what dockhand has written of the description, where the
 	// edit or the opening landed in part or whole (prdescription.Landed);
 	// empty where nothing of it is known to have landed.
@@ -78,6 +88,9 @@ func Settle(publication model.Publication, recorded *model.PullRequest, reading 
 		case publication.Number == 0 && found.Ref.Number > publication.Earlier:
 			pr, s.Number, s.Provenance = &found, found.Ref.Number, model.Found
 		}
+	}
+	if pr != nil {
+		s.Created = pr.CreatedAt
 	}
 	terminal := pr != nil && pr.State != forge.PullRequestOpen
 	for _, step := range publication.Owes {
@@ -188,4 +201,172 @@ const (
 // may have been sent, doesn't; a ready asked and not done is failed.
 func (p Pending) FailsCommand() bool {
 	return p.Reason == PendingFailed || p.Reason == PendingRefused
+}
+
+// settlePublication accounts for what an earlier submission of the branch
+// left, under its head's lock, before a new one is planned: it reads the
+// fork's branch, the pull request by head and base, and its draft state,
+// settles what each step left (Settle), and in one transaction folds what
+// is done into the pull request's record, the description that landed,
+// serve's row, and the reviewer receipt, then ends the publication. It
+// only reads the fork and GitHub. A read that fails leaves it as it is,
+// and the plan is refused with the read named. What the person asked of
+// it that still applies is returned, for the plan to carry.
+func (e *Engine) settlePublication(ctx context.Context, worktree *git.Repository, branch model.Branch, pushURL string) (model.Branch, *model.Publication, []model.PublicationStep, error) {
+	record := branch.Publication
+	if record == nil {
+		return branch, nil, nil, nil
+	}
+	headRepository, headBranch, _ := strings.Cut(record.Head, ":")
+	baseRepository, baseBranch, _ := strings.Cut(record.Base, ":")
+	var settled Settlement
+	var unread error
+	err := worktree.WithHeadLock(ctx, record.Head, func(ctx context.Context) error {
+		current, err := e.Branch(ctx, branch.ID)
+		if err != nil {
+			return err
+		}
+		if current.Publication == nil || current.Publication.ID != record.ID {
+			branch = current
+			record = nil
+			return nil
+		}
+		var reading PublicationReading
+		if pushURL != "" {
+			if head, err := worktree.RemoteHead(ctx, pushURL, headBranch); err == nil {
+				reading.HeadRead, reading.HeadExists, reading.HeadAt = true, head.Exists, model.ObjectID(head.Object)
+			}
+		}
+		found, err := e.forge().Find(ctx, forge.PullRequestQuery{Repository: baseRepository, HeadRepository: headRepository, HeadBranch: headBranch, BaseBranch: baseBranch})
+		if err == nil {
+			reading.FoundRead, reading.Found, reading.PullRequest = true, found.Found, found.PullRequest
+		}
+		number := record.Number
+		if reading.Found && number == 0 && found.PullRequest.Ref.Number > record.Earlier {
+			number = found.PullRequest.Ref.Number
+		}
+		if number != 0 {
+			if status, err := e.forge().Inspect(ctx, pullRequestRef(baseRepository, number)); err == nil {
+				reading.StatusRead, reading.Status = true, status
+			}
+		}
+		settled = Settle(*record, current.PullRequest, reading)
+		if len(settled.Unread) > 0 && !settled.Ended {
+			unread = fmt.Errorf("an earlier submission of %s couldn't be accounted for: %s couldn't be read; nothing was done, and dockhand submit tries again", branch.ShortName(), prose.And(settled.Unread))
+			return nil
+		}
+		return e.rewritePublication(ctx, branch.ID, record.ID, nil, func(tx store.Tx) error {
+			return e.foldSettlement(tx, branch.ID, *record, settled, baseRepository)
+		})
+	})
+	if err != nil {
+		return branch, nil, nil, err
+	}
+	if unread != nil {
+		return branch, nil, nil, unread
+	}
+	if record == nil {
+		return branch, nil, nil, nil
+	}
+	branch, err = e.Branch(ctx, branch.ID)
+	if settled.Ended {
+		return branch, nil, nil, err
+	}
+	carried := *record
+	carried.Owes = settled.Owes
+	return branch, &carried, settled.Done, err
+}
+
+// foldSettlement writes what settling found into the branch's record,
+// before the publication goes: each step found done into the pull
+// request, the description's parts that landed, serve's row with the pull
+// request and GitHub's creation time, and every reviewer mark other than
+// not sent as the receipt (docs/designs/publication-record.md, "Ending a
+// publication").
+func (e *Engine) foldSettlement(tx store.Tx, id model.BranchID, record model.Publication, settled Settlement, repository string) error {
+	branch, err := tx.Branch(id)
+	if err != nil {
+		return err
+	}
+	pr := branch.PullRequest
+	found := false
+	if settled.Number != 0 && (pr == nil || pr.Number != settled.Number) {
+		pr = &model.PullRequest{Repository: repository, Number: settled.Number, Head: record.Head, Provenance: settled.Provenance}
+		found = true
+	}
+	if pr != nil {
+		for _, step := range settled.Done {
+			switch step {
+			case model.StepPush:
+				// A push to a pull request already recorded is left for
+				// the next submission's record, which says it in the
+				// timeline after its update, as a clean run does.
+				if found {
+					pr.Pushed = record.Commit
+				}
+			case model.StepDraft:
+				pr.Draft = true
+			case model.StepReady:
+				pr.Draft = false
+			}
+		}
+		if settled.Body != "" {
+			pr.Body = settled.Body
+		}
+		if record.Review != nil && slices.ContainsFunc(record.Review.Reviewers, func(r model.Reviewer) bool { return r.Sent != model.NotSent }) {
+			pr.Rerequested = &model.ReviewReceipt{Head: record.Commit, Reviewers: record.Review.Reviewers}
+		}
+		branch.PullRequest = pr
+		if err := tx.UpdateBranch(branch); err != nil {
+			return err
+		}
+	}
+	if !record.Served {
+		return nil
+	}
+	rows, err := tx.ServeOpenings()
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if row.Head != record.Head || row.Base != record.Base || row.Number != 0 {
+			continue
+		}
+		switch {
+		case settled.Number != 0:
+			if charged, ok := row.FoundFor(settled.Number, settled.Created); ok {
+				return tx.UpdateServeOpening(charged)
+			}
+		case row.Tried.IsZero():
+			// A place never tried is released with its publication.
+			return tx.ReleaseServeOpening(row.ID)
+		}
+	}
+	return nil
+}
+
+// endPublicationFor ends a branch's unfinished submission before the
+// branch is archived or forgotten: what each step left is read and
+// written down, then it goes (docs/designs/publication-record.md, "Ending
+// a publication"). Where a read it needs fails, it stays, and the verb is
+// refused with nothing done.
+func (e *Engine) endPublicationFor(ctx context.Context, branch model.Branch, verb string) error {
+	current, err := e.Branch(ctx, branch.ID)
+	if err != nil || current.Publication == nil {
+		return err
+	}
+	worktree := e.Repo
+	if current.Worktree != "" && exists(current.Worktree) {
+		if worktree, err = e.worktree(ctx, current); err != nil {
+			return err
+		}
+	}
+	pushURL := ""
+	if fork, err := e.Fork(ctx, ""); err == nil {
+		pushURL = fork.PushURL
+	}
+	if _, _, _, err := e.settlePublication(ctx, worktree, current, pushURL); err != nil {
+		return fmt.Errorf("%w; %s wasn't %s", err, current.ShortName(), verb)
+	}
+	return nil
 }

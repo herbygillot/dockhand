@@ -68,6 +68,10 @@ const (
 	Conflicting      Reason = "conflicting"
 	AcceptedToSubmit Reason = "accepted-to-submit"
 	NotPushed        Reason = "not-pushed"
+	// Unfinished is a submission dockhand began and hasn't seen finished,
+	// whose record says what it still owes; submit settles and finishes it
+	// (docs/designs/publication-record.md).
+	Unfinished Reason = "unfinished-submission"
 )
 
 // The verbs a verdict's Next names (refusal).
@@ -228,6 +232,13 @@ func Attend(facts Facts) []Attention {
 	check := facts.Check
 	if run := check.Stopped; run != nil {
 		return row(NeedsYou, StoppedCheck, Next{Verb: VerbWait, Args: []string{run.Name()}}, func(a *Attention) { a.Run = run })
+	}
+	if publication := b.Record.Publication; publication != nil {
+		var owed []string
+		for _, step := range publication.Owes {
+			owed = append(owed, step.Words())
+		}
+		return row(NeedsYou, Unfinished, submitNext(b), func(a *Attention) { a.PullRequest, a.Detail = b.Record.PullRequest, prose.And(owed) })
 	}
 	if rows := pullRequestAttention(facts, row); len(rows) > 0 {
 		return rows
@@ -600,6 +611,11 @@ func (a Attention) Words(v Vocabulary) string {
 		return a.Run.Name() + "'s failures are accepted; waiting for you to submit"
 	case NotPushed:
 		return fmt.Sprintf("passed; #%d has not been updated with these changes", pr.Number)
+	case Unfinished:
+		if a.Detail == "" {
+			return "an earlier submit didn't finish; submit accounts for what it left"
+		}
+		return "an earlier submit didn't finish: " + a.Detail + " may still be owed; submit accounts for what it left"
 	}
 	return string(a.Reason)
 }

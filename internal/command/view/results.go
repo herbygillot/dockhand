@@ -424,6 +424,18 @@ type SubmittedJSON struct {
 	// them, and whether submit asked each to review again
 	// (submit.rerequest_review).
 	ChangesRequestedBy []ChangesRequestedJSON `json:"changes_requested_by"`
+	// Pending are the steps the submission still owes when it returns,
+	// each with why (docs/designs/publication-record.md).
+	Pending []PendingJSON `json:"pending"`
+}
+
+// PendingJSON is a step still owed: step is its name, reason one of
+// failed, awaits-answer, may-have-been-sent, refused, or unread, and
+// detail the error or GitHub's words.
+type PendingJSON struct {
+	Step   string `json:"step"`
+	Reason string `json:"reason"`
+	Detail string `json:"detail,omitempty"`
 }
 
 // ChangesRequestedJSON is a reviewer who requested changes, and whether

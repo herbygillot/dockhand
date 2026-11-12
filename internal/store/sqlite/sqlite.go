@@ -88,7 +88,18 @@ type Options struct {
 	// carries its sessions, fresh, and the processes behind them work on
 	// the original (field testing's .backup copy, 2026-10-29).
 	Heartbeat time.Duration
+	// Quiet lists the other dockhand processes on this Mac, which the
+	// engine gives as procid.Named("dockhand"): a migration to the
+	// publication record's schema waits until there are none
+	// (store.QuietUnderMigrationError). Nil checks nothing, as a test's
+	// store does.
+	Quiet func() ([]int, error)
 }
+
+// quietSchema is the first schema whose migration waits for quiet: the
+// publication record's, which a paused older submit could push and write
+// to GitHub past with no record.
+const quietSchema = 61
 
 // Store is a dockhand v3 database.
 type Store struct {
@@ -670,6 +681,19 @@ func (s *Store) prepareSchema(ctx context.Context) error {
 		case app == applicationID && version == schemaVersion:
 			return nil
 		case app == applicationID && version > 0 && version < schemaVersion:
+			// Read once, under the writer lock this transaction holds
+			// through the commit, so a dockhand that starts after the
+			// reading can't open the database until the migration has
+			// committed, and then refuses its newer schema.
+			if version < quietSchema && schemaVersion >= quietSchema && s.options.Quiet != nil {
+				pids, err := s.options.Quiet()
+				switch {
+				case err != nil:
+					return &store.QuietUnderMigrationError{From: version, To: schemaVersion, Unreadable: err}
+				case len(pids) > 0:
+					return &store.QuietUnderMigrationError{From: version, To: schemaVersion, PIDs: pids}
+				}
+			}
 			if !s.options.MigrateUnderLive {
 				if err := t.refuseUnderLive(ctx, s, version, s.options.LiveWithin); err != nil {
 					return err

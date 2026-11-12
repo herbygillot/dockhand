@@ -36,6 +36,25 @@ type scenario struct {
 	// them to fail, and fails where one no longer does, so the list only
 	// shrinks.
 	known map[string]string
+	// unreadable are the faults, by "address/mode" prefix, whose outcome
+	// dockhand can't read back, and the end state the scenario declares
+	// for each: a value in the recovered world, and the clean run's it
+	// stands for, each pair with why (docs/designs/publication-record.md,
+	// "Tests": a pull request found rather than opened, a reviewer marked
+	// "may have been sent").
+	unreadable map[string]declaredEnd
+}
+
+// declaredEnd is a fault's declared end: Replace are pairs of a recovered
+// world's text and the clean run's it stands for, and Why says why it
+// can't be read back.
+type declaredEnd struct {
+	Replace []string
+	// Unsaid are the clean run's lines, by a part of each, the recovered
+	// world rightly lacks: the timeline's line for a request it can't say
+	// was made.
+	Unsaid []string
+	Why    string
 }
 
 // run is one run of a scenario in a world of its own, with a fault
@@ -143,7 +162,13 @@ func sweep(t *testing.T, sc scenario) {
 						problems = append(problems, fmt.Sprintf("%s happened %d times, the clean run %d", name, happened(r.effects, name), cleanCounts[name]))
 					}
 				}
-				if found := differences(clean.world, r.world); len(found) > 0 {
+				found := differences(clean.world, r.world)
+				for prefix, end := range sc.unreadable {
+					if strings.HasPrefix(address+"/"+string(how), prefix) {
+						found = settleDeclared(found, end)
+					}
+				}
+				if len(found) > 0 {
 					problems = append(problems, "the recovered world differs from the clean run's:\n"+strings.Join(found, "\n"))
 					if len(r.recovered) > 0 {
 						problems = append(problems, "recovery refused: "+strings.Join(r.recovered, "; "))
@@ -220,4 +245,46 @@ func sweptModes(boundary string) []mode {
 		return modes(boundary)
 	}
 	return []mode{failed}
+}
+
+// settleDeclared drops the differences a declared end accounts for: a row
+// the recovered world has that, with the declared values put back, is the
+// row the clean run has and the recovered lacks.
+func settleDeclared(found []string, end declaredEnd) []string {
+	const cleanHas, recoveredHas = ": clean has, recovered lacks: ", ": recovered has, clean lacks: "
+	put := strings.NewReplacer(end.Replace...)
+	missing := map[string]int{}
+	for _, line := range found {
+		if section, row, ok := strings.Cut(line, cleanHas); ok {
+			missing[section+cleanHas+row]++
+		}
+	}
+	var kept, settled []string
+	for _, line := range found {
+		section, row, ok := strings.Cut(line, recoveredHas)
+		if !ok {
+			continue
+		}
+		key := section + cleanHas + put.Replace(row)
+		if missing[key] > 0 {
+			missing[key]--
+			settled = append(settled, key)
+			continue
+		}
+		kept = append(kept, line)
+	}
+	for _, line := range found {
+		if strings.Contains(line, recoveredHas) {
+			continue
+		}
+		if i := slices.Index(settled, line); i >= 0 {
+			settled = slices.Delete(settled, i, i+1)
+			continue
+		}
+		if slices.ContainsFunc(end.Unsaid, func(part string) bool { return strings.Contains(line, part) }) {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return kept
 }

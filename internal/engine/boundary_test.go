@@ -21,6 +21,7 @@ var engineImports = map[string]string{
 	"internal/store":                  "the store's contract",
 	"internal/store/sqlite":           "the store, opened with the engine",
 	"internal/coord":                  "sessions and leases for runs and serve",
+	"internal/procid":                 "this Mac's other dockhand processes, which the publication record's migration waits on",
 	"internal/checks":                 "the check-execution service, which the engine composes from its fields and drives",
 	"internal/buildenv":               "the contract the providers meet; the command layer composes them",
 	"internal/git":                    "the checkout, captures, and history",

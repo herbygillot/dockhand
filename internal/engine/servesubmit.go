@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/checks"
@@ -512,13 +513,21 @@ const (
 
 // SubmitForServe opens the pull request for a candidate serve may submit,
 // saying in its description that no person reviewed it.
-func (e *Engine) SubmitForServe(ctx context.Context, candidate ServeCandidate) (Submitted, error) {
+// ServeAdmission is what serve's count admits a submission by: its limit,
+// serve.submit_limit as read for this admission, and the time serve
+// counts the day from (dayStart).
+type ServeAdmission struct {
+	Limit int
+	Now   time.Time
+}
+
+func (e *Engine) SubmitForServe(ctx context.Context, candidate ServeCandidate, admission ServeAdmission) (Submitted, error) {
 	if len(candidate.Held) > 0 {
 		return Submitted{}, fmt.Errorf("%s needs review before submission: %s", candidate.Branch.ShortName(), strings.Join(HoldLines(candidate.Held), "; "))
 	}
 	plan := candidate.Plan
 	plan.Body = plan.Body + "\n\n" + ServeNote + "\n"
-	plan.served = true
+	plan.served, plan.admission = true, admission
 	return e.ApplySubmit(ctx, plan, model.AnsweredNobody)
 }
 

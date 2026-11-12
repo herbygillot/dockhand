@@ -15,19 +15,19 @@ import (
 // Times are stored in milliseconds, so a record read back carries its times
 // truncated to the millisecond.
 
-const branchColumns = "id, name, base, worktree, managed, title, state, pr_repository, pr_number, pr_head, pr_pushed, pr_body, pr_draft, pr_observed, pr_adopted, created_at, origin, note, ended_at, ports, clean_kept, forgotten_at, closes, pr_author, tested, pr_author_head"
+const branchColumns = "id, name, base, worktree, managed, title, state, pr_repository, pr_number, pr_head, pr_pushed, pr_body, pr_draft, pr_observed, pr_adopted, created_at, origin, note, ended_at, ports, clean_kept, forgotten_at, closes, pr_author, tested, pr_author_head, pr_provenance, pr_rerequested, publication"
 
 func (t *tx) scanBranch(row interface{ Scan(...any) error }) (model.Branch, error) {
 	var b model.Branch
 	var managed int
 	var prRepository, prHead sql.NullString
 	var prNumber sql.NullInt64
-	var prPushed, prBody, prObserved, prAuthor, prAuthorHead string
+	var prPushed, prBody, prObserved, prAuthor, prAuthorHead, prProvenance, prRerequested, publication string
 	var prDraft, prAdopted int
 	var created int64
 	var ended, forgotten sql.NullInt64
 	var ports, closes, tested string
-	if err := row.Scan(&b.ID, &b.Name, &b.Base, &b.Worktree, &managed, &b.Title, &b.State, &prRepository, &prNumber, &prHead, &prPushed, &prBody, &prDraft, &prObserved, &prAdopted, &created, &b.Origin, &b.Note, &ended, &ports, &b.CleanKept, &forgotten, &closes, &prAuthor, &tested, &prAuthorHead); err != nil {
+	if err := row.Scan(&b.ID, &b.Name, &b.Base, &b.Worktree, &managed, &b.Title, &b.State, &prRepository, &prNumber, &prHead, &prPushed, &prBody, &prDraft, &prObserved, &prAdopted, &created, &b.Origin, &b.Note, &ended, &ports, &b.CleanKept, &forgotten, &closes, &prAuthor, &tested, &prAuthorHead, &prProvenance, &prRerequested, &publication); err != nil {
 		return model.Branch{}, storageError(err)
 	}
 	b.TestedBinaries, b.TestedVariants = testedStatements(tested)
@@ -44,12 +44,25 @@ func (t *tx) scanBranch(row interface{ Scan(...any) error }) (model.Branch, erro
 	}
 	if prNumber.Valid {
 		b.PullRequest = &model.PullRequest{Repository: prRepository.String, Number: int(prNumber.Int64), Head: prHead.String,
-			Pushed: model.ObjectID(prPushed), Body: prBody, Draft: prDraft == 1, Adopted: prAdopted == 1, Author: prAuthor, AuthorHead: model.ObjectID(prAuthorHead)}
+			Pushed: model.ObjectID(prPushed), Body: prBody, Draft: prDraft == 1, Adopted: prAdopted == 1, Author: prAuthor, AuthorHead: model.ObjectID(prAuthorHead),
+			Provenance: model.Provenance(prProvenance)}
 		if prObserved != "" {
 			b.PullRequest.Observed = &model.PullRequestObservation{}
 			if err := json.Unmarshal([]byte(prObserved), b.PullRequest.Observed); err != nil {
 				return model.Branch{}, fmt.Errorf("%w: branch %s's pull request observation: %w", store.ErrUnavailable, b.ID, err)
 			}
+		}
+		if prRerequested != "" {
+			b.PullRequest.Rerequested = &model.ReviewReceipt{}
+			if err := json.Unmarshal([]byte(prRerequested), b.PullRequest.Rerequested); err != nil {
+				return model.Branch{}, fmt.Errorf("%w: branch %s's reviewer receipt: %w", store.ErrUnavailable, b.ID, err)
+			}
+		}
+	}
+	if publication != "" {
+		b.Publication = &model.Publication{}
+		if err := json.Unmarshal([]byte(publication), b.Publication); err != nil {
+			return model.Branch{}, fmt.Errorf("%w: branch %s's publication: %w", store.ErrUnavailable, b.ID, err)
 		}
 	}
 	return b, nil
@@ -99,16 +112,30 @@ func (t *tx) checkRepository(repository model.RepositoryID) error {
 	return nil
 }
 
-func pullRequestColumns(pr *model.PullRequest) (any, any, any, string, string, int, string, int, string, string) {
+// prColumns are a pull request's record as the branch's pr_ columns hold
+// it, nil and empty where there is none.
+type prColumns struct {
+	repository, number, head                   any
+	pushed, body, observed, author, authorHead string
+	draft, adopted                             int
+	provenance, rerequested                    string
+}
+
+func pullRequestColumns(pr *model.PullRequest) prColumns {
 	if pr == nil {
-		return nil, nil, nil, "", "", 0, "", 0, "", ""
+		return prColumns{}
 	}
-	observed := ""
+	c := prColumns{repository: pr.Repository, number: pr.Number, head: pr.Head, pushed: string(pr.Pushed), body: pr.Body, draft: boolInt(pr.Draft),
+		adopted: boolInt(pr.Adopted), author: pr.Author, authorHead: string(pr.AuthorHead), provenance: string(pr.Provenance)}
 	if pr.Observed != nil {
 		data, _ := json.Marshal(pr.Observed)
-		observed = string(data)
+		c.observed = string(data)
 	}
-	return pr.Repository, pr.Number, pr.Head, string(pr.Pushed), pr.Body, boolInt(pr.Draft), observed, boolInt(pr.Adopted), pr.Author, string(pr.AuthorHead)
+	if pr.Rerequested != nil {
+		data, _ := json.Marshal(pr.Rerequested)
+		c.rerequested = string(data)
+	}
+	return c
 }
 
 func (t *tx) AddBranch(b model.Branch) error {
@@ -121,7 +148,12 @@ func (t *tx) AddBranch(b model.Branch) error {
 	if b.Origin == "" {
 		b.Origin = model.OriginPerson
 	}
-	repository, number, head, pushed, body, draft, observed, adopted, author, authorHead := pullRequestColumns(b.PullRequest)
+	pr := pullRequestColumns(b.PullRequest)
+	publication := ""
+	if b.Publication != nil {
+		data, _ := json.Marshal(b.Publication)
+		publication = string(data)
+	}
 	var ended any
 	if b.State != model.BranchOpen {
 		if b.EndedAt.IsZero() {
@@ -129,8 +161,8 @@ func (t *tx) AddBranch(b model.Branch) error {
 		}
 		ended = millis(b.EndedAt)
 	}
-	_, err := t.exec("INSERT INTO branches(repository_id, "+branchColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		t.repo, b.ID, b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, adopted, millis(b.CreatedAt), b.Origin, b.Note, ended, strings.Join(b.Ports, " "), b.CleanKept, nil, strings.Join(b.Closes, " "), author, testedWords(b), authorHead)
+	_, err := t.exec("INSERT INTO branches(repository_id, "+branchColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		t.repo, b.ID, b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, pr.repository, pr.number, pr.head, pr.pushed, pr.body, pr.draft, pr.observed, pr.adopted, millis(b.CreatedAt), b.Origin, b.Note, ended, strings.Join(b.Ports, " "), b.CleanKept, nil, strings.Join(b.Closes, " "), pr.author, testedWords(b), pr.authorHead, pr.provenance, pr.rerequested, publication)
 	return err
 }
 
@@ -175,9 +207,42 @@ func (t *tx) UpdateBranch(b model.Branch) error {
 	if err != nil {
 		return err
 	}
-	repository, number, head, pushed, body, draft, observed, adopted, author, authorHead := pullRequestColumns(b.PullRequest)
-	return t.update("branch "+string(b.ID), "UPDATE branches SET name=?, base=?, worktree=?, managed=?, title=?, state=?, pr_repository=?, pr_number=?, pr_head=?, pr_pushed=?, pr_body=?, pr_draft=?, pr_observed=?, pr_adopted=?, note=?, ended_at=?, ports=?, clean_kept=?, closes=?, pr_author=?, tested=?, pr_author_head=? WHERE repository_id=? AND id=? AND forgotten_at IS NULL",
-		b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, adopted, b.Note, ended, strings.Join(b.Ports, " "), b.CleanKept, strings.Join(b.Closes, " "), author, testedWords(b), authorHead, t.repo, b.ID)
+	pr := pullRequestColumns(b.PullRequest)
+	return t.update("branch "+string(b.ID), "UPDATE branches SET name=?, base=?, worktree=?, managed=?, title=?, state=?, pr_repository=?, pr_number=?, pr_head=?, pr_pushed=?, pr_body=?, pr_draft=?, pr_observed=?, pr_adopted=?, note=?, ended_at=?, ports=?, clean_kept=?, closes=?, pr_author=?, tested=?, pr_author_head=?, pr_provenance=?, pr_rerequested=? WHERE repository_id=? AND id=? AND forgotten_at IS NULL",
+		b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, pr.repository, pr.number, pr.head, pr.pushed, pr.body, pr.draft, pr.observed, pr.adopted, b.Note, ended, strings.Join(b.Ports, " "), b.CleanKept, strings.Join(b.Closes, " "), pr.author, testedWords(b), pr.authorHead, pr.provenance, pr.rerequested, t.repo, b.ID)
+}
+
+// SetPublication replaces a branch's publication while the one recorded is
+// was, by ID, in this transaction: the first only where the branch has
+// none, every later write only by the publication it replaces.
+func (t *tx) SetPublication(branch model.BranchID, was string, next *model.Publication) error {
+	written := ""
+	if next != nil {
+		if next.ID == "" {
+			return fmt.Errorf("%w: a publication needs its ID", model.ErrInvalid)
+		}
+		data, err := json.Marshal(next)
+		if err != nil {
+			return err
+		}
+		written = string(data)
+	}
+	var current string
+	if err := t.conn.QueryRowContext(t.ctx, "SELECT publication FROM branches WHERE repository_id=? AND id=? AND forgotten_at IS NULL", t.repo, branch).Scan(&current); err != nil {
+		return storageError(err)
+	}
+	recorded := ""
+	if current != "" {
+		var p model.Publication
+		if err := json.Unmarshal([]byte(current), &p); err != nil {
+			return fmt.Errorf("%w: branch %s's publication: %w", store.ErrUnavailable, branch, err)
+		}
+		recorded = p.ID
+	}
+	if recorded != was {
+		return fmt.Errorf("%w: branch %s's publication is no longer the one this submission recorded; run dockhand submit again", store.ErrConflict, branch)
+	}
+	return t.update("branch "+string(branch), "UPDATE branches SET publication=? WHERE repository_id=? AND id=? AND forgotten_at IS NULL", written, t.repo, branch)
 }
 
 const revisionColumns = "id, branch_id, kind, snapshot, commit_id, tree_id, base_id, head_id, created_at"

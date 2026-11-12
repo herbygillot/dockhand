@@ -75,6 +75,10 @@ func TestSweepFirstSubmit(t *testing.T) {
 			"store.update@engine.(*Engine).PlanSubmit#":     "its note of what took the network to find is a saving, which submit says (submit.go)",
 			"git update-ref@engine.(*Engine).fetchMaster#2": "the master kept for status is a saving: a ref that can't be written leaves the fetch as it was (fetchMaster)",
 		},
+		unreadable: map[string]declaredEnd{
+			"store.update@engine.(*Engine).rewritePublication#1/fail": {Replace: []string{`pr_provenance="found"`, `pr_provenance="opened"`},
+				Why: "the opening's record failed: the next submit finds the pull request, and GitHub's answer to the create, the only proof dockhand opened it, is gone, so it is found (#191)"},
+		},
 	})
 }
 
@@ -105,16 +109,16 @@ func TestSweepResubmitAfterReview(t *testing.T) {
 			"store.update@engine.(*Engine).PlanSubmit#":     "its note of what took the network to find is a saving, which submit says (submit.go)",
 			"git update-ref@engine.(*Engine).fetchMaster#2": "the master kept for status is a saving (fetchMaster)",
 		},
-		known: map[string]string{
-			// The sweep's first run (#129): the reviewer asked again only on
-			// the run that pushed, so a submit that failed after its push, or
-			// whose ask failed, never asks again; #117's family.
-			"store.update@engine.(*Engine).ApplySubmit#1/":                  "#205: the reviewer isn't asked again after the submit's record fails",
-			"git push@remotewrite.Push#1/lost":                              "#205: the reviewer isn't asked again after the push's reply is lost",
-			"forge.Update@remotewrite.Edit#1/":                              "#205: the reviewer isn't asked again after the pull request's edit fails",
-			"forge.RequestReviewers@remotewrite.Ask#1/":                     "#205: a failed ask of the reviewer isn't made again",
-			"store.update@engine.(*Engine).RequestReview#1/!landed-unknown": "#206: the ask made, its record failed, the timeline never says it",
+		unreadable: map[string]declaredEnd{
+			"store.update@engine.(*Engine).rewritePublication#3/fail": {Replace: []string{`\"Sent\":\"may-have-been-sent\"`, `\"Sent\":\"sent\"`},
+				Why: "the ask's answer wasn't recorded: the mark recorded before the call says it may have been sent, and it is never sent again (#191's case AC)"},
+			"forge.RequestReviewers@remotewrite.Ask#1/fail": {Replace: []string{`\"Sent\":\"may-have-been-sent\"`, `\"Sent\":\"sent\"`, "rerequested=[]", "rerequested=[ryandesign]"},
+				Unsaid: []string{`kind="branch.rerequest"`},
+				Why:    "an ask with no answer may have landed, so it is never sent again: GitHub may lack the request, and the receipt says it may have been sent rather than the timeline that it was (#191's case AC)"},
 		},
+		// The sweep's first run found the reviewer asked again only on the
+		// run that pushed (#205, #206, #117's family): the publication
+		// record carries the request to the next submit of the commit.
 	})
 }
 

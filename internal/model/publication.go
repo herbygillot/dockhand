@@ -56,6 +56,26 @@ const (
 	StepRerequest PublicationStep = "rerequest"
 )
 
+// Words are a step still owed as a person reads it: never the step's
+// internal name alone.
+func (s PublicationStep) Words() string {
+	switch s {
+	case StepDraft:
+		return "returning the pull request to draft"
+	case StepPush:
+		return "the push"
+	case StepOpen:
+		return "opening the pull request"
+	case StepEdit:
+		return "updating the pull request's title and description"
+	case StepReady:
+		return "marking the pull request ready for review"
+	case StepRerequest:
+		return "asking the reviewers to review again"
+	}
+	return string(s)
+}
+
 // PublicationSteps are every step, in the order they are made.
 var PublicationSteps = []PublicationStep{StepDraft, StepPush, StepOpen, StepEdit, StepReady, StepRerequest}
 

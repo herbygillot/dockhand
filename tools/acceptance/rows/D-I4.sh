@@ -2,7 +2,8 @@
 # D-I4: submit killed with SIGKILL at its two dangerous steps, after the
 # push and before GitHub opens the pull request, and after GitHub has it
 # and before dockhand records it. Submitting again opens exactly one pull
-# request, or finds the one GitHub has, never a second (H3).
+# request, or finds the one GitHub has, never a second (H3), and status
+# says the killed one didn't finish (the publication record, #191).
 #
 # The kill lands at the step itself, by the candidate's own source built
 # with the acceptance failpoints (failpoint_bin): the release binary,
@@ -50,6 +51,8 @@ act() {
 		printf '$ DOCKHAND_FAILPOINT=submit.%s:kill dockhand submit -b %s -y\n' "$step" "$branch" >>"$ROW_DIR/out.log"
 		DOCKHAND_FAILPOINT="submit.$step:kill" "$DI4_FP" submit -b "$branch" -y "${words[@]}" </dev/null >>"$ROW_DIR/out.log" 2>&1
 		printf '[exit %d] killed at submit.%s\n' "$?" "$step" >>"$ROW_DIR/out.log"
+		# The killed submit's record says it didn't finish (#191).
+		"$DH_BIN" status -b "$branch" </dev/null >"$ROW_DIR/status.$step" 2>&1 || :
 		dh_json submit -b "$branch" -y "${words[@]}" || :
 		printf '%s\n' "$(di4_count "$branch")" >"$ROW_DIR/count.$step"
 		close_test_pr "$(port)" "$branch"
@@ -63,6 +66,8 @@ assert() {
 			{ row_fail "submit wasn't killed at submit.$step"; return; }
 		[ "$(cat "$ROW_DIR/count.$step" 2>/dev/null)" = 1 ] ||
 			{ row_fail "after the kill at submit.$step, the sandbox has $(cat "$ROW_DIR/count.$step" 2>/dev/null) pull requests from its branch, not one"; return; }
+		grep -q "didn't finish" "$ROW_DIR/status.$step" ||
+			{ row_fail "after the kill at submit.$step, status didn't say the submission was unfinished"; return; }
 	done
-	row_pass "killed after the push and after GitHub opened the pull request, submit again left exactly one pull request each time"
+	row_pass "killed after the push and after GitHub opened the pull request, status said the submit was unfinished, and submit again left exactly one pull request each time"
 }

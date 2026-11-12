@@ -367,6 +367,10 @@ var (
 // once its rows are sorted by what isn't an id; and each time its rank in
 // the run and its day, which attempts' order and serve's daily limit
 // read.
+// settledFields are a branch's columns that settling may leave otherwise
+// than a clean run, as a scenario declares (unreadable).
+var settledFields = regexp.MustCompile(`\b(pr_provenance|pr_rerequested|publication)="(?:[^"\\]|\\.)*"`)
+
 func normalize(w world, root string) world {
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {
 		root = resolved
@@ -388,6 +392,10 @@ func normalize(w world, root string) world {
 				continue
 			}
 			masked := ids.ReplaceAllString(markedTimes.ReplaceAllString(writtenTimes.ReplaceAllString(strings.ReplaceAll(line, root, "ROOT"), "T"), "T"), "ID")
+			// How a pull request is known and what became of a reviewer
+			// request are what a scenario may declare (unreadable), not
+			// which branch a row is, so they don't name it.
+			masked = settledFields.ReplaceAllString(masked, `$1="…"`)
 			sum := sha256.Sum256([]byte(section + masked))
 			prefix, _, _ := strings.Cut(match[1], "_")
 			named[match[1]] = fmt.Sprintf("%s:%x", prefix, sum[:4])

@@ -351,6 +351,13 @@ func (e *Engine) rebase(ctx context.Context, branch model.Branch) (Rebased, erro
 // Archive hides a branch from status without touching its files, its Git
 // branch, or its pull request; undo brings it back.
 func (e *Engine) Archive(ctx context.Context, branch model.Branch, undo bool) (model.Branch, error) {
+	// An unfinished submission ends first, what it left written down; a
+	// read it needs that fails refuses the archive with nothing done.
+	if !undo {
+		if err := e.endPublicationFor(ctx, branch, "archived"); err != nil {
+			return branch, err
+		}
+	}
 	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		current, err := tx.Branch(branch.ID)
 		if err != nil {

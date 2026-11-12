@@ -80,6 +80,24 @@ type PullRequest struct {
 	AuthorHead ObjectID `json:",omitempty"`
 	// Observed is what the forge last reported about it; nil until then.
 	Observed *PullRequestObservation `json:",omitempty"`
+	// Provenance is how dockhand knows it: opened, where GitHub answered
+	// dockhand's own create with it; found, where a read found it; empty
+	// on a record from before the publication record, read as before.
+	Provenance Provenance `json:",omitempty"`
+	// Rerequested is the last reviewer request dockhand set out to make,
+	// as a receipt: the head it was for, and each login with what became
+	// of it. It outlives the publication, and the next one replaces it.
+	Rerequested *ReviewReceipt `json:",omitempty"`
+}
+
+// ReviewReceipt is a reviewer request's outcome, kept after its
+// publication ends: the head it was for, and each login's mark. Unasked
+// says the reviewers may not have been asked at all, as an upgrade finds
+// an old submission's left-over.
+type ReviewReceipt struct {
+	Head      ObjectID
+	Reviewers []Reviewer `json:",omitempty"`
+	Unasked   bool       `json:",omitempty"`
 }
 
 // HeadParts are the pull request's head repository and branch, as Head
@@ -234,6 +252,10 @@ type Branch struct {
 	Title       string
 	State       BranchState
 	PullRequest *PullRequest
+	// Publication is a submission of the branch dockhand began and hasn't
+	// seen finished, with what it still owes; nil where there is none
+	// (docs/designs/publication-record.md).
+	Publication *Publication
 	CreatedAt   time.Time
 	// Origin is who started it: a person, or serve for your outdated
 	// ports. serve submits only its own (Design v3 §11).

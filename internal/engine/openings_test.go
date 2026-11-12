@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // serve's count by its rows: midnight in each of K's four forms, a create
@@ -21,23 +23,23 @@ func TestServesCountByItsRows(t *testing.T) {
 	// K. (i) opened before midnight: yesterday's; (ii) held, not tried:
 	// today's; (iii) opened after midnight: today's; (iv) tried, nothing
 	// found: every day.
-	require.False(t, ServeOpening{Opened: today.Add(-time.Minute)}.Counts(today))
-	require.True(t, ServeOpening{Opened: today.Add(-time.Minute)}.Counts(yesterday))
-	require.True(t, ServeOpening{Holding: true}.Counts(today))
-	require.True(t, ServeOpening{Opened: today.Add(time.Minute)}.Counts(today))
-	tried := ServeOpening{Tried: yesterday.Add(time.Hour), Unanswered: true, After: 40}
+	require.False(t, model.ServeOpening{Opened: today.Add(-time.Minute)}.Counts(today))
+	require.True(t, model.ServeOpening{Opened: today.Add(-time.Minute)}.Counts(yesterday))
+	require.True(t, model.ServeOpening{Holding: true}.Counts(today))
+	require.True(t, model.ServeOpening{Opened: today.Add(time.Minute)}.Counts(today))
+	tried := model.ServeOpening{Tried: yesterday.Add(time.Hour), Unanswered: true, After: 40}
 	require.True(t, tried.Counts(yesterday))
 	require.True(t, tried.Counts(today))
 	require.True(t, tried.Counts(today.Add(72*time.Hour)), "AJ: no length of time settles a tried row")
 
 	// The limit and the place: under a limit of one, a tried row from
 	// yesterday holds today's place.
-	require.False(t, ServeAdmits([]ServeOpening{tried}, today, 1))
-	require.True(t, ServeAdmits([]ServeOpening{{Opened: yesterday.Add(time.Hour)}}, today, 1))
+	require.False(t, ServeAdmits([]model.ServeOpening{tried}, today, 1))
+	require.True(t, ServeAdmits([]model.ServeOpening{{Opened: yesterday.Add(time.Hour)}}, today, 1))
 
 	// AM. Three tried rows, the limit lowered to one: only the oldest's
 	// create is sent.
-	rows := []ServeOpening{{Tried: today.Add(3 * time.Hour)}, {Tried: today.Add(time.Hour)}, {Tried: today.Add(2 * time.Hour)}}
+	rows := []model.ServeOpening{{Tried: today.Add(3 * time.Hour)}, {Tried: today.Add(time.Hour)}, {Tried: today.Add(2 * time.Hour)}}
 	require.True(t, ServeMaySend(rows, 1, today, 1))
 	require.False(t, ServeMaySend(rows, 0, today, 1))
 	require.False(t, ServeMaySend(rows, 2, today, 1))
@@ -56,7 +58,7 @@ func TestServesCountByItsRows(t *testing.T) {
 
 	// AK. A refusal releases a row only where nothing of it is unanswered.
 	require.False(t, tried.Refused())
-	require.True(t, ServeOpening{Tried: today}.Refused())
+	require.True(t, model.ServeOpening{Tried: today}.Refused())
 
 	// AR. The head gone from the fork: written down at the first look,
 	// released at a second ten minutes on; back in between clears it.
