@@ -79,6 +79,10 @@ const (
 // not known, naming what is still running or what has no run yet, however
 // long ago it was pushed. An attempt recorded before launches were noted,
 // a run's URL and no note, has that run canceled and read the same way.
+// A launch whose runs can't be named, one from before notes with no run
+// or a note that can't be read, is not known, and said with the rest once
+// the runs that can be named are canceled: it never keeps them running
+// (the confirmation of #193's fixes, note 1).
 func (p *Provider) Stop(ctx context.Context, request buildenv.StopRequest) ([]string, error) {
 	release, err := request.Lock.Hold(ctx, stopWait)
 	if err != nil {
@@ -88,6 +92,9 @@ func (p *Provider) Stop(ctx context.Context, request buildenv.StopRequest) ([]st
 	var notes []launchNote
 	seen := map[string]bool{}
 	var legacy []int64
+	// unnamed are the launches whose runs can't be named, said as not
+	// known once the rest are canceled.
+	var unnamed []string
 	for _, attempt := range request.Attempts {
 		switch {
 		case attempt.Launch == model.LaunchUnrecorded && attempt.ProviderRef == "":
@@ -95,11 +102,12 @@ func (p *Provider) Stop(ctx context.Context, request buildenv.StopRequest) ([]st
 			// came before its run's URL was saved: a run may have started
 			// that nothing names (Codex's review of #193 steps 5 and 6,
 			// finding 3).
-			return nil, fmt.Errorf("attempt %d was started before dockhand noted its launches, and recorded no run: a push of it may have started one that nothing names", attempt.Attempt)
+			unnamed = append(unnamed, fmt.Sprintf("attempt %d was started before dockhand noted its launches, and recorded no run: a push of it may have started one that nothing names", attempt.Attempt))
 		case attempt.Launch != "" && attempt.Launch != model.LaunchUnrecorded:
 			var note launchNote
 			if err := json.Unmarshal([]byte(attempt.Launch), &note); err != nil {
-				return nil, fmt.Errorf("attempt %d's note of what it launched can't be read: %w", attempt.Attempt, err)
+				unnamed = append(unnamed, fmt.Sprintf("attempt %d's note of what it launched can't be read: %v", attempt.Attempt, err))
+				continue
 			}
 			if key := cmp.Or(note.ID, attempt.Launch); !seen[key] {
 				seen[key] = true
@@ -116,8 +124,11 @@ func (p *Provider) Stop(ctx context.Context, request buildenv.StopRequest) ([]st
 		}
 	}
 	if len(notes) == 0 && len(legacy) == 0 {
-		// Nothing was pushed or run again for the check, and holding the
-		// lock, nothing can be.
+		// Nothing named was pushed or run again for the check, and holding
+		// the lock, nothing can be.
+		if len(unnamed) > 0 {
+			return nil, fmt.Errorf("%s", prose.And(unnamed))
+		}
 		return nil, nil
 	}
 	fork, err := p.Fork(ctx)
@@ -193,7 +204,7 @@ func (p *Provider) Stop(ctx context.Context, request buildenv.StopRequest) ([]st
 			words = append(words, fmt.Sprintf("GitHub was asked to cancel %s, and it is still %s", run.URL, strings.ReplaceAll(cmp.Or(run.Status, "not completed"), "_", " ")))
 		}
 	}
-	words = append(words, answered(notes, runs)...)
+	words = append(append(words, answered(notes, runs)...), unnamed...)
 	if len(words) > 0 {
 		return nil, fmt.Errorf("%s", prose.And(words))
 	}

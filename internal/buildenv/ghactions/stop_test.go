@@ -218,3 +218,32 @@ func TestAGitHubAttemptFromBeforeNotesIsNotKnownWithoutARun(t *testing.T) {
 	old.add(4, "in_progress")
 	require.NoError(t, stop(t, old, []model.GuestExecution{{ID: "github_old", Attempt: 1, Launch: model.LaunchUnrecorded, ProviderRef: "https://github.com/ada/macports-ports/actions/runs/4"}}))
 }
+
+// A launch whose runs can't be named, one from before notes with no run or
+// a note that can't be read, is not known, and never keeps the runs that
+// can be named from being canceled: every stop asked all of the
+// provider's attempts, and returned at the first such one with a known
+// run still in progress (the confirmation of #193's fixes, note 1).
+func TestALaunchThatCantBeNamedDoesntKeepAKnownRunRunning(t *testing.T) {
+	t.Parallel()
+	known := model.GuestExecution{ID: "github_known", Attempt: 2, Launch: model.LaunchUnrecorded, ProviderRef: "https://github.com/ada/macports-ports/actions/runs/4"}
+	for _, unnamed := range []struct {
+		attempt model.GuestExecution
+		said    string
+	}{
+		{model.GuestExecution{ID: "github_unknown", Attempt: 1, Launch: model.LaunchUnrecorded}, "attempt 1 was started before dockhand noted its launches, and recorded no run"},
+		{model.GuestExecution{ID: "github_unread", Attempt: 1, Launch: "{not a note"}, "attempt 1's note of what it launched can't be read"},
+	} {
+		api := &stopAPI{}
+		api.add(4, "in_progress")
+		err := stop(t, api, []model.GuestExecution{unnamed.attempt, known})
+		require.ErrorContains(t, err, unnamed.said)
+		require.Equal(t, []int64{4}, api.canceled, "%s: the known run is canceled all the same", unnamed.said)
+		require.NotContains(t, err.Error(), "still", "and read until it completed")
+
+		// Alone, it's not known, and nothing is canceled.
+		alone := &stopAPI{}
+		require.ErrorContains(t, stop(t, alone, []model.GuestExecution{unnamed.attempt}), unnamed.said)
+		require.Empty(t, alone.canceled)
+	}
+}
