@@ -272,6 +272,17 @@ func TestAHoldGoesWithThePortsChange(t *testing.T) {
 	submit, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: current, NoCheck: true})
 	require.NoError(t, err)
 	require.Empty(t, unlockedHolds(submit.Held()), "the submit preview")
+
+	// The port's change back at the same release, the revert reverted,
+	// brings its hold back: nothing ended it but the port leaving.
+	testsupport.Git(t, branch.Worktree, "-c", "user.name=Ada", "-c", "user.email=ada@example.org", "revert", "--no-edit", "HEAD")
+	require.NotEmpty(t, testsupport.Git(t, branch.Worktree, "diff", string(current.Base), "--", "textproc/jq"), "the branch changes jq again")
+	status, err = e.BranchStatus(t.Context(), current)
+	require.NoError(t, err)
+	require.Len(t, unlockedHolds(status.Held), 1, "status, the change back")
+	submit, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: current, NoCheck: true})
+	require.NoError(t, err)
+	require.Len(t, unlockedHolds(submit.Held()), 1, "the submit preview, the change back")
 }
 
 // Every hold an update raises for what only it finds, a mirror's
