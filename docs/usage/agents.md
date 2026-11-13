@@ -273,3 +273,7 @@ reaches a build environment, which runs its own MacPorts.
 tree and database selections, and each program named, as `--tool name=path`. It does not write a token into the agent
 file. Read `dockhand usage configuration` for settings and
 `dockhand usage unattended` for installing and stopping the service.
+
+Host-read explanation diagnostics retain the product's ordinary model policy.
+The follower-off comparison exists only in a separately tagged survey build;
+no product command, configuration or environment variable selects it.

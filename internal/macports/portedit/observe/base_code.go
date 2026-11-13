@@ -1,6 +1,7 @@
 package observe
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -22,9 +23,12 @@ import (
 
 // baseCode answers whose code frames are for one observation.
 type baseCode struct {
-	library  string
-	resolved string
-	memo     map[string]bool
+	context      context.Context
+	recordFollow bool
+	followed     []FollowerUse
+	library      string
+	resolved     string
+	memo         map[string]bool
 }
 
 func newBaseCode(library string) *baseCode {
