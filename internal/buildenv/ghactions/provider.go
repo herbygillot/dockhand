@@ -45,8 +45,8 @@ import (
 const Workflow = "main.yml"
 
 // BranchPrefix names the branches the provider pushes to your fork. It
-// removes each once the check is done with its run; clean removes a merged
-// branch's that are left.
+// removes each once the check is done with its run, and Settle removes
+// any left when its attempts end; clean retries those deletions (#241).
 const BranchPrefix = buildenv.CheckBranchPrefix
 
 // Run is one run of the workflow, at its latest attempt.
@@ -482,7 +482,7 @@ func launchedOn(launched []string, branch string) bool {
 
 // removeBranch removes the check's branch from your fork, while it still
 // holds the commit pushed. One it can't remove is said, once, and left for
-// clean, which removes a merged branch's; it never fails the check.
+// clean to try again; it never fails the check (#241).
 func (p *Provider) removeBranch(ctx context.Context, build buildenv.Build, fork buildenv.Fork, branch, commit string) {
 	err := remotewrite.Delete(ctx, p.Repo, remotewrite.Made, fork.Repository, fork.PushURL, branch, git.RefValue{Exists: true, Object: commit})
 	var moved *git.RefConflict
@@ -490,7 +490,7 @@ func (p *Provider) removeBranch(ctx context.Context, build buildenv.Build, fork 
 	case errors.As(err, &moved):
 		build.Progress(fmt.Sprintf("left %s on %s, since it has moved since the check", branch, fork.Repository))
 	case err != nil:
-		build.Progress(fmt.Sprintf("couldn't remove %s from %s, which dockhand clean removes once the branch is merged: %v", branch, fork.Repository, err))
+		build.Progress(fmt.Sprintf("couldn't remove %s from %s; dockhand clean can try again: %v", branch, fork.Repository, err))
 	default:
 		build.Progress(fmt.Sprintf("removed %s from %s", branch, fork.Repository))
 	}

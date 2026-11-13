@@ -250,8 +250,15 @@ enabled there. It pushes a branch of the check's own,
 MacPorts' own workflow. Every run on that branch is the check's, so two checks
 of one commit never share a run, and a cancel of one stops only its own.
 Dockhand reads the results and keeps logs locally, then removes the temporary
-branch when it is done with it; `dockhand clean` removes one a canceled check
-left. This has external effects even though it opens no PR.
+branch when it is done with it. It also removes the branch after the last
+attempt or a refusal ends the check, and after a cancel finishes stopping
+its runs. The branch stays while another attempt may run again, including
+when a driver stops for the next driver. A branch moved since the check's
+push stays, and dockhand says why. A removal that fails leaves the verdict
+unchanged and is said once; `dockhand clean` and the daily cleanup try again
+for a settled check, even before its dockhand branch merges. They remove it
+only while it still holds the commit its launch recorded. This has external
+effects even though it opens no PR.
 
 A cancel of a GitHub check cancels every run on its branch and is finished
 once each has completed and every push and rerun of the check has a run of

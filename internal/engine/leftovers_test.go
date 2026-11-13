@@ -63,6 +63,37 @@ func (p *leavingProvider) RemoveLeftover(_ context.Context, ref string) error {
 	return nil
 }
 
+// attemptLeavingProvider lists from attempts without being a Settler:
+// cleanup asks the listing capability on its own (#241).
+type attemptLeavingProvider struct {
+	leavingProvider
+	attempts []model.GuestExecution
+}
+
+func (p *attemptLeavingProvider) AttemptLeftovers(ctx context.Context, attempts []model.GuestExecution) ([]buildenv.Leftover, error) {
+	p.attempts = slices.Clone(attempts)
+	return p.Leftovers(ctx)
+}
+
+func TestAttemptLeftoversDoNotRequireASettler(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	provider := &attemptLeavingProvider{}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	queued := queuedHarborRun(t, e, tahoeArm)
+	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, run.State, run.Detail)
+
+	plan, err := e.PlanLeftovers(t.Context(), session(t, e))
+	require.NoError(t, err)
+	require.Len(t, plan, 2)
+	require.Len(t, provider.attempts, 1)
+	require.Equal(t, run.ID, provider.attempts[0].Run)
+	require.Equal(t, tahoeArm, provider.attempts[0].Environment)
+}
+
 // What a check's environment left is removed once no process drives the
 // check, under the check's lease; one a live process drives, even after
 // the plan was made, is kept, and so is one no check of this checkout made.

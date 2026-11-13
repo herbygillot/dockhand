@@ -266,6 +266,10 @@ type driver struct {
 	// problems are why the run needs a person's attention; mu guards them
 	// while environments build together.
 	problems []string
+	// settling are environments whose attempts are over. Their provider
+	// is asked once the check's verdict is recorded, so a death before
+	// Settle leaves a settled check for clean to find (#241).
+	settling []model.GuestExecution
 	mu       sync.Mutex
 }
 
@@ -502,11 +506,15 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			}
 		}
 		remaining := d.remaining(environment, results)
-		if len(remaining) == 0 {
+		if attempt >= model.MaxAttempts {
+			d.settle(ctx, executions[len(executions)-1])
+			if len(remaining) == 0 {
+				return nil
+			}
+			d.problem(fmt.Sprintf("%s failed %d times because of an environment error. See dockhand logs %s", DescribeEnvironment(environment), attempt, d.run.Name()))
 			return nil
 		}
-		if attempt >= model.MaxAttempts {
-			d.problem(fmt.Sprintf("%s failed %d times because of an environment error. See dockhand logs %s", DescribeEnvironment(environment), attempt, d.run.Name()))
+		if len(remaining) == 0 {
 			return nil
 		}
 		// The environment's identity is read once for the attempt. Reuse
@@ -645,6 +653,10 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		}
 		job := buildenv.Job{Run: d.run, Execution: execution, Revision: revision, Plan: d.plan, Environment: environment, Targets: building, Commit: commit, Installs: build.installs,
 			Directory: filepath.Join(c.Logs, d.run.Name(), ExecutionDirectory(execution))}
+		job.Launched, err = d.launched(ctx, provider.Name())
+		if err != nil {
+			return err
+		}
 		stopWatching := watchStalls(ctx, build, job.Directory)
 		err = provider.Execute(ctx, job, build)
 		stopWatching()
@@ -668,6 +680,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 				return err
 			}
 			d.problem(notTriedWords(DescribeEnvironment(environment), err))
+			d.settle(ctx, execution)
 			return nil
 		case errors.Is(err, buildenv.ErrDockhandFault):
 			// A fault in dockhand's own handling, as a guest program
@@ -679,6 +692,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			}
 			fault := refusal.WordsOf(err)
 			d.problem(fmt.Sprintf("dockhand: %s: %s; this is an internal Dockhand error, so no retry was attempted", DescribeEnvironment(environment), fault))
+			d.settle(ctx, execution)
 			return nil
 		case refusal.Transient(err):
 			// What another try may meet, a VM or a runner that failed, or
@@ -699,6 +713,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 				return err
 			}
 			d.problem(fmt.Sprintf("dockhand: %s: %v; the provider did not mark this failure for automatic retry, so no retry was attempted", DescribeEnvironment(environment), err))
+			d.settle(ctx, execution)
 			return nil
 		}
 		return d.endExecution(ctx, execution, model.ExecutionFinished, "")
@@ -788,6 +803,7 @@ func (d *driver) matrix(ctx context.Context, provider buildenv.Provider, environ
 			return err
 		}
 		var cells []*matrixCell
+		var exhausted []model.GuestExecution
 		for _, environment := range environments {
 			executions := slices.DeleteFunc(slices.Clone(check.Executions), func(x model.GuestExecution) bool { return x.Environment != environment })
 			slices.SortFunc(executions, func(a, b model.GuestExecution) int { return a.Attempt - b.Attempt })
@@ -804,16 +820,25 @@ func (d *driver) matrix(ctx context.Context, provider buildenv.Provider, environ
 					}
 				}
 			}
-			if cell.remaining = d.remaining(environment, cell.results); len(cell.remaining) == 0 {
-				continue
-			}
+			cell.remaining = d.remaining(environment, cell.results)
 			if cell.attempt >= model.MaxAttempts {
+				exhausted = append(exhausted, executions[len(executions)-1])
+				if len(cell.remaining) == 0 {
+					continue
+				}
 				d.problem(fmt.Sprintf("%s failed %d times because of an environment error. See dockhand logs %s", DescribeEnvironment(environment), cell.attempt, d.run.Name()))
 				continue
 			}
-			cells = append(cells, cell)
+			if len(cell.remaining) > 0 {
+				cells = append(cells, cell)
+			}
 		}
 		if len(cells) == 0 {
+			// The cells share a launch: none is settled while another
+			// could run the workflow again (#241).
+			for _, execution := range exhausted {
+				d.settle(ctx, execution)
+			}
 			return nil
 		}
 		var job buildenv.Job
@@ -886,6 +911,11 @@ func (d *driver) matrix(ctx context.Context, provider buildenv.Provider, environ
 			}
 			if endErr != nil {
 				return endErr
+			}
+		}
+		if ctx.Err() == nil && err != nil && !retry {
+			for _, cell := range cells {
+				d.settle(ctx, cell.build.execution)
 			}
 		}
 		where := provider.Name()
@@ -1026,6 +1056,11 @@ func (d *driver) finish(ctx context.Context) (model.Run, error) {
 		_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: model.EventRunState, Level: model.LevelInfo, Message: fmt.Sprintf("%s %s: %s", d.run.Name(), state, detail)})
 		return err
 	})
+	if err == nil {
+		for _, execution := range d.settling {
+			d.c.settle(ctx, d.session, d.lease, execution)
+		}
+	}
 	// A check that failed queues the baseline it points to, where
 	// check.baseline asks, whichever path ran it (Then's item 4).
 	if err == nil && state == model.RunFailed && d.c.Hooks != nil {

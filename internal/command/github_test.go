@@ -539,9 +539,9 @@ func TestCancelingAGitHubCheckCancelsItsRun(t *testing.T) {
 	_, errs, err := cmdtest.Dockhand(t, "check", "--on", "github")
 	require.Error(t, err, errs)
 	require.Equal(t, 1, f.canceled)
-	// Its run isn't read, and a retry runs the run again, so the branch
-	// is left for clean.
-	require.NotEmpty(t, checkBranches(t, f))
+	// Its run isn't read, but the cancel settles the check once its run
+	// is cancelled, which removes the branch (#241).
+	require.Empty(t, checkBranches(t, f))
 }
 
 // A run that builds past its bound is cancelled, and the port it was
@@ -571,8 +571,7 @@ func TestAGitHubRunPastItsBoundIsCancelled(t *testing.T) {
 }
 
 // A branch the check couldn't remove from your fork is said once, doesn't
-// fail the check, and is left for clean, which removes it once the branch
-// is merged.
+// fail the check, and is left for clean, which removes it (#241).
 func TestCleanRemovesTheCheckBranchesLeftInYourFork(t *testing.T) {
 	t.Parallel()
 	f, w := githubBranch(t)
@@ -583,7 +582,7 @@ func TestCleanRemovesTheCheckBranchesLeftInYourFork(t *testing.T) {
 	require.NoError(t, err, errs)
 	checked := checkBranches(t, f)
 	require.NotEmpty(t, checked)
-	require.Equal(t, 1, strings.Count(errs, "github: couldn't remove "+checked+" from ada/macports-ports, which dockhand clean removes once the branch is merged: "), errs)
+	require.Equal(t, 1, strings.Count(errs, "github: couldn't remove "+checked+" from ada/macports-ports; dockhand clean can try again: "), errs)
 	require.NotContains(t, errs, "github: removed")
 	require.NoError(t, os.Remove(filepath.Join(f.fork, "hooks", "pre-receive")))
 

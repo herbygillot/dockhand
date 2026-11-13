@@ -105,7 +105,10 @@ Choose a build environment before the first real change:
 - **GitHub Actions:** enable Actions in your fork. `--on github` pushes a
   temporary branch of the check's own, `dockhand-check/<commit>-<check ID>`,
   and runs MacPorts' workflow there. Each check of a commit has its own
-  branch, so several can stand in your fork until they are read or cleaned.
+  branch. Dockhand removes it once the run is read or the check's attempts
+  end, including a finished cancel. `dockhand clean` and the daily cleanup
+  retry a settled check's removal if it was interrupted or refused; a
+  branch moved since its recorded push stays.
 - **A MacPorts prefix on this Mac:** `--on local` builds among the active ports
   in the configured prefix, `/opt/local` by default. It changes that
   installation during the check and restores its active versions afterward. Read

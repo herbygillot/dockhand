@@ -187,6 +187,8 @@ func (c *Service) stopUnfinished(ctx context.Context, id model.RunID) (left, unk
 // work ended, naming what that work left.
 func (c *Service) finishCanceled(ctx context.Context, session *coord.Session, lease model.Lease, id model.RunID, left []string) (model.Run, error) {
 	var run model.Run
+	latest := map[string]model.GuestExecution{}
+	finished := false
 	err := session.Fenced(ctx, lease, func(tx store.Tx) error {
 		var err error
 		if run, err = tx.Run(id); err != nil || run.State.Terminal() {
@@ -198,6 +200,9 @@ func (c *Service) finishCanceled(ctx context.Context, session *coord.Session, le
 		}
 		now := c.Now()
 		for _, execution := range executions {
+			if last, ok := latest[execution.Environment.Provider]; !ok || execution.Attempt > last.Attempt {
+				latest[execution.Environment.Provider] = execution
+			}
 			if !execution.State.Terminal() {
 				execution.State, execution.FinishedAt, execution.Detail = model.ExecutionCanceled, &now, "canceled"
 				if err := tx.UpdateExecution(execution); err != nil {
@@ -220,8 +225,14 @@ func (c *Service) finishCanceled(ctx context.Context, session *coord.Session, le
 			return err
 		}
 		_, err = session.Emit(tx, model.Event{Branch: run.Branch, Run: run.ID, Kind: model.EventRunState, Level: model.LevelInfo, Message: run.Name() + " canceled"})
+		finished = err == nil
 		return err
 	})
+	if err == nil && finished {
+		for _, execution := range latest {
+			c.settle(ctx, session, lease, execution)
+		}
+	}
 	return run, err
 }
 

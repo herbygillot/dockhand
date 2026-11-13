@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/checks"
@@ -924,13 +925,13 @@ func (e *Engine) planLeftovers(ctx context.Context, session *coord.Session, spar
 		if !ok {
 			continue
 		}
-		found, err := provider.Leftovers(ctx)
+		found, err := e.providerLeftovers(ctx, provider)
 		if err != nil {
 			return all, fmt.Errorf("listing what %s checks left: %w", name, err)
 		}
 		for _, reported := range found {
 			reported.Provider = name
-			leftover := Leftover{Leftover: reported}
+			leftover := Leftover{Leftover: reported, Kept: reported.Kept}
 			if err := e.judgeLeftover(ctx, session, &leftover); err != nil {
 				return all, err
 			}
@@ -955,6 +956,10 @@ func (e *Engine) judgeLeftover(ctx context.Context, session *coord.Session, left
 		leftover.Kept = "no check of this checkout made it"
 		return nil
 	}
+	if leftover.SettledOnly && !leftover.Run.State.Terminal() {
+		leftover.Kept = leftover.Run.Name() + " can still be resumed"
+		return nil
+	}
 	holder, err := session.Holder(ctx, checks.RunResource(leftover.Run.ID))
 	if holder != nil {
 		leftover.Kept = leftover.Run.Name() + " is running"
@@ -965,12 +970,28 @@ func (e *Engine) judgeLeftover(ctx context.Context, session *coord.Session, left
 // leftoverRun finds the check of this checkout a leftover was made for,
 // and the attempt that made it; neither where none was.
 func (e *Engine) leftoverRun(ctx context.Context, leftover *Leftover) error {
+	leftover.Run, leftover.Execution = nil, nil
 	return e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		executions, err := r.ExecutionsReferred(leftover.Ref)
-		if err != nil || len(executions) == 0 {
-			return err
+		var execution model.GuestExecution
+		if leftover.Leftover.Execution != "" {
+			var err error
+			execution, err = r.Execution(leftover.Leftover.Execution)
+			if errors.Is(err, store.ErrNotFound) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if execution.Environment.Provider != leftover.Provider || execution.Launch != leftover.Ref {
+				return nil
+			}
+		} else {
+			executions, err := r.ExecutionsReferred(leftover.Ref)
+			if err != nil || len(executions) == 0 {
+				return err
+			}
+			execution = executions[len(executions)-1]
 		}
-		execution := executions[len(executions)-1]
 		run, err := r.Run(execution.Run)
 		leftover.Run, leftover.Execution = &run, &execution
 		return err
@@ -1003,7 +1024,7 @@ func (e *Engine) KeptClones(ctx context.Context) ([]Leftover, error) {
 		if !ok {
 			continue
 		}
-		found, err := provider.Leftovers(ctx)
+		found, err := e.providerLeftovers(ctx, provider)
 		if err != nil {
 			return nil, fmt.Errorf("listing what %s checks left: %w", name, err)
 		}
@@ -1012,7 +1033,7 @@ func (e *Engine) KeptClones(ctx context.Context) ([]Leftover, error) {
 				continue
 			}
 			reported.Provider = name
-			leftover := Leftover{Leftover: reported}
+			leftover := Leftover{Leftover: reported, Kept: reported.Kept}
 			if err := e.leftoverRun(ctx, &leftover); err != nil {
 				return nil, err
 			}
@@ -1023,6 +1044,62 @@ func (e *Engine) KeptClones(ctx context.Context) ([]Leftover, error) {
 	}
 	slices.SortStableFunc(kept, func(a, b Leftover) int { return b.Run.Number - a.Run.Number })
 	return kept, nil
+}
+
+// providerLeftovers gives providers the recorded attempts too: a GitHub
+// push can leave a branch without ever recording a run URL (#241).
+func (e *Engine) providerLeftovers(ctx context.Context, provider buildenv.LeftoverProvider) ([]buildenv.Leftover, error) {
+	listing, ok := provider.(buildenv.AttemptLeftovers)
+	if !ok {
+		return provider.Leftovers(ctx)
+	}
+	var attempts []model.GuestExecution
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		runs, err := r.Runs(store.RunFilter{})
+		if err != nil {
+			return err
+		}
+		for _, run := range runs {
+			executions, err := r.Executions(run.ID)
+			if err != nil {
+				return err
+			}
+			for _, execution := range executions {
+				if execution.Environment.Provider == provider.Name() {
+					attempts = append(attempts, execution)
+				}
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return listing.AttemptLeftovers(ctx, attempts)
+}
+
+// removeLeftover checks a launch note again under its launch lock and the
+// check's lease. A driver stopped before its last attempt's settlement
+// can still be resumed, so its shared branch stays (#241).
+func (e *Engine) removeLeftover(ctx context.Context, provider buildenv.LeftoverProvider, leftover *Leftover) error {
+	if leftover.Leftover.Execution != "" && leftover.Execution != nil {
+		release, err := e.checks().LaunchLock(leftover.Execution.ID).Hold(ctx, 30*time.Second)
+		if err != nil {
+			return err
+		}
+		defer release()
+		if err := e.leftoverRun(ctx, leftover); err != nil {
+			return err
+		}
+		if leftover.Run == nil {
+			leftover.Kept = "no check of this checkout made it"
+			return nil
+		}
+		if leftover.SettledOnly && !leftover.Run.State.Terminal() {
+			leftover.Kept = leftover.Run.Name() + " can still be resumed"
+			return nil
+		}
+	}
+	return provider.RemoveLeftover(ctx, leftover.Ref)
 }
 
 // RemoveLeftovers removes what PlanLeftovers found removable. Each goes
@@ -1045,7 +1122,7 @@ func (e *Engine) RemoveLeftovers(ctx context.Context, session *coord.Session, le
 			leftover.Kept = leftover.Run.Name() + " is running"
 			continue
 		}
-		err = provider.RemoveLeftover(ctx, leftover.Ref)
+		err = e.removeLeftover(ctx, provider, leftover)
 		releaseErr := session.Release(context.WithoutCancel(ctx), lease)
 		if errors.Is(err, buildenv.ErrLeftoverGone) && releaseErr == nil {
 			// Another process removed it under the same lease first.
@@ -1055,8 +1132,16 @@ func (e *Engine) RemoveLeftovers(ctx context.Context, session *coord.Session, le
 		if err == nil || errors.Is(err, buildenv.ErrLeftoverGone) {
 			err = releaseErr
 		}
+		var moved *git.RefConflict
+		if errors.As(err, &moved) {
+			leftover.Kept = "it moved since the check"
+			continue
+		}
 		if err != nil {
 			problems = append(problems, fmt.Errorf("removing %s: %w", leftover.What, err))
+			continue
+		}
+		if leftover.Kept != "" {
 			continue
 		}
 		leftover.Done = true
@@ -1085,7 +1170,7 @@ func (e *Engine) reclaim(ctx context.Context, judge *coord.Session, provider str
 	if !ok || len(refs) == 0 {
 		return nil, nil
 	}
-	found, err := leftovers.Leftovers(ctx)
+	found, err := e.providerLeftovers(ctx, leftovers)
 	if err != nil {
 		return nil, err
 	}
@@ -1095,7 +1180,7 @@ func (e *Engine) reclaim(ctx context.Context, judge *coord.Session, provider str
 			continue
 		}
 		reported.Provider = provider
-		leftover := Leftover{Leftover: reported}
+		leftover := Leftover{Leftover: reported, Kept: reported.Kept}
 		if err := e.judgeLeftover(ctx, judge, &leftover); err != nil {
 			return nil, err
 		}
