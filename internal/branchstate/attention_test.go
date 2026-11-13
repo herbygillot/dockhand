@@ -182,6 +182,25 @@ func TestAnAcceptedFailureGoesOnAsAPass(t *testing.T) {
 	require.Equal(t, SubmitReady, SubmitReadiness(facts))
 }
 
+// A variant build's failure is named by its build, as logs finds its log
+// and --accept takes it (#235).
+func TestAVariantBuildsFailureIsNamedByItsBuild(t *testing.T) {
+	failed := &model.Run{Number: 3, State: model.RunFailed}
+	branch := Branch{Record: model.Branch{Name: "dockhand/jq-1.8.2", State: model.BranchOpen}, Commits: 1, Revision: &model.Revision{Kind: model.RevisionCommit}}
+	environment := model.Environment{Provider: "tart"}
+	docs := model.Target{Name: "jq", Variants: map[string]bool{"docs": true}}
+	jq := evidence.TargetEvidence{Target: model.PlanTarget{ID: docs.ID(), Target: docs, Kind: model.Substantive, Role: model.Changed},
+		Outcomes: []evidence.Cell{{TargetResult: model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseInstall}, Kind: evidence.CellRecorded, Environment: environment}}}
+	check := Check{Latest: failed, Current: true, Evidence: &evidence.Evidence{Run: *failed, Plan: model.Plan{Environments: []model.Environment{environment}}, Targets: []evidence.TargetEvidence{jq}}}
+	rows := Attend(Facts{Branch: branch, Check: check})
+	require.Equal(t, "jq +docs", rows[0].Port)
+	require.Equal(t, []string{failed.Name(), "jq +docs"}, rows[0].Next.Args)
+
+	check.AtBase = map[string][]string{"jq +docs": {"check-4"}}
+	rows = Attend(Facts{Branch: branch, Check: check})
+	require.Equal(t, Next{Verb: VerbSubmit, Branch: "jq-1.8.2", Args: []string{"--accept", "jq +docs"}}, rows[0].Next)
+}
+
 // After an amend, the files' missing pass names where the latest check
 // built, and its Next checks there, where it suggested build.default's
 // platforms after a pass on two releases (field testing's outdated-ports
