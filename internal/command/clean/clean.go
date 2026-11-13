@@ -337,6 +337,11 @@ func writeLeftovers(out io.Writer, leftovers []engine.Leftover, done bool) int {
 	fmt.Fprintln(out, "Left by checks")
 	count := 0
 	for _, leftover := range leftovers {
+		// A listing problem was said in the preview; verbose completion
+		// must not repeat it, or count it as something removed (#241).
+		if done && leftover.ListingProblem() {
+			continue
+		}
 		switch {
 		case leftover.Kept != "":
 			fmt.Fprintf(out, "  keep     %s: %s\n", leftover.What, leftover.Kept)

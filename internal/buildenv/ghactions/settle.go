@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/remotewrite"
 )
@@ -35,6 +38,11 @@ func branchNote(execution model.GuestExecution) (launchNote, bool) {
 // attempt's launch lock. It neither reads nor stops workflow runs: the
 // runner has already recorded that no attempt follows (#241).
 func (p *Provider) Settle(ctx context.Context, request buildenv.SettleRequest) ([]string, error) {
+	// The caller keeps settlement alive after an interrupt. Bound the
+	// whole operation, including fork lookup, the lock and remote writes,
+	// so that WithoutCancel cannot hang the check's exit (#241).
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	var notes []launchNote
 	seen := map[string]bool{}
 	for _, attempt := range request.Attempts {
@@ -117,22 +125,51 @@ func (p *Provider) Leftovers(context.Context) ([]buildenv.Leftover, error) {
 // removal; a moved branch is still listed, and its deletion refuses it.
 // The engine keeps these while another attempt may resume (#241).
 func (p *Provider) AttemptLeftovers(ctx context.Context, attempts []model.GuestExecution) ([]buildenv.Leftover, error) {
+	var recorded []model.GuestExecution
+	for _, attempt := range attempts {
+		if _, ok := branchNote(attempt); ok && attempt.Environment.Provider == p.Name() {
+			recorded = append(recorded, attempt)
+		}
+	}
+	if len(recorded) == 0 || p.Fork == nil {
+		return nil, nil
+	}
+	// This is optional cleanup. A missing setup is quiet, and an outage
+	// is one informational row, never a failure that stops Tart's cleanup.
+	// Resolve the current fork once; notes for an earlier account or fork
+	// belong to neither this listing nor its removals (#241).
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	fork, err := p.Fork(ctx)
+	if errors.Is(err, buildenv.ErrNoFork) || errors.Is(err, github.ErrNoCredentials) {
+		return nil, nil
+	}
+	if err != nil {
+		return listingProblem(err), nil
+	}
+	if fork.Repository == "" || fork.PushURL == "" {
+		return nil, nil
+	}
+	recorded = slices.DeleteFunc(recorded, func(attempt model.GuestExecution) bool {
+		note, _ := branchNote(attempt)
+		return !strings.EqualFold(note.Repository, fork.Repository)
+	})
+	if len(recorded) == 0 {
+		return nil, nil
+	}
+	refs, err := p.Repo.ReadRemoteRefs(ctx, fork.PushURL, "refs/heads/"+BranchPrefix)
+	if err != nil {
+		return listingProblem(err), nil
+	}
 	var found []buildenv.Leftover
 	seen := map[string]bool{}
-	for _, attempt := range attempts {
-		note, ok := branchNote(attempt)
-		if !ok || attempt.Environment.Provider != p.Name() || seen[note.Repository+"\n"+note.Branch] {
+	for _, attempt := range recorded {
+		note, _ := branchNote(attempt)
+		if seen[note.Branch] {
 			continue
 		}
-		seen[note.Repository+"\n"+note.Branch] = true
-		fork, err := p.notedFork(ctx, note)
-		if err != nil {
-			return found, err
-		}
-		head, err := p.Repo.RemoteHead(ctx, fork.PushURL, note.Branch)
-		if err != nil {
-			return found, err
-		}
+		seen[note.Branch] = true
+		head := refs["refs/heads/"+note.Branch]
 		if head.Exists {
 			leftover := buildenv.Leftover{Ref: attempt.Launch, What: "GitHub check branch " + note.Branch + " on " + fork.Repository, Execution: attempt.ID, SettledOnly: true}
 			if head.Object != note.Commit {
@@ -142,6 +179,12 @@ func (p *Provider) AttemptLeftovers(ctx context.Context, attempts []model.GuestE
 		}
 	}
 	return found, nil
+}
+
+// listingProblem is one line however many recorded checks the failed
+// listing couldn't look at. Clean and daily cleanup both say it (#241).
+func listingProblem(err error) []buildenv.Leftover {
+	return []buildenv.Leftover{{What: "GitHub check branches", Kept: "couldn't list them: " + strings.Join(strings.Fields(err.Error()), " ")}}
 }
 
 // RemoveLeftover uses the launch note clean listed, never the branch's

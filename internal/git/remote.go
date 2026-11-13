@@ -69,6 +69,39 @@ func (r *Repository) RemoteHead(ctx context.Context, remote, branch string) (Ref
 	return RefValue{Exists: true, Object: fields[0]}, nil
 }
 
+// ReadRemoteRefs reads a remote's direct refs under prefix in one listing,
+// as cleanup reads a fork's check branches without asking once for every
+// recorded check. Its keys are whole ref names, as ReadRefs' are (#241).
+func (r *Repository) ReadRemoteRefs(ctx context.Context, remote, prefix string) (map[string]RefValue, error) {
+	if !validRemoteURL(remote) || !strings.HasSuffix(prefix, "/") || !validRefName(prefix+"entry") {
+		return nil, fmt.Errorf("git: invalid remote or ref prefix")
+	}
+	out, err := r.output(ctx, "ls-remote", "--refs", "--", remote, prefix+"*")
+	if err != nil {
+		return nil, err
+	}
+	refs := map[string]RefValue{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) != 2 || !ValidObjectID(fields[0]) || !validRefName(fields[1]) {
+			return nil, fmt.Errorf("git: unreadable remote ref %q", line)
+		}
+		// Git patterns can also match trailing components. Only the
+		// requested prefix belongs in this listing (#241).
+		if !strings.HasPrefix(fields[1], prefix) {
+			continue
+		}
+		if refs[fields[1]].Exists {
+			return nil, fmt.Errorf("git: remote lists %s twice", fields[1])
+		}
+		refs[fields[1]] = RefValue{Exists: true, Object: fields[0]}
+	}
+	return refs, nil
+}
+
 // PushReport is what a push did: whether git push was run at all (Sent),
 // and the line its --porcelain report gave for the branch, as it was read.
 // A push whose own read of the branch failed, found it elsewhere than

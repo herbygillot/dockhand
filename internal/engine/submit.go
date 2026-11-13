@@ -1874,6 +1874,8 @@ type noForkError struct{ words string }
 
 func (n *noForkError) Error() string { return n.words }
 
+func (n *noForkError) Is(target error) bool { return target == buildenv.ErrNoFork }
+
 func (e *Engine) fork(ctx context.Context, remotes []git.Remote, login, named string) (buildenv.Fork, error) {
 	f := e.forge()
 	sandbox := e.Sandboxed()

@@ -400,7 +400,7 @@ func ownedHead(pr *model.PullRequest) bool {
 }
 
 // planCleanChecks finds the branches the github provider pushed to your
-// fork for the branch's checks, each check's own (buildenv.CheckBranch),
+// fork for the branch's checks from before launch notes, each check's own (buildenv.CheckBranch),
 // and one for each commit checked by a check from before branches were
 // the check's (buildenv.LegacyCheckBranch), each removed only while it
 // still holds that commit. The provider removes each once its check is
@@ -424,6 +424,19 @@ func (e *Engine) planCleanChecks(ctx context.Context, branch model.Branch, repos
 				return err
 			}
 			if !slices.ContainsFunc(plan.Environments, func(e model.Environment) bool { return e.Provider == buildenv.GitHub }) {
+				continue
+			}
+			// Launch notes give the provider the branch and expected commit.
+			// AttemptLeftovers owns those branches, including after a merge,
+			// so clean reports each once. This older path owns only checks
+			// from before launch notes, whose names it must derive (#241).
+			executions, err := r.Executions(run.ID)
+			if err != nil {
+				return err
+			}
+			if slices.ContainsFunc(executions, func(x model.GuestExecution) bool {
+				return x.Environment.Provider == buildenv.GitHub && x.Launch != "" && x.Launch != model.LaunchUnrecorded
+			}) {
 				continue
 			}
 			revision, err := r.Revision(run.Revision)
@@ -932,8 +945,10 @@ func (e *Engine) planLeftovers(ctx context.Context, session *coord.Session, spar
 		for _, reported := range found {
 			reported.Provider = name
 			leftover := Leftover{Leftover: reported, Kept: reported.Kept}
-			if err := e.judgeLeftover(ctx, session, &leftover); err != nil {
-				return all, err
+			if !reported.ListingProblem() {
+				if err := e.judgeLeftover(ctx, session, &leftover); err != nil {
+					return all, err
+				}
 			}
 			spared := KeptFor
 			if reported.Failed {
@@ -1011,12 +1026,14 @@ func (e *Engine) BranchLeftovers(ctx context.Context, branches ...model.BranchID
 	defer session.End(context.WithoutCancel(ctx))
 	all, err := e.PlanLeftovers(ctx, session)
 	return slices.DeleteFunc(all, func(leftover Leftover) bool {
-		return leftover.Run == nil || !slices.Contains(branches, leftover.Run.Branch)
+		return !leftover.ListingProblem() && (leftover.Run == nil || !slices.Contains(branches, leftover.Run.Branch))
 	}), err
 }
 
 // KeptClones are the clones this checkout's checks kept for dockhand
-// shell, each with its check and attempt, the newest check's first.
+// shell, each with its check and attempt, the newest check's first. This
+// asks only local Leftovers, never AttemptLeftovers: entering a kept clone
+// must not depend on GitHub's network or login (#241).
 func (e *Engine) KeptClones(ctx context.Context) ([]Leftover, error) {
 	var kept []Leftover
 	for _, name := range slices.Sorted(maps.Keys(e.Providers)) {
@@ -1024,7 +1041,7 @@ func (e *Engine) KeptClones(ctx context.Context) ([]Leftover, error) {
 		if !ok {
 			continue
 		}
-		found, err := e.providerLeftovers(ctx, provider)
+		found, err := provider.Leftovers(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("listing what %s checks left: %w", name, err)
 		}

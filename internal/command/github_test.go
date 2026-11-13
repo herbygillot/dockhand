@@ -598,7 +598,9 @@ func TestCleanRemovesTheCheckBranchesLeftInYourFork(t *testing.T) {
 
 	out, _, err := cmdtest.Dockhand(t, "clean")
 	require.Equal(t, term.ExitFailure, term.ExitCode(err))
-	require.Contains(t, out, "  remove   ada/macports-ports:"+checked+"\n")
+	// The launch-note listing owns a noted check branch, said once (#241).
+	require.Equal(t, 1, strings.Count(out, "  remove   GitHub check branch "+checked+" on ada/macports-ports, left by check-1\n"), out)
+	require.NotContains(t, out, "  remove   ada/macports-ports:"+checked+"\n")
 	_, _, err = cmdtest.Dockhand(t, "clean", "--yes")
 	require.NoError(t, err)
 	require.Empty(t, strings.TrimSpace(testsupport.Git(t, f.fork, "for-each-ref", "refs/heads/dockhand-check/")))

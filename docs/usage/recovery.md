@@ -272,6 +272,12 @@ that waits for a slot removes it, saying so, and `dockhand clean` or the daily
 cleanup removes it where no check waits; one kept for `dockhand shell` stays
 until you clean it.
 
+A check on GitHub removes its `dockhand-check/…` branch from your fork once
+its last attempt is over, and `dockhand clean` or the daily cleanup removes
+one it couldn't. Only branches on the fork and account you use now are
+listed: a branch a check pushed to a fork or account you have since changed
+is never listed, so remove it on GitHub yourself.
+
 Once the external cause is resolved, `retry check-42` repeats that capture. If
 you changed the files or need another environment, use a new check with explicit
 selections. The provider-specific setup commands, local-prefix behavior, and

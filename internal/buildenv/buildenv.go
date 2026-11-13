@@ -635,6 +635,13 @@ type Leftover struct {
 	Failed bool
 }
 
+// ListingProblem reports whether this is a provider's one-line explanation
+// of why its resources couldn't be listed, carried as What and Kept with
+// no resource reference.
+// The engine and clean report it without attempting removal or failing
+// the rest of cleanup (#241).
+func (l Leftover) ListingProblem() bool { return l.Ref == "" && l.Kept != "" }
+
 // ShellProvider starts a clone a check kept (Leftover.KeptAt) for a person
 // to look in: Ref is it, Portfile the port's, as the plan names it,
 // Command what to run in its work directory, a shell where it's empty,
@@ -672,9 +679,15 @@ type Fork struct {
 	PushURL    string
 }
 
+// ErrNoFork is no configured remote for the person's fork. Cleanup skips
+// GitHub's leftovers in that case without treating it as an outage (#241).
+var ErrNoFork = errors.New("no fork is configured")
+
 // CheckBranchPrefix names the branches a check pushes to your fork, as the
 // github provider does. The provider removes each once the check is done
-// with its run; clean removes a merged branch's that are left.
+// with its run; cleanup recovers branches from its launch notes, including
+// after a merge, and the older branch cleanup covers checks without notes
+// (#241).
 const CheckBranchPrefix = "dockhand-check/"
 
 // CheckBranch is a check's own branch in your fork: the first twelve
