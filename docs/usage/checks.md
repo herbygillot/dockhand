@@ -336,8 +336,11 @@ script's own to stop.
 ## Run in the foreground or queue it
 
 Without `serve`, an ordinary check runs here. Ctrl-C stops that work, preserving
-completed results. With `serve` leading, it runs the check and this command
-follows; Ctrl-C then stops following, not the service's check.
+completed results, and so does closing the terminal or losing the SSH session
+it runs in: the hangup stops the check as Ctrl-C does, stopping a Tart VM and
+deleting its clone, even though nothing can show its output any more. With
+`serve` leading, it runs the check and this command follows; Ctrl-C then stops
+following, not the service's check.
 
 ```sh
 dockhand check -d
@@ -364,8 +367,14 @@ slot says once what holds it, naming each check using one and its process,
 `check-617 waits for a slot on command: providers.command.capacity is 1, and
 check-616 (a foreground dockhand, pid 4242, v0.8.0, for 2 hours) is using it`,
 or `waiting for /opt/local, held by check-786` for a prefix another check
-builds in. `logs` says when a check was queued, how long it waited for its
-slot, and when it finished,
+builds in. A check waiting for one of the Mac's two VMs looks each time it
+counts them for a VM that a check of this checkout left running when its
+dockhand was killed outright, and removes it as cleanup would, under that
+check's lease, saying so: `removed Tart clone dockhand-check-…, left by
+check-812: its check is no longer running`. A VM whose check a live dockhand
+drives, one kept for `dockhand shell`, one no check of this checkout made, and
+your own VMs are left, and the wait goes on. `logs` says when a check was
+queued, how long it waited for its slot, and when it finished,
 `Queued 2026-10-31 14:02:11, waited 3m 31s for its slot, finished 2026-10-31
 14:20:40.`, and `status`'s queue says each started check's wait.
 `dockhand console` keeps the branches current as serve works, with the

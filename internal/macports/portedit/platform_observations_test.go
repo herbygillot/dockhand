@@ -204,6 +204,47 @@ if {${os.major} < $minimum} {
 	}
 }
 
+// A modelled context that evaluates but reads host state, a caught closed
+// exec or a closed file test, is left and named past a boundary written
+// through a scalar or an option, as one the model can't answer is, and the
+// update goes on with the contexts that read (the outside confirmation of
+// #110 and #125 at 6ab59afb, finding 3).
+func TestAnUpdateLeavesAContextReadingHostStatePastABoundary(t *testing.T) {
+	t.Parallel()
+	for _, setup := range []struct{ name, text, condition string }{
+		{"scalar", "set minimum 15", `${os.major} < $minimum`},
+		{"option", "options fixture.minimum\nfixture.minimum 15", `${os.major} < [option fixture.minimum]`},
+	} {
+		for _, probe := range []struct{ name, text string }{
+			{"caught exec", `catch {exec /usr/bin/true}`},
+			{"file exists", `if {[file exists /opt/dockhand-absent/sdk]} {configure.args-append --sdk}`},
+		} {
+			s, r, requests := archiveFixture(t, `version 1.2.3
+revision 0
+`+setup.text+`
+master_sites @SITE@/${version}
+if {`+setup.condition+`} {
+    `+probe.text+`
+    distfiles old-${version}.tar.gz
+    checksums sha256 bbbb size 3
+} else {
+    checksums sha256 aaaa size 2
+}
+`)
+			result, err := s.Prepare(t.Context(), r)
+			require.NoError(t, err, "%s/%s: a context reading host state is left, not the whole update refused", setup.name, probe.name)
+			require.Len(t, *requests, 1, "%s/%s: only the context it could read is fetched", setup.name, probe.name)
+			require.Contains(t, string(result.Files[0].After), "checksums sha256 bbbb size 3", "%s/%s: the context left keeps its checksums", setup.name, probe.name)
+			require.NotEmpty(t, result.Left, "%s/%s", setup.name, probe.name)
+			for _, left := range result.Left {
+				require.Equal(t, LeftContext, left.Kind, "%+v", left)
+				require.Regexp(t, `^darwin (8|9|1[0-4]) `, left.What)
+				require.Contains(t, left.Reason, "host state", left.What)
+			}
+		}
+	}
+}
+
 // A checksum refresh that can't locate a declaration offers the values to
 // write from the contexts it reads, and fetches nothing of a context it
 // left: the fallback asks the one rule the plan does (Codex's review of

@@ -83,6 +83,8 @@ type fakePreparer struct {
 	// cratesUnlocked is why the edit left a crate list as it was, its new
 	// source shipping no Cargo.lock.
 	cratesUnlocked string
+	// mirrorConflicts are archives MacPorts' mirror holds another file of.
+	mirrorConflicts []editprep.MirrorConflict
 }
 
 func (p *fakePreparer) ResolveRelease(_ context.Context, r editprep.Request) (model.Release, error) {
@@ -189,6 +191,7 @@ func (p *fakePreparer) Prepare(ctx context.Context, r editprep.Request) (editpre
 	result.GoToolchain = p.toolchain
 	result.Patches = p.patches
 	result.CratesUnlocked = p.cratesUnlocked
+	result.MirrorConflicts = p.mirrorConflicts
 	if r.HTTPS != nil {
 		result.HTTPS = p.https
 	}

@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
 	"runtime/pprof"
-	"syscall"
 
 	"github.com/herbygillot/dockhand/internal/buildenv/starter"
 	"github.com/herbygillot/dockhand/internal/command"
@@ -19,7 +17,7 @@ func main() {
 	// dockhand as the starter of a local or a script build runs nothing
 	// else (starter.Command).
 	starter.RunIfAsked()
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := term.UntilStopped(context.Background())
 	defer stop()
 	stopProfile := startProfile(os.Getenv("DOCKHAND_CPUPROFILE"))
 	err := command.Run(ctx, os.Args[1:], term.Streams{In: os.Stdin, Out: os.Stdout, Err: os.Stderr})

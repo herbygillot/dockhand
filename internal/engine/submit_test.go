@@ -1442,8 +1442,8 @@ func TestABaselineOfOneVariantBuildAcceptsThatBuildAlone(t *testing.T) {
 	branch := committedUpdate(t, e)
 	docs := model.Target{Name: "jq", Variants: map[string]bool{"docs": true}}
 	tests := model.Target{Name: "jq", Variants: map[string]bool{"tests": true}}
-	of := recordedRun(t, e, branch, "", []built{{docs, model.OutcomeFailed}, {tests, model.OutcomeFailed}})
-	recordedRun(t, e, branch, of, []built{{docs, model.OutcomeFailed}, {tests, model.OutcomePassed}})
+	of := recordedRun(t, e, branch, "", []built{{target: docs, outcome: model.OutcomeFailed}, {target: tests, outcome: model.OutcomeFailed}})
+	recordedRun(t, e, branch, of, []built{{target: docs, outcome: model.OutcomeFailed}, {target: tests, outcome: model.OutcomePassed}})
 
 	_, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"jq"}})
 	require.ErrorContains(t, err, "--accept jq:")
@@ -1463,7 +1463,7 @@ func TestABaselineOfOneVariantBuildAcceptsThatBuildAlone(t *testing.T) {
 
 	// +tests passes: its build's own name still takes +docs, and the bare
 	// name now names it too, the port's one failed build.
-	recordedRun(t, e, branch, "", []built{{tests, model.OutcomePassed}})
+	recordedRun(t, e, branch, "", []built{{target: tests, outcome: model.OutcomePassed}})
 	for _, name := range []string{"jq +docs", "jq"} {
 		plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{name}})
 		require.NoError(t, err, name)
@@ -1472,10 +1472,91 @@ func TestABaselineOfOneVariantBuildAcceptsThatBuildAlone(t *testing.T) {
 	}
 }
 
-// built is a target recordedRun builds, with its outcome.
+// An acceptance is kept as the build it took when it was given: a bare
+// name that took the port's one failed build doesn't come to take another
+// build a later check at the same commit fails, though a baseline fails
+// it alike (#235).
+func TestAnAcceptanceKeepsTheBuildItTook(t *testing.T) {
+	t.Parallel()
+	g := setup(t)
+	e, _ := g.withPreparer(t)
+	g.withFork(t, e)
+	branch := committedUpdate(t, e)
+	docs := model.Target{Name: "jq", Variants: map[string]bool{"docs": true}}
+	tests := model.Target{Name: "jq", Variants: map[string]bool{"tests": true}}
+	of := recordedRun(t, e, branch, "", []built{{target: docs, outcome: model.OutcomeFailed}, {target: tests, outcome: model.OutcomePassed}})
+	recordedRun(t, e, branch, of, []built{{target: docs, outcome: model.OutcomeFailed}})
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"jq"}})
+	require.NoError(t, err)
+	require.Empty(t, plan.Blocking)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.NoError(t, err)
+
+	of = recordedRun(t, e, branch, "", []built{{target: docs, outcome: model.OutcomePassed}, {target: tests, outcome: model.OutcomeFailed}})
+	recordedRun(t, e, branch, of, []built{{target: tests, outcome: model.OutcomeFailed}})
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Contains(t, strings.Join(plan.Blocking, "\n"), "jq +tests failed in check-3 and has the same failure at the base (check-4)")
+}
+
+// A new port built only as a variant build that lint warned of is
+// accepted by its build's name, as its failure would be, or by the port's
+// bare name, its one build to accept (#235).
+func TestANewVariantBuildsLintIsAcceptedByItsBuild(t *testing.T) {
+	t.Parallel()
+	g := setup(t)
+	e, _ := g.withPreparer(t)
+	g.withFork(t, e)
+	branch := committedUpdate(t, e)
+	docs := model.Target{Name: "jq", Variants: map[string]bool{"docs": true}}
+	recordedRun(t, e, branch, "", []built{{target: docs, outcome: model.OutcomePassed, lint: []string{"Line 3 has trailing whitespace"}, added: true}})
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Contains(t, strings.Join(plan.Blocking, "\n"), "lint --nitpick warned")
+	for _, name := range []string{"jq +docs", "jq"} {
+		plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{name}})
+		require.NoError(t, err, name)
+		require.Empty(t, plan.Blocking, name)
+	}
+}
+
+// In a port built only as variant builds, the bare name takes a failure
+// before lint: where one build failed and another passed with lint
+// warnings, --accept <port> takes the failure, and the lint block names
+// the build to accept it by. Two builds lint warned of, and none failed,
+// are refused by the bare name, each named (#235).
+func TestABareNameTakesAFailureBeforeLint(t *testing.T) {
+	t.Parallel()
+	g := setup(t)
+	e, _ := g.withPreparer(t)
+	g.withFork(t, e)
+	branch := committedUpdate(t, e)
+	docs := model.Target{Name: "jq", Variants: map[string]bool{"docs": true}}
+	tests := model.Target{Name: "jq", Variants: map[string]bool{"tests": true}}
+	warned := []string{"Line 3 has trailing whitespace"}
+	of := recordedRun(t, e, branch, "", []built{{target: docs, outcome: model.OutcomeFailed, added: true}, {target: tests, outcome: model.OutcomePassed, lint: warned, added: true}})
+	recordedRun(t, e, branch, of, []built{{target: docs, outcome: model.OutcomeFailed, added: true}})
+
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"jq"}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"jq +tests is a new port, and lint --nitpick warned in check-1: Line 3 has trailing whitespace. Fix it and check again, or accept it with --accept 'jq +tests'"}, plan.Blocking)
+	require.Equal(t, AcceptedAtBase, plan.Accepted["jq +docs"].Kind)
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"jq", "jq +tests"}})
+	require.NoError(t, err)
+	require.Empty(t, plan.Blocking)
+
+	recordedRun(t, e, branch, "", []built{{target: docs, outcome: model.OutcomePassed, lint: warned, added: true}, {target: tests, outcome: model.OutcomePassed, lint: warned, added: true}})
+	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"jq"}})
+	require.ErrorContains(t, err, "--accept jq: jq was warned of by lint in 2 builds in check-3, and each is accepted by its build's name. Name the builds to accept: --accept 'jq +docs' --accept 'jq +tests'")
+}
+
+// built is a target recordedRun builds, with its outcome, what lint
+// warned of, and whether the branch adds its port.
 type built struct {
 	target  model.Target
 	outcome model.Outcome
+	lint    []string
+	added   bool
 }
 
 // recordedRun records a finished check of the branch's head tree on Tahoe,
@@ -1489,7 +1570,7 @@ func recordedRun(t *testing.T, e *Engine, branch model.Branch, of model.RunID, b
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
 	var targets []model.PlanTarget
 	for _, b := range builds {
-		targets = append(targets, model.PlanTarget{ID: b.target.ID(), Target: b.target, Directory: "textproc/jq", Kind: model.Substantive, Role: model.Changed})
+		targets = append(targets, model.PlanTarget{ID: b.target.ID(), Target: b.target, Directory: "textproc/jq", Kind: model.Substantive, Role: model.Changed, Added: b.added})
 	}
 	var id model.RunID
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
@@ -1515,7 +1596,7 @@ func recordedRun(t *testing.T, e *Engine, branch model.Branch, of model.RunID, b
 		}
 		state := model.RunPassed
 		for _, b := range builds {
-			result := model.TargetResult{Execution: execution.ID, Target: b.target.ID(), Outcome: b.outcome, Tests: model.TestsPassed, RecordedAt: at}
+			result := model.TargetResult{Execution: execution.ID, Target: b.target.ID(), Outcome: b.outcome, Tests: model.TestsPassed, RecordedAt: at, Lint: b.lint, Nitpicked: true}
 			if result.Outcome == model.OutcomeFailed {
 				result.Phase, result.Tests, state = model.PhaseInstall, model.TestsNone, model.RunFailed
 			}

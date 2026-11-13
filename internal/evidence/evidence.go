@@ -265,19 +265,21 @@ type TargetEvidence struct {
 // default build's, so accepting a variant build doesn't accept the default
 // build (field testing's note 10 from the curl fix). The port's bare name
 // is another way to name a variant build, where it's the one build of a
-// port with no default build that failed (AcceptTarget, #235).
+// port with no default build with something to accept (AcceptTarget,
+// #235).
 func (e Evidence) AcceptName(target TargetEvidence) string { return string(target.Target.ID) }
 
 // AcceptTarget is the build a name given to submit --accept takes: the
 // build it names, or for a port's bare name where the port has no default
-// build, the one build of it that failed. False where it names none, as
-// where several of the port's builds failed (FailedBuildsOf names them).
+// build, the one build of it with something to accept (BuildsToAccept).
+// False where it names none, as where several of the port's builds have
+// something to accept.
 func (e Evidence) AcceptTarget(name string) (TargetEvidence, bool) {
 	if i := slices.IndexFunc(e.Targets, func(t TargetEvidence) bool { return string(t.Target.ID) == name }); i >= 0 {
 		return e.Targets[i], true
 	}
-	if failed := e.FailedBuildsOf(name); len(failed) == 1 {
-		return failed[0], true
+	if builds := e.BuildsToAccept(name); len(builds) == 1 {
+		return builds[0], true
 	}
 	return TargetEvidence{}, false
 }
@@ -302,16 +304,24 @@ func (e Evidence) BuildsOf(port string) []TargetEvidence {
 	return builds
 }
 
-// FailedBuildsOf are the builds of a port that failed where a check built
-// them, a build never built not one of them.
-func (e Evidence) FailedBuildsOf(port string) []TargetEvidence {
-	var failed []TargetEvidence
+// BuildsToAccept are the builds of a port with something for --accept to
+// take: those that failed where a check built them, a build never built
+// not one of them, or where none did, those of a port the branch adds
+// that passed with lint warnings (LintHolds).
+func (e Evidence) BuildsToAccept(port string) []TargetEvidence {
+	var failed, linted []TargetEvidence
 	for _, target := range e.BuildsOf(port) {
-		if target.Failing() && slices.ContainsFunc(target.Outcomes, func(c Cell) bool { return c.Kind == CellRecorded && c.Outcome != model.OutcomePassed }) {
+		switch {
+		case target.Failing() && slices.ContainsFunc(target.Outcomes, func(c Cell) bool { return c.Kind == CellRecorded && c.Outcome != model.OutcomePassed }):
 			failed = append(failed, target)
+		case target.Passed && target.LintHolds():
+			linted = append(linted, target)
 		}
 	}
-	return failed
+	if len(failed) > 0 {
+		return failed
+	}
+	return linted
 }
 
 // Remade are the environments where the target's result was recorded

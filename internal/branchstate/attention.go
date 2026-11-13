@@ -327,15 +327,18 @@ func Attend(facts Facts) []Attention {
 				if result.Phase == model.PhaseDependencies {
 					reason = DependencyFailed
 				}
-				next := Next{Verb: VerbLogs, Args: []string{run.Name(), target.Target.Target.Name}}
+				// The build by its ID, as logs and --accept take it: a variant
+				// build's log goes by "jq +docs" (#235).
+				build := check.Evidence.AcceptName(target)
+				next := Next{Verb: VerbLogs, Args: []string{run.Name(), build}}
 				// A failure its baseline has alike is the verdict's to say
 				// with --accept, which dockhand never takes itself (Then's
 				// item 4).
 				if _, atBase := check.AtBase[string(target.Target.ID)]; atBase {
-					next = Next{Verb: VerbSubmit, Args: []string{"--accept", check.Evidence.AcceptName(target)}}
+					next = Next{Verb: VerbSubmit, Args: []string{"--accept", build}}
 				}
 				return row(Failed, reason, next, func(a *Attention) {
-					a.Run, a.Port, a.Environment, a.Detail = run, target.Target.Target.Name, check.Evidence.Plan.Environments[i], result.Detail
+					a.Run, a.Port, a.Environment, a.Detail = run, build, check.Evidence.Plan.Environments[i], result.Detail
 					if reason == TargetFailed {
 						a.Detail = string(result.Phase)
 					}

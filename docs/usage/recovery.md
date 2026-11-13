@@ -162,7 +162,9 @@ Ctrl-C has two meanings. When the check runs in the foreground here, it stops
 that run and keeps completed results. When another serve process drives the
 check and you are only following, it stops following; the check continues. Use
 status or wait to see which state you actually have before replacing or
-cancelling it.
+cancelling it. A closed terminal or a dropped SSH session stops the command as
+Ctrl-C does; a check started with `nohup` keeps running through a closed
+terminal.
 
 For work that should survive your terminal or agent invocation ending,
 `check -d` queues and returns. Serve drives it, or dockhand starts a background
@@ -263,6 +265,12 @@ then run the command again. The message names the app, and a wait whose
 address routes to Tart's bridge ends early rather than after the full timeout.
 A VPN or firewall that routes Tart's 192.168.64.0/24 network elsewhere does the
 same, which `route -n get <address>` shows.
+
+A dockhand killed outright while it drove a Tart check leaves the clone
+running, since its `tart run` is in a process group of its own. The next check
+that waits for a slot removes it, saying so, and `dockhand clean` or the daily
+cleanup removes it where no check waits; one kept for `dockhand shell` stays
+until you clean it.
 
 Once the external cause is resolved, `retry check-42` repeats that capture. If
 you changed the files or need another environment, use a new check with explicit

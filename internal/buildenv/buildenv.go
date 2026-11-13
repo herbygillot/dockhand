@@ -482,8 +482,33 @@ type LeftoverProvider interface {
 	// Leftovers are the environments it made that are still there.
 	Leftovers(ctx context.Context) ([]Leftover, error)
 	// RemoveLeftover removes one, and refuses anything it didn't make for
-	// a check.
+	// a check. ErrLeftoverGone where it is already gone, as another
+	// process may have removed it.
 	RemoveLeftover(ctx context.Context, ref string) error
+}
+
+// ErrLeftoverGone is a leftover that was already removed when its removal
+// came: two checks waiting for a slot may both reclaim it (#239).
+var ErrLeftoverGone = errors.New("already removed")
+
+// Reclaimer is a Build that can remove, of the environments running that
+// its provider named, those a check left whose owner is gone, as cleanup
+// would remove them: a provider waiting for room it shares, as Tart's
+// slots, asks it each time it counts again, so a check killed outright
+// doesn't hold a slot until the daily cleanup (#239). It returns one line
+// for each it removed, and nothing where it removed nothing. Its error is
+// the provider's to say; it never fails the wait.
+type Reclaimer interface {
+	Reclaim(ctx context.Context, refs []string) ([]string, error)
+}
+
+// Reclaim asks a build that can reclaim (Reclaimer), and nothing of one
+// that can't.
+func Reclaim(ctx context.Context, build Build, refs []string) ([]string, error) {
+	if reclaimer, ok := build.(Reclaimer); ok {
+		return reclaimer.Reclaim(ctx, refs)
+	}
+	return nil, nil
 }
 
 // A ChangingProvider changes something of the person's for a check and

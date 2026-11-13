@@ -245,6 +245,128 @@ func TestAnUpdatesHeldFindingOutlivesTheTreeItLeft(t *testing.T) {
 	}
 }
 
+// A held finding is carried only for a port the branch still changes
+// against its base: jq's update undone while libharbor's stays, jq's
+// crates-unlocked hold goes with it (architecture's read of #242).
+func TestAHoldGoesWithThePortsChange(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, p := f.withPreparer(t)
+	f.withFork(t, e)
+	p.cratesUnlocked = "The source for 1.8.1 ships no Cargo.lock, so cargo.crates is left as 1.7.1 had it and may not match what 1.8.1 builds."
+	branch := twoPortBranch(t, e)
+	current, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	status, err := e.BranchStatus(t.Context(), current)
+	require.NoError(t, err)
+	require.Len(t, unlockedHolds(status.Held), 1, "held while jq's update is on the branch")
+
+	base := testsupport.Git(t, branch.Worktree, "show", string(current.Base)+":textproc/jq/Portfile")
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": base + "\n"})
+	commitAs(t, branch.Worktree, "Ada ada@example.org", "jq: back to master's")
+	require.Empty(t, testsupport.Git(t, branch.Worktree, "diff", string(current.Base), "--", "textproc/jq"), "the branch no longer changes jq")
+
+	status, err = e.BranchStatus(t.Context(), current)
+	require.NoError(t, err)
+	require.Empty(t, unlockedHolds(status.Held), "status")
+	submit, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: current, NoCheck: true})
+	require.NoError(t, err)
+	require.Empty(t, unlockedHolds(submit.Held()), "the submit preview")
+
+	// The port's change back at the same release, the revert reverted,
+	// brings its hold back: nothing ended it but the port leaving.
+	testsupport.Git(t, branch.Worktree, "-c", "user.name=Ada", "-c", "user.email=ada@example.org", "revert", "--no-edit", "HEAD")
+	require.NotEmpty(t, testsupport.Git(t, branch.Worktree, "diff", string(current.Base), "--", "textproc/jq"), "the branch changes jq again")
+	status, err = e.BranchStatus(t.Context(), current)
+	require.NoError(t, err)
+	require.Len(t, unlockedHolds(status.Held), 1, "status, the change back")
+	submit, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: current, NoCheck: true})
+	require.NoError(t, err)
+	require.Len(t, unlockedHolds(submit.Held()), 1, "the submit preview, the change back")
+}
+
+// Every hold an update raises for what only it finds, a mirror's
+// conflicting archive and a repository GitHub answers by another name,
+// stays with the branch and the port through one more commit, as
+// crates-unlocked does: no later assessment finds them again
+// (architecture's read of #242).
+func TestAnUpdatesOwnHoldsOutliveOneMoreCommit(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		rule, from, to string
+		mirror         bool
+	}{
+		{rule: "mirror-conflict", mirror: true},
+		{rule: "upstream-moved", from: "acme/jqx", to: "acme/jqy"},
+		{rule: "upstream-renamed-port", from: "jqlang/jq", to: "jqlang/jq2"},
+		{rule: "upstream-transferred", from: "returntocorp/jq", to: "semgrep/jq"},
+	} {
+		t.Run(test.rule, func(t *testing.T) {
+			t.Parallel()
+			f := setup(t)
+			e, p := f.withPreparer(t)
+			fake := f.withFork(t, e)
+			repository := "jqlang/jq-src"
+			if test.mirror {
+				p.mirrorConflicts = []editprep.MirrorConflict{{Name: "jq-1.8.1.tar.gz", Subdir: "jq"}}
+			} else {
+				fake.Renamed = map[string]string{test.from: test.to}
+				repository = test.from
+			}
+			branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
+			require.NoError(t, err)
+			_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq", Version: "1.8.1", CompareUpstream: true,
+				Release: &model.Release{Forge: forge.GitHub, Repository: repository, Version: "1.8.1"}})
+			require.NoError(t, err)
+			plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+			require.NoError(t, err)
+			_, err = e.ApplyTidy(t.Context(), plan)
+			require.NoError(t, err)
+			rules := func(concerns []model.Concern) []string {
+				var found []string
+				for _, c := range concerns {
+					if c.Rule == test.rule {
+						found = append(found, c.Rule)
+					}
+				}
+				return found
+			}
+			current, err := e.Branch(t.Context(), branch.ID)
+			require.NoError(t, err)
+			status, err := e.BranchStatus(t.Context(), current)
+			require.NoError(t, err)
+			require.Equal(t, []string{test.rule}, rules(status.Held), "held after the update")
+
+			portfile := filepath.Join(branch.Worktree, "textproc/jq/Portfile")
+			data, err := os.ReadFile(portfile)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(portfile, append(data, "# a comment\n"...), 0o644))
+			commitAs(t, branch.Worktree, "Ada ada@example.org", "jq: a comment")
+			status, err = e.BranchStatus(t.Context(), current)
+			require.NoError(t, err)
+			require.Equal(t, []string{test.rule}, rules(status.Held), "status, one commit later")
+			submit, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: current, NoCheck: true})
+			require.NoError(t, err)
+			require.Equal(t, []string{test.rule}, rules(submit.Held()), "the submit preview, one commit later")
+			if test.rule != "upstream-moved" {
+				return
+			}
+			// Following the move, an edit of the move alone at the same
+			// release, answers it: the hold goes.
+			data, err = os.ReadFile(portfile)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(portfile, append(data, "github.setup acme jqx 1.8.1 v\n"...), 0o644))
+			commitAs(t, branch.Worktree, "Ada ada@example.org", "jq: github.setup")
+			_, err = e.Update(t.Context(), UpdateRequest{Branch: current, Action: model.EditUpdate, Port: "jq", Version: "1.8.1", CompareUpstream: true, FollowMoves: true,
+				Release: &model.Release{Forge: forge.GitHub, Repository: repository, Version: "1.8.1"}})
+			require.NoError(t, err)
+			status, err = e.BranchStatus(t.Context(), current)
+			require.NoError(t, err)
+			require.Empty(t, rules(status.Held), "followed")
+		})
+	}
+}
+
 // An archived branch keeps its update's held finding: archive --undo
 // brings it back holding, since archiving drops no edit record; only
 // clean --delete forgets them, once the branch can't be submitted (#242).

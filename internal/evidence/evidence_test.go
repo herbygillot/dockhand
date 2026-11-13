@@ -510,7 +510,7 @@ func TestATreesEvidenceIsEveryBuildItsChecksMade(t *testing.T) {
 	both := judge(checkOf(775, ssl, model.OutcomeFailed), checkOf(772, gnutls, model.OutcomeFailed))
 	require.Equal(t, []bool{true, false}, accepts(both, "curl +sectrust +ssl"))
 	require.Equal(t, []bool{false, false}, accepts(both, "curl"))
-	require.Len(t, both.FailedBuildsOf("curl"), 2)
+	require.Len(t, both.BuildsToAccept("curl"), 2)
 	// With a default build beside them, the bare name is the default
 	// build's alone (field testing's note 10 from the curl fix).
 	require.False(t, judged.Accepts([]string{"curl"}, failed))

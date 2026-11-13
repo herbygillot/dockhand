@@ -25,15 +25,19 @@ func AcceptanceProblem(ev evidence.Evidence, accept []string, atBase map[string]
 	for _, port := range accept {
 		target, ok := ev.AcceptTarget(port)
 		if !ok {
-			if failed := ev.FailedBuildsOf(port); len(failed) > 1 {
+			if builds := ev.BuildsToAccept(port); len(builds) > 1 {
 				var names []string
-				for _, build := range failed {
-					names = append(names, "--accept '"+ev.AcceptName(build)+"'")
+				for _, build := range builds {
+					names = append(names, "--accept "+acceptWord(ev.AcceptName(build)))
 				}
-				return fmt.Errorf("--accept %s: %s failed in %d builds in %s, and each is accepted by its build's name. Name the builds to accept: %s", port, port, len(failed), ev.Run.Name(), strings.Join(names, " "))
+				what := "failed in"
+				if !builds[0].Failing() {
+					what = "was warned of by lint in"
+				}
+				return fmt.Errorf("--accept %s: %s %s %d builds in %s, and each is accepted by its build's name. Name the builds to accept: %s", port, port, what, len(builds), ev.Run.Name(), strings.Join(names, " "))
 			}
-			// No build of the port failed: say what its builds did, one
-			// that asks for a check before one that passed.
+			// No build of the port has anything to accept: say what its
+			// builds did, one that asks for a check before one that passed.
 			builds := ev.BuildsOf(port)
 			if i := slices.IndexFunc(builds, evidence.TargetEvidence.Failing); i >= 0 {
 				target, ok = builds[i], true
@@ -116,19 +120,21 @@ func ReadsDecisions(ev evidence.Evidence) bool {
 // LintBlocks are the ports the branch adds that lint warned of and a
 // person hasn't accepted at this commit, each a block with what lint said
 // once: a new port has no baseline, so its warnings count as ✗, its build
-// answering all the same (the docs dig's I13). A port that failed is
-// refused for its failure first.
+// answering all the same (the docs dig's I13). Each build is accepted by
+// the names a failure is (evidence.Accepts) and blocked by its build's
+// name (#235). A build that failed is refused for its failure first.
 func LintBlocks(ev evidence.Evidence, accepted []string) []Block {
 	var blocks []Block
 	for _, finding := range evidence.LintFindings(ev) {
-		if !finding.Holds || slices.Contains(accepted, finding.Port) {
+		if !finding.Holds {
 			continue
 		}
 		i := slices.IndexFunc(ev.Targets, func(t evidence.TargetEvidence) bool { return t.Target.ID == finding.Target })
-		if ev.Targets[i].Failing() {
+		if ev.Targets[i].Failing() || ev.Accepts(accepted, ev.Targets[i]) {
 			continue
 		}
-		if j := slices.IndexFunc(blocks, func(b Block) bool { return b.Port == finding.Port }); j >= 0 {
+		name := ev.AcceptName(ev.Targets[i])
+		if j := slices.IndexFunc(blocks, func(b Block) bool { return b.Port == name }); j >= 0 {
 			for _, line := range finding.Lines {
 				if !slices.Contains(blocks[j].Lint, line) {
 					blocks[j].Lint = append(blocks[j].Lint, line)
@@ -136,7 +142,7 @@ func LintBlocks(ev evidence.Evidence, accepted []string) []Block {
 			}
 			continue
 		}
-		blocks = append(blocks, Block{Kind: BlockLint, Port: finding.Port, Run: ev.Run.Name(), Lint: slices.Clone(finding.Lines)})
+		blocks = append(blocks, Block{Kind: BlockLint, Port: name, Run: ev.Run.Name(), Lint: slices.Clone(finding.Lines)})
 	}
 	return blocks
 }

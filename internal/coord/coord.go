@@ -115,6 +115,17 @@ type Session struct {
 	// stopBeating ends KeepAlive, which End calls: an ended session has
 	// nothing to keep alive.
 	stopBeating context.CancelFunc
+	// beaten is closed when a registered KeepAlive has returned, which
+	// End waits for, so the store can be closed after it (#252).
+	beaten chan struct{}
+	// ending is set by End before it writes the session ended, under mu,
+	// so a KeepAlive that starts while End is under way never registers:
+	// one that found End past its look for a heartbeat beat an ended
+	// session until the process exited (#252).
+	ending bool
+	// endPaused and beatStopping are test seams: End's pause between its
+	// look for a heartbeat and its write, and KeepAlive's last step.
+	endPaused, beatStopping func()
 }
 
 // Start opens a session for the running process.
@@ -185,12 +196,19 @@ func (s *Session) KeepAlive(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	s.mu.Lock()
-	if s.record.EndedAt != nil {
+	if s.record.EndedAt != nil || s.ending {
 		s.mu.Unlock()
 		return
 	}
-	s.stopBeating = cancel
+	beaten := make(chan struct{})
+	s.stopBeating, s.beaten = cancel, beaten
 	s.mu.Unlock()
+	defer func() {
+		if s.beatStopping != nil {
+			s.beatStopping()
+		}
+		close(beaten)
+	}()
 	ticker := time.NewTicker(s.c.heartbeat())
 	defer ticker.Stop()
 	failing := false
@@ -223,12 +241,22 @@ func (s *Session) KeepAlive(ctx context.Context) {
 
 // End closes the session cleanly. Leases it still holds become free to
 // take, since an ended session is dead to every judge.
+//
+// It stops the heartbeat whichever started first, and returns only once
+// a running one has returned, so the caller may close the store after it
+// (#252).
 func (s *Session) End(ctx context.Context) error {
 	s.mu.Lock()
-	if s.stopBeating != nil {
-		s.stopBeating()
-	}
+	s.ending = true
+	stop, beaten := s.stopBeating, s.beaten
 	s.mu.Unlock()
+	if stop != nil {
+		stop()
+		<-beaten
+	}
+	if s.endPaused != nil {
+		s.endPaused()
+	}
 	now := s.c.now()
 	next := s.Record()
 	next.HeartbeatAt, next.EndedAt = now, &now

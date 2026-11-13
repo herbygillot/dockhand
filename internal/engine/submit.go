@@ -191,6 +191,10 @@ type SubmitPlan struct {
 	// its baseline failing alike, the cause not established, or blocked
 	// only by accepted failures.
 	Accepted map[string]AcceptedFailure
+	// Accept are the builds --accept took, by ID, as AcceptTarget resolved
+	// each name given when it was given: what the submission records, so a
+	// bare name doesn't come to take a build a later check fails (#235).
+	Accept []string
 	// Blocks are what stops the submission, each of its kind
 	// (branchstate.Block), whose words Blocking says.
 	Blocks []branchstate.Block
@@ -773,6 +777,14 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 	if err := branchstate.AcceptanceProblem(evidence, request.Accept, plan.AtBase, request.Standing); err != nil {
 		return err
 	}
+	for _, name := range request.Accept {
+		if target, ok := evidence.AcceptTarget(name); ok {
+			name = evidence.AcceptName(target)
+		}
+		if !slices.Contains(plan.Accept, name) {
+			plan.Accept = append(plan.Accept, name)
+		}
+	}
 	// The standing decisions asked for count here, as those recorded do,
 	// and are recorded with the submission.
 	if request.Standing {
@@ -790,9 +802,9 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 		standing = append(slices.Clone(standing), plan.Standing...)
 	}
 	plan.StandingAccepted = branchstate.StandingAccepted(evidence, standing)
-	plan.Accepted = branchstate.AcceptedReasons(evidence, slices.Concat(accepted, request.Accept), plan.AtBase, plan.StandingAccepted)
+	plan.Accepted = branchstate.AcceptedReasons(evidence, slices.Concat(accepted, plan.Accept), plan.AtBase, plan.StandingAccepted)
 	if !request.Draft {
-		for _, block := range branchstate.PublicationBlocks(evidence, slices.Concat(accepted, request.Accept), plan.AtBase, plan.StandingAccepted) {
+		for _, block := range branchstate.PublicationBlocks(evidence, slices.Concat(accepted, plan.Accept), plan.AtBase, plan.StandingAccepted) {
 			plan.block(block)
 		}
 	}
@@ -1546,8 +1558,8 @@ func (e *Engine) recordSubmission(tx store.Tx, plan SubmitPlan, result *Submitte
 	if err := tx.UpdateBranch(branch); err != nil {
 		return err
 	}
-	for _, port := range plan.Request.Accept {
-		if err := tx.AddDecision(model.Decision{Branch: branch.ID, Finding: model.FindingFailure, Subject: port, Evidence: plan.Commit, Answer: model.Accepted, At: e.now()}); err != nil {
+	for _, build := range plan.Accept {
+		if err := tx.AddDecision(model.Decision{Branch: branch.ID, Finding: model.FindingFailure, Subject: build, Evidence: plan.Commit, Answer: model.Accepted, At: e.now()}); err != nil {
 			return err
 		}
 	}
