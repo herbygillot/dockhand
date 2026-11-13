@@ -5,12 +5,13 @@ import (
 	"io"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 	"github.com/herbygillot/dockhand/internal/tcl/rpc"
 	"github.com/stretchr/testify/require"
 )
 
 func TestAWorkerFailureIsNotAnAssessmentVerdict(t *testing.T) {
-	for _, cause := range []error{fmt.Errorf("%w: %w", rpc.ErrBrokenSession, io.EOF), rpc.ErrHandshake, rpc.ErrNoAnswer} {
+	for _, cause := range []error{fmt.Errorf("%w: %w", rpc.ErrBrokenSession, io.EOF), rpc.ErrHandshake, rpc.ErrNoAnswer, observe.ErrInconclusive.Because("probe: %w", rpc.ErrBrokenSession)} {
 		got := Problem("evaluation", fmt.Errorf("evaluating fixture: %w", cause))
 		require.Equal(t, "evaluation-unavailable", got.Code)
 		require.Equal(t, Unknown, got.Status)

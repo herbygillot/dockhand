@@ -36,6 +36,7 @@ func (l *list) Set(v string) error { *l = append(*l, v); return nil }
 // run is how a survey was made and what it cost, written beside its
 // journal as <journal>.run.json.
 type run struct {
+	Tolerance     *measurementReport `json:"tolerance,omitempty"`
 	Measurement   *measurementConfig `json:"measurement,omitempty"`
 	Tree          string             `json:"tree"`
 	Commit        string             `json:"commit"`
@@ -308,6 +309,14 @@ func survey() (err error) {
 	made.Outcomes = outcomes
 	made.Settings = &settings{Mode: *mode, Record: *dbPath != "", Recording: *dbPath != "" && *recording,
 		Selection: selectionOf(request.Selection), Commit: made.Commit, Prefix: filepath.Dir(filepath.Dir(tclsh))}
+	if measurement != nil {
+		totals, e := record.measurementReport()
+		if e != nil {
+			return e
+		}
+		made.Tolerance = &totals
+		fmt.Fprintf(os.Stderr, "Tolerance: %d complete, %d parity, %d flips; %d unavailable, %d missing captures\n", totals.Complete, totals.Parity, totals.Flips, totals.Unavailable, totals.Missing)
+	}
 	if record != nil {
 		if err := record.Finish(made.WallSeconds, made.UserSeconds, made.SystemSeconds); err != nil {
 			return err
@@ -321,6 +330,9 @@ func survey() (err error) {
 		if err := os.WriteFile(*journalPath+".run.json", append(data, '\n'), 0o644); err != nil {
 			return err
 		}
+	}
+	if made.Tolerance != nil && (made.Tolerance.Captures == 0 || made.Tolerance.Unavailable > 0) {
+		return fmt.Errorf("measurement is not complete: %d captures, %d unavailable evaluations", made.Tolerance.Captures, made.Tolerance.Unavailable)
 	}
 	fmt.Fprintf(os.Stderr, "Assessed %d ports (%d already in the journal) at %s in %s: %v; %.1f cores\n",
 		len(result.Ports), result.Skipped, shortID(made.Commit), time.Duration(made.WallSeconds*float64(time.Second)).Round(time.Second), outcomes, made.Cores)

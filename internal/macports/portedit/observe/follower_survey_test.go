@@ -3,9 +3,11 @@
 package observe
 
 import (
-	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/herbygillot/dockhand/internal/macports"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestSurveyWithholdsOnlyTheFollowerAndChecksParity(t *testing.T) {
@@ -20,4 +22,21 @@ func TestSurveyWithholdsOnlyTheFollowerAndChecksParity(t *testing.T) {
 	require.Equal(t, RuleNone, off.Accesses[0].Rule)
 	require.False(t, off.Accesses[0].Followers[0].Benign)
 	require.Equal(t, []string{"build.args", "build.cmd"}, on.Accesses[0].Followers[0].Watched)
+}
+
+func TestSurveyPolicyIsPerCall(t *testing.T) {
+	b := newBaseFixture(t)
+	d := b.lookup("make", "base", b.substitution("build.cmd", "[portbuild::build_getmaketype]"), b.getmaketype())
+	p := macports.PortObservation{ModeledHostAccess: true, Problems: []string{d.Values[0]}, Declarations: []macports.Declaration{d}, BaseLibrary: b.lib}
+	root := t.TempDir()
+	results := make(chan bool, 8)
+	for i := 0; i < 8; i++ {
+		go func() {
+			on, off, err := CompareTolerance(t.Context(), p, []byte("build.args ${build.cmd}\n"), root)
+			results <- err == nil && !on.Inconclusive && off.Inconclusive
+		}()
+	}
+	for i := 0; i < 8; i++ {
+		require.True(t, <-results)
+	}
 }

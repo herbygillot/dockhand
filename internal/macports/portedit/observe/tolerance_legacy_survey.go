@@ -5,9 +5,10 @@ package observe
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"strings"
 )
 
 // legacyTolerate is the unmodified decision routine at a0298da0, retained

@@ -309,3 +309,14 @@ selection. Use a new record after rebuilding the tool.
 In `Tolerance`, `On` and `Off` are true when inconclusive; `OnLeft` and
 `OffLeft` respect the native-context exception. `Complete: false` identifies
 an incomplete evaluation, not a classifier verdict or parity mismatch.
+
+The run manifest's `tolerance` totals report complete parity checks, flips,
+unavailable evaluations and missing captures. A measurement with no captures or
+a worker failure exits unsuccessfully; its partial record remains diagnostic.
+Do not call a partial run whole-corpus parity. Replay's `Changes` list includes
+source mentions for grouping; these are witnesses to inspect, not a proof that
+every mentioned line belongs to the accepted flow.
+
+The manifest also sums elapsed seconds spent in paired analysis (including the
+legacy parity check), capture preparation and JSON/compression. Parallel
+analysis durations overlap; they are not an increase in survey wall time.

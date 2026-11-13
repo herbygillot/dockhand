@@ -3,9 +3,10 @@
 package observe
 
 import (
-	"github.com/stretchr/testify/require"
 	"os/exec"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestTheProductBuildContainsNoFollowerOffPolicy(t *testing.T) {

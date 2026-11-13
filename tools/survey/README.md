@@ -150,3 +150,13 @@ Base source digest and selection; a different configuration cannot resume it.
 outcomes. A newly left context need not make a Portfile uncovered. Preserve the
 ordinary assessment and do not infer whole-survey outcome or guard changes by
 marking every flipping port unknown.
+
+The run manifest includes tolerance completeness and byte totals. A dead worker
+is recorded with `evaluation-unavailable` and is not counted as a parity check
+or a verdict flip. Zero captures or unavailable workers make the measurement
+exit unsuccessfully. Captured file bytes are compressed once per content hash,
+and a rolled-back transaction invalidates that compression cache.
+
+`tolerance` also sums analysis, capture-preparation and JSON/compression elapsed
+seconds. Analysis includes the frozen parity oracle. Parallel calls overlap;
+these sums are not CPU seconds or total survey wall-time overhead.

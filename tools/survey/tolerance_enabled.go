@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 )

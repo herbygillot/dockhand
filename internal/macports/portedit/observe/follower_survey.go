@@ -7,8 +7,9 @@ import (
 	"crypto/sha256"
 	_ "embed"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports"
 	"reflect"
+
+	"github.com/herbygillot/dockhand/internal/macports"
 )
 
 //go:embed follow.go

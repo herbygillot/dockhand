@@ -69,10 +69,11 @@ type Record struct {
 
 	// The writer's own: paths and hook bodies kept by id, and the
 	// toolchains written.
-	paths      map[string]int64
-	normalized map[string]string
-	toolchains map[string]bool
-	roots      sync.Map
+	paths          map[string]int64
+	normalized     map[string]string
+	toolchains     map[string]bool
+	toleranceFiles map[string]bool
+	roots          sync.Map
 }
 
 // RunInfo is how a run is made, written to its row when it begins.
@@ -102,7 +103,7 @@ func OpenRecord(ctx context.Context, file, mode string, recording bool, info Run
 	}
 	db.SetMaxOpenConns(1)
 	r := &Record{db: db, path: file, mode: mode, recording: recording, info: info, repo: repo, git: gitBin, journal: journal,
-		held: map[string]bool{}, trees: map[string]string{}, jobs: make(chan job), done: make(chan struct{}), paths: map[string]int64{}, normalized: map[string]string{}, toolchains: map[string]bool{}}
+		held: map[string]bool{}, trees: map[string]string{}, jobs: make(chan job), done: make(chan struct{}), paths: map[string]int64{}, normalized: map[string]string{}, toolchains: map[string]bool{}, toleranceFiles: map[string]bool{}}
 	if err := r.initialize(ctx); err != nil {
 		db.Close()
 		return nil, err
@@ -146,6 +147,7 @@ func (r *Record) apply(j job) (err error) {
 	defer func() {
 		if err != nil {
 			_ = tx.Rollback()
+			r.toleranceFiles = map[string]bool{}
 			if len(r.paths) != paths {
 				// Ids the rolled-back transaction gave are gone with it.
 				r.paths = map[string]int64{}
@@ -331,9 +333,9 @@ func (r *Record) evaluation(tx *sql.Tx, port int64, o observed) error {
 		outcome, detail = "failed", o.Err.Error()
 	}
 	var id int64
-	err := tx.QueryRow(`INSERT INTO evaluation (run_id, port_id, platform_os, platform_version, platform_arch, modeled, outcome, error)
-		VALUES (?, ?, ?, ?, ?, ?, ?, nullif(?, '')) ON CONFLICT DO NOTHING RETURNING id`,
-		r.run, port, o.Platform.OS, o.Platform.Version, o.Platform.Architecture, o.Modeled, outcome, detail).Scan(&id)
+	err := tx.QueryRow(`INSERT INTO evaluation (run_id, port_id, platform_os, platform_version, platform_arch, modeled, outcome, error,error_code)
+		VALUES (?, ?, ?, ?, ?, ?, ?, nullif(?, ''),nullif(?, '')) ON CONFLICT DO NOTHING RETURNING id`,
+		r.run, port, o.Platform.OS, o.Platform.Version, o.Platform.Architecture, o.Modeled, outcome, detail, evaluationCode(o.Err)).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	} else if err != nil {

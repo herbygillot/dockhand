@@ -2,6 +2,7 @@ package observe
 
 import (
 	"context"
+
 	"github.com/herbygillot/dockhand/internal/macports"
 )
 

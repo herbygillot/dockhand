@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
@@ -39,26 +40,29 @@ type capturedFile struct {
 }
 
 type toleranceCapture struct {
-	Evaluation  int64 `json:"-"`
-	Version     int
-	Target      model.Target
-	Platform    model.Platform
-	Modeled     bool
-	Unanswered  string
-	Error       string `json:",omitempty"`
-	ErrorCode   string `json:",omitempty"`
-	Contents    string
-	Root, Base  string
-	Aliases     map[string]string
-	Files       map[string]capturedFile
-	Observation macports.PortObservation
-	Pair        tolerancePair
+	Evaluation                  int64 `json:"-"`
+	AnalysisNanos, CaptureNanos int64
+	Version                     int
+	Target                      model.Target
+	Platform                    model.Platform
+	Modeled                     bool
+	Unanswered                  string
+	Error                       string `json:",omitempty"`
+	ErrorCode                   string `json:",omitempty"`
+	Contents                    string
+	Root, Base                  string
+	Aliases                     map[string]string
+	Files                       map[string]capturedFile
+	Observation                 macports.PortObservation
+	Pair                        tolerancePair
 }
 
 func digest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 
 func captureTolerance(ctx context.Context, target model.Target, platform model.Platform, modeled bool, unanswered string, port macports.PortObservation, contents []byte, root string) (*toleranceCapture, error) {
+	started := time.Now()
 	on, off, err := measurePolicies(ctx, port, contents, root)
+	analysisNanos := time.Since(started).Nanoseconds()
 	if err != nil {
 		return nil, err
 	}
@@ -116,6 +120,8 @@ func captureTolerance(ctx context.Context, target model.Target, platform model.P
 			}
 		}
 	}
+	c.AnalysisNanos = analysisNanos
+	c.CaptureNanos = time.Since(started).Nanoseconds() - analysisNanos
 	return c, nil
 }
 

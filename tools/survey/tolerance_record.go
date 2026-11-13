@@ -7,13 +7,16 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/model"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/herbygillot/dockhand/internal/macports/portedit"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 func compress(data []byte) ([]byte, error) {
@@ -77,15 +80,23 @@ func (r *Record) tolerance(tx *sql.Tx, id int64, o observed) error {
 			return err
 		}
 	}
+	var compressionNanos int64
 	for _, file := range c.Files {
+		if r.toleranceFiles[file.Hash] {
+			continue
+		}
+		started := time.Now()
 		packed, err := compress(file.Data)
+		compressionNanos += time.Since(started).Nanoseconds()
 		if err != nil {
 			return err
 		}
 		if _, err = tx.Exec(`insert or ignore into tolerance_file(hash,payload,raw_bytes) values (?,?,?)`, file.Hash, packed, len(file.Data)); err != nil {
 			return err
 		}
+		r.toleranceFiles[file.Hash] = true
 	}
+	started := time.Now()
 	raw, err := json.Marshal(c)
 	if err != nil {
 		return err
@@ -94,7 +105,8 @@ func (r *Record) tolerance(tx *sql.Tx, id int64, o observed) error {
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(`insert into tolerance_capture(evaluation_id,hash,payload,raw_bytes) values (?,?,?,?)`, id, digest(raw), packed, len(raw))
+	compressionNanos += time.Since(started).Nanoseconds()
+	_, err = tx.Exec(`insert into tolerance_capture(evaluation_id,hash,payload,raw_bytes,analysis_ns,capture_ns,compression_ns) values (?,?,?,?,?,?,?)`, id, digest(raw), packed, len(raw), c.AnalysisNanos, c.CaptureNanos, compressionNanos)
 	return err
 }
 
@@ -257,7 +269,10 @@ func replayTolerance(ctx context.Context, file string) (replayTotals, error) {
 // that every line is part of the accepted flow. Base files are excluded.
 func (c *toleranceCapture) mentions() []toleranceMention {
 	names := map[string]bool{}
-	for _, a := range c.Pair.On.Accesses {
+	for i, a := range c.Pair.On.Accesses {
+		if i >= len(c.Pair.Off.Accesses) || a.Rule == c.Pair.Off.Accesses[i].Rule || (a.Rule != "build-default" && a.Rule != "base-lookup") {
+			continue
+		}
 		for _, f := range a.Followers {
 			if f.Benign {
 				names[f.Option] = true
@@ -294,4 +309,35 @@ func (c *toleranceCapture) mentions() []toleranceMention {
 		}
 	}
 	return found
+}
+
+func evaluationCode(err error) string {
+	if err == nil {
+		return ""
+	}
+	return portedit.Problem("evaluation", err).Code
+}
+
+type measurementReport struct {
+	Evaluations, Captures, Complete, Parity, Unavailable, Missing, Flips, OnLeft, OffLeft int
+	CaptureBytes, FileBytes                                                               int64
+	AnalysisSeconds, CaptureSeconds, CompressionSeconds                                   float64
+}
+
+func (r *Record) measurementReport() (measurementReport, error) {
+	var m measurementReport
+	if err := r.db.QueryRow(`select count(*),coalesce(sum(error_code='evaluation-unavailable'),0) from evaluation where run_id=?`, r.run).Scan(&m.Evaluations, &m.Unavailable); err != nil {
+		return m, err
+	}
+	if err := r.db.QueryRow(`select count(*),coalesce(sum(t.complete),0),coalesce(sum(t.parity),0),coalesce(sum(t.complete and t.on_verdict<>t.off_verdict),0),coalesce(sum(t.on_left),0),coalesce(sum(t.off_left),0) from tolerance_context t join evaluation e on e.id=t.evaluation_id where e.run_id=?`, r.run).Scan(&m.Captures, &m.Complete, &m.Parity, &m.Flips, &m.OnLeft, &m.OffLeft); err != nil {
+		return m, err
+	}
+	m.Missing = m.Evaluations - m.Captures
+	if err := r.db.QueryRow(`select coalesce(sum(length(payload)),0), coalesce(sum(analysis_ns),0)/1e9, coalesce(sum(capture_ns),0)/1e9, coalesce(sum(compression_ns),0)/1e9 from tolerance_capture`).Scan(&m.CaptureBytes, &m.AnalysisSeconds, &m.CaptureSeconds, &m.CompressionSeconds); err != nil {
+		return m, err
+	}
+	if err := r.db.QueryRow(`select coalesce(sum(length(payload)),0) from tolerance_file`).Scan(&m.FileBytes); err != nil {
+		return m, err
+	}
+	return m, nil
 }

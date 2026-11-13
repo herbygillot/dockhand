@@ -46,6 +46,7 @@ CREATE TABLE evaluation (
     modeled INTEGER NOT NULL,
     outcome TEXT NOT NULL,
     error TEXT,
+    error_code TEXT,
     UNIQUE (run_id, port_id, platform_os, platform_version, platform_arch, developer_tools)
 );
 CREATE INDEX evaluation_port ON evaluation (port_id);
@@ -224,5 +225,6 @@ CREATE TABLE tolerance_file (
 ) WITHOUT ROWID;
 CREATE TABLE tolerance_capture (
  evaluation_id INTEGER PRIMARY KEY REFERENCES evaluation(id),
- hash TEXT NOT NULL, payload BLOB NOT NULL, raw_bytes INTEGER NOT NULL
+ hash TEXT NOT NULL, payload BLOB NOT NULL, raw_bytes INTEGER NOT NULL,
+ analysis_ns INTEGER NOT NULL, capture_ns INTEGER NOT NULL, compression_ns INTEGER NOT NULL
 );
