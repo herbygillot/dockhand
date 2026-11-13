@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/fetchguard"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/textedit"
 )
@@ -98,6 +99,9 @@ type follower struct {
 	// watched are the options, procs the procedures, and carried the
 	// top-level variables a watched value reaches.
 	watched, procs, carried map[string]bool
+	// previous is the last pass's carried: a pass changes nothing by
+	// carrying a variable again.
+	previous map[string]bool
 	// returning are the watched procedures whose bodies return a watched
 	// value; a statement call is placed only for one that doesn't (A2).
 	returning map[string]bool
@@ -166,7 +170,7 @@ func followedReadsBenign(sources [][]byte, option string, base *baseCode) ([]str
 		}
 		// Each pass carries its own top-level variables; the last pass's
 		// told which procedures mention them.
-		f.carried = map[string]bool{}
+		f.previous, f.carried = f.carried, map[string]bool{}
 		returning := map[string]bool{}
 		for _, def := range f.defs {
 			if !f.procs[def.name] {
@@ -270,7 +274,8 @@ func (f *follower) taint(sc *scope, variable string, carries bool) {
 		return
 	}
 	if carries && !f.carried[variable] {
-		f.carried[variable], f.changed = true, true
+		f.carried[variable] = true
+		f.changed = f.changed || !f.previous[variable]
 	}
 }
 
@@ -302,15 +307,16 @@ func (f *follower) walk(si int, script *syntax.Script, sc *scope) bool {
 		// github group's option handlers write master_sites and distname
 		// (architecture's condition 1, as A2 for a procedure).
 		if registrations[name] {
-			for _, word := range cmd.Words[1:] {
-				if named, ok := word.Literal(src); ok {
-					if f.watched[named] || f.procs[named] || f.carried[named] {
-						return false
-					}
-					f.placed[si] = append(f.placed[si], word.Span)
-				}
+			if !f.registered(si, cmd) {
+				return false
 			}
 			continue
+		}
+		// What a command substitution in any of its words does is judged
+		// first, by the rules of a command here (the confirmation's
+		// finding 1); the command's own sink rule takes what it hands on.
+		if !f.substitutions(si, cmd, sc, false) {
+			return false
 		}
 		switch {
 		case name == "proc":
@@ -629,6 +635,11 @@ func (f *follower) benignBody(si int, body syntax.Word, sc *scope) bool {
 				}
 			}
 		}
+		// Every command a branch the read selects runs, nested ones
+		// included, is chosen by the read.
+		if registrations[name] && !f.registered(si, cmd) || !f.substitutions(si, cmd, sc, true) {
+			return false
+		}
 		switch {
 		case control:
 			for _, word := range nested {
@@ -651,6 +662,191 @@ func (f *follower) benignBody(si int, body syntax.Word, sc *scope) bool {
 			if option, ok := optionSink(name); ok {
 				f.watch(option)
 			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// registered judges a handler, trace or callback registration: a subject
+// naming a watched option, procedure or carried variable fails, and so
+// does one that isn't a literal, which can't be shown not to (the
+// confirmation's finding 2; something is always watched here). A braced
+// subject is a literal, judged by its text.
+func (f *follower) registered(si int, cmd syntax.Command) bool {
+	src := f.srcs[si]
+	for _, word := range cmd.Words[1:] {
+		named, ok := word.Literal(src)
+		if !ok && !word.Expand && len(word.Segments) == 1 {
+			if braced, isBraced := word.Segments[0].(syntax.Braced); isBraced {
+				named, ok = braced.Body.Text(src), true
+			}
+		}
+		if !ok {
+			return false
+		}
+		for _, name := range strings.Fields(named) {
+			if f.watched[name] || f.procs[name] || f.carried[name] {
+				return false
+			}
+		}
+		f.placed[si] = append(f.placed[si], word.Span)
+	}
+	return true
+}
+
+// substitutions judges what the commands in a command's substitutions do,
+// in every word, quoted ones included, its braced conditions and
+// expressions, and a default's braced text, by the rules of a command at
+// the top: a nested set carries its value to its variable, a nested
+// option assignment watches its option, a nested control structure is
+// walked as one, and a nested command that does anything but compute a
+// value fails where a watched value reaches it; forced counts every one
+// as reached, in a branch a watched read selects.
+func (f *follower) substitutions(si int, cmd syntax.Command, sc *scope, forced bool) bool {
+	src := f.srcs[si]
+	for _, word := range cmd.Words {
+		if !f.nestedSegments(si, word.Segments, sc, forced) {
+			return false
+		}
+	}
+	name, _ := cmd.Name(src)
+	if controls, _, ok := cmd.Control(src); ok && (name == "if" || name == "while" || name == "for") {
+		for _, word := range controls {
+			if !f.nestedExpression(si, word.Inner(), sc, forced) {
+				return false
+			}
+		}
+	}
+	if name == "expr" && len(cmd.Words) == 2 {
+		if !f.nestedExpression(si, cmd.Words[1].Inner(), sc, forced) {
+			return false
+		}
+	}
+	if name == "default" && len(cmd.Words) == 3 {
+		if text, ok := cmd.Words[2].BracedScript(src); ok {
+			for _, inner := range text.Direct() {
+				for _, word := range inner.Words {
+					if !f.nestedSegments(si, word.Segments, sc, forced) {
+						return false
+					}
+				}
+			}
+		}
+	}
+	return true
+}
+
+func (f *follower) nestedSegments(si int, segments []syntax.Segment, sc *scope, forced bool) bool {
+	for _, segment := range segments {
+		switch value := segment.(type) {
+		case syntax.Quoted:
+			if !f.nestedSegments(si, value.Segments, sc, forced) {
+				return false
+			}
+		case syntax.CmdSub:
+			if !f.nestedScript(si, value.Script, sc, forced) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// nestedExpression judges the command substitutions in an expression's
+// window; one that doesn't parse is judged as a script.
+func (f *follower) nestedExpression(si int, window textedit.Span, sc *scope, forced bool) bool {
+	src := f.srcs[si]
+	e, errs := syntax.ParseExpr(src, window)
+	if len(errs) > 0 {
+		script, errs := syntax.ParseScript(src, window)
+		if len(errs) > 0 {
+			return false
+		}
+		for _, cmd := range script.Direct() {
+			if !f.substitutions(si, cmd, sc, forced) {
+				return false
+			}
+		}
+		return true
+	}
+	ok := true
+	syntax.WalkExpr(e, func(node syntax.Expr) bool {
+		switch node := node.(type) {
+		case syntax.Call:
+			ok = ok && f.nestedScript(si, node.Script, sc, forced)
+			return false
+		case syntax.Text:
+			ok = ok && f.nestedSegments(si, node.Word.Segments, sc, forced)
+			return false
+		}
+		return true
+	})
+	return ok
+}
+
+// nestedScript judges the commands of a command substitution.
+func (f *follower) nestedScript(si int, script *syntax.Script, sc *scope, forced bool) bool {
+	src := f.srcs[si]
+	for _, cmd := range script.Direct() {
+		if len(cmd.Words) == 0 {
+			continue
+		}
+		name, _ := cmd.Name(src)
+		if _, bodies, control := cmd.Control(src); control {
+			// A nested control structure runs its bodies as a command here
+			// does.
+			if forced {
+				for _, body := range bodies {
+					if !f.benignBody(si, body, sc) {
+						return false
+					}
+				}
+			}
+			if !f.walk(si, &syntax.Script{Span: cmd.Span, Items: []syntax.Item{cmd}}, sc) {
+				return false
+			}
+			continue
+		}
+		if registrations[name] && !f.registered(si, cmd) {
+			return false
+		}
+		if !f.substitutions(si, cmd, sc, forced) {
+			return false
+		}
+		var reads []read
+		for _, word := range cmd.Words {
+			reads = append(reads, f.wordReads(src, word)...)
+		}
+		if !f.carries(si, reads, sc) && !forced {
+			continue
+		}
+		switch {
+		case name == "set" && len(cmd.Words) == 2:
+		case (name == "set" || name == "append" || name == "lappend") && len(cmd.Words) >= 3:
+			variable, ok := cmd.Words[1].Literal(src)
+			if !ok {
+				return false
+			}
+			f.placed[si] = append(f.placed[si], cmd.Words[1].Span)
+			f.taint(sc, variable, true)
+		case f.procs[name]:
+		case sinkFor(name):
+			if option, ok := optionSink(name); ok {
+				f.watch(option)
+			}
+		case name == "file":
+			if len(cmd.Words) < 2 {
+				return false
+			}
+			if sub, ok := cmd.Words[1].Literal(src); !ok || !fetchguard.FileRead(sub) {
+				return false
+			}
+		case fetchguard.HarmlessBuiltin(name) && name != "global" && name != "variable":
+		case name == "exec":
+			// A program's output is a value; running it writes no field
+			// the model acts on, and a modelled context closes it.
 		default:
 			return false
 		}

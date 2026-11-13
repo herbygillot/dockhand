@@ -81,6 +81,15 @@ func withWorkerAliasReads(builtins map[string]bool) map[string]bool {
 	return builtins
 }
 
+// HarmlessBuiltin reports a built-in or Base command that reads,
+// computes, or says something and writes nothing but the plain variables
+// its arguments name (harmlessBuiltins): what the closed model's value
+// following lets a command substitution compute (observe's follower).
+func HarmlessBuiltin(name string) bool { return harmlessBuiltins[name] }
+
+// FileRead reports a file subcommand that reads and changes nothing.
+func FileRead(subcommand string) bool { return fileReads[subcommand] }
+
 // fileReads are the file subcommands that read the host and change nothing.
 var fileReads = map[string]bool{"exists": true, "isdirectory": true, "isfile": true, "readable": true, "executable": true, "tail": true, "dirname": true, "join": true, "normalize": true, "extension": true, "rootname": true, "split": true, "type": true}
 

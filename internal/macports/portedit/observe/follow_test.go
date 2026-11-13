@@ -184,3 +184,60 @@ func TestAQuotedVariantBodyIsWalkedAsAScript(t *testing.T) {
 	command := "variant x description {x} \"\n    ${build.cmd} foo\n\""
 	require.True(t, b.tolerate(t, command, getmake), "a quoted body whose command word is build.cmd's value")
 }
+
+// A command inside a command substitution is judged for what it does, by
+// the rules of a command at the top, before the outer command's sink rule:
+// a nested write to a fetch field fails, a nested set carries the value to
+// its variable, a nested option assignment watches its option, inside a
+// procedure's body and its return as at the top (the outside confirmation
+// of #110 at 6ab59afb, finding 1). A nested command that only computes a
+// value hands it to the outer command, which judges it.
+func TestANestedCommandIsJudgedForWhatItDoes(t *testing.T) {
+	t.Parallel()
+	b := newBaseFixture(t)
+	getmake := b.lookup("make", "base", b.substitution("build.cmd", "[portbuild::build_getmaketype]"), b.getmaketype())
+	for _, c := range []struct {
+		name, contents string
+		host           bool
+	}{
+		{"a nested distfiles", "build.args [distfiles x-${build.cmd}.tgz]", true},
+		{"a nested distfiles in a quoted word", "build.args \"-D[distfiles x-${build.cmd}.tgz]\"", true},
+		{"a nested set read by distfiles", "build.args [set m ${build.cmd}]\ndistfiles x-$m.tgz", true},
+		{"a nested append read by distfiles", "build.args [append m ${build.cmd}]\ndistfiles x-$m.tgz", true},
+		{"a nested option read by distfiles", "build.args [test.cmd ${build.cmd}]\ndistfiles x-${test.cmd}.tgz", true},
+		{"a nested distfiles in a procedure's body", "proc p {} {\n    global build.cmd\n    build.args [distfiles x-${build.cmd}.tgz]\n}\nbuild.args [p]", true},
+		{"a nested distfiles in a return", "proc p {} {\n    global build.cmd\n    return [distfiles x-${build.cmd}.tgz]\n}\nbuild.args [p]", true},
+		{"a nested distfiles in a default's text", "default test.args {[distfiles x-${build.cmd}.tgz]}", true},
+		{"a nested distfiles in a caught script", "build.args [catch {distfiles x-${build.cmd}.tgz}]", true},
+		{"a nested PortGroup procedure taking it", "build.args [github.setup a b ${build.cmd}]", true},
+		{"a namespace variable is no global", "proc p {} {\n    variable build.cmd\n    distfiles x-${build.cmd}.tgz\n}\nbuild.args [p]", true},
+		{"a nested value, handed to a build option", "build.args [file tail ${build.cmd}] [string toupper ${build.cmd}]", false},
+		{"a nested set read by the build", "build.args [set m ${build.cmd}]\nbuild.target $m", false},
+		{"a set read by the build", "set m ${build.cmd}\nbuild.target $m", false},
+		{"a nested option read by the build", "build.args [test.cmd ${build.cmd}]\nbuild.target ${test.cmd}", false},
+	} {
+		require.Equal(t, c.host, b.tolerate(t, c.contents, getmake), "%s", c.name)
+	}
+}
+
+// A handler, trace or callback registration whose subject isn't a literal
+// can't be shown not to name a watched option or procedure: it fails the
+// context (the outside confirmation of #110 at 6ab59afb, finding 2). A
+// braced subject is a literal, judged by its text.
+func TestAComputedRegistrationIsInconclusive(t *testing.T) {
+	t.Parallel()
+	b := newBaseFixture(t)
+	getmake := b.lookup("make", "base", b.substitution("build.cmd", "[portbuild::build_getmaketype]"), b.getmaketype())
+	handler := "proc handler {option action args} {\n    if {$action eq {set}} {distfiles x-$args.tgz}\n}\n"
+	for _, c := range []struct {
+		name, contents string
+		host           bool
+	}{
+		{"a computed option name", "set n [string cat test .cmd]\noption_proc $n handler\n" + handler + "test.cmd ${build.cmd}", true},
+		{"a computed traced variable", "set n [string cat test .cmd]\ntrace add variable $n write handler\n" + handler + "test.cmd ${build.cmd}", true},
+		{"a braced watched option", "option_proc {test.cmd} handler\n" + handler + "test.cmd ${build.cmd}", true},
+		{"a literal unwatched option", "option_proc test.env handler\n" + handler + "test.cmd ${build.cmd}", false},
+	} {
+		require.Equal(t, c.host, b.tolerate(t, c.contents, getmake), "%s", c.name)
+	}
+}

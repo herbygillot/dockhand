@@ -409,3 +409,39 @@ func TestKnownGapAPortGroupOffTheStackIsNotFollowed(t *testing.T) {
 	require.Equal(t, "foo-.tar.gz", distfiles, "make, not found on the empty Mac, in a fetch field")
 	require.False(t, inconclusive, "known gap: explained today")
 }
+
+// The outside confirmation of #110 at 6ab59afb, findings 1 and 2, live: a
+// closed read of build.jobs or build.cmd reaching distfiles through a
+// command nested in a build option's arguments, a nested set or option
+// assignment, a nested write in a procedure's body or its return, or a
+// handler registered under a computed name, leaves the context
+// inconclusive; each wrote the closed value into distfiles and read as
+// explained.
+func TestANestedOrComputedPathToAFetchFieldIsHostState(t *testing.T) {
+	t.Parallel()
+	for _, option := range []string{"build.jobs", "build.cmd"} {
+		for _, c := range []struct{ name, body string }{
+			{"nested distfiles", "build.args [distfiles x-${OPTION}.tgz]"},
+			{"nested set", "build.args [set m ${OPTION}]\ndistfiles x-$m.tgz"},
+			{"nested option", "build.args [test.cmd ${OPTION}]\ndistfiles x-${test.cmd}.tgz"},
+			{"nested in a procedure", "proc p {} {\n global OPTION\n build.args [distfiles x-${OPTION}.tgz]\n}\nbuild.args [p]"},
+			{"nested in a return", "proc p {} {\n global OPTION\n return [distfiles x-${OPTION}.tgz]\n}\nbuild.args [p]"},
+			{"computed handler", "set n [string cat test .cmd]\noption_proc $n handler\nproc handler {option action args} {\n if {$action eq {set}} {distfiles x-$args.tgz}\n}\ntest.cmd ${OPTION}"},
+		} {
+			contents := "PortSystem 1.0\nname effects\nversion 1\n" + strings.ReplaceAll(c.body, "OPTION", option) + "\n"
+			inconclusive, distfiles, port := knownGapVerdict(t, monterey, nil, contents)
+			require.NotEmpty(t, closedCalls(port), "%s/%s", option, c.name)
+			require.Regexp(t, `^x-`, distfiles, "%s/%s: the closed value reached distfiles", option, c.name)
+			require.True(t, inconclusive, "%s/%s: %v", option, c.name, port.Problems)
+		}
+	}
+	// The confirmation's controls: the direct forms and a literal handler.
+	for _, body := range []string{
+		"set m ${build.jobs}\ndistfiles x-$m.tgz",
+		"test.cmd ${build.jobs}\ndistfiles x-${test.cmd}.tgz",
+		"option_proc test.cmd handler\nproc handler {option action args} {\n if {$action eq {set}} {distfiles x-$args.tgz}\n}\ntest.cmd ${build.jobs}",
+	} {
+		inconclusive, _, _ := knownGapVerdict(t, monterey, nil, "PortSystem 1.0\nname effects\nversion 1\n"+body+"\n")
+		require.True(t, inconclusive, "%s", body)
+	}
+}
