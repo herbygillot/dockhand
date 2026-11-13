@@ -1046,7 +1046,13 @@ func (e *Engine) RemoveLeftovers(ctx context.Context, session *coord.Session, le
 			continue
 		}
 		err = provider.RemoveLeftover(ctx, leftover.Ref)
-		if releaseErr := session.Release(context.WithoutCancel(ctx), lease); err == nil {
+		releaseErr := session.Release(context.WithoutCancel(ctx), lease)
+		if errors.Is(err, buildenv.ErrLeftoverGone) && releaseErr == nil {
+			// Another process removed it under the same lease first.
+			leftover.Kept = "already removed"
+			continue
+		}
+		if err == nil || errors.Is(err, buildenv.ErrLeftoverGone) {
 			err = releaseErr
 		}
 		if err != nil {
@@ -1063,6 +1069,56 @@ func (e *Engine) RemoveLeftovers(ctx context.Context, session *coord.Session, le
 		}
 	}
 	return leftovers, errors.Join(problems...)
+}
+
+// reclaim removes, of the provider's environments refs names, those a
+// check left whose owner is gone, judged and removed as cleanup removes
+// them: a check of this checkout made it, no live process holds that
+// check's lease, and it isn't kept for dockhand shell. A check waiting for
+// one of the Mac's VM slots asks it each time it counts again (#239). It
+// only reads unless something is removable; the removals go under a
+// session of their own, so the waiting check's own session, which may
+// drive the check whose VM it is, never takes that check's lease. It
+// returns one line for each it removed.
+func (e *Engine) reclaim(ctx context.Context, judge *coord.Session, provider string, refs []string) ([]string, error) {
+	leftovers, ok := e.Providers[provider].(buildenv.LeftoverProvider)
+	if !ok || len(refs) == 0 {
+		return nil, nil
+	}
+	found, err := leftovers.Leftovers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var removable []Leftover
+	for _, reported := range found {
+		if !slices.Contains(refs, reported.Ref) || !reported.KeptAt.IsZero() {
+			continue
+		}
+		reported.Provider = provider
+		leftover := Leftover{Leftover: reported}
+		if err := e.judgeLeftover(ctx, judge, &leftover); err != nil {
+			return nil, err
+		}
+		if leftover.Kept == "" {
+			removable = append(removable, leftover)
+		}
+	}
+	if len(removable) == 0 {
+		return nil, nil
+	}
+	session, err := e.Session(ctx, model.SessionForeground)
+	if err != nil {
+		return nil, err
+	}
+	defer session.End(context.WithoutCancel(ctx))
+	done, err := e.RemoveLeftovers(ctx, session, removable)
+	var said []string
+	for _, leftover := range done {
+		if leftover.Done {
+			said = append(said, fmt.Sprintf("removed %s, left by %s: its check is no longer running", leftover.What, leftover.Run.Name()))
+		}
+	}
+	return said, err
 }
 
 // superseded says the ports master declares at other versions than a

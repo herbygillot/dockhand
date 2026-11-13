@@ -126,6 +126,14 @@ type Hooks interface {
 	Family(ctx context.Context, revision model.Revision, directory string) (macports.Snapshot, error)
 }
 
+// Reclaimer is Hooks that can remove, of a provider's environments
+// running, those a check left whose owner is gone, as cleanup removes them
+// (buildenv.Reclaimer): judge is the waiting driver's session, which only
+// reads. A check waiting for one of the Mac's VM slots asks it (#239).
+type Reclaimer interface {
+	Reclaim(ctx context.Context, judge *coord.Session, provider string, refs []string) ([]string, error)
+}
+
 // PortReader reads ports from a source tree: the ports a directory defines
 // on a platform, main port first, and the directory that defines a port by
 // name. MacPorts' own evaluator is the real one.

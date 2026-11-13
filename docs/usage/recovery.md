@@ -266,6 +266,12 @@ address routes to Tart's bridge ends early rather than after the full timeout.
 A VPN or firewall that routes Tart's 192.168.64.0/24 network elsewhere does the
 same, which `route -n get <address>` shows.
 
+A dockhand killed outright while it drove a Tart check leaves the clone
+running, since its `tart run` is in a process group of its own. The next check
+that waits for a slot removes it, saying so, and `dockhand clean` or the daily
+cleanup removes it where no check waits; one kept for `dockhand shell` stays
+until you clean it.
+
 Once the external cause is resolved, `retry check-42` repeats that capture. If
 you changed the files or need another environment, use a new check with explicit
 selections. The provider-specific setup commands, local-prefix behavior, and

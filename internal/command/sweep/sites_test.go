@@ -286,7 +286,7 @@ var owed = map[string]string{
 	"store.update@engine.(*Engine).Ready":               "#191: draft and ready, group B",
 	"store.update@engine.(*Engine).RecordReview":        "#129: the review scenario",
 	"store.update@engine.(*Engine).RefreshAdopted":      "#129: the adopt scenario, the author's push followed",
-	"store.update@engine.(*Engine).RemoveLeftovers":     "#193: what checks left, removed",
+	"store.update@engine.(*Engine).RemoveLeftovers":     "#193: what checks left, removed by clean, by cleanup, and by a check waiting for a Tart slot (#239), which owes killed between judging and removing, and killed after removing before counting again",
 	"store.update@engine.(*Engine).answeredCreate":      "#191: serve's opening charged or released, group C",
 	"store.update@engine.(*Engine).carryRename":         "#129: a branch renamed with Git",
 	"store.update@engine.(*Engine).checkOutAgain":       "#129: a worktree clean removed, checked out again",

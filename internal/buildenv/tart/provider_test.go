@@ -877,6 +877,8 @@ func TestLeftoversAreOnlyCheckClones(t *testing.T) {
 	}
 	require.Len(t, mac.events, 2, "nothing else was stopped or deleted")
 	require.Contains(t, mac.images, "dockhand-base-tahoe")
+	require.ErrorIs(t, p.RemoveLeftover(t.Context(), "dockhand-check-run-7-tahoe-1"), buildenv.ErrLeftoverGone, "already removed, as by another waiter")
+	require.Len(t, mac.events, 2)
 }
 
 // A canceled check stops, and its clone goes.
@@ -1263,4 +1265,78 @@ func TestShellEntersARunningChecksCloneAndLeavesItRunning(t *testing.T) {
 	require.False(t, mac.run.stopped)
 	_, err = p.Shell(t.Context(), buildenv.ShellJob{Ref: "harbor", Running: true, Environment: tahoe})
 	require.ErrorContains(t, err, "isn't a check's clone")
+}
+
+// reclaimingBuild is a fakeBuild whose dockhand can reclaim the VMs a
+// dead check left running (buildenv.Reclaimer).
+type reclaimingBuild struct {
+	*fakeBuild
+	asked   [][]string
+	answers []reclaimAnswer
+}
+
+type reclaimAnswer struct {
+	said []string
+	err  error
+}
+
+func (b *reclaimingBuild) Reclaim(_ context.Context, refs []string) ([]string, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.asked = append(b.asked, slices.Clone(refs))
+	if len(b.answers) == 0 {
+		return nil, nil
+	}
+	answer := b.answers[0]
+	if len(b.answers) > 1 {
+		b.answers = b.answers[1:]
+	}
+	return answer.said, answer.err
+}
+
+// A check waiting for a slot asks for the VMs running that are dockhand's
+// to be reclaimed, says what was, and counts again at once: a check killed
+// outright held its slot until the daily cleanup (#239).
+func TestAWaitReclaimsADeadChecksVM(t *testing.T) {
+	t.Parallel()
+	mac := newMac(guestprogram.Results{State: "finished"})
+	mac.running = []int{2, 1}
+	mac.whose, mac.theirs = []string{"dockhand-check-run-9-tahoe-1"}, 1
+	build := &reclaimingBuild{fakeBuild: &fakeBuild{}, answers: []reclaimAnswer{{said: []string{"removed Tart clone dockhand-check-run-9-tahoe-1, left by check-616: its check is no longer running"}}}}
+	require.NoError(t, testProvider(mac).Execute(t.Context(), tartJob(t, 1), build))
+	require.Equal(t, [][]string{{"dockhand-check-run-9-tahoe-1"}}, build.asked)
+	require.Contains(t, build.progress, "removed Tart clone dockhand-check-run-9-tahoe-1, left by check-616: its check is no longer running")
+	require.False(t, slices.ContainsFunc(build.progress, func(line string) bool { return strings.HasPrefix(line, "waiting for the Mac's VMs") }), "%q", build.progress)
+}
+
+// A wait asks again each time it counts, since an owner can die while it
+// waits, and says nothing more where nothing was reclaimed; one that
+// can't be reclaimed is said once and the wait goes on (#239).
+func TestAWaitAsksEachTimeItCountsAndNeverFailsOnIt(t *testing.T) {
+	t.Parallel()
+	mac := newMac(guestprogram.Results{State: "finished"})
+	mac.running = []int{2, 2, 2, 1}
+	mac.whose = []string{"dockhand-check-run-9-tahoe-1", "dockhand-check-run-10-tahoe-1"}
+	build := &reclaimingBuild{fakeBuild: &fakeBuild{}}
+	require.NoError(t, testProvider(mac).Execute(t.Context(), tartJob(t, 1), build))
+	require.Len(t, build.asked, 3)
+	waits := slices.DeleteFunc(slices.Clone(build.progress), func(line string) bool { return !strings.HasPrefix(line, "waiting for the Mac's VMs") })
+	require.Len(t, waits, 1, "%q", build.progress)
+
+	mac = newMac(guestprogram.Results{State: "finished"})
+	mac.running = []int{2, 2, 2, 1}
+	mac.whose = []string{"dockhand-check-run-9-tahoe-1"}
+	build = &reclaimingBuild{fakeBuild: &fakeBuild{}, answers: []reclaimAnswer{{err: errors.New("database is locked")}}}
+	require.NoError(t, testProvider(mac).Execute(t.Context(), tartJob(t, 1), build))
+	require.Len(t, build.asked, 3)
+	failed := slices.DeleteFunc(slices.Clone(build.progress), func(line string) bool { return !strings.Contains(line, "database is locked") })
+	require.Equal(t, []string{"couldn't look for a stopped check's VM to remove (database is locked); waiting for a slot as before"}, failed)
+
+	// None of the VMs running is dockhand's: nothing is asked.
+	mac = newMac(guestprogram.Results{State: "finished"})
+	mac.running = []int{2, 1}
+	mac.theirs = 2
+	build = &reclaimingBuild{fakeBuild: &fakeBuild{}}
+	require.NoError(t, testProvider(mac).Execute(t.Context(), tartJob(t, 1), build))
+	require.Empty(t, build.asked)
 }

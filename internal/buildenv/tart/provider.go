@@ -533,6 +533,12 @@ type failures struct {
 // one (buildenv.Detailer).
 func (f *failures) Detail(message string) { buildenv.Detail(f.Build, message) }
 
+// Reclaim passes a wait's asking on, where the build can reclaim
+// (buildenv.Reclaimer).
+func (f *failures) Reclaim(ctx context.Context, refs []string) ([]string, error) {
+	return buildenv.Reclaim(ctx, f.Build, refs)
+}
+
 func (f *failures) Record(report buildenv.TargetReport) error {
 	if report.Result.Outcome == model.OutcomeFailed {
 		f.failed = true
@@ -630,6 +636,15 @@ func (p *Provider) RemoveLeftover(ctx context.Context, ref string) error {
 	m, err := p.vms()
 	if err != nil {
 		return err
+	}
+	// One already gone was removed by another process, as the second of
+	// two checks waiting for a slot finds it (#239).
+	images, err := m.Images(ctx)
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(images, ref) {
+		return buildenv.ErrLeftoverGone
 	}
 	if err := m.Stop(ctx, ref); err != nil {
 		return err
@@ -922,8 +937,16 @@ func (p *Provider) Parallel() int { return 2 }
 
 // slot waits until the Mac has room for another VM: it runs two at most,
 // whoever started them. It says how many were running then.
+//
+// Each time it finds them full it asks for dockhand's VMs among them to be
+// reclaimed where a check left one whose owner is gone, as cleanup would
+// remove it (buildenv.Reclaimer), and counts again at once where one was:
+// a check killed outright held its slot until the daily cleanup (#239).
+// Asking again each time is the point, since an owner can die while the
+// wait goes on. One that can't be asked is said once, and the wait goes
+// on as it would have.
 func (p *Provider) slot(ctx context.Context, m machine, build buildenv.Build) (int, error) {
-	told := false
+	told, troubled := false, false
 	for {
 		running, err := m.Running(ctx)
 		if err != nil {
@@ -931,6 +954,21 @@ func (p *Provider) slot(ctx context.Context, m machine, build buildenv.Build) (i
 		}
 		if running < 2 {
 			return running, nil
+		}
+		if _, ok := build.(buildenv.Reclaimer); ok {
+			if ours, _, err := m.Whose(ctx); err == nil && len(ours) > 0 {
+				said, err := buildenv.Reclaim(ctx, build, ours)
+				for _, line := range said {
+					build.Progress(line)
+				}
+				if err != nil && ctx.Err() == nil && !troubled {
+					build.Progress(fmt.Sprintf("couldn't look for a stopped check's VM to remove (%v); waiting for a slot as before", err))
+					troubled = true
+				}
+				if len(said) > 0 {
+					continue
+				}
+			}
 		}
 		if !told {
 			build.Waiting(fmt.Sprintf("waiting for the Mac's VMs: %d are running, and macOS runs two at most%s", running, whoseWords(ctx, m, build)))

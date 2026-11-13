@@ -55,6 +55,9 @@ func (p *leavingProvider) Leftovers(context.Context) ([]buildenv.Leftover, error
 func (p *leavingProvider) RemoveLeftover(_ context.Context, ref string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if !slices.Contains(p.left, ref) {
+		return buildenv.ErrLeftoverGone
+	}
 	p.left = slices.DeleteFunc(p.left, func(left string) bool { return left == ref })
 	p.removed = append(p.removed, ref)
 	return nil

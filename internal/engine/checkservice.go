@@ -187,3 +187,9 @@ func (e *Engine) RunProviders(ctx context.Context, run model.Run) ([]string, err
 func (e *Engine) Remedy(unmet model.Unmet) string {
 	return e.checks().Remedy(unmet)
 }
+
+// Reclaim removes what a check left running in the provider's VMs refs
+// names, where its owner is gone (checks.Reclaimer, #239).
+func (h checkHooks) Reclaim(ctx context.Context, judge *coord.Session, provider string, refs []string) ([]string, error) {
+	return h.e.reclaim(ctx, judge, provider, refs)
+}

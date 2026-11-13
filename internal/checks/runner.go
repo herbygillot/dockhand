@@ -1332,6 +1332,19 @@ func (b *build) Detail(message string) {
 	b.d.emitAt(b.ctx, model.EventProgress, model.LevelVerbose, DescribeEnvironment(b.execution.Environment)+": "+message)
 }
 
+// Reclaim removes, of the VMs running that the provider named, those a
+// check left whose owner is gone, where the rest of dockhand can
+// (Reclaimer): a check waiting for a slot asks it each time it counts
+// again, so a check killed outright doesn't hold one until the daily
+// cleanup (#239).
+func (b *build) Reclaim(ctx context.Context, refs []string) ([]string, error) {
+	reclaimer, ok := b.d.c.Hooks.(Reclaimer)
+	if !ok {
+		return nil, nil
+	}
+	return reclaimer.Reclaim(ctx, b.d.session, b.execution.Environment.Provider, refs)
+}
+
 // Holding is the check whose execution runs in the VM a provider named
 // ref, among the running checks: a wait for the Mac's VMs names them.
 func (b *build) Holding(ref string) string {
