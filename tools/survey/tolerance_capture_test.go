@@ -3,6 +3,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -48,7 +50,11 @@ func TestToleranceCaptureReplaysWithoutItsTreeOrBase(t *testing.T) {
 	require.NoError(t, journal.Close())
 	journalData, err := os.ReadFile(database + ".jsonl")
 	require.NoError(t, err)
-	require.Contains(t, string(journalData), `"Tolerance":[{"Evaluation":1`)
+	var recorded Port
+	require.NoError(t, json.Unmarshal(bytes.Split(bytes.TrimSpace(journalData), []byte("\n"))[1], &recorded))
+	require.Len(t, recorded.Tolerance, 1)
+	require.Equal(t, int64(1), recorded.Tolerance[0].Evaluation)
+	require.True(t, recorded.Tolerance[0].Complete)
 	require.NoError(t, os.Rename(root, root+"-absent"))
 	require.NoError(t, os.Rename(base, base+"-absent"))
 	replay, dir, err := c.materialize(t.TempDir())

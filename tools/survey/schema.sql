@@ -209,6 +209,7 @@ CREATE TABLE tolerance_context (
  evaluation_id INTEGER PRIMARY KEY REFERENCES evaluation(id),
  on_verdict INTEGER NOT NULL, off_verdict INTEGER NOT NULL,
  on_left INTEGER NOT NULL, off_left INTEGER NOT NULL, parity INTEGER NOT NULL,
+ complete INTEGER NOT NULL,
  pair TEXT NOT NULL
 );
 CREATE TABLE tolerance_access (

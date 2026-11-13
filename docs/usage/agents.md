@@ -283,3 +283,29 @@ field names each context's default and follower-withheld verdicts; it is a
 measurement, not a change to the product's assessment. Lossless observation
 captures and their source/Base files are checksummed and compressed in the
 survey record, so later analysis need not read the original installation.
+
+## Survey-only follower measurement
+
+From a source checkout, build the separate developer tool with:
+
+```sh
+go build -tags surveymeasure -o survey ./tools/survey
+./survey -tree "$TREE" -prefix "$PREFIX" -sample "$PORTS" \
+  -index-cache "$INDEX_CACHE" -db "$RECORD" -measure-follower
+./survey -replay-tolerance "$RECORD"
+```
+
+`-measure-follower` requires `-db`, current mode and recording enabled. It
+compares the same complete observation with the ordinary follower and with
+follower approval withheld, and stops on a default-policy parity mismatch.
+The ordinary assessment remains the journal's outcome. `Tolerance` entries
+record both verdicts, whether each modelled context is left, and parity.
+Replay opens the record read-only and prints JSON counts and compressed byte
+totals. It uses captured source and Base bytes and runs no Tcl evaluations.
+Only a tagged survey build supports either flag; the Dockhand CLI cannot
+select the off policy. Resume requires the same binary, Base sources and
+selection. Use a new record after rebuilding the tool.
+
+In `Tolerance`, `On` and `Off` are true when inconclusive; `OnLeft` and
+`OffLeft` respect the native-context exception. `Complete: false` identifies
+an incomplete evaluation, not a classifier verdict or parity mismatch.

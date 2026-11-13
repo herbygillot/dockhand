@@ -36,22 +36,23 @@ func (l *list) Set(v string) error { *l = append(*l, v); return nil }
 // run is how a survey was made and what it cost, written beside its
 // journal as <journal>.run.json.
 type run struct {
-	Tree          string    `json:"tree"`
-	Commit        string    `json:"commit"`
-	Tclsh         string    `json:"tclsh"`
-	Portindex     string    `json:"portindex"`
-	Base          string    `json:"base"`
-	Parallel      int       `json:"parallel"`
-	Started       time.Time `json:"started"`
-	Finished      time.Time `json:"finished"`
-	WallSeconds   float64   `json:"wall_seconds"`
-	UserSeconds   float64   `json:"user_seconds"`
-	SystemSeconds float64   `json:"system_seconds"`
-	Cores         float64   `json:"cores"`
-	LoadAtStart   string    `json:"load_at_start"`
-	Assessed      int       `json:"assessed"`
-	Skipped       int       `json:"skipped"`
-	Outcomes      any       `json:"outcomes"`
+	Measurement   *measurementConfig `json:"measurement,omitempty"`
+	Tree          string             `json:"tree"`
+	Commit        string             `json:"commit"`
+	Tclsh         string             `json:"tclsh"`
+	Portindex     string             `json:"portindex"`
+	Base          string             `json:"base"`
+	Parallel      int                `json:"parallel"`
+	Started       time.Time          `json:"started"`
+	Finished      time.Time          `json:"finished"`
+	WallSeconds   float64            `json:"wall_seconds"`
+	UserSeconds   float64            `json:"user_seconds"`
+	SystemSeconds float64            `json:"system_seconds"`
+	Cores         float64            `json:"cores"`
+	LoadAtStart   string             `json:"load_at_start"`
+	Assessed      int                `json:"assessed"`
+	Skipped       int                `json:"skipped"`
+	Outcomes      any                `json:"outcomes"`
 	// Settings are what decide what the run measured, which -compare
 	// holds two runs to (#222).
 	Settings *settings `json:"settings,omitempty"`
@@ -90,7 +91,24 @@ func survey() (err error) {
 	flag.Var(&maintainers, "maintainer", "an exact maintainer to select (repeatable)")
 	flag.Var(&notMaintainers, "not-maintainer", "a maintainer to leave out (repeatable)")
 	flag.Var(&categories, "category", "an exact category to select (repeatable)")
+	measure := flag.Bool("measure-follower", false, "record paired tolerance rules and lossless replay captures (requires surveymeasure build)")
+	replay := flag.String("replay-tolerance", "", "replay tolerance captures from a record, read-only, without evaluating ports")
 	flag.Parse()
+	if *replay != "" {
+		if !measurementAvailable() {
+			return errors.New("replay requires a survey built with -tags surveymeasure")
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		totals, err := replayTolerance(ctx, *replay)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(totals)
+	}
+	if *measure && (!measurementAvailable() || *dbPath == "" || !*recording || *mode != "current") {
+		return errors.New("-measure-follower requires -tags surveymeasure, -db, -recording=true and -mode=current")
+	}
 
 	if *compare {
 		if flag.NArg() != 2 {
@@ -204,6 +222,7 @@ func survey() (err error) {
 		Index:           &portindex.Stager{Repo: repo, Config: index},
 		DependencyTools: depblock.Tools{Go2Port: *go2port, Cargo2Port: *cargo2port},
 		Observe:         *dbPath != "",
+		MeasureFollower: *measure,
 		ObserveOnly:     *mode != "current",
 	}
 	Concurrency = max(*parallel, 1)
@@ -213,6 +232,20 @@ func survey() (err error) {
 			return err
 		}
 	}
+	var measurement *measurementConfig
+	if *measure {
+		config, err := measurementIdentity(selectionOf(request.Selection), filepath.Dir(filepath.Dir(tclsh)))
+		if err != nil {
+			return err
+		}
+		measurement = &config
+		// An old standalone journal cannot be mixed with a new measurement DB.
+		js, je := os.Stat(*journalPath)
+		_, de := os.Stat(*dbPath)
+		if je == nil && js.Size() > 0 && os.IsNotExist(de) {
+			return errors.New("measurement needs a matching record for an existing journal")
+		}
+	}
 	var record *Record
 	if *dbPath != "" {
 		host, err := native.NativePlatform(ctx)
@@ -220,6 +253,9 @@ func survey() (err error) {
 			return err
 		}
 		info := RunInfo{Tree: root, Tclsh: tclsh, Portindex: portindexBin, Base: baseVersion(tclsh), Host: host.OS + " " + host.Version + " " + host.Architecture, Load: loadAverage(), Parallel: Concurrency}
+		if measurement != nil {
+			info.Measurement = measurement.key()
+		}
 		if record, err = OpenRecord(ctx, *dbPath, *mode, *recording, info, repo.Root, *gitBin, journal); err != nil {
 			if journal != nil {
 				journal.Close()
@@ -251,7 +287,7 @@ func survey() (err error) {
 		defer func() { err = errors.Join(err, journal.Close()) }()
 	}
 
-	made := run{Tree: root, Tclsh: tclsh, Portindex: portindexBin, Base: baseVersion(tclsh), Parallel: Concurrency, Started: time.Now(), LoadAtStart: loadAverage()}
+	made := run{Measurement: measurement, Tree: root, Tclsh: tclsh, Portindex: portindexBin, Base: baseVersion(tclsh), Parallel: Concurrency, Started: time.Now(), LoadAtStart: loadAverage()}
 	fmt.Fprintf(os.Stderr, "Surveying %s with %s (%s), %d Portfiles at a time; load %s\n", root, tclsh, made.Base, Concurrency, made.LoadAtStart)
 	result, err := service.Assess(ctx, request)
 	if err != nil {

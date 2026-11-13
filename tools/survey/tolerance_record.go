@@ -7,10 +7,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/model"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
+	"strings"
 )
 
 func compress(data []byte) ([]byte, error) {
@@ -51,7 +54,7 @@ func (r *Record) tolerance(tx *sql.Tx, id int64, o observed) error {
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec(`insert into tolerance_context(evaluation_id,on_verdict,off_verdict,on_left,off_left,parity,pair) values (?,?,?,?,?,?,?)`, id, c.Pair.On.Inconclusive, c.Pair.Off.Inconclusive, c.Pair.OnLeft, c.Pair.OffLeft, c.Pair.Parity, string(pairJSON)); err != nil {
+	if _, err = tx.Exec(`insert into tolerance_context(evaluation_id,on_verdict,off_verdict,on_left,off_left,parity,complete,pair) values (?,?,?,?,?,?,?,?)`, id, c.Pair.On.Inconclusive, c.Pair.Off.Inconclusive, c.Pair.OnLeft, c.Pair.OffLeft, c.Pair.Parity, c.Pair.Complete, string(pairJSON)); err != nil {
 		return err
 	}
 	if len(c.Pair.On.Accesses) != len(c.Pair.Off.Accesses) {
@@ -95,8 +98,27 @@ func (r *Record) tolerance(tx *sql.Tx, id int64, o observed) error {
 	return err
 }
 
+type toleranceMention struct {
+	File string
+	Line int
+	Text string
+	Hash string
+}
+type toleranceChange struct {
+	Evaluation               int64
+	Port                     string
+	Platform                 model.Platform
+	Modeled                  bool
+	On, Off, OnLeft, OffLeft bool
+	Mentions                 []toleranceMention
+}
+
 type replayTotals struct {
+	Ports, FlippingPorts int
+	Changes              []toleranceChange `json:",omitempty"`
+
 	Contexts, Parity, Flips, OnLeft, OffLeft int
+	Incomplete                               int
 	CaptureBytes, FileBytes                  int64
 }
 
@@ -120,6 +142,7 @@ func replayTolerance(ctx context.Context, file string) (replayTotals, error) {
 	if err = db.QueryRowContext(ctx, "select coalesce(sum(length(payload)),0) from tolerance_file").Scan(&total.FileBytes); err != nil {
 		return total, err
 	}
+	seen, flipping := map[string]bool{}, map[string]bool{}
 	var last int64
 	for {
 		if err = ctx.Err(); err != nil {
@@ -148,6 +171,7 @@ func replayTolerance(ctx context.Context, file string) (replayTotals, error) {
 		if err = json.Unmarshal(raw, &c); err != nil {
 			return total, err
 		}
+		seen[c.Target.Name] = true
 		for role, entry := range c.Files {
 			var data []byte
 			if err = db.QueryRowContext(ctx, "select payload from tolerance_file where hash=?", entry.Hash).Scan(&data); err != nil {
@@ -158,6 +182,22 @@ func replayTolerance(ctx context.Context, file string) (replayTotals, error) {
 				return total, err
 			}
 			c.Files[role] = entry
+		}
+		if !c.Pair.Complete {
+			for role, entry := range c.Files {
+				if digest(entry.Data) != entry.Hash {
+					return total, fmt.Errorf("capture file checksum mismatch: %s", role)
+				}
+			}
+			total.Contexts++
+			total.Incomplete++
+			if c.Pair.OnLeft {
+				total.OnLeft++
+			}
+			if c.Pair.OffLeft {
+				total.OffLeft++
+			}
+			continue
 		}
 		dir, err := os.MkdirTemp("", "dockhand-tolerance-replay-")
 		if err != nil {
@@ -196,6 +236,8 @@ func replayTolerance(ctx context.Context, file string) (replayTotals, error) {
 		}
 		if c.Pair.On.Inconclusive != c.Pair.Off.Inconclusive {
 			total.Flips++
+			flipping[c.Target.Name] = true
+			total.Changes = append(total.Changes, toleranceChange{Evaluation: id, Port: c.Target.Name, Platform: c.Platform, Modeled: c.Modeled, On: c.Pair.On.Inconclusive, Off: c.Pair.Off.Inconclusive, OnLeft: c.Pair.OnLeft, OffLeft: c.Pair.OffLeft, Mentions: c.mentions()})
 		}
 		if c.Pair.OnLeft {
 			total.OnLeft++
@@ -207,5 +249,49 @@ func replayTolerance(ctx context.Context, file string) (replayTotals, error) {
 	if total.Contexts == 0 {
 		return total, fmt.Errorf("record contains no tolerance captures")
 	}
+	total.Ports, total.FlippingPorts = len(seen), len(flipping)
 	return total, nil
+}
+
+// mentions supplies source witnesses for a person's grouping, not a proof
+// that every line is part of the accepted flow. Base files are excluded.
+func (c *toleranceCapture) mentions() []toleranceMention {
+	names := map[string]bool{}
+	for _, a := range c.Pair.On.Accesses {
+		for _, f := range a.Followers {
+			if f.Benign {
+				names[f.Option] = true
+				for _, n := range f.Watched {
+					names[n] = true
+				}
+			}
+		}
+	}
+	var files []string
+	for name := range c.Files {
+		if strings.HasPrefix(name, "source/") {
+			files = append(files, name)
+		}
+	}
+	sort.Strings(files)
+	var found []toleranceMention
+	for _, name := range files {
+		file := c.Files[name]
+		for i, line := range strings.Split(string(file.Data), "\n") {
+			text := strings.TrimSpace(line)
+			if text == "" || strings.HasPrefix(text, "#") {
+				continue
+			}
+			for watched := range names {
+				if strings.Contains(text, watched) {
+					found = append(found, toleranceMention{name, i + 1, text, file.Hash})
+					break
+				}
+			}
+			if len(found) >= 12 {
+				return found
+			}
+		}
+	}
+	return found
 }

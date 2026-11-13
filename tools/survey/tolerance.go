@@ -18,12 +18,14 @@ import (
 const toleranceVersion = 1
 
 type tolerancePair struct {
+	Complete        bool
 	On, Off         observe.Explanation
 	OnLeft, OffLeft bool
 	Parity          bool
 }
 
 type toleranceSummary struct {
+	Complete        bool
 	Evaluation      int64
 	Platform        model.Platform
 	On, Off         bool
@@ -60,7 +62,7 @@ func captureTolerance(ctx context.Context, target model.Target, platform model.P
 	if err != nil {
 		return nil, err
 	}
-	c := &toleranceCapture{Version: toleranceVersion, Target: target, Platform: platform, Modeled: modeled, Unanswered: unanswered, Contents: string(contents), Root: root, Base: port.BaseLibrary, Observation: port, Files: map[string]capturedFile{}, Aliases: map[string]string{}, Pair: tolerancePair{On: on, Off: off, OnLeft: modeled && (unanswered != "" || on.Inconclusive), OffLeft: modeled && (unanswered != "" || off.Inconclusive), Parity: true}}
+	c := &toleranceCapture{Version: toleranceVersion, Target: target, Platform: platform, Modeled: modeled, Unanswered: unanswered, Contents: string(contents), Root: root, Base: port.BaseLibrary, Observation: port, Files: map[string]capturedFile{}, Aliases: map[string]string{}, Pair: tolerancePair{Complete: unanswered == "", On: on, Off: off, OnLeft: modeled && (unanswered != "" || on.Inconclusive), OffLeft: modeled && (unanswered != "" || off.Inconclusive), Parity: unanswered == ""}}
 	alias := func(original, role string) {
 		if original == "" {
 			return

@@ -304,7 +304,7 @@ func (r *Record) Record(port Port) error {
 			}
 			if o.Capture != nil {
 				c := o.Capture
-				port.Tolerance = append(port.Tolerance, toleranceSummary{Evaluation: c.Evaluation, Platform: c.Platform, On: c.Pair.On.Inconclusive, Off: c.Pair.Off.Inconclusive, OnLeft: c.Pair.OnLeft, OffLeft: c.Pair.OffLeft, Parity: c.Pair.Parity})
+				port.Tolerance = append(port.Tolerance, toleranceSummary{Complete: c.Pair.Complete, Evaluation: c.Evaluation, Platform: c.Platform, On: c.Pair.On.Inconclusive, Off: c.Pair.Off.Inconclusive, OnLeft: c.Pair.OnLeft, OffLeft: c.Pair.OffLeft, Parity: c.Pair.Parity})
 			}
 		}
 		return nil

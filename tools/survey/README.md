@@ -135,3 +135,18 @@ once by content hash. Captures include complete declaration values and frames,
 including anonymous frames; the older `host_access` table remains a compact,
 lossy read summary. Original tree and Base paths are remapped to captured files
 for replay. A record made with different measurement settings cannot be resumed.
+
+Build with `go build -tags surveymeasure -o survey ./tools/survey` and pass
+`-measure-follower -db <new-record>` to collect both policies during one normal
+run. This requires current mode and recording enabled. The tagged binary checks
+every measured complete observation against the frozen a0298da0 tolerance
+routine and stops on a mismatch. It writes lossless captures automatically.
+`survey -replay-tolerance <record>` opens that database with
+`mode=ro&immutable=1`, validates checksums and reports JSON counts without Tcl,
+the original tree, or the original Base. The record pins the exact binary,
+Base source digest and selection; a different configuration cannot resume it.
+
+`Tolerance` journal entries are context measurements, not counterfactual port
+outcomes. A newly left context need not make a Portfile uncovered. Preserve the
+ordinary assessment and do not infer whole-survey outcome or guard changes by
+marking every flipping port unknown.

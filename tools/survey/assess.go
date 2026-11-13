@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/model"
+	"os"
 	"path"
+	"path/filepath"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -60,6 +62,7 @@ type Service struct {
 	// assessment observes it in, for the record; ObserveOnly does that
 	// alone, without assessing it.
 	Observe, ObserveOnly bool
+	MeasureFollower      bool
 }
 
 func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err error) {
@@ -72,6 +75,8 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 	if s == nil || s.Repo == nil || s.Ports == nil {
 		return Result{}, fmt.Errorf("assess: Git and MacPorts are required")
 	}
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 	// A survey evaluates MacPorts' own tree at a revision (#162).
 	ctx = workspace.MacPorts(ctx)
 	platform, err := s.Ports.NativePlatform(ctx)
@@ -157,6 +162,10 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 				if failures[i] == nil && journal != nil {
 					failures[i] = journal.Record(assessed[i])
 				}
+				if failures[i] != nil {
+					cancel(failures[i])
+					return
+				}
 				if n := finished.Add(1); journal != nil && n%1000 == 0 {
 					progress.Report(ctx, "Assessed %d of %d ports", n, total)
 				}
@@ -164,6 +173,9 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 		}()
 	}
 	wait.Wait()
+	if cause := context.Cause(ctx); cause != nil {
+		return result, cause
+	}
 	for _, err := range failures {
 		if err != nil {
 			return result, err
@@ -201,11 +213,44 @@ func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files
 	if problem == nil && s.Observe {
 		// Observed first, so the assessment's own observations of the
 		// committed Portfile are these.
-		err := probe.Observations(ctx, func(context model.Platform, observation macports.Observation, err error) {
-			name := observation.Snapshot.Target.Name
-			item.observed = append(item.observed, observed{Platform: context, Modeled: observation.Modeled, Root: observation.Snapshot.Root,
-				Info: observation.Snapshot.Ports[name], Observation: observation.Ports[name], Err: err})
+		var measurementErr error
+		err := probe.Observations(ctx, func(profile model.Platform, observation macports.Observation, observedErr error) {
+			target := observation.Snapshot.Target
+			if target.Name == "" {
+				target = model.Target{Name: probe.Port().Name, Portfile: selected.Portfile, Subport: selected.Selection.Subport, Variants: selected.Selection.Variants}
+			}
+			name := target.Name
+			root := observation.Snapshot.Root
+			if root == "" {
+				root = projection.Root()
+			}
+			modeled := observation.Modeled
+			if observedErr != nil && profile != platform {
+				modeled = true
+			}
+			entry := observed{Platform: profile, Modeled: modeled, Root: root, Info: observation.Snapshot.Ports[name], Observation: observation.Ports[name], Err: observedErr}
+			if s.MeasureFollower && measurementErr == nil {
+				contents, readErr := os.ReadFile(filepath.Join(root, target.Portfile))
+				if readErr != nil {
+					measurementErr = readErr
+					return
+				}
+				entry.Capture, measurementErr = captureTolerance(ctx, target, profile, modeled, observation.Unanswered, entry.Observation, contents, root)
+				if entry.Capture != nil && observedErr != nil {
+					entry.Capture.Pair.Complete = false
+					entry.Capture.Pair.Parity = false
+					entry.Capture.Error = observedErr.Error()
+					entry.Capture.ErrorCode = portedit.Problem("evaluation", observedErr).Code
+				}
+			}
+			if measurementErr != nil {
+				measurementErr = fmt.Errorf("%s on %s %s: %w", name, profile.Version, profile.Architecture, measurementErr)
+			}
+			item.observed = append(item.observed, entry)
 		})
+		if measurementErr != nil {
+			return item, measurementErr
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				return Port{}, ctx.Err()
