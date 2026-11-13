@@ -29,22 +29,26 @@ const hangupDir = "DOCKHAND_TEST_HANGUP_DIR"
 // command unwinds to its end, where the process ended on the spot and left
 // the build running, as it leaves a Tart check's VM and clone (#240). A
 // terminal gone before the hangup, its output a pipe no one reads, doesn't
-// end the unwind either.
+// end the unwind either. A dockhand started with hangups ignored, as
+// nohup starts it, keeps them ignored and its check runs on to its end.
 func TestAHangupUnwindsACheck(t *testing.T) {
 	t.Parallel()
 	if dir := os.Getenv(hangupDir); dir != "" {
 		hungUpCheck(t, dir)
 		return
 	}
-	for _, gone := range []bool{false, true} {
-		name := "terminal"
-		if gone {
-			name = "terminal gone"
-		}
-		t.Run(name, func(t *testing.T) {
+	for _, c := range []struct {
+		name        string
+		gone, nohup bool
+	}{{"terminal", false, false}, {"terminal gone", true, false}, {"nohup", false, true}} {
+		gone := c.gone
+		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
 			child := exec.Command(os.Args[0], "-test.run", "^TestAHangupUnwindsACheck$", "-test.count=1")
+			if c.nohup {
+				child = exec.Command("/usr/bin/nohup", child.Args...)
+			}
 			child.Env = append(os.Environ(), hangupDir+"="+dir)
 			var output bytes.Buffer
 			var reader, writer *os.File
@@ -75,6 +79,17 @@ func TestAHangupUnwindsACheck(t *testing.T) {
 				require.NoError(t, reader.Close(), "the terminal is gone")
 			}
 			require.NoError(t, child.Process.Signal(syscall.SIGHUP))
+			if c.nohup {
+				// A hangup dockhand heeded would have cancelled the check
+				// by now; one it ignores leaves the build to finish.
+				time.Sleep(500 * time.Millisecond)
+				select {
+				case err := <-ended:
+					t.Fatalf("dockhand under nohup ended on the hangup: %v: %s", err, output.String())
+				default:
+				}
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "release"), nil, 0o600))
+			}
 
 			var err error
 			select {
@@ -90,6 +105,11 @@ func TestAHangupUnwindsACheck(t *testing.T) {
 			require.NoError(t, err, output.String())
 			outcome, readErr := os.ReadFile(filepath.Join(dir, "outcome"))
 			require.NoError(t, readErr, "the command unwound to its end: %s", output.String())
+			if c.nohup {
+				require.Equal(t, "no error", string(outcome), output.String())
+				require.Contains(t, output.String(), "\nPassed.\n", "the check ran to its end")
+				return
+			}
 			require.Equal(t, "check-1 stopped; finished results are kept", string(outcome))
 			if !gone {
 				require.Contains(t, output.String(), "  jq  ! not run\n", "the unwind says what it left")
@@ -102,11 +122,18 @@ func TestAHangupUnwindsACheck(t *testing.T) {
 }
 
 // hungUpCheck is the test binary as dockhand running a check in the
-// foreground, its build waiting until it's stopped: its context is the
-// process's, as main's is, and what the command returned is kept in dir.
+// foreground, its build waiting until it's stopped or the test releases
+// it, when it passes: its context is the process's, as main's is, and what
+// the command returned is kept in dir.
 func hungUpCheck(t *testing.T, dir string) {
 	w := cmdtest.CheckedBranch(t)
-	testsupport.WriteExecutable(t, filepath.Join(w.Home, "bin", "build-ports"), "#!/bin/sh\necho $$ > '"+filepath.Join(dir, "build.pid")+"'\nexec sleep 300\n")
+	testsupport.WriteExecutable(t, filepath.Join(w.Home, "bin", "build-ports"), `#!/bin/sh
+echo $$ > '`+filepath.Join(dir, "build.pid")+`'
+while [ ! -f '`+filepath.Join(dir, "release")+`' ]; do sleep 0.1; done
+cat > "$(dirname "$1")/result.json" <<JSON
+{"version": 1, "targets": [{"id": "jq", "outcome": "passed"}]}
+JSON
+`)
 	ctx, stop := term.UntilStopped(context.Background())
 	defer stop()
 	err := cmdtest.RunFor(t, ctx, []string{"check"}, term.Streams{In: strings.NewReader(""), Out: os.Stdout, Err: os.Stderr})

@@ -16,7 +16,10 @@ var StopSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP}
 
 // UntilStopped is parent until one of StopSignals arrives, as
 // signal.NotifyContext makes it, and the function to call once the command
-// is done. Once stopped, writes to standard output or error no longer end
+// is done. A stop signal the process started with ignored stays ignored:
+// nohup starts dockhand with hangups ignored so that it outlives its
+// terminal, and a non-interactive shell starts a background job with
+// interrupts ignored, where asking to be told of one would heed it. Once stopped, writes to standard output or error no longer end
 // the process: the terminal or pipe they went to may be gone with the
 // hangup, and the unwind is worth more than its words, so a write there
 // fails as any write does, with its error, which teardown doesn't wait on,
@@ -26,7 +29,13 @@ var StopSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP}
 func UntilStopped(parent context.Context) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(parent)
 	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, StopSignals...)
+	var heeded []os.Signal
+	for _, stop := range StopSignals {
+		if !signal.Ignored(stop) {
+			heeded = append(heeded, stop)
+		}
+	}
+	signal.Notify(signals, heeded...)
 	go func() {
 		select {
 		case <-signals:
