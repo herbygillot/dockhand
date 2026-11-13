@@ -93,7 +93,10 @@ func (p assessed) guards() (guards []string, refused bool) {
 // compareJournals reports how a survey differs from its baseline over the
 // ports both hold: outcomes and their moves, regressions, findings,
 // fetch guards, Portfiles fully covered, and where ports stop.
-func compareJournals(out io.Writer, basePath, newPath string, top int) error {
+func compareJournals(out io.Writer, basePath, newPath string, top int, unchecked bool) error {
+	if err := alike(out, basePath, newPath, unchecked); err != nil {
+		return err
+	}
 	base, baseCommit, err := loadJournal(basePath)
 	if err != nil {
 		return err

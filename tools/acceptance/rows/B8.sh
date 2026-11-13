@@ -12,7 +12,9 @@ act() {
 		[ -n "$url" ] || continue
 		dh_json create "$url" --new || continue
 		name=$(jq -r '.result.branch.name // empty' "$DH_LAST_JSON")
-		dh check -b "$name" || :
+		# --fresh: an earlier run's check of the same change on the same
+		# master would be reused, and nothing built (#227).
+		dh check -b "$name" --fresh || :
 		# submit previews commits, so the new port is tidied first, as B4
 		# tidies (the rc6 full stage).
 		dh tidy -b "$name" -y || :

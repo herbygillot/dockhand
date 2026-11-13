@@ -22,6 +22,13 @@ check() {
 			;;
 		esac
 	fi
+	# Each result says what made it: the harness's commit and the binary
+	# the row ran (#230).
+	if ! jq -e '.harness_commit and .binary.path' "$state/results/selftest/$row.json" >/dev/null; then
+		echo "selftest: $row's result doesn't record its harness and binary"
+		fail=1
+		return
+	fi
 	# Only the invariant the row breaks is broken.
 	local others
 	others=$(jq -r --arg h "$harm" '.harm | to_entries[] | select(.key != $h and (.value | startswith("broken"))) | .key + ": " + .value' "$state/results/selftest/$row.json")
@@ -32,13 +39,14 @@ check() {
 	fi
 	echo "selftest: $row $got${harm:+ ($harm)}: $(jq -r '[.harm | to_entries[] | .key + " " + (.value | split(":")[0])] | join(", ")' "$state/results/selftest/$row.json")"
 }
-for spec in ok:pass h1allowed:pass h2allowed:pass h1:blocker:H1 h2:blocker:H2 h2upstream:blocker:H2 h3:blocker:H3 h4:blocker:H4 h4present:pass h4added:blocker:H4 h5:blocker:H5 h6:blocker:H6 h6closed:pass h6cleaned:pass h6otherbranch:blocker:H6 h6wrapped:blocker:H6 h7:blocker:H7 h7teardown:blocker:H7 h7cut:not_run h7stopped:fail h8:blocker:H8 h9:blocker:H9; do
+for spec in ok:pass h1allowed:pass h2allowed:pass h1:blocker:H1 h2:blocker:H2 h2upstream:blocker:H2 h3:blocker:H3 h4:blocker:H4 h4present:pass h4added:blocker:H4 h5:blocker:H5 h6:blocker:H6 h6closed:pass h6cleaned:pass h6otherbranch:blocker:H6 h6wrapped:blocker:H6 h7:blocker:H7 h7teardown:blocker:H7 h7handoff:pass h7cut:not_run h7stopped:fail h8:blocker:H8 h9:blocker:H9 exercised:pass unexercised:not_exercised h2unread:blocked~_unobserved; do
 	row=${spec%%:*}
 	rest=${spec#*:}
 	want=${rest%%:*}
 	harm=""
 	[ "$rest" = "$want" ] || harm=${rest#*:}
 	want=${want//_/ }
+	want=${want//\~/:}
 	tmp=$(mktemp -d "${TMPDIR:-/tmp}/dockhand-selftest.XXXXXX")
 	mkdir -p "$tmp/state" "$tmp/fake" "$tmp/home/.dockhand"
 	git init -q -b master "$tmp/clone"
@@ -53,7 +61,7 @@ for spec in ok:pass h1allowed:pass h2allowed:pass h1:blocker:H1 h2:blocker:H2 h2
 		export ACCEPT_STATE="$tmp/state" ACCEPT_WATCH="$tmp/clone" ACCEPT_UPSTREAM="upstream" ACCEPT_RUN_DIR="$tmp/clone"
 		export SELFTEST_CLONE="$tmp/clone" FAKE_DH_STATE="$tmp/fake" DH_BIN="$here/selftest/bin/dockhand"
 		export DOCKHAND_DB="$tmp/state/db" DOCKHAND_CONFIG="$tmp/state/config.toml" MACPORTS_TREE="$tmp/state/clone"
-		export DOCKHAND_UPSTREAM="$tmp/state/upstream.git" DOCKHAND_INDEX_CACHE="$tmp/state/index" DOCKHAND_READING_CACHE="$tmp/state/readings" DOCKHAND_GITHUB_CACHE="$tmp/state/github"
+		export DOCKHAND_UPSTREAM="$tmp/state/upstream.git" DOCKHAND_INDEX_CACHE="$tmp/state/index" DOCKHAND_READING_CACHE="$tmp/state/readings" DOCKHAND_GITHUB_CACHE="$tmp/state/github" DOCKHAND_ARCHIVE_CACHE="$tmp/state/archive-cache" DOCKHAND_BUILD_HISTORY_CACHE="$tmp/state/build-history"
 		export DOCKHAND_TART_HOME="$tmp/state/tart/dockhand" DOCKHAND_SSH_DIR="$tmp/state/tart/ssh" TART_HOME="$tmp/state/tart/tart"
 		export SELFTEST_HOME="$tmp/home" ACCEPT_HOME_DIRS="$tmp/home/.dockhand $tmp/home/.tart"
 		export PATH="$here/selftest/bin:$PATH"
@@ -63,6 +71,138 @@ for spec in ok:pass h1allowed:pass h2allowed:pass h1:blocker:H1 h2:blocker:H2 h2
 	check "$row" "$want" "$harm" "$tmp/state"
 	rm -rf "$tmp"
 done
+# The host's preflight (#226): a host whose tart list hangs blocks a row
+# before it runs, and a row that fails once the host turned bad during it
+# is the host's, each on the rerun list, neither a fail.
+host_case() {
+	local row=$1 before=$2 want=$3 got
+	tmp=$(mktemp -d "${TMPDIR:-/tmp}/dockhand-selftest.XXXXXX")
+	mkdir -p "$tmp/state/tart/dockhand" "$tmp/fake" "$tmp/home/.dockhand"
+	git init -q -b master "$tmp/clone"
+	git -C "$tmp/clone" -c user.name=t -c user.email=t@example.org commit -q --allow-empty -m init
+	[ "$before" = hangs ] && : >"$tmp/fake/tart-hangs"
+	(
+		export ACCEPT_STATE="$tmp/state" ACCEPT_WATCH="$tmp/clone" ACCEPT_UPSTREAM="" ACCEPT_RUN_DIR="$tmp/clone" ACCEPT_TART_WAIT=2
+		export SELFTEST_CLONE="$tmp/clone" FAKE_DH_STATE="$tmp/fake" DH_BIN="$here/selftest/bin/dockhand"
+		export DOCKHAND_DB="$tmp/state/db" DOCKHAND_CONFIG="$tmp/state/config.toml" MACPORTS_TREE="$tmp/state/clone"
+		export DOCKHAND_UPSTREAM="$tmp/state/upstream.git" DOCKHAND_INDEX_CACHE="$tmp/state/index" DOCKHAND_READING_CACHE="$tmp/state/readings" DOCKHAND_GITHUB_CACHE="$tmp/state/github" DOCKHAND_ARCHIVE_CACHE="$tmp/state/archive-cache" DOCKHAND_BUILD_HISTORY_CACHE="$tmp/state/build-history"
+		export DOCKHAND_TART_HOME="$tmp/state/tart/dockhand" DOCKHAND_SSH_DIR="$tmp/state/tart/ssh" TART_HOME="$tmp/state/tart/tart"
+		export SELFTEST_HOME="$tmp/home" ACCEPT_HOME_DIRS="$tmp/home/.dockhand"
+		export PATH="$here/selftest/bin:$PATH"
+		unset ACCEPT_GH_LOGIN ACCEPT_SECRET_DIRS
+		"$here/run.sh" --stage quick --candidate selftest --rows "$row" --row-dir "$here/selftest/rows" >/dev/null || :
+	)
+	got=$(jq -r '.result + ": " + .why' "$tmp/state/results/selftest/$row.json" 2>/dev/null || echo "no result")
+	if [[ "$got" == "$want"* ]] && grep -qx "$row" "$tmp/state/results/selftest/rerun.txt"; then
+		echo "selftest: $row with the host's tart $before gave $got"
+	else
+		echo "selftest: $row with the host's tart $before gave $got, not $want..., or isn't on the rerun list"
+		fail=1
+	fi
+	rm -rf "$tmp"
+}
+host_case ok hangs "blocked: host: tart list in "
+host_case hostbad answering "blocked: host: the host turned bad during the row: tart list in "
+
+# A7's and A8's candidate checks, which no unattended run reaches (#234):
+# each passes when dockhand --version names the candidate, with or without
+# its v and with no port revision asked, and fails on a newer build left
+# in the overlay; A7's last checkpoint says to answer done when there's
+# nothing to put back.
+candidate_case() {
+	local row=$1 version=$2 want=$3 got
+	tmp=$(mktemp -d "${TMPDIR:-/tmp}/dockhand-selftest.XXXXXX")
+	mkdir -p "$tmp/row"
+	printf '#!/bin/sh\necho "dockhand %s"\n' "$version" >"$tmp/dockhand"
+	chmod +x "$tmp/dockhand"
+	(
+		export ACCEPT_STATE="$tmp" ACCEPT_STAGE=full ACCEPT_DRY=0 ROW_DIR="$tmp/row" ROW_ID=$row ROW_LIB="$here/lib"
+		export ACCEPT_CANDIDATE=v0.8.0-rc4 DH_BIN="$tmp/dockhand" HOME="$tmp"
+		# shellcheck source=lib/common.sh
+		. "$here/lib/common.sh"
+		# shellcheck source=lib/protocol.sh
+		. "$here/lib/protocol.sh"
+		say() { :; }
+		# shellcheck disable=SC1090
+		. "$here/rows/$row.sh"
+		"$DH_BIN" --version >"$tmp/row/reinstalled"
+		cp "$tmp/row/reinstalled" "$tmp/row/restored"
+		cp "$tmp/row/reinstalled" "$tmp/row/upgraded"
+		# A7's evidence of the upgrade itself, as a passing run leaves it.
+		printf '$ dockhand status\n[exit 0]\n' >"$tmp/row/out.log"
+		printf '2026-11-12T12:00:00Z serve: upgrade detected\n2026-11-12T12:00:01Z serve: stopped for the upgrade\n' >"$tmp/row/serve.log"
+		echo 1 >"$tmp/row/pid.before"
+		echo 2 >"$tmp/row/pid.after"
+		: >"$tmp/row/agents" && : >"$tmp/row/agents.again"
+		assert
+	) >/dev/null 2>&1
+	got=$(cat "$tmp/row/result" 2>/dev/null || echo "no result")
+	if [ "$got" = "$want" ]; then
+		echo "selftest: $row with --version \"dockhand $version\" is $got"
+	else
+		echo "selftest: $row with --version \"dockhand $version\" is $got, not $want: $(cat "$tmp/row/why" 2>/dev/null)"
+		fail=1
+	fi
+	rm -rf "$tmp"
+}
+for row in A7 A8; do
+	candidate_case "$row" v0.8.0-rc4 pass
+	candidate_case "$row" 0.8.0-rc4 pass
+	candidate_case "$row" 0.8.0-rc5 fail
+done
+if grep -q 'already names .*answer done' "$here/rows/A7.sh"; then
+	echo "selftest: A7's last checkpoint says to answer done where the candidate is already installed"
+else
+	echo "selftest: A7's last checkpoint doesn't say what to answer where there's nothing to put back"
+	fail=1
+fi
+
+# A pause (pause.sh) stops the run at the next row boundary, with the
+# rows left written for --rows-file (#225).
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/dockhand-selftest.XXXXXX")
+mkdir -p "$tmp/state" "$tmp/fake" "$tmp/home/.dockhand"
+git init -q -b master "$tmp/clone"
+git -C "$tmp/clone" -c user.name=t -c user.email=t@example.org commit -q --allow-empty -m init
+status=0
+(
+	export ACCEPT_STATE="$tmp/state" ACCEPT_WATCH="$tmp/clone" ACCEPT_UPSTREAM="" ACCEPT_RUN_DIR="$tmp/clone"
+	export SELFTEST_CLONE="$tmp/clone" FAKE_DH_STATE="$tmp/fake" DH_BIN="$here/selftest/bin/dockhand"
+	export DOCKHAND_DB="$tmp/state/db" DOCKHAND_CONFIG="$tmp/state/config.toml" MACPORTS_TREE="$tmp/state/clone"
+	export DOCKHAND_UPSTREAM="$tmp/state/upstream.git" DOCKHAND_INDEX_CACHE="$tmp/state/index" DOCKHAND_READING_CACHE="$tmp/state/readings" DOCKHAND_GITHUB_CACHE="$tmp/state/github" DOCKHAND_ARCHIVE_CACHE="$tmp/state/archive-cache" DOCKHAND_BUILD_HISTORY_CACHE="$tmp/state/build-history"
+	export DOCKHAND_TART_HOME="$tmp/state/tart/dockhand" DOCKHAND_SSH_DIR="$tmp/state/tart/ssh" TART_HOME="$tmp/state/tart/tart"
+	export SELFTEST_HOME="$tmp/home" ACCEPT_HOME_DIRS="$tmp/home/.dockhand" PATH="$here/selftest/bin:$PATH"
+	unset ACCEPT_GH_LOGIN ACCEPT_SECRET_DIRS
+	"$here/run.sh" --stage quick --candidate selftest --rows "pauser ok" --row-dir "$here/selftest/rows" >"$tmp/run.out" 2>&1
+) || status=$?
+if [ "$status" = 3 ] && [ -f "$tmp/state/results/selftest/pauser.json" ] && [ ! -f "$tmp/state/results/selftest/ok.json" ] &&
+	grep -qx ok "$tmp/state/results/selftest/remaining.txt"; then
+	echo "selftest: a pause stops the run before its next row, the rows left written for --rows-file"
+else
+	echo "selftest: a pause didn't stop the run as it should (exit $status): $(tail -2 "$tmp/run.out" | tr '\n' ' ')"
+	fail=1
+fi
+rm -rf "$tmp"
+
+# G13 takes a waiting line's waiter from its prefix, never a holder the
+# line names after it, in both wordings ship gives a wait (#237).
+waiters=$(
+	ROW_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dockhand-selftest.XXXXXX")
+	# shellcheck disable=SC1091
+	. "$here/rows/G13.sh"
+	printf '%s\n' \
+		"jq-update: waits for a slot on tart: check-1085 holds one; check-1086 holds the other" \
+		"check-1084: waiting for the Mac's VMs: 2 are running, and macOS runs two at most: check-1085's dockhand-check-run-9-tahoe-1 and check-1086's dockhand-check-run-10-tahoe-1" \
+		"check-1085: attempt 1 of 3" >"$ROW_DIR/ship.log"
+	g13_waiters "$ROW_DIR/ship.log" | tr '\n' ' '
+	rm -rf "$ROW_DIR"
+)
+if [ "$waiters" = "check-1084 jq-update " ]; then
+	echo "selftest: G13 names each waiting line's waiter, not its holders"
+else
+	echo "selftest: G13 read the waiters as \"$waiters\", not \"check-1084 jq-update \""
+	fail=1
+fi
+
 # The guard: a quick run with dockhand's state outside the scratch
 # directory, as your own database or Tart home, runs nothing.
 guard_case() {
@@ -71,7 +211,7 @@ guard_case() {
 	mkdir -p "$tmp/state"
 	(
 		export ACCEPT_STATE="$tmp/state" DOCKHAND_DB="$tmp/state/db" DOCKHAND_CONFIG="$tmp/state/config.toml"
-		export MACPORTS_TREE="$tmp/state/clone" DOCKHAND_UPSTREAM="$tmp/state/upstream.git" DOCKHAND_INDEX_CACHE="$tmp/state/index" DOCKHAND_READING_CACHE="$tmp/state/readings" DOCKHAND_GITHUB_CACHE="$tmp/state/github"
+		export MACPORTS_TREE="$tmp/state/clone" DOCKHAND_UPSTREAM="$tmp/state/upstream.git" DOCKHAND_INDEX_CACHE="$tmp/state/index" DOCKHAND_READING_CACHE="$tmp/state/readings" DOCKHAND_GITHUB_CACHE="$tmp/state/github" DOCKHAND_ARCHIVE_CACHE="$tmp/state/archive-cache" DOCKHAND_BUILD_HISTORY_CACHE="$tmp/state/build-history"
 		export DOCKHAND_TART_HOME="$tmp/state/tart/dockhand" DOCKHAND_SSH_DIR="$tmp/state/tart/ssh" TART_HOME="$tmp/state/tart/tart"
 		export "$name=$value"
 		"$here/run.sh" --stage quick --candidate selftest --rows ok --row-dir "$here/selftest/rows" >/dev/null 2>"$tmp/guard.err"
@@ -99,7 +239,7 @@ fullrows=$(cd "$here/rows" && grep -lx '# stages: full' -- *.sh | sed 's/[.]sh$/
 	export ACCEPT_STATE="$tmp/state" ACCEPT_WATCH="$tmp/clone" ACCEPT_UPSTREAM="" ACCEPT_RUN_DIR="$tmp/clone"
 	export SELFTEST_CLONE="$tmp/clone" FAKE_DH_STATE="$tmp/fake" DH_BIN="$here/selftest/bin/dockhand"
 	export DOCKHAND_DB="$tmp/state/db" DOCKHAND_CONFIG="$tmp/state/config.toml" MACPORTS_TREE="$tmp/state/clone"
-	export DOCKHAND_UPSTREAM="$tmp/state/upstream.git" DOCKHAND_INDEX_CACHE="$tmp/state/index" DOCKHAND_READING_CACHE="$tmp/state/readings" DOCKHAND_GITHUB_CACHE="$tmp/state/github"
+	export DOCKHAND_UPSTREAM="$tmp/state/upstream.git" DOCKHAND_INDEX_CACHE="$tmp/state/index" DOCKHAND_READING_CACHE="$tmp/state/readings" DOCKHAND_GITHUB_CACHE="$tmp/state/github" DOCKHAND_ARCHIVE_CACHE="$tmp/state/archive-cache" DOCKHAND_BUILD_HISTORY_CACHE="$tmp/state/build-history"
 	export DOCKHAND_TART_HOME="$tmp/state/tart/dockhand" DOCKHAND_SSH_DIR="$tmp/state/tart/ssh" TART_HOME="$tmp/state/tart/tart"
 	export ACCEPT_GO_PORT=go-port ACCEPT_RUST_PORT=rust-port PATH="$here/selftest/bin:$PATH"
 	unset ACCEPT_GH_LOGIN ACCEPT_SECRET_DIRS ACCEPT_HOME_DIRS

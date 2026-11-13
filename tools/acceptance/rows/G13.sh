@@ -37,6 +37,14 @@ act() {
 	sed -n '/^\$ dockhand ship /,/^\[exit/p' "$ROW_DIR/out.log" >"$ROW_DIR/ship.log"
 }
 
+# g13_waiters names each check a ship.log says is waiting, by the prefix
+# ship gives its line, "<branch or check>: waits for a slot on ..." or
+# "<branch or check>: waiting for the Mac's VMs: ...", never a holder the
+# line names after it.
+g13_waiters() {
+	grep -E "^[^ :]+: (waiting for the Mac's VMs|waits for a slot)" "$1" | sed -E 's/^([^ :]+): .*/\1/' | sort -u
+}
+
 assert() {
 	[ -f "$ROW_DIR/result" ] && return 0
 	[ -s "$ROW_DIR/ship.log" ] || return 0
@@ -52,15 +60,41 @@ assert() {
 	# stage, check-820 to 822).
 	local numbers rows
 	numbers=$(grep -oE 'check-[0-9]+: attempt 1 of 3' "$ROW_DIR/ship.log" | sed 's/check-//; s/:.*//' | sort -un | tr '\n' ',' | sed 's/,$//')
-	[ -n "$numbers" ] || { row_fail "ship named no check: $(tail -3 "$ROW_DIR/ship.log" | tr '\n' ' ')"; return; }
+	# ship has no --fresh: where its three checks each reused an earlier
+	# check's results, no build ran, and running together wasn't shown
+	# (rc4: check-1094 to 1096 reused 1084 to 1086 from three hours
+	# before). That's not exercised, with the checks it reused named.
+	if [ -z "$numbers" ]; then
+		local named
+		named=$(grep -oE 'check-[0-9]+' "$ROW_DIR/ship.log" | sort -uV | tr '\n' ' ')
+		if [ -n "$named" ]; then
+			row_result "not exercised" "ship's checks ran no build, each reusing an earlier check's results ($named); set ACCEPT_BATCH_PORTS to three due ports no check has built since"
+		else
+			row_fail "ship named no check: $(tail -3 "$ROW_DIR/ship.log" | tr '\n' ' ')"
+		fi
+		return
+	fi
 	rows=$(stage_db "SELECT r.number, e.created_at, coalesce(e.finished_at, 0) FROM executions e JOIN runs r ON r.repository_id = e.repository_id AND r.id = e.run_id WHERE r.number IN ($numbers) AND e.attempt = 1 ORDER BY e.created_at" 2>>"$ROW_DIR/out.log")
 	printf '%s\n' "$rows" >"$ROW_DIR/executions.txt"
 	[ "$(printf '%s\n' "$rows" | grep -c '|')" -ge 3 ] || { row_fail "the stage's database has $(printf '%s\n' "$rows" | grep -c '|') of the three checks' executions: $rows"; return; }
 	# How many started before the first to finish ended. An execution is
 	# recorded before it waits for a slot or one of the Mac's VMs, which
-	# the batch says (ec5a4846), so a check said waiting doesn't count.
-	local waited
-	waited=$(grep -E "waiting for the Mac's VMs|waits for a slot" "$ROW_DIR/ship.log" | grep -oE 'check-[0-9]+' | sed 's/check-//' | sort -un | tr '\n' ' ')
+	# the batch says (ec5a4846), so a check said waiting doesn't count. The
+	# waiter is the line's prefix, what ship names the check by, a branch
+	# or a check: the first check-N in the line can be a holder, as both
+	# wordings name the holders after the waiter (rc4's reruns counted
+	# all three as waiting).
+	local waited="" waiter number
+	while IFS= read -r waiter; do
+		[ -n "$waiter" ] || continue
+		case "$waiter" in
+		check-[0-9]*) number=${waiter#check-} ;;
+		*) number=$(stage_db "SELECT r.number FROM runs r JOIN branches b ON b.repository_id = r.repository_id AND b.id = r.branch_id WHERE r.number IN ($numbers) AND (b.name = '$waiter' OR b.name = 'dockhand/$waiter')" 2>>"$ROW_DIR/out.log") ;;
+		esac
+		waited="$waited $number"
+	done <<EOT
+$(g13_waiters "$ROW_DIR/ship.log")
+EOT
 	started=$(printf '%s\n' "$rows" | awk -F'|' -v waited=" $waited " '
 		$3 > 0 && (end == 0 || $3 < end) { end = $3 }
 		index(waited, " " $1 " ") == 0 { start[NR] = $2 }

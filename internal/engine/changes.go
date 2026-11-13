@@ -242,8 +242,8 @@ func recordedChange(records map[string]model.ChangeRecord, directory, port strin
 func recordedPorts(directories []string, records map[string]model.ChangeRecord) (ports []string, notes map[string]string) {
 	notes = map[string]string{}
 	for _, directory := range directories {
-		record, recorded := records[directory]
 		if changed, ok := changedSubports(records, directory); ok {
+			record := records[directory]
 			ports = append(ports, changed...)
 			for _, port := range changed {
 				if slices.Contains(record.Unseen, port) && !slices.Contains(record.Changed(), port) {
@@ -254,19 +254,27 @@ func recordedPorts(directories []string, records map[string]model.ChangeRecord) 
 		}
 		port := path.Base(directory)
 		ports = append(ports, port)
-		switch {
-		case !recorded:
-			notes[port] = "not yet evaluated"
-		case record.Problem != "":
-			// "the base couldn't be evaluated: …", or the revision.
-			notes[port] = record.Problem
-		case record.AllUnseen && len(record.Changed()) > 0:
-			notes[port] = "changed where this Mac's evaluation doesn't look, besides what it sees"
-		default:
-			notes[port] = "no change this Mac's evaluation sees"
-		}
+		notes[port] = unnarrowed(records, directory, "not yet evaluated")
 	}
 	return ports, notes
+}
+
+// unnarrowed says why a directory's change record doesn't narrow it to
+// the subports a revision changes (changedSubports), absent where it has
+// none: the problem that kept it from being made, or what it found.
+func unnarrowed(records map[string]model.ChangeRecord, directory, absent string) string {
+	record, recorded := records[directory]
+	switch {
+	case !recorded:
+		return absent
+	case record.Problem != "":
+		// "the base couldn't be evaluated: …", or the revision.
+		return record.Problem
+	case record.AllUnseen && len(record.Changed()) > 0:
+		return "changed where this Mac's evaluation doesn't look, besides what it sees"
+	default:
+		return "no change this Mac's evaluation sees"
+	}
 }
 
 // changeRecord is the one way a change record is made (L2's one-producer
@@ -293,37 +301,68 @@ func changeRecord(record model.ChangeRecord, sides [2]*macports.Snapshot, texts 
 	return record
 }
 
+// Siblings are a plan's changed targets that their directory's change
+// record finds unchanged (PlanSiblings), and the directories of several
+// changed targets no record narrows, each with why, whose subports are
+// all listed as changed.
+type Siblings struct {
+	Targets    map[model.TargetID]bool
+	Unnarrowed []Unnarrowed
+}
+
+// Unnarrowed is a directory whose subports a plan lists as changed, every
+// one, as its text says, and why no change record narrows them.
+type Unnarrowed struct {
+	Directory string
+	Reason    string
+}
+
 // PlanSiblings are a plan's changed targets that their directory's change
 // record finds unchanged: built because a check builds every subport of a
 // changed Portfile, as MacPorts' CI does, not because the revision changed
 // them, as terraform-1.16's 18 siblings (field testing's terraform replay,
-// 2026-10-22). None for a directory no record narrows, which keeps its
-// text scope (changedSubports), or where the plan's revision can't be read.
-// The records are made where they aren't yet, as a plan of a new commit's
-// files has none: reading only what was recorded, check --plan on one
-// said "Changed 19 ports" still (the replay's rerun on 1f445dc7).
-func (e *Engine) PlanSiblings(ctx context.Context, plan model.Plan) map[model.TargetID]bool {
-	revision, err := e.Revision(ctx, plan.Revision)
-	if err != nil || revision.Branch == "" {
-		return nil
-	}
+// 2026-10-22). A directory no record narrows keeps its text scope
+// (changedSubports), and is said, with why, where it has several changed
+// targets. The records are made where they aren't yet, as a plan of a new
+// commit's files has none: reading only what was recorded, check --plan
+// on one said "Changed 19 ports" still (the replay's rerun on 1f445dc7).
+// They're read for the revision the plan's capture holds, which a plan
+// doesn't record: looked up by its ID, a tree no check had seen had none,
+// and apache-arrow's py subports all read as changed (#228).
+func (e *Engine) PlanSiblings(ctx context.Context, revision model.Revision, plan model.Plan) Siblings {
 	records, err := e.revisionChanges(ctx, revision.Branch, revision.Source.Base, revision.Source.Tree, true)
-	if err != nil {
-		return nil
+	absent := "it wasn't evaluated"
+	if ports, capable := e.capabilities(); capable == nil && ports.Families == nil {
+		absent = "nothing here evaluates a port's family"
 	}
-	return planSiblings(plan, records)
+	// What was recorded still narrows where the rest couldn't be made.
+	if err != nil {
+		absent = err.Error()
+	}
+	return planSiblings(plan, records, absent)
 }
 
 // planSiblings are the plan's changed targets their directories' records
-// find unchanged (PlanSiblings).
-func planSiblings(plan model.Plan, records map[string]model.ChangeRecord) map[model.TargetID]bool {
-	siblings := map[model.TargetID]bool{}
+// find unchanged, and the directories of several no record narrows, with
+// absent saying why for one with no record (PlanSiblings).
+func planSiblings(plan model.Plan, records map[string]model.ChangeRecord, absent string) Siblings {
+	siblings := Siblings{Targets: map[model.TargetID]bool{}}
+	changed := map[string]int{}
+	var directories []string
 	for _, target := range plan.Targets {
 		if target.Role != model.Changed {
 			continue
 		}
-		if changed, ok := changedSubports(records, target.Directory); ok && !slices.Contains(changed, target.Target.Name) {
-			siblings[target.ID] = true
+		if changed[target.Directory]++; changed[target.Directory] == 1 {
+			directories = append(directories, target.Directory)
+		}
+		if ports, ok := changedSubports(records, target.Directory); ok && !slices.Contains(ports, target.Target.Name) {
+			siblings.Targets[target.ID] = true
+		}
+	}
+	for _, directory := range directories {
+		if _, ok := changedSubports(records, directory); !ok && changed[directory] > 1 {
+			siblings.Unnarrowed = append(siblings.Unnarrowed, Unnarrowed{Directory: directory, Reason: unnarrowed(records, directory, absent)})
 		}
 	}
 	return siblings

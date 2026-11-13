@@ -325,6 +325,23 @@ namespace eval ::dockhand {
                     }
                     return $answer
                 }
+                # closed_lookup records one of Base's lookups a modelled
+                # context closed, as shut records a call: in the ledger by
+                # the lookup and what it looked for, and for the verdict
+                # with why, by who asked; a lookup that failed is a closed
+                # answer an evaluation may end on, named by the call.
+                proc closed_lookup {name subject problem code result} {
+                    variable ledger
+                    variable walking
+                    dict incr ledger [list $name "" closed [expr {$walking ? "fingerprint" : $subject}]]
+                    set call [string range [list $name $subject] 0 199]
+                    if {!$walking && [namespace exists ::dockhand_observation]} {
+                        ::dockhand_observation::closed 4 $problem $call
+                    }
+                    if {$code == 1} {
+                        interp invokehidden {} dockhand_closed $call $result
+                    }
+                }
                 # reaches reports whether reading a path reaches the host
                 # (host_path), judged as shut judges it, recording nothing.
                 proc reaches {path} {

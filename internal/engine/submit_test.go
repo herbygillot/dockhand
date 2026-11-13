@@ -1429,3 +1429,103 @@ func TestATestedStatementStandsForItsFilesAlone(t *testing.T) {
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(current) }))
 	require.False(t, plan(SubmitRequest{}).Request.TestedVariants)
 }
+
+// Where a changed port's only builds are variant builds and several
+// failed, a baseline reproducing one of them accepts that build alone:
+// --accept by the port's bare name is refused, naming each build to accept
+// by its build, and the build no baseline reproduces is refused (#235).
+func TestABaselineOfOneVariantBuildAcceptsThatBuildAlone(t *testing.T) {
+	t.Parallel()
+	g := setup(t)
+	e, _ := g.withPreparer(t)
+	g.withFork(t, e)
+	branch := committedUpdate(t, e)
+	docs := model.Target{Name: "jq", Variants: map[string]bool{"docs": true}}
+	tests := model.Target{Name: "jq", Variants: map[string]bool{"tests": true}}
+	of := recordedRun(t, e, branch, "", []built{{docs, model.OutcomeFailed}, {tests, model.OutcomeFailed}})
+	recordedRun(t, e, branch, of, []built{{docs, model.OutcomeFailed}, {tests, model.OutcomePassed}})
+
+	_, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"jq"}})
+	require.ErrorContains(t, err, "--accept jq:")
+	require.ErrorContains(t, err, "'jq +docs'")
+	require.ErrorContains(t, err, "'jq +tests'")
+
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"jq +docs"}})
+	require.NoError(t, err)
+	blocking := strings.Join(plan.Blocking, "\n")
+	require.NotContains(t, blocking, "jq +docs")
+	require.Contains(t, blocking, "jq +tests did not pass in check-1")
+	require.Equal(t, AcceptedFailure{Kind: AcceptedAtBase, Baselines: []string{"check-2"}}, plan.Accepted["jq +docs"])
+	require.NotContains(t, plan.Accepted, "jq +tests")
+
+	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"jq +tests"}})
+	require.ErrorContains(t, err, "can be accepted only if the baseline fails the same way")
+}
+
+// built is a target recordedRun builds, with its outcome.
+type built struct {
+	target  model.Target
+	outcome model.Outcome
+}
+
+// recordedRun records a finished check of the branch's head tree on Tahoe,
+// each build a changed build of jq with its outcome, failed at
+// install; a baseline of the check of where of is given.
+func recordedRun(t *testing.T, e *Engine, branch model.Branch, of model.RunID, builds []built) model.RunID {
+	t.Helper()
+	head := model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"))
+	tree := model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD^{tree}"))
+	at := time.Now().UTC().Truncate(time.Millisecond)
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
+	var targets []model.PlanTarget
+	for _, b := range builds {
+		targets = append(targets, model.PlanTarget{ID: b.target.ID(), Target: b.target, Directory: "textproc/jq", Kind: model.Substantive, Role: model.Changed})
+	}
+	var id model.RunID
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		revision := model.Revision{ID: model.RevisionID(store.NewID("rev")), Branch: branch.ID, Kind: model.RevisionCommit, Source: model.Source{Commit: head, Tree: tree, Base: branch.Base}, Head: head, CreatedAt: at}
+		plan := model.Plan{ID: model.PlanID(store.NewID("plan")), Revision: revision.ID, Environments: []model.Environment{tahoe}, Tests: model.TestsDeclared, CreatedAt: at, Targets: targets,
+			Builds: []model.EnvironmentPlan{{Environment: tahoe}}}
+		for _, target := range targets {
+			plan.Builds[0].Order = append(plan.Builds[0].Order, target.ID)
+		}
+		number, err := tx.NextRunNumber()
+		if err != nil {
+			return err
+		}
+		run := model.Run{ID: model.RunID(store.NewID("run")), Branch: branch.ID, Revision: revision.ID, Plan: plan.ID, Number: number, Origin: model.OriginPerson, State: model.RunQueued, CreatedAt: at, BaselineOf: of}
+		id = run.ID
+		execution := model.GuestExecution{ID: model.ExecutionID(store.NewID("tart")), Run: run.ID, Environment: tahoe, Attempt: 1, State: model.ExecutionWaiting, CreatedAt: at,
+			Observed: model.Observed{MacOS: "26.6.2", Build: "25G71", Architecture: "arm64", Xcode: "26.6", XcodeBuild: "17F42", Tools: "26.6.0.0.1781586589"}}
+		steps := []func() error{
+			func() error { return tx.AddRevision(revision) },
+			func() error { return tx.AddPlan(plan) },
+			func() error { return tx.AddRun(run) },
+			func() error { return tx.AddExecution(execution) },
+		}
+		state := model.RunPassed
+		for _, b := range builds {
+			result := model.TargetResult{Execution: execution.ID, Target: b.target.ID(), Outcome: b.outcome, Tests: model.TestsPassed, RecordedAt: at}
+			if result.Outcome == model.OutcomeFailed {
+				result.Phase, result.Tests, state = model.PhaseInstall, model.TestsNone, model.RunFailed
+			}
+			steps = append(steps, func() error { return tx.RecordResult(result) })
+		}
+		for _, step := range steps {
+			if err := step(); err != nil {
+				return err
+			}
+		}
+		for _, next := range []model.RunState{model.RunRunning, state} {
+			run.State = next
+			if next == state {
+				run.FinishedAt = &at
+			}
+			if err := tx.UpdateRun(run); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	return id
+}

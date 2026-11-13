@@ -23,7 +23,9 @@ TOML
 }
 act() {
 	dh_setup update "$(port)" --new || return 0
-	dh_json check -p "$(port)" --on command || :
+	# --fresh: an earlier run's passed check on the command provider would
+	# be reused, and the stub never run (#227).
+	dh_json check -p "$(port)" --on command --fresh || :
 }
 assert() {
 	case "$(cat "$ROW_DIR/json/1.json.exit" 2>/dev/null)" in

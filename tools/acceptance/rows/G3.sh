@@ -24,7 +24,9 @@ act() {
 	G3_BRANCH=$(run_name g3-clean)
 	dh_setup revbump "${ACCEPT_GO_PORT:?}" --new="$G3_BRANCH" --subject "rebuild to check in a prefix of dhtest's" || return 0
 	# No sudo here: one asked for would fail the check, not prompt.
-	(export DOCKHAND_CONFIG="$ROW_DIR/g3.toml"; dh_json check -b "$G3_BRANCH" --on "local:$G3_PREFIX" </dev/null) || :
+	# --fresh: an earlier run's check of the same change on the same master
+	# would be reused, and nothing built (#227).
+	(export DOCKHAND_CONFIG="$ROW_DIR/g3.toml"; dh_json check -b "$G3_BRANCH" --on "local:$G3_PREFIX" --fresh </dev/null) || :
 	# A second check of the same revision builds again, uninstalling the
 	# first's image, inactive and unrequested, where rc7 refused it (v0.7.0).
 	(export DOCKHAND_CONFIG="$ROW_DIR/g3.toml"; dh_json check -b "$G3_BRANCH" --on "local:$G3_PREFIX" --fresh </dev/null) || :

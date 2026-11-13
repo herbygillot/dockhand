@@ -176,8 +176,10 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // or build, says the same verdict more exactly (#52): it stays 3. A
 // put-back of a local check's prefix that carries the snapshot's name
 // into what it saves builds and judges nothing otherwise (#199): it stays
-// 3.
-const guestPin = "9e1fc6b3f19c3ee66e3a4321c4ea17e25e42445df45183b47c9f77174bd06b2f"
+// 3. stdin_is, the guest's one reading of its standard input, carried
+// ahead of the program for a root build's lock check (#193) and called by
+// nothing yet, builds and judges nothing: it stays 3.
+const guestPin = "71102478e5b932590e55b357c6e2262a06c210657caca2ab756f0e525d1849c9"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

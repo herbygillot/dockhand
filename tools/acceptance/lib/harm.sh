@@ -52,7 +52,7 @@ harm_snapshot() {
 	# never logged in, made H3 pass while A4 opened a pull request (the
 	# rc3 full run, 2026-10-06).
 	harm_prs >"$out/prs" 2>"$out/prs.err" || printf 'the pull requests could not be listed\n' >>"$out/prs.err"
-	harm_running >"$out/running" 2>/dev/null || :
+	harm_running >"$out/running" 2>"$out/running.err" || :
 	harm_home >"$out/home"
 	harm_tokens >"$out/tokens" 2>/dev/null || :
 }
@@ -80,7 +80,16 @@ harm_home() {
 			continue
 		fi
 		printf 'present %s\n' "$dir"
-		find "$dir" \( -type f -o -type l \) -exec stat -f 'file %N %z %m' {} + 2>/dev/null | sort
+		# Each file by its content's hash, a write of the same size within
+		# a second included, which size and a second's mtime missed (#231);
+		# a file past a megabyte, as an archive under ~/.dockhand, by its
+		# size and its mtime to the nanosecond, which hashing every row
+		# would take minutes over.
+		{
+			find "$dir" -type l -exec stat -f 'link %N %Y' {} + 2>/dev/null
+			find "$dir" -type f -size -1024k -exec shasum -a 256 {} + 2>/dev/null | awk '{h=$1; $1=""; print "file" $0 " " h}'
+			find "$dir" -type f -size +1023k -exec stat -f 'file %N %z %Fm' {} + 2>/dev/null
+		} | sort
 	done
 }
 
@@ -110,21 +119,41 @@ harm_work_files() {
 # and in the quick stage the upstream's too: a local bare repository
 # there, which a push lands in and fresh's reset of master hid (#147). The
 # full stage's upstream is MacPorts', which others push to.
+#
+# A remote that can't be read is said on standard error as "<remote>:
+# <why>", and the others are still read: one remote's failure skipped H2
+# for every watched repository (Codex's cold read at 2cdaf571, #231).
 harm_remote_refs() {
-	local repo=$1 remote
+	local repo=$1 remote listed
 	for remote in $(git -C "$repo" remote); do
 		case " ${ACCEPT_UPSTREAM:-} " in *" $remote "*) [ "${ACCEPT_STAGE:-}" = quick ] || continue ;; esac
-		git -C "$repo" ls-remote --heads --tags "$remote" | sed "s|^|$remote |" || return 1
+		if listed=$(git -C "$repo" ls-remote --heads --tags "$remote" 2>"$ROW_DIR/ls-remote.err"); then
+			[ -z "$listed" ] || printf '%s\n' "$listed" | sed "s|^|$remote |"
+		else
+			printf '%s: %s\n' "$remote" "$(head -1 "$ROW_DIR/ls-remote.err" 2>/dev/null)" >&2
+		fi
 	done
+	rm -f "$ROW_DIR/ls-remote.err"
 }
 
 # harm_prs lists the pull requests the login has opened, where one's set,
 # at MacPorts and in the sandbox the full stage's test ones go to.
+#
+# It lists with the test account's token, ACCEPT_GH_TOKEN or the file
+# ACCEPT_GH_TOKEN_FILE names (~/.dockhand-acceptance/gh-token unless set),
+# where there is one, and gh's own login otherwise, never a token the run
+# inherited: full.sh unsets GH_TOKEN and GITHUB_TOKEN (#233), and a
+# listing that leaned on them would leave every row unobserved (#231).
 harm_prs() {
 	[ -n "${ACCEPT_GH_LOGIN:-}" ] && command -v gh >/dev/null || return 1
-	local repo
+	local repo token=${ACCEPT_GH_TOKEN:-}
+	[ -n "$token" ] || token=$(cat "${ACCEPT_GH_TOKEN_FILE:-$HOME/.dockhand-acceptance/gh-token}" 2>/dev/null || :)
 	for repo in macports/macports-ports ${DOCKHAND_PULL_REQUESTS:-}; do
-		gh pr list --repo "$repo" --author "$ACCEPT_GH_LOGIN" --state all --limit 200 --json number --jq ".[] | \"$repo#\(.number)\"" || return 1
+		if [ -n "$token" ]; then
+			GH_TOKEN=$token gh pr list --repo "$repo" --author "$ACCEPT_GH_LOGIN" --state all --limit 200 --json number --jq ".[] | \"$repo#\(.number)\"" || return 1
+		else
+			env -u GH_TOKEN -u GITHUB_TOKEN gh pr list --repo "$repo" --author "$ACCEPT_GH_LOGIN" --state all --limit 200 --json number --jq ".[] | \"$repo#\(.number)\"" || return 1
+		fi
 	done | sort
 }
 
@@ -150,11 +179,23 @@ harm_running() {
 			[ -d "$home" ] || continue
 			# Bounded, as dockhand's own listing is: a disk Tart's listing
 			# waits on can hang it (the rc8 full stage).
-			with_timeout 150 env TART_HOME="$home" tart list --format json 2>/dev/null | jq -r '.[] | select(.State == "running") | "vm " + .Name' 2>/dev/null || :
+			local listing
+			if listing=$(with_timeout 150 env TART_HOME="$home" tart list --format json 2>/dev/null) && printf '%s' "$listing" | jq -e 'type == "array"' >/dev/null 2>&1; then
+				printf '%s' "$listing" | jq -r '.[] | select(.State == "running") | "vm " + .Name'
+			else
+				printf "tart's VMs in %s couldn't be listed\n" "$home" >&2
+			fi
 		done
 	fi
 	# The queue is status's since rc7, which removed dockhand queue.
-	"$DH_BIN" --json status --all 2>/dev/null | jq -r '.result.queue[]? | select(.state == "queued" or .state == "running") | "run " + .name' 2>/dev/null || :
+	local queue
+	if [ -x "${DH_BIN:-}" ]; then
+		if queue=$("$DH_BIN" --json status --all 2>/dev/null) && printf '%s' "$queue" | jq -e '.result' >/dev/null 2>&1; then
+			printf '%s' "$queue" | jq -r '.result.queue[]? | select(.state == "queued" or .state == "running") | "run " + .name'
+		else
+			printf "status's queue couldn't be read\n" >&2
+		fi
+	fi
 	# The fault kit's own processes, a row's proxy among them, and its disk
 	# images still attached, as D-R1's low-disk one was left (the rc8 full
 	# stage).
@@ -165,6 +206,34 @@ harm_running() {
 }
 
 harm_write() { printf '%s\n' "$2" >"$ROW_DIR/harm/$1"; }
+
+# harm_ours reports whether a ref is in the run's namespace, a branch
+# dockhand makes (dockhand/, dockhand-check/) or the run's own preflight
+# branch, as a local branch, a remote-tracking ref or a remote's head. A
+# change to any other ref during a row is outside activity, said with the
+# ref, not the row's harm: probe branches pushed to the fork while D-R2,
+# D-R4 and D-S1 ran read as theirs in rc4 (#225).
+harm_ours() {
+	case "$1" in
+	*refs/heads/dockhand/* | *refs/heads/dockhand-check/* | *refs/heads/accept-preflight-*) return 0 ;;
+	refs/remotes/*/dockhand/* | refs/remotes/*/dockhand-check/* | refs/remotes/*/accept-preflight-*) return 0 ;;
+	esac
+	# A remote's ref (from its listing, "remote") outside the namespace is
+	# anyone's; a local ref of the clone's own making, its tags, master
+	# and the rest, only the row's commands touch.
+	[ "${2:-}" != remote ] || return 1
+	case "$1" in refs/remotes/*) return 1 ;; esac
+	return 0
+}
+
+# harm_earlier reports whether a ref was made during this run, by an
+# earlier row: one the stage's start didn't hold. A row may remove what an
+# earlier row of the run left, as D-C2's clean --closed took C7's when the
+# host hung (#225).
+harm_earlier() {
+	[ -f "${ACCEPT_STATE:-/nonexistent}/stage.refs" ] || return 1
+	! awk -v ref="$1" '$3 == ref {found = 1} END {exit !found}' "$ACCEPT_STATE/stage.refs"
+}
 
 # harm_check compares the snapshots and runs what needs running, writing
 # each invariant's verdict.
@@ -186,7 +255,7 @@ harm_check() {
 # its content, every commit a ref named is still an object, and no ref
 # went, but where the row says it may.
 harm_h1() {
-	local before=$1 after=$2 repo id wt path hash ref object broken=""
+	local before=$1 after=$2 repo id wt path hash ref object broken="" outside=""
 	for repo in $ACCEPT_WATCH; do
 		id=$(harm_id "$repo")
 		while IFS="$(printf '\t')" read -r wt path hash; do
@@ -200,13 +269,19 @@ harm_h1() {
 		done <"$before/files.$id"
 		while read -r ref object; do
 			if ! grep -q "^$ref " "$after/refs.$id" && ! harm_allowed "$ROW_DIR/allow.refgone" "$ref"; then
-				broken="$broken ref:$ref"
+				if ! harm_ours "$ref"; then
+					outside="$outside $ref"
+				else
+					broken="$broken ref:$ref"
+				fi
 			fi
 			git -C "$repo" cat-file -e "$object" 2>/dev/null || broken="$broken commit:$object"
 		done <"$before/refs.$id"
 	done
 	if [ -n "$broken" ]; then
 		harm_write H1 "broken: lost${broken}"
+	elif [ -n "$outside" ]; then
+		harm_write H1 "outside: refs no row's dockhand keeps went during the row:$outside"
 	else
 		harm_write H1 ok
 	fi
@@ -216,24 +291,43 @@ harm_h1() {
 # It checks remotewrite's rule, lines 1 and 2 (internal/remotewrite), by
 # what the row says it pushes, never by the rule's table (#144).
 harm_h2() {
-	local before=$1 after=$2 repo id line ref broken="" read=""
+	local before=$1 after=$2 repo id line ref broken="" read="" unread="" remote outside=""
 	for repo in $ACCEPT_WATCH; do
 		id=$(harm_id "$repo")
-		if [ -s "$before/remote.$id.err" ] || [ -s "$after/remote.$id.err" ]; then
-			harm_write H2 "skipped: a fork remote couldn't be read: $(head -1 "$before/remote.$id.err" "$after/remote.$id.err" 2>/dev/null | grep -v '^==>' | head -1)"
-			return
-		fi
+		# A remote unread before or after is unobserved, and the rest of
+		# this repository's remotes, and the other repositories, are still
+		# compared (#231).
+		for remote in $(cat "$before/remote.$id.err" "$after/remote.$id.err" 2>/dev/null | cut -d: -f1 | sort -u); do
+			unread="$unread $repo:$remote"
+		done
 		read=yes
 		while IFS= read -r line; do
+			remote=${line%% *}
+			case "$unread " in *" $repo:$remote "*) continue ;; esac
 			grep -qxF "$line" "$before/remote.$id" && continue
 			ref=$(printf '%s' "$line" | awk '{print $1 " " $3}')
 			harm_allowed "$ROW_DIR/allow.push" "$ref" && continue
+			if ! harm_ours "$(printf '%s' "$line" | awk '{print $3}')" remote && [ "${ACCEPT_STAGE:-}" = full ]; then
+				outside="$outside $ref"
+				continue
+			fi
 			broken="$broken pushed:$ref"
 		done <"$after/remote.$id"
 		while IFS= read -r line; do
+			remote=${line%% *}
+			case "$unread " in *" $repo:$remote "*) continue ;; esac
 			ref=$(printf '%s' "$line" | awk '{print $1 " " $3}')
 			awk -v r="$(printf '%s' "$line" | awk '{print $3}')" -v m="$(printf '%s' "$line" | awk '{print $1}')" '$1 == m && $3 == r {found=1} END {exit !found}' "$after/remote.$id" && continue
 			harm_allowed "$ROW_DIR/allow.push" "$ref" && continue
+			if ! harm_ours "$(printf '%s' "$line" | awk '{print $3}')" remote && [ "${ACCEPT_STAGE:-}" = full ]; then
+				outside="$outside $ref"
+				continue
+			fi
+			# What an earlier row of this run left, a row may remove.
+			if harm_earlier "$(printf '%s' "$line" | awk '{print $3}')"; then
+				printf 'H2: %s, an earlier row'"'"'s, removed\n' "$ref" >>"$ROW_DIR/notes"
+				continue
+			fi
 			broken="$broken removed:$ref"
 		done <"$before/remote.$id"
 	done
@@ -241,6 +335,10 @@ harm_h2() {
 		harm_write H2 "skipped: nothing to watch"
 	elif [ -n "$broken" ]; then
 		harm_write H2 "broken:$broken"
+	elif [ -n "$unread" ]; then
+		harm_write H2 "unobserved: couldn't read$unread: $(cat "$before"/remote.*.err "$after"/remote.*.err 2>/dev/null | head -1)"
+	elif [ -n "$outside" ]; then
+		harm_write H2 "outside: refs outside the run's namespace changed during the row:$outside"
 	else
 		harm_write H2 ok
 	fi
@@ -256,7 +354,7 @@ harm_h3() {
 		return
 	fi
 	if [ -s "$before/prs.err" ] || [ -s "$after/prs.err" ]; then
-		harm_write H3 "not checked: $(cat "$before/prs.err" "$after/prs.err" 2>/dev/null | grep . | head -1)"
+		harm_write H3 "unobserved: $(cat "$before/prs.err" "$after/prs.err" 2>/dev/null | grep . | head -1)"
 		return
 	fi
 	[ -f "$ROW_DIR/allow.prs" ] && allowed=$(cat "$ROW_DIR/allow.prs")
@@ -489,11 +587,15 @@ harm_h7() {
 			[ -n "$line" ] || continue
 			grep -qxF "$line" "$before/running" && continue
 			case "$broken" in *"[$line]"*) continue ;; esac
+			harm_allowed "$ROW_DIR/allow.handoff" "$line" && continue
 			broken="$broken [$line, past teardown]"
 		done <"$after/running.teardown"
 	fi
 	if [ -n "$broken" ]; then
 		harm_write H7 "broken: left running$broken"
+	elif [ -s "$after/running.err" ]; then
+		# A listing that failed is no sign that nothing runs (#231).
+		harm_write H7 "unobserved: $(head -1 "$after/running.err")"
 	else
 		harm_write H7 ok
 	fi

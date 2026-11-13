@@ -6,11 +6,18 @@
 # of an older schema, which the candidate migrates while the original
 # stays as it was.
 act() {
+	needs_command backup || return 0
 	mkdir -p "$ROW_DIR/backups"
 	dh_bg serve
 	A6_SERVE=$DH_BG_PID A6_SERVE_LOG=$DH_BG_LOG
-	wait_for_line "$DH_BG_LOG" 'leading|serve:' 60 || :
+	# The backup is made while serve runs only where serve said it leads
+	# and still runs: a readiness wait that timed out was ignored (Codex's
+	# cold read at 2cdaf571, #232).
+	if wait_for_line "$DH_BG_LOG" 'serve: leading \(pid [0-9]+\)' 60 && kill -0 "$A6_SERVE" 2>/dev/null; then
+		A6_SERVING=1
+	fi
 	dh_json backup "$ROW_DIR/backups" || :
+	kill -0 "$A6_SERVE" 2>/dev/null || A6_SERVING=""
 	kill "$A6_SERVE" 2>/dev/null
 	DH_BG_PID=$A6_SERVE DH_BG_LOG=$A6_SERVE_LOG dh_bg_wait || :
 	A6_COPY=$(ls "$ROW_DIR"/backups/dockhand-*.db 2>/dev/null | head -1)
@@ -20,6 +27,7 @@ act() {
 	stat -f '%m %z' "$DOCKHAND_DB" >"$ROW_DIR/original.after"
 }
 assert() {
+	[ -n "${A6_SERVING:-}" ] || { row_result "not exercised" "serve wasn't running throughout the backup: $(tail -2 "${A6_SERVE_LOG:-/dev/null}" | tr '\n' ' ')"; return; }
 	[ -n "${A6_COPY:-}" ] || { row_fail "backup made no copy in the directory: $(tail -3 "$ROW_DIR/out.log" | tr '\n' ';')"; return; }
 	case "$(basename "$A6_COPY")" in
 	dockhand-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-[0-9][0-9][0-9][0-9].db) ;;

@@ -194,6 +194,19 @@ body and the pull request say it too. `--source keep` moves nothing, and
 `--source archive` asks for GitHub's archive; `[update] source` sets any of
 these for every update.
 
+For a port that lists its crates (`cargo.crates`) or Go modules
+(`go.vendors`), the update regenerates the list from the new source's
+`Cargo.lock` or `go.sum`. Where the new version's source ships no `Cargo.lock`
+and `cargo.update` is off, the update still writes the version, checksums and
+patches, leaves `cargo.crates` and `cargo.crates_github` as they were, byte for
+byte, and holds as `crates-unlocked`: the list may not match the new version.
+The finding names the directories holding a `Cargo.toml` and, where the list is
+declared in a variant's body, the variant and whether the default variants
+include it, since a check builds only those. Regenerate the list by hand before
+submitting. With `cargo.update` on, or with a `Cargo.lock` only somewhere other
+than worksrcdir or above it, the update refuses, naming each lock it found. An
+update to the version the port is already at says so: `jq is already at 1.8.1`.
+
 `diff` shows the change; `impact` shows the changed ports and dependents worth
 checking, and, where ports.macports.org answers, whether MacPorts' builders
 built each changed port on each macOS release. `tidy` makes the commits.

@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/pprof"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -51,6 +52,9 @@ type run struct {
 	Assessed      int       `json:"assessed"`
 	Skipped       int       `json:"skipped"`
 	Outcomes      any       `json:"outcomes"`
+	// Settings are what decide what the run measured, which -compare
+	// holds two runs to (#222).
+	Settings *settings `json:"settings,omitempty"`
 }
 
 func main() {
@@ -77,8 +81,11 @@ func survey() (err error) {
 	recording := flag.Bool("recording", true, "with -db, record what each evaluation read, ran, and declared")
 	sample := flag.String("sample", "", "a file naming ports to survey, one a line")
 	verbose := flag.Bool("v", false, "report the work behind the scenes")
-	compare := flag.Bool("compare", false, "compare two journals, the baseline and the new one, given as arguments")
+	compare := flag.Bool("compare", false, "compare two journals, the baseline and the new one, given as arguments; refused where their runs were made with different settings")
 	top := flag.Int("top", 15, "with -compare, how many of each kind of change to list")
+	unchecked := flag.Bool("unchecked", false, "with -compare, compare runs whose settings differ or weren't recorded, saying so")
+	pair := flag.Bool("pair", false, "run a before/after pair: the before and after survey binaries, given as arguments, with this command's other flags and a record each in -out, then compare them")
+	out := flag.String("out", "", "with -pair, the directory the pair's records go in")
 	flag.Var(&ports, "port", "a port to assess (repeatable); every port when no selection is given")
 	flag.Var(&maintainers, "maintainer", "an exact maintainer to select (repeatable)")
 	flag.Var(&notMaintainers, "not-maintainer", "a maintainer to leave out (repeatable)")
@@ -89,7 +96,13 @@ func survey() (err error) {
 		if flag.NArg() != 2 {
 			return errors.New("-compare takes the baseline journal and the new one")
 		}
-		return compareJournals(os.Stdout, flag.Arg(0), flag.Arg(1), *top)
+		return compareJournals(os.Stdout, flag.Arg(0), flag.Arg(1), *top, *unchecked)
+	}
+	if *pair {
+		if flag.NArg() != 2 {
+			return errors.New("-pair takes the before survey binary and the after one")
+		}
+		return runPair(os.Stdout, os.Stderr, flag.Arg(0), flag.Arg(1), *out, handedOn(), *top)
 	}
 	if *journalPath == "" && *dbPath == "" {
 		return errors.New("-journal or -db is required, so a long survey can be continued")
@@ -257,6 +270,8 @@ func survey() (err error) {
 		outcomes[port.Outcome]++
 	}
 	made.Outcomes = outcomes
+	made.Settings = &settings{Mode: *mode, Record: *dbPath != "", Recording: *dbPath != "" && *recording,
+		Selection: selectionOf(request.Selection), Commit: made.Commit, Prefix: filepath.Dir(filepath.Dir(tclsh))}
 	if record != nil {
 		if err := record.Finish(made.WallSeconds, made.UserSeconds, made.SystemSeconds); err != nil {
 			return err
@@ -274,6 +289,25 @@ func survey() (err error) {
 	fmt.Fprintf(os.Stderr, "Assessed %d ports (%d already in the journal) at %s in %s: %v; %.1f cores\n",
 		len(result.Ports), result.Skipped, shortID(made.Commit), time.Duration(made.WallSeconds*float64(time.Second)).Round(time.Second), outcomes, made.Cores)
 	return nil
+}
+
+// handedOn are the flags this command was given that a pair hands on to
+// each of its runs, a repeatable one once for each value.
+func handedOn() []string {
+	var args []string
+	flag.Visit(func(f *flag.Flag) {
+		if slices.Contains(pairFlags, f.Name) {
+			return
+		}
+		if values, ok := f.Value.(*list); ok {
+			for _, value := range *values {
+				args = append(args, "-"+f.Name, value)
+			}
+			return
+		}
+		args = append(args, "-"+f.Name+"="+f.Value.String())
+	})
+	return args
 }
 
 // cpuSeconds is the user and system time of this process and the

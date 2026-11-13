@@ -12,16 +12,18 @@
 # angelscript past 2.33.0 (rc4's full stage).
 . "${ROW_LIB:?}/plan.sh"
 setup() { plan_at_pin "angelscript is at 2.33.0"; }
+# --new: against the pin's master a plain --plan, with no branch of the
+# port's to plan on, is refused (rc4's reruns).
 act() {
-	dh update angelscript 2.38.0 --plan </dev/null || :
-	dh_json update angelscript 2.38.0 --plan </dev/null || :
+	dh update angelscript 2.38.0 --new --plan </dev/null || :
+	dh_json update angelscript 2.38.0 --new --plan </dev/null || :
 }
 assert() {
 	local json=$ROW_DIR/json/1.json said worksrcdir patch
 	[ -f "$json" ] || { row_fail "update --plan didn't run"; return; }
-	said=$(sed -n '/^\$ dockhand update angelscript 2.38.0 --plan$/,/^\[exit/p' "$ROW_DIR/out.log")
+	said=$(sed -n '/^\$ dockhand update angelscript 2.38.0 --new --plan$/,/^\[exit/p' "$ROW_DIR/out.log")
 	if printf '%s\n' "$said" | tail -1 | matches -vF '[exit 0]'; then
-		row_fail "update angelscript 2.38.0 --plan $(printf '%s' "$said" | tail -1): $(printf '%s\n' "$said" | sed 1d | head -3 | tr '\n' ' ')"
+		row_fail "update angelscript 2.38.0 --new --plan $(printf '%s' "$said" | tail -1): $(printf '%s\n' "$said" | sed 1d | head -3 | tr '\n' ' ')"
 		return
 	fi
 	worksrcdir=$(printf '%s\n' "$said" | grep -n "^! worksrcdir sdk/angelscript/projects/gnuc macosx/\{0,1\} isn't in 2.38.0's source" | head -1 | cut -d: -f1)

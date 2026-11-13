@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -105,8 +106,15 @@ func sweepWorld(t *testing.T, sc scenario, p *plan) (cmdtest.World, *forgetest.G
 	stands.GitHook = p.gitHook
 	stands.WrapStore = func(s store.Store) store.Store { return recordingStore{Store: s, plan: p} }
 	stands.Forge = func(*engine.Engine) engine.Forge { return recordingForge{GitHub: g, plan: p} }
+	stands.Heartbeat = heartbeat
 	return w, g
 }
+
+// heartbeat is the worlds' session interval, longer than any run and
+// inside the coordinator's two minutes before a live process is called
+// hung, so no heartbeat falls inside a run unless a scenario is about one
+// (docs/designs/fault-sweep.md, "A fault is placed at an address").
+const heartbeat = 90 * time.Second
 
 // stoppedProcess is the process start the steps' sessions are recorded
 // under: a process of their own, which ends when they do.
@@ -137,6 +145,7 @@ func runOnce(t *testing.T, sc scenario, armed *fault) run {
 	stands.GitHook = p.gitHook
 	stands.WrapStore = func(s store.Store) store.Store { return recordingStore{Store: s, plan: p} }
 	stands.Forge = func(*engine.Engine) engine.Forge { return recordingForge{GitHub: g, plan: p} }
+	stands.Heartbeat = heartbeat
 	// The steps are a process of their own, gone once they return;
 	// recovery is this one.
 	over := &atomic.Bool{}

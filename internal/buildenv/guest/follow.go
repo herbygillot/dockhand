@@ -34,10 +34,18 @@ import (
 )
 
 // Program is the guest program, guest.tcl, which its provider stages
-// beside its input.
-//
+// beside its input, with StdinIs before it.
+var Program = append(append([]byte{}, StdinIs...), program...)
+
 //go:embed guest.tcl
-var Program []byte
+var program []byte
+
+// StdinIs is the guest's one way of reading whether its standard input is
+// a file, stdin.tcl's stdin_is: the guest program's own, and the test
+// with this Mac's real sudo's (buildenv/local).
+//
+//go:embed stdin.tcl
+var StdinIs []byte
 
 // Guest is where the program runs, as its provider reaches it: a clone
 // over dockhand's SSH channel, or this Mac's own files.

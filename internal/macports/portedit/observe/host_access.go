@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -17,6 +18,115 @@ import (
 // inconclusive: a compiler probe whose reads are confined to build
 // positions, or a read inside a PortGroup whose frame lands on a benign
 // command or the condition of a control whose bodies are benign.
+
+// lookups are Base's program and dependency lookups, which a modelled
+// context closes once each (dispatcher's closed_lookup).
+var lookups = []string{"findBinary", "binaryInPath", "_mportsearchpath"}
+
+// baseLib is where Base's own code is, as a frame names its file.
+const baseLib = "/libexec/macports/lib/"
+
+// fetchInputs are Base's phase options its own fetch defaults read:
+// distfiles' default is ${distname}${extract.suffix}.
+var fetchInputs = []string{"extract.suffix"}
+
+// baseLookupBenign reports whether a closed lookup is Base's own, made for
+// options no fetch or checksum value reads, under the same "only where"
+// condition as build.jobs's read (architecture's step 2 on #110's finding
+// 1; closed-model.md's verdict). Who made the lookup and which value took
+// it are decided apart: the lookup's caller must be Base's code, never a
+// Portfile's or PortGroup's own findBinary; and each option whose default
+// the chain evaluated must be one of Base's extract, patch, configure,
+// build, test or destroot options or build-only defaults, none read by
+// Base's own fetch defaults, and each read by the Portfile and its
+// PortGroups only in build positions (optionReadBenign); or, with no
+// option's default on the way, the lookup is in one of Base's callbacks,
+// which write dependency lists and notes. A PortGroup may have written the
+// option's default, as cmake's configure.args reads build.cmd, so long as
+// no fetch value reads it.
+func baseLookupBenign(root string, contents []byte, declaration macports.Declaration, groups map[string][]byte) bool {
+	if len(declaration.Values) < 4 || declaration.Values[1] != "closed" {
+		return false
+	}
+	lookup, _, _ := strings.Cut(declaration.Values[3], " ")
+	if !slices.Contains(lookups, lookup) {
+		return false
+	}
+	// Who made it: the nearest file the frames name at or before the
+	// lookup's call, Base's library or not.
+	call := slices.IndexFunc(declaration.Frames, func(frame macports.SourceFrame) bool {
+		return strings.HasPrefix(frame.Command, lookup+" ")
+	})
+	if call < 0 {
+		return false
+	}
+	caller := ""
+	for i := call; i >= 0 && caller == ""; i-- {
+		caller = declaration.Frames[i].File
+	}
+	if !strings.Contains(caller, baseLib) {
+		return false
+	}
+	// Which value took it: each option whose default the chain read.
+	var options []string
+	for _, frame := range declaration.Frames[:call] {
+		if match := defaultCheck.FindStringSubmatch(frame.Command); match != nil {
+			options = append(options, match[1])
+		}
+	}
+	// A lookup in one of Base's callbacks, run once the Portfile is read,
+	// takes a dependency list or the notes, which no fetch or checksum
+	// value reads: add_extract_deps' lbzip2, the build system's make. A
+	// callback a PortGroup registered has its file for a caller.
+	if len(options) == 0 {
+		return len(declaration.Frames) > 0 && strings.HasPrefix(declaration.Frames[0].Command, "port::run_callbacks")
+	}
+	for _, option := range options {
+		if !(buildOnlyDefault(option) || basePhaseOption(option)) || slices.Contains(fetchInputs, option) {
+			return false
+		}
+		if !optionReadBenignAs(root, contents, option, declaration, groups, true) {
+			return false
+		}
+	}
+	return true
+}
+
+// basePhaseOption names Base's extract, patch and configure options,
+// beside build, test and destroot's (phaseOption).
+func basePhaseOption(name string) bool {
+	for _, phase := range []string{"extract.", "patch.", "configure."} {
+		if strings.HasPrefix(name, phase) {
+			return true
+		}
+	}
+	return false
+}
+
+// sourceDateEpochLookup reports whether a recorded host access is a closed
+// lookup Base's portmain::get_source_date_epoch made, by its frame, never
+// by what was looked for: its findBinary git. The tree dockhand evaluates
+// is a snapshot with no .git, and the model answers git's work-tree
+// question of it as git does there (dispatcher's work_tree), so with git
+// found or not the value is the files' times, and the closed lookup can
+// reach no fetch value through it (architecture's call on #110's finding
+// 1; TestSourceDateEpochIsTheSameWithGitAndWithout holds the claim). A
+// Portfile's or PortGroup's own lookup of git has no such frame, and stays
+// a problem.
+func sourceDateEpochLookup(declaration macports.Declaration) bool {
+	if len(declaration.Values) < 4 || declaration.Values[1] != "closed" {
+		return false
+	}
+	if lookup, _, _ := strings.Cut(declaration.Values[3], " "); lookup != "findBinary" && lookup != "binaryInPath" {
+		return false
+	}
+	for _, frame := range declaration.Frames {
+		if strings.HasPrefix(frame.Command, "portmain::get_source_date_epoch") {
+			return true
+		}
+	}
+	return false
+}
 
 // toolchainProbe reports whether a recorded host access came from MacPorts
 // compiler selection. Such probes look for compilers the modeled profile
@@ -167,6 +277,10 @@ func Tolerate(ctx context.Context, port macports.PortObservation, contents []byt
 		switch {
 		case buildDefaultReadBenign(root, contents, declaration, groups):
 			progress.DebugReport(ctx, "Host access explained as a build-only option's default: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
+		case baseLookupBenign(root, contents, declaration, groups):
+			progress.DebugReport(ctx, "Host access explained as Base's own lookup for an option no fetch or checksum value reads: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
+		case sourceDateEpochLookup(declaration):
+			progress.DebugReport(ctx, "Host access explained as Base's source_date_epoch lookup of git: the snapshot has no .git, so the answer doesn't depend on whether git is found: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
 		case callbackExplained(declaration, contents):
 			progress.DebugReport(ctx, "Host access explained as a PortGroup callback's build-only read: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
 		case toolchainProbe(declaration):
@@ -294,6 +408,15 @@ func buildDefaultReadBenign(root string, contents []byte, declaration macports.D
 // optionReadBenign reports whether neither the Portfile nor a PortGroup on
 // the read's stack reads option outside a build-only position.
 func optionReadBenign(root string, contents []byte, option string, declaration macports.Declaration, groups map[string][]byte) bool {
+	return optionReadBenignAs(root, contents, option, declaration, groups, option == "build.jobs")
+}
+
+// optionReadBenignAs is optionReadBenign, where expressionsOnly counts a
+// read the walk can't see only in an expression or by [option], as for
+// build.jobs, which Portfiles pass to the build by name, -j${build.jobs}:
+// a Base lookup's options are judged so (architecture's step 2 on #110's
+// finding 1), as test.cmd ${build.cmd} is a build position.
+func optionReadBenignAs(root string, contents []byte, option string, declaration macports.Declaration, groups map[string][]byte, expressionsOnly bool) bool {
 	reads := func(src []byte) bool {
 		script, errs := syntax.Parse(src)
 		return len(errs) == 0 && classifyReads(src, script, &dimension{read: func(name string) bool { return name == option }, label: option, tainted: map[string]bool{}}) == nil
@@ -302,11 +425,11 @@ func optionReadBenign(root string, contents []byte, option string, declaration m
 	// counts too: the Portfile reading the option at all, by $name,
 	// [option name], or [tbool name], keeps it inconclusive.
 	readsAtAll := regexp.MustCompile(`\$\{?` + regexp.QuoteMeta(option) + `\b|\[(?:option|tbool|istrue)\s+` + regexp.QuoteMeta(option) + `\b`)
-	if option == "build.jobs" {
+	if expressionsOnly {
 		// Portfiles pass build.jobs to the build by name, -j${build.jobs},
 		// in positions the walk sees; only one in an expression it can't
 		// see, or asked for by [option], counts (#110).
-		readsAtAll = regexp.MustCompile(`(?:\bif|\belseif|\bexpr|\bwhile)\s*\{[^}\n]*\$\{?build\.jobs\b|\[(?:option|tbool|istrue)\s+build\.jobs\b`)
+		readsAtAll = regexp.MustCompile(`(?:\bif|\belseif|\bexpr|\bwhile)\s*\{[^}\n]*\$\{?` + regexp.QuoteMeta(option) + `\b|\[(?:option|tbool|istrue)\s+` + regexp.QuoteMeta(option) + `\b`)
 	}
 	if !reads(contents) || readsAtAll.Match(contents) {
 		return false

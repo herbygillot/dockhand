@@ -80,6 +80,9 @@ type fakePreparer struct {
 	// https are the links the edit reports it switched to https, where
 	// it's given answers to ask (editprep.Request.HTTPS).
 	https []macports.PlainURL
+	// cratesUnlocked is why the edit left a crate list as it was, its new
+	// source shipping no Cargo.lock.
+	cratesUnlocked string
 }
 
 func (p *fakePreparer) ResolveRelease(_ context.Context, r editprep.Request) (model.Release, error) {
@@ -185,6 +188,7 @@ func (p *fakePreparer) Prepare(ctx context.Context, r editprep.Request) (editpre
 	result.Files, result.PreparedTree = []git.FileEdit{edit}, model.ObjectID(tree)
 	result.GoToolchain = p.toolchain
 	result.Patches = p.patches
+	result.CratesUnlocked = p.cratesUnlocked
 	if r.HTTPS != nil {
 		result.HTTPS = p.https
 	}

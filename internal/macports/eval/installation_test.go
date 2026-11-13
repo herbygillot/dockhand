@@ -261,7 +261,7 @@ func TestAModelledContextSaysWhetherItHasSystemHeaders(t *testing.T) {
 			continue
 		}
 		require.Equal(t, []string{c.want}, got, "darwin %s", c.version)
-		require.False(t, port.ModeledHostAccess, "darwin %s: %v", c.version, port.Problems)
+		require.False(t, hostState(t, port, effects("lappend results [file exists /usr/include/sys/cdefs.h]")), "darwin %s: %v", c.version, port.Problems)
 	}
 }
 
@@ -289,7 +289,7 @@ func TestAModelledContextAnswersXcodesSDKsFromTheTable(t *testing.T) {
 		sdks + "/MacOSX15.5.sdk", sdks + "/MacOSX15.5.sdk",
 		"1", "1",
 		clt + "/MacOSX.sdk", clt + "/MacOSX.sdk"}, got, "the tools' MacOSX.sdk links to MacOSX15.5.sdk and comes first, as the tools' 27.0 said here")
-	require.False(t, port.ModeledHostAccess, "%v", port.Problems)
+	require.False(t, hostState(t, port, effects(lines)), "%v", port.Problems)
 }
 
 // An Xcode before 8 has an SDK per version and no MacOSX.sdk: Xcode 4.6.3,
@@ -354,7 +354,8 @@ func TestAModelledCxx20PortTakesTheTablesClang(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "1403.0.22.14.1", tools.Clang, "the table, as this test expects it")
 	for _, standard := range []string{"2017", "2020"} {
-		got, port := observedDescription(t, ventura, "", "compiler.cxx_standard "+standard+"\nlappend results [compiler.command_line_tools_version clang] ${configure.compiler}")
+		lines := "compiler.cxx_standard " + standard + "\nlappend results [compiler.command_line_tools_version clang] ${configure.compiler}"
+		got, port := observedDescription(t, ventura, "", lines)
 		require.Len(t, got, 2)
 		require.Equal(t, tools.Clang, got[0], standard)
 		if standard == "2017" {
@@ -362,7 +363,7 @@ func TestAModelledCxx20PortTakesTheTablesClang(t *testing.T) {
 		} else {
 			require.True(t, strings.HasPrefix(got[1], "macports-clang-"), "C++20: %s", got[1])
 		}
-		require.False(t, port.ModeledHostAccess, "%v", port.Problems)
+		require.False(t, hostState(t, port, effects(lines)), "%v", port.Problems)
 	}
 }
 

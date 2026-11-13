@@ -233,6 +233,9 @@ type Dependencies struct {
 	// (engine.Options), unset but in its tests (#129).
 	Process  func() (engine.SessionProcess, error)
 	Liveness engine.Liveness
+	// Heartbeat is the sweep's session interval (engine.Options.Heartbeat),
+	// zero but in its tests.
+	Heartbeat time.Duration
 	// OtherDockhands stands in for this Mac's other dockhand processes,
 	// which a migration waits on (engine.Options.OtherDockhands).
 	OtherDockhands func() ([]int, error)
@@ -380,6 +383,7 @@ func Settings(ctx context.Context, options Options, dependencies Dependencies) (
 		WrapStore: dependencies.WrapStore,
 		Process:   dependencies.Process,
 		Liveness:  dependencies.Liveness,
+		Heartbeat: dependencies.Heartbeat,
 		// A test's world counts its own dockhands, not this Mac's.
 		OtherDockhands: dependencies.OtherDockhands,
 		Worktrees:      file.Worktrees,

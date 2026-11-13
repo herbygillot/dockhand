@@ -96,6 +96,11 @@ type Capture struct {
 	// a port written by hand, which the worktree's sparse checkout keeps
 	// git add from taking (the Vx port's field testing, 2026-10-03).
 	NewPorts []string
+	// OutsideSparse are the tracked files the capture read from disk that
+	// lie outside the worktree's sparse checkout: git status reports them,
+	// so a check builds them, but git add declines them until the
+	// checkout is widened (#228: apache-arrow's Portfile).
+	OutsideSparse []string
 	// Fixed are the lint findings the capture fixed in the working files
 	// first, as tidy's plan fixes them (lintFixes), each in words; a
 	// plan's are said, and its capture holds them, but nothing is
@@ -175,6 +180,13 @@ func (e *Engine) Capture(ctx context.Context, request CaptureRequest) (Capture, 
 		}
 		_, files, err := worktree.WorkingTree(ctx)
 		if err != nil {
+			return Capture{}, err
+		}
+		changes, err := worktree.TrackedChanges(ctx)
+		if err != nil {
+			return Capture{}, err
+		}
+		if capture.OutsideSparse, err = worktree.OutsideSparse(ctx, changes); err != nil {
 			return Capture{}, err
 		}
 		if fixes, capture.Fixed, err = lintFixes(ctx, worktree, bases[string(branch.Base)], files); err != nil {

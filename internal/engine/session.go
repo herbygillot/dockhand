@@ -19,7 +19,7 @@ type (
 // until ctx ends: the one coordinator built for a command, where command
 // built its own (the command package split's 7b row 2).
 func (e *Engine) Session(ctx context.Context, kind model.SessionKind) (*coord.Session, error) {
-	c := &coord.Coordinator{Store: e.Store, Repository: e.Repository, Liveness: e.options.Liveness}
+	c := &coord.Coordinator{Store: e.Store, Repository: e.Repository, Liveness: e.options.Liveness, Heartbeat: e.options.Heartbeat}
 	self := coord.Self
 	if e.options.Process != nil {
 		self = e.options.Process

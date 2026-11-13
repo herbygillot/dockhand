@@ -10,7 +10,8 @@ fault_proxy() {
 	if [ ! -x "$bin" ]; then
 		(cd "${ACCEPT_REPO:?}" && GOFLAGS=-mod=vendor go build -o "$bin" ./tools/acceptance/faultproxy) || return 1
 	fi
-	"$bin" -mode "$mode" >"$ROW_DIR/faultproxy.addr" 2>"$ROW_DIR/faultproxy.log" &
+	shift
+	"$bin" -mode "$mode" "$@" >"$ROW_DIR/faultproxy.addr" 2>"$ROW_DIR/faultproxy.log" &
 	FAULT_PROXY_PID=$!
 	# A row calls this in $(...), whose variables go with it: the pid is
 	# kept in a file, which _stop reads (the M1's runs: D-N1's proxy was
@@ -21,8 +22,18 @@ fault_proxy() {
 		[ -s "$ROW_DIR/faultproxy.addr" ] && break
 		sleep 0.2
 	done
+	# A proxy that never said where it listens isn't there: "http://"
+	# alone, returned as success, sent dockhand nowhere in particular
+	# (Codex's cold read at 2cdaf571, #232).
+	if [ ! -s "$ROW_DIR/faultproxy.addr" ] || ! kill -0 "$FAULT_PROXY_PID" 2>/dev/null; then
+		printf 'fault_proxy: the %s proxy didn'"'"'t start: %s\n' "$mode" "$(head -1 "$ROW_DIR/faultproxy.log" 2>/dev/null)" >>"$ROW_DIR/out.log"
+		return 1
+	fi
 	printf 'http://%s' "$(head -1 "$ROW_DIR/faultproxy.addr")"
 }
+# fault_proxy_asked says how many requests the row's proxy was asked: a
+# fault nothing went through tested nothing.
+fault_proxy_asked() { grep -cE ' (CONNECT|GET|POST|HEAD) ' "$ROW_DIR/faultproxy.log" 2>/dev/null || echo 0; }
 fault_proxy_stop() {
 	local pid=${FAULT_PROXY_PID:-}
 	[ -n "$pid" ] || pid=$(cat "$ROW_DIR/faultproxy.pid" 2>/dev/null)

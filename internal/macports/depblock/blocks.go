@@ -64,6 +64,10 @@ type Plan struct {
 	// which is the declaration of each name that ran, by its place among
 	// the Portfile's declarations of it (declaration).
 	which map[string]int
+	// unselected are the names whose declaration sits in the body of a
+	// variant the evaluation didn't select, taken as written
+	// (InspectVariants).
+	unselected map[string]bool
 }
 
 // Declared is the crates or Go modules a port's Portfile declares, as
@@ -79,6 +83,21 @@ func Declared(src []byte, info macports.PortInfo) (*Plan, error) {
 }
 
 func Inspect(src []byte, options map[string]string) (*Plan, error) {
+	return inspect(src, options, false)
+}
+
+// InspectVariants is Inspect, but a declaration in the body of a variant
+// the evaluation didn't select, which MacPorts evaluated as empty, is
+// taken as its literal words say, and Unselected says so, where Inspect
+// refuses it as calculated: an update that leaves the block as it is,
+// its new source shipping no Cargo.lock, still moves the version (#229).
+// What would write the block can't check it against MacPorts'
+// evaluation, so a caller that writes one refuses it there.
+func InspectVariants(src []byte, options map[string]string) (*Plan, error) {
+	return inspect(src, options, true)
+}
+
+func inspect(src []byte, options map[string]string, variants bool) (*Plan, error) {
 	commands, err := declarations(src)
 	if err != nil {
 		return nil, err
@@ -104,7 +123,7 @@ func Inspect(src []byte, options map[string]string) (*Plan, error) {
 	if kind == "" {
 		return nil, nil
 	}
-	values, which := map[string][]string{}, map[string]int{}
+	values, which, unselected := map[string][]string{}, map[string]int{}, map[string]bool{}
 	for _, name := range names(kind) {
 		expected, errs := syntax.ListValues(options[name])
 		if len(errs) > 0 {
@@ -125,12 +144,15 @@ func Inspect(src []byte, options map[string]string) (*Plan, error) {
 				return nil, err
 			}
 		}
+		if variants && len(expected) == 0 && len(actual) > 0 && portfile.EnclosingVariant(src, commands[name][i].Span) != "" {
+			unselected[name], expected = true, actual
+		}
 		if !slices.Equal(actual, expected) {
 			return nil, fmt.Errorf("dependency: calculated or overridden %s requires manual preparation", name)
 		}
 		values[name] = expected
 	}
-	plan := &Plan{Kind: kind, Values: values, source: slices.Clone(src), which: which}
+	plan := &Plan{Kind: kind, Values: values, source: slices.Clone(src), which: which, unselected: unselected}
 	if kind == Cargo {
 		plan.Git = gitPolicy(options, len(commands[CargoGit]) > 0)
 	}
@@ -245,6 +267,28 @@ func (p *Plan) Strip(src []byte) ([]byte, error) {
 		replacements[name] = nil
 	}
 	return apply(src, replacements, nil, p.which)
+}
+
+// Variant is the variant whose body holds the declaration of name the plan
+// was made from, or "" where it's at the Portfile's top or in no variant's
+// body (portfile.EnclosingVariant).
+func (p *Plan) Variant(name string) string {
+	original, err := declarations(p.source)
+	if err != nil {
+		return ""
+	}
+	cmd, found, err := pick(original, p.which, name)
+	if err != nil || !found {
+		return ""
+	}
+	return portfile.EnclosingVariant(p.source, cmd.Span)
+}
+
+// Unselected reports whether a declaration the plan takes sits in the body
+// of a variant the evaluation didn't select (InspectVariants): its words
+// are the Portfile's, not MacPorts' evaluation of them.
+func (p *Plan) Unselected() bool {
+	return len(p.unselected) > 0
 }
 
 // Empty reports a block the Portfile declares with nothing in it, which

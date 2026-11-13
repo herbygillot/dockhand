@@ -95,8 +95,34 @@ fi
 
 results="$ACCEPT_STATE/results/$candidate"
 mkdir -p "$results"
+# What made the results, recorded in each (#230): the candidate's commit,
+# where its label or ACCEPT_CANDIDATE_REF names one, the harness's own
+# commit, and, per row, the binary the row ran.
+candidate_commit=$(git -C "$here" rev-parse -q --verify "${ACCEPT_CANDIDATE_REF:-$candidate}^{commit}" 2>/dev/null || :)
+harness_commit=$(git -C "$here" rev-parse HEAD 2>/dev/null || echo unknown)
+[ -z "$(git -C "$here" status --porcelain -- . 2>/dev/null)" ] || harness_commit="$harness_commit+dirty"
+# The candidate's version as --version names it, ACCEPT_CANDIDATE_VERSION
+# where the label isn't one, as v0.8.0-rc4-reruns.
+candidate_version=${ACCEPT_CANDIDATE_VERSION:-${candidate#v}}
+binary_json() {
+	if [ -x "${DH_BIN:-}" ]; then
+		jq -n --arg path "$DH_BIN" --arg version "$("$DH_BIN" --version 2>/dev/null | head -1)" --arg sha256 "$(shasum -a 256 "$DH_BIN" 2>/dev/null | cut -d' ' -f1)" \
+			'{path: $path, version: $version, sha256: $sha256}'
+	else
+		jq -n --arg path "${DH_BIN:-}" '{path: $path, version: null, sha256: null}'
+	fi
+}
+# write_result writes a row's result whole, never a part: a rerun that's
+# cut leaves the result it marked superseded, not a pass pointing at
+# evidence it deleted (#230).
+write_result() {
+	jq --arg commit "$candidate_commit" --arg harness "$harness_commit" --argjson binary "$(binary_json)" \
+		'. + {candidate_commit: $commit, harness_commit: $harness, binary: $binary}' >"$results/$row.json.new" &&
+		mv "$results/$row.json.new" "$results/$row.json"
+}
 failed=0
 notrun=0
+unexercised=0
 pending=0
 stage_started=$(date +%s)
 
@@ -114,6 +140,18 @@ fi
 if [ "$quick_gated" = 1 ] && [ "${ACCEPT_NO_QUICK_GATE:-0}" != 1 ]; then
 	if [ ! -d "$quick_results" ]; then
 		echo "run.sh: the quick stage hasn't run on $candidate here ($quick_results); run tools/acceptance/quick.sh --candidate $candidate first, or set ACCEPT_NO_QUICK_GATE=1" >&2
+		exit 2
+	fi
+	# The quick stage's results stand only for the same candidate, whole:
+	# its manifest, written at the end of a complete quick run, names the
+	# commit it was built from (#230).
+	if ! jq -e '.complete == true' "$quick_results/manifest.json" >/dev/null 2>&1; then
+		echo "run.sh: the quick stage on $candidate has no complete run's manifest ($quick_results/manifest.json); run the whole quick stage on it first, or set ACCEPT_NO_QUICK_GATE=1" >&2
+		exit 2
+	fi
+	quick_commit=$(jq -r '.candidate_commit // ""' "$quick_results/manifest.json")
+	if [ -n "$candidate_commit" ] && [ "$quick_commit" != "$candidate_commit" ]; then
+		echo "run.sh: the quick stage on $candidate was built from ${quick_commit:-an unnamed commit}, not the candidate's $candidate_commit; run it again on the candidate" >&2
 		exit 2
 	fi
 	blocking=$(jq -r 'select(.result == "fail" or .result == "blocker") | .row' "$quick_results"/*.json 2>/dev/null | sort -V | tr '\n' ' ')
@@ -190,14 +228,113 @@ EOT
 	git -C "${MACPORTS_TREE:?}" remote prune origin >>"$ROW_DIR/isolation.log" 2>&1 || :
 }
 
+# preflight runs one of lib/preflight.sh's checks, host or account, with
+# the libraries it needs, printing what's wrong (#226).
+preflight() {
+	(
+		set +e
+		# shellcheck source=lib/common.sh
+		. "$here/lib/common.sh"
+		# shellcheck source=lib/harm.sh
+		. "$here/lib/harm.sh"
+		# shellcheck source=lib/preflight.sh
+		. "$here/lib/preflight.sh"
+		"preflight_$1"
+	)
+}
+# blocked_result records a row the host or the test account kept from
+# running: not a fail, since dockhand didn't fail, and on the rerun list.
+blocked=0
+rerun="$results/rerun.txt"
+: >"$rerun"
+blocked_result() {
+	local result=$1 why=$2
+	jq -n --arg row "$row" --arg stage "$stage" --arg candidate "$candidate" --arg result "$result" --arg why "$why" --arg started "$started" \
+		'{row: $row, stage: $stage, candidate: $candidate, result: $result, why: $why, started: $started, seconds: 0}' | write_result
+	printf '%-8s %-14s %s\n' "$row" "$result" "$why"
+}
+# The test account is checked once, at the full stage's start: a fork
+# whose Actions start no run blocks every row that checks on GitHub, as
+# B9's six attempts waited ten minutes each (the v0.8.0 acceptance).
+account=""
+if [ "$stage" = full ] && [ "${ACCEPT_DRY:-0}" != 1 ]; then
+	account=$(preflight account)
+	[ -z "$account" ] || echo "run.sh: the test account: $account; rows that check on GitHub are blocked" >&2
+fi
+
+# The fence (#225): at the full stage's start, the forks' refs as they
+# stand; refs made after it are the run's, which a later row may remove;
+# and before each row, the refs outside the run's namespace must be as the
+# start left them, or the run pauses there, since a row would be judged
+# against changes nobody in it made. A pause asked for with pause.sh, as
+# for an upgrade landing mid-run (rc4's C2 straddled two candidates),
+# stops at the same boundary.
+fence_refs() {
+	(
+		set +e
+		ROW_DIR=$ACCEPT_STATE
+		# shellcheck source=lib/common.sh
+		. "$here/lib/common.sh"
+		# shellcheck source=lib/harm.sh
+		. "$here/lib/harm.sh"
+		for repo in ${ACCEPT_WATCH:-}; do
+			harm_remote_refs "$repo" 2>/dev/null
+		done | sort -u
+	)
+}
+fence_outside() {
+	(
+		# shellcheck source=lib/harm.sh
+		. "$here/lib/harm.sh"
+		while read -r remote object ref; do
+			[ -n "$ref" ] || continue
+			harm_ours "$ref" remote || printf '%s %s %s\n' "$remote" "$object" "$ref"
+		done
+	)
+}
+fenced=0
+rm -f "$ACCEPT_STATE/pause"
+if [ "$stage" = full ] && [ "${ACCEPT_DRY:-0}" != 1 ] && [ -n "${ACCEPT_WATCH:-}" ]; then
+	fence_refs >"$ACCEPT_STATE/stage.refs"
+	fence_outside <"$ACCEPT_STATE/stage.refs" >"$ACCEPT_STATE/fence.refs"
+	fenced=1
+fi
+# stop_before stops the run at a row boundary, writing the rows still to
+# run where --rows-file takes them up again.
+stop_before() {
+	local why=$1 left="" seen=0 r
+	for r in $rows; do
+		[ "$r" = "$row" ] && seen=1
+		[ "$seen" = 1 ] && left="$left$r
+"
+	done
+	printf '%s' "$left" >"$results/remaining.txt"
+	echo "run.sh: paused before $row: $why. The rows left are in $results/remaining.txt; run them with --rows-file $results/remaining.txt once it's settled"
+	exit 3
+}
+
 printf '%-8s %-14s %s\n' ROW RESULT WHY
 for row in $rows; do
+	if [ -f "$ACCEPT_STATE/pause" ]; then
+		rm -f "$ACCEPT_STATE/pause"
+		stop_before "a pause was asked for (pause.sh)"
+	fi
+	if [ "$fenced" = 1 ]; then
+		moved=$(fence_refs | fence_outside | diff "$ACCEPT_STATE/fence.refs" - | sed -n 's/^[<>] //p' | awk '{print $3}' | sort -u | tr '\n' ' ')
+		[ -z "$moved" ] || stop_before "refs outside the run's namespace moved since the stage began: ${moved% }"
+	fi
 	file="$rowdir/$row.sh"
 	if [ ! -f "$file" ]; then
 		echo "run.sh: no row $row" >&2
 		exit 2
 	fi
 	ROW_DIR="$results/$row"
+	# An earlier result is marked superseded before its evidence goes, so
+	# a rerun cut short leaves no pass pointing at deleted evidence (#230).
+	if [ -f "$results/$row.json" ]; then
+		jq --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.superseded = {at: $at, was: .result, why: .why} | .result = "superseded" | .why = "a rerun began at \($at) and hasn'"'"'t written its result"' \
+			"$results/$row.json" >"$results/$row.json.new" 2>/dev/null && mv "$results/$row.json.new" "$results/$row.json"
+	fi
 	rm -rf "$ROW_DIR"
 	started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 	row_started=$(date +%s)
@@ -208,9 +345,42 @@ for row in $rows; do
 		result=$(jq -r .result "$quick_results/$row.json")
 		why="passed in the quick stage on $candidate: $(jq -r .why "$quick_results/$row.json")"
 		jq -n --arg row "$row" --arg stage "$stage" --arg candidate "$candidate" --arg result "$result" --arg why "$why" --arg started "$started" \
-			--arg from "$quick_results/$row.json" '{row: $row, stage: $stage, candidate: $candidate, result: $result, why: $why, started: $started, seconds: 0, from_quick: $from}' >"$results/$row.json"
+			--arg from "$quick_results/$row.json" '{row: $row, stage: $stage, candidate: $candidate, result: $result, why: $why, started: $started, seconds: 0, from_quick: $from}' | write_result
 		printf '%-8s %-14s %s\n' "$row" "$result" "$why"
 		continue
+	fi
+	# The binary a full-stage row runs is the candidate's, by --version, but
+	# for a row that installs it, as A1: a label is only a label, and every
+	# row after A7 could otherwise run its newer build under the
+	# candidate's name (#230, #234).
+	if [ "$stage" = full ] && [ "${ACCEPT_DRY:-0}" != 1 ] && [ -x "${DH_BIN:-}" ] && ! grep -q '^# installs:' "$file"; then
+		installed=$("$DH_BIN" --version 2>/dev/null | head -1)
+		case "$installed" in
+		*"$candidate_version"*) ;;
+		*)
+			blocked_result "blocked: wrong binary" "$DH_BIN says \"$installed\", not $candidate_version; install the candidate, or set ACCEPT_CANDIDATE_VERSION where the label isn't its version"
+			blocked=$((blocked + 1))
+			echo "$row" >>"$rerun"
+			continue
+			;;
+		esac
+	fi
+	# Each row first repeats the host's cheap checks: a host fault blocks
+	# the row, said as the host's, and the row joins the rerun list (#226).
+	if [ "${ACCEPT_DRY:-0}" != 1 ]; then
+		host=$(preflight host)
+		if [ -n "$host" ]; then
+			blocked_result "blocked: host" "$(printf '%s' "$host" | paste -sd ';' -)"
+			blocked=$((blocked + 1))
+			echo "$row" >>"$rerun"
+			continue
+		fi
+		if [ -n "$account" ] && grep -q -- "--on github" "$file"; then
+			blocked_result "blocked: test account" "$account"
+			blocked=$((blocked + 1))
+			echo "$row" >>"$rerun"
+			continue
+		fi
 	fi
 	# A row starts from the stage's environment as made, where the stage
 	# says how to make it again.
@@ -270,6 +440,34 @@ for row in $rows; do
 		result=fail
 		why="GitHub's rate limit, not a refusal: $(grep -i -m1 "rate limit" "$ROW_DIR/out.log" | cut -c1-200)"
 	fi
+	# A row that names its deciding steps, "# exercises: a, b", and passed
+	# without each recorded as run is "not exercised": the step that
+	# decides it was never reached (#227).
+	case "$result" in pass | "refused well" | "known issue")
+		missing=""
+		while IFS= read -r half; do
+			half=$(printf '%s' "$half" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+			[ -n "$half" ] || continue
+			grep -qxF "$half" "$ROW_DIR/exercised" 2>/dev/null || missing="${missing:+$missing, }$half"
+		done <<EOT
+$(sed -n 's/^# exercises: //p' "$file" | tr ',' '\n')
+EOT
+		if [ -n "$missing" ]; then
+			result="not exercised"
+			why="its deciding step never ran: $missing; the row said: $why"
+		fi
+		;;
+	esac
+	# A row that failed reads the host's checks again: one that turned bad
+	# during it is the host's, said with what the row said (C7's fault
+	# began during C4, about 11:25Z, in the v0.8.0 acceptance).
+	if [ "$result" = fail ] && [ "${ACCEPT_DRY:-0}" != 1 ]; then
+		host=$(preflight host)
+		if [ -n "$host" ]; then
+			result="blocked: host"
+			why="the host turned bad during the row: $(printf '%s' "$host" | paste -sd ';' -); the row said: $why"
+		fi
+	fi
 	harmful=""
 	for verdict in "$ROW_DIR"/harm/H*; do
 		[ -f "$verdict" ] || continue
@@ -278,6 +476,37 @@ for row in $rows; do
 	if [ -n "$harmful" ]; then
 		result=blocker
 		why="harm:$harmful${why:+; $why}"
+	else
+		# Outside activity during the row, a ref no dockhand of the run
+		# keeps, isn't the row's harm, but leaves it judged against what
+		# nobody in it did: it's rerun (#225).
+		outside=""
+		for verdict in "$ROW_DIR"/harm/H*; do
+			[ -f "$verdict" ] || continue
+			case "$(cat "$verdict")" in outside*) outside="$outside $(basename "$verdict") $(cut -c1-200 "$verdict");" ;; esac
+		done
+		case "$result" in pass | "refused well" | "known issue")
+			if [ -n "$outside" ]; then
+				result="blocked: outside activity"
+				why="refs changed during the row that it didn't make:${outside%;}; the row said: $why"
+			fi
+			;;
+		esac
+		# An invariant that couldn't look never lets a row pass: its push,
+		# pull request or surviving work went unobserved, and the row is
+		# blocked and joins the rerun list (#231).
+		unobserved=""
+		for verdict in "$ROW_DIR"/harm/H*; do
+			[ -f "$verdict" ] || continue
+			case "$(cat "$verdict")" in unobserved*) unobserved="$unobserved $(basename "$verdict") $(cut -c1-160 "$verdict");" ;; esac
+		done
+		case "$result" in pass | "refused well" | "known issue")
+			if [ -n "$unobserved" ]; then
+				result="blocked: unobserved"
+				why="harm couldn't observe:${unobserved%;}; the row said: $why"
+			fi
+			;;
+		esac
 	fi
 	jq -n --arg row "$row" --arg stage "$stage" --arg candidate "$candidate" --arg result "$result" --arg why "$why" \
 		--arg log "$ROW_DIR/out.log" --argjson harm "$(for v in "$ROW_DIR"/harm/H*; do [ -f "$v" ] && jq -n --arg k "$(basename "$v")" --arg v "$(cat "$v")" '{($k): $v}'; done | jq -s 'add // {}')" \
@@ -285,20 +514,35 @@ for row in $rows; do
 		--argjson spent "${spent:-0}" --argjson used "${used:-0}" \
 		--arg started "$started" --argjson seconds "$(($(date +%s) - row_started))" \
 		'{row: $row, stage: $stage, candidate: $candidate, result: $result, why: $why, harm: $harm, exit_codes: $exits, log: $log,
-		  github_requests: $spent, github_used_after: $used, started: $started, seconds: $seconds}' >"$results/$row.json"
+		  github_requests: $spent, github_used_after: $used, started: $started, seconds: $seconds}' | write_result
 	printf '%-8s %-14s %s\n' "$row" "$result" "$why"
+	# What the row asks of a person once its result is written, as D-I5's
+	# reboot, said only now (after_result).
+	[ ! -s "$ROW_DIR/after-result" ] || printf 'WAITING: %s: %s\n' "$row" "$(cat "$ROW_DIR/after-result")"
 	case "$result" in
 	pass | "refused well" | "known issue") ;;
 	"not run") notrun=$((notrun + 1)) ;;
+	"not exercised") unexercised=$((unexercised + 1)); echo "$row" >>"$rerun" ;;
 	"judge pending") pending=$((pending + 1)) ;;
+	"blocked: "*) blocked=$((blocked + 1)); echo "$row" >>"$rerun" ;;
 	*) failed=$((failed + 1)) ;;
 	esac
 done
+[ "$unexercised" -eq 0 ] || echo "$unexercised not exercised: each passed without its deciding step running, as its row's # exercises: line names"
+[ "$blocked" -eq 0 ] || echo "$blocked blocked by the host or the test account, not dockhand: once it's put right, rerun them with --rows-file $rerun"
 [ "$notrun" -eq 0 ] || echo "$notrun not run: each stopped at a step for the host or a person, as its row says"
 [ "$pending" -eq 0 ] || echo "$pending wait on a person's judgment: tools/acceptance/judge.sh --candidate $candidate answers them"
 for row in $alone; do
 	echo "$row runs alone, after this run: run it with --rows $row"
 done
+# A whole quick run writes its manifest, which the full stage's gate
+# reads (#230); one of named rows leaves it as it was.
+if [ "$stage" = quick ] && [ -z "$named" ] && [ "${ACCEPT_DRY:-0}" != 1 ]; then
+	jq -n --arg candidate "$candidate" --arg commit "$candidate_commit" --arg harness "$harness_commit" --argjson binary "$(binary_json)" \
+		--arg rows "$rows" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+		'{candidate: $candidate, candidate_commit: $commit, harness_commit: $harness, binary: $binary, rows: ($rows | split(" ") | map(select(. != ""))), finished: $at, complete: true}' \
+		>"$results/manifest.json.new" && mv "$results/manifest.json.new" "$results/manifest.json"
+fi
 elapsed=$(($(date +%s) - stage_started))
 echo "Results: $results ($stage stage, $((elapsed / 3600))h $((elapsed % 3600 / 60))m $((elapsed % 60))s)"
-[ "$failed" -eq 0 ]
+[ "$failed" -eq 0 ] && [ "$blocked" -eq 0 ] && [ "$unexercised" -eq 0 ]

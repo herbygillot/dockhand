@@ -145,6 +145,10 @@ type Result struct {
 	// the manifest it's generated from, wants a look: what the hook does
 	// to it couldn't be checked (R3-20). Empty otherwise.
 	ManifestHook string `json:",omitempty"`
+	// CratesUnlocked is why a Cargo port's crate list, left as the old
+	// version had it, wants a look: the new version's source ships no
+	// Cargo.lock to regenerate it from (#229). Empty otherwise.
+	CratesUnlocked string `json:",omitempty"`
 	// Pairs are each archive the update replaced beside the one that
 	// replaces it, in every context that fetches them, fetched only when
 	// KeepArchives asked; PreviousProblem is why the replaced ones could

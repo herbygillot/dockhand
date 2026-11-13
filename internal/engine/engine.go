@@ -76,6 +76,11 @@ type Options struct {
 	// fault-sweep.md, "dead"; #129's fix list, 4). Nil in production.
 	Process  func() (coord.Process, error)
 	Liveness coord.Liveness
+	// Heartbeat is how often a session records that it is alive, the
+	// coordinator's default where zero: the sweep's worlds set one no run
+	// lasts, so no heartbeat falls inside a run (docs/designs/
+	// fault-sweep.md). Zero in production.
+	Heartbeat time.Duration
 	// OtherDockhands are the other dockhand processes on this Mac, which a
 	// migration that waits for quiet waits on; this Mac's own, by name
 	// (otherDockhands), where nil. A test's own world counts none, so it

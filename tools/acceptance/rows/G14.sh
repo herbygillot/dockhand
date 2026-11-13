@@ -21,16 +21,25 @@ act() {
 	G14_SECOND=$(run_name g14-second)
 	dh_setup revbump "${ACCEPT_GO_PORT:?}" --new="$G14_FIRST" --subject "rebuild to check twice in one prefix" || return 0
 	dh_setup revbump "${ACCEPT_GO_PORT:?}" --new="$G14_SECOND" --subject "rebuild to check twice in one prefix" || return 0
-	dh_json check -b "$G14_FIRST" --on "local:$G14_PREFIX" -d </dev/null || :
+	# --fresh: an earlier run's check of the same change on the same master
+	# would be reused, and nothing built (#227).
+	dh_json check -b "$G14_FIRST" --on "local:$G14_PREFIX" -d --fresh </dev/null || :
 	G14_RUN=$(jq -r '.result.run.name // empty' "$ROW_DIR/json/1.json" 2>/dev/null)
 	[ -n "$G14_RUN" ] || return 0
 	# The second starts once the first is building there.
-	local i
-	for i in $(seq 1 60); do
-		"$DH_BIN" --json status -b "$G14_FIRST" 2>/dev/null | matches -i running && break
+	# By the queue's state for the run, not the word: "running" matched
+	# "running": false (Codex's cold read at 2cdaf571, #232). A first check
+	# never seen running leaves the overlap untested.
+	local deadline=$((SECONDS + 300))
+	while [ "$SECONDS" -lt "$deadline" ]; do
+		if dh_queue | jq -e --arg run "$G14_RUN" '.result.queue[]? | select(.name == $run and .state == "running")' >/dev/null 2>&1; then
+			G14_OVERLAPPED=1
+			break
+		fi
 		sleep 5
 	done
-	dh check -b "$G14_SECOND" --on "local:$G14_PREFIX" -v </dev/null || :
+	[ -n "${G14_OVERLAPPED:-}" ] || { row_result "not exercised" "$G14_RUN was never seen running in five minutes, so the second check couldn't start beside it"; return 0; }
+	dh check -b "$G14_SECOND" --on "local:$G14_PREFIX" --fresh -v </dev/null || :
 	dh_json wait "$G14_RUN" </dev/null || :
 }
 

@@ -17,7 +17,10 @@ ds14_next() {
 		printf '1'
 		return
 	fi
-	sqlite3 -readonly "$DOCKHAND_DB" "SELECT coalesce(max(c.number), 0) + 1 FROM checkpoints c JOIN repositories r ON r.id = c.repository_id WHERE r.common_dir = '$common'"
+	# A copy, as stage_db reads one: sqlite3 -readonly couldn't open the
+	# WAL database with no -shm beside it, "unable to open database file
+	# (14)" (rc4's reruns).
+	stage_db "SELECT coalesce(max(c.number), 0) + 1 FROM checkpoints c JOIN repositories r ON r.id = c.repository_id WHERE r.common_dir = '$common'"
 }
 
 setup() {

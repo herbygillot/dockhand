@@ -233,6 +233,10 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 
 	data, err = os.ReadFile(request.Result)
 	if errors.Is(err, os.ErrNotExist) {
+		said, _ := os.ReadFile(logPath)
+		if reason, ok := starter.Unrecorded(runErr, said); ok {
+			return buildenv.Infrastructure("%s didn't run: %s; see %s", p.Label, reason, logPath)
+		}
 		return buildenv.Infrastructure("%s wrote no result file (%v); see %s", p.Label, runErr, logPath)
 	}
 	if err != nil {

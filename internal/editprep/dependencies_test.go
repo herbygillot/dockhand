@@ -467,6 +467,100 @@ extract.rename no
 	}
 }
 
+// A Cargo port whose new source ships no Cargo.lock, cargo.update off,
+// takes its version, checksums and patches, keeps its crate list byte for
+// byte, and holds for a look under crates-unlocked, naming the directories
+// holding a Cargo.toml and the variant the crates are declared in (#229,
+// watchman's: cargo.crates in +rust, resolved by hand). A source that had
+// no lock and has one now regenerates whole, said; a lock only below
+// worksrcdir refuses, named.
+func TestACargoSourceWithoutALock(t *testing.T) {
+	t.Parallel()
+	sha := strings.Repeat("b", 64)
+	lock := func(name string) string {
+		return fmt.Sprintf("version = 4\n[[package]]\nname = \"fixture\"\nversion = \"1.0.0\"\n[[package]]\nname = %q\nversion = \"1.2.3\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = %q\n", name, sha)
+	}
+	toml := "[package]\nname = \"cli\"\n"
+	for _, scenario := range []string{"unlocked", "unlocked-not-default", "locked-now", "nested-lock"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
+			before := manifestArchive(t, "sub/cli/Cargo.toml", toml, "1.0")
+			after := manifestArchive(t, "sub/cli/Cargo.toml", toml, "2.0")
+			switch scenario {
+			case "locked-now":
+				after = manifestArchive(t, "Cargo.lock", lock("new"), "2.0")
+			case "nested-lock":
+				before = manifestArchive(t, "Cargo.lock", lock("old"), "1.0")
+				after = manifestArchive(t, "sub/cli/Cargo.toml", toml, "2.0", "sub/cli/Cargo.lock", lock("new"), "sub/other/Cargo.lock", lock("new"))
+			}
+			block := "variant rust description {Rust tools} {\n    cargo.crates \\\n        old    1.2.3  " + sha + "\n}\n"
+			extra := `options cargo.crates cargo.crates_github cargo.update cargo.dir
+ default cargo.crates {}
+ default cargo.crates_github {}
+ default cargo.update no
+ default cargo.dir {${worksrcpath}}
+ proc fixture_crates {} {
+  foreach {name version checksum} [option cargo.crates] {
+   distfiles-append ${name}-${version}.crate:crate-${name}
+   master_sites-append https://static.crates.io/crates/${name}:crate-${name}
+   checksums-append ${name}-${version}.crate sha256 $checksum
+  }
+ }
+ port::register_callback fixture_crates
+` + block
+			if scenario != "unlocked-not-default" {
+				extra += "default_variants +rust\n"
+			}
+			var requests atomic.Int64
+			service, request := versionFixture(t, "setup", extra, func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				if strings.Contains(r.URL.Path, "/1.0/") {
+					_, _ = w.Write(before)
+				} else {
+					_, _ = w.Write(after)
+				}
+			})
+			script := "if /usr/bin/grep -q 'name = \"old\"' \"$1\"; then\nprintf '%s\\n' 'cargo.crates old 1.2.3 " + sha + "'\nelif /usr/bin/grep -q 'name = \"new\"' \"$1\"; then\nprintf '%s\\n' 'cargo.crates new 1.2.3 " + sha + "'\nfi"
+			service.DependencyTools = depblock.Tools{Cargo2Port: dependencyHelper(t, script), Go2Port: "absent"}
+			result, err := service.Prepare(yours(t), request)
+			switch scenario {
+			case "nested-lock":
+				require.ErrorContains(t, err, "fixture-2.0/sub/cli/Cargo.lock")
+				require.ErrorContains(t, err, "fixture-2.0/sub/other/Cargo.lock")
+				require.ErrorContains(t, err, "2.0")
+				require.Empty(t, result.PreparedTree)
+				return
+			case "locked-now":
+				require.NoError(t, err)
+				written := string(result.Files[0].After)
+				require.Contains(t, written, "new    1.2.3")
+				require.NotContains(t, written, "old    1.2.3")
+				require.Empty(t, result.CratesUnlocked)
+				require.Len(t, result.Regenerated, 2)
+				require.Equal(t, depblock.Cargo, result.Regenerated[0].Option)
+				require.Equal(t, "The source for 1.0 ships no Cargo.lock, so the existing cargo.crates wasn't checked against it; it's regenerated whole.", result.Regenerated[0].Unchecked)
+				return
+			}
+			require.NoError(t, err)
+			require.NotEmpty(t, result.PreparedTree)
+			written := string(result.Files[0].After)
+			require.Contains(t, written, "github.setup owner fixture 2.0 v\n", "the version is written")
+			require.Contains(t, written, fmt.Sprintf("sha256 %x", sha256.Sum256(after)), "the checksums are written")
+			require.Contains(t, written, fmt.Sprintf("size %d", len(after)))
+			require.Contains(t, written, block, "the crate list is byte for byte as it was")
+			require.Empty(t, result.Regenerated, "nothing was regenerated")
+			require.Contains(t, result.CratesUnlocked, "The source for 2.0 ships no Cargo.lock, so cargo.crates is left as 1.0 had it and may not match")
+			require.Contains(t, result.CratesUnlocked, "fixture-2.0/sub/cli")
+			require.Contains(t, result.CratesUnlocked, "variant rust")
+			if scenario == "unlocked" {
+				require.Contains(t, result.CratesUnlocked, "which the default variants include")
+			} else {
+				require.Contains(t, result.CratesUnlocked, "which no default build includes")
+			}
+		})
+	}
+}
+
 func TestCargoGitArchivesUseEvaluatedPortGroupLocations(t *testing.T) {
 	t.Parallel()
 	oldCommit, newCommit := strings.Repeat("a", 40), strings.Repeat("b", 40)

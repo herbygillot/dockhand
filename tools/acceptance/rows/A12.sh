@@ -20,7 +20,9 @@ act() {
 	local branch
 	branch=$(run_name a12-xcode)
 	dh_setup revbump "$ACCEPT_XCODE_PORT" --new="$branch" --subject "rebuild to check an Xcode image" || return 0
-	dh_json check -b "$branch" </dev/null || :
+	# --fresh: an earlier run's check of the same change on the same master
+	# would be reused, and nothing built (#227).
+	dh_json check -b "$branch" --fresh </dev/null || :
 }
 
 assert() {

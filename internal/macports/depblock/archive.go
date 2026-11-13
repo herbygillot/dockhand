@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/archive"
@@ -89,4 +90,34 @@ func CargoLock(ctx context.Context, filename, worksrcdir string) ([]byte, string
 		}
 		dir = parent
 	}
+}
+
+// CargoFiles are the Cargo.lock and Cargo.toml members an archive holds,
+// wherever they are, by their cleaned paths, sorted.
+type CargoFiles struct {
+	Locks, Manifests []string
+}
+
+// CargoMembers is every Cargo.lock and Cargo.toml an archive holds, read
+// where CargoLock finds no lock the build at worksrcdir reads: the source
+// ships none, as watchman's doesn't, or holds one only elsewhere, below
+// worksrcdir, which nothing points the build at (#229).
+func CargoMembers(ctx context.Context, filename string) (CargoFiles, error) {
+	var files CargoFiles
+	err := archive.Walk(ctx, filename, func(member archive.Member) error {
+		clean, ok := member.Clean()
+		if !ok || !member.Regular {
+			return nil
+		}
+		switch path.Base(clean) {
+		case "Cargo.lock":
+			files.Locks = append(files.Locks, clean)
+		case "Cargo.toml":
+			files.Manifests = append(files.Manifests, clean)
+		}
+		return nil
+	})
+	slices.Sort(files.Locks)
+	slices.Sort(files.Manifests)
+	return files, err
 }

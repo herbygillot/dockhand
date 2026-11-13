@@ -10,7 +10,7 @@ act() {
 	(cd / && dh_json --tree "$MACPORTS_TREE" status) || :
 	(cd / && dh_json status) || :
 	(cd / && env -u MACPORTS_TREE "$DH_BIN" --json status >"$ROW_DIR/outside.json" 2>&1) || :
-	dh_json start ds8 --here </dev/null || :
+	dh_json start "$(run_name ds8)" --here </dev/null || :
 }
 # The staged file goes again, from the index and the checkout: it stayed
 # staged in the full stage's checkout from 2026-10-09 until a driver

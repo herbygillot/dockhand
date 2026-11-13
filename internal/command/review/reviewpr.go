@@ -296,7 +296,7 @@ func checkPullRequest(ctx context.Context, e *engine.Engine, s *settings.Setting
 	if captured := proposal.Capture.Revision.Source.Commit; captured != head {
 		return model.Run{}, nil, fmt.Errorf("%s moved to %s while review --check ran; nothing was checked", branch.ShortName(), captured.Short())
 	}
-	view.WritePlan(streams.Prose(), proposal.Plan, e.PlanNotes(ctx, proposal.Plan), e.PlanSiblings(ctx, proposal.Plan), e.Remedy, view.ListShown(streams))
+	view.WritePlan(streams.Prose(), proposal.Plan, e.PlanNotes(ctx, proposal.Plan), e.PlanSiblings(ctx, proposal.Capture.Revision, proposal.Plan), e.Remedy, view.ListShown(streams))
 	if err := checks.Runnable(proposal.Plan); err != nil {
 		return model.Run{}, nil, fmt.Errorf("nothing was checked: %w", err)
 	}

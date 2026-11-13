@@ -118,16 +118,14 @@ own_branch() {
 		grep -vxF -f "$ROW_DIR/branches.before" 2>/dev/null | tail -1
 }
 
-# stage_db queries a copy of the stage's database: it's in WAL mode, which
-# a read-only open can't read without its -shm, nor make one, so it's
-# copied with its -wal and -shm, as A5 copies the person's (the rc1 full
-# stage's D-T1: "unable to open database file").
+# stage_db queries a copy of the stage's database, made with SQLite's own
+# backup, which copies one consistent state: copying the main file, its
+# WAL and its SHM one after another could straddle a checkpoint and hold
+# none of the rows committed (Codex's cold read at 2cdaf571, #233).
 stage_db() {
-	local copy="$ROW_DIR/db-copy" part
+	local copy="$ROW_DIR/db-copy"
 	rm -rf "$copy" && mkdir -p "$copy" || return 1
-	for part in "" -wal -shm; do
-		[ ! -f "${DOCKHAND_DB:?}$part" ] || cp "$DOCKHAND_DB$part" "$copy/dockhand.db$part" || return 1
-	done
+	sqlite3 "${DOCKHAND_DB:?}" ".backup '$copy/dockhand.db'" || return 1
 	sqlite3 "$copy/dockhand.db" "$1"
 }
 
@@ -158,6 +156,53 @@ dh_json() {
 # pass it silently. matches reads all its input.
 matches() { grep "$@" >/dev/null; }
 
+# said is how a row asserts what dockhand printed: its out.log, a --json
+# envelope's error or messages, serve.log, a drain's or a background
+# dockhand's log (#223). said [-i] [-x] [-h] [-c | -o | -p | -n] [--] ERE
+# [file...] is grep -E with those flags, reading its standard input where
+# no file is named: -p prints the lines that match, as grep alone does, and
+# -n with their numbers. With none of -c, -o, -p, or -n it is quiet,
+# exiting 0 on a match and 1 on none; like matches, it reads all its input. Every row's pattern is one the
+# gate holds to dockhand's source (tools/acceptance/said): it must hold a
+# fixed run of at least 12 literal characters, and match a message some
+# string literal of internal/ or cmd/ can be, or be in said-allow.txt with
+# the Go test that pins the message dockhand assembles. A commit that
+# rewords a message a row says then fails the gate, not the test host
+# (rc3 and rc4's B2, D-T1, and the ^serve: rows).
+#
+# The gap: a literal can match while the message dockhand renders
+# differs, as where a prefix or a wrap comes between, or a verb is filled
+# with what the row didn't expect. A row that reads a --json field (jq) is
+# the only kind that can't go stale on wording, so a row reads one where
+# the envelope carries the fact it checks.
+said() {
+	local fold="" whole="" mode=-q names=""
+	while :; do
+		case "${1:-}" in
+		-i) fold=-i ;;
+		-x) whole=-x ;;
+		-c | -o | -n) mode=$1 ;;
+		-p) mode="" ;;
+		-h) names=-h ;;
+		--)
+			shift
+			break
+			;;
+		*) break ;;
+		esac
+		shift
+	done
+	local pattern=$1
+	shift
+	# The flags are empty or one word each.
+	# shellcheck disable=SC2086
+	if [ "$mode" = -q ]; then
+		grep -E $fold $whole $names -e "$pattern" -- "$@" >/dev/null
+	else
+		grep -E $fold $whole $names $mode -e "$pattern" -- "$@"
+	fi
+}
+
 # The allowances: what a row is meant to change, which the harm sweep
 # then doesn't count. Each is a glob.
 allow_change() { printf '%s\n' "$@" >>"$ROW_DIR/allow.change"; }
@@ -165,6 +210,18 @@ allow_ref_gone() { printf '%s\n' "$@" >>"$ROW_DIR/allow.refgone"; }
 allow_push() { printf '%s\n' "$@" >>"$ROW_DIR/allow.push"; }
 allow_prs() { printf '%s\n' "$1" >"$ROW_DIR/allow.prs"; }
 allow_running() { printf '%s\n' "$@" >>"$ROW_DIR/allow.running"; }
+# allow_handoff says what the row leaves running on purpose for a later
+# half of itself, as D-I5's first half leaves its check and serve to the
+# reboot: allowed past teardown too, where H7 otherwise allows nothing
+# (#234).
+allow_handoff() {
+	printf '%s\n' "$@" >>"$ROW_DIR/allow.running"
+	printf '%s\n' "$@" >>"$ROW_DIR/allow.handoff"
+}
+# after_result is what the run says once the row's result is written,
+# never before: D-I5's "reboot now" asked before it, and a reboot that
+# came sooner could cut the result's write (#234).
+after_result() { printf '%s\n' "$*" >"$ROW_DIR/after-result"; }
 
 # A row's result, prime-time.md's: pass, refused well, known issue, or
 # fail; the harm sweep makes a blocker of any. The first said stands.
@@ -173,6 +230,11 @@ row_result() {
 	printf '%s\n' "$1" >"$ROW_DIR/result"
 	printf '%s\n' "${2:-}" >"$ROW_DIR/why"
 }
+# exercised records that a deciding step the row's "# exercises:" header
+# names ran: a row whose deciding step never ran reports "not exercised",
+# not pass, as G36's build half and D-T1's guest went unreached in rc4
+# (#227).
+exercised() { printf '%s\n' "$*" >>"$ROW_DIR/exercised"; }
 row_pass() { row_result pass "${1:-}"; }
 row_refused_well() { row_result "refused well" "$1"; }
 row_known() { row_result "known issue" "$1"; }
@@ -278,7 +340,8 @@ dh_bg_wait() {
 SERVE_LINE='^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(Z|[+-][0-9]{2}:[0-9]{2}) )?serve: '
 
 # wait_for_line waits until a file has a line matching a pattern, for up
-# to some seconds; it fails where none comes.
+# to some seconds; it fails where none comes. The pattern is said's, and
+# the gate holds it to dockhand's source as it holds said's.
 #
 # log_size is a file's size in bytes, 0 where it isn't there: the offset
 # to give wait_for_line before a row's step writes the lines it waits on.
@@ -289,11 +352,30 @@ log_size() { wc -c <"$1" 2>/dev/null | tr -d ' ' || echo 0; }
 # D-C3's waits matched rc9's, so queue ran before rc10's serve had looked
 # (the rc10 full stage). log_size gives the offset to take before acting.
 wait_for_line() {
-	local file=$1 pattern=$2 seconds=${3:-600} from=${4:-0} waited=0
-	while [ "$waited" -lt "$seconds" ]; do
+	local file=$1 pattern=$2 seconds=${3:-600} from=${4:-0} deadline
+	# By the wall clock, not the sleeps: a slow read must not stretch it.
+	deadline=$((SECONDS + seconds))
+	while [ "$SECONDS" -lt "$deadline" ]; do
+		tail -c +"$((from + 1))" "$file" 2>/dev/null | said "$pattern" && return 0
+		sleep 2
+	done
+	return 1
+}
+
+# wait_for_mark is wait_for_line for a line a row reads by its shape, not
+# dockhand's words: a check's or a branch's state as serve and console
+# print it, "<check> <branch>: <state>" and "<branch> <state>", where the
+# names are the row's and the states model's, as --json carries them. Its
+# pattern is grep -E's, which the gate doesn't hold to dockhand's source,
+# so selftest's lint lets a row use it only where its exemptions list the
+# row (#223).
+wait_for_mark() {
+	local file=$1 pattern=$2 seconds=${3:-600} from=${4:-0} deadline
+	# By the wall clock, not the sleeps: a slow read must not stretch it.
+	deadline=$((SECONDS + seconds))
+	while [ "$SECONDS" -lt "$deadline" ]; do
 		tail -c +"$((from + 1))" "$file" 2>/dev/null | matches -E "$pattern" && return 0
 		sleep 2
-		waited=$((waited + 2))
 	done
 	return 1
 }
@@ -316,4 +398,21 @@ end_drains() {
 		kill -0 "$pid" 2>/dev/null && kill -KILL "$pid" 2>/dev/null
 		printf 'a background drain (pid %s) outlived the row, and the runner ended it\n' "$pid" >>"$ROW_DIR/notes"
 	done
+}
+
+# dh_queue reads status's queue and processes for a poll: plain status,
+# from outside any worktree so it isn't one branch's, which lists the open
+# branches only. status --all reads every branch the database ever kept,
+# and on dhtest's 1,400 a call outlasted the build a row polled for (rc4's
+# D-I6, prime-time's batch).
+dh_queue() { (cd / && "$DH_BIN" --json status 2>/dev/null); }
+
+# needs_command stops a row as "not run" where the candidate has no such
+# command, one a newer build added: rc4 has no backup, which aee12d32
+# added after it, and A6 failed for it rather than saying so (#227). It
+# returns 1 where the row stops.
+needs_command() {
+	"$DH_BIN" "$1" --help >/dev/null 2>&1 && return 0
+	row_result "not run" "needs dockhand $1, which this candidate ($("$DH_BIN" --version 2>/dev/null | head -1)) hasn't"
+	return 1
 }

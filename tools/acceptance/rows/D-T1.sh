@@ -10,7 +10,14 @@
 # one branch, checks both, which keeps the dependency's archive, alters
 # that one archive by a byte, bumps only the dependent again, and checks:
 # the dependency's result is reused, its archive would be given to the
-# guest, and the digest must stop it. The quick stage's ports depend on
+# guest, and the digest must stop it. The dependent's second change is
+# this run's own, a build.env-append of the run's stamp committed after
+# the revbump: two revbumps on the stage's pinned master make the
+# Portfiles an earlier run made, and rc4's check-1097 and 1098 reused
+# check-1082 and 1083, so no guest was given the altered archive. --fresh
+# would build the dependency too, and give the guest no kept archive. A
+# check that still reuses every result isn't exercised, naming the checks
+# it reused. The quick stage's ports depend on
 # none, and it doesn't run this; the engine's
 # TestTheGuestInstallsWhatABuildNeedsFromItsKeptArchive alters one there.
 #
@@ -32,6 +39,37 @@ dt1_restore() {
 	path=$(cat "$ROW_DIR/dt1.path")
 	cp -p "$ROW_DIR/dt1.original" "$path" && rm -f "$path.altered"
 }
+# dt1_unique makes the dependent's change this run's own: a build input
+# no build reads differently, the run's stamp in its build environment,
+# appended to its Portfile on the branch and committed. A comment line
+# changes nothing dockhand compares, and rc4's attempt with one was
+# reused whole.
+dt1_unique() {
+	local branch worktree portfile
+	branch=$(run_name dt1-tamper)
+	worktree=$("$DH_BIN" path "$branch") || { row_fail "dockhand path $branch found no worktree"; return 1; }
+	portfile=$(find "$worktree" -mindepth 3 -maxdepth 3 -path "*/$ACCEPT_LIB_DEPENDENT/Portfile" | head -1)
+	[ -n "$portfile" ] || { row_fail "no Portfile of $ACCEPT_LIB_DEPENDENT on $branch"; return 1; }
+	printf '\nbuild.env-append DOCKHAND_ACCEPT_RUN=%s\n' "$(cat "$ROW_DIR/run-stamp")" >>"$portfile"
+	git -C "$worktree" add --sparse "${portfile#"$worktree"/}" &&
+		git -C "$worktree" -c user.name=acceptance -c user.email=acceptance@example.invalid -c commit.gpgsign=false \
+			commit -q -m "$ACCEPT_LIB_DEPENDENT: build as this acceptance run's own" >>"$ROW_DIR/out.log" 2>&1 ||
+		{ row_fail "couldn't commit $ACCEPT_LIB_DEPENDENT's run stamp on $branch"; return 1; }
+}
+
+# dt1_reused names the checks whose results the second check reused,
+# where it reused every result it has, so built nothing; nothing where
+# anything built.
+dt1_reused() {
+	local file=$1 ids list
+	[ -f "$file" ] || return 0
+	jq -e '[.result.targets[]?.results[]? | select(.excluded != true)] | length > 0 and all((.reused_from // "") != "")' "$file" >/dev/null 2>&1 || return 0
+	ids=$(jq -r '.result.targets[]?.results[]?.reused_from // empty' "$file" | tr -cd 'A-Za-z0-9_.:\n-' | sort -u)
+	list=$(printf '%s\n' "$ids" | sed "s/.*/'&'/" | paste -sd, -)
+	list=$(stage_db "SELECT DISTINCT 'check-' || r.number FROM executions e JOIN runs r ON r.repository_id = e.repository_id AND r.id = e.run_id WHERE e.id IN ($list) ORDER BY r.number" 2>>"$ROW_DIR/out.log" | paste -sd' ' -)
+	printf '%s' "${list:-executions $(printf '%s' "$ids" | paste -sd' ' -)}"
+}
+
 . "${ROW_LIB:?}/fault.sh"
 act() {
 	if [ "${ACCEPT_STAGE:-}" = quick ]; then
@@ -60,15 +98,24 @@ act() {
 		fault_flip "$path"
 		DT1_ALTERED=1
 	fi
-	# The dependent's revision bumped again, which builds it differently,
-	# so its build runs and is given the dependency's kept archive: a
-	# comment line built nothing differently, the whole check was reused,
-	# and no guest ran (rc4's full stage).
+	# The dependent's revision bumped again, and its build made this run's
+	# own (dt1_unique), so its build runs and is given the dependency's
+	# kept archive: a comment line built nothing differently, and a second
+	# revbump alone makes what an earlier run on the same master made; in
+	# each, the whole check was reused, and no guest ran (rc4's full stage).
 	dh_setup revbump "$ACCEPT_LIB_DEPENDENT" -b "$(run_name dt1-tamper)" --subject "rebuild again to test a tampered archive" || return 0
+	dt1_unique || return 0
+	# Only this check's events: every archive.altered the database ever
+	# held could credit an earlier attempt (Codex's cold read at 2cdaf571,
+	# #232).
+	local since
+	since=$(stage_db "SELECT coalesce(max(sequence), 0) FROM events" 2>>"$ROW_DIR/out.log" || echo 0)
 	dh_json check -b "$(run_name dt1-tamper)" || :
+	DT1_CHECK=$DH_LAST_JSON
 	# The check's events, as its record keeps them, read from a copy of the
 	# stage's own database.
-	stage_db "SELECT message FROM events WHERE kind = 'archive.altered'" >>"$ROW_DIR/out.log" 2>&1 || :
+	stage_db "SELECT message FROM events WHERE kind = 'archive.altered' AND sequence > ${since:-0}" >"$ROW_DIR/dt1.events" 2>>"$ROW_DIR/out.log" || :
+	cat "$ROW_DIR/dt1.events" >>"$ROW_DIR/out.log" 2>/dev/null || :
 	dt1_restore
 }
 teardown() {
@@ -77,22 +124,31 @@ teardown() {
 }
 assert() {
 	# Every kept archive is whole, the altered one put back included. The
-	# .json records beside them, master/*.tbz2.json, aren't
-	# archives, and were swept as if they were (the M1's rc6 full stage).
+	# .json records beside them, master/*.tbz2.json and *.tbz2.json.none,
+	# aren't archives, and were swept as if they were (the M1's rc6 full
+	# stage, and rc4's reruns for the .none ones).
 	local file bad=""
 	while IFS= read -r file; do
 		[ -n "$file" ] || continue
 		[ "$(shasum -a 256 "$file" | cut -d' ' -f1)" = "$(basename "$file")" ] || bad="$bad $(basename "$file")"
 	done <<EOT
-$(find "$(dt1_archives)" -type f ! -name '*.sig' ! -name '*.rmd160' ! -name '*.altered' ! -name '*.json' 2>/dev/null)
+$(find "$(dt1_archives)" -type f ! -name '*.sig' ! -name '*.rmd160' ! -name '*.altered' ! -name '*.json' ! -name '*.json.*' 2>/dev/null)
 EOT
 	[ -z "$bad" ] || { row_fail "kept archives that don't match their digests after the row:$bad"; return; }
 	[ "${DT1_ALTERED:-0}" -gt 0 ] || { row_fail "no archive of $ACCEPT_LIB_PORT was kept to alter, so the guard wasn't exercised"; return; }
+	# A second check that reused every result gave no guest anything, so
+	# the guard went untried: not exercised, naming what it reused.
+	local reused
+	reused=$(dt1_reused "${DT1_CHECK:-}")
+	if [ -n "$reused" ]; then
+		row_result "not exercised" "the second check reused every result ($reused), so no guest was given the altered archive of $ACCEPT_LIB_PORT"
+		return
+	fi
 	# The words are read wherever the check said them, its output and its
 	# envelope as well as the events copied into out.log, and as a pattern,
 	# not one wording (rc4's full stage, where the row missed a catch).
 	local said
-	said=$(cat "$ROW_DIR/out.log" "$ROW_DIR"/json/*.json 2>/dev/null | grep -oiE "saved archive for $ACCEPT_LIB_PORT[^\"]*(digest|altered)[^\"]*" | head -1)
+	said=$(cat "$ROW_DIR/dt1.events" "$ROW_DIR/json/$(($(find "$ROW_DIR/json" -name '*.json' | wc -l | tr -d ' ')))".json 2>/dev/null | grep -oiE "saved archive for $ACCEPT_LIB_PORT[^\"]*(digest|altered)[^\"]*" | head -1)
 	if [ -n "$said" ]; then
 		row_pass "the altered archive was caught and the dependency built instead: $said"
 	else

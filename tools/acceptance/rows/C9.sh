@@ -21,7 +21,13 @@ act() {
 }
 
 assert() {
-	local archives sigs bad=""
+	local archives sigs bad="" n
+	# Both checks ran to their end: a kept archive could be an earlier
+	# attempt's (Codex's cold read at 2cdaf571, #232).
+	for n in 1 2; do
+		[ "$(cat "$ROW_DIR/json/$n.json.exit" 2>/dev/null)" = 0 ] ||
+			{ row_fail "check $n exited $(cat "$ROW_DIR/json/$n.json.exit" 2>/dev/null): $(jq -r '.error // empty' "$ROW_DIR/json/$n.json" 2>/dev/null)"; return; }
+	done
 	archives="$(dirname "${DOCKHAND_DB:?}")/archives"
 	if [ ! -d "$archives" ] || [ -z "$(find "$archives" -type f ! -name '*.sig' ! -name '*.rmd160' | head -1)" ]; then
 		row_fail "no archive was kept in $archives"

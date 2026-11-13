@@ -13,7 +13,9 @@ act() {
 	local_active /opt/local >"$ROW_DIR/active.before"
 	G4_BRANCH=$(run_name g4-killed)
 	dh_setup revbump "${ACCEPT_SLEEP_PORT:?}" --new="$G4_BRANCH" --subject "rebuild to stop mid-build in /opt/local" || return 0
-	dh_bg check -b "$G4_BRANCH" --on local
+	# --fresh: an earlier run's check of the same change on the same master
+	# would be reused, and nothing built (#227).
+	dh_bg check -b "$G4_BRANCH" --on local --fresh
 	if ! wait_for_line "$DH_BG_LOG" "building .*: (fetch|checksum|install)" 1800; then
 		kill "$DH_BG_PID" 2>/dev/null
 		dh_bg_wait || :

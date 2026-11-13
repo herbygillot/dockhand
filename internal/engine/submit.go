@@ -182,8 +182,8 @@ type SubmitPlan struct {
 	// pull request's description that dockhand writes; zero for a new one.
 	Sections DescriptionSections
 	Evidence *Evidence
-	// AtBase are the changed ports that failed whose baseline fails them
-	// the same way, each with the baselines that did: --accept takes
+	// AtBase are the changed builds that failed whose baseline fails them
+	// the same way, each by its ID with the baselines that did: --accept takes
 	// them, and the pull request says so (the person's word, 2026-10-17).
 	AtBase map[string][]string
 	// Accepted are the failed ports the submission accepts, each with why,

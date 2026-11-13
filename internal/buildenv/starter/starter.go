@@ -20,6 +20,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -139,6 +140,23 @@ func Self() (Program, error) {
 // noRecord is the starter's exit where it couldn't record itself, having
 // started nothing.
 const noRecord = 70
+
+// Unrecorded is why a starter that ended with err started nothing, as it
+// said in output, where its standard error went: its own line saying so,
+// where err is its exit for that. A provider's error names it, where the
+// build's log would otherwise be the only place it's said.
+func Unrecorded(err error, output []byte) (string, bool) {
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != noRecord {
+		return "", false
+	}
+	for line := range strings.Lines(string(output)) {
+		if reason, ok := strings.CutPrefix(strings.TrimSpace(line), "dockhand: "); ok && strings.HasPrefix(reason, "the starter couldn't") {
+			return reason, true
+		}
+	}
+	return "the starter couldn't record itself, so nothing was started", true
+}
 
 // Main is the starter's body, run as dockhand Command with its arguments,
 // returning its exit status: the child's, or the signal it died of again.

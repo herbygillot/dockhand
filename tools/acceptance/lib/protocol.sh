@@ -150,6 +150,33 @@ close_test_pr() {
 	git -C "$MACPORTS_TREE" update-ref -d "refs/remotes/origin/dockhand/$branch" 2>/dev/null || :
 }
 
+# close_leftover_test_prs closes the test pull requests an earlier row of
+# the stage left open in the sandbox for a port, with their branches, so a
+# row that takes the port up again starts as on a fresh account: B3's ship
+# was rightly refused in rc4 for A4's open test pull request of the same
+# port (#224). Only the test login's [testing] pull requests whose head is
+# a dockhand branch go; the row is told what it may see change.
+close_leftover_test_prs() {
+	local port url head branch
+	[ -n "${DOCKHAND_PULL_REQUESTS:-}" ] && [ -n "${ACCEPT_GH_LOGIN:-}" ] && command -v gh >/dev/null || return 0
+	for port in "$@"; do
+		while IFS=$'\t' read -r url head; do
+			[ -n "$url" ] || continue
+			branch=${head#dockhand/}
+			printf '# closing %s, an earlier row'"'"'s test pull request for %s left open\n' "$url" "$port" >>"$ROW_DIR/out.log"
+			gh pr close "$url" --comment "Closed: a dockhand release candidate's test, left open by an earlier row." >/dev/null 2>&1 || :
+			allow_change "*"
+			allow_ref_gone "*$branch*"
+			next_superseded_for "$branch" "an earlier row's test pull request, closed"
+			dh_json clean "$branch" -y || :
+			git -C "$MACPORTS_TREE" update-ref -d "refs/remotes/origin/$head" 2>/dev/null || :
+		done <<EOT
+$(gh pr list --repo "$DOCKHAND_PULL_REQUESTS" --author "$ACCEPT_GH_LOGIN" --state open --limit 100 --json url,title,headRefName \
+			--jq ".[] | select((.title | startswith(\"[testing]\")) and (.headRefName | startswith(\"dockhand/\")) and (.headRefName | contains(\"$port\"))) | [.url, .headRefName] | @tsv" 2>/dev/null)
+EOT
+	done
+}
+
 # dh_quiet runs dockhand for a value a row reads, not for the row's log.
 dh_quiet() { "$DH_BIN" "$@" 2>/dev/null; }
 
@@ -195,7 +222,7 @@ device_login() {
 			}
 		fi
 		dh_bg_wait && return 0
-		grep -q 'expired before it was entered' "$DH_BG_LOG" && [ "$codes" -lt 3 ] || return 1
+		said 'expired before it was entered' "$DH_BG_LOG" && [ "$codes" -lt 3 ] || return 1
 		checkpoint "the code expired before it was entered; say ready for a new one: $*" || return 1
 	done
 }
@@ -205,8 +232,14 @@ device_login() {
 # the release binary can't stop at a named step: the candidate's tag
 # where it is one, else the harness's own checkout. It says the binary.
 failpoint_bin() {
-	local rev=${ACCEPT_CANDIDATE:-HEAD} out source
-	git -C "${ACCEPT_REPO:?}" rev-parse -q --verify "$rev^{commit}" >/dev/null 2>&1 || rev=HEAD
+	local rev=${ACCEPT_CANDIDATE_REF:-${ACCEPT_CANDIDATE:-HEAD}} out source
+	# A label that names no commit, as v0.8.0-rc4-reruns, is refused, never
+	# read as HEAD, which built the kill rows from the harness's main
+	# (Codex's cold read at 2cdaf571, #230); ACCEPT_CANDIDATE_REF names it.
+	if ! git -C "${ACCEPT_REPO:?}" rev-parse -q --verify "$rev^{commit}" >/dev/null 2>&1; then
+		printf 'failpoint_bin: %s names no commit in %s; set ACCEPT_CANDIDATE_REF to the candidate'"'"'s tag or commit\n' "$rev" "$ACCEPT_REPO" >>"$ROW_DIR/out.log"
+		return 1
+	fi
 	out="${ACCEPT_STATE:?}/bin/dockhand-failpoints-$(git -C "$ACCEPT_REPO" rev-parse --short "$rev^{commit}")"
 	if [ ! -x "$out" ]; then
 		source=$(mktemp -d "${ACCEPT_STATE}/failpoint-src.XXXXXX") || return 1

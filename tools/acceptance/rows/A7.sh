@@ -1,4 +1,5 @@
 # stages: full
+# installs: a newer build, then the candidate again
 # A7: port upgrade dockhand to the next candidate while serve runs as a
 # launchd agent. The running serve notices its executable was replaced,
 # says so, and stops once its checks end; launchd starts the new build,
@@ -27,22 +28,30 @@ act() {
 	fi
 	# serve stops once its checks end, and launchd starts the new build:
 	# a new process leads.
-	local waited=0
-	while [ "$waited" -lt 300 ]; do
+	local deadline=$((SECONDS + 300))
+	while [ "$SECONDS" -lt "$deadline" ]; do
 		a7_pid >"$ROW_DIR/pid.after"
 		[ -s "$ROW_DIR/pid.after" ] && ! cmp -s "$ROW_DIR/pid.before" "$ROW_DIR/pid.after" && break
 		sleep 10
-		waited=$((waited + 10))
 	done
 	tail -c +"$(($(cat "$ROW_DIR/log.before") + 1))" "$A7_LOG" >"$ROW_DIR/serve.log" 2>/dev/null || :
 	dh status || :
+	"$DH_BIN" --version >"$ROW_DIR/upgraded" 2>&1 || :
+	# The newer build leaves with the row: the rows after run the candidate
+	# under its name, and A8's reinstall found A7's build still in the
+	# overlay (#234). With the next candidate staged as the newer build,
+	# that's the candidate itself, and the step is answered done.
+	checkpoint "put the candidate back for the rows after: if dockhand --version already names ${ACCEPT_CANDIDATE:-the candidate}, as when the newer build was the next candidate itself, answer done; otherwise, as the admin, run tools/acceptance/host/stage-candidate.sh ${ACCEPT_CANDIDATE:-<candidate>} --run and sudo port -N install dockhand (sudo port -N activate it where both are installed), then answer done" || return 0
+	"$DH_BIN" --version >"$ROW_DIR/restored" 2>&1 || :
 }
 
 # A7_LOG is the agent's log, beside dhtest's database.
 A7_LOG=$HOME/.dockhand/logs/serve.log
 
 # a7_pid is the leading serve's process, or nothing.
-a7_pid() { dh_quiet --json status --all | jq -r '.result.serve_state.pid // empty'; }
+# Plain status, which carries serve's state: status --all reads every
+# branch the database kept, which on dhtest's took over a minute a call.
+a7_pid() { dh_queue | jq -r '.result.serve_state.pid // empty'; }
 # serve's agent goes when the row does, skipped or not: a skipped A7 left
 # it running through the rows after (the rc3 full stage).
 teardown() {
@@ -54,15 +63,15 @@ assert() {
 		{ row_fail "status failed after the upgrade: the database may be stuck"; return; }
 	# serve's words since 4a33af6d, "upgrade detected", or before them; the
 	# row read rc1's passing upgrade as a fail (the M1's rc1 run).
-	grep -qE "${SERVE_LINE}(upgrade detected|dockhand was upgraded)" "$ROW_DIR/serve.log" ||
+	said "${SERVE_LINE}(upgrade detected|dockhand was upgraded)" "$ROW_DIR/serve.log" ||
 		{ row_fail "serve's log says nothing of the upgrade: $(tail -3 "$ROW_DIR/serve.log" | tr '\n' ';')"; return; }
-	grep -qE "${SERVE_LINE}stopped for the upgrade" "$ROW_DIR/serve.log" ||
+	said "${SERVE_LINE}stopped for the upgrade" "$ROW_DIR/serve.log" ||
 		{ row_fail "serve noticed the upgrade but didn't stop for it"; return; }
 	if [ ! -s "$ROW_DIR/pid.after" ] || cmp -s "$ROW_DIR/pid.before" "$ROW_DIR/pid.after"; then
 		row_fail "no new serve leads after the upgrade: pid $(cat "$ROW_DIR/pid.before") before, $(cat "$ROW_DIR/pid.after" 2>/dev/null) after"
 		return
 	fi
-	if grep -q 'where this is' <(sed -n '/^\$ dockhand status/,/^\[exit/p' "$ROW_DIR/out.log"); then
+	if said ' · running dockhand .*; this command is ' <(sed -n '/^\$ dockhand status/,/^\[exit/p' "$ROW_DIR/out.log"); then
 		row_fail "status says serve runs another build than the upgraded one"
 		return
 	fi
@@ -72,5 +81,12 @@ assert() {
 		row_fail "the migration a person answered kept no copy of the database's older schema beside it"
 		return
 	fi
-	row_pass "serve said the upgrade, stopped, and a new serve (pid $(cat "$ROW_DIR/pid.after")) leads on the new build"
+	case "$(head -1 "$ROW_DIR/restored" 2>/dev/null)" in
+	*"${ACCEPT_CANDIDATE#v}"*) ;;
+	*)
+		row_fail "serve took the upgrade, but the candidate wasn't put back after: --version says \"$(head -1 "$ROW_DIR/restored" 2>/dev/null)\", not ${ACCEPT_CANDIDATE:-}"
+		return
+		;;
+	esac
+	row_pass "serve said the upgrade, stopped, and a new serve (pid $(cat "$ROW_DIR/pid.after")) leads on the new build ($(head -1 "$ROW_DIR/upgraded")); the candidate was put back after"
 }

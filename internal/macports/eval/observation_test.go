@@ -17,7 +17,7 @@ func TestObservationOwnsDeclarationsAndDoesNotLeakProfiles(t *testing.T) {
 	t.Parallel()
 	e := liveEvaluator(t)
 	tree := fixtureTree(t)
-	putFile(t, tree.Root(), "devel/observed/Portfile", `PortSystem 1.0
+	contents := `PortSystem 1.0
 name observed
 version 1.0
 master_sites https://example.invalid/$version:release
@@ -31,7 +31,8 @@ subport observed-child {
  checksums a.zip sha256 aaaa size 2
 }
 if {${build_arch} eq "arm64"} { distfiles a.zip:release } else { distfiles b.zip:release }
-`)
+`
+	putFile(t, tree.Root(), "devel/observed/Portfile", contents)
 	targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: "observed", Subport: "observed-child"})
 	require.NoError(t, err)
 	bound, err := tree.Select(targets[0])
@@ -44,9 +45,11 @@ if {${build_arch} eq "arm64"} { distfiles a.zip:release } else { distfiles b.zip
 	require.Equal(t, native.Runtime, got.Snapshot.Runtime)
 	require.Equal(t, "16", got.Snapshot.Platform.Version)
 	o := got.Ports["observed-child"]
-	require.Empty(t, o.Problems)
+	require.False(t, hostState(t, o, contents), "%v", o.Problems)
 	require.Len(t, o.Distfiles, 1)
 	require.Equal(t, macports.Distfile{Name: "b.zip", URLs: []string{"https://example.invalid/1.0/b.zip"}}, o.Distfiles[0])
+	// The Portfile's own declarations, beside what the verdict weighs.
+	o.Declarations = slices.DeleteFunc(o.Declarations, func(d macports.Declaration) bool { return d.Command == "dockhand.host-access" })
 	require.Len(t, o.Declarations, 3)
 	require.Equal(t, "revision", o.Declarations[0].Command)
 	require.Equal(t, []string{"4"}, o.Declarations[0].Values)

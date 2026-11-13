@@ -637,6 +637,15 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		}
 		update.Upstream.Changes = append(update.Upstream.Changes, model.UpstreamChange{Kind: "manifest", Rule: manifestHookRule, Hold: true, Class: model.Introduced, Message: result.ManifestHook})
 	}
+	// A crate list left as the old version had it, the new source shipping
+	// no Cargo.lock to regenerate it from, holds for a look, as a check
+	// builds the default variants only and can't settle it (#229).
+	if result.CratesUnlocked != "" && !followOnly {
+		if update.Upstream == nil {
+			update.Upstream = &model.UpstreamComparison{}
+		}
+		update.Upstream.Changes = append(update.Upstream.Changes, model.UpstreamChange{Kind: "manifest", Rule: cratesUnlockedRule, Hold: true, Class: model.Introduced, Message: result.CratesUnlocked})
+	}
 	// What an update or a refresh left as the Portfile has it: a context
 	// it couldn't read, and the declarations only that context fetches
 	// (#125).
@@ -1216,6 +1225,11 @@ const mirrorConflictRule = "mirror-conflict"
 // under a hook that edits the manifest it's generated from, where whether
 // the hook shapes it couldn't be checked (R3-20).
 const manifestHookRule = "manifest-hook"
+
+// cratesUnlockedRule is the finding that a Cargo port's crate list was
+// left as the old version had it, the new version's source shipping no
+// Cargo.lock to regenerate it from (#229).
+const cratesUnlockedRule = "crates-unlocked"
 
 // mirrorConflictWords says a mirror conflict and its fix.
 func mirrorConflictWords(conflict editprep.MirrorConflict) string {

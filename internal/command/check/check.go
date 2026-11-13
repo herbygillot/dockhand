@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -15,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -166,6 +168,16 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 			for _, path := range engine.UntrackedInChanged(capture, proposed) {
 				fmt.Fprintf(out, "! %s is untracked and excluded from this check. Use --include %s for this check only, or git add %s to track it.\n", path, path, path)
 			}
+			// A tracked file on disk outside the worktree's sparse checkout
+			// is built, as git status reports it, but git add declines it:
+			// said, with the command that lets it be staged (#228).
+			for _, file := range capture.OutsideSparse {
+				directory, ok := macports.PortDirectoryOf(file)
+				if !ok {
+					directory = path.Dir(file)
+				}
+				fmt.Fprintf(out, "! %s is outside this worktree's sparse checkout: this check builds it as it is on disk, but git add declines it. Run git sparse-checkout add %s before staging it.\n", file, directory)
+			}
 			if len(capture.Untracked) > 0 {
 				fmt.Fprintf(out, "Untracked files excluded: %s. Use --include to add a file to this check.\n", strings.Join(capture.Untracked, ", "))
 				// A Portfile written by hand in a new port's directory is
@@ -176,7 +188,7 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 					fmt.Fprintf(out, "  New port directory %s: run dockhand check --include %s/Portfile to build it. Run git sparse-checkout add %s before staging its files.\n", directory, directory, directory)
 				}
 			}
-			view.WritePlan(out, proposed, e.PlanNotes(ctx, proposed), e.PlanSiblings(ctx, proposed), e.Remedy, view.ListShown(streams))
+			view.WritePlan(out, proposed, e.PlanNotes(ctx, proposed), e.PlanSiblings(ctx, capture.Revision, proposed), e.Remedy, view.ListShown(streams))
 			// The plan's evaluation, with -v: check --plan -v is the dry
 			// evaluation under a variant set (field testing's curl
 			// +sectrust notes, note 8b).
@@ -413,7 +425,7 @@ func previewBaseline(ctx context.Context, e *engine.Engine, streams term.Streams
 		return err
 	}
 	writeBaselineHeader(streams.Prose(), branch, baseline)
-	view.WritePlan(streams.Prose(), baseline.Plan, e.PlanNotes(ctx, baseline.Plan), nil, e.Remedy, view.ListShown(streams))
+	view.WritePlan(streams.Prose(), baseline.Plan, e.PlanNotes(ctx, baseline.Plan), engine.Siblings{}, e.Remedy, view.ListShown(streams))
 	planned := view.PlanView(baseline.Plan)
 	streams.Emit(view.CheckJSON{Branch: branch.ShortName(), Plan: &planned, Targets: []view.TargetJSON{}})
 	return nil

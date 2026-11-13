@@ -101,6 +101,7 @@ The rest reach something outside the checkout and run only when named:
 | `DOCKHAND_TEST_TART_LIVE` | `buildenv/tart` `TestLiveCheckInATahoeGuest` | the acceptance test above, with `DOCKHAND_TEST_PORTS_TREE` |
 | `DOCKHAND_TEST_TART_IMAGE` | `tart/host` `TestLiveTartContracts`, `tart/guestssh` `TestLiveChannel` | Tart's listing, stop, and delete behavior, and the guest channel, on a clone of the named raw-disk image |
 | `DOCKHAND_TEST_TART_ASIF_SOURCE` | `tart/host` `TestLiveTartListsWhileAnASIFVMRuns` | an ASIF image such as Golden Gate's, cloned and run briefly while Tart lists its VMs; it needs Tart 2.39.0 or newer, and skips on an older one |
+| `DOCKHAND_TEST_SUDO_PREFIX` | `buildenv/local` `TestLiveSudoHandsTheLockToItsCommand` | this Mac's sudo, running the named prefix's `port-tclsh` as root, which needs the sudoers line `<you> ALL=(root) NOPASSWD: <prefix>/bin/port-tclsh`: whether the lock handed to it as standard input reaches its command and stays held, with a terminal and without, and whether a SIGTERM reaches the command; it runs on the M1, never on a Mac whose sudoers nobody chose to change |
 
 ## The notices' measure over a tree
 
@@ -124,6 +125,10 @@ DOCKHAND_MEASURE_TREE=~/Source/macports-ports DOCKHAND_TEST_MACPORTS_TCLSH=/opt/
 | `unreferenced-file` | 381 files | none seen: they're patches and select files earlier versions and subports used | a file is named by a word that builds it from variables, by its directory under files/, or by a `${filespath}` word of variables alone |
 
 The first four were measured on macports-ports 324108c8883 (20,231 Portfiles), the last four on 9c3d4bd8a7c (20,233). Those four are what the measure says of a whole tree; a change says one only of the lines and files it adds.
+
+## The survey that gates the model
+
+A change to the version probe or the evaluator is judged by a whole-tree pair: `tools/survey -pair` over the pinned tree, the survey built from main before the change and from the change, each with a record (`-db`), compared (docs/designs/closed-model.md, "The gating survey"; tools/survey/README.md). Any other change replays the five-port set instead (terraform, py-lmdb, qemu, perl5, and terraform's obsolete stub). A narrower look at one set of ports is a pair with `-sample`. `-compare` refuses two runs whose settings differ (the mode, `-db`, recording, the selection, the tree's commit, the prefix) or that record none ([#222](https://github.com/herbygillot/dockhand/issues/222)). A run without `-db` writes only a journal and skips observing each port in every context before assessing it (`Service.Observe` in tools/survey/assess.go), so its outcomes and contexts left never compare with a `-db` survey: on 2026-11-12 one such run reported 472 contexts left where main's `-db` survey left 82.
 
 ## MacPorts' distributable checker
 

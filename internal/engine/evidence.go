@@ -354,7 +354,8 @@ func (e *Engine) StandingAccepted(ctx context.Context, evidence Evidence) (map[s
 // failsAtBase are the changed ports that failed and couldn't be accepted
 // otherwise, whose every failure a finished baseline of the check that
 // made it reproduces, in the same environment and at the same phase, each
-// with those baselines' names.
+// by its build's ID, with those baselines' names: one variant build's
+// baseline failure says nothing of another's (#235).
 func (e *Engine) failsAtBase(ctx context.Context, branch model.BranchID, judged Evidence) (map[string][]string, error) {
 	var failing []TargetEvidence
 	for _, target := range judged.Failed() {
@@ -424,7 +425,7 @@ func (e *Engine) failsAtBase(ctx context.Context, branch model.BranchID, judged 
 			}
 		}
 		if reproduced && len(names) > 0 {
-			atBase[target.Target.Target.Name] = names
+			atBase[string(target.Target.ID)] = names
 		}
 	}
 	return atBase, nil

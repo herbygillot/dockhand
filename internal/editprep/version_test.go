@@ -591,3 +591,32 @@ func TestACurrentVersionReadsItsFamily(t *testing.T) {
 	require.NotEmpty(t, result.Fidelity)
 	require.Contains(t, result.Fidelity[0].Before.Ports, "fixture-old")
 }
+
+// An update to the version the port already evaluates to says so, where
+// it said no version input could select it: watchman, its version set by
+// hand, then updated to it (#229).
+func TestAnUpdateToTheVersionThePortIsAtSaysSo(t *testing.T) {
+	t.Parallel()
+	for _, style := range []string{"literal", "setup"} {
+		t.Run(style, func(t *testing.T) {
+			t.Parallel()
+			var requests atomic.Int64
+			service, request := versionFixture(t, style, "", func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				fmt.Fprint(w, "fixture archive bytes")
+			})
+			request.Version = "1.0"
+			resolver := releaseTagFunc(func(_ context.Context, repo, name string) (forge.Tag, error) {
+				return forge.Tag{Name: name, Commit: strings.Repeat("a", 40)}, nil
+			})
+			service.Upstream = &upstream.Service{Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: resolver}}
+			release := *request.Release
+			release.Requested, release.Version, release.Tag = "1.0", "1.0", "v1.0"
+			request.Release = &release
+			_, err := service.Prepare(yours(t), request)
+			require.ErrorContains(t, err, "fixture is already at 1.0")
+			require.NotContains(t, err.Error(), "no version input")
+			require.Zero(t, requests.Load(), "nothing is fetched")
+		})
+	}
+}

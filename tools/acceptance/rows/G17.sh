@@ -15,7 +15,9 @@ act() {
 	fi
 	dh_setup update "$(port)" --new || return 0
 	G17_BRANCH=$(own_branch)
-	dh_json check -b "$G17_BRANCH" --on tart || :
+	# --fresh: an earlier run's check of the same change on the same master
+	# would be reused, and nothing built (#227).
+	dh_json check -b "$G17_BRANCH" --on tart --fresh || :
 }
 
 assert() {

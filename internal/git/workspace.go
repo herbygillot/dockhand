@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -125,6 +126,47 @@ func (r *Repository) SparseCone(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	return strings.Fields(string(out)), nil
+}
+
+// OutsideSparse are the paths given that lie outside the worktree's sparse
+// cone: git status reports a tracked file there that is on disk as
+// modified, so a capture of the working files reads it, while git add and
+// git commit -a decline it without --sparse. None where the checkout isn't
+// sparse, or its patterns aren't cone mode, which this doesn't read. The
+// cone is matched as git-sparse-checkout(1) defines it: every file at the
+// top, those directly in each directory above a cone directory, and all
+// under one; git sparse-checkout check-rules, which would say it, needs
+// Git 2.42, newer than MinimumVersion.
+func (r *Repository) OutsideSparse(ctx context.Context, paths []string) ([]string, error) {
+	cone, err := r.SparseCone(ctx)
+	if err != nil || len(cone) == 0 {
+		return nil, err
+	}
+	mode, err := r.output(ctx, "config", "--type=bool", "--default=false", "core.sparseCheckoutCone")
+	if err != nil || strings.TrimSpace(string(mode)) != "true" {
+		return nil, err
+	}
+	var outside []string
+	for _, name := range paths {
+		if !inCone(cone, name) {
+			outside = append(outside, name)
+		}
+	}
+	return outside, nil
+}
+
+// inCone says whether a file is inside a sparse cone (OutsideSparse).
+func inCone(cone []string, name string) bool {
+	parent := path.Dir(name)
+	if parent == "." {
+		return true
+	}
+	for _, directory := range cone {
+		if strings.HasPrefix(name, directory+"/") || strings.HasPrefix(directory, parent+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // RemoveWorktree removes a linked worktree and its administrative files,

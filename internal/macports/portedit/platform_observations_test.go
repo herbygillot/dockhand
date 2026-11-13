@@ -202,3 +202,30 @@ if {${os.major} < 15} {
 		require.NotContains(t, path, "left-", "a context left isn't fetched by the fallback")
 	}
 }
+
+// A fetch value set from Base's lookup of a program, in a modelled
+// context, rests on this Mac's PATH, which the closed lookup doesn't
+// read: the context is left and said by the lookup, never tolerated for
+// being a lookup (architecture's conditions on #110's finding 1).
+func TestAFetchValueFromALookupLeavesTheContext(t *testing.T) {
+	t.Parallel()
+	s, r, requests := archiveFixture(t, `version 1.2.3
+revision 0
+master_sites @SITE@/${version}
+if {${os.major} < 15} {
+    if {[catch {findBinary hostonly}]} { distfiles none-${version}.tar.gz } else { distfiles host-${version}.tar.gz }
+    checksums sha256 bbbb size 3
+} else {
+    checksums sha256 aaaa size 2
+}
+`)
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Len(t, *requests, 1, "only the context it could read is fetched")
+	require.NotEmpty(t, result.Left)
+	for _, left := range result.Left {
+		require.Equal(t, LeftContext, left.Kind, "%+v", left)
+		require.Regexp(t, `^darwin (8|9|1[0-4]) `, left.What)
+		require.Contains(t, left.Reason, "hostonly, which findBinary looks for along this Mac's PATH", left.What)
+	}
+}

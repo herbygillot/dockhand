@@ -234,25 +234,77 @@ namespace eval ::dockhand {
                     }
                     return 0
                 }
+                # test is a file test of a path in a lookup below: the
+                # fresh installation's answer under its prefix, else, in a
+                # modelled context, the facts table's where it has one, and
+                # otherwise no answer of the host's: the path isn't there,
+                # and the lookup is noted as having passed over this Mac
+                # (passed), for it to close once (Codex's review of #110
+                # and #125, finding 1; architecture's option 2). In the
+                # Mac's own context the host answers, unobserved, as it did
+                # in the parent. exists is Tcl's file type, a link whose
+                # target is gone included.
+                variable passed 0
+                proc test {subcommand path} {
+                    if {[absent $path]} { return 0 }
+                    variable closed
+                    if {$closed && ![own $path]} {
+                        set answer [modelled file [list [expr {$subcommand eq "type" ? "exists" : $subcommand}] $path]]
+                        if {$answer ne ""} { return [lindex $answer 2] }
+                        variable passed
+                        set passed 1
+                        return 0
+                    }
+                    if {$subcommand eq "type"} { return [expr {![catch {interp invokehidden {} file type $path}]}] }
+                    interp invokehidden {} file $subcommand $path
+                }
+                # lookup runs one of Base's lookups, and where it passed over
+                # this Mac in a modelled context and found nothing, closes it
+                # once, naming what it looked for and which lookup asked, so
+                # the verdict tells make for build.cmd's default from a
+                # program a fetch value rests on (architecture's conditions
+                # on finding 1). Its answer is the empty Mac's: what the
+                # fresh installation and the table had.
+                variable depth 0
+                proc lookup {name subject where body} {
+                    variable passed
+                    variable depth
+                    if {$depth == 0} { set passed 0 }
+                    incr depth
+                    try { set code [catch {uplevel 1 $body} result options] } finally { incr depth -1 }
+                    # findBinary's own binaryInPath is the one lookup, and
+                    # one the fresh installation or the table answered with
+                    # what it found is theirs, not the host's.
+                    # A return -code error in the body is the lookup's error.
+                    if {$code == 2 && [dict get $options -level] == 1} { set code [dict get $options -code] }
+                    if {$depth == 0 && $passed && ($code == 1 || $result in {"" 0})} {
+                        closed_lookup $name $subject "modeled context depends on $subject, which $name looks for $where" $code $result
+                    }
+                    dict incr options -level
+                    return -options $options $result
+                }
                 # binaryInPath and findBinary, Base's lookups of a program
                 # along PATH, run in the parent and see the host's prefix;
                 # these are the same, in the worker, over the fresh one.
-                # Their reads stay as unobserved as they were in the parent.
                 proc executable {path} {
-                    expr {![absent $path] && [interp invokehidden {} file executable $path]}
+                    test executable $path
                 }
                 proc binaryInPath {program} {
-                    foreach directory [split $::env(PATH) :] {
-                        if {[executable $directory/$program]} { return $directory/$program }
+                    lookup binaryInPath $program "along this Mac's PATH" {
+                        foreach directory [split $::env(PATH) :] {
+                            if {[executable $directory/$program]} { return $directory/$program }
+                        }
+                        return -code error "Failed to locate '$program' in path: '$::env(PATH)'"
                     }
-                    return -code error "Failed to locate '$program' in path: '$::env(PATH)'"
                 }
                 proc findBinary {program {hint {}}} {
-                    if {$hint ne "" && [executable $hint]} { return $hint }
-                    if {[catch {binaryInPath $program} found]} {
-                        error "$found or at its MacPorts configuration time location, did you move it?"
+                    lookup findBinary $program "along this Mac's PATH" {
+                        if {$hint ne "" && [executable $hint]} { return $hint }
+                        if {[catch {binaryInPath $program} found]} {
+                            error "$found or at its MacPorts configuration time location, did you move it?"
+                        }
+                        return $found
                     }
-                    return $found
                 }
                 # _mportsearchpath, Base's search for a dependency's file
                 # along directories (macports.tcl), which port1.0's path:,
@@ -260,17 +312,19 @@ namespace eval ::dockhand {
                 # host's prefix; this is the same, in the worker, over the
                 # fresh one.
                 proc _mportsearchpath {depfilename search_path {executable 0} {return_match 0}} {
-                    set found ""
-                    foreach directory $search_path {
-                        set path [interp invokehidden {} file join $directory $depfilename]
-                        if {[absent $directory] || ![interp invokehidden {} file isdirectory $directory] || [absent $path]} { continue }
-                        if {![catch {interp invokehidden {} file type $path}] && (!$executable || [interp invokehidden {} file executable $path])} {
-                            set found $path
-                            break
+                    lookup _mportsearchpath $depfilename "in this Mac's [join $search_path {, }]" {
+                        set found ""
+                        foreach directory $search_path {
+                            set path [interp invokehidden {} file join $directory $depfilename]
+                            if {![test isdirectory $directory]} { continue }
+                            if {[test type $path] && (!$executable || [test executable $path])} {
+                                set found $path
+                                break
+                            }
                         }
+                        if {$return_match} { return $found }
+                        expr {$found ne ""}
                     }
-                    if {$return_match} { return $found }
-                    expr {$found ne ""}
                 }
                 # fresh is the fresh installation's answer to a call, as its
                 # subject, then catch's code, result, and options; or

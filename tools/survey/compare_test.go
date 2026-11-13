@@ -2,11 +2,14 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	portsurvey "github.com/herbygillot/dockhand/internal/macports/survey"
 )
 
 // A comparison reads the journals by selector, whatever their order, and
@@ -34,7 +37,7 @@ func TestCompareReportsMovesRegressionsAndStops(t *testing.T) {
 		`{"Selector":"jq","Outcome":"unknown","Portfile":"textproc/jq/Portfile","Findings":[{"Check":"fetch","Status":"unknown","Code":"probe-inconclusive"}]}`,
 	)
 	var out bytes.Buffer
-	require.NoError(t, compareJournals(&out, base, next, 5))
+	require.NoError(t, compareJournals(&out, base, next, 5, true))
 	report := out.String()
 	require.Contains(t, report, "shared 2; only in the baseline 1; only in the new 0")
 	require.Contains(t, report, "      1  input-found → unknown\n")
@@ -68,9 +71,83 @@ func TestAnOwnVersionIsCovered(t *testing.T) {
 		`{"Selector":"kubectl_select","Outcome":"own-version","Portfile":"sysutils/kubectl/Portfile","Findings":[{"Check":"version-input","Status":"not-tested","Code":"own-version"}]}`,
 	)
 	var out bytes.Buffer
-	require.NoError(t, compareJournals(&out, base, next, 5))
+	require.NoError(t, compareJournals(&out, base, next, 5, true))
 	report := out.String()
 	require.Contains(t, report, "regressions: 0\n")
 	require.Contains(t, report, "improvements: 1\n  kubectl_select: unsupported → own-version\n")
 	require.Contains(t, report, "Portfiles fully covered: 0 → 1")
+}
+
+// Two runs compare only like for like: a pair whose settings differ is
+// refused, each difference named, and so is a run that records none,
+// unless the comparison is unchecked, when it says so (#222).
+func TestCompareRefusesRunsMadeDifferently(t *testing.T) {
+	dir := t.TempDir()
+	journal := func(name string, made *settings) string {
+		path := filepath.Join(dir, name)
+		require.NoError(t, os.WriteFile(path, []byte(`{"Source":{"Commit":"abd9fff84df525aef309d4f1ffddff52ce0f4a8e"}}`+"\n"+`{"Selector":"jq","Outcome":"input-found","Portfile":"textproc/jq/Portfile"}`+"\n"), 0o644))
+		if made != nil || name == "old.jsonl" {
+			data, err := json.Marshal(run{Settings: made})
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(path+".run.json", data, 0o644))
+		}
+		return path
+	}
+	gating := settings{Mode: "current", Record: true, Recording: true, Selection: "every port", Commit: "abd9fff8", Prefix: "/opt/macports-test"}
+	sample := gating
+	sample.Record, sample.Recording, sample.Selection = false, false, "826 ports, sha256:0123456789ab"
+	base, same, other, old := journal("base.jsonl", &gating), journal("same.jsonl", &gating), journal("other.jsonl", &sample), journal("old.jsonl", nil)
+
+	var out bytes.Buffer
+	require.NoError(t, compareJournals(&out, base, same, 5, false))
+	require.NotContains(t, out.String(), "unchecked")
+
+	err := compareJournals(&out, base, other, 5, false)
+	require.ErrorContains(t, err, "record (-db): true against false")
+	require.ErrorContains(t, err, "selection: every port against 826 ports")
+	require.NotContains(t, err.Error(), "prefix")
+
+	require.ErrorContains(t, compareJournals(&out, base, old, 5, false), "made before surveys recorded their settings")
+	require.ErrorContains(t, compareJournals(&out, base, filepath.Join(dir, "none.jsonl"), 5, false), "no run.json beside it")
+
+	out.Reset()
+	require.NoError(t, compareJournals(&out, base, other, 5, true))
+	require.Contains(t, out.String(), "unchecked: the runs differ:\n  record (-db): true against false")
+}
+
+// A before/after pair is one command: each binary runs with the flags the
+// pair was given and a record of its own, and the two are compared, here
+// with stand-ins that write what a survey writes (#222).
+func TestAPairRunsBothAndCompares(t *testing.T) {
+	dir := t.TempDir()
+	stand := func(name, outcome string) string {
+		path := filepath.Join(dir, name)
+		require.NoError(t, os.WriteFile(path, []byte(`#!/bin/sh
+for last; do :; done
+journal="${last%.db}.jsonl"
+echo "$@" > "$journal.args"
+printf '%s\n' '{"Source":{"Commit":"abd9fff84df525aef309d4f1ffddff52ce0f4a8e"}}' '{"Selector":"jq","Outcome":"`+outcome+`","Portfile":"textproc/jq/Portfile"}' > "$journal"
+printf '%s\n' '{"settings":{"mode":"current","record":true,"recording":true,"selection":"every port","commit":"abd9fff8","prefix":"/opt/macports-test"}}' > "$journal.run.json"
+`), 0o755))
+		return path
+	}
+	before, after := stand("before", "unknown"), stand("after", "input-found")
+	out := filepath.Join(dir, "pair")
+	var report, log bytes.Buffer
+	require.NoError(t, runPair(&report, &log, before, after, out, []string{"-tree=/tmp/ports", "-prefix=/opt/macports-test"}, 5))
+	require.Contains(t, report.String(), "improvements: 1\n  jq: unknown → input-found\n")
+	args, err := os.ReadFile(filepath.Join(out, "before.jsonl.args"))
+	require.NoError(t, err)
+	require.Equal(t, "-tree=/tmp/ports -prefix=/opt/macports-test -db "+filepath.Join(out, "before.db")+"\n", string(args))
+}
+
+// A selection is recorded by what it names, not the order it was named
+// in.
+func TestASelectionIsRecordedByItsPorts(t *testing.T) {
+	a := selectionOf(portsurvey.Selection{Ports: []string{"jq", "yq", "jq"}})
+	require.Equal(t, a, selectionOf(portsurvey.Selection{Ports: []string{"yq", "jq"}}))
+	require.Contains(t, a, "2 ports, sha256:")
+	require.NotEqual(t, a, selectionOf(portsurvey.Selection{Ports: []string{"jq"}}))
+	require.Equal(t, "every port", selectionOf(portsurvey.Selection{All: true}))
+	require.Equal(t, "categories devel,textproc", selectionOf(portsurvey.Selection{Categories: []string{"textproc", "devel"}}))
 }

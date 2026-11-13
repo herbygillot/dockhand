@@ -46,14 +46,11 @@ setup() {
 		return 0
 	fi
 	mkdir -p "$ROW_DIR/db" "$ROW_DIR/old" "$ROW_DIR/source"
-	# The database is in WAL mode, which a read-only open can't read
-	# without its -shm, nor make one (the rc3 full stage: "unable to open
-	# database file"): it's copied with its -wal and -shm, and backed up
-	# from the copy, which leaves the person's untouched.
-	local part
-	for part in "" -wal -shm; do
-		[ ! -f "$ACCEPT_REAL_DB$part" ] || cp "$ACCEPT_REAL_DB$part" "$ROW_DIR/source/dockhand.db$part"
-	done
+	# The person's database is read with SQLite's own backup, one
+	# consistent state, never a copy of its main, WAL and SHM files one
+	# after another, which could straddle a checkpoint (#233); the copy is
+	# what the row then works from.
+	sqlite3 "$ACCEPT_REAL_DB" ".backup '$ROW_DIR/source/dockhand.db'" || return 1
 	sqlite3 "$ROW_DIR/source/dockhand.db" ".backup '$ROW_DIR/db/dockhand.db'" || return 1
 	mkdir -p "$ROW_DIR/release-home/.dockhand"
 	sqlite3 "$ROW_DIR/source/dockhand.db" ".backup '$ROW_DIR/release-home/.dockhand/dockhand.db'" || return 1

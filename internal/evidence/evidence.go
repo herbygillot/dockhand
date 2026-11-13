@@ -263,16 +263,36 @@ type TargetEvidence struct {
 // build's, as the Tested on table names it, "curl +ssl +sectrust", a
 // bare port name its default build's, so accepting a variant build
 // doesn't accept the default build (field testing's note 10 from the curl
-// fix). A variant build that is its port's only coverage, no default build
-// beside it, goes by the port's name, as before.
+// fix). A variant build with no default build beside it goes by the
+// port's name where that names it alone: it's the port's only build, or
+// the only one of the port's builds that failed. Where several builds of
+// the port failed, each goes by its build, so one build's baseline
+// failure doesn't accept another's (#235); BuildsOf names them.
 func (e Evidence) AcceptName(target TargetEvidence) string {
 	name := target.Target.Target.Name
 	if target.Target.Target.VariantSpec() == "" || slices.ContainsFunc(e.Targets, func(t TargetEvidence) bool {
-		return t.Target.Target.Name == name && t.Target.Target.VariantSpec() == ""
+		return t.Target.Target.Name == name && t.Target.ID != target.Target.ID &&
+			(t.Target.Target.VariantSpec() == "" || t.Failing() || !target.Failing())
 	}) {
 		return string(target.Target.ID)
 	}
 	return name
+}
+
+// BuildsOf are the builds of a port the evidence has, failing ones first,
+// each in the plan's order.
+func (e Evidence) BuildsOf(port string) []TargetEvidence {
+	var failing, others []TargetEvidence
+	for _, target := range e.Targets {
+		switch {
+		case target.Target.Target.Name != port:
+		case target.Failing():
+			failing = append(failing, target)
+		default:
+			others = append(others, target)
+		}
+	}
+	return append(failing, others...)
 }
 
 // Remade are the environments where the target's result was recorded

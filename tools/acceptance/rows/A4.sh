@@ -21,7 +21,7 @@ export MACPORTS_TREE=$MACPORTS_TREE
 export PATH="/opt/local/bin:/opt/local/sbin:\$PATH"
 ENV
 	local image=""
-	"$DH_BIN" setup </dev/null 2>/dev/null | matches '✓ images for' || image=" Its check builds in Tart's plain image, which this home hasn't: make it first with dockhand setup tart, the README's setup."
+	"$DH_BIN" setup </dev/null 2>/dev/null | said '✓ ready for macOS ' || image=" Its check builds in Tart's plain image, which this home hasn't: make it first with dockhand setup tart, the README's setup."
 	checkpoint "in a dhtest Terminal, source $ROW_DIR/env.sh, then follow the README's \"Make your first update\" word for word on $ACCEPT_GO_PORT. At submit, add --title \"[testing] <the commit's subject>\" --skip-notification --note \"This pull request tests a dockhand release candidate, ${ACCEPT_CANDIDATE:-}, and will be closed without merging.\", so it's a test pull request in $DOCKHAND_PULL_REQUESTS.$image Write each disagreement with the README as a line of $ROW_DIR/disagreements, and leave it empty or absent where there are none" || return 0
 	# Its test pull request closes once the row has its evidence, as B2's
 	# does: left open, B3's ship of the same port was rightly refused for
@@ -29,6 +29,13 @@ ENV
 	local branch
 	branch=$(own_branch)
 	[ -z "$branch" ] || close_test_pr "$ACCEPT_GO_PORT" "$branch"
+}
+# teardown closes the row's test pull request where act didn't reach its
+# close, as when the person skipped the row after submitting, so B3 finds
+# none of A4's open (#224).
+teardown() {
+	[ "${ACCEPT_STAGE:-}" = full ] && [ "${ACCEPT_DRY:-0}" != 1 ] || return 0
+	close_leftover_test_prs "${ACCEPT_GO_PORT:?}"
 }
 # disagreements are the lines a person wrote of the README and the tool
 # disagreeing, a line saying there were none aside: the row once read

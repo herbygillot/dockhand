@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/textedit"
 	"github.com/stretchr/testify/require"
 )
 
@@ -132,4 +133,30 @@ func TestTheLinesAChangeAddsAreEachWithoutIt(t *testing.T) {
 	require.Len(t, added, 2, "the block's a command spanning several lines, so it isn't one")
 	require.Equal(t, portfile.AddedLine{Line: 3, Option: "version", Text: "version 1.8.1", Without: []byte("PortGroup github 1.0\ngithub.setup jqlang jq 1.8.1 jq-\nrevision 0\nuse_configure no\nplatform darwin {\n    use_parallel_build no\n}\n")}, added[0])
 	require.Equal(t, "use_configure", added[1].Option)
+}
+
+// The variant whose body holds a command is named, the innermost where
+// they nest; a command at the top, or in a platform's body, has none
+// (#229).
+func TestTheVariantEnclosingACommand(t *testing.T) {
+	t.Parallel()
+	src := []byte(`PortSystem 1.0
+cargo.crates top
+platform darwin {
+    cargo.crates platform
+}
+variant rust description {Rust} {
+    if {1} {
+        cargo.crates nested
+    }
+}
+`)
+	at := func(text string) textedit.Span {
+		start := strings.Index(string(src), text)
+		require.GreaterOrEqual(t, start, 0)
+		return textedit.Span{Start: start, End: start + len(text)}
+	}
+	require.Empty(t, portfile.EnclosingVariant(src, at("cargo.crates top")))
+	require.Empty(t, portfile.EnclosingVariant(src, at("cargo.crates platform")))
+	require.Equal(t, "rust", portfile.EnclosingVariant(src, at("cargo.crates nested")))
 }

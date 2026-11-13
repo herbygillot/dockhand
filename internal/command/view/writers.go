@@ -47,10 +47,11 @@ func WritePushes(out io.Writer, plan model.Plan) {
 	}
 }
 
-// WritePlan shows a plan, with remedy saying how to give an environment
-// what a target it can't build needs, and shown how many of a long list
-// a line names (ListShown).
-func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings map[model.TargetID]bool, remedy func(model.Unmet) string, shown int) {
+// WritePlan shows a plan, with its changed targets' siblings and the
+// directories no change record narrows (engine.PlanSiblings), remedy
+// saying how to give an environment what a target it can't build needs,
+// and shown how many of a long list a line names (ListShown).
+func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings engine.Siblings, remedy func(model.Unmet) string, shown int) {
 	var changed, built, extra []string
 	for _, target := range plan.Targets {
 		name := string(target.ID)
@@ -59,7 +60,7 @@ func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings map[mode
 			extra = append(extra, name)
 		case target.Role == model.Prerequisite:
 			changed = append(changed, name+" (needed by --only)")
-		case siblings[target.ID]:
+		case siblings.Targets[target.ID]:
 			built = append(built, name)
 		case target.MovedFrom != "" && path.Base(target.MovedFrom) != path.Base(target.Directory):
 			name += " (renamed from " + path.Base(target.MovedFrom) + ")"
@@ -76,6 +77,13 @@ func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings map[mode
 	}
 	if len(changed) > 0 {
 		fmt.Fprintf(out, "Changed     %s\n", prose.Few(changed, shown, "port"))
+	}
+	// A directory whose subports no change record narrows has each listed
+	// as changed, as its text says, and that is said with why, where
+	// apache-arrow's untouched py subports read as changed in silence
+	// (#228).
+	for _, directory := range siblings.Unnarrowed {
+		fmt.Fprintf(out, "            every subport of %s is listed as changed; they couldn't be narrowed to what changed: %s\n", path.Base(directory.Directory), directory.Reason)
 	}
 	if len(plan.Removed) > 0 {
 		fmt.Fprintf(out, "Removed     %s, with no port to build\n", strings.Join(plan.Removed, ", "))

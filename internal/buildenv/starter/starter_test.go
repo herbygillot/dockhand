@@ -190,6 +190,13 @@ func TestAStarterThatCantRecordItselfStartsNothing(t *testing.T) {
 	require.Equal(t, noRecord, exit.ExitCode())
 	require.Contains(t, out.String(), "couldn't record itself, so nothing was started")
 	require.NoFileExists(t, marker)
+	// Its reason is read back from what it said, for the error that names
+	// it (#129's second round, 5).
+	reason, ok := Unrecorded(err, append([]byte("building from x\n"), out.Bytes()...))
+	require.True(t, ok)
+	require.Contains(t, reason, "the starter couldn't record itself")
+	_, ok = Unrecorded(errors.New("exit status 1"), out.Bytes())
+	require.False(t, ok, "only the starter's own exit for it")
 }
 
 // A directory whose starter holds its lock is being built in, from the

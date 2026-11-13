@@ -2,6 +2,7 @@ package git_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -106,6 +107,50 @@ func TestSparseWorktreeHoldsOnlyItsConeAndLeavesTheCheckoutWhole(t *testing.T) {
 	require.NoError(t, repo.RemoveWorktree(t.Context(), dir))
 	_, err = os.Stat(dir)
 	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+// A tracked file on disk outside a sparse worktree's cone is one git
+// status reports as modified, so a capture of the working files reads it,
+// while git add declines it: OutsideSparse names it, where an edit inside
+// the cone, or at the top of the tree, isn't (#228: apache-arrow's
+// Portfile, edited outside the cone, was planned but couldn't be staged).
+func TestOutsideSparseNamesATrackedFileGitAddDeclines(t *testing.T) {
+	t.Parallel()
+	repo, head := portsCheckout(t)
+	require.NoError(t, repo.CreateBranch(t.Context(), "dockhand/jq-update", head))
+	dir := filepath.Join(t.TempDir(), "branches", "jq-update")
+	require.NoError(t, repo.AddSparseWorktree(t.Context(), dir, "dockhand/jq-update", []string{"_resources", "textproc/jq"}))
+	worktree, err := git.Open(t.Context(), dir, git.Program{Env: testsupport.GitEnv(t)})
+	require.NoError(t, err)
+	testsupport.WriteFiles(t, dir, map[string]string{
+		"devel/libharbor/Portfile": "name libharbor\nrevision 1\n",
+		"textproc/jq/Portfile":     "name jq\nrevision 1\n",
+		"README.md":                "ports, edited\n",
+	})
+	changes, err := worktree.TrackedChanges(t.Context())
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"README.md", "devel/libharbor/Portfile", "textproc/jq/Portfile"}, changes, "git status reports the file outside the cone")
+	outside, err := worktree.OutsideSparse(t.Context(), changes)
+	require.NoError(t, err)
+	require.Equal(t, []string{"devel/libharbor/Portfile"}, outside)
+
+	add := exec.Command("git", "add", "devel/libharbor/Portfile")
+	add.Dir, add.Env = dir, testsupport.GitEnv(t)
+	declined, err := add.CombinedOutput()
+	require.Error(t, err, "git add declines it: %s", declined)
+	require.Contains(t, string(declined), "outside of your sparse-checkout definition")
+
+	none, err := repo.OutsideSparse(t.Context(), changes)
+	require.NoError(t, err)
+	require.Empty(t, none, "a checkout that isn't sparse has nothing outside")
+
+	// Out of cone mode the patterns are gitignore lines, which the cone's
+	// rules don't read: nothing is said, never a wrong "outside" of a file
+	// the person can commit.
+	testsupport.Git(t, dir, "config", "--worktree", "core.sparseCheckoutCone", "false")
+	unsaid, err := worktree.OutsideSparse(t.Context(), changes)
+	require.NoError(t, err)
+	require.Empty(t, unsaid, "a sparse checkout out of cone mode says nothing")
 }
 
 func TestAFailedWorktreeIsRemoved(t *testing.T) {

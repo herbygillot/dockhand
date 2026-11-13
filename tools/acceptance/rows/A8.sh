@@ -42,8 +42,10 @@ act() {
 	a8_runs >"$ROW_DIR/runs.again"
 	printf '%s\n' "$waited" >"$ROW_DIR/waited"
 	cp "$log" "$ROW_DIR/uninstall.log" 2>/dev/null || :
-	# The rows after need dockhand, which nothing else puts back.
-	checkpoint "install the candidate again: sudo port -N install dockhand" || return 0
+	# The rows after need the candidate, which nothing else puts back, and
+	# the overlay may hold A7's newer build: the candidate's Portfile is
+	# staged again first, so it's the candidate that's installed (#234).
+	checkpoint "install the candidate again for the rows after: as the admin, run tools/acceptance/host/stage-candidate.sh ${ACCEPT_CANDIDATE:-<candidate>} --run, so the overlay holds the candidate and not a newer build, then sudo port -N install dockhand, and answer done" || return 0
 	"$DH_BIN" --version >"$ROW_DIR/reinstalled" 2>&1 || :
 }
 # serve's agent goes when the row does: one left running would take the
@@ -57,6 +59,14 @@ assert() {
 		row_fail "dockhand isn't installed again after the row, which the rows after need: $(head -1 "$ROW_DIR/reinstalled" 2>/dev/null)"
 		return
 	fi
+	# The candidate, as A1 names it, never a newer build left in the overlay.
+	case "$(head -1 "$ROW_DIR/reinstalled")" in
+	*"${ACCEPT_CANDIDATE#v}"*) ;;
+	*)
+		row_fail "the dockhand installed again isn't the candidate: --version says \"$(head -1 "$ROW_DIR/reinstalled")\", not ${ACCEPT_CANDIDATE:-}"
+		return
+		;;
+	esac
 	local first again
 	first=$(cat "$ROW_DIR/agents" 2>/dev/null) again=$(cat "$ROW_DIR/agents.again" 2>/dev/null)
 	if [ -z "$first" ] && [ -z "$again" ]; then
