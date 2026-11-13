@@ -1520,6 +1520,36 @@ func TestANewVariantBuildsLintIsAcceptedByItsBuild(t *testing.T) {
 	}
 }
 
+// In a port built only as variant builds, the bare name takes a failure
+// before lint: where one build failed and another passed with lint
+// warnings, --accept <port> takes the failure, and the lint block names
+// the build to accept it by. Two builds lint warned of, and none failed,
+// are refused by the bare name, each named (#235).
+func TestABareNameTakesAFailureBeforeLint(t *testing.T) {
+	t.Parallel()
+	g := setup(t)
+	e, _ := g.withPreparer(t)
+	g.withFork(t, e)
+	branch := committedUpdate(t, e)
+	docs := model.Target{Name: "jq", Variants: map[string]bool{"docs": true}}
+	tests := model.Target{Name: "jq", Variants: map[string]bool{"tests": true}}
+	warned := []string{"Line 3 has trailing whitespace"}
+	of := recordedRun(t, e, branch, "", []built{{target: docs, outcome: model.OutcomeFailed, added: true}, {target: tests, outcome: model.OutcomePassed, lint: warned, added: true}})
+	recordedRun(t, e, branch, of, []built{{target: docs, outcome: model.OutcomeFailed, added: true}})
+
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"jq"}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"jq +tests is a new port, and lint --nitpick warned in check-1: Line 3 has trailing whitespace. Fix it and check again, or accept it with --accept 'jq +tests'"}, plan.Blocking)
+	require.Equal(t, AcceptedAtBase, plan.Accepted["jq +docs"].Kind)
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"jq", "jq +tests"}})
+	require.NoError(t, err)
+	require.Empty(t, plan.Blocking)
+
+	recordedRun(t, e, branch, "", []built{{target: docs, outcome: model.OutcomePassed, lint: warned, added: true}, {target: tests, outcome: model.OutcomePassed, lint: warned, added: true}})
+	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"jq"}})
+	require.ErrorContains(t, err, "--accept jq: jq was warned of by lint in 2 builds in check-3, and each is accepted by its build's name. Name the builds to accept: --accept 'jq +docs' --accept 'jq +tests'")
+}
+
 // built is a target recordedRun builds, with its outcome, what lint
 // warned of, and whether the branch adds its port.
 type built struct {

@@ -174,16 +174,16 @@ func (b Block) Words(v Vocabulary) string {
 		}
 		return fmt.Sprintf("%s has changed, but these files haven't been built on %s. Run dockhand check, or share the branch with --draft", b.Port, strings.Join(places, "; "))
 	case BlockFailsAtBase:
-		return fmt.Sprintf("%s failed in %s and has the same failure at the base (%s). Use --accept %s to submit with this existing failure disclosed, fix the failure, or share the branch with --draft", b.Port, b.Run, strings.Join(b.Baselines, ", "), b.Port)
+		return fmt.Sprintf("%s failed in %s and has the same failure at the base (%s). Use --accept %s to submit with this existing failure disclosed, fix the failure, or share the branch with --draft", b.Port, b.Run, strings.Join(b.Baselines, ", "), acceptWord(b.Port))
 	case BlockFailed:
 		return fmt.Sprintf("%s did not pass in %s. Fix the failure, submit a draft with --draft, or run dockhand check --baseline to see whether master fails in the same way", b.Port, b.Run)
 	case BlockNotAccepted:
-		return fmt.Sprintf("%s (%s) did not pass in %s. If the failure was not caused by this branch, acknowledge it with --accept %s", b.Port, kindWords(b.Planned), b.Run, b.Port)
+		return fmt.Sprintf("%s (%s) did not pass in %s. If the failure was not caused by this branch, acknowledge it with --accept %s", b.Port, kindWords(b.Planned), b.Run, acceptWord(b.Port))
 	case BlockAwaiting:
 		port, rule, _ := strings.Cut(b.Port, " ")
 		return fmt.Sprintf("%s: you're awaiting %s. Once you have it, run dockhand decide %s -p %s --because \"…\", or share the branch with --draft", b.Port, b.Awaited, rule, port)
 	case BlockLint:
-		return fmt.Sprintf("%s is a new port, and lint --nitpick warned in %s: %s. Fix %s and check again, or accept %s with --accept %s", b.Port, b.Run, strings.Join(b.Lint, "; "), map[bool]string{true: "it", false: "them"}[len(b.Lint) == 1], map[bool]string{true: "it", false: "them"}[len(b.Lint) == 1], b.Port)
+		return fmt.Sprintf("%s is a new port, and lint --nitpick warned in %s: %s. Fix %s and check again, or accept %s with --accept %s", b.Port, b.Run, strings.Join(b.Lint, "; "), map[bool]string{true: "it", false: "them"}[len(b.Lint) == 1], map[bool]string{true: "it", false: "them"}[len(b.Lint) == 1], acceptWord(b.Port))
 	case BlockOthersPushed:
 		p := b.Pushed
 		return fmt.Sprintf("someone else pushed to #%d. The remote is at %s; Dockhand last pushed %s. Fetch it with git fetch %s %s and compare the changes, then incorporate it into your branch, for example with git merge %s, before submitting; Dockhand will not push over it",
@@ -246,4 +246,14 @@ func kindWords(target model.PlanTarget) string {
 		return "revision bump only"
 	}
 	return "changed"
+}
+
+// acceptWord is a build's name as --accept is typed with it: a variant
+// build's, "jq +docs", quoted for the shell, as a Next's arguments are
+// (#235).
+func acceptWord(name string) string {
+	if strings.Contains(name, " ") {
+		return "'" + name + "'"
+	}
+	return name
 }

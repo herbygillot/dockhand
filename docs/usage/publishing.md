@@ -314,6 +314,9 @@ These choices answer different questions:
   default build. Where a port has only variant builds, `--accept <port>` also
   takes the one build with a failure or, where none failed, lint warnings to
   accept; where several have, it is refused and names each build to accept.
+  Where one build failed and another has lint warnings, `--accept <port>`
+  takes the failure, and the lint warnings need their own
+  `--accept '<port> +variant'`.
   Such a port is named by its build, as `jq +docs`, wherever dockhand says
   what blocks a submission or what to accept. The submission records the
   build the name took, so a later check of the same commit that fails
