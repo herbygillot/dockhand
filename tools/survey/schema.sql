@@ -2,11 +2,12 @@
 -- answers, each question a query (queries/). Every row of a run carries
 -- its mode through run.
 CREATE TABLE schema (version INTEGER NOT NULL);
-INSERT INTO schema (version) VALUES (1);
+INSERT INTO schema (version) VALUES (2);
 
 CREATE TABLE run (
     id INTEGER PRIMARY KEY,
     mode TEXT NOT NULL,
+    measurement TEXT NOT NULL DEFAULT '',
     tree TEXT NOT NULL,
     "commit" TEXT NOT NULL,
     tclsh TEXT,
@@ -200,4 +201,27 @@ CREATE TABLE toolchain (
     sdks TEXT,
     developer_dir TEXT,
     UNIQUE (run_id, darwin, arch, profile)
+);
+
+-- Complete one-run tolerance diagnostics. Declaration ordinals are never
+-- grouped by the old, intentionally lossy host_access representation.
+CREATE TABLE tolerance_context (
+ evaluation_id INTEGER PRIMARY KEY REFERENCES evaluation(id),
+ on_verdict INTEGER NOT NULL, off_verdict INTEGER NOT NULL,
+ on_left INTEGER NOT NULL, off_left INTEGER NOT NULL, parity INTEGER NOT NULL,
+ pair TEXT NOT NULL
+);
+CREATE TABLE tolerance_access (
+ evaluation_id INTEGER NOT NULL REFERENCES evaluation(id),
+ declaration_ordinal INTEGER NOT NULL,
+ on_rule TEXT NOT NULL, off_rule TEXT NOT NULL,
+ on_followers TEXT NOT NULL, off_followers TEXT NOT NULL,
+ PRIMARY KEY(evaluation_id,declaration_ordinal)
+) WITHOUT ROWID;
+CREATE TABLE tolerance_file (
+ hash TEXT PRIMARY KEY, payload BLOB NOT NULL, raw_bytes INTEGER NOT NULL
+) WITHOUT ROWID;
+CREATE TABLE tolerance_capture (
+ evaluation_id INTEGER PRIMARY KEY REFERENCES evaluation(id),
+ hash TEXT NOT NULL, payload BLOB NOT NULL, raw_bytes INTEGER NOT NULL
 );

@@ -126,3 +126,12 @@ A comparison reports Tcl worker failures (`evaluation-unavailable`) separately
 as **not evaluated**, naming whether the baseline, new run or both lacked an
 evaluation. Those ports contribute no verdict movement or guard change; their
 Portfiles are excluded from comparable fully-covered totals on both sides.
+
+## Replayable tolerance records
+
+Schema 2 adds per-context tolerance pairs, per-declaration rule traces and
+checksummed gzip observation captures. Files read by the classifier are stored
+once by content hash. Captures include complete declaration values and frames,
+including anonymous frames; the older `host_access` table remains a compact,
+lossy read summary. Original tree and Base paths are remapped to captured files
+for replay. A record made with different measurement settings cannot be resumed.

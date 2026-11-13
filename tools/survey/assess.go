@@ -41,7 +41,8 @@ type Result struct {
 }
 
 type Port struct {
-	Selector string
+	Tolerance []toleranceSummary `json:",omitempty"`
+	Selector  string
 	portedit.Assessment
 	// portfile is the port's Portfile where the selection knew it, and
 	// observed each context it was observed in, for the record.

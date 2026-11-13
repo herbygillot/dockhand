@@ -27,6 +27,7 @@ type FollowerUse struct {
 
 type AccessExplanation struct {
 	Declaration int
+	Ignored     bool `json:",omitempty"`
 	Rule        Rule
 	Followers   []FollowerUse `json:",omitempty"`
 }
@@ -43,6 +44,15 @@ type Explanation struct {
 
 func Explain(ctx context.Context, port macports.PortObservation, contents []byte, root string) Explanation {
 	var trace Explanation
+	if !(port.HostAccess || port.ModeledHostAccess) {
+		trace.Observation = port
+		for i, d := range port.Declarations {
+			if d.Command == "dockhand.host-access" && len(d.Values) > 0 {
+				trace.Accesses = append(trace.Accesses, AccessExplanation{Declaration: i, Rule: RuleNone, Ignored: true})
+			}
+		}
+		return trace
+	}
 	trace.Observation, trace.Inconclusive = tolerate(ctx, port, contents, root, &trace)
 	return trace
 }

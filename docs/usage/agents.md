@@ -277,3 +277,9 @@ file. Read `dockhand usage configuration` for settings and
 Host-read explanation diagnostics retain the product's ordinary model policy.
 The follower-off comparison exists only in a separately tagged survey build;
 no product command, configuration or environment variable selects it.
+
+Survey measurement records use schema 2. The optional `Tolerance` journal
+field names each context's default and follower-withheld verdicts; it is a
+measurement, not a change to the product's assessment. Lossless observation
+captures and their source/Base files are checksummed and compressed in the
+survey record, so later analysis need not read the original installation.

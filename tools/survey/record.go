@@ -28,7 +28,7 @@ import (
 var schema string
 
 // schemaVersion is the record's shape, schema.sql's.
-const schemaVersion = 1
+const schemaVersion = 2
 
 // Modes are what a run evaluates ports against: current, the fresh
 // installation and the facts table, as dockhand does; installed, the
@@ -79,6 +79,7 @@ type Record struct {
 type RunInfo struct {
 	Tree, Tclsh, Portindex, Base, Host, Load string
 	Parallel                                 int
+	Measurement                              string
 }
 
 type job struct {
@@ -158,6 +159,9 @@ func (r *Record) apply(j job) (err error) {
 		return err
 	}
 	if j.line != nil && r.journal != nil {
+		if line, ok := j.line.(*Port); ok {
+			return r.journal.Record(*line)
+		}
 		if line, ok := j.line.(Port); ok {
 			return r.journal.Record(line)
 		}
@@ -182,8 +186,16 @@ func (r *Record) Begin(source model.Source) error {
 		}
 	}
 	return r.do(func(tx *sql.Tx) error {
+		var prior string
+		err := tx.QueryRow(`SELECT measurement FROM run WHERE measurement <> ? LIMIT 1`, r.info.Measurement).Scan(&prior)
+		if err == nil {
+			return fmt.Errorf("survey: measurement settings differ; use another record")
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
 		var other string
-		err := tx.QueryRow(`SELECT "commit" FROM run WHERE "commit" <> ? LIMIT 1`, r.commit).Scan(&other)
+		err = tx.QueryRow(`SELECT "commit" FROM run WHERE "commit" <> ? LIMIT 1`, r.commit).Scan(&other)
 		if err == nil {
 			return fmt.Errorf("survey: %s records commit %s, not %s; use another file", r.path, other, r.commit)
 		} else if !errors.Is(err, sql.ErrNoRows) {
@@ -191,8 +203,8 @@ func (r *Record) Begin(source model.Source) error {
 		}
 		err = tx.QueryRow(`SELECT id FROM run WHERE mode = ? AND recording = ? AND finished IS NULL ORDER BY id DESC LIMIT 1`, r.mode, r.recording).Scan(&r.run)
 		if errors.Is(err, sql.ErrNoRows) {
-			result, err := tx.Exec(`INSERT INTO run (mode, tree, "commit", tclsh, portindex, base_version, host_platform, parallel, started, load_at_start, recording)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, r.mode, r.info.Tree, r.commit, r.info.Tclsh, r.info.Portindex, r.info.Base, r.info.Host, r.info.Parallel,
+			result, err := tx.Exec(`INSERT INTO run (mode, measurement, tree, "commit", tclsh, portindex, base_version, host_platform, parallel, started, load_at_start, recording)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, r.mode, r.info.Measurement, r.info.Tree, r.commit, r.info.Tclsh, r.info.Portindex, r.info.Base, r.info.Host, r.info.Parallel,
 				time.Now().UTC().Format(time.RFC3339), r.info.Load, r.recording)
 			if err != nil {
 				return err
@@ -265,7 +277,7 @@ func (r *Record) Has(selector string) bool { return r.held[selector] }
 func (r *Record) Record(port Port) error {
 	var line any
 	if r.mode == "current" {
-		line = port
+		line = &port
 	}
 	return r.do(func(tx *sql.Tx) error {
 		var id int64
@@ -290,6 +302,10 @@ func (r *Record) Record(port Port) error {
 			if err := r.evaluation(tx, id, o); err != nil {
 				return err
 			}
+			if o.Capture != nil {
+				c := o.Capture
+				port.Tolerance = append(port.Tolerance, toleranceSummary{Evaluation: c.Evaluation, Platform: c.Platform, On: c.Pair.On.Inconclusive, Off: c.Pair.Off.Inconclusive, OnLeft: c.Pair.OnLeft, OffLeft: c.Pair.OffLeft, Parity: c.Pair.Parity})
+			}
 		}
 		return nil
 	}, line)
@@ -297,6 +313,7 @@ func (r *Record) Record(port Port) error {
 
 // observed is one context a port was observed in.
 type observed struct {
+	Capture     *toleranceCapture
 	Platform    model.Platform
 	Modeled     bool
 	Root        string
@@ -328,7 +345,7 @@ func (r *Record) evaluation(tx *sql.Tx, port int64, o observed) error {
 		}
 	}
 	if o.Err != nil {
-		return nil
+		return r.tolerance(tx, id, o)
 	}
 	local := r.localizer(o.Root)
 	insert := func(query string, rows func(func(...any) error) error) error {
@@ -494,7 +511,7 @@ func (r *Record) evaluation(tx *sql.Tx, port int64, o observed) error {
 	}); err != nil {
 		return err
 	}
-	return insert(`INSERT INTO hook_body (evaluation_id, phase, origin, body_id) VALUES (?, ?, ?, ?)`, func(add func(...any) error) error {
+	if err := insert(`INSERT INTO hook_body (evaluation_id, phase, origin, body_id) VALUES (?, ?, ?, ?)`, func(add func(...any) error) error {
 		for _, hook := range o.Observation.Hooks {
 			body, err := r.bodyID(tx, local(hook.Body))
 			if err != nil {
@@ -505,7 +522,10 @@ func (r *Record) evaluation(tx *sql.Tx, port int64, o observed) error {
 			}
 		}
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	return r.tolerance(tx, id, o)
 }
 
 // normalize is a path as Tcl's file normalize has it: cleaned, with its

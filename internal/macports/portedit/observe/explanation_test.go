@@ -24,3 +24,12 @@ func TestExplanationContinuesAfterFailureWithoutChangingTheVerdict(t *testing.T)
 	require.True(t, got.Accesses[1].Followers[0].Benign)
 	require.True(t, p.ModeledHostAccess, "the input remains unchanged")
 }
+
+func TestExplanationIdentifiesAnAccessNotCountedByTheInput(t *testing.T) {
+	p := macports.PortObservation{Declarations: []macports.Declaration{{Command: "dockhand.host-access", Values: []string{"not flagged"}}}}
+	got := Explain(t.Context(), p, nil, t.TempDir())
+	require.False(t, got.Inconclusive)
+	require.Len(t, got.Accesses, 1)
+	require.True(t, got.Accesses[0].Ignored)
+	require.Equal(t, RuleNone, got.Accesses[0].Rule)
+}
