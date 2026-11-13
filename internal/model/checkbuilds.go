@@ -20,7 +20,7 @@ type CheckBuilds struct {
 // the plan unresolved: ordering after both cannot select an image (#236).
 func (b CheckBuilds) Resolve(dependent TargetID, port string) (TargetID, error) {
 	var candidates, selected []TargetID
-	var ordinary TargetID
+	var ordinary, configured TargetID
 	for _, target := range b.Targets {
 		name := target.Target.Name
 		if target.Target.Subport != "" {
@@ -35,6 +35,8 @@ func (b CheckBuilds) Resolve(dependent TargetID, port string) (TargetID, error) 
 		}
 		if len(target.Target.Variants) == 0 {
 			ordinary = target.ID
+		} else if configured == "" {
+			configured = target.ID
 		}
 	}
 	if len(selected) == 1 {
@@ -51,7 +53,7 @@ func (b CheckBuilds) Resolve(dependent TargetID, port string) (TargetID, error) 
 			return candidates[0], nil
 		}
 	}
-	return "", fmt.Errorf("%s depends on %s, but which build it consumes is unresolved: %v", dependent, port, candidates)
+	return "", fmt.Errorf("%s depends on %s, but which build it consumes is unresolved: %v; select one configuration with --variants '%s', or for a baseline use --baseline --only '%s,%s'", dependent, port, candidates, configured, dependent, configured)
 }
 
 // Consumed names the build of each in-check port active as a dependent

@@ -440,3 +440,38 @@ func TestABaselineLeavesOutWhatMastersBuildReadsTheSame(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"jq:unchanged:also"}, names(baseline.Plan.Targets), "--only builds it whatever the rule says")
 }
+
+// A passed default stays out of an automatic baseline that keeps two
+// failed variants and their failed dependent. --only can name one build
+// ID beside the dependent to resolve that reachable ambiguity (#236).
+func TestABaselineWithTwoFailedVariantsSaysHowToSelectOneBuild(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	revision := harborBranch(t, e)
+	usePorts(e, harborVariants())
+	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}, VariantsPort: "libharbor", EachVariant: true})
+	require.NoError(t, err)
+	branch, err := e.Branch(t.Context(), revision.Branch)
+	require.NoError(t, err)
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{outcomes: map[model.TargetID]model.Outcome{
+		"libharbor +tests": model.OutcomeFailed, "libharbor +docs": model.OutcomeFailed, "harbor-cli": model.OutcomeFailed,
+	}}}
+	queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+	require.NoError(t, err)
+	checked, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunFailed, checked.State)
+	// check --baseline retains both failed variants, without the default.
+	_, err = e.PlanBaseline(t.Context(), BaselineRequest{Branch: branch})
+	require.ErrorContains(t, err, "harbor-cli depends on libharbor")
+	require.ErrorContains(t, err, "libharbor +tests")
+	require.ErrorContains(t, err, "libharbor +docs")
+	require.ErrorContains(t, err, "--baseline --only 'harbor-cli,libharbor +tests'")
+	// check --baseline --only 'harbor-cli,libharbor +tests'
+	baseline, err := e.PlanBaseline(t.Context(), BaselineRequest{Branch: branch, Ports: []string{"harbor-cli", "libharbor +tests"}})
+	require.NoError(t, err)
+	build, _ := baseline.Plan.In(tahoeArm)
+	require.Equal(t, []model.TargetID{"libharbor +tests", "harbor-cli"}, build.Order)
+	require.Equal(t, []model.TargetID{"libharbor +tests"}, build.Dependencies["harbor-cli"])
+}

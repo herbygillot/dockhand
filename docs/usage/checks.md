@@ -447,8 +447,8 @@ the build ID of each in-check port consumed. Changing a prerequisite from its
 default build to `+docs` rebuilds its consumers, even with unchanged Portfiles.
 Earlier results fill a later check's missing rows only when those consumed
 build IDs match; unknown consumption rebuilds and leaves the row unfilled.
-Existing builds with in-check dependencies get new input keys once this is
-recorded. A moved source tag also rebuilds consumers of configured prerequisites. Where an
+The first check after upgrading rebuilds the dependents of in-check builds
+once. A moved source tag also rebuilds consumers of configured prerequisites. Where an
 environment's identity can't be read, as when Tart doesn't answer, its results
 are taken as they were and status says so, with the cause; serve and `ship
 --yes` hold a submission resting on them (`identity-unread`) until it reads

@@ -373,6 +373,8 @@ func TestAmbiguousConfiguredPrerequisiteRefusesThePlan(t *testing.T) {
 	require.ErrorContains(t, err, "harbor-cli")
 	require.ErrorContains(t, err, "libharbor +docs")
 	require.ErrorContains(t, err, "libharbor +tests")
+	require.ErrorContains(t, err, "--variants 'libharbor +docs'")
+	require.ErrorContains(t, err, "--baseline --only 'harbor-cli,libharbor +docs'")
 }
 
 // Minmax keeps a configured prerequisite in an interior environment

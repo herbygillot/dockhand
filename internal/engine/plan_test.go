@@ -737,3 +737,39 @@ func TestVariantsTakeThePlansOnePort(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"curl +sectrust:unchanged:also"}, names(plan.Targets))
 }
+
+// Each retains the default candidate, but a variant-dependent known_fail
+// can exclude it alone. Choosing one configuration resolves the actual
+// command line's ambiguity without waiting for --set (#236, #50).
+func TestEachWithAKnownFailDefaultSaysHowToChooseOneBuild(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	revision := harborBranch(t, e)
+	ports := harborVariants()
+	ports.directories["devel/libharbor"][0].Options["dockhand.known_fail"] = "1"
+	withVariants := ports.withVariants
+	ports.withVariants = func(port macports.PortInfo, variants map[string]bool) macports.PortInfo {
+		port = withVariants(port, variants)
+		if port.Name == "libharbor" && (variants["tests"] || variants["docs"]) {
+			port.Options["dockhand.known_fail"] = "0"
+		}
+		return port
+	}
+	usePorts(e, ports)
+	// check --only harbor-cli --variants 'libharbor each'
+	request := PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}, Only: []string{"harbor-cli"}, VariantsPort: "libharbor", EachVariant: true}
+	_, err := e.PlanCheck(t.Context(), request)
+	require.ErrorContains(t, err, "harbor-cli depends on libharbor")
+	require.ErrorContains(t, err, "libharbor +tests")
+	require.ErrorContains(t, err, "libharbor +docs")
+	require.ErrorContains(t, err, "--variants 'libharbor +tests'")
+	// The suggested --variants 'libharbor +tests' replaces each.
+	request.EachVariant = false
+	request.Variants = map[string]bool{"tests": true}
+	plan, err := e.PlanCheck(t.Context(), request)
+	require.NoError(t, err)
+	build, _ := plan.In(tahoeArm)
+	require.Equal(t, []model.TargetID{"libharbor +tests", "harbor-cli"}, build.Order)
+	require.Equal(t, []model.TargetID{"libharbor +tests"}, build.Dependencies["harbor-cli"])
+}
