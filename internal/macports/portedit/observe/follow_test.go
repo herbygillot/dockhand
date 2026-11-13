@@ -150,3 +150,17 @@ proc ksharch {} {
 	wireshark := "PortSystem 1.0\nname wireshark\nversion 1\nconfigure.args-append -DBUILD_wireshark=OFF\nvariant kerberos {\n    configure.args-replace  -DENABLE_KERBEROS=OFF -DENABLE_KERBEROS=ON \\\n    configure.args-append   -DCMAKE_SHARED_LINKER_FLAGS=\"-lk5crypto\"\n}\n"
 	require.False(t, tolerate(wireshark, getmake), "wireshark: a continued line's literal word")
 }
+
+// A variant whose body is a quoted string, as wireshark3's python variants
+// are, made in a loop, runs that string as its script: a watched option it
+// sets there is a write, and a watched value it reads is judged where the
+// script puts it.
+func TestAQuotedVariantBodyIsWalkedAsAScript(t *testing.T) {
+	t.Parallel()
+	b := newBaseFixture(t)
+	getmake := b.lookup("make", "base", b.substitution("configure.args", "[list -DCMAKE_BUILD_TYPE=Release]"), b.substitution("build.cmd", "[portbuild::build_getmaketype]"), b.getmaketype())
+	writes := "foreach v {39 310} {\n    variant py$v description \"Use python $v\" \"\n        depends_build-append port:py$v\n        configure.args-append -DPython3_ROOT_DIR=\\\"/x/$v/bin\\\"\n    \"\n}"
+	require.False(t, b.tolerate(t, writes, getmake), "a quoted body setting configure.args")
+	reads := "variant x description {x} \"\n    distfiles x-[file tail ${build.cmd}].tgz\n\""
+	require.True(t, b.tolerate(t, reads, getmake), "a quoted body putting build.cmd in distfiles")
+}

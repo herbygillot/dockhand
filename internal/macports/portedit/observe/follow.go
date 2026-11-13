@@ -399,8 +399,18 @@ func (f *follower) walk(si int, script *syntax.Script, sc *scope) bool {
 		if f.procs[name] || f.watched[optionSuffix.ReplaceAllString(name, "")] {
 			f.placed[si] = append(f.placed[si], cmd.Words[0].Span)
 		}
-		for _, word := range cmd.Words[1:] {
+		for i, word := range cmd.Words[1:] {
 			if body, ok := word.BracedScript(src); ok {
+				if !f.walk(si, body, sc) {
+					return false
+				}
+				continue
+			}
+			// A variant's, subport's or platform's body written as a
+			// quoted string, as wireshark3's python variants are made in a
+			// loop, is the script it runs once substituted: walked as one,
+			// its reads judged where it puts them.
+			if body, ok := quotedBody(src, cmd, name, i+1); ok {
 				if !f.walk(si, body, sc) {
 					return false
 				}
@@ -422,6 +432,23 @@ func (f *follower) walk(si int, script *syntax.Script, sc *scope) bool {
 		}
 	}
 	return true
+}
+
+// quotedBody is the script a quoted last word of a variant, subport or
+// platform is, where it parses as one.
+func quotedBody(src []byte, cmd syntax.Command, name string, at int) (*syntax.Script, bool) {
+	if name != "variant" && name != "subport" && name != "platform" || at != len(cmd.Words)-1 {
+		return nil, false
+	}
+	word := cmd.Words[at]
+	if word.Expand || len(word.Segments) != 1 {
+		return nil, false
+	}
+	if _, quoted := word.Segments[0].(syntax.Quoted); !quoted {
+		return nil, false
+	}
+	script, errs := syntax.ParseScript(src, word.Inner())
+	return script, len(errs) == 0
 }
 
 // benignBody accepts a branch a watched read selects only where every
