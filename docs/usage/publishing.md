@@ -309,9 +309,12 @@ These choices answer different questions:
 - `submit --accept <port>`: Accept an eligible recorded failure, or a new port's
   lint warnings, for this commit.
 - `submit --accept '<port> +variant'`: Accept a variant build's failure by the
-  name the table gives it; `--accept <port>` is the port's default build.
-  Where a port has only variant builds, `--accept <port>` takes the one that
-  failed; where several failed, it is refused and names each build to accept.
+  name the table gives it, whatever the port's other builds did;
+  `--accept <port>` is the port's default build. Where a port has only
+  variant builds, `--accept <port>` also takes the one that failed; where
+  several failed, it is refused and names each build to accept. Such a port
+  is named by its build, as `jq +docs`, wherever dockhand says what blocks a
+  submission or what to accept.
 - `submit --accept <port> --standing`: Accept a specifically identified
   dependency-install failure across branches until its dependency version or
   image changes.

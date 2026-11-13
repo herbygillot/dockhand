@@ -103,6 +103,11 @@ type PortObservation struct {
 	Reads []PathRead
 	Execs []CommandRun
 	Hooks []Hook
+	// BaseLibrary is the directory MacPorts Base's own Tcl was loaded
+	// from, as the evaluation's frames name its files (the parent of
+	// port1.0 and macports1.0); empty where the evaluator doesn't say. A
+	// frame is Base's code only under it.
+	BaseLibrary string
 }
 
 // FetchPlan is the port's fetch plan as MacPorts made it: each archive,

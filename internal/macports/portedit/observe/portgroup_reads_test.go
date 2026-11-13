@@ -126,13 +126,14 @@ platform darwin {
 func TestAClosedReadIsWeighedAsAHostRead(t *testing.T) {
 	t.Parallel()
 	problem := "modeled context depends on filesystem state outside the captured ports tree"
+	library := "/opt/local/libexec/macports/lib"
 	closed := func(command string) macports.Declaration {
 		return macports.Declaration{Command: "dockhand.host-access", Values: []string{problem, "closed", "base", "file exists /usr/include/sys/cdefs.h"},
-			Frames: []macports.SourceFrame{{File: "/opt/local/libexec/macports/lib/port1.0/portconfigure.tcl", Line: 1, Command: command}}}
+			Frames: []macports.SourceFrame{{Line: 1, Command: command}, {File: library + "/port1.0/portconfigure.tcl", Line: 1, Command: "file exists /usr/include/sys/cdefs.h"}}}
 	}
 	ledger := []macports.LedgerEntry{{Command: "file", Subcommand: "exists", Source: "closed", Count: 1}}
 	observed := func(declaration macports.Declaration) macports.PortObservation {
-		return macports.PortObservation{ModeledHostAccess: true, Declarations: []macports.Declaration{declaration}, Problems: []string{problem}, Ledger: ledger}
+		return macports.PortObservation{ModeledHostAccess: true, Declarations: []macports.Declaration{declaration}, Problems: []string{problem}, Ledger: ledger, BaseLibrary: library}
 	}
 	contents := []byte("PortSystem 1.0\nname fixture\nversion 1\nconfigure.args CC=${configure.cc}\n")
 	port, inconclusive := Tolerate(context.Background(), observed(closed("portconfigure::configure_get_compiler cc")), contents, "")
@@ -154,16 +155,16 @@ func TestBuildJobsDefaultIsExplainedWhereOnlyTheBuildReadsIt(t *testing.T) {
 	root := t.TempDir()
 	portfile := filepath.Join(root, "devel", "cmake", "Portfile")
 	sysctl := "modeled context depends on this Mac's kernel, read with sysctl, while evaluating the Portfile"
-	frame := func(command string) macports.SourceFrame { return macports.SourceFrame{Line: 1, Command: command} }
 	access := func(at macports.SourceFrame, frames ...macports.SourceFrame) macports.Declaration {
 		return macports.Declaration{Command: "dockhand.host-access", Values: []string{sysctl, "closed", "base"}, Frames: append([]macports.SourceFrame{at}, frames...)}
 	}
+	base := newBaseFixture(t)
 	observed := func(declarations ...macports.Declaration) macports.PortObservation {
-		return macports.PortObservation{ModeledHostAccess: true, Declarations: declarations, Problems: []string{sysctl}}
+		return macports.PortObservation{ModeledHostAccess: true, Declarations: declarations, Problems: []string{sysctl}, BaseLibrary: base.lib}
 	}
 	jobs := func(at macports.SourceFrame) macports.Declaration {
 		return access(at, frame("default_check build.jobs {} read"), frame("subst {[portbuild::build_getjobs]}"), frame("portbuild::build_getjobs"),
-			macports.SourceFrame{File: "/opt/local/libexec/macports/lib/port1.0/portbuild.tcl", Line: 152, Command: "macports_try -pass_signal {\n    set jobs [sysctl hw.activecpu]\n}"})
+			macports.SourceFrame{File: base.file("port1.0/portbuild.tcl"), Line: 152, Command: "macports_try -pass_signal {\n    set jobs [sysctl hw.activecpu]\n}"})
 	}
 	building := []byte("PortSystem 1.0\nname cmake\nversion 3.31.12\nbuild.args -j${build.jobs}\n")
 	port, inconclusive := Tolerate(context.Background(), observed(jobs(macports.SourceFrame{File: portfile, Line: 4, Command: "build.args -j${build.jobs}"})), building, root)

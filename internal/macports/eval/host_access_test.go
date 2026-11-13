@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/stretchr/testify/require"
 )
@@ -286,11 +287,17 @@ func TestEachContextGetsItsOwnCompilerList(t *testing.T) {
 // Portfile in another phase's command, as abella's test.cmd is. One a
 // fetch value reads, one the Portfile reads in an expression, or a
 // Portfile's own lookup, pure-gen's build_getmaketype call among them,
-// stays host state.
+// stays host state. So does one reaching a fetch value through another
+// option, a proc or [set], one a Portfile's callback or a PortGroup's
+// default makes, and one under a Portfile procedure named into portmain
+// or portconfigure (architecture's points 1 to 4 on #110's finding 1).
 func TestBasesOwnLookupForAPhaseOptionIsExplained(t *testing.T) {
 	t.Parallel()
 	group := func(root string) {
 		putFile(t, root, "_resources/port1.0/group/makeargs-1.0.tcl", "default configure.args {-DCMAKE_MAKE_PROGRAM=${build.cmd}}\n")
+	}
+	hostDefault := func(root string) {
+		putFile(t, root, "_resources/port1.0/group/hostdefault-1.0.tcl", "default build.cmd {[catch {findBinary hostonly}]}\n")
 	}
 	for _, c := range []struct {
 		name, lines string
@@ -305,9 +312,100 @@ func TestBasesOwnLookupForAPhaseOptionIsExplained(t *testing.T) {
 		{"a Portfile's own call of Base's make lookup", "build.cmd [portbuild::build_getmaketype]", nil, true, "make, which findBinary"},
 		{"configure.args read by a fetch value", "PortGroup makeargs 1.0\ndistfiles effects-[llength ${configure.args}].tar.gz", group, true, "make, which findBinary"},
 		{"a Portfile's own lookup for configure.args", "catch {configure.args-append [findBinary hostonly]}", nil, true, "hostonly, which findBinary"},
+		{"a Portfile's callback calling Base's make lookup", "proc mine {} { if {[catch {portbuild::build_getmaketype}]} {master_sites a} else {master_sites b} }\nport::register_callback mine", nil, true, "make, which findBinary"},
+		{"a PortGroup's default looking for a program", "PortGroup hostdefault 1.0\nbuild.args ${build.cmd}", hostDefault, true, "hostonly, which findBinary"},
+		{"build.cmd's make, through test.cmd to distfiles", "test.cmd ${build.cmd}\ndistfiles foo-[file tail ${test.cmd}].tgz", nil, true, "make, which findBinary"},
+		{"build.cmd's make, through build.env to master_sites", "build.env MAKE=${build.cmd}\nmaster_sites http://x/${build.env}", nil, true, "make, which findBinary"},
+		{"build.cmd's make, returned by a proc", "proc f {} {global build.cmd; return ${build.cmd}}\ndistfiles [f].tgz", nil, true, "make, which findBinary"},
+		{"build.cmd's make, read by [set]", "distfiles foo-[file tail [set build.cmd]].tar.gz", nil, true, "make, which findBinary"},
+		{"a Portfile procedure named like source_date_epoch's", "proc portmain::get_source_date_epoch_probe {} {return [catch {findBinary hostonly}]}\nif {[portmain::get_source_date_epoch_probe]} {distfiles a} else {distfiles b}", nil, true, "hostonly, which findBinary"},
+		{"a Portfile procedure in portconfigure", "proc portconfigure::mine {} {return [catch {findBinary hostonly}]}\nif {[portconfigure::mine]} {distfiles a} else {distfiles b}", nil, true, "hostonly, which findBinary"},
 	} {
 		_, port := observedIn(t, monterey, c.setup, c.lines)
 		require.True(t, slices.ContainsFunc(port.Problems, func(p string) bool { return strings.Contains(p, c.lookup) }), "%s: the lookup is closed: %v", c.name, port.Problems)
 		require.Equal(t, c.host, hostState(t, port, effects(c.lines)), "%s: %v", c.name, port.Problems)
 	}
+}
+
+// Base's own xcrun, asked for the SDK by configure.sdkroot's default
+// where the table has no answer for the release (Darwin 9), is closed and
+// explained: Base wrote the default and every frame below it is Base's
+// library, and the option shapes the build alone (#110's finding 1,
+// architecture's point 5).
+func TestBasesOwnXcrunForTheSDKIsExplained(t *testing.T) {
+	t.Parallel()
+	leopard := model.Platform{OS: "darwin", Version: "9", Architecture: "i386"}
+	lines := "build.args ${configure.sdkroot}"
+	_, port := observedDescription(t, leopard, model.DeveloperToolsXcode, lines)
+	xcrun := 0
+	for _, declaration := range port.Declarations {
+		if declaration.Command != "dockhand.host-access" || len(declaration.Values) < 4 || !strings.HasPrefix(declaration.Values[3], "exec xcrun ") {
+			continue
+		}
+		xcrun++
+		alone := port
+		alone.Declarations, alone.Problems = []macports.Declaration{declaration}, []string{declaration.Values[0]}
+		require.False(t, hostState(t, alone, effects(lines)), "%v %+v", declaration.Values, declaration.Frames)
+	}
+	require.Positive(t, xcrun, "Base asked xcrun: %v", port.Problems)
+}
+
+// knownGapVerdict observes contents as devel/effects/Portfile on the
+// platform, with setup given the tree's root, and returns the verdict
+// Tolerate gives with the tree's own root, so PortGroups it holds are
+// there to read, and the evaluated distfiles.
+func knownGapVerdict(t *testing.T, platform model.Platform, setup func(string), contents string) (bool, string, macports.PortObservation) {
+	t.Helper()
+	e := liveEvaluator(t)
+	tree := fixtureTree(t)
+	if setup != nil {
+		setup(tree.Root())
+	}
+	putFile(t, tree.Root(), "devel/effects/Portfile", contents)
+	bound, err := tree.Select(model.Target{Name: "effects", Portfile: "devel/effects/Portfile"})
+	require.NoError(t, err)
+	got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Declarations: true, Platform: platform})
+	require.NoError(t, err)
+	_, inconclusive := observe.Tolerate(t.Context(), got.Ports["effects"], []byte(contents), tree.Root())
+	return inconclusive, got.Snapshot.Ports["effects"].Options["distfiles"], got.Ports["effects"]
+}
+
+// Known gap, filed as #247, pinned as it stands, not fixed in #110's round (architecture's
+// ruling): a Portfile calling Base's portconfigure procedure itself, as
+// hdhomerun calls configure_get_universal_archflags, is taken for Base's
+// compiler selection, so on Darwin 10 the SDK the host's files would
+// choose reaches distfiles and the context reads as conclusive. When the
+// gap is closed this test fails, and flips.
+func TestKnownGapAPortfilesOwnCallOfBasesToolchainProcedureIsExplained(t *testing.T) {
+	t.Parallel()
+	snowLeopard := model.Platform{OS: "darwin", Version: "10", Architecture: "x86_64"}
+	contents := "PortSystem 1.0\nname effects\nversion 1\ndistfiles x-[file tail [portconfigure::configure_get_sdkroot 10.6]].tar.gz\n"
+	inconclusive, distfiles, port := knownGapVerdict(t, snowLeopard, nil, contents)
+	own := false
+	for _, declaration := range port.Declarations {
+		if declaration.Command == "dockhand.host-access" && len(declaration.Values) > 2 && declaration.Values[1] == "closed" && declaration.Values[2] == "portfile" {
+			own = true
+		}
+	}
+	require.True(t, own, "the Portfile's own call closes a host read: %v", port.Problems)
+	require.Equal(t, "x-.tar.gz", distfiles, "the empty Mac's SDK answer in a fetch field")
+	require.False(t, inconclusive, "known gap: explained today")
+}
+
+// Known gap, filed as #247, pinned as it stands, not fixed in #110's round (architecture's
+// ruling): following a Base lookup's value reads the Portfile and only the
+// PortGroups on the read's stack. A PortGroup the Portfile includes reads
+// build.cmd into distfiles while it is sourced, which leaves no frame of
+// its file, so build.cmd's make reaches a fetch field and the context
+// reads as conclusive. When the gap is closed this test fails, and flips.
+func TestKnownGapAPortGroupOffTheStackIsNotFollowed(t *testing.T) {
+	t.Parallel()
+	setup := func(root string) {
+		putFile(t, root, "_resources/port1.0/group/hostread-1.0.tcl", "distfiles foo-[file tail ${build.cmd}].tar.gz\n")
+	}
+	contents := "PortSystem 1.0\nPortGroup hostread 1.0\nname effects\nversion 1\n"
+	inconclusive, distfiles, port := knownGapVerdict(t, monterey, setup, contents)
+	require.Contains(t, port.Problems, "modeled context depends on make, which findBinary looks for along this Mac's PATH")
+	require.Equal(t, "foo-.tar.gz", distfiles, "make, not found on the empty Mac, in a fetch field")
+	require.False(t, inconclusive, "known gap: explained today")
 }

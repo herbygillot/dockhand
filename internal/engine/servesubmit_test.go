@@ -160,6 +160,119 @@ func TestACrateListLeftUnlockedHoldsUntilHoldsAllowNamesIt(t *testing.T) {
 	}
 }
 
+// unlockedHolds are the crates-unlocked concerns among those given, by
+// their words.
+func unlockedHolds(concerns []model.Concern) []string {
+	var held []string
+	for _, c := range concerns {
+		if c.Rule == "crates-unlocked" {
+			held = append(held, c.Detail)
+		}
+	}
+	return held
+}
+
+// A finding an update holds for a look belongs to the branch and the port,
+// not to the tree the update left: one more commit, a rebase onto a moved
+// base, or an update on a branch already ahead of its base keeps it, in
+// status and in the submit preview, until a later update of the port
+// replaces it (#242).
+func TestAnUpdatesHeldFindingOutlivesTheTreeItLeft(t *testing.T) {
+	t.Parallel()
+	words := "The source for 1.8.1 ships no Cargo.lock, so cargo.crates is left as 1.7.1 had it and may not match what 1.8.1 builds; Cargo.toml is in jq-1.8.1/cli."
+	for _, scenario := range []string{"another commit", "rebased", "ahead of its base", "updated again"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
+			f := setup(t)
+			e, p := f.withPreparer(t)
+			f.withFork(t, e)
+			p.cratesUnlocked = words
+			branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Directories: []string{"textproc/jq"}})
+			require.NoError(t, err)
+			if scenario == "ahead of its base" {
+				portfile := filepath.Join(branch.Worktree, "textproc/jq/Portfile")
+				data, err := os.ReadFile(portfile)
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(portfile, append(data, "# before the update\n"...), 0o644))
+				commitAs(t, branch.Worktree, "Ada ada@example.org", "jq: a comment")
+			}
+			_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
+			require.NoError(t, err)
+			plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+			require.NoError(t, err)
+			_, err = e.ApplyTidy(t.Context(), plan)
+			require.NoError(t, err)
+			want := []string{words}
+			switch scenario {
+			case "another commit":
+				portfile := filepath.Join(branch.Worktree, "textproc/jq/Portfile")
+				data, err := os.ReadFile(portfile)
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(portfile, append(data, "# a comment\n"...), 0o644))
+				commitAs(t, branch.Worktree, "Ada ada@example.org", "jq: a comment")
+			case "rebased":
+				testsupport.WriteFiles(t, f.upstream, map[string]string{"devel/other/Portfile": "name other\nversion 1\n"})
+				testsupport.Git(t, f.upstream, "add", "devel/other/Portfile")
+				testsupport.Git(t, f.upstream, "commit", "-q", "-m", "other: new port")
+				current, err := e.Branch(t.Context(), branch.ID)
+				require.NoError(t, err)
+				_, err = e.Rebase(t.Context(), current)
+				require.NoError(t, err)
+				require.NotEqual(t, current.Base, baseOf(t, e, branch), "the rebase moved the base")
+			case "updated again":
+				// The new release's source ships a lock: the update
+				// regenerates the crates, and holds nothing.
+				p.cratesUnlocked, p.version = "", "1.9.0"
+				current, err := e.Branch(t.Context(), branch.ID)
+				require.NoError(t, err)
+				_, err = e.Update(t.Context(), UpdateRequest{Branch: current, Action: model.EditUpdate, Port: "jq"})
+				require.NoError(t, err)
+				plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: current})
+				require.NoError(t, err)
+				_, err = e.ApplyTidy(t.Context(), plan)
+				require.NoError(t, err)
+				want = nil
+			}
+			current, err := e.Branch(t.Context(), branch.ID)
+			require.NoError(t, err)
+			status, err := e.BranchStatus(t.Context(), current)
+			require.NoError(t, err)
+			require.Equal(t, want, unlockedHolds(status.Held), "status")
+			submit, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: current, NoCheck: true})
+			require.NoError(t, err)
+			require.Equal(t, want, unlockedHolds(submit.Held()), "the submit preview")
+		})
+	}
+}
+
+// An archived branch keeps its update's held finding: archive --undo
+// brings it back holding, since archiving drops no edit record; only
+// clean --delete forgets them, once the branch can't be submitted (#242).
+func TestAnArchivedBranchComesBackWithItsHold(t *testing.T) {
+	t.Parallel()
+	words := "The source for 1.8.1 ships no Cargo.lock, so cargo.crates is left as 1.7.1 had it and may not match what 1.8.1 builds; Cargo.toml is in jq-1.8.1/cli."
+	f := setup(t)
+	e, p := f.withPreparer(t)
+	f.withFork(t, e)
+	p.cratesUnlocked = words
+	branch := committedUpdate(t, e)
+	_, err := e.ArchiveBranch(t.Context(), ArchiveRequest{Branch: branch})
+	require.NoError(t, err)
+	archived, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.BranchArchived, archived.State)
+	back, err := e.ArchiveBranch(t.Context(), ArchiveRequest{Branch: archived, Undo: true})
+	require.NoError(t, err)
+	require.Equal(t, model.BranchOpen, back.Branch.State)
+
+	status, err := e.BranchStatus(t.Context(), back.Branch)
+	require.NoError(t, err)
+	require.Equal(t, []string{words}, unlockedHolds(status.Held), "status")
+	submit, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: back.Branch, NoCheck: true})
+	require.NoError(t, err)
+	require.Equal(t, []string{words}, unlockedHolds(submit.Held()), "the submit preview")
+}
+
 // Archives the update couldn't compare hold serve's submission as a
 // finding would (D4): nobody looks, and the comparison couldn't.
 func TestServeHoldsAnUpdateWhoseArchivesCouldNotBeCompared(t *testing.T) {

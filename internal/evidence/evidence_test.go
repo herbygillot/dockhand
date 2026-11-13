@@ -490,19 +490,30 @@ func TestATreesEvidenceIsEveryBuildItsChecksMade(t *testing.T) {
 	require.True(t, failed.Extra())
 	require.Equal(t, "curl +sectrust +ssl", judged.AcceptName(failed))
 	require.Equal(t, "curl", judged.AcceptName(judged.Targets[0]), "a bare name is the default build")
+	require.True(t, judged.Accepts([]string{"curl +sectrust +ssl"}, failed))
 
 	// Only variant checks: the build is the port's coverage, by its name.
 	only := judge(checkOf(772, gnutls, model.OutcomePassed))
 	require.Equal(t, []string{"curl +gnutls +sectrust changed run_772"}, rows(only))
-	require.Equal(t, "curl", only.AcceptName(only.Targets[0]))
+	require.Equal(t, "curl +gnutls +sectrust", only.AcceptName(only.Targets[0]))
 
-	// Several variant builds and no default build: the bare name is the
-	// one that failed, and where several failed, none is (#235).
+	// Several variant builds and no default build: each build's name
+	// takes it, and the bare name takes the one that failed where only
+	// one did; where several failed, it takes none (#235).
+	accepts := func(e Evidence, name string) []bool {
+		return []bool{e.Accepts([]string{name}, e.Targets[0]), e.Accepts([]string{name}, e.Targets[1])}
+	}
 	one := judge(checkOf(775, ssl, model.OutcomeFailed), checkOf(772, gnutls, model.OutcomePassed))
-	require.Equal(t, []string{"curl", "curl +gnutls +sectrust"}, []string{one.AcceptName(one.Targets[0]), one.AcceptName(one.Targets[1])})
+	require.Equal(t, []bool{true, false}, accepts(one, "curl +sectrust +ssl"), "a build's own name, its sibling passed")
+	require.Equal(t, []bool{true, false}, accepts(one, "curl"))
+	require.Equal(t, []bool{false, true}, accepts(one, "curl +gnutls +sectrust"))
 	both := judge(checkOf(775, ssl, model.OutcomeFailed), checkOf(772, gnutls, model.OutcomeFailed))
-	require.Equal(t, []string{"curl +sectrust +ssl", "curl +gnutls +sectrust"}, []string{both.AcceptName(both.Targets[0]), both.AcceptName(both.Targets[1])})
-	require.Len(t, both.BuildsOf("curl"), 2)
+	require.Equal(t, []bool{true, false}, accepts(both, "curl +sectrust +ssl"))
+	require.Equal(t, []bool{false, false}, accepts(both, "curl"))
+	require.Len(t, both.FailedBuildsOf("curl"), 2)
+	// With a default build beside them, the bare name is the default
+	// build's alone (field testing's note 10 from the curl fix).
+	require.False(t, judged.Accepts([]string{"curl"}, failed))
 }
 
 // A result recorded after a shell opened in its running guest isn't

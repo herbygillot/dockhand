@@ -228,9 +228,7 @@ namespace eval ::dockhand {
                 # narrows the matches, so a link it would leave out is
                 # judged too.
                 proc matched {arguments} {
-                    set join [expr {[lsearch -exact [lmap word $arguments {tcl::prefix match -error {} {-directory -join -nocomplain -path -tails -types --} $word}] -join] >= 0}]
                     set patterns [patterns $arguments]
-                    if {$join} { set patterns [list [join $patterns /]] }
                     set paths {}
                     foreach pattern $patterns {
                         if {[catch {interp invokehidden {} glob -nocomplain -- $pattern} found]} { continue }
@@ -449,9 +447,12 @@ namespace eval ::dockhand {
                     return host
                 }
                 # patterns are a glob's patterns, each joined with its
-                # -directory or -path.
+                # -directory or -path; with -join, the one pattern Tcl
+                # makes of them, joined by / first and then given the
+                # prefix once (the outside reader's point 6 on #110).
                 proc patterns {arguments} {
                     set prefix ""
+                    set join 0
                     set i 0
                     while {$i < [llength $arguments]} {
                         switch -- [tcl::prefix match -error {} {-directory -join -nocomplain -path -tails -types --} [lindex $arguments $i]] {
@@ -464,7 +465,11 @@ namespace eval ::dockhand {
                                 incr i 2
                             }
                             -types { incr i 2 }
-                            -join - -nocomplain - -tails { incr i }
+                            -join {
+                                set join 1
+                                incr i
+                            }
+                            -nocomplain - -tails { incr i }
                             -- {
                                 incr i
                                 break
@@ -472,7 +477,9 @@ namespace eval ::dockhand {
                             default { break }
                         }
                     }
-                    return [lmap pattern [lrange $arguments $i end] {string cat $prefix $pattern}]
+                    set patterns [lrange $arguments $i end]
+                    if {$join} { set patterns [list [join $patterns /]] }
+                    return [lmap pattern $patterns {string cat $prefix $pattern}]
                 }
                 # hooked keeps a phase body as makeuserproc makes it, every
                 # hook a Portfile or PortGroup declares going through it

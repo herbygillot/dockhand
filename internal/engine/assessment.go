@@ -51,9 +51,13 @@ func (e *Engine) revisionAssessments(ctx context.Context, branch model.BranchID,
 	var recorded, seen []model.Assessment
 	var owner model.Branch
 	var records map[string]model.ChangeRecord
+	var edits []model.Edit
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
 		if owner, err = r.Branch(branch); err != nil {
+			return err
+		}
+		if edits, err = r.Edits(branch); err != nil {
 			return err
 		}
 		if records, err = recordedChanges(r, branch, base, tree); err != nil {
@@ -71,7 +75,7 @@ func (e *Engine) revisionAssessments(ctx context.Context, branch model.BranchID,
 		return nil, err
 	}
 	if !collect {
-		return recorded, nil
+		return withEditHolds(recorded, edits), nil
 	}
 	// Assessing evaluates the revision's Portfiles: another's go through
 	// the door only where the person allowed them (the trust rule).
@@ -121,7 +125,74 @@ func (e *Engine) revisionAssessments(ctx context.Context, branch model.BranchID,
 			return nil, err
 		}
 	}
-	return append(found, made...), nil
+	return withEditHolds(append(found, made...), edits), nil
+}
+
+// editHeldRules are the rules of the findings an update holds for what it
+// couldn't do itself, as against what upstream's change means: a crate
+// list it left as it was (crates-unlocked), a block regenerated under a
+// hook it couldn't check (manifest-hook). No assessment of a revision
+// finds them again, since none prepares the update; they belong to the
+// branch and the port (#242).
+var editHeldRules = []string{cratesUnlockedRule, manifestHookRule}
+
+// withEditHolds are a revision's assessments with what the branch's
+// updates held for a look carried into them, by port: the held findings
+// of the port's latest update, which replaces an earlier one's, where it
+// moves to another release or holds anything itself; a move followed at
+// the same release replaces nothing. A port with no assessment of the
+// revision gets one of those findings alone, with no directory, so how
+// far its files are assessed is still said (assessedHolds). One more
+// commit, a rebase, or a branch ahead of its base primed nothing, and
+// dropped the hold (#242). Accepting it is accepting any concern:
+// holds.allow or a decision on its rule.
+func withEditHolds(assessments []model.Assessment, edits []model.Edit) []model.Assessment {
+	type held struct {
+		version string
+		changes []model.UpstreamChange
+	}
+	byPort := map[string]held{}
+	for _, edit := range edits {
+		if edit.Kind != model.EditUpdate {
+			continue
+		}
+		var changes []model.UpstreamChange
+		if edit.Upstream != nil {
+			for _, change := range edit.Upstream.Changes {
+				if change.Hold && slices.Contains(editHeldRules, change.Rule) {
+					changes = append(changes, change)
+				}
+			}
+		}
+		version := ""
+		if edit.Release != nil {
+			version = edit.Release.Version
+		}
+		if before, ok := byPort[edit.Port]; ok && len(changes) == 0 && version == before.version {
+			continue
+		}
+		byPort[edit.Port] = held{version: version, changes: changes}
+	}
+	for _, port := range slices.Sorted(maps.Keys(byPort)) {
+		changes := byPort[port].changes
+		if len(changes) == 0 {
+			continue
+		}
+		i := slices.IndexFunc(assessments, func(a model.Assessment) bool { return a.Port == port })
+		if i < 0 {
+			assessments = append(assessments, model.Assessment{Port: port, Policy: assess.Policy, Comparison: model.UpstreamComparison{Changes: slices.Clone(changes)}})
+			continue
+		}
+		a := assessments[i]
+		a.Comparison.Changes = slices.Clone(a.Comparison.Changes)
+		for _, change := range changes {
+			if !slices.ContainsFunc(a.Comparison.Changes, func(c model.UpstreamChange) bool { return c.Rule == change.Rule && c.Message == change.Message }) {
+				a.Comparison.Changes = append(a.Comparison.Changes, change)
+			}
+		}
+		assessments[i] = a
+	}
+	return assessments
 }
 
 // revisionComparisons are a revision's assessments, by port, as a

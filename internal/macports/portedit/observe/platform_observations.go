@@ -60,6 +60,14 @@ func (s *Session) Profiles(ctx context.Context, candidate []byte) ([]model.Platf
 			visited[profile] = true
 			for _, contents := range [][]byte{s.Baseline, candidate} {
 				observed, err := s.One(ctx, contents, macports.ObservationRequest{Platform: profile, Declarations: true}, false)
+				// A modelled context whose evaluation ended on a call the
+				// model has no answer for has no operand to read: it's left
+				// and named where the plan reads it (Left), as there, and
+				// the boundary is found from the contexts that read (the
+				// outside reader's point 7 on #110).
+				if err != nil && observed.Modeled && observed.Unanswered != "" {
+					continue
+				}
 				if err != nil {
 					return nil, err
 				}
