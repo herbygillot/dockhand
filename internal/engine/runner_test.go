@@ -231,9 +231,16 @@ func session(t *testing.T, e *Engine) *coord.Session {
 // queuedHarborRun plans and queues a check of the harbor branch.
 func queuedHarborRun(t *testing.T, e *Engine, environments ...model.Environment) model.Run {
 	t.Helper()
+	return queuedHarborSelection(t, e, nil, environments...)
+}
+
+// queuedHarborSelection can keep a read test's active ports outside its
+// check, so it tests external inputs rather than in-check images (#236).
+func queuedHarborSelection(t *testing.T, e *Engine, only []string, environments ...model.Environment) model.Run {
+	t.Helper()
 	revision := harborBranch(t, e)
 	usePorts(e, harborPorts())
-	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: environments})
+	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: environments, Only: only})
 	require.NoError(t, err)
 	var branch model.Branch
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
@@ -830,7 +837,11 @@ func TestAnUnchangedBuildIsReused(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
 	tools := model.ActivePort{Name: "harbor-tools", Spec: "@1_0", Directory: "graphics/harbor-tools", Archive: "sha256:aa"}
-	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{tools}}, identity: "origin a"}
+	lib := model.ActivePort{Name: "libharbor", Spec: "@4_0", Directory: "devel/libharbor", Archive: "sha256:libharbor"}
+	cli := model.ActivePort{Name: "harbor-cli", Spec: "@1_0", Directory: "devel/harbor-cli", Archive: "sha256:harbor-cli"}
+	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{tools}, consumes: map[model.TargetID][]model.ActivePort{
+		"harbor-cli": {tools, lib}, "harbor-viewer": {tools, lib, cli},
+	}}, identity: "origin a"}
 	e.Providers = map[string]buildenv.Provider{"command": provider}
 	first, err := e.Drive(t.Context(), session(t, e), queuedHarborRun(t, e, tahoeArm).ID)
 	require.NoError(t, err)
@@ -846,9 +857,10 @@ func TestAnUnchangedBuildIsReused(t *testing.T) {
 		branch, err = r.Branch(first.Branch)
 		return err
 	}))
+	var only []string
 	again := func(fresh bool) model.Run {
 		t.Helper()
-		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}, Fresh: fresh})
+		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}, Only: only, Fresh: fresh})
 		require.NoError(t, err)
 		queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
 		require.NoError(t, err)
@@ -901,9 +913,13 @@ func TestAnUnchangedBuildIsReused(t *testing.T) {
 	again(false)
 	require.Len(t, provider.jobs, 3, "the environment was made again")
 
+	// Keep the external tools port outside this check when shared code
+	// changes bring more ports into its scope (#236).
+	only = []string{"libharbor"}
 	// What every port may source, _resources, is read by every build:
 	// changed, each builds again, and is reused in its turn.
-	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"_resources/port1.0/group/harbor-1.0.tcl": "# changed\n"})
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"_resources/port1.0/compilers/gcc_compilers.tcl": "# changed\n"})
+	testsupport.Git(t, branch.Worktree, "add", "_resources/port1.0/compilers/gcc_compilers.tcl")
 	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 	require.NoError(t, err)
 	revision = capture.Revision
@@ -928,7 +944,7 @@ func TestABuildIsReusedAcrossPortGroupsItDidntLoad(t *testing.T) {
 	}
 	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{tools}, sourced: loaded("# group\n")}, identity: "origin a"}
 	e.Providers = map[string]buildenv.Provider{"command": provider}
-	first, err := e.Drive(t.Context(), session(t, e), queuedHarborRun(t, e, tahoeArm).ID)
+	first, err := e.Drive(t.Context(), session(t, e), queuedHarborSelection(t, e, []string{"libharbor"}, tahoeArm).ID)
 	require.NoError(t, err)
 	require.Equal(t, model.RunPassed, first.State, first.Detail)
 	require.Len(t, provider.jobs, 1)
@@ -946,7 +962,7 @@ func TestABuildIsReusedAcrossPortGroupsItDidntLoad(t *testing.T) {
 		}
 		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 		require.NoError(t, err)
-		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
+		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}, Only: []string{"libharbor"}})
 		require.NoError(t, err)
 		queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
 		require.NoError(t, err)
@@ -996,7 +1012,7 @@ func TestABuildIsReusedUntilAPortGroupOfAPortBuiltWithItChanges(t *testing.T) {
 	}
 	provider := &identified{scriptedProvider: scriptedProvider{active: active(loaded("# group\n")), sourced: map[string]model.ObjectID{}}, identity: "origin a"}
 	e.Providers = map[string]buildenv.Provider{"command": provider}
-	first, err := e.Drive(t.Context(), session(t, e), queuedHarborRun(t, e, tahoeArm).ID)
+	first, err := e.Drive(t.Context(), session(t, e), queuedHarborSelection(t, e, []string{"libharbor"}, tahoeArm).ID)
 	require.NoError(t, err)
 	require.Equal(t, model.RunPassed, first.State, first.Detail)
 	var branch model.Branch
@@ -1013,7 +1029,7 @@ func TestABuildIsReusedUntilAPortGroupOfAPortBuiltWithItChanges(t *testing.T) {
 		}
 		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureWorking})
 		require.NoError(t, err)
-		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
+		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}, Only: []string{"libharbor"}})
 		require.NoError(t, err)
 		queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
 		require.NoError(t, err)
@@ -1093,7 +1109,7 @@ func TestTheTargetsThatChangedBuildAndTheRestAreReused(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
-	lib := model.ActivePort{Name: "libharbor", Spec: "@4_0", Directory: "devel/libharbor", Archive: "sha256:aa"}
+	lib := model.ActivePort{Name: "libharbor", Spec: "@4_0", Directory: "devel/libharbor", Archive: "sha256:libharbor"}
 	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}, consumes: map[model.TargetID][]model.ActivePort{"harbor-cli": {lib}}}, identity: "origin a"}
 	e.Providers = map[string]buildenv.Provider{"command": provider}
 	revision := harborBranch(t, e)
@@ -1532,9 +1548,11 @@ func TestAResultIsntReusedOnceAPortGroupItsKeptDependencyWasBuiltWithChanged(t *
 		ports[0].PortGroups = loaded
 		return ports
 	}
+	_, _, libDigest := scriptedArchive("libharbor")
+	lib := model.ActivePort{Name: "libharbor", Spec: "@4_0", Directory: "devel/libharbor", Archive: libDigest}
 	provider := &identified{scriptedProvider: scriptedProvider{
 		keep: true, keepDependencies: true, active: []model.ActivePort{}, sourced: map[string]model.ObjectID{},
-		consumes: map[model.TargetID][]model.ActivePort{"harbor-viewer": active(groups)},
+		consumes: map[model.TargetID][]model.ActivePort{"harbor-cli": {lib}, "harbor-viewer": active(groups)},
 	}, identity: "origin a"}
 	e.Providers = map[string]buildenv.Provider{"command": provider}
 	revision := harborBranch(t, e)

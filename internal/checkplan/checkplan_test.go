@@ -22,7 +22,7 @@ func candidate(name string, role model.TargetRole) model.PlanTarget {
 	return model.PlanTarget{ID: model.TargetID(name), Target: model.Target{Name: name}, Directory: "devel/" + name, Kind: kind, Role: role}
 }
 
-func needing(deps ...model.TargetID) Evaluated {
+func needing(deps ...string) Evaluated {
 	var evaluated Evaluated
 	for _, dep := range deps {
 		evaluated.Dependencies = append(evaluated.Dependencies, Dependency{Port: dep})
@@ -30,7 +30,13 @@ func needing(deps ...model.TargetID) Evaluated {
 	return evaluated
 }
 
-func onPorts(ports ...model.TargetID) []Dependency { return needing(ports...).Dependencies }
+func onPorts(ports ...model.TargetID) []Need {
+	var needs []Need
+	for _, id := range ports {
+		needs = append(needs, Need{Build: id})
+	}
+	return needs
+}
 
 // Each phase is a function of what came before it: an environment that
 // doesn't define a port, or where MacPorts CI wouldn't build it, or where
@@ -58,17 +64,19 @@ func TestAPlanIsDecidedPhaseByPhase(t *testing.T) {
 		Where: map[model.TargetID]Limited{"harbor-extra": {Environments: []model.Environment{intel}, Elsewhere: "check-1 didn't fail there"}},
 	}
 
-	reasons := Exclusions(input)
+	reasons, err := Exclusions(input)
+	require.NoError(t, err)
 	require.Equal(t, []map[model.TargetID]Excluded{
 		{"harbor-legacy": {Reason: "known_fail here, as the Portfile says"}, "harbor-extra": {Reason: "check-1 didn't fail there"}},
 		{"harbor-viewer": {Reason: "not defined there"}, "harbor-legacy": {Reason: "supported_archs arm64 only"}},
 	}, reasons)
 	built := Built(input.Candidates, reasons)
 	require.Equal(t, []model.TargetID{"harbor-cli", "libharbor", "harbor-tools", "harbor-viewer", "harbor-extra"}, ids(built), "harbor-legacy is ruled out everywhere")
-	needs, union := Needs(built, reasons, input.Evaluations)
-	require.Equal(t, map[model.TargetID][]Dependency{"harbor-cli": onPorts("libharbor"), "libharbor": onPorts("harbor-tools")}, needs[0],
+	needs, union, err := Needs(built, reasons, input.Evaluations)
+	require.NoError(t, err)
+	require.Equal(t, map[model.TargetID][]Need{"harbor-cli": onPorts("libharbor"), "libharbor": onPorts("harbor-tools")}, needs[0],
 		"not itself, nor a port the plan doesn't build")
-	require.Equal(t, map[model.TargetID][]Dependency{"harbor-cli": onPorts("libharbor"), "harbor-tools": onPorts("libharbor")}, needs[1],
+	require.Equal(t, map[model.TargetID][]Need{"harbor-cli": onPorts("libharbor"), "harbor-tools": onPorts("libharbor")}, needs[1],
 		"nor one built elsewhere and not here")
 	require.Equal(t, map[model.TargetID][]model.TargetID{"harbor-cli": {"libharbor"}, "libharbor": {"harbor-tools"}, "harbor-tools": {"libharbor"}}, union)
 
@@ -180,7 +188,7 @@ func TestEvaluateReadsWhatPlanningNeeds(t *testing.T) {
 		Dependencies: []macports.Dependency{{Port: "libharbor", Phase: "lib", Spec: "port:libharbor"}}}
 	evaluated, err := Evaluate(port, arm.Platform)
 	require.NoError(t, err)
-	require.Equal(t, Evaluated{Dependencies: onPorts("libharbor"), NeedsXcode: true, Untested: true}, evaluated)
+	require.Equal(t, Evaluated{Dependencies: needing("libharbor").Dependencies, NeedsXcode: true, Untested: true}, evaluated)
 
 	port.Dependencies = append(port.Dependencies,
 		macports.Dependency{Port: "harbor-git", Phase: "fetch", Spec: "bin:git:harbor-git"},
@@ -300,7 +308,8 @@ func TestSpanBuildsEachPortOnItsOldestAndNewest(t *testing.T) {
 		Span:     true,
 		Releases: []string{"macOS 12", "macOS 13", "macOS 14", "macOS 26"},
 	}
-	reasons := Exclusions(input)
+	reasons, err := Exclusions(input)
+	require.NoError(t, err)
 	require.Equal(t, "minmax builds each port on its oldest and newest releases, macOS 12 and 26", reasons[1]["harbor-cli"].Reason)
 	require.True(t, reasons[1]["harbor-cli"].Span, "marked where it's made (the architecture review of 5897a82, R3-15)")
 	require.False(t, reasons[1]["harbor-new"].Span, "a port's own reason isn't minmax's")
@@ -344,4 +353,81 @@ func TestClosure(t *testing.T) {
 	require.Equal(t, []string{"gtk3", "glib2", "cairo", "libffi", "pixman"}, Closure(graph, []string{"gnome-voice"}, nil))
 	require.Equal(t, []string{"gtk3", "cairo", "libffi", "pixman"}, Closure(graph, []string{"Gnome-Voice"}, map[string]bool{"glib2": true}), "an excepted port is still walked through")
 	require.Empty(t, Closure(graph, []string{"pixman"}, nil))
+}
+
+// A dependent cannot choose between two configured builds of its port
+// when neither is the default build (#236).
+func TestAmbiguousConfiguredPrerequisiteRefusesThePlan(t *testing.T) {
+	docs := candidate("libharbor", model.Changed)
+	docs.Target.Variants = map[string]bool{"docs": true}
+	docs.ID = docs.Target.ID()
+	tests := candidate("libharbor", model.Changed)
+	tests.Target.Variants = map[string]bool{"tests": true}
+	tests.ID = tests.Target.ID()
+	_, err := Decide(Input{
+		Environments: []model.Environment{arm},
+		Candidates:   []model.PlanTarget{candidate("harbor-cli", model.Changed), docs, tests},
+		Evaluations:  []Evaluation{{"harbor-cli": needing("libharbor"), docs.ID: {}, tests.ID: {}}},
+	})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "harbor-cli")
+	require.ErrorContains(t, err, "libharbor +docs")
+	require.ErrorContains(t, err, "libharbor +tests")
+}
+
+// Minmax keeps a configured prerequisite in an interior environment
+// where a dependent needs it, and keeps their edge (#236).
+func TestMinmaxKeepsAConfiguredPrerequisite(t *testing.T) {
+	old, middle, newest := arm, arm, arm
+	old.Platform.Version, middle.Platform.Version, newest.Platform.Version = "23", "24", "25"
+	lib := candidate("libharbor", model.Changed)
+	lib.Target.Variants = map[string]bool{"docs": true}
+	lib.ID = lib.Target.ID()
+	decision, err := Decide(Input{
+		Environments: []model.Environment{old, middle, newest}, Span: true,
+		Candidates: []model.PlanTarget{candidate("harbor-cli", model.Changed), lib},
+		Evaluations: []Evaluation{
+			{lib.ID: {}},
+			{"harbor-cli": needing("libharbor"), lib.ID: {}},
+			{"harbor-cli": needing("libharbor"), lib.ID: {}},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []model.TargetID{lib.ID, "harbor-cli"}, decision.Builds[1].Order)
+	require.Equal(t, []model.TargetID{lib.ID}, decision.Builds[1].Dependencies["harbor-cli"])
+}
+
+// --only keeps the configured prerequisite and its ordering edge, which
+// execution also uses to block a dependent on its failure (#236).
+func TestOnlyKeepsAConfiguredPrerequisite(t *testing.T) {
+	lib := candidate("libharbor", model.Changed)
+	lib.Target.Variants = map[string]bool{"docs": true}
+	lib.ID = lib.Target.ID()
+	decision, err := Decide(Input{
+		Environments: []model.Environment{arm}, Only: []string{"harbor-cli"},
+		Candidates:  []model.PlanTarget{candidate("harbor-cli", model.Changed), lib, candidate("other", model.Changed)},
+		Evaluations: []Evaluation{{"harbor-cli": needing("libharbor"), lib.ID: {}, "other": {}}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []model.TargetID{lib.ID, "harbor-cli"}, decision.Builds[0].Order)
+	require.Equal(t, []model.TargetID{lib.ID}, decision.Builds[0].Dependencies["harbor-cli"])
+	require.Equal(t, model.Prerequisite, decision.Targets[0].Role)
+}
+
+// The unchanged part of a dependency chain still reaches a configured
+// in-check build, so --only keeps it by the same resolver (#236).
+func TestAnUnchangedDependencyReachesAConfiguredBuild(t *testing.T) {
+	lib := candidate("libharbor", model.Changed)
+	lib.Target.Variants = map[string]bool{"docs": true}
+	lib.ID = lib.Target.ID()
+	input := Input{
+		Environments: []model.Environment{arm}, Only: []string{"harbor-cli"},
+		Candidates:  []model.PlanTarget{candidate("harbor-cli", model.Changed), lib},
+		Evaluations: []Evaluation{{"harbor-cli": needing("middle"), lib.ID: {}}},
+	}
+	ThroughUnchanged(map[string][]string{"middle": {"libharbor"}}, input.Candidates, input.Evaluations)
+	decision, err := Decide(input)
+	require.NoError(t, err)
+	require.Equal(t, []model.TargetID{lib.ID, "harbor-cli"}, decision.Builds[0].Order)
+	require.Equal(t, []model.TargetID{lib.ID}, decision.Builds[0].Dependencies["harbor-cli"])
 }

@@ -63,8 +63,8 @@ func Paths(recorded model.TargetInputs) []string {
 // by its name, a target where the plan has it and an active port by
 // judge.Moved, and its new directory judged against the recorded tree by
 // the same rule. The zero Judge compares trees alone.
-func Current(recorded model.TargetInputs, identity string, target model.PlanTarget, git *model.GitSource, trees map[string]model.ObjectID, judge Judge) bool {
-	_, ok := Carry(recorded, "", identity, target, git, trees, judge)
+func Current(recorded model.TargetInputs, identity string, target model.PlanTarget, git *model.GitSource, trees map[string]model.ObjectID, judge Judge, builds model.CheckBuilds) bool {
+	_, ok := Carry(recorded, "", identity, target, git, trees, judge, builds)
 	return ok
 }
 
@@ -72,13 +72,14 @@ func Current(recorded model.TargetInputs, identity string, target model.PlanTarg
 // options no build reads, or moved, each with the options changed and
 // where it moved from, which a result carried over says: none where every
 // directory is the same tree, or differs only in other subports' blocks.
+// The in-check builds it consumed must match this check too (#236).
 // origin is the run whose build read the inputs, whose change records
 // judge.Inert reads.
-func Carry(recorded model.TargetInputs, origin model.RunID, identity string, target model.PlanTarget, git *model.GitSource, trees map[string]model.ObjectID, judge Judge) ([]model.InertPort, bool) {
+func Carry(recorded model.TargetInputs, origin model.RunID, identity string, target model.PlanTarget, git *model.GitSource, trees map[string]model.ObjectID, judge Judge, builds model.CheckBuilds) ([]model.InertPort, bool) {
 	if recorded.NotReusable != "" || !recorded.Complete() || identity == "" || recorded.Environment != identity {
 		return nil, false
 	}
-	if !maps.Equal(recorded.Variants, target.Target.Variants) {
+	if !builds.SameInputs(target.ID, recorded) || !maps.Equal(recorded.Variants, target.Target.Variants) {
 		return nil, false
 	}
 	// A Git build stands only where it fetched the commit the plan

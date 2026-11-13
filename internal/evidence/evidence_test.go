@@ -636,7 +636,7 @@ func TestAnEarlierReleasesResultIsJudgedAgainstTheNewestReading(t *testing.T) {
 					{Execution: execution, Target: "harbor-cli", Outcome: model.OutcomePassed, Inputs: "c"},
 					{Execution: execution, Target: "zlib", Outcome: model.OutcomePassed, Inputs: "z"},
 				}
-				inputs := map[string]model.TargetInputs{"h": {}, "c": {Active: []model.ActivePort{{Name: "harbor", Archive: "sha256:harbor"}}}, "z": {}}
+				inputs := map[string]model.TargetInputs{"h": {}, "c": {Targets: map[string]model.TargetID{"harbor": "harbor"}, Active: []model.ActivePort{{Name: "harbor", Archive: "sha256:harbor"}}}, "z": {}}
 				if !tagged {
 					inputs["h"] = model.TargetInputs{Fetched: commit}
 				}
@@ -698,7 +698,7 @@ func TestAnUnknownTagReadingStandsForNothingBesideAShownMove(t *testing.T) {
 				{Execution: execution, Target: "harbor-cli", Outcome: model.OutcomePassed, Inputs: "c"},
 			}
 		}
-		inputs := map[string]model.TargetInputs{"h": {}, "c": {Active: []model.ActivePort{{Name: "harbor", Archive: fmt.Sprint("sha256:harbor", number)}}}}
+		inputs := map[string]model.TargetInputs{"h": {}, "c": {Targets: map[string]model.TargetID{"harbor": "harbor"}, Active: []model.ActivePort{{Name: "harbor", Archive: fmt.Sprint("sha256:harbor", number)}}}}
 		build := model.EnvironmentPlan{Environment: tahoeArm, Order: []model.TargetID{"harbor", "harbor-cli"}, Dependencies: map[model.TargetID][]model.TargetID{"harbor-cli": {"harbor"}}, Tags: tag(commit)}
 		return Check{Run: run, Plan: model.Plan{Targets: []model.PlanTarget{target("harbor"), target("harbor-cli")}, Environments: []model.Environment{tahoeArm}, Builds: []model.EnvironmentPlan{build}},
 			Executions: []model.GuestExecution{{ID: execution, Run: run.ID, Environment: tahoeArm}},
@@ -791,8 +791,8 @@ func TestATurnedDownResultSaysWhy(t *testing.T) {
 			{Target: "app", Outcome: model.OutcomePassed, Inputs: "p"},
 		}, map[string]model.TargetInputs{
 			"h": {Fetched: model.ObjectID(fetched)},
-			"c": {Active: []model.ActivePort{{Name: "harbor", Archive: "sha256:harbor"}}},
-			"p": {Active: []model.ActivePort{{Name: "cli", Archive: "sha256:cli"}}},
+			"c": {Targets: map[string]model.TargetID{"harbor": "harbor"}, Active: []model.ActivePort{{Name: "harbor", Archive: "sha256:harbor"}}},
+			"p": {Targets: map[string]model.TargetID{"cli": "cli"}, Active: []model.ActivePort{{Name: "cli", Archive: "sha256:cli"}}},
 		}
 	}
 	for _, c := range []struct {
@@ -862,4 +862,64 @@ func TestATurnedDownResultSaysWhy(t *testing.T) {
 			require.Empty(t, cell.PlannedIn, "%s: %s isn't said as a check that stopped", c.name, id)
 		}
 	}
+}
+
+// Same-tree fill requires the same consumed build IDs. A passed consumer
+// from ordinary b cannot fill a check against b +docs, and missing inputs
+// cannot establish either configuration (#236).
+func TestSameTreeFillRequiresTheSameConsumedBuilds(t *testing.T) {
+	b := model.PlanTarget{ID: "b +docs", Target: model.Target{Name: "b", Variants: map[string]bool{"docs": true}}, Kind: model.Substantive, Role: model.Changed}
+	a := model.PlanTarget{ID: "a", Target: model.Target{Name: "a"}, Kind: model.Substantive, Role: model.Changed}
+	plan := model.Plan{Targets: []model.PlanTarget{b, a}, Environments: []model.Environment{tahoeArm}, Builds: []model.EnvironmentPlan{{
+		Environment: tahoeArm, Order: []model.TargetID{b.ID, a.ID}, Dependencies: map[model.TargetID][]model.TargetID{a.ID: {b.ID}},
+	}}}
+	newest := Check{Run: model.Run{ID: "run_2", Number: 2}, Plan: plan}
+	earlier := Check{Run: model.Run{ID: "run_1", Number: 1}, Plan: plan,
+		Executions: []model.GuestExecution{{ID: "x1", Run: "run_1", Environment: tahoeArm}},
+		Results:    map[model.ExecutionID][]model.TargetResult{"x1": {{Execution: "x1", Target: a.ID, Outcome: model.OutcomePassed, Inputs: "a-inputs"}}},
+	}
+	for _, test := range []struct {
+		name   string
+		inputs model.TargetInputs
+		kind   CellKind
+	}{
+		{"same", model.TargetInputs{Targets: map[string]model.TargetID{"b": b.ID}, Active: []model.ActivePort{{Name: "b"}}}, CellRecorded},
+		{"changed", model.TargetInputs{Targets: map[string]model.TargetID{"b": "b"}, Active: []model.ActivePort{{Name: "b"}}}, CellNotRun},
+		{"old", model.TargetInputs{Active: []model.ActivePort{{Name: "b"}}}, CellNotRun},
+		{"unknown", model.TargetInputs{}, CellNotRun},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			earlier.Inputs = map[string]model.TargetInputs{"a-inputs": test.inputs}
+			judged := Judge(newest, plan, []Check{earlier}, nil, []model.Environment{tahoeArm})
+			cell := judged.Targets[1].Outcomes[0]
+			require.Equal(t, test.kind, cell.Kind)
+			if test.kind == CellNotRun {
+				require.Equal(t, RefusedInputs, cell.Refused.Kind)
+			}
+		})
+	}
+}
+
+// A configured prerequisite's moved tag invalidates an earlier consumer
+// even where that check recorded no result of the prerequisite (#236).
+func TestAMovedConfiguredPrerequisiteWithoutAResultDoesNotFill(t *testing.T) {
+	b := model.PlanTarget{ID: "b +docs", Target: model.Target{Name: "b", Variants: map[string]bool{"docs": true}}, Kind: model.Substantive, Role: model.Changed}
+	a := model.PlanTarget{ID: "a", Target: model.Target{Name: "a"}, Kind: model.Substantive, Role: model.Changed}
+	plan := func(commit string) model.Plan {
+		return model.Plan{Targets: []model.PlanTarget{b, a}, Environments: []model.Environment{tahoeArm}, Builds: []model.EnvironmentPlan{{
+			Environment: tahoeArm, Order: []model.TargetID{b.ID, a.ID}, Dependencies: map[model.TargetID][]model.TargetID{a.ID: {b.ID}},
+			Tags: map[model.TargetID]model.GitSource{b.ID: {URL: "https://github.com/owner/b.git", Ref: "v1", Commit: model.ObjectID(strings.Repeat(commit, 40))}},
+		}}}
+	}
+	newest := Check{Run: model.Run{ID: "run_2", Number: 2}, Plan: plan("b")}
+	earlier := Check{Run: model.Run{ID: "run_1", Number: 1}, Plan: plan("a"),
+		Executions: []model.GuestExecution{{ID: "x1", Run: "run_1", Environment: tahoeArm}},
+		Results:    map[model.ExecutionID][]model.TargetResult{"x1": {{Execution: "x1", Target: a.ID, Outcome: model.OutcomePassed, Inputs: "inputs"}}},
+		Inputs:     map[string]model.TargetInputs{"inputs": {Targets: map[string]model.TargetID{"b": b.ID}, Active: []model.ActivePort{{Name: "b", Archive: "sha256:old"}}}},
+	}
+	judged := Judge(newest, newest.Plan, []Check{earlier}, nil, []model.Environment{tahoeArm})
+	cell := judged.Targets[1].Outcomes[0]
+	require.Equal(t, CellNotRun, cell.Kind)
+	require.Equal(t, RefusedDependency, cell.Refused.Kind)
+	require.Equal(t, b.ID, cell.Refused.Dependency)
 }

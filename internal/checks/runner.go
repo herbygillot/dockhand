@@ -1003,7 +1003,7 @@ func (d *driver) endExecution(ctx context.Context, execution model.GuestExecutio
 func (d *driver) finish(ctx context.Context) (model.Run, error) {
 	var check evidence.Evidence
 	err := d.c.Store.View(ctx, d.c.Repository, func(r store.Reader) error {
-		record, err := LoadCheck(r, d.run, false)
+		record, err := LoadCheck(r, d.run)
 		check = evidence.Of(record)
 		return err
 	})
@@ -1156,7 +1156,7 @@ func (b *build) Record(report buildenv.TargetReport) error {
 
 // activeIn completes what the provider saw active as a target built with
 // the revision's trees (reuse.Inputs). Inputs that can't be read are left
-// unknown, and a result stands without them.
+// unknown, so a later check cannot reuse the result (#236).
 func (b *build) activeIn(target model.TargetID, active []model.ActivePort) {
 	planned, ok := b.d.plan.Target(target)
 	if !ok {
@@ -1220,7 +1220,42 @@ func (b *build) read(planned model.PlanTarget, active []model.ActivePort) (model
 		}
 		return model.TargetInputs{NotReusable: reason}, true
 	}
+	inputs.Targets, err = b.consumedTargets(planned.ID, active)
+	if err != nil {
+		inputs.NotReusable = fmt.Sprintf("its in-check build inputs could not be recorded: %v", err)
+		b.Progress(fmt.Sprintf("%s: %s", planned.ID, inputs.NotReusable))
+	}
 	return inputs, true
+}
+
+// consumedTargets records the selected build only where its result's
+// archive is the one the provider saw active. Planning an image does not
+// establish that the guest actually installed it (#236).
+func (b *build) consumedTargets(dependent model.TargetID, active []model.ActivePort) (map[string]model.TargetID, error) {
+	builds := b.d.plan.CheckBuilds(b.execution.Environment)
+	consumed, err := builds.Consumed(dependent, active)
+	if err != nil {
+		return nil, err
+	}
+	for _, port := range active {
+		id := consumed[strings.ToLower(port.Name)]
+		if id == "" {
+			continue
+		}
+		archive := b.results[id].Archive
+		if archive == "" {
+			for _, installed := range b.installs {
+				if installed.Target == id {
+					archive = installed.Digest
+					break
+				}
+			}
+		}
+		if archive == "" || port.Archive != archive {
+			return nil, fmt.Errorf("%s's active archive of %s cannot be established as build %s", dependent, port.Name, id)
+		}
+	}
+	return consumed, nil
 }
 
 // withBuiltWith is the active ports with the PortGroups of the kept

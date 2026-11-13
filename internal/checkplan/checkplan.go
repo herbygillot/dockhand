@@ -46,7 +46,7 @@ type Evaluated struct {
 // bin:, or path: dependency, and none by port:), which a dependency by
 // port on the same port overrides.
 type Dependency struct {
-	Port   model.TargetID
+	Port   string
 	ByFile bool
 }
 
@@ -71,12 +71,12 @@ func Evaluate(port macports.PortInfo, platform model.Platform) (Evaluated, error
 	}
 	evaluated := Evaluated{Eligibility: eligibility, NeedsXcode: needsXcode, MinimumXcode: minimum, Xcode: port.Xcode()}
 	for _, dependency := range port.Dependencies {
-		id := model.TargetID(dependency.Port)
-		if i := slices.IndexFunc(evaluated.Dependencies, func(d Dependency) bool { return d.Port == id }); i >= 0 {
+		name := dependency.Port
+		if i := slices.IndexFunc(evaluated.Dependencies, func(d Dependency) bool { return d.Port == name }); i >= 0 {
 			evaluated.Dependencies[i].ByFile = evaluated.Dependencies[i].ByFile && dependency.MetByFile()
 			continue
 		}
-		evaluated.Dependencies = append(evaluated.Dependencies, Dependency{Port: id, ByFile: dependency.MetByFile()})
+		evaluated.Dependencies = append(evaluated.Dependencies, Dependency{Port: name, ByFile: dependency.MetByFile()})
 	}
 	if declares, known := port.DeclaresTests(); known && !declares {
 		evaluated.Untested = true
@@ -155,9 +155,15 @@ func Decide(input Input) (Decision, error) {
 	if len(input.Evaluations) != len(input.Environments) {
 		return Decision{}, fmt.Errorf("%d evaluations for %d environments", len(input.Evaluations), len(input.Environments))
 	}
-	reasons := Exclusions(input)
+	reasons, err := Exclusions(input)
+	if err != nil {
+		return Decision{}, err
+	}
 	built := Built(input.Candidates, reasons)
-	needs, union := Needs(built, reasons, input.Evaluations)
+	needs, union, err := Needs(built, reasons, input.Evaluations)
+	if err != nil {
+		return Decision{}, err
+	}
 	targets := built
 	var decision Decision
 	if len(input.Only) > 0 {
@@ -185,7 +191,7 @@ func Decide(input Input) (Decision, error) {
 // Exclusions are what each environment rules out, and why: a port its
 // evaluation didn't define, whichever other environment defined it, a port
 // MacPorts CI would exclude there, and an extra limited to elsewhere.
-func Exclusions(input Input) []map[model.TargetID]Excluded {
+func Exclusions(input Input) ([]map[model.TargetID]Excluded, error) {
 	reasons := make([]map[model.TargetID]Excluded, len(input.Environments))
 	for e, environment := range input.Environments {
 		reasons[e] = map[model.TargetID]Excluded{}
@@ -203,9 +209,11 @@ func Exclusions(input Input) []map[model.TargetID]Excluded {
 		}
 	}
 	if input.Span {
-		span(input, reasons)
+		if err := span(input, reasons); err != nil {
+			return nil, err
+		}
 	}
-	return reasons
+	return reasons, nil
 }
 
 // Excluded is why an environment rules a target out, and whether a
@@ -229,7 +237,7 @@ func (i Input) releaseName(e int) string {
 // span rules out, for a minmax plan, each port where it builds but isn't
 // on its oldest or newest release, unless a port built there on one of
 // its own needs it first.
-func span(input Input, reasons []map[model.TargetID]Excluded) {
+func span(input Input, reasons []map[model.TargetID]Excluded) error {
 	darwin := make([]int, len(input.Environments))
 	for e, environment := range input.Environments {
 		darwin[e], _ = strconv.Atoi(environment.Platform.Version)
@@ -263,11 +271,13 @@ func span(input Input, reasons []map[model.TargetID]Excluded) {
 		}
 	}
 	// What a kept port needs first there is built there too.
-	candidates := map[model.TargetID]bool{}
-	for _, c := range input.Candidates {
-		candidates[c.ID] = true
-	}
 	for e := range input.Environments {
+		available := model.CheckBuilds{}
+		for _, candidate := range input.Candidates {
+			if reasons[e][candidate.ID].Reason == "" {
+				available.Targets = append(available.Targets, candidate)
+			}
+		}
 		var queue []model.TargetID
 		for id, kept := range keep[e] {
 			if kept {
@@ -278,9 +288,13 @@ func span(input Input, reasons []map[model.TargetID]Excluded) {
 			id := queue[0]
 			queue = queue[1:]
 			for _, dependency := range input.Evaluations[e][id].Dependencies {
-				if candidates[dependency.Port] && reasons[e][dependency.Port].Reason == "" && !keep[e][dependency.Port] {
-					keep[e][dependency.Port] = true
-					queue = append(queue, dependency.Port)
+				need, err := available.Resolve(id, dependency.Port)
+				if err != nil {
+					return err
+				}
+				if need != "" && !keep[e][need] {
+					keep[e][need] = true
+					queue = append(queue, need)
 				}
 			}
 		}
@@ -294,6 +308,7 @@ func span(input Input, reasons []map[model.TargetID]Excluded) {
 			reasons[e][c.ID] = Excluded{Reason: fmt.Sprintf("minmax builds each port on its oldest and newest releases, %s and %s", input.releaseName(end[0]), strings.TrimPrefix(input.releaseName(end[1]), "macOS ")), Span: true}
 		}
 	}
+	return nil
 }
 
 // Built are the candidates some environment doesn't rule out: one ruled
@@ -310,24 +325,23 @@ func Built(candidates []model.PlanTarget, reasons []map[model.TargetID]Excluded)
 // py313-mlx-vlm on py313-safetensors through py313-transformers, which
 // --only had put first (field testing's py-mlx-vlm, check-201).
 func ThroughUnchanged(graph map[string][]string, candidates []model.PlanTarget, evaluations []Evaluation) {
-	byName := map[string]model.TargetID{}
+	byName := map[string]bool{}
+	ports := map[model.TargetID]string{}
 	for _, candidate := range candidates {
-		// A port's default build, not one of --variants' builds of it.
 		name := candidate.Target.Name
 		if candidate.Target.Subport != "" {
 			name = candidate.Target.Subport
 		}
-		if model.TargetID(name) == candidate.ID {
-			byName[strings.ToLower(name)] = candidate.ID
-		}
+		byName[strings.ToLower(name)] = true
+		ports[candidate.ID] = strings.ToLower(name)
 	}
 	for _, evaluation := range evaluations {
 		for id, evaluated := range evaluation {
 			seen := map[string]bool{}
 			var queue []string
 			for _, dependency := range evaluated.Dependencies {
-				if _, candidate := byName[strings.ToLower(string(dependency.Port))]; !candidate {
-					queue = append(queue, strings.ToLower(string(dependency.Port)))
+				if !byName[strings.ToLower(dependency.Port)] {
+					queue = append(queue, strings.ToLower(dependency.Port))
 				}
 			}
 			for len(queue) > 0 {
@@ -338,9 +352,9 @@ func ThroughUnchanged(graph map[string][]string, candidates []model.PlanTarget, 
 				}
 				seen[name] = true
 				for _, next := range graph[name] {
-					if reached, candidate := byName[next]; candidate {
-						if reached != id && !slices.ContainsFunc(evaluated.Dependencies, func(d Dependency) bool { return d.Port == reached }) {
-							evaluated.Dependencies = append(evaluated.Dependencies, Dependency{Port: reached})
+					if byName[next] {
+						if next != ports[id] && !slices.ContainsFunc(evaluated.Dependencies, func(d Dependency) bool { return strings.EqualFold(d.Port, next) }) {
+							evaluated.Dependencies = append(evaluated.Dependencies, Dependency{Port: next})
 						}
 						continue
 					}
@@ -352,8 +366,6 @@ func ThroughUnchanged(graph map[string][]string, candidates []model.PlanTarget, 
 	}
 }
 
-// Needs are what each target needs built first in each environment: the
-// targets built there that it depends on there. Their union, over every
 // Closure are the ports the roots need, each one the graph, a port index's
 // direct dependencies by lowercased name (portindex.Index.Dependencies),
 // reaches from the roots, less those in except: what a check's guest
@@ -384,51 +396,42 @@ func Closure(graph map[string][]string, roots []string, except map[string]bool) 
 	return closure
 }
 
-// environment, is what --only adds back.
-func Needs(built []model.PlanTarget, reasons []map[model.TargetID]Excluded, evaluations []Evaluation) (needs []map[model.TargetID][]Dependency, union map[model.TargetID][]model.TargetID) {
-	builtAnywhere := func(id model.TargetID) bool {
-		return slices.ContainsFunc(built, func(c model.PlanTarget) bool { return c.ID == id })
-	}
-	// A dependency names a port: it's the port's default build where the
-	// plan has one, and otherwise its one build, as --variants builds a
-	// port with its variants, beside its default variants, in place of
-	// its default build.
-	resolve := func(dep model.TargetID) model.TargetID {
-		if builtAnywhere(dep) {
-			return dep
-		}
-		var builds []model.TargetID
-		for _, c := range built {
-			if model.TargetID(c.Target.Name) == dep {
-				builds = append(builds, c.ID)
-			}
-		}
-		if len(builds) == 1 {
-			return builds[0]
-		}
-		return dep
-	}
-	needs = make([]map[model.TargetID][]Dependency, len(evaluations))
-	union = map[model.TargetID][]model.TargetID{}
+// Need is a prerequisite resolved to a build, rather than a port name (#236).
+type Need struct {
+	Build  model.TargetID
+	ByFile bool
+}
+
+// Needs resolves each evaluated port dependency to the build consumed in
+// that environment. Their union is what --only adds back (#236).
+func Needs(built []model.PlanTarget, reasons []map[model.TargetID]Excluded, evaluations []Evaluation) ([]map[model.TargetID][]Need, map[model.TargetID][]model.TargetID, error) {
+	needs := make([]map[model.TargetID][]Need, len(evaluations))
+	union := map[model.TargetID][]model.TargetID{}
 	for e := range evaluations {
-		needs[e] = map[model.TargetID][]Dependency{}
+		available := model.CheckBuilds{}
 		for _, c := range built {
-			if reasons[e][c.ID].Reason != "" {
-				continue
+			if reasons[e][c.ID].Reason == "" {
+				available.Targets = append(available.Targets, c)
 			}
+		}
+		needs[e] = map[model.TargetID][]Need{}
+		for _, c := range available.Targets {
 			for _, dep := range evaluations[e][c.ID].Dependencies {
-				dep.Port = resolve(dep.Port)
-				if dep.Port == c.ID || !builtAnywhere(dep.Port) || reasons[e][dep.Port].Reason != "" {
+				id, err := available.Resolve(c.ID, dep.Port)
+				if err != nil {
+					return nil, nil, err
+				}
+				if id == "" {
 					continue
 				}
-				needs[e][c.ID] = append(needs[e][c.ID], dep)
-				if !slices.Contains(union[c.ID], dep.Port) {
-					union[c.ID] = append(union[c.ID], dep.Port)
+				needs[e][c.ID] = append(needs[e][c.ID], Need{Build: id, ByFile: dep.ByFile})
+				if !slices.Contains(union[c.ID], id) {
+					union[c.ID] = append(union[c.ID], id)
 				}
 			}
 		}
 	}
-	return needs, union
+	return needs, union, nil
 }
 
 // EnvironmentPlan is one environment's plan: what it builds, in its own
@@ -439,7 +442,7 @@ func Needs(built []model.PlanTarget, reasons []map[model.TargetID]Excluded, eval
 // unless a dependency met by a file closes it: Base drops that dependency
 // where the file is there, and would loop itself where it isn't, so the
 // plan drops it and keeps the order the rest make.
-func EnvironmentPlan(environment model.Environment, targets, candidates []model.PlanTarget, reasons map[model.TargetID]Excluded, needs map[model.TargetID][]Dependency, evaluation Evaluation) (model.EnvironmentPlan, []string) {
+func EnvironmentPlan(environment model.Environment, targets, candidates []model.PlanTarget, reasons map[model.TargetID]Excluded, needs map[model.TargetID][]Need, evaluation Evaluation) (model.EnvironmentPlan, []string) {
 	planned := model.EnvironmentPlan{Environment: environment}
 	var members []model.TargetID
 	for _, target := range targets {
@@ -451,9 +454,9 @@ func EnvironmentPlan(environment model.Environment, targets, candidates []model.
 	byFile := map[[2]model.TargetID]bool{}
 	for _, id := range members {
 		for _, dep := range needs[id] {
-			if slices.Contains(members, dep.Port) {
-				dependencies[id] = append(dependencies[id], dep.Port)
-				byFile[[2]model.TargetID{id, dep.Port}] = dep.ByFile
+			if slices.Contains(members, dep.Build) {
+				dependencies[id] = append(dependencies[id], dep.Build)
+				byFile[[2]model.TargetID{id, dep.Build}] = dep.ByFile
 			}
 		}
 	}

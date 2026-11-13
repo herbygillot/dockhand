@@ -20,35 +20,35 @@ func TestARecordedBuildStandsWhileItsInputsDo(t *testing.T) {
 		[]model.ActivePort{{Name: "oniguruma6", Spec: "@6.9.10_0", Directory: "devel/oniguruma6", Tree: "33", Archive: "sha256:44"}})
 	require.Equal(t, []string{"sysutils/jq", "_resources", "devel/oniguruma6"}, Paths(recorded))
 	now := map[string]model.ObjectID{"sysutils/jq": "11", "_resources": "22", "devel/oniguruma6": "33"}
-	require.True(t, Current(recorded, "origin a", target, nil, now, Judge{}))
+	require.True(t, Current(recorded, "origin a", target, nil, now, Judge{}, model.CheckBuilds{}))
 
-	require.False(t, Current(recorded, "origin b", target, nil, now, Judge{}), "the environment was made again")
-	require.False(t, Current(recorded, "", target, nil, now, Judge{}), "the environment can't say what it is")
+	require.False(t, Current(recorded, "origin b", target, nil, now, Judge{}, model.CheckBuilds{}), "the environment was made again")
+	require.False(t, Current(recorded, "", target, nil, now, Judge{}, model.CheckBuilds{}), "the environment can't say what it is")
 	for path, why := range map[string]string{"sysutils/jq": "the port changed", "_resources": "a PortGroup changed", "devel/oniguruma6": "a dependency changed"} {
 		changed := map[string]model.ObjectID{"sysutils/jq": "11", "_resources": "22", "devel/oniguruma6": "33"}
 		changed[path] = "99"
-		require.False(t, Current(recorded, "origin a", target, nil, changed, Judge{}), why)
+		require.False(t, Current(recorded, "origin a", target, nil, changed, Judge{}, model.CheckBuilds{}), why)
 	}
 	gone := map[string]model.ObjectID{"sysutils/jq": "11", "_resources": "22"}
-	require.False(t, Current(recorded, "origin a", target, nil, gone, Judge{}), "a dependency's directory is gone")
+	require.False(t, Current(recorded, "origin a", target, nil, gone, Judge{}, model.CheckBuilds{}), "a dependency's directory is gone")
 	variant := target
 	variant.Target.Variants = map[string]bool{"doc": true}
-	require.False(t, Current(recorded, "origin a", variant, nil, now, Judge{}), "other variants asked for")
+	require.False(t, Current(recorded, "origin a", variant, nil, now, Judge{}, model.CheckBuilds{}), "other variants asked for")
 	// Everything the result read is the same but whose directory it was:
 	// a result recorded for another port's directory isn't this one's. No
 	// test noticed this check removed (the test plan's escaped mutant).
 	elsewhere := target
 	elsewhere.Directory = "textproc/jq"
-	require.False(t, Current(recorded, "origin a", elsewhere, nil, now, Judge{}), "a result recorded for another directory")
+	require.False(t, Current(recorded, "origin a", elsewhere, nil, now, Judge{}, model.CheckBuilds{}), "a result recorded for another directory")
 
 	incomplete := recorded
 	incomplete.Active = []model.ActivePort{{Name: "oniguruma6", Spec: "@6.9.10_0", Directory: "devel/oniguruma6", Tree: "33"}}
-	require.False(t, Current(incomplete, "origin a", target, nil, now, Judge{}), "an archive wasn't known, so the inputs are incomplete")
+	require.False(t, Current(incomplete, "origin a", target, nil, now, Judge{}, model.CheckBuilds{}), "an archive wasn't known, so the inputs are incomplete")
 
 	outside := recorded
 	outside.Active = []model.ActivePort{{Name: "legacy", Spec: "@1_0", Archive: "sha256:55"}}
 	require.Equal(t, []string{"sysutils/jq", "_resources"}, Paths(outside), "a port with no directory has none to look up")
-	require.False(t, Current(outside, "origin a", target, nil, now, Judge{}), "a port outside the tree leaves the inputs incomplete")
+	require.False(t, Current(outside, "origin a", target, nil, now, Judge{}, model.CheckBuilds{}), "a port outside the tree leaves the inputs incomplete")
 }
 
 // A port fetched with Git reads, beside its tree, the commit its tag
@@ -64,21 +64,21 @@ func TestAGitFetchedBuildStandsOnlyForTheCommitExpected(t *testing.T) {
 	recorded := model.NewTargetInputs("origin a", "devel/harbor", "11", "22", nil, []model.ActivePort{})
 	recorded.Fetched = commit
 	expected := &model.GitSource{URL: "https://github.com/harbor/harbor.git", Ref: "v4", Commit: commit, ResolvedAt: time.Now()}
-	require.True(t, Current(recorded, "origin a", target, expected, now, Judge{}))
+	require.True(t, Current(recorded, "origin a", target, expected, now, Judge{}, model.CheckBuilds{}))
 
 	tagMoved := *expected
 	tagMoved.Commit = moved
-	require.False(t, Current(recorded, "origin a", target, &tagMoved, now, Judge{}), "the same tree, and the tag names another commit now")
+	require.False(t, Current(recorded, "origin a", target, &tagMoved, now, Judge{}, model.CheckBuilds{}), "the same tree, and the tag names another commit now")
 	before := recorded
 	before.Fetched = ""
-	require.False(t, Current(before, "origin a", target, expected, now, Judge{}), "recorded without the commit it fetched")
+	require.False(t, Current(before, "origin a", target, expected, now, Judge{}, model.CheckBuilds{}), "recorded without the commit it fetched")
 	unresolved := model.GitSource{URL: expected.URL, Ref: "v4", Unresolved: "its refs couldn't be read", ResolvedAt: time.Now()}
-	require.False(t, Current(recorded, "origin a", target, &unresolved, now, Judge{}), "nothing to compare it with")
+	require.False(t, Current(recorded, "origin a", target, &unresolved, now, Judge{}, model.CheckBuilds{}), "nothing to compare it with")
 	short := model.GitSource{URL: expected.URL, Ref: "aaaaaaa", Abbreviation: "aaaaaaa", ResolvedAt: time.Now()}
-	require.True(t, Current(recorded, "origin a", target, &short, now, Judge{}), "the commit an abbreviation begins")
+	require.True(t, Current(recorded, "origin a", target, &short, now, Judge{}, model.CheckBuilds{}), "the commit an abbreviation begins")
 
-	require.True(t, Current(before, "origin a", target, nil, now, Judge{}), "a port fetched otherwise, as before")
-	require.False(t, Current(recorded, "origin a", target, nil, now, Judge{}), "fetched with Git then, and not now")
+	require.True(t, Current(before, "origin a", target, nil, now, Judge{}, model.CheckBuilds{}), "a port fetched otherwise, as before")
+	require.False(t, Current(recorded, "origin a", target, nil, now, Judge{}, model.CheckBuilds{}), "fetched with Git then, and not now")
 }
 
 // A subport's result stands across an edit inside another subport's
@@ -97,16 +97,16 @@ func TestASubportsResultStandsAcrossAnotherSubportsEdit(t *testing.T) {
 		require.Equal(t, model.ObjectID("12"), now)
 		return []string{"terraform-1.16"}, true
 	}
-	require.True(t, Current(recorded, "origin a", sibling, nil, now, Judge{Blocks: inside}), "terraform-1.16's block alone changed")
-	require.False(t, Current(recorded, "origin a", sibling, nil, now, Judge{}), "trees alone, as before")
+	require.True(t, Current(recorded, "origin a", sibling, nil, now, Judge{Blocks: inside}, model.CheckBuilds{}), "terraform-1.16's block alone changed")
+	require.False(t, Current(recorded, "origin a", sibling, nil, now, Judge{}, model.CheckBuilds{}), "trees alone, as before")
 	own := func(string, model.ObjectID, model.ObjectID) ([]string, bool) { return []string{"terraform-1.0"}, true }
-	require.False(t, Current(recorded, "origin a", sibling, nil, now, Judge{Blocks: own}), "its own block changed")
+	require.False(t, Current(recorded, "origin a", sibling, nil, now, Judge{Blocks: own}, model.CheckBuilds{}), "its own block changed")
 	unknown := func(string, model.ObjectID, model.ObjectID) ([]string, bool) { return nil, false }
-	require.False(t, Current(recorded, "origin a", sibling, nil, now, Judge{Blocks: unknown}), "outside every block, or unreadable")
+	require.False(t, Current(recorded, "origin a", sibling, nil, now, Judge{Blocks: unknown}, model.CheckBuilds{}), "outside every block, or unreadable")
 	selectChanged := func(string, model.ObjectID, model.ObjectID) ([]string, bool) {
 		return []string{"terraform_select"}, true
 	}
-	require.False(t, Current(recorded, "origin a", sibling, nil, now, Judge{Blocks: selectChanged}), "an active port's own block changed")
+	require.False(t, Current(recorded, "origin a", sibling, nil, now, Judge{Blocks: selectChanged}, model.CheckBuilds{}), "an active port's own block changed")
 }
 
 // A result whose build named what it read of _resources stands across a
@@ -125,18 +125,18 @@ func TestAResultLastsUntilWhatItReadOfResourcesChanges(t *testing.T) {
 		require.NoError(t, err)
 		return objects
 	}
-	require.True(t, Current(recorded, "origin", target, nil, now(resources("t1", cmakeBlob, golangBlob, "c1"), "t1"), Judge{}))
+	require.True(t, Current(recorded, "origin", target, nil, now(resources("t1", cmakeBlob, golangBlob, "c1"), "t1"), Judge{}, model.CheckBuilds{}))
 
 	golang := now(resources("t2", cmakeBlob, strings.Repeat("f", 40), "c1"), "t2")
-	require.True(t, Current(recorded, "origin", target, nil, golang, Judge{}), "a PortGroup it didn't load changed")
+	require.True(t, Current(recorded, "origin", target, nil, golang, Judge{}, model.CheckBuilds{}), "a PortGroup it didn't load changed")
 	require.Empty(t, ResourcesChanged(recorded, golang))
 
 	cmake := now(resources("t3", cmakeEdited, golangBlob, "c1"), "t3")
-	require.False(t, Current(recorded, "origin", target, nil, cmake, Judge{}), "a PortGroup it loaded changed")
+	require.False(t, Current(recorded, "origin", target, nil, cmake, Judge{}, model.CheckBuilds{}), "a PortGroup it loaded changed")
 	require.Equal(t, "the cmake 1.1 PortGroup", ResourcesChanged(recorded, cmake))
 
 	compilers := now(resources("t4", cmakeBlob, golangBlob, "c2"), "t4")
-	require.False(t, Current(recorded, "origin", target, nil, compilers, Judge{}), "the compiler lists every port reads changed")
+	require.False(t, Current(recorded, "origin", target, nil, compilers, Judge{}, model.CheckBuilds{}), "the compiler lists every port reads changed")
 	require.Equal(t, "_resources/port1.0/compilers", ResourcesChanged(recorded, compilers))
 
 	added := resources("t5", cmakeBlob, golangBlob, "c1")
@@ -147,7 +147,7 @@ func TestAResultLastsUntilWhatItReadOfResourcesChanges(t *testing.T) {
 	require.Equal(t, "the cmake 1.1 PortGroup", ResourcesChanged(recorded, now(gone, "t6")), "a PortGroup it loaded gone")
 
 	unread := map[string]model.ObjectID{"sysutils/jq": "11", "_resources": "t1r"}
-	require.False(t, Current(recorded, "origin", target, nil, unread, Judge{}), "_resources' tree alone says nothing of its parts")
+	require.False(t, Current(recorded, "origin", target, nil, unread, Judge{}, model.CheckBuilds{}), "_resources' tree alone says nothing of its parts")
 }
 
 // Inputs recorded under _resources' whole tree, as every build was before
@@ -158,10 +158,10 @@ func TestAWholeTreeInputMatchesOnlyItsTree(t *testing.T) {
 	recorded := model.NewTargetInputs("origin", "sysutils/jq", "11", "t1r", nil, []model.ActivePort{})
 	same, err := Objects(t.Context(), resources("t1", cmakeBlob, golangBlob, "c1"), "t1", Paths(recorded))
 	require.NoError(t, err)
-	require.True(t, Current(recorded, "origin", target, nil, same, Judge{}))
+	require.True(t, Current(recorded, "origin", target, nil, same, Judge{}, model.CheckBuilds{}))
 	golang, err := Objects(t.Context(), resources("t2", cmakeBlob, strings.Repeat("f", 40), "c1"), "t2", Paths(recorded))
 	require.NoError(t, err)
-	require.False(t, Current(recorded, "origin", target, nil, golang, Judge{}), "a PortGroup changed, which it may have read")
+	require.False(t, Current(recorded, "origin", target, nil, golang, Judge{}, model.CheckBuilds{}), "a PortGroup changed, which it may have read")
 	require.Equal(t, "_resources", ResourcesChanged(recorded, golang))
 }
 
@@ -194,14 +194,14 @@ func TestAResultLastsUntilAPortGroupOfAPortBuiltWithItChanges(t *testing.T) {
 		require.NoError(t, err)
 		return objects
 	}
-	require.True(t, Current(recorded, "origin", target, nil, now(revision("t1", cmakeBlob, golangBlob), "t1"), Judge{}))
+	require.True(t, Current(recorded, "origin", target, nil, now(revision("t1", cmakeBlob, golangBlob), "t1"), Judge{}, model.CheckBuilds{}))
 
 	installed := now(revision("t2", cmakeBlob, strings.Repeat("f", 40)), "t2")
-	require.True(t, Current(recorded, "origin", target, nil, installed, Judge{}), "a PortGroup of a port installed from its archive changed")
+	require.True(t, Current(recorded, "origin", target, nil, installed, Judge{}, model.CheckBuilds{}), "a PortGroup of a port installed from its archive changed")
 	require.Empty(t, ResourcesChanged(recorded, installed))
 
 	built := now(revision("t3", cmakeEdited, golangBlob), "t3")
-	require.False(t, Current(recorded, "origin", target, nil, built, Judge{}), "a PortGroup of the port built with it changed")
+	require.False(t, Current(recorded, "origin", target, nil, built, Judge{}, model.CheckBuilds{}), "a PortGroup of the port built with it changed")
 	require.Equal(t, "the cmake 1.1 PortGroup loaded by gettext when it was built from source", ResourcesChanged(recorded, built))
 
 	// A record from before, its active ports carrying none, is keyed as
@@ -211,7 +211,7 @@ func TestAResultLastsUntilAPortGroupOfAPortBuiltWithItChanges(t *testing.T) {
 	key, err := json.Marshal(old.Active[0])
 	require.NoError(t, err)
 	require.NotContains(t, string(key), "PortGroups", "left out, so the key is the one recorded")
-	require.True(t, Current(old, "origin", target, nil, built, Judge{}), "an old record names no PortGroup of its ports")
+	require.True(t, Current(old, "origin", target, nil, built, Judge{}, model.CheckBuilds{}), "an old record names no PortGroup of its ports")
 }
 
 // A build stands across a change that builds nothing differently: its
@@ -234,16 +234,16 @@ func TestABuildIsCarriedOverAChangeThatBuildsNothingDifferently(t *testing.T) {
 
 	// The target's own Portfile: an openmaintainer line.
 	edited := map[string]model.ObjectID{"devel/omnidiff": "12", "_resources": "22", "devel/omnidiff-data": "33"}
-	carried, ok := Carry(recorded, "run_766", "origin a", target, nil, edited, judge)
+	carried, ok := Carry(recorded, "run_766", "origin a", target, nil, edited, judge, model.CheckBuilds{})
 	require.True(t, ok)
 	require.Equal(t, []model.InertPort{{Port: "omnidiff", Options: []string{"maintainers"}}}, carried)
-	require.False(t, Current(recorded, "origin a", target, nil, edited, Judge{}), "trees alone, as before")
-	_, ok = Carry(recorded, "run_766", "origin a", target, nil, map[string]model.ObjectID{"devel/omnidiff": "99", "_resources": "22", "devel/omnidiff-data": "33"}, judge)
+	require.False(t, Current(recorded, "origin a", target, nil, edited, Judge{}, model.CheckBuilds{}), "trees alone, as before")
+	_, ok = Carry(recorded, "run_766", "origin a", target, nil, map[string]model.ObjectID{"devel/omnidiff": "99", "_resources": "22", "devel/omnidiff-data": "33"}, judge, model.CheckBuilds{})
 	require.False(t, ok, "a change that isn't inert")
 
 	// An active port's: a dependent carries over by the same closure.
 	dependency := map[string]model.ObjectID{"devel/omnidiff": "11", "_resources": "22", "devel/omnidiff-data": "34"}
-	carried, ok = Carry(recorded, "run_766", "origin a", target, nil, dependency, judge)
+	carried, ok = Carry(recorded, "run_766", "origin a", target, nil, dependency, judge, model.CheckBuilds{})
 	require.True(t, ok)
 	require.Equal(t, []model.InertPort{{Port: "omnidiff-data", Options: []string{"maintainers"}}}, carried)
 
@@ -256,17 +256,17 @@ func TestABuildIsCarriedOverAChangeThatBuildsNothingDifferently(t *testing.T) {
 	carried, ok = Carry(recorded, "run_766", "origin a", moved, nil, reordered, Judge{Inert: func(_ model.RunID, from string, _ model.ObjectID, at string, _ model.ObjectID) ([]string, bool) {
 		asked = append(asked, [2]string{from, at})
 		return []string{"categories"}, true
-	}})
+	}}, model.CheckBuilds{})
 	require.True(t, ok)
 	require.Equal(t, []model.InertPort{{Port: "omnidiff", Options: []string{"categories"}, From: "devel/omnidiff"}}, carried)
 	require.Equal(t, [][2]string{{"devel/omnidiff", "textproc/omnidiff"}}, asked, "the new directory judged against the recorded tree")
 	// And without a reorder: the same tree in another directory.
-	carried, ok = Carry(recorded, "run_766", "origin a", moved, nil, map[string]model.ObjectID{"textproc/omnidiff": "11", "_resources": "22", "devel/omnidiff-data": "33"}, judge)
+	carried, ok = Carry(recorded, "run_766", "origin a", moved, nil, map[string]model.ObjectID{"textproc/omnidiff": "11", "_resources": "22", "devel/omnidiff-data": "33"}, judge, model.CheckBuilds{})
 	require.True(t, ok)
 	require.Equal(t, []model.InertPort{{Port: "omnidiff", From: "devel/omnidiff"}}, carried)
-	_, ok = Carry(recorded, "run_766", "origin a", moved, nil, map[string]model.ObjectID{"textproc/omnidiff": "11", "_resources": "22", "devel/omnidiff-data": "33"}, Judge{})
+	_, ok = Carry(recorded, "run_766", "origin a", moved, nil, map[string]model.ObjectID{"textproc/omnidiff": "11", "_resources": "22", "devel/omnidiff-data": "33"}, Judge{}, model.CheckBuilds{})
 	require.False(t, ok, "a move is followed only where inert changes are")
-	_, ok = Carry(recorded, "run_766", "origin a", moved, nil, map[string]model.ObjectID{"devel/omnidiff": "11", "textproc/omnidiff": "11", "_resources": "22", "devel/omnidiff-data": "33"}, judge)
+	_, ok = Carry(recorded, "run_766", "origin a", moved, nil, map[string]model.ObjectID{"devel/omnidiff": "11", "textproc/omnidiff": "11", "_resources": "22", "devel/omnidiff-data": "33"}, judge, model.CheckBuilds{})
 	require.False(t, ok, "the directory it was built in is still there: another port's")
 
 	// An active port that moved is found by its name.
@@ -274,10 +274,10 @@ func TestABuildIsCarriedOverAChangeThatBuildsNothingDifferently(t *testing.T) {
 	lookup := func(port string) (string, bool) {
 		return "textproc/omnidiff-data", port == "omnidiff-data"
 	}
-	carried, ok = Carry(recorded, "run_766", "origin a", target, nil, movedData, Judge{Inert: maintainers, Moved: lookup})
+	carried, ok = Carry(recorded, "run_766", "origin a", target, nil, movedData, Judge{Inert: maintainers, Moved: lookup}, model.CheckBuilds{})
 	require.True(t, ok)
 	require.Equal(t, []model.InertPort{{Port: "omnidiff-data", From: "devel/omnidiff-data"}}, carried)
-	_, ok = Carry(recorded, "run_766", "origin a", target, nil, movedData, Judge{Inert: maintainers})
+	_, ok = Carry(recorded, "run_766", "origin a", target, nil, movedData, Judge{Inert: maintainers}, model.CheckBuilds{})
 	require.False(t, ok, "nothing finds it")
 }
 
@@ -296,9 +296,9 @@ func TestABuildIsCarriedOverADeclarationOfWhatItHadActive(t *testing.T) {
 		}
 	}
 	trees := map[string]model.ObjectID{"devel/omnidiff": "12", "_resources": "22", "textproc/libiconv": "33"}
-	carried, ok := Carry(recorded, "run_12", "origin a", target, nil, trees, Judge{Declared: declares("libiconv")})
+	carried, ok := Carry(recorded, "run_12", "origin a", target, nil, trees, Judge{Declared: declares("libiconv")}, model.CheckBuilds{})
 	require.True(t, ok)
 	require.Equal(t, []model.InertPort{{Port: "omnidiff", Declared: []string{"libiconv"}}}, carried)
-	_, ok = Carry(recorded, "run_12", "origin a", target, nil, trees, Judge{Declared: declares("zlib")})
+	_, ok = Carry(recorded, "run_12", "origin a", target, nil, trees, Judge{Declared: declares("zlib")}, model.CheckBuilds{})
 	require.False(t, ok, "zlib wasn't active as it built")
 }

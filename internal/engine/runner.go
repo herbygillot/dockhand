@@ -74,7 +74,7 @@ func (e *Engine) RunEvidenceNow(ctx context.Context, id model.RunID) (Evidence, 
 	now := e.identitiesNow(ctx, plan.Environments)
 	var found Evidence
 	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		check, err := checks.LoadCheck(r, run, false)
+		check, err := checks.LoadCheck(r, run)
 		if err != nil {
 			return err
 		}
@@ -102,7 +102,7 @@ func (e *Engine) RunEvidence(ctx context.Context, id model.RunID) (Evidence, err
 // runEvidence is what a run established for each target in each of its
 // environments, as its own record says (evidence.Of).
 func runEvidence(r store.Reader, run model.Run) (Evidence, error) {
-	check, err := checks.LoadCheck(r, run, false)
+	check, err := checks.LoadCheck(r, run)
 	if err != nil {
 		return Evidence{}, err
 	}

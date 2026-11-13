@@ -2,7 +2,6 @@ package reuse
 
 import (
 	"slices"
-	"strings"
 
 	"github.com/herbygillot/dockhand/internal/model"
 )
@@ -101,13 +100,14 @@ type Choice struct {
 // unrecorded. A target that builds for that reason takes what it needs in
 // turn.
 func Choose(targets []Target, identity string, trees map[string]model.ObjectID, judge Judge, stands func(model.TargetResult) bool, available func(Candidate) bool) Choice {
+	builds := checkBuilds(targets)
 	choice := Choice{Reused: map[model.TargetID]Candidate{}, Carried: map[model.TargetID][]model.InertPort{}}
 	for _, target := range targets {
 		for _, c := range target.Earlier {
 			if !stands(c.Result) || target.unseated(c) {
 				continue
 			}
-			if carried, ok := Carry(c.Inputs, c.Origin.Run, identity, target.PlanTarget, target.Git, trees, judge); ok {
+			if carried, ok := Carry(c.Inputs, c.Origin.Run, identity, target.PlanTarget, target.Git, trees, judge, builds); ok {
 				choice.Reused[target.ID] = c
 				if len(carried) > 0 {
 					choice.Carried[target.ID] = carried
@@ -119,10 +119,6 @@ func Choose(targets []Target, identity string, trees map[string]model.ObjectID, 
 	for id := range AgainstOtherSources(targets, choice.Reused) {
 		delete(choice.Reused, id)
 	}
-	ids := make([]model.TargetID, len(targets))
-	for i, target := range targets {
-		ids[i] = target.ID
-	}
 	// A target that builds takes what it needs and can't be installed,
 	// and that what it needs, until nothing more is taken.
 	for taken := true; taken; {
@@ -131,7 +127,7 @@ func Choose(targets []Target, identity string, trees map[string]model.ObjectID, 
 			if _, reused := choice.Reused[target.ID]; reused {
 				continue
 			}
-			for _, need := range Needs(target, ids) {
+			for _, need := range Needs(target, builds) {
 				if c, reused := choice.Reused[need]; reused && !available(c) {
 					delete(choice.Reused, need)
 					taken = true
@@ -148,7 +144,7 @@ func Choose(targets []Target, identity string, trees map[string]model.ObjectID, 
 		if _, reused := choice.Reused[target.ID]; reused {
 			continue
 		}
-		for _, need := range Needs(target, ids) {
+		for _, need := range Needs(target, builds) {
 			if _, reused := choice.Reused[need]; reused && !slices.Contains(choice.Installs, need) {
 				choice.Installs = append(choice.Installs, need)
 			}
@@ -162,25 +158,43 @@ func Choose(targets []Target, identity string, trees map[string]model.ObjectID, 
 // newest earlier build ran, which it may reach through ports the branch
 // doesn't change. A port's name is its target's, in any case, as MacPorts
 // reads names.
-func Needs(target Target, among []model.TargetID) []model.TargetID {
+func Needs(target Target, builds model.CheckBuilds) []model.TargetID {
 	if len(target.Earlier) == 0 {
 		return slices.Clone(target.DependsOn)
 	}
-	return needs(target.DependsOn, target.Earlier[0].Inputs.Active, among)
+	return needs(target.ID, target.DependsOn, target.Earlier[0].Inputs.Active, builds)
 }
 
-// needs are the targets, among those given, that a build needs: those the
-// plan names, and those among the ports active as it ran.
-func needs(dependsOn []model.TargetID, active []model.ActivePort, among []model.TargetID) []model.TargetID {
+// needs resolves the ports active as a build ran with the same rule the
+// planner uses. Ambiguity keeps every candidate here so none can silently
+// escape source comparison; Carry refuses reuse of ambiguous inputs (#236).
+func needs(dependent model.TargetID, dependsOn []model.TargetID, active []model.ActivePort, builds model.CheckBuilds) []model.TargetID {
 	needed := slices.Clone(dependsOn)
 	for _, port := range active {
-		for _, other := range among {
-			if strings.EqualFold(port.Name, string(other)) && !slices.Contains(needed, other) {
-				needed = append(needed, other)
+		id, err := builds.Resolve(dependent, port.Name)
+		if err != nil {
+			for _, target := range builds.Targets {
+				one := model.CheckBuilds{Targets: []model.PlanTarget{target}}
+				if candidate, _ := one.Resolve(dependent, port.Name); candidate != "" && !slices.Contains(needed, candidate) {
+					needed = append(needed, candidate)
+				}
 			}
+		} else if id != "" && !slices.Contains(needed, id) {
+			needed = append(needed, id)
 		}
 	}
 	return needed
+}
+
+// checkBuilds gives the resolver each target and the plan's selected
+// prerequisites, without reading an ID as a port name (#236).
+func checkBuilds(targets []Target) model.CheckBuilds {
+	builds := model.CheckBuilds{Dependencies: map[model.TargetID][]model.TargetID{}}
+	for _, target := range targets {
+		builds.Targets = append(builds.Targets, target.PlanTarget)
+		builds.Dependencies[target.ID] = target.DependsOn
+	}
+	return builds
 }
 
 // AgainstOtherSources are the targets whose chosen earlier build (chosen)
@@ -198,10 +212,10 @@ func needs(dependsOn []model.TargetID, active []model.ActivePort, among []model.
 // isn't evidence for the commit expected now. Each is given with the
 // dependency it was found against (Against), for its words.
 func AgainstOtherSources(targets []Target, chosen map[model.TargetID]Candidate) map[model.TargetID]Against {
-	ids := make([]model.TargetID, len(targets))
+	builds := checkBuilds(targets)
 	byID := map[model.TargetID]Target{}
-	for i, target := range targets {
-		ids[i], byID[target.ID] = target.ID, target
+	for _, target := range targets {
+		byID[target.ID] = target
 	}
 	against := map[model.TargetID]Against{}
 	for taken := true; taken; {
@@ -211,9 +225,9 @@ func AgainstOtherSources(targets []Target, chosen map[model.TargetID]Candidate) 
 			if _, found := against[target.ID]; !ok || found {
 				continue
 			}
-			for _, need := range needs(target.DependsOn, c.Inputs.Active, ids) {
+			for _, need := range needs(target.ID, target.DependsOn, c.Inputs.Active, builds) {
 				_, indirect := against[need]
-				if dependency := byID[need]; indirect || dependency.Git != nil && !builtAgainst(c, dependency) || builtAgainstMovedTag(c, dependency) {
+				if dependency := byID[need]; indirect || dependency.Git != nil && !builtAgainst(c, target.ID, dependency, builds) || builtAgainstMovedTag(c, target.ID, dependency, builds) {
 					against[target.ID], taken = Against{Dependency: need, Indirect: indirect}, true
 					break
 				}
@@ -234,9 +248,13 @@ type Against struct {
 // builtAgainst reports whether an earlier build had active an archive of a
 // Git-fetched target that a build of it from the commit its plan expects
 // now made: one of its earlier builds that recorded fetching that commit.
-func builtAgainst(c Candidate, dependency Target) bool {
+func builtAgainst(c Candidate, dependent model.TargetID, dependency Target, builds model.CheckBuilds) bool {
 	for _, port := range c.Inputs.Active {
-		if !strings.EqualFold(port.Name, string(dependency.ID)) || port.Archive == "" {
+		id, err := builds.Resolve(dependent, port.Name)
+		if err != nil {
+			return false
+		}
+		if id != dependency.ID || port.Archive == "" {
 			continue
 		}
 		for _, earlier := range dependency.Earlier {
@@ -255,12 +273,16 @@ func builtAgainst(c Candidate, dependency Target) bool {
 // again, from the commit the tag names now, so a build against the old
 // one stands for nothing now, as one against another commit of a
 // Git-fetched target doesn't (Codex's sixth review, #71).
-func builtAgainstMovedTag(c Candidate, dependency Target) bool {
+func builtAgainstMovedTag(c Candidate, dependent model.TargetID, dependency Target, builds model.CheckBuilds) bool {
 	if dependency.Tag == nil {
 		return false
 	}
 	for _, port := range c.Inputs.Active {
-		if !strings.EqualFold(port.Name, string(dependency.ID)) || port.Archive == "" {
+		id, err := builds.Resolve(dependent, port.Name)
+		if err != nil {
+			return true
+		}
+		if id != dependency.ID || port.Archive == "" {
 			continue
 		}
 		recorded := false

@@ -125,6 +125,8 @@ func RefusedWords(r Refusal) string {
 		return fmt.Sprintf("built by %s against %s's build there, which doesn't count either, so it doesn't count%s", r.Check, r.Dependency, again)
 	case evidence.RefusedBlocked:
 		return fmt.Sprintf("%s found it blocked by %s, whose result there no longer stands%s", r.Check, r.Dependency, again)
+	case evidence.RefusedInputs:
+		return fmt.Sprintf("built by %s, whose consumed in-check builds differ or weren't recorded, so it doesn't count%s", r.Check, again)
 	case evidence.RefusedNotPlanned:
 		return fmt.Sprintf("%s's result there doesn't count, since its plan didn't build it there%s", r.Check, again)
 	}
@@ -205,8 +207,7 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 		// docs/designs/source-comparison.md): loaded without what they
 		// read, every Git result answered "not known", and no check of a
 		// Git-fetched port stood for another request.
-		reads := evidence.AnyReadsSources(append([]model.Plan{plan, own}, others...)...)
-		own, err := checks.LoadCheck(r, primary, reads)
+		own, err := checks.LoadCheck(r, primary)
 		if err != nil {
 			return err
 		}
@@ -215,7 +216,7 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 			if run.ID == primary.ID {
 				continue
 			}
-			check, err := checks.LoadCheck(r, run, reads)
+			check, err := checks.LoadCheck(r, run)
 			if err != nil {
 				return err
 			}

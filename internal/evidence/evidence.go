@@ -41,7 +41,8 @@ type Identity struct {
 // its plan, its executions and each one's results, the executions that
 // built the results it reused, with the checks they were in, and what its
 // results' builds read (model.TargetInputs), by their keys, which is
-// needed only where a newer check fetches a target with Git (ReadsSources).
+// used to compare consumed builds even where no source is fetched with
+// Git (#236).
 type Check struct {
 	Run        model.Run
 	Plan       model.Plan
@@ -214,6 +215,9 @@ const (
 	RefusedBlocked RefusalKind = "blocked"
 	// RefusedNotPlanned is one its check's plan didn't build there.
 	RefusedNotPlanned RefusalKind = "not-planned"
+	// RefusedInputs is a result whose consumed in-check builds differ or
+	// cannot be established from its inputs (#236).
+	RefusedInputs RefusalKind = "inputs"
 	// refusedRemade is one built in an environment made again since,
 	// which fill marks CellRemade.
 	refusedRemade RefusalKind = "remade"
@@ -1132,10 +1136,10 @@ func (e Evidence) missing() bool {
 // (standing). That is a question of the other targets' cells, which fill
 // answers as it takes an earlier check's results.
 //
-// Nothing else about the check's selection matters: from the same files,
-// a target builds the same whichever ports were selected with it. Nor does
-// its test policy: a result keeps the policy of the check that recorded it,
-// and reads under it (decision D1, Evidence.Words).
+// The in-check builds a target consumed must also match before an earlier
+// result fills a cell (#236). Its test policy does not decide that: a
+// result keeps the policy of the check that recorded it, and reads under
+// it (decision D1, Evidence.Words).
 func Counts(recorded model.Plan, execution model.GuestExecution, id model.TargetID, now string, git *model.GitSource, fetched model.ObjectID, other bool) bool {
 	return countsRefusal(recorded, execution, id, now, git, fetched, other) == nil
 }
@@ -1397,7 +1401,7 @@ func (e *Evidence) readSources(primary model.Plan) {
 	// The earlier check's own Git builds are read too, where the newest
 	// plan fetches nothing with Git, so a result is judged against its own
 	// plan with what it fetched (Codex's review of #192, finding 3).
-	if !ReadsSources(primary) && !ReadsSources(e.Plan) {
+	if !AnyReadsSources(primary, e.Plan) {
 		return
 	}
 	e.sources = map[[2]string]readSource{}
@@ -1428,14 +1432,29 @@ func (e *Evidence) readSources(primary model.Plan) {
 			keys[target.Target.ID] = resultKey(c.TargetResult)
 			e.sources[keys[target.Target.ID]] = readSource{fetched: inputs.Fetched}
 		}
-		// A Git-fetched target the earlier check has no result of, which
-		// a build there had active all the same, was a build dockhand
-		// can't place.
+		// A fetched target with no result may still have been active as a
+		// dependent built. Keep its port metadata for the resolver, and
+		// compare its source as reuse does (#236).
 		expected, _ := primary.In(environment)
-		for _, id := range slices.Sorted(maps.Keys(expected.Git)) {
-			if _, ok := keys[id]; !ok {
-				source := expected.Git[id]
-				targets = append(targets, reuse.Target{PlanTarget: model.PlanTarget{ID: id}, Git: &source})
+		for _, sources := range []map[model.TargetID]model.GitSource{expected.Git, expected.Tags} {
+			for _, id := range slices.Sorted(maps.Keys(sources)) {
+				if _, ok := keys[id]; ok {
+					continue
+				}
+				target, found := primary.Target(id)
+				if !found {
+					for _, omitted := range primary.Omitted {
+						if omitted.ID == id {
+							target = omitted
+							break
+						}
+					}
+				}
+				planned := reuse.Target{PlanTarget: target, Tag: primary.TagIn(environment, id), TagShownMoved: e.shown[id]}
+				if source, ok := expected.Git[id]; ok {
+					planned.Git = &source
+				}
+				targets = append(targets, planned)
 			}
 		}
 		for id, against := range reuse.AgainstOtherSources(targets, built) {
@@ -1480,6 +1499,19 @@ func sourceReading(plan model.Plan, environment model.Environment, id model.Targ
 		return &source
 	}
 	return plan.TagIn(environment, id)
+}
+
+// fillBuilds includes the targets --only left out, which evidence still
+// requires. Their builds must resolve from port metadata too; a narrow
+// check does not turn them into external dependencies (#236).
+func fillBuilds(plan model.Plan, environment model.Environment) model.CheckBuilds {
+	builds := plan.CheckBuilds(environment)
+	for _, omitted := range plan.Omitted {
+		if _, excluded := plan.ExclusionIn(environment, omitted.ID); !excluded {
+			builds.Targets = append(builds.Targets, omitted)
+		}
+	}
+	return builds
 }
 
 // fill takes an earlier check's results for what this evidence lacks,
@@ -1530,6 +1562,11 @@ func (e *Evidence) fill(earlier Evidence) bool {
 			why := countsRefusal(earlier.Plan, execution, target.Target.ID, e.now[environment].Value, git, read.fetched, read.against != nil)
 			if why == nil && cell.Kind == CellRecorded {
 				why = sourceRefusal(earlier.Plan, readings, environment, target.Target.ID, builds && newest.Builds(target.Target.ID), earlier.shown[target.Target.ID])
+			}
+			if why == nil && cell.Kind == CellRecorded && (cell.Outcome == model.OutcomePassed || cell.Outcome == model.OutcomeFailed) {
+				if !fillBuilds(readings, environment).SameInputs(target.Target.ID, earlier.inputs[cell.Inputs]) {
+					why = &Refusal{Kind: RefusedInputs}
+				}
 			}
 			if why != nil {
 				if cell.Kind == CellRecorded && !current(execution, e.now[environment].Value) {

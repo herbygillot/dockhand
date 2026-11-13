@@ -131,7 +131,12 @@ branch ends.
 
 `--variants '+tests -docs'` builds the selected port once, in place of its
 default build, with its default variants plus those given, as MacPorts opens
-it; a `-variant` leaves a default out.
+it; a `-variant` leaves a default out. A dependent uses the default build of a
+prerequisite where the check has one, otherwise its sole configured build.
+If two configured builds remain and neither the default nor a dependency
+selection says which one it consumes, planning refuses and names both.
+Ordering, failure blocking, `--only` and `minmax` keep the selected build,
+including its variants, wherever its dependent needs it.
 `--variants each`, or `'curl each'` naming the port, builds the selected port
 with defaults, then each eligible non-default variant separately; `universal` is
 excluded. It multiplies work across environments. More than 12 builds requires
@@ -437,7 +442,13 @@ declared port's pkg-config brings in an undeclared library, the finding says so:
 pkg-config Libs`, and `-Wl,-dead_strip_dylibs` as the other way out.
 
 Tart results can be reused when recorded input content and environment identity
-still match, including dependencies and fetched Git commits. Where an
+still match, including dependencies and fetched Git commits. Inputs record
+the build ID of each in-check port consumed. Changing a prerequisite from its
+default build to `+docs` rebuilds its consumers, even with unchanged Portfiles.
+Earlier results fill a later check's missing rows only when those consumed
+build IDs match; unknown consumption rebuilds and leaves the row unfilled.
+Existing builds with in-check dependencies get new input keys once this is
+recorded. A moved source tag also rebuilds consumers of configured prerequisites. Where an
 environment's identity can't be read, as when Tart doesn't answer, its results
 are taken as they were and status says so, with the cause; serve and `ship
 --yes` hold a submission resting on them (`identity-unread`) until it reads
