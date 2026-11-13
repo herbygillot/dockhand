@@ -12,7 +12,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
-	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
 // A host access the evaluator recorded is explained here, or the probe is
@@ -82,7 +81,7 @@ func baseLookupBenign(root string, contents []byte, declaration macports.Declara
 		if !(buildOnlyDefault(option) || basePhaseOption(option)) || slices.Contains(fetchInputs, option) {
 			return false
 		}
-		if !optionReadBenignAs(root, contents, option, declaration, groups, true) {
+		if !optionReadBenignAs(root, contents, option, declaration, groups, true, base) {
 			return false
 		}
 	}
@@ -410,7 +409,7 @@ func buildDefaultReadBenign(root string, contents []byte, declaration macports.D
 		return false
 	}
 	for _, option := range options {
-		if !optionReadBenign(root, contents, option, declaration, groups) {
+		if !optionReadBenign(root, contents, option, declaration, groups, base) {
 			return false
 		}
 	}
@@ -419,8 +418,8 @@ func buildDefaultReadBenign(root string, contents []byte, declaration macports.D
 
 // optionReadBenign reports whether neither the Portfile nor a PortGroup on
 // the read's stack reads option outside a build-only position.
-func optionReadBenign(root string, contents []byte, option string, declaration macports.Declaration, groups map[string][]byte) bool {
-	return optionReadBenignAs(root, contents, option, declaration, groups, option == "build.jobs")
+func optionReadBenign(root string, contents []byte, option string, declaration macports.Declaration, groups map[string][]byte, base *baseCode) bool {
+	return optionReadBenignAs(root, contents, option, declaration, groups, option == "build.jobs", base)
 }
 
 // optionReadBenignAs is optionReadBenign, where expressionsOnly counts a
@@ -431,7 +430,7 @@ func optionReadBenign(root string, contents []byte, option string, declaration m
 // the value is followed (followedReadsBenign): an option given it is
 // judged as the option is, and a read the walk can't place keeps the
 // context inconclusive (architecture's point 3).
-func optionReadBenignAs(root string, contents []byte, option string, declaration macports.Declaration, groups map[string][]byte, expressionsOnly bool) bool {
+func optionReadBenignAs(root string, contents []byte, option string, declaration macports.Declaration, groups map[string][]byte, expressionsOnly bool, base *baseCode) bool {
 	if root == "" {
 		return false
 	}
@@ -463,7 +462,7 @@ func optionReadBenignAs(root string, contents []byte, option string, declaration
 		}
 		sources = append(sources, src)
 	}
-	watched, ok := followedReadsBenign(sources, option)
+	watched, ok := followedReadsBenign(sources, option, base)
 	if !ok {
 		return false
 	}
@@ -484,163 +483,6 @@ func optionReadBenignAs(root string, contents []byte, option string, declaration
 		}
 		if readsAtAll.Match(contents) {
 			return false
-		}
-	}
-	return true
-}
-
-// followedReadsBenign follows option's value through the Portfile and the
-// PortGroups in sources (architecture's point 3 on #110's finding 1): an
-// option a read of a watched one reaches as a benign sink, in its
-// arguments or in a branch the read selects, is watched too, to a fixed
-// point, and each watched option is judged as the first is, its reads in
-// build positions only (classifyReads), so test.cmd ${build.cmd} followed
-// by a distfiles reading test.cmd is a fetch value's read. Then every
-// mention of a watched option, or of a variable one was carried into, must
-// be a read the walk placed or a write of it; one it didn't place, by
-// [set name], [option name], in a substitution or a script it doesn't
-// walk, or anywhere inside a procedure's body, whose value a fetch field
-// may call for, keeps the context inconclusive. The second result says
-// whether every read is benign; the first is the options watched.
-func followedReadsBenign(sources [][]byte, option string) ([]string, bool) {
-	watched := map[string]bool{option: true}
-	scripts := make([]*syntax.Script, len(sources))
-	for i, src := range sources {
-		script, errs := syntax.Parse(src)
-		if len(errs) > 0 {
-			return nil, false
-		}
-		scripts[i] = script
-	}
-	var carried map[string]bool
-	var seen []textedit.Span
-	for {
-		added := false
-		carried, seen = map[string]bool{}, nil
-		for i, src := range sources {
-			d := &dimension{
-				read:       func(name string) bool { return watched[name] },
-				label:      option,
-				tainted:    map[string]bool{},
-				carried:    carried,
-				hostAnswer: true,
-				seen:       func(read syntax.VarSub) { seen = append(seen, read.Span) },
-				sink: func(command string) {
-					if name, ok := optionSink(command); ok && !watched[name] {
-						watched[name], added = true, true
-					}
-				},
-			}
-			if classifyReads(src, scripts[i], d) != nil {
-				return nil, false
-			}
-		}
-		if !added {
-			break
-		}
-	}
-	for i, src := range sources {
-		if !accountedFor(src, scripts[i], watched, carried, seen) {
-			return nil, false
-		}
-	}
-	names := make([]string, 0, len(watched))
-	for name := range watched {
-		names = append(names, name)
-	}
-	slices.Sort(names)
-	return names, true
-}
-
-// optionSuffix is what a Portfile command adds to an option's name to
-// change its value rather than set it.
-var optionSuffix = regexp.MustCompile(`-(?:append|prepend|delete|replace|strsed)$`)
-
-// optionSink is the option a benign sink command sets, where it sets one:
-// test.cmd, configure.args-append's configure.args. Commands that run or
-// print, as system and ui_msg, set none; patchfiles is no sink for a host
-// answer at all (dimension.benign).
-func optionSink(command string) (string, bool) {
-	name := optionSuffix.ReplaceAllString(command, "")
-	switch name {
-	case "use_xcode", "macosx_deployment_target", "notes":
-		return name, true
-	}
-	for _, family := range benignFamilies {
-		if strings.HasPrefix(name, family) {
-			return name, true
-		}
-	}
-	return "", false
-}
-
-// accountedFor reports whether every mention in src of a watched option or
-// a carried variable, outside comments, is a read the walk placed (seen)
-// or the command that writes it, and none is inside a procedure's body.
-func accountedFor(src []byte, script *syntax.Script, watched, carried map[string]bool, seen []textedit.Span) bool {
-	var comments, procs, writes []textedit.Span
-	var walk func(*syntax.Script)
-	walk = func(script *syntax.Script) {
-		for _, item := range script.Items {
-			switch item := item.(type) {
-			case syntax.Comment:
-				comments = append(comments, item.Span)
-			case syntax.Command:
-				if name, ok := item.Name(src); ok {
-					if watched[optionSuffix.ReplaceAllString(name, "")] {
-						writes = append(writes, item.Words[0].Span)
-					}
-					if name == "proc" {
-						procs = append(procs, item.Span)
-					}
-					if name == "set" && len(item.Words) == 3 {
-						if variable, ok := item.Words[1].Literal(src); ok && carried[variable] {
-							writes = append(writes, item.Words[1].Span)
-						}
-					}
-				}
-				for _, word := range item.Words {
-					if body, ok := word.BracedScript(src); ok {
-						walk(body)
-					}
-					for _, segment := range word.Segments {
-						if sub, ok := segment.(syntax.CmdSub); ok {
-							walk(sub.Script)
-						}
-					}
-				}
-			}
-		}
-	}
-	walk(script)
-	within := func(spans []textedit.Span, offset int) bool {
-		return slices.ContainsFunc(spans, func(span textedit.Span) bool { return span.Start <= offset && offset < span.End })
-	}
-	nameByte := func(c byte, dot bool) bool {
-		return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || dot && c == '.'
-	}
-	text := string(src)
-	for _, names := range []map[string]bool{watched, carried} {
-		for name := range names {
-			for from := 0; ; {
-				at := strings.Index(text[from:], name)
-				if at < 0 {
-					break
-				}
-				at += from
-				from = at + 1
-				if at > 0 && nameByte(text[at-1], true) || at+len(name) < len(text) && nameByte(text[at+len(name)], false) {
-					continue
-				}
-				switch {
-				case within(comments, at):
-				case within(procs, at):
-					return false
-				case within(writes, at), within(seen, at):
-				default:
-					return false
-				}
-			}
 		}
 	}
 	return true

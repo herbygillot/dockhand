@@ -23,7 +23,8 @@ func newBaseFixture(t *testing.T) baseFixture {
 	lib := filepath.Join(t.TempDir(), "libexec", "macports", "lib")
 	for name, body := range map[string]string{
 		"port1.0/portbuild.tcl":     "default build.cmd {[portbuild::build_getmaketype]}\ndefault build.jobs {[portbuild::build_getjobs]}\n",
-		"port1.0/portmain.tcl":      "default source_date_epoch {[portmain::get_source_date_epoch]}\n",
+		"port1.0/portmain.tcl":      "options prefix name version revision epoch \\\n    categories maintainers\ndefault source_date_epoch {[portmain::get_source_date_epoch]}\n",
+		"port1.0/portfetch.tcl":     "options master_sites patch_sites distfiles patchfiles \\\n    dist_subdir checksums\n",
 		"port1.0/portconfigure.tcl": "namespace eval portconfigure {}\ndefault configure.sdkroot {[portconfigure::configure_get_sdkroot ${configure.sdk_version}]}\ndefault configure.compiler {[portconfigure::configure_get_default_compiler]}\ndefault compiler.fallback {[portconfigure::get_compiler_fallback]}\n",
 		"port1.0/portutil.tcl":      "proc default_check {optionName index op} {}\n",
 	} {
@@ -125,7 +126,7 @@ func TestABaseLookupsValueIsFollowedToEveryFetchValue(t *testing.T) {
 		{"expr", "set m [expr {${build.cmd} eq \"\" ? \"a\" : \"b\"}]\ndistfiles $m.tgz", true},
 		{"switch", "switch -glob ${build.cmd} { *g* {distfiles a} default {distfiles b}}", true},
 		{"a proc's return", "proc f {} {global build.cmd; return ${build.cmd}}\ndistfiles [f].tgz", true},
-		{"a proc alone", "proc f {} {global build.cmd; return ${build.cmd}}", true},
+		{"a proc no one calls", "proc f {} {global build.cmd; return ${build.cmd}}", false},
 		{"a tainted variable", "set m ${build.cmd}\nif {$m eq \"\"} {distfiles a}", true},
 		{"a tainted variable by [set]", "set m ${build.cmd}\ndistfiles [set m].tgz", true},
 		{"a multi-line condition", "if {[info exists x] ||\n ${build.cmd} eq {}} {distfiles a}", true},
