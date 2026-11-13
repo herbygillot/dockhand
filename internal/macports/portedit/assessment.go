@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/tcl/rpc"
 	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
@@ -59,6 +60,8 @@ const (
 func Problem(check string, err error) Finding {
 	status, code := Unknown, "check-inconclusive"
 	switch {
+	case errors.Is(err, rpc.ErrBrokenSession), errors.Is(err, rpc.ErrHandshake), errors.Is(err, rpc.ErrNoAnswer):
+		code = "evaluation-unavailable"
 	case errors.Is(err, depblock.ErrToolUnavailable):
 		status, code = Blocked, "missing-helper"
 	case errors.Is(err, errProbeInconclusive):
