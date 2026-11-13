@@ -94,6 +94,13 @@ A change that makes a port non-distributable, by MacPorts' own checker, holds
 as `not-distributable`, since the builders would keep no binary archive of it;
 `holds.allow` names it like any other rule.
 
+An update's held findings (`manifest-hook`, `mirror-conflict`, and an
+unfollowed `upstream-moved`, `upstream-renamed-port` or
+`upstream-transferred`) belong to the branch and the port: later commits and
+rebases keep them while the branch still changes the port, and only a later
+update of the port replaces them, or for a move, `update --follow-moves`.
+Read each against the new source, then decide on it as on any concern below,
+or let `holds.allow` name it.
 A build that links a port's library its Portfile doesn't declare holds as
 `link-undeclared` only where tidy can't write the declaration: a subport's or
 a variant build's finding, links that couldn't be read, a library no port
