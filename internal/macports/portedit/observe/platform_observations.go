@@ -73,6 +73,16 @@ func (s *Session) Profiles(ctx context.Context, candidate []byte) ([]model.Platf
 				}
 				for name, port := range observed.Ports {
 					if port, inconclusive := Tolerate(ctx, port, contents, observed.Snapshot.Root); inconclusive {
+						// A modelled context that evaluates but reads host
+						// state, a caught closed exec or a closed file test,
+						// is left and named where the plan reads it, as one
+						// the model can't answer is, and the boundary is
+						// found from the contexts that read (the outside
+						// confirmation of #110 and #125, finding 3). This
+						// Mac's own context is never left.
+						if observed.Modeled {
+							continue
+						}
 						return nil, ErrInconclusive.Because("platform boundary depends on host state%s", HostInputs(port))
 					}
 					for _, fact := range port.Operands {
