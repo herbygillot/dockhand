@@ -270,6 +270,30 @@ func TestNoResultFileIsInfrastructureTrouble(t *testing.T) {
 	require.DirExists(t, strings.TrimSuffix(dir, "1")+"3", "three attempts, each with its own directory")
 }
 
+// A script that itself exits 70 is a script that wrote no result file,
+// said with its exit; the starter's own line with that exit is a start
+// that never happened, said as the starter said it (#243). The second
+// script prints the starter's line itself, as the attempt's log would
+// hold it, since a real starter that can't record runs no script.
+func TestAnExit70IsTheStartersOnlyWithItsLine(t *testing.T) {
+	t.Parallel()
+	said := func(body string) string {
+		run, _, e := checked(t, body)
+		require.Equal(t, model.RunAttention, run.State)
+		logs, err := e.Logs(t.Context(), run.ID)
+		require.NoError(t, err)
+		require.NotEmpty(t, logs.Executions)
+		return logs.Executions[0].Execution.Detail
+	}
+	own := said(`echo "make: *** [all] Error 70" >&2; exit 70`)
+	require.NotContains(t, own, "the starter couldn't", "a script's own exit 70")
+	require.Contains(t, own, "wrote no result file")
+	require.Contains(t, own, "exit status 70")
+
+	starters := said(`echo "dockhand: the starter couldn't record itself, so nothing was started: no room" >&2; exit 70`)
+	require.Contains(t, starters, "didn't run: the starter couldn't record itself, so nothing was started: no room")
+}
+
 // documentedScript is the example script docs/command-provider.md gives,
 // between its markers, so the page is the one copy.
 func documentedScript(t *testing.T) string {
