@@ -75,7 +75,7 @@ func (e *Engine) revisionAssessments(ctx context.Context, branch model.BranchID,
 		return nil, err
 	}
 	if !collect {
-		return withEditHolds(recorded, edits), nil
+		return withEditHolds(recorded, edits, analysis.Scope.Ports), nil
 	}
 	// Assessing evaluates the revision's Portfiles: another's go through
 	// the door only where the person allowed them (the trust rule).
@@ -125,31 +125,37 @@ func (e *Engine) revisionAssessments(ctx context.Context, branch model.BranchID,
 			return nil, err
 		}
 	}
-	return withEditHolds(append(found, made...), edits), nil
+	return withEditHolds(append(found, made...), edits, analysis.Scope.Ports), nil
 }
 
-// editHeldRules are the rules of the findings an update holds for what it
-// couldn't do itself, as against what upstream's change means: a crate
-// list it left as it was (crates-unlocked), a block regenerated under a
-// hook it couldn't check (manifest-hook). No assessment of a revision
-// finds them again, since none prepares the update; they belong to the
-// branch and the port (#242).
-var editHeldRules = []string{cratesUnlockedRule, manifestHookRule}
+// editHeldRules are the rules of the findings only an update makes, as
+// against what upstream's change between two trees means: a crate list it
+// left as it was (crates-unlocked), a block regenerated under a hook it
+// couldn't check (manifest-hook), an archive MacPorts' mirror holds
+// another file of (mirror-conflict), and a repository GitHub answers by
+// another name, not followed (upstream-moved, upstream-renamed-port,
+// upstream-transferred). No assessment of a revision finds them again,
+// since none prepares the update; each was dropped by one more commit, so
+// they belong to the branch and the port (#242).
+var editHeldRules = []string{cratesUnlockedRule, manifestHookRule, mirrorConflictRule, upstreamMovedRule, upstreamRenamedPortRule, upstreamTransferredRule}
 
 // withEditHolds are a revision's assessments with what the branch's
 // updates held for a look carried into them, by port: the held findings
 // of the port's latest update, which replaces an earlier one's, where it
-// moves to another release or holds anything itself; a move followed at
-// the same release replaces nothing. A port with no assessment of the
-// revision gets one of those findings alone, with no directory, so how
-// far its files are assessed is still said (assessedHolds). One more
-// commit, a rebase, or a branch ahead of its base primed nothing, and
-// dropped the hold (#242). Accepting it is accepting any concern:
-// holds.allow or a decision on its rule.
-func withEditHolds(assessments []model.Assessment, edits []model.Edit) []model.Assessment {
+// moves to another release or holds anything itself. A later edit at the
+// same release that holds nothing, as a move followed alone, answers the
+// moves held and nothing else. Only a port whose directory is among
+// changed, those the revision changes against its base, carries one: an
+// update undone, its port no longer changed, holds nothing. A port with no
+// assessment of the revision gets one of those findings alone, with no
+// directory, so how far its files are assessed is still said
+// (assessedHolds). One more commit, a rebase, or a branch ahead of its
+// base primed nothing, and dropped the hold (#242). Accepting it is
+// accepting any concern: holds.allow or a decision on its rule.
+func withEditHolds(assessments []model.Assessment, edits []model.Edit, changed []string) []model.Assessment {
 	type held struct {
-		version string
-		changes []model.UpstreamChange
+		version, directory string
+		changes            []model.UpstreamChange
 	}
 	byPort := map[string]held{}
 	for _, edit := range edits {
@@ -169,13 +175,18 @@ func withEditHolds(assessments []model.Assessment, edits []model.Edit) []model.A
 			version = edit.Release.Version
 		}
 		if before, ok := byPort[edit.Port]; ok && len(changes) == 0 && version == before.version {
+			// A later edit at the same release that holds nothing, as
+			// update --follow-moves's edit of a move alone, answers the
+			// moves it was held for, and nothing else.
+			before.changes = slices.DeleteFunc(before.changes, func(c model.UpstreamChange) bool { return c.Kind == "moved" })
+			byPort[edit.Port] = before
 			continue
 		}
-		byPort[edit.Port] = held{version: version, changes: changes}
+		byPort[edit.Port] = held{version: version, directory: edit.Directory, changes: changes}
 	}
 	for _, port := range slices.Sorted(maps.Keys(byPort)) {
 		changes := byPort[port].changes
-		if len(changes) == 0 {
+		if len(changes) == 0 || !slices.Contains(changed, byPort[port].directory) {
 			continue
 		}
 		i := slices.IndexFunc(assessments, func(a model.Assessment) bool { return a.Port == port })

@@ -96,10 +96,12 @@ as `not-distributable`, since the builders would keep no binary archive of it;
 
 A Cargo port whose new source ships no `Cargo.lock`, its crate list left as
 the old version had it, holds as `crates-unlocked` whether or not its check
-passes, since a check builds the default variants only. Like `manifest-hook`,
-a hook's effect on a regenerated list that couldn't be checked, it belongs to
-the branch and the port: later commits and rebases keep it, and only a later
-update of the port replaces it. Read the list against the new source, then
+passes, since a check builds the default variants only. Like the other holds
+only an update finds (`manifest-hook`, `mirror-conflict`, and an unfollowed
+`upstream-moved`, `upstream-renamed-port` or `upstream-transferred`), it
+belongs to the branch and the port: later commits and rebases keep it while the
+branch still changes the port, and only a later update of the port replaces
+it, or for a move, `update --follow-moves`. Read the list against the new source, then
 decide on it as on any concern below, or let `holds.allow` name it.
 
 A build that links a port's library its Portfile doesn't declare holds as
