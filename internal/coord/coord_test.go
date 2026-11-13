@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -77,6 +78,17 @@ func (f fixture) session(t *testing.T, pid int, kind model.SessionKind) *Session
 	s, err := f.c.StartFor(t.Context(), Process{PID: pid, Start: "test"}, kind, "test")
 	require.NoError(t, err)
 	return s
+}
+
+// stored is the session as the store holds it.
+func (f fixture) stored(t *testing.T, id model.SessionID) model.Session {
+	t.Helper()
+	var got model.Session
+	require.NoError(t, f.c.Store.View(t.Context(), f.c.Repository, func(r store.Reader) (err error) {
+		got, err = r.Session(id)
+		return err
+	}))
+	return got
 }
 
 func TestALiveHolderKeepsItsLease(t *testing.T) {
@@ -346,4 +358,71 @@ func TestSystemLivenessKnowsAReplacedOrExitedProcess(t *testing.T) {
 	alive, err = System{}.Alive(proc)
 	require.NoError(t, err)
 	require.False(t, alive, "an exited process is dead at once")
+}
+
+// A heartbeat that starts while End is under way never beats: End looked
+// for a heartbeat to stop, found none, and one registered before End wrote
+// the session ended, so it beat an ended session until the command ended
+// and the store was closed under it (#252).
+func TestAHeartbeatStartingAsTheSessionEndsNeverBeats(t *testing.T) {
+	f := setup(t)
+	f.c.Now, f.c.Heartbeat = nil, 10*time.Millisecond
+	s := f.session(t, 100, model.SessionForeground)
+	paused, release := make(chan struct{}), make(chan struct{})
+	s.endPaused = func() {
+		close(paused)
+		<-release
+	}
+	ended := make(chan error, 1)
+	go func() { ended <- s.End(t.Context()) }()
+	<-paused
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.KeepAlive(t.Context())
+	}()
+	// KeepAlive has either returned or registered before End goes on.
+	require.Eventually(t, func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.stopBeating != nil
+	}, testsupport.Settle, time.Millisecond)
+	close(release)
+	require.NoError(t, <-ended)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a heartbeat that started as the session ended went on beating")
+	}
+	endedAt := f.stored(t, s.ID()).HeartbeatAt
+	time.Sleep(50 * time.Millisecond)
+	stored := f.stored(t, s.ID())
+	require.True(t, stored.HeartbeatAt.Equal(endedAt), "no beat lands after End: %v, ended at %v", stored.HeartbeatAt, endedAt)
+}
+
+// End returns only once a running heartbeat has stopped, so the caller
+// may close the store after it: check closed the store with a heartbeat
+// still running (#252).
+func TestEndWaitsForTheHeartbeatToStop(t *testing.T) {
+	f := setup(t)
+	f.c.Now, f.c.Heartbeat = nil, 10*time.Millisecond
+	s := f.session(t, 100, model.SessionForeground)
+	var stopped atomic.Bool
+	s.beatStopping = func() {
+		time.Sleep(50 * time.Millisecond)
+		stopped.Store(true)
+	}
+	go s.KeepAlive(t.Context())
+	require.Eventually(t, func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.stopBeating != nil
+	}, testsupport.Settle, time.Millisecond)
+	require.NoError(t, s.End(t.Context()))
+	require.True(t, stopped.Load(), "End returned with the heartbeat still running")
 }
