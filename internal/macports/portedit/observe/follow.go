@@ -85,6 +85,9 @@ type scope struct {
 	// returns is set where a watched value reaches what the procedure
 	// returns.
 	returns bool
+	// phase is set inside a post-extraction phase or hook's body, which
+	// runs after the source is fetched.
+	phase bool
 }
 
 // follower holds one following's state across its passes.
@@ -287,6 +290,28 @@ func (f *follower) walk(si int, script *syntax.Script, sc *scope) bool {
 				return false
 			}
 		}
+		// A dynamic call, a command word that is no literal or eval of
+		// built text, can't be shown not to be a watched procedure: where
+		// one exists, it fails the context outside a benign sink's
+		// arguments and phase bodies (architecture's condition 5).
+		if len(f.procs) > 0 && !sc.phase && f.dynamicOutsideSinks(src, cmd) {
+			return false
+		}
+		// A watched option or procedure named to a handler, a trace or a
+		// callback runs whatever that is when it's set or read, as the
+		// github group's option handlers write master_sites and distname
+		// (architecture's condition 1, as A2 for a procedure).
+		if registrations[name] {
+			for _, word := range cmd.Words[1:] {
+				if named, ok := word.Literal(src); ok {
+					if f.watched[named] || f.procs[named] || f.carried[named] {
+						return false
+					}
+					f.placed[si] = append(f.placed[si], word.Span)
+				}
+			}
+			continue
+		}
 		switch {
 		case name == "proc":
 			// Definitions are judged apart, the watched ones' bodies by
@@ -401,7 +426,11 @@ func (f *follower) walk(si int, script *syntax.Script, sc *scope) bool {
 		}
 		for i, word := range cmd.Words[1:] {
 			if body, ok := word.BracedScript(src); ok {
-				if !f.walk(si, body, sc) {
+				phase := sc.phase
+				sc.phase = phase || phaseHook.MatchString(name)
+				ok := f.walk(si, body, sc)
+				sc.phase = phase
+				if !ok {
 					return false
 				}
 				continue
@@ -432,6 +461,133 @@ func (f *follower) walk(si int, script *syntax.Script, sc *scope) bool {
 		}
 	}
 	return true
+}
+
+// registrations are the commands that name an option, variable or
+// procedure to run something when it's set or read, or to call it by
+// another name.
+var registrations = map[string]bool{"option_proc": true, "trace": true, "port::register_callback": true, "rename": true, "interp": true}
+
+// dynamicOutsideSinks reports a command that calls what can't be named
+// from the source, outside a benign sink's arguments: a command word that
+// is no literal, eval or uplevel of anything but a braced script, or such
+// a call in a command substitution of its arguments.
+func (f *follower) dynamicOutsideSinks(src []byte, cmd syntax.Command) bool {
+	dynamic := func(cmd syntax.Command) bool {
+		name, literal := cmd.Name(src)
+		if !literal {
+			return true
+		}
+		if name == "eval" || name == "uplevel" {
+			for _, word := range cmd.Words[1:] {
+				if _, braced := word.BracedScript(src); !braced {
+					if _, plain := word.Literal(src); !plain || name == "eval" {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+	if dynamic(cmd) {
+		return true
+	}
+	name, _ := cmd.Name(src)
+	if sinkFor(name) {
+		return false
+	}
+	var inScript func(*syntax.Script) bool
+	var inSegments func([]syntax.Segment) bool
+	var inCommand func(syntax.Command, bool) bool
+	// inExpression reports a dynamic call in an expression's window; one
+	// that doesn't parse counts as one.
+	inExpression := func(window textedit.Span) bool {
+		e, errs := syntax.ParseExpr(src, window)
+		if len(errs) > 0 {
+			return true
+		}
+		found := false
+		syntax.WalkExpr(e, func(node syntax.Expr) bool {
+			switch node := node.(type) {
+			case syntax.Call:
+				found = found || inScript(node.Script)
+				return false
+			case syntax.Text:
+				found = found || inSegments(node.Word.Segments)
+				return false
+			}
+			return true
+		})
+		return found
+	}
+	inSegments = func(segments []syntax.Segment) bool {
+		for _, segment := range segments {
+			switch value := segment.(type) {
+			case syntax.Quoted:
+				if inSegments(value.Segments) {
+					return true
+				}
+			case syntax.CmdSub:
+				if inScript(value.Script) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	// inCommand reports a dynamic call in a command's substitutions, its
+	// braced conditions and expressions, and its control bodies; own
+	// includes the command itself.
+	inCommand = func(cmd syntax.Command, own bool) bool {
+		if len(cmd.Words) == 0 {
+			return false
+		}
+		if own && dynamic(cmd) {
+			return true
+		}
+		for _, word := range cmd.Words[1:] {
+			if inSegments(word.Segments) {
+				return true
+			}
+		}
+		name, _ := cmd.Name(src)
+		if name == "expr" {
+			for _, word := range cmd.Words[1:] {
+				if _, braced := word.BracedScript(src); braced || len(word.Segments) == 1 {
+					if inExpression(word.Inner()) {
+						return true
+					}
+				}
+			}
+		}
+		if controls, bodies, ok := cmd.Control(src); ok {
+			if name == "if" || name == "while" || name == "for" {
+				for _, word := range controls {
+					if inExpression(word.Inner()) {
+						return true
+					}
+				}
+			}
+			if own {
+				for _, body := range bodies {
+					if script, ok := body.BracedScript(src); ok && inScript(script) {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+	inScript = func(script *syntax.Script) bool {
+		for _, nested := range script.Direct() {
+			if inCommand(nested, true) {
+				return true
+			}
+		}
+		return false
+	}
+	// The command's own bodies are walked as scripts in their turn.
+	return inCommand(cmd, false)
 }
 
 // quotedBody is the script a quoted last word of a variant, subport or

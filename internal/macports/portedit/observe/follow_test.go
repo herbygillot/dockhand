@@ -54,6 +54,22 @@ func TestAWatchedProcedureIsFollowedWithinItsBounds(t *testing.T) {
 		{"a literal word naming a watched procedure", returns + "build.args p", true},
 		{"a literal word naming it in distfiles", "distfiles build.cmd", true},
 		{"a bracketed word naming it", "build.args [list build.cmd]", true},
+		// Architecture's conditions on accepting A and B.
+		{"a port's own option, read by distfiles", returns + "options ksharch\ndefault ksharch {[p]}\ndistfiles x-${ksharch}.tgz", true},
+		{"a port's own option, read in phase bodies", returns + "options ksharch\ndefault ksharch {[p]}\npost-build {\n    system \"ls arch/${ksharch}\"\n}\ndestroot {\n    xinstall -m 0755 arch/${ksharch}/ksh ${destroot}${prefix}/bin\n}", false},
+		{"a two-step chain of the port's own options to master_sites", returns + "default a {[p]}\ndefault b {${a}}\nmaster_sites ${b}", true},
+		{"a watched option given a handler", returns + "options ksharch\ndefault ksharch {[p]}\noption_proc ksharch handler\nproc handler {option action args} {}", true},
+		{"a watched option traced", returns + "options ksharch\ndefault ksharch {[p]}\ntrace add variable ksharch write handler\nproc handler {args} {}", true},
+		{"a PortGroup-style option whose handler writes master_sites", returns + "options gh.version\noption_proc gh.version gh.handler\nproc gh.handler {option action args} {\n    if {$action eq \"set\"} {\n        master_sites https://x/$args/\n    }\n}\ndefault gh.version {[p]}", true},
+		{"an uncalled procedure writing distfiles", "proc f {} {\n    global build.cmd\n    distfiles x-${build.cmd}.tgz\n    return x\n}", true},
+		{"mentions after a global, judged", "proc f {} {\n    global build.cmd\n    git.branch ${build.cmd}\n    return x\n}", true},
+		{"a dynamic call into a set", "proc p_y {} {\n    global build.cmd\n    return ${build.cmd}\n}\nset x p\nset v [${x}_y]", true},
+		{"eval of built text", "proc p_y {} {\n    global build.cmd\n    return ${build.cmd}\n}\nset s [string cat p _y]\neval $s", true},
+		{"a dynamic call in a condition", "proc p_y {} {\n    global build.cmd\n    return ${build.cmd}\n}\nset x p\nif {[${x}_y] eq \"\"} {distfiles a}", true},
+		{"a dynamic call in a nested expression", "proc p_y {} {\n    global build.cmd\n    return ${build.cmd}\n}\nset x p\nset v [expr {[${x}_y] eq {}}]", true},
+		{"a dynamic call in a build option", "proc p_y {} {\n    global build.cmd\n    return ${build.cmd}\n}\nset x p\nbuild.args [${x}_y]", false},
+		{"a dynamic call in a phase body", "proc p_y {} {\n    global build.cmd\n    return ${build.cmd}\n}\nset x p\npost-build {\n    set v [${x}_y]\n}", false},
+		{"a dynamic call with no watched procedure", "set x p\nset v [${x}_y]", false},
 	} {
 		require.Equal(t, c.host, b.tolerate(t, c.contents, getmake), "%s", c.name)
 	}
@@ -163,4 +179,8 @@ func TestAQuotedVariantBodyIsWalkedAsAScript(t *testing.T) {
 	require.False(t, b.tolerate(t, writes, getmake), "a quoted body setting configure.args")
 	reads := "variant x description {x} \"\n    distfiles x-[file tail ${build.cmd}].tgz\n\""
 	require.True(t, b.tolerate(t, reads, getmake), "a quoted body putting build.cmd in distfiles")
+	// Substituted as the Portfile is read, whatever the selection: a
+	// watched value in a command word names the command.
+	command := "variant x description {x} \"\n    ${build.cmd} foo\n\""
+	require.True(t, b.tolerate(t, command, getmake), "a quoted body whose command word is build.cmd's value")
 }
