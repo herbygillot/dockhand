@@ -28,7 +28,7 @@ func AcceptanceProblem(ev evidence.Evidence, accept []string, atBase map[string]
 			if builds := ev.BuildsToAccept(port); len(builds) > 1 {
 				var names []string
 				for _, build := range builds {
-					names = append(names, "--accept '"+ev.AcceptName(build)+"'")
+					names = append(names, "--accept "+acceptWord(ev.AcceptName(build)))
 				}
 				what := "failed in"
 				if !builds[0].Failing() {
