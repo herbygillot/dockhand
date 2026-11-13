@@ -162,7 +162,8 @@ Ctrl-C has two meanings. When the check runs in the foreground here, it stops
 that run and keeps completed results. When another serve process drives the
 check and you are only following, it stops following; the check continues. Use
 status or wait to see which state you actually have before replacing or
-cancelling it.
+cancelling it. A closed terminal or a dropped SSH session stops the command as
+Ctrl-C does.
 
 For work that should survive your terminal or agent invocation ending,
 `check -d` queues and returns. Serve drives it, or dockhand starts a background

@@ -336,8 +336,11 @@ script's own to stop.
 ## Run in the foreground or queue it
 
 Without `serve`, an ordinary check runs here. Ctrl-C stops that work, preserving
-completed results. With `serve` leading, it runs the check and this command
-follows; Ctrl-C then stops following, not the service's check.
+completed results, and so does closing the terminal or losing the SSH session
+it runs in: the hangup stops the check as Ctrl-C does, stopping a Tart VM and
+deleting its clone, even though nothing can show its output any more. With
+`serve` leading, it runs the check and this command follows; Ctrl-C then stops
+following, not the service's check.
 
 ```sh
 dockhand check -d

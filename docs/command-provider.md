@@ -24,7 +24,7 @@ The command runs in a session of its own, with no terminal. A check that stops e
 - it is canceled with `dockhand cancel`;
 - `check --replace` replaces it;
 - serve stops;
-- you press Ctrl-C.
+- you press Ctrl-C, or the terminal running the check closes.
 
 This prevents child processes such as `port` from keeping the MacPorts lock after the check stops. The script has no terminal, so it must run without prompts, including `sudo` password prompts. A command that requires a terminal fails immediately and records the error in `command.log`.
 
