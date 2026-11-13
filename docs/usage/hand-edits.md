@@ -284,3 +284,9 @@ make a dependency edited elsewhere in the same branch visible. Use a Dockhand
 check for a branch with changed dependencies, or deliberately configure your own
 temporary MacPorts source overlay and keep its port index current. Dockhand does
 not add worktrees to your system's `sources.conf`.
+
+An assessment finding with code `evaluation-unavailable` means the Tcl worker
+failed to supply an evaluation, rather than reaching a judgment about the
+Portfile. The survey comparison lists such ports separately as `not evaluated`
+and excludes them from outcome moves, guard changes and comparable Portfile
+coverage. Retry those evaluations before judging a change.

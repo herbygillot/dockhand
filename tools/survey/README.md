@@ -121,3 +121,8 @@ The comparison covers the ports both journals hold:
 - fetches refused then accepted;
 - Portfiles fully covered;
 - where the ports that stop, stop.
+
+A comparison reports Tcl worker failures (`evaluation-unavailable`) separately
+as **not evaluated**, naming whether the baseline, new run or both lacked an
+evaluation. Those ports contribute no verdict movement or guard change; their
+Portfiles are excluded from comparable fully-covered totals on both sides.

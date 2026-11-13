@@ -151,3 +151,21 @@ func TestASelectionIsRecordedByItsPorts(t *testing.T) {
 	require.Equal(t, "every port", selectionOf(portsurvey.Selection{All: true}))
 	require.Equal(t, "categories devel,textproc", selectionOf(portsurvey.Selection{Categories: []string{"textproc", "devel"}}))
 }
+
+func TestCompareSeparatesAWorkerThatDidNotEvaluate(t *testing.T) {
+	dir := t.TempDir()
+	base, next := filepath.Join(dir, "base.jsonl"), filepath.Join(dir, "next.jsonl")
+	write := func(path, dead string) {
+		rows := `{"Selector":"ok","Outcome":"input-found","Portfile":"devel/ok/Portfile"}` + "\n" + dead + "\n"
+		require.NoError(t, os.WriteFile(path, []byte(rows), 0o600))
+	}
+	write(base, `{"Selector":"worker","Outcome":"input-found","Portfile":"devel/worker/Portfile","Coverage":[{"Fetch":{"Guards":["guard"]}}]}`)
+	write(next, `{"Selector":"worker","Outcome":"unknown","Portfile":"devel/worker/Portfile","Findings":[{"Check":"evaluation","Status":"unknown","Code":"evaluation-unavailable"}]}`)
+	var out bytes.Buffer
+	require.NoError(t, compareJournals(&out, base, next, 10, true))
+	require.Contains(t, out.String(), "not evaluated: 1\n  worker: new\n")
+	require.Contains(t, out.String(), "regressions: 0")
+	require.NotContains(t, out.String(), "input-found → unknown")
+	require.Contains(t, out.String(), "fetch guards lost 0")
+	require.Contains(t, out.String(), "Portfiles fully covered: 1 → 1")
+}

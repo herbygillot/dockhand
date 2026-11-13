@@ -57,6 +57,17 @@ func loadJournal(path string) (map[string]assessed, string, error) {
 	return ports, commit, scanner.Err()
 }
 
+// notEvaluated distinguishes a worker that supplied no judgment from an
+// inconclusive reading of the Portfile (#253, part b).
+func (p assessed) notEvaluated() bool {
+	for _, f := range p.Findings {
+		if f.Code == "evaluation-unavailable" {
+			return true
+		}
+	}
+	return false
+}
+
 // firstStop is the first finding that stopped a port, as the baseline
 // survey bucketed them.
 func (p assessed) firstStop() string {
@@ -123,13 +134,35 @@ func compareJournals(out io.Writer, basePath, newPath string, top int, unchecked
 	fmt.Fprintf(out, "baseline %s at %s: %d ports\nnew      %s at %s: %d ports\nshared %d; only in the baseline %d; only in the new %d\n",
 		basePath, shortID(baseCommit), len(base), newPath, shortID(nextCommit), len(next), len(shared), onlyBase, onlyNew)
 
+	var comparable, notEvaluated []string
+	excludedFiles := map[string]bool{}
+	for _, selector := range shared {
+		b, n := base[selector], next[selector]
+		if b.notEvaluated() || n.notEvaluated() {
+			where := "new"
+			if b.notEvaluated() {
+				where = "baseline"
+				if n.notEvaluated() {
+					where = "both"
+				}
+			}
+			notEvaluated = append(notEvaluated, selector+": "+where)
+			excludedFiles[b.Portfile], excludedFiles[n.Portfile] = true, true
+		} else {
+			comparable = append(comparable, selector)
+		}
+	}
+	fmt.Fprintf(out, "\nnot evaluated: %d\n", len(notEvaluated))
+	for _, line := range head(notEvaluated, top) {
+		fmt.Fprintln(out, "  "+line)
+	}
 	before, after := map[string]int{}, map[string]int{}
 	moves := map[string]int{}
 	var regressions, improvements []string
 	findingChanges := map[string]int{}
 	changedFindings, guardsLost, guardsChanged, refusedAccepted, acceptedRefused := 0, 0, 0, 0, 0
 	baseStops, newStops := map[string]int{}, map[string]int{}
-	for _, selector := range shared {
+	for _, selector := range comparable {
 		b, n := base[selector], next[selector]
 		before[b.Outcome]++
 		after[n.Outcome]++
@@ -192,7 +225,13 @@ func compareJournals(out io.Writer, basePath, newPath string, top int, unchecked
 		fmt.Fprintf(out, "  %6d  %s\n", findingChanges[change], change)
 	}
 	fmt.Fprintf(out, "\nfetch guards lost %d, changed %d; refused then accepted %d, accepted then refused %d\n", guardsLost, guardsChanged, refusedAccepted, acceptedRefused)
-	fmt.Fprintf(out, "Portfiles fully covered: %d → %d\n", fullyCovered(base, shared), fullyCovered(next, shared))
+	var coveredScope []string
+	for _, selector := range comparable {
+		if !excludedFiles[base[selector].Portfile] && !excludedFiles[next[selector].Portfile] {
+			coveredScope = append(coveredScope, selector)
+		}
+	}
+	fmt.Fprintf(out, "Portfiles fully covered: %d → %d\n", fullyCovered(base, coveredScope), fullyCovered(next, coveredScope))
 	fmt.Fprintln(out, "\nwhere ports stop (first stopping finding)")
 	for _, stop := range byCount(merge(baseStops, newStops), top) {
 		fmt.Fprintf(out, "  %6d → %6d  %s\n", baseStops[stop], newStops[stop], stop)
