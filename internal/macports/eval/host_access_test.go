@@ -445,3 +445,34 @@ func TestANestedOrComputedPathToAFetchFieldIsHostState(t *testing.T) {
 		require.True(t, inconclusive, "%s", body)
 	}
 }
+
+// Architecture's condition on round 2 of #110: a command in a substitution
+// that writes no field, exec, a file read or a harmless built-in, still
+// hands its result on, so a closed read of build.jobs it takes reaches
+// wherever the substitution lands, and a fetch field there leaves the
+// context inconclusive, directly or through a variable. An uncaught exec
+// in a modelled context ends the evaluation on its closed answer, a
+// context left, never explained; observe's
+// TestANestedCommandIsJudgedForWhatItDoes holds the verdict on its shapes.
+func TestANestedValueCommandsResultIsJudgedWhereItLands(t *testing.T) {
+	t.Parallel()
+	shapes := []string{"distfiles x-[NESTED].tgz", "set m [NESTED]\ndistfiles x-$m.tgz"}
+	for _, nested := range []string{"file tail ${build.jobs}", "string toupper ${build.jobs}", "lindex ${build.jobs} 0"} {
+		for _, shape := range shapes {
+			body := strings.ReplaceAll(shape, "NESTED", nested)
+			inconclusive, _, port := knownGapVerdict(t, monterey, nil, "PortSystem 1.0\nname effects\nversion 1\n"+body+"\n")
+			require.NotEmpty(t, closedCalls(port), "%s", body)
+			require.True(t, inconclusive, "%s: %v", body, port.Problems)
+		}
+	}
+	for _, shape := range shapes {
+		body := strings.ReplaceAll(shape, "NESTED", "exec echo ${build.jobs}")
+		e := liveEvaluator(t)
+		tree := fixtureTree(t)
+		putFile(t, tree.Root(), "devel/effects/Portfile", "PortSystem 1.0\nname effects\nversion 1\n"+body+"\n")
+		bound, err := tree.Select(model.Target{Name: "effects", Portfile: "devel/effects/Portfile"})
+		require.NoError(t, err)
+		_, err = e.Observe(t.Context(), bound, macports.ObservationRequest{Declarations: true, Platform: monterey})
+		require.ErrorIs(t, err, macports.ErrUnanswered, "%s: the closed exec ends the evaluation", body)
+	}
+}
