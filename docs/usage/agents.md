@@ -389,14 +389,16 @@ DOCKHAND_PROBE_GATE_REPORT=<gate.json> \
 go test -tags surveymeasure ./tools/survey -run '^TestPerturbationPilotGate$' -v
 ```
 
-It opens both records read-only, verifies capture checksums, requires `same`
-for every eligible context of the eight named pilot ports, and checks the
-eight `differs` fixtures plus the exact-value `same` fixture. All fixtures must
-have a benign follower result and nonzero substitutions. Missing records skip
+It opens both records read-only, verifies capture checksums and probe policy
+version 2, and recomputes the class and changed excluded names from both plans.
+Every substituted real pilot context must be `same` or `same, build-only moved`;
+successful zeros must be `not perturbed`. It checks eight `differs` fixtures,
+the exact-value `same` fixture, and a `same, build-only moved` fixture. All ten
+fixtures must have a benign follower result and nonzero substitutions. Missing records skip
 the test and do not establish a passing gate. A failed gate forbids the whole
 tree run; a pass still needs architecture's read, the free host and tools/heavy.
 
-`TestPerturbationFixtureGate` makes the nine-case record. Set
+`TestPerturbationFixtureGate` makes the ten-case record. Set
 `DOCKHAND_PROBE_FIXTURE_DB` to a fresh scratch path to retain it, optionally
 `DOCKHAND_PILOT_TCLSH` for the owned Base wrapper. Fixtures use numeric
 `build.jobs` as V, and fix unrelated exported tool options so that the exact

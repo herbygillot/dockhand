@@ -31,7 +31,7 @@ func TestPerturbationFixtureGate(t *testing.T) {
 		_, err := os.Stat(db)
 		require.True(t, os.IsNotExist(err), "fixture pilot needs a fresh record")
 	}
-	rec, err := OpenRecord(t.Context(), db, "current", true, RunInfo{Tree: gitRoot, Measurement: "perturbation-fixtures-v1"}, gitRoot, "", nil)
+	rec, err := OpenRecord(t.Context(), db, "current", true, RunInfo{Tree: gitRoot, Measurement: "perturbation-fixtures-v2"}, gitRoot, "", nil)
 	require.NoError(t, err)
 	require.NoError(t, rec.Begin(source))
 	for _, f := range []struct{ name, body, want string }{
@@ -44,6 +44,7 @@ func TestPerturbationFixtureGate(t *testing.T) {
 		{"computed-name", `distfiles x-[set [string cat build .jobs]].tgz`, "differs"},
 		{"control-exit", "set m ${build.jobs}\nif {$m > 8} {return}\ndistfiles later.tgz", "differs"},
 		{"exact-value", "set m ${build.jobs}\nif {$m == 17} {return}\ndistfiles later.tgz", "same"},
+		{"build-only", `build.args -j${build.jobs}`, probeBuildOnlyMoved},
 	} {
 		t.Run(f.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -51,7 +52,8 @@ func TestPerturbationFixtureGate(t *testing.T) {
 			target := model.Target{Name: name, Portfile: "devel/" + name + "/Portfile"}
 			// Hold unrelated exported tool options fixed. V is the CPU-derived
 			// build.jobs value; otherwise a changed build.cmd would mask the exact
-			// value fixture's deliberately missed branch in the all-options compare.
+			// value fixture's deliberately missed branch. The build-only case
+			// intentionally varies an excluded ReadOptions entry.
 			data := []byte("PortSystem 1.0\nname " + name + "\nversion 1\ncategories devel\nlicense MIT\nmaster_sites https://example.invalid\nchecksums sha256 " + strings.Repeat("a", 64) + " size 2\nbuild.cmd make\nconfigure.cmd ./configure\n" + f.body + "\n")
 			file := filepath.Join(root, target.Portfile)
 			require.NoError(t, os.MkdirAll(filepath.Dir(file), 0700))
@@ -77,12 +79,15 @@ func TestPerturbationFixtureGate(t *testing.T) {
 			if cap.Probe.After != nil {
 				after = cap.Probe.After.Distfiles
 			}
-			t.Logf("gate: on-inconclusive=%v probe=%s field=%s code=%s standins=%d seconds=%.4f before=%v after=%v", pair.On.Inconclusive, cap.Probe.Status, cap.Probe.Field, cap.Probe.ErrorCode, cap.Probe.Standins, cap.Probe.Seconds, cap.Probe.Before.Distfiles, after)
+			t.Logf("gate: on-inconclusive=%v probe=%s moved=%v field=%s code=%s standins=%d seconds=%.4f before=%v after=%v", pair.On.Inconclusive, cap.Probe.Status, cap.Probe.BuildOnlyMoved, cap.Probe.Field, cap.Probe.ErrorCode, cap.Probe.Standins, cap.Probe.Seconds, cap.Probe.Before.Distfiles, after)
 			assert.Equal(t, pair, cap.Pair, "the experiment cannot change the ordinary verdict")
 			assert.False(t, pair.On.Inconclusive, "the fixture exercises an accepted follower shape")
 			assert.True(t, cap.Probe.FollowerBenign)
 			assert.Greater(t, cap.Probe.Standins, 0)
 			assert.Equal(t, f.want, cap.Probe.Status)
+			if f.want == probeBuildOnlyMoved {
+				assert.Equal(t, []string{"build.args"}, cap.Probe.BuildOnlyMoved)
+			}
 		})
 	}
 	require.NoError(t, rec.Close())

@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -71,20 +73,7 @@ func readProbeGate(t *testing.T, file string, expected map[string]string, fixtur
 		} else {
 			row.probeSummary = *c.Probe.summary()
 		}
-		row.Passed = row.Status == want && c.Pair.Complete && c.Pair.Parity
-		if fixtures {
-			row.Passed = row.Passed && !c.Pair.On.Inconclusive && row.FollowerBenign && row.Standins > 0
-		}
-		if c.Probe != nil && c.Probe.After != nil {
-			field := firstProbeDifference(c.Probe.Before, *c.Probe.After)
-			if row.Status == "same" {
-				row.Passed = row.Passed && field == ""
-			} else if row.Status == "differs" {
-				row.Passed = row.Passed && field == row.Field
-			}
-		} else if row.Status == "same" {
-			row.Passed = false
-		}
+		row.Expected, row.Passed = probeGatePass(&c, want, fixtures)
 		passed = passed && row.Passed
 		seen[name]++
 		out = append(out, row)
@@ -127,6 +116,7 @@ func TestPerturbationPilotGate(t *testing.T) {
 		requiredFixtures["probe-"+p] = "differs"
 	}
 	requiredFixtures["probe-exact-value"] = "same"
+	requiredFixtures["probe-build-only"] = probeBuildOnlyMoved
 	var g perturbationGate
 	var missing []string
 	g.Real, g.Missing, g.RealPassed = readProbeGate(t, real, requiredReal, false)
@@ -140,4 +130,75 @@ func TestPerturbationPilotGate(t *testing.T) {
 	}
 	t.Logf("real gate=%v fixtures gate=%v (%d real contexts, %d fixture contexts)", g.RealPassed, g.FixturesPassed, len(g.Real), len(g.Fixtures))
 	assert.True(t, g.Passed, "perturbation pilot gate failed; whole-tree run remains forbidden")
+}
+
+// Gate v2 accepts unperturbed contexts as explicit non-evidence. Only
+// substituted contexts can satisfy either same class; all fixture probes
+// must apply a stand-in, including the known-hole and build-only fixtures.
+func probeGatePass(c *toleranceCapture, expected string, fixture bool) (string, bool) {
+	p := c.Probe
+	if p == nil || p.Version != probeVersion || !p.SubstitutionsKnown || p.After == nil || !c.Pair.Complete || !c.Pair.Parity {
+		return expected, false
+	}
+	if !fixture {
+		if p.Standins == 0 {
+			expected = probeNotPerturbed
+		} else {
+			expected = "same or same, build-only moved"
+		}
+	}
+	field := firstProbeDifference(p.Before, *p.After)
+	moved := buildOnlyProbeChanges(p.Before, *p.After)
+	if field != p.Field || !slices.Equal(moved, p.BuildOnlyMoved) {
+		return expected, false
+	}
+	valid := false
+	switch p.Status {
+	case probeSame:
+		valid = p.Standins > 0 && field == "" && len(moved) == 0
+	case probeBuildOnlyMoved:
+		valid = p.Standins > 0 && field == "" && len(moved) > 0
+	case probeNotPerturbed:
+		valid = p.Standins == 0
+	case probeDiffers:
+		valid = p.Standins > 0 && field != ""
+	}
+	if fixture {
+		return expected, valid && p.Status == expected && p.Standins > 0 && p.FollowerBenign && !c.Pair.On.Inconclusive
+	}
+	return expected, valid && (p.Status == probeSame || p.Status == probeBuildOnlyMoved || p.Status == probeNotPerturbed)
+}
+
+func TestRevisedProbeGateRejectsStaleOrUnsupportedEvidence(t *testing.T) {
+	before := makeProbePlan(macports.PortInfo{Options: map[string]string{"build.cmd": "make", "patchfiles": "old"}}, macports.PortObservation{})
+	after := makeProbePlan(macports.PortInfo{Options: map[string]string{"build.cmd": "standin", "patchfiles": "old"}}, macports.PortObservation{})
+	p := &probeResult{Version: probeVersion, Before: before, After: &after, Standins: 1, FollowerBenign: true}
+	classifyProbePlans(p)
+	c := &toleranceCapture{Pair: tolerancePair{Complete: true, Parity: true}, Probe: p}
+	_, pass := probeGatePass(c, probeSame, false)
+	require.True(t, pass)
+	_, pass = probeGatePass(c, probeBuildOnlyMoved, true)
+	require.True(t, pass)
+	p.BuildOnlyMoved = nil
+	_, pass = probeGatePass(c, probeSame, false)
+	require.False(t, pass, "missing moved names")
+	classifyProbePlans(p)
+	p.Standins = 0
+	classifyProbePlans(p)
+	_, pass = probeGatePass(c, probeSame, false)
+	require.True(t, pass, "native non-evidence is explicit")
+	_, pass = probeGatePass(c, probeSame, true)
+	require.False(t, pass, "fixtures must really perturb")
+	p.Status = probeSame
+	_, pass = probeGatePass(c, probeSame, false)
+	require.False(t, pass, "zero cannot pass as same")
+	p.Standins = 1
+	classifyProbePlans(p)
+	p.Version = 0
+	_, pass = probeGatePass(c, probeSame, false)
+	require.False(t, pass, "old policy records cannot pass")
+	p.Version = probeVersion
+	p.SubstitutionsKnown = false
+	_, pass = probeGatePass(c, probeSame, false)
+	require.False(t, pass, "unknown is not a successful zero")
 }

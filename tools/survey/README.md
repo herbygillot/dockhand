@@ -202,13 +202,16 @@ The whole-tree run requires the fixture/pilot gate and architecture's review.
 The probe misses exact-value tests hit by neither answer and dependencies on
 mixed combinations when all stand-ins vary together. Phase bodies do not run.
 
-Run `TestPerturbationFixtureGate` in a tagged test build to make the nine-case
+Run `TestPerturbationFixtureGate` in a tagged test build to make the ten-case
 fixture record (`DOCKHAND_PROBE_FIXTURE_DB` names a fresh scratch DB). Then run
 `TestPerturbationPilotGate` with `DOCKHAND_PROBE_PILOT_DB` and
 `DOCKHAND_PROBE_GATE_FIXTURES`; optionally retain its JSON table with
 `DOCKHAND_PROBE_GATE_REPORT`. Both inputs are opened read-only. The real gate
-requires every eligible context of the eight pilot ports to be `same`. The
-fixture gate requires eight `differs` results and the exact-value `same`, all
-with a benign follower and a nonzero substitution count. A skipped gate is
+requires every substituted context of the eight pilot ports to be `same` or
+`same, build-only moved`, and successful zero-substitution contexts to be
+`not perturbed`. It checks policy version 2 and recomputes the class and moved
+names from the retained plans. The fixture gate requires eight `differs`, the
+exact-value `same`, and the new build-only movement result, all with a benign
+follower and a nonzero substitution count. A skipped gate is
 not a pass. Architecture review and host/heavy-lock authorization remain
 required after a passing gate.
