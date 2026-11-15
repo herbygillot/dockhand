@@ -459,7 +459,7 @@ func (d *driver) inert(ctx context.Context, revision model.Revision) reuse.Inert
 // object, and the directory's evaluations at the two find nothing else
 // moved (fidelity.DeclaredBetween). As tidy declares what a passed
 // check's builds linked, the check after it reuses them
-// (docs/designs/declare-linked-libraries.md, part 3). Each judgment is
+// (#49). Each judgment is
 // read once; none where nothing evaluates a revision's directory.
 func (d *driver) declared(ctx context.Context, revision model.Revision) reuse.Declared {
 	if d.c.Hooks == nil {

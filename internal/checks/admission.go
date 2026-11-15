@@ -70,9 +70,8 @@ func SourcesCover(have, want model.Plan) bool {
 // FinishedSourcesCover reports whether a finished check's resolved sources
 // stand for another request: a Git source judges same, since what isn't
 // known of a Git fetch stands for nothing, and a tag same or unresolved,
-// since the Portfile's checksums say what an archive was (docs/designs/
-// source-comparison.md, change 1). Its caller asks each Git result what
-// it fetched too.
+// since the Portfile's checksums say what an archive was (#192). Its
+// caller asks each Git result what it fetched too.
 func FinishedSourcesCover(have, want model.Plan) bool {
 	return sourcesStand(have, want, func(standing model.SourceStanding, git bool) bool {
 		return standing == model.SourceSame || !git && standing == model.SourceUnresolved

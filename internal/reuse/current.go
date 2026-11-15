@@ -85,7 +85,7 @@ func Carry(recorded model.TargetInputs, origin model.RunID, identity string, tar
 	// A Git build stands only where it fetched the commit the plan
 	// expects; what isn't known of a Git fetch stands for nothing, and a
 	// build that fetched with Git stands for no plan that doesn't
-	// (docs/designs/source-comparison.md).
+	// (#192).
 	if git == nil && recorded.Fetched != "" || git != nil && git.AgainstFetched(recorded.Fetched) != model.SourceSame {
 		return nil, false
 	}

@@ -623,8 +623,7 @@ func TestCarriedResultsAreSaidOnceForEachEarlierCheck(t *testing.T) {
 
 // A finished check stands for another request only where each Git result's
 // own build fetched the commit the request expects: one that fetched
-// another, or didn't say, stands for nothing (change 1 of docs/designs/
-// source-comparison.md).
+// another, or didn't say, stands for nothing (#192).
 func TestAFinishedCheckStandsWhereEachGitResultFetchedTheSource(t *testing.T) {
 	t.Parallel()
 	environment := model.Environment{Provider: "command"}

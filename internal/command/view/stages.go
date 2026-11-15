@@ -57,7 +57,7 @@ func Where(places config.Places, dir string) string {
 // (and 1 more of its libraries), which it doesn't declare in depends_lib;
 // depends_lib-append port:oniguruma declares it, which dockhand tidy
 // writes", naming the line tidy writes from the check (the omnidiff
-// session's note 2; docs/designs/declare-linked-libraries.md);
+// session's note 2; #49);
 // or, where the links couldn't be read, so nothing is said of them; or,
 // where each is declared, how many ports they map to.
 func LinkWords(finding engine.LinkFinding) string {

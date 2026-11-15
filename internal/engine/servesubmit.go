@@ -113,8 +113,7 @@ func (e *Engine) serveCandidates(ctx context.Context) ([]ServeCandidate, []model
 		// person's tidy would, in a commit of its own; the branch then
 		// waits for its check, which reuses the builds, and submits at
 		// the next pass. Only what tidy can't write holds (the person's
-		// "Write it", 2026-11-04; docs/designs/declare-linked-libraries.md,
-		// part 4).
+		// "Write it", 2026-11-04; #49).
 		if len(plan.Undeclared) > 0 {
 			if declared, err := e.declareUnattended(ctx, branch); err == nil && declared {
 				continue

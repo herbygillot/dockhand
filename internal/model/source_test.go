@@ -49,9 +49,9 @@ func TestWhatABuildFetchedIsAnInputOnlyWhereItFetchedWithGit(t *testing.T) {
 	require.NotEqual(t, fetched.Key(), other.Key(), "another commit fetched is another build")
 }
 
-// One judgment of two readings of a source, every row of the design's two
+// One judgment of two readings of a source, every row of its two
 // tables in both argument orders where the order can matter, and a record
-// from before plans kept the commit (docs/designs/source-comparison.md).
+// from before plans kept the commit (#192).
 func TestTwoReadingsOfASourceAreJudgedOneWay(t *testing.T) {
 	commit, other := ObjectID(strings.Repeat("a", 40)), ObjectID(strings.Repeat("b", 40))
 	at := time.Date(2026, 11, 11, 0, 0, 0, 0, time.UTC)

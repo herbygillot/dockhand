@@ -53,7 +53,7 @@ func TestPlanCoverageRequiresTheSameResolvedSources(t *testing.T) {
 // a finished check like that stands for no other request, since what
 // isn't known of a Git fetch stands for nothing. A tag's unresolved
 // readings stand either way, the Portfile's checksums saying what was
-// built (change 1 of docs/designs/source-comparison.md).
+// built (#192).
 func TestAnUnresolvedGitSourceJoinsAndDoesntStand(t *testing.T) {
 	t.Parallel()
 	environment := model.Environment{Provider: "command"}

@@ -284,7 +284,7 @@ func TestABuildIsCarriedOverAChangeThatBuildsNothingDifferently(t *testing.T) {
 // A build is carried over a Portfile that only declares ports it had
 // active, as tidy declares what a check found it linking, the ports
 // declared said; one declaring a port it didn't have active builds again
-// (#49; docs/designs/declare-linked-libraries.md, part 3).
+// (#49).
 func TestABuildIsCarriedOverADeclarationOfWhatItHadActive(t *testing.T) {
 	recorded := model.NewTargetInputs("origin a", "devel/omnidiff", "11", "22", nil,
 		[]model.ActivePort{{Name: "libiconv", Spec: "@1.18_0", Directory: "textproc/libiconv", Tree: "33", Archive: "sha256:44"}})

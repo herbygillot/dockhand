@@ -47,7 +47,7 @@ func (s GitSource) Expected() string {
 }
 
 // SourceStanding is what one reading of a source says of another
-// (docs/designs/source-comparison.md): the one judgment joining, coverage,
+// (#192): the one judgment joining, coverage,
 // evidence, reuse, a run's verdict and submit read, each with its own
 // policy for what it isn't told.
 type SourceStanding int

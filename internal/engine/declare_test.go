@@ -15,7 +15,7 @@ import (
 // declaring, tidy declares in a commit of its own, after the branch's,
 // with the check's evidence in its body; serve does it unattended where
 // it held, and the branch waits for its check, which reuses the build
-// (#49; docs/designs/declare-linked-libraries.md, parts 2 and 4).
+// (#49).
 func TestTidyDeclaresWhatTheCheckFoundLinked(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
