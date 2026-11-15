@@ -8,9 +8,10 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
-func perturbContext(ctx context.Context, observer macports.Observer, snapshot macports.Snapshot, info macports.PortInfo, c *toleranceCapture) *probeResult {
+func perturbContext(ctx context.Context, observer macports.Observer, sourceIdentity model.Source, native model.Platform, info macports.PortInfo, c *toleranceCapture) *probeResult {
 	rules, benign := probeRules(c)
 	if len(rules) == 0 {
 		return nil
@@ -22,7 +23,7 @@ func perturbContext(ctx context.Context, observer macports.Observer, snapshot ma
 		r.ErrorCode = "probe-baseline-incomplete"
 		return r
 	}
-	tree, err := macports.NewTree(snapshot.Source, c.Root, snapshot.Runtime.Platform)
+	tree, err := macports.NewTree(sourceIdentity, c.Root, native)
 	if err != nil {
 		r.ErrorCode = "probe-source-unavailable"
 		r.Error = err.Error()

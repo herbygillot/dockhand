@@ -249,7 +249,7 @@ func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files
 					entry.Capture.ErrorCode = portedit.Problem("evaluation", observedErr).Code
 				}
 				if entry.Capture != nil && s.ProbeObserver != nil {
-					entry.Capture.Probe = perturbContext(ctx, s.ProbeObserver, observation.Snapshot, entry.Info, entry.Capture)
+					entry.Capture.Probe = perturbContext(ctx, s.ProbeObserver, files.Source, platform, entry.Info, entry.Capture)
 				}
 			}
 			if measurementErr != nil {

@@ -70,7 +70,7 @@ func TestPerturbationFixtureGate(t *testing.T) {
 			cap, err := captureTolerance(t.Context(), target, profile, true, "", p, data, root, groups)
 			require.NoError(t, err)
 			pair := cap.Pair
-			cap.Probe = perturbContext(t.Context(), e, got.Snapshot, info, cap)
+			cap.Probe = perturbContext(t.Context(), e, got.Snapshot.Source, got.Snapshot.Runtime.Platform, info, cap)
 			require.NotNil(t, cap.Probe)
 			require.NoError(t, rec.Record(Port{Selector: name, portfile: target.Portfile, Assessment: portedit.Assessment{Outcome: "fixture"}, observed: []observed{{Platform: profile, Modeled: true, Root: root, Info: info, Observation: p, Capture: cap}}}))
 			var after []macports.Distfile
