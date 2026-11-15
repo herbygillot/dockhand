@@ -326,3 +326,13 @@ inventory, including off-stack files, with source bytes stored once by hash.
 A complete observation missing that inventory, or a loaded file that cannot be
 read, stops measurement. Capturing these files does not change which sources
 Tolerate follows.
+
+Survey builds tagged `surveymeasure` include an experimental per-call evaluator
+API, `eval.WithStandinAnswers`. It replaces only typed closed machine answers:
+numeric sysctl keys answer 1099511627776, failed tool lookups answer a path
+under `/dockhand-standin/bin/`, and boolean file tests under that prefix answer
+true. `_mportsearchpath` retains its boolean/path return convention. Such
+answers have `standin` ledger and event provenance; unsupported calls retain
+ordinary closed answers. Ordinary product builds contain neither the API nor
+the Tcl implementation. Native contexts that do not close a read are not
+perturbed by this policy.
