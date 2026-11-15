@@ -80,6 +80,16 @@ func (r *Record) tolerance(tx *sql.Tx, id int64, o observed) error {
 			return err
 		}
 	}
+	if c.Probe != nil {
+		rules, err := json.Marshal(c.Probe.Rules)
+		if err != nil {
+			return err
+		}
+		p := c.Probe
+		if _, err = tx.Exec(`insert into tolerance_probe(evaluation_id,status,field,error_code,seconds,standins,follower_benign,rules) values (?,?,?,?,?,?,?,?)`, id, p.Status, p.Field, p.ErrorCode, p.Seconds, p.Standins, p.FollowerBenign, string(rules)); err != nil {
+			return err
+		}
+	}
 	var compressionNanos int64
 	for _, file := range c.Files {
 		if r.toleranceFiles[file.Hash] {
@@ -319,6 +329,7 @@ func evaluationCode(err error) string {
 }
 
 type measurementReport struct {
+	Probes                                                                                *probeReport `json:",omitempty"`
 	Evaluations, Captures, Complete, Parity, Unavailable, Missing, Flips, OnLeft, OffLeft int
 	CaptureBytes, FileBytes                                                               int64
 	AnalysisSeconds, CaptureSeconds, CompressionSeconds                                   float64
@@ -339,5 +350,7 @@ func (r *Record) measurementReport() (measurementReport, error) {
 	if err := r.db.QueryRow(`select coalesce(sum(length(payload)),0) from tolerance_file`).Scan(&m.FileBytes); err != nil {
 		return m, err
 	}
-	return m, nil
+	var err error
+	m.Probes, err = r.probeReport()
+	return m, err
 }

@@ -92,6 +92,7 @@ func survey() (err error) {
 	flag.Var(&maintainers, "maintainer", "an exact maintainer to select (repeatable)")
 	flag.Var(&notMaintainers, "not-maintainer", "a maintainer to leave out (repeatable)")
 	flag.Var(&categories, "category", "an exact category to select (repeatable)")
+	probe := flag.Bool("probe-follower", false, "repeat follower-explained contexts with stand-in answers (requires -measure-follower)")
 	measure := flag.Bool("measure-follower", false, "record paired tolerance rules and lossless replay captures (requires surveymeasure build)")
 	replay := flag.String("replay-tolerance", "", "replay tolerance captures from a record, read-only, without evaluating ports")
 	flag.Parse()
@@ -106,6 +107,9 @@ func survey() (err error) {
 			return err
 		}
 		return json.NewEncoder(os.Stdout).Encode(totals)
+	}
+	if *probe && !*measure {
+		return errors.New("-probe-follower requires -measure-follower")
 	}
 	if *measure && (!measurementAvailable() || *dbPath == "" || !*recording || *mode != "current") {
 		return errors.New("-measure-follower requires -tags surveymeasure, -db, -recording=true and -mode=current")
@@ -226,6 +230,9 @@ func survey() (err error) {
 		MeasureFollower: *measure,
 		ObserveOnly:     *mode != "current",
 	}
+	if *probe {
+		service.ProbeObserver = &eval.Evaluator{Executable: native.Executable, Env: native.Env, Model: native.Model, Adapter: native.Adapter, Recording: true}
+	}
 	Concurrency = max(*parallel, 1)
 	var journal *Journal
 	if *journalPath != "" {
@@ -238,6 +245,9 @@ func survey() (err error) {
 		config, err := measurementIdentity(selectionOf(request.Selection), filepath.Dir(filepath.Dir(tclsh)))
 		if err != nil {
 			return err
+		}
+		if *probe {
+			config.Policy += "+standin-v1"
 		}
 		measurement = &config
 		// An old standalone journal cannot be mixed with a new measurement DB.
@@ -315,6 +325,10 @@ func survey() (err error) {
 			return e
 		}
 		made.Tolerance = &totals
+		if totals.Probes != nil {
+			p := totals.Probes.Total
+			fmt.Fprintf(os.Stderr, "Probe: %d same, %d differs, %d failed; %d with no substitutions; %.3fs summed elapsed\n", p.Same, p.Differs, p.Failed, p.Unperturbed, p.Seconds)
+		}
 		fmt.Fprintf(os.Stderr, "Tolerance: %d complete, %d parity, %d flips; %d unavailable, %d missing captures\n", totals.Complete, totals.Parity, totals.Flips, totals.Unavailable, totals.Missing)
 	}
 	if record != nil {

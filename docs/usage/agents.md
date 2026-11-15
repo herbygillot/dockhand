@@ -343,3 +343,21 @@ and final revision, then every `macports.ReadOptions` entry (presence, value
 and read error). It ignores source frames, host events and the ledger. Build
 and configure options are included even when they do not affect fetch inputs;
 a reported difference names the first field under this definition.
+
+A tagged survey can add `-probe-follower` to `-measure-follower`. Every context
+with a winning build-default or base-lookup rule gets a fresh evaluation using
+stand-in answers. Its `Probe` record says `same`, `differs` with the first field,
+or `failed` with an error code. A semantic evaluation failure following a
+complete baseline counts as `differs` at `evaluation`, with its error code;
+worker/startup failures count as `failed`. Incomplete baselines are failed.
+`Standins: 0` identifies evaluations that changed no closed machine answer;
+a `same` result there supplies no perturbation evidence. Tolerate and ordinary
+assessments retain their original results.
+
+`tolerance_probe` indexes each result by evaluation ID. The corresponding
+lossless capture holds both compared plans and the second observation, including
+its ledger/events. Journal `Tolerance[].Probe` entries are compact summaries.
+The run manifest sums results and elapsed seconds by port and winning rule;
+contexts with two winning rule kinds contribute to both rule totals. Its
+named `Findings` list identifies follower-benign differences and the captures
+holding both plans. A different probe policy cannot resume a measurement.

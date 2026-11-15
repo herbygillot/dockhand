@@ -169,3 +169,26 @@ and a rolled-back transaction invalidates that compression cache.
 `tolerance` also sums analysis, capture-preparation and JSON/compression elapsed
 seconds. Analysis includes the frozen parity oracle. Parallel calls overlap;
 these sums are not CPU seconds or total survey wall-time overhead.
+
+## Perturbation experiment
+
+With a `surveymeasure` build, add `-probe-follower` to `-measure-follower` to
+repeat each context explained by build-default or base-lookup using typed
+stand-in machine answers. Only typed closed reads change; a native context
+can have zero substitutions. Compare distfiles with expanded locations,
+checksum/revision declaration values and final revision, then **all**
+`macports.ReadOptions`, including build and configure values. Host-access
+events and the ledger do not participate in equality.
+
+The per-context result is `same`, `differs` (first differing field), or `failed`
+(error code). Semantic evaluation failure after a complete baseline is
+`differs` at `evaluation`; worker/startup failure is `failed`. Zero `Standins`
+is explicitly recorded and supplies no evidence of invariance under a changed
+answer. The database's `tolerance_probe` table indexes results; captures retain
+both plans and stand-in observations. Journal summaries and manifest totals
+report by port and rule, with named benign/differs findings. Rule totals can
+overlap. This experiment does not change Tolerate or any ordinary verdict.
+
+The whole-tree run requires the fixture/pilot gate and architecture's review.
+The probe misses exact-value tests hit by neither answer and dependencies on
+mixed combinations when all stand-ins vary together. Phase bodies do not run.

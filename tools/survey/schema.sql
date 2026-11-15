@@ -228,3 +228,12 @@ CREATE TABLE tolerance_capture (
  hash TEXT NOT NULL, payload BLOB NOT NULL, raw_bytes INTEGER NOT NULL,
  analysis_ns INTEGER NOT NULL, capture_ns INTEGER NOT NULL, compression_ns INTEGER NOT NULL
 );
+
+-- Per-context experiment results. Both plans and the stand-in observation
+-- are retained in tolerance_capture; this table is the summary index.
+CREATE TABLE tolerance_probe (
+ evaluation_id INTEGER PRIMARY KEY REFERENCES evaluation(id),
+ status TEXT NOT NULL, field TEXT NOT NULL, error_code TEXT NOT NULL,
+ seconds REAL NOT NULL, standins INTEGER NOT NULL,
+ follower_benign INTEGER NOT NULL, rules TEXT NOT NULL
+);

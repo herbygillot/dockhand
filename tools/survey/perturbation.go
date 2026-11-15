@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"reflect"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
+	"github.com/herbygillot/dockhand/internal/tcl/rpc"
 )
 
 // probePlan is deliberately the literal comparison specified for this
@@ -122,4 +126,18 @@ func probeRules(c *toleranceCapture) ([]observe.Rule, bool) {
 		}
 	}
 	return rules, benign
+}
+
+// Infrastructure failure cannot establish a plan difference. A semantic
+// evaluation failure after a complete baseline is a difference, retaining
+// its code as well as the field, as the spec's safe-direction rule requires.
+func probeFailure(r *probeResult, err error) {
+	r.ErrorCode = portedit.Problem("evaluation", err).Code
+	r.Error = err.Error()
+	r.Status = "differs"
+	r.Field = "evaluation"
+	if errors.Is(err, rpc.ErrBrokenSession) || errors.Is(err, rpc.ErrHandshake) || errors.Is(err, rpc.ErrNoAnswer) || errors.Is(err, macports.ErrStartup) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		r.Status = "failed"
+		r.Field = ""
+	}
 }

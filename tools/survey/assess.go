@@ -63,6 +63,7 @@ type Service struct {
 	// alone, without assessing it.
 	Observe, ObserveOnly bool
 	MeasureFollower      bool
+	ProbeObserver        macports.Observer
 }
 
 func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err error) {
@@ -246,6 +247,9 @@ func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files
 					entry.Capture.Pair.Parity = false
 					entry.Capture.Error = observedErr.Error()
 					entry.Capture.ErrorCode = portedit.Problem("evaluation", observedErr).Code
+				}
+				if entry.Capture != nil && s.ProbeObserver != nil {
+					entry.Capture.Probe = perturbContext(ctx, s.ProbeObserver, observation.Snapshot, entry.Info, entry.Capture)
 				}
 			}
 			if measurementErr != nil {

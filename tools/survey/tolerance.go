@@ -26,6 +26,7 @@ type tolerancePair struct {
 }
 
 type toleranceSummary struct {
+	Probe           *probeSummary `json:",omitempty"`
 	Complete        bool
 	Evaluation      int64
 	Platform        model.Platform
@@ -53,6 +54,7 @@ type toleranceCapture struct {
 	Root, Base                  string
 	Aliases                     map[string]string
 	Files                       map[string]capturedFile
+	Probe                       *probeResult `json:",omitempty"`
 	PortGroups                  []macports.LoadedPortGroup
 	Observation                 macports.PortObservation
 	Pair                        tolerancePair

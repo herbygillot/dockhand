@@ -2,9 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
+	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/tcl/rpc"
 	"github.com/stretchr/testify/require"
 )
 
@@ -59,4 +63,51 @@ func TestProbeComparesEverySpecifiedField(t *testing.T) {
 	delete(info.Options, "build.cmd")
 	info.OptionErrors = map[string]string{"build.cmd": "missing"}
 	require.Equal(t, "read-options.build.cmd", firstProbeDifference(a, makeProbePlan(info, p)))
+}
+
+func TestProbeRetainsErrorsWithoutCallingADeadWorkerADifference(t *testing.T) {
+	for _, c := range []struct {
+		err                 error
+		status, field, code string
+	}{
+		{rpc.CallError{Msg: "Portfile failed"}, "differs", "evaluation", "check-inconclusive"},
+		{rpc.ErrBrokenSession, "failed", "", "evaluation-unavailable"},
+		{macports.ErrStartup, "failed", "", "check-inconclusive"},
+	} {
+		r := &probeResult{}
+		probeFailure(r, c.err)
+		require.Equal(t, c.status, r.Status)
+		require.Equal(t, c.field, r.Field)
+		require.Equal(t, c.code, r.ErrorCode)
+	}
+}
+
+func TestProbeRecordRetainsBothPlansAndNamedFindings(t *testing.T) {
+	root, source := recordTree(t)
+	rec, err := OpenRecord(t.Context(), filepath.Join(t.TempDir(), "probe.db"), "current", true, RunInfo{Tree: root}, root, "", nil)
+	require.NoError(t, err)
+	defer rec.Close()
+	require.NoError(t, rec.Begin(source))
+	before := makeProbePlan(macports.PortInfo{Options: map[string]string{"build.cmd": "make"}}, macports.PortObservation{})
+	after := makeProbePlan(macports.PortInfo{Options: map[string]string{"build.cmd": "standin"}}, macports.PortObservation{})
+	result := &probeResult{Status: "differs", Field: "read-options.build.cmd", Rules: []observe.Rule{observe.RuleBuildDefault, observe.RuleBaseLookup}, FollowerBenign: true, Seconds: 0.25, Standins: 1, Before: before, After: &after}
+	c := &toleranceCapture{Version: toleranceVersion, Target: model.Target{Name: "fixture"}, Probe: result}
+	require.NoError(t, rec.Record(Port{Selector: "fixture", observed: []observed{{Capture: c}}}))
+	report, err := rec.measurementReport()
+	require.NoError(t, err)
+	require.Equal(t, 1, report.Probes.Total.Differs)
+	require.Equal(t, 0.25, report.Probes.Total.Seconds)
+	require.Equal(t, 1, report.Probes.ByPort["fixture"].Differs)
+	require.Equal(t, 1, report.Probes.ByRule[observe.RuleBaseLookup].Differs)
+	require.Equal(t, 1, report.Probes.ByRule[observe.RuleBuildDefault].Differs)
+	require.Len(t, report.Probes.Findings, 1)
+	require.Equal(t, "fixture", report.Probes.Findings[0].Port)
+	var packed []byte
+	require.NoError(t, rec.db.QueryRow("select payload from tolerance_capture").Scan(&packed))
+	raw, err := decompress(packed)
+	require.NoError(t, err)
+	var round toleranceCapture
+	require.NoError(t, json.Unmarshal(raw, &round))
+	require.Equal(t, before, round.Probe.Before)
+	require.Equal(t, after, *round.Probe.After)
 }
