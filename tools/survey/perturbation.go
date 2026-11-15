@@ -12,8 +12,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/tcl/rpc"
 )
 
-// probePlan is deliberately the literal comparison specified for this
-// experiment. In particular, all ReadOptions include build-only options.
+// probePlan retains all observed values. Equality excludes exactly the
+// options the follower accepts as benign sinks; their changes stay visible.
 type probePlan struct {
 	Distfiles                       []macports.Distfile
 	Checksums, RevisionDeclarations [][]string
@@ -98,11 +98,12 @@ func firstProbeDifference(a, b probePlan) string {
 	if a.Revision != b.Revision {
 		return "revision"
 	}
-	if len(a.Options) != len(b.Options) {
+	actedA, actedB := actedProbeOptions(a.Options), actedProbeOptions(b.Options)
+	if len(actedA) != len(actedB) {
 		return "read-options.length"
 	}
-	for i, x := range a.Options {
-		if x != b.Options[i] {
+	for i, x := range actedA {
+		if x != actedB[i] {
 			return "read-options." + x.Name
 		}
 	}
@@ -140,4 +141,38 @@ func probeFailure(r *probeResult, err error) {
 		r.Status = "failed"
 		r.Field = ""
 	}
+}
+
+func actedProbeOptions(options []probeOption) []probeOption {
+	var out []probeOption
+	for _, o := range options {
+		if observe.ActedOption(o.Name) {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// Retain names of every excluded option whose presence, value or error
+// changes. The full before/after values remain in the captured plans.
+func buildOnlyProbeChanges(a, b probePlan) []string {
+	right := map[string]probeOption{}
+	for _, o := range b.Options {
+		right[o.Name] = o
+	}
+	seen := map[string]bool{}
+	var moved []string
+	for _, o := range a.Options {
+		seen[o.Name] = true
+		other, ok := right[o.Name]
+		if !observe.ActedOption(o.Name) && (!ok || o != other) {
+			moved = append(moved, o.Name)
+		}
+	}
+	for _, o := range b.Options {
+		if !seen[o.Name] && !observe.ActedOption(o.Name) {
+			moved = append(moved, o.Name)
+		}
+	}
+	return moved
 }

@@ -339,10 +339,12 @@ perturbed by this policy.
 
 The survey perturbation comparison is literal and ordered: expanded distfile
 names and locations, checksum declaration values, revision declaration values
-and final revision, then every `macports.ReadOptions` entry (presence, value
-and read error). It ignores source frames, host events and the ledger. Build
-and configure options are included even when they do not affect fetch inputs;
-a reported difference names the first field under this definition.
+and final revision, then each `macports.ReadOptions` entry for which
+`observe.ActedOption(name)` is true (presence, value and read error).
+ActedOption is exactly `!sinkFor(name)`, the follower's own benign-sink rule,
+so patchfiles stays compared. Excluded values remain in both stored plans;
+their changed names are recorded separately. Frames, host events and the ledger
+do not participate in equality.
 
 A tagged survey can add `-probe-follower` to `-measure-follower`. Every context
 with a winning build-default or base-lookup rule gets a fresh evaluation using

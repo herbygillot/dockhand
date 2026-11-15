@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -46,7 +47,13 @@ func TestProbeComparesEverySpecifiedField(t *testing.T) {
 					changed.Options[i].Value += "changed"
 				}
 			}
-			require.Equal(t, "read-options."+option.Name, firstProbeDifference(original, changed))
+			if observe.ActedOption(option.Name) {
+				require.Equal(t, "read-options."+option.Name, firstProbeDifference(original, changed))
+				require.Empty(t, buildOnlyProbeChanges(original, changed))
+			} else {
+				require.Empty(t, firstProbeDifference(original, changed))
+				require.Equal(t, []string{option.Name}, buildOnlyProbeChanges(original, changed))
+			}
 		})
 	}
 	info := macports.PortInfo{Options: map[string]string{}}
@@ -58,11 +65,11 @@ func TestProbeComparesEverySpecifiedField(t *testing.T) {
 	p.Problems = []string{"host event"}
 	require.Empty(t, firstProbeDifference(a, makeProbePlan(info, p)))
 	// Absence and a failed option read are also different from an empty value.
-	info.Options["build.cmd"] = ""
-	require.Equal(t, "read-options.build.cmd", firstProbeDifference(a, makeProbePlan(info, p)))
-	delete(info.Options, "build.cmd")
-	info.OptionErrors = map[string]string{"build.cmd": "missing"}
-	require.Equal(t, "read-options.build.cmd", firstProbeDifference(a, makeProbePlan(info, p)))
+	info.Options["patchfiles"] = ""
+	require.Equal(t, "read-options.patchfiles", firstProbeDifference(a, makeProbePlan(info, p)))
+	delete(info.Options, "patchfiles")
+	info.OptionErrors = map[string]string{"patchfiles": "missing"}
+	require.Equal(t, "read-options.patchfiles", firstProbeDifference(a, makeProbePlan(info, p)))
 }
 
 func TestProbeRetainsErrorsWithoutCallingADeadWorkerADifference(t *testing.T) {
@@ -88,9 +95,9 @@ func TestProbeRecordRetainsBothPlansAndNamedFindings(t *testing.T) {
 	require.NoError(t, err)
 	defer rec.Close()
 	require.NoError(t, rec.Begin(source))
-	before := makeProbePlan(macports.PortInfo{Options: map[string]string{"build.cmd": "make"}}, macports.PortObservation{})
-	after := makeProbePlan(macports.PortInfo{Options: map[string]string{"build.cmd": "standin"}}, macports.PortObservation{})
-	result := &probeResult{Status: "differs", Field: "read-options.build.cmd", Rules: []observe.Rule{observe.RuleBuildDefault, observe.RuleBaseLookup}, FollowerBenign: true, Seconds: 0.25, Standins: 1, Before: before, After: &after}
+	before := makeProbePlan(macports.PortInfo{Options: map[string]string{"patchfiles": "old.patch"}}, macports.PortObservation{})
+	after := makeProbePlan(macports.PortInfo{Options: map[string]string{"patchfiles": "new.patch"}}, macports.PortObservation{})
+	result := &probeResult{Status: "differs", Field: "read-options.patchfiles", Rules: []observe.Rule{observe.RuleBuildDefault, observe.RuleBaseLookup}, FollowerBenign: true, Seconds: 0.25, Standins: 1, Before: before, After: &after}
 	c := &toleranceCapture{Version: toleranceVersion, Target: model.Target{Name: "fixture"}, Probe: result}
 	require.NoError(t, rec.Record(Port{Selector: "fixture", observed: []observed{{Capture: c}}}))
 	report, err := rec.measurementReport()
@@ -110,4 +117,20 @@ func TestProbeRecordRetainsBothPlansAndNamedFindings(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &round))
 	require.Equal(t, before, round.Probe.Before)
 	require.Equal(t, after, *round.Probe.After)
+}
+
+func TestProbeReadOptionsPartition(t *testing.T) {
+	split := map[string][]string{"acted": {}, "excluded": {}}
+	for _, name := range macports.ReadOptions {
+		side := "excluded"
+		if observe.ActedOption(name) {
+			side = "acted"
+		}
+		split[side] = append(split[side], name)
+	}
+	require.Contains(t, split["acted"], "patchfiles")
+	require.NotContains(t, split["excluded"], "patchfiles")
+	raw, err := json.Marshal(split)
+	require.NoError(t, err)
+	t.Log("ReadOptions split: " + strings.TrimSpace(string(raw)))
 }

@@ -176,9 +176,11 @@ With a `surveymeasure` build, add `-probe-follower` to `-measure-follower` to
 repeat each context explained by build-default or base-lookup using typed
 stand-in machine answers. Only typed closed reads change; a native context
 can have zero substitutions. Compare distfiles with expanded locations,
-checksum/revision declaration values and final revision, then **all**
-`macports.ReadOptions`, including build and configure values. Host-access
-events and the ledger do not participate in equality.
+checksum/revision declaration values and final revision, then the
+`macports.ReadOptions` for which `observe.ActedOption(name)` is true. This is
+exactly the complement of the follower's sinkFor rule, with patchfiles still
+compared. Both plans retain excluded options and their changed names are kept
+separately. Host-access events and the ledger do not participate in equality.
 
 The per-context result is `same`, `differs` (first differing field), or `failed`
 (error code). Semantic evaluation failure after a complete baseline is
