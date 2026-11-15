@@ -215,3 +215,13 @@ exact-value `same`, and the new build-only movement result, all with a benign
 follower and a nonzero substitution count. A skipped gate is
 not a pass. Architecture review and host/heavy-lock authorization remain
 required after a passing gate.
+
+`UnperturbedClosedReads` in the probe totals counts contexts per closed call
+that received no stand-in, using the second observation's host-access events
+in originally complete/conclusive follower-benign contexts. This includes
+residual closed calls in contexts where other calls were perturbed. Calls
+are deduplicated within a context; sysctl groups by key, other commands by
+the recorded command line (currently capped at 200 characters). The per-context
+list is retained in captures, journal summaries and the probe index. Stand-in
+and native/unmarked events do not enter this diagnostic tally. It is not a
+gate condition; absent observations after failure cannot supply an event list.

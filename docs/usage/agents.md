@@ -403,3 +403,16 @@ tree run; a pass still needs architecture's read, the free host and tools/heavy.
 `DOCKHAND_PILOT_TCLSH` for the owned Base wrapper. Fixtures use numeric
 `build.jobs` as V, and fix unrelated exported tool options so that the exact
 value case measures the stated hole instead of an unrelated tool-path change.
+
+The manifest's `tolerance.Probes.UnperturbedClosedReads` maps each still-closed
+host-access call to its context count, restricted to originally complete,
+conclusive follower-benign contexts. It examines the second observation's
+host-access events, including residual closed reads in otherwise perturbed
+contexts; it does not use the ledger. Each call counts once per context.
+Sysctl calls are grouped by key; other calls retain their recorded command
+line (events currently cap this diagnostic at 200 characters). Stand-in and
+native/unmarked events are excluded. Calls are also kept per context in the
+probe capture and journal summary, and indexed in `tolerance_probe` as
+`unperturbed_closed_reads`. Aborted probes with no returned observation have
+no event list; `UnknownSubstitutions` remains separate. This is diagnostic
+coverage data, not a new pilot-gate condition.

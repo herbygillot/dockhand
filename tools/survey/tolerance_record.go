@@ -96,7 +96,11 @@ func (r *Record) tolerance(tx *sql.Tx, id int64, o observed) error {
 		if err != nil {
 			return err
 		}
-		if _, err = tx.Exec(`insert into tolerance_probe(evaluation_id,status,field,error_code,seconds,standins,follower_benign,rules,substitutions_known,build_only_moved) values (?,?,?,?,?,?,?,?,?,?)`, id, p.Status, p.Field, p.ErrorCode, p.Seconds, p.Standins, p.FollowerBenign, string(rules), p.SubstitutionsKnown, string(moved)); err != nil {
+		closed, err := json.Marshal(p.UnperturbedClosedReads)
+		if err != nil {
+			return err
+		}
+		if _, err = tx.Exec(`insert into tolerance_probe(evaluation_id,status,field,error_code,seconds,standins,follower_benign,rules,substitutions_known,build_only_moved,unperturbed_closed_reads) values (?,?,?,?,?,?,?,?,?,?,?)`, id, p.Status, p.Field, p.ErrorCode, p.Seconds, p.Standins, p.FollowerBenign, string(rules), p.SubstitutionsKnown, string(moved), string(closed)); err != nil {
 			return err
 		}
 	}

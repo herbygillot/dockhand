@@ -46,15 +46,16 @@ type probeFinding struct {
 }
 
 type probeReport struct {
-	Total  probeCounts
-	ByPort map[string]probeCounts
-	ByRule map[observe.Rule]probeCounts
+	UnperturbedClosedReads map[string]int
+	Total                  probeCounts
+	ByPort                 map[string]probeCounts
+	ByRule                 map[observe.Rule]probeCounts
 	// Each evaluation identifies its lossless capture containing both plans.
 	Findings []probeFinding `json:",omitempty"`
 }
 
 func (r *Record) probeReport() (*probeReport, error) {
-	rows, err := r.db.Query(`select e.id,p.name,e.platform_os,e.platform_version,e.platform_arch,t.status,t.field,t.error_code,t.seconds,t.standins,t.follower_benign,t.rules,t.substitutions_known,t.build_only_moved,e.modeled,c.complete,c.on_verdict from tolerance_probe t join tolerance_context c on c.evaluation_id=t.evaluation_id join evaluation e on e.id=t.evaluation_id join port p on p.id=e.port_id where e.run_id=? order by e.id`, r.run)
+	rows, err := r.db.Query(`select e.id,p.name,e.platform_os,e.platform_version,e.platform_arch,t.status,t.field,t.error_code,t.seconds,t.standins,t.follower_benign,t.rules,t.substitutions_known,t.build_only_moved,e.modeled,c.complete,c.on_verdict,t.unperturbed_closed_reads from tolerance_probe t join tolerance_context c on c.evaluation_id=t.evaluation_id join evaluation e on e.id=t.evaluation_id join port p on p.id=e.port_id where e.run_id=? order by e.id`, r.run)
 	if err != nil {
 		return nil, err
 	}
@@ -66,16 +67,30 @@ func (r *Record) probeReport() (*probeReport, error) {
 		var seconds float64
 		var standins int
 		var benign, known, modeled, complete, inconclusive bool
-		var movedJSON string
-		if err = rows.Scan(&f.Evaluation, &f.Port, &f.Platform.OS, &f.Platform.Version, &f.Platform.Architecture, &status, &f.Field, &f.ErrorCode, &seconds, &standins, &benign, &rulesJSON, &known, &movedJSON, &modeled, &complete, &inconclusive); err != nil {
+		var movedJSON, closedJSON string
+		if err = rows.Scan(&f.Evaluation, &f.Port, &f.Platform.OS, &f.Platform.Version, &f.Platform.Architecture, &status, &f.Field, &f.ErrorCode, &seconds, &standins, &benign, &rulesJSON, &known, &movedJSON, &modeled, &complete, &inconclusive, &closedJSON); err != nil {
 			return nil, err
 		}
 		if out == nil {
-			out = &probeReport{ByPort: map[string]probeCounts{}, ByRule: map[observe.Rule]probeCounts{}}
+			out = &probeReport{UnperturbedClosedReads: map[string]int{}, ByPort: map[string]probeCounts{}, ByRule: map[observe.Rule]probeCounts{}}
 		}
 		p := probeSummary{Status: status, Standins: standins, Seconds: seconds, FollowerBenign: benign, SubstitutionsKnown: known}
 		if err = json.Unmarshal([]byte(movedJSON), &p.BuildOnlyMoved); err != nil {
 			return nil, err
+		}
+		if benign && complete && !inconclusive {
+			var calls []string
+			if err = json.Unmarshal([]byte(closedJSON), &calls); err != nil {
+				return nil, err
+			}
+			// Deduplicate defensively even when reading a manually made record.
+			seen := map[string]bool{}
+			for _, call := range calls {
+				if !seen[call] {
+					out.UnperturbedClosedReads[call]++
+					seen[call] = true
+				}
+			}
 		}
 		out.Total.add(p, modeled && complete && !inconclusive)
 		port := out.ByPort[f.Port]

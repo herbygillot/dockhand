@@ -50,6 +50,7 @@ func perturbContext(ctx context.Context, observer macports.Observer, sourceIdent
 		return r
 	}
 	r.Observation = &after
+	r.UnperturbedClosedReads = unperturbedClosedReads(after)
 	plan := makeProbePlan(next, after)
 	r.After = &plan
 	for _, e := range after.Ledger {

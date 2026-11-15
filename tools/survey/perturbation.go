@@ -37,6 +37,7 @@ const (
 )
 
 type probeResult struct {
+	UnperturbedClosedReads  []string `json:",omitempty"`
 	Version                 int
 	Status                  string
 	BuildOnlyMoved          []string `json:",omitempty"`
@@ -52,6 +53,7 @@ type probeResult struct {
 }
 
 type probeSummary struct {
+	UnperturbedClosedReads   []string `json:",omitempty"`
 	Version                  int
 	BuildOnlyMoved           []string `json:",omitempty"`
 	SubstitutionsKnown       bool
@@ -66,7 +68,7 @@ func (r *probeResult) summary() *probeSummary {
 	if r == nil {
 		return nil
 	}
-	return &probeSummary{Version: r.Version, BuildOnlyMoved: r.BuildOnlyMoved, SubstitutionsKnown: r.SubstitutionsKnown, Status: r.Status, Field: r.Field, ErrorCode: r.ErrorCode, Rules: r.Rules, Seconds: r.Seconds, Standins: r.Standins, FollowerBenign: r.FollowerBenign}
+	return &probeSummary{UnperturbedClosedReads: r.UnperturbedClosedReads, Version: r.Version, BuildOnlyMoved: r.BuildOnlyMoved, SubstitutionsKnown: r.SubstitutionsKnown, Status: r.Status, Field: r.Field, ErrorCode: r.ErrorCode, Rules: r.Rules, Seconds: r.Seconds, Standins: r.Standins, FollowerBenign: r.FollowerBenign}
 }
 
 func makeProbePlan(info macports.PortInfo, p macports.PortObservation) probePlan {

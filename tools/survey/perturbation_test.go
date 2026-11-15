@@ -106,7 +106,7 @@ func TestProbeRecordRetainsBothPlansAndNamedFindings(t *testing.T) {
 	}{
 		{"modeled-zero", true, true}, {"native-zero", false, true}, {"already-inconclusive", true, false},
 	} {
-		probe := &probeResult{Version: probeVersion, Status: probeNotPerturbed, SubstitutionsKnown: true, FollowerBenign: true, Rules: []observe.Rule{observe.RuleBuildDefault}, Before: before, After: &before}
+		probe := &probeResult{Version: probeVersion, Status: probeNotPerturbed, SubstitutionsKnown: true, FollowerBenign: true, Rules: []observe.Rule{observe.RuleBuildDefault}, Before: before, After: &before, UnperturbedClosedReads: []string{"sysctl hw.optional.arm64", "sysctl hw.optional.arm64", "exec uname -m"}}
 		cap := &toleranceCapture{Version: toleranceVersion, Target: model.Target{Name: zero.name}, Probe: probe, Pair: tolerancePair{Complete: true, On: observe.Explanation{Inconclusive: !zero.conclusive}}}
 		require.NoError(t, rec.Record(Port{Selector: zero.name, observed: []observed{{Modeled: zero.modeled, Capture: cap}}}))
 	}
@@ -116,6 +116,7 @@ func TestProbeRecordRetainsBothPlansAndNamedFindings(t *testing.T) {
 	require.Equal(t, 0, report.Probes.Total.Same)
 	require.Equal(t, 3, report.Probes.Total.NotPerturbed)
 	require.Equal(t, 1, report.Probes.Total.ModeledFollowerNotPerturbed)
+	require.Equal(t, map[string]int{"sysctl hw.optional.arm64": 2, "exec uname -m": 2}, report.Probes.UnperturbedClosedReads, "count contexts, exclude originally inconclusive contexts")
 	require.Equal(t, 0.25, report.Probes.Total.Seconds)
 	require.Equal(t, 1, report.Probes.ByPort["fixture"].Differs)
 	require.Equal(t, 1, report.Probes.ByRule[observe.RuleBaseLookup].Differs)
