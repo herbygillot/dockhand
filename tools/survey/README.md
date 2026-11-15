@@ -192,3 +192,14 @@ overlap. This experiment does not change Tolerate or any ordinary verdict.
 The whole-tree run requires the fixture/pilot gate and architecture's review.
 The probe misses exact-value tests hit by neither answer and dependencies on
 mixed combinations when all stand-ins vary together. Phase bodies do not run.
+
+Run `TestPerturbationFixtureGate` in a tagged test build to make the nine-case
+fixture record (`DOCKHAND_PROBE_FIXTURE_DB` names a fresh scratch DB). Then run
+`TestPerturbationPilotGate` with `DOCKHAND_PROBE_PILOT_DB` and
+`DOCKHAND_PROBE_GATE_FIXTURES`; optionally retain its JSON table with
+`DOCKHAND_PROBE_GATE_REPORT`. Both inputs are opened read-only. The real gate
+requires every eligible context of the eight pilot ports to be `same`. The
+fixture gate requires eight `differs` results and the exact-value `same`, all
+with a benign follower and a nonzero substitution count. A skipped gate is
+not a pass. Architecture review and host/heavy-lock authorization remain
+required after a passing gate.

@@ -361,3 +361,26 @@ The run manifest sums results and elapsed seconds by port and winning rule;
 contexts with two winning rule kinds contribute to both rule totals. Its
 named `Findings` list identifies follower-benign differences and the captures
 holding both plans. A different probe policy cannot resume a measurement.
+
+The perturbation pilot gate is an explicit tagged test, run after making the
+small real-port record with `-probe-follower` and the nine-fixture record:
+
+```sh
+DOCKHAND_PROBE_PILOT_DB=<pilot.db> \
+DOCKHAND_PROBE_GATE_FIXTURES=<fixtures.db> \
+DOCKHAND_PROBE_GATE_REPORT=<gate.json> \
+go test -tags surveymeasure ./tools/survey -run '^TestPerturbationPilotGate$' -v
+```
+
+It opens both records read-only, verifies capture checksums, requires `same`
+for every eligible context of the eight named pilot ports, and checks the
+eight `differs` fixtures plus the exact-value `same` fixture. All fixtures must
+have a benign follower result and nonzero substitutions. Missing records skip
+the test and do not establish a passing gate. A failed gate forbids the whole
+tree run; a pass still needs architecture's read, the free host and tools/heavy.
+
+`TestPerturbationFixtureGate` makes the nine-case record. Set
+`DOCKHAND_PROBE_FIXTURE_DB` to a fresh scratch path to retain it, optionally
+`DOCKHAND_PILOT_TCLSH` for the owned Base wrapper. Fixtures use numeric
+`build.jobs` as V, and fix unrelated exported tool options so that the exact
+value case measures the stated hole instead of an unrelated tool-path change.
