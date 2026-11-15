@@ -16,7 +16,7 @@ func perturbContext(ctx context.Context, observer macports.Observer, sourceIdent
 	if len(rules) == 0 {
 		return nil
 	}
-	r := &probeResult{Status: "failed", Rules: rules, FollowerBenign: benign, Before: makeProbePlan(info, c.Observation)}
+	r := &probeResult{Version: probeVersion, Status: "failed", Rules: rules, FollowerBenign: benign, Before: makeProbePlan(info, c.Observation)}
 	started := time.Now()
 	defer func() { r.Seconds = time.Since(started).Seconds() }()
 	if !c.Pair.Complete {
@@ -57,10 +57,6 @@ func perturbContext(ctx context.Context, observer macports.Observer, sourceIdent
 			r.Standins += e.Count
 		}
 	}
-	r.Field = firstProbeDifference(r.Before, plan)
-	r.Status = "same"
-	if r.Field != "" {
-		r.Status = "differs"
-	}
+	classifyProbePlans(r)
 	return r
 }

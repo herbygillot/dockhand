@@ -235,5 +235,6 @@ CREATE TABLE tolerance_probe (
  evaluation_id INTEGER PRIMARY KEY REFERENCES evaluation(id),
  status TEXT NOT NULL, field TEXT NOT NULL, error_code TEXT NOT NULL,
  seconds REAL NOT NULL, standins INTEGER NOT NULL,
- follower_benign INTEGER NOT NULL, rules TEXT NOT NULL
+ follower_benign INTEGER NOT NULL, rules TEXT NOT NULL,
+ substitutions_known INTEGER NOT NULL, build_only_moved TEXT NOT NULL
 );

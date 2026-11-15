@@ -348,13 +348,21 @@ do not participate in equality.
 
 A tagged survey can add `-probe-follower` to `-measure-follower`. Every context
 with a winning build-default or base-lookup rule gets a fresh evaluation using
-stand-in answers. Its `Probe` record says `same`, `differs` with the first field,
-or `failed` with an error code. A semantic evaluation failure following a
-complete baseline counts as `differs` at `evaluation`, with its error code;
-worker/startup failures count as `failed`. Incomplete baselines are failed.
-`Standins: 0` identifies evaluations that changed no closed machine answer;
-a `same` result there supplies no perturbation evidence. Tolerate and ordinary
-assessments retain their original results.
+stand-in answers. Its `Probe` record uses these classes:
+
+- `same`: substitutions occurred and all compared and excluded options stayed equal;
+- `same, build-only moved`: compared fields stayed equal and excluded options
+  changed; `BuildOnlyMoved` lists their names (values remain in both plans);
+- `differs`: the first compared field changed, or semantic evaluation failed
+  at `evaluation`, retaining its error code;
+- `failed`: infrastructure/startup failure (or an unavailable baseline/source);
+- `not perturbed`: a completed observation applied zero substitutions, even
+  if unrelated drift occurred. It never contributes to a same total.
+
+`SubstitutionsKnown` is true after a completed second observation. Aborted
+observations with no returned ledger have an unknown count, rather than a
+claimed zero typed-read coverage. Tolerate and ordinary assessments retain
+their original results.
 
 `tolerance_probe` indexes each result by evaluation ID. The corresponding
 lossless capture holds both compared plans and the second observation, including
@@ -363,6 +371,13 @@ The run manifest sums results and elapsed seconds by port and winning rule;
 contexts with two winning rule kinds contribute to both rule totals. Its
 named `Findings` list identifies follower-benign differences and the captures
 holding both plans. A different probe policy cannot resume a measurement.
+Per-rule/port totals include `Perturbed`, `Same`, `BuildOnlyMoved`, `Differs`,
+`Failed`, `NotPerturbed`, and `ModeledFollowerNotPerturbed` (successful,
+originally complete/conclusive follower-benign modeled observations with zero
+typed substitutions).
+`UnknownSubstitutions` counts aborted observations without a returned count.
+The stand-in policy is version 2; use fresh records, not v1 summaries.
+
 
 The perturbation pilot gate is an explicit tagged test, run after making the
 small real-port record with `-probe-follower` and the nine-fixture record:

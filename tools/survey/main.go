@@ -247,7 +247,7 @@ func survey() (err error) {
 			return err
 		}
 		if *probe {
-			config.Policy += "+standin-v1"
+			config.Policy += "+standin-v2"
 		}
 		measurement = &config
 		// An old standalone journal cannot be mixed with a new measurement DB.
@@ -327,7 +327,7 @@ func survey() (err error) {
 		made.Tolerance = &totals
 		if totals.Probes != nil {
 			p := totals.Probes.Total
-			fmt.Fprintf(os.Stderr, "Probe: %d same, %d differs, %d failed; %d with no substitutions; %.3fs summed elapsed\n", p.Same, p.Differs, p.Failed, p.Unperturbed, p.Seconds)
+			fmt.Fprintf(os.Stderr, "Probe: %d perturbed: %d same, %d build-only moved, %d differs, %d failed; %d not perturbed (%d modeled follower); %.3fs summed elapsed\n", p.Perturbed, p.Same, p.BuildOnlyMoved, p.Differs, p.Failed, p.NotPerturbed, p.ModeledFollowerNotPerturbed, p.Seconds)
 		}
 		fmt.Fprintf(os.Stderr, "Tolerance: %d complete, %d parity, %d flips; %d unavailable, %d missing captures\n", totals.Complete, totals.Parity, totals.Flips, totals.Unavailable, totals.Missing)
 	}

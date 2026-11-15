@@ -45,5 +45,6 @@ func TestProbeBindsThePinnedSourceInsteadOfStrippedSnapshotMetadata(t *testing.T
 	})
 	r := perturbContext(t.Context(), observer, pinned, native, info, cap)
 	require.True(t, called)
-	require.Equal(t, "same", r.Status)
+	require.Equal(t, probeNotPerturbed, r.Status)
+	require.True(t, r.SubstitutionsKnown)
 }

@@ -182,14 +182,21 @@ exactly the complement of the follower's sinkFor rule, with patchfiles still
 compared. Both plans retain excluded options and their changed names are kept
 separately. Host-access events and the ledger do not participate in equality.
 
-The per-context result is `same`, `differs` (first differing field), or `failed`
-(error code). Semantic evaluation failure after a complete baseline is
-`differs` at `evaluation`; worker/startup failure is `failed`. Zero `Standins`
-is explicitly recorded and supplies no evidence of invariance under a changed
-answer. The database's `tolerance_probe` table indexes results; captures retain
-both plans and stand-in observations. Journal summaries and manifest totals
-report by port and rule, with named benign/differs findings. Rule totals can
-overlap. This experiment does not change Tolerate or any ordinary verdict.
+Results are `same`, `same, build-only moved` (recording changed excluded
+option names), `differs` at the first acted field, `failed` for infrastructure,
+or `not perturbed` for a successful zero-substitution observation. Such zero
+cases contribute to no same total. Semantic evaluation failure after a complete
+baseline remains `differs` at `evaluation`, with its code. An aborted probe
+without a ledger has an unknown substitution count, not a successful zero.
+
+The database's `tolerance_probe` table indexes results and changed excluded
+names; captures retain both plans and stand-in observations. Journal summaries
+and manifest totals report by port and rule, with named benign/differs findings.
+Totals distinguish perturbed, same, build-only moved, differs, failed and not
+perturbed, plus the count of follower-benign modeled contexts with no typed
+substitution and the count of aborted observations without substitution data.
+Rule totals can overlap. Policy version 2 requires fresh records. This
+experiment does not change Tolerate or any ordinary verdict.
 
 The whole-tree run requires the fixture/pilot gate and architecture's review.
 The probe misses exact-value tests hit by neither answer and dependencies on

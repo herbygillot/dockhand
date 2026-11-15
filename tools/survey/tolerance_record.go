@@ -86,7 +86,17 @@ func (r *Record) tolerance(tx *sql.Tx, id int64, o observed) error {
 			return err
 		}
 		p := c.Probe
-		if _, err = tx.Exec(`insert into tolerance_probe(evaluation_id,status,field,error_code,seconds,standins,follower_benign,rules) values (?,?,?,?,?,?,?,?)`, id, p.Status, p.Field, p.ErrorCode, p.Seconds, p.Standins, p.FollowerBenign, string(rules)); err != nil {
+		if (p.Status == probeSame || p.Status == probeBuildOnlyMoved) && (!p.SubstitutionsKnown || p.Standins <= 0) {
+			return fmt.Errorf("probe same result requires known substitutions")
+		}
+		if p.Status == probeNotPerturbed && (!p.SubstitutionsKnown || p.Standins != 0) {
+			return fmt.Errorf("probe not-perturbed result requires a known zero count")
+		}
+		moved, err := json.Marshal(p.BuildOnlyMoved)
+		if err != nil {
+			return err
+		}
+		if _, err = tx.Exec(`insert into tolerance_probe(evaluation_id,status,field,error_code,seconds,standins,follower_benign,rules,substitutions_known,build_only_moved) values (?,?,?,?,?,?,?,?,?,?)`, id, p.Status, p.Field, p.ErrorCode, p.Seconds, p.Standins, p.FollowerBenign, string(rules), p.SubstitutionsKnown, string(moved)); err != nil {
 			return err
 		}
 	}

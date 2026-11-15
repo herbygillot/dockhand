@@ -100,9 +100,22 @@ func TestProbeRecordRetainsBothPlansAndNamedFindings(t *testing.T) {
 	result := &probeResult{Status: "differs", Field: "read-options.patchfiles", Rules: []observe.Rule{observe.RuleBuildDefault, observe.RuleBaseLookup}, FollowerBenign: true, Seconds: 0.25, Standins: 1, Before: before, After: &after}
 	c := &toleranceCapture{Version: toleranceVersion, Target: model.Target{Name: "fixture"}, Probe: result}
 	require.NoError(t, rec.Record(Port{Selector: "fixture", observed: []observed{{Capture: c}}}))
+	for _, zero := range []struct {
+		name                string
+		modeled, conclusive bool
+	}{
+		{"modeled-zero", true, true}, {"native-zero", false, true}, {"already-inconclusive", true, false},
+	} {
+		probe := &probeResult{Version: probeVersion, Status: probeNotPerturbed, SubstitutionsKnown: true, FollowerBenign: true, Rules: []observe.Rule{observe.RuleBuildDefault}, Before: before, After: &before}
+		cap := &toleranceCapture{Version: toleranceVersion, Target: model.Target{Name: zero.name}, Probe: probe, Pair: tolerancePair{Complete: true, On: observe.Explanation{Inconclusive: !zero.conclusive}}}
+		require.NoError(t, rec.Record(Port{Selector: zero.name, observed: []observed{{Modeled: zero.modeled, Capture: cap}}}))
+	}
 	report, err := rec.measurementReport()
 	require.NoError(t, err)
 	require.Equal(t, 1, report.Probes.Total.Differs)
+	require.Equal(t, 0, report.Probes.Total.Same)
+	require.Equal(t, 3, report.Probes.Total.NotPerturbed)
+	require.Equal(t, 1, report.Probes.Total.ModeledFollowerNotPerturbed)
 	require.Equal(t, 0.25, report.Probes.Total.Seconds)
 	require.Equal(t, 1, report.Probes.ByPort["fixture"].Differs)
 	require.Equal(t, 1, report.Probes.ByRule[observe.RuleBaseLookup].Differs)
@@ -133,4 +146,54 @@ func TestProbeReadOptionsPartition(t *testing.T) {
 	raw, err := json.Marshal(split)
 	require.NoError(t, err)
 	t.Log("ReadOptions split: " + strings.TrimSpace(string(raw)))
+}
+
+func TestProbeClassifiesActedBuildOnlyAndUnperturbedChanges(t *testing.T) {
+	before := makeProbePlan(macports.PortInfo{Options: map[string]string{"build.cmd": "make", "patchfiles": "old.patch"}}, macports.PortObservation{})
+	for _, c := range []struct {
+		name, status string
+		standins     int
+		options      map[string]string
+		moved        []string
+		field        string
+	}{
+		{"same", probeSame, 1, map[string]string{"build.cmd": "make", "patchfiles": "old.patch"}, nil, ""},
+		{"build only", probeBuildOnlyMoved, 1, map[string]string{"build.cmd": "standin", "patchfiles": "old.patch"}, []string{"build.cmd"}, ""},
+		{"patchfiles acted", probeDiffers, 1, map[string]string{"build.cmd": "standin", "patchfiles": "new.patch"}, []string{"build.cmd"}, "read-options.patchfiles"},
+		{"no change or substitution", probeNotPerturbed, 0, map[string]string{"build.cmd": "make", "patchfiles": "old.patch"}, nil, ""},
+		{"unperturbed drift", probeNotPerturbed, 0, map[string]string{"build.cmd": "make", "patchfiles": "new.patch"}, nil, "read-options.patchfiles"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			after := makeProbePlan(macports.PortInfo{Options: c.options}, macports.PortObservation{})
+			r := &probeResult{Before: before, After: &after, Standins: c.standins}
+			classifyProbePlans(r)
+			require.Equal(t, c.status, r.Status)
+			require.Equal(t, c.field, r.Field)
+			require.Equal(t, c.moved, r.BuildOnlyMoved)
+			require.True(t, r.SubstitutionsKnown)
+		})
+	}
+}
+
+func TestProbeTotalsSeparateEveryClassAndModeledNonCoverage(t *testing.T) {
+	var counts probeCounts
+	for _, p := range []probeSummary{
+		{Status: probeSame, Standins: 1, SubstitutionsKnown: true},
+		{Status: probeBuildOnlyMoved, Standins: 2, SubstitutionsKnown: true},
+		{Status: probeDiffers, Standins: 1, SubstitutionsKnown: true},
+		{Status: probeFailed},
+		{Status: probeNotPerturbed, SubstitutionsKnown: true, FollowerBenign: true},
+	} {
+		counts.add(p, true)
+	}
+	// Native zero-substitution observations are also excluded from same totals.
+	counts.add(probeSummary{Status: probeNotPerturbed, SubstitutionsKnown: true, FollowerBenign: true}, false)
+	require.Equal(t, 3, counts.Perturbed)
+	require.Equal(t, 1, counts.Same)
+	require.Equal(t, 1, counts.BuildOnlyMoved)
+	require.Equal(t, 1, counts.Differs)
+	require.Equal(t, 1, counts.Failed)
+	require.Equal(t, 2, counts.NotPerturbed)
+	require.Equal(t, 1, counts.ModeledFollowerNotPerturbed)
+	require.Equal(t, 1, counts.UnknownSubstitutions)
 }

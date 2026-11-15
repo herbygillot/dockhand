@@ -27,8 +27,20 @@ type probeOption struct {
 	Value, Error          string
 }
 
+const probeVersion = 2
+const (
+	probeSame           = "same"
+	probeBuildOnlyMoved = "same, build-only moved"
+	probeDiffers        = "differs"
+	probeFailed         = "failed"
+	probeNotPerturbed   = "not perturbed"
+)
+
 type probeResult struct {
-	Status                  string // same, differs, or failed
+	Version                 int
+	Status                  string
+	BuildOnlyMoved          []string `json:",omitempty"`
+	SubstitutionsKnown      bool
 	Field, ErrorCode, Error string `json:",omitempty"`
 	Rules                   []observe.Rule
 	Seconds                 float64
@@ -40,6 +52,9 @@ type probeResult struct {
 }
 
 type probeSummary struct {
+	Version                  int
+	BuildOnlyMoved           []string `json:",omitempty"`
+	SubstitutionsKnown       bool
 	Status, Field, ErrorCode string
 	Rules                    []observe.Rule
 	Seconds                  float64
@@ -51,7 +66,7 @@ func (r *probeResult) summary() *probeSummary {
 	if r == nil {
 		return nil
 	}
-	return &probeSummary{Status: r.Status, Field: r.Field, ErrorCode: r.ErrorCode, Rules: r.Rules, Seconds: r.Seconds, Standins: r.Standins, FollowerBenign: r.FollowerBenign}
+	return &probeSummary{Version: r.Version, BuildOnlyMoved: r.BuildOnlyMoved, SubstitutionsKnown: r.SubstitutionsKnown, Status: r.Status, Field: r.Field, ErrorCode: r.ErrorCode, Rules: r.Rules, Seconds: r.Seconds, Standins: r.Standins, FollowerBenign: r.FollowerBenign}
 }
 
 func makeProbePlan(info macports.PortInfo, p macports.PortObservation) probePlan {
@@ -175,4 +190,22 @@ func buildOnlyProbeChanges(a, b probePlan) []string {
 		}
 	}
 	return moved
+}
+
+// Called only after a completed second observation, whose substitution
+// count is known. Errors keep their own semantic/infrastructure classes.
+func classifyProbePlans(r *probeResult) {
+	r.SubstitutionsKnown = true
+	r.Field = firstProbeDifference(r.Before, *r.After)
+	r.BuildOnlyMoved = buildOnlyProbeChanges(r.Before, *r.After)
+	switch {
+	case r.Standins == 0:
+		r.Status = probeNotPerturbed
+	case r.Field != "":
+		r.Status = probeDiffers
+	case len(r.BuildOnlyMoved) > 0:
+		r.Status = probeBuildOnlyMoved
+	default:
+		r.Status = probeSame
+	}
 }
