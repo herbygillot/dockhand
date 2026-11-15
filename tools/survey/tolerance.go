@@ -53,20 +53,21 @@ type toleranceCapture struct {
 	Root, Base                  string
 	Aliases                     map[string]string
 	Files                       map[string]capturedFile
+	PortGroups                  []macports.LoadedPortGroup
 	Observation                 macports.PortObservation
 	Pair                        tolerancePair
 }
 
 func digest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 
-func captureTolerance(ctx context.Context, target model.Target, platform model.Platform, modeled bool, unanswered string, port macports.PortObservation, contents []byte, root string) (*toleranceCapture, error) {
+func captureTolerance(ctx context.Context, target model.Target, platform model.Platform, modeled bool, unanswered string, port macports.PortObservation, contents []byte, root string, loaded []macports.LoadedPortGroup) (*toleranceCapture, error) {
 	started := time.Now()
 	on, off, err := measurePolicies(ctx, port, contents, root)
 	analysisNanos := time.Since(started).Nanoseconds()
 	if err != nil {
 		return nil, err
 	}
-	c := &toleranceCapture{Version: toleranceVersion, Target: target, Platform: platform, Modeled: modeled, Unanswered: unanswered, Contents: string(contents), Root: root, Base: port.BaseLibrary, Observation: port, Files: map[string]capturedFile{}, Aliases: map[string]string{}, Pair: tolerancePair{Complete: unanswered == "", On: on, Off: off, OnLeft: modeled && (unanswered != "" || on.Inconclusive), OffLeft: modeled && (unanswered != "" || off.Inconclusive), Parity: unanswered == ""}}
+	c := &toleranceCapture{PortGroups: loaded, Version: toleranceVersion, Target: target, Platform: platform, Modeled: modeled, Unanswered: unanswered, Contents: string(contents), Root: root, Base: port.BaseLibrary, Observation: port, Files: map[string]capturedFile{}, Aliases: map[string]string{}, Pair: tolerancePair{Complete: unanswered == "", On: on, Off: off, OnLeft: modeled && (unanswered != "" || on.Inconclusive), OffLeft: modeled && (unanswered != "" || off.Inconclusive), Parity: unanswered == ""}}
 	alias := func(original, role string) {
 		if original == "" {
 			return
@@ -99,8 +100,31 @@ func captureTolerance(ctx context.Context, target model.Target, platform model.P
 			put(filepath.Join("base", "port1.0", filepath.Base(file)), data)
 		}
 	}
-	// Capture exactly the PortGroup files the current classifier may read.
-	// The complete Portfile and Base sources retain the known #247 boundary.
+	// Retain every loaded PortGroup, including those absent from host-read
+	// stacks. The classifier still follows only its existing sources (#247).
+	for _, group := range loaded {
+		file := group.Path
+		role := ""
+		if relative := group.File(); relative != "" {
+			if !filepath.IsLocal(relative) {
+				return nil, fmt.Errorf("capture: nonlocal PortGroup path %q", group.Path)
+			}
+			file = filepath.Join(root, filepath.FromSlash(relative))
+			role = filepath.Join("source", relative)
+		} else {
+			if !filepath.IsAbs(file) {
+				return nil, fmt.Errorf("capture: loaded PortGroup %s %s has no absolute source path", group.Name, group.Version)
+			}
+			role = filepath.Join("portgroups", digest([]byte(file)), filepath.Base(file))
+		}
+		data, e := os.ReadFile(file)
+		if e != nil {
+			return nil, fmt.Errorf("capture PortGroup %s %s: %w", group.Name, group.Version, e)
+		}
+		put(role, data)
+		alias(file, role)
+	}
+	// Keep frame sources too, for partial observations with no inventory.
 	groupDir := filepath.Join(root, macports.PortGroupDirectory)
 	if resolved, e := filepath.EvalSymlinks(groupDir); e == nil {
 		groupDir = resolved

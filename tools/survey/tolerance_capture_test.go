@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestToleranceCaptureReplaysWithoutItsTreeOrBase(t *testing.T) {
+func TestToleranceCaptureKeepsOffStackPortGroupsAndReplaysWithoutItsTreeOrBase(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "tree")
 	base := filepath.Join(t.TempDir(), "base")
 	put := func(file, text string) {
@@ -36,8 +36,22 @@ func TestToleranceCaptureReplaysWithoutItsTreeOrBase(t *testing.T) {
 		{File: filepath.Join(base, "port1.0/portbuild.tcl"), Command: "return [findBinary make /usr/bin/make]"},
 		{Command: "findBinary make /usr/bin/make"},
 	}}}}
-	c, err := captureTolerance(t.Context(), model.Target{Name: "fixture", Portfile: "devel/fixture/Portfile"}, model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"}, true, "", p, data, root)
+	groupBody := "proc offstack {} {global build.cmd; distfiles ${build.cmd}.tgz}\n"
+	loaded := []macports.LoadedPortGroup{
+		{Name: "offstack", Version: "1.0", Path: "<source>/" + macports.PortGroupDirectory + "/offstack-1.0.tcl"},
+		{Name: "same-bytes", Version: "1.0", Path: "<source>/" + macports.PortGroupDirectory + "/same-bytes-1.0.tcl"},
+	}
+	for _, group := range loaded {
+		put(filepath.Join(root, group.File()), groupBody)
+	}
+	put(filepath.Join(root, macports.PortGroupDirectory, "not-loaded-1.0.tcl"), "set not_loaded 1\n")
+	c, err := captureTolerance(t.Context(), model.Target{Name: "fixture", Portfile: "devel/fixture/Portfile"}, model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"}, true, "", p, data, root, loaded)
 	require.NoError(t, err)
+	require.Equal(t, loaded, c.PortGroups)
+	for _, group := range loaded {
+		require.Equal(t, []byte(groupBody), c.Files["source/"+group.File()].Data, "no host-read frame names this group")
+	}
+	require.NotContains(t, c.Files, "source/"+macports.PortGroupDirectory+"/not-loaded-1.0.tcl")
 	require.False(t, c.Pair.On.Inconclusive)
 	require.True(t, c.Pair.Off.Inconclusive)
 	gitRoot, source := recordTree(t)
@@ -48,6 +62,9 @@ func TestToleranceCaptureReplaysWithoutItsTreeOrBase(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, rec.Begin(source))
 	require.NoError(t, rec.Record(Port{Selector: "fixture", portfile: "devel/fixture/Portfile", Assessment: portedit.Assessment{Outcome: portedit.InputFound}, observed: []observed{{Platform: c.Platform, Modeled: true, Root: root, Observation: p, Capture: c}}}))
+	var copies int
+	require.NoError(t, rec.db.QueryRow("select count(*) from tolerance_file where hash=?", digest([]byte(groupBody))).Scan(&copies))
+	require.Equal(t, 1, copies, "two off-stack files with identical bytes share one stored blob")
 	var encoded []byte
 	require.NoError(t, rec.db.QueryRow("select payload from tolerance_capture limit 1").Scan(&encoded))
 	decoded, err := decompress(encoded)
@@ -55,6 +72,7 @@ func TestToleranceCaptureReplaysWithoutItsTreeOrBase(t *testing.T) {
 	var round toleranceCapture
 	require.NoError(t, json.Unmarshal(decoded, &round))
 	require.Equal(t, p, round.Observation, "the raw observation, including anonymous frames, survives storage")
+	require.Equal(t, loaded, round.PortGroups)
 	require.NoError(t, rec.Close())
 	require.NoError(t, journal.Close())
 	journalData, err := os.ReadFile(database + ".jsonl")
@@ -68,6 +86,11 @@ func TestToleranceCaptureReplaysWithoutItsTreeOrBase(t *testing.T) {
 	require.NoError(t, os.Rename(base, base+"-absent"))
 	replay, dir, err := c.materialize(t.TempDir())
 	require.NoError(t, err)
+	for _, group := range loaded {
+		bytes, err := os.ReadFile(filepath.Join(dir, group.File()))
+		require.NoError(t, err)
+		require.Equal(t, groupBody, string(bytes), "off-stack group bytes materialize with the tree absent")
+	}
 	on, off, err := measurePolicies(t.Context(), replay, data, dir)
 	require.NoError(t, err)
 	require.Equal(t, c.Pair.On.Inconclusive, on.Inconclusive)

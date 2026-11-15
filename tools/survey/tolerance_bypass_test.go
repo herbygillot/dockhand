@@ -61,7 +61,9 @@ func TestToleranceBypassFamilyCaptures(t *testing.T) {
 			profile := model.Platform{OS: "darwin", Version: "24", Architecture: "x86_64"}
 			got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: profile, Declarations: true, SelectedOnly: true})
 			require.NoError(t, err)
-			cap, err := captureTolerance(t.Context(), target, profile, true, "", got.Ports[name], data, root)
+			groups, known := got.Snapshot.Ports[name].LoadedPortGroups()
+			require.True(t, known)
+			cap, err := captureTolerance(t.Context(), target, profile, true, "", got.Ports[name], data, root, groups)
 			require.NoError(t, err)
 			t.Logf("normal inconclusive=%v off=%v distfiles=%q", cap.Pair.On.Inconclusive, cap.Pair.Off.Inconclusive, got.Snapshot.Ports[name].Options["distfiles"])
 			require.NoError(t, rec.Record(Port{Selector: name, portfile: target.Portfile, Assessment: portedit.Assessment{Outcome: "fixture"}, observed: []observed{{Platform: profile, Modeled: true, Root: root, Info: got.Snapshot.Ports[name], Observation: got.Ports[name], Capture: cap}}}))

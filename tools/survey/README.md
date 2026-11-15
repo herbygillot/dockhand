@@ -130,8 +130,11 @@ Portfiles are excluded from comparable fully-covered totals on both sides.
 ## Replayable tolerance records
 
 Schema 2 adds per-context tolerance pairs, per-declaration rule traces and
-checksummed gzip observation captures. Files read by the classifier are stored
-once by content hash. Captures include complete declaration values and frames,
+checksummed gzip observation captures. Files read by the classifier and every
+PortGroup the port loaded are stored once by content hash, including PortGroups
+absent from host-read stacks. The loaded inventory and source paths remain in
+each capture for later judgement. Captures include complete declaration values
+and frames,
 including anonymous frames; the older `host_access` table remains a compact,
 lossy read summary. Original tree and Base paths are remapped to captured files
 for replay. A record made with different measurement settings cannot be resumed.

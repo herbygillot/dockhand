@@ -320,3 +320,9 @@ every mentioned line belongs to the accepted flow.
 The manifest also sums elapsed seconds spent in paired analysis (including the
 legacy parity check), capture preparation and JSON/compression. Parallel
 analysis durations overlap; they are not an increase in survey wall time.
+
+Follower captures retain every PortGroup named in the evaluation's loaded
+inventory, including off-stack files, with source bytes stored once by hash.
+A complete observation missing that inventory, or a loaded file that cannot be
+read, stops measurement. Capturing these files does not change which sources
+Tolerate follows.

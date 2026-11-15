@@ -235,7 +235,12 @@ func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files
 					measurementErr = readErr
 					return
 				}
-				entry.Capture, measurementErr = captureTolerance(ctx, target, profile, modeled, observation.Unanswered, entry.Observation, contents, root)
+				groups, known := entry.Info.LoadedPortGroups()
+				if observedErr == nil && observation.Unanswered == "" && !known {
+					measurementErr = fmt.Errorf("%s: loaded PortGroup inventory was not recorded", name)
+					return
+				}
+				entry.Capture, measurementErr = captureTolerance(ctx, target, profile, modeled, observation.Unanswered, entry.Observation, contents, root, groups)
 				if entry.Capture != nil && observedErr != nil {
 					entry.Capture.Pair.Complete = false
 					entry.Capture.Pair.Parity = false
