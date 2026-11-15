@@ -336,3 +336,10 @@ answers have `standin` ledger and event provenance; unsupported calls retain
 ordinary closed answers. Ordinary product builds contain neither the API nor
 the Tcl implementation. Native contexts that do not close a read are not
 perturbed by this policy.
+
+The survey perturbation comparison is literal and ordered: expanded distfile
+names and locations, checksum declaration values, revision declaration values
+and final revision, then every `macports.ReadOptions` entry (presence, value
+and read error). It ignores source frames, host events and the ledger. Build
+and configure options are included even when they do not affect fetch inputs;
+a reported difference names the first field under this definition.
