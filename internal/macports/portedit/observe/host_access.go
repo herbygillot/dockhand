@@ -322,11 +322,8 @@ func tolerate(ctx context.Context, port macports.PortObservation, contents []byt
 }
 
 func classifyAccess(ctx context.Context, root string, contents []byte, declaration macports.Declaration, groups map[string][]byte, base *baseCode, toolchainBenign, toolchainChecked *bool) Rule {
-	var where []string
-	for _, frame := range declaration.Frames {
-		where = append(where, fmt.Sprintf("%s:%d %s", frame.File, frame.Line, sourceLine(frame.Command)))
-	}
 	rule := RuleNone
+	refusedCompiler := false
 	switch {
 	case buildDefaultReadBenign(root, contents, declaration, groups, base):
 		rule = RuleBuildDefault
@@ -342,12 +339,44 @@ func classifyAccess(ctx context.Context, root string, contents []byte, declarati
 		}
 		if *toolchainBenign {
 			rule = RuleToolchain
+		} else {
+			refusedCompiler = true
 		}
 	case portGroupReadBenign(root, declaration.Frames, groups):
 		rule = RulePortGroup
 	}
-	progress.DebugReport(ctx, "Host access explanation %s: %s; frames: %s", rule, declaration.Values[0], strings.Join(where, " <- "))
+	reportAccess(ctx, rule, refusedCompiler, declaration)
 	return rule
+}
+
+// reportAccess retains Tolerate's original debug wording and its silence
+// for an accepted compiler probe.
+func reportAccess(ctx context.Context, rule Rule, refusedCompiler bool, declaration macports.Declaration) {
+	var sentence string
+	switch rule {
+	case RuleBuildDefault:
+		sentence = "Host access explained as a build-only option's default"
+	case RuleBaseLookup:
+		sentence = "Host access explained as Base's own lookup for an option no fetch or checksum value reads"
+	case RuleSourceDate:
+		sentence = "Host access explained as Base's source_date_epoch lookup of git: the snapshot has no .git, so the answer doesn't depend on whether git is found"
+	case RuleCallback:
+		sentence = "Host access explained as a PortGroup callback's build-only read"
+	case RuleToolchain:
+		return
+	case RulePortGroup:
+		sentence = "Host access explained as a PortGroup's build-only read"
+	default:
+		sentence = "Host access not explained"
+		if refusedCompiler {
+			sentence = "Host access is a compiler probe but the Portfile reads toolchain options outside build positions"
+		}
+	}
+	var where []string
+	for _, frame := range declaration.Frames {
+		where = append(where, fmt.Sprintf("%s:%d %s", frame.File, frame.Line, sourceLine(frame.Command)))
+	}
+	progress.DebugReport(ctx, "%s: %s; frames: %s", sentence, declaration.Values[0], strings.Join(where, " <- "))
 }
 
 // sourceLine is a frame command's first line, enough to recognize it.
