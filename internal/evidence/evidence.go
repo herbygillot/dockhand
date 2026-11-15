@@ -551,7 +551,7 @@ func Judge(primary Check, plan model.Plan, earlier []Check, now Identities, requ
 	checks := append([]Check{primary}, earlier...)
 	// An environment only an earlier check planned is judged against the
 	// newest check's own reading of each source, where it has one
-	// (change 4 of docs/designs/source-comparison.md).
+	// (#192).
 	readings := newestReadings(primary.Plan, plan)
 	primary.Plan = plan
 	evidence := Of(primary)
@@ -1417,8 +1417,7 @@ func (e *Evidence) readSources(primary model.Plan) {
 			inputs := e.inputs[c.Inputs]
 			// The tag the earlier check planned beside its build, and the
 			// newest plan's, so a dependent built against a moved tag's old
-			// archive is found here as reuse finds it (change 2 of
-			// docs/designs/source-comparison.md).
+			// archive is found here as reuse finds it (#192).
 			build := reuse.Candidate{Result: c.TargetResult, Inputs: inputs, Tagged: e.Plan.TagIn(environment, target.Target.ID)}
 			planned := reuse.Target{PlanTarget: target.Target, DependsOn: e.Plan.DependsOnIn(environment, target.Target.ID), Earlier: []reuse.Candidate{build},
 				Tag: primary.TagIn(environment, target.Target.ID), TagShownMoved: e.shown[target.Target.ID]}

@@ -203,8 +203,8 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 	var judged Evidence
 	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		// The newest check's own results are asked what their builds
-		// fetched too, where finished coverage asks it (change 1 of
-		// docs/designs/source-comparison.md): loaded without what they
+		// fetched too, where finished coverage asks it (#192): loaded
+		// without what they
 		// read, every Git result answered "not known", and no check of a
 		// Git-fetched port stood for another request.
 		own, err := checks.LoadCheck(r, primary)
@@ -475,8 +475,7 @@ func (e *Engine) Covered(ctx context.Context, branch model.BranchID, tree model.
 // tests, or one the environment can't build (unmet) either way, with the
 // same resolved sources (checks.FinishedSourcesCover), and each Git
 // result's own fetch the source want expects: a check whose Git source
-// couldn't be read stands for itself alone (change 1 of docs/designs/
-// source-comparison.md).
+// couldn't be read stands for itself alone (#192).
 func coversPlan(have model.Plan, cell func(model.TargetID, int) (Cell, bool), fetched func(Cell) model.ObjectID, want model.Plan) bool {
 	environments := have.Environments
 	if checks.TestsRank(have.Tests) < checks.TestsRank(want.Tests) || !checks.FinishedSourcesCover(have, want) {

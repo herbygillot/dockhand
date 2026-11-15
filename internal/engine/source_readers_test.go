@@ -19,8 +19,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
-// The readers of a check's resolved source, held to one table: the design's
-// "What each reader does with each answer" (docs/designs/source-comparison.md),
+// The readers of a check's resolved source, held to one table of what each
+// reader does with each answer (#192),
 // each row put through each reader's own entry point, joining through
 // QueueCheck, counting a finished check through Covered, an earlier result
 // through EvidenceFor, reuse through reuse.Choose (which asks Carry), and
@@ -373,7 +373,7 @@ func TestAnUnresolvedGitSourceThroughQueueCheck(t *testing.T) {
 }
 
 // Change 4 through its entry points, for a Git source and for a GitHub
-// tag (docs/designs/source-comparison.md, "The readers agree"): a check
+// tag (#192): a check
 // on one release, the ref moved, a second check on another release. On
 // the earlier release the moved target's result and its dependent's read
 // as not checked, an unrelated target's still counts, and the release

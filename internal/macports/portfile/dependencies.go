@@ -224,7 +224,7 @@ func DeclareLibrary(src []byte, spec string) ([]byte, bool) {
 // declared, each added one literal, port:, path:, lib:, or bin:, by the
 // port it names. It's how a check
 // after tidy declares a library its builds linked reuses what they built
-// (docs/designs/declare-linked-libraries.md, part 3). False where either
+// (#49). False where either
 // doesn't parse, or anything else differs.
 func DeclaredChanges(before, after []byte) (ports []string, ok bool) {
 	strippedBefore, okBefore := withoutTopDependencies(before)

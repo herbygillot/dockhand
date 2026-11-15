@@ -28,7 +28,7 @@ type Declaration struct {
 // declareTidy adds to a tidy plan the commit that declares what the
 // branch's passed check found its builds link and not declare,
 // "<port>: declare libiconv", after the groups and before --restyle's
-// (docs/designs/declare-linked-libraries.md, part 2): a line each,
+// (#49): a line each,
 // written as the tree writes a dependency on that port most, after the
 // Portfile's last depends_lib. A finding it can't write is said in
 // NotDeclared: a subport's of a Portfile with several ports, a variant

@@ -549,8 +549,8 @@ func TestAResultAShellEnteredIsNoEvidence(t *testing.T) {
 
 // An earlier pass doesn't fill the newest evidence where the GitHub tag
 // its archive was fetched by named another commit then than the newest
-// plan's, as reuse builds again for it (change 2 of docs/designs/
-// source-comparison.md); another release's tag, or a tag one side didn't
+// plan's, as reuse builds again for it (#192); another release's tag,
+// or a tag one side didn't
 // record, stands. A result built with Git doesn't fill where the newest
 // plan builds that target another way (change 3).
 func TestAnEarlierPassStandsOnlyForTheSourceTheNewestPlanFetches(t *testing.T) {
@@ -601,7 +601,7 @@ func TestAnEarlierPassStandsOnlyForTheSourceTheNewestPlanFetches(t *testing.T) {
 // two, the moved target's result there and a dependent's built against
 // it read as not checked, an unrelated target's still counts, and the
 // release stays required. Where the newest couldn't resolve the ref, the
-// earlier result stands (change 4 of docs/designs/source-comparison.md;
+// earlier result stands (#192;
 // Codex's probe, a pass on 15 at one commit and on 26 at another).
 func TestAnEarlierReleasesResultIsJudgedAgainstTheNewestReading(t *testing.T) {
 	sequoia := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}
