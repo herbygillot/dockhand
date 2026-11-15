@@ -144,6 +144,12 @@ Build with `go build -tags surveymeasure -o survey ./tools/survey` and pass
 run. This requires current mode and recording enabled. The tagged binary checks
 every measured complete observation against the frozen a0298da0 tolerance
 routine and stops on a mismatch. It writes lossless captures automatically.
+
+These parity safeguards are temporary. Delete the legacy Tolerate copy in
+`observe/tolerance_legacy_survey.go` and the pinned `follow.go` hash guard,
+along with their call sites, in the commit that first changes `follow.go`.
+Do not update the pin to accept a changed follower as the original baseline.
+
 `survey -replay-tolerance <record>` opens that database with
 `mode=ro&immutable=1`, validates checksums and reports JSON counts without Tcl,
 the original tree, or the original Base. The record pins the exact binary,
