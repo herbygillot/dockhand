@@ -89,13 +89,11 @@ type PullRequestStatus struct {
 	// kind, a comment-only one included: the time a reviewer's own answer
 	// is for, where ReviewedAt is the verdict's.
 	LatestReview map[string]time.Time `json:",omitempty"`
-	// CommentedBy is who wrote the conversation's latest word, where that
-	// is someone other than the pull request's author, a bot, and after
-	// its head was committed: a reviewer waiting on the author, as
-	// reneeotten's question on #36300 was, which GitHub's review state
-	// doesn't count; empty otherwise, or where the forge doesn't say.
-	CommentedBy string `json:",omitempty"`
-	Checks      CheckSummary
+	// CommentedBy is the newest human commenter when they are not the account
+	// acting here. CommentsRead says whether the conversation settled it (#248).
+	CommentedBy  string `json:",omitempty"`
+	CommentsRead bool   `json:",omitempty"`
+	Checks       CheckSummary
 }
 
 // CheckSummary counts the checks and statuses reported for a pull

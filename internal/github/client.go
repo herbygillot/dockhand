@@ -101,7 +101,7 @@ func (c *Client) AuthenticatedAPI(ctx context.Context) (*gh.Client, error) {
 			source = SystemCredentials{}
 		}
 		if source == nil {
-			return nil, fmt.Errorf("%w: configure an explicit credential for this GitHub API", ErrAuthentication)
+			return nil, fmt.Errorf("%w: configure an explicit credential for this GitHub API", ErrNoCredentials)
 		}
 	}
 	// The token is asked for now, so a client with none says so here, and

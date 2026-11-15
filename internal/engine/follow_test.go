@@ -187,8 +187,9 @@ func TestStalePullRequestsAreReadAndADrainNamesTheUnwatched(t *testing.T) {
 // couldn't say everything, which are read one at a time.
 type batchReader struct {
 	*forgetest.GitHub
-	partial map[int]bool
-	read    int
+	partial     map[int]bool
+	batchStatus map[int]forge.PullRequestStatus
+	read        int
 }
 
 func (b *batchReader) ReadPullRequests(ctx context.Context, refs []forge.PullRequestRef) ([]forge.PullRequestReading, error) {
@@ -201,6 +202,9 @@ func (b *batchReader) ReadPullRequests(ctx context.Context, refs []forge.PullReq
 			continue
 		}
 		status, _ := b.Inspect(ctx, ref)
+		if batchStatus, ok := b.batchStatus[ref.Number]; ok {
+			status = batchStatus
+		}
 		readings = append(readings, forge.PullRequestReading{Ref: ref, Found: true, Partial: b.partial[ref.Number], PullRequest: *pr, Status: status})
 	}
 	return readings, nil
@@ -241,6 +245,34 @@ func TestPullRequestsAreReadAtOnceWhereTheForgeCan(t *testing.T) {
 	refreshed, err = e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)
 	require.EqualError(t, refreshed.Branches[0].Err, "#34901 was not found")
+}
+
+// A fallback that cannot read the conversation keeps the previous answer (#248).
+func TestFallbackKeepsEarlierComment(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.NoError(t, err)
+	number := submitted.PullRequest.Ref.Number
+	fake.Statuses = map[int]forge.PullRequestStatus{number: {CommentedBy: "reviewer", CommentsRead: true}}
+	reader := &batchReader{GitHub: fake, partial: map[int]bool{}}
+	e.Forge = reader
+	_, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	reader.partial[number] = true
+	fake.Statuses[number] = forge.PullRequestStatus{}
+	refreshed, err := e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "reviewer", refreshed.Branches[0].Branch.PullRequest.Observed.CommentedBy)
+	reader.batchStatus = map[int]forge.PullRequestStatus{number: {CommentedBy: "new-reviewer", CommentsRead: true}}
+	refreshed, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "new-reviewer", refreshed.Branches[0].Branch.PullRequest.Observed.CommentedBy)
 }
 
 // anonymousForge is GitHub without a login: no read over many pull

@@ -242,12 +242,30 @@ func (e *Engine) readPullRequests(ctx context.Context, branches []model.Branch) 
 	return func(ctx context.Context, pr *model.PullRequest) (model.PullRequestObservation, error) {
 		reading, ok := byNumber[pullRequestRef(pr.Repository, pr.Number)]
 		switch {
-		case !ok || reading.Partial:
+		case !ok:
+			return e.observePullRequest(ctx, pr)
+		case reading.Partial:
+			// Keep the conversation from the partial read if the fallback
+			// cannot read it itself (#248).
+			if reading.Status.CommentsRead {
+				copyPR := *pr
+				var prior model.PullRequestObservation
+				if pr.Observed != nil {
+					prior = *pr.Observed
+				}
+				prior.CommentedBy = reading.Status.CommentedBy
+				copyPR.Observed = &prior
+				return e.observePullRequest(ctx, &copyPR)
+			}
 			return e.observePullRequest(ctx, pr)
 		case !reading.Found:
 			return model.PullRequestObservation{}, fmt.Errorf("#%d was not found", pr.Number)
 		}
-		return e.observation(reading.PullRequest, reading.Status), nil
+		next := e.observation(reading.PullRequest, reading.Status)
+		if !reading.Status.CommentsRead && pr.Observed != nil {
+			next.CommentedBy = pr.Observed.CommentedBy
+		}
+		return next, nil
 	}, true, nil
 }
 
@@ -285,7 +303,12 @@ func (e *Engine) observePullRequest(ctx context.Context, pr *model.PullRequest) 
 	if err != nil {
 		return model.PullRequestObservation{}, err
 	}
-	return e.observation(observed.PullRequest, status), nil
+	next := e.observation(observed.PullRequest, status)
+	// An unread conversation cannot erase the earlier answer (#248).
+	if !status.CommentsRead && pr.Observed != nil {
+		next.CommentedBy = pr.Observed.CommentedBy
+	}
+	return next, nil
 }
 
 // checksOf is how a pull request's checks stand, from their counts.

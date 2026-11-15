@@ -3,6 +3,7 @@ package github_test
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,7 +19,7 @@ import (
 
 func TestInspectSummarizesMergeabilityReviewsAndChecks(t *testing.T) {
 	head := strings.Repeat("a", 40)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/pulls/7/reviews"):
 			fmt.Fprint(w, `[{"state":"CHANGES_REQUESTED","user":{"login":"alice"},"submitted_at":"2026-11-01T10:00:00Z"},{"state":"APPROVED","user":{"login":"alice"},"submitted_at":"2026-11-02T10:00:00Z"},{"state":"COMMENTED","user":{"login":"bob"},"submitted_at":"2026-11-03T10:00:00Z"},{"state":"APPROVED","user":{"login":"carol"}},{"state":"DISMISSED","user":{"login":"carol"}}]`)
@@ -33,9 +34,12 @@ func TestInspectSummarizesMergeabilityReviewsAndChecks(t *testing.T) {
 		default:
 			http.NotFound(w, r)
 		}
-	}))
-	defer server.Close()
-	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}
+	})
+	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: "https://example.test/"}, HTTP: &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, r)
+		return response.Result(), nil
+	})}}}
 	status, err := client.Inspect(t.Context(), forge.PullRequestRef{Forge: forge.GitHub, Repository: "macports/macports-ports", Number: 7})
 	require.NoError(t, err)
 	require.Equal(t, "no", status.Mergeable)
@@ -58,7 +62,7 @@ func TestInspectSummarizesMergeabilityReviewsAndChecks(t *testing.T) {
 // account owns its sandbox, whose pull requests never wait).
 func TestCIAwaitingApprovalReadsAsWaiting(t *testing.T) {
 	head := strings.Repeat("b", 40)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/pulls/8/reviews"):
 			fmt.Fprint(w, `[]`)
@@ -73,9 +77,12 @@ func TestCIAwaitingApprovalReadsAsWaiting(t *testing.T) {
 		default:
 			http.NotFound(w, r)
 		}
-	}))
-	defer server.Close()
-	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}
+	})
+	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: "https://example.test/"}, HTTP: &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, r)
+		return response.Result(), nil
+	})}}}
 	status, err := client.Inspect(t.Context(), forge.PullRequestRef{Forge: forge.GitHub, Repository: "macports/macports-ports", Number: 8})
 	require.NoError(t, err)
 	require.Equal(t, forge.CheckSummary{Total: 2, Pending: 2}, status.Checks)
@@ -84,8 +91,12 @@ func TestCIAwaitingApprovalReadsAsWaiting(t *testing.T) {
 func TestInspectNamesWhoRequestedChangesAndReviewCanBeRequestedAgain(t *testing.T) {
 	head := strings.Repeat("a", 40)
 	var requested []any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.Path == "/user":
+			fmt.Fprint(w, `{"login":"ada"}`)
+		case strings.HasSuffix(r.URL.Path, "/issues/7/comments"):
+			fmt.Fprint(w, `[]`)
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/pulls/7/requested_reviewers"):
 			var payload map[string]any
 			assert.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
@@ -104,9 +115,12 @@ func TestInspectNamesWhoRequestedChangesAndReviewCanBeRequestedAgain(t *testing.
 		default:
 			http.NotFound(w, r)
 		}
-	}))
-	defer server.Close()
-	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, Token: "fixture-token"}}}
+	})
+	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: "https://example.test/", Token: "fixture-token"}, HTTP: &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, r)
+		return response.Result(), nil
+	})}}}
 	ref := forge.PullRequestRef{Forge: forge.GitHub, Repository: "macports/macports-ports", Number: 7}
 	status, err := client.Inspect(t.Context(), ref)
 	require.NoError(t, err)
@@ -115,4 +129,79 @@ func TestInspectNamesWhoRequestedChangesAndReviewCanBeRequestedAgain(t *testing.
 	require.Equal(t, time.Date(2026, 10, 1, 5, 0, 0, 0, time.UTC), status.ReviewedAt, "the latest request for changes, not carol's later approval (field testing, 2026-10-02)")
 	require.NoError(t, client.RequestReviewers(t.Context(), ref, status.ChangesRequestedBy))
 	require.Equal(t, []any{"herbygillot", "ryandesign"}, requested)
+}
+
+// Inspect reads the same conversation as the bulk reader (#248).
+func TestInspectConversation(t *testing.T) {
+	for _, tc := range []struct{ name, comments, want string }{
+		{"adopted reply", `[{"user":{"type":"User","login":"ada"},"created_at":"2026-11-06T00:00:00Z"}]`, ""},
+		{"bot after reviewer", `[{"user":{"type":"User","login":"reviewer"},"created_at":"2026-11-05T00:00:00Z"},{"user":{"type":"Bot","login":"bot"},"created_at":"2026-11-06T00:00:00Z"}]`, "reviewer"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: "https://example.test/", Token: "fixture-token"}, HTTP: &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+				body := `{}`
+				switch {
+				case r.URL.Path == "/user":
+					body = `{"login":"ada"}`
+				case strings.HasSuffix(r.URL.Path, "/issues/7/comments"):
+					body = tc.comments
+				case strings.HasSuffix(r.URL.Path, "/reviews"):
+					body = `[]`
+				case strings.HasSuffix(r.URL.Path, "/requested_reviewers"):
+					body = `{"users":[]}`
+				case strings.HasSuffix(r.URL.Path, "/pulls/7"):
+					body = `{"number":7,"head":{"sha":"abc"}}`
+				case strings.HasSuffix(r.URL.Path, "/check-runs"):
+					body = `{"check_runs":[]}`
+				case strings.HasSuffix(r.URL.Path, "/status"):
+					body = `{"statuses":[]}`
+				default:
+					t.Errorf("unexpected request %s", r.URL.Path)
+				}
+				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+			})}}}
+			status, err := client.Inspect(t.Context(), forge.PullRequestRef{Forge: forge.GitHub, Repository: "owner/repo", Number: 7})
+			require.NoError(t, err)
+			require.True(t, status.CommentsRead)
+			require.Equal(t, tc.want, status.CommentedBy)
+		})
+	}
+}
+
+// Without an account, Inspect still reads the pull request but cannot say
+// whether its conversation awaits the account's answer (#248).
+func TestInspectWithoutCredential(t *testing.T) {
+	for _, token := range []string{"", "fixture-token"} {
+		t.Run(map[bool]string{true: "no credential", false: "identity unavailable"}[token == ""], func(t *testing.T) {
+			client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: "https://example.test/", Token: token}, HTTP: &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+				var body string
+				if r.URL.Path == "/user" {
+					return &http.Response{StatusCode: 500, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{}`)), Request: r}, nil
+				}
+				switch {
+				case strings.HasSuffix(r.URL.Path, "/pulls/7"):
+					body = `{"number":7,"mergeable":false,"head":{"sha":"abc"}}`
+				case strings.HasSuffix(r.URL.Path, "/reviews"):
+					body = `[{"state":"APPROVED","user":{"login":"reviewer"},"submitted_at":"2026-11-03T10:00:00Z"}]`
+				case strings.HasSuffix(r.URL.Path, "/requested_reviewers"):
+					body = `{"users":[{"login":"bob"}]}`
+				case strings.HasSuffix(r.URL.Path, "/check-runs"):
+					body = `{"check_runs":[{"name":"build","status":"completed","conclusion":"failure"}]}`
+				case strings.HasSuffix(r.URL.Path, "/status"):
+					body = `{"statuses":[]}`
+				default:
+					t.Errorf("unexpected request %s", r.URL.Path)
+				}
+				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+			})}}}
+			status, err := client.Inspect(t.Context(), forge.PullRequestRef{Forge: forge.GitHub, Repository: "owner/repo", Number: 7})
+			require.NoError(t, err)
+			require.False(t, status.CommentsRead)
+			require.Empty(t, status.CommentedBy)
+			require.Equal(t, "no", status.Mergeable)
+			require.Equal(t, "approved", status.Review)
+			require.Equal(t, []string{"bob"}, status.Requested)
+			require.Equal(t, forge.CheckSummary{Total: 1, Failed: 1, Failing: []string{"build"}}, status.Checks)
+		})
+	}
 }

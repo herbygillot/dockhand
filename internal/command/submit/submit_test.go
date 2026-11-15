@@ -601,7 +601,7 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 
 	// A reviewer's comment, the conversation's latest word, waits on you
 	// though GitHub counts no review: #36300 read "CI ✓" alone (#90).
-	g.Status = forge.PullRequestStatus{Review: "none", CommentedBy: "reneeotten", Checks: forge.CheckSummary{Total: 2, Passed: 2}}
+	g.Status = forge.PullRequestStatus{Review: "none", CommentedBy: "reneeotten", CommentsRead: true, Checks: forge.CheckSummary{Total: 2, Passed: 2}}
 	out, errs, err = cmdtest.Dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
 	require.Contains(t, errs, "jq-update: #34901: @reneeotten commented\n")
@@ -613,7 +613,7 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
 
 	// serve reads them by itself.
-	g.Status = forge.PullRequestStatus{Review: "none", Checks: forge.CheckSummary{Total: 2, Passed: 1, Failed: 1, Failing: []string{"macOS 26"}}}
+	g.Status = forge.PullRequestStatus{Review: "none", CommentsRead: true, Checks: forge.CheckSummary{Total: 2, Passed: 1, Failed: 1, Failing: []string{"macOS 26"}}}
 	cmdtest.Hosted(t).Timings.ServePoll = 20 * time.Millisecond
 	ctx, stop := context.WithCancel(t.Context())
 	var served cmdtest.SyncBuffer

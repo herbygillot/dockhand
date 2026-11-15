@@ -3,6 +3,7 @@ package github_test
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -38,6 +39,7 @@ func TestPullRequestsAreReadAtOnce(t *testing.T) {
 		assert.Contains(t, payload.Query, `p0: repository(owner: "macports", name: "macports-ports") { pullRequest(number: 34901) { ...fields } }`)
 		assert.Contains(t, payload.Query, `p2: repository(owner: "macports", name: "macports-ports") { pullRequest(number: 9) { ...fields } }`)
 		fmt.Fprintf(w, `{"data": {
+  "viewer": {"login":"herbygillot"},
   "p0": {"pullRequest": {"number": 34901, "state": "OPEN", "isDraft": false, "headRefOid": %[1]q, "mergeable": "CONFLICTING",
     "createdAt": "2026-10-14T09:00:00Z", "body": "jq: update to 1.8.1\n\ncc @ryandesign", "author": {"login": "herbygillot"},
     "latestOpinionatedReviews": {"totalCount": 2, "nodes": [
@@ -125,10 +127,7 @@ func TestAPullRequestsOpeningIsReadAgainForNothing(t *testing.T) {
 	require.Equal(t, 1, notModified, "the second look is GitHub's 304")
 }
 
-// A comment by someone other than the author, a person and after the
-// head was committed, is a reviewer waiting, which GitHub's review state
-// doesn't count: reneeotten's question on #36300 read "CI ✓" alone (#90).
-// The author's own word, a bot's, or one before the head isn't.
+// The newest human comment is waiting when it is from another account (#248).
 func TestAReviewersLatestCommentIsRead(t *testing.T) {
 	head := strings.Repeat("a", 40)
 	pullRequest := func(number int, by, kind, at string) string {
@@ -139,7 +138,7 @@ func TestAReviewersLatestCommentIsRead(t *testing.T) {
     "commits": {"nodes": [{"commit": {"committedDate": "2026-11-04T09:00:00Z", "statusCheckRollup": {"contexts": {"totalCount": 0, "nodes": []}}}}]}}}`, number, head, at, kind, by)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, `{"data": {"p0": %s, "p1": %s, "p2": %s, "p3": %s}}`,
+		fmt.Fprintf(w, `{"data": {"viewer":{"login":"herbygillot"},"p0": %s, "p1": %s, "p2": %s, "p3": %s}}`,
 			pullRequest(1, "reneeotten", "User", "2026-11-05T14:00:09Z"),
 			pullRequest(2, "herbygillot", "User", "2026-11-05T14:00:09Z"),
 			pullRequest(3, "macportsbot", "Bot", "2026-11-05T14:00:09Z"),
@@ -157,5 +156,71 @@ func TestAReviewersLatestCommentIsRead(t *testing.T) {
 	for _, reading := range readings {
 		commented = append(commented, reading.Status.CommentedBy)
 	}
-	require.Equal(t, []string{"reneeotten", "", "", ""}, commented)
+	require.Equal(t, []string{"reneeotten", "", "", "reneeotten"}, commented)
+}
+
+// The account acting on an adopted pull request answers its reviewer (#248).
+func TestAdoptedPullRequestOwnReply(t *testing.T) {
+	checkConversation248(t, `[{"createdAt":"2026-11-05T13:00:00Z","author":{"__typename":"User","login":"reviewer"}},{"createdAt":"2026-11-05T14:00:00Z","author":{"__typename":"User","login":"ada"}}]`, "2026-11-04T00:00:00Z", "")
+}
+
+// A later bot does not hide the reviewer's question (#248).
+func TestBotAfterReviewer(t *testing.T) {
+	checkConversation248(t, `[{"createdAt":"2026-11-05T14:00:00Z","author":{"__typename":"User","login":"reviewer"}},{"createdAt":"2026-11-06T14:00:00Z","author":{"__typename":"Bot","login":"bot"}}]`, "2026-11-04T00:00:00Z", "reviewer")
+}
+
+// A head's committed date cannot establish when a push answered (#248).
+func TestCommittedDateDoesNotAnswerReviewer(t *testing.T) {
+	for _, date := range []string{"2020-01-01T00:00:00Z", "2099-01-01T00:00:00Z"} {
+		t.Run(date, func(t *testing.T) {
+			checkConversation248(t, `[{"createdAt":"2026-11-05T14:00:00Z","author":{"__typename":"User","login":"reviewer"}}]`, date, "reviewer")
+		})
+	}
+}
+
+func checkConversation248(t *testing.T, comments, committed, want string) {
+	t.Helper()
+	body := fmt.Sprintf(`{"data":{"viewer":{"login":"ada"},"p0":{"pullRequest":{"number":1,"state":"OPEN","headRefOid":%q,"author":{"login":"original"},"comments":{"nodes":%s},"commits":{"nodes":[{"commit":{"committedDate":%q}}]}}}}}`, strings.Repeat("a", 40), comments, committed)
+	httpClient := &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+	})}
+	client := &github.Client{Client: &githubapi.Client{HTTP: httpClient, Config: githubapi.Config{BaseURL: "https://example.test/", Token: "fixture-token"}}}
+	readings, err := client.ReadPullRequests(t.Context(), []forge.PullRequestRef{{Forge: forge.GitHub, Repository: "owner/repo", Number: 1}})
+	require.NoError(t, err)
+	require.Equal(t, want, readings[0].Status.CommentedBy)
+}
+
+// A page of bots may hide a person on an earlier page, so Inspect reads it (#248).
+func TestBotOnlyPageIsPartial(t *testing.T) {
+	body := fmt.Sprintf(`{"data":{"viewer":{"login":"ada"},"p0":{"pullRequest":{"number":1,"state":"OPEN","headRefOid":%q,"comments":{"pageInfo":{"hasPreviousPage":true},"nodes":[{"author":{"__typename":"Bot","login":"bot"}}]}}}}}`, strings.Repeat("a", 40))
+	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: "https://example.test/", Token: "fixture-token"}, HTTP: &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+	})}}}
+	readings, err := client.ReadPullRequests(t.Context(), []forge.PullRequestRef{{Forge: forge.GitHub, Repository: "owner/repo", Number: 1}})
+	require.NoError(t, err)
+	require.True(t, readings[0].Partial)
+	require.False(t, readings[0].Status.CommentsRead)
+}
+
+// A bulk read still reports its reviews and checks if the viewer is unknown (#248).
+func TestBulkReadWithoutViewer(t *testing.T) {
+	body := fmt.Sprintf(`{"data":{"viewer":null,"p0":{"pullRequest":{"number":1,"state":"OPEN","headRefOid":%q,"mergeable":"CONFLICTING","comments":{"nodes":[{"author":{"__typename":"User","login":"reviewer"}}]},"latestOpinionatedReviews":{"totalCount":1,"nodes":[{"state":"APPROVED","author":{"login":"reviewer"},"submittedAt":"2026-11-03T10:00:00Z"}]},"commits":{"nodes":[{"commit":{"statusCheckRollup":{"contexts":{"totalCount":1,"nodes":[{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"FAILURE"}]}}}}]}}}},"errors":[{"type":"FORBIDDEN","path":["viewer"],"message":"viewer unavailable"}]}`, strings.Repeat("a", 40))
+	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: "https://example.test/", Token: "fixture-token"}, HTTP: &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+	})}}}
+	readings, err := client.ReadPullRequests(t.Context(), []forge.PullRequestRef{{Forge: forge.GitHub, Repository: "owner/repo", Number: 1}})
+	require.NoError(t, err)
+	require.Len(t, readings, 1)
+	require.False(t, readings[0].Status.CommentsRead)
+	require.Empty(t, readings[0].Status.CommentedBy)
+	require.Equal(t, "no", readings[0].Status.Mergeable)
+	require.Equal(t, "approved", readings[0].Status.Review)
+	require.Equal(t, 1, readings[0].Status.Checks.Failed)
+}
+
+// Without a credential, the bulk read asks refresh to use anonymous reads (#248).
+func TestBulkReadWithoutCredential(t *testing.T) {
+	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: "https://example.test/"}}}
+	_, err := client.ReadPullRequests(t.Context(), []forge.PullRequestRef{{Forge: forge.GitHub, Repository: "owner/repo", Number: 1}})
+	require.ErrorIs(t, err, githubapi.ErrNoCredentials)
 }

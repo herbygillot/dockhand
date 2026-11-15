@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	gh "github.com/google/go-github/v93/github"
+
 	"github.com/herbygillot/dockhand/internal/forge"
 	githubapi "github.com/herbygillot/dockhand/internal/github"
 )
@@ -65,6 +67,54 @@ func (c *Client) Inspect(ctx context.Context, ref forge.PullRequestRef) (forge.P
 		opinions = append(opinions, opinion{Login: login, State: state, At: submitted[login]})
 	}
 	review(&status, opinions)
+	// The authenticated account, not the pull request author, decides whose
+	// latest human comment is awaiting an answer. If it cannot be learned,
+	// the conversation answer remains unknown (#248).
+	account, err := c.AuthenticatedUser(ctx)
+	if err == nil && account != "" {
+		opts := &gh.IssueListCommentsOptions{ListOptions: gh.ListOptions{PerPage: 100}}
+		status.CommentsRead = true
+		var latest, unknown time.Time
+		for {
+			comments, response, err := client.Issues.ListComments(ctx, owner, repo, ref.Number, opts)
+			if err != nil {
+				return forge.PullRequestStatus{}, githubapi.RateLimitError(err)
+			}
+			for _, comment := range comments {
+				user := comment.GetUser()
+				at := comment.GetCreatedAt().Time
+				if user == nil || user.GetType() == "" || (user.GetType() == "User" && user.GetLogin() == "") {
+					if at.IsZero() {
+						status.CommentsRead = false
+					} else if at.After(unknown) {
+						unknown = at
+					}
+					continue
+				}
+				if user.GetType() != "User" {
+					continue
+				}
+				if at.IsZero() {
+					status.CommentsRead = false
+					continue
+				}
+				if latest.IsZero() || !at.Before(latest) {
+					latest = at
+					status.CommentedBy = ""
+					if !strings.EqualFold(user.GetLogin(), account) {
+						status.CommentedBy = user.GetLogin()
+					}
+				}
+			}
+			if response.NextPage == 0 {
+				break
+			}
+			opts.Page = response.NextPage
+		}
+		if !unknown.IsZero() && !unknown.Before(latest) {
+			status.CommentsRead = false
+		}
+	}
 	// The reviews still requested: GitHub's whole list, which the endpoint
 	// gives in one page. A team requested is named by its slug.
 	requested, _, err := client.PullRequests.ListReviewers(ctx, owner, repo, ref.Number)
