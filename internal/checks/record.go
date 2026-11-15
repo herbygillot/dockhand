@@ -12,10 +12,11 @@ import (
 // LoadCheck loads a check's record, as evidence reads it, in the store's
 // one read of a check (the SQL study's O2): its plan, its executions and
 // their results, the executions that built the results it reused, with
-// their checks, and, where sources asks, what its results' builds read.
+// their checks, and what its results' builds read. Consumption of
+// in-check builds is needed even where no source is fetched with Git (#236).
 // The run is the caller's, which a driver finishing it holds ahead of its
 // record.
-func LoadCheck(r store.Reader, run model.Run, sources bool) (evidence.Check, error) {
+func LoadCheck(r store.Reader, run model.Run) (evidence.Check, error) {
 	record, err := r.Check(run.ID)
 	if err != nil {
 		return evidence.Check{}, err
@@ -27,7 +28,7 @@ func LoadCheck(r store.Reader, run model.Run, sources bool) (evidence.Check, err
 		}
 		check.Origins[id] = evidence.Origin{Execution: origin.Execution, Check: origin.Run.Name()}
 	}
-	if sources && len(record.Inputs) > 0 {
+	if len(record.Inputs) > 0 {
 		check.Inputs = record.Inputs
 	}
 	return check, nil

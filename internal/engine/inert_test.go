@@ -62,7 +62,11 @@ func TestACheckIsCarriedOverAnEditThatBuildsNothingDifferently(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
 	tools := model.ActivePort{Name: "harbor-tools", Spec: "@1_0", Directory: "graphics/harbor-tools", Archive: "sha256:aa"}
-	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{tools}}, identity: "origin a"}
+	lib := model.ActivePort{Name: "libharbor", Spec: "@4_0", Directory: "devel/libharbor", Archive: "sha256:libharbor"}
+	cli := model.ActivePort{Name: "harbor-cli", Spec: "@1_0", Directory: "devel/harbor-cli", Archive: "sha256:harbor-cli"}
+	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{tools}, consumes: map[model.TargetID][]model.ActivePort{
+		"harbor-cli": {tools, lib}, "harbor-viewer": {tools, lib, cli},
+	}}, identity: "origin a"}
 	e.Providers = map[string]buildenv.Provider{"command": provider}
 	queued := queuedHarborRun(t, e, tahoeArm)
 	ports := &inertPorts{fakePorts: harborPorts(), e: e, lint: macports.Lint{Warnings: []string{"Using full email address for no/open maintainer"}}}
@@ -109,7 +113,8 @@ func TestACheckIsCarriedOverAnEditThatBuildsNothingDifferently(t *testing.T) {
 			carried = target.Outcomes[0].Carried
 			require.Equal(t, []string{"Using full email address for no/open maintainer"}, target.Outcomes[0].Lint, "lint's lines, the Portfile's now")
 		} else {
-			require.Nil(t, target.Outcomes[0].Carried, "%s's directory is the same", target.Target.ID)
+			require.NotNil(t, target.Outcomes[0].Carried, "%s consumed the changed libharbor", target.Target.ID)
+			require.Equal(t, []model.InertPort{{Port: "libharbor", Options: []string{"maintainers"}}}, target.Outcomes[0].Carried.Ports)
 		}
 	}
 	require.NotNil(t, carried)

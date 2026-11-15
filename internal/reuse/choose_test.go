@@ -20,6 +20,12 @@ func TestTargetsReuseWhatStandsAndBuildWhatTheBuiltOnesNeed(t *testing.T) {
 	now := map[string]model.ObjectID{"devel/lib": "1", "devel/cli": "2", "graphics/viewer": "3", "graphics/tools": "4", macports.ResourcesDirectory: "5"}
 	built := func(target, directory string, active ...model.ActivePort) Candidate {
 		inputs := model.NewTargetInputs("origin a", directory, now[directory], now[macports.ResourcesDirectory], nil, append([]model.ActivePort{}, active...))
+		for _, port := range active {
+			if inputs.Targets == nil {
+				inputs.Targets = map[string]model.TargetID{}
+			}
+			inputs.Targets[strings.ToLower(port.Name)] = model.TargetID(strings.ToLower(port.Name))
+		}
 		return Candidate{Result: model.TargetResult{Target: model.TargetID(target), Outcome: model.OutcomePassed, Execution: "tart_1"}, Inputs: inputs}
 	}
 	lib := model.ActivePort{Name: "Lib", Spec: "@1_0", Directory: "devel/lib", Tree: "1", Archive: "sha256:aa"}
@@ -93,6 +99,12 @@ func TestAMovedTagRebuildsWhatWasBuiltAgainstIt(t *testing.T) {
 	a, b := model.ObjectID(strings.Repeat("a", 40)), model.ObjectID(strings.Repeat("b", 40))
 	built := func(target, directory, archive string, fetched model.ObjectID, active ...model.ActivePort) Candidate {
 		inputs := model.NewTargetInputs("origin a", directory, now[directory], now[macports.ResourcesDirectory], nil, append([]model.ActivePort{}, active...))
+		for _, port := range active {
+			if inputs.Targets == nil {
+				inputs.Targets = map[string]model.TargetID{}
+			}
+			inputs.Targets[strings.ToLower(port.Name)] = model.TargetID(strings.ToLower(port.Name))
+		}
 		inputs.Fetched = fetched
 		return Candidate{Result: model.TargetResult{Target: model.TargetID(target), Outcome: model.OutcomePassed, Execution: "tart_1", Archive: archive}, Inputs: inputs}
 	}
@@ -162,7 +174,7 @@ func TestWhatWasBuiltAgainstAnotherSourceIsOneRule(t *testing.T) {
 	}
 	targets := func(expected model.ObjectID) []Target {
 		target := func(id string, dependsOn ...model.TargetID) Target {
-			return Target{PlanTarget: model.PlanTarget{ID: model.TargetID(id)}, DependsOn: dependsOn, Earlier: []Candidate{chosen[model.TargetID(id)]}}
+			return Target{PlanTarget: model.PlanTarget{ID: model.TargetID(id), Target: model.Target{Name: id}}, DependsOn: dependsOn, Earlier: []Candidate{chosen[model.TargetID(id)]}}
 		}
 		lib := target("lib")
 		lib.Git = &model.GitSource{URL: "https://github.com/harbor/lib.git", Ref: "v4", Commit: expected, ResolvedAt: time.Now()}
@@ -257,4 +269,39 @@ func TestAMovedTagRebuildsItsDependents(t *testing.T) {
 	_, reusedConsumer := choice.Reused["cli"]
 	require.False(t, reusedLibrary)
 	require.False(t, reusedConsumer, "a consumer built against the old archive source cannot establish the new dependency source")
+}
+
+// A build against ordinary b cannot stand when the check asks its
+// dependent to consume b +docs, even with the same trees (#236).
+func TestCarryRejectsAChangedPrerequisiteConfiguration(t *testing.T) {
+	trees := map[string]model.ObjectID{"devel/a": "1", "devel/b": "2", "_resources": "3"}
+	a := model.PlanTarget{ID: "a +tests", Target: model.Target{Name: "a", Variants: map[string]bool{"tests": true}}, Directory: "devel/a"}
+	b := model.PlanTarget{ID: "b +docs", Target: model.Target{Name: "b", Variants: map[string]bool{"docs": true}}, Directory: "devel/b"}
+	inputs := model.NewTargetInputs("origin", a.Directory, "1", "3", a.Target.Variants,
+		[]model.ActivePort{{Name: "b", Spec: "@1_0", Directory: "devel/b", Tree: "2", Archive: "sha256:b"}})
+	inputs.Targets = map[string]model.TargetID{"b": "b"}
+	choice := Choose([]Target{
+		{PlanTarget: b},
+		{PlanTarget: a, DependsOn: []model.TargetID{b.ID}, Earlier: []Candidate{{Result: model.TargetResult{Target: a.ID, Outcome: model.OutcomePassed}, Inputs: inputs}}},
+	}, "origin", trees, Judge{}, func(model.TargetResult) bool { return true }, func(Candidate) bool { return true })
+	require.NotContains(t, choice.Reused, a.ID)
+	builds := model.CheckBuilds{Targets: []model.PlanTarget{a, b}, Dependencies: map[model.TargetID][]model.TargetID{a.ID: {b.ID}}}
+	_, ok := Carry(inputs, "", "origin", a, nil, trees, Judge{}, builds)
+	require.False(t, ok)
+	inputs.Targets["b"] = b.ID
+	_, ok = Carry(inputs, "", "origin", a, nil, trees, Judge{}, builds)
+	require.True(t, ok, "the same configured prerequisite stands")
+}
+
+// A moved tag of b +docs invalidates a consumer of its old archive,
+// including one reached through a port outside the check (#236).
+func TestAMovedTagOfAConfiguredPrerequisiteRejectsItsConsumer(t *testing.T) {
+	source := func(commit string) *model.GitSource {
+		return &model.GitSource{URL: "https://github.com/owner/b.git", Ref: "v1", Commit: model.ObjectID(strings.Repeat(commit, 40))}
+	}
+	b := Target{PlanTarget: model.PlanTarget{ID: "b +docs", Target: model.Target{Name: "b", Variants: map[string]bool{"docs": true}}}, Tag: source("b"),
+		Earlier: []Candidate{{Result: model.TargetResult{Target: "b +docs", Archive: "sha256:old-b"}, Tagged: source("a")}}}
+	a := Target{PlanTarget: model.PlanTarget{ID: "a", Target: model.Target{Name: "a"}}}
+	chosen := map[model.TargetID]Candidate{"a": {Inputs: model.TargetInputs{Active: []model.ActivePort{{Name: "b", Archive: "sha256:old-b"}}}}}
+	require.Equal(t, map[model.TargetID]Against{"a": {Dependency: b.ID}}, AgainstOtherSources([]Target{b, a}, chosen))
 }

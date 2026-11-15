@@ -102,7 +102,8 @@ func TestAMovedTagDoesntLetEarlierEvidenceStand(t *testing.T) {
 	e := f.open(t)
 	url, first, move := harborRepository(t)
 	lib := model.ActivePort{Name: "libharbor", Spec: "@4_0", Directory: "devel/libharbor", Archive: "sha256:libharbor"}
-	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}, consumes: map[model.TargetID][]model.ActivePort{"harbor-cli": {lib}, "harbor-viewer": {lib}},
+	cli := model.ActivePort{Name: "harbor-cli", Spec: "@1_0", Directory: "devel/harbor-cli", Archive: "sha256:harbor-cli"}
+	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}, consumes: map[model.TargetID][]model.ActivePort{"harbor-cli": {lib}, "harbor-viewer": {lib, cli}},
 		// A commit said of harbor-cli, fetched otherwise, is none of its
 		// inputs, and doesn't keep its build from being reused.
 		fetches: map[model.TargetID]string{"libharbor": first, "harbor-cli": first}}, identity: "origin a"}
@@ -191,7 +192,8 @@ func TestAnEarlierResultFillsInOnlyForTheCommitExpected(t *testing.T) {
 	e := f.open(t)
 	url, first, move := harborRepository(t)
 	lib := model.ActivePort{Name: "libharbor", Spec: "@4_0", Directory: "devel/libharbor", Archive: "sha256:libharbor"}
-	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}, consumes: map[model.TargetID][]model.ActivePort{"harbor-cli": {lib}, "harbor-viewer": {lib}},
+	cli := model.ActivePort{Name: "harbor-cli", Spec: "@1_0", Directory: "devel/harbor-cli", Archive: "sha256:harbor-cli"}
+	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}, consumes: map[model.TargetID][]model.ActivePort{"harbor-cli": {lib}, "harbor-viewer": {lib, cli}},
 		fetches: map[model.TargetID]string{"libharbor": first}}, identity: "origin a"}
 	e.Providers = map[string]buildenv.Provider{"command": provider}
 	revision := harborBranch(t, e)
@@ -298,7 +300,8 @@ func TestATargetLeftOutExpectsTheCommitItsTagNames(t *testing.T) {
 	e := f.open(t)
 	url, first, move := harborRepository(t)
 	lib := model.ActivePort{Name: "libharbor", Spec: "@4_0", Directory: "devel/libharbor", Archive: "sha256:libharbor"}
-	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}, consumes: map[model.TargetID][]model.ActivePort{"harbor-viewer": {lib}},
+	cli := model.ActivePort{Name: "harbor-cli", Spec: "@1_0", Directory: "devel/harbor-cli", Archive: "sha256:harbor-cli"}
+	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}, consumes: map[model.TargetID][]model.ActivePort{"harbor-viewer": {lib, cli}},
 		fetches: map[model.TargetID]string{"libharbor": first}}, identity: "origin a"}
 	ports := gitHarbor(url, "v4")
 	ports.directories["devel/harbor-cli"][0] = port("harbor-cli")
@@ -573,7 +576,9 @@ func TestAMovedGitHubTagIsSaidByCheckAndSubmit(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
 	url, first, move := harborRepository(t)
-	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}}, identity: "origin a"}
+	lib := model.ActivePort{Name: "libharbor", Spec: "@4_0", Directory: "devel/libharbor", Archive: "sha256:libharbor"}
+	cli := model.ActivePort{Name: "harbor-cli", Spec: "@1_0", Directory: "devel/harbor-cli", Archive: "sha256:harbor-cli"}
+	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}, consumes: map[model.TargetID][]model.ActivePort{"harbor-cli": {lib}, "harbor-viewer": {lib, cli}}}, identity: "origin a"}
 	e.Providers = map[string]buildenv.Provider{"command": provider}
 	revision := harborBranch(t, e)
 	usePorts(e, githubHarbor(url, "v4"))
@@ -630,13 +635,13 @@ func TestAMovedGitHubTagIsSaidByCheckAndSubmit(t *testing.T) {
 
 	again := check()
 	require.Len(t, provider.jobs, 2)
-	require.Equal(t, []model.TargetID{"libharbor"}, func() []model.TargetID {
+	require.Equal(t, []model.TargetID{"libharbor", "harbor-cli", "harbor-viewer"}, func() []model.TargetID {
 		var ids []model.TargetID
 		for _, target := range provider.jobs[1].Targets {
 			ids = append(ids, target.ID)
 		}
 		return ids
-	}(), "libharbor builds again; the rest is reused")
+	}(), "libharbor and its consumers build again after its tag moves")
 	var said []string
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 		events, err := r.RunEvents(again.ID, 0, 1000)

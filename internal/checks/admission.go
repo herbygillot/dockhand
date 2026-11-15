@@ -1,6 +1,7 @@
 package checks
 
 import (
+	"maps"
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/model"
@@ -32,6 +33,13 @@ func PlanCovers(have, want model.Plan) bool {
 			return false
 		}
 		for _, id := range build.Order {
+			// A joining request must consume the same configured builds,
+			// rather than merely share the target's own build ID (#236).
+			has, hasErr := have.CheckBuilds(build.Environment).Planned(id)
+			wants, wantErr := want.CheckBuilds(build.Environment).Planned(id)
+			if hasErr != nil || wantErr != nil || !maps.Equal(has, wants) {
+				return false
+			}
 			if !slices.Contains(have.Builds[at].Order, id) {
 				return false
 			}

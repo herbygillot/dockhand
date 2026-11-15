@@ -63,3 +63,30 @@ func TestLogDirectoriesNameTheMacOSRelease(t *testing.T) {
 	require.Equal(t, "tart-darwin30-arm64", environmentSlug(model.Environment{Provider: "tart", Platform: model.Platform{Version: "30", Architecture: "arm64"}}), "no OS is Darwin's")
 	require.Equal(t, "command", environmentSlug(model.Environment{Provider: "command"}))
 }
+
+// A configured prerequisite's failure blocks its dependent, and an input
+// records that build only where its archive was actually active (#236).
+func TestAConfiguredPrerequisiteBlocksAndRecordsItsConsumer(t *testing.T) {
+	t.Parallel()
+	environment := model.Environment{Provider: "command"}
+	plan := model.Plan{Targets: []model.PlanTarget{
+		{ID: "a", Target: model.Target{Name: "a"}},
+		{ID: "b +docs", Target: model.Target{Name: "b", Variants: map[string]bool{"docs": true}}},
+	}, Builds: []model.EnvironmentPlan{{Environment: environment, Order: []model.TargetID{"b +docs", "a"}, Dependencies: map[model.TargetID][]model.TargetID{"a": {"b +docs"}}}}}
+	b := &build{d: &driver{plan: plan}, execution: model.GuestExecution{Environment: environment}, results: map[model.TargetID]model.TargetResult{
+		"b +docs": {Outcome: model.OutcomeFailed},
+	}}
+	id, blocked := b.Blocked("a")
+	require.True(t, blocked)
+	require.Equal(t, model.TargetID("b +docs"), id)
+	b.results["b +docs"] = model.TargetResult{Outcome: model.OutcomePassed, Archive: "sha256:docs"}
+	_, blocked = b.Blocked("a")
+	require.False(t, blocked)
+	inputs, err := b.consumedTargets("a", []model.ActivePort{{Name: "b", Archive: "sha256:docs"}})
+	require.NoError(t, err)
+	require.Equal(t, map[string]model.TargetID{"b": "b +docs"}, inputs)
+	_, err = b.consumedTargets("a", []model.ActivePort{{Name: "b", Archive: "sha256:default"}})
+	require.Error(t, err)
+	_, err = b.consumedTargets("a", nil)
+	require.Error(t, err)
+}

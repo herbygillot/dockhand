@@ -329,6 +329,30 @@ type Stopper interface {
 	Stop(ctx context.Context, request StopRequest) (left []string, err error)
 }
 
+// SettleRequest names an environment's last execution, all the check's
+// attempts on its provider, and that execution's launch lock (#241).
+type SettleRequest struct {
+	Execution model.GuestExecution
+	Attempts  []model.GuestExecution
+	Lock      LaunchLock
+}
+
+// Settler removes what a check no longer needs once no attempt will
+// follow. It never stops work, and its failure cannot change the recorded
+// result. A driver stopping for its successor does not ask it (#241).
+type Settler interface {
+	Provider
+	Settle(ctx context.Context, request SettleRequest) (said []string, err error)
+}
+
+// AttemptLeftovers is a provider whose leftovers are found through its
+// recorded attempts, as a GitHub push that never got a run URL. The engine
+// gives it those records when it lists what checks left (#241).
+type AttemptLeftovers interface {
+	LeftoverProvider
+	AttemptLeftovers(ctx context.Context, attempts []model.GuestExecution) ([]Leftover, error)
+}
+
 // LinkReader is a provider that reads what a passed build's binaries link
 // (TargetReport.Links), as Tart's guest does: where its results' links
 // are nil, they couldn't be read, where another provider's are nil
@@ -590,6 +614,19 @@ type Leftover struct {
 	Provider string
 	Ref      string
 	What     string
+	// Execution names the attempt whose launch note made it, where Ref
+	// names that note rather than a ProviderRef, as GitHub's does (#241).
+	// The engine's leftoverRun reads it to find the check, and
+	// removeLeftover takes that attempt's launch lock before removal.
+	Execution model.ExecutionID
+	// SettledOnly is read by the engine's judgeLeftover and removeLeftover
+	// to keep a shared resource while its check can be resumed, as a
+	// GitHub branch a later attempt may run again (#241).
+	SettledOnly bool
+	// Kept says why the provider leaves it, as a branch moved since its
+	// recorded push. The engine copies it into its cleanup plan's Kept
+	// reason so clean reports it and skips removal (#241).
+	Kept string
 	// KeptAt is when a check asked to keep it (model.Plan.Keep) kept it,
 	// for dockhand shell; zero for one left by a process that died.
 	// Failed is a clone kept unasked, for a target's failure in it
@@ -597,6 +634,13 @@ type Leftover struct {
 	KeptAt time.Time
 	Failed bool
 }
+
+// ListingProblem reports whether this is a provider's one-line explanation
+// of why its resources couldn't be listed, carried as What and Kept with
+// no resource reference.
+// The engine and clean report it without attempting removal or failing
+// the rest of cleanup (#241).
+func (l Leftover) ListingProblem() bool { return l.Ref == "" && l.Kept != "" }
 
 // ShellProvider starts a clone a check kept (Leftover.KeptAt) for a person
 // to look in: Ref is it, Portfile the port's, as the plan names it,
@@ -635,9 +679,15 @@ type Fork struct {
 	PushURL    string
 }
 
+// ErrNoFork is no configured remote for the person's fork. Cleanup skips
+// GitHub's leftovers in that case without treating it as an outage (#241).
+var ErrNoFork = errors.New("no fork is configured")
+
 // CheckBranchPrefix names the branches a check pushes to your fork, as the
 // github provider does. The provider removes each once the check is done
-// with its run; clean removes a merged branch's that are left.
+// with its run; cleanup recovers branches from its launch notes, including
+// after a merge, and the older branch cleanup covers checks without notes
+// (#241).
 const CheckBranchPrefix = "dockhand-check/"
 
 // CheckBranch is a check's own branch in your fork: the first twelve

@@ -548,11 +548,11 @@ func (d *driver) portfiles(ctx context.Context, then, now model.ObjectID) ([2][]
 // goes with the PortGroups its build loaded, where its result's inputs
 // name them (builtWith).
 func (d *driver) installs(ctx context.Context, environment model.Environment, building []reuse.Target, results map[model.TargetID]model.TargetResult) ([]buildenv.Archive, builtWith, error) {
-	planned, _ := d.plan.In(environment)
+	selection := d.plan.CheckBuilds(environment)
 	var installs []buildenv.Archive
 	var inputs []string
 	for _, target := range building {
-		for _, need := range reuse.Needs(target, planned.Order) {
+		for _, need := range reuse.Needs(target, selection) {
 			if slices.ContainsFunc(building, func(t reuse.Target) bool { return t.ID == need }) || slices.ContainsFunc(installs, func(a buildenv.Archive) bool { return a.Target == need }) {
 				continue
 			}

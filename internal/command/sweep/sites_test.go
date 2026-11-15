@@ -263,6 +263,8 @@ var owed = map[string]string{
 	"remote@engine.(*Engine).readyByCLI":                "#191: draft and ready, group B, the GitHub CLI's way",
 	"remote@ghactions.(*Provider).Execute":              "#193: a GitHub check launched and canceled",
 	"remote@ghactions.(*Provider).Stop":                 "#193: a GitHub check stopped",
+	"remote@ghactions.(*Provider).Settle":               "#241: killed before Settle, killed after the delete and before it is noted, delete refused",
+	"remote@ghactions.(*Provider).RemoveLeftover":       "#241: clean after killed before Settle, killed after the delete and before it is noted, delete refused",
 	"remote@ghactions.(*Provider).removeBranch":         "#193: a GitHub check's branch removed",
 	"store.update@checks.(*Archives).Keep":              "#193: a check's kept archives",
 	"store.update@checks.(*Archives).Prune":             "#193: a check's kept archives pruned",

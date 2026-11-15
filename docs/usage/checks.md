@@ -131,7 +131,12 @@ branch ends.
 
 `--variants '+tests -docs'` builds the selected port once, in place of its
 default build, with its default variants plus those given, as MacPorts opens
-it; a `-variant` leaves a default out.
+it; a `-variant` leaves a default out. A dependent uses the default build of a
+prerequisite where the check has one, otherwise its sole configured build.
+If two configured builds remain and neither the default nor a dependency
+selection says which one it consumes, planning refuses and names both.
+Ordering, failure blocking, `--only` and `minmax` keep the selected build,
+including its variants, wherever its dependent needs it.
 `--variants each`, or `'curl each'` naming the port, builds the selected port
 with defaults, then each eligible non-default variant separately; `universal` is
 excluded. It multiplies work across environments. More than 12 builds requires
@@ -250,8 +255,15 @@ enabled there. It pushes a branch of the check's own,
 MacPorts' own workflow. Every run on that branch is the check's, so two checks
 of one commit never share a run, and a cancel of one stops only its own.
 Dockhand reads the results and keeps logs locally, then removes the temporary
-branch when it is done with it; `dockhand clean` removes one a canceled check
-left. This has external effects even though it opens no PR.
+branch when it is done with it. It also removes the branch after the last
+attempt or a refusal ends the check, and after a cancel finishes stopping
+its runs. The branch stays while another attempt may run again, including
+when a driver stops for the next driver. A branch moved since the check's
+push stays, and dockhand says why. A removal that fails leaves the verdict
+unchanged and is said once; `dockhand clean` and the daily cleanup try again
+for a settled check, even before its dockhand branch merges. They remove it
+only while it still holds the commit its launch recorded. This has external
+effects even though it opens no PR.
 
 A cancel of a GitHub check cancels every run on its branch and is finished
 once each has completed and every push and rerun of the check has a run of
@@ -430,7 +442,13 @@ declared port's pkg-config brings in an undeclared library, the finding says so:
 pkg-config Libs`, and `-Wl,-dead_strip_dylibs` as the other way out.
 
 Tart results can be reused when recorded input content and environment identity
-still match, including dependencies and fetched Git commits. Where an
+still match, including dependencies and fetched Git commits. Inputs record
+the build ID of each in-check port consumed. Changing a prerequisite from its
+default build to `+docs` rebuilds its consumers, even with unchanged Portfiles.
+Earlier results fill a later check's missing rows only when those consumed
+build IDs match; unknown consumption rebuilds and leaves the row unfilled.
+The first check after upgrading rebuilds the dependents of in-check builds
+once. A moved source tag also rebuilds consumers of configured prerequisites. Where an
 environment's identity can't be read, as when Tart doesn't answer, its results
 are taken as they were and status says so, with the cause; serve and `ship
 --yes` hold a submission resting on them (`identity-unread`) until it reads

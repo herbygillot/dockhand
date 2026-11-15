@@ -333,6 +333,11 @@ func (e *Engine) CleanupIfDue(ctx context.Context, session *coord.Session, every
 // each, as serve and the background clean both say it.
 func (r CleanupReport) Words(after time.Duration) []string {
 	var lines []string
+	for _, leftover := range r.Leftovers {
+		if leftover.ListingProblem() {
+			lines = append(lines, leftover.What+": "+leftover.Kept)
+		}
+	}
 	for _, name := range r.Caches {
 		lines = append(lines, fmt.Sprintf("removed %s from Tart's cache, unused for %s", name, CacheUnused))
 	}

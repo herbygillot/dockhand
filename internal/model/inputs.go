@@ -63,6 +63,10 @@ type TargetInputs struct {
 	// port, and nil where its provider couldn't say, as one that reports
 	// only what a Git fetch checked out can't.
 	Active []ActivePort
+	// Targets names the build ID of each in-check port consumed, by its
+	// lower-case port name. Older inputs omit it; builds with in-check
+	// dependencies gain a new key once their consumption is recorded (#236).
+	Targets map[string]TargetID `json:",omitempty"`
 	// Fetched is the commit a Git-fetched target's build checked out, as
 	// its provider reported it (batch 20): the source it built, which its
 	// Portfile's tag doesn't bind. It is empty for a port fetched

@@ -71,3 +71,23 @@ func TestAnUnresolvedGitSourceJoinsAndDoesntStand(t *testing.T) {
 	require.False(t, SourcesCover(git, tag))
 	require.False(t, FinishedSourcesCover(git, tag))
 }
+
+// Matching target sets do not cover a request when its dependent is
+// planned to consume another build of the prerequisite (#236).
+func TestPlanCoverageRequiresTheSameConsumedBuilds(t *testing.T) {
+	t.Parallel()
+	environment := model.Environment{Provider: "command"}
+	targets := []model.PlanTarget{
+		{ID: "a", Target: model.Target{Name: "a"}},
+		{ID: "b", Target: model.Target{Name: "b"}},
+		{ID: "b +docs", Target: model.Target{Name: "b", Variants: map[string]bool{"docs": true}}},
+	}
+	plan := func(dependency model.TargetID) model.Plan {
+		return model.Plan{Targets: targets, Environments: []model.Environment{environment}, Builds: []model.EnvironmentPlan{{
+			Environment: environment, Order: []model.TargetID{"b", "b +docs", "a"}, Dependencies: map[model.TargetID][]model.TargetID{"a": {dependency}},
+		}}}
+	}
+	require.True(t, PlanCovers(plan("b +docs"), plan("b +docs")))
+	require.False(t, PlanCovers(plan("b"), plan("b +docs")))
+	require.False(t, PlanCovers(plan("b +docs"), plan("b")))
+}
