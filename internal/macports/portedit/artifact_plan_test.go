@@ -2,6 +2,7 @@ package portedit
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"github.com/stretchr/testify/require"
 	"net/http"
@@ -347,6 +348,32 @@ variant extra description {Install the extras} {
 		names = append(names, sum.Name)
 	}
 	require.Equal(t, []string{"fixture-1.2.3.tar.gz", "fixture-doc-1.2.3.tar.gz", "fixture-extra-1.2.3.tar.gz"}, names, "each archive once, a variant's own included")
+}
+
+// The checksums a refresh couldn't write are fetched only as every other
+// fetch is, after the fetch policy: a variant whose archives MacPorts'
+// own fetch would treat differently, here by ignoring the certificate,
+// was fetched directly by this fallback alone (#271).
+func TestARefreshThatCantWriteFetchesOnlyUnderThePolicy(t *testing.T) {
+	t.Parallel()
+	s, r, requests := archiveFixture(t, `version 1.2.3
+master_sites @SITE@/${version}
+distfiles fixture-${version}.tar.gz fixture-doc-${version}.tar.gz
+checksums fixture-${version}.tar.gz sha256 aaaa size 2
+eval checksums-append fixture-doc-${version}.tar.gz sha256 bbbb size 3
+variant extra description {Install the extras} {
+    fetch.ignore_sslcert yes
+    distfiles-append fixture-extra-${version}.tar.gz
+    checksums-append fixture-extra-${version}.tar.gz sha256 cccc size 4
+}
+`)
+	r.Action, r.Version, r.Release = model.EditChecksums, "", nil
+	_, err := s.Prepare(t.Context(), r)
+	var unlocated *distfiles.Unlocated
+	require.ErrorAs(t, err, &unlocated, "the refusal is still the one the plan gave")
+	var toWrite *ChecksumsToWrite
+	require.False(t, errors.As(err, &toWrite), "no checksums are offered from a fetch the policy refuses")
+	require.NotContains(t, *requests, "/1.2.3/fixture-extra-1.2.3.tar.gz", "nothing of the refused context is fetched")
 }
 
 // A checksum refresh of a port whose family shares one declaration, as a
