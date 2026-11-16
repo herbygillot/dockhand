@@ -32,7 +32,7 @@ func unanswered(err error) (string, bool) {
 
 // unansweredWords say a call the model has no answer for.
 func unansweredWords(call string) string {
-	return fmt.Sprintf("modeled context has no answer for `%s`, which the Portfile needs", call)
+	return fmt.Sprintf("modeled context has no answer for `%s`, which the Portfile needs", macports.HostCallText(call))
 }
 
 // Left says why a context modelled on another Mac is left as the Portfile
