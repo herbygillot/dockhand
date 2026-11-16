@@ -1,6 +1,7 @@
 package workspace_test
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -352,7 +353,10 @@ func TestObservationReadsSharedResourcesThroughTheOverlayLink(t *testing.T) {
 	if modeled == platform {
 		modeled.Version = "23"
 	}
-	observed, err := evaluator.Observe(t.Context(), bound, macports.ObservationRequest{Platform: modeled, Declarations: true, Operands: []string{"os.major"}})
+	session := &observe.Session{Ports: evaluator, Primary: bound.Target(), Target: bound.Target(), Native: platform, Baseline: []byte(grouped),
+		Project: func(context.Context, []byte) (*workspace.Workspace, error) { return overlay, nil },
+	}
+	observed, err := session.One(t.Context(), []byte(grouped), macports.ObservationRequest{Platform: modeled, Declarations: true, Operands: []string{"os.major"}}, false)
 	require.NoError(t, err)
 	require.Equal(t, "2", observed.Snapshot.Ports["a"].Version)
 	// The PortGroup's read declares nothing, and the verdict weighs only
