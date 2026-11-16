@@ -67,9 +67,9 @@ func TestARecordingEvaluationKeepsWhatItReadRanAndDeclared(t *testing.T) {
 
 	e = liveEvaluator(t)
 	o = observeEffects(t, e, recordedLines).Ports["effects"]
-	require.Empty(t, o.Reads, "an evaluator that doesn't record keeps nothing")
+	require.Empty(t, o.Reads, "path reads require survey recording")
 	require.Empty(t, o.Execs)
-	require.Empty(t, o.Hooks)
+	require.NotEmpty(t, o.Hooks, "phase registrations are always verdict evidence")
 	require.NotEmpty(t, o.Ledger, "and still counts")
 }
 
