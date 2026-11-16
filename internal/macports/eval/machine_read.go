@@ -3,12 +3,10 @@ package eval
 import (
 	"context"
 	_ "embed"
-	"errors"
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/tcl/rpc"
 )
 
 type machineReadKey struct{}
@@ -39,7 +37,7 @@ func performMachineReadExperiment(ctx context.Context, before macports.Observati
 		summary := macports.MachineReadExperiment{Outcome: "not perturbed"}
 		if err != nil {
 			summary.Outcome, summary.Field, summary.ErrorCode = "differs", "evaluation", "check-inconclusive"
-			if errors.Is(err, macports.ErrStartup) || errors.Is(err, rpc.ErrBrokenSession) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			if macports.IsEvaluationUnavailable(err) {
 				summary.Outcome, summary.ErrorCode = "failed", "evaluation-unavailable"
 			}
 		} else if second, ok := after.Ports[name]; !ok {

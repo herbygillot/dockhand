@@ -90,7 +90,8 @@ answers, is not seen. Equal results are evidence for these two readings, not
 proof for every possible machine answer.
 
 An assessment finding with code `evaluation-unavailable` means the Tcl worker
-failed to supply an evaluation, rather than reaching a judgment about the
+failed to supply an evaluation (startup, handshake, missing reply or broken
+session), or the evaluation was canceled, rather than reaching a judgment about the
 Portfile. Survey comparisons list such ports separately as `not evaluated` and
 exclude them from outcome moves, guard changes and comparable Portfile coverage.
 Retry those evaluations before judging a change.
