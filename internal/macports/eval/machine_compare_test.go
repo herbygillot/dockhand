@@ -95,3 +95,22 @@ func TestChecksumGuardUsesEachReadsOwnDefaultChain(t *testing.T) {
 	require.Equal(t, []int{0, 1}, summary.Varied)
 	require.Equal(t, []int{0}, summary.Unexplained)
 }
+
+func TestChecksumBodyNamingNoDefaultChainOptionLeavesReadExplained(t *testing.T) {
+	for _, tc := range []struct{ name, body string }{
+		{"python stub", `distfiles`},
+		{"gpg verify", `if {[geteuid] == 0} { xinstall -o ${macportsuser} -d [option gpg_verify.gpg_homedir] }`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hooks := []macports.Hook{{Procedure: "userproc-pre-org.macports.checksum-checksum-0", Body: tc.body}}
+			before := macports.Observation{Ports: map[string]macports.PortObservation{"fixture": {Hooks: hooks, Declarations: []macports.Declaration{{Command: "dockhand.host-access", Values: []string{"cpu", "closed", "base", "sysctl hw.activecpu"}}}}}}
+			after := macports.Observation{Ports: map[string]macports.PortObservation{"fixture": {Hooks: hooks, Declarations: []macports.Declaration{{Command: "dockhand.host-access", Values: []string{"cpu", "standin", "base", "sysctl hw.activecpu"}}}}}}
+			candidates := map[string][]macports.MachineReadCandidate{"fixture": {{Read: 0, Defaults: []string{"build.jobs", "test.jobs"}}}}
+			summary := performMachineReadExperiment(t.Context(), before, candidates, nil, func(context.Context) (macports.Observation, error) { return after, nil })["fixture"]
+			require.Equal(t, "same", summary.Outcome)
+			require.Equal(t, []int{0}, summary.Varied)
+			require.Empty(t, summary.Unexplained)
+			require.Empty(t, summary.ErrorCode)
+		})
+	}
+}
