@@ -309,3 +309,7 @@ context is unchanged. Neither evaluation runs phase bodies.
 This experiment cannot see a difference that appears only at one exact value,
 or only for one mixed combination of answers. Equal results are evidence for
 these two evaluations, not proof for every possible machine answer.
+
+The standalone `tools/survey -experiment` report uses these product outcomes.
+Its schema 2 record holds summaries and original questions, never the stand-in
+observation. See [the survey instructions](../../tools/survey/README.md).

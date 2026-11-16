@@ -27,38 +27,8 @@ var lookups = []string{"findBinary", "binaryInPath", "_mportsearchpath"}
 // distfiles' default is ${distname}${extract.suffix}.
 var fetchInputs = []string{"extract.suffix"}
 
-// baseLookupBenign reports whether a closed lookup is Base's own, made for
-// options no fetch or checksum value reads, under the same "only where"
-// condition as build.jobs's read (architecture's step 2 on #110's finding
-// 1; closed-model.md's verdict). Who made the lookup and which value took
-// it are decided apart. Who: with an option's default on the way, the
-// innermost default is one Base's own source writes, and no frame below
-// it names a file outside Base's library (defaultIsBases); with none, the
-// lookup is in a callback Base runs once the Portfile is read, its owner
-// is Base, and every frame below the callback is Base's code
-// (bodyIsBases). A Portfile's or PortGroup's own findBinary, a default
-// one wrote, and a callback one registered, are theirs, whichever of
-// Base's procedures they call (architecture's points 1 and 2). Which
-// value: each option whose default the chain evaluated must be one of
-// Base's extract, patch, configure, build, test or destroot options or
-// build-only defaults, none read by Base's own fetch defaults, and its
-// value, followed through every option and variable the Portfile and its
-// PortGroups give it to, read only in build positions (optionReadBenignAs,
-// point 3). A PortGroup may have written an outer default, as cmake's
-// configure.args reads build.cmd, so long as no fetch value reads it.
-func baseLookupBenign(root string, contents []byte, declaration macports.Declaration, groups map[string][]byte, base *baseCode) bool {
-	options, ok := recognizeBaseLookup(declaration, base)
-	if !ok {
-		return false
-	}
-	for _, option := range options {
-		if !optionReadBenignAs(root, contents, option, declaration, groups, true, base) {
-			return false
-		}
-	}
-	return true
-}
-
+// recognizeBaseLookup establishes Base ownership and the default chain,
+// independently of the experiment that accepts or refuses the original read.
 func recognizeBaseLookup(declaration macports.Declaration, base *baseCode) ([]string, bool) {
 	if len(declaration.Values) < 4 || declaration.Values[1] != "closed" {
 		return nil, false
@@ -392,31 +362,8 @@ func buildJobsRead(declaration macports.Declaration) bool {
 	return false
 }
 
-// buildDefaultReadBenign reports a host read Base made computing the
-// default of a build-only option, where neither the Portfile nor a
-// PortGroup on the read's stack reads that option outside a build-only
-// position: qmake5 1.0's platform block reads use_xcode, whose default
-// reads the host, and librecad's and cpi's version lines and archives,
-// which read no host state, were inconclusive in every modeled context
-// (the roadmap's v0.5.0 part 3, item 2). A Portfile whose own source
-// declarations read the option stays inconclusive. The read is the
-// default's only where Base wrote the innermost default on the way and
-// nothing below it is anyone else's code (defaultIsBases): a default a
-// Portfile or PortGroup wrote reads the host for itself (architecture's
-// point 2).
-func buildDefaultReadBenign(root string, contents []byte, declaration macports.Declaration, groups map[string][]byte, base *baseCode) bool {
-	options, ok := recognizeBuildDefault(declaration, base)
-	if !ok {
-		return false
-	}
-	for _, option := range options {
-		if !optionReadBenign(root, contents, option, declaration, groups, base) {
-			return false
-		}
-	}
-	return true
-}
-
+// recognizeBuildDefault establishes Base ownership of a machine-dependent
+// build default. Recognition alone never explains a read.
 func recognizeBuildDefault(declaration macports.Declaration, base *baseCode) ([]string, bool) {
 	var options []string
 	for _, frame := range declaration.Frames {
@@ -431,78 +378,6 @@ func recognizeBuildDefault(declaration macports.Declaration, base *baseCode) ([]
 		return nil, false
 	}
 	return options, true
-}
-
-// optionReadBenign reports whether neither the Portfile nor a PortGroup on
-// the read's stack reads option outside a build-only position.
-func optionReadBenign(root string, contents []byte, option string, declaration macports.Declaration, groups map[string][]byte, base *baseCode) bool {
-	return optionReadBenignAs(root, contents, option, declaration, groups, option == "build.jobs", base)
-}
-
-// optionReadBenignAs is optionReadBenign, where expressionsOnly counts a
-// read the walk can't see only in an expression or by [option], as for
-// build.jobs, which Portfiles pass to the build by name, -j${build.jobs}:
-// a Base lookup's options are judged so (architecture's step 2 on #110's
-// finding 1), as test.cmd ${build.cmd} is a build position. Either way
-// the value is followed (followedReadsBenign): an option given it is
-// judged as the option is, and a read the walk can't place keeps the
-// context inconclusive (architecture's point 3).
-func optionReadBenignAs(root string, contents []byte, option string, declaration macports.Declaration, groups map[string][]byte, expressionsOnly bool, base *baseCode) bool {
-	if root == "" {
-		return false
-	}
-	if resolved, err := filepath.EvalSymlinks(root); err == nil {
-		root = resolved
-	}
-	groupDir := filepath.Join(root, filepath.FromSlash(macports.PortGroupDirectory))
-	// An overlay links the tree's PortGroups rather than copying them, so
-	// their frames name the linked directory.
-	if resolved, err := filepath.EvalSymlinks(groupDir); err == nil {
-		groupDir = resolved
-	}
-	sources := [][]byte{contents}
-	for _, frame := range declaration.Frames {
-		file := frame.File
-		if resolved, err := filepath.EvalSymlinks(file); err == nil {
-			file = resolved
-		}
-		if file == "" || filepath.Dir(file) != groupDir {
-			continue
-		}
-		src, ok := groups[file]
-		if !ok {
-			data, err := os.ReadFile(file)
-			if err != nil {
-				return false
-			}
-			src, groups[file] = data, data
-		}
-		sources = append(sources, src)
-	}
-	watched, ok := followedReadsBenign(sources, option, base)
-	if !ok {
-		return false
-	}
-	// A read the walk can't see, as one inside an expression's braces,
-	// counts too: the Portfile reading the option at all, by $name,
-	// [option name], or [tbool name], keeps it inconclusive.
-	names := []string{option}
-	if expressionsOnly {
-		names = watched
-	}
-	for _, name := range names {
-		readsAtAll := regexp.MustCompile(`\$\{?` + regexp.QuoteMeta(name) + `\b|\[(?:option|tbool|istrue)\s+` + regexp.QuoteMeta(name) + `\b`)
-		if expressionsOnly {
-			// Portfiles pass build.jobs to the build by name, -j${build.jobs},
-			// in positions the walk sees; only one in an expression it can't
-			// see, or asked for by [option], counts (#110).
-			readsAtAll = regexp.MustCompile(`(?:\bif|\belseif|\bexpr|\bwhile)\s*\{[^}\n]*\$\{?` + regexp.QuoteMeta(name) + `\b|\[(?:option|tbool|istrue)\s+` + regexp.QuoteMeta(name) + `\b`)
-		}
-		if readsAtAll.Match(contents) {
-			return false
-		}
-	}
-	return true
 }
 
 // callbackExplained reports a host read made under a PortGroup callback

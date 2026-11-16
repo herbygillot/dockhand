@@ -126,3 +126,20 @@ A comparison reports Tcl worker failures (`evaluation-unavailable`) separately
 as **not evaluated**, naming whether the baseline, new run or both lacked an
 evaluation. Those ports contribute no verdict movement or guard change; their
 Portfiles are excluded from comparable fully-covered totals on both sides.
+
+### Machine-read experiment reporting
+
+`-experiment` reports the product's machine-read summaries in each journal
+port's `Experiments` array and outcome totals in `run.json`. It asks for the
+same context observations as `-db` when used without a database. It changes
+reporting, never the product's verdict or its stand-in policy. `not requested`
+means no recognized machine read needed an experiment; native contexts are
+`not perturbed`. An equal summary can still leave an unvaried read unexplained.
+
+Records use schema 2; start a fresh database for this version. The
+`machine_read_experiment` table keeps the safe summary, and
+`machine_read_original` maps its original declaration indices to original
+questions. Neither the database nor journal stores a second observation or plan.
+The survey has no legacy Tolerate copy, pinned follow.go hash, follower policy,
+or separate second evaluation; those measurement-only implementations were not
+carried onto the product branch. `follow.go` is removed with this change.

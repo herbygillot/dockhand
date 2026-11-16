@@ -26,7 +26,8 @@ type settings struct {
 	Mode string `json:"mode"`
 	// Record is whether the run wrote a record, -db, and so observed each
 	// port in every context before assessing it.
-	Record bool `json:"record"`
+	Record     bool `json:"record"`
+	Experiment bool `json:"experiment,omitempty"`
 	// Recording is whether the record kept what each evaluation read,
 	// -recording; false without a record.
 	Recording bool `json:"recording"`
@@ -65,6 +66,7 @@ func selectionOf(selection portsurvey.Selection) string {
 // values.
 func (s settings) differences(other settings) []string {
 	var found []string
+	// Reporting without a database also asks for context observations.
 	differ := func(name string, a, b any) {
 		if a != b {
 			found = append(found, fmt.Sprintf("%s: %v against %v", name, a, b))
@@ -72,6 +74,7 @@ func (s settings) differences(other settings) []string {
 	}
 	differ("mode", s.Mode, other.Mode)
 	differ("record (-db)", s.Record, other.Record)
+	differ("experiment reporting", s.Experiment, other.Experiment)
 	differ("recording", s.Recording, other.Recording)
 	differ("selection", s.Selection, other.Selection)
 	differ("tree commit", s.Commit, other.Commit)

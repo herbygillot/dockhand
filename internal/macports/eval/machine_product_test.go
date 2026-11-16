@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -108,4 +109,50 @@ func TestMachineReadProductMixedVariedAndUnvaried(t *testing.T) {
 	require.Positive(t, unvaried)
 	_, left := observe.Tolerate(t.Context(), p, []byte(data), tree.Root())
 	require.True(t, left)
+}
+
+type countedMachineObserver struct {
+	*Evaluator
+	ordinary, experiments int
+	request               macports.ObservationRequest
+}
+
+func (c *countedMachineObserver) Observe(ctx context.Context, source macports.Context, request macports.ObservationRequest) (macports.Observation, error) {
+	c.ordinary++
+	c.request = request
+	return c.Evaluator.Observe(ctx, source, request)
+}
+func (c *countedMachineObserver) MachineReadExperiments(ctx context.Context, source macports.Context, request macports.ObservationRequest, before macports.Observation, candidates map[string][]int, acted []string) map[string]macports.MachineReadExperiment {
+	c.experiments++
+	// A changed request would make the comparison evidence unusable.
+	if !reflect.DeepEqual(c.request, request) {
+		panic("experiment request changed")
+	}
+	return c.Evaluator.MachineReadExperiments(ctx, source, request, before, candidates, acted)
+}
+func TestMachineExperimentSharedBeforeOneAndObserveCache(t *testing.T) {
+	e := liveEvaluator(t)
+	tree := fixtureTree(t)
+	data := []byte("PortSystem 1.0\nname fixture\nversion 1\nbuild.cmd make\nconfigure.cmd ./configure\nbuild.args -j${build.jobs}\n")
+	putFile(t, tree.Root(), "devel/fixture/Portfile", string(data))
+	bound, err := tree.Select(model.Target{Name: "fixture", Portfile: "devel/fixture/Portfile"})
+	require.NoError(t, err)
+	s := productObservationSession(t, e, bound)
+	s.Baseline = data
+	counter := &countedMachineObserver{Evaluator: e}
+	s.Ports = counter
+	platform := model.Platform{OS: "darwin", Version: "24", Architecture: "x86_64"}
+	one, err := s.One(t.Context(), data, macports.ObservationRequest{Platform: platform, Declarations: true}, false)
+	require.NoError(t, err)
+	many, err := s.Observe(t.Context(), data, []model.Platform{platform}, true, false)
+	require.NoError(t, err)
+	require.Equal(t, one, many[0])
+	require.Equal(t, 1, counter.ordinary)
+	require.Equal(t, 1, counter.experiments)
+	// A fresh Session's multi-profile entry point also runs the helper.
+	s = s.WithBaseline(data)
+	_, err = s.Observe(t.Context(), data, []model.Platform{platform}, true, false)
+	require.NoError(t, err)
+	require.Equal(t, 2, counter.ordinary)
+	require.Equal(t, 2, counter.experiments)
 }

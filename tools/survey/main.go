@@ -36,22 +36,23 @@ func (l *list) Set(v string) error { *l = append(*l, v); return nil }
 // run is how a survey was made and what it cost, written beside its
 // journal as <journal>.run.json.
 type run struct {
-	Tree          string    `json:"tree"`
-	Commit        string    `json:"commit"`
-	Tclsh         string    `json:"tclsh"`
-	Portindex     string    `json:"portindex"`
-	Base          string    `json:"base"`
-	Parallel      int       `json:"parallel"`
-	Started       time.Time `json:"started"`
-	Finished      time.Time `json:"finished"`
-	WallSeconds   float64   `json:"wall_seconds"`
-	UserSeconds   float64   `json:"user_seconds"`
-	SystemSeconds float64   `json:"system_seconds"`
-	Cores         float64   `json:"cores"`
-	LoadAtStart   string    `json:"load_at_start"`
-	Assessed      int       `json:"assessed"`
-	Skipped       int       `json:"skipped"`
-	Outcomes      any       `json:"outcomes"`
+	Tree          string         `json:"tree"`
+	Commit        string         `json:"commit"`
+	Tclsh         string         `json:"tclsh"`
+	Portindex     string         `json:"portindex"`
+	Base          string         `json:"base"`
+	Parallel      int            `json:"parallel"`
+	Started       time.Time      `json:"started"`
+	Finished      time.Time      `json:"finished"`
+	WallSeconds   float64        `json:"wall_seconds"`
+	UserSeconds   float64        `json:"user_seconds"`
+	SystemSeconds float64        `json:"system_seconds"`
+	Cores         float64        `json:"cores"`
+	LoadAtStart   string         `json:"load_at_start"`
+	Assessed      int            `json:"assessed"`
+	Skipped       int            `json:"skipped"`
+	Experiments   map[string]int `json:"experiments,omitempty"`
+	Outcomes      any            `json:"outcomes"`
 	// Settings are what decide what the run measured, which -compare
 	// holds two runs to (#222).
 	Settings *settings `json:"settings,omitempty"`
@@ -78,6 +79,7 @@ func survey() (err error) {
 	ledgerPath := flag.String("ledger", "", "write each observed port's dispatcher ledger to this file, one JSON line per port and context")
 	dbPath := flag.String("db", "", "record to write, one SQLite file per snapshot of the tree, never dockhand's own database; a rerun continues it")
 	mode := flag.String("mode", "current", "with -db, what each port is evaluated against: current, installed, or host")
+	experiment := flag.Bool("experiment", false, "report product machine-read experiment summaries; never retain a second observation")
 	recording := flag.Bool("recording", true, "with -db, record what each evaluation read, ran, and declared")
 	sample := flag.String("sample", "", "a file naming ports to survey, one a line")
 	verbose := flag.Bool("v", false, "report the work behind the scenes")
@@ -251,6 +253,10 @@ func survey() (err error) {
 		defer func() { err = errors.Join(err, journal.Close()) }()
 	}
 
+	service.ExperimentReport = *experiment
+	if *experiment {
+		service.Observe = true
+	}
 	made := run{Tree: root, Tclsh: tclsh, Portindex: portindexBin, Base: baseVersion(tclsh), Parallel: Concurrency, Started: time.Now(), LoadAtStart: loadAverage()}
 	fmt.Fprintf(os.Stderr, "Surveying %s with %s (%s), %d Portfiles at a time; load %s\n", root, tclsh, made.Base, Concurrency, made.LoadAtStart)
 	result, err := service.Assess(ctx, request)
@@ -270,7 +276,16 @@ func survey() (err error) {
 		outcomes[port.Outcome]++
 	}
 	made.Outcomes = outcomes
-	made.Settings = &settings{Mode: *mode, Record: *dbPath != "", Recording: *dbPath != "" && *recording,
+	if *experiment {
+		made.Experiments = map[string]int{}
+		for _, p := range result.Ports {
+			for _, e := range p.Experiments {
+				made.Experiments[e.Summary.Outcome]++
+			}
+		}
+		fmt.Fprintf(os.Stderr, "Product machine-read experiments: %v\n", made.Experiments)
+	}
+	made.Settings = &settings{Mode: *mode, Record: *dbPath != "", Experiment: *experiment, Recording: *dbPath != "" && *recording,
 		Selection: selectionOf(request.Selection), Commit: made.Commit, Prefix: filepath.Dir(filepath.Dir(tclsh))}
 	if record != nil {
 		if err := record.Finish(made.WallSeconds, made.UserSeconds, made.SystemSeconds); err != nil {
