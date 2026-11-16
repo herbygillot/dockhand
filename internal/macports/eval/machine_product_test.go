@@ -3,6 +3,7 @@ package eval
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -92,7 +93,7 @@ func TestMachineReadProductFixtureGate(t *testing.T) {
 func TestMachineReadProductMixedVariedAndUnvaried(t *testing.T) {
 	e := liveEvaluator(t)
 	tree := fixtureTree(t)
-	data := "PortSystem 1.0\nname fixture\nversion 1\nbuild.cmd make\nconfigure.cmd ./configure\nbuild.args -j${build.jobs} ${use_xcode}\n"
+	data := "PortSystem 1.0\nname fixture\nversion 1\nbuild.cmd make\nconfigure.cmd ./configure\nbuild.args -j${build.jobs}\nset unvaried [file exists /usr/lib/dockhand-no-standin.dylib]\n"
 	putFile(t, tree.Root(), "devel/fixture/Portfile", data)
 	bound, err := tree.Select(model.Target{Name: "fixture", Portfile: "devel/fixture/Portfile"})
 	require.NoError(t, err)
@@ -106,7 +107,7 @@ func TestMachineReadProductMixedVariedAndUnvaried(t *testing.T) {
 		if d.Command == "dockhand.host-access" {
 			t.Logf("read %d: %v", id, d.Values)
 		}
-		if d.Command == "dockhand.host-access" && len(d.Values) > 3 && strings.Contains(d.Values[3], "libxcselect.dylib") {
+		if d.Command == "dockhand.host-access" && len(d.Values) > 3 && strings.Contains(d.Values[3], "dockhand-no-standin.dylib") {
 			unvaried++
 			require.NotContains(t, p.MachineReadExperiment.Varied, id)
 		}
@@ -160,4 +161,46 @@ func TestMachineExperimentSharedBeforeOneAndObserveCache(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, counter.ordinary)
 	require.Equal(t, 2, counter.experiments)
+}
+
+func TestMachineExperimentPreservesRecordingMode(t *testing.T) {
+	for _, recording := range []bool{false, true} {
+		for _, fixture := range []struct{ name, body string }{
+			{"gcc43", `if {[vercmp $xcodeversion 9.0] > 0} {pre-fetch {return -code error {unsupported Xcode version}}}`},
+			{"clang-3.7", `if {[vercmp $xcodeversion 5.0] < 0} {patchfiles-append leopard-no-asan.patch}`},
+			{"cctools", `if {$xcodeversion ne "none" && [vercmp $xcodeversion 11.0] >= 0} {distfiles}`},
+		} {
+			t.Run(fmt.Sprintf("%s/recording=%t", fixture.name, recording), func(t *testing.T) {
+				e := liveEvaluator(t)
+				e.Recording = recording
+				var ledgerCalls, bootstrapCalls int
+				e.Ledger = func(report LedgerReport) {
+					ledgerCalls++
+					for _, entry := range report.Entries {
+						require.NotEqual(t, "standin", entry.Source)
+					}
+				}
+				e.Bootstrap = func(Bootstrap) { bootstrapCalls++ }
+				tree := fixtureTree(t)
+				data := []byte("PortSystem 1.0\nname fixture\nversion 1\nbuild.args -j${build.jobs}\n" + fixture.body + "\n")
+				putFile(t, tree.Root(), "devel/fixture/Portfile", string(data))
+				bound, err := tree.Select(model.Target{Name: "fixture", Portfile: "devel/fixture/Portfile"})
+				require.NoError(t, err)
+				s := productObservationSession(t, e, bound)
+				got, err := s.One(t.Context(), data, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "9", Architecture: "x86_64"}, Declarations: true}, true)
+				require.NoError(t, err)
+				summary := got.Ports["fixture"].MachineReadExperiment
+				require.NotNil(t, summary)
+				require.NotEmpty(t, summary.Varied)
+				require.Contains(t, []string{"same", "same, build-only moved"}, summary.Outcome)
+				require.Empty(t, summary.Field)
+				require.Equal(t, 1, ledgerCalls, "the private evaluation must not publish a ledger")
+				if recording {
+					require.Equal(t, 1, bootstrapCalls)
+				} else {
+					require.Zero(t, bootstrapCalls)
+				}
+			})
+		}
+	}
 }

@@ -23,10 +23,11 @@ func machineReadScript(ctx context.Context) string {
 
 // MachineReadExperiments never publishes a second observation. The operation
 // owns a fresh interpreter, with no ledger, bootstrap, or progress subscribers.
+// Reuse the first evaluator's configuration by construction: only the private
+// context changes. Observe starts and closes a new interpreter for each call.
 func (e *Evaluator) MachineReadExperiments(ctx context.Context, source macports.Context, request macports.ObservationRequest, before macports.Observation, candidates map[string][]macports.MachineReadCandidate, acted []string) map[string]macports.MachineReadExperiment {
-	private := &Evaluator{Executable: e.Executable, Env: e.Env, Model: e.Model, Adapter: e.Adapter, Installation: e.Installation, Installed: e.Installed}
 	return performMachineReadExperiment(ctx, before, candidates, acted, func(ctx context.Context) (macports.Observation, error) {
-		return private.Observe(context.WithValue(ctx, machineReadKey{}, true), source, request)
+		return e.Observe(context.WithValue(ctx, machineReadKey{}, true), source, request)
 	})
 }
 

@@ -236,7 +236,8 @@ func (e *Evaluator) evaluate(ctx context.Context, source macports.Context, reque
 		}
 	}
 	observation, err := evaluateIn(ctx, session, runtime, checked, source, request, selectedOnly)
-	if err == nil && e.Recording && e.Bootstrap != nil && e.bootstrapped.CompareAndSwap(false, true) {
+	publish := machineReadScript(ctx) == ""
+	if publish && err == nil && e.Recording && e.Bootstrap != nil && e.bootstrapped.CompareAndSwap(false, true) {
 		reply, err := session.Call(ctx, "bootstrap_record")
 		if err != nil {
 			return macports.Observation{}, err
@@ -247,7 +248,7 @@ func (e *Evaluator) evaluate(ctx context.Context, source macports.Context, reque
 		}
 		e.Bootstrap(record)
 	}
-	if err == nil && e.Ledger != nil {
+	if publish && err == nil && e.Ledger != nil {
 		for name, port := range observation.Ports {
 			e.Ledger(LedgerReport{Portfile: source.Target().Portfile, Port: name, Platform: observation.Snapshot.Platform, Modeled: observation.Modeled, Entries: port.Ledger})
 		}
