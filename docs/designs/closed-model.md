@@ -90,3 +90,53 @@ With the contract, these too:
 ## Size and docs
 
 About a fifth of a batch, Tcl and Go and their tests, plus the gating survey, inferred. It was a tenth before the contract was written out: the one path reading, `source`'s refusal, the helpers' caches and the event for a read Base owns are each work the first estimate didn't count. Usage docs: the paragraph on other macOS releases in docs/usage/hand-edits.md, which lands before this in its pre-#110 wording, gains its "never with this Mac's answer" clause in the implementing commit. The modelled-context notice a person sees is unchanged; `closed` appears in the record and the ledger only. docs/oracle.md's decision 1 paragraph gains its settlement; docs/decisions.md's entry moves from adopted to built.
+
+## Amendment, 2026-11-16: a machine read is explained by experiment
+
+Adopted at the person's word ("Replace it", 2026-11-15 21:09Z, then "Adopt", 2026-11-16 03:54Z, both on architecture's cards in the architecture thread), after a whole-tree measurement of the source-reading follower and of the experiment that replaces it, and one design read by Codex against main a123336b and codex/110-measure c14926bf, taken in full (its points are marked C1 to C5). Not yet built. It replaces how the build-default and Base-lookup rules accept a read; the rule above and the rest of the contract stand.
+
+### What the run showed (tree 6945bcfaf256, Base 2.12.7, c14926bf)
+
+| | Contexts |
+| --- | ---: |
+| Evaluated | 92,479 |
+| Stay in the model only because the follower explains a read | 29,664 |
+| The experiment could vary | 29,647 |
+| Same fetch plan under both answers, after a rerun of nine transient ones | all of those it completed |
+| Differed with a stand-in in play | 0 |
+| Modelled, follower-explained, nothing the experiment could vary | about sixty (56 by the record, 61 by implementation's join) |
+
+No contradiction was found in the comparisons that completed. That is evidence, not proof that no port is in a bypass family: the exact-value fixture shows what the experiment cannot see.
+
+### The rule
+
+A closed read is a **machine read** when its answer is a fact of one machine and not of a macOS release: a numeric `sysctl` key, a tool looked up by Base (`findBinary`, `binaryInPath`, `_mportsearchpath`), a file test. Where the build-default or Base-lookup rule recognizes such a read in a modelled context, dockhand no longer reads the Portfile's source to see where the value goes. It evaluates the context a second time with a stand-in answer for every machine read and compares what it would act on. A read is explained when it was varied and nothing dockhand acts on changed.
+
+### The contract
+
+1. **Stand-ins** are the ones the survey used: 1099511627776 for the nine numeric keys, `/dockhand-standin/bin/<name>` for a failed lookup, true for a file test under that prefix. Every other closed call keeps its empty-Mac answer.
+2. **Recognizing a read is separate from accepting it** (C5). The two rules keep their recognition (Base owns the read, it is a build default or a Base lookup). What the follower did after that, deciding where the value flows, is what the experiment replaces. A recognized read with no experiment evidence stays unexplained.
+3. **One place makes the second evaluation** (C1): a shared helper behind `observe.Session.One` and `Observe`, before caching, so update (baseline and candidate), checksums, assessment and the survey all get it the same way. It runs once for each exact observation (contents, target, subport, variants, platform, scope), with the same request as the first.
+4. **A stand-in observation is never a result** (C2). One private evaluator operation makes it, compares it and drops it. What leaves is a summary on the ordinary observation (`macports.MachineReadExperiment`): the outcome, which original reads were varied, the first differing field's name or the error's code. No second observation, no plan, no value and no raw error text leaves, in the product or the survey. One test injects marked stand-ins and finds no mark in returned data, cache, stored records or output.
+5. **What is compared** (C5) is everything dockhand reads from an evaluation and acts on: name, version, epoch and revision; distfiles with expanded locations; checksum and revision declarations; every read option that is not a build-only sink (today's `sinkFor` list, kept in its own file; patchfiles stays compared); which fetch and checksum phase bodies are registered; and whether the fetch is standard or custom. An option dockhand never reads cannot change what it does, so it is not compared.
+6. **Verdict, read by read** (C5). A read is explained only if it was itself varied and the comparison is equal. A differing field, a second evaluation that fails, or a recognized read that got no stand-in leaves that read unexplained, and the context inconclusive unless another rule explains it, saying which. A varied CPU read never covers an unvaried read beside it. The native context is untouched.
+7. **Phase bodies** (C3) run in neither evaluation, so equality says nothing about them. A fetch-phase body is judged by the fetch guard, as now. A checksum-phase body, or a fetch-phase body the guard cannot read, leaves recognized reads unexplained. Extract and later phases are not part of what is compared and need no guard. Which bodies are registered is recorded in every observation, not only the survey's.
+8. **Stated limits**, in docs/usage/hand-edits.md: a difference that appears only at one exact value, or only for one mixed combination of answers, is not seen.
+
+### What goes, what stays
+
+Goes: `follow.go` and its tests (about a thousand lines), the follower path inside the two rules, both follower policy files, the survey's frozen copy of `Tolerate` and its pinned hash, the watched-name tracing, and the survey's own second evaluation and its stored plans. Stays: `sinkFor` and `ActedOption`, the other explanation rules, and the behaviour tests, rewritten where they named the follower. The two debug sentences say the read was varied and nothing changed. The survey keeps one flag that reports the experiment's outcomes.
+
+### What it costs
+
+One more evaluation for about a third of contexts. No figure goes in the docs. About sixty contexts move to inconclusive because their reads have no stand-in; most are `file exists /usr/lib/libxcselect.dylib`, which looks like a fact of the release and is judged as its own item after the switch.
+
+### Gate and order
+
+1. Built on a branch by Codex, read by architecture before main. Tests: the ten survey fixtures as product tests; the no-escape test of point 4; `epoch ${build.jobs}` differing; a stand-in that flips the fetch from standard to custom differing; one varied and one unvaried read in the same context leaving the second unexplained; a checksum-phase body leaving a read unexplained.
+2. A whole-tree before-and-after survey, the design's own gate: no fetch value changes in a context that stays conclusive, and every context that moves to inconclusive is counted and named by cause.
+3. #247 stays held until the switch is in and its two gaps are judged again.
+
+### Not taken
+
+Two stand-in values with a third evaluation; a stand-in for `exec` or `glob`; keeping the follower as a second opinion; keeping the second observation in survey records for diagnosis (the field's name and a rerun are enough, and it would be the one place a stand-in value is stored).
