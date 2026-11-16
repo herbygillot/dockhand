@@ -476,3 +476,34 @@ func TestANestedValueCommandsResultIsJudgedWhereItLands(t *testing.T) {
 		require.ErrorIs(t, err, macports.ErrUnanswered, "%s: the closed exec ends the evaluation", body)
 	}
 }
+
+func TestDarwinEightAndNineKnowOnlyLibxcselectAbsence(t *testing.T) {
+	for _, major := range []string{"8", "9"} {
+		t.Run(major, func(t *testing.T) {
+			platform := model.Platform{OS: "darwin", Version: major, Architecture: "x86_64"}
+			answers, err := macports.ToolchainAnswers(platform, "")
+			require.NoError(t, err)
+			require.Empty(t, answers, "the single release fact must not invent a toolchain row")
+			e := liveEvaluator(t)
+			tree := fixtureTree(t)
+			putFile(t, tree.Root(), "devel/host/Portfile", `PortSystem 1.0
+name host
+version [expr {1 + [file exists /usr/lib/libxcselect.dylib]}]
+set unknown [file exists /usr/lib/dockhand-not-a-release-fact.dylib]
+`)
+			bound, err := tree.Select(model.Target{Name: "host", Portfile: "devel/host/Portfile"})
+			require.NoError(t, err)
+			got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: platform, Declarations: true})
+			require.NoError(t, err)
+			require.Equal(t, "1", got.Snapshot.Ports["host"].Version)
+			var calls []string
+			for _, d := range got.Ports["host"].Declarations {
+				if d.Command == "dockhand.host-access" && len(d.Values) >= 4 {
+					calls = append(calls, d.Values[3])
+				}
+			}
+			require.NotContains(t, calls, "file exists /usr/lib/libxcselect.dylib")
+			require.Contains(t, calls, "file exists /usr/lib/dockhand-not-a-release-fact.dylib")
+		})
+	}
+}
