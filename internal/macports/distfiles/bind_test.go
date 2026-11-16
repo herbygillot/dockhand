@@ -1,6 +1,7 @@
 package distfiles_test
 
 import (
+	"context"
 	"github.com/stretchr/testify/require"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -43,9 +45,18 @@ distfiles-append pinned.zip
 	require.NoError(t, err)
 	bound, err := tree.Select(targets[0])
 	require.NoError(t, err)
+
+	projection, err := workspace.Adopt(root, tree.Source())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, projection.Close()) })
+	native, err := e.NativePlatform(t.Context())
+	require.NoError(t, err)
+	session := &observe.Session{Ports: e, Primary: bound.Target(), Target: bound.Target(), Native: native, Baseline: src,
+		Project: func(context.Context, []byte) (*workspace.Workspace, error) { return projection, nil },
+	}
 	var bindings []distfiles.Binding
 	for _, arch := range []string{"arm64", "x86_64"} {
-		observed, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "25", Architecture: arch}, Declarations: true})
+		observed, err := session.One(t.Context(), src, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "25", Architecture: arch}, Declarations: true}, false)
 		require.NoError(t, err)
 		// The reading as the verdict leaves it, as update binds it: Base's
 		// build-only lookups a modelled context closes explained (#110).
