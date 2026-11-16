@@ -49,7 +49,7 @@ func TestModeledObservationTracksHostFilesAtAccessTime(t *testing.T) {
 			require.NoError(t, err)
 			bound, err := tree.Select(targets[0])
 			require.NoError(t, err)
-			got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
+			got, err := observeForVerdict(t, e, bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
 			require.NoError(t, err)
 			// A captured read is no host state, as the verdict weighs it;
 			// a host read is, at the moment it was made.
@@ -78,11 +78,11 @@ func TestCompilerDependentFetchInputComesFromTheTable(t *testing.T) {
 	putFile(t, tree.Root(), "devel/host/Portfile", contents)
 	bound, err := tree.Select(model.Target{Name: "host", Portfile: "devel/host/Portfile"})
 	require.NoError(t, err)
-	got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
+	got, err := observeForVerdict(t, e, bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
 	require.NoError(t, err)
 	require.False(t, hostState(t, got.Ports["host"], contents), "%v", got.Ports["host"].Problems)
 	require.Equal(t, "host-clang++.tar.gz", got.Snapshot.Ports["host"].Options["distfiles"])
-	got, err = e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "9", Architecture: "x86_64"}, Declarations: true})
+	got, err = observeForVerdict(t, e, bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "9", Architecture: "x86_64"}, Declarations: true})
 	require.NoError(t, err)
 	require.True(t, got.Ports["host"].ModeledHostAccess, "%v", got.Ports["host"].Problems)
 	require.Positive(t, closedCalls(got.Ports["host"])["file executable"]+closedCalls(got.Ports["host"])["exec"], "%v", got.Ports["host"].Ledger)
@@ -124,7 +124,7 @@ func TestPortsThatAskBaseForCompilersReadTheTable(t *testing.T) {
 			require.NoError(t, err)
 			bound, err := tree.Select(targets[0])
 			require.NoError(t, err)
-			got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "22", Architecture: "x86_64"}, Declarations: true})
+			got, err := observeForVerdict(t, e, bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "22", Architecture: "x86_64"}, Declarations: true})
 			require.NoError(t, err)
 			require.False(t, got.Ports[port.name].ModeledHostAccess, "%v", got.Ports[port.name].Problems)
 		})
@@ -147,7 +147,7 @@ func TestTheDispatcherCountsEveryCallByItsSource(t *testing.T) {
 	require.NoError(t, err)
 	var reported []LedgerReport
 	e.Ledger = func(report LedgerReport) { reported = append(reported, report) }
-	got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Declarations: true})
+	got, err := observeForVerdict(t, e, bound, macports.ObservationRequest{Declarations: true})
 	require.NoError(t, err)
 	require.Len(t, reported, 1, "a survey hears each observed port's ledger")
 	require.Equal(t, "ledger", reported[0].Port)
@@ -185,14 +185,14 @@ func TestSourceDateEpochIsReadFromTheCapturedTree(t *testing.T) {
 	require.NoError(t, os.Chtimes(filepath.Join(tree.Root(), "devel/host/Portfile"), when, when))
 	bound, err := tree.Select(model.Target{Name: "host", Portfile: "devel/host/Portfile"})
 	require.NoError(t, err)
-	got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
+	got, err := observeForVerdict(t, e, bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
 	require.NoError(t, err)
 	require.False(t, hostState(t, got.Ports["host"], contents), "%v", got.Ports["host"].Problems)
 	require.Equal(t, "host-1700000000-2023-11-14T22:13:20Z.tar.gz", got.Snapshot.Ports["host"].Options["distfiles"], "the Portfile's time, in UTC")
 
 	// The same question of a directory outside the captured tree.
 	putFile(t, tree.Root(), "devel/host/Portfile", "PortSystem 1.0\nname host\nversion 1\ncatch {exec git -c safe.directory=* -C "+t.TempDir()+" rev-parse --is-inside-work-tree}\n")
-	got, err = e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
+	got, err = observeForVerdict(t, e, bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
 	require.NoError(t, err)
 	require.True(t, got.Ports["host"].ModeledHostAccess, "a directory outside the captured tree is the host's")
 }
@@ -214,9 +214,9 @@ func TestSourceDateEpochIsTheSameWithGitAndWithout(t *testing.T) {
 	require.NoError(t, os.Chtimes(filepath.Join(tree.Root(), "devel/host/Portfile"), when, when))
 	bound, err := tree.Select(model.Target{Name: "host", Portfile: "devel/host/Portfile"})
 	require.NoError(t, err)
-	native, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Declarations: true})
+	native, err := observeForVerdict(t, e, bound, macports.ObservationRequest{Declarations: true})
 	require.NoError(t, err)
-	modelled, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
+	modelled, err := observeForVerdict(t, e, bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
 	require.NoError(t, err)
 	asked := func(observed macports.Observation, command, source string) bool {
 		for _, entry := range observed.Ports["host"].Ledger {
@@ -260,7 +260,7 @@ func TestEachContextGetsItsOwnCompilerList(t *testing.T) {
 	platforms := []model.Platform{{OS: "darwin", Version: "25", Architecture: "arm64"}, {OS: "darwin", Version: "16", Architecture: "x86_64"}}
 	alone := map[model.Platform]string{}
 	for _, platform := range platforms {
-		got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: platform, Declarations: true})
+		got, err := observeForVerdict(t, e, bound, macports.ObservationRequest{Platform: platform, Declarations: true})
 		require.NoError(t, err)
 		alone[platform] = got.Snapshot.Ports["host"].Options["distfiles"]
 	}
@@ -308,9 +308,9 @@ func TestBasesOwnLookupForAPhaseOptionIsExplained(t *testing.T) {
 		{"build.cmd's make, taken by a PortGroup's configure.args", "PortGroup makeargs 1.0", group, false, "make, which findBinary"},
 		{"extract.cmd's lbzip2", "use_bzip2 yes", nil, false, "lbzip2, which findBinary"},
 		{"build.cmd's make, in the Portfile's test.cmd", "test.run yes\ntest.cmd ${build.cmd}", nil, false, "make, which findBinary"},
-		{"build.cmd's make, read in the Portfile's expression", "build.args-append [string length ${build.cmd}]\nif {${build.cmd} eq {}} {build.target none}", nil, true, "make, which findBinary"},
+		{"build.cmd's make, read in the Portfile's expression", "build.args-append [string length ${build.cmd}]\nif {${build.cmd} eq {}} {build.target none}", nil, false, "make, which findBinary"},
 		{"a Portfile's own call of Base's make lookup", "build.cmd [portbuild::build_getmaketype]", nil, true, "make, which findBinary"},
-		{"configure.args read by a fetch value", "PortGroup makeargs 1.0\ndistfiles effects-[llength ${configure.args}].tar.gz", group, true, "make, which findBinary"},
+		{"configure.args read by a fetch value", "PortGroup makeargs 1.0\ndistfiles effects-[string length ${configure.args}].tar.gz", group, true, "make, which findBinary"},
 		{"a Portfile's own lookup for configure.args", "catch {configure.args-append [findBinary hostonly]}", nil, true, "hostonly, which findBinary"},
 		{"a Portfile's callback calling Base's make lookup", "proc mine {} { if {[catch {portbuild::build_getmaketype}]} {master_sites a} else {master_sites b} }\nport::register_callback mine", nil, true, "make, which findBinary"},
 		{"a PortGroup's default looking for a program", "PortGroup hostdefault 1.0\nbuild.args ${build.cmd}", hostDefault, true, "hostonly, which findBinary"},
@@ -364,7 +364,7 @@ func knownGapVerdict(t *testing.T, platform model.Platform, setup func(string), 
 	putFile(t, tree.Root(), "devel/effects/Portfile", contents)
 	bound, err := tree.Select(model.Target{Name: "effects", Portfile: "devel/effects/Portfile"})
 	require.NoError(t, err)
-	got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Declarations: true, Platform: platform})
+	got, err := observeForVerdict(t, e, bound, macports.ObservationRequest{Declarations: true, Platform: platform})
 	require.NoError(t, err)
 	_, inconclusive := observe.Tolerate(t.Context(), got.Ports["effects"], []byte(contents), tree.Root())
 	return inconclusive, got.Snapshot.Ports["effects"].Options["distfiles"], got.Ports["effects"]
@@ -389,7 +389,7 @@ func TestKnownGapAPortfilesOwnCallOfBasesToolchainProcedureIsExplained(t *testin
 	}
 	require.True(t, own, "the Portfile's own call closes a host read: %v", port.Problems)
 	require.Equal(t, "x-.tar.gz", distfiles, "the empty Mac's SDK answer in a fetch field")
-	require.False(t, inconclusive, "known gap: explained today")
+	require.False(t, inconclusive, "known toolchain gap remains held in #247")
 }
 
 // Known gap, filed as #247, pinned as it stands, not fixed in #110's round (architecture's
@@ -398,7 +398,7 @@ func TestKnownGapAPortfilesOwnCallOfBasesToolchainProcedureIsExplained(t *testin
 // build.cmd into distfiles while it is sourced, which leaves no frame of
 // its file, so build.cmd's make reaches a fetch field and the context
 // reads as conclusive. When the gap is closed this test fails, and flips.
-func TestKnownGapAPortGroupOffTheStackIsNotFollowed(t *testing.T) {
+func TestExperimentSeesAPortGroupOffTheOriginalReadsStack(t *testing.T) {
 	t.Parallel()
 	setup := func(root string) {
 		putFile(t, root, "_resources/port1.0/group/hostread-1.0.tcl", "distfiles foo-[file tail ${build.cmd}].tar.gz\n")
@@ -407,7 +407,7 @@ func TestKnownGapAPortGroupOffTheStackIsNotFollowed(t *testing.T) {
 	inconclusive, distfiles, port := knownGapVerdict(t, monterey, setup, contents)
 	require.Contains(t, port.Problems, "modeled context depends on make, which findBinary looks for along this Mac's PATH")
 	require.Equal(t, "foo-.tar.gz", distfiles, "make, not found on the empty Mac, in a fetch field")
-	require.False(t, inconclusive, "known gap: explained today")
+	require.True(t, inconclusive, "the experiment catches this off-stack fetch change; #247 remains held")
 }
 
 // The outside confirmation of #110 at 6ab59afb, findings 1 and 2, live: a

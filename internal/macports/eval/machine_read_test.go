@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -29,5 +31,19 @@ func TestMachineReadExperimentNeverEscapesStandinData(t *testing.T) {
 		require.NoError(t, err)
 		require.NotContains(t, string(data), marker)
 		require.NotContains(t, strings.Join(output, ""), marker)
+		for name, summary := range result {
+			p := before.Ports[name]
+			p.MachineReadExperiment = &summary
+			before.Ports[name] = p
+		}
+		cache := map[string]macports.Observation{"original": before}
+		encoded, err := json.Marshal(cache)
+		require.NoError(t, err)
+		require.NotContains(t, string(encoded), marker)
+		path := filepath.Join(t.TempDir(), "record.json")
+		require.NoError(t, os.WriteFile(path, encoded, 0600))
+		stored, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.NotContains(t, string(stored), marker)
 	}
 }

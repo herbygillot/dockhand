@@ -299,3 +299,13 @@ retain the complete call so the summary identifies the original question exactly
 Every observation records registered phase bodies without running them. The
 machine-read experiment compares fetch and checksum registrations; an unreadable
 fetch guard or a checksum body cannot establish that a read is harmless.
+
+For a modeled build default or Base program lookup, dockhand varies that machine
+read in a private second evaluation. It explains the original read only when
+that read was varied and nothing dockhand acts on changed. A read without a
+stand-in stays unexplained unless another existing rule explains it. The native
+context is unchanged. Neither evaluation runs phase bodies.
+
+This experiment cannot see a difference that appears only at one exact value,
+or only for one mixed combination of answers. Equal results are evidence for
+these two evaluations, not proof for every possible machine answer.
