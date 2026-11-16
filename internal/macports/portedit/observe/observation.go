@@ -61,7 +61,6 @@ func Left(ctx context.Context, observed macports.Observation, port string, conte
 // projection; results keep the profiles' order. Baseline observations come from and go
 // to the session's cache like single observations do.
 func (s *Session) Observe(ctx context.Context, contents []byte, profiles []model.Platform, declarations, selectedOnly bool) ([]macports.Observation, error) {
-	observer := s.Ports
 	results := make([]macports.Observation, len(profiles))
 	requests := make([]macports.ObservationRequest, len(profiles))
 	keys := make([]key, len(profiles))
@@ -102,7 +101,7 @@ func (s *Session) Observe(ctx context.Context, contents []byte, profiles []model
 			}
 		}
 		group.Go(func() error {
-			observed, err := observer.Observe(gctx, bound, requests[i])
+			observed, err := s.readObservation(gctx, bound, requests[i])
 			// A modelled context whose evaluation ended on a call the model
 			// has no answer for is one nothing else of was read, for its
 			// readers to leave (Left), not a failure of the rest (Codex's
@@ -142,7 +141,6 @@ var observationConcurrency = min(8, max(2, runtime.NumCPU()))
 // declarations are reused from the cache; candidate observations and
 // final untraced evaluations always run afresh.
 func (s *Session) One(ctx context.Context, contents []byte, profile macports.ObservationRequest, selectedOnly bool) (macports.Observation, error) {
-	observer := s.Ports
 	if err := ctx.Err(); err != nil {
 		return macports.Observation{}, err
 	}
@@ -166,7 +164,7 @@ func (s *Session) One(ctx context.Context, contents []byte, profile macports.Obs
 	if err != nil {
 		return macports.Observation{}, err
 	}
-	observed, err := observer.Observe(ctx, bound, profile)
+	observed, err := s.readObservation(ctx, bound, profile)
 	// A closed answer that ended the evaluation is a context the model
 	// has no answer for, named by the call: inconclusive, not a failure
 	// (#110), and the observation says it, for a reader to leave the

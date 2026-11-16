@@ -185,3 +185,10 @@ func After(ctx context.Context, delay time.Duration, format string, args ...any)
 	})
 	return func() { timer.Stop() }
 }
+
+// WithoutReports suppresses reporters and observers while preserving cancellation.
+// Private counterfactual evaluations must never publish their diagnostic values.
+func WithoutReports(ctx context.Context) context.Context {
+	ctx = context.WithValue(ctx, reporterKey{}, (*reporter)(nil))
+	return context.WithValue(ctx, observerKey{}, (*observer)(nil))
+}

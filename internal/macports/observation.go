@@ -88,6 +88,7 @@ type Hook struct {
 }
 
 type PortObservation struct {
+	MachineReadExperiment *MachineReadExperiment `json:",omitempty"`
 	// HostAccess records external evaluation inputs even in the native context.
 	HostAccess bool
 	// Ledger is every call the dispatcher passed while the port was

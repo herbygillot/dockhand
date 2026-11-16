@@ -290,3 +290,8 @@ failed to supply an evaluation, rather than reaching a judgment about the
 Portfile. The survey comparison lists such ports separately as `not evaluated`
 and excludes them from outcome moves, guard changes and comparable Portfile
 coverage. Retry those evaluations before judging a change.
+
+Machine-read observations carry a summary of a private counterfactual evaluation:
+its outcome, original read indices, and a field or error code. The second
+observation and its values are never returned or recorded. Host-access events
+retain the complete call so the summary identifies the original question exactly.
