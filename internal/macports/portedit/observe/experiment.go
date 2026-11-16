@@ -2,8 +2,9 @@ package observe
 
 import (
 	"context"
-	"github.com/herbygillot/dockhand/internal/macports"
 	"slices"
+
+	"github.com/herbygillot/dockhand/internal/macports"
 )
 
 // readObservation is shared by One and Observe, before either caches a result.
