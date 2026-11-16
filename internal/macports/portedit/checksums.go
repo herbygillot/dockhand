@@ -485,6 +485,12 @@ func (s *Service) checksumsToWrite(ctx context.Context, input *sourceInput, refu
 			continue
 		}
 		info := observed.Snapshot.Ports[input.target.Name]
+		// Fetched only as every other fetch is, after the policy: this
+		// fallback fetched a context's archives that MacPorts' own fetch
+		// would treat differently (#271).
+		if err := distfetch.CheckPolicy(info, input.portdirIn(observed.Snapshot.Root)); err != nil {
+			return refusal
+		}
 		declared, _ := syntax.ListValues(info.Options["checksums"])
 		plan, err := observed.Ports[input.target.Name].FetchPlan()
 		if err != nil {
