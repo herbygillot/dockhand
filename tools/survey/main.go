@@ -36,23 +36,24 @@ func (l *list) Set(v string) error { *l = append(*l, v); return nil }
 // run is how a survey was made and what it cost, written beside its
 // journal as <journal>.run.json.
 type run struct {
-	Tree          string         `json:"tree"`
-	Commit        string         `json:"commit"`
-	Tclsh         string         `json:"tclsh"`
-	Portindex     string         `json:"portindex"`
-	Base          string         `json:"base"`
-	Parallel      int            `json:"parallel"`
-	Started       time.Time      `json:"started"`
-	Finished      time.Time      `json:"finished"`
-	WallSeconds   float64        `json:"wall_seconds"`
-	UserSeconds   float64        `json:"user_seconds"`
-	SystemSeconds float64        `json:"system_seconds"`
-	Cores         float64        `json:"cores"`
-	LoadAtStart   string         `json:"load_at_start"`
-	Assessed      int            `json:"assessed"`
-	Skipped       int            `json:"skipped"`
-	Experiments   map[string]int `json:"experiments,omitempty"`
-	Outcomes      any            `json:"outcomes"`
+	Tolerance     *toleranceCounts `json:"tolerance,omitempty"`
+	Tree          string           `json:"tree"`
+	Commit        string           `json:"commit"`
+	Tclsh         string           `json:"tclsh"`
+	Portindex     string           `json:"portindex"`
+	Base          string           `json:"base"`
+	Parallel      int              `json:"parallel"`
+	Started       time.Time        `json:"started"`
+	Finished      time.Time        `json:"finished"`
+	WallSeconds   float64          `json:"wall_seconds"`
+	UserSeconds   float64          `json:"user_seconds"`
+	SystemSeconds float64          `json:"system_seconds"`
+	Cores         float64          `json:"cores"`
+	LoadAtStart   string           `json:"load_at_start"`
+	Assessed      int              `json:"assessed"`
+	Skipped       int              `json:"skipped"`
+	Experiments   map[string]int   `json:"experiments,omitempty"`
+	Outcomes      any              `json:"outcomes"`
 	// Settings are what decide what the run measured, which -compare
 	// holds two runs to (#222).
 	Settings *settings `json:"settings,omitempty"`
@@ -278,12 +279,15 @@ func survey() (err error) {
 	made.Outcomes = outcomes
 	if *experiment {
 		made.Experiments = map[string]int{}
+		made.Tolerance = &toleranceCounts{}
 		for _, p := range result.Ports {
 			for _, e := range p.Experiments {
 				made.Experiments[e.Summary.Outcome]++
+				made.Tolerance.add(e.Tolerance)
 			}
 		}
 		fmt.Fprintf(os.Stderr, "Product machine-read experiments: %v\n", made.Experiments)
+		fmt.Fprintf(os.Stderr, "Final Tolerate verdicts: %+v\n", *made.Tolerance)
 	}
 	made.Settings = &settings{Mode: *mode, Record: *dbPath != "", Experiment: *experiment, Recording: *dbPath != "" && *recording,
 		Selection: selectionOf(request.Selection), Commit: made.Commit, Prefix: filepath.Dir(filepath.Dir(tclsh))}

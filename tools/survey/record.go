@@ -28,7 +28,7 @@ import (
 var schema string
 
 // schemaVersion is the record's shape, schema.sql's.
-const schemaVersion = 2
+const schemaVersion = 3
 
 // Modes are what a run evaluates ports against: current, the fresh
 // installation and the facts table, as dockhand does; installed, the
@@ -297,6 +297,7 @@ func (r *Record) Record(port Port) error {
 
 // observed is one context a port was observed in.
 type observed struct {
+	Tolerance   *toleranceVerdict
 	Platform    model.Platform
 	Modeled     bool
 	Root        string
@@ -320,6 +321,9 @@ func (r *Record) evaluation(tx *sql.Tx, port int64, o observed) error {
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	} else if err != nil {
+		return err
+	}
+	if err := recordTolerance(tx, id, o.Tolerance); err != nil {
 		return err
 	}
 	if o.Modeled {
