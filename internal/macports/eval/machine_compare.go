@@ -80,12 +80,6 @@ func compareMachinePlans(a, b macports.PortInfo, x, y macports.PortObservation, 
 	if !reflect.DeepEqual(fetch(a), fetch(b)) {
 		return "fetch", nil
 	}
-	if guard := machinePhaseGuard(a, x); guard != "" {
-		return guard, nil
-	}
-	if guard := machinePhaseGuard(b, y); guard != "" {
-		return guard, nil
-	}
 	var moved []string
 	for _, name := range macports.ReadOptions {
 		if !slices.Contains(acted, name) && (a.Options[name] != b.Options[name] || a.OptionErrors[name] != b.OptionErrors[name]) {

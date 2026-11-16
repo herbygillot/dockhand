@@ -24,3 +24,14 @@ func TestExperimentEvidenceAppliesReadByRead(t *testing.T) {
 	_, left = Tolerate(t.Context(), port, nil, t.TempDir())
 	require.True(t, left, "recognition without evidence is not acceptance")
 }
+
+func TestNativeBuildDefaultNeedsNoCounterfactual(t *testing.T) {
+	b := newBaseFixture(t)
+	frames := append(b.substitution("build.jobs", "[portbuild::build_getjobs]"), frame("portbuild::build_getjobs"), macports.SourceFrame{File: b.file("port1.0/portbuild.tcl"), Line: 152, Command: "set jobs [sysctl hw.activecpu]"})
+	d := macports.Declaration{Command: "dockhand.host-access", Values: []string{"this Mac's kernel read with sysctl"}, Frames: frames}
+	_, recognized := recognizeBuildDefault(d, newBaseCode(b.lib))
+	require.True(t, recognized)
+	p := macports.PortObservation{HostAccess: true, BaseLibrary: b.lib, Declarations: []macports.Declaration{d}, Problems: []string{d.Values[0]}}
+	_, left := Tolerate(t.Context(), p, []byte("build.args -j${build.jobs}"), t.TempDir())
+	require.False(t, left, "native Base defaults use this Mac's answer without a second evaluation")
+}

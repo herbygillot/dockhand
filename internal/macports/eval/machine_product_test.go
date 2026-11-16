@@ -50,7 +50,7 @@ func TestMachineReadProductFixtureGate(t *testing.T) {
 		{"build-only", `build.args -j${build.jobs}`, "same, build-only moved", ""},
 		{"epoch", `epoch ${build.jobs}`, "differs", "epoch"},
 		{"custom-fetch", `if {${build.jobs} > 8} {fetch {return}}`, "differs", "phase registrations"},
-		{"checksum-hook", `build.args -j${build.jobs}; pre-checksum {return}`, "differs", "checksum phase"},
+		{"checksum-hook", `build.args -j${build.jobs}; pre-checksum {return}`, "unexplained", ""},
 	} {
 		t.Run(f.name, func(t *testing.T) {
 			e := liveEvaluator(t)
@@ -70,8 +70,11 @@ func TestMachineReadProductFixtureGate(t *testing.T) {
 			t.Logf("gate %s: %s field=%s varied=%v moved=%v", f.name, summary.Outcome, summary.Field, summary.Varied, summary.BuildOnlyMoved)
 			require.Equal(t, f.want, summary.Outcome)
 			require.Equal(t, f.field, summary.Field)
+			if f.name == "checksum-hook" {
+				require.Equal(t, "checksum-phase-unread", summary.ErrorCode)
+			}
 			_, left := observe.Tolerate(t.Context(), p, data, tree.Root())
-			require.Equal(t, f.want == "differs", left)
+			require.Equal(t, f.want == "differs" || f.want == "unexplained", left)
 			cached, err := s.One(t.Context(), data, request, true)
 			require.NoError(t, err)
 			require.Equal(t, got, cached)
