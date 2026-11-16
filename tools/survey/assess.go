@@ -41,7 +41,8 @@ type Result struct {
 }
 
 type Port struct {
-	Selector string
+	Experiments []experimentContext `json:",omitempty"`
+	Selector    string
 	portedit.Assessment
 	// portfile is the port's Portfile where the selection knew it, and
 	// observed each context it was observed in, for the record.
@@ -59,6 +60,7 @@ type Service struct {
 	// assessment observes it in, for the record; ObserveOnly does that
 	// alone, without assessing it.
 	Observe, ObserveOnly bool
+	ExperimentReport     bool
 }
 
 func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err error) {
@@ -181,7 +183,12 @@ var Concurrency = min(8, max(2, runtime.NumCPU()))
 
 // assessOne assesses one selected port: its probe and the assessment
 // itself.
-func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files *portsurvey.Workspace, projection *workspace.Workspace, platform model.Platform, selected portsurvey.Port) (Port, error) {
+func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files *portsurvey.Workspace, projection *workspace.Workspace, platform model.Platform, selected portsurvey.Port) (result Port, resultErr error) {
+	defer func() {
+		if s.ExperimentReport {
+			result.Experiments = experimentReports(result.observed)
+		}
+	}()
 	if err := ctx.Err(); err != nil {
 		return Port{}, err
 	}
