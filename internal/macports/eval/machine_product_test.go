@@ -50,7 +50,9 @@ func TestMachineReadProductFixtureGate(t *testing.T) {
 		{"build-only", `build.args -j${build.jobs}`, "same, build-only moved", ""},
 		{"epoch", `epoch ${build.jobs}`, "differs", "epoch"},
 		{"custom-fetch", `if {${build.jobs} > 8} {fetch {return}}`, "differs", "phase registrations"},
-		{"checksum-hook", `build.args -j${build.jobs}; pre-checksum {return}`, "unexplained", ""},
+		{"python-checksum", `build.args -j${build.jobs}; pre-checksum {distfiles}`, "same, build-only moved", ""},
+		{"gpg-checksum", `build.args -j${build.jobs}; pre-checksum {if {[geteuid] == 0} {xinstall -o ${macportsuser} -d [option gpg_verify.gpg_homedir]}}`, "same, build-only moved", ""},
+		{"checksum-hook", `build.args -j${build.jobs}; pre-checksum {if {${build.jobs} > 4} {checksums sha256 changed}}`, "unexplained", ""},
 	} {
 		t.Run(f.name, func(t *testing.T) {
 			e := liveEvaluator(t)
@@ -125,7 +127,7 @@ func (c *countedMachineObserver) Observe(ctx context.Context, source macports.Co
 	c.request = request
 	return c.Evaluator.Observe(ctx, source, request)
 }
-func (c *countedMachineObserver) MachineReadExperiments(ctx context.Context, source macports.Context, request macports.ObservationRequest, before macports.Observation, candidates map[string][]int, acted []string) map[string]macports.MachineReadExperiment {
+func (c *countedMachineObserver) MachineReadExperiments(ctx context.Context, source macports.Context, request macports.ObservationRequest, before macports.Observation, candidates map[string][]macports.MachineReadCandidate, acted []string) map[string]macports.MachineReadExperiment {
 	c.experiments++
 	// A changed request would make the comparison evidence unusable.
 	if !reflect.DeepEqual(c.request, request) {

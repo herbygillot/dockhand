@@ -20,7 +20,7 @@ func TestMachineReadExperimentNeverEscapesStandinData(t *testing.T) {
 	ctx := progress.Observe(progress.WithReporter(t.Context(), func(u progress.Update) { output = append(output, u.Message) }), func(u progress.Update) { output = append(output, u.Message) })
 	before := macports.Observation{Ports: map[string]macports.PortObservation{"fixture": {Declarations: []macports.Declaration{{Command: "dockhand.host-access", Values: []string{"question", "closed", "base", "sysctl hw.activecpu"}}}}}}
 	for _, fail := range []bool{false, true} {
-		result := performMachineReadExperiment(ctx, before, map[string][]int{"fixture": {0}}, nil, func(ctx context.Context) (macports.Observation, error) {
+		result := performMachineReadExperiment(ctx, before, map[string][]macports.MachineReadCandidate{"fixture": {{Read: 0}}}, nil, func(ctx context.Context) (macports.Observation, error) {
 			progress.Report(ctx, marker)
 			if fail {
 				return macports.Observation{}, errors.New(marker)
@@ -56,7 +56,7 @@ func TestOneStandinCoversTwoOriginalReadsOfTheSameCall(t *testing.T) {
 	standin.Values = append([]string(nil), question.Values...)
 	standin.Values[1] = "standin"
 	calls := 0
-	result := performMachineReadExperiment(t.Context(), before, map[string][]int{"fixture": {0, 1}}, nil, func(context.Context) (macports.Observation, error) {
+	result := performMachineReadExperiment(t.Context(), before, map[string][]macports.MachineReadCandidate{"fixture": {{Read: 0}, {Read: 1}}}, nil, func(context.Context) (macports.Observation, error) {
 		calls++
 		return macports.Observation{Snapshot: before.Snapshot, Ports: map[string]macports.PortObservation{"fixture": {Declarations: []macports.Declaration{standin}}}}, nil
 	})["fixture"]

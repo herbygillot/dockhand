@@ -18,17 +18,22 @@ func (s *Session) readObservation(ctx context.Context, bound macports.Context, r
 	if !ok {
 		return observed, nil
 	}
-	candidates := map[string][]int{}
+	candidates := map[string][]macports.MachineReadCandidate{}
 	for name, port := range observed.Ports {
 		base := newBaseCode(port.BaseLibrary)
 		for id, d := range port.Declarations {
 			if d.Command != "dockhand.host-access" {
 				continue
 			}
-			_, build := recognizeBuildDefault(d, base)
-			_, lookup := recognizeBaseLookup(d, base)
+			defaults, build := recognizeBuildDefault(d, base)
+			lookupDefaults, lookup := recognizeBaseLookup(d, base)
 			if build || lookup {
-				candidates[name] = append(candidates[name], id)
+				for _, option := range lookupDefaults {
+					if !slices.Contains(defaults, option) {
+						defaults = append(defaults, option)
+					}
+				}
+				candidates[name] = append(candidates[name], macports.MachineReadCandidate{Read: id, Defaults: defaults})
 			}
 		}
 	}
@@ -50,5 +55,5 @@ func (s *Session) readObservation(ctx context.Context, bound macports.Context, r
 }
 
 func experimentExplains(summary *macports.MachineReadExperiment, id int) bool {
-	return summary != nil && (summary.Outcome == "same" || summary.Outcome == "same, build-only moved") && slices.Contains(summary.Varied, id)
+	return summary != nil && (summary.Outcome == "same" || summary.Outcome == "same, build-only moved") && slices.Contains(summary.Varied, id) && !slices.Contains(summary.Unexplained, id)
 }

@@ -2,10 +2,12 @@ package eval
 
 import (
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
 // Only names and registration text are compared; positions and private
@@ -20,13 +22,36 @@ func machineHooks(p macports.PortObservation) []macports.Hook {
 	}
 	return hooks
 }
-func machinePhaseGuard(port macports.PortObservation) string {
+func machinePhaseGuard(port macports.PortObservation, defaults []string) string {
 	for _, h := range machineHooks(port) {
-		if strings.Contains(h.Procedure, "-org.macports.checksum-") {
+		if strings.Contains(h.Procedure, "-org.macports.checksum-") && checksumNamesDefault(h.Body, defaults) {
 			return "checksum phase"
 		}
 	}
 	return ""
+}
+
+// checksumNamesDefault is a literal name check, not value following. It
+// recognizes variable text, literal option queries, and bare option commands.
+func checksumNamesDefault(body string, defaults []string) bool {
+	src := []byte(body)
+	for _, name := range defaults {
+		quoted := regexp.QuoteMeta(name)
+		if regexp.MustCompile(`\$(?:\{` + quoted + `\}|` + quoted + `(?:$|[^[:alnum:]_.:]))|\[\s*option\s+` + quoted + `\s*\]|\[\s*` + quoted + `(?:\s|\])`).MatchString(body) {
+			return true
+		}
+	}
+	script, _ := syntax.Parse(src)
+	if script == nil {
+		return false
+	}
+	for cmd := range script.Commands(src, func(syntax.Command) bool { return true }) {
+		name, _ := cmd.Name(src)
+		if slices.Contains(defaults, name) {
+			return true
+		}
+	}
+	return false
 }
 func compareMachinePlans(a, b macports.PortInfo, x, y macports.PortObservation, acted []string) (string, []string) {
 	for _, field := range []struct {

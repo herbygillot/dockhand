@@ -154,8 +154,13 @@ with `-recording=false`.
 Summary outcomes are `same`, `same, build-only moved`, `differs` (a compared
 field, or a semantic evaluation failure), `failed` (infrastructure),
 `not perturbed`, or `unexplained` (equal compared values but a checksum-phase
-body leaves the read unexplained). This carries `checksum-phase-unread`, rather
+body names an option in that read's recognized default chain). This carries `checksum-phase-unread`, rather
 than claiming a value differed. The experiment adds no fetch-body verdict:
 fetch policy refuses unsupported fetching, while a change in fetch kind or
 registration between evaluations remains a compared difference. An absent
 summary is reported as `not requested` for a modeled context.
+
+The proposed narrow checksum guard records original read indices in
+`Unexplained`. An equal summary cannot explain those indices even when other
+varied reads in the same context remain explained. No value following or
+derived-name resolution is performed. This proposal is pending adoption.
