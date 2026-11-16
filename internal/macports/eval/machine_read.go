@@ -64,6 +64,12 @@ func performMachineReadExperiment(ctx context.Context, before macports.Observati
 				summary.Outcome = "same"
 				if summary.Field != "" {
 					summary.Outcome = "differs"
+				} else if guard := machinePhaseGuard(before.Snapshot.Ports[name], before.Ports[name]); guard != "" {
+					summary.Outcome = "unexplained"
+					summary.ErrorCode = machineGuardCode(guard)
+				} else if guard := machinePhaseGuard(after.Snapshot.Ports[name], second); guard != "" {
+					summary.Outcome = "unexplained"
+					summary.ErrorCode = machineGuardCode(guard)
 				} else if len(summary.BuildOnlyMoved) > 0 {
 					summary.Outcome = "same, build-only moved"
 				}
@@ -72,4 +78,11 @@ func performMachineReadExperiment(ctx context.Context, before macports.Observati
 		result[name] = summary
 	}
 	return result
+}
+
+func machineGuardCode(guard string) string {
+	if guard == "checksum phase" {
+		return "checksum-phase-unread"
+	}
+	return "fetch-unreadable"
 }

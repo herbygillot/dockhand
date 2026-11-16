@@ -143,3 +143,17 @@ questions. Neither the database nor journal stores a second observation or plan.
 The survey has no legacy Tolerate copy, pinned follow.go hash, follower policy,
 or separate second evaluation; those measurement-only implementations were not
 carried onto the product branch. `follow.go` is removed with this change.
+
+The private operation publishes only an outcome, original declaration indices
+that were varied, the first differing field or error code, and names of excluded
+build-only options that moved. It publishes no second plan, values, or raw error
+text. Original host-access events retain full call identities. Ordinary
+observations record phase registrations without executing their bodies, even
+with `-recording=false`.
+
+Summary outcomes are `same`, `same, build-only moved`, `differs` (a compared
+field, or a semantic evaluation failure), `failed` (infrastructure),
+`not perturbed`, or `unexplained` (equal compared values but a checksum or fetch
+phase guard could not establish the read). Guard refusals carry
+`checksum-phase-unread` or `fetch-unreadable`, rather than claiming a value
+differed. An absent summary is reported as `not requested` for a modeled context.

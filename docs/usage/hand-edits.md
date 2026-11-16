@@ -71,6 +71,28 @@ on, and go on with the releases they could read. Checks
 build only on the releases you have images for, or GitHub's. MacPorts' builders
 cover the rest after the pull request is merged.
 
+For a build default or a program lookup owned by MacPorts Base, Dockhand can
+check whether a machine answer affects that reading. It evaluates the same
+contents and context again with stand-in answers for supported CPU and memory
+questions and failed program lookups. A read is explained only when that read
+was varied and nothing Dockhand acts on changed, including the downloads and
+their locations, checksums, version, epoch, and revision. A read without a
+stand-in stays unexplained unless another existing rule explains it. This Mac's
+native context is unchanged.
+
+Neither reading runs phase bodies. Fetch bodies still need to pass the fetch
+guard; a checksum body or an unreadable fetch body leaves machine reads
+unexplained. Extract and later phases are outside this comparison. A difference
+that appears only at one exact value, or only for one mixed combination of
+answers, is not seen. Equal results are evidence for these two readings, not
+proof for every possible machine answer.
+
+An assessment finding with code `evaluation-unavailable` means the Tcl worker
+failed to supply an evaluation, rather than reaching a judgment about the
+Portfile. Survey comparisons list such ports separately as `not evaluated` and
+exclude them from outcome moves, guard changes and comparable Portfile coverage.
+Retry those evaluations before judging a change.
+
 For ports with `cargo.crates` or `go.vendors`, an ordinary refresh preserves
 those lists byte for byte while refreshing the port's own archives. An empty
 declared dependency block can be filled from the source. A declaration or
@@ -284,32 +306,3 @@ make a dependency edited elsewhere in the same branch visible. Use a Dockhand
 check for a branch with changed dependencies, or deliberately configure your own
 temporary MacPorts source overlay and keep its port index current. Dockhand does
 not add worktrees to your system's `sources.conf`.
-
-An assessment finding with code `evaluation-unavailable` means the Tcl worker
-failed to supply an evaluation, rather than reaching a judgment about the
-Portfile. The survey comparison lists such ports separately as `not evaluated`
-and excludes them from outcome moves, guard changes and comparable Portfile
-coverage. Retry those evaluations before judging a change.
-
-Machine-read observations carry a summary of a private counterfactual evaluation:
-its outcome, original read indices, and a field or error code. The second
-observation and its values are never returned or recorded. Host-access events
-retain the complete call so the summary identifies the original question exactly.
-
-Every observation records registered phase bodies without running them. The
-machine-read experiment compares fetch and checksum registrations; an unreadable
-fetch guard or a checksum body cannot establish that a read is harmless.
-
-For a modeled build default or Base program lookup, dockhand varies that machine
-read in a private second evaluation. It explains the original read only when
-that read was varied and nothing dockhand acts on changed. A read without a
-stand-in stays unexplained unless another existing rule explains it. The native
-context is unchanged. Neither evaluation runs phase bodies.
-
-This experiment cannot see a difference that appears only at one exact value,
-or only for one mixed combination of answers. Equal results are evidence for
-these two evaluations, not proof for every possible machine answer.
-
-The standalone `tools/survey -experiment` report uses these product outcomes.
-Its schema 2 record holds summaries and original questions, never the stand-in
-observation. See [the survey instructions](../../tools/survey/README.md).

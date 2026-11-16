@@ -265,6 +265,10 @@ func Tolerate(ctx context.Context, port macports.PortObservation, contents []byt
 		_, lookup := recognizeBaseLookup(declaration, base)
 		varied := experimentExplains(port.MachineReadExperiment, id)
 		switch {
+		// #125: this Mac's actual Base-default answer is not a closed
+		// modeled read. Only the latter needs counterfactual evidence.
+		case build && !port.ModeledHostAccess:
+			progress.DebugReport(ctx, "Host access explained as this Mac's own Base default: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
 		case build && varied:
 			progress.DebugReport(ctx, "Host access explained as Base's build default: the read was varied and nothing dockhand acts on changed: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
 		case lookup && varied:
