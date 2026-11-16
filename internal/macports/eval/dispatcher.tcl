@@ -315,7 +315,7 @@ namespace eval ::dockhand {
                     dict incr ledger [list $name [expr {$name eq "file" ? [lindex $arguments 0] : ""}] closed [expr {$walking ? "fingerprint" : ""}]]
                     if {$record_paths} { note $name $asked closed }
                     if {!$walking && [namespace exists ::dockhand_observation]} {
-                        ::dockhand_observation::closed $skip $problem [string range [list $name {*}$asked] 0 199]
+                        ::dockhand_observation::closed $skip $problem [list $name {*}$asked]
                     }
                     set answer [closed_answer $name $arguments]
                     if {[lindex $answer 0]} {
@@ -332,7 +332,7 @@ namespace eval ::dockhand {
                     variable ledger
                     variable walking
                     dict incr ledger [list $name "" closed [expr {$walking ? "fingerprint" : $subject}]]
-                    set call [string range [list $name $subject] 0 199]
+                    set call [list $name $subject]
                     if {!$walking && [namespace exists ::dockhand_observation]} {
                         ::dockhand_observation::closed 4 $problem $call
                     }

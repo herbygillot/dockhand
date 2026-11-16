@@ -63,7 +63,8 @@ if {${build_arch} eq "arm64"} { distfiles a.zip:release } else { distfiles b.zip
 	// A native observation is modeled exactly when its runtime models the
 	// host: never on a Mac, always elsewhere.
 	require.Equal(t, native.Runtime.Modeled(), plain.Modeled)
-	require.Empty(t, plain.Ports["observed-child"].Declarations)
+	// Final fidelity observations retain verdict evidence too.
+	require.NotEmpty(t, plain.Ports["observed-child"].Declarations)
 	require.Equal(t, native.Ports, plain.Snapshot.Ports)
 }
 
