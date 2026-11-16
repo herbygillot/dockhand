@@ -47,18 +47,31 @@ var fetchInputs = []string{"extract.suffix"}
 // point 3). A PortGroup may have written an outer default, as cmake's
 // configure.args reads build.cmd, so long as no fetch value reads it.
 func baseLookupBenign(root string, contents []byte, declaration macports.Declaration, groups map[string][]byte, base *baseCode) bool {
-	if len(declaration.Values) < 4 || declaration.Values[1] != "closed" {
+	options, ok := recognizeBaseLookup(declaration, base)
+	if !ok {
 		return false
+	}
+	for _, option := range options {
+		if !optionReadBenignAs(root, contents, option, declaration, groups, true, base) {
+			return false
+		}
+	}
+	return true
+}
+
+func recognizeBaseLookup(declaration macports.Declaration, base *baseCode) ([]string, bool) {
+	if len(declaration.Values) < 4 || declaration.Values[1] != "closed" {
+		return nil, false
 	}
 	lookup, _, _ := strings.Cut(declaration.Values[3], " ")
 	if !slices.Contains(lookups, lookup) {
-		return false
+		return nil, false
 	}
 	call := slices.IndexFunc(declaration.Frames, func(frame macports.SourceFrame) bool {
 		return strings.HasPrefix(frame.Command, lookup+" ")
 	})
 	if call < 0 {
-		return false
+		return nil, false
 	}
 	// Which value took it: each option whose default the chain read.
 	var options []string
@@ -71,21 +84,18 @@ func baseLookupBenign(root string, contents []byte, declaration macports.Declara
 	// takes a dependency list or the notes, which no fetch or checksum
 	// value reads: add_extract_deps' lbzip2, the build system's make.
 	if len(options) == 0 {
-		return declaration.Values[2] == "base" && len(declaration.Frames) > 0 && strings.TrimSpace(declaration.Frames[0].Command) == "port::run_callbacks" &&
+		return nil, declaration.Values[2] == "base" && len(declaration.Frames) > 0 && strings.TrimSpace(declaration.Frames[0].Command) == "port::run_callbacks" &&
 			base.bodyIsBases(declaration.Frames[1:call+1])
 	}
 	if !base.defaultIsBases(declaration.Frames, call+1) {
-		return false
+		return nil, false
 	}
 	for _, option := range options {
 		if !(buildOnlyDefault(option) || basePhaseOption(option)) || slices.Contains(fetchInputs, option) {
-			return false
-		}
-		if !optionReadBenignAs(root, contents, option, declaration, groups, true, base) {
-			return false
+			return nil, false
 		}
 	}
-	return true
+	return options, true
 }
 
 // basePhaseOption names Base's extract, patch and configure options,
@@ -392,20 +402,8 @@ func buildJobsRead(declaration macports.Declaration) bool {
 // Portfile or PortGroup wrote reads the host for itself (architecture's
 // point 2).
 func buildDefaultReadBenign(root string, contents []byte, declaration macports.Declaration, groups map[string][]byte, base *baseCode) bool {
-	// Each default on the way to the read is one: configure.cc's reads
-	// configure.compiler's, which reads the host, so the value reaches
-	// every option of the chain, and each must be build-only and read only
-	// in build-only positions.
-	var options []string
-	for _, frame := range declaration.Frames {
-		if match := defaultCheck.FindStringSubmatch(frame.Command); match != nil {
-			if !buildOnlyDefault(match[1]) || match[1] == "build.jobs" && !buildJobsRead(declaration) {
-				return false
-			}
-			options = append(options, match[1])
-		}
-	}
-	if len(options) == 0 || !base.defaultIsBases(declaration.Frames, len(declaration.Frames)) {
+	options, ok := recognizeBuildDefault(declaration, base)
+	if !ok {
 		return false
 	}
 	for _, option := range options {
@@ -414,6 +412,22 @@ func buildDefaultReadBenign(root string, contents []byte, declaration macports.D
 		}
 	}
 	return true
+}
+
+func recognizeBuildDefault(declaration macports.Declaration, base *baseCode) ([]string, bool) {
+	var options []string
+	for _, frame := range declaration.Frames {
+		if match := defaultCheck.FindStringSubmatch(frame.Command); match != nil {
+			if !buildOnlyDefault(match[1]) || match[1] == "build.jobs" && !buildJobsRead(declaration) {
+				return nil, false
+			}
+			options = append(options, match[1])
+		}
+	}
+	if len(options) == 0 || !base.defaultIsBases(declaration.Frames, len(declaration.Frames)) {
+		return nil, false
+	}
+	return options, true
 }
 
 // optionReadBenign reports whether neither the Portfile nor a PortGroup on
