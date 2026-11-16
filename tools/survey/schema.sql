@@ -2,7 +2,7 @@
 -- answers, each question a query (queries/). Every row of a run carries
 -- its mode through run.
 CREATE TABLE schema (version INTEGER NOT NULL);
-INSERT INTO schema (version) VALUES (2);
+INSERT INTO schema (version) VALUES (3);
 
 CREATE TABLE run (
     id INTEGER PRIMARY KEY,
@@ -213,4 +213,14 @@ CREATE TABLE machine_read_original (
  ord INTEGER NOT NULL,
  question TEXT NOT NULL,
  PRIMARY KEY(evaluation_id,ord)
+);
+
+-- Final product Tolerate result, including every original read's evidence.
+-- An equal experiment summary is not a conclusive verdict by itself.
+CREATE TABLE tolerance_context (
+    evaluation_id INTEGER PRIMARY KEY REFERENCES evaluation(id),
+    evaluated INTEGER NOT NULL,
+    inconclusive INTEGER NOT NULL,
+    "left" INTEGER NOT NULL,
+    error_code TEXT NOT NULL
 );

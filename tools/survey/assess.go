@@ -1,15 +1,15 @@
 package main
 
 import (
-	"runtime"
-	"sync"
-	"sync/atomic"
-
 	"context"
 	"errors"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/model"
+	"os"
 	"path"
+	"path/filepath"
+	"runtime"
+	"sync"
+	"sync/atomic"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -18,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	portsurvey "github.com/herbygillot/dockhand/internal/macports/survey"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 )
 
@@ -207,10 +208,15 @@ func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files
 	if problem == nil && s.Observe {
 		// Observed first, so the assessment's own observations of the
 		// committed Portfile are these.
-		err := probe.Observations(ctx, func(context model.Platform, observation macports.Observation, err error) {
+		contents, err := os.ReadFile(filepath.Join(projection.Root(), selected.Portfile))
+		if err != nil {
+			return Port{}, err
+		}
+		err = probe.Observations(ctx, func(context model.Platform, observation macports.Observation, err error) {
 			name := observation.Snapshot.Target.Name
+			verdict := measureTolerance(ctx, observation, name, contents, err)
 			item.observed = append(item.observed, observed{Platform: context, Modeled: observation.Modeled, Root: observation.Snapshot.Root,
-				Info: observation.Snapshot.Ports[name], Observation: observation.Ports[name], Err: err})
+				Info: observation.Snapshot.Ports[name], Observation: observation.Ports[name], Err: err, Tolerance: &verdict})
 		})
 		if err != nil {
 			if ctx.Err() != nil {
