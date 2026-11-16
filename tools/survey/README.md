@@ -164,3 +164,9 @@ The proposed narrow checksum guard records original read indices in
 `Unexplained`. An equal summary cannot explain those indices even when other
 varied reads in the same context remain explained. No value following or
 derived-name resolution is performed. This proposal is pending adoption.
+
+Original closed-call text is retained in machine-readable evidence and matching.
+Human-facing host-input/error fragments and debug descriptions show at most 200
+characters plus an ellipsis; debug frame commands use their first 80 characters.
+Survey findings use those bounded product descriptions. Raw SQLite questions,
+ledger JSON and source evidence intentionally retain full text for later analysis.

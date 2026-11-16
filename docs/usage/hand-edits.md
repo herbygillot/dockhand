@@ -94,7 +94,8 @@ failed to supply an evaluation (startup, handshake, missing reply or broken
 session), or the evaluation was canceled, rather than reaching a judgment about the
 Portfile. Survey comparisons list such ports separately as `not evaluated` and
 exclude them from outcome moves, guard changes and comparable Portfile coverage.
-Retry those evaluations before judging a change.
+Retry those evaluations before judging a change. Long host questions are
+abbreviated in diagnostics; observation evidence retains the full call.
 
 For ports with `cargo.crates` or `go.vendors`, an ordinary refresh preserves
 those lists byte for byte while refreshing the port's own archives. An empty

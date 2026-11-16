@@ -173,6 +173,7 @@ func sourceBoundOperand(root string, frames []macports.SourceFrame) bool {
 func HostInputs(port macports.PortObservation) string {
 	var details []string
 	add := func(detail string) {
+		detail = macports.HostCallText(detail)
 		if !slices.Contains(details, detail) {
 			details = append(details, detail)
 		}

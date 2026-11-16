@@ -268,27 +268,27 @@ func Tolerate(ctx context.Context, port macports.PortObservation, contents []byt
 		// #125: this Mac's actual Base-default answer is not a closed
 		// modeled read. Only the latter needs counterfactual evidence.
 		case build && !port.ModeledHostAccess:
-			progress.DebugReport(ctx, "Host access explained as this Mac's own Base default: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
+			progress.DebugReport(ctx, "Host access explained as this Mac's own Base default: %s; frames: %s", macports.HostCallText(declaration.Values[0]), strings.Join(where, " <- "))
 		case build && varied:
-			progress.DebugReport(ctx, "Host access explained as Base's build default: the read was varied and nothing dockhand acts on changed: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
+			progress.DebugReport(ctx, "Host access explained as Base's build default: the read was varied and nothing dockhand acts on changed: %s; frames: %s", macports.HostCallText(declaration.Values[0]), strings.Join(where, " <- "))
 		case lookup && varied:
-			progress.DebugReport(ctx, "Host access explained as Base's lookup: the read was varied and nothing dockhand acts on changed: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
+			progress.DebugReport(ctx, "Host access explained as Base's lookup: the read was varied and nothing dockhand acts on changed: %s; frames: %s", macports.HostCallText(declaration.Values[0]), strings.Join(where, " <- "))
 		case sourceDateEpochLookup(declaration, base):
-			progress.DebugReport(ctx, "Host access explained as Base's source_date_epoch lookup of git: the snapshot has no .git, so the answer doesn't depend on whether git is found: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
+			progress.DebugReport(ctx, "Host access explained as Base's source_date_epoch lookup of git: the snapshot has no .git, so the answer doesn't depend on whether git is found: %s; frames: %s", macports.HostCallText(declaration.Values[0]), strings.Join(where, " <- "))
 		case callbackExplained(declaration, contents):
-			progress.DebugReport(ctx, "Host access explained as a PortGroup callback's build-only read: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
+			progress.DebugReport(ctx, "Host access explained as a PortGroup callback's build-only read: %s; frames: %s", macports.HostCallText(declaration.Values[0]), strings.Join(where, " <- "))
 		case toolchainProbe(declaration, base):
 			if !toolchainChecked {
 				toolchainBenign, toolchainChecked = toolchainReadsBenign(contents), true
 			}
 			if !toolchainBenign {
-				progress.DebugReport(ctx, "Host access is a compiler probe but the Portfile reads toolchain options outside build positions: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
+				progress.DebugReport(ctx, "Host access is a compiler probe but the Portfile reads toolchain options outside build positions: %s; frames: %s", macports.HostCallText(declaration.Values[0]), strings.Join(where, " <- "))
 				return port, true
 			}
 		case portGroupReadBenign(root, declaration.Frames, groups):
-			progress.DebugReport(ctx, "Host access explained as a PortGroup's build-only read: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
+			progress.DebugReport(ctx, "Host access explained as a PortGroup's build-only read: %s; frames: %s", macports.HostCallText(declaration.Values[0]), strings.Join(where, " <- "))
 		default:
-			progress.DebugReport(ctx, "Host access not explained: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
+			progress.DebugReport(ctx, "Host access not explained: %s; frames: %s", macports.HostCallText(declaration.Values[0]), strings.Join(where, " <- "))
 			return port, true
 		}
 		explained[declaration.Values[0]] = true

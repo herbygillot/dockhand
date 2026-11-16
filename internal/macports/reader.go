@@ -30,7 +30,7 @@ var (
 type UnansweredError struct{ Call string }
 
 func (e *UnansweredError) Error() string {
-	return fmt.Sprintf("the modelled context has no answer for `%s`, which the evaluation needed", e.Call)
+	return fmt.Sprintf("the modelled context has no answer for `%s`, which the evaluation needed", HostCallText(e.Call))
 }
 
 func (e *UnansweredError) Unwrap() error { return ErrUnanswered }
