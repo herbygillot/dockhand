@@ -186,7 +186,7 @@ func observedDescription(t *testing.T, platform model.Platform, tools model.Deve
 	putFile(t, tree.Root(), "devel/effects/Portfile", "PortSystem 1.0\nname effects\nversion 1\nset results {}\n"+lines+"\ndescription {*}$results\n")
 	bound, err := tree.Select(model.Target{Name: "effects", Portfile: "devel/effects/Portfile"})
 	require.NoError(t, err)
-	got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Declarations: true, Platform: platform, DeveloperTools: tools})
+	got, err := observeForVerdict(t, e, bound, macports.ObservationRequest{Declarations: true, Platform: platform, DeveloperTools: tools})
 	require.NoError(t, err)
 	values, errs := syntax.ListValues(got.Snapshot.Ports["effects"].Options["description"])
 	require.Empty(t, errs)

@@ -283,7 +283,7 @@ func Tolerate(ctx context.Context, port macports.PortObservation, contents []byt
 	groups := map[string][]byte{}
 	base := newBaseCode(port.BaseLibrary)
 	explained := map[string]bool{}
-	for _, declaration := range port.Declarations {
+	for id, declaration := range port.Declarations {
 		if declaration.Command != "dockhand.host-access" || len(declaration.Values) == 0 {
 			continue
 		}
@@ -291,11 +291,14 @@ func Tolerate(ctx context.Context, port macports.PortObservation, contents []byt
 		for _, frame := range declaration.Frames {
 			where = append(where, fmt.Sprintf("%s:%d %s", frame.File, frame.Line, sourceLine(frame.Command)))
 		}
+		_, build := recognizeBuildDefault(declaration, base)
+		_, lookup := recognizeBaseLookup(declaration, base)
+		varied := experimentExplains(port.MachineReadExperiment, id)
 		switch {
-		case buildDefaultReadBenign(root, contents, declaration, groups, base):
-			progress.DebugReport(ctx, "Host access explained as a build-only option's default: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
-		case baseLookupBenign(root, contents, declaration, groups, base):
-			progress.DebugReport(ctx, "Host access explained as Base's own lookup for an option no fetch or checksum value reads: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
+		case build && varied:
+			progress.DebugReport(ctx, "Host access explained as Base's build default: the read was varied and nothing dockhand acts on changed: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
+		case lookup && varied:
+			progress.DebugReport(ctx, "Host access explained as Base's lookup: the read was varied and nothing dockhand acts on changed: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
 		case sourceDateEpochLookup(declaration, base):
 			progress.DebugReport(ctx, "Host access explained as Base's source_date_epoch lookup of git: the snapshot has no .git, so the answer doesn't depend on whether git is found: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
 		case callbackExplained(declaration, contents):

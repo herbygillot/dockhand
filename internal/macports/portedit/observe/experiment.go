@@ -3,6 +3,7 @@ package observe
 import (
 	"context"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"slices"
 )
 
 // readObservation is shared by One and Observe, before either caches a result.
@@ -45,4 +46,8 @@ func (s *Session) readObservation(ctx context.Context, bound macports.Context, r
 		observed.Ports[name] = port
 	}
 	return observed, nil
+}
+
+func experimentExplains(summary *macports.MachineReadExperiment, id int) bool {
+	return summary != nil && (summary.Outcome == "same" || summary.Outcome == "same, build-only moved") && slices.Contains(summary.Varied, id)
 }
