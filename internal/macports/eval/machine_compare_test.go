@@ -1,6 +1,7 @@
 package eval
 
 import (
+	"context"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/stretchr/testify/require"
 	"testing"
@@ -26,10 +27,9 @@ func TestMachineComparisonEpochAndCustomFetch(t *testing.T) {
 }
 
 func TestMachinePhaseGuard(t *testing.T) {
-	standard := macports.PortInfo{Fetch: &macports.FetchSemantics{Kind: "standard"}}
-	require.Equal(t, "checksum phase", machinePhaseGuard(standard, macports.PortObservation{Hooks: []macports.Hook{{Procedure: "userproc-pre-org.macports.checksum-checksum-0", Body: "return"}}}))
-	require.Empty(t, machinePhaseGuard(standard, macports.PortObservation{Hooks: []macports.Hook{{Procedure: "userproc-post-org.macports.extract-extract-0", Body: "unknown"}}}))
-	require.Equal(t, "fetch guard", machinePhaseGuard(macports.PortInfo{}, macports.PortObservation{}))
+	require.Equal(t, "checksum phase", machinePhaseGuard(macports.PortObservation{Hooks: []macports.Hook{{Procedure: "userproc-pre-org.macports.checksum-checksum-0", Body: "return"}}}))
+	require.Empty(t, machinePhaseGuard(macports.PortObservation{Hooks: []macports.Hook{{Procedure: "userproc-post-org.macports.extract-extract-0", Body: "unknown"}}}))
+	require.Empty(t, machinePhaseGuard(macports.PortObservation{}))
 }
 
 func TestPhaseRegistrationsWithoutSurveyRecording(t *testing.T) {
@@ -48,5 +48,15 @@ post-extract {error ALSO-MUST-NOT-RUN}
 	got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{})
 	require.NoError(t, err)
 	require.NotEmpty(t, got.Ports["fixture"].Hooks)
-	require.Equal(t, "checksum phase", machinePhaseGuard(got.Snapshot.Ports["fixture"], got.Ports["fixture"]))
+	require.Equal(t, "checksum phase", machinePhaseGuard(got.Ports["fixture"]))
+}
+
+func TestCustomFetchAddsNoExperimentVerdict(t *testing.T) {
+	info := macports.PortInfo{Name: "fixture", Version: "1", Fetch: &macports.FetchSemantics{Kind: "custom"}}
+	before := macports.Observation{Snapshot: macports.Snapshot{Ports: map[string]macports.PortInfo{"fixture": info}}, Ports: map[string]macports.PortObservation{"fixture": {Declarations: []macports.Declaration{{Command: "dockhand.host-access", Values: []string{"question", "closed", "base", "sysctl hw.activecpu"}}}}}}
+	after := macports.Observation{Snapshot: before.Snapshot, Ports: map[string]macports.PortObservation{"fixture": {Declarations: []macports.Declaration{{Command: "dockhand.host-access", Values: []string{"question", "standin", "base", "sysctl hw.activecpu"}}}}}}
+	summaries := performMachineReadExperiment(t.Context(), before, map[string][]int{"fixture": {0}}, nil, func(context.Context) (macports.Observation, error) { return after, nil })
+	require.Equal(t, "same", summaries["fixture"].Outcome)
+	require.Empty(t, summaries["fixture"].ErrorCode)
+	require.Equal(t, []int{0}, summaries["fixture"].Varied)
 }

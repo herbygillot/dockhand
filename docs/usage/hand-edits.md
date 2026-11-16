@@ -81,7 +81,8 @@ stand-in stays unexplained unless another existing rule explains it. This Mac's
 native context is unchanged.
 
 Neither reading runs phase bodies. Fetch bodies still need to pass the fetch
-guard; a checksum body or an unreadable fetch body leaves machine reads
+guard, which can refuse the port before its plan is used. The experiment adds
+no verdict of its own on a fetch body. A checksum body leaves machine reads
 unexplained. Extract and later phases are outside this comparison. A difference
 that appears only at one exact value, or only for one mixed combination of
 answers, is not seen. Equal results are evidence for these two readings, not

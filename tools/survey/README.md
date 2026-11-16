@@ -153,7 +153,9 @@ with `-recording=false`.
 
 Summary outcomes are `same`, `same, build-only moved`, `differs` (a compared
 field, or a semantic evaluation failure), `failed` (infrastructure),
-`not perturbed`, or `unexplained` (equal compared values but a checksum or fetch
-phase guard could not establish the read). Guard refusals carry
-`checksum-phase-unread` or `fetch-unreadable`, rather than claiming a value
-differed. An absent summary is reported as `not requested` for a modeled context.
+`not perturbed`, or `unexplained` (equal compared values but a checksum-phase
+body leaves the read unexplained). This carries `checksum-phase-unread`, rather
+than claiming a value differed. The experiment adds no fetch-body verdict:
+fetch policy refuses unsupported fetching, while a change in fetch kind or
+registration between evaluations remains a compared difference. An absent
+summary is reported as `not requested` for a modeled context.

@@ -20,14 +20,11 @@ func machineHooks(p macports.PortObservation) []macports.Hook {
 	}
 	return hooks
 }
-func machinePhaseGuard(info macports.PortInfo, port macports.PortObservation) string {
+func machinePhaseGuard(port macports.PortObservation) string {
 	for _, h := range machineHooks(port) {
 		if strings.Contains(h.Procedure, "-org.macports.checksum-") {
 			return "checksum phase"
 		}
-	}
-	if info.Fetch == nil || (info.Fetch.Kind != "standard" && info.Fetch.Kind != "guarded") {
-		return "fetch guard"
 	}
 	return ""
 }
