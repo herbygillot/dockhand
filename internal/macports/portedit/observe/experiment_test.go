@@ -35,3 +35,9 @@ func TestNativeBuildDefaultNeedsNoCounterfactual(t *testing.T) {
 	_, left := Tolerate(t.Context(), p, []byte("build.args -j${build.jobs}"), t.TempDir())
 	require.False(t, left, "native Base defaults use this Mac's answer without a second evaluation")
 }
+
+func TestChecksumBlockedReadCannotUseAnotherReadsEqualSummary(t *testing.T) {
+	summary := &macports.MachineReadExperiment{Outcome: "same", Varied: []int{0, 1}, Unexplained: []int{0}}
+	require.False(t, experimentExplains(summary, 0))
+	require.True(t, experimentExplains(summary, 1))
+}

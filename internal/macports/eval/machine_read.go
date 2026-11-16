@@ -25,14 +25,14 @@ func machineReadScript(ctx context.Context) string {
 
 // MachineReadExperiments never publishes a second observation. The operation
 // owns a fresh interpreter, with no ledger, bootstrap, or progress subscribers.
-func (e *Evaluator) MachineReadExperiments(ctx context.Context, source macports.Context, request macports.ObservationRequest, before macports.Observation, candidates map[string][]int, acted []string) map[string]macports.MachineReadExperiment {
+func (e *Evaluator) MachineReadExperiments(ctx context.Context, source macports.Context, request macports.ObservationRequest, before macports.Observation, candidates map[string][]macports.MachineReadCandidate, acted []string) map[string]macports.MachineReadExperiment {
 	private := &Evaluator{Executable: e.Executable, Env: e.Env, Model: e.Model, Adapter: e.Adapter, Installation: e.Installation, Installed: e.Installed}
 	return performMachineReadExperiment(ctx, before, candidates, acted, func(ctx context.Context) (macports.Observation, error) {
 		return private.Observe(context.WithValue(ctx, machineReadKey{}, true), source, request)
 	})
 }
 
-func performMachineReadExperiment(ctx context.Context, before macports.Observation, candidates map[string][]int, acted []string, operation func(context.Context) (macports.Observation, error)) map[string]macports.MachineReadExperiment {
+func performMachineReadExperiment(ctx context.Context, before macports.Observation, candidates map[string][]macports.MachineReadCandidate, acted []string, operation func(context.Context) (macports.Observation, error)) map[string]macports.MachineReadExperiment {
 	after, err := operation(progress.WithoutReports(ctx))
 	result := make(map[string]macports.MachineReadExperiment, len(candidates))
 	for name, ids := range candidates {
@@ -45,7 +45,8 @@ func performMachineReadExperiment(ctx context.Context, before macports.Observati
 		} else if second, ok := after.Ports[name]; !ok {
 			summary.Outcome, summary.ErrorCode = "failed", "experiment-incomplete"
 		} else {
-			for _, id := range ids {
+			for _, candidate := range ids {
+				id := candidate.Read
 				if id < 0 || id >= len(before.Ports[name].Declarations) {
 					continue
 				}
@@ -57,6 +58,9 @@ func performMachineReadExperiment(ctx context.Context, before macports.Observati
 					return d.Command == "dockhand.host-access" && len(d.Values) >= 4 && d.Values[1] == "standin" && d.Values[3] == original.Values[3]
 				}) {
 					summary.Varied = append(summary.Varied, id)
+					if machinePhaseGuard(before.Ports[name], candidate.Defaults) != "" || machinePhaseGuard(second, candidate.Defaults) != "" {
+						summary.Unexplained = append(summary.Unexplained, id)
+					}
 				}
 			}
 			if len(summary.Varied) > 0 {
@@ -64,10 +68,7 @@ func performMachineReadExperiment(ctx context.Context, before macports.Observati
 				summary.Outcome = "same"
 				if summary.Field != "" {
 					summary.Outcome = "differs"
-				} else if guard := machinePhaseGuard(before.Ports[name]); guard != "" {
-					summary.Outcome = "unexplained"
-					summary.ErrorCode = "checksum-phase-unread"
-				} else if guard := machinePhaseGuard(second); guard != "" {
+				} else if len(summary.Unexplained) == len(summary.Varied) {
 					summary.Outcome = "unexplained"
 					summary.ErrorCode = "checksum-phase-unread"
 				} else if len(summary.BuildOnlyMoved) > 0 {

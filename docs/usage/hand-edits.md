@@ -82,8 +82,9 @@ native context is unchanged.
 
 Neither reading runs phase bodies. Fetch bodies still need to pass the fetch
 guard, which can refuse the port before its plan is used. The experiment adds
-no verdict of its own on a fetch body. A checksum body leaves machine reads
-unexplained. Extract and later phases are outside this comparison. A difference
+no verdict of its own on a fetch body. A checksum body leaves a machine read unexplained only when its text names
+an option in that read's recognized default chain. This is a literal name
+check; it does not follow values or resolve derived option names. Extract and later phases are outside this comparison. A difference
 that appears only at one exact value, or only for one mixed combination of
 answers, is not seen. Equal results are evidence for these two readings, not
 proof for every possible machine answer.
