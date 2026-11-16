@@ -295,3 +295,7 @@ Machine-read observations carry a summary of a private counterfactual evaluation
 its outcome, original read indices, and a field or error code. The second
 observation and its values are never returned or recorded. Host-access events
 retain the complete call so the summary identifies the original question exactly.
+
+Every observation records registered phase bodies without running them. The
+machine-read experiment compares fetch and checksum registrations; an unreadable
+fetch guard or a checksum body cannot establish that a read is harmless.

@@ -750,7 +750,7 @@ namespace eval ::dockhand {
                     variable outright
                     guard [dict keys $outright]
                     variable record_paths
-                    if {$record_paths && [llength [info commands ::makeuserproc]] && ![llength [trace info execution ::makeuserproc]]} {
+                    if {[llength [info commands ::makeuserproc]] && ![llength [trace info execution ::makeuserproc]]} {
                         trace add execution ::makeuserproc enter ::dockhand_dispatcher::hooked
                     }
                 }

@@ -99,8 +99,8 @@ type PortObservation struct {
 	Declarations      []Declaration
 	Distfiles         []Distfile
 	Problems          []string
-	// Reads, Execs, and Hooks are what the evaluation read, ran, and
-	// declared, where the evaluator records them; empty otherwise.
+	// Reads and Execs require recording. Hooks are registered phase and
+	// variant bodies in every observation, without executing them.
 	Reads []PathRead
 	Execs []CommandRun
 	Hooks []Hook

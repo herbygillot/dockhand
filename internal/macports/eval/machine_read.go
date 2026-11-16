@@ -60,8 +60,13 @@ func performMachineReadExperiment(ctx context.Context, before macports.Observati
 				}
 			}
 			if len(summary.Varied) > 0 {
-				// Acceptance is connected only after the comparison is implemented.
-				summary.Outcome = "unavailable"
+				summary.Field, summary.BuildOnlyMoved = compareMachinePlans(before.Snapshot.Ports[name], after.Snapshot.Ports[name], before.Ports[name], second, acted)
+				summary.Outcome = "same"
+				if summary.Field != "" {
+					summary.Outcome = "differs"
+				} else if len(summary.BuildOnlyMoved) > 0 {
+					summary.Outcome = "same, build-only moved"
+				}
 			}
 		}
 		result[name] = summary
