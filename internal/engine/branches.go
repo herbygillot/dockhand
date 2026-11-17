@@ -1214,7 +1214,7 @@ func (e *Engine) OpenWork(ctx context.Context) (*OpenWork, error) {
 	var commits []string
 	for _, branch := range open {
 		if ref := refs["refs/heads/"+branch.Name]; ref.Exists {
-			commits = append(commits, ref.Object)
+			commits = append(commits, ref.Object, string(branch.Base))
 		}
 	}
 	trees, err := e.Repo.CommitTrees(ctx, slices.Compact(slices.Sorted(slices.Values(commits))))
@@ -1225,31 +1225,94 @@ func (e *Engine) OpenWork(ctx context.Context) (*OpenWork, error) {
 	if err != nil {
 		return nil, err
 	}
-	var branchPaths [][]string
+	// Find overlaps in batches grouped by recorded base. Ordinary branches
+	// keep the net base-to-head tree diff, so touched-then-reverted paths do
+	// not count; only stale branches need commit-level paths below.
+	masters, err := e.masters(ctx)
+	if err != nil {
+		return nil, err
+	}
+	byBase := make(map[string][]string)
+	branchesByBase := make(map[string][]model.Branch)
+	heads := make(map[string]string)
 	for _, branch := range open {
 		ref := refs["refs/heads/"+branch.Name]
 		if !ref.Exists {
 			continue
 		}
-		found := openBranch{branch: branch, tree: trees[ref.Object]}
-		if found.tree == "" {
-			return nil, fmt.Errorf("%s's head couldn't be read as a commit", branch.ShortName())
+		head := ref.Object
+		heads[branch.Name] = head
+		byBase[string(branch.Base)] = append(byBase[string(branch.Base)], head)
+		branchesByBase[string(branch.Base)] = append(branchesByBase[string(branch.Base)], branch)
+	}
+	stale := make(map[string]bool)
+	if len(masters) > 0 {
+		for base, branchHeads := range byBase {
+			roots := slices.Compact(slices.Sorted(slices.Values(branchHeads)))
+			for _, master := range masters {
+				if !slices.Contains(roots, master) {
+					roots = append(roots, master)
+				}
+			}
+			reachable, err := e.Repo.ReachableCommits(ctx, roots, []string{base})
+			if err != nil {
+				return nil, err
+			}
+			masterCommits := make(map[string]struct{})
+			for _, master := range masters {
+				for commit := range reachable[master] {
+					masterCommits[commit] = struct{}{}
+				}
+			}
+			for _, branch := range branchesByBase[base] {
+				for commit := range reachable[heads[branch.Name]] {
+					if _, found := masterCommits[commit]; found {
+						stale[branch.Name] = true
+						break
+					}
+				}
+			}
 		}
-		head := refs["refs/heads/"+branch.Name].Object
-		own, err := e.branchOwnCommits(ctx, e.Repo, string(branch.Base), head)
-		if err != nil {
-			return nil, err
+	}
+
+	var pairs [][2]string
+	var fastIndexes []int
+	var stalePaths = make(map[int][]string)
+	for _, branch := range open {
+		head, exists := heads[branch.Name]
+		if !exists {
+			continue
 		}
-		var paths []string
-		for _, commit := range own {
-			paths = append(paths, commit.Paths...)
+		found := openBranch{branch: branch, tree: trees[head]}
+		if found.tree == "" || trees[string(branch.Base)] == "" {
+			return nil, fmt.Errorf("%s's head or base couldn't be read as a commit", branch.ShortName())
 		}
-		branchPaths = append(branchPaths, paths)
+		index := len(work.branches)
 		work.branches = append(work.branches, found)
+		if stale[branch.Name] {
+			own, err := e.branchOwnCommits(ctx, e.Repo, string(branch.Base), head)
+			if err != nil {
+				return nil, err
+			}
+			for _, commit := range own {
+				stalePaths[index] = append(stalePaths[index], commit.Paths...)
+			}
+		} else {
+			pairs = append(pairs, [2]string{trees[string(branch.Base)], found.tree})
+			fastIndexes = append(fastIndexes, index)
+		}
+	}
+	changed, err := e.Repo.ChangedPathsOf(ctx, pairs)
+	if err != nil {
+		return nil, err
+	}
+	pathsByBranch := stalePaths
+	for i, index := range fastIndexes {
+		pathsByBranch[index] = changed[i]
 	}
 	for i := range work.branches {
 		found := &work.branches[i]
-		paths := branchPaths[i]
+		paths := pathsByBranch[i]
 		// The tracked files edited in its worktree and not yet committed;
 		// none where it isn't checked out there, which leaves it as it is.
 		if found.branch.Worktree != "" && exists(found.branch.Worktree) {
