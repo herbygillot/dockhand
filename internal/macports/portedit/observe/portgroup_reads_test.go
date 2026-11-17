@@ -144,7 +144,7 @@ func TestAClosedReadIsWeighedAsAHostRead(t *testing.T) {
 	require.Equal(t, ledger, port.Ledger)
 }
 
-// Base's build.jobs default asks the kernel for its CPU count and memory
+// With experiment evidence, Base's build.jobs default asks the kernel for its CPU count and memory
 // (build_getjobs, portbuild.tcl:152), which a modelled context closes; a
 // build-only option, so the read is explained where neither the Portfile
 // nor a PortGroup on the stack reads build.jobs outside a build position,
@@ -160,7 +160,7 @@ func TestBuildJobsDefaultIsExplainedWhereOnlyTheBuildReadsIt(t *testing.T) {
 	}
 	base := newBaseFixture(t)
 	observed := func(declarations ...macports.Declaration) macports.PortObservation {
-		return macports.PortObservation{ModeledHostAccess: true, Declarations: declarations, Problems: []string{sysctl}, BaseLibrary: base.lib}
+		return macports.PortObservation{ModeledHostAccess: true, Declarations: declarations, Problems: []string{sysctl}, BaseLibrary: base.lib, MachineReadExperiment: &macports.MachineReadExperiment{Outcome: "same", Varied: []int{0}}}
 	}
 	jobs := func(at macports.SourceFrame) macports.Declaration {
 		return access(at, frame("default_check build.jobs {} read"), frame("subst {[portbuild::build_getjobs]}"), frame("portbuild::build_getjobs"),
@@ -172,7 +172,9 @@ func TestBuildJobsDefaultIsExplainedWhereOnlyTheBuildReadsIt(t *testing.T) {
 	require.Empty(t, port.Problems)
 
 	versioned := []byte("PortSystem 1.0\nname cmake\nversion [expr {${build.jobs} > 4 ? 2 : 1}]\n")
-	_, inconclusive = Tolerate(context.Background(), observed(jobs(macports.SourceFrame{File: portfile, Line: 3, Command: "version [expr {${build.jobs} > 4 ? 2 : 1}]"})), versioned, root)
+	changed := observed(jobs(macports.SourceFrame{File: portfile, Line: 3, Command: "version [expr {${build.jobs} > 4 ? 2 : 1}]"}))
+	changed.MachineReadExperiment = &macports.MachineReadExperiment{Outcome: "differs", Varied: []int{0}, Field: "version"}
+	_, inconclusive = Tolerate(context.Background(), changed, versioned, root)
 	require.True(t, inconclusive, "a version that reads build.jobs reads the kernel through its default")
 
 	feature := access(macports.SourceFrame{File: portfile, Line: 5, Command: "if {[sysctl hw.optional.avx2_0]} {"}, frame("sysctl hw.optional.avx2_0"))

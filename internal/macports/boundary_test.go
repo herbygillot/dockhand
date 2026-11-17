@@ -22,6 +22,7 @@ var macportsImports = map[string]string{
 	"internal/macos":      "the macOS release a Darwin version is, which MacPorts' platforms name",
 	"internal/project":    "the build systems and licenses a PortGroup or license line names",
 	"internal/tcl/syntax": "reading the Tcl words a Portfile's options are",
+	"internal/tcl/rpc":    "typed infrastructure error identities shared by assessments and experiments; no session is constructed here",
 	"internal/textedit":   "the spans a maintainers line is edited at",
 }
 

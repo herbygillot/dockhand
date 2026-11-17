@@ -177,9 +177,9 @@ namespace eval ::dockhand {
             set native {}
         }
 
-        if {$declarations} {
-            trace add execution ::macports::worker_init leave ::dockhand::observe_worker
-        }
+        # Every observation needs the evidence used by the verdict, even
+        # final fidelity reads which do not request editable declarations.
+        trace add execution ::macports::worker_init leave ::dockhand::observe_worker
     }
     proc observation_details {worker} {
         set artifacts {}

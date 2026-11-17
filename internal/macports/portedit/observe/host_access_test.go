@@ -3,6 +3,7 @@ package observe
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -88,66 +89,18 @@ func (b baseFixture) lookup(program, owner string, frames ...[]macports.SourceFr
 
 func (b baseFixture) tolerate(t *testing.T, contents string, d macports.Declaration) bool {
 	t.Helper()
-	port := macports.PortObservation{ModeledHostAccess: true, Problems: []string{d.Values[0]}, Declarations: []macports.Declaration{d}, BaseLibrary: b.lib}
+	port := macports.PortObservation{ModeledHostAccess: true, Problems: []string{d.Values[0]}, Declarations: []macports.Declaration{d}, BaseLibrary: b.lib, MachineReadExperiment: &macports.MachineReadExperiment{Outcome: "same", Varied: []int{0}}}
+	if !strings.HasPrefix(d.Values[3], "findBinary ") {
+		port.MachineReadExperiment = nil
+	}
 	_, inconclusive := Tolerate(t.Context(), port, []byte("PortSystem 1.0\nname x\nversion 1\n"+contents+"\n"), t.TempDir())
 	return inconclusive
 }
 
 const thePortfile = "/tree/devel/x/Portfile"
 
-// A Base lookup's value is followed wherever the Portfile takes it: an
-// option set from it is judged as it is, to a fixed point, and a read the
-// walk can't place, by [set], in a proc's body, in an expression, a
-// substitution or a script it doesn't walk, leaves the context
-// inconclusive (#110 finding 1, architecture's points 3 and 5). Only reads
-// in build positions, of options no fetch value reads, are explained:
-// abella's test.cmd ${build.cmd}. patchfiles is no benign sink for a host
-// answer: dockhand fetches, checksums and rewrites the patch list
-// (architecture's ruling on case n).
-func TestABaseLookupsValueIsFollowedToEveryFetchValue(t *testing.T) {
-	t.Parallel()
-	b := newBaseFixture(t)
-	getmake := b.lookup("make", "base", b.substitution("build.cmd", "[portbuild::build_getmaketype]"), b.getmaketype())
-	for _, c := range []struct {
-		name, contents string
-		host           bool
-	}{
-		{"no read", "", false},
-		{"abella's test.cmd", "test.run yes\ntest.cmd ${build.cmd}", false},
-		{"test.cmd, read by the build", "test.cmd ${build.cmd}\nbuild.args ${test.cmd}", false},
-		{"in a phase body", "post-destroot {\n    system \"${build.cmd} install\"\n}", false},
-		{"patchfiles, which dockhand fetches and checksums", "patchfiles-append patch-[file tail ${build.cmd}].diff", true},
-		{"patchfiles, in a branch the read selects", "set m [file tail ${build.cmd}]\nif {$m eq \"gmake\"} {patchfiles-append patch-gmake.diff}", true},
-		{"a comment naming it", "# build.cmd is make\nbuild.args ${build.cmd}", false},
-		{"distfiles", "distfiles foo-[file tail ${build.cmd}].tar.gz", true},
-		{"[set]", "distfiles foo-[file tail [set build.cmd]].tar.gz", true},
-		{"subst", "distfiles foo-[subst {${build.cmd}}].tar.gz", true},
-		{"a condition", "if {[string match {*g*} ${build.cmd}]} {distfiles a.tgz}", true},
-		{"expr", "set m [expr {${build.cmd} eq \"\" ? \"a\" : \"b\"}]\ndistfiles $m.tgz", true},
-		{"switch", "switch -glob ${build.cmd} { *g* {distfiles a} default {distfiles b}}", true},
-		{"a proc's return", "proc f {} {global build.cmd; return ${build.cmd}}\ndistfiles [f].tgz", true},
-		{"a proc no one calls", "proc f {} {global build.cmd; return ${build.cmd}}", false},
-		{"a tainted variable", "set m ${build.cmd}\nif {$m eq \"\"} {distfiles a}", true},
-		{"a tainted variable by [set]", "set m ${build.cmd}\ndistfiles [set m].tgz", true},
-		{"a multi-line condition", "if {[info exists x] ||\n ${build.cmd} eq {}} {distfiles a}", true},
-		{"through test.cmd", "test.cmd ${build.cmd}\ndistfiles foo-[file tail ${test.cmd}].tgz", true},
-		{"through test.cmd by [option]", "test.cmd ${build.cmd}\ndistfiles foo-[option test.cmd].tgz", true},
-		{"through test.cmd and a variable", "set m ${build.cmd}\ntest.cmd $m\nmaster_sites http://x/${test.cmd}", true},
-		{"through build.env", "build.env MAKE=${build.cmd}\nmaster_sites http://x/${build.env}", true},
-		{"through two options", "build.env MAKE=${build.cmd}\ntest.env ${build.env}\ndistfiles ${test.env}.tgz", true},
-		{"catch", "if {[catch {set m ${build.cmd}}]} {distfiles a}", true},
-		{"string length", "set m [string length ${build.cmd}]\ndistfiles $m.tgz", true},
-		{"a multi-line expr", "set m [expr {\n${build.cmd} eq {} ? 1 : 2}]\ndistfiles $m.tgz", true},
-		{"lassign", "lassign ${build.cmd} m\ndistfiles $m.tgz", true},
-		{"append", "append m ${build.cmd}\ndistfiles $m.tgz", true},
-		{"git.branch", "git.branch ${build.cmd}", true},
-		{"checksums", "checksums sha256 ${build.cmd}", true},
-		{"a default of its own", "default test.cmd {${build.cmd}}\ndistfiles ${test.cmd}", true},
-	} {
-		require.Equal(t, c.host, b.tolerate(t, c.contents, getmake), "%s", c.name)
-	}
-}
-
+// These ownership fixtures supply equal, varied summaries; live product
+// fixtures exercise the actual comparison.
 // A lookup made under a default is Base's only where Base wrote the
 // default being evaluated, by Base's own source, and nothing below it is
 // a Portfile's or PortGroup's code: a default a Portfile or PortGroup
@@ -239,7 +192,7 @@ func TestBasesNamedProbesAreBasesByTheirCode(t *testing.T) {
 		frames = append(append(frames, b.caught(call)...), frame(call))
 		return macports.Declaration{Command: "dockhand.host-access", Values: []string{"modeled context depends on a host process executed while evaluating the Portfile", "closed", "base", call}, Frames: frames}
 	}
-	require.False(t, b.tolerate(t, "build.args ${configure.sdkroot}", xcrun(b.file("port1.0/portconfigure.tcl"))), "Base's own xcrun for the SDK")
+	require.False(t, b.tolerate(t, "build.args ${configure.sdkroot}", xcrun(b.file("port1.0/portconfigure.tcl"))), "the existing toolchain rule still explains this unvaried exec")
 	require.True(t, b.tolerate(t, "build.args ${configure.sdkroot}", xcrun(thePortfile)), "a Portfile's xcrun under a portconfigure name")
 
 	// Base's universal_setup choosing the compiler on Darwin 10: Base's

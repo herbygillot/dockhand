@@ -28,7 +28,7 @@ import (
 var schema string
 
 // schemaVersion is the record's shape, schema.sql's.
-const schemaVersion = 1
+const schemaVersion = 3
 
 // Modes are what a run evaluates ports against: current, the fresh
 // installation and the facts table, as dockhand does; installed, the
@@ -297,6 +297,7 @@ func (r *Record) Record(port Port) error {
 
 // observed is one context a port was observed in.
 type observed struct {
+	Tolerance   *toleranceVerdict
 	Platform    model.Platform
 	Modeled     bool
 	Root        string
@@ -322,6 +323,9 @@ func (r *Record) evaluation(tx *sql.Tx, port int64, o observed) error {
 	} else if err != nil {
 		return err
 	}
+	if err := recordTolerance(tx, id, o.Tolerance); err != nil {
+		return err
+	}
 	if o.Modeled {
 		if err := r.toolchain(tx, o.Platform); err != nil {
 			return err
@@ -329,6 +333,27 @@ func (r *Record) evaluation(tx *sql.Tx, port int64, o observed) error {
 	}
 	if o.Err != nil {
 		return nil
+	}
+	if summary := o.Observation.MachineReadExperiment; summary != nil {
+		encoded, err := json.Marshal(summary)
+		if err != nil {
+			return err
+		}
+		if _, err = tx.Exec(`INSERT INTO machine_read_experiment(evaluation_id,outcome,summary) VALUES(?,?,?)`, id, summary.Outcome, string(encoded)); err != nil {
+			return err
+		}
+		for ord, d := range o.Observation.Declarations {
+			if d.Command != "dockhand.host-access" {
+				continue
+			}
+			question, err := json.Marshal(d.Values)
+			if err != nil {
+				return err
+			}
+			if _, err = tx.Exec(`INSERT INTO machine_read_original(evaluation_id,ord,question) VALUES(?,?,?)`, id, ord, string(question)); err != nil {
+				return err
+			}
+		}
 	}
 	local := r.localizer(o.Root)
 	insert := func(query string, rows func(func(...any) error) error) error {

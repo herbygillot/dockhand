@@ -88,6 +88,7 @@ type Hook struct {
 }
 
 type PortObservation struct {
+	MachineReadExperiment *MachineReadExperiment `json:",omitempty"`
 	// HostAccess records external evaluation inputs even in the native context.
 	HostAccess bool
 	// Ledger is every call the dispatcher passed while the port was
@@ -98,8 +99,8 @@ type PortObservation struct {
 	Declarations      []Declaration
 	Distfiles         []Distfile
 	Problems          []string
-	// Reads, Execs, and Hooks are what the evaluation read, ran, and
-	// declared, where the evaluator records them; empty otherwise.
+	// Reads and Execs require recording. Hooks are registered phase and
+	// variant bodies in every observation, without executing them.
 	Reads []PathRead
 	Execs []CommandRun
 	Hooks []Hook

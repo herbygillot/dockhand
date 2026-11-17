@@ -1,15 +1,15 @@
 package main
 
 import (
-	"runtime"
-	"sync"
-	"sync/atomic"
-
 	"context"
 	"errors"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/model"
+	"os"
 	"path"
+	"path/filepath"
+	"runtime"
+	"sync"
+	"sync/atomic"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -18,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	portsurvey "github.com/herbygillot/dockhand/internal/macports/survey"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 )
 
@@ -41,7 +42,8 @@ type Result struct {
 }
 
 type Port struct {
-	Selector string
+	Experiments []experimentContext `json:",omitempty"`
+	Selector    string
 	portedit.Assessment
 	// portfile is the port's Portfile where the selection knew it, and
 	// observed each context it was observed in, for the record.
@@ -59,6 +61,7 @@ type Service struct {
 	// assessment observes it in, for the record; ObserveOnly does that
 	// alone, without assessing it.
 	Observe, ObserveOnly bool
+	ExperimentReport     bool
 }
 
 func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err error) {
@@ -181,7 +184,12 @@ var Concurrency = min(8, max(2, runtime.NumCPU()))
 
 // assessOne assesses one selected port: its probe and the assessment
 // itself.
-func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files *portsurvey.Workspace, projection *workspace.Workspace, platform model.Platform, selected portsurvey.Port) (Port, error) {
+func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files *portsurvey.Workspace, projection *workspace.Workspace, platform model.Platform, selected portsurvey.Port) (result Port, resultErr error) {
+	defer func() {
+		if s.ExperimentReport {
+			result.Experiments = experimentReports(result.observed)
+		}
+	}()
 	if err := ctx.Err(); err != nil {
 		return Port{}, err
 	}
@@ -200,10 +208,15 @@ func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files
 	if problem == nil && s.Observe {
 		// Observed first, so the assessment's own observations of the
 		// committed Portfile are these.
-		err := probe.Observations(ctx, func(context model.Platform, observation macports.Observation, err error) {
+		contents, err := os.ReadFile(filepath.Join(projection.Root(), selected.Portfile))
+		if err != nil {
+			return Port{}, err
+		}
+		err = probe.Observations(ctx, func(context model.Platform, observation macports.Observation, err error) {
 			name := observation.Snapshot.Target.Name
+			verdict := measureTolerance(ctx, observation, name, contents, err)
 			item.observed = append(item.observed, observed{Platform: context, Modeled: observation.Modeled, Root: observation.Snapshot.Root,
-				Info: observation.Snapshot.Ports[name], Observation: observation.Ports[name], Err: err})
+				Info: observation.Snapshot.Ports[name], Observation: observation.Ports[name], Err: err, Tolerance: &verdict})
 		})
 		if err != nil {
 			if ctx.Err() != nil {

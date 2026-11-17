@@ -37,6 +37,12 @@ act() {
 	[ -n "$G8_RUN" ] || return 0
 	(export DOCKHAND_CONFIG="$ROW_DIR/g8.toml"; dh_json wait "$G8_RUN" </dev/null) || :
 	tail -c +"$((${G8_DRAINED:-0} + 1))" "${DOCKHAND_DB%/*}/drain.log" >"$ROW_DIR/drain.log" 2>/dev/null || :
+	# The step that says it builds as root is in the check's own log, not
+	# drain.log, which carries only the check's states: rc4's G8 failed a
+	# check that built as root and passed (prime-time, 2026-11-17).
+	(export DOCKHAND_CONFIG="$ROW_DIR/g8.toml"; dh logs "$G8_RUN" </dev/null) || :
+	sed -n "/^\$ dockhand logs $G8_RUN\$/,/^\[exit/p" "$ROW_DIR/out.log" >"$ROW_DIR/logs.txt"
+	cat "$ROW_DIR/drain.log" "$ROW_DIR/logs.txt" >"$ROW_DIR/said.txt" 2>/dev/null || :
 }
 
 assert() {
@@ -47,7 +53,7 @@ assert() {
 		row_fail "$G8_RUN didn't pass under serve's worker, exit $(cat "$wait.exit" 2>/dev/null): $(jq -r '.error // empty' "$wait" 2>/dev/null)"
 		return
 	fi
-	said "building in /opt/local \\(as root\\)" "$ROW_DIR/drain.log" 2>/dev/null || { row_fail "$G8_RUN didn't say it built in /opt/local as root, in what its worker wrote"; return; }
+	said "building in /opt/local \\(as root\\)" "$ROW_DIR/said.txt" 2>/dev/null || { row_fail "$G8_RUN didn't say it built in /opt/local as root, in its own log or what its worker wrote"; return; }
 	local_same /opt/local "$ROW_DIR/active.before" "$G8_RUN left /opt/local's active ports changed" || return
 	row_pass "$G8_RUN passed in /opt/local under serve's worker, as root, with sudo asking no password for /opt/local/bin/port-tclsh alone, and put the ports back"
 }

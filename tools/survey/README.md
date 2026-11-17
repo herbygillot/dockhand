@@ -126,3 +126,57 @@ A comparison reports Tcl worker failures (`evaluation-unavailable`) separately
 as **not evaluated**, naming whether the baseline, new run or both lacked an
 evaluation. Those ports contribute no verdict movement or guard change; their
 Portfiles are excluded from comparable fully-covered totals on both sides.
+
+### Machine-read experiment reporting
+
+`-experiment` reports the product's machine-read summaries in each journal
+port's `Experiments` array and outcome totals in `run.json`. It asks for the
+same context observations as `-db` when used without a database. It changes
+reporting, never the product's verdict or its stand-in policy. `not requested`
+means no recognized machine read needed an experiment; native contexts are
+`not perturbed`. An equal summary can still leave an unvaried read unexplained. Each entry's
+`Tolerance` records the final product `Tolerate` result: `Evaluated`,
+`Inconclusive`, and `Left`, with `ErrorCode` when evaluation was unavailable.
+`Left` applies to modeled contexts; a native inconclusive reader verdict does
+not leave the native context. No rule is reimplemented in the survey.
+`run.json` also has `tolerance` totals (`Evaluated`, `Conclusive`, `Inconclusive`,
+`Left`, `NotEvaluated`), printed beside the experiment outcome totals.
+With `-db`, `tolerance_context` stores the same verdict for every observed
+context even without `-experiment`. A missing verdict or failed evaluation
+is never counted as conclusive. These are committed-context reader verdicts,
+not a replacement for assessment's fetch policy or candidate validation.
+
+Records use schema 3; start a fresh database for this version. The
+`machine_read_experiment` table keeps the safe summary, and
+`machine_read_original` maps its original declaration indices to original
+questions. Neither the database nor journal stores a second observation or plan.
+The survey has no legacy Tolerate copy, pinned follow.go hash, follower policy,
+or separate second evaluation; those measurement-only implementations were not
+carried onto the product branch. `follow.go` is removed with this change.
+
+The private operation publishes only an outcome, original declaration indices
+that were varied, the first differing field or error code, and names of excluded
+build-only options that moved. It publishes no second plan, values, or raw error
+text. Original host-access events retain full call identities. Ordinary
+observations record phase registrations without executing their bodies, even
+with `-recording=false`.
+
+Summary outcomes are `same`, `same, build-only moved`, `differs` (a compared
+field, or a semantic evaluation failure), `failed` (infrastructure),
+`not perturbed`, or `unexplained` (equal compared values but a checksum-phase
+body names an option in that read's recognized default chain). This carries `checksum-phase-unread`, rather
+than claiming a value differed. The experiment adds no fetch-body verdict:
+fetch policy refuses unsupported fetching, while a change in fetch kind or
+registration between evaluations remains a compared difference. An absent
+summary is reported as `not requested` for a modeled context.
+
+The narrow checksum guard records original read indices in
+`Unexplained`. An equal summary cannot explain those indices even when other
+varied reads in the same context remain explained. No value following or
+derived-name resolution is performed. This rule was adopted for contract point 7.
+
+Original closed-call text is retained in machine-readable evidence and matching.
+Human-facing host-input/error fragments and debug descriptions show at most 200
+characters plus an ellipsis; debug frame commands use their first 80 characters.
+Survey findings use those bounded product descriptions. Raw SQLite questions,
+ledger JSON and source evidence intentionally retain full text for later analysis.
