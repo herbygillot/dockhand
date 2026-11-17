@@ -367,7 +367,7 @@ The five the scope left open, as settled on 2026-09-25:
    Phases 1–4 lose no coverage, and the tag counts what phase 5 must
    replace. This falls out of facts by domain and source.
 
-   *Settled by #110 (docs/designs/closed-model.md):* a modelled context
+   *Settled by #110:* a modelled context
    takes no host answer, on a Mac or off one. A call that would reach
    the host, a host path's `file`, `open`, `glob`, or `source`, or any
    `exec`, is answered as an empty Mac answers it (`file exists` 0, no
@@ -376,6 +376,32 @@ The five the scope left open, as settled on 2026-09-25:
    inconclusive unless `Tolerate` explains it. Base's helpers that run
    programs are the worker's, and the master's own `exec` is closed while
    a modelled port is evaluated. The Mac's own context reads the Mac.
+
+   *Machine reads (#110, 2026-11-16).* A closed read is a machine read
+   when its answer is a fact of one machine and not of a macOS release:
+   a numeric `sysctl` key, a tool Base looks up (`findBinary`,
+   `binaryInPath`, `_mportsearchpath`), a file test. Where the
+   build-default or Base-lookup rule recognizes one, dockhand does not
+   read the Portfile's source to see where the value goes. One private
+   evaluation, made in one place behind `observe.Session.One` and
+   `Observe` and differing from the first only in its stand-in answers,
+   is compared with the first on everything dockhand acts on: name,
+   version, epoch, revision, distfiles with their locations, checksum
+   and revision declarations, every read option that is not a build-only
+   sink, the fetch and checksum phase bodies registered, and whether the
+   fetch is standard or custom. A read is explained only if it was
+   itself varied and nothing compared changed; a differing field, a
+   failed second evaluation, or a recognized read with no stand-in
+   leaves that read unexplained. The stand-in observation is never a
+   result: only a summary leaves, with no value in it. Phase bodies run
+   in neither evaluation: a fetch body is judged by the fetch guard and
+   the fetch policy as before, and a checksum-phase body leaves a
+   recognized read unexplained only where its text names an option in
+   that read's own default chain. A fact of a release is a fact, not a
+   stand-in: `/usr/lib/libxcselect.dylib` is absent on Darwin 8 and 9.
+   Limit, stated in docs/usage/hand-edits.md: a difference that appears
+   only at one exact value, or for one mixed combination of answers, is
+   not seen.
 2. **Phase 4's behaviour change.** Accepted: every context, native
    included, plans against a clean installation, whatever is installed
    on the Mac. Clean means CI's two scenarios, `fresh` by default and
