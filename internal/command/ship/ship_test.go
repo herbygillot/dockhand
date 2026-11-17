@@ -154,6 +154,33 @@ func TestShipChoosesAPortsBranchAsSelectDoes(t *testing.T) {
 	require.Contains(t, errs, "? which one, or n for a new branch? [1-2/n] ")
 }
 
+// #280: master-only commits in an old recorded range must not make ship
+// route an update into that branch's worktree.
+func TestShipDoesNotEditAStaleBranchForAMasterOnlyPort(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	branchName := "jq"
+	_, errs, err := cmdtest.Dockhand(t, "start", branchName)
+	require.NoError(t, err, errs)
+	branch := filepath.Join(w.Home, "Source", "macports-branches", branchName)
+	testsupport.WriteFiles(t, branch, map[string]string{"_resources/port1.0/group/github-1.0.tcl": "# group\n# branch note\n"})
+	testsupport.Git(t, branch, "add", "_resources/port1.0/group/github-1.0.tcl")
+	testsupport.Git(t, branch, "-c", "user.name=Ada", "-c", "user.email=ada@example.org", "commit", "-q", "-m", "notes")
+	testsupport.WriteFiles(t, w.Upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.2\n"})
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-am", "jq: update to 1.7.2")
+	testsupport.Git(t, branch, "fetch", "origin", "master")
+	testsupport.Git(t, branch, "rebase", "origin/master")
+
+	_, errs, err = cmdtest.Dockhand(t, "ship", "jq", "--to", "commit")
+	portfile, readErr := os.ReadFile(filepath.Join(branch, "textproc/jq/Portfile"))
+	require.NoError(t, readErr)
+	require.Contains(t, string(portfile), "version 1.7.2", "#280: shipping did not update the unrelated branch worktree")
+	require.NotContains(t, string(portfile), "version 1.8.1")
+	require.NoError(t, err, errs)
+}
+
 // --mine ships the person's ports outdated --mine finds newer releases of,
 // at the release it found, and says what it leaves; --passing, the
 // branches whose checks passed and aren't submitted.

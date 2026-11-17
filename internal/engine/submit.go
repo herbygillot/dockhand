@@ -1002,19 +1002,43 @@ func (e *Engine) mayPushTheirs(ctx context.Context, plan *SubmitPlan, login stri
 // fetched, the local branch, and each remote's, since a person rebases
 // onto the one they fetched. undone is what wasn't done.
 func (e *Engine) commitsAreOwn(ctx context.Context, worktree *git.Repository, branch model.Branch, base, head string, commits int, undone string) error {
-	masters, err := e.masters(ctx)
-	if err != nil || len(masters) == 0 {
-		return err
-	}
-	own, err := worktree.CountCommitsNotIn(ctx, base, head, masters)
+	own, err := e.branchOwnCommits(ctx, worktree, base, head)
 	if err != nil {
 		return err
 	}
-	if own >= commits {
+	if len(own) >= commits {
 		return nil
 	}
-	return refusal.New(refusal.Attention, "%s's history has %s master already has, past the base %s this database records for it, so nothing was %s: its Git branch was moved onto a newer master without dockhand, by git rebase or by dockhand on another database", branch.ShortName(), prose.Plural(commits-own, "commit"), model.ObjectID(base).Short(), undone).
+	return refusal.New(refusal.Attention, "%s's history has %s master already has, past the base %s this database records for it, so nothing was %s: its Git branch was moved onto a newer master without dockhand, by git rebase or by dockhand on another database", branch.ShortName(), prose.Plural(commits-len(own), "commit"), model.ObjectID(base).Short(), undone).
 		Then(refusal.Next{Verb: refusal.VerbRebase, Branch: branch.ShortName()})
+}
+
+// branchOwnCommits is the one reading of a branch's own history: its
+// recorded-base-to-head commits, except commits any local master has.
+func (e *Engine) branchOwnCommits(ctx context.Context, worktree *git.Repository, base, head string) ([]git.HistoryCommit, error) {
+	history, err := worktree.History(ctx, base, head)
+	if err != nil {
+		return nil, err
+	}
+	masters, err := e.masters(ctx)
+	if err != nil || len(masters) == 0 {
+		return history, err
+	}
+	var own []git.HistoryCommit
+	for _, commit := range history {
+		inMaster := false
+		for _, master := range masters {
+			contains, err := worktree.IsAncestor(ctx, commit.ID, master)
+			if err != nil {
+				return nil, err
+			}
+			inMaster = inMaster || contains
+		}
+		if !inMaster {
+			own = append(own, commit)
+		}
+	}
+	return own, nil
 }
 
 // masters are the commits each master the checkout has points at: the
