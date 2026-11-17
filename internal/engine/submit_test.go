@@ -120,6 +120,11 @@ func TestSubmitWithoutACheckSaysSoAndOpensThePullRequest(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 34901, recorded.PullRequest.Number)
 		require.Equal(t, model.ObjectID(head), recorded.PullRequest.Pushed)
+		event, found, err := r.LatestBranchEvent(branch.ID, model.EventBranchPush)
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, event.At, recorded.PullRequest.PushedAt)
+		require.Equal(t, fmt.Sprintf("pushed %s to #%d", model.ObjectID(head).Short(), recorded.PullRequest.Number), event.Message)
 		require.Equal(t, plan.Body, recorded.PullRequest.Body)
 		return nil
 	}))
@@ -211,6 +216,11 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	require.Len(t, fake.Created, 1)
 	require.Empty(t, fake.Updated, "the push is the update; the title and description had nothing new")
 	require.Equal(t, model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")), fake.ForkHead("dockhand/jq-update"))
+	pushedBranch, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	pushedAt := pushedBranch.PullRequest.PushedAt
+	require.False(t, pushedAt.IsZero())
+	e.options.Now = func() time.Time { return pushedAt.Add(time.Hour) }
 
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Title: "jq: update to 1.8.1, reviewed"})
 	require.NoError(t, err)
@@ -218,6 +228,9 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, first.PullRequest.Ref.Number, fake.Updated[0].ExistingPR.Number)
 	require.Equal(t, "jq: update to 1.8.1, reviewed", fake.PRs[first.PullRequest.Ref.Number].Title, "--title retitles")
+	afterEdit, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.Equal(t, pushedAt, afterEdit.PullRequest.PushedAt, "an edit without a push preserves the time")
 
 	// Someone edits the description on GitHub; dockhand leaves it be.
 	fake.PRs[first.PullRequest.Ref.Number].Body = "My own words.\n"

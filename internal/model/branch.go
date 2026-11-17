@@ -61,6 +61,9 @@ type PullRequest struct {
 	// Pushed is the commit dockhand last pushed to the head branch. A push
 	// that finds anything else there stops, since someone else pushed.
 	Pushed ObjectID
+	// PushedAt is when dockhand recorded its last push to this pull request;
+	// zero for a push recorded before the time was kept (#248).
+	PushedAt time.Time `json:",omitzero"`
 	// Body is the description dockhand last wrote, so a person's edits to
 	// it are recognized and kept.
 	Body  string

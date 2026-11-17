@@ -2174,3 +2174,56 @@ func TestSchema63MarksTheAttemptsUnfinishedBeforeLaunchesWereNoted(t *testing.T)
 		return nil
 	}))
 }
+
+// Schema 64 cannot infer when an older pull request's head was pushed (#248).
+func TestSchema64KeepsOldPushTimeUnknown(t *testing.T) {
+	t.Parallel()
+	setup := schema23Records + `UPDATE branches SET pr_repository='macports/macports-ports', pr_number=34901, pr_head='ada/macports-ports:work', pr_pushed='abc' WHERE id='br_1';`
+	s, err := Open(t.Context(), schemaAt(t, 63, setup), Options{})
+	require.NoError(t, err)
+	defer s.Close()
+	require.NoError(t, s.View(t.Context(), "repo_1", func(r store.Reader) error {
+		branch, err := r.Branch("br_1")
+		require.NoError(t, err)
+		require.Equal(t, model.ObjectID("abc"), branch.PullRequest.Pushed)
+		require.True(t, branch.PullRequest.PushedAt.IsZero())
+		return nil
+	}))
+	pushTime := at.Add(time.Hour)
+	require.NoError(t, s.Update(t.Context(), "repo_1", func(tx store.Tx) error {
+		branch, err := tx.Branch("br_1")
+		if err != nil {
+			return err
+		}
+		branch.PullRequest.PushedAt = pushTime
+		return tx.UpdateBranch(branch)
+	}))
+	require.NoError(t, s.View(t.Context(), "repo_1", func(r store.Reader) error {
+		branch, err := r.Branch("br_1")
+		require.NoError(t, err)
+		require.Equal(t, pushTime, branch.PullRequest.PushedAt)
+		return nil
+	}))
+}
+
+func TestPullRequestPushTimeRoundTrips(t *testing.T) {
+	t.Parallel()
+	f := open(t)
+	branch := f.branch("br_push", "dockhand/push")
+	branch.PullRequest = &model.PullRequest{Repository: "owner/repo", Number: 7, Head: "ada/repo:work", Pushed: "abc", PushedAt: at}
+	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.AddBranch(branch) }))
+	require.NoError(t, f.store.View(t.Context(), f.repo, func(r store.Reader) error {
+		got, err := r.Branch(branch.ID)
+		require.NoError(t, err)
+		require.Equal(t, at, got.PullRequest.PushedAt)
+		return nil
+	}))
+	branch.PullRequest = nil
+	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(branch) }))
+	require.NoError(t, f.store.View(t.Context(), f.repo, func(r store.Reader) error {
+		got, err := r.Branch(branch.ID)
+		require.NoError(t, err)
+		require.Nil(t, got.PullRequest)
+		return nil
+	}))
+}

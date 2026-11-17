@@ -479,7 +479,8 @@ func TestOpenWorkReadsStalePullRequestsFirst(t *testing.T) {
 	require.Empty(t, found, "OpenWork read the stale pull request, merged")
 }
 
-// A recorded push after a comment answers it; a head without such a record does not (#248).
+// A recorded push after a comment answers it; an old record and an
+// unrecorded push do not, even when the old timeline has a push line (#248).
 func TestRefreshRecordedPushAnswersComment(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
@@ -495,22 +496,30 @@ func TestRefreshRecordedPushAnswersComment(t *testing.T) {
 	fake.PRs[number].RemoteHead = model.ObjectID(strings.Repeat("b", 40))
 	fake.Statuses = map[int]forge.PullRequestStatus{number: {CommentedBy: "reviewer", CommentedAt: commented, CommentsRead: true}}
 	e.Forge = &batchReader{GitHub: fake, partial: map[int]bool{}}
+	setPush := func(when time.Time) {
+		t.Helper()
+		require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+			current, err := tx.Branch(branch.ID)
+			if err != nil {
+				return err
+			}
+			current.PullRequest.PushedAt = when
+			return tx.UpdateBranch(current)
+		}))
+	}
+	setPush(time.Time{})
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		_, err := tx.AppendEvent(model.Event{At: commented.Add(time.Minute), Branch: branch.ID, Kind: model.EventBranchPush, Level: model.LevelVerbose, Message: fmt.Sprintf("pushed abcdef0 to #%d", number)})
+		return err
+	}))
 	refreshed, err := e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, "reviewer", refreshed.Branches[0].Branch.PullRequest.Observed.CommentedBy, "an unrecorded push does not answer")
-	recordPush := func(pr int) {
-		t.Helper()
-		err := e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
-			_, err := tx.AppendEvent(model.Event{At: commented.Add(time.Minute), Branch: branch.ID, Kind: model.EventBranchPush, Level: model.LevelVerbose, Message: fmt.Sprintf("pushed abcdef0 to #%d", pr)})
-			return err
-		})
-		require.NoError(t, err)
-	}
-	recordPush(number + 1)
+	require.Equal(t, "reviewer", refreshed.Branches[0].Branch.PullRequest.Observed.CommentedBy, "a legacy push event is not a recorded push time")
+	setPush(commented.Add(-time.Minute))
 	refreshed, err = e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, "reviewer", refreshed.Branches[0].Branch.PullRequest.Observed.CommentedBy, "a push to another pull request does not answer")
-	recordPush(number)
+	require.Equal(t, "reviewer", refreshed.Branches[0].Branch.PullRequest.Observed.CommentedBy, "an older recorded push does not answer")
+	setPush(commented.Add(time.Minute))
 	fake.Statuses[number] = forge.PullRequestStatus{}
 	refreshed, err = e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)

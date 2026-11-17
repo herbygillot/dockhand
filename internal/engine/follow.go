@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -333,20 +332,13 @@ func checksOf(checks forge.CheckSummary) model.PullRequestChecks {
 // it: merged, closed, or open again.
 func recordPullRequest(tx store.Tx, branch model.Branch, next model.PullRequestObservation, refreshed *Refreshed) error {
 	pr := branch.PullRequest
-	// A push event records dockhand's own submission to this pull request;
-	// a head's committed date does not say when it was pushed (#248).
-	if next.CommentsRead && next.CommentedBy != "" && !next.CommentedAt.IsZero() {
-		push, found, err := tx.LatestBranchEvent(branch.ID, model.EventBranchPush)
-		if err != nil {
-			return err
-		}
-		var commit string
-		var number int
-		if found && push.At.After(next.CommentedAt) && strings.HasPrefix(push.Message, "pushed ") {
-			if _, err := fmt.Sscanf(push.Message, "pushed %s to #%d", &commit, &number); err == nil && number == pr.Number && push.Message == fmt.Sprintf("pushed %s to #%d", commit, number) {
-				next.CommentedBy, next.CommentedAt = "", time.Time{}
-			}
-		}
+	current, err := tx.Branch(branch.ID)
+	if err != nil || current.PullRequest == nil || current.PullRequest.Number != pr.Number || current.PullRequest.Repository != pr.Repository {
+		return err
+	}
+	// A recorded push to this pull request after the comment answers it (#248).
+	if next.CommentsRead && next.CommentedBy != "" && !next.CommentedAt.IsZero() && current.PullRequest.PushedAt.After(next.CommentedAt) {
+		next.CommentedBy, next.CommentedAt = "", time.Time{}
 	}
 	previous := pr.Observed
 	if previous == nil {
@@ -365,10 +357,6 @@ func recordPullRequest(tx store.Tx, branch model.Branch, next model.PullRequestO
 		if previous.Checks != next.Checks && (next.Checks == model.ChecksFailing || next.Checks == model.ChecksPassing) {
 			refreshed.Changes = append(refreshed.Changes, fmt.Sprintf("#%d: CI %s", pr.Number, next.Checks))
 		}
-	}
-	current, err := tx.Branch(branch.ID)
-	if err != nil || current.PullRequest == nil || current.PullRequest.Number != pr.Number {
-		return err
 	}
 	current.PullRequest.Observed = &next
 	current.PullRequest.Draft = next.Draft

@@ -1539,12 +1539,15 @@ func (e *Engine) recordSubmission(tx store.Tx, plan SubmitPlan, result *Submitte
 	// retry, pushing nothing, never said it, so the reviewers who asked
 	// for changes weren't asked again (#117).
 	pushed := result.Pushed || branch.PullRequest == nil || branch.PullRequest.Pushed != next.Pushed || slices.Contains(plan.settledDone, model.StepPush)
-	if old := branch.PullRequest; old != nil && old.Number == next.Number {
-		next.Observed, next.Adopted, next.Author, next.AuthorHead, next.Rerequested = old.Observed, old.Adopted, old.Author, old.AuthorHead, old.Rerequested
+	if old := branch.PullRequest; old != nil && old.Number == next.Number && old.Repository == next.Repository {
+		next.Observed, next.Adopted, next.Author, next.AuthorHead, next.Rerequested, next.PushedAt = old.Observed, old.Adopted, old.Author, old.AuthorHead, old.Rerequested, old.PushedAt
 		// An old record's empty provenance keeps the rights it has.
 		if provenance == model.Found && old.Provenance != model.Found {
 			next.Provenance = old.Provenance
 		}
+	}
+	if pushed {
+		next.PushedAt = e.now()
 	}
 	branch.PullRequest = &next
 	if plan.Request.Title != "" {
@@ -1599,7 +1602,7 @@ func (e *Engine) recordSubmission(tx store.Tx, plan SubmitPlan, result *Submitte
 	if !pushed {
 		return nil
 	}
-	_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchPush, Level: model.LevelVerbose,
+	_, err = tx.AppendEvent(model.Event{At: next.PushedAt, Branch: branch.ID, Kind: model.EventBranchPush, Level: model.LevelVerbose,
 		Message: fmt.Sprintf("pushed %s to #%d", model.ObjectID(plan.Commit).Short(), observed.PullRequest.Ref.Number)})
 	return err
 }
