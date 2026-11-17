@@ -73,47 +73,31 @@ func (c *Client) Inspect(ctx context.Context, ref forge.PullRequestRef) (forge.P
 	account, err := c.AuthenticatedUser(ctx)
 	if err == nil && account != "" {
 		opts := &gh.IssueListCommentsOptions{ListOptions: gh.ListOptions{PerPage: 100}}
-		status.CommentsRead = true
-		var latest, unknown time.Time
+		var all []forge.Comment
 		for {
 			comments, response, err := client.Issues.ListComments(ctx, owner, repo, ref.Number, opts)
 			if err != nil {
 				return forge.PullRequestStatus{}, githubapi.RateLimitError(err)
 			}
-			for _, comment := range comments {
-				user := comment.GetUser()
-				at := comment.GetCreatedAt().Time
-				if user == nil || user.GetType() == "" || (user.GetType() == "User" && user.GetLogin() == "") {
-					if at.IsZero() {
-						status.CommentsRead = false
-					} else if at.After(unknown) {
-						unknown = at
-					}
-					continue
-				}
-				if user.GetType() != "User" {
-					continue
-				}
-				if at.IsZero() {
-					status.CommentsRead = false
-					continue
-				}
-				if latest.IsZero() || !at.Before(latest) {
-					latest = at
-					status.CommentedBy = ""
-					if !strings.EqualFold(user.GetLogin(), account) {
-						status.CommentedBy = user.GetLogin()
+			for _, c := range comments {
+				comment := forge.Comment{At: c.GetCreatedAt().Time, Kind: forge.CommentUnknown}
+				if user := c.GetUser(); user != nil {
+					comment.Login = user.GetLogin()
+					switch user.GetType() {
+					case "User":
+						comment.Kind = forge.CommentUser
+					case "Bot":
+						comment.Kind = forge.CommentBot
 					}
 				}
+				all = append(all, comment)
 			}
 			if response.NextPage == 0 {
 				break
 			}
 			opts.Page = response.NextPage
 		}
-		if !unknown.IsZero() && !unknown.Before(latest) {
-			status.CommentsRead = false
-		}
+		status.CommentedBy, status.CommentedAt, status.CommentsRead = forge.AwaitingResponse(all, account, true)
 	}
 	// The reviews still requested: GitHub's whole list, which the endpoint
 	// gives in one page. A team requested is named by its slug.

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -181,6 +182,7 @@ func (e *Engine) observeState(ctx context.Context, pr *model.PullRequest) (model
 	next := e.observation(observed.PullRequest, forge.PullRequestStatus{})
 	if was := pr.Observed; was != nil && next.State == model.PullRequestOpen {
 		next.Draft, next.Review, next.ChangesRequestedBy, next.ReviewedAt, next.ApprovedBy, next.CommentedBy = was.Draft, was.Review, was.ChangesRequestedBy, was.ReviewedAt, was.ApprovedBy, was.CommentedBy
+		next.CommentedAt = was.CommentedAt
 		next.Checks, next.Failing = was.Checks, was.Failing
 	}
 	return next, nil
@@ -253,7 +255,7 @@ func (e *Engine) readPullRequests(ctx context.Context, branches []model.Branch) 
 				if pr.Observed != nil {
 					prior = *pr.Observed
 				}
-				prior.CommentedBy = reading.Status.CommentedBy
+				prior.CommentedBy, prior.CommentedAt, prior.CommentsRead = reading.Status.CommentedBy, reading.Status.CommentedAt, true
 				copyPR.Observed = &prior
 				return e.observePullRequest(ctx, &copyPR)
 			}
@@ -263,7 +265,7 @@ func (e *Engine) readPullRequests(ctx context.Context, branches []model.Branch) 
 		}
 		next := e.observation(reading.PullRequest, reading.Status)
 		if !reading.Status.CommentsRead && pr.Observed != nil {
-			next.CommentedBy = pr.Observed.CommentedBy
+			next.CommentedBy, next.CommentedAt, next.CommentsRead = pr.Observed.CommentedBy, pr.Observed.CommentedAt, pr.Observed.CommentsRead
 		}
 		return next, nil
 	}, true, nil
@@ -280,6 +282,7 @@ func (e *Engine) observation(now forge.PullRequest, status forge.PullRequestStat
 	}
 	next.Draft, next.Review, next.Failing, next.ChangesRequestedBy, next.ReviewedAt = status.Draft, model.PullRequestReview(status.Review), status.Checks.Failing, status.ChangesRequestedBy, status.ReviewedAt
 	next.Opened, next.Author, next.Mentioned, next.ApprovedBy, next.CommentedBy = now.CreatedAt, now.Author, now.Mentions, status.ApprovedBy, status.CommentedBy
+	next.CommentedAt, next.CommentsRead = status.CommentedAt, status.CommentsRead
 	next.Checks = checksOf(status.Checks)
 	next.Conflicts = status.Mergeable == "no"
 	return next
@@ -306,7 +309,7 @@ func (e *Engine) observePullRequest(ctx context.Context, pr *model.PullRequest) 
 	next := e.observation(observed.PullRequest, status)
 	// An unread conversation cannot erase the earlier answer (#248).
 	if !status.CommentsRead && pr.Observed != nil {
-		next.CommentedBy = pr.Observed.CommentedBy
+		next.CommentedBy, next.CommentedAt, next.CommentsRead = pr.Observed.CommentedBy, pr.Observed.CommentedAt, pr.Observed.CommentsRead
 	}
 	return next, nil
 }
@@ -330,6 +333,21 @@ func checksOf(checks forge.CheckSummary) model.PullRequestChecks {
 // it: merged, closed, or open again.
 func recordPullRequest(tx store.Tx, branch model.Branch, next model.PullRequestObservation, refreshed *Refreshed) error {
 	pr := branch.PullRequest
+	// A push event records dockhand's own submission to this pull request;
+	// a head's committed date does not say when it was pushed (#248).
+	if next.CommentsRead && next.CommentedBy != "" && !next.CommentedAt.IsZero() {
+		push, found, err := tx.LatestBranchEvent(branch.ID, model.EventBranchPush)
+		if err != nil {
+			return err
+		}
+		var commit string
+		var number int
+		if found && push.At.After(next.CommentedAt) && strings.HasPrefix(push.Message, "pushed ") {
+			if _, err := fmt.Sscanf(push.Message, "pushed %s to #%d", &commit, &number); err == nil && number == pr.Number && push.Message == fmt.Sprintf("pushed %s to #%d", commit, number) {
+				next.CommentedBy, next.CommentedAt = "", time.Time{}
+			}
+		}
+	}
 	previous := pr.Observed
 	if previous == nil {
 		previous = &model.PullRequestObservation{}

@@ -118,10 +118,11 @@ type PullRequestObservation struct {
 	// ReviewedAt is when the review that sets Review was made; zero where
 	// none does, or for an observation from before it was kept.
 	ReviewedAt time.Time `json:",omitzero"`
-	// CommentedBy is the reviewer whose comment is the conversation's
-	// latest word, after the head, which GitHub's review state doesn't
-	// count (forge.PullRequestStatus.CommentedBy); empty where none is.
-	CommentedBy string `json:",omitempty"`
+	// CommentedBy and CommentedAt identify the waiting reviewer's comment (#248).
+	CommentedBy string    `json:",omitempty"`
+	CommentedAt time.Time `json:",omitzero"`
+	// CommentsRead is transient: a preserved answer was not read again (#248).
+	CommentsRead bool `json:"-"`
 	// Failing names the checks that concluded unsuccessfully.
 	Checks  PullRequestChecks
 	Failing []string `json:",omitempty"`

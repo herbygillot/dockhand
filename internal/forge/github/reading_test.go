@@ -188,6 +188,9 @@ func checkConversation248(t *testing.T, comments, committed, want string) {
 	readings, err := client.ReadPullRequests(t.Context(), []forge.PullRequestRef{{Forge: forge.GitHub, Repository: "owner/repo", Number: 1}})
 	require.NoError(t, err)
 	require.Equal(t, want, readings[0].Status.CommentedBy)
+	if want != "" {
+		require.Equal(t, time.Date(2026, 11, 5, 14, 0, 0, 0, time.UTC), readings[0].Status.CommentedAt)
+	}
 }
 
 // A page of bots may hide a person on an earlier page, so Inspect reads it (#248).

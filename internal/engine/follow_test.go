@@ -259,7 +259,8 @@ func TestFallbackKeepsEarlierComment(t *testing.T) {
 	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	require.NoError(t, err)
 	number := submitted.PullRequest.Ref.Number
-	fake.Statuses = map[int]forge.PullRequestStatus{number: {CommentedBy: "reviewer", CommentsRead: true}}
+	commentedAt := e.now().Add(time.Hour)
+	fake.Statuses = map[int]forge.PullRequestStatus{number: {CommentedBy: "reviewer", CommentedAt: commentedAt, CommentsRead: true}}
 	reader := &batchReader{GitHub: fake, partial: map[int]bool{}}
 	e.Forge = reader
 	_, err = e.RefreshPullRequests(t.Context())
@@ -269,10 +270,12 @@ func TestFallbackKeepsEarlierComment(t *testing.T) {
 	refreshed, err := e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "reviewer", refreshed.Branches[0].Branch.PullRequest.Observed.CommentedBy)
-	reader.batchStatus = map[int]forge.PullRequestStatus{number: {CommentedBy: "new-reviewer", CommentsRead: true}}
+	require.True(t, commentedAt.Equal(refreshed.Branches[0].Branch.PullRequest.Observed.CommentedAt))
+	reader.batchStatus = map[int]forge.PullRequestStatus{number: {CommentedBy: "new-reviewer", CommentedAt: commentedAt, CommentsRead: true}}
 	refreshed, err = e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "new-reviewer", refreshed.Branches[0].Branch.PullRequest.Observed.CommentedBy)
+	require.True(t, commentedAt.Equal(refreshed.Branches[0].Branch.PullRequest.Observed.CommentedAt))
 }
 
 // anonymousForge is GitHub without a login: no read over many pull
@@ -474,4 +477,46 @@ func TestOpenWorkReadsStalePullRequestsFirst(t *testing.T) {
 	found, err := e.PortBranches(t.Context(), "jq")
 	require.NoError(t, err)
 	require.Empty(t, found, "OpenWork read the stale pull request, merged")
+}
+
+// A recorded push after a comment answers it; a head without such a record does not (#248).
+func TestRefreshRecordedPushAnswersComment(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.NoError(t, err)
+	number := submitted.PullRequest.Ref.Number
+	commented := e.now().Add(time.Hour)
+	fake.PRs[number].RemoteHead = model.ObjectID(strings.Repeat("b", 40))
+	fake.Statuses = map[int]forge.PullRequestStatus{number: {CommentedBy: "reviewer", CommentedAt: commented, CommentsRead: true}}
+	e.Forge = &batchReader{GitHub: fake, partial: map[int]bool{}}
+	refreshed, err := e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "reviewer", refreshed.Branches[0].Branch.PullRequest.Observed.CommentedBy, "an unrecorded push does not answer")
+	recordPush := func(pr int) {
+		t.Helper()
+		err := e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+			_, err := tx.AppendEvent(model.Event{At: commented.Add(time.Minute), Branch: branch.ID, Kind: model.EventBranchPush, Level: model.LevelVerbose, Message: fmt.Sprintf("pushed abcdef0 to #%d", pr)})
+			return err
+		})
+		require.NoError(t, err)
+	}
+	recordPush(number + 1)
+	refreshed, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "reviewer", refreshed.Branches[0].Branch.PullRequest.Observed.CommentedBy, "a push to another pull request does not answer")
+	recordPush(number)
+	fake.Statuses[number] = forge.PullRequestStatus{}
+	refreshed, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "reviewer", refreshed.Branches[0].Branch.PullRequest.Observed.CommentedBy, "an unread conversation keeps its earlier answer")
+	fake.Statuses[number] = forge.PullRequestStatus{CommentedBy: "reviewer", CommentedAt: commented, CommentsRead: true}
+	refreshed, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, refreshed.Branches[0].Branch.PullRequest.Observed.CommentedBy, "the recorded push answered")
 }

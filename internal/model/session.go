@@ -125,8 +125,8 @@ const (
 	EventBranchState         EventKind = "branch.state"
 	EventBranchSubmit        EventKind = "branch.submit"
 	EventBranchRerequest     EventKind = "branch.rerequest"
-	// EventBranchPush is a submission that pushed, at the time it did:
-	// a line in the timeline, which nothing reads as state.
+	// EventBranchPush records a submission's push; refresh uses its time
+	// and pull request to decide whether it answered a comment (#248).
 	EventBranchPush    EventKind = "branch.push"
 	EventBranchReady   EventKind = "branch.ready"
 	EventBranchRestore EventKind = "branch.restore"

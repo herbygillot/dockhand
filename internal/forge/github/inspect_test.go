@@ -164,6 +164,9 @@ func TestInspectConversation(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, status.CommentsRead)
 			require.Equal(t, tc.want, status.CommentedBy)
+			if tc.want != "" {
+				require.Equal(t, time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC), status.CommentedAt)
+			}
 		})
 	}
 }

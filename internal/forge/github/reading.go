@@ -204,27 +204,23 @@ func readingOf(ref forge.PullRequestRef, pr graphPullRequest, account string) (f
 		}
 	}
 	review(&status, opinions)
-	// Skip bots before deciding whose turn it is; commit dates cannot time a push (#248).
-	status.CommentsRead = account != ""
-	foundHuman := false
-	for i := len(pr.Comments.Nodes) - 1; status.CommentsRead && i >= 0; i-- {
-		comment := pr.Comments.Nodes[i]
-		if comment.Author == nil || comment.Author.Type == "" || (comment.Author.Type == "User" && comment.Author.Login == "") {
-			status.CommentsRead = false
-			break
+	var comments []forge.Comment
+	for _, c := range pr.Comments.Nodes {
+		comment := forge.Comment{At: c.CreatedAt, Kind: forge.CommentUnknown}
+		if c.Author != nil {
+			comment.Login = c.Author.Login
+			switch c.Author.Type {
+			case "User":
+				comment.Kind = forge.CommentUser
+			case "Bot":
+				comment.Kind = forge.CommentBot
+			}
 		}
-		if comment.Author.Type != "User" {
-			continue
-		}
-		foundHuman = true
-		if !strings.EqualFold(comment.Author.Login, account) {
-			status.CommentedBy = comment.Author.Login
-		}
-		break
+		comments = append(comments, comment)
 	}
-	if account != "" && !foundHuman && pr.Comments.PageInfo.HasPreviousPage {
+	status.CommentedBy, status.CommentedAt, status.CommentsRead = forge.AwaitingResponse(comments, account, !pr.Comments.PageInfo.HasPreviousPage)
+	if account != "" && !status.CommentsRead && pr.Comments.PageInfo.HasPreviousPage {
 		reading.Partial = true
-		status.CommentsRead = false
 	}
 	if nodes := pr.Commits.Nodes; len(nodes) > 0 && nodes[0].Commit.Rollup != nil {
 		contexts := nodes[0].Commit.Rollup.Contexts

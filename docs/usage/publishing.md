@@ -400,7 +400,7 @@ the browser. A comment by someone other than you that is the conversation's
 latest human word is said as a reviewer waiting, `#36300
 @reneeotten commented; awaiting your response`, and puts the branch under Needs attention.
 GitHub counts no review for that comment. Bots do not hide it, and your own
-later comment clears the line; a push does not. Edit the same tracked branch,
+later comment or a later push recorded by dockhand clears the line. Edit the same tracked branch,
 inspect the diff, tidy and check the new work, and submit again. The existing pull request is updated. Where a
 reviewer requested changes, submit asks whether to request their review again
 with the plan, before it pushes, and makes the request as the submission's last

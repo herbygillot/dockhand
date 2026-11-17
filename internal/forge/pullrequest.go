@@ -91,8 +91,9 @@ type PullRequestStatus struct {
 	LatestReview map[string]time.Time `json:",omitempty"`
 	// CommentedBy is the newest human commenter when they are not the account
 	// acting here. CommentsRead says whether the conversation settled it (#248).
-	CommentedBy  string `json:",omitempty"`
-	CommentsRead bool   `json:",omitempty"`
+	CommentedBy  string    `json:",omitempty"`
+	CommentedAt  time.Time `json:",omitzero"`
+	CommentsRead bool      `json:",omitempty"`
 	Checks       CheckSummary
 }
 
