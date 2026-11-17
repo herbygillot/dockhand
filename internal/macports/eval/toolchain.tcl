@@ -208,7 +208,17 @@ namespace eval ::dockhand {
                         if {$answer eq "" && [dict size $toolchain]} { set answer [show_sdk_path $arguments] }
                         return $answer
                     }
-                    if {![dict size $toolchain]} { return }
+                    if {![dict size $toolchain]} {
+                        # libxcselect arrived with OS X 10.9 (Darwin 13).
+                        # This release fact needs no invented toolchain row.
+                        variable closed
+                        if {$closed && ${::os.major} in {8 9} && $name eq "file"
+                            && [lindex $arguments 0] in {exists isfile isdirectory executable readable}
+                            && [lindex $arguments 1] eq "/usr/lib/libxcselect.dylib"} {
+                            return [list "" 0 0 {-code 0}]
+                        }
+                        return
+                    }
                     switch -- $name {
                         file {
                             set subcommand [lindex $arguments 0]
