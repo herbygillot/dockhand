@@ -35,9 +35,14 @@ assert() {
 	# The preview is read from the row's log past where it began: dh writes
 	# the command's output to out.log, so a process substitution of dh read
 	# nothing, and G1 always failed here (Codex's cold read at 2cdaf571).
+	# The revbump edits are tidied first, and the preview takes the check:
+	# with the edits uncommitted it showed only the proposed series, and
+	# --no-check leaves Tested on out, so the line could never appear
+	# (prime-time, rc4).
+	dh tidy -b "$G1_TWO" -y || :
 	local from
 	from=$(log_size "$ROW_DIR/out.log")
-	dh submit -b "$G1_TWO" --plan --no-check || :
+	dh submit -b "$G1_TWO" --plan -v || :
 	tail -c +"$((from + 1))" "$ROW_DIR/out.log" | grep -q 'with [0-9]* ports* active' ||
 		{ row_fail "submit's preview's Tested on line didn't say how many ports were active in /opt/local"; return; }
 	row_pass "both branches built in /opt/local among its active ports, put back as they were, and Tested on names how many were active"
