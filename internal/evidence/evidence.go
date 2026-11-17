@@ -119,6 +119,10 @@ type Cell struct {
 	// NotReusable is why no later check can reuse a passed result, where
 	// what its build read wasn't recorded (model.TargetInputs).
 	NotReusable string
+	// SourceUnknown says a provider recorded a pass for a Git-fetched
+	// target but didn't report the fetched commit; the row is visible but
+	// its source cannot be verified against another check.
+	SourceUnknown bool
 	// PlannedIn is the check that planned a target not run in an
 	// environment outside build.default's profile, which asks for it there
 	// only because that check did; empty in the profile's own, and where
@@ -1532,7 +1536,7 @@ func (e *Evidence) fill(earlier Evidence) bool {
 		}
 		for i, result := range target.Outcomes {
 			environment := result.Environment
-			if result.Kind != CellNotRun && result.Kind != CellRemade && result.Kind != CellEntered {
+			if result.Kind != CellNotRun && result.Kind != CellRemade && result.Kind != CellEntered && result.Kind != CellExcluded {
 				continue
 			}
 			j := slices.Index(earlier.Plan.Environments, environment)
@@ -1559,6 +1563,13 @@ func (e *Evidence) fill(earlier Evidence) bool {
 			read := earlier.sources[resultKey(cell.TargetResult)]
 			newest, builds := e.Plan.In(environment)
 			why := countsRefusal(earlier.Plan, execution, target.Target.ID, e.now[environment].Value, git, read.fetched, read.against != nil)
+			unknownPass := why != nil && why.Kind == RefusedUnrecorded && cell.Kind == CellRecorded && cell.Outcome == model.OutcomePassed && environment.Provider == "github"
+			if unknownPass {
+				// Keep the provider's passed row visible. It remains unusable
+				// for reuse; the reader says its source wasn't reported.
+				why = nil
+				cell.SourceUnknown = true
+			}
 			if why == nil && cell.Kind == CellRecorded {
 				why = sourceRefusal(earlier.Plan, readings, environment, target.Target.ID, builds && newest.Builds(target.Target.ID), earlier.shown[target.Target.ID])
 			}

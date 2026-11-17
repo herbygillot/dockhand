@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,6 +17,91 @@ import (
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
+
+type unknownGitSourceProvider struct {
+	tartCalls int
+	fetched   string
+}
+
+func (unknownGitSourceProvider) Name() string { return "command" }
+
+func (p *unknownGitSourceProvider) Execute(_ context.Context, job buildenv.Job, build buildenv.Build) error {
+	for _, target := range job.Targets {
+		result := model.TargetResult{Target: target.ID, Outcome: model.OutcomePassed, Tests: model.TestsNone}
+		report := buildenv.TargetReport{Result: result}
+		if job.Environment.Provider == buildenv.Tart {
+			if p.tartCalls == 0 {
+				result.Outcome, result.Phase = model.OutcomeFailed, model.PhaseFetch
+				report.Result = result
+			} else {
+				report.Fetched = p.fetched
+			}
+			p.tartCalls++
+		}
+		if err := build.Record(report); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// #264: a passed GitHub build whose workflow doesn't report the Git fetch
+// remains visible beside a later Tart result, with its source limitation.
+func TestAGitHubGitFetchPassRemainsVisibleBesideLaterTartCheck(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	url, fetched, _ := harborRepository(t)
+	revision := harborBranch(t, e)
+	usePorts(e, gitHarbor(url, "v4"))
+	provider := &unknownGitSourceProvider{fetched: fetched}
+	e.Providers = map[string]buildenv.Provider{buildenv.GitHub: provider, buildenv.Tart: provider}
+	github12 := model.Environment{Provider: buildenv.GitHub, Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}}
+	tart27 := model.Environment{Provider: buildenv.Tart, Platform: model.Platform{OS: "darwin", Version: "26", Architecture: "arm64"}}
+	var branch model.Branch
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		var err error
+		branch, err = r.Branch(revision.Branch)
+		return err
+	}))
+	check := func(environments ...model.Environment) model.Run {
+		t.Helper()
+		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: environments})
+		require.NoError(t, err)
+		queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+		require.NoError(t, err)
+		run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+		require.NoError(t, err)
+		return run
+	}
+	check(github12, tart27)
+	check(tart27)
+	evidence, found, err := e.EvidenceFor(t.Context(), branch.ID, revision.Source.Tree)
+	require.NoError(t, err)
+	require.True(t, found)
+	var pulumi *TargetEvidence
+	for i := range evidence.Targets {
+		if evidence.Targets[i].Target.Target.Name == "libharbor" {
+			pulumi = &evidence.Targets[i]
+		}
+	}
+	require.NotNil(t, pulumi)
+	i := slices.Index(evidence.Plan.Environments, github12)
+	require.GreaterOrEqual(t, i, 0)
+	require.Equal(t, CellRecorded, pulumi.Outcomes[i].Kind, "the earlier GitHub pass remains a row")
+	require.Equal(t, model.OutcomePassed, pulumi.Outcomes[i].Outcome)
+	require.True(t, pulumi.Outcomes[i].SourceUnknown, "the row states its source limitation")
+	require.Contains(t, targetWords(evidence.Plan, pulumi.Outcomes[i], "advisory", AcceptedFailure{}), "GitHub did not report which commit of git.branch v4")
+	tartIndex := slices.Index(evidence.Plan.Environments, tart27)
+	require.GreaterOrEqual(t, tartIndex, 0)
+	var inputs model.TargetInputs
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		var err error
+		inputs, err = r.Inputs(pulumi.Outcomes[tartIndex].Inputs)
+		return err
+	}))
+	require.Equal(t, model.ObjectID(fetched), inputs.Fetched, "Tart's passed build records the fetched commit")
+}
 
 // harborRepository is the repository libharbor's Git fetch clones, with
 // its tag v4 at a first release, and a function that moves v4 to a new
