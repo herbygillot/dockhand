@@ -184,8 +184,12 @@ dockhand status -b jq-update
 `--plan` fetches master and says what the rebase would replay, drop as already
 on master, or stop at, and moves nothing.
 
-`rebase` requires committed work, fetches master, and replays the branch's
-commits. A conflicting replay leaves the branch as it was and names the
+`rebase` requires committed work, fetches master, and replays the branch's own
+commits, leaving out commits already contained in a master this checkout has.
+If Git has already moved the branch onto newer master, rebase records that base
+and reports that there was nothing to replay. Reading the branch never repairs
+its recorded base; submit and tidy continue to ask for rebase until it does.
+A conflicting replay leaves the branch as it was and names the
 conflicting files; there is no half-completed rebase for you to continue. A
 branch containing merge commits needs Git work by hand. Inspect the reported
 conflict and choose how to resolve the change before trying again.

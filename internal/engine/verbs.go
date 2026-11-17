@@ -258,15 +258,55 @@ func (e *Engine) planRebase(ctx context.Context, branch model.Branch) (rebasePla
 	if base, err := worktree.MergeBase(ctx, plan.head, string(master)); err != nil {
 		return rebasePlan{}, err
 	} else if base == string(master) {
-		plan.UpToDate = true
-		return plan, nil
+		if current.Base == master {
+			plan.UpToDate = true
+			return plan, nil
+		}
+		// Even an already advanced branch needs its recorded base repaired.
+		own, err := e.branchOwnCommits(ctx, worktree, string(current.Base), plan.head)
+		if err != nil {
+			return rebasePlan{}, err
+		}
+		if len(own) == 0 {
+			plan.UpToDate = true
+			return plan, nil
+		}
 	}
 	committer, err := worktree.Author(ctx)
 	if err != nil {
 		return rebasePlan{}, err
 	}
 	committer.When = e.now()
-	plan.replayed, plan.Replay, err = worktree.Replay(ctx, string(master), string(current.Base), plan.head, committer)
+	own, ownErr := e.branchOwnCommits(ctx, worktree, string(current.Base), plan.head)
+	if ownErr != nil {
+		return rebasePlan{}, ownErr
+	}
+	for _, commit := range own {
+		if commit.Merge() {
+			plan.Refused = fmt.Sprintf("%s is a merge commit, which dockhand doesn't replay", model.ObjectID(commit.ID).Short())
+			plan.refusal = fmt.Errorf("%s", plan.Refused)
+			return plan, nil
+		}
+	}
+	parent := string(master)
+	var replay []git.Replayed
+	for i, commit := range own {
+		var made []git.Replayed
+		plan.replayed, made, err = worktree.Replay(ctx, parent, commit.Parents[0], commit.ID, committer)
+		replay = append(replay, made...)
+		if err != nil {
+			if errors.Is(err, git.ErrRebaseConflict) {
+				for _, untried := range own[i+1:] {
+					replay = append(replay, git.Replayed{Commit: untried, Outcome: git.ReplayUntried})
+				}
+			}
+			break
+		}
+		if plan.replayed != "" {
+			parent = plan.replayed
+		}
+	}
+	plan.Replay = replay
 	var merge *git.MergeCommitError
 	switch {
 	case errors.Is(err, git.ErrRebaseConflict):

@@ -1214,7 +1214,7 @@ func (e *Engine) OpenWork(ctx context.Context) (*OpenWork, error) {
 	var commits []string
 	for _, branch := range open {
 		if ref := refs["refs/heads/"+branch.Name]; ref.Exists {
-			commits = append(commits, ref.Object, string(branch.Base))
+			commits = append(commits, ref.Object)
 		}
 	}
 	trees, err := e.Repo.CommitTrees(ctx, slices.Compact(slices.Sorted(slices.Values(commits))))
@@ -1225,26 +1225,31 @@ func (e *Engine) OpenWork(ctx context.Context) (*OpenWork, error) {
 	if err != nil {
 		return nil, err
 	}
-	var pairs [][2]string
+	var branchPaths [][]string
 	for _, branch := range open {
 		ref := refs["refs/heads/"+branch.Name]
 		if !ref.Exists {
 			continue
 		}
 		found := openBranch{branch: branch, tree: trees[ref.Object]}
-		if found.tree == "" || trees[string(branch.Base)] == "" {
-			return nil, fmt.Errorf("%s's head or base couldn't be read as a commit", branch.ShortName())
+		if found.tree == "" {
+			return nil, fmt.Errorf("%s's head couldn't be read as a commit", branch.ShortName())
 		}
-		pairs = append(pairs, [2]string{trees[string(branch.Base)], found.tree})
+		head := refs["refs/heads/"+branch.Name].Object
+		own, err := e.branchOwnCommits(ctx, e.Repo, string(branch.Base), head)
+		if err != nil {
+			return nil, err
+		}
+		var paths []string
+		for _, commit := range own {
+			paths = append(paths, commit.Paths...)
+		}
+		branchPaths = append(branchPaths, paths)
 		work.branches = append(work.branches, found)
-	}
-	changed, err := e.Repo.ChangedPathsOf(ctx, pairs)
-	if err != nil {
-		return nil, err
 	}
 	for i := range work.branches {
 		found := &work.branches[i]
-		paths := changed[i]
+		paths := branchPaths[i]
 		// The tracked files edited in its worktree and not yet committed;
 		// none where it isn't checked out there, which leaves it as it is.
 		if found.branch.Worktree != "" && exists(found.branch.Worktree) {
