@@ -71,7 +71,7 @@ func effects(lines string) string {
 // host is answered as an empty Mac answers it, file tests false and reads
 // the no-such-file error, glob no match, source no file, and an admitted
 // program "couldn't execute", each marked closed in the ledger, and seen
-// by the verdict as host state (docs/designs/closed-model.md, #110).
+// by the verdict as host state (#110).
 func TestAModelledContextAnswersAsAnEmptyMac(t *testing.T) {
 	t.Parallel()
 	got, port := observedIn(t, monterey, nil, strings.Join([]string{

@@ -118,8 +118,7 @@ namespace eval ::dockhand {
                     }
                     return $found
                 }
-                # closed is set in a modelled context (docs/designs/
-                # closed-model.md, #110): a call that would reach the host is
+                # closed is set in a modelled context (#110): a call that would reach the host is
                 # answered as an empty Mac answers it, marked closed, and no
                 # host answer enters the evaluation. The Mac's own context
                 # reads the Mac.
