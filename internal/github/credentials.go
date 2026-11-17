@@ -2,11 +2,15 @@ package github
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"sync"
 	"time"
 )
+
+// ErrCredentialRenewed asks a write's previewing caller to judge the account again.
+var ErrCredentialRenewed = errors.New("GitHub renewed the credential before the write")
 
 // Renewer is a TokenSource that, told the token GitHub rejected, can find
 // another: a login it can refresh. A source that isn't one is asked again
@@ -106,9 +110,8 @@ func (s staticToken) Token(context.Context) (Token, error) {
 
 // credentialTransport carries the credential's token on each request, and
 // where GitHub rejects a token its source may replace, asks for another
-// and tries the request once more with it. A 401 means GitHub did
-// nothing, so a write is tried again as safely as a read, where its body
-// can be read again.
+// and tries reads again. A write returns ErrCredentialRenewed for its
+// caller to judge against the account named in its preview (#250).
 type credentialTransport struct {
 	next        http.RoundTripper
 	credentials *credentials
@@ -120,12 +123,19 @@ func (t credentialTransport) RoundTrip(req *http.Request) (*http.Response, error
 		return nil, err
 	}
 	response, err := t.next.RoundTrip(carrying(req, token, req.Body))
-	if err != nil || response.StatusCode != http.StatusUnauthorized || !renewable(token.Source) || req.Body != nil && req.GetBody == nil {
+	if err != nil || response.StatusCode != http.StatusUnauthorized || !renewable(token.Source) {
 		return response, err
 	}
 	next, renewErr := t.credentials.renew(req.Context(), token)
 	if renewErr != nil || next.Secret == token.Secret {
 		return response, err
+	}
+	if req.Method != http.MethodGet && req.Method != http.MethodHead && req.Method != http.MethodOptions {
+		response.Body.Close()
+		return nil, ErrCredentialRenewed
+	}
+	if req.Body != nil && req.GetBody == nil {
+		return response, nil
 	}
 	body := req.Body
 	if req.GetBody != nil {

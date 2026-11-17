@@ -15,13 +15,58 @@ package remotewrite
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/refusal"
 )
+
+type identityReader interface {
+	Current(context.Context) (github.Identity, error)
+}
+type accountBinding struct {
+	account  string
+	identity identityReader
+}
+type accountBindingKey struct{}
+
+// ForAccount binds subsequent writes to the account named in a preview (#250).
+func ForAccount(ctx context.Context, account string, identity identityReader) context.Context {
+	return context.WithValue(ctx, accountBindingKey{}, accountBinding{account: account, identity: identity})
+}
+
+func write(ctx context.Context, run func() error) error {
+	binding, ok := ctx.Value(accountBindingKey{}).(accountBinding)
+	if !ok || binding.identity == nil {
+		return run()
+	}
+	check := func() error {
+		current, err := binding.identity.Current(ctx)
+		if err != nil {
+			return fmt.Errorf("reading the GitHub account from the preview: %w", err)
+		}
+		if !strings.EqualFold(current.Account, binding.account) {
+			return errors.New("the account changed; run it again")
+		}
+		return nil
+	}
+	if err := check(); err != nil {
+		return err
+	}
+	err := run()
+	if !errors.Is(err, github.ErrCredentialRenewed) {
+		return err
+	}
+	if err := check(); err != nil {
+		return err
+	}
+	return run()
+}
 
 // Upstream is MacPorts' repository, where pull requests are opened and
 // nothing dockhand pushes lands.
@@ -122,7 +167,9 @@ func Push(ctx context.Context, repo *git.Repository, basis Basis, repository str
 	if err := Permit(PushBranch, repository, basis); err != nil {
 		return git.PushReport{}, err
 	}
-	return repo.Push(ctx, push)
+	var report git.PushReport
+	err := write(ctx, func() error { var err error; report, err = repo.Push(ctx, push); return err })
+	return report, err
 }
 
 // Delete deletes a repository's branch where it still holds expected
@@ -131,7 +178,7 @@ func Delete(ctx context.Context, repo *git.Repository, basis Basis, repository, 
 	if err := Permit(DeleteBranch, repository, basis); err != nil {
 		return err
 	}
-	return repo.DeleteRemoteBranch(ctx, remote, branch, expected)
+	return write(ctx, func() error { return repo.DeleteRemoteBranch(ctx, remote, branch, expected) })
 }
 
 // PullRequests are a forge's writes to pull requests and their checks.
@@ -150,7 +197,9 @@ func Open(ctx context.Context, f PullRequests, basis Basis, input forge.PullRequ
 	if err := Permit(OpenPullRequest, input.Repository, basis); err != nil {
 		return forge.PullRequestObservation{}, err
 	}
-	return f.Create(ctx, input)
+	var result forge.PullRequestObservation
+	err := write(ctx, func() error { var err error; result, err = f.Create(ctx, input); return err })
+	return result, err
 }
 
 // Edit edits an open pull request's title and description.
@@ -158,7 +207,9 @@ func Edit(ctx context.Context, f PullRequests, basis Basis, input forge.PullRequ
 	if err := Permit(EditPullRequest, input.Repository, basis); err != nil {
 		return forge.PullRequestObservation{}, err
 	}
-	return f.Update(ctx, input)
+	var result forge.PullRequestObservation
+	err := write(ctx, func() error { var err error; result, err = f.Update(ctx, input); return err })
+	return result, err
 }
 
 // Draft returns a pull request to draft.
@@ -166,7 +217,9 @@ func Draft(ctx context.Context, f PullRequests, basis Basis, ref forge.PullReque
 	if err := Permit(DraftPullRequest, ref.Repository, basis); err != nil {
 		return forge.PullRequestObservation{}, err
 	}
-	return f.MarkDraft(ctx, ref)
+	var result forge.PullRequestObservation
+	err := write(ctx, func() error { var err error; result, err = f.MarkDraft(ctx, ref); return err })
+	return result, err
 }
 
 // Ready takes a pull request out of draft.
@@ -174,7 +227,9 @@ func Ready(ctx context.Context, f PullRequests, basis Basis, ref forge.PullReque
 	if err := Permit(ReadyPullRequest, ref.Repository, basis); err != nil {
 		return forge.PullRequestObservation{}, err
 	}
-	return f.MarkReady(ctx, ref)
+	var result forge.PullRequestObservation
+	err := write(ctx, func() error { var err error; result, err = f.MarkReady(ctx, ref); return err })
+	return result, err
 }
 
 // Ask asks people to review a pull request again.
@@ -182,7 +237,7 @@ func Ask(ctx context.Context, f PullRequests, basis Basis, ref forge.PullRequest
 	if err := Permit(AskReviewers, ref.Repository, basis); err != nil {
 		return err
 	}
-	return f.RequestReviewers(ctx, ref, logins)
+	return write(ctx, func() error { return f.RequestReviewers(ctx, ref, logins) })
 }
 
 // Review posts a review on a pull request.
@@ -190,7 +245,9 @@ func Review(ctx context.Context, f PullRequests, basis Basis, input forge.Review
 	if err := Permit(PostReview, input.Ref.Repository, basis); err != nil {
 		return "", err
 	}
-	return f.PostReview(ctx, input)
+	var result string
+	err := write(ctx, func() error { var err error; result, err = f.PostReview(ctx, input); return err })
+	return result, err
 }
 
 // RerunFailed runs a pull request's failed CI jobs again.
@@ -198,7 +255,7 @@ func RerunFailed(ctx context.Context, f PullRequests, basis Basis, repository st
 	if err := Permit(RerunChecks, repository, basis); err != nil {
 		return err
 	}
-	return f.RerunFailed(ctx, repository, run)
+	return write(ctx, func() error { return f.RerunFailed(ctx, repository, run) })
 }
 
 // CLI is the GitHub CLI's writes, which act as its own app where an
@@ -213,7 +270,7 @@ func DraftByCLI(ctx context.Context, cli CLI, basis Basis, ref forge.PullRequest
 	if err := Permit(DraftPullRequest, ref.Repository, basis); err != nil {
 		return err
 	}
-	return cli.MarkDraft(ctx, ref)
+	return write(ctx, func() error { return cli.MarkDraft(ctx, ref) })
 }
 
 // ReadyByCLI takes a pull request out of draft through the GitHub CLI.
@@ -221,7 +278,7 @@ func ReadyByCLI(ctx context.Context, cli CLI, basis Basis, ref forge.PullRequest
 	if err := Permit(ReadyPullRequest, ref.Repository, basis); err != nil {
 		return err
 	}
-	return cli.MarkReady(ctx, ref)
+	return write(ctx, func() error { return cli.MarkReady(ctx, ref) })
 }
 
 // Runs are GitHub Actions' writes to a workflow run.
@@ -235,7 +292,7 @@ func Cancel(ctx context.Context, runs Runs, basis Basis, repository string, id i
 	if err := Permit(CancelRun, repository, basis); err != nil {
 		return err
 	}
-	return runs.Cancel(ctx, repository, id)
+	return write(ctx, func() error { return runs.Cancel(ctx, repository, id) })
 }
 
 // Rerun runs a workflow run's unsuccessful jobs again.
@@ -243,5 +300,5 @@ func Rerun(ctx context.Context, runs Runs, basis Basis, repository string, id in
 	if err := Permit(RerunRun, repository, basis); err != nil {
 		return err
 	}
-	return runs.Rerun(ctx, repository, id)
+	return write(ctx, func() error { return runs.Rerun(ctx, repository, id) })
 }

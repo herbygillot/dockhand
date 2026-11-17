@@ -424,7 +424,7 @@ Adopted pr-34905: "Update jq" by @newcontrib, 6 commits, jq; maintainers can edi
 Directory: ~/Source/macports-branches/pr-34905
 ```
 
-Adopting someone else's PR lets you inspect it and work on it locally. It doesn't assume permission to push to their branch. `submit` names that destination and checks your access before pushing anything.
+Adopting someone else's PR lets you inspect it and work on it locally. It doesn't assume permission to push to their branch. `submit` names that destination and checks fresh maintainer-edit and account-permission settings before pushing; if either refuses the push, enable maintainer edits or ask for write access, then run `dockhand submit` again. `submit --ready` applies the same check before changing someone else's pull request; if it refuses, mark it ready on GitHub or use a pull request you have permission to change.
 
 `review` reports what a reviewer would say, and posts it only if you ask:
 

@@ -416,13 +416,26 @@ func (p SubmitPlan) editBasis() remotewrite.Basis {
 	return remotewrite.Made
 }
 
-// pullRequestBasis is what lets dockhand change a branch's recorded pull
-// request: one it made, or, adopted, someone's it was invited to.
-func pullRequestBasis(pr *model.PullRequest) remotewrite.Basis {
-	if pr != nil && pr.Adopted {
-		return remotewrite.Invited
+// pullRequestBasis grants invited basis only after the same fresh authorization
+// check submit uses before pushing someone's branch (#249).
+func (e *Engine) pullRequestBasis(ctx context.Context, pr *model.PullRequest, login string) (remotewrite.Basis, error) {
+	if pr == nil || !pr.Adopted {
+		return remotewrite.Made, nil
 	}
-	return remotewrite.Made
+	ref := pullRequestRef(pr.Repository, pr.Number)
+	allowed, permission, fresh, err := e.mayWriteTheirs(ctx, login, forge.PullRequest{Ref: ref})
+	if err != nil {
+		return "", err
+	}
+	if !allowed {
+		push := &branchstate.Push{Number: pr.Number, Author: fresh.Author, Head: pr.Head, Repository: e.PullRequestRepository(), Permission: permission}
+		kind := branchstate.BlockNoWriteAccess
+		if !fresh.MaintainerCanModify {
+			kind = branchstate.BlockMaintainerEdits
+		}
+		return "", fmt.Errorf("%s", (branchstate.Block{Kind: kind, Pushed: push}).Words(nil))
+	}
+	return remotewrite.Invited, nil
 }
 
 // ToDraft reports whether a draft submission returns its open pull request
@@ -977,18 +990,38 @@ func (e *Engine) theirRemote(ctx context.Context, remotes []git.Remote, reposito
 // request: they allow maintainers to edit it, and you have write access
 // to MacPorts' repository. Otherwise the plan says what stands in the way.
 func (e *Engine) mayPushTheirs(ctx context.Context, plan *SubmitPlan, login string, pr forge.PullRequest) error {
+	allowed, permission, pr, err := e.mayWriteTheirs(ctx, login, pr)
+	if err != nil {
+		return err
+	}
 	if !pr.MaintainerCanModify {
 		plan.block(branchstate.Block{Kind: branchstate.BlockMaintainerEdits, Pushed: &branchstate.Push{Number: pr.Ref.Number, Author: pr.Author, Head: plan.Head()}})
 		return nil
 	}
-	permission, err := e.forge().Permission(ctx, e.PullRequestRepository(), login)
-	if err != nil {
-		return fmt.Errorf("reading your access to %s: %w", e.PullRequestRepository(), err)
-	}
-	if !slices.Contains([]string{"admin", "maintain", "write"}, permission) {
+	if !allowed {
 		plan.block(branchstate.Block{Kind: branchstate.BlockNoWriteAccess, Pushed: &branchstate.Push{Number: pr.Ref.Number, Author: pr.Author, Head: plan.Head(), Repository: e.PullRequestRepository(), Permission: permission}})
 	}
 	return nil
+}
+
+// mayWriteTheirs is the one judge for another person's pull request (#249).
+func (e *Engine) mayWriteTheirs(ctx context.Context, login string, pr forge.PullRequest) (bool, string, forge.PullRequest, error) {
+	observed, err := e.forge().Observe(ctx, pr.Ref)
+	if err != nil {
+		return false, "", pr, err
+	}
+	if !observed.Found {
+		return false, "", pr, fmt.Errorf("pull request #%d could not be read to check write access", pr.Ref.Number)
+	}
+	pr = observed.PullRequest
+	if !pr.MaintainerCanModify {
+		return false, "", pr, nil
+	}
+	permission, err := e.forge().Permission(ctx, e.PullRequestRepository(), login)
+	if err != nil {
+		return false, "", pr, fmt.Errorf("reading your access to %s: %w", e.PullRequestRepository(), err)
+	}
+	return slices.Contains([]string{"admin", "maintain", "write"}, permission), permission, pr, nil
 }
 
 // commitsAreOwn refuses a branch whose commits since its base include
@@ -1417,6 +1450,9 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 // leaves the publication owing it, for dockhand submit to settle and
 // finish.
 func (e *Engine) publish(ctx context.Context, plan SubmitPlan, worktree *git.Repository) (Submitted, error) {
+	if e.Forge == nil && e.GitHub != nil && e.GitHub.Client != nil && e.GitHub.Client.Credentials != nil {
+		ctx = remotewrite.ForAccount(ctx, plan.Login.Account, e.GitHub.Identity())
+	}
 	var result Submitted
 	current, err := e.Branch(ctx, plan.Branch.ID)
 	if err != nil {
@@ -1722,6 +1758,9 @@ func (e *Engine) createdAnyway(ctx context.Context, plan SubmitPlan, failed erro
 // signed in as the account dockhand is, as Ready's does; otherwise nothing
 // is pushed, and the refusal names the command that does it.
 func (e *Engine) draftFirst(ctx context.Context, plan SubmitPlan) error {
+	if e.Forge == nil && e.GitHub != nil && e.GitHub.Client != nil && e.GitHub.Client.Credentials != nil {
+		ctx = remotewrite.ForAccount(ctx, plan.Login.Account, e.GitHub.Identity())
+	}
 	ref := plan.Existing.PullRequest.Ref
 	_, err := remotewrite.Draft(ctx, e.pullRequests(), plan.editBasis(), ref)
 	if err == nil {
@@ -1786,13 +1825,24 @@ func (e *Engine) Ready(ctx context.Context, branch model.Branch) (_ model.Branch
 		return branch, false, fmt.Errorf("%s has no pull request yet; dockhand submit opens one", branch.Name)
 	}
 	ref := pullRequestRef(pr.Repository, pr.Number)
-	if _, err := remotewrite.Ready(ctx, e.pullRequests(), pullRequestBasis(pr), ref); err != nil {
+	login, err := e.forge().Login(ctx)
+	if err != nil {
+		return branch, false, err
+	}
+	if e.Forge == nil && e.GitHub != nil && e.GitHub.Client != nil && e.GitHub.Client.Credentials != nil {
+		ctx = remotewrite.ForAccount(ctx, login.Account, e.GitHub.Identity())
+	}
+	basis, err := e.pullRequestBasis(ctx, pr, login.Account)
+	if err != nil {
+		return branch, false, err
+	}
+	if _, err := remotewrite.Ready(ctx, e.pullRequests(), basis, ref); err != nil {
 		// GitHub may refuse dockhand's app what it allows another, as an
 		// organization that restricts which apps may act for its members
 		// does (the hugo exercise's sshuttle run, finding 2).
 		var why string
 		if errors.Is(err, forge.ErrAppRestricted) {
-			byCLI, why = e.readyByCLI(ctx, ref, pullRequestBasis(pr))
+			byCLI, why = e.readyByCLI(ctx, ref, basis)
 		}
 		if !byCLI {
 			err = fmt.Errorf("marking #%d ready for review: %w\nIt's still a draft. Mark it ready on its page, %s, or with the GitHub CLI, which signs in as its own app: gh pr ready %d --repo %s", pr.Number, err, github.PullRequestURL(pr.Repository, pr.Number), pr.Number, pr.Repository)

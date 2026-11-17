@@ -22,9 +22,45 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/prdescription"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/refusal"
+	"github.com/herbygillot/dockhand/internal/remotewrite"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
+
+func TestAdoptedPullRequestBasisAndPushUseTheSameFreshAuthorization(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		maintainer bool
+		role       string
+		invited    bool
+	}{
+		{name: "maintainer edits off", role: "write"},
+		{name: "permission missing", maintainer: true, role: "read"},
+		{name: "both yes", maintainer: true, role: "write", invited: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := forgetest.New("", "")
+			fake.Role = tc.role
+			pr := forge.PullRequest{Ref: forge.PullRequestRef{Forge: forge.GitHub, Repository: UpstreamRepository, Number: 34999}, Author: "ada", MaintainerCanModify: tc.maintainer}
+			fake.Theirs = map[int]forge.PullRequest{34999: pr}
+			e := &Engine{Forge: fake}
+			plan := SubmitPlan{}
+			err := e.mayPushTheirs(t.Context(), &plan, "ada", pr)
+			basis, basisErr := e.pullRequestBasis(t.Context(), &model.PullRequest{Repository: UpstreamRepository, Number: 34999, Adopted: true}, "ada")
+			if tc.invited {
+				require.NoError(t, err)
+				require.NoError(t, basisErr)
+				require.Empty(t, plan.Blocking)
+				require.Equal(t, remotewrite.Invited, basis)
+			} else {
+				require.NoError(t, err)
+				require.Error(t, basisErr)
+				require.NotEmpty(t, plan.Blocking)
+				require.NotEqual(t, remotewrite.Invited, basis)
+			}
+		})
+	}
+}
 
 // withFork gives the clone a fork remote and the engine a fake GitHub.
 func (f fixture) withFork(t *testing.T, e *Engine) *forgetest.GitHub {
