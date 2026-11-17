@@ -218,6 +218,8 @@ func TestRebaseRepairsAStaleRecordedBase(t *testing.T) {
 	changed, err := work.BranchesChanging(t.Context(), "libharbor")
 	require.NoError(t, err)
 	require.Empty(t, changed, "#280: master-only port is not in the branch")
+	_, err = e.Status(t.Context(), model.BranchOpen)
+	require.NoError(t, err, "#280: status can read the stale branch")
 	current, err := e.Branch(t.Context(), branch.ID)
 	require.NoError(t, err)
 	require.Equal(t, oldBase, current.Base, "#280: reading leaves recorded base unchanged")
