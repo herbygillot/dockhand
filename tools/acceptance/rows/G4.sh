@@ -27,7 +27,16 @@ act() {
 	dir=$(ls -dt /var/tmp/dockhand-local-* 2>/dev/null | head -1)
 	pid=$(jq -r '.environment.pid // empty' "$dir/results.json" 2>/dev/null)
 	kill -9 "$DH_BG_PID" 2>/dev/null
-	[ -z "$pid" ] || sudo /bin/kill -9 -- "-$(ps -o pgid= -p "$pid" | tr -d ' ')" "$pid" 2>/dev/null || :
+	# The root guest is killed with sudo, which must not ask: under G8's
+	# rule, which lets port-tclsh alone, it would, and on rc4 the kill
+	# failed silently and the power-loss case never happened (prime-time).
+	# One that can't be killed leaves the row not exercised.
+	if [ -z "$pid" ] || ! sudo -n /bin/kill -9 -- "-$(ps -o pgid= -p "$pid" | tr -d ' ')" "$pid" 2>>"$ROW_DIR/out.log"; then
+		dh_bg_wait || :
+		row_result "not exercised" "the root guest program (pid ${pid:-unknown}) couldn't be killed with sudo -n, so the build was never cut off mid-way; give dhtest a sudo rule for /bin/kill, or none at all and run G9's way"
+		dh cancel -b "$G4_BRANCH" || :
+		return 0
+	fi
 	dh_bg_wait || :
 	# dh sends dockhand's output to out.log alone, so status is run
 	# directly to keep its own copy, then added to the log (the rc8 G4
@@ -43,6 +52,7 @@ act() {
 
 assert() {
 	[ -n "${G4_BRANCH:-}" ] || return 0
+	[ -f "$ROW_DIR/result" ] && return 0
 	[ -n "${G4_RUN:-}" ] || { row_fail "status didn't name the dockhand undo that puts /opt/local back: $(grep -i 'local' "$ROW_DIR/status.txt" | head -2 | tr '\n' ' ')"; return; }
 	grep -q 'stopped before restoring /opt/local' "$ROW_DIR/status.txt" || { row_fail "status didn't say the check left /opt/local changed"; return; }
 	grep -q "Before checking the same branch, use dockhand wait $G4_RUN, check --replace, or dockhand cancel $G4_RUN" "$ROW_DIR/status.txt" || { row_fail "status didn't say a check of the branch first needs $G4_RUN settled"; return; }
