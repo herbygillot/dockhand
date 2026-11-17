@@ -801,6 +801,7 @@ func TestATurnedDownResultSaysWhy(t *testing.T) {
 		tagged           bool
 		fetched          string
 		results          []model.TargetResult
+		unknownPass      bool
 		harbor, cli, app *Refusal
 	}{
 		{name: "the Git ref moved", then: harbor(a), now: harbor(b), fetched: a,
@@ -819,10 +820,9 @@ func TestATurnedDownResultSaysWhy(t *testing.T) {
 			harbor: &Refusal{Kind: RefusedUnreadNow, Ref: "v4", Then: a},
 			cli:    &Refusal{Kind: RefusedDependencyUnshown, Ref: "v4", Dependency: "harbor"},
 			app:    &Refusal{Kind: RefusedDependencyRefused, Dependency: "cli"}},
-		{name: "the build didn't say what it fetched", then: harbor(a), now: harbor(a),
-			harbor: &Refusal{Kind: RefusedUnrecorded, Ref: "v4", Now: a},
-			cli:    &Refusal{Kind: RefusedDependencyUnshown, Ref: "v4", Now: a, Dependency: "harbor"},
-			app:    &Refusal{Kind: RefusedDependencyRefused, Dependency: "cli"}},
+		{name: "the build didn't say what it fetched", then: harbor(a), now: harbor(a), unknownPass: true,
+			cli: &Refusal{Kind: RefusedDependencyUnshown, Ref: "v4", Now: a, Dependency: "harbor"},
+			app: &Refusal{Kind: RefusedDependencyRefused, Dependency: "cli"}},
 		{name: "its own check found the ref moved", then: harbor(a), now: harbor(b), fetched: b,
 			harbor: &Refusal{Kind: RefusedOwnMove, Ref: "v4", Then: a, Now: b}},
 		{name: "built with Git, fetched another way now", then: harbor(a), now: nil, fetched: a,
@@ -852,6 +852,12 @@ func TestATurnedDownResultSaysWhy(t *testing.T) {
 		for id, want := range map[model.TargetID]*Refusal{"harbor": c.harbor, "cli": c.cli, "app": c.app} {
 			i := slices.IndexFunc(judged.Targets, func(t TargetEvidence) bool { return t.Target.ID == id })
 			cell := judged.Targets[i].Outcomes[0]
+			if id == "harbor" && c.unknownPass {
+				require.Equal(t, CellRecorded, cell.Kind, "%s: keep the passed row visible", c.name)
+				require.Equal(t, model.OutcomePassed, cell.Outcome, "%s: retain the provider's outcome", c.name)
+				require.True(t, cell.SourceUnknown, "%s: show that the fetched commit wasn't recorded", c.name)
+				continue
+			}
 			if want == nil {
 				require.Nil(t, cell.Refused, "%s: %s", c.name, id)
 				continue

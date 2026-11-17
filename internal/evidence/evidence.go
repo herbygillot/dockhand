@@ -1563,7 +1563,13 @@ func (e *Evidence) fill(earlier Evidence) bool {
 			read := earlier.sources[resultKey(cell.TargetResult)]
 			newest, builds := e.Plan.In(environment)
 			why := countsRefusal(earlier.Plan, execution, target.Target.ID, e.now[environment].Value, git, read.fetched, read.against != nil)
-			unknownPass := why != nil && why.Kind == RefusedUnrecorded && cell.Kind == CellRecorded && cell.Outcome == model.OutcomePassed && environment.Provider == "github"
+			unknownPass := why != nil && why.Kind == RefusedUnrecorded && cell.Kind == CellRecorded && cell.Outcome == model.OutcomePassed
+			// A narrowed check marks older environments excluded. Replace that
+			// cell only to show this unverified pass; excluded environments
+			// aren't otherwise destinations for earlier evidence.
+			if result.Kind == CellExcluded && !unknownPass {
+				continue
+			}
 			if unknownPass {
 				// Keep the provider's passed row visible. It remains unusable
 				// for reuse; the reader says its source wasn't reported.

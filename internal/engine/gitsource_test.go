@@ -19,8 +19,8 @@ import (
 )
 
 type unknownGitSourceProvider struct {
-	tartCalls int
-	fetched   string
+	newerCalls int
+	fetched    string
 }
 
 func (unknownGitSourceProvider) Name() string { return "command" }
@@ -29,14 +29,14 @@ func (p *unknownGitSourceProvider) Execute(_ context.Context, job buildenv.Job, 
 	for _, target := range job.Targets {
 		result := model.TargetResult{Target: target.ID, Outcome: model.OutcomePassed, Tests: model.TestsNone}
 		report := buildenv.TargetReport{Result: result}
-		if job.Environment.Provider == buildenv.Tart {
-			if p.tartCalls == 0 {
+		if job.Environment.Provider == buildenv.Tart && job.Environment.Platform.Version == "26" {
+			if p.newerCalls == 0 {
 				result.Outcome, result.Phase = model.OutcomeFailed, model.PhaseFetch
 				report.Result = result
 			} else {
 				report.Fetched = p.fetched
 			}
-			p.tartCalls++
+			p.newerCalls++
 		}
 		if err := build.Record(report); err != nil {
 			return err
@@ -45,9 +45,9 @@ func (p *unknownGitSourceProvider) Execute(_ context.Context, job buildenv.Job, 
 	return nil
 }
 
-// #264: a passed GitHub build whose workflow doesn't report the Git fetch
-// remains visible beside a later Tart result, with its source limitation.
-func TestAGitHubGitFetchPassRemainsVisibleBesideLaterTartCheck(t *testing.T) {
+// #264: a passed Tart build without a reported commit remains visible beside
+// a later Tart result, with its source limitation, but doesn't cover that ref.
+func TestAPassedBuildWithoutAGitCommitRemainsVisibleButDoesntCoverRef(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
@@ -55,8 +55,8 @@ func TestAGitHubGitFetchPassRemainsVisibleBesideLaterTartCheck(t *testing.T) {
 	revision := harborBranch(t, e)
 	usePorts(e, gitHarbor(url, "v4"))
 	provider := &unknownGitSourceProvider{fetched: fetched}
-	e.Providers = map[string]buildenv.Provider{buildenv.GitHub: provider, buildenv.Tart: provider}
-	github12 := model.Environment{Provider: buildenv.GitHub, Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}}
+	e.Providers = map[string]buildenv.Provider{buildenv.Tart: provider}
+	tart12 := model.Environment{Provider: buildenv.Tart, Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}}
 	tart27 := model.Environment{Provider: buildenv.Tart, Platform: model.Platform{OS: "darwin", Version: "26", Architecture: "arm64"}}
 	var branch model.Branch
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
@@ -74,30 +74,35 @@ func TestAGitHubGitFetchPassRemainsVisibleBesideLaterTartCheck(t *testing.T) {
 		require.NoError(t, err)
 		return run
 	}
-	check(github12, tart27)
+	check(tart12, tart27)
 	check(tart27)
 	evidence, found, err := e.EvidenceFor(t.Context(), branch.ID, revision.Source.Tree)
 	require.NoError(t, err)
 	require.True(t, found)
-	var pulumi *TargetEvidence
+	var gitPort *TargetEvidence
 	for i := range evidence.Targets {
 		if evidence.Targets[i].Target.Target.Name == "libharbor" {
-			pulumi = &evidence.Targets[i]
+			gitPort = &evidence.Targets[i]
 		}
 	}
-	require.NotNil(t, pulumi)
-	i := slices.Index(evidence.Plan.Environments, github12)
+	require.NotNil(t, gitPort)
+	i := slices.Index(evidence.Plan.Environments, tart12)
 	require.GreaterOrEqual(t, i, 0)
-	require.Equal(t, CellRecorded, pulumi.Outcomes[i].Kind, "the earlier GitHub pass remains a row")
-	require.Equal(t, model.OutcomePassed, pulumi.Outcomes[i].Outcome)
-	require.True(t, pulumi.Outcomes[i].SourceUnknown, "the row states its source limitation")
-	require.Contains(t, targetWords(evidence.Plan, pulumi.Outcomes[i], "advisory", AcceptedFailure{}), "GitHub did not report which commit of git.branch v4")
+	require.Equal(t, CellRecorded, gitPort.Outcomes[i].Kind, "the earlier Tart pass remains a row")
+	require.Equal(t, model.OutcomePassed, gitPort.Outcomes[i].Outcome)
+	require.True(t, gitPort.Outcomes[i].SourceUnknown, "the row states its source limitation")
+	require.Contains(t, targetWords(evidence.Plan, gitPort.Outcomes[i], "advisory", AcceptedFailure{}), "provider did not report which commit of git.branch v4")
+	want, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tart12}})
+	require.NoError(t, err)
+	_, covered, err := e.Covered(t.Context(), branch.ID, revision.Source.Tree, want)
+	require.NoError(t, err)
+	require.False(t, covered, "submit's coverage reader won't count a pass without the fetched commit")
 	tartIndex := slices.Index(evidence.Plan.Environments, tart27)
 	require.GreaterOrEqual(t, tartIndex, 0)
 	var inputs model.TargetInputs
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 		var err error
-		inputs, err = r.Inputs(pulumi.Outcomes[tartIndex].Inputs)
+		inputs, err = r.Inputs(gitPort.Outcomes[tartIndex].Inputs)
 		return err
 	}))
 	require.Equal(t, model.ObjectID(fetched), inputs.Fetched, "Tart's passed build records the fetched commit")
