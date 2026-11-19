@@ -28,12 +28,13 @@ type (
 )
 
 const (
-	CellRecorded = evidence.CellRecorded
-	CellExcluded = evidence.CellExcluded
-	CellUnmet    = evidence.CellUnmet
-	CellNotRun   = evidence.CellNotRun
-	CellRemade   = evidence.CellRemade
-	CellEntered  = evidence.CellEntered
+	CellRecorded      = evidence.CellRecorded
+	CellSourceUnknown = evidence.CellSourceUnknown
+	CellExcluded      = evidence.CellExcluded
+	CellUnmet         = evidence.CellUnmet
+	CellNotRun        = evidence.CellNotRun
+	CellRemade        = evidence.CellRemade
+	CellEntered       = evidence.CellEntered
 )
 
 // CarriedLines say, of the evidence's results reused over a change that
@@ -231,6 +232,9 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 				if c.Kind == CellRecorded && c.Outcome == model.OutcomePassed {
 					if _, gitFetched := judged.Plan.GitIn(c.Environment, c.Target); gitFetched && judged.Fetched(c) == "" {
 						judged.Targets[t].Outcomes[i].SourceUnknown = true
+						judged.Targets[t].Outcomes[i].Kind = CellSourceUnknown
+						judged.Targets[t].Passed = false
+						judged.Targets[t].Unchecked = true
 					}
 				}
 				if c.Outcome != model.OutcomePassed || c.Inputs == "" {

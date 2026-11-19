@@ -338,6 +338,8 @@ proc test_logs {log work} {
 # as its unprivileged user, while this guest program may be root. Monterey's
 # system Git doesn't honor safe.directory supplied with -c, so run Git as
 # the directory owner instead.
+# Tests may define this command in the Tcl prelude to replace Git access;
+# production defines it here when no test replacement was supplied.
 if {[llength [info procs git_as_owner]] == 0} {
     proc git_as_owner {path} {
         set owner [string trim [exec /usr/bin/stat -f %u $path]]

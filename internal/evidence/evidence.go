@@ -81,6 +81,9 @@ type CellKind string
 const (
 	// CellRecorded is a result an execution recorded, or reused.
 	CellRecorded CellKind = "recorded"
+	// CellSourceUnknown is a passed Git-fetched result whose fetched commit
+	// wasn't recorded. It is shown, but cannot stand as a pass for another ask.
+	CellSourceUnknown CellKind = "source-unknown"
 	// CellExcluded is a target the plan leaves out there, which needn't
 	// pass there.
 	CellExcluded CellKind = "excluded"
@@ -249,7 +252,7 @@ func (c Cell) Reason() string {
 // Unbuilt reports a cell whose target no check of the files built there,
 // where the plan asks it to be: not run, remade, or unmet.
 func (c Cell) Unbuilt() bool {
-	return c.Kind == CellNotRun || c.Kind == CellRemade || c.Kind == CellUnmet || c.Kind == CellEntered
+	return c.Kind == CellNotRun || c.Kind == CellRemade || c.Kind == CellUnmet || c.Kind == CellEntered || c.Kind == CellSourceUnknown
 }
 
 // TargetEvidence is one planned target's result across a run's
@@ -1574,6 +1577,7 @@ func (e *Evidence) fill(earlier Evidence) bool {
 				// Keep the provider's passed row visible. It remains unusable
 				// for reuse; the reader says its source wasn't reported.
 				why = nil
+				cell.Kind = CellSourceUnknown
 				cell.SourceUnknown = true
 			}
 			if why == nil && cell.Kind == CellRecorded {
@@ -1658,7 +1662,7 @@ func (e *Evidence) settle() {
 			if c.Kind == CellExcluded {
 				continue
 			}
-			target.Passed = target.Passed && c.Outcome == model.OutcomePassed
+			target.Passed = target.Passed && c.Kind == CellRecorded && c.Outcome == model.OutcomePassed
 			target.Unchecked = target.Unchecked || c.Unbuilt()
 		}
 	}

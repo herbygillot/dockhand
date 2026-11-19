@@ -853,9 +853,11 @@ func TestATurnedDownResultSaysWhy(t *testing.T) {
 			i := slices.IndexFunc(judged.Targets, func(t TargetEvidence) bool { return t.Target.ID == id })
 			cell := judged.Targets[i].Outcomes[0]
 			if id == "harbor" && c.unknownPass {
-				require.Equal(t, CellRecorded, cell.Kind, "%s: keep the passed row visible", c.name)
+				require.Equal(t, CellSourceUnknown, cell.Kind, "%s: keep the passed row visible without treating it as recorded evidence", c.name)
 				require.Equal(t, model.OutcomePassed, cell.Outcome, "%s: retain the provider's outcome", c.name)
 				require.True(t, cell.SourceUnknown, "%s: show that the fetched commit wasn't recorded", c.name)
+				require.True(t, judged.Targets[i].Missing(), "%s: the unverified source remains missing", c.name)
+				require.False(t, judged.Targets[i].Passed, "%s: the unverified source is not a pass", c.name)
 				continue
 			}
 			if want == nil {
