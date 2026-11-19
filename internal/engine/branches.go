@@ -1232,9 +1232,8 @@ func (e *Engine) OpenWork(ctx context.Context) (*OpenWork, error) {
 	if err != nil {
 		return nil, err
 	}
-	byBase := make(map[string][]string)
-	branchesByBase := make(map[string][]model.Branch)
 	heads := make(map[string]string)
+	var allHeads []string
 	for _, branch := range open {
 		ref := refs["refs/heads/"+branch.Name]
 		if !ref.Exists {
@@ -1242,35 +1241,37 @@ func (e *Engine) OpenWork(ctx context.Context) (*OpenWork, error) {
 		}
 		head := ref.Object
 		heads[branch.Name] = head
-		byBase[string(branch.Base)] = append(byBase[string(branch.Base)], head)
-		branchesByBase[string(branch.Base)] = append(branchesByBase[string(branch.Base)], branch)
+		allHeads = append(allHeads, head)
 	}
 	stale := make(map[string]bool)
 	if len(masters) > 0 {
-		for base, branchHeads := range byBase {
-			roots := slices.Compact(slices.Sorted(slices.Values(branchHeads)))
-			for _, master := range masters {
-				if !slices.Contains(roots, master) {
-					roots = append(roots, master)
+		allHeads = slices.Compact(slices.Sorted(slices.Values(allHeads)))
+		graph, err := e.Repo.BoundaryGraph(ctx, allHeads, masters)
+		if err != nil {
+			return nil, err
+		}
+		for _, branch := range open {
+			head, exists := heads[branch.Name]
+			if !exists {
+				continue
+			}
+			seen := make(map[string]struct{})
+			pending := []string{head}
+			for len(pending) > 0 {
+				last := len(pending) - 1
+				commit := pending[last]
+				pending = pending[:last]
+				if _, visited := seen[commit]; visited {
+					continue
 				}
-			}
-			reachable, err := e.Repo.ReachableCommits(ctx, roots, []string{base})
-			if err != nil {
-				return nil, err
-			}
-			masterCommits := make(map[string]struct{})
-			for _, master := range masters {
-				for commit := range reachable[master] {
-					masterCommits[commit] = struct{}{}
-				}
-			}
-			for _, branch := range branchesByBase[base] {
-				for commit := range reachable[heads[branch.Name]] {
-					if _, found := masterCommits[commit]; found {
+				seen[commit] = struct{}{}
+				if _, boundary := graph.Boundaries[commit]; boundary {
+					if commit != string(branch.Base) {
 						stale[branch.Name] = true
-						break
 					}
+					continue
 				}
+				pending = append(pending, graph.Parents[commit]...)
 			}
 		}
 	}
