@@ -416,6 +416,26 @@ func (p SubmitPlan) editBasis() remotewrite.Basis {
 	return remotewrite.Made
 }
 
+type forgeIdentity struct{ forge Forge }
+
+func (f forgeIdentity) Current(ctx context.Context) (github.Identity, error) {
+	account, err := f.forge.AuthenticatedUser(ctx)
+	return github.Identity{Account: account}, err
+}
+
+// writeAccount binds remote writes to the preview or command's account.
+func (e *Engine) writeAccount(ctx context.Context, account string) context.Context {
+	return remotewrite.ForAccount(ctx, account, e.RemoteWriteIdentity())
+}
+
+// RemoteWriteIdentity reads the account used by a remote write.
+func (e *Engine) RemoteWriteIdentity() remotewrite.IdentityReader {
+	if e.Forge == nil && e.GitHub != nil && e.GitHub.Client != nil && e.GitHub.Client.Credentials != nil {
+		return e.GitHub.Identity()
+	}
+	return forgeIdentity{forge: e.forge()}
+}
+
 // pullRequestBasis grants invited basis only after the same fresh authorization
 // check submit uses before pushing someone's branch (#249).
 func (e *Engine) pullRequestBasis(ctx context.Context, pr *model.PullRequest, login string) (remotewrite.Basis, error) {
@@ -433,7 +453,8 @@ func (e *Engine) pullRequestBasis(ctx context.Context, pr *model.PullRequest, lo
 		if !fresh.MaintainerCanModify {
 			kind = branchstate.BlockMaintainerEdits
 		}
-		return "", fmt.Errorf("%s", (branchstate.Block{Kind: kind, Pushed: push}).Words(nil))
+		return "", refusal.New(refusal.Unsupported, "%s", (branchstate.Block{Kind: kind, Pushed: push}).Words(nil)).
+			Then(refusal.Next{Verb: refusal.VerbSubmit, Args: []string{"--ready"}})
 	}
 	return remotewrite.Invited, nil
 }
@@ -1390,6 +1411,7 @@ func (e *Engine) masterUnchanged(ctx context.Context, plan SubmitPlan) error {
 // ApplySubmit pushes the planned commit to your fork, only while the fork's
 // branch is as the plan saw it, and opens or updates the pull request.
 func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered model.Answered) (Submitted, error) {
+	ctx = e.writeAccount(ctx, plan.Login.Account)
 	// What the submission evaluates of the branch's Portfiles, finding a
 	// port's directory as it publishes, is their owner's (#162): the door
 	// refuses an unallowed author's commit's, after the refusals that come
@@ -1450,9 +1472,6 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 // leaves the publication owing it, for dockhand submit to settle and
 // finish.
 func (e *Engine) publish(ctx context.Context, plan SubmitPlan, worktree *git.Repository) (Submitted, error) {
-	if e.Forge == nil && e.GitHub != nil && e.GitHub.Client != nil && e.GitHub.Client.Credentials != nil {
-		ctx = remotewrite.ForAccount(ctx, plan.Login.Account, e.GitHub.Identity())
-	}
 	var result Submitted
 	current, err := e.Branch(ctx, plan.Branch.ID)
 	if err != nil {
@@ -1758,9 +1777,6 @@ func (e *Engine) createdAnyway(ctx context.Context, plan SubmitPlan, failed erro
 // signed in as the account dockhand is, as Ready's does; otherwise nothing
 // is pushed, and the refusal names the command that does it.
 func (e *Engine) draftFirst(ctx context.Context, plan SubmitPlan) error {
-	if e.Forge == nil && e.GitHub != nil && e.GitHub.Client != nil && e.GitHub.Client.Credentials != nil {
-		ctx = remotewrite.ForAccount(ctx, plan.Login.Account, e.GitHub.Identity())
-	}
 	ref := plan.Existing.PullRequest.Ref
 	_, err := remotewrite.Draft(ctx, e.pullRequests(), plan.editBasis(), ref)
 	if err == nil {
@@ -1829,9 +1845,7 @@ func (e *Engine) Ready(ctx context.Context, branch model.Branch) (_ model.Branch
 	if err != nil {
 		return branch, false, err
 	}
-	if e.Forge == nil && e.GitHub != nil && e.GitHub.Client != nil && e.GitHub.Client.Credentials != nil {
-		ctx = remotewrite.ForAccount(ctx, login.Account, e.GitHub.Identity())
-	}
+	ctx = e.writeAccount(ctx, login.Account)
 	basis, err := e.pullRequestBasis(ctx, pr, login.Account)
 	if err != nil {
 		return branch, false, err

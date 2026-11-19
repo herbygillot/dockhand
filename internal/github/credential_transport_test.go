@@ -20,8 +20,14 @@ func (swappingCredentials) Renew(context.Context, Token) (Token, error) {
 }
 
 func TestRenewedCredentialReplaysReadButHandsWriteBackToItsCaller(t *testing.T) {
-	for _, method := range []string{http.MethodGet, http.MethodPost} {
-		t.Run(method, func(t *testing.T) {
+	for _, tc := range []struct {
+		name, method string
+		write        bool
+	}{
+		{name: "GraphQL read POST", method: http.MethodPost},
+		{name: "mutation", method: http.MethodPost, write: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			var auth []string
 			next := roundTrip(func(req *http.Request) (*http.Response, error) {
 				auth = append(auth, req.Header.Get("Authorization"))
@@ -32,9 +38,12 @@ func TestRenewedCredentialReplaysReadButHandsWriteBackToItsCaller(t *testing.T) 
 				return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("")), Request: req}, nil
 			})
 			transport := credentialTransport{next: next, credentials: &credentials{source: swappingCredentials{}}}
-			req, _ := http.NewRequest(method, "https://example.test/", nil)
+			req, _ := http.NewRequest(tc.method, "https://example.test/", nil)
+			if tc.write {
+				req = req.WithContext(AsWrite(req.Context()))
+			}
 			response, err := transport.RoundTrip(req)
-			if method == http.MethodGet {
+			if !tc.write {
 				require.NoError(t, err)
 				require.Equal(t, http.StatusOK, response.StatusCode)
 				require.Equal(t, []string{"Bearer first", "Bearer second"}, auth)

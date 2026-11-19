@@ -165,8 +165,9 @@ func (p *Provider) ForkWorkflow(ctx context.Context) (string, string, error) {
 type Provider struct {
 	Repo *git.Repository
 	// Fork finds your fork and the remote that pushes to it.
-	Fork func(ctx context.Context) (buildenv.Fork, error)
-	API  API
+	Fork     func(ctx context.Context) (buildenv.Fork, error)
+	API      API
+	Identity remotewrite.IdentityReader
 	// Sleep, when set, stands in for waiting.
 	Sleep func(ctx context.Context, d time.Duration) error
 	// BuildTimeout is how long a run may build before dockhand cancels it,
@@ -177,6 +178,17 @@ type Provider struct {
 	// clock, time.Now where nil.
 	watch runWatch
 	now   func() time.Time
+}
+
+func (p *Provider) accountContext(ctx context.Context) (context.Context, string, error) {
+	if p.Identity == nil {
+		return ctx, "", nil
+	}
+	identity, err := p.Identity.Current(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	return remotewrite.ForAccount(ctx, identity.Account, p.Identity), identity.Account, nil
 }
 
 // runWatch is the newest listing of a repository's workflow runs, which
@@ -269,6 +281,10 @@ func (p *Provider) sleep(ctx context.Context, d time.Duration) error {
 }
 
 func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv.Build) error {
+	ctx, account, err := p.accountContext(ctx)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(job.Directory, 0o755); err != nil {
 		return err
 	}
@@ -315,6 +331,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		note := newLaunch(fork.Repository, branch, job, launchPush)
 		note.Before = before
 		if err := build.Launch(note.String(), func(ctx context.Context) (string, error) {
+			ctx = remotewrite.ForAccount(ctx, account, p.Identity)
 			report, err := remotewrite.Push(ctx, p.Repo, remotewrite.OwnFork, fork.Repository, git.Push{Remote: fork.PushURL, Branch: branch, Commit: job.Commit, ExpectedRemote: head})
 			// A push known to have started nothing is written down as that,
 			// in these cases and no others: nothing was sent, or git push's
@@ -406,6 +423,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		note := newLaunch(fork.Repository, branch, job, launchRerun)
 		note.Run, note.Attempt = run.ID, run.Attempt
 		if err := build.Launch(note.String(), func(ctx context.Context) (string, error) {
+			ctx = remotewrite.ForAccount(ctx, account, p.Identity)
 			return note.String(), remotewrite.Rerun(ctx, p.API, remotewrite.Made, fork.Repository, run.ID)
 		}); err != nil {
 			if errors.Is(err, buildenv.ErrNotLaunched) {

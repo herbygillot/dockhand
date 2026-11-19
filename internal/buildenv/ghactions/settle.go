@@ -38,6 +38,11 @@ func branchNote(execution model.GuestExecution) (launchNote, bool) {
 // attempt's launch lock. It neither reads nor stops workflow runs: the
 // runner has already recorded that no attempt follows (#241).
 func (p *Provider) Settle(ctx context.Context, request buildenv.SettleRequest) ([]string, error) {
+	var err error
+	ctx, _, err = p.accountContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 	// The caller keeps settlement alive after an interrupt. Bound the
 	// whole operation, including fork lookup, the lock and remote writes,
 	// so that WithoutCancel cannot hang the check's exit (#241).
@@ -190,6 +195,10 @@ func listingProblem(err error) []buildenv.Leftover {
 // RemoveLeftover uses the launch note clean listed, never the branch's
 // current head as its expected value (#241).
 func (p *Provider) RemoveLeftover(ctx context.Context, ref string) error {
+	ctx, _, accountErr := p.accountContext(ctx)
+	if accountErr != nil {
+		return accountErr
+	}
 	var note launchNote
 	if err := json.Unmarshal([]byte(ref), &note); err != nil {
 		return err

@@ -55,6 +55,10 @@ func TestAdoptedPullRequestBasisAndPushUseTheSameFreshAuthorization(t *testing.T
 			} else {
 				require.NoError(t, err)
 				require.Error(t, basisErr)
+				var rejected *refusal.Refusal
+				require.ErrorAs(t, basisErr, &rejected)
+				require.Equal(t, refusal.Unsupported, rejected.Kind())
+				require.Equal(t, []refusal.Next{{Verb: refusal.VerbSubmit, Args: []string{"--ready"}}}, rejected.Next)
 				require.NotEmpty(t, plan.Blocking)
 				require.NotEqual(t, remotewrite.Invited, basis)
 			}

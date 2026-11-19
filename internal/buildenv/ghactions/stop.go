@@ -84,6 +84,11 @@ const (
 // the runs that can be named are canceled: it never keeps them running
 // (the confirmation of #193's fixes, note 1).
 func (p *Provider) Stop(ctx context.Context, request buildenv.StopRequest) ([]string, error) {
+	var err error
+	ctx, _, err = p.accountContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 	release, err := request.Lock.Hold(ctx, stopWait)
 	if err != nil {
 		return nil, err

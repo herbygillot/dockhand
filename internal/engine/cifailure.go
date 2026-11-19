@@ -148,6 +148,11 @@ func (e *Engine) RerunCI(ctx context.Context, branch model.Branch) ([]int64, err
 	if pr == nil || pr.Observed == nil || pr.Observed.State != model.PullRequestOpen {
 		return nil, refusal.New(refusal.Failed, "%s has no open pull request to run CI for", branch.ShortName())
 	}
+	login, err := e.forge().Login(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ctx = e.writeAccount(ctx, login.Account)
 	jobs, err := e.forge().FailedJobs(ctx, pr.Repository, string(pr.Observed.Head))
 	if err != nil {
 		return nil, err

@@ -39,13 +39,15 @@ func (s *identitySequence) Current(context.Context) (github.Identity, error) {
 type writeForge struct {
 	ready, draft, edit int
 	editErr            error
+	markedWrite        bool
 }
 
 func (f *writeForge) Create(context.Context, forge.PullRequestInput) (forge.PullRequestObservation, error) {
 	return forge.PullRequestObservation{}, nil
 }
-func (f *writeForge) Update(context.Context, forge.PullRequestInput) (forge.PullRequestObservation, error) {
+func (f *writeForge) Update(ctx context.Context, _ forge.PullRequestInput) (forge.PullRequestObservation, error) {
 	f.edit++
+	f.markedWrite = github.IsWriteRequest(ctx)
 	err := f.editErr
 	f.editErr = nil
 	return forge.PullRequestObservation{}, err
@@ -105,6 +107,21 @@ func TestRenewedCredentialRetriesOnlyForThePreviewedAccount(t *testing.T) {
 		require.Equal(t, 1, f.edit)
 		require.Equal(t, 2, watcher.reads)
 	})
+}
+
+func TestWriteWithoutAccountBindingIsRefused(t *testing.T) {
+	f := &writeForge{}
+	_, err := Edit(t.Context(), f, Named, forge.PullRequestInput{Repository: "macports/macports-ports"})
+	require.EqualError(t, err, "remote write requires an account binding")
+	require.Zero(t, f.edit)
+}
+
+func TestRemotewriteMarksItsWriteContext(t *testing.T) {
+	f := &writeForge{}
+	watcher := &identitySequence{accounts: []string{"ada"}}
+	_, err := Edit(ForAccount(t.Context(), "ada", watcher), f, Named, forge.PullRequestInput{Repository: "macports/macports-ports"})
+	require.NoError(t, err)
+	require.True(t, f.markedWrite)
 }
 
 // Every effect against every basis, in your fork, another person's, and

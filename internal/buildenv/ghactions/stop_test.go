@@ -96,7 +96,7 @@ func attempts(notes ...launchNote) []model.GuestExecution {
 }
 
 func stopper(api *stopAPI) *Provider {
-	return &Provider{API: api, Sleep: func(context.Context, time.Duration) error { return nil },
+	return &Provider{API: api, Identity: accountIdentity("ada"), Sleep: func(context.Context, time.Duration) error { return nil },
 		Fork: func(context.Context) (buildenv.Fork, error) {
 			return buildenv.Fork{Repository: "ada/macports-ports", PushURL: "https://github.com/ada/macports-ports.git"}, nil
 		}}

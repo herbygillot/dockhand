@@ -653,6 +653,19 @@ var errNoRemote = errors.New("no Git remote pushes to")
 // ApplyClean removes what the plans would, checking each again as it goes,
 // and marks each step done. Steps that are kept are left alone.
 func (e *Engine) ApplyClean(ctx context.Context, plans []CleanBranch) ([]CleanBranch, error) {
+	for _, plan := range plans {
+		if !slices.ContainsFunc(plan.Steps, func(step CleanStep) bool {
+			return step.Kept == "" && (step.Kind == "check" || step.Kind == "fork" && ownedHead(plan.Branch.PullRequest))
+		}) {
+			continue
+		}
+		login, err := e.forge().Login(ctx)
+		if err != nil {
+			return plans, err
+		}
+		ctx = e.writeAccount(ctx, login.Account)
+		break
+	}
 	for i := range plans {
 		plan := &plans[i]
 		for j := range plan.Steps {

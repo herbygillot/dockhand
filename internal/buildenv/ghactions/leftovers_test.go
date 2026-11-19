@@ -33,7 +33,7 @@ func leftoverFork(t *testing.T) (*Provider, []model.GuestExecution) {
 	testsupport.Git(t, root, "init", "-q", "--bare", fork)
 	repo, err := git.Open(t.Context(), root, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
-	p := &Provider{Repo: repo, Fork: func(context.Context) (buildenv.Fork, error) {
+	p := &Provider{Repo: repo, Identity: accountIdentity("ada"), Fork: func(context.Context) (buildenv.Fork, error) {
 		return buildenv.Fork{Repository: "ada/macports-ports", PushURL: fork}, nil
 	}}
 	var attempts []model.GuestExecution
