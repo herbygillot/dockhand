@@ -8,33 +8,80 @@
 
 **Prepare, test, and submit changes to MacPorts ports.**
 
-Dockhand helps contributors to [macports/macports-ports](https://github.com/macports/macports-ports) update ports, test their changes, and open pull requests. It finds upstream releases, updates Portfiles and checksums, builds in clean macOS environments, and prepares commits for MacPorts review.
+Dockhand takes a port from a new upstream release to a pull request on [macports/macports-ports](https://github.com/macports/macports-ports): it finds the release, updates the Portfile and checksums, builds the result in a clean macOS environment, and opens the pull request from your fork. You don't need commit access to MacPorts.
 
-Each change lives on an ordinary Git branch, with its own working directory. You can edit with your usual tools, review each step, or let Dockhand take a routine update through to a pull request. Pushes go to your fork; you do not need commit access to MacPorts.
+> These examples use the v0.8.0 command interface. Run `dockhand --version` to check your build and `dockhand <command> --help` for its options.
 
-> These examples use the v0.8.0 command interface. The main branch may differ, and earlier releases may use different commands. Run `dockhand --version` to check your build and `dockhand <command> --help` for its options.
+## Quick start
 
-## Install
+You need MacPorts, Git 2.40 or later, and a [fork of macports/macports-ports](https://github.com/macports/macports-ports/fork).
 
-With [MacPorts](https://www.macports.org/install.php) installed:
+**1. Install Dockhand and clone your fork.** Replace `YOUR-USERNAME` with your GitHub username, or skip the clone and `cd` into the ports checkout you already have.
 
 ```sh
 sudo port install dockhand
+git clone https://github.com/YOUR-USERNAME/macports-ports.git
+cd macports-ports
+git remote add upstream https://github.com/macports/macports-ports.git
 ```
 
-You will also need:
-
-- **Git 2.40 or later** and a local clone of `macports/macports-ports` with your fork configured as a remote.
-- **MacPorts on your Mac**, even if you build remotely. Dockhand uses MacPorts to evaluate Portfiles.
-- **GitHub access** to open pull requests and use GitHub Actions. Your Git configuration must also allow pushes to your fork without an interactive password prompt, through SSH or an HTTPS credential helper.
-
-For local VM builds, install [Tart](https://tart.run) on an Apple silicon Mac:
+**2. Set up.**
 
 ```sh
-sudo port install tart
+dockhand setup
 ```
 
-On a Mac without Tart, including an Intel Mac, you can run checks in a local MacPorts prefix with `dockhand check --on local`, or use GitHub Actions. Some Go and Rust ports also need the MacPorts `go2port` or `cargo2port` helper to regenerate their dependency lists. Dockhand finds `tart`, `go2port`, and `cargo2port` as it finds `port-tclsh`: on your `PATH`, then in `/opt/local/bin`, so a shell whose `PATH` lacks MacPorts' programs, as one over SSH may, still has them, or where `--tool`, a `*_BIN` variable, or `[tools]` names one.
+`setup` registers the checkout, signs you in to GitHub, and offers to prepare a [Tart](https://tart.run) VM image to build in. The image downloads macOS and can use up to 60 GB; on Apple silicon, `sudo port install tart` first. Without Tart, or on an Intel Mac, enable Actions in your fork and add `--on github` to the commands below. Git must also be able to push to your fork without a password prompt, through SSH or a credential helper.
+
+**3. Update a port.** Pick one with a newer upstream release; these examples use `ripgrep`.
+
+```sh
+dockhand bump ripgrep --plan
+dockhand bump ripgrep
+```
+
+`--plan` shows what will happen and changes nothing. `bump` then updates the port, builds it, and **opens a pull request on MacPorts without asking**. It stops and keeps the branch for you instead when something needs a person: a failed build, a major-version change, another open pull request for the port, or an upstream change a build can't judge. `dockhand status` shows where things stand and the next command to run.
+
+## Look before you submit
+
+`ship` does what `bump` does, but shows its plan and asks once before it submits. It can also stop earlier:
+
+```sh
+dockhand ship ripgrep
+dockhand ship ripgrep --to commit   # update and commit only
+dockhand ship ripgrep --to check    # update, commit, and build
+```
+
+Run `ship` or `bump` again to resume where it stopped.
+
+## Work step by step
+
+Each change is an ordinary Git branch with its own worktree, so you can edit with your usual tools and run each stage yourself:
+
+```sh
+dockhand update ripgrep --new=ripgrep-update
+cd "$(dockhand path ripgrep-update)"
+dockhand diff
+dockhand check
+dockhand tidy
+dockhand submit --plan
+dockhand submit
+```
+
+`check` builds the files as they are on disk; `tidy` shapes the commits for MacPorts review; `submit` pushes to your fork and opens or updates the pull request. Add `--plan` to any of them to preview it.
+
+## Learn more
+
+`dockhand usage` prints the full guide, and `dockhand usage <topic>` one part of it. The same pages are [in the repository](docs/usage.md):
+
+- [Where checks build](docs/usage/checks.md): Tart, GitHub Actions, a local prefix, or your own machine
+- [Ports you maintain](docs/usage/batches.md): `outdated --mine`, `ship --mine`, and many ports at once
+- [Unattended work](docs/usage/unattended.md): `bump`, `serve`, and what stops for a person
+- [When something stops](docs/usage/recovery.md): failed checks, holds, and how to resume
+- [New ports](docs/usage/new-port.md) and [reviewing pull requests](docs/usage/review.md)
+- [Everything else](docs/usage.md#more-port-work), [what Dockhand covers](docs/usage.md#what-dockhand-covers), and [install details](docs/usage.md#install-details)
+
+Dockhand is built for routine maintenance: version updates from GitHub releases and GitLab tags, with Go and Rust ports the most exercised. Ports it can't update yet, such as Python ports, get a plan or a clear refusal with the manual steps rather than a wrong edit. Each release's known issues are in its [release notes](https://github.com/herbygillot/dockhand/releases).
 
 <details>
 <summary>Build Dockhand from source</summary>
@@ -53,229 +100,9 @@ Make sure `~/.local/bin` is on your `PATH`. Dependencies are vendored; `make bui
 
 </details>
 
-### Shell completion
-
-Installed with MacPorts, dockhand's completion scripts for zsh, bash, and fish are already in place under `/opt/local/share`; fish needs nothing more, Apple's `/bin/zsh` needs `/opt/local/share/zsh/site-functions` on its `fpath`, and bash needs the `bash-completion` port. The help of each shell's completion command, `completion zsh`, `completion bash`, and `completion fish`, says how, for a build from source too.
-
-## Set up your ports checkout
-
-If you already have a ports checkout with your fork as a remote, run this there:
-
-```sh
-dockhand setup
-```
-
-For a new checkout, [fork macports/macports-ports](https://github.com/macports/macports-ports/fork), then clone your fork. Replace `YOUR-USERNAME` with your GitHub username:
-
-```sh
-git clone https://github.com/YOUR-USERNAME/macports-ports.git
-cd macports-ports
-git remote add upstream https://github.com/macports/macports-ports.git
-dockhand setup
-```
-
-`setup` registers the checkout and checks your configuration. In a terminal, it offers to sign in to GitHub, save your maintainer identity, and prepare a Tart image. Creating an image downloads macOS and can use up to 60 GB of disk space; you can decline and set it up later.
-
-You can also run those steps separately:
-
-```sh
-dockhand setup github
-dockhand setup tart
-```
-
-Dockhand saves its GitHub login in the macOS Keychain. Existing `GH_TOKEN`, `GITHUB_TOKEN`, or GitHub CLI credentials can also be used; environment tokens take precedence. This API login is separate from Git's authentication for pushing commits. Over SSH with nobody at the screen, the login Keychain is locked, which stops the saved login and Tart's VMs alike; `dockhand setup` says so, and `security unlock-keychain` in the same shell unlocks it.
-
-Run `dockhand setup` again whenever you want to check what is ready or missing. Existing contributors can keep their remote names: Dockhand identifies upstream and your fork without requiring them to be called `upstream` and `origin`.
-
-## Make your first update
-
-Choose a port with a newer upstream release available. The examples below use the Rust port `ripgrep`; substitute the port you want to update. From your ports checkout:
-
-```sh
-dockhand update ripgrep --new=ripgrep-update
-cd "$(dockhand path ripgrep-update)"
-dockhand diff
-```
-
-`update` finds the latest release, edits the version and checksums, and regenerates supported dependency lists. It also compares the old and new source archives for changes worth reviewing, such as licensing or build requirements. If the port is already current, it creates no branch. To select a particular version, use `dockhand update ripgrep <version> --new=ripgrep-update` instead. Where a GitHub release carries its own source archive, `update` says so and leaves the source where it is; `update --source releases` moves the port to that archive, and `source = "choose"` under `[update]` in the config does so whenever the archive qualifies.
-
-The branch has its own Git worktree: a separate directory sharing your checkout's Git history. Dockhand normally puts these in `~/Source/macports-branches`. Its sparse worktrees contain the ports being changed and their shared resources, so you can work on several changes without switching your main checkout between branches.
-
-Review the diff, make any further edits, and build the result:
-
-```sh
-dockhand edit ripgrep
-dockhand check
-```
-
-By default, `check` builds tracked files as they are on disk, including uncommitted edits. Stage new files or add them with `--include <file>` so the check sees them too. You do not have to commit before checking.
-
-If you use GitHub Actions instead of Tart, run `dockhand check --on github`; enable Actions in your fork first. To build in your own MacPorts prefix instead, run `dockhand check --on local`.
-
-When the change is ready:
-
-```sh
-dockhand tidy
-dockhand submit --plan
-dockhand submit
-```
-
-`tidy` prepares the commits, normally one per port directory, without changing the final contents of your files. `submit --plan` previews the destination, publishing account, commits, build results, and pull request description. `submit` then pushes to your fork and opens or updates the pull request against MacPorts.
-
-Use `--plan` with `update`, `check`, `tidy`, or `submit` to preview that step without applying it. Submission normally requires passing checks for the committed files. A build alone does not establish that the programs work correctly or that important variants still work; include the testing you actually performed when preparing your pull request.
-
-### If a check fails
-
-Your branch and edits remain available. Inspect the result and log, fix the problem, and run another check:
-
-```sh
-dockhand status
-dockhand logs ripgrep
-dockhand edit ripgrep
-dockhand check
-```
-
-`dockhand check --baseline` can help establish whether an install or test failure also occurs on the upstream version. After a reviewer requests changes, use the same edit, check, tidy, and submit cycle to update the existing pull request.
-
-From outside the worktree, `dockhand status -p ripgrep` and `dockhand logs -p ripgrep` find the port's branch. Commands that work on a branch also accept `-b <branch>` or `--pr <number>`.
-
-## Choose where to build
-
-Dockhand runs lint, fetch, checksum, installation, and declared tests. Test failures are advisory by default, matching MacPorts CI. Use `--tests required` to make failed or timed-out declared tests fail the check; a port that declares no tests can still pass.
-
-| Build environment | How it works |
-| --- | --- |
-| **Tart** | Builds in disposable macOS VMs on your Apple silicon Mac. The usual `minmax` profile selects VMs for each port's oldest and newest release you have images for. See [the Tart provider](docs/tart-provider.md). |
-| **Local** | Builds in a MacPorts prefix on this Mac, such as `/opt/local`, alongside your active ports. Afterward, Dockhand restores the prefix; `--keep` leaves the branch's versions active. Select it with `--on local` or `--on local:/opt/macports-test`. See [the local provider](docs/local-provider.md). |
-| **GitHub Actions** | Runs MacPorts' own workflow in your fork. Enable Actions in the fork and select `--on github`. See [the GitHub provider](docs/github-provider.md). |
-| **Custom command** | Runs a script you configure for a build machine or VM you manage. See [the command provider](docs/command-provider.md). |
-
-Prepare the images you want to check against. For example, to check on Sequoia and Tahoe:
-
-```sh
-dockhand setup tart sequoia
-dockhand setup tart tahoe
-dockhand check --on sequoia --on tahoe
-```
-
-Each selected environment must pass. `dockhand check --build macports-ci` selects Tart releases based on MacPorts' CI workflow; you need images for those releases. Ports requiring full Xcode need an additional image, prepared with `dockhand setup tart --xcode <archive.xip>`. Without the required tools, a port is reported as not built.
-
-For a GitHub build:
-
-```sh
-dockhand check --on github
-```
-
-This pushes a temporary branch to your fork to trigger Actions, even though you have not submitted a pull request. Dockhand saves the logs and removes the temporary branch after it has collected the results. The pull request later includes the recorded build results in its *Tested on* section.
-
-Eligible passing results can be reused when build inputs and the environment are unchanged. Use `check --fresh` to rebuild everything.
-
-## Run a routine update in one command
-
-Once you are comfortable with the workflow, `ship` can update, commit, check, and submit a port for you:
-
-```sh
-dockhand ship ripgrep --plan
-dockhand ship ripgrep
-```
-
-In a terminal, `ship` shows its plan and asks once before proceeding. Use `--to commit` to stop once the change is prepared and committed, or `--to check` to stop after committing and checking, without opening a pull request:
-
-```sh
-dockhand ship ripgrep --to commit
-dockhand ship ripgrep --to check
-```
-
-**`bump` can open a pull request without prompting:**
-
-```sh
-dockhand bump ripgrep
-```
-
-It is the unattended shortcut for a single port, distinct from MacPorts' `port bump`. Add a version argument to target a specific release. `ship --yes` and `ship` outside a terminal also proceed without confirmation. Unattended updates pause for review when they encounter major-version changes, competing pull requests, or other findings that require a decision. They use `build.unattended`, normally `minmax` for Tart: each port's oldest supported macOS release, macOS 12 at the earliest, and its newest, where images exist. Use `--build` or `--on` to choose explicitly.
-
-Run `ship` or `bump` again to resume an existing update. `status` shows what needs attention and suggests the next command.
-
-## Keep up with the ports you maintain
-
-`--mine` selects ports whose maintainer entry matches your configured identity. It refers to ports you maintain, rather than ports installed on your Mac. `setup` can suggest the identity from existing ports; you can also set it in `~/.dockhand/config.toml`:
-
-```toml
-maintainer = "{example.org:you @you} openmaintainer"
-```
-
-Replace that example with your own maintainer entry, then:
-
-```sh
-dockhand outdated --mine
-dockhand ship --mine --to check
-dockhand ship --passing
-```
-
-The first command lists newer releases. The second prepares and checks an update branch for each eligible port. The third submits passing branches that still need their commits published in a pull request.
-
-For background work, run `dockhand serve`, or install it as a macOS login agent:
-
-```sh
-dockhand serve --install
-```
-
-`serve` processes queued checks, follows pull request reviews and CI, checks your ports for new releases daily, and posts macOS notifications. By default, discovering a release only adds it to status. Automatic preparation and submission are opt-in through `serve.ship_to`; automatic submissions have a daily limit and cover only branches `serve` prepared. Use `ship --passing` for branches you started yourself.
-
-`dockhand console` keeps the branches current in a table the terminal's size, with keys that run logs, check, tidy, and submit on the row selected. You can also use Dockhand without `serve`: checks run in the foreground.
-
-## Other port work
-
-| Task | Command |
-| --- | --- |
-| Start a manual fix | `dockhand edit ripgrep --new=ripgrep-fix` |
-| Bring an existing branch into Dockhand | `dockhand adopt` from that branch's worktree |
-| Draft a port from a GitHub project | `dockhand create <github-url> --new --category devel` |
-| Find affected dependents | `dockhand impact` |
-| Preview library rebuilds for an update | `dockhand update <port> --revbump-dependents --plan` |
-| Compare upstream source archives | `dockhand diff --source` |
-| Refresh the branch against upstream master | `dockhand rebase` |
-| Undo the latest tidy or rebase, or put back a prefix a local check changed | `dockhand undo` |
-| Review someone else's pull request | `dockhand review <pr>`, or `dockhand review <pr> --check` to build it in Tart |
-| Keep a check's VM and open a shell in it | `dockhand check --keep`, then `dockhand shell check-12` |
-| Remove merged branches and their worktrees | `dockhand clean` |
-| Back up the database | `dockhand backup ~/Backups` |
-
-New Portfiles include `# dockhand: unconfirmed` markers for inferred values. Review and correct those fields, then remove the markers before submitting. For Go and Rust version updates, prefer `update` over editing the version and running `checksums`: `checksums` alone does not regenerate dependency lists.
-
-## Known issues in v0.8.0
-
-These limitations have workarounds:
-
-- A check covers each port's oldest and newest macOS among the Tart images you've set up (`build.default`'s `minmax`), this Mac's alone where its image is the only one, while MacPorts CI builds on the releases its workflow names, macOS 15 and 26 as of this writing, which Dockhand reads from the master you last fetched. `submit` and the pull request say which releases no check covered. To check on CI's releases, use `--build macports-ci`; to make that the default, set `build.default = "macports-ci"`.
-- On a new macOS release, before MacPorts' builders have made archives of a Rust or Go toolchain, the first Tart check of a Rust or Go port builds rust and cargo, or go, from source, which takes hours on a VM's two cores. The check says so before it builds, and later checks install them from the archives Dockhand kept, until cleanup removes them. To avoid the wait, check such a port first on the previous release with `--on tahoe`, or let the first check run.
-
-## Scope
-
-Dockhand is built for routine port maintenance, and is used for it every day:
-
-- **Version updates from GitHub releases**, and from tags on GitLab.com or a self-hosted GitLab. Go and Rust ports, with `go.vendors` and `cargo.crates` regenerated, are the most exercised; C and C++ ports building with CMake, Meson, or autotools are updated the same way, such as fluent-bit, cglm, wasm3, and exiv2.
-- **Many ports at once.** Your own ports, or any selection by maintainer or category, through `outdated`, `ship`, and `serve`, under the same holds.
-- **Library updates** with `--revbump-dependents`, such as libuv's.
-- **New ports** with `create`, from a GitHub URL, `pypi:`, `crates:`, or `go:`.
-- **Revision bumps** with `revbump`.
-
-Some ports get a correct plan or a clear refusal rather than an update: subports sharing one Portfile (py-lmdb, terraform-1.16), Python ports, upstreams hosted outside GitHub and GitLab, Git-fetched ports, and Portfiles that compute their version in ways the evaluation can't follow. A refusal says what Dockhand couldn't do and the manual steps available. Read the plan and diff of anything outside the list above more closely.
-
-A pull request someone else wrote, which `review` reads and `adopt --pr` brings into a branch, holds their Portfiles. When a command you run evaluates them on your Mac, it says so once, naming whose they are: "Evaluating `@example-user`'s Portfiles on this Mac, for #35174". A local check of an adopted branch, which would run their Portfiles as root, is refused, naming `--on tart` and `--on github` instead; `review <pr> --check` builds it in Tart.
-
 ## Help and contributing
 
-```sh
-dockhand --help
-dockhand <command> --help
-dockhand config
-dockhand usage <topic>
-```
-
-`dockhand usage` prints the guide, and `dockhand usage <topic>` one of its topics: `branches`, `hand-edits`, `checks`, `publishing`, `recovery`, `batches`, `unattended`, `new-port`, `review`, `agents`, and `configuration`. For MacPorts contribution practices, see the [MacPorts contribution workflow](https://guide.macports.org/#project.github) and [commit-message guidelines](https://trac.macports.org/wiki/CommitMessages). `dockhand explain <code>` explains the rule behind a finding reported by `tidy` or `submit`; `dockhand explain check-42` says why a check ended as it did, and `dockhand explain -b <branch>` explains the branch's status and suggested next steps.
-
-Report Dockhand bugs and propose improvements on [its issues page](https://github.com/herbygillot/dockhand/issues), which `dockhand --help` names at its foot. Include your `dockhand --version`, the command you ran, and the relevant error or build log. To work on Dockhand itself, build with `make build` and run its tests with `make test`.
+`dockhand <command> --help` covers each command, and `dockhand explain` says why a check, finding, or branch ended up as it did. Report bugs and propose improvements on [the issues page](https://github.com/herbygillot/dockhand/issues), with your `dockhand --version`, the command you ran, and the error or build log. For MacPorts' own practices, see its [contribution workflow](https://guide.macports.org/#project.github) and [commit-message guidelines](https://trac.macports.org/wiki/CommitMessages). To work on Dockhand itself, run `make build` and `make test`.
 
 ## License
 
