@@ -78,59 +78,48 @@ func (r *Repository) History(ctx context.Context, base, head string) ([]HistoryC
 	return commits, nil
 }
 
-// ReachableCommits returns, for each root, the commits reachable from it
-// without passing through any excluded commit. It reads all roots in one
-// rev-list process; roots that are excluded have an empty set.
-func (r *Repository) ReachableCommits(ctx context.Context, roots, excluded []string) (map[string]map[string]struct{}, error) {
-	args := []string{"rev-list", "--parents"}
-	for _, object := range append(slices.Clone(roots), excluded...) {
+// CommitGraph is the included commit graph from a boundary rev-list, and
+// the excluded commits it meets at the graph's boundary.
+type CommitGraph struct {
+	Parents    map[string][]string
+	Boundaries map[string]struct{}
+}
+
+// BoundaryGraph lists commits reachable from any head but no master, and
+// their parents, in one rev-list process. Excluded parents reached from the
+// branch histories are returned as boundary commits.
+func (r *Repository) BoundaryGraph(ctx context.Context, heads, masters []string) (CommitGraph, error) {
+	args := []string{"rev-list", "--parents", "--boundary"}
+	for _, object := range append(slices.Clone(heads), masters...) {
 		if !ValidObjectID(object) {
-			return nil, fmt.Errorf("git: literal commit objects are required")
+			return CommitGraph{}, fmt.Errorf("git: literal commit objects are required")
 		}
 	}
-	for _, root := range roots {
-		args = append(args, root)
+	for _, head := range heads {
+		args = append(args, head)
 	}
-	if len(excluded) > 0 {
+	if len(masters) > 0 {
 		args = append(args, "--not")
-		args = append(args, excluded...)
+		args = append(args, masters...)
 	}
 	args = append(args, "--")
 	out, err := r.output(ctx, args...)
 	if err != nil {
-		return nil, err
+		return CommitGraph{}, err
 	}
-	parents := make(map[string][]string)
+	graph := CommitGraph{Parents: make(map[string][]string), Boundaries: make(map[string]struct{})}
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) > 0 {
-			parents[fields[0]] = fields[1:]
+			id := fields[0]
+			if strings.HasPrefix(id, "-") {
+				id = strings.TrimPrefix(id, "-")
+				graph.Boundaries[id] = struct{}{}
+			}
+			graph.Parents[id] = fields[1:]
 		}
 	}
-	reachable := make(map[string]map[string]struct{}, len(roots))
-	for _, root := range roots {
-		if _, exists := reachable[root]; exists {
-			continue
-		}
-		found := make(map[string]struct{})
-		pending := []string{root}
-		for len(pending) > 0 {
-			last := len(pending) - 1
-			commit := pending[last]
-			pending = pending[:last]
-			if _, seen := found[commit]; seen {
-				continue
-			}
-			commitParents, exists := parents[commit]
-			if !exists {
-				continue
-			}
-			found[commit] = struct{}{}
-			pending = append(pending, commitParents...)
-		}
-		reachable[root] = found
-	}
-	return reachable, nil
+	return graph, nil
 }
 
 // ComposeTree is onto's tree with each of paths as it is in from: its
