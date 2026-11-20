@@ -47,14 +47,17 @@ g9_kill() {
 	local from dir pid
 	from=$(log_size "$ROW_DIR/out.log")
 	wait_for_line "$ROW_DIR/out.log" 'building in /opt/local \(as root\)' 1800 "$from" || return 0
-	sleep 360
+	local build_started deadline
+	build_started=$(date +%s)
+	deadline=$((build_started + 300))
+	sleep 240
 	said 'put /opt/local back as it was' "$ROW_DIR/out.log" && return 0
 	dir=$(ls -dt /var/tmp/dockhand-local-* 2>/dev/null | head -1)
 	pid=$(jq -r '.environment.pid // empty' "$dir/results.json" 2>/dev/null)
 	[ -n "$pid" ] || return 0
 	local after="the check puts /opt/local back, says the kill, and makes no other attempt"
 	g9_stops || after="the check puts /opt/local back and, as v0.7.0 does, builds again, asking the password at each attempt; kill only this attempt"
-	checkpoint "from another terminal, kill G9's guest program and its builds: sudo kill -9 -- -$(ps -o pgid= -p "$pid" | tr -d ' ') $pid; then answer done here, and type dhtest's password at full.sh's terminal when the check asks: $after" || return 0
+	checkpoint "from another terminal, before the deadline $(date -r "$deadline" '+%H:%M:%S' 2>/dev/null || date -d "@$deadline" '+%H:%M:%S'), kill G9's guest program and its builds: sudo kill -9 -- -$(ps -o pgid= -p "$pid" | tr -d ' ') $pid; then answer done here, and type dhtest's password at full.sh's terminal when the check asks: $after" || return 0
 }
 
 assert() {

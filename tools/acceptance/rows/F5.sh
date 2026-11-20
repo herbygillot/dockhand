@@ -14,7 +14,7 @@ setup() {
 }
 act() {
 	host_only "an SSH session to the host" || return 0
-	checkpoint "with no one logged in at the screen, ssh in as dhtest from another machine and run dockhand setup, dockhand check -b $F5_BRANCH --fresh, and dockhand serve --drain, saving their output in $ROW_DIR/ssh.log" || return 0
+	checkpoint "from the MACPORTS_TREE folder ($(printf '%s' "${MACPORTS_TREE:-$HOME/Source/macports-ports}")), with no one logged in at the screen, ssh in as dhtest from another machine and run dockhand setup, dockhand check -b $F5_BRANCH --fresh, and dockhand serve --drain, teeing their output to $ROW_DIR/ssh.log" || return 0
 }
 assert() {
 	[ -s "$ROW_DIR/ssh.log" ] || { row_fail "no output from the SSH session"; return; }
