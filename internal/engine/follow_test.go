@@ -187,8 +187,9 @@ func TestStalePullRequestsAreReadAndADrainNamesTheUnwatched(t *testing.T) {
 // couldn't say everything, which are read one at a time.
 type batchReader struct {
 	*forgetest.GitHub
-	partial map[int]bool
-	read    int
+	partial     map[int]bool
+	batchStatus map[int]forge.PullRequestStatus
+	read        int
 }
 
 func (b *batchReader) ReadPullRequests(ctx context.Context, refs []forge.PullRequestRef) ([]forge.PullRequestReading, error) {
@@ -201,6 +202,9 @@ func (b *batchReader) ReadPullRequests(ctx context.Context, refs []forge.PullReq
 			continue
 		}
 		status, _ := b.Inspect(ctx, ref)
+		if batchStatus, ok := b.batchStatus[ref.Number]; ok {
+			status = batchStatus
+		}
 		readings = append(readings, forge.PullRequestReading{Ref: ref, Found: true, Partial: b.partial[ref.Number], PullRequest: *pr, Status: status})
 	}
 	return readings, nil
@@ -241,6 +245,37 @@ func TestPullRequestsAreReadAtOnceWhereTheForgeCan(t *testing.T) {
 	refreshed, err = e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)
 	require.EqualError(t, refreshed.Branches[0].Err, "#34901 was not found")
+}
+
+// A fallback that cannot read the conversation keeps the previous answer (#248).
+func TestFallbackKeepsEarlierComment(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.NoError(t, err)
+	number := submitted.PullRequest.Ref.Number
+	commentedAt := e.now().Add(time.Hour)
+	fake.Statuses = map[int]forge.PullRequestStatus{number: {CommentedBy: "reviewer", CommentedAt: commentedAt, CommentsRead: true}}
+	reader := &batchReader{GitHub: fake, partial: map[int]bool{}}
+	e.Forge = reader
+	_, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	reader.partial[number] = true
+	fake.Statuses[number] = forge.PullRequestStatus{}
+	refreshed, err := e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "reviewer", refreshed.Branches[0].Branch.PullRequest.Observed.CommentedBy)
+	require.True(t, commentedAt.Equal(refreshed.Branches[0].Branch.PullRequest.Observed.CommentedAt))
+	reader.batchStatus = map[int]forge.PullRequestStatus{number: {CommentedBy: "new-reviewer", CommentedAt: commentedAt, CommentsRead: true}}
+	refreshed, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "new-reviewer", refreshed.Branches[0].Branch.PullRequest.Observed.CommentedBy)
+	require.True(t, commentedAt.Equal(refreshed.Branches[0].Branch.PullRequest.Observed.CommentedAt))
 }
 
 // anonymousForge is GitHub without a login: no read over many pull
@@ -442,4 +477,55 @@ func TestOpenWorkReadsStalePullRequestsFirst(t *testing.T) {
 	found, err := e.PortBranches(t.Context(), "jq")
 	require.NoError(t, err)
 	require.Empty(t, found, "OpenWork read the stale pull request, merged")
+}
+
+// A recorded push after a comment answers it; an old record and an
+// unrecorded push do not, even when the old timeline has a push line (#248).
+func TestRefreshRecordedPushAnswersComment(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.NoError(t, err)
+	number := submitted.PullRequest.Ref.Number
+	commented := e.now().Add(time.Hour)
+	fake.PRs[number].RemoteHead = model.ObjectID(strings.Repeat("b", 40))
+	fake.Statuses = map[int]forge.PullRequestStatus{number: {CommentedBy: "reviewer", CommentedAt: commented, CommentsRead: true}}
+	e.Forge = &batchReader{GitHub: fake, partial: map[int]bool{}}
+	setPush := func(when time.Time) {
+		t.Helper()
+		require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+			current, err := tx.Branch(branch.ID)
+			if err != nil {
+				return err
+			}
+			current.PullRequest.PushedAt = when
+			return tx.UpdateBranch(current)
+		}))
+	}
+	setPush(time.Time{})
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		_, err := tx.AppendEvent(model.Event{At: commented.Add(time.Minute), Branch: branch.ID, Kind: model.EventBranchPush, Level: model.LevelVerbose, Message: fmt.Sprintf("pushed abcdef0 to #%d", number)})
+		return err
+	}))
+	refreshed, err := e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "reviewer", refreshed.Branches[0].Branch.PullRequest.Observed.CommentedBy, "a legacy push event is not a recorded push time")
+	setPush(commented.Add(-time.Minute))
+	refreshed, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "reviewer", refreshed.Branches[0].Branch.PullRequest.Observed.CommentedBy, "an older recorded push does not answer")
+	setPush(commented.Add(time.Minute))
+	fake.Statuses[number] = forge.PullRequestStatus{}
+	refreshed, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "reviewer", refreshed.Branches[0].Branch.PullRequest.Observed.CommentedBy, "an unread conversation keeps its earlier answer")
+	fake.Statuses[number] = forge.PullRequestStatus{CommentedBy: "reviewer", CommentedAt: commented, CommentsRead: true}
+	refreshed, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, refreshed.Branches[0].Branch.PullRequest.Observed.CommentedBy, "the recorded push answered")
 }

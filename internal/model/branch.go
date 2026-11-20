@@ -61,6 +61,9 @@ type PullRequest struct {
 	// Pushed is the commit dockhand last pushed to the head branch. A push
 	// that finds anything else there stops, since someone else pushed.
 	Pushed ObjectID
+	// PushedAt is when dockhand recorded its last push to this pull request;
+	// zero for a push recorded before the time was kept (#248).
+	PushedAt time.Time `json:",omitzero"`
 	// Body is the description dockhand last wrote, so a person's edits to
 	// it are recognized and kept.
 	Body  string
@@ -118,10 +121,11 @@ type PullRequestObservation struct {
 	// ReviewedAt is when the review that sets Review was made; zero where
 	// none does, or for an observation from before it was kept.
 	ReviewedAt time.Time `json:",omitzero"`
-	// CommentedBy is the reviewer whose comment is the conversation's
-	// latest word, after the head, which GitHub's review state doesn't
-	// count (forge.PullRequestStatus.CommentedBy); empty where none is.
-	CommentedBy string `json:",omitempty"`
+	// CommentedBy and CommentedAt identify the waiting reviewer's comment (#248).
+	CommentedBy string    `json:",omitempty"`
+	CommentedAt time.Time `json:",omitzero"`
+	// CommentsRead is transient: a preserved answer was not read again (#248).
+	CommentsRead bool `json:"-"`
 	// Failing names the checks that concluded unsuccessfully.
 	Checks  PullRequestChecks
 	Failing []string `json:",omitempty"`

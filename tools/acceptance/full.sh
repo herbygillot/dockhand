@@ -135,8 +135,15 @@ export DH_BIN=${DH_BIN:-/opt/local/bin/dockhand}
 # went on without a branch (the M1's rc5 full stage). Asked of the dockhand
 # installed, where one is, before any row runs.
 if [ -x "$DH_BIN" ]; then
-	current=$(cd "$MACPORTS_TREE" && "$DH_BIN" --json outdated "$ACCEPT_GO_PORT" "$ACCEPT_RUST_PORT" 2>/dev/null |
-		jq -r '.result.ports[]? | select(.class == "current") | .port' 2>/dev/null | tr '\n' ' ')
+	if ! outdated=$(cd "$MACPORTS_TREE" && "$DH_BIN" --json outdated "$ACCEPT_GO_PORT" "$ACCEPT_RUST_PORT" 2>&1); then
+		echo "full.sh: dockhand couldn't check whether the fixture ports are due:" >&2
+		printf '%s\n' "$outdated" >&2
+		case "$outdated" in
+			*"Keychain is locked"* | *"keychain is locked"*) echo "full.sh: the SSH login keychain is locked; unlock it before running the full stage" >&2 ;;
+		esac
+		exit 1
+	fi
+	current=$(printf '%s\n' "$outdated" | jq -r '.result.ports[]? | select(.class == "current") | .port' 2>/dev/null | tr '\n' ' ')
 	if [ -n "$current" ]; then
 		echo "full.sh: these fixture ports are current at master, so the rows that update them can't run: ${current}name ports that are due as ACCEPT_GO_PORT and ACCEPT_RUST_PORT" >&2
 		exit 1

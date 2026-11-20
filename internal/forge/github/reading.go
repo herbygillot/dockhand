@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -25,8 +26,8 @@ const readingChunk = 25
 // more (macports.MergeFitness).
 const pullRequestFields = `number state isDraft headRefOid mergeable createdAt body author { login }
 latestOpinionatedReviews(first: 100) { totalCount nodes { state submittedAt author { login } } }
-comments(last: 1) { nodes { createdAt author { __typename login } } }
-commits(last: 1) { nodes { commit { committedDate statusCheckRollup { contexts(first: 100) { totalCount nodes {
+comments(last: 100) { pageInfo { hasPreviousPage } nodes { createdAt author { __typename login } } }
+commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { totalCount nodes {
   __typename
   ... on CheckRun { name status conclusion }
   ... on StatusContext { context state }
@@ -67,6 +68,9 @@ type graphPullRequest struct {
 		Nodes      []graphReview `json:"nodes"`
 	} `json:"latestOpinionatedReviews"`
 	Comments struct {
+		PageInfo struct {
+			HasPreviousPage bool `json:"hasPreviousPage"`
+		} `json:"pageInfo"`
 		Nodes []struct {
 			CreatedAt time.Time `json:"createdAt"`
 			Author    *struct {
@@ -78,8 +82,7 @@ type graphPullRequest struct {
 	Commits struct {
 		Nodes []struct {
 			Commit struct {
-				CommittedDate time.Time `json:"committedDate"`
-				Rollup        *struct {
+				Rollup *struct {
 					Contexts struct {
 						TotalCount int            `json:"totalCount"`
 						Nodes      []graphContext `json:"nodes"`
@@ -108,7 +111,7 @@ func (c *Client) ReadPullRequests(ctx context.Context, refs []forge.PullRequestR
 	var readings []forge.PullRequestReading
 	for chunk := range slices.Chunk(refs, readingChunk) {
 		var query strings.Builder
-		query.WriteString("query {\n")
+		query.WriteString("query {\nviewer { login }\n")
 		for i, ref := range chunk {
 			owner, name, _ := strings.Cut(ref.Repository, "/")
 			fmt.Fprintf(&query, "p%d: repository(owner: %q, name: %q) { pullRequest(number: %d) { ...fields } }\n", i, owner, name, ref.Number)
@@ -119,9 +122,7 @@ func (c *Client) ReadPullRequests(ctx context.Context, refs []forge.PullRequestR
 			return nil, err
 		}
 		var result struct {
-			Data map[string]*struct {
-				PullRequest *graphPullRequest `json:"pullRequest"`
-			} `json:"data"`
+			Data   map[string]json.RawMessage `json:"data"`
 			Errors []struct {
 				Type    string   `json:"type"`
 				Path    []string `json:"path"`
@@ -133,15 +134,36 @@ func (c *Client) ReadPullRequests(ctx context.Context, refs []forge.PullRequestR
 		}
 		// A pull request GitHub hasn't is an error at its path, and null;
 		// any other error is the read's.
+		viewerFailed := false
 		for _, e := range result.Errors {
+			if len(e.Path) > 0 && e.Path[0] == "viewer" {
+				viewerFailed = true
+				continue
+			}
 			if e.Type != "NOT_FOUND" {
 				return nil, fmt.Errorf("github: reading pull requests: %s", e.Message)
 			}
 		}
+		var viewer struct {
+			Login string `json:"login"`
+		}
+		// A missing viewer leaves the conversation unknown, not the rest
+		// of the pull request (#248).
+		if !viewerFailed {
+			_ = json.Unmarshal(result.Data["viewer"], &viewer)
+		}
 		for i, ref := range chunk {
 			reading := forge.PullRequestReading{Ref: ref}
-			if found := result.Data[fmt.Sprintf("p%d", i)]; found != nil && found.PullRequest != nil {
-				if reading, err = readingOf(ref, *found.PullRequest); err != nil {
+			var found struct {
+				PullRequest *graphPullRequest `json:"pullRequest"`
+			}
+			if raw := result.Data[fmt.Sprintf("p%d", i)]; len(raw) > 0 {
+				if err := json.Unmarshal(raw, &found); err != nil {
+					return nil, err
+				}
+			}
+			if found.PullRequest != nil {
+				if reading, err = readingOf(ref, *found.PullRequest, viewer.Login); err != nil {
 					return nil, err
 				}
 			}
@@ -153,7 +175,7 @@ func (c *Client) ReadPullRequests(ctx context.Context, refs []forge.PullRequestR
 
 // readingOf is a pull request as GraphQL gave it, its reviews and checks
 // counted as Inspect counts them.
-func readingOf(ref forge.PullRequestRef, pr graphPullRequest) (forge.PullRequestReading, error) {
+func readingOf(ref forge.PullRequestRef, pr graphPullRequest, account string) (forge.PullRequestReading, error) {
 	if pr.Number != ref.Number || !git.ValidObjectID(pr.HeadRefOID) {
 		return forge.PullRequestReading{}, fmt.Errorf("github: invalid pull-request reading")
 	}
@@ -182,14 +204,23 @@ func readingOf(ref forge.PullRequestRef, pr graphPullRequest) (forge.PullRequest
 		}
 	}
 	review(&status, opinions)
-	// The conversation's latest word, where a person other than the
-	// author wrote it after the head was committed, is a reviewer waiting
-	// (#90).
-	if comments := pr.Comments.Nodes; len(comments) > 0 && len(pr.Commits.Nodes) > 0 {
-		last := comments[len(comments)-1]
-		if by := last.Author; by != nil && by.Type == "User" && (pr.Author == nil || !strings.EqualFold(by.Login, pr.Author.Login)) && last.CreatedAt.After(pr.Commits.Nodes[0].Commit.CommittedDate) {
-			status.CommentedBy = by.Login
+	var comments []forge.Comment
+	for _, c := range pr.Comments.Nodes {
+		comment := forge.Comment{At: c.CreatedAt, Kind: forge.CommentUnknown}
+		if c.Author != nil {
+			comment.Login = c.Author.Login
+			switch c.Author.Type {
+			case "User":
+				comment.Kind = forge.CommentUser
+			case "Bot":
+				comment.Kind = forge.CommentBot
+			}
 		}
+		comments = append(comments, comment)
+	}
+	status.CommentedBy, status.CommentedAt, status.CommentsRead = forge.AwaitingResponse(comments, account, !pr.Comments.PageInfo.HasPreviousPage)
+	if account != "" && !status.CommentsRead && pr.Comments.PageInfo.HasPreviousPage {
+		reading.Partial = true
 	}
 	if nodes := pr.Commits.Nodes; len(nodes) > 0 && nodes[0].Commit.Rollup != nil {
 		contexts := nodes[0].Commit.Rollup.Contexts
