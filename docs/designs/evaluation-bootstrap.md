@@ -1,6 +1,6 @@
 # Evaluation starts from dockhand's own MacPorts configuration and HOME
 
-An improvement for v0.10.0, [#21](https://github.com/herbygillot/dockhand/issues/21), the final piece of the oracle's bootstrap phase ([oracle.md](../oracle.md), phase 6). The issue says where it stands; this file is its design. Not yet built. **Review limit:** one Codex pass against `main` before adoption.
+An improvement for v0.10.0, [#21](https://github.com/herbygillot/dockhand/issues/21), the final piece of the oracle's bootstrap phase ([oracle.md](../oracle.md), phase 6). The issue says where it stands; this file is its design. Adopted 2026-11-20, after its one review pass; not yet built.
 
 ## What exists today, and what an experiment established
 
@@ -122,8 +122,8 @@ Updated in the same commit:
 - `docs/oracle.md` (mark Phase 6 done and record the bootstrap contract).
 - `docs/macports-compatibility.md` (update "Isolating evaluation" to current behavior, add `::macports::autoconf::macports_conf_path` and `::macports::autoconf::macports_user_dir` to Base internals, and note that native evaluation no longer searches `/usr/local` or Homebrew on `PATH`).
 - `docs/local-provider.md` (document that `--on local` ignores the prefix's `variants.conf` and takes other variants via `--variants`, while keeping the prefix's `macports.conf` and installed ports).
-- `docs/decisions.md` (record the settled decisions: `macports.conf.default` bootstrap, no user-facing opt-back-in, and local checks ignoring `variants.conf`).
+- `docs/decisions.md` (recorded at adoption; the entry is marked built).
 
 ## Order
 
-Independent of v0.9.0's core (`#191`–`#195`); ready to build in v0.10.0 once adopted (after one Codex pass and verifying Base 2.11.6 and the `portindex` wrapper).
+Independent of v0.9.0's core (`#191`–`#195`); ready to build in v0.10.0. Base 2.11.6 and the `portindex` wrapper are verified as it is built.
