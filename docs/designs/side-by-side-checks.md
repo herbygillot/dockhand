@@ -9,7 +9,7 @@ From field testing: while a GitHub-provider check of a commit ran, a Tart check 
 - **One active check per branch (decision 29):** `checks.Service.queue` and `checks.Service.ActiveCheck` refuse any new branch check (`Run.BranchCheck()`, i.e. non-baseline and no cancel requested) while any other branch check on the same branch is queued or running, whatever files or environments it builds.
 - **Admission (`BesideFollow` / `BesideReplace`):** `checks.Service.beside` follows an active check only when it is for the same revision, is not stopped, and `PlanCovers` holds; otherwise it returns `ActiveRunError` (whose wording for requesting another environment is being updated in [#259](https://github.com/herbygillot/dockhand/issues/259)), or stops every active run under `--replace`.
 - **Per-run concurrency already exists underneath:**
-  - Leases are per run (`RunResource`), and `checks.Service.Candidates` filters only by whether each run's own lease is held—`serve` does **not** deduplicate active runs by branch.
+  - Leases are per run (`RunResource`), and `checks.Service.Candidates` passes over a run whose own lease is held, or whose cancel was asked again lately, and nothing else—`serve` does **not** deduplicate active runs by branch, and its loop launches every candidate it can reserve a slot for.
   - Provider slot reservation (`checks.Service.Reserve` / `fullProviders`) counts live run holders per provider against `Capacity(provider)` (`TartCapacity` is 2, GitHub's default is 20, local/command default is 1).
   - Tart enforces the Mac's 2-VM limit inside each environment attempt (`tart.Provider.slot`), counting running VMs machine-wide and naming holders by check via `build.Holding`.
   - `evidence` already combines target results across every check of the same tree, and `evidence.Judge` receives the required environments from its caller.
@@ -17,7 +17,7 @@ From field testing: while a GitHub-provider check of a commit ran, a Tart check 
   - [#193](check-lifecycle.md) names GitHub check branches per check (`dockhand-check/<commit>-<check>`), so two concurrent GitHub checks on one commit do not collide on the fork branch or cancel each other's runs.
 - **Single-active-check assumptions that remain:**
   1. `ForgetKept` removes every kept clone of the branch whenever any new check or retry is queued, even for the same files.
-  2. `BranchStatus.Stopped` / `Canceling` and `branchstate.Check.Stopped` / `Canceling` are single pointers overwritten in a loop by `JudgeStopped`.
+  2. `branchstate.Check.Stopped` and `Canceling` are single pointers overwritten in a loop by `JudgeStopped`.
   3. `branchstate.Check.Checking` returns a single run, so `view.CheckState` and `branchstate.Working` show only one active check.
   4. `branchflags.NamedOrLatest`, `engine.SelectBuild`, and `console`'s `l` key fall back to `LatestCheck` (newest run by number) when no check is named, which would silently pick one of two running checks for `cancel`, `wait`, or `logs`.
   5. `engine.PlanSubmit` checks for pending runs of the tree only when `EvidenceFor` found no evidence yet, so a fast sibling that already passed would let `submit` proceed while a slower sibling is still running.
@@ -42,9 +42,9 @@ Why: `model.Plan` is immutable from admission, each run already has its own leas
 ### 2. Admission: same files and disjoint environments (amending decision 29)
 Inside `checks.Service.queue` (under the store write transaction, so concurrent `dockhand check` processes cannot race) and `checks.Service.ActiveCheck`:
 
-- A new branch check `want` for revision `wantRev` is checked against every active `BranchCheck()` run `have` on the same branch:
+- A new branch check `want` for revision `wantRev` is checked against every active `BranchCheck()` run `have` on the same branch, by these cases in this order; the first that matches decides:
   1. **Different files (`haveRev.Source.Tree != wantRev.Source.Tree`):** **Conflict.** A branch does not run checks for two versions of its files side by side; the older run(s) must finish, be canceled, or be stopped with `--replace`.
-  2. **Same files, covered (`PlanCovers(havePlan, wantPlan)`):** Under `BesideFollow` and while `have` is not stopped, **follow `have`** as today—do not queue a duplicate.
+  2. **Same files, covered (`PlanCovers(havePlan, wantPlan)`):** Under `BesideFollow` and while `have` is not stopped, **follow `have`** as today—do not queue a duplicate. A covering run that is stopped is not followed: it falls to case 3, whose refusal names `dockhand wait check-N`.
   3. **Same files, overlapping environment:** If any `model.Environment` in `wantPlan.Environments` equals any `model.Environment` in `havePlan.Environments` (exact equality on provider, platform, tools, and prefix), **conflict**—even when `--variants`, `--tests`, `--only`, `--fresh`, `--keep`, or `--set` ([#50](canary-checks.md)) differ. A `--variants` check still builds changed dependencies with default variants, so two concurrent checks on one environment would double-build shared dependencies and race on reuse. For multiple variant sets in one check, `--variants each` is the one-check path; a later sequential variant check reuses the shared builds.
   4. **Same files, disjoint environments:** **Admit side by side.** Every `model.Environment` in `wantPlan` is distinct from every `model.Environment` in all active `BranchCheck()` runs on the branch.
 - **Baselines and canceling runs:** Unchanged—neither is a `BranchCheck()`, so neither blocks admission.
@@ -64,7 +64,7 @@ With multiple active runs on a branch, `--replace` replaces **only the conflicti
 This answers the second report directly and can land ahead of the rest:
 
 - A clone kept for `dockhand shell` lasts for as long as the branch's files (`Source.Tree`) match the tree it was built from.
-- `Admission.ForgetKept` takes the new check's tree and replaced run IDs—`(ctx, branch, tree, replaced)`—rather than removing every kept clone of the branch:
+- `Admission.ForgetKept` takes the new check's tree and replaced run IDs—`(ctx, branch, tree, replaced)`—rather than removing every kept clone of the branch (the interface, its one implementation and its two callers change). A kept clone's tree is its run's: a leftover already names the run it was made for, and the run its revision.
   - A kept clone built from a **different tree** is removed when a new check is queued, as today.
   - A kept clone belonging to a **replaced run** (`--replace`) is removed when that run is replaced.
   - A kept clone built from the **same tree** by another check—whether a sibling check on another environment or an earlier variant check on the same release—**stays** until the branch's files change, `clean` removes it, or automatic cleanup ages it out.
@@ -77,14 +77,14 @@ This answers the second report directly and can land ahead of the rest:
 ### 5. Sibling cohort and D17's governing ask (amending D17)
 Under literal D17 ("newest ask"), starting GitHub then Tart vs. Tart then GitHub gives different answers if the older sibling ends in `attention` (no results): whichever started second becomes the sole ask and silently drops the older sibling's environments from what submission requires.
 
-- **Recorded at admission, no time inference:** A check admitted beside one or more active `BranchCheck()` runs on the same tree records the IDs of those active siblings on its run record (`Beside []model.RunID` on `model.Run`, persisted in the store). A check started with no active siblings (or after `--replace` stopped all conflicts) records only the remaining non-replaced active siblings, if any; a check that replaces an older run does not inherit the replaced run's environments.
-- **Union of the sibling cohort:** When computing the required environments handed to `evidence.Judge`, the caller starts from the newest non-narrowed check of the tree (as `evidence.AskOf` does today) and unions in the environments of every non-narrowed check transitively linked in its `Beside` cohort on the same tree (excluding any run that was later superseded by `--replace`). Nothing inside `evidence.Judge` itself needs to change.
+- **Recorded at admission, no time inference:** A check admitted beside one or more active `BranchCheck()` runs on the same tree records the IDs of those active siblings on its run record (`Beside []model.RunID` on `model.Run`, persisted in the store). A check started with no active siblings (or after `--replace` stopped all conflicts) records only the remaining non-replaced active siblings, if any; a check that replaces an older run does not inherit the replaced run's environments, but takes its place in the cohort: it records the replaced run's siblings as its own, finished ones included, so replacing one run never splits the others from the ask.
+- **Union of the sibling cohort:** When computing the required environments handed to `evidence.Judge`, the caller starts from the newest non-narrowed check of the tree (as `evidence.AskOf` does today) and unions in the environments of every non-narrowed check in its cohort on the same tree. The cohort is the runs joined by `Beside` links read in either direction, through any number of steps, leaving out every run that was replaced or that the person canceled. Nothing inside `evidence.Judge` itself needs to change.
 - **Order-independent outcomes for two siblings (`check-42` on GitHub + `check-43` on Tart):**
   1. While either is still queued or running: `Standing()` is `Checking`, and `submit` / `serve` wait.
   2. When both pass: `evidence` merges both into `Tested on`, and the union ask is satisfied.
   3. If either fails a build: D17's failed-cell rule blocks submission until rebuilt or explicitly accepted.
   4. If either (older or newer) ends in `attention`: its environments stay required by the union ask until the person rebuilds them, replaces the cohort with a new ask (`--replace`), or submits with `--no-check`.
-  5. If the person cancels one (`dockhand cancel check-N`): that run leaves the ask, since canceling it is the person withdrawing that request, and the remaining siblings' environments are what is required. What the canceled run had already recorded still counts, a failure above all, as D17 has it for any result outside the ask.
+  5. If the person cancels one (`dockhand cancel check-N`): that run leaves the ask, since canceling it is the person withdrawing that request, and the remaining siblings' environments are what is required. What the canceled run had already recorded still counts, as D17 has it for any result outside the ask: a pass stands, and a failure blocks submission until it is rebuilt or accepted.
 
 ### 6. Two-VM limit, provider capacity, and `serve`
 No new capacity mechanism is needed; existing guards compose cleanly:
@@ -93,13 +93,13 @@ No new capacity mechanism is needed; existing guards compose cleanly:
 - **Two Tart checks on different macOS releases (e.g. `tart:15` + `tart:26`):** `TartCapacity` is 2, so both pass `Reserve` and run 1 VM each in parallel (2 VMs total).
 - **More than 2 Tart VMs across two Tart checks (e.g. `check-42` on `tart:15,26` + `check-43` on `tart:14`):** Both pass `Reserve` (2 Tart checks ≤ `TartCapacity`). `check-42` boots 2 VMs; `check-43` waits inside `tart.Provider.slot`, names `check-42`'s VMs via `build.Holding`, and starts as soon as either VM exits. No deadlock is possible because each environment builds independently and releases its VM on completion without waiting on another VM.
 - **A third Tart check on the same branch (`tart:13` while `check-42` and `check-43` hold Tart leases):** Admitted to the queue (disjoint environment, same tree), then waits in `checks.Service.Reserve` naming both `check-42` and `check-43` until a Tart slot frees.
-- **`serve` and background drain:** Verified in the code—`checks.Service.Candidates` orders queued and running runs and filters only by each run's own lease, never by branch. `serve` already drives side-by-side runs of one branch concurrently whenever provider slots allow.
+- **`serve` and background drain:** `checks.Service.Candidates` never filters by branch, and `serve`'s loop launches each candidate it reserves a slot for without waiting for the last, so it drives side-by-side runs of one branch concurrently whenever provider slots allow. A test holds this.
 
 ### 7. `status`, `console`, `branchstate`, `submit`, and command ambiguity
 
 - **`branchstate.Check` and `BranchStatus`:**
   - `Stopped` and `Canceling` become slices (`[]model.Run`, oldest first) instead of single pointers, so `JudgeStopped` never drops a second stopped or unfinished-cancel run.
-  - Add `Check.CheckingAll` returning all active `BranchCheck()` runs (oldest first). `Standing()` stays `CheckStopped` if `len(Stopped) > 0`, else `Checking` if `len(CheckingAll()) > 0`, else evaluates `Latest`/`Evidence` as today.
+  - Add `Check.CheckingAll` returning all active `BranchCheck()` runs (oldest first). `Standing()` is `CheckStopped` if `len(Stopped) > 0`, whatever siblings are still live, since a stopped check wants the person first; else `Checking` if `len(CheckingAll()) > 0`; else it evaluates `Latest`/`Evidence` as today. `status` lists the live siblings beside the stopped one either way.
   - `branchstate.Attend` emits one `CancelUnfinished` row per run in `Canceling` and one `StoppedCheck` row per run in `Stopped` (each naming its own `check-N`).
 - **`status` overview & `console` row (`view.CheckState`, `branchstate.Working`):**
   - 1 active check: unchanged (`running (check-42)`, Next: `dockhand wait check-42`).

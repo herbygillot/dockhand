@@ -42,7 +42,7 @@ Local checks (`--on local`) pass an empty `variants_conf` beside their `sources_
 
 For each evaluator session (`eval.Evaluator`), dockhand creates a temporary bootstrap directory under `internal/scratch` (removed on `Session.Close` and on startup failure):
 
-1. Locate `macports.conf.default` beside the chosen Base's `macports.conf` (from `port-tclsh`'s prefix, `<prefix>/etc/macports/macports.conf.default`). If it is missing or unreadable, fail closed naming the path.
+1. Locate `macports.conf.default` beside the chosen Base's `macports.conf` (from `port-tclsh`'s prefix, `<prefix>/etc/macports/macports.conf.default`). If it is missing or unreadable, or sets no `prefix` (Base refuses to start without one), fail closed naming the path.
 2. Write `<dir>/macports.conf` as a copy of `macports.conf.default` with **only these five location keys replaced** (appended if absent, replacing any existing setting for those keys, preserving `prefix` and every other stock line verbatim):
    - `portdbpath <dir>/portdb`
    - `sources_conf <dir>/sources.conf`
@@ -62,8 +62,8 @@ Because `eval.Session` already reuses one interpreter across repeated probes of 
 
 One shared bootstrap helper builds the directory, copies and edits `macports.conf.default`, produces the minimal `Env`, and cleans up on `Close()`.
 
-- **`portindex`:** Because `portindex` is a Tcl script run by the same `port-tclsh` interpreter on all tested Bases, the primary path launches `port-tclsh` with a small wrapper that loads `macports`, sets `::macports::autoconf::macports_conf_path` and `::macports::autoconf::macports_user_dir`, and runs `portindex` with `-p file:<index_vars>`.
-- **First test to write:** Confirm that this wrapper works cleanly for `portindex` on Base 2.11, 2.12, and master (not yet tried). If a Base's `portindex` script does not tolerate pre-loading `macports`, `portindex` falls back to passing `PORTSRC=<dir>/macports.conf` (containing `macports.conf.default`'s stock values + the five location overrides, which the experiment confirmed restores keys that have values) with the same clean `HOME` and minimal `Env`. That fallback cannot undo a key the installation's `macports.conf` sets and the stock file leaves to Base, such as `default_compilers`, so under it the index build compares the two files first and refuses, naming the key and the file, when the installation's sets one the stock file doesn't.
+- **`portindex`:** `portindex` is a Tcl script on all tested Bases, run by the interpreter its first line names, which the index build already finds for its runtime probe. The primary path launches that interpreter with a small wrapper that loads `macports`, sets `::macports::autoconf::macports_conf_path` and `::macports::autoconf::macports_user_dir`, and then sources `portindex` with the arguments the index build passes today (its `-p file:<index_vars>` platform file, `-o`, and the tree), unchanged. No `PORTSRC` is set on this path, and an ambient one is dropped.
+- **First test to write:** Confirm that this wrapper works cleanly for `portindex` on Base 2.11, 2.12, and master (not yet tried). If a Base's `portindex` script does not tolerate pre-loading `macports`, `portindex` falls back to passing `PORTSRC=<dir>/macports.conf` (containing `macports.conf.default`'s stock values + the five location overrides, which the experiment confirmed restores keys that have values) with the same clean `HOME` and minimal `Env`. That fallback cannot undo a key the installation's `macports.conf` sets and the stock file leaves to Base, such as `default_compilers`, so under it the index build compares the two files first and, when the installation's sets one the stock file doesn't, fails with a message naming the key and the file. No index is ever built outside dockhand's bootstrap.
 
 ### 4. Local provider ignores the prefix's `variants.conf` (decided 2026-11-20)
 
