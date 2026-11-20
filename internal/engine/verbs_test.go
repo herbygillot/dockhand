@@ -252,6 +252,31 @@ func TestRebaseRepairsAStaleRecordedBase(t *testing.T) {
 	require.Equal(t, f.upstreamMaster(t), currentEmpty.Base, "#280: records the newer base despite having nothing to replay")
 }
 
+// #280: a branch with no own commits can have a master head but an older
+// recorded base; the excluded head must not make its master's paths appear
+// to be branch work.
+func TestOpenWorkOmitsAMasterHeadAboveItsRecordedBase(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "already-on-master", Here: true})
+	require.NoError(t, err)
+	base := branch.Base
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 3")
+	testsupport.Git(t, branch.Worktree, "fetch", "origin", "master")
+	testsupport.Git(t, branch.Worktree, "rebase", "origin/master")
+
+	work, err := e.OpenWork(t.Context())
+	require.NoError(t, err)
+	changed, err := work.BranchesChanging(t.Context(), "libharbor")
+	require.NoError(t, err)
+	require.Empty(t, changed, "#280: a master head with no own commits claims no paths")
+	current, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.Equal(t, base, current.Base, "#280: reading doesn't repair the recorded base")
+}
+
 // A branch master already has every change of has nothing to rebase, and
 // is refused as it is, as is one whose pull request is recorded merged:
 // skim's replayed nothing onto master, and said submit would replace the
