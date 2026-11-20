@@ -334,12 +334,27 @@ proc test_logs {log work} {
     }
     close $fd
 }
-# fetched is the commit a checkout is at, as Git's own rev-parse reads it.
-# The checkout is MacPorts' unprivileged user's, and this program runs as
-# root, so Git is told it is safe for this one command, as Base tells it
-# when it reads a port's own files with Git (portmain.tcl).
+# git_as_owner reads a checkout as its owner. MacPorts fetches Git sources
+# as its unprivileged user, while this guest program may be root. Monterey's
+# system Git doesn't honor safe.directory supplied with -c, so run Git as
+# the directory owner instead.
+# Tests may define this command in the Tcl prelude to replace Git access;
+# production defines it here when no test replacement was supplied.
+if {[llength [info procs git_as_owner]] == 0} {
+    proc git_as_owner {path} {
+        set owner [string trim [exec /usr/bin/stat -f %u $path]]
+        set current [string trim [exec /usr/bin/id -u]]
+        set command [list /usr/bin/git -C $path rev-parse --verify {HEAD^{commit}}]
+        if {$owner ne $current} {
+            set command [linsert $command 0 /usr/bin/sudo -n -u "#$owner"]
+        }
+        return [exec {*}$command]
+    }
+}
+
+# fetched is the commit a checkout is at, read as its owner for old system Git.
 proc fetched {path} {
-    return [string trim [exec /usr/bin/git -c safe.directory=* -C $path rev-parse --verify {HEAD^{commit}}]]
+    return [string trim [git_as_owner $path]]
 }
 
 # fact is a command's output, trimmed, or nothing.

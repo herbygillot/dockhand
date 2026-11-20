@@ -179,7 +179,7 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // 3. stdin_is, the guest's one reading of its standard input, carried
 // ahead of the program for a root build's lock check (#193) and called by
 // nothing yet, builds and judges nothing: it stays 3.
-const guestPin = "71102478e5b932590e55b357c6e2262a06c210657caca2ab756f0e525d1849c9"
+const guestPin = "e8cabe817c28f922767da7a7f3035707096912e4d010654365f9da0c27869296"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this
