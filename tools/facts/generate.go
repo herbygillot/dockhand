@@ -113,8 +113,8 @@ type fact struct {
 // by version (toolsVersion): two builds of one release of the Command Line
 // Tools carry the same clang and SDKs. A runner's other Xcodes, and its own
 // tools where they aren't the builder's, are reported, not kept, until the
-// table's lookup can choose among toolchains
-// (plan/facts-table-xcode-key-2026-11-05.md): kept, they would stand for
+// table's lookup can choose among toolchains, which was declined
+// (docs/decisions.md, decision 12): kept, they would stand for
 // the builder with tools it doesn't run.
 func runnerRows(runners, others []macos.Facts, report io.Writer) []macos.Facts {
 	builders := map[string]macos.Facts{}
