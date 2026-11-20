@@ -95,9 +95,7 @@ func (r *Repository) BoundaryGraph(ctx context.Context, heads, masters []string)
 			return CommitGraph{}, fmt.Errorf("git: literal commit objects are required")
 		}
 	}
-	for _, head := range heads {
-		args = append(args, head)
-	}
+	args = append(args, heads...)
 	if len(masters) > 0 {
 		args = append(args, "--not")
 		args = append(args, masters...)
@@ -115,6 +113,7 @@ func (r *Repository) BoundaryGraph(ctx context.Context, heads, masters []string)
 			if strings.HasPrefix(id, "-") {
 				id = strings.TrimPrefix(id, "-")
 				graph.Boundaries[id] = struct{}{}
+				continue
 			}
 			graph.Parents[id] = fields[1:]
 		}

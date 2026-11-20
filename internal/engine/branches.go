@@ -1244,7 +1244,7 @@ func (e *Engine) OpenWork(ctx context.Context) (*OpenWork, error) {
 		allHeads = append(allHeads, head)
 	}
 	stale := make(map[string]bool)
-	if len(masters) > 0 {
+	if len(masters) > 0 && len(allHeads) > 0 {
 		allHeads = slices.Compact(slices.Sorted(slices.Values(allHeads)))
 		graph, err := e.Repo.BoundaryGraph(ctx, allHeads, masters)
 		if err != nil {
@@ -1254,6 +1254,13 @@ func (e *Engine) OpenWork(ctx context.Context) (*OpenWork, error) {
 			head, exists := heads[branch.Name]
 			if !exists {
 				continue
+			}
+			if _, included := graph.Parents[head]; !included {
+				if _, boundary := graph.Boundaries[head]; !boundary && head != string(branch.Base) {
+					// A head already reachable from master is itself excluded
+					// from the rev-list; it has no own commits in the graph.
+					stale[branch.Name] = true
+				}
 			}
 			seen := make(map[string]struct{})
 			pending := []string{head}
