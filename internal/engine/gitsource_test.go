@@ -23,6 +23,10 @@ type unknownGitSourceProvider struct {
 	fetched    string
 }
 
+type unknownGitHubSourceProvider struct{ *unknownGitSourceProvider }
+
+func (unknownGitHubSourceProvider) Name() string { return buildenv.GitHub }
+
 func (unknownGitSourceProvider) Name() string { return "command" }
 
 func (p *unknownGitSourceProvider) Execute(_ context.Context, job buildenv.Job, build buildenv.Build) error {
@@ -88,12 +92,16 @@ func TestAPassedBuildWithoutAGitCommitRemainsVisibleButDoesntCoverRef(t *testing
 	require.NotNil(t, gitPort)
 	i := slices.Index(evidence.Plan.Environments, tart12)
 	require.GreaterOrEqual(t, i, 0)
-	require.Equal(t, CellSourceUnknown, gitPort.Outcomes[i].Kind, "the earlier Tart pass remains a distinct row")
+	require.Equal(t, CellExcluded, gitPort.Outcomes[i].Kind, "the earlier Tart pass remains outside the narrowed request")
 	require.Equal(t, model.OutcomePassed, gitPort.Outcomes[i].Outcome)
 	require.True(t, gitPort.Outcomes[i].SourceUnknown, "the row states its source limitation")
+	require.True(t, gitPort.Passed, "the excluded unknown-source row doesn't clear the narrowed request's pass")
+	require.False(t, gitPort.Unchecked, "the excluded unknown-source row doesn't make the narrowed request incomplete")
 	require.Contains(t, targetWords(evidence.Plan, gitPort.Outcomes[i], "advisory", AcceptedFailure{}), "provider did not report which commit of git.branch v4")
 	require.Contains(t, pullRequestBody(bodyFacts{Evidence: &evidence}), "provider did not report which commit of git.branch v4", "Tested on keeps the row's source limitation")
-	require.False(t, allBuilt(evidence, nil), "ship readiness cannot treat the unknown-source pass as passed")
+	// The narrow request excludes Tart 12, so carrying its unknown-source row
+	// must not make the new request unready.
+	require.True(t, allBuilt(evidence, nil), "an excluded environment remains excluded from ship readiness")
 	want, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tart12}})
 	require.NoError(t, err)
 	_, covered, err := e.Covered(t.Context(), branch.ID, revision.Source.Tree, want)
@@ -108,6 +116,53 @@ func TestAPassedBuildWithoutAGitCommitRemainsVisibleButDoesntCoverRef(t *testing
 		return err
 	}))
 	require.Equal(t, model.ObjectID(fetched), inputs.Fetched, "Tart's passed build records the fetched commit")
+}
+
+func TestGitHubPassWithoutFetchedCommitIsReadyForItsOwnRequest(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	url, _, _ := harborRepository(t)
+	revision := harborBranch(t, e)
+	usePorts(e, gitHarbor(url, "v4"))
+	provider := &unknownGitHubSourceProvider{unknownGitSourceProvider: &unknownGitSourceProvider{}}
+	e.Providers = map[string]buildenv.Provider{buildenv.GitHub: provider}
+	github12 := model.Environment{Provider: buildenv.GitHub, Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}}
+	var branch model.Branch
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		var err error
+		branch, err = r.Branch(revision.Branch)
+		return err
+	}))
+	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{github12}})
+	require.NoError(t, err)
+	queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+	require.NoError(t, err)
+	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	events, err := e.RunEvents(t.Context(), run.ID, 0)
+	require.NoError(t, err)
+	require.True(t, slices.ContainsFunc(events, func(event model.Event) bool {
+		return strings.Contains(event.Message, "libharbor: its build didn't say which commit of git.branch v4 it fetched, so no later check can reuse its result")
+	}), "the existing not-reusable message remains")
+
+	judged, found, err := e.EvidenceFor(t.Context(), branch.ID, revision.Source.Tree)
+	require.NoError(t, err)
+	require.True(t, found)
+	var gitPort *TargetEvidence
+	for i := range judged.Targets {
+		if judged.Targets[i].Target.Target.Name == "libharbor" {
+			gitPort = &judged.Targets[i]
+		}
+	}
+	require.NotNil(t, gitPort)
+	require.True(t, gitPort.Passed, "the GitHub result passed its own request")
+	require.False(t, gitPort.Unchecked)
+	require.True(t, allBuilt(judged, nil), "its own request is ship-ready")
+	body := pullRequestBody(bodyFacts{Evidence: &judged})
+	require.Contains(t, body, "###### Tested on")
+	require.Contains(t, body, "| libharbor | ✓")
+	require.NotContains(t, body, "provider did not report which commit of git.branch v4")
 }
 
 // harborRepository is the repository libharbor's Git fetch clones, with

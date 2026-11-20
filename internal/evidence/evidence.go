@@ -700,6 +700,11 @@ func (e *Evidence) outsideProfile(required []model.Environment, checks []Check) 
 				skipped := noResult(CellExcluded, environment, e.Targets[t].Target.ID)
 				skipped.Exclusion = model.Exclusion{Target: e.Targets[t].Target.Target, Reason: "outside what the newest check of these files asked for", Span: true}
 				*cell = skipped
+			case !asked && cell.Kind == CellSourceUnknown:
+				// Keep the earlier pass visible with its source limitation,
+				// while retaining the newest check's exclusion for judgment.
+				cell.Kind = CellExcluded
+				cell.Exclusion = model.Exclusion{Target: e.Targets[t].Target.Target, Reason: "outside what the newest check of these files asked for", Span: true}
 			}
 		}
 	}
@@ -918,7 +923,7 @@ func (e Evidence) Shown() []int {
 	var shown []int
 	for i := range e.Plan.Environments {
 		for _, target := range e.Targets {
-			if target.Outcomes[i].Kind != CellExcluded {
+			if target.Outcomes[i].Kind != CellExcluded || target.Outcomes[i].SourceUnknown {
 				shown = append(shown, i)
 				break
 			}
@@ -1577,7 +1582,14 @@ func (e *Evidence) fill(earlier Evidence) bool {
 				// Keep the provider's passed row visible. It remains unusable
 				// for reuse; the reader says its source wasn't reported.
 				why = nil
-				cell.Kind = CellSourceUnknown
+				if result.Kind == CellExcluded {
+					// Preserve the narrowed check's exclusion: this row is shown
+					// for context, but isn't part of its readiness judgment.
+					cell.Kind = CellExcluded
+					cell.Exclusion = result.Exclusion
+				} else {
+					cell.Kind = CellSourceUnknown
+				}
 				cell.SourceUnknown = true
 			}
 			if why == nil && cell.Kind == CellRecorded {

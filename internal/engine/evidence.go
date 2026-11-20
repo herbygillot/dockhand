@@ -229,14 +229,6 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 		// isn't a silent hour (the architecture review's L3a).
 		for t := range judged.Targets {
 			for i, c := range judged.Targets[t].Outcomes {
-				if c.Kind == CellRecorded && c.Outcome == model.OutcomePassed {
-					if _, gitFetched := judged.Plan.GitIn(c.Environment, c.Target); gitFetched && judged.Fetched(c) == "" {
-						judged.Targets[t].Outcomes[i].SourceUnknown = true
-						judged.Targets[t].Outcomes[i].Kind = CellSourceUnknown
-						judged.Targets[t].Passed = false
-						judged.Targets[t].Unchecked = true
-					}
-				}
 				if c.Outcome != model.OutcomePassed || c.Inputs == "" {
 					continue
 				}
