@@ -1,12 +1,12 @@
 # Side-by-side checks of one commit on different environments
 
-A feature for v0.10.0, [#260](https://github.com/herbygillot/dockhand/issues/260). The issue says where it stands; this file is its design. Not yet built. **Review limit:** one Codex pass against `main` before adoption.
+A feature for v0.10.0, [#260](https://github.com/herbygillot/dockhand/issues/260). The issue says where it stands; this file is its design. Adopted 2026-11-20, after its one review pass; not yet built.
 
 From field testing: while a GitHub-provider check of a commit ran, a Tart check of the same commit on another macOS could only be started with `--replace`, which canceled and threw away the running GitHub check. Separately, in review builds of 2026-11-19, running a second check of the same files—such as a variant check—deleted the first check's `--keep` clone, forcing the person to inspect one clone before starting the next check.
 
 ## What exists today
 
-- **One active check per branch (decision 29):** `checks.Service.queue` and `checks.Service.ActiveCheck` refuse any new branch check (`Run.BranchCheck()`, i.e. non-baseline and no cancel requested) while any other branch check on the same branch is queued or running, whatever files or environments it builds.
+- **One active check per branch** (the code's comments call it decision 29; its record is the entry "Queueing a check beside a running check of the same files that doesn't cover it" in decisions.md): `checks.Service.queue` and `checks.Service.ActiveCheck` refuse any new branch check (`Run.BranchCheck()`, i.e. non-baseline and no cancel requested) while any other branch check on the same branch is queued or running, whatever files or environments it builds.
 - **Admission (`BesideFollow` / `BesideReplace`):** `checks.Service.beside` follows an active check only when it is for the same revision, is not stopped, and `PlanCovers` holds; otherwise it returns `ActiveRunError` (whose wording for requesting another environment is being updated in [#259](https://github.com/herbygillot/dockhand/issues/259)), or stops every active run under `--replace`.
 - **Per-run concurrency already exists underneath:**
   - Leases are per run (`RunResource`), and `checks.Service.Candidates` passes over a run whose own lease is held, or whose cancel was asked again lately, and nothing else—`serve` does **not** deduplicate active runs by branch, and its loop launches every candidate it can reserve a slot for.
@@ -39,7 +39,7 @@ A side-by-side request is admitted as a **new `model.Run` with its own immutable
 
 Why: `model.Plan` is immutable from admission, each run already has its own lease and `Stay` policy ([#193](check-lifecycle.md)), `evidence` already merges across runs of the same tree, and separate runs let the person cancel, wait on, or inspect logs for the Tart run without disturbing the GitHub run.
 
-### 2. Admission: same files and disjoint environments (amending decision 29)
+### 2. Admission: same files and disjoint environments (amending the one-check rule)
 Inside `checks.Service.queue` (under the store write transaction, so concurrent `dockhand check` processes cannot race) and `checks.Service.ActiveCheck`:
 
 - A new branch check `want` for revision `wantRev` is checked against every active `BranchCheck()` run `have` on the same branch, by these cases in this order; the first that matches decides:
@@ -138,7 +138,7 @@ No new capacity mechanism is needed; existing guards compose cleanly:
 Updated in the same commit:
 - `docs/usage/checks.md` (running checks on different environments of the same commit side by side; kept clones surviving across checks of the same files; `--replace`, `cancel`, `wait`, `logs`, and `--variants each`).
 - `docs/usage/branches.md` (`status` and `console` with multiple active checks and multiple kept clones).
-- `docs/decisions.md` (amend decision 29 to allow side-by-side checks of the same files on disjoint environments, and amend D17 for the union ask of sibling runs).
+- `docs/decisions.md` (done at adoption: the one-check entry reopened for the same files on other environments, and D17's ask the union of checks started beside each other; the code's "decision 29" comments are corrected when this is built).
 - Command help of `check`, `cancel`, `wait`, `logs`, and `clean`.
 
 ## Order
