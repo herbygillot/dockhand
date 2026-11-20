@@ -32,6 +32,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildlog"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports/cilog"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -184,8 +185,32 @@ func (p *Provider) accountContext(ctx context.Context) (context.Context, string,
 	if p.Identity == nil {
 		return ctx, "", nil
 	}
-	identity, err := p.Identity.Current(ctx)
+	type identityResult struct {
+		identity github.Identity
+		err      error
+	}
+	read := func() (github.Identity, error) { return p.Identity.Current(ctx) }
+	var identity github.Identity
+	var err error
+	if ctx.Done() == nil {
+		identity, err = read()
+	} else {
+		result := make(chan identityResult, 1)
+		go func() {
+			current, readErr := read()
+			result <- identityResult{identity: current, err: readErr}
+		}()
+		select {
+		case got := <-result:
+			identity, err = got.identity, got.err
+		case <-ctx.Done():
+			return nil, "", ctx.Err()
+		}
+	}
 	if err != nil {
+		return nil, "", err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, "", err
 	}
 	return remotewrite.ForAccount(ctx, identity.Account, p.Identity), identity.Account, nil

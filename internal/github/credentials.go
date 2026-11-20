@@ -19,13 +19,11 @@ func AsWrite(ctx context.Context) context.Context {
 	return context.WithValue(ctx, writeRequestKey{}, true)
 }
 
-func isWriteRequest(ctx context.Context) bool {
+// IsWriteRequest reports whether remotewrite designated this request as a write.
+func IsWriteRequest(ctx context.Context) bool {
 	value, _ := ctx.Value(writeRequestKey{}).(bool)
 	return value
 }
-
-// IsWriteRequest reports whether remotewrite designated this request as a write.
-func IsWriteRequest(ctx context.Context) bool { return isWriteRequest(ctx) }
 
 // Renewer is a TokenSource that, told the token GitHub rejected, can find
 // another: a login it can refresh. A source that isn't one is asked again
@@ -145,7 +143,7 @@ func (t credentialTransport) RoundTrip(req *http.Request) (*http.Response, error
 	if renewErr != nil || next.Secret == token.Secret {
 		return response, err
 	}
-	if isWriteRequest(req.Context()) {
+	if IsWriteRequest(req.Context()) {
 		response.Body.Close()
 		return nil, ErrCredentialRenewed
 	}

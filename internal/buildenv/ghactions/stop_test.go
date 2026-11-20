@@ -113,6 +113,18 @@ func stop(t *testing.T, api *stopAPI, executions []model.GuestExecution) error {
 	return err
 }
 
+func TestStopIdentityReadFollowsTheLockAndIsBounded(t *testing.T) {
+	release, unblock := releaseAfter(250 * time.Millisecond)
+	defer unblock()
+	p := &Provider{Identity: blockedIdentity{release: release}}
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	_, err := p.Stop(ctx, buildenv.StopRequest{Lock: freeLock{}})
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Less(t, time.Since(started), 150*time.Millisecond, "identity lookup is inside Stop's bounded remote work")
+}
+
 // A cancel of a GitHub check is ended only when every run listed on its
 // branch has completed and every launch of the check is answered for,
 // each push and each rerun counted once by its own note (the lifecycle

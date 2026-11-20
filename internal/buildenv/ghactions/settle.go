@@ -38,16 +38,16 @@ func branchNote(execution model.GuestExecution) (launchNote, bool) {
 // attempt's launch lock. It neither reads nor stops workflow runs: the
 // runner has already recorded that no attempt follows (#241).
 func (p *Provider) Settle(ctx context.Context, request buildenv.SettleRequest) ([]string, error) {
-	var err error
-	ctx, _, err = p.accountContext(ctx)
-	if err != nil {
-		return nil, err
-	}
 	// The caller keeps settlement alive after an interrupt. Bound the
 	// whole operation, including fork lookup, the lock and remote writes,
 	// so that WithoutCancel cannot hang the check's exit (#241).
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+	var err error
+	ctx, _, err = p.accountContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var notes []launchNote
 	seen := map[string]bool{}
 	for _, attempt := range request.Attempts {
