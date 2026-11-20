@@ -28,6 +28,7 @@ import (
 )
 
 func TestAdoptedPullRequestBasisAndPushUseTheSameFreshAuthorization(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name       string
 		maintainer bool
@@ -39,6 +40,7 @@ func TestAdoptedPullRequestBasisAndPushUseTheSameFreshAuthorization(t *testing.T
 		{name: "both yes", maintainer: true, role: "write", invited: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			fake := forgetest.New("", "")
 			fake.Role = tc.role
 			pr := forge.PullRequest{Ref: forge.PullRequestRef{Forge: forge.GitHub, Repository: UpstreamRepository, Number: 34999}, Author: "ada", MaintainerCanModify: tc.maintainer}

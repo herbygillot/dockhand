@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -65,8 +66,9 @@ func (n launchNote) String() string {
 // reads the runs it canceled for GitHub to say they completed, every
 // stopPoll.
 const (
-	stopWait = 30 * time.Second
-	stopPoll = 5 * time.Second
+	stopWait  = 30 * time.Second
+	stopPoll  = 5 * time.Second
+	stopBound = 2 * stopWait
 )
 
 // Stop ends what a check launched on GitHub (buildenv.Stopper), holding the
@@ -89,10 +91,12 @@ func (p *Provider) Stop(ctx context.Context, request buildenv.StopRequest) ([]st
 		return nil, err
 	}
 	defer release()
-	// Bound identity lookup and remote cleanup together once the launch lock
-	// is held, so a stalled account read cannot precede Stop's work bound.
-	ctx, cancel := context.WithTimeout(ctx, stopWait)
-	defer cancel()
+	// Give identity lookup and the initial reads/cancels one share, then give
+	// the run-completion loop its own stopWait. The overall bound covers both.
+	workCtx, cancelWork := context.WithTimeout(ctx, stopBound)
+	defer cancelWork()
+	ctx, cancelPrep := context.WithTimeout(workCtx, stopWait)
+	defer cancelPrep()
 	ctx, _, err = p.accountContext(ctx)
 	if err != nil {
 		return nil, err
@@ -155,10 +159,10 @@ func (p *Provider) Stop(ctx context.Context, request buildenv.StopRequest) ([]st
 			places = append(places, p)
 		}
 	}
-	list := func() ([]Run, error) {
+	list := func(callCtx context.Context) ([]Run, error) {
 		var runs []Run
 		for _, at := range places {
-			listed, err := p.API.Runs(ctx, fork.Repository, at.branch, at.commit)
+			listed, err := p.API.Runs(callCtx, fork.Repository, at.branch, at.commit)
 			if err != nil {
 				return nil, err
 			}
@@ -168,7 +172,7 @@ func (p *Provider) Stop(ctx context.Context, request buildenv.StopRequest) ([]st
 			if slices.ContainsFunc(runs, func(r Run) bool { return r.ID == id }) {
 				continue
 			}
-			run, err := p.API.Run(ctx, fork.Repository, id)
+			run, err := p.API.Run(callCtx, fork.Repository, id)
 			if err != nil {
 				return nil, err
 			}
@@ -176,33 +180,54 @@ func (p *Provider) Stop(ctx context.Context, request buildenv.StopRequest) ([]st
 		}
 		return runs, nil
 	}
-	runs, err := list()
+	runs, err := list(ctx)
 	if err != nil {
 		return nil, err
 	}
+	cancelRequested := make(map[int64]bool)
 	for _, run := range runs {
 		if run.Status != "completed" {
 			if err := remotewrite.Cancel(ctx, p.API, remotewrite.Made, fork.Repository, run.ID); err != nil {
+				if errors.Is(err, context.DeadlineExceeded) {
+					return leftRuns(runs, cancelRequested), nil
+				}
 				return nil, err
 			}
+			cancelRequested[run.ID] = true
 		}
 	}
+	cancelPrep()
+	waitCtx, cancelWait := context.WithTimeout(workCtx, stopWait)
+	defer cancelWait()
 	for waited := time.Duration(0); ; waited += stopPoll {
-		if !slices.ContainsFunc(runs, func(r Run) bool { return r.Status != "completed" }) || waited >= stopWait {
+		if !slices.ContainsFunc(runs, func(r Run) bool { return r.Status != "completed" }) {
 			break
 		}
-		if err := p.sleep(ctx, stopPoll); err != nil {
+		if waited >= stopWait {
+			return append(append(leftRuns(runs, cancelRequested), answered(notes, runs)...), unnamed...), nil
+		}
+		if err := p.sleep(waitCtx, stopPoll); err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				return leftRuns(runs, cancelRequested), nil
+			}
 			return nil, err
 		}
-		if runs, err = list(); err != nil {
+		if runs, err = list(waitCtx); err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				return leftRuns(runs, cancelRequested), nil
+			}
 			return nil, err
 		}
 		// A run listed since is canceled as it's seen.
 		for _, run := range runs {
 			if run.Status == "queued" || run.Status == "in_progress" || run.Status == "waiting" || run.Status == "pending" || run.Status == "requested" {
-				if err := remotewrite.Cancel(ctx, p.API, remotewrite.Made, fork.Repository, run.ID); err != nil {
+				if err := remotewrite.Cancel(waitCtx, p.API, remotewrite.Made, fork.Repository, run.ID); err != nil {
+					if errors.Is(err, context.DeadlineExceeded) {
+						return leftRuns(runs, cancelRequested), nil
+					}
 					return nil, err
 				}
+				cancelRequested[run.ID] = true
 			}
 		}
 	}
@@ -217,6 +242,22 @@ func (p *Provider) Stop(ctx context.Context, request buildenv.StopRequest) ([]st
 		return nil, fmt.Errorf("%s", prose.And(words))
 	}
 	return nil, nil
+}
+
+func leftRuns(runs []Run, cancelRequested map[int64]bool) []string {
+	var left []string
+	for _, run := range runs {
+		if run.Status != "completed" {
+			url := run.URL
+			status := strings.ReplaceAll(cmp.Or(run.Status, "not completed"), "_", " ")
+			if cancelRequested[run.ID] {
+				left = append(left, fmt.Sprintf("GitHub was asked to cancel %s, and it is still %s; cancel it at %s", url, status, url))
+			} else {
+				left = append(left, fmt.Sprintf("Stop couldn't confirm a cancellation for %s, and it is still %s; cancel it at %s", url, status, url))
+			}
+		}
+	}
+	return left
 }
 
 // legacyRun is the run an attempt recorded before launches were noted, by
