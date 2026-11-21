@@ -133,8 +133,8 @@ func manifestHookHolds(concerns []model.Concern) []string {
 // not to the tree the update left: one more commit, a rebase onto a moved
 // base, or an update on a branch already ahead of its base keeps it, in
 // status and in the submit preview, until a later update of the port
-// This test stands on manifest-hook here because crates-unlocked is not in v0.8.0.
 // replaces it (#242).
+// This test stands on manifest-hook here because crates-unlocked is not in v0.8.0.
 func TestAnUpdatesHeldFindingOutlivesTheTreeItLeft(t *testing.T) {
 	t.Parallel()
 	words := "post-patch edits a dependency manifest, and the Portfile's go.vendors could not be checked against the current version's lock"
@@ -178,8 +178,8 @@ func TestAnUpdatesHeldFindingOutlivesTheTreeItLeft(t *testing.T) {
 				require.NoError(t, err)
 				require.NotEqual(t, current.Base, baseOf(t, e, branch), "the rebase moved the base")
 			case "updated again":
-				// The new release's source ships a lock: the update
-				// regenerates the crates, and holds nothing.
+				// A later update of the port to another release
+				// holds nothing, and replaces the earlier one's hold.
 				p.manifestHook, p.version = "", "1.9.0"
 				current, err := e.Branch(t.Context(), branch.ID)
 				require.NoError(t, err)
@@ -205,8 +205,8 @@ func TestAnUpdatesHeldFindingOutlivesTheTreeItLeft(t *testing.T) {
 
 // An archived branch keeps its update's held finding: archive --undo
 // brings it back holding, since archiving drops no edit record; only
-// This test stands on manifest-hook here because crates-unlocked is not in v0.8.0.
 // clean --delete forgets them, once the branch can't be submitted (#242).
+// This test stands on manifest-hook here because crates-unlocked is not in v0.8.0.
 func TestAnArchivedBranchComesBackWithItsHold(t *testing.T) {
 	t.Parallel()
 	words := "post-patch edits a dependency manifest, and the Portfile's go.vendors could not be checked against the current version's lock"
@@ -262,8 +262,8 @@ func TestAHoldGoesWithThePortsChange(t *testing.T) {
 
 }
 
-// This test stands on manifest-hook here because crates-unlocked is not in v0.8.0.
 // A port's change back at the same release brings its update hold back.
+// This test stands on manifest-hook here because crates-unlocked is not in v0.8.0.
 func TestAHoldReturnsWhenThePortsChangeReturns(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
@@ -295,8 +295,7 @@ func TestAHoldReturnsWhenThePortsChangeReturns(t *testing.T) {
 // conflicting archive and a repository GitHub answers by another name,
 // stays with the branch and the port through one more commit, as
 // manifest-hook does: no later assessment finds them again
-// (architecture's read of #242). This test stands on manifest-hook here
-// because crates-unlocked is not in v0.8.0.
+// (architecture's read of #242).
 func TestAnUpdatesOwnHoldsOutliveOneMoreCommit(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -374,9 +373,6 @@ func TestAnUpdatesOwnHoldsOutliveOneMoreCommit(t *testing.T) {
 	}
 }
 
-// An archived branch keeps its update's held finding: archive --undo
-// brings it back holding, since archiving drops no edit record; only
-// clean --delete forgets them, once the branch can't be submitted (#242).
 // Archives the update couldn't compare hold serve's submission as a
 // finding would (D4): nobody looks, and the comparison couldn't.
 func TestServeHoldsAnUpdateWhoseArchivesCouldNotBeCompared(t *testing.T) {

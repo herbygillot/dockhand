@@ -101,6 +101,7 @@ rebases keep them while the branch still changes the port, and only a later
 update of the port replaces them, or for a move, `update --follow-moves`.
 Read each against the new source, then decide on it as on any concern below,
 or let `holds.allow` name it.
+
 A build that links a port's library its Portfile doesn't declare holds as
 `link-undeclared` only where tidy can't write the declaration: a subport's or
 a variant build's finding, links that couldn't be read, a library no port
