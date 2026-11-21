@@ -537,7 +537,7 @@ U is update, B bump, S ship, Sub submit, C check, Sv serve. A star marks a row w
 | `--on`, `--build` | `Check`, one place | B, S, C | the check | the place kept, else the settings of that moment | | the request; either replaces the other | done; kept* below the check; not read by `--baseline` |
 | `--tests` | `Check` | B, S, C | the check | what is kept, else the settings of that moment | | the request | done; kept* below the check; not read by `--baseline` |
 | `--draft`, `--type`, `--skip-notification` | `Publish` | B, S, Sub | submit | what is kept, else not a draft, the type worked out, notified | false, over a kept true | the request, then the publication | done, kept |
-| `--title`, `--note` | the branch's own | B, S, Sub | submit | what the branch holds, else worked out | empty clears it | the branch, saved with the request | done, kept |
+| `--title`, `--note` | the branch's own | B, S, Sub | submit | what the branch holds, else worked out | an empty `--title` clears it; an empty `--note` is refused and `--no-note` clears it (#272) | the branch, saved with the request | done, kept |
 | `--tested-binaries`, `--tested-variants` | `Publish` as asked, then the branch's own | B, S, Sub | submit | what the branch holds for these files | false withdraws it, pending or bound | the request until bound to its files, then the branch | done, kept |
 | `--ready`, `--accept`, `--standing`, `--no-check`, `--head`, `--remote`, `--rewrite-description` | submit's own | Sub | submit | | | #191's | #191's |
 | `--fresh`, `--only`, `--also`, `--variants`, `--keep`, `--head`, `--staged`, `--working-tree`, `--include`, `--replace`, `--baseline`, `--of`, `--enqueue`, `--for` | check's own | C | the check | | | #193's | #193's |
