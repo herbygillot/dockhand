@@ -36,7 +36,7 @@ mkdir -p "$HOME/.local/bin"
 install -m 755 dockhand "$HOME/.local/bin/dockhand"
 ```
 
-Ensure `~/.local/bin` is on your `PATH`. For zsh, bash, or fish completion setup, run `dockhand completion <shell> --help`.
+Ensure `~/.local/bin` is on your `PATH`. For shell completion setup, the help of `completion zsh`, `completion bash` or `completion fish` says how.
 
 </details>
 
