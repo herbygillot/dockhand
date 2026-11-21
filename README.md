@@ -184,6 +184,6 @@ For MacPorts conventions, see the [MacPorts contribution workflow](https://guide
 
 ## Contributing and license
 
-Report bugs or suggest improvements on [GitHub Issues](https://github.com/herbygillot/dockhand/issues) (include `dockhand --version`, the command you ran, and the relevant error or log). To work on Dockhand itself, build with `make build` and run tests with `make test`.
+Report bugs or suggest improvements on [GitHub Issues](https://github.com/herbygillot/dockhand/issues) (include `dockhand --version` or `-V`, the command you ran, and the relevant error or log). To work on Dockhand itself, build with `make build` and run tests with `make test`.
 
 Licensed under the [MIT License](LICENSE).

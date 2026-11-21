@@ -184,6 +184,9 @@ func newRoot(shared *settings.Settings, streams term.Streams) *cobra.Command {
 		},
 	}
 	root.SetVersionTemplate("dockhand {{.Version}}\n")
+	// -V is --version's shorthand: cobra would give it -v, which is
+	// --verbose here.
+	root.Flags().BoolP("version", "V", false, "print dockhand's version")
 	// The main help ends with where to report a problem, as its foot; a
 	// subcommand's help, read many times a day, doesn't (the person's
 	// "Have Dockhand mention its repo issues page in its help output.",
