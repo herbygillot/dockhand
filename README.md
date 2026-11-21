@@ -71,14 +71,17 @@ dockhand submit
 
 ## Learn more
 
-`dockhand usage` prints the full guide, and `dockhand usage <topic>` one part of it. The same pages are [in the repository](docs/usage.md):
+Dockhand carries its own guide, written for the version you installed:
 
-- [Where checks build](docs/usage/checks.md): Tart, GitHub Actions, a local prefix, or your own machine
-- [Ports you maintain](docs/usage/batches.md): `outdated --mine`, `ship --mine`, and many ports at once
-- [Unattended work](docs/usage/unattended.md): `bump`, `serve`, and what stops for a person
-- [When something stops](docs/usage/recovery.md): failed checks, holds, and how to resume
-- [New ports](docs/usage/new-port.md) and [reviewing pull requests](docs/usage/review.md)
-- [Everything else](docs/usage.md#more-port-work), [what Dockhand covers](docs/usage.md#what-dockhand-covers), and [install details](docs/usage.md#install-details)
+```sh
+dockhand usage              # setup and the path to a pull request
+dockhand usage checks       # where checks build: Tart, GitHub Actions, a local prefix
+dockhand usage recovery     # when something stops, and how to resume
+dockhand usage batches      # the ports you maintain, many at once
+dockhand usage unattended   # bump, serve, and what stops for a person
+```
+
+`dockhand usage --help` lists every topic, and `dockhand <command> --help` covers each command. The repository has the same pages for the development branch, [docs/usage.md](docs/usage.md), with [more port work](docs/usage.md#more-port-work), [what Dockhand covers](docs/usage.md#what-dockhand-covers), and [install details](docs/usage.md#install-details).
 
 Dockhand is built for routine maintenance: version updates from GitHub releases and GitLab tags, with Go and Rust ports the most exercised. Ports it can't update yet, such as Python ports, get a plan or a clear refusal with the manual steps rather than a wrong edit. Each release's known issues are in its [release notes](https://github.com/herbygillot/dockhand/releases).
 
