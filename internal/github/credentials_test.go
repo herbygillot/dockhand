@@ -64,6 +64,10 @@ func client(server *httptest.Server, source github.TokenSource) *github.Client {
 	return &github.Client{HTTP: server.Client(), Config: github.Config{BaseURL: server.URL + "/"}, Credentials: source}
 }
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
 // A token GitHub rejects is asked for anew, and the request tried again
 // with the new one, a write's body with it; GitHub did nothing with the
 // rejected request (the GitHub auth flow review's plan, step 1).
@@ -85,18 +89,19 @@ func TestARejectedTokenIsReplacedAndTheRequestTriedAgain(t *testing.T) {
 	require.Contains(t, (*seen)[0], "POST Bearer B ")
 }
 
-// A write rejected is tried again with its body.
-func TestARejectedWriteIsTriedAgainWithItsBody(t *testing.T) {
-	server, seen := accepting(t, "B")
+// #250: reads replay after renewal, but a write is left to its previewing caller.
+func TestARejectedWriteReturnsCredentialRenewed(t *testing.T) {
+	var seen []string
 	source := &tokens{source: github.SourceGitHubCLI, given: []string{"A", "B"}}
-	api, err := client(server, source).AuthenticatedAPI(t.Context())
+	client := &github.Client{HTTP: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		seen = append(seen, req.Method+" "+req.Header.Get("Authorization"))
+		return &http.Response{StatusCode: http.StatusUnauthorized, Status: "401 Unauthorized", Header: make(http.Header), Body: io.NopCloser(strings.NewReader("")), Request: req}, nil
+	})}, Config: github.Config{BaseURL: "https://github.invalid/"}, Credentials: source}
+	api, err := client.AuthenticatedAPI(t.Context())
 	require.NoError(t, err)
-	_, _, err = api.Issues.CreateComment(t.Context(), "macports", "macports-ports", 1, gh.IssueCommentRequest{Body: "hello"})
-	require.NoError(t, err)
-	require.Len(t, *seen, 2)
-	require.True(t, strings.HasPrefix((*seen)[0], "POST Bearer A {"), (*seen)[0])
-	require.True(t, strings.HasPrefix((*seen)[1], "POST Bearer B {"), (*seen)[1])
-	require.Equal(t, strings.TrimPrefix((*seen)[0], "POST Bearer A "), strings.TrimPrefix((*seen)[1], "POST Bearer B "), "the same body")
+	_, _, err = api.Issues.CreateComment(github.AsWrite(t.Context()), "macports", "macports-ports", 1, gh.IssueCommentRequest{Body: "hello"})
+	require.ErrorIs(t, err, github.ErrCredentialRenewed)
+	require.Equal(t, []string{"POST Bearer A"}, seen, "a transport cannot choose the previewed account")
 }
 
 // A second rejection is the rejection, and a token from the environment

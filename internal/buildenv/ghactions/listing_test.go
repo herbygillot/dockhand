@@ -110,7 +110,7 @@ func TestARerunIsAnsweredOnlyByTheAttemptItStarted(t *testing.T) {
 		{ID: 1, Attempt: 1, Status: "completed", Conclusion: "success", URL: "https://github.com/ada/macports-ports/actions/runs/1"},
 		{ID: 2, Attempt: 1, Status: "in_progress"},
 	}}
-	p := &Provider{Repo: repo, API: api,
+	p := &Provider{Repo: repo, API: api, Identity: accountIdentity("ada"),
 		Fork: func(context.Context) (buildenv.Fork, error) {
 			return buildenv.Fork{Repository: "ada/macports-ports", PushURL: fork}, nil
 		},
@@ -173,7 +173,7 @@ func TestAMatrixJobWaitingForARunnerCountsAgainstTheBound(t *testing.T) {
 	require.NoError(t, err)
 	api := &queuedMatrixAPI{}
 	sleeps := 0
-	p := &Provider{Repo: repo, API: api, BuildTimeout: 2 * poll,
+	p := &Provider{Repo: repo, API: api, Identity: accountIdentity("ada"), BuildTimeout: 2 * poll,
 		Fork: func(context.Context) (buildenv.Fork, error) {
 			return buildenv.Fork{Repository: "ada/macports-ports", PushURL: fork}, nil
 		},

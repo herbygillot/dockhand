@@ -623,6 +623,7 @@ func (e *Engine) PostReview(ctx context.Context, report ReviewReport, body strin
 	if requestChanges && !report.CanRequestChanges() {
 		return "", fmt.Errorf("requesting changes is left to people with write or triage access to %s; you have %s, so post it as a comment", report.Ref.Repository, Access(report.Permission))
 	}
+	ctx = e.writeAccount(ctx, report.Login)
 	url, err := remotewrite.Review(ctx, e.pullRequests(), remotewrite.Named, forge.ReviewInput{Ref: report.Ref, Commit: report.Head, RequestChanges: requestChanges, Body: body, Comments: report.Comments()})
 	if err != nil {
 		return "", fmt.Errorf("posting the review on #%d: %w", report.Ref.Number, err)

@@ -78,6 +78,49 @@ func (r *Repository) History(ctx context.Context, base, head string) ([]HistoryC
 	return commits, nil
 }
 
+// CommitGraph is the included commit graph from a boundary rev-list, and
+// the excluded commits it meets at the graph's boundary.
+type CommitGraph struct {
+	Parents    map[string][]string
+	Boundaries map[string]struct{}
+}
+
+// BoundaryGraph lists commits reachable from any head but no master, and
+// their parents, in one rev-list process. Excluded parents reached from the
+// branch histories are returned as boundary commits.
+func (r *Repository) BoundaryGraph(ctx context.Context, heads, masters []string) (CommitGraph, error) {
+	args := []string{"rev-list", "--parents", "--boundary"}
+	for _, object := range append(slices.Clone(heads), masters...) {
+		if !ValidObjectID(object) {
+			return CommitGraph{}, fmt.Errorf("git: literal commit objects are required")
+		}
+	}
+	args = append(args, heads...)
+	if len(masters) > 0 {
+		args = append(args, "--not")
+		args = append(args, masters...)
+	}
+	args = append(args, "--")
+	out, err := r.output(ctx, args...)
+	if err != nil {
+		return CommitGraph{}, err
+	}
+	graph := CommitGraph{Parents: make(map[string][]string), Boundaries: make(map[string]struct{})}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 0 {
+			id := fields[0]
+			if strings.HasPrefix(id, "-") {
+				id = strings.TrimPrefix(id, "-")
+				graph.Boundaries[id] = struct{}{}
+				continue
+			}
+			graph.Parents[id] = fields[1:]
+		}
+	}
+	return graph, nil
+}
+
 // ComposeTree is onto's tree with each of paths as it is in from: its
 // entry there, whatever its mode, or removed when from lacks it. Nothing
 // but objects is written; a private index does the work.

@@ -33,7 +33,7 @@ func leftoverFork(t *testing.T) (*Provider, []model.GuestExecution) {
 	testsupport.Git(t, root, "init", "-q", "--bare", fork)
 	repo, err := git.Open(t.Context(), root, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
-	p := &Provider{Repo: repo, Fork: func(context.Context) (buildenv.Fork, error) {
+	p := &Provider{Repo: repo, Identity: accountIdentity("ada"), Fork: func(context.Context) (buildenv.Fork, error) {
 		return buildenv.Fork{Repository: "ada/macports-ports", PushURL: fork}, nil
 	}}
 	var attempts []model.GuestExecution
@@ -132,4 +132,22 @@ func TestSettleBoundsTheWholeRemoteOperation(t *testing.T) {
 			require.Less(t, time.Since(started), 35*time.Second)
 		})
 	}
+}
+
+func TestSettleIdentityReadCannotOutliveItsBound(t *testing.T) {
+	release, unblock := releaseAfter(250 * time.Millisecond)
+	defer unblock()
+	commit := strings.Repeat("a", 40)
+	run := model.Run{ID: "run_stalled_identity"}
+	note := newLaunch("ada/macports-ports", buildenv.CheckBranch(commit, run.ID), buildenv.Job{Run: run, Commit: commit}, launchPush)
+	execution := model.GuestExecution{ID: "github_stalled", Run: run.ID, Environment: model.Environment{Provider: buildenv.GitHub}, Launch: note.String()}
+	p := &Provider{Identity: blockedIdentity{release: release}, Fork: func(ctx context.Context) (buildenv.Fork, error) {
+		return buildenv.Fork{}, ctx.Err()
+	}}
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	_, err := p.Settle(ctx, buildenv.SettleRequest{Execution: execution, Attempts: []model.GuestExecution{execution}, Lock: freeLock{}})
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Less(t, time.Since(started), 150*time.Millisecond, "identity lookup is inside Settle's operation bound")
 }

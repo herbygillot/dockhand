@@ -272,6 +272,15 @@ func (e *Engine) rerequest(ctx context.Context, branch model.BranchID, record *m
 			return nil, err
 		}
 		*record = marked
+		account := record.By
+		if account == "" {
+			login, loginErr := e.forge().Login(ctx)
+			if loginErr != nil {
+				return asked, loginErr
+			}
+			account = login.Account
+		}
+		ctx = e.writeAccount(ctx, account)
 		err := remotewrite.Ask(ctx, e.pullRequests(), reviewBasis(pr, record), ref, send)
 		sent, words := ReviewerAnswered(err)
 		for i, reviewer := range ask.Reviewers {

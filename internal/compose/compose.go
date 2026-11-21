@@ -492,7 +492,7 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	}
 	e.GitHubMoves = forgegithub.NewMoves(movesFile)
 	remote := file.Providers.GitHub.Remote
-	actions := &ghactions.Provider{Repo: e.Repo, Fork: func(ctx context.Context) (buildenv.Fork, error) { return e.Fork(ctx, remote) },
+	actions := &ghactions.Provider{Repo: e.Repo, Identity: e.RemoteWriteIdentity(), Fork: func(ctx context.Context) (buildenv.Fork, error) { return e.Fork(ctx, remote) },
 		API: ghactions.GitHub{Client: e.GitHub.Client}, BuildTimeout: file.Providers.GitHub.BuildBound()}
 	if dependencies.Actions != nil {
 		actions.API, actions.Sleep = dependencies.Actions, func(ctx context.Context, _ time.Duration) error { return ctx.Err() }
@@ -547,6 +547,13 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	}
 	if dependencies.Forge != nil {
 		e.Forge = dependencies.Forge(e)
+		// Provider writes use the composed forge's account reader too. In
+		// command tests (and other injected compositions), the GitHub runtime
+		// can have no credentials while the injected forge has a signed-in
+		// account.
+		if actions, ok := e.Providers[buildenv.GitHub].(*ghactions.Provider); ok {
+			actions.Identity = e.RemoteWriteIdentity()
+		}
 	}
 	e.Ports = dependencies.Ports
 	if dependencies.ArchiveFetcher != nil {

@@ -41,24 +41,26 @@ func TestTheChecksBranchGoesOnlyWhileItHoldsTheCommit(t *testing.T) {
 	testsupport.Git(t, root, "init", "-q", "--bare", fork)
 	repo, err := git.Open(t.Context(), clone, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
-	p := &Provider{Repo: repo}
+	p := &Provider{Repo: repo, Identity: accountIdentity("ada")}
 	target := buildenv.Fork{Repository: "ada/macports-ports", PushURL: fork}
 	branch := BranchPrefix + checked[:12]
 
 	testsupport.Git(t, clone, "push", "-q", fork, later+":refs/heads/"+branch)
 	build := &said{}
-	p.removeBranch(t.Context(), build, target, branch, checked)
+	writeCtx, _, err := p.accountContext(t.Context())
+	require.NoError(t, err)
+	p.removeBranch(writeCtx, build, target, branch, checked)
 	require.Equal(t, []string{"left " + branch + " on ada/macports-ports, since it has moved since the check"}, build.lines)
 	require.Equal(t, later, testsupport.Git(t, fork, "rev-parse", branch))
 
 	testsupport.Git(t, clone, "push", "-q", "-f", fork, checked+":refs/heads/"+branch)
 	build = &said{}
-	p.removeBranch(t.Context(), build, target, branch, checked)
+	p.removeBranch(writeCtx, build, target, branch, checked)
 	require.Equal(t, []string{"removed " + branch + " from ada/macports-ports"}, build.lines)
 	require.Empty(t, testsupport.Git(t, fork, "branch", "--list", branch))
 
 	build = &said{}
-	p.removeBranch(t.Context(), build, target, branch, checked)
+	p.removeBranch(writeCtx, build, target, branch, checked)
 	require.Equal(t, []string{"removed " + branch + " from ada/macports-ports"}, build.lines, "one already gone is gone either way, and the check goes on")
 }
 
@@ -106,7 +108,7 @@ func TestTheChecksOwnBranchAndAPushThatStartedNothing(t *testing.T) {
 	fork := filepath.Join(root, "fork.git")
 	testsupport.Git(t, root, "init", "-q", "--bare", fork)
 	testsupport.Git(t, clone, "push", "-q", fork, commit+":refs/heads/"+branch)
-	p := &Provider{Repo: repo, API: pushingAPI{}, Fork: func(context.Context) (buildenv.Fork, error) {
+	p := &Provider{Repo: repo, API: pushingAPI{}, Identity: accountIdentity("ada"), Fork: func(context.Context) (buildenv.Fork, error) {
 		return buildenv.Fork{Repository: "ada/macports-ports", PushURL: fork}, nil
 	}}
 	err = p.Execute(t.Context(), job, &noting{})

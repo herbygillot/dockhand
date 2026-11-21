@@ -43,6 +43,11 @@ func (p *Provider) Settle(ctx context.Context, request buildenv.SettleRequest) (
 	// so that WithoutCancel cannot hang the check's exit (#241).
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+	var err error
+	ctx, _, err = p.accountContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var notes []launchNote
 	seen := map[string]bool{}
 	for _, attempt := range request.Attempts {
@@ -190,6 +195,10 @@ func listingProblem(err error) []buildenv.Leftover {
 // RemoveLeftover uses the launch note clean listed, never the branch's
 // current head as its expected value (#241).
 func (p *Provider) RemoveLeftover(ctx context.Context, ref string) error {
+	ctx, _, accountErr := p.accountContext(ctx)
+	if accountErr != nil {
+		return accountErr
+	}
 	var note launchNote
 	if err := json.Unmarshal([]byte(ref), &note); err != nil {
 		return err
