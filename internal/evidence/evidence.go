@@ -81,6 +81,9 @@ type CellKind string
 const (
 	// CellRecorded is a result an execution recorded, or reused.
 	CellRecorded CellKind = "recorded"
+	// CellSourceUnknown is a passed Git-fetched result whose fetched commit
+	// wasn't recorded. It is shown, but cannot stand as a pass for another ask.
+	CellSourceUnknown CellKind = "source-unknown"
 	// CellExcluded is a target the plan leaves out there, which needn't
 	// pass there.
 	CellExcluded CellKind = "excluded"
@@ -119,6 +122,10 @@ type Cell struct {
 	// NotReusable is why no later check can reuse a passed result, where
 	// what its build read wasn't recorded (model.TargetInputs).
 	NotReusable string
+	// SourceUnknown says a provider recorded a pass for a Git-fetched
+	// target but didn't report the fetched commit; the row is visible but
+	// its source cannot be verified against another check.
+	SourceUnknown bool
 	// PlannedIn is the check that planned a target not run in an
 	// environment outside build.default's profile, which asks for it there
 	// only because that check did; empty in the profile's own, and where
@@ -245,7 +252,7 @@ func (c Cell) Reason() string {
 // Unbuilt reports a cell whose target no check of the files built there,
 // where the plan asks it to be: not run, remade, or unmet.
 func (c Cell) Unbuilt() bool {
-	return c.Kind == CellNotRun || c.Kind == CellRemade || c.Kind == CellUnmet || c.Kind == CellEntered
+	return c.Kind == CellNotRun || c.Kind == CellRemade || c.Kind == CellUnmet || c.Kind == CellEntered || c.Kind == CellSourceUnknown
 }
 
 // TargetEvidence is one planned target's result across a run's
@@ -693,6 +700,11 @@ func (e *Evidence) outsideProfile(required []model.Environment, checks []Check) 
 				skipped := noResult(CellExcluded, environment, e.Targets[t].Target.ID)
 				skipped.Exclusion = model.Exclusion{Target: e.Targets[t].Target.Target, Reason: "outside what the newest check of these files asked for", Span: true}
 				*cell = skipped
+			case !asked && cell.Kind == CellSourceUnknown:
+				// Keep the earlier pass visible with its source limitation,
+				// while retaining the newest check's exclusion for judgment.
+				cell.Kind = CellExcluded
+				cell.Exclusion = model.Exclusion{Target: e.Targets[t].Target.Target, Reason: "outside what the newest check of these files asked for", Span: true}
 			}
 		}
 	}
@@ -911,7 +923,7 @@ func (e Evidence) Shown() []int {
 	var shown []int
 	for i := range e.Plan.Environments {
 		for _, target := range e.Targets {
-			if target.Outcomes[i].Kind != CellExcluded {
+			if target.Outcomes[i].Kind != CellExcluded || target.Outcomes[i].SourceUnknown {
 				shown = append(shown, i)
 				break
 			}
@@ -1532,7 +1544,7 @@ func (e *Evidence) fill(earlier Evidence) bool {
 		}
 		for i, result := range target.Outcomes {
 			environment := result.Environment
-			if result.Kind != CellNotRun && result.Kind != CellRemade && result.Kind != CellEntered {
+			if result.Kind != CellNotRun && result.Kind != CellRemade && result.Kind != CellEntered && result.Kind != CellExcluded {
 				continue
 			}
 			j := slices.Index(earlier.Plan.Environments, environment)
@@ -1559,6 +1571,27 @@ func (e *Evidence) fill(earlier Evidence) bool {
 			read := earlier.sources[resultKey(cell.TargetResult)]
 			newest, builds := e.Plan.In(environment)
 			why := countsRefusal(earlier.Plan, execution, target.Target.ID, e.now[environment].Value, git, read.fetched, read.against != nil)
+			unknownPass := why != nil && why.Kind == RefusedUnrecorded && cell.Kind == CellRecorded && cell.Outcome == model.OutcomePassed
+			// A narrowed check marks older environments excluded. Replace that
+			// cell only to show this unverified pass; excluded environments
+			// aren't otherwise destinations for earlier evidence.
+			if result.Kind == CellExcluded && !unknownPass {
+				continue
+			}
+			if unknownPass {
+				// Keep the provider's passed row visible. It remains unusable
+				// for reuse; the reader says its source wasn't reported.
+				why = nil
+				if result.Kind == CellExcluded {
+					// Preserve the narrowed check's exclusion: this row is shown
+					// for context, but isn't part of its readiness judgment.
+					cell.Kind = CellExcluded
+					cell.Exclusion = result.Exclusion
+				} else {
+					cell.Kind = CellSourceUnknown
+				}
+				cell.SourceUnknown = true
+			}
 			if why == nil && cell.Kind == CellRecorded {
 				why = sourceRefusal(earlier.Plan, readings, environment, target.Target.ID, builds && newest.Builds(target.Target.ID), earlier.shown[target.Target.ID])
 			}
@@ -1641,7 +1674,7 @@ func (e *Evidence) settle() {
 			if c.Kind == CellExcluded {
 				continue
 			}
-			target.Passed = target.Passed && c.Outcome == model.OutcomePassed
+			target.Passed = target.Passed && c.Kind == CellRecorded && c.Outcome == model.OutcomePassed
 			target.Unchecked = target.Unchecked || c.Unbuilt()
 		}
 	}

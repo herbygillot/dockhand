@@ -1225,26 +1225,102 @@ func (e *Engine) OpenWork(ctx context.Context) (*OpenWork, error) {
 	if err != nil {
 		return nil, err
 	}
-	var pairs [][2]string
+	// Find overlaps in batches grouped by recorded base. Ordinary branches
+	// keep the net base-to-head tree diff, so touched-then-reverted paths do
+	// not count; only stale branches need commit-level paths below.
+	masters, err := e.masters(ctx)
+	if err != nil {
+		return nil, err
+	}
+	heads := make(map[string]string)
+	var allHeads []string
 	for _, branch := range open {
 		ref := refs["refs/heads/"+branch.Name]
 		if !ref.Exists {
 			continue
 		}
-		found := openBranch{branch: branch, tree: trees[ref.Object]}
+		head := ref.Object
+		heads[branch.Name] = head
+		allHeads = append(allHeads, head)
+	}
+	stale := make(map[string]bool)
+	if len(masters) > 0 && len(allHeads) > 0 {
+		allHeads = slices.Compact(slices.Sorted(slices.Values(allHeads)))
+		graph, err := e.Repo.BoundaryGraph(ctx, allHeads, masters)
+		if err != nil {
+			return nil, err
+		}
+		for _, branch := range open {
+			head, exists := heads[branch.Name]
+			if !exists {
+				continue
+			}
+			if _, included := graph.Parents[head]; !included {
+				if _, boundary := graph.Boundaries[head]; !boundary && head != string(branch.Base) {
+					// A head already reachable from master is itself excluded
+					// from the rev-list; it has no own commits in the graph.
+					stale[branch.Name] = true
+				}
+			}
+			seen := make(map[string]struct{})
+			pending := []string{head}
+			for len(pending) > 0 {
+				last := len(pending) - 1
+				commit := pending[last]
+				pending = pending[:last]
+				if _, visited := seen[commit]; visited {
+					continue
+				}
+				seen[commit] = struct{}{}
+				if _, boundary := graph.Boundaries[commit]; boundary {
+					if commit != string(branch.Base) {
+						stale[branch.Name] = true
+					}
+					continue
+				}
+				pending = append(pending, graph.Parents[commit]...)
+			}
+		}
+	}
+
+	var pairs [][2]string
+	var fastIndexes []int
+	var stalePaths = make(map[int][]string)
+	for _, branch := range open {
+		head, exists := heads[branch.Name]
+		if !exists {
+			continue
+		}
+		found := openBranch{branch: branch, tree: trees[head]}
 		if found.tree == "" || trees[string(branch.Base)] == "" {
 			return nil, fmt.Errorf("%s's head or base couldn't be read as a commit", branch.ShortName())
 		}
-		pairs = append(pairs, [2]string{trees[string(branch.Base)], found.tree})
+		index := len(work.branches)
 		work.branches = append(work.branches, found)
+		if stale[branch.Name] {
+			own, err := e.branchOwnCommits(ctx, e.Repo, string(branch.Base), head)
+			if err != nil {
+				return nil, err
+			}
+			for _, commit := range own {
+				stalePaths[index] = append(stalePaths[index], commit.Paths...)
+			}
+		} else {
+			pairs = append(pairs, [2]string{trees[string(branch.Base)], found.tree})
+			fastIndexes = append(fastIndexes, index)
+		}
 	}
 	changed, err := e.Repo.ChangedPathsOf(ctx, pairs)
 	if err != nil {
 		return nil, err
 	}
+	pathsByBranch := stalePaths
+	for i, index := range fastIndexes {
+		pathsByBranch[index] = changed[i]
+	}
 	for i := range work.branches {
 		found := &work.branches[i]
-		paths := changed[i]
+		paths := pathsByBranch[i]
 		// The tracked files edited in its worktree and not yet committed;
 		// none where it isn't checked out there, which leaves it as it is.
 		if found.branch.Worktree != "" && exists(found.branch.Worktree) {

@@ -1,6 +1,7 @@
 package remotewrite
 
 import (
+	"context"
 	"fmt"
 	"go/ast"
 	"go/build"
@@ -18,8 +19,110 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/stretchr/testify/require"
 )
+
+type identitySequence struct {
+	accounts []string
+	reads    int
+}
+
+func (s *identitySequence) Current(context.Context) (github.Identity, error) {
+	i := min(s.reads, len(s.accounts)-1)
+	s.reads++
+	return github.Identity{Account: s.accounts[i]}, nil
+}
+
+type writeForge struct {
+	ready, draft, edit int
+	editErr            error
+	markedWrite        bool
+}
+
+func (f *writeForge) Create(context.Context, forge.PullRequestInput) (forge.PullRequestObservation, error) {
+	return forge.PullRequestObservation{}, nil
+}
+func (f *writeForge) Update(ctx context.Context, _ forge.PullRequestInput) (forge.PullRequestObservation, error) {
+	f.edit++
+	f.markedWrite = github.IsWriteRequest(ctx)
+	err := f.editErr
+	f.editErr = nil
+	return forge.PullRequestObservation{}, err
+}
+func (f *writeForge) MarkReady(context.Context, forge.PullRequestRef) (forge.PullRequestObservation, error) {
+	f.ready++
+	return forge.PullRequestObservation{}, nil
+}
+func (f *writeForge) MarkDraft(context.Context, forge.PullRequestRef) (forge.PullRequestObservation, error) {
+	f.draft++
+	return forge.PullRequestObservation{}, nil
+}
+func (f *writeForge) PostReview(context.Context, forge.ReviewInput) (string, error) { return "", nil }
+func (f *writeForge) RequestReviewers(context.Context, forge.PullRequestRef, []string) error {
+	return nil
+}
+func (f *writeForge) RerunFailed(context.Context, string, int64) error { return nil }
+
+func TestPreviewAccountGuardsEditReadyAndDraft(t *testing.T) {
+	watcher := &identitySequence{accounts: []string{"bea"}}
+	_, pushErr := Push(ForAccount(t.Context(), "ada", watcher), nil, OwnFork, "ada/macports-ports", git.Push{})
+	require.EqualError(t, pushErr, "the account changed; run it again")
+	for _, effect := range []string{"edit", "ready", "draft"} {
+		t.Run(effect, func(t *testing.T) {
+			watcher := &identitySequence{accounts: []string{"bea"}}
+			f := &writeForge{}
+			ctx := ForAccount(t.Context(), "ada", watcher)
+			var err error
+			switch effect {
+			case "edit":
+				_, err = Edit(ctx, f, Named, forge.PullRequestInput{Repository: "macports/macports-ports"})
+			case "ready":
+				_, err = Ready(ctx, f, Named, forge.PullRequestRef{Repository: "macports/macports-ports"})
+			case "draft":
+				_, err = Draft(ctx, f, Named, forge.PullRequestRef{Repository: "macports/macports-ports"})
+			}
+			require.EqualError(t, err, "the account changed; run it again")
+			require.Zero(t, f.edit+f.ready+f.draft, "no write reached the forge")
+		})
+	}
+}
+
+func TestRenewedCredentialRetriesOnlyForThePreviewedAccount(t *testing.T) {
+	t.Run("same account", func(t *testing.T) {
+		watcher := &identitySequence{accounts: []string{"ada", "ada"}}
+		f := &writeForge{editErr: github.ErrCredentialRenewed}
+		_, err := Edit(ForAccount(t.Context(), "ada", watcher), f, Named, forge.PullRequestInput{Repository: "macports/macports-ports"})
+		require.NoError(t, err)
+		require.Equal(t, 2, f.edit)
+		require.Equal(t, 2, watcher.reads)
+	})
+	t.Run("changed account", func(t *testing.T) {
+		watcher := &identitySequence{accounts: []string{"ada", "bea"}}
+		f := &writeForge{editErr: github.ErrCredentialRenewed}
+		_, err := Edit(ForAccount(t.Context(), "ada", watcher), f, Named, forge.PullRequestInput{Repository: "macports/macports-ports"})
+		require.EqualError(t, err, "the account changed; run it again")
+		require.Equal(t, 1, f.edit)
+		require.Equal(t, 2, watcher.reads)
+	})
+}
+
+func TestWriteWithoutAccountBindingIsRefused(t *testing.T) {
+	f := &writeForge{}
+	_, err := Edit(t.Context(), f, Named, forge.PullRequestInput{Repository: "macports/macports-ports"})
+	require.EqualError(t, err, "remote write requires an account binding")
+	require.Zero(t, f.edit)
+}
+
+func TestRemotewriteMarksItsWriteContext(t *testing.T) {
+	f := &writeForge{}
+	watcher := &identitySequence{accounts: []string{"ada"}}
+	_, err := Edit(ForAccount(t.Context(), "ada", watcher), f, Named, forge.PullRequestInput{Repository: "macports/macports-ports"})
+	require.NoError(t, err)
+	require.True(t, f.markedWrite)
+}
 
 // Every effect against every basis, in your fork, another person's, and
 // MacPorts' repository: what's pushed, deleted, canceled, or run again

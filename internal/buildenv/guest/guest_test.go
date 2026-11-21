@@ -95,6 +95,12 @@ namespace eval macports {variable os_platform darwin; variable os_major 25; vari
 proc mportinit {} {}
 proc declares_tests {portdir name variants} { return [expr {$name in $::env(TESTED)}] }
 proc checkout {portdir name variants} { return [file join $::env(CHECKOUTS) $name] }
+if {[info exists ::env(DOCKHAND_TEST_GIT_FAILURE)]} {
+    proc git_as_owner {path} {
+        if {[file tail $path] eq "libharbor"} { error $::env(DOCKHAND_TEST_GIT_FAILURE) }
+        return [exec /usr/bin/git -C $path rev-parse --verify {HEAD^{commit}}]
+    }
+}
 proc work_dir {portdir name variants} { return [file join $::env(CHECKOUTS) $name-work] }
 proc portgroups {portdir name variants} {
     set files {}
@@ -579,9 +585,8 @@ func TestAGitSourceThatMovedIsNotBuilt(t *testing.T) {
 	}
 }
 
-// A checkout the guest can't read leaves what was fetched unknown: the log
-// says so, and the target builds as it did before. A plan that couldn't
-// resolve the ref expects nothing, and what was fetched is reported.
+// An old system Git's dubious-ownership refusal leaves the commit unknown:
+// the guest logs it, builds as before, and records no fetched commit.
 func TestAGitFetchThatCantBeReadBuildsAsBefore(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -589,13 +594,17 @@ func TestAGitFetchThatCantBeReadBuildsAsBefore(t *testing.T) {
 	input.Targets[0].Git = &Git{Ref: "v4", Expect: strings.Repeat("1", 40)}
 	cli := checkoutAt(t, root, "harbor-cli")
 	input.Targets[1].Git = &Git{Ref: "v4"}
-	results, _ := guestRunIn(t, root, input)
+	refusal := "fatal: detected dubious ownership in repository at /opt/local/var/macports/build/pulumi/work/gopath/src/github.com/pulumi/pulumi"
+	results, commands := guestRunIn(t, root, input, "DOCKHAND_TEST_GIT_FAILURE="+refusal)
 	require.Equal(t, "finished", results.State, results.Detail)
 	require.Equal(t, "passed", results.Targets[0].Outcome, results.Targets[0].Detail)
 	require.Empty(t, results.Targets[0].Fetched)
+	require.Contains(t, commands, "-N -D devel/libharbor -d checksum subport=libharbor")
+	require.Contains(t, commands, "-N -D devel/libharbor -dkns install --unrequested subport=libharbor")
 	log, err := os.ReadFile(filepath.Join(root, "libharbor.log"))
 	require.NoError(t, err)
 	require.Contains(t, string(log), "dockhand: could not read the commit checked out by fetch:")
+	require.Contains(t, string(log), refusal)
 	require.Equal(t, "passed", results.Targets[1].Outcome, results.Targets[1].Detail)
 	require.Equal(t, cli, results.Targets[1].Fetched)
 }

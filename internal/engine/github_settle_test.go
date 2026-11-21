@@ -74,7 +74,7 @@ func newGitHubCheck(t *testing.T, matrix bool) *githubCheck {
 	testsupport.Git(t, f.clone, "init", "-q", "--bare", fork)
 	api := &settlingAPI{}
 	g := &githubCheck{e: e, api: api, fork: fork, checkout: f.clone}
-	p := &ghactions.Provider{Repo: e.Repo, API: api, Fork: func(context.Context) (buildenv.Fork, error) {
+	p := &ghactions.Provider{Repo: e.Repo, API: api, Identity: e.RemoteWriteIdentity(), Fork: func(context.Context) (buildenv.Fork, error) {
 		if g.run.ID != "" {
 			require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 				run, err := r.Run(g.run.ID)

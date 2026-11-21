@@ -192,6 +192,91 @@ func TestARebaseCountsWhatItReplays(t *testing.T) {
 	require.Equal(t, 1, rebases())
 }
 
+// #280: a Git rebase can advance the branch without updating dockhand's
+// recorded base. Readers must ignore master commits, while rebase repairs
+// the record and replays only the branch's own change.
+func TestRebaseRepairsAStaleRecordedBase(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Here: true})
+	require.NoError(t, err)
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\\nversion 1.8.1\\n"})
+	commitAs(t, branch.Worktree, "Ada ada@example.org", "jq: update to 1.8.1")
+	oldBase := branch.Base
+	// Advance onto master's newer commit without updating the stored record.
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 2.1\n"})
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 2.1")
+	testsupport.Git(t, branch.Worktree, "fetch", "origin", "master")
+	testsupport.Git(t, branch.Worktree, "rebase", "origin/master")
+	plan, err := e.PlanOutdated(t.Context(), OutdatedReport{Ports: []OutdatedPort{{Port: "libharbor", Current: "2", Newest: "3", Outdated: true}}})
+	require.NoError(t, err)
+	require.Empty(t, plan.Skipped, "#280: outdated does not say libharbor is already in this branch")
+	require.Len(t, plan.Updates, 1)
+	work, err := e.OpenWork(t.Context())
+	require.NoError(t, err)
+	changed, err := work.BranchesChanging(t.Context(), "libharbor")
+	require.NoError(t, err)
+	require.Empty(t, changed, "#280: master-only port is not in the branch")
+	_, err = e.Status(t.Context(), model.BranchOpen)
+	require.NoError(t, err, "#280: status can read the stale branch")
+	current, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.Equal(t, oldBase, current.Base, "#280: reading leaves recorded base unchanged")
+	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: current, NoCheck: true})
+	require.ErrorContains(t, err, "history has")
+
+	rebased, err := e.Rebase(t.Context(), current)
+	require.NoError(t, err)
+	require.Equal(t, 1, rebased.Commits, "#280: only jq's commit was replayed")
+	require.Equal(t, []string{"jq: update to 1.8.1"}, log(t, branch.Worktree, rebased.To))
+	current, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.Equal(t, f.upstreamMaster(t), current.Base, "#280: records new base")
+	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: current, NoCheck: true})
+	require.NoError(t, err, "#280: submit's refusal is gone after rebase")
+
+	// #280: if Git already moved a branch with no own commits onto master,
+	// rebase records its new base and reports that it was up to date.
+	empty, err := e.Start(t.Context(), StartRequest{Name: "already-current", Here: true})
+	require.NoError(t, err)
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 2.2\n"})
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 2.2")
+	testsupport.Git(t, empty.Worktree, "fetch", "origin", "master")
+	testsupport.Git(t, empty.Worktree, "rebase", "origin/master")
+	upToDate, err := e.Rebase(t.Context(), empty)
+	require.NoError(t, err)
+	require.True(t, upToDate.UpToDate)
+	currentEmpty, err := e.Branch(t.Context(), empty.ID)
+	require.NoError(t, err)
+	require.Equal(t, f.upstreamMaster(t), currentEmpty.Base, "#280: records the newer base despite having nothing to replay")
+}
+
+// #280: a branch with no own commits can have a master head but an older
+// recorded base; the excluded head must not make its master's paths appear
+// to be branch work.
+func TestOpenWorkOmitsAMasterHeadAboveItsRecordedBase(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "already-on-master", Here: true})
+	require.NoError(t, err)
+	base := branch.Base
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 3")
+	testsupport.Git(t, branch.Worktree, "fetch", "origin", "master")
+	testsupport.Git(t, branch.Worktree, "rebase", "origin/master")
+
+	work, err := e.OpenWork(t.Context())
+	require.NoError(t, err)
+	changed, err := work.BranchesChanging(t.Context(), "libharbor")
+	require.NoError(t, err)
+	require.Empty(t, changed, "#280: a master head with no own commits claims no paths")
+	current, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.Equal(t, base, current.Base, "#280: reading doesn't repair the recorded base")
+}
+
 // A branch master already has every change of has nothing to rebase, and
 // is refused as it is, as is one whose pull request is recorded merged:
 // skim's replayed nothing onto master, and said submit would replace the

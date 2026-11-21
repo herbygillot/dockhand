@@ -96,7 +96,7 @@ func attempts(notes ...launchNote) []model.GuestExecution {
 }
 
 func stopper(api *stopAPI) *Provider {
-	return &Provider{API: api, Sleep: func(context.Context, time.Duration) error { return nil },
+	return &Provider{API: api, Identity: accountIdentity("ada"), Sleep: func(context.Context, time.Duration) error { return nil },
 		Fork: func(context.Context) (buildenv.Fork, error) {
 			return buildenv.Fork{Repository: "ada/macports-ports", PushURL: "https://github.com/ada/macports-ports.git"}, nil
 		}}
@@ -111,6 +111,18 @@ func stop(t *testing.T, api *stopAPI, executions []model.GuestExecution) error {
 	left, err := stopper(api).Stop(t.Context(), request)
 	require.Empty(t, left)
 	return err
+}
+
+func TestStopIdentityReadFollowsTheLockAndIsBounded(t *testing.T) {
+	release, unblock := releaseAfter(250 * time.Millisecond)
+	defer unblock()
+	p := &Provider{Identity: blockedIdentity{release: release}}
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	_, err := p.Stop(ctx, buildenv.StopRequest{Lock: freeLock{}})
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Less(t, time.Since(started), 150*time.Millisecond, "identity lookup is inside Stop's bounded remote work")
 }
 
 // A cancel of a GitHub check is ended only when every run listed on its
@@ -135,7 +147,9 @@ func TestAGitHubStopAnswersForEveryLaunch(t *testing.T) {
 	// A run that doesn't complete within the bound is not known, named.
 	stuck := &stopAPI{hold: -1}
 	stuck.add(9, "queued")
-	require.ErrorContains(t, stop(t, stuck, attempts(push("p1", 0))), "GitHub was asked to cancel https://github.com/ada/macports-ports/actions/runs/9, and it is still cancelling")
+	left, err := stopper(stuck).Stop(t.Context(), buildenv.StopRequest{Attempts: attempts(push("p1", 0)), Lock: freeLock{}})
+	require.NoError(t, err)
+	require.Contains(t, left, "GitHub was asked to cancel https://github.com/ada/macports-ports/actions/runs/9, and it is still cancelling; cancel it at https://github.com/ada/macports-ports/actions/runs/9")
 
 	// Two pushes that noted the same newest run need two runs newer
 	// than it: one completed run answers for one (A7).
@@ -182,6 +196,24 @@ func TestAGitHubStopAnswersForEveryLaunch(t *testing.T) {
 		return note
 	}
 	require.NoError(t, stop(t, reruns, attempts(push("p1", 0), attach("a1"), attach("a2"))))
+}
+
+func TestStopBoundReturnsUnfinishedCancellationAsLeft(t *testing.T) {
+	api := &stopAPI{hold: -1}
+	api.add(42, "in_progress")
+	p := stopper(api)
+	p.Sleep = func(ctx context.Context, _ time.Duration) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	left, err := p.Stop(ctx, buildenv.StopRequest{Attempts: attempts(push("p1", 0)), Lock: freeLock{}})
+	require.NoError(t, err)
+	require.Less(t, time.Since(started), 150*time.Millisecond)
+	require.Contains(t, left, "GitHub was asked to cancel https://github.com/ada/macports-ports/actions/runs/42, and it is still in progress; cancel it at https://github.com/ada/macports-ports/actions/runs/42")
+	require.Equal(t, []int64{42}, api.canceled)
 }
 
 // What a stop can't read or mayn't touch is said, never taken as ended:

@@ -28,12 +28,13 @@ type (
 )
 
 const (
-	CellRecorded = evidence.CellRecorded
-	CellExcluded = evidence.CellExcluded
-	CellUnmet    = evidence.CellUnmet
-	CellNotRun   = evidence.CellNotRun
-	CellRemade   = evidence.CellRemade
-	CellEntered  = evidence.CellEntered
+	CellRecorded      = evidence.CellRecorded
+	CellSourceUnknown = evidence.CellSourceUnknown
+	CellExcluded      = evidence.CellExcluded
+	CellUnmet         = evidence.CellUnmet
+	CellNotRun        = evidence.CellNotRun
+	CellRemade        = evidence.CellRemade
+	CellEntered       = evidence.CellEntered
 )
 
 // CarriedLines say, of the evidence's results reused over a change that

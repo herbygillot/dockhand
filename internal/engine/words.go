@@ -26,6 +26,14 @@ import (
 // (Evidence.testsReading). Accepted is why submit --accept acknowledged a
 // failure, where it did.
 func targetWords(plan model.Plan, result Cell, reading string, accepted AcceptedFailure) string {
+	if result.SourceUnknown && result.Outcome == model.OutcomePassed {
+		source, _ := plan.GitIn(result.Environment, result.Target)
+		ref := "the default branch"
+		if source.Ref != "" {
+			ref = "git.branch " + source.Ref
+		}
+		return fmt.Sprintf("✓ build passed; its provider did not report which commit of %s it fetched, so the source cannot be verified", ref)
+	}
 	if reading == "" {
 		reading = "advisory"
 	}

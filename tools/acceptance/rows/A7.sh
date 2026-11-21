@@ -18,6 +18,18 @@ act() {
 	wc -c <"$A7_LOG" 2>/dev/null | tr -d ' ' >"$ROW_DIR/log.before" || echo 0 >"$ROW_DIR/log.before"
 	# There's a next candidate only while one is being made; on the newest
 	# one, skip (the rc3 full stage).
+	local active_port active_version installed version
+	active_port=$(port -q installed dockhand | awk '/\(active\)/ {print $2; exit}')
+	active_version=${active_port#@}
+	while IFS= read -r installed; do
+		version=${installed#@}
+		[ "$installed" != "$version" ] || continue
+		[ "$installed" = "$active_port" ] && continue
+		if [ "$(printf '%s\n' "$active_version" "$version" | sort -V | tail -1)" = "$version" ] && [ "$version" != "$active_version" ]; then
+			echo "A7: removing inactive dockhand image $version, newer than active $active_version"
+			port -f uninstall "dockhand@$version" || return 0
+		fi
+	done < <(port -q installed dockhand | awk '{print $2}')
 	checkpoint "stage a dockhand newer than ${ACCEPT_CANDIDATE:-this candidate} in the overlay, as the next candidate or a build of main, and upgrade it: sudo port -N upgrade dockhand. With none to stage, answer skip" || return 0
 	# A candidate's serve refuses to migrate a release's database, which
 	# would lock the release out, until a person answers at the terminal:

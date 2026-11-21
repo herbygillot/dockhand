@@ -471,6 +471,9 @@ from separate checks can jointly cover the same branch files; a narrow rerun
 does not erase other still-valid results. Moved tags or changed inputs can make
 evidence stale even when a version string did not change. A check whose Git
 source couldn't be read stands for itself alone, never for a later request. A
+passed build of a Git-fetched port remains visible in its environment's row
+when another check asks for that row, but without the fetched commit dockhand
+can't verify its source or count it as coverage. A
 result built before a GitHub tag moved, or on a release an earlier check built
 from another commit of the same ref, is built again; on that release, results
 of other ports still count, and the release is still required.

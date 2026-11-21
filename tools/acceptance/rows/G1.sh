@@ -42,7 +42,7 @@ assert() {
 	dh tidy -b "$G1_TWO" -y || :
 	local from
 	from=$(log_size "$ROW_DIR/out.log")
-	dh submit -b "$G1_TWO" --plan -v || :
+	dh submit -b "$G1_TWO" --plan -v --title "rebuild two to check in /opt/local" || :
 	tail -c +"$((from + 1))" "$ROW_DIR/out.log" | grep -q 'with [0-9]* ports* active' ||
 		{ row_fail "submit's preview's Tested on line didn't say how many ports were active in /opt/local"; return; }
 	row_pass "both branches built in /opt/local among its active ports, put back as they were, and Tested on names how many were active"
