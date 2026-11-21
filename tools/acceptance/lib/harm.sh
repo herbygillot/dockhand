@@ -422,11 +422,14 @@ harm_h5() {
 			broken="$broken $name:head"
 		fi
 		if [ -d "$worktree" ]; then
-			actual=$(cd "$worktree" && git status --porcelain=v1 --untracked-files=no | cut -c4- | sort | tr '\n' ',' | sed 's/,$//')
+			# Compared as sets, both sides in the same byte order: jq sorts
+			# by code point and a locale's sort doesn't, so D-I5 read the
+			# same three edits as different (prime-time, rc4).
+			actual=$(cd "$worktree" && git status --porcelain=v1 --untracked-files=no | cut -c4- | LC_ALL=C sort -u | tr '\n' ',' | sed 's/,$//')
 			[ "$actual" = "$edited" ] || broken="$broken $name:edits($edited|$actual)"
 		fi
 	done <<EOT
-$(printf '%s' "$json" | jq -r '.result.branches[]? | select(.missing != true) | [.name, .git_branch, .head, .worktree, ((.edited // []) | sort | join(","))] | @tsv')
+$(printf '%s' "$json" | jq -r '.result.branches[]? | select(.missing != true) | [.name, .git_branch, .head, .worktree, ((.edited // []) | unique | join(","))] | @tsv')
 EOT
 	if [ -n "$broken" ]; then
 		harm_write H5 "broken:$broken"
