@@ -275,7 +275,10 @@ func (d *driver) carry(ctx context.Context, revision model.Revision, targets []r
 			}
 			return nil
 		})
-		if slices.ContainsFunc(ports, func(p model.InertPort) bool { return p.Port == target.Target.Name && len(p.Options) > 0 }) {
+		// Every carried entry for the target's own port means its Portfile
+		// changed; lint it even when the change was comments, declarations,
+		// or a subport block (#258).
+		if slices.ContainsFunc(ports, func(p model.InertPort) bool { return p.Port == target.Target.Name || p.Port == target.Target.Subport }) {
 			answer, ok := linted[target.ID]
 			if !ok {
 				answer = d.relint(ctx, revision, target)

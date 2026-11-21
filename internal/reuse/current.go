@@ -112,6 +112,9 @@ func Carry(recorded model.TargetInputs, origin model.RunID, identity string, tar
 		}
 		if !moved && judge.Blocks != nil {
 			if subports, ok := judge.Blocks(from, then, now); ok && !slices.Contains(subports, port) {
+				if port == target.Target.Name || port == target.Target.Subport {
+					carried = append(carried, entry)
+				}
 				return true
 			}
 		}

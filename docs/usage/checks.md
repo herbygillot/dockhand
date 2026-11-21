@@ -497,7 +497,10 @@ starting a guest, running lint again on this Mac where the Portfile changed. The
 check's result, `status`, and the pull request's Tested on say so:
 `check-767 reused check-766's builds (commit 3f2a1c9): since then only
 omnidiff's maintainers changed, which builds nothing differently, and lint ran
-again on this Portfile`. A lint error builds the target again.
+again on this Portfile`. A lint error builds the target again. A comment, a
+blank line or a declared dependency the build already had lints again the
+same way, so `status` shows the Portfile's own lines, not the earlier
+commit's; where lint can't run, the earlier lines stay and say why.
 
 By default, a failed Tart check keeps its clone, stopped, one for each branch
 and release, for `dockhand shell`: the branch's next check or `clean` removes
