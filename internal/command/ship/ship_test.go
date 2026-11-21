@@ -79,6 +79,10 @@ func TestShipStopsWhereToSays(t *testing.T) {
 
 	_, _, err := cmdtest.Dockhand(t, "ship", "jq", "--to", "review")
 	require.EqualError(t, err, "--to review: commit, check, or submit")
+	_, _, err = cmdtest.Dockhand(t, "ship", "jq", "--note", "")
+	require.EqualError(t, err, "--note must not be empty; use --no-note to remove it")
+	_, _, err = cmdtest.Dockhand(t, "ship", "jq", "--note", "x", "--no-note")
+	require.Error(t, err)
 	// -v says each stage's report.
 	out, errs, err := cmdtest.Dockhand(t, "ship", "jq", "--to", "commit", "-v")
 	require.NoError(t, err, errs)

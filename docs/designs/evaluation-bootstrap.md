@@ -1,6 +1,6 @@
 # Evaluation starts from dockhand's own MacPorts configuration and HOME
 
-An improvement for v0.10.0, [#21](https://github.com/herbygillot/dockhand/issues/21), the final piece of the oracle's bootstrap phase ([oracle.md](../oracle.md), phase 6). The issue says where it stands; this file is its design. Adopted 2026-11-20, after its one review pass; not yet built.
+An improvement for v0.10.0, [#21](https://github.com/herbygillot/dockhand/issues/21), the final piece of the oracle's bootstrap phase ([oracle.md](../oracle.md), phase 6). The issue says where it stands; this file is its design. Adopted 2026-11-20, after its one review pass; amended twice on 2026-11-21 (the index build goes by `PORTSRC` alone, and a tree-less `sources.conf`); not yet built.
 
 ## What exists today, and what an experiment established
 
@@ -26,7 +26,7 @@ Local checks (`--on local`) pass an empty `variants_conf` beside their `sources_
 
 | Input | Disposition | Rule & Why |
 |---|---|---|
-| **Ports tree location** (dockhand's materialized tree) | **Kept (dockhand's snapshot)** | Written as the sole `file://<root> [default,nosync]` entry in dockhand's `sources.conf` (empty file for tree-less `Inspect`/`Versions`), and bound via `::macports::sources*` for overlays. The person's `sources.conf` is never read. |
+| **Ports tree location** (dockhand's materialized tree) | **Kept (dockhand's snapshot)** | Written as the sole `file://<root> [default,nosync]` entry in dockhand's `sources.conf` (for tree-less `Inspect`/`Versions`, an entry naming an empty directory in the bootstrap: Base may refuse to start with no source defined), and bound via `::macports::sources*` for overlays. The person's `sources.conf` is never read. |
 | **MacPorts installation (`port-tclsh` / `portindex` & compiled-in `${prefix}`)** | **Kept** | Located through the person's `--tool port-tclsh`, `PORT_TCLSH_BIN`, `[tools].port_tclsh`, or `PATH` (else `/opt/local/bin`) before launch. Base requires its own `${prefix}/share/macports`, and `installation.tcl` derives the fresh skeleton from `${::macports::prefix}`. |
 | **Base's own stock `macports.conf.default`** | **Kept (from the chosen Base)** | Copied from the installation's `macports.conf.default` (which sets `prefix`, `applications_dir`, `frameworks_dir`, etc.) so dockhand never hardcodes Base defaults. |
 | **Host OS & native toolchain (native contexts only)** | **Kept (via OS/Base defaults)** | Native contexts still describe this Mac's Darwin version, hardware arch, and installed Xcode/CLT; modelled contexts replace them with `ModelVariables` and the facts table as today. |
@@ -34,7 +34,7 @@ Local checks (`--on local`) pass an empty `variants_conf` beside their `sources_
 | **`~/.macports/macports.conf`, `~/.macports/variants.conf`** | **Dropped** | Never opened: both `::macports::autoconf::macports_user_dir` and `HOME` point at dockhand's empty directory (mode `0700`; `HOME` is never unset because `mportinit`'s `dscl` fallback is misquoted on macOS). |
 | **`${prefix}/etc/macports/variants.conf`, `sources.conf`, `archive_sites.conf`, `pubkeys.conf`** | **Dropped** | Replaced by dockhand's five location lines pointing into the bootstrap directory (empty files except `sources.conf`). |
 | **Host `${prefix}/var/macports` registry & cache** | **Dropped** | Overridden via `portdbpath` pointing at a fresh per-session directory (with `registry/` created before launch) removed on session close, preventing stale `${portdbpath}/cache` facts (`xcodeinfo`, `compiler_versions`, `macos_version`, `pingtimes`) from crossing sessions. |
-| **Process environment (`Env`)** | **Minimal allowlist only** | Passed to `port-tclsh` / `portindex`: `HOME=<dir>/home`, `TMPDIR=<dir>/tmp`, `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, `LC_ALL=C` (plus `PORTSRC` only if the `portindex` fallback in §3 is needed). Ambient `PORTSRC`, `SUDO_USER`, `SSH_AUTH_SOCK`, `JAVA_HOME`, `DEVELOPER_DIR`, `CCACHE_DIR`, `DYLD_*`, `DISPLAY`, `TMP`, `*_SITE_LOCAL`, and proxy variables are **dropped**. |
+| **Process environment (`Env`)** | **Minimal allowlist only** | Passed to `port-tclsh` / `portindex`: `HOME=<dir>/home`, `TMPDIR=<dir>/tmp`, `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, `LC_ALL=C` (plus `PORTSRC` for the index build, §3). Ambient `PORTSRC`, `SUDO_USER`, `SSH_AUTH_SOCK`, `JAVA_HOME`, `DEVELOPER_DIR`, `CCACHE_DIR`, `DYLD_*`, `DISPLAY`, `TMP`, `*_SITE_LOCAL`, and proxy variables are **dropped**. |
 
 **Visible (and intended) behavior change from minimal `PATH`:** Dockhand still finds `port-tclsh` and `portindex` on the person's `PATH` before launch, and `mportinit` prepends `${prefix}/bin:${prefix}/sbin`, but **native contexts will no longer find programs under `/usr/local/bin` or Homebrew (`/opt/homebrew/bin`)** during evaluation. This is wanted—evaluation matches a clean MacPorts prefix rather than incidental host tools.
 
@@ -49,7 +49,7 @@ For each evaluator session (`eval.Evaluator`), dockhand creates a temporary boot
    - `variants_conf <dir>/variants.conf`
    - `archive_sites_conf <dir>/archive_sites.conf`
    - `pubkeys_conf <dir>/pubkeys.conf`
-3. Create `<dir>/portdb/registry`, `<dir>/home`, `<dir>/tmp`, empty `variants.conf`, `archive_sites.conf`, `pubkeys.conf`, and `sources.conf` (`file://<root> [default,nosync]` when a tree is given, empty otherwise).
+3. Create `<dir>/portdb/registry`, `<dir>/home`, `<dir>/tmp`, empty `variants.conf`, `archive_sites.conf`, `pubkeys.conf`, and `sources.conf` (`file://<root> [default,nosync]` when a tree is given; otherwise `file://<dir>/empty-tree [default,nosync]`, an empty directory made beside it, since Base may refuse to start with no source defined. Amended 2026-11-21; the first test without a tree confirms it on each Base).
 4. In `evaluator.tcl`, after `package require macports` and before `mportinit`:
    - Check that `::macports::autoconf::macports_conf_path` and `::macports::autoconf::macports_user_dir` exist. If either is absent on a Base release, **fail closed** with a startup error naming the missing variable.
    - Set `::macports::autoconf::macports_conf_path` to `<dir>` and `::macports::autoconf::macports_user_dir` to `<dir>/home`.
@@ -62,8 +62,12 @@ Because `eval.Session` already reuses one interpreter across repeated probes of 
 
 One shared bootstrap helper builds the directory, copies and edits `macports.conf.default`, produces the minimal `Env`, and cleans up on `Close()`.
 
-- **`portindex`:** `portindex` is a Tcl script on all tested Bases, run by the interpreter its first line names, which the index build already finds for its runtime probe. The primary path launches that interpreter with a small wrapper that loads `macports`, sets `::macports::autoconf::macports_conf_path` and `::macports::autoconf::macports_user_dir`, and then sources `portindex` with the arguments the index build passes today (its `-p file:<index_vars>` platform file, `-o`, and the tree), unchanged. No `PORTSRC` is set on this path, and an ambient one is dropped.
-- **First test to write:** Confirm that this wrapper works cleanly for `portindex` on Base 2.11, 2.12, and master (not yet tried). If a Base's `portindex` script does not tolerate pre-loading `macports`, `portindex` falls back to passing `PORTSRC=<dir>/macports.conf` (containing `macports.conf.default`'s stock values + the five location overrides, which the experiment confirmed restores keys that have values) with the same clean `HOME` and minimal `Env`. That fallback cannot undo a key the installation's `macports.conf` sets and the stock file leaves to Base, such as `default_compilers`, so under it the index build compares the two files first and, when the installation's sets one the stock file doesn't, fails with a message naming the key and the file. No index is ever built outside dockhand's bootstrap.
+- **`portindex` goes by `PORTSRC` alone** (amended twice on 2026-11-21, on two measurements of the full tree on Base 2.12.7 and master). The index build runs `portindex` as it does today, with no wrapper, with `PORTSRC=<dir>/macports.conf` from the shared bootstrap (the stock file's values and the five location lines), the clean `HOME` and the minimal `Env`.
+- **Why not the evaluator's mechanism here.** `portindex` starts each worker thread as a new interpreter that loads `macports` again, which puts the configuration directory back to the prefix's. With the two directories set in the main interpreter only, every thread read the prefix's `macports.conf`, `sources.conf`, `variants.conf`, caches and registry, two ports' dependencies followed what the prefix's registry had active, and on a prefix the person owns the threads rewrote a cache file there. Reaching the threads means a trace on `portindex`'s own thread start-up script, one more Base internal, and the first amendment took that. The second measurement made it unnecessary.
+- **What `PORTSRC` was measured to do.** `mportinit` keeps `PORTSRC` in the environment and threads share it, so all eighteen worker threads ended with dockhand's `portdbpath`, registry and caches, opened nothing under the prefix's `var/macports`, and never read the home directory's configuration. What `PORTSRC` cannot do is undo a key the prefix's `macports.conf` sets and dockhand's file does not restate, because it is read after that file, not instead of it.
+- **So the index build restates and refuses.** Dockhand's file carries every key the stock file sets, by value. Before the build, dockhand compares the installation's `macports.conf` with its `macports.conf.default`; where the installation's sets a key the stock file leaves to Base, such as `default_compilers`, the build fails with a message naming the key and the file. No index is built outside dockhand's bootstrap.
+- **Tests first:** on each Base, a full index build under a polluted home directory and a prefix registry with a port active that a Portfile asks about must match one built with neither (the measurement's two ports are the case); nothing under the prefix's `etc/macports` or `var/macports` is changed; and an installation file with an extra key is refused by name.
+- **Not covered here:** the index still varies with what is installed in the prefix (an installed `lbzip2` adds an extract dependency to about 1,400 ports) and, for a platform that is not this Mac's, with the host's clang build number (about 250 ports' compiler dependencies). Dockhand builds its index for this Mac's own platform and reads it for which ports depend on which, by library, build and run dependencies, so neither reaches a decision; both are recorded in docs/macports-compatibility.md and left.
 
 ### 4. Local provider ignores the prefix's `variants.conf` (decided 2026-11-20)
 
@@ -101,7 +105,7 @@ Results recorded before `#21` may have been produced under the person's `variant
 ## Tests & Proof
 
 ### Automated tests
-- **`portindex` wrapper (first test to write):** Verify `portindex` runs cleanly under `::macports::autoconf::macports_conf_path` / `macports_user_dir` and ignores polluted `HOME`, `PORTSRC`, `variants.conf`, and `PATH` shims.
+- **Index build (first test to write):** the three tests of §3: threads isolated under `PORTSRC`, nothing under the prefix changed, and a non-stock installation file refused by name.
 - **Evaluator isolation & fail-closed checks:**
   - Polluted `Env` (`HOME` with `~/.macports/macports.conf`, ambient `PORTSRC`, `SUDO_USER`, `SSH_AUTH_SOCK`, `JAVA_HOME`, `DEVELOPER_DIR`, `NO_PROXY`, `PATH` with fake `/usr/local/bin` tools) leaves `bootstrap_record` reading only dockhand's bootstrap directory and allowed env keys.
   - Non-default `variants.conf` (`+universal`) and polluted installation/user `macports.conf` (`macosx_deployment_target`, `build_arch`, `cxx_stdlib`, `default_compilers`, `applications_dir`) do not alter evaluated `PortInfo`, `configure.compiler`, or `bootstrap_settings`.
@@ -126,4 +130,4 @@ Updated in the same commit:
 
 ## Order
 
-Independent of v0.9.0's core (`#191`–`#195`); ready to build in v0.10.0. Base 2.11.6 and the `portindex` wrapper are verified as it is built.
+Independent of v0.9.0's core (`#191`–`#195`); ready to build in v0.10.0. Base 2.11.6 is verified as it is built.
