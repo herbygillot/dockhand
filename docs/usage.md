@@ -71,7 +71,6 @@ rest.
 | Process checks, reviews, and new releases in the background | `dockhand serve --install` |
 | Watch every branch in one table | `dockhand console` |
 | Remove merged branches and their worktrees | `dockhand clean` |
-| Back up the database | `dockhand backup ~/Backups` |
 
 New Portfiles include `# dockhand: unconfirmed` markers for inferred values.
 Review and correct those fields, then remove the markers before submitting. For

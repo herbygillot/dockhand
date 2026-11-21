@@ -59,16 +59,15 @@ Run `ship` or `bump` again to resume where it stopped.
 Each change is an ordinary Git branch with its own worktree, so you can edit with your usual tools and run each stage yourself:
 
 ```sh
-dockhand update ripgrep --new=ripgrep-update
-cd "$(dockhand path ripgrep-update)"
+dockhand update ripgrep
+cd "$(dockhand path -p ripgrep)"
 dockhand diff
 dockhand check
-dockhand tidy
 dockhand submit --plan
 dockhand submit
 ```
 
-`check` builds the files as they are on disk; `tidy` shapes the commits for MacPorts review; `submit` pushes to your fork and opens or updates the pull request. Add `--plan` to any of them to preview it.
+`update` starts a branch for the port at its newest release. `check` builds the files as they are on disk, and `submit` commits them, pushes to your fork, and opens or updates the pull request. To shape the commits yourself first, run `dockhand tidy` before `submit`. Add `--plan` to any of these to preview it.
 
 ## Learn more
 
