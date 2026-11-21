@@ -240,3 +240,10 @@ func TestToolchainProbeMustEnterFromBaseCompilerSelection(t *testing.T) {
 		require.Equal(t, want, portconfigureEntry(direct, newBaseCode(b.lib), groupDir), "direct caller %s", file)
 	}
 }
+
+func TestPatchfilesIsInTheActedOptionList(t *testing.T) {
+	t.Parallel()
+	require.True(t, ActedOption("patchfiles"))
+	require.True(t, ActedOption("patchfiles-append"))
+	require.False(t, benignSink("patchfiles"), "patchfiles is acted on, so the older rules no longer take it as a benign sink")
+}
