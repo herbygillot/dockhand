@@ -57,7 +57,7 @@ func TestArchiveTakesTheWorktreeAndPathBringsItBack(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "build.log"), []byte("built\n"), 0o644))
 	archived, _, err = cmdtest.Dockhand(t, "archive", "--discard", "jq-update")
 	require.NoError(t, err)
-	require.Contains(t, cmdtest.Flat(archived), "Archived jq-update and removed its worktree. The Git branch and pull request remain. Run dockhand archive --undo jq-update to restore the archived branch.")
+	require.Contains(t, cmdtest.Flat(archived), "Archived jq-update and removed its worktree. The Git branch remains. Run dockhand archive --undo jq-update to restore the archived branch.")
 	require.Contains(t, archived, "Its ignored files went with it: build.log\n")
 	require.NoDirExists(t, dir)
 	require.Equal(t, head, strings.TrimSpace(testsupport.Git(t, w.Clone, "rev-parse", "dockhand/jq-update")), "the branch and its work stay")
@@ -92,6 +92,25 @@ func TestArchiveTakesTheWorktreeAndPathBringsItBack(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "\nRemoved 1 worktree.\n", "one line, once done")
 	require.NoDirExists(t, dir)
+}
+
+func TestArchiveWithoutPullRequestDoesNotClaimOneRemains(t *testing.T) {
+	t.Parallel()
+	cmdtest.NewWorld(t)
+	_, _, err := cmdtest.Dockhand(t, "start", "notes")
+	require.NoError(t, err)
+	out, _, err := cmdtest.Dockhand(t, "archive", "notes")
+	require.NoError(t, err)
+	flat := cmdtest.Flat(out)
+	require.NotContains(t, flat, "pull request")
+}
+
+func TestAbandonSuggestsArchive(t *testing.T) {
+	t.Parallel()
+	cmdtest.NewWorld(t)
+	_, _, err := cmdtest.Dockhand(t, "abandon")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "archive")
 }
 
 // --closed adds to what clean takes; merged branches stay in it unless

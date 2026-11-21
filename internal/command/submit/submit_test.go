@@ -1400,3 +1400,27 @@ func TestSubmitsPreviewIsNotWrapped(t *testing.T) {
 	_ = cmdtest.RunFor(t, t.Context(), []string{"submit", "--no-check", "--note", note, "--tested-binaries"}, term.Streams{In: strings.NewReader("p\nq\n"), Out: &out, Err: &errs}.AsTerminal())
 	require.Contains(t, out.String(), note+"\n", errs.String())
 }
+
+// archive of a branch with a pull request says both the Git branch and
+// the pull request remain; one without says only the branch (#279).
+func TestArchivingABranchWithAPullRequestSaysItRemains(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithGitHub(t, w)
+	started, err := cmdtest.JSONOf(t, "start", "jq-update")
+	require.NoError(t, err)
+	worktree := cmdtest.Dig(t, started.Result, "branch", "worktree").(string)
+	cmdtest.Setenv(t, "MACPORTS_TREE", worktree)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "tidy")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
+	archived, _, err := cmdtest.Dockhand(t, "archive", "jq-update", "--discard")
+	require.NoError(t, err)
+	require.Contains(t, cmdtest.Flat(archived), "The Git branch and pull request remain.")
+}
