@@ -68,9 +68,9 @@ Choose how much of the workflow you want Dockhand to drive. The examples below u
 For a routine upstream release, `dockhand bump` takes a single port from A to Z without prompts:
 
 ```sh
+dockhand bump ripgrep --plan     # preview without changing anything
 dockhand bump ripgrep            # update to the latest release, check, and open a PR
 dockhand bump ripgrep <version>  # target a specific release
-dockhand bump ripgrep --plan     # preview without changing anything
 ```
 
 `bump` creates a branch and worktree from fresh `master`, updates the Portfile (version, checksums, and supported dependency lists), compares the old and new upstream archives for license or build changes, commits, builds and tests the port, and opens a pull request from your fork.
@@ -151,34 +151,21 @@ Checks run lint, fetch, checksum, install from source, and declared tests (test 
 
 Dockhand is built for everyday MacPorts maintenance: routine version updates from GitHub releases and GitLab tags—especially Go (`go.vendors`), Rust (`cargo.crates`), and C/C++ (CMake, Meson, autotools) ports—along with batch maintenance, library revbumps, and drafting new ports.
 
-For ports with custom version calculations, shared multi-subport Portfiles, or upstreams outside GitHub and GitLab, Dockhand either produces a conservative plan or refuses clearly and tells you what to finish by hand. See the [v0.8.0 release notes](docs/releases/v0.8.0.md) for current changes and known limitations.
+For ports with custom version calculations, shared multi-subport Portfiles, or upstreams outside GitHub and GitLab, Dockhand either produces a conservative plan or refuses clearly and tells you what to finish by hand. See the [release notes](https://github.com/herbygillot/dockhand/releases) for each version's changes and known issues.
 
 ## Documentation and help
 
-Dockhand's full workflow guide is built into the binary and available in [`docs/usage/`](docs/usage.md):
+Dockhand's workflow guide is built into the binary, so it always matches the version you installed:
 
 ```sh
 dockhand --help           # command overview
 dockhand <cmd> --help     # flags and options for any command
 dockhand usage            # first-run guide
-dockhand usage <topic>    # deep-dive workflow guides
+dockhand usage --help     # the topics: checks, recovery, batches, unattended, and more
 dockhand explain <code>   # explain any finding, check result, or branch state
 ```
 
-| Guide (`dockhand usage <topic>`) | Covers |
-| --- | --- |
-| [First run to PR](docs/usage/setup.md) (`usage`) | Setup, authentication, providers, and first update |
-| [Branches & worktrees](docs/usage/branches.md) (`branches`) | Finding, adopting, rebasing, undoing, and cleaning branches |
-| [Hand edits](docs/usage/hand-edits.md) (`hand-edits`) | Editing Portfiles, refreshing checksums, and revbumping dependents |
-| [Builds & tests](docs/usage/checks.md) (`checks`) | Capture modes, variants, test policies, and build targets |
-| [Publishing](docs/usage/publishing.md) (`publishing`) | Shaping commits, review updates, drafts, and evidence rules |
-| [Recovery](docs/usage/recovery.md) (`recovery`) | Diagnosing holds, failed builds, and stale evidence |
-| [Batches](docs/usage/batches.md) (`batches`) | Selecting and shipping many ports at once |
-| [Unattended work](docs/usage/unattended.md) (`unattended`) | `bump`, background checks, `serve`, and holds |
-| [New ports](docs/usage/new-port.md) (`new-port`) | Creating and finishing a new Portfile |
-| [PR reviews](docs/usage/review.md) (`review`) | Inspecting, adopting, and building others' PRs |
-| [Configuration](docs/usage/configuration.md) (`configuration`) | Build profiles, holds, tools, paths, and retention |
-| [Scripts & agents](docs/usage/agents.md) (`agents`) | `--json` output, exit codes, and non-interactive automation |
+The repository's copy of the guide, [`docs/usage/`](docs/usage.md), follows the development branch and may describe features newer than your release.
 
 For MacPorts conventions, see the [MacPorts contribution workflow](https://guide.macports.org/#project.github) and [commit-message guidelines](https://trac.macports.org/wiki/CommitMessages).
 
