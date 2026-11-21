@@ -349,6 +349,7 @@ type VersionUpdate struct {
 	// tidy's Closes: trailer (the docs dig's I41).
 	Closes []string
 	Linked LinkedOptions
+	NoNote bool
 }
 
 // flags adds the edit's flags, which update, ship, and bump share, those
@@ -380,6 +381,8 @@ func (v *VersionUpdate) StageFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&v.Linked.TestedVariants, "tested-variants", false, "state that you checked the most important variants, for these files; =false withdraws it")
 	cmd.Flags().StringVar(&v.Linked.Title, "title", "", "the pull request's title (default: the commit subject)")
 	cmd.Flags().StringVar(&v.Linked.Note, "note", "", "your own note in the pull request's description")
+	cmd.Flags().BoolVar(&v.NoNote, "no-note", false, "remove your note from the pull request's description")
+	cmd.MarkFlagsMutuallyExclusive("note", "no-note")
 	cmd.Flags().BoolVar(&v.Linked.SkipNotification, "skip-notification", false, "add [skip notification], so maintainers are not mentioned")
 	cmd.MarkFlagsMutuallyExclusive("build", "on")
 }
@@ -387,6 +390,9 @@ func (v *VersionUpdate) StageFlags(cmd *cobra.Command) {
 // stageReady refuses what the later stages' flags can't take before
 // anything is done: a misspelled --tests.
 func (v VersionUpdate) StageReady() error {
+	if v.Linked.NoteSet && strings.TrimSpace(v.Linked.Note) == "" && !v.NoNote {
+		return errors.New("--note must not be empty; use --no-note to remove it")
+	}
 	if v.Linked.Tests != "" && !model.TestPolicy(v.Linked.Tests).Valid() {
 		return fmt.Errorf("--tests %q is not declared, required, or skip", v.Linked.Tests)
 	}
@@ -439,7 +445,7 @@ type LinkedOptions struct {
 	Draft      bool
 	Unattended bool
 	// title, note, and skipNotification are submit's, passed on; noteSet
-	// is whether --note was given, "" taking a note out. bump took none, so
+	// is whether --note or --no-note was given. bump took none, so
 	// a test's pull request couldn't be marked one (the rc6 full stage, B2).
 	Title            string
 	Note             string

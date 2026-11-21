@@ -229,8 +229,8 @@ dockhand submit -b jq-update \
 ```
 
 The note stays with the branch for later submissions. A new `--note` replaces
-it; `--note ""` clears it. `--title` explicitly sets the title, including an
-existing pull request's title. Without it, the title is the commits': one
+it; `--no-note` removes it. An empty `--note` is refused. `--title` explicitly
+sets the title, including an existing pull request's title. Without it, the title is the commits': one
 commit's subject; for one port, the subject of its commit that names the
 version the branch moves it to, else its first; for an update beside the
 rebuilds it causes, the update's; and for commits that each update one port

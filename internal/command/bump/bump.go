@@ -60,6 +60,10 @@ dockhand can't. The check builds where build.unattended's profile says;
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
+			version.Linked.NoteSet = cmd.Flags().Changed("note") || version.NoNote
+			if version.NoNote {
+				version.Linked.Note = ""
+			}
 			if err := version.StageReady(); err != nil {
 				return err
 			}
@@ -84,7 +88,6 @@ dockhand can't. The check builds where build.unattended's profile says;
 				fmt.Fprintln(streams.Out, "Nothing was shipped (--plan).")
 				return nil
 			}
-			version.Linked.NoteSet = cmd.Flags().Changed("note")
 			// A statement said false withdraws the one kept, as ship's and
 			// submit's do, where bump read it as the flag left out (#198).
 			version.Withdrawn(cmd)
