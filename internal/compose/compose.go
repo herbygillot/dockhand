@@ -547,6 +547,13 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	}
 	if dependencies.Forge != nil {
 		e.Forge = dependencies.Forge(e)
+		// Provider writes use the composed forge's account reader too. In
+		// command tests (and other injected compositions), the GitHub runtime
+		// can have no credentials while the injected forge has a signed-in
+		// account.
+		if actions, ok := e.Providers[buildenv.GitHub].(*ghactions.Provider); ok {
+			actions.Identity = e.RemoteWriteIdentity()
+		}
 	}
 	e.Ports = dependencies.Ports
 	if dependencies.ArchiveFetcher != nil {
