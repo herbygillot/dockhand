@@ -23,6 +23,7 @@ import (
 func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
 	var note string
+	var noNote bool
 	var request engine.SubmitRequest
 	var yes, testedBinaries, testedVariants, ready, preview bool
 	cmd := &cobra.Command{
@@ -49,7 +50,7 @@ its commit passes as submit requires.
 
 --note adds your own note to the pull request description, under its
 Description heading. The note is kept with the branch and included each
-time Dockhand writes the description; --note "" removes it.
+time Dockhand writes the description. --no-note removes it.
 
 Every push happens only if the fork's branch is still where submit last
 saw it, so someone else's push is never overwritten. A description you
@@ -60,6 +61,12 @@ write, keeping your --note.
 --plan shows the preview and changes nothing, locally or on GitHub.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if cmd.Flags().Changed("note") && noNote {
+				return errors.New("--note and --no-note cannot be used together")
+			}
+			if cmd.Flags().Changed("note") && strings.TrimSpace(note) == "" {
+				return errors.New("--note must not be empty; use --no-note to remove it")
+			}
 			ctx := cmd.Context()
 			e, err := s.Open(ctx)
 			if err != nil {
@@ -71,9 +78,11 @@ write, keeping your --note.
 			// keeps (#153).
 			request.WithdrawBinaries = cmd.Flags().Changed("tested-binaries") && !testedBinaries
 			request.WithdrawVariants = cmd.Flags().Changed("tested-variants") && !testedVariants
-			// --note "" clears the note, which leaving --note out keeps.
+			// --note replaces the note; --no-note explicitly removes it.
 			if cmd.Flags().Changed("note") {
 				request.Note = &note
+			} else if noNote {
+				request.Note = new(string)
 			}
 			if request.Branch, err = where.Resolve(ctx, e, streams); err != nil {
 				return err
@@ -168,7 +177,8 @@ write, keeping your --note.
 	cmd.Flags().BoolVar(&request.Standing, "standing", false, "with --accept, accept an eligible dependency install failure across branches until the dependency version or image changes")
 	cmd.Flags().StringVar(&request.Title, "title", "", "the pull request's title (default: the commit subject)")
 	cmd.Flags().BoolVar(&request.Rewrite, "rewrite-description", false, "replace the entire pull request description with Dockhand's, including a description you wrote; keep your --note")
-	cmd.Flags().StringVar(&note, "note", "", "add a note preserved when Dockhand rewrites the description; use an empty value to remove it")
+	cmd.Flags().StringVar(&note, "note", "", "add a note preserved when Dockhand rewrites the description")
+	cmd.Flags().BoolVar(&noNote, "no-note", false, "remove your note from the pull request's description")
 	cmd.Flags().StringSliceVar(&request.Types, "type", nil, "the template's Type(s): bugfix, enhancement, security fix (default: enhancement for a branch that updates a port)")
 	cmd.Flags().StringVar(&request.Remote, "remote", "", "the Git remote of your fork, when several could be")
 	cmd.Flags().BoolVar(&request.SkipNotification, "skip-notification", false, "add [skip notification], so maintainers are not mentioned")

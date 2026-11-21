@@ -445,7 +445,7 @@ func TestTheRefreshedPartsAreNamed(t *testing.T) {
 // submit --note gives a person's note under the description's
 // Description, kept with the branch: submitting again without it keeps
 // it, a new one replaces it, which is the description's update, and
-// --note "" takes it out. The preview shows it, and says when a
+// --no-note takes it out. The preview shows it, and says when a
 // Description a person edited won't give it. A note is one branch's, so
 // --passing takes none. dockhand writes the whole description, so a
 // person had no way to say in it why rust's tests failed (the rust run,
@@ -491,7 +491,7 @@ func TestSubmitNoteIsKeptWithTheBranch(t *testing.T) {
 	require.Contains(t, out, "#34901 has nothing new: the fork has its commit, and its title and description are current\n", "the note is kept")
 	// and says so, since it outlives the commits it was written beside
 	// (field testing, grafana 13.2.4).
-	require.Contains(t, out, "  Note     The tests failed on a permission error, …\n           kept from an earlier submit, across rewritten commits; --note \"\" clears it\n")
+	require.Contains(t, out, "  Note     The tests failed on a permission error, …\n           kept from an earlier submit, across rewritten commits; --no-note clears it\n")
 	require.Contains(t, g.PRs[34901].Body, "#### Description\n\nThe tests failed")
 
 	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes", "--note", "Fixed upstream.")
@@ -500,12 +500,23 @@ func TestSubmitNoteIsKeptWithTheBranch(t *testing.T) {
 	require.Contains(t, g.PRs[34901].Body, "#### Description\n\nFixed upstream.\n\n###### Type(s)")
 	require.NotContains(t, g.PRs[34901].Body, "permission error")
 
-	updated, err := cmdtest.JSONOf(t, "submit", "--no-check", "--yes", "--note", "")
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes", "--note", "")
+	require.ErrorContains(t, err, "--note must not be empty; use --no-note to remove it")
+	require.Contains(t, g.PRs[34901].Body, "#### Description\n\nFixed upstream.")
+	// A note of only whitespace is trimmed to nothing, so it's refused too
+	// and the kept note stays (#272).
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes", "--note", " ")
+	require.ErrorContains(t, err, "--note must not be empty; use --no-note to remove it")
+	require.Contains(t, g.PRs[34901].Body, "#### Description\n\nFixed upstream.")
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes", "--note", "Fixed upstream.", "--no-note")
+	require.ErrorContains(t, err, "--note and --no-note cannot be used together")
+	updated, err := cmdtest.JSONOf(t, "submit", "--no-check", "--yes", "--no-note")
 	require.NoError(t, err)
 	pr, _ := updated.Result["pull_request"].(map[string]any)
 	require.Equal(t, true, pr["updated_description"], "the JSON says what was rewritten")
 	require.Equal(t, false, pr["updated_title"])
 	require.NotContains(t, g.PRs[34901].Body, "Author's note")
+	require.NotContains(t, g.PRs[34901].Body, "Fixed upstream.")
 	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "  Note     missing; the commit has no body, so the description does not explain the change. Add --note \"…\".\n",
@@ -1388,4 +1399,28 @@ func TestSubmitsPreviewIsNotWrapped(t *testing.T) {
 	var out, errs bytes.Buffer
 	_ = cmdtest.RunFor(t, t.Context(), []string{"submit", "--no-check", "--note", note, "--tested-binaries"}, term.Streams{In: strings.NewReader("p\nq\n"), Out: &out, Err: &errs}.AsTerminal())
 	require.Contains(t, out.String(), note+"\n", errs.String())
+}
+
+// archive of a branch with a pull request says both the Git branch and
+// the pull request remain; one without says only the branch (#279).
+func TestArchivingABranchWithAPullRequestSaysItRemains(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithGitHub(t, w)
+	started, err := cmdtest.JSONOf(t, "start", "jq-update")
+	require.NoError(t, err)
+	worktree := cmdtest.Dig(t, started.Result, "branch", "worktree").(string)
+	cmdtest.Setenv(t, "MACPORTS_TREE", worktree)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "tidy")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
+	archived, _, err := cmdtest.Dockhand(t, "archive", "jq-update", "--discard")
+	require.NoError(t, err)
+	require.Contains(t, cmdtest.Flat(archived), "The Git branch and pull request remain.")
 }
