@@ -160,10 +160,10 @@ func noteLine(plan engine.SubmitPlan) string {
 	// before a commit was amended to carry a body read twice in the
 	// Description (field testing, grafana 13.2.4, #35488).
 	if plan.NoteKept() {
-		words += "\n           kept from an earlier submit, across rewritten commits; --note \"\" clears it"
+		words += "\n           kept from an earlier submit, across rewritten commits; --no-note clears it"
 	}
 	if plan.NoteRepeatsCommits() && !plan.NoteLeftOut {
-		words += "\n           ! the note mostly repeats the commit message body, which the pull request description already includes above it; --note \"\" clears it"
+		words += "\n           ! the note mostly repeats the commit message body, which the pull request description already includes above it; --no-note clears it"
 	}
 	if plan.NoteLeftOut {
 		words += "\n           ! note omitted: the pull request description was edited or removed on GitHub, so Dockhand will preserve it"

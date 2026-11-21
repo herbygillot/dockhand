@@ -86,6 +86,10 @@ func TestBumpChangesNothingWhenItHasNothingToDo(t *testing.T) {
 	require.EqualError(t, err, "--except takes a port out of --revbump-dependents; add --revbump-dependents")
 	_, _, err = cmdtest.BumpOn(t, "jq", "--submit")
 	require.ErrorContains(t, err, "unknown flag: --submit", "bump is ship <port> --yes already")
+	_, _, err = cmdtest.BumpOn(t, "jq", "--note", "")
+	require.EqualError(t, err, "--note must not be empty; use --no-note to remove it")
+	_, _, err = cmdtest.BumpOn(t, "jq", "--note", "x", "--no-note")
+	require.Error(t, err)
 
 	require.Empty(t, testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/*"), "no branch was started")
 }

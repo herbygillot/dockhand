@@ -82,6 +82,10 @@ need review.`,
 			default:
 				return fmt.Errorf("--to %s: commit, check, or submit", to)
 			}
+			version.Linked.NoteSet = cmd.Flags().Changed("note") || version.NoNote
+			if version.NoNote {
+				version.Linked.Note = ""
+			}
 			if err := version.StageReady(); err != nil {
 				return err
 			}
@@ -134,7 +138,6 @@ need review.`,
 				}
 				answered = model.AnsweredAsked
 			}
-			version.Linked.NoteSet = cmd.Flags().Changed("note")
 			version.Withdrawn(cmd)
 			return ShipAll(ctx, s, streams, whole, targets, stage, answered, version)
 		},
