@@ -25,7 +25,7 @@ type (
 	// methods of the GitLab API.
 	//
 	// GitLab API docs:
-	// https://docs.gitlab.com/api/member_roles/#list-all-member-roles-of-a-group
+	// https://docs.gitlab.com/api/member_roles/#get-all-group-member-roles
 	MemberRolesService struct {
 		client *Client
 	}
@@ -36,7 +36,7 @@ var _ MemberRolesServiceInterface = (*MemberRolesService)(nil)
 // MemberRole represents a GitLab member role.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/member_roles/#list-all-member-roles-of-a-group
+// https://docs.gitlab.com/api/member_roles/#get-all-group-member-roles
 type MemberRole struct {
 	ID                         int64            `json:"id"`
 	Name                       string           `json:"name"`
@@ -83,7 +83,7 @@ func (s *MemberRolesService) ListInstanceMemberRoles(options ...RequestOptionFun
 // and CreateMemberRole() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/member_roles/#create-a-instance-member-role
+// https://docs.gitlab.com/api/member_roles/#create-an-instance-member-role
 // https://docs.gitlab.com/api/member_roles/#add-a-member-role-to-a-group
 type CreateMemberRoleOptions struct {
 	Name                       *string           `url:"name,omitempty" json:"name,omitempty"`
@@ -114,7 +114,7 @@ type CreateMemberRoleOptions struct {
 // CreateInstanceMemberRole creates an instance-wide member role.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/member_roles/#create-a-instance-member-role
+// https://docs.gitlab.com/api/member_roles/#create-an-instance-member-role
 func (s *MemberRolesService) CreateInstanceMemberRole(opt *CreateMemberRoleOptions, options ...RequestOptionFunc) (*MemberRole, *Response, error) {
 	return do[*MemberRole](s.client,
 		withMethod(http.MethodPost),

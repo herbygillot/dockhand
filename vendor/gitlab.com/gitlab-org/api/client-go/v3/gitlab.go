@@ -32,6 +32,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"reflect"
 	"slices"
 	"sort"
 	"strconv"
@@ -52,8 +53,9 @@ const (
 	apiVersionPath = "api/v4/"
 	userAgent      = "go-gitlab"
 
-	headerRateLimit = "Ratelimit-Limit"
-	headerRateReset = "Ratelimit-Reset"
+	headerRateLimit  = "Ratelimit-Limit"
+	headerRateReset  = "Ratelimit-Reset"
+	headerRetryAfter = "Retry-After"
 
 	AccessTokenHeaderName = "Private-Token"
 	JobTokenHeaderName    = "Job-Token"
@@ -76,7 +78,10 @@ const (
 )
 
 var (
-	// ErrNotFound is returned for 404 Not Found errors
+	// ErrNotFound is returned for 404 Not Found errors. A client built with
+	// WithDetailedNotFoundErrors returns a per-request *ErrorResponse that
+	// carries the request and the response body instead, which still
+	// matches errors.Is(err, ErrNotFound) but not err == ErrNotFound.
 	ErrNotFound = &ErrorResponse{
 		StatusCode: http.StatusNotFound,
 		Message:    "Not Found",
@@ -124,9 +129,26 @@ type Client struct {
 	// disableRetries is used to disable the default retry logic.
 	disableRetries bool
 
+	// retryAfterBackoff makes the backoff from a 429 without Ratelimit-Reset
+	// wait for its Retry-After header. Set via WithRetryAfterBackoff.
+	retryAfterBackoff bool
+
+	// retryAfterMax is the longest Retry-After of a 429 that is retried. It
+	// applies only if hasRetryAfterMax is true. Both set via WithRetryAfterMax.
+	retryAfterMax    time.Duration
+	hasRetryAfterMax bool
+
 	// onlyIdempotentRetries restricts automatic retries to safe or idempotent
 	// HTTP methods. Set via WithOnlyIdempotentRetries.
 	onlyIdempotentRetries bool
+
+	// omitNilOptions makes an options argument holding a nil pointer mean no
+	// options, as an untyped nil does. Set via WithNilOptionsOmitted.
+	omitNilOptions bool
+
+	// detailedNotFoundErrors makes a 404 return a per-request *ErrorResponse
+	// instead of the shared ErrNotFound. Set via WithDetailedNotFoundErrors.
+	detailedNotFoundErrors bool
 
 	// configureLimiterOnce is used to make sure the limiter is configured exactly
 	// once and block all other calls until the initial (one) call is done.
@@ -214,6 +236,7 @@ type Client struct {
 	GitIgnoreTemplates                  GitIgnoreTemplatesServiceInterface
 	GroupAccessTokens                   GroupAccessTokensServiceInterface
 	GroupActivityAnalytics              GroupActivityAnalyticsServiceInterface
+	GroupApplications                   GroupApplicationsServiceInterface
 	GroupBadges                         GroupBadgesServiceInterface
 	GroupCluster                        GroupClustersServiceInterface
 	GroupCredentials                    GroupCredentialsServiceInterface
@@ -550,6 +573,7 @@ func NewAuthSourceClient(as AuthSource, options ...ClientOptionFunc) (*Client, e
 	c.GitIgnoreTemplates = &GitIgnoreTemplatesService{client: c}
 	c.GroupAccessTokens = &GroupAccessTokensService{client: c}
 	c.GroupActivityAnalytics = &GroupActivityAnalyticsService{client: c}
+	c.GroupApplications = &GroupApplicationsService{client: c}
 	c.GroupBadges = &GroupBadgesService{client: c}
 	c.GroupCluster = &GroupClustersService{client: c}
 	c.GroupCredentials = &GroupCredentialsService{client: c}
@@ -769,7 +793,7 @@ func (c *Client) retryHTTPCheck(ctx context.Context, resp *http.Response, err er
 	// a Retry-After response header to indicate when the server is
 	// available to start processing request from client.
 	if resp.StatusCode == http.StatusTooManyRequests {
-		return true, nil
+		return !c.retryAfterExceedsMax(resp), nil
 	}
 
 	// Check the response code. We retry on 500-range responses to allow
@@ -833,7 +857,7 @@ func isMethodIdempotent(method string) bool {
 func (c *Client) retryHTTPBackoff(min, max time.Duration, attemptNum int, resp *http.Response) time.Duration {
 	// Use the rate limit backoff function when we are rate limited.
 	if resp != nil && resp.StatusCode == http.StatusTooManyRequests {
-		return rateLimitBackoff(min, max, attemptNum, resp)
+		return c.rateLimitBackoff(min, max, attemptNum, resp)
 	}
 
 	// Set custom duration's when we experience a service interruption.
@@ -844,13 +868,14 @@ func (c *Client) retryHTTPBackoff(min, max time.Duration, attemptNum int, resp *
 }
 
 // rateLimitBackoff provides a callback for Client.Backoff which will use the
-// Ratelimit-Reset header to determine the time to wait. We add some jitter
-// to prevent a thundering herd.
+// Ratelimit-Reset header to determine the time to wait, or, with
+// WithRetryAfterBackoff, the Retry-After header when Ratelimit-Reset is not
+// set. We add some jitter to prevent a thundering herd.
 //
 // min and max are mainly used for bounding the jitter that will be added to
 // the reset time retrieved from the headers. But if the final wait time is
 // less than min, min will be used instead.
-func rateLimitBackoff(min, max time.Duration, attemptNum int, resp *http.Response) time.Duration {
+func (c *Client) rateLimitBackoff(min, max time.Duration, attemptNum int, resp *http.Response) time.Duration {
 	// First create some jitter bounded by the min and max durations.
 	jitter := time.Duration(rand.Float64() * float64(max-min))
 
@@ -862,15 +887,101 @@ func rateLimitBackoff(min, max time.Duration, attemptNum int, resp *http.Respons
 					min = wait
 				}
 			}
+		} else if wait, ok := c.retryAfterWait(resp, min, jitter); ok {
+			// GitLab's application rate limits answer with Retry-After only,
+			// without Ratelimit-Reset.
+			min = wait
 		} else {
-			// In case the Ratelimit-Reset header is not set, back off an additional
-			// 100% exponentially. With the default milliseconds being set to 100 for
-			// `min`, this makes the 5th retry wait 3.2 seconds (3,200 ms) by default.
+			// In case neither the Ratelimit-Reset header nor a Retry-After
+			// header the client waits for is set, back off an additional
+			// 100% exponentially. With the default milliseconds being set to
+			// 100 for `min`, this makes the 5th retry wait 3.2 seconds
+			// (3,200 ms) by default.
 			min = time.Duration(float64(min) * math.Pow(2, float64(attemptNum)))
 		}
 	}
 
-	return min + jitter
+	return addJitter(min, jitter)
+}
+
+// retryAfterWait returns the time to wait, without the jitter, that the
+// Retry-After header of a rate limited response gives, never less than
+// minWait, and whether the client waits for it. It does only with
+// WithRetryAfterBackoff, for a usable value, and when the wait with its
+// jitter ends before the deadline of the request's context. When the
+// context ends during a wait, go-retryablehttp returns only the context
+// error, so a caller whose deadline is too short for the wait keeps the
+// exponential backoff instead and gets the 429 back once its retries are
+// spent.
+func (c *Client) retryAfterWait(resp *http.Response, minWait, jitter time.Duration) (time.Duration, bool) {
+	if !c.retryAfterBackoff {
+		return 0, false
+	}
+
+	// A wait too long for a duration would never end.
+	wait := retryAfter(resp.Header.Get(headerRetryAfter))
+	if wait <= 0 || wait == math.MaxInt64 {
+		return 0, false
+	}
+	// Only use the Retry-After if the given time to wait is longer.
+	wait = max(wait, minWait)
+
+	if resp.Request != nil {
+		deadline, ok := resp.Request.Context().Deadline()
+		if ok && addJitter(wait, jitter) >= time.Until(deadline) {
+			return 0, false
+		}
+	}
+
+	return wait, true
+}
+
+// retryAfterExceedsMax reports whether a 429's Retry-After is longer than
+// WithRetryAfterMax allows. It is false when Ratelimit-Reset is set.
+func (c *Client) retryAfterExceedsMax(resp *http.Response) bool {
+	if !c.hasRetryAfterMax || resp.Header.Get(headerRateReset) != "" {
+		return false
+	}
+	return retryAfter(resp.Header.Get(headerRetryAfter)) > c.retryAfterMax
+}
+
+// addJitter returns wait with jitter added on top. It saturates at the
+// longest duration when the jitter does not fit on top of the wait, instead
+// of wrapping around to a negative wait, which would retry at once. Only a
+// positive jitter is checked: a maximum wait below the minimum makes the
+// jitter negative, which always fits, and math.MaxInt64-jitter would
+// overflow for it.
+func addJitter(wait, jitter time.Duration) time.Duration {
+	if jitter > 0 && wait > math.MaxInt64-jitter {
+		return math.MaxInt64
+	}
+	return wait + jitter
+}
+
+// retryAfter returns the time to wait given by the value of a Retry-After
+// header, which is either a number of seconds or an HTTP date. It returns
+// zero for an empty or invalid value or a number of seconds that is not
+// positive, and the longest duration for a wait too long for a
+// time.Duration. For a date that does not lie in the future it returns a
+// duration that is not positive.
+func retryAfter(v string) time.Duration {
+	seconds, err := strconv.ParseInt(v, 10, 64)
+	// ParseInt returns the nearest int64 with ErrRange for a value out of range.
+	if err == nil || errors.Is(err, strconv.ErrRange) {
+		if seconds <= 0 {
+			return 0
+		}
+		// Checked before multiplying, which would wrap around.
+		if time.Duration(seconds) > math.MaxInt64/time.Second {
+			return math.MaxInt64
+		}
+		return time.Duration(seconds) * time.Second
+	}
+	if date, err := http.ParseTime(v); err == nil {
+		// time.Until saturates at the longest duration.
+		return time.Until(date)
+	}
+	return 0
 }
 
 // configureLimiter configures the rate limiter.
@@ -1006,6 +1117,18 @@ func (c *Client) NewRequest(method, path string, opt any, options []RequestOptio
 	return c.NewRequestToURL(method, &u, opt, options)
 }
 
+// isNonNilOptions reports whether opt carries options: it is not nil, and it
+// does not hold a nil pointer. A nil *SomeOptions passed as an any is not
+// equal to nil, so without WithNilOptionsOmitted it is marshaled into the
+// JSON literal null as a body, or encoded into an empty query.
+func isNonNilOptions(opt any) bool {
+	if opt == nil {
+		return false
+	}
+	v := reflect.ValueOf(opt)
+	return v.Kind() != reflect.Pointer || !v.IsNil()
+}
+
 func (c *Client) NewRequestToURL(method string, u *url.URL, opt any, options []RequestOptionFunc) (*retryablehttp.Request, error) {
 	if u.Scheme != c.baseURL.Scheme || u.Host != c.baseURL.Host {
 		return nil, fmt.Errorf("client only allows requests to URLs matching the clients configured base URL. Got %q, base URL is %q", u.String(), c.baseURL.String())
@@ -1019,19 +1142,27 @@ func (c *Client) NewRequestToURL(method string, u *url.URL, opt any, options []R
 		reqHeaders.Set("User-Agent", c.UserAgent)
 	}
 
+	// If the input `opt` is nil and the `WithNilOptionsOmitted` builder
+	// function is used, then we want an empty body instead of string
+	// literal "null"
+	hasOpt := opt != nil
+	if c.omitNilOptions {
+		hasOpt = isNonNilOptions(opt)
+	}
+
 	var body any
 	switch {
 	case method == http.MethodPatch || method == http.MethodPost || method == http.MethodPut:
 		reqHeaders.Set("Content-Type", "application/json")
 
-		if opt != nil {
+		if hasOpt {
 			b, err := json.Marshal(opt)
 			if err != nil {
 				return nil, err
 			}
 			body = b
 		}
-	case opt != nil:
+	case hasOpt:
 		q, err := query.Values(opt)
 		if err != nil {
 			return nil, err
@@ -1294,7 +1425,7 @@ func (c *Client) Do(req *retryablehttp.Request, v any) (*Response, error) {
 
 	response := newResponse(resp)
 
-	err = CheckResponse(resp)
+	err = checkResponse(resp, c.detailedNotFoundErrors)
 	if err != nil {
 		// Even though there was an error, we still return the response
 		// in case the caller wants to inspect it further.
@@ -1425,17 +1556,32 @@ func (e *ErrorResponse) Is(target error) bool {
 }
 
 // CheckResponse checks the API response for errors, and returns them if present.
+// A 404 Not Found response returns the shared ErrNotFound.
 func CheckResponse(r *http.Response) error {
+	return checkResponse(r, false)
+}
+
+// checkResponse checks the API response for errors, and returns them if
+// present. A 404 Not Found response returns the shared ErrNotFound, unless
+// detailedNotFound is set, in which case it returns a per-request
+// *ErrorResponse like any other error status.
+func checkResponse(r *http.Response, detailedNotFound bool) error {
 	switch r.StatusCode {
 	case http.StatusOK, http.StatusCreated, http.StatusAccepted, http.StatusNoContent, http.StatusNotModified:
 		return nil
 	case http.StatusNotFound:
-		return ErrNotFound
+		if !detailedNotFound {
+			return ErrNotFound
+		}
 	}
 
 	errorResponse := &ErrorResponse{
 		StatusCode: r.StatusCode,
 		Response:   r,
+	}
+
+	if r.Body == nil {
+		return errorResponse
 	}
 
 	data, err := io.ReadAll(r.Body)

@@ -31,13 +31,13 @@ type (
 		// ListBroadcastMessages gets a list of all broadcasted messages.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/broadcast_messages/#get-all-broadcast-messages
+		// https://docs.gitlab.com/api/broadcast_messages/#list-all-broadcast-messages
 		ListBroadcastMessages(opt *ListBroadcastMessagesOptions, options ...RequestOptionFunc) ([]*BroadcastMessage, *Response, error)
 
 		// GetBroadcastMessage gets a single broadcast message.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/broadcast_messages/#get-a-specific-broadcast-message
+		// https://docs.gitlab.com/api/broadcast_messages/#retrieve-a-broadcast-message
 		GetBroadcastMessage(broadcast int64, options ...RequestOptionFunc) (*BroadcastMessage, *Response, error)
 
 		// CreateBroadcastMessage creates a message to broadcast.
@@ -73,7 +73,7 @@ var _ BroadcastMessagesServiceInterface = (*BroadcastMessagesService)(nil)
 // BroadcastMessage represents a GitLab broadcast message.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/broadcast_messages/#get-all-broadcast-messages
+// https://docs.gitlab.com/api/broadcast_messages/#list-all-broadcast-messages
 type BroadcastMessage struct {
 	Message            string             `json:"message"`
 	StartsAt           *time.Time         `json:"starts_at"`
@@ -93,7 +93,7 @@ type BroadcastMessage struct {
 // options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/broadcast_messages/#get-all-broadcast-messages
+// https://docs.gitlab.com/api/broadcast_messages/#list-all-broadcast-messages
 type ListBroadcastMessagesOptions struct {
 	ListOptions
 }

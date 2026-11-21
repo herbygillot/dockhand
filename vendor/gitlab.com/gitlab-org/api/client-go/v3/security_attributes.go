@@ -265,6 +265,12 @@ func (s *SecurityAttributesService) CreateSecurityAttributes(namespaceID int64, 
 	if err != nil {
 		return nil, resp, err
 	}
+	if len(result.Errors) != 0 {
+		return nil, resp, &GraphQLResponseError{
+			Err:    errors.New("mutation.securityAttributeCreate failed"),
+			Errors: result.GenericGraphQLErrors,
+		}
+	}
 	if len(result.Data.SecurityAttributeCreate.Errors) > 0 {
 		return nil, resp, fmt.Errorf("securityAttributeCreate mutation errors: %v", result.Data.SecurityAttributeCreate.Errors)
 	}
@@ -341,6 +347,13 @@ func (s *SecurityAttributesService) UpdateSecurityAttribute(id int64, opt *Updat
 	if err != nil {
 		return nil, resp, err
 	}
+	if len(result.Errors) != 0 {
+		// A refusal returned ErrNotFound before, and still matches it.
+		return nil, resp, &notFoundGraphQLResponseError{err: &GraphQLResponseError{
+			Err:    errors.New("mutation.securityAttributeUpdate failed"),
+			Errors: result.GenericGraphQLErrors,
+		}}
+	}
 	if len(result.Data.SecurityAttributeUpdate.Errors) > 0 {
 		return nil, resp, fmt.Errorf("securityAttributeUpdate mutation errors: %v", result.Data.SecurityAttributeUpdate.Errors)
 	}
@@ -385,6 +398,12 @@ func (s *SecurityAttributesService) DestroySecurityAttribute(id int64, options .
 	resp, err := s.client.GraphQL.Do(mutation, &result, options...)
 	if err != nil {
 		return resp, err
+	}
+	if len(result.Errors) != 0 {
+		return resp, &GraphQLResponseError{
+			Err:    errors.New("mutation.securityAttributeDestroy failed"),
+			Errors: result.GenericGraphQLErrors,
+		}
 	}
 	if len(result.Data.SecurityAttributeDestroy.Errors) > 0 {
 		return resp, fmt.Errorf("securityAttributeDestroy mutation errors: %v", result.Data.SecurityAttributeDestroy.Errors)
@@ -445,6 +464,12 @@ func (s *SecurityAttributesService) ProjectUpdateSecurityAttribute(projectID int
 	if err != nil {
 		return nil, resp, err
 	}
+	if len(result.Errors) != 0 {
+		return nil, resp, &GraphQLResponseError{
+			Err:    errors.New("mutation.securityAttributeProjectUpdate failed"),
+			Errors: result.GenericGraphQLErrors,
+		}
+	}
 	if len(result.Data.SecurityAttributeProjectUpdate.Errors) > 0 {
 		return nil, resp, fmt.Errorf("securityAttributeProjectUpdate mutation errors: %v", result.Data.SecurityAttributeProjectUpdate.Errors)
 	}
@@ -502,6 +527,12 @@ func (s *SecurityAttributesService) BulkUpdateSecurityAttributes(opt *BulkUpdate
 	resp, err := s.client.GraphQL.Do(mutation, &result, options...)
 	if err != nil {
 		return resp, err
+	}
+	if len(result.Errors) != 0 {
+		return resp, &GraphQLResponseError{
+			Err:    errors.New("mutation.bulkUpdateSecurityAttributes failed"),
+			Errors: result.GenericGraphQLErrors,
+		}
 	}
 	if len(result.Data.BulkUpdateSecurityAttributes.Errors) > 0 {
 		return resp, fmt.Errorf("bulkUpdateSecurityAttributes mutation errors: %v", result.Data.BulkUpdateSecurityAttributes.Errors)

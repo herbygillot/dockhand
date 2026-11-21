@@ -36,25 +36,25 @@ type (
 		// viewable by the authenticated user.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/access_requests/#list-access-requests-for-a-group-or-project
+		// https://docs.gitlab.com/api/access_requests/#list-all-access-requests-for-a-group-or-project
 		// ListProjectAccessRequests gets a list of access requests
 		// viewable by the authenticated user.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/access_requests/#list-access-requests-for-a-group-or-project
+		// https://docs.gitlab.com/api/access_requests/#list-all-access-requests-for-a-group-or-project
 		ListProjectAccessRequests(pid any, opt *ListAccessRequestsOptions, options ...RequestOptionFunc) ([]*AccessRequest, *Response, error)
 
 		// ListGroupAccessRequests gets a list of access requests
 		// viewable by the authenticated user.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/access_requests/#list-access-requests-for-a-group-or-project
+		// https://docs.gitlab.com/api/access_requests/#list-all-access-requests-for-a-group-or-project
 
 		// ListGroupAccessRequests gets a list of access requests
 		// viewable by the authenticated user.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/access_requests/#list-access-requests-for-a-group-or-project
+		// https://docs.gitlab.com/api/access_requests/#list-all-access-requests-for-a-group-or-project
 		ListGroupAccessRequests(gid any, opt *ListAccessRequestsOptions, options ...RequestOptionFunc) ([]*AccessRequest, *Response, error)
 
 		// RequestProjectAccess requests access for the authenticated user
@@ -131,7 +131,7 @@ type AccessRequest struct {
 // ListProjectAccessRequests() or ListGroupAccessRequests() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/access_requests/#list-access-requests-for-a-group-or-project
+// https://docs.gitlab.com/api/access_requests/#list-all-access-requests-for-a-group-or-project
 type ListAccessRequestsOptions struct {
 	ListOptions
 }

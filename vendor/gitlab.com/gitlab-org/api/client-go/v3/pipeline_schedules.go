@@ -90,7 +90,7 @@ type LastPipeline struct {
 // ListPipelineSchedulesOptions represents the available ListPipelineTriggers() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pipeline_schedules/#get-all-pipeline-schedules
+// https://docs.gitlab.com/api/pipeline_schedules/#list-all-pipeline-schedules
 type ListPipelineSchedulesOptions struct {
 	ListOptions
 	Scope *PipelineScheduleScopeValue `url:"scope,omitempty"`
@@ -99,7 +99,7 @@ type ListPipelineSchedulesOptions struct {
 // ListPipelineSchedules gets a list of project triggers.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pipeline_schedules/#get-all-pipeline-schedules
+// https://docs.gitlab.com/api/pipeline_schedules/#list-all-pipeline-schedules
 func (s *PipelineSchedulesService) ListPipelineSchedules(pid any, opt *ListPipelineSchedulesOptions, options ...RequestOptionFunc) ([]*PipelineSchedule, *Response, error) {
 	return do[[]*PipelineSchedule](s.client,
 		withPath(routeProjectsIDPipelineSchedules, ProjectID{pid}),
@@ -111,7 +111,7 @@ func (s *PipelineSchedulesService) ListPipelineSchedules(pid any, opt *ListPipel
 // GetPipelineSchedule gets a pipeline schedule.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pipeline_schedules/#get-a-single-pipeline-schedule
+// https://docs.gitlab.com/api/pipeline_schedules/#retrieve-a-pipeline-schedule
 func (s *PipelineSchedulesService) GetPipelineSchedule(pid any, schedule int64, options ...RequestOptionFunc) (*PipelineSchedule, *Response, error) {
 	return do[*PipelineSchedule](s.client,
 		withPath(routeProjectsIDPipelineSchedulesID, ProjectID{pid}, schedule),
@@ -123,7 +123,7 @@ func (s *PipelineSchedulesService) GetPipelineSchedule(pid any, schedule int64, 
 // ListPipelinesTriggeredBySchedule() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pipeline_schedules/#get-all-pipelines-triggered-by-a-pipeline-schedule
+// https://docs.gitlab.com/api/pipeline_schedules/#list-all-pipelines-triggered-by-a-pipeline-schedule
 type ListPipelinesTriggeredByScheduleOptions struct {
 	ListOptions
 }
@@ -132,7 +132,7 @@ type ListPipelinesTriggeredByScheduleOptions struct {
 // schedule.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pipeline_schedules/#get-all-pipelines-triggered-by-a-pipeline-schedule
+// https://docs.gitlab.com/api/pipeline_schedules/#list-all-pipelines-triggered-by-a-pipeline-schedule
 func (s *PipelineSchedulesService) ListPipelinesTriggeredBySchedule(pid any, schedule int64, opt *ListPipelinesTriggeredByScheduleOptions, options ...RequestOptionFunc) ([]*Pipeline, *Response, error) {
 	return do[[]*Pipeline](s.client,
 		withPath(routeProjectsIDPipelineSchedulesIDPipelines, ProjectID{pid}, schedule),
@@ -172,7 +172,7 @@ func (s *PipelineSchedulesService) CreatePipelineSchedule(pid any, opt *CreatePi
 // EditPipelineSchedule() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pipeline_schedules/#edit-a-pipeline-schedule
+// https://docs.gitlab.com/api/pipeline_schedules/#update-a-pipeline-schedule
 type EditPipelineScheduleOptions struct {
 	Description  *string          `url:"description,omitempty" json:"description,omitempty"`
 	Ref          *string          `url:"ref,omitempty" json:"ref,omitempty"`
@@ -185,7 +185,7 @@ type EditPipelineScheduleOptions struct {
 // EditPipelineSchedule edits a pipeline schedule.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pipeline_schedules/#edit-a-pipeline-schedule
+// https://docs.gitlab.com/api/pipeline_schedules/#update-a-pipeline-schedule
 func (s *PipelineSchedulesService) EditPipelineSchedule(pid any, schedule int64, opt *EditPipelineScheduleOptions, options ...RequestOptionFunc) (*PipelineSchedule, *Response, error) {
 	return do[*PipelineSchedule](s.client,
 		withMethod(http.MethodPut),
@@ -199,7 +199,7 @@ func (s *PipelineSchedulesService) EditPipelineSchedule(pid any, schedule int64,
 // pipeline schedule to the user issuing the request.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pipeline_schedules/#take-ownership-of-a-pipeline-schedule
+// https://docs.gitlab.com/api/pipeline_schedules/#update-ownership-of-a-pipeline-schedule
 func (s *PipelineSchedulesService) TakeOwnershipOfPipelineSchedule(pid any, schedule int64, options ...RequestOptionFunc) (*PipelineSchedule, *Response, error) {
 	return do[*PipelineSchedule](s.client,
 		withMethod(http.MethodPost),
@@ -224,7 +224,7 @@ func (s *PipelineSchedulesService) DeletePipelineSchedule(pid any, schedule int6
 // RunPipelineSchedule triggers a new scheduled pipeline to run immediately.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pipeline_schedules/#run-a-scheduled-pipeline-immediately
+// https://docs.gitlab.com/api/pipeline_schedules/#run-a-pipeline-schedule-immediately
 func (s *PipelineSchedulesService) RunPipelineSchedule(pid any, schedule int64, options ...RequestOptionFunc) (*Response, error) {
 	_, resp, err := do[none](s.client,
 		withMethod(http.MethodPost),
@@ -262,7 +262,7 @@ func (s *PipelineSchedulesService) CreatePipelineScheduleVariable(pid any, sched
 // EditPipelineScheduleVariable() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pipeline_schedules/#edit-a-pipeline-schedule-variable
+// https://docs.gitlab.com/api/pipeline_schedules/#update-a-variable-for-a-pipeline-schedule
 type EditPipelineScheduleVariableOptions struct {
 	Value        *string            `url:"value" json:"value"`
 	VariableType *VariableTypeValue `url:"variable_type,omitempty" json:"variable_type,omitempty"`
@@ -271,7 +271,7 @@ type EditPipelineScheduleVariableOptions struct {
 // EditPipelineScheduleVariable creates a pipeline schedule variable.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pipeline_schedules/#edit-a-pipeline-schedule-variable
+// https://docs.gitlab.com/api/pipeline_schedules/#update-a-variable-for-a-pipeline-schedule
 func (s *PipelineSchedulesService) EditPipelineScheduleVariable(pid any, schedule int64, key string, opt *EditPipelineScheduleVariableOptions, options ...RequestOptionFunc) (*PipelineVariable, *Response, error) {
 	return do[*PipelineVariable](s.client,
 		withMethod(http.MethodPut),
@@ -284,7 +284,7 @@ func (s *PipelineSchedulesService) EditPipelineScheduleVariable(pid any, schedul
 // DeletePipelineScheduleVariable creates a pipeline schedule variable.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pipeline_schedules/#delete-a-pipeline-schedule-variable
+// https://docs.gitlab.com/api/pipeline_schedules/#delete-a-variable-for-a-pipeline-schedule
 func (s *PipelineSchedulesService) DeletePipelineScheduleVariable(pid any, schedule int64, key string, options ...RequestOptionFunc) (*PipelineVariable, *Response, error) {
 	return do[*PipelineVariable](s.client,
 		withMethod(http.MethodDelete),

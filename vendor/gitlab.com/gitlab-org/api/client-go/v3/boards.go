@@ -54,26 +54,26 @@ type (
 		// ListIssueBoards gets a list of all issue boards in a project.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/boards/#list-project-issue-boards
+		// https://docs.gitlab.com/api/boards/#list-all-project-issue-boards
 		ListIssueBoards(pid any, opt *ListIssueBoardsOptions, options ...RequestOptionFunc) ([]*IssueBoard, *Response, error)
 
 		// GetIssueBoard gets a single issue board of a project.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/boards/#show-a-single-issue-board
+		// https://docs.gitlab.com/api/boards/#retrieve-an-issue-board
 		GetIssueBoard(pid any, board int64, options ...RequestOptionFunc) (*IssueBoard, *Response, error)
 
 		// GetIssueBoardLists gets a list of the issue board's lists. Does not include
 		// backlog and closed lists.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/boards/#list-board-lists-in-a-project-issue-board
+		// https://docs.gitlab.com/api/boards/#list-all-board-lists-in-an-issue-board
 		GetIssueBoardLists(pid any, board int64, opt *GetIssueBoardListsOptions, options ...RequestOptionFunc) ([]*BoardList, *Response, error)
 
 		// GetIssueBoardList gets a single issue board list.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/boards/#show-a-single-board-list
+		// https://docs.gitlab.com/api/boards/#retrieve-a-board-list
 		GetIssueBoardList(pid any, board, list int64, options ...RequestOptionFunc) (*BoardList, *Response, error)
 
 		// CreateIssueBoardList creates a new issue board list.
@@ -85,7 +85,7 @@ type (
 		// UpdateIssueBoardList updates the position of an existing issue board list.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/boards/#reorder-a-list-in-a-board
+		// https://docs.gitlab.com/api/boards/#update-a-board-list
 		UpdateIssueBoardList(pid any, board, list int64, opt *UpdateIssueBoardListOptions, options ...RequestOptionFunc) (*BoardList, *Response, error)
 
 		// DeleteIssueBoardList soft deletes an issue board list. Only for admins and
@@ -211,7 +211,7 @@ func (s *IssueBoardsService) DeleteIssueBoard(pid any, board int64, options ...R
 
 // ListIssueBoardsOptions represents the available ListIssueBoards() options.
 //
-// GitLab API docs: https://docs.gitlab.com/api/boards/#list-project-issue-boards
+// GitLab API docs: https://docs.gitlab.com/api/boards/#list-all-project-issue-boards
 type ListIssueBoardsOptions struct {
 	ListOptions
 }
@@ -235,7 +235,7 @@ func (s *IssueBoardsService) GetIssueBoard(pid any, board int64, options ...Requ
 
 // GetIssueBoardListsOptions represents the available GetIssueBoardLists() options.
 //
-// GitLab API docs: https://docs.gitlab.com/api/boards/#list-board-lists-in-a-project-issue-board
+// GitLab API docs: https://docs.gitlab.com/api/boards/#list-all-board-lists-in-an-issue-board
 type GetIssueBoardListsOptions struct {
 	ListOptions
 }
@@ -280,7 +280,7 @@ func (s *IssueBoardsService) CreateIssueBoardList(pid any, board int64, opt *Cre
 // UpdateIssueBoardListOptions represents the available UpdateIssueBoardList()
 // options.
 //
-// GitLab API docs: https://docs.gitlab.com/api/boards/#reorder-a-list-in-a-board
+// GitLab API docs: https://docs.gitlab.com/api/boards/#update-a-board-list
 type UpdateIssueBoardListOptions struct {
 	Position *int64 `url:"position" json:"position"`
 }

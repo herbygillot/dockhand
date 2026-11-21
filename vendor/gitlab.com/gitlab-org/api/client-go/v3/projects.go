@@ -440,6 +440,7 @@ type Project struct {
 	AllowPipelineTriggerApproveDeployment     bool                                        `json:"allow_pipeline_trigger_approve_deployment"`
 	OnlyAllowMergeIfPipelineSucceeds          bool                                        `json:"only_allow_merge_if_pipeline_succeeds"`
 	OnlyAllowMergeIfAllDiscussionsAreResolved bool                                        `json:"only_allow_merge_if_all_discussions_are_resolved"`
+	OnlyAllowMergeIfAllStatusChecksPassed     bool                                        `json:"only_allow_merge_if_all_status_checks_passed"`
 	RemoveSourceBranchAfterMerge              bool                                        `json:"remove_source_branch_after_merge"`
 	PreventMergeWithoutJiraIssue              bool                                        `json:"prevent_merge_without_jira_issue"`
 	PrintingMergeRequestLinkEnabled           bool                                        `json:"printing_merge_request_link_enabled"`
@@ -756,6 +757,9 @@ type ListProjectsOptions struct {
 	Starred                  *bool             `url:"starred,omitempty" json:"starred,omitempty"`
 	Statistics               *bool             `url:"statistics,omitempty" json:"statistics,omitempty"`
 	Topic                    *string           `url:"topic,omitempty" json:"topic,omitempty"`
+	TopicID                  *int64            `url:"topic_id,omitempty" json:"topic_id,omitempty"`
+	UpdatedAfter             *time.Time        `url:"updated_after,omitempty" json:"updated_after,omitempty"`
+	UpdatedBefore            *time.Time        `url:"updated_before,omitempty" json:"updated_before,omitempty"`
 	Visibility               *VisibilityValue  `url:"visibility,omitempty" json:"visibility,omitempty"`
 	WikiChecksumFailed       *bool             `url:"wiki_checksum_failed,omitempty" json:"wiki_checksum_failed,omitempty"`
 	WithCustomAttributes     *bool             `url:"with_custom_attributes,omitempty" json:"with_custom_attributes,omitempty"`

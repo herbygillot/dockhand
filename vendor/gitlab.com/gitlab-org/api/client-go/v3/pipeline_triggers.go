@@ -86,7 +86,7 @@ func (s *PipelineTriggersService) ListPipelineTriggers(pid any, opt *ListPipelin
 // GetPipelineTrigger gets a specific pipeline trigger for a project.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pipeline_triggers/#get-trigger-token-details
+// https://docs.gitlab.com/api/pipeline_triggers/#retrieve-trigger-token-details
 func (s *PipelineTriggersService) GetPipelineTrigger(pid any, trigger int64, options ...RequestOptionFunc) (*PipelineTrigger, *Response, error) {
 	return do[*PipelineTrigger](s.client,
 		withPath(routeProjectsIDTriggersID, ProjectID{pid}, trigger),
@@ -139,7 +139,7 @@ func (s *PipelineTriggersService) EditPipelineTrigger(pid any, trigger int64, op
 // DeletePipelineTrigger removes a trigger from a project.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pipeline_triggers/#remove-a-pipeline-trigger-token
+// https://docs.gitlab.com/api/pipeline_triggers/#delete-a-pipeline-trigger-token
 func (s *PipelineTriggersService) DeletePipelineTrigger(pid any, trigger int64, options ...RequestOptionFunc) (*Response, error) {
 	_, resp, err := do[none](s.client,
 		withMethod(http.MethodDelete),

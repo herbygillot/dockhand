@@ -129,6 +129,31 @@ func (e *GraphQLResponseError) Error() string {
 	return sb.String()
 }
 
+// Unwrap returns the underlying error, so that errors.Is and errors.As reach
+// the *ErrorResponse of a failed request, for example to match ErrNotFound.
+func (e *GraphQLResponseError) Unwrap() error {
+	return e.Err
+}
+
+// notFoundGraphQLResponseError carries a *GraphQLResponseError and matches
+// ErrNotFound as well. Methods that returned ErrNotFound when GitLab refused
+// them return one instead, so that errors.Is(err, ErrNotFound) still holds on
+// a refusal while errors.As reaches GitLab's errors.
+type notFoundGraphQLResponseError struct {
+	err *GraphQLResponseError
+}
+
+// Error returns the text of the *GraphQLResponseError, GitLab's messages
+// included.
+func (e *notFoundGraphQLResponseError) Error() string {
+	return e.err.Error()
+}
+
+// Unwrap returns the *GraphQLResponseError and ErrNotFound.
+func (e *notFoundGraphQLResponseError) Unwrap() []error {
+	return []error{e.err, ErrNotFound}
+}
+
 // Do sends a GraphQL query and returns the response in the given response argument
 // The response must be JSON serializable. The *Response return value is the HTTP response
 // and must be used to retrieve additional HTTP information, like status codes and also

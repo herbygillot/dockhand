@@ -54,6 +54,7 @@ func (m MarkdownUpload) String() string {
 //
 // GitLab API docs:
 // https://docs.gitlab.com/api/project_markdown_uploads/
+// https://docs.gitlab.com/api/group_markdown_uploads/
 type MarkdownUploadedFile struct {
 	ID       int64  `json:"id"`
 	Alt      string `json:"alt"`

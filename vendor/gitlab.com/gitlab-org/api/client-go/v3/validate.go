@@ -25,12 +25,12 @@ type (
 		// ProjectNamespaceLint validates .gitlab-ci.yml content by project.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/lint/#validate-sample-cicd-configuration
+		// https://docs.gitlab.com/api/lint/#validate-cicd-configuration
 		ProjectNamespaceLint(pid any, opt *ProjectNamespaceLintOptions, options ...RequestOptionFunc) (*ProjectLintResult, *Response, error)
 		// ProjectLint validates .gitlab-ci.yml content by project.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/lint/#validate-a-projects-cicd-configuration
+		// https://docs.gitlab.com/api/lint/#validate-existing-cicd-configuration
 		ProjectLint(pid any, opt *ProjectLintOptions, options ...RequestOptionFunc) (*ProjectLintResult, *Response, error)
 	}
 
@@ -85,7 +85,7 @@ type Include struct {
 // ProjectNamespaceLintOptions represents the available ProjectNamespaceLint() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/lint/#validate-sample-cicd-configuration
+// https://docs.gitlab.com/api/lint/#validate-cicd-configuration
 type ProjectNamespaceLintOptions struct {
 	Content     *string `url:"content,omitempty" json:"content,omitempty"`
 	DryRun      *bool   `url:"dry_run,omitempty" json:"dry_run,omitempty"`
@@ -105,7 +105,7 @@ func (s *ValidateService) ProjectNamespaceLint(pid any, opt *ProjectNamespaceLin
 // ProjectLintOptions represents the available ProjectLint() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/lint/#validate-a-projects-cicd-configuration
+// https://docs.gitlab.com/api/lint/#validate-existing-cicd-configuration
 type ProjectLintOptions struct {
 	ContentRef  *string `url:"content_ref,omitempty" json:"content_ref,omitempty"`
 	DryRunRef   *string `url:"dry_run_ref,omitempty" json:"dry_run_ref,omitempty"`

@@ -34,7 +34,7 @@ type (
 		// maintainer privileges.
 		//
 		// GitLab API Docs:
-		// https://docs.gitlab.com/api/pages/#get-pages-settings-for-a-project
+		// https://docs.gitlab.com/api/pages/#retrieve-pages-settings-for-a-project
 		GetPages(gid any, options ...RequestOptionFunc) (*Pages, *Response, error)
 		// UpdatePages updates Pages settings for a project. The user must have
 		// administrator privileges.

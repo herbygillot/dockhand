@@ -104,7 +104,7 @@ func (a LicenseAddOns) String() string {
 // GetLicense retrieves information about the current license.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/license/#retrieve-information-about-the-current-license
+// https://docs.gitlab.com/api/license/#retrieve-license-information
 func (s *LicenseService) GetLicense(options ...RequestOptionFunc) (*License, *Response, error) {
 	return do[*License](s.client,
 		withPath(routeLicense),
@@ -114,7 +114,7 @@ func (s *LicenseService) GetLicense(options ...RequestOptionFunc) (*License, *Re
 
 // AddLicenseOptions represents the available AddLicense() options.
 //
-// https://docs.gitlab.com/api/license/#add-a-new-license
+// https://docs.gitlab.com/api/license/#create-a-license
 type AddLicenseOptions struct {
 	License *string `url:"license" json:"license"`
 }
@@ -122,7 +122,7 @@ type AddLicenseOptions struct {
 // AddLicense adds a new license.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/license/#add-a-new-license
+// https://docs.gitlab.com/api/license/#create-a-license
 func (s *LicenseService) AddLicense(opt *AddLicenseOptions, options ...RequestOptionFunc) (*License, *Response, error) {
 	return do[*License](s.client,
 		withMethod(http.MethodPost),

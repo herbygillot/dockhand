@@ -54,12 +54,12 @@ type (
 		// ShareWithGroup shares a group with the group.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/groups/#create-a-link-to-share-a-group-with-another-group
+		// https://docs.gitlab.com/api/groups/#create-a-group-invitation
 		ShareWithGroup(gid any, opt *ShareWithGroupOptions, options ...RequestOptionFunc) (*Group, *Response, error)
 		// DeleteShareWithGroup allows to unshare a group from a group.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/groups/#delete-the-link-that-shares-a-group-with-another-group
+		// https://docs.gitlab.com/api/groups/#delete-a-group-invitation
 		DeleteShareWithGroup(gid any, groupID int64, options ...RequestOptionFunc) (*Response, error)
 		// EditGroupMember updates a member of a group.
 		//

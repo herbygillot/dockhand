@@ -25,7 +25,7 @@ var _ ModelRegistryServiceInterface = (*ModelRegistryService)(nil)
 
 // DownloadMachineLearningModelPackage downloads a machine learning model package file.
 //
-// GitLab API docs: https://docs.gitlab.com/api/model_registry/#download-a-model-package-file
+// GitLab API docs: https://docs.gitlab.com/api/model_registry/#download-a-machine-learning-model-package-file
 func (s *ModelRegistryService) DownloadMachineLearningModelPackage(pid, modelVersionID any, path string, filename string, options ...RequestOptionFunc) (*bytes.Reader, *Response, error) {
 	// The modelVersionID can be an int or a string like "candidate:5",
 	// so we convert it to a string for the URL.

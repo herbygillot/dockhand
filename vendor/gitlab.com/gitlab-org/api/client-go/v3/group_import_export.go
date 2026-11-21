@@ -53,7 +53,7 @@ var _ GroupImportExportServiceInterface = (*GroupImportExportService)(nil)
 // ScheduleExport starts a new group export.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/group_import_export/#schedule-new-export
+// https://docs.gitlab.com/api/group_import_export/#create-a-group-export
 func (s *GroupImportExportService) ScheduleExport(gid any, options ...RequestOptionFunc) (*Response, error) {
 	_, resp, err := do[none](s.client,
 		withMethod(http.MethodPost),
@@ -67,7 +67,7 @@ func (s *GroupImportExportService) ScheduleExport(gid any, options ...RequestOpt
 // ExportDownload downloads the finished export.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/group_import_export/#export-download
+// https://docs.gitlab.com/api/group_import_export/#retrieve-a-group-export-download
 func (s *GroupImportExportService) ExportDownload(gid any, options ...RequestOptionFunc) (*bytes.Reader, *Response, error) {
 	buf, resp, err := do[bytes.Buffer](s.client,
 		withPath(routeGroupsIDExportDownload, GroupID{gid}),
@@ -82,7 +82,7 @@ func (s *GroupImportExportService) ExportDownload(gid any, options ...RequestOpt
 // GroupImportFileOptions represents the available ImportFile() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/group_import_export/#import-a-file
+// https://docs.gitlab.com/api/group_import_export/#create-a-group-import
 type GroupImportFileOptions struct {
 	Name     *string `url:"name,omitempty" json:"name,omitempty"`
 	Path     *string `url:"path,omitempty" json:"path,omitempty"`
@@ -93,7 +93,7 @@ type GroupImportFileOptions struct {
 // ImportFile imports a file.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/group_import_export/#import-a-file
+// https://docs.gitlab.com/api/group_import_export/#create-a-group-import
 func (s *GroupImportExportService) ImportFile(opt *GroupImportFileOptions, options ...RequestOptionFunc) (*Response, error) {
 	// First check if we got all required options.
 	if opt.Name == nil || *opt.Name == "" {
