@@ -856,13 +856,13 @@ func (e *Engine) fetchMaster(ctx context.Context) (model.ObjectID, error) {
 	// It can take a while, and a bump said nothing for twenty seconds
 	// before "Started" (field testing, 2026-10-02); a quick one says
 	// nothing, and serve's, which nobody waits on, says nothing at all.
-	say := progress.Report
+	after := progress.After
 	if serving(ctx) {
-		say = progress.VerboseReport
+		after = progress.VerboseAfter
 	}
-	slow := time.AfterFunc(fetchSaid, func() { say(ctx, "Fetching master from %s", e.Upstream()) })
+	stop := after(ctx, fetchSaid, "Fetching master from %s", e.Upstream())
 	commit, _, err := e.Repo.FetchBranch(ctx, e.Upstream(), "master")
-	slow.Stop()
+	stop()
 	if err != nil {
 		return "", fmt.Errorf("fetching master from %s: %w", e.Upstream(), err)
 	}
