@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -59,4 +60,43 @@ func TestARefreshSettlesWhatItRead(t *testing.T) {
 	_, err = e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)
 	require.Nil(t, publication(), "a merged pull request ends it")
+}
+
+// A row of serve's count whose create may have landed is read and written
+// under its head's lock: while another process holds the head, serve's
+// pass leaves the row as it is, and once it's free the pass takes its look
+// at the fork (#191, group A).
+func TestServesTriedRowsWaitForTheirHead(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	fork, err := e.Fork(t.Context(), "")
+	require.NoError(t, err)
+	head := fork.Repository + ":dockhand/gone"
+	tried := model.ServeOpening{Base: e.PullRequestRepository() + ":" + UpstreamBranch, Head: head, Tried: e.now().Add(-time.Hour), Unanswered: true}
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		_, err := tx.AddServeOpening(tried)
+		return err
+	}))
+	row := func() model.ServeOpening {
+		var rows []model.ServeOpening
+		require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+			var err error
+			rows, err = r.ServeOpenings()
+			return err
+		}))
+		require.Len(t, rows, 1)
+		return rows[0]
+	}
+
+	require.NoError(t, e.Repo.WithHeadLock(t.Context(), head, func(context.Context) error {
+		_, err := e.settleServe(t.Context())
+		return err
+	}))
+	require.True(t, row().Gone.IsZero(), "a held head's row is left as it is")
+
+	_, err = e.settleServe(t.Context())
+	require.NoError(t, err)
+	require.False(t, row().Gone.IsZero(), "the head gone from the fork is looked at once it's free")
 }

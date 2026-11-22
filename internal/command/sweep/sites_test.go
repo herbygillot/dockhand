@@ -304,7 +304,8 @@ var owed = map[string]string{
 	"store.update@engine.(*Engine).revisionAssessments": "#194: a revision's assessments",
 	"store.update@engine.(*Engine).revisionChanges":     "#194: a revision's change records",
 	"store.update@engine.(*Engine).serveFirstPass":      "#191: serve's count over an upgrade, group C",
-	"store.update@engine.(*Engine).settleTriedRows":     "#191: serve's continuation and count, group C",
+	"store.update@engine.(*Engine).firstPassRow":        "#191: serve's count over an upgrade, group C",
+	"store.update@engine.(*Engine).settleTriedRow":      "#191: serve's continuation and count, group C",
 	"store.update@engine.(*Engine).shellRunning":        "#193: a shell entering a running check",
 
 	// Local git writes (#129's second round, 2).
