@@ -394,6 +394,27 @@ func (e *Engine) unchangedSince(ctx context.Context, plan *SubmitPlan) error {
 	return nil
 }
 
+// textChangedSince reads a pull request's title and description once more,
+// just before the edit, and names which of them is no longer what the plan
+// saw: the read before the push can be long before (docs/designs/
+// publication-record.md, "One read before the pull request is written").
+// GitHub has no conditional write for either, so the window left is one
+// request wide.
+func (e *Engine) textChangedSince(ctx context.Context, saw forge.PullRequestObservation) ([]string, error) {
+	fresh, err := e.forge().Observe(ctx, saw.PullRequest.Ref)
+	if err != nil {
+		return nil, err
+	}
+	var changed []string
+	if fresh.PullRequest.Title != saw.PullRequest.Title {
+		changed = append(changed, "title")
+	}
+	if fresh.PullRequest.Body != saw.PullRequest.Body {
+		changed = append(changed, "description")
+	}
+	return changed, nil
+}
+
 // Head is the fork's head as "owner/repo:branch".
 func (p SubmitPlan) Head() string { return p.HeadRepository + ":" + p.RemoteBranch() }
 
@@ -1559,6 +1580,13 @@ func (e *Engine) publish(ctx context.Context, plan SubmitPlan, worktree *git.Rep
 			result.Edited = SubmitEdits{Title: plan.Title != plan.Existing.PullRequest.Title, Body: plan.Body != plan.Existing.PullRequest.Body}
 		}
 		if result.Edited.Title || result.Edited.Body {
+			if changed, readErr := e.textChangedSince(ctx, *plan.Existing); readErr != nil || len(changed) > 0 {
+				result.Edited = SubmitEdits{}
+				if readErr != nil {
+					return result, owing(model.StepEdit, fmt.Errorf("pushed %s to %s, but could not read #%d again before updating it: %w; dockhand submit updates it", model.ObjectID(plan.Commit).Short(), plan.Head(), ref.Number, readErr))
+				}
+				return result, owing(model.StepEdit, fmt.Errorf("pushed %s to %s, but #%d's %s changed on GitHub during the submission, so it wasn't updated; dockhand submit plans against the new text", model.ObjectID(plan.Commit).Short(), plan.Head(), ref.Number, prose.And(changed)))
+			}
 			observed, err = remotewrite.Edit(ctx, e.pullRequests(), plan.editBasis(), input)
 		}
 	}

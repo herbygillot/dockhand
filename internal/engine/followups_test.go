@@ -49,3 +49,44 @@ func TestAFollowUpIsForTheCommitSubmitted(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, branch.Publication, "the head at another commit ends the publication")
 }
+
+// The title and description are read once more just before the edit: one
+// changed on GitHub after submit's read before the push isn't written
+// over, the edit stays owed, and the error names what changed (#191,
+// group B; docs/designs/publication-record.md, "One read before the pull
+// request is written").
+func TestTheEditReadsTheTextJustBeforeIt(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.NoError(t, err)
+	number := submitted.PullRequest.Ref.Number
+
+	branch, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Title: "jq: update to 1.8.1, retitled"})
+	require.NoError(t, err)
+	reads := 0
+	fake.Observing = func(ref forge.PullRequestRef) {
+		if ref.Number != number {
+			return
+		}
+		// The first read is submit's before the push; a person edits the
+		// title on GitHub after it.
+		if reads++; reads == 2 {
+			fake.PRs[number].Title = "jq: a person's title"
+		}
+	}
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.ErrorContains(t, err, "title changed on GitHub during the submission, so it wasn't updated")
+	require.Equal(t, "jq: a person's title", fake.PRs[number].Title, "the person's title isn't written over")
+	branch, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.NotNil(t, branch.Publication)
+	require.Contains(t, branch.Publication.Owes, model.StepEdit)
+}

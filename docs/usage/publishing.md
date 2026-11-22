@@ -273,6 +273,10 @@ unchanged text. Subsequent submissions refresh the sections dockhand still owns.
 `--rewrite-description` explicitly replaces the full description with dockhand's
 version, preserving your stored note; inspect that preview before choosing it.
 For someone else's adopted pull request, their description stays theirs.
+Just before it updates the title or description, submit reads both once more;
+where either changed on GitHub during the submission, it leaves them as they
+are, says which changed, and the next `dockhand submit` plans against the new
+text.
 
 Before its first push, submit records what it sets out to do: the commit, the
 fork's branch and the pull request, the title and description it writes, and
