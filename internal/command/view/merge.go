@@ -169,10 +169,14 @@ func ReviewReceiptWords(pr *model.PullRequest) string {
 	if receipt.Unasked {
 		return "the reviewers who requested changes may not have been asked to review again after an earlier push; ask them on GitHub"
 	}
-	var asked, maybe, refused, since []string
+	var asked, lapsed, maybe, refused, since []string
 	for _, reviewer := range receipt.Reviewers {
 		switch reviewer.Sent {
 		case model.SentRequest:
+			if reviewer.Lapsed {
+				lapsed = append(lapsed, "@"+reviewer.Login)
+				continue
+			}
 			asked = append(asked, "@"+reviewer.Login)
 		case model.MaySent:
 			maybe = append(maybe, "@"+reviewer.Login)
@@ -190,6 +194,9 @@ func ReviewReceiptWords(pr *model.PullRequest) string {
 	var parts []string
 	if len(asked) > 0 {
 		parts = append(parts, "asked "+prose.And(asked)+" to review again")
+	}
+	if len(lapsed) > 0 {
+		parts = append(parts, "asked "+prose.And(lapsed)+" to review again, and the request is no longer pending")
 	}
 	if len(maybe) > 0 {
 		parts = append(parts, "asking "+prose.And(maybe)+" got no answer, so it may have been sent; ask on GitHub if it wasn't")

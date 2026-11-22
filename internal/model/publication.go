@@ -154,6 +154,10 @@ type Reviewer struct {
 	Sent     Sent
 	// Why are GitHub's words, where it refused.
 	Why string `json:",omitempty"`
+	// Lapsed is a request GitHub acknowledged that it no longer shows
+	// pending, at the last reading: they were asked, and it was answered
+	// or withdrawn since.
+	Lapsed bool `json:",omitempty"`
 }
 
 // Sent is how far a request that can't be read back got: a mark recorded

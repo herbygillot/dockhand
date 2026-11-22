@@ -296,6 +296,9 @@ func Apply(ctx context.Context, e *engine.Engine, streams term.Streams, plan eng
 	// isn't asked again (#191).
 	if logins := plan.Rerequests(); len(logins) > 0 && !plan.Request.Rerequest {
 		who := "@" + strings.Join(logins, ", @")
+		if plan.ReviewsUnread {
+			fmt.Fprintf(streams.Prose(), "%s's latest reviews couldn't be read now; dockhand reads them again before it asks\n", who)
+		}
 		// The answer is recorded however it comes: always and never are
 		// the person's standing word, and nobody there leaves the
 		// question for the next run they attend (#191, group E).

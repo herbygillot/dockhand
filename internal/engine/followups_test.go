@@ -504,3 +504,37 @@ func TestTheReviewerQuestionIsRecordedHoweverItWasAnswered(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, current.Publication)
 }
+
+// An unread review is no answer: where the plan couldn't read each
+// reviewer's latest review, the pull request's verdict time doesn't stand
+// in for theirs, so a reviewer whose own newer, comment-only review the
+// reviewer step reads is still asked (#191; Codex's review of group D).
+func TestAReviewThePlanCouldntReadDropsNobody(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	g := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.NoError(t, err)
+	base := time.Date(2026, 11, 22, 8, 0, 0, 0, time.UTC)
+	g.Status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, ChangesRequestedBy: []string{"ana"}, ReviewedAt: base, LatestReview: map[string]time.Time{"ana": base.Add(2 * time.Hour)}}
+	e.options.Now = func() time.Time { return base.Add(3 * time.Hour) }
+	_, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# review addressed\n"})
+	testsupport.Git(t, branch.Worktree, "commit", "-qam", "jq: address review")
+	branch, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	g.InspectErr = errors.New("github: 502")
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Rerequest: true})
+	require.NoError(t, err)
+	require.True(t, plan.ReviewsUnread)
+	g.InspectErr = nil
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.NoError(t, err)
+	require.Equal(t, []string{"ana"}, submitted.Asked, "the reviewer step's own reading decides")
+	require.Empty(t, submitted.ReviewedSince)
+}

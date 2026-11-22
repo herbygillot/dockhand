@@ -48,7 +48,9 @@ func ReviewerStep(reviewer model.Reviewer, status forge.PullRequestStatus) Revie
 	if !status.RequestedRead {
 		return ReviewerUnread
 	}
-	if latest, ok := status.LatestReview[reviewer.Login]; ok && latest.After(reviewer.Reviewed) {
+	// A review time the plan couldn't read is no review's: a newer one
+	// can't be told from it, so it drops nobody.
+	if latest, ok := status.LatestReview[reviewer.Login]; ok && !reviewer.Reviewed.IsZero() && latest.After(reviewer.Reviewed) {
 		return ReviewedSince
 	}
 	for _, login := range status.Requested {

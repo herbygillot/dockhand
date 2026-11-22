@@ -74,14 +74,12 @@ func (p SubmitPlan) publication(id, by string, served bool) model.Publication {
 		}
 	} else if logins := p.Rerequests(); len(logins) > 0 {
 		ask := &model.ReviewAsk{Answer: answer}
-		// Each login's answer is for its own latest review, where the plan
-		// read it; the verdict's time where it couldn't.
+		// Each login's answer is for its own latest review, as the plan
+		// read it. An unread review is no answer's: the time stays empty,
+		// never the pull request's one verdict time, and the reviewer
+		// step's own reading decides (#191, Codex's review of group D).
 		for _, login := range logins {
-			reviewed, ok := p.reviewedBy[login]
-			if !ok {
-				reviewed = p.Branch.PullRequest.Observed.ReviewedAt
-			}
-			ask.Reviewers = append(ask.Reviewers, model.Reviewer{Login: login, Reviewed: reviewed})
+			ask.Reviewers = append(ask.Reviewers, model.Reviewer{Login: login, Reviewed: p.reviewedBy[login]})
 		}
 		record.Review = ask
 		if answer != model.ReviewNo {
@@ -324,7 +322,12 @@ func (e *Engine) rerequest(ctx context.Context, branch model.BranchID, record *m
 			ask.Reviewers[i].Sent = model.MaySent
 			send = append(send, reviewer.Login)
 		case ReviewerPending:
+			ask.Reviewers[i].Lapsed = false
 			asked = append(asked, reviewer.Login)
+		case ReviewerNoLongerPending:
+			// Asked, and said so: the request is no longer pending (#191,
+			// Codex's review of group D).
+			ask.Reviewers[i].Lapsed = true
 		}
 	}
 	if len(send) > 0 {

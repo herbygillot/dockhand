@@ -132,6 +132,9 @@ type SubmitPlan struct {
 	// with the plan where it asks reviewers again: the review each one's
 	// answer is for.
 	reviewedBy map[string]time.Time
+	// ReviewsUnread is that reading failing: the answer is then for no
+	// review in particular, and the reviewer step's own reading decides.
+	ReviewsUnread bool
 	// admission is serve's limit and clock, read at the admission: serve's
 	// count's rows that count today must be fewer than the limit.
 	admission ServeAdmission
@@ -935,6 +938,8 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 	if plan.Carried == nil && plan.Existing != nil && len(plan.Rerequests()) > 0 {
 		if status, err := e.forge().Inspect(ctx, plan.Existing.PullRequest.Ref); err == nil {
 			plan.reviewedBy = status.LatestReview
+		} else {
+			plan.ReviewsUnread = true
 		}
 	}
 	return nil
