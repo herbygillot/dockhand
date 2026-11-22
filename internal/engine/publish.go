@@ -72,6 +72,12 @@ func (p SubmitPlan) publication(id, by string, served bool) model.Publication {
 		if answer != model.ReviewNo {
 			record.Owes = append(record.Owes, model.StepRerequest)
 		}
+	} else if c != nil && c.Review != nil && c.Review.Answer == model.ReviewNo {
+		// The no carries, owing nothing, as the person gave it for this
+		// commit.
+		ask := *c.Review
+		ask.Reviewers = slices.Clone(c.Review.Reviewers)
+		record.Review = &ask
 	} else if logins := p.Rerequests(); len(logins) > 0 {
 		ask := &model.ReviewAsk{Answer: answer}
 		// Each login's answer is for its own latest review, as the plan

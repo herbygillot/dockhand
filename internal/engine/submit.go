@@ -2065,6 +2065,11 @@ func (p SubmitPlan) Pushes() bool {
 // changes, as GitHub last reported them; none where it opens one or
 // pushes nothing. The person is asked before the push.
 func (p SubmitPlan) Rerequests() []string {
+	// A no the person gave for this commit carries, and isn't asked again
+	// (#191, Codex's review of group E).
+	if c := p.Carried; c != nil && c.Review != nil && c.Review.Answer == model.ReviewNo {
+		return nil
+	}
 	// An earlier submission of this commit that still owed the request
 	// carries its reviewers, though this one pushes nothing.
 	if c := p.Carried; c != nil && c.Review != nil && slices.Contains(c.Owes, model.StepRerequest) {

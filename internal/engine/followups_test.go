@@ -619,3 +619,45 @@ func TestANoCheckSubmissionNamesTheEarlierPass(t *testing.T) {
 	require.Contains(t, plan.Body, "no Dockhand check result is included")
 	require.Regexp(t, `An earlier commit was checked: check-\d+ passed for [0-9a-f]{7}; since then textproc/jq/Portfile changed, which no check here covers\. The files submitted here were not checked\.`, plan.Body)
 }
+
+// A reviewer no the person gave for a commit carries across a push that
+// failed: the retry of that commit doesn't ask again, and its record keeps
+// the no, owing nothing for the reviewers (#191; Codex's review of group
+// E, 0644188b).
+func TestReview090NoAnswerCarriesAcrossFailedPush(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	g := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.NoError(t, err)
+	base := time.Date(2026, 11, 22, 8, 0, 0, 0, time.UTC)
+	g.Status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, ChangesRequestedBy: []string{"ana"}, ReviewedAt: base, LatestReview: map[string]time.Time{"ana": base}}
+	e.options.Now = func() time.Time { return base.Add(time.Hour) }
+	_, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# review addressed\n"})
+	testsupport.Git(t, branch.Worktree, "commit", "-qam", "jq: address review")
+	branch, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, RerequestAnswer: model.ReviewNo})
+	require.NoError(t, err)
+	require.Equal(t, []string{"ana"}, plan.Rerequests())
+	require.NoError(t, os.Chmod(filepath.Join(g.Fork, "objects"), 0o555))
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.Error(t, err, "the fork refuses the push")
+	require.NoError(t, os.Chmod(filepath.Join(g.Fork, "objects"), 0o755))
+
+	branch, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	again, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	require.Empty(t, again.Rerequests(), "the no isn't asked again")
+	record := again.publication("pub_again", "", false)
+	require.NotNil(t, record.Review)
+	require.Equal(t, model.ReviewNo, record.Review.Answer)
+	require.NotContains(t, record.Owes, model.StepRerequest)
+}
