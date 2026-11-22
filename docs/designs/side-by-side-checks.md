@@ -30,7 +30,7 @@ dockhand check --on github -d              # queues check-42 (github: macOS 15)
 dockhand check --on tart:26                # queues check-43 (tart: macOS 26) beside check-42
 ```
 
-Two or more checks of the same branch may be queued or running at once when they check **the exact same files** (same captured `Source.Tree`) and build **disjoint environments** (`model.Environment`). Each request remains its own immutable run with its own lease, stay policy, and cancellation handle; their combined environments form the branch's required ask; and a kept clone survives for as long as the branch's files match what it was built from.
+Two or more checks of the same branch may be queued or running at once when they check **the exact same files** (same captured `Source.Tree`) and build **disjoint environments** (`model.Environment`). Each request remains its own immutable run with its own lease, stay policy, and cancellation handle; their combined environments form the branch's required ask; and a clone kept by `--keep` stays until the person removes it, while a clone kept for a failure survives for as long as the branch's files match what it was built from (§4).
 
 ## Rules
 
@@ -137,7 +137,7 @@ No new capacity mechanism is needed; existing guards compose cleanly:
 ## Usage docs
 
 Updated in the same commit:
-- `docs/usage/checks.md` (running checks on different environments of the same commit side by side; kept clones surviving across checks of the same files; `--replace`, `cancel`, `wait`, `logs`, and `--variants each`).
+- `docs/usage/checks.md` (running checks on different environments of the same commit side by side; asked clones surviving every later check and failure clones surviving checks of the same files; `--replace`, `cancel`, `wait`, `logs`, and `--variants each`).
 - `docs/usage/branches.md` (`status` and `console` with multiple active checks and multiple kept clones).
 - `docs/decisions.md` (done at adoption: the one-check entry reopened for the same files on other environments, and D17's ask the union of checks started beside each other; the code's "decision 29" comments are corrected when this is built).
 - Command help of `check`, `cancel`, `wait`, `logs`, and `clean`.
