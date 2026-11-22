@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -138,4 +140,67 @@ func TestWhatIsCarriedChecksTheAccountAndDestination(t *testing.T) {
 	require.True(t, carries(plan.Login.Account, ""), "the same login and destination")
 	require.False(t, carries("someone-else", ""), "another login")
 	require.False(t, carries(plan.Login.Account, "someone/macports-ports:master"), "another base")
+}
+
+// A create GitHub refuses is its answer: nothing was opened, so the
+// publication ends with the refusal said rather than owing open forever
+// (#191, group B; docs/designs/publication-record.md, "A create GitHub
+// refuses").
+func TestACreateGitHubRefusesEndsThePublication(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	fake.Refuse = map[string]string{"Create": "Validation Failed"}
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.ErrorContains(t, err, "GitHub refused to open the pull request")
+	require.ErrorContains(t, err, "Validation Failed")
+	branch, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.Nil(t, branch.Publication, "nothing is owed after a refusal")
+}
+
+// Returning a pull request to draft ends the publication only where GitHub
+// refused it; an error that may have done it leaves the step owed, for
+// settling to read (#191, group B).
+func TestOnlyARefusedDraftEndsThePublication(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct {
+		err  error
+		ends bool
+	}{
+		"refused":   {fmt.Errorf("%w: Resource not accessible by integration", forge.ErrRejected), true},
+		"no answer": {errors.New("github: connection reset"), false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := setup(t)
+			e, _ := f.withPreparer(t)
+			fake := f.withFork(t, e)
+			branch := committedUpdate(t, e)
+			plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+			require.NoError(t, err)
+			_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+			require.NoError(t, err)
+
+			branch, err = e.Branch(t.Context(), branch.ID)
+			require.NoError(t, err)
+			plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Draft: true})
+			require.NoError(t, err)
+			fake.DraftRefused = tc.err
+			_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+			require.Error(t, err)
+			branch, err = e.Branch(t.Context(), branch.ID)
+			require.NoError(t, err)
+			if tc.ends {
+				require.Nil(t, branch.Publication)
+				return
+			}
+			require.NotNil(t, branch.Publication)
+			require.Contains(t, branch.Publication.Owes, model.StepDraft)
+		})
+	}
 }

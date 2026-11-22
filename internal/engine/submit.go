@@ -397,6 +397,24 @@ func (e *Engine) unchangedSince(ctx context.Context, plan *SubmitPlan) error {
 	return nil
 }
 
+// foldDraft writes a pull request's draft state, as a draft change GitHub
+// answered left it, into the branch's record.
+func foldDraft(tx store.Tx, id model.BranchID, draft bool) error {
+	branch, err := tx.Branch(id)
+	if err != nil || branch.PullRequest == nil {
+		return err
+	}
+	pr := *branch.PullRequest
+	pr.Draft = draft
+	if pr.Observed != nil {
+		observed := *pr.Observed
+		observed.Draft = draft
+		pr.Observed = &observed
+	}
+	branch.PullRequest = &pr
+	return tx.UpdateBranch(branch)
+}
+
 // textChangedSince reads a pull request's title and description once more,
 // just before the edit, and names which of them is no longer what the plan
 // saw: the read before the push can be long before (docs/designs/
@@ -1536,13 +1554,21 @@ func (e *Engine) publish(ctx context.Context, plan SubmitPlan, worktree *git.Rep
 	// pushes what may be failing work to it (ToDraft).
 	if slices.Contains(record.Owes, model.StepDraft) {
 		// GitHub's refusal is an answer: nothing was done, nothing is
-		// owed, and the publication ends with the refusal said.
+		// owed, and the publication ends with the refusal said. Any other
+		// error may have been done, and the step stays owed for settling.
 		if err := e.draftFirst(ctx, plan); err != nil {
-			return result, errors.Join(err, e.endRefused(ctx, plan.Branch.ID, record))
+			if writeRefused(err) {
+				return result, errors.Join(err, e.endRefused(ctx, plan.Branch.ID, record))
+			}
+			return result, owing(model.StepDraft, err)
 		}
 		result.Drafted = true
 		next := without(record, model.StepDraft)
-		if err := e.rewritePublication(ctx, plan.Branch.ID, record.ID, &next, nil); err != nil {
+		// The pull request's record takes the draft with the step, so a
+		// push that fails after it doesn't leave it said as ready.
+		if err := e.rewritePublication(ctx, plan.Branch.ID, record.ID, &next, func(tx store.Tx) error {
+			return foldDraft(tx, plan.Branch.ID, true)
+		}); err != nil {
 			return result, err
 		}
 		record = next
@@ -1582,6 +1608,13 @@ func (e *Engine) publish(ctx context.Context, plan SubmitPlan, worktree *git.Rep
 		} else {
 			e.answeredCreate(ctx, opening, err)
 			observed, err = e.createdAnyway(ctx, plan, err)
+			// GitHub's refusal of the create is its answer: nothing was
+			// opened, open ends as refused, and the publication ends with
+			// nothing owed. "One is already open" isn't a refusal: open
+			// stays owed until a read finds it.
+			if err != nil && writeRefused(err) && !errors.Is(err, forge.ErrPullRequestExists) {
+				return result, errors.Join(fmt.Errorf("pushed %s to %s, but GitHub refused to open the pull request: %w; nothing was opened, and the next dockhand submit tries again", model.ObjectID(plan.Commit).Short(), plan.Head(), err), e.endRefused(ctx, plan.Branch.ID, record))
+			}
 		}
 	} else {
 		ref := plan.Existing.PullRequest.Ref

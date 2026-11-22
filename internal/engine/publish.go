@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/remotewrite"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -373,6 +374,14 @@ func (e *Engine) endRefused(ctx context.Context, branch model.BranchID, record m
 		}
 		return nil
 	})
+}
+
+// writeRefused reports a write answered with a refusal, so nothing of it
+// was done: GitHub refusing it, the organization refusing dockhand's app,
+// a login refused, or dockhand's own gate refusing it before it was sent.
+// Any other error, no answer among them, may have been done.
+func writeRefused(err error) bool {
+	return errors.Is(err, forge.ErrRejected) || errors.Is(err, forge.ErrAppRestricted) || errors.Is(err, forge.ErrAuthentication) || refusal.KindOf(err) == refusal.Unsupported
 }
 
 // pendingAfter are the steps a submission that returned with err still
