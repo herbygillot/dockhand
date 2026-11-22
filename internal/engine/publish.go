@@ -16,7 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
-// The publication record's working half (docs/designs/publication-record.md):
+// The publication record's working half (docs/designs/publication-record.md at 0e0ad767):
 // a submission records what it sets out to do before its first remote
 // effect, and each step leaves what it owes in the transaction that writes
 // its result. settle.go reads what an earlier one left.
@@ -410,7 +410,7 @@ func (e *Engine) rerequest(ctx context.Context, branch model.BranchID, record *m
 // reviewBasis is the basis a reviewer request states to the gate: Made on
 // a pull request dockhand opened, or on an old record that isn't adopted,
 // as today; otherwise Named, since the person answered yes to this exact
-// request (docs/designs/publication-record.md, "The gate").
+// request (docs/designs/publication-record.md at 0e0ad767, "The gate").
 func reviewBasis(pr *model.PullRequest, record *model.Publication) remotewrite.Basis {
 	if openedByDockhand(pr) {
 		return remotewrite.Made

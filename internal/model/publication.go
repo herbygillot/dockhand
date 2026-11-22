@@ -6,7 +6,7 @@ import (
 )
 
 // Publication is a submission of one commit that dockhand has begun and
-// has not yet seen finished (docs/designs/publication-record.md, #191).
+// has not yet seen finished (docs/designs/publication-record.md at 0e0ad767, #191).
 // It is recorded before the first remote effect, names its whole
 // destination, and owes its steps in order until a read shows each done.
 // A branch has one at a time, beside its PullRequest, which is what

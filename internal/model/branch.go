@@ -258,7 +258,7 @@ type Branch struct {
 	PullRequest *PullRequest
 	// Publication is a submission of the branch dockhand began and hasn't
 	// seen finished, with what it still owes; nil where there is none
-	// (docs/designs/publication-record.md).
+	// (docs/designs/publication-record.md at 0e0ad767).
 	Publication *Publication
 	CreatedAt   time.Time
 	// Origin is who started it: a person, or serve for your outdated

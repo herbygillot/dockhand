@@ -593,7 +593,7 @@ func showBranch(out io.Writer, places config.Places, status engine.BranchStatus,
 	}
 	fmt.Fprintf(out, "  PR       %s\n", pr)
 	// What became of the last reviewer request, as its receipt says it
-	// (docs/designs/publication-record.md).
+	// (docs/designs/publication-record.md at 0e0ad767).
 	if line := view.ReviewReceiptWords(status.Branch.PullRequest); line != "" {
 		fmt.Fprintf(out, "  Review   %s\n", line)
 	}

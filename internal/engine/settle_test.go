@@ -18,7 +18,7 @@ import (
 
 // Settling, one table: a publication and what each read answers, complete
 // or failed, against what is folded, what stays owed, and whether it ends
-// (docs/designs/publication-record.md, "Tests", and cases A, AN, D, F, O,
+// (docs/designs/publication-record.md at 0e0ad767, "Tests", and cases A, AN, D, F, O,
 // R, U).
 func TestSettlingReadsWhatEachStepLeft(t *testing.T) {
 	t.Parallel()
@@ -87,7 +87,7 @@ func TestSettlingReadsWhatEachStepLeft(t *testing.T) {
 
 // A step still owed fails the command only where it failed or GitHub
 // refused it; one awaiting an answer, unread, or that may have been sent
-// is reported and doesn't (docs/designs/publication-record.md, `pending`).
+// is reported and doesn't (docs/designs/publication-record.md at 0e0ad767, `pending`).
 func TestAPendingStepFailsTheCommandOnlyWhereItFailed(t *testing.T) {
 	t.Parallel()
 	for reason, fails := range map[PendingReason]bool{

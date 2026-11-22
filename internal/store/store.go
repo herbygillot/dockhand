@@ -252,7 +252,7 @@ type Tx interface {
 	// recorded is was, by ID: "" where there is none, so the first is
 	// written only where the branch has none, and another write of it
 	// only by the process holding that one. next nil ends it. UpdateBranch
-	// leaves the publication as it is (docs/designs/publication-record.md,
+	// leaves the publication as it is (docs/designs/publication-record.md at 0e0ad767,
 	// "One submission at a time").
 	SetPublication(branch model.BranchID, was string, next *model.Publication) error
 	// AddServeOpening records a row of serve's count and gives its ID;
@@ -443,7 +443,7 @@ func (e *LiveUnderMigrationError) Error() string {
 // or not it has a session, or where the process list can't be read, as in
 // a sandbox. A submit, an update or a ship opens no session, and one paused
 // before its push would push and write to GitHub after the migration with
-// no record and no lock (docs/designs/publication-record.md, "Existing
+// no record and no lock (docs/designs/publication-record.md at 0e0ad767, "Existing
 // databases and branches"). Nothing overrides it.
 type QuietUnderMigrationError struct {
 	From, To int

@@ -15,7 +15,7 @@ import (
 )
 
 // HeadHeldError is a head another process is submitting to: who, as that
-// process recorded itself in the lock (docs/designs/publication-record.md,
+// process recorded itself in the lock (docs/designs/publication-record.md at 0e0ad767,
 // "One submission at a time").
 type HeadHeldError struct {
 	Head  string

@@ -16,7 +16,7 @@ import (
 )
 
 // settleServe is what serve's submitting pass does first, before any
-// candidate (docs/designs/publication-record.md, "serve's count"): the
+// candidate (docs/designs/publication-record.md at 0e0ad767, "serve's count"): the
 // first pass after the records took on the count by rows, which accounts
 // for a create an older dockhand may have left; every publication serve
 // recorded, settled; and every row of a create that may have landed whose

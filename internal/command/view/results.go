@@ -425,7 +425,7 @@ type SubmittedJSON struct {
 	// (submit.rerequest_review).
 	ChangesRequestedBy []ChangesRequestedJSON `json:"changes_requested_by"`
 	// Pending are the steps the submission still owes when it returns,
-	// each with why (docs/designs/publication-record.md).
+	// each with why (docs/designs/publication-record.md at 0e0ad767).
 	Pending []PendingJSON `json:"pending"`
 }
 

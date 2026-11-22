@@ -8,7 +8,7 @@ import (
 )
 
 // ReviewerAction is what a publication's reviewer step does for one login
-// once the pull request is read (docs/designs/publication-record.md, "The
+// once the pull request is read (docs/designs/publication-record.md at 0e0ad767, "The
 // reviewer request"). Its promise is that each reviewer named has a
 // request pending, or dockhand says who doesn't and why; never that a
 // notification was delivered.

@@ -43,7 +43,7 @@ type scenario struct {
 	// unreadable are the faults, by "address/mode" prefix, whose outcome
 	// dockhand can't read back, and the end state the scenario declares
 	// for each: a value in the recovered world, and the clean run's it
-	// stands for, each pair with why (docs/designs/publication-record.md,
+	// stands for, each pair with why (docs/designs/publication-record.md at 0e0ad767,
 	// "Tests": a pull request found rather than opened, a reviewer marked
 	// "may have been sent").
 	unreadable map[string]declaredEnd

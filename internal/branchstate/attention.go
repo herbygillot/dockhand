@@ -73,7 +73,7 @@ const (
 	NotPushed        Reason = "not-pushed"
 	// Unfinished is a submission dockhand began and hasn't seen finished,
 	// whose record says what it still owes; submit settles and finishes it
-	// (docs/designs/publication-record.md).
+	// (docs/designs/publication-record.md at 0e0ad767).
 	Unfinished Reason = "unfinished-submission"
 )
 

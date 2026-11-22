@@ -17,7 +17,7 @@ import (
 // shows done is folded and the step leaves the publication, a step still
 // owed keeps it, a head another process holds leaves it as it is, and the
 // pull request merged ends it (#191, group A; docs/designs/
-// publication-record.md, "When settling runs").
+// publication-record.md at 0e0ad767, "When settling runs").
 func TestARefreshSettlesWhatItRead(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
@@ -104,7 +104,7 @@ func TestServesTriedRowsWaitForTheirHead(t *testing.T) {
 // A retry of serve's create takes the place its row already holds, not a
 // new one, so a day at its limit with that row counting still lets the
 // retry go; under a lowered limit only the oldest row's retry goes (#191,
-// group C; docs/designs/publication-record.md, "serve's count").
+// group C; docs/designs/publication-record.md at 0e0ad767, "serve's count").
 func TestServesRetryTakesThePlaceItsRowHolds(t *testing.T) {
 	t.Parallel()
 	f := setup(t)

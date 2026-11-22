@@ -431,7 +431,7 @@ func foldDraft(tx store.Tx, id model.BranchID, draft bool) error {
 // textChangedSince reads a pull request's title and description once more,
 // just before the edit, and names which of them is no longer what the plan
 // saw: the read before the push can be long before (docs/designs/
-// publication-record.md, "One read before the pull request is written").
+// publication-record.md at 0e0ad767, "One read before the pull request is written").
 // GitHub has no conditional write for either, so the window left is one
 // request wide.
 func (e *Engine) textChangedSince(ctx context.Context, saw forge.PullRequestObservation) ([]string, error) {
@@ -467,7 +467,7 @@ func (p SubmitPlan) pushBasis() remotewrite.Basis {
 // where the record says it opened that pull request, or an old record
 // that isn't adopted says nothing; otherwise the person naming it by
 // submitting to it. A found pull request is never stated as made
-// (docs/designs/publication-record.md, "The gate").
+// (docs/designs/publication-record.md at 0e0ad767, "The gate").
 func (p SubmitPlan) editBasis() remotewrite.Basis {
 	if p.Theirs {
 		return remotewrite.Invited
@@ -983,7 +983,7 @@ func (e *Engine) findDestination(ctx context.Context, worktree *git.Repository, 
 	// An earlier submission that didn't finish is accounted for first,
 	// under its head's lock, so the plan is of the settled record and
 	// carries what the person asked of it (docs/designs/
-	// publication-record.md, "When settling runs").
+	// publication-record.md at 0e0ad767, "When settling runs").
 	if plan.Branch.Publication != nil {
 		settled, carried, done, err := e.settlePublication(ctx, worktree, plan.Branch, false)
 		if err != nil {
@@ -1039,7 +1039,7 @@ func (e *Engine) findDestination(ctx context.Context, worktree *git.Repository, 
 	plan.Existing = &observed
 	// An old record with no provenance, of a pull request GitHub names
 	// another author of, is found from this read on: the author only ever
-	// withdraws Made (docs/designs/publication-record.md, "Existing
+	// withdraws Made (docs/designs/publication-record.md at 0e0ad767, "Existing
 	// databases and branches").
 	if last := plan.Branch.PullRequest; last != nil && last.Number == pr.Ref.Number && last.Provenance == "" && !last.Adopted && pr.Author != "" && !strings.EqualFold(pr.Author, login) {
 		found := *last
@@ -1608,7 +1608,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 	// the operating system's, carried by every git and gh child that
 	// writes for the submission, never taken from a live process, and
 	// held to the end, follow-ups included (docs/designs/
-	// publication-record.md, "One submission at a time").
+	// publication-record.md at 0e0ad767, "One submission at a time").
 	err = worktree.WithHeadLock(ctx, plan.Head(), func(ctx context.Context) error {
 		var err error
 		result, err = e.publish(ctx, plan, worktree)
@@ -1771,7 +1771,7 @@ func (e *Engine) publish(ctx context.Context, plan SubmitPlan, worktree *git.Rep
 // the note and the tested statements on the branch, and the decisions.
 // Each stands even where the publication then fails; AddDecision's key
 // keeps a second run from recording one twice (docs/designs/
-// publication-record.md, "The record").
+// publication-record.md at 0e0ad767, "The record").
 func (e *Engine) recordAsked(tx store.Tx, plan SubmitPlan) error {
 	branch, err := tx.Branch(plan.Branch.ID)
 	if err != nil {
@@ -1896,7 +1896,7 @@ func (e *Engine) recordSubmission(tx store.Tx, plan SubmitPlan, result *Submitte
 // each leaves the publication in the transaction that follows it. Where
 // the head is at another commit, the publication ends and what it still
 // owed is dropped, for the command to say (docs/designs/
-// publication-record.md, "Follow-ups are for the commit").
+// publication-record.md at 0e0ad767, "Follow-ups are for the commit").
 func (e *Engine) followUps(ctx context.Context, plan SubmitPlan, result *Submitted, record *model.Publication) error {
 	ref := result.PullRequest.Ref
 	// atCommit reads the pull request's head once more; false is the head
@@ -1953,7 +1953,7 @@ func (e *Engine) followUps(ctx context.Context, plan SubmitPlan, result *Submitt
 // still owed that the person asked of it: a ready, unless this run asks
 // for a draft, and a yes to asking the reviewers again. Another commit,
 // another account, or another destination, its head, its base or its pull
-// request, carries nothing (docs/designs/publication-record.md, "Who
+// request, carries nothing (docs/designs/publication-record.md at 0e0ad767, "Who
 // continues what").
 func (p *SubmitPlan) carry(earlier *model.Publication) {
 	if earlier == nil || earlier.Commit != model.ObjectID(p.Commit) || earlier.Head != p.Head() || earlier.Base != p.Repository+":"+UpstreamBranch {
@@ -1981,7 +1981,7 @@ func (p *SubmitPlan) carry(earlier *model.Publication) {
 // EarlierSubmit is what a plan says of the earlier submission of its
 // commit it continues: what settling found it did, what of it this run
 // carries, and what it asked that this run doesn't carry yet (docs/
-// designs/publication-record.md, "Who continues what"). Nil where the
+// designs/publication-record.md at 0e0ad767, "Who continues what"). Nil where the
 // plan continues none.
 type EarlierSubmit struct {
 	Did, Carries, NotCarried []string

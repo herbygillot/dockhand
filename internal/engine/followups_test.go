@@ -21,7 +21,7 @@ import (
 // where someone moved the fork's branch after the push, marking ready was
 // for the commit submitted, so it isn't made, the publication ends, and
 // what it owed comes back as dropped (#191, group B; docs/designs/
-// publication-record.md, "Follow-ups are for the commit").
+// publication-record.md at 0e0ad767, "Follow-ups are for the commit").
 func TestAFollowUpIsForTheCommitSubmitted(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
@@ -60,7 +60,7 @@ func TestAFollowUpIsForTheCommitSubmitted(t *testing.T) {
 // The title and description are read once more just before the edit: one
 // changed on GitHub after submit's read before the push isn't written
 // over, the edit stays owed, and the error names what changed (#191,
-// group B; docs/designs/publication-record.md, "One read before the pull
+// group B; docs/designs/publication-record.md at 0e0ad767, "One read before the pull
 // request is written").
 func TestTheEditReadsTheTextJustBeforeIt(t *testing.T) {
 	t.Parallel()
@@ -102,7 +102,7 @@ func TestTheEditReadsTheTextJustBeforeIt(t *testing.T) {
 // account and destination: its commit and head, its base, and the pull
 // request it was for. A ready still owed carries under the same login and
 // destination, and not under another login, or for another base (#191,
-// group B; docs/designs/publication-record.md, "Who continues what").
+// group B; docs/designs/publication-record.md at 0e0ad767, "Who continues what").
 func TestWhatIsCarriedChecksTheAccountAndDestination(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
@@ -148,7 +148,7 @@ func TestWhatIsCarriedChecksTheAccountAndDestination(t *testing.T) {
 
 // A create GitHub refuses is its answer: nothing was opened, so the
 // publication ends with the refusal said rather than owing open forever
-// (#191, group B; docs/designs/publication-record.md, "A create GitHub
+// (#191, group B; docs/designs/publication-record.md at 0e0ad767, "A create GitHub
 // refuses").
 func TestACreateGitHubRefusesEndsThePublication(t *testing.T) {
 	t.Parallel()
@@ -212,7 +212,7 @@ func TestOnlyARefusedDraftEndsThePublication(t *testing.T) {
 // A found pull request is stated to the gate as named, never as made:
 // Made only where the record says dockhand opened it, or an old record
 // with no provenance that isn't adopted keeps the right it had (#191,
-// group C; docs/designs/publication-record.md, "The gate").
+// group C; docs/designs/publication-record.md at 0e0ad767, "The gate").
 func TestAFoundPullRequestIsStatedAsNamed(t *testing.T) {
 	t.Parallel()
 	existing := &forge.PullRequestObservation{Found: true, PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 7}}}
@@ -427,7 +427,7 @@ func TestADraftChangeOnAFoundPullRequestIsFolded(t *testing.T) {
 // What the person gave with the plan is written in the submission's first
 // transaction, before any remote effect: the title and the note stand
 // though the push then fails (#191, group E; docs/designs/
-// publication-record.md, "The record").
+// publication-record.md at 0e0ad767, "The record").
 func TestTheFirstTransactionWritesWhatThePersonGave(t *testing.T) {
 	t.Parallel()
 	f := setup(t)

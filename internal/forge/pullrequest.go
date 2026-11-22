@@ -85,7 +85,7 @@ type PullRequestStatus struct {
 	// Requested are the logins whose review is requested and still
 	// pending, sorted, and RequestedRead whether that list is complete: a
 	// reading that couldn't take it, or took it cut short, says so, and an
-	// absent login then settles nothing (docs/designs/publication-record.md).
+	// absent login then settles nothing (docs/designs/publication-record.md at 0e0ad767).
 	Requested     []string `json:",omitempty"`
 	RequestedRead bool     `json:",omitempty"`
 	// LatestReview is when each login last reviewed it, a review of any

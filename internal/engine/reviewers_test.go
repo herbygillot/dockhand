@@ -16,7 +16,7 @@ import (
 // mark, and each answer. AC: a request that landed, whose answer was lost
 // and which someone removed, is not sent again. AD: Alice approving since,
 // while Bob's review still sets the verdict, drops Alice and keeps Bob
-// (docs/designs/publication-record.md, "The reviewer request").
+// (docs/designs/publication-record.md at 0e0ad767, "The reviewer request").
 func TestAReviewerRequestIsSentOnceAtMost(t *testing.T) {
 	t.Parallel()
 	question := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)

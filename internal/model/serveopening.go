@@ -4,7 +4,7 @@ import "time"
 
 // ServeOpening is one row of serve's count: a pull request serve opened,
 // may have opened, or holds a place to open (docs/designs/
-// publication-record.md, "serve's count"). It isn't deleted with a branch,
+// publication-record.md at 0e0ad767, "serve's count"). It isn't deleted with a branch,
 // which is what let #155's opening leave the count.
 type ServeOpening struct {
 	// ID is the row's, 0 before it is recorded.

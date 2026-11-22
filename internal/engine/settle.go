@@ -18,7 +18,7 @@ import (
 )
 
 // PublicationReading is what settling read of the fork and GitHub for a
-// publication, under its head's lock (docs/designs/publication-record.md,
+// publication, under its head's lock (docs/designs/publication-record.md at 0e0ad767,
 // "The steps"). A read that failed, or came back cut short, is not read:
 // it settles nothing.
 type PublicationReading struct {
@@ -343,7 +343,7 @@ func (e *unsettledError) Error() string { return e.why }
 // each publication of the pull request read, by its number: where status
 // reads a pull request anyway, that reading settles what it can, and
 // status makes no read of its own for a publication (docs/designs/
-// publication-record.md, "When settling runs"). Its head is what GitHub
+// publication-record.md at 0e0ad767, "When settling runs"). Its head is what GitHub
 // says the open pull request is at, and its draft state is what was read
 // with it. A publication whose head another process holds, or which needs
 // a read the refresh didn't make, stays as it is for the process or the
@@ -379,7 +379,7 @@ func (e *Engine) settleRefreshed(ctx context.Context, observed []observedPullReq
 // before the publication goes: each step found done into the pull
 // request, the description's parts that landed, serve's row with the pull
 // request and GitHub's creation time, and every reviewer mark other than
-// not sent as the receipt (docs/designs/publication-record.md, "Ending a
+// not sent as the receipt (docs/designs/publication-record.md at 0e0ad767, "Ending a
 // publication").
 func (e *Engine) foldSettlement(tx store.Tx, id model.BranchID, record model.Publication, settled Settlement, repository string) error {
 	branch, err := tx.Branch(id)
@@ -452,7 +452,7 @@ func (e *Engine) foldSettlement(tx store.Tx, id model.BranchID, record model.Pub
 
 // endPublicationFor ends a branch's unfinished submission before the
 // branch is archived or forgotten: what each step left is read and
-// written down, then it goes (docs/designs/publication-record.md, "Ending
+// written down, then it goes (docs/designs/publication-record.md at 0e0ad767, "Ending
 // a publication"). Where a read it needs fails, it stays, and the verb is
 // refused with nothing done.
 func (e *Engine) endPublicationFor(ctx context.Context, branch model.Branch, verb string) error {

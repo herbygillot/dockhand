@@ -1090,7 +1090,7 @@ func normalize(text string) string {
 // where GitHub's part reads as written's, and is recorded's where it reads
 // otherwise. Merge then keeps a person's edit, made to the old text or the
 // new, as their own: #157's lost record read a part GitHub took as a
-// person's (docs/designs/publication-record.md, "The description").
+// person's (docs/designs/publication-record.md at 0e0ad767, "The description").
 func Landed(observed, sent, written, recorded string) string {
 	// GitHub gives a description back with its line endings, which
 	// aren't a person's edit.

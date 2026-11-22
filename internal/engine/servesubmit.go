@@ -114,7 +114,7 @@ func (e *Engine) serveCandidates(ctx context.Context) ([]ServeCandidate, []model
 		}
 		// A pull request found open for its head is one serve didn't
 		// open, and serve never writes to one it found (docs/designs/
-		// publication-record.md, "Who continues what").
+		// publication-record.md at 0e0ad767, "Who continues what").
 		if plan.Existing != nil {
 			candidate.Held = append(candidate.Held, model.Concern{Origin: model.FromSubmission, Rule: "found", Detail: fmt.Sprintf("#%d is already open for its branch, and serve didn't open it; serve leaves it to you", plan.Existing.PullRequest.Ref.Number)})
 			candidates = append(candidates, candidate)

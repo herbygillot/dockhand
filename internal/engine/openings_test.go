@@ -14,7 +14,7 @@ import (
 // unanswered first (AK), the limit lowered (AM), an earlier pull request
 // that settles nothing (AN), and a head gone from the fork, kept at the
 // first look and released at the second, or back between them (AR)
-// (docs/designs/publication-record.md, "serve's count").
+// (docs/designs/publication-record.md at 0e0ad767, "serve's count").
 func TestServesCountByItsRows(t *testing.T) {
 	t.Parallel()
 	today := time.Date(2026, 11, 11, 0, 0, 0, 0, time.UTC)
