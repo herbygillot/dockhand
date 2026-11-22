@@ -90,7 +90,7 @@ jobs:
   # the runner isn't root, so the root case is a skip too.
   linux:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     steps:
       - name: Check out repository
@@ -104,6 +104,13 @@ jobs:
 
       - name: Test
         run: go test -mod=vendor ./...
+
+      # The packages that do their own concurrency, under the race
+      # detector (make test-race-set; docs/development.md).
+      - name: Race
+        run: make test-race-set TEST_TIMEOUT=30m
+        env:
+          GOFLAGS: -mod=vendor
 
   # The corpus (tools/corpus): MacPorts' own version bumps replayed
   # through this build's update, against the PortGroups of a pinned slice

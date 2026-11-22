@@ -26,7 +26,7 @@ ifneq ($(strip $(LAST_RELEASE)),)
 GO_LDFLAGS += -X github.com/herbygillot/dockhand/internal/buildinfo.LastRelease=$(strip $(LAST_RELEASE))
 endif
 
-.PHONY: build test test-race lint fmt-check path-check deadcode mutate vendor vendor-check acceptance acceptance-selftest sweep test-corpus gate clean
+.PHONY: build test test-race test-race-set lint fmt-check path-check deadcode mutate vendor vendor-check acceptance acceptance-selftest sweep test-corpus gate clean
 
 build:
 	$(GO) build $(if $(strip $(GO_LDFLAGS)),-ldflags "$(GO_LDFLAGS)") -o "$(BINARY)" ./cmd/dockhand
@@ -56,6 +56,14 @@ test:
 	wait $$others; others=$$?; [ $$others = 0 ] && [ $$command = 0 ]
 	@# The acceptance build's failpoints, which a normal build hasn't.
 	@$(GO) test -tags acceptance ./internal/failpoint/
+
+# The packages that do their own concurrency, which CI's Linux job runs
+# under the race detector; a package that starts goroutines of its own
+# joins the list. make test-race is the whole tree, by hand.
+RACE_PACKAGES := ./internal/term ./internal/command/checkrun ./internal/checks ./internal/coord ./internal/store/... ./internal/engine ./internal/command/serve ./internal/outdated ./internal/filelock ./tools/survey ./internal/progress
+
+test-race-set:
+	$(GO) test -race -timeout $(TEST_TIMEOUT) $(RACE_PACKAGES)
 
 test-race:
 	@$(GO) test -race -timeout $(TEST_TIMEOUT) $$($(GO) list ./... | grep -vxF $(COMMAND_PACKAGE)) & others=$$!; \
