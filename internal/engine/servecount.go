@@ -42,7 +42,7 @@ func (e *Engine) settleServe(ctx context.Context) (opens bool, err error) {
 				return false, err
 			}
 		}
-		if _, _, _, err := e.settlePublication(ctx, worktree, branch, fork.PushURL, false); err != nil {
+		if _, _, _, err := e.settlePublication(ctx, worktree, branch, false); err != nil {
 			return false, err
 		}
 	}

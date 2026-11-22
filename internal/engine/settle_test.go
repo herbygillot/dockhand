@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // Settling, one table: a publication and what each read answers, complete
@@ -107,16 +109,46 @@ func TestSettlingKeepsAPublicationThatStillOwesAStep(t *testing.T) {
 	worktree, err := e.worktree(t.Context(), branch)
 	require.NoError(t, err)
 
-	settled, carried, _, err := e.settlePublication(t.Context(), worktree, branch, "", false)
+	settled, carried, _, err := e.settlePublication(t.Context(), worktree, branch, false)
 	require.NoError(t, err)
 	require.NotNil(t, carried)
 	require.Equal(t, []model.PublicationStep{model.StepRerequest}, carried.Owes)
 	require.NotNil(t, settled.Publication, "a plan keeps the publication that still owes the reviewers")
 	require.True(t, settled.Publication.Same(*recorded))
 
-	_, _, _, err = e.settlePublication(t.Context(), worktree, settled, "", true)
+	_, _, _, err = e.settlePublication(t.Context(), worktree, settled, true)
 	require.NoError(t, err)
 	ended, err := e.Branch(t.Context(), branch.ID)
 	require.NoError(t, err)
 	require.Nil(t, ended.Publication, "archiving or forgetting ends it")
+}
+
+// Settling reads the publication's recorded head in that head's own
+// repository, not whichever fork is selected now: a push that landed in
+// another fork is found there, and the publication owes nothing more
+// (#191, group B).
+func TestSettlingReadsTheRecordedHeadsRepository(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	commit := testsupport.Git(t, f.clone, "rev-parse", branch.Name)
+	other := filepath.Join(filepath.Dir(f.upstream), "other.git")
+	testsupport.Git(t, filepath.Dir(f.upstream), "clone", "-q", "--bare", f.upstream, other)
+	testsupport.Git(t, f.clone, "remote", "add", "other", other)
+	testsupport.Git(t, f.clone, "push", "-q", other, commit+":refs/heads/dockhand/notes")
+	fake.Repos = map[string]string{"other/macports-ports": other}
+
+	recorded := &model.Publication{ID: "pub_other", Commit: model.ObjectID(commit), At: time.Now().UTC(), Head: "other/macports-ports:dockhand/notes", Base: e.PullRequestRepository() + ":" + UpstreamBranch,
+		Owes: []model.PublicationStep{model.StepPush}}
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.SetPublication(branch.ID, "", recorded) }))
+	branch, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	worktree, err := e.worktree(t.Context(), branch)
+	require.NoError(t, err)
+	settled, _, done, err := e.settlePublication(t.Context(), worktree, branch, false)
+	require.NoError(t, err)
+	require.Equal(t, []model.PublicationStep{model.StepPush}, done)
+	require.Nil(t, settled.Publication, "the push landed in the head's own repository")
 }

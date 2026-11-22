@@ -921,7 +921,7 @@ func (e *Engine) findDestination(ctx context.Context, worktree *git.Repository, 
 	// carries what the person asked of it (docs/designs/
 	// publication-record.md, "When settling runs").
 	if plan.Branch.Publication != nil {
-		settled, carried, done, err := e.settlePublication(ctx, worktree, plan.Branch, plan.PushURL, false)
+		settled, carried, done, err := e.settlePublication(ctx, worktree, plan.Branch, false)
 		if err != nil {
 			return err
 		}

@@ -213,22 +213,22 @@ func (p Pending) FailsCommand() bool {
 // only reads the fork and GitHub. A read that fails leaves it as it is,
 // and the plan is refused with the read named. What the person asked of
 // it that still applies is returned, for the plan to carry.
-func (e *Engine) settlePublication(ctx context.Context, worktree *git.Repository, branch model.Branch, pushURL string, end bool) (model.Branch, *model.Publication, []model.PublicationStep, error) {
+func (e *Engine) settlePublication(ctx context.Context, worktree *git.Repository, branch model.Branch, end bool) (model.Branch, *model.Publication, []model.PublicationStep, error) {
 	return e.settleReading(ctx, worktree, branch, end, func(ctx context.Context, record model.Publication) PublicationReading {
-		return e.readPublication(ctx, worktree, record, pushURL)
+		return e.readPublication(ctx, worktree, record)
 	})
 }
 
-// readPublication reads what settling a publication reads: the fork's
-// head branch, the pull request by head and base, and its draft state.
-func (e *Engine) readPublication(ctx context.Context, worktree *git.Repository, record model.Publication, pushURL string) PublicationReading {
+// readPublication reads what settling a publication reads: its recorded
+// head branch, in the head's own repository whichever fork is selected
+// now, the pull request by head and base, and its draft state.
+func (e *Engine) readPublication(ctx context.Context, worktree *git.Repository, record model.Publication) PublicationReading {
 	headRepository, headBranch, _ := strings.Cut(record.Head, ":")
 	baseRepository, baseBranch, _ := strings.Cut(record.Base, ":")
 	var reading PublicationReading
-	if pushURL != "" {
-		if head, err := worktree.RemoteHead(ctx, pushURL, headBranch); err == nil {
-			reading.HeadRead, reading.HeadExists, reading.HeadAt = true, head.Exists, model.ObjectID(head.Object)
-		}
+	// The head is read where the push is owed, the one step it settles.
+	if slices.Contains(record.Owes, model.StepPush) {
+		reading.HeadRead, reading.HeadExists, reading.HeadAt = e.readHead(ctx, worktree, headRepository, headBranch)
 	}
 	found, err := e.forge().Find(ctx, forge.PullRequestQuery{Repository: baseRepository, HeadRepository: headRepository, HeadBranch: headBranch, BaseBranch: baseBranch})
 	if err == nil {
@@ -244,6 +244,25 @@ func (e *Engine) readPublication(ctx context.Context, worktree *git.Repository, 
 		}
 	}
 	return reading
+}
+
+// readHead reads a branch in its own repository, through a remote that
+// already pushes there, else its GitHub address: read is false where it
+// couldn't be read.
+func (e *Engine) readHead(ctx context.Context, worktree *git.Repository, repository, branch string) (read, exists bool, at model.ObjectID) {
+	remotes, err := worktree.Remotes(ctx)
+	if err != nil {
+		return false, false, ""
+	}
+	_, address, err := e.theirRemote(ctx, remotes, repository)
+	if err != nil {
+		return false, false, ""
+	}
+	head, err := worktree.RemoteHead(ctx, address, branch)
+	if err != nil {
+		return false, false, ""
+	}
+	return true, head.Exists, model.ObjectID(head.Object)
 }
 
 // settleReading settles a branch's publication, under its head's lock,
@@ -434,11 +453,7 @@ func (e *Engine) endPublicationFor(ctx context.Context, branch model.Branch, ver
 			return err
 		}
 	}
-	pushURL := ""
-	if fork, err := e.Fork(ctx, ""); err == nil {
-		pushURL = fork.PushURL
-	}
-	if _, _, _, err := e.settlePublication(ctx, worktree, current, pushURL, true); err != nil {
+	if _, _, _, err := e.settlePublication(ctx, worktree, current, true); err != nil {
 		return fmt.Errorf("%w; %s wasn't %s", err, current.ShortName(), verb)
 	}
 	return nil
