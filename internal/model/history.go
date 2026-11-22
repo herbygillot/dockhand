@@ -39,6 +39,11 @@ type EditedFile struct {
 	Path   string
 	Before ObjectID
 	After  ObjectID
+	// BeforeMode and AfterMode are Git's mode for the file on each side,
+	// such as 100644; empty where it is absent there, or on an edit from
+	// before modes were kept (#194).
+	BeforeMode string `json:",omitempty"`
+	AfterMode  string `json:",omitempty"`
 }
 
 // Edit is what an authoring command wrote in a branch's working files. It
@@ -77,6 +82,12 @@ type Edit struct {
 	// the patch problems it held it for: serve's recovery leaves it held,
 	// where it queued its check (Codex's review of 275125ff, finding 2).
 	Held []string `json:",omitempty"`
+	// Written is when the edit's files were seen written; zero until
+	// then, where the edit is recorded before its files are (#194).
+	Written time.Time `json:",omitzero"`
+	// Result is what preparing the edit found and did; nil on an edit
+	// from before it was kept, or one no preparation made.
+	Result *EditResult `json:",omitempty"`
 }
 
 // SourceMove is an update's move of a GitHub port's source: from
