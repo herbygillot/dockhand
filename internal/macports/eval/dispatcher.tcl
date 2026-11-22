@@ -128,9 +128,9 @@ namespace eval ::dockhand {
                 # closed read then is the fingerprint's, kept in the ledger
                 # and not weighed.
                 variable walking 0
-                # reading are the file subcommands that read the
+                # reading are the file subcommands that read a path on the
                 # filesystem; the rest are path arithmetic or refused.
-                variable reading {exists isfile isdirectory readable writable executable mtime atime stat lstat size type readlink owned attributes link}
+                variable reading {exists isfile isdirectory readable writable executable mtime atime stat lstat size type readlink owned attributes link system}
                 # subcommands are Tcl 8.6's file subcommands, which Tcl
                 # takes by any unique prefix: file exi is file exists.
                 variable subcommands {atime attributes channels copy delete dirname executable exists extension isdirectory isfile join link lstat mkdir mtime nativename normalize owned pathtype readable readlink rename rootname separator size split stat system tail tempfile type volumes writable}
@@ -511,6 +511,7 @@ namespace eval ::dockhand {
                         }
                         file {
                             switch -- [lindex $arguments 0] {
+                                volumes { return "lists host volumes" }
                                 mkdir - delete - copy - rename - tempfile - tempdir { return "changes the filesystem" }
                                 link { if {[llength $arguments] > 2} { return "changes the filesystem" } }
                                 attributes { if {[llength $arguments] > 3} { return "changes a file's attributes" } }

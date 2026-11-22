@@ -30,6 +30,7 @@ func observeEffects(t *testing.T, e *Evaluator, lines string) macports.Observati
 
 const recordedLines = `source ${filespath}/extra.tcl
 set results [list [file exists /usr/bin/true] [exec /usr/bin/uname -s]]
+set filesystem [file system /usr/bin/true]
 post-destroot {
     system "echo destroot"
 }`
@@ -57,6 +58,9 @@ func TestARecordingEvaluationKeepsWhatItReadRanAndDeclared(t *testing.T) {
 	host := read("file", "exists", "/usr/bin/true")
 	require.Equal(t, "host", host.Kind)
 	require.Equal(t, 1, host.Count)
+	filesystem := read("file", "system", "/usr/bin/true")
+	require.Equal(t, "host", filesystem.Kind)
+	require.Equal(t, 1, filesystem.Count)
 	require.Contains(t, o.Execs, macports.CommandRun{Line: "/usr/bin/uname -s", Source: "host", Count: 1})
 	i := slices.IndexFunc(o.Hooks, func(h macports.Hook) bool {
 		return strings.Contains(h.Procedure, "post") && strings.Contains(h.Procedure, "destroot")

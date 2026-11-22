@@ -70,6 +70,15 @@ func TestTheDispatcherRefusesEffects(t *testing.T) {
 	}
 }
 
+func TestTheDispatcherRefusesHostVolumeEnumeration(t *testing.T) {
+	t.Parallel()
+	for _, observed := range []bool{false, true} {
+		_, err := evaluateLines(t, "file volumes", observed)
+		require.ErrorIs(t, err, macports.ErrRefused)
+		require.ErrorContains(t, err, "lists host volumes")
+	}
+}
+
 func TestTheDispatcherAdmitsReadsThatOnlyReport(t *testing.T) {
 	t.Parallel()
 	link := filepath.Join(t.TempDir(), "link")
@@ -78,6 +87,7 @@ func TestTheDispatcherAdmitsReadsThatOnlyReport(t *testing.T) {
 		// The programs a command line runs are the one admission table's
 		// (TestExecAdmissionIsOneTable); these are the other reads.
 		"set target [file link " + link + "]",
+		"set open_channels [file channels]",
 		"set f [open " + os.DevNull + " r]; close $f",
 		"set found [file exists /usr/bin/true]",
 		"if {[catch {exec " + filepath.Join(t.TempDir(), "ruby1.8") + " -e {puts 1}}]} { set fallback 1 }",
