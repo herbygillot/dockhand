@@ -18,6 +18,13 @@ endif
 ifneq ($(strip $(VERSION)),)
 GO_LDFLAGS += -X github.com/herbygillot/dockhand/internal/buildinfo.Version=$(strip $(VERSION))
 endif
+# LAST_RELEASE is the newest release's tag, which a development build names
+# itself after: Go stamps the newest ancestor tag, and a release is tagged
+# on its own branch, so main otherwise names the last candidate (#96).
+LAST_RELEASE ?= $(shell git tag --list 'v[0-9]*' 2>/dev/null | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' | sort -t. -k1,1V -k2,2n -k3,3n | tail -n 1)
+ifneq ($(strip $(LAST_RELEASE)),)
+GO_LDFLAGS += -X github.com/herbygillot/dockhand/internal/buildinfo.LastRelease=$(strip $(LAST_RELEASE))
+endif
 
 .PHONY: build test test-race lint fmt-check path-check deadcode mutate vendor vendor-check acceptance acceptance-selftest sweep test-corpus gate clean
 

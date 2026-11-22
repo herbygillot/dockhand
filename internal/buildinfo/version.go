@@ -33,10 +33,52 @@ type Info struct {
 // checkout is never mislabeled by a stale build variable.
 var Version string
 
+// LastRelease is the newest release's tag, which make build names at link
+// time from the repository's tags: a development build after it names
+// itself after it (afterRelease). Empty, as in a plain go build, leaves the
+// toolchain's name as it is.
+var LastRelease string
+
 // Current reads the embedded build information.
 func Current() Info {
 	info, ok := debug.ReadBuildInfo()
-	return current(info, ok, Version)
+	current := current(info, ok, Version)
+	current.Version = afterRelease(current.Version, LastRelease)
+	return current
+}
+
+// afterRelease is a development build's pseudo-version named after the
+// newest release where the toolchain named it after an older tag: Go's
+// stamp comes from the newest ancestor tag, and a release is tagged on its
+// own branch, so a build of main said v0.7.0-rc3 after v0.7.0 shipped, and
+// put that in port pull requests' Generated-By trailers (#96). The
+// timestamp, revision and +dirty are kept; anything that isn't such a
+// pseudo-version is left as it is.
+func afterRelease(version, release string) string {
+	if !semver.IsValid(release) || semver.Prerelease(release) != "" || semver.Build(release) != "" {
+		return version
+	}
+	pseudo, dirty, _ := strings.Cut(version, "+")
+	if !module.IsPseudoVersion(pseudo) {
+		return version
+	}
+	base, err := module.PseudoVersionBase(pseudo)
+	if err != nil || base != "" && semver.Compare(base, release) >= 0 {
+		return version
+	}
+	at, err := module.PseudoVersionTime(pseudo)
+	if err != nil {
+		return version
+	}
+	rev, err := module.PseudoVersionRev(pseudo)
+	if err != nil {
+		return version
+	}
+	renamed := module.PseudoVersion(semver.Major(release), release, at, rev)
+	if dirty != "" {
+		renamed += "+" + dirty
+	}
+	return renamed
 }
 
 func current(info *debug.BuildInfo, ok bool, named string) Info {

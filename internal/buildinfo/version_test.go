@@ -105,3 +105,27 @@ func TestReleasedAndTheWayToABuild(t *testing.T) {
 	require.Equal(t, "it was built from commit abcdef123456 of "+ProjectURL, Way("devel (abcdef123456, modified)"))
 	require.Empty(t, Way("devel"))
 }
+
+// A development build named after an older tag than the newest release is
+// named after that release, keeping its time, revision and +dirty: a build
+// of main said v0.7.0-rc3 after v0.7.0 shipped (#96). A release, a build
+// already after it, a plain devel build and no release named are left as
+// they are.
+func TestADevelopmentBuildIsNamedAfterTheLastRelease(t *testing.T) {
+	t.Parallel()
+	for version, want := range map[string]string{
+		"v0.7.0-rc3.0.20261107141839-250c7d1560ed":       "v0.8.2-0.20261107141839-250c7d1560ed",
+		"v0.7.0-rc3.0.20261107141839-250c7d1560ed+dirty": "v0.8.2-0.20261107141839-250c7d1560ed+dirty",
+		"v0.0.0-20261107141839-250c7d1560ed":             "v0.8.2-0.20261107141839-250c7d1560ed",
+		"v0.8.2-0.20261107141839-250c7d1560ed":           "v0.8.2-0.20261107141839-250c7d1560ed",
+		"v0.9.0-rc1.0.20261107141839-250c7d1560ed":       "v0.9.0-rc1.0.20261107141839-250c7d1560ed",
+		"v0.8.1": "v0.8.1",
+		"devel":  "devel",
+	} {
+		require.Equal(t, want, afterRelease(version, "v0.8.1"), version)
+	}
+	require.Equal(t, "v0.7.0-rc3.0.20261107141839-250c7d1560ed", afterRelease("v0.7.0-rc3.0.20261107141839-250c7d1560ed", ""), "no release named")
+	require.Equal(t, "v0.7.0-rc3.0.20261107141839-250c7d1560ed", afterRelease("v0.7.0-rc3.0.20261107141839-250c7d1560ed", "v0.8.1-rc1"), "a candidate is no release")
+	_, released := Released(afterRelease("v0.7.0-rc3.0.20261107141839-250c7d1560ed", "v0.8.1"))
+	require.False(t, released, "still no release")
+}
