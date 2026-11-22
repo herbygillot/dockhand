@@ -255,7 +255,7 @@ func lookupKey(portfile string, port macports.PortInfo) string {
 		return ""
 	}
 	key := []string{portfile, port.Version, upstream.Series(port)}
-	for _, option := range []string{"livecheck.type", "livecheck.url", "livecheck.regex", "livecheck.version", "livecheck.branch", "github.author", "github.project", "github.version", "github.tag_prefix", "github.tag_suffix", "gitlab.instance", "gitlab.author", "gitlab.project", "gitlab.version", "git.url", "git.branch", "distname", "distfiles", "master_sites"} {
+	for _, option := range []string{"livecheck.type", "livecheck.url", "livecheck.regex", "livecheck.version", "livecheck.branch", "github.author", "github.project", "github.version", "github.tag_prefix", "github.tag_suffix", "github.tarball_from", "gitlab.instance", "gitlab.author", "gitlab.project", "gitlab.version", "git.url", "git.branch", "distname", "distfiles", "master_sites"} {
 		key = append(key, port.Options[option])
 	}
 	return strings.Join(key, "\x00")
