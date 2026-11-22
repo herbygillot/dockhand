@@ -490,6 +490,9 @@ func evaluateOne(ctx context.Context, session *rpc.Session, source macports.Cont
 	}
 	reply, err := session.Call(ctx, "metadata", args...)
 	if err != nil {
+		if exited := macports.Exited(source.Target().Portfile, err); exited != err {
+			return macports.PortInfo{}, nil, exited
+		}
 		return macports.PortInfo{}, nil, fmt.Errorf("macports: evaluating %s (%s): %w", source.Target().Portfile, subport, err)
 	}
 	return decodeMetadata(reply)
