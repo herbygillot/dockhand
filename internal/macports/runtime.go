@@ -1,6 +1,8 @@
 package macports
 
 import (
+	"strings"
+
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -15,11 +17,34 @@ type Runtime struct {
 	Host        model.Platform
 	BaseVersion string
 	TclVersion  string
+	// DarwinVersion is the kernel's full version, 25.1.0, and Xcode and
+	// Tools are xcodeversion and xcodecltversion, as Base read them at the
+	// session's start; empty where Base has none, which a scope takes as
+	// unknown (#194).
+	DarwinVersion, Xcode, Tools string
 }
 
 // Provenance is the runtime as a record keeps it (model.EvaluatedUnder).
 func (r Runtime) Provenance() model.EvaluatedUnder {
-	return model.EvaluatedUnder{BaseVersion: r.BaseVersion, TclVersion: r.TclVersion, Platform: r.Platform, Host: r.Host}
+	return model.EvaluatedUnder{BaseVersion: r.BaseVersion, TclVersion: r.TclVersion, Platform: r.Platform, Host: r.Host, DarwinVersion: r.DarwinVersion, Xcode: r.Xcode, Tools: r.Tools}
+}
+
+// PatchScope is the scope a port's patch list was read in: the runtime's
+// provenance, the subport, and the variants, each part Base or the caller
+// named; a part it didn't name is unknown, so the list compares with none
+// (model.ScopesComparable, #194). No variants is "-", a known value.
+func (r Runtime) PatchScope(subport string, variants []string) string {
+	selected := "-"
+	if len(variants) > 0 {
+		selected = strings.Join(variants, " ")
+	}
+	platform := func(p model.Platform) string {
+		if p == (model.Platform{}) {
+			return "-"
+		}
+		return p.OS + " " + p.Version + " " + p.Architecture
+	}
+	return model.PatchScope(r.BaseVersion, r.TclVersion, platform(r.Platform), platform(r.Host), r.DarwinVersion, r.Xcode, r.Tools, subport, selected)
 }
 
 // Modeled reports whether every context of this runtime is a model: MacPorts

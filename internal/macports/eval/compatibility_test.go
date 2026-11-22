@@ -20,6 +20,11 @@ func TestRuntimeInspectionAndVersionEvidence(t *testing.T) {
 	decoded, err := decodeRuntime("platform {darwin 25 arm64} tcl_version 8.6.16 base_version 2.12.6")
 	require.NoError(t, err)
 	require.Equal(t, "2.12.6", decoded.BaseVersion)
+	require.Empty(t, decoded.DarwinVersion, "a Base that read no full version leaves the part unknown")
+	require.NotEmpty(t, runtime.DarwinVersion, "the kernel's full version comes from Base")
+	full, err := decodeRuntime("platform {darwin 25 arm64} tcl_version 8.6.16 base_version 2.12.6 os_version 25.1.0 xcode 26.1 xcodeclt 26.1.0.0.1")
+	require.NoError(t, err)
+	require.Equal(t, macports.Runtime{Platform: full.Platform, BaseVersion: "2.12.6", TclVersion: "8.6.16", DarwinVersion: "25.1.0", Xcode: "26.1", Tools: "26.1.0.0.1"}, full)
 	_, err = decodeRuntime("platform {darwin 25 arm64}")
 	require.ErrorIs(t, err, macports.ErrStartup)
 }

@@ -37,7 +37,22 @@ namespace eval ::dockhand {
             set ::macports::sources_default [list $url]
             set ::macports::porturl_prefix_map [dict create $url $url]
         }
-        return [dict create platform [list $::macports::os_platform $::macports::os_major $::macports::build_arch] base_version [base_version] tcl_version [info patchlevel]]
+        # The kernel's full version and the developer tools' versions as Base
+        # has read them, which a patch list's scope names (#194); empty where
+        # Base has none yet. Base reads the tools only when first asked, by
+        # a read trace that runs xcode-select and xcodebuild: one still
+        # pending is left alone, since reading it here would answer for every
+        # modelled context what each must ask itself (info exists fires it
+        # too).
+        set readings [dict create]
+        foreach {key variable} {os_version ::macports::os_version xcode ::macports::xcodeversion xcodeclt ::macports::xcodecltversion} {
+            set reading ""
+            if {[trace info variable $variable] eq "" && [info exists $variable]} {
+                set reading [set $variable]
+            }
+            dict set readings $key $reading
+        }
+        return [dict merge [dict create platform [list $::macports::os_platform $::macports::os_major $::macports::build_arch] base_version [base_version] tcl_version [info patchlevel]] $readings]
     }
 
     # bootstrap_reads are what mportinit read, when a survey records

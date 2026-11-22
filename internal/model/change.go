@@ -13,6 +13,10 @@ type EvaluatedUnder struct {
 	BaseVersion, TclVersion string `json:",omitempty"`
 	Platform                Platform
 	Host                    Platform `json:",omitzero"`
+	// DarwinVersion is the kernel's full version, and Xcode and Tools the
+	// developer tools' versions, as the evaluator read them (#194).
+	DarwinVersion string `json:",omitempty"`
+	Xcode, Tools  string `json:",omitempty"`
 }
 
 // ChangeRecord is what a revision changed in one port directory, against

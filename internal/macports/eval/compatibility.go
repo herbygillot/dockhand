@@ -98,7 +98,8 @@ func decodeRuntime(reply string) (macports.Runtime, error) {
 	if err != nil || fields["base_version"] == "" || fields["tcl_version"] == "" {
 		return macports.Runtime{}, fmt.Errorf("%w: incomplete runtime reply", macports.ErrStartup)
 	}
-	return macports.Runtime{Platform: platform, BaseVersion: fields["base_version"], TclVersion: fields["tcl_version"]}, nil
+	return macports.Runtime{Platform: platform, BaseVersion: fields["base_version"], TclVersion: fields["tcl_version"],
+		DarwinVersion: fields["os_version"], Xcode: fields["xcode"], Tools: fields["xcodeclt"]}, nil
 }
 
 // decodePlatform reads the interpreter's os_platform, os_major, and
