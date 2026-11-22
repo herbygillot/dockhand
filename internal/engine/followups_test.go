@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -276,4 +277,62 @@ func TestAnOldRecordBecomesFoundWhereAnotherIsItsAuthor(t *testing.T) {
 	_, err = e.ApplySubmit(t.Context(), next, model.AnsweredAsked)
 	require.NoError(t, err)
 	require.Equal(t, model.Found, provenance(), "and the submission records it")
+}
+
+// Reviewers, one by one: each login's answer is for its own latest review,
+// read with the plan; each is asked in a call of its own, so GitHub
+// refusing one leaves the other asked, with GitHub's words kept; and one
+// who reviewed again after the answer isn't asked, and is said (#191,
+// group D).
+func TestEachReviewerIsAskedForTheirOwnReview(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	g := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	first, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.NoError(t, err)
+	number := first.PullRequest.Ref.Number
+	base := time.Date(2026, 11, 22, 8, 0, 0, 0, time.UTC)
+	g.Status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 3, ChangesRequestedBy: []string{"ana", "bo", "cy"}, ReviewedAt: base.Add(3 * time.Hour),
+		LatestReview: map[string]time.Time{"ana": base.Add(time.Hour), "bo": base.Add(2 * time.Hour), "cy": base.Add(3 * time.Hour)}}
+	e.options.Now = func() time.Time { return base.Add(4 * time.Hour) }
+	_, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# review addressed\n"})
+	testsupport.Git(t, branch.Worktree, "commit", "-qam", "jq: address review")
+	branch, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Rerequest: true})
+	require.NoError(t, err)
+	record := plan.publication("pub_x", "", false)
+	reviewed := map[string]time.Time{}
+	for _, r := range record.Review.Reviewers {
+		reviewed[r.Login] = r.Reviewed
+	}
+	require.Equal(t, map[string]time.Time{"ana": base.Add(time.Hour), "bo": base.Add(2 * time.Hour), "cy": base.Add(3 * time.Hour)}, reviewed, "each login's own latest review")
+
+	// GitHub won't ask bo; cy reviews again after the answer.
+	g.Unrequestable = map[string]string{"bo": "not a collaborator"}
+	status := g.Status
+	status.LatestReview = map[string]time.Time{"ana": base.Add(time.Hour), "bo": base.Add(2 * time.Hour), "cy": base.Add(5 * time.Hour)}
+	g.Status = status
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.ErrorContains(t, err, "GitHub refused to ask bo")
+	require.Equal(t, []string{"ana"}, submitted.Asked, "ana is asked though GitHub refused bo")
+	require.Equal(t, []string{"cy"}, submitted.ReviewedSince)
+	require.Equal(t, []string{"ana"}, g.RerequestedOn[number])
+	branch, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	marks := map[string]model.Reviewer{}
+	for _, r := range branch.PullRequest.Rerequested.Reviewers {
+		marks[r.Login] = r
+	}
+	require.Equal(t, model.SentRequest, marks["ana"].Sent)
+	require.Equal(t, model.RefusedToAsk, marks["bo"].Sent)
+	require.Contains(t, marks["bo"].Why, "not a collaborator", "the receipt keeps GitHub's words")
+	require.Equal(t, model.ReviewedAgain, marks["cy"].Sent)
+	require.Nil(t, branch.Publication, "every reviewer has an outcome")
 }

@@ -9,6 +9,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
@@ -122,6 +123,10 @@ type SubmitPlan struct {
 	// settled is the earlier publication settling left and what it still
 	// asks, for carry to take once the destination is known.
 	settled *model.Publication
+	// reviewedBy is when each login last reviewed the pull request, read
+	// with the plan where it asks reviewers again: the review each one's
+	// answer is for.
+	reviewedBy map[string]time.Time
 	// admission is serve's limit and clock, read at the admission: serve's
 	// count's rows that count today must be fewer than the limit.
 	admission ServeAdmission
@@ -919,6 +924,14 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 	if plan.Carried == nil {
 		plan.settledDone = nil
 	}
+	// The question about the reviewers is for each one's own latest
+	// review, read now: the recorded verdict's time is one review's, and
+	// another reviewer's newer one would read as an answer it isn't.
+	if plan.Carried == nil && plan.Existing != nil && len(plan.Rerequests()) > 0 {
+		if status, err := e.forge().Inspect(ctx, plan.Existing.PullRequest.Ref); err == nil {
+			plan.reviewedBy = status.LatestReview
+		}
+	}
 	return nil
 }
 
@@ -1392,8 +1405,10 @@ type Submitted struct {
 	// ReadyByCLI marked so by the GitHub CLI where an organization refuses
 	// dockhand's app.
 	Ready, ReadyByCLI bool
-	// Asked are the reviewers asked to review again after the push.
-	Asked []string
+	// Asked are the reviewers asked to review again after the push, and
+	// ReviewedSince those not asked, having reviewed since the question was
+	// put.
+	Asked, ReviewedSince []string
 	// MovedTo is the commit the pull request's head was found at, other
 	// than the one submitted, just before a follow-up: the publication
 	// ended there, and Dropped are the follow-ups it owed for its commit.
@@ -1684,6 +1699,12 @@ func (e *Engine) publish(ctx context.Context, plan SubmitPlan, worktree *git.Rep
 	}
 	record = next
 	if err := e.followUps(ctx, plan, &result, &record); err != nil || result.MovedTo != "" {
+		// A follow-up that failed with nothing left owed, as a reviewer
+		// GitHub refused, still ends the publication; endPublication
+		// leaves one that owes a step.
+		if err != nil && result.MovedTo == "" {
+			err = errors.Join(err, e.endPublication(ctx, plan.Branch.ID, record))
+		}
 		return result, err
 	}
 	return result, e.endPublication(ctx, plan.Branch.ID, record)
@@ -1849,8 +1870,8 @@ func (e *Engine) followUps(ctx context.Context, plan SubmitPlan, result *Submitt
 		}
 		return err
 	}
-	asked, err := e.rerequest(ctx, plan.Branch.ID, record)
-	result.Asked = asked
+	asked, since, err := e.rerequest(ctx, plan.Branch.ID, record)
+	result.Asked, result.ReviewedSince = asked, since
 	return err
 }
 

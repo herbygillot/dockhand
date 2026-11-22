@@ -161,6 +161,9 @@ const (
 	MaySent      Sent = "may-have-been-sent"
 	SentRequest  Sent = "sent"
 	RefusedToAsk Sent = "refused"
+	// ReviewedAgain is a login that reviewed since the question was put:
+	// the answer was for an older review, so it isn't asked.
+	ReviewedAgain Sent = "reviewed-since"
 )
 
 // Provenance is how dockhand came to know a pull request: GitHub's answer

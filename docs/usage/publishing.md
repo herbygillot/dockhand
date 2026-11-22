@@ -416,7 +416,11 @@ step, after marking the pull request ready where `--ready` asked.
 `dockhand usage configuration`. If the request fails after the push, the next
 `submit` of the same commit makes it, even though it pushes nothing. A request
 that got no answer may have been sent, so it is never sent again; status says
-which reviewers were asked and which may not have been.
+which reviewers were asked and which may not have been. Each reviewer is asked
+on their own, so GitHub refusing one leaves the others asked, and status gives
+GitHub's words for the refusal. Your answer is for each reviewer's latest review
+when you gave it: one who has reviewed again since isn't asked, and submit says
+so.
 
 While the pull request is open, status says when it may be merged under
 MacPorts' maintainer policy (the MacPorts Guide, section 7.4.1). The branch's
