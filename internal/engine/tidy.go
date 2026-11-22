@@ -1063,6 +1063,30 @@ func standingSubject(ctx context.Context, repo *git.Repository, final, directory
 	return chainSubject(mine), nil
 }
 
+// treeFile is a file's blob and mode in a tree.
+type treeFile struct {
+	blob model.ObjectID
+	mode string
+}
+
+// plainFileMode is Git's mode for a plain file.
+const plainFileMode = "100644"
+
+// filesWithModes are paths' blobs and modes in tree; a path it lacks is absent.
+func filesWithModes(ctx context.Context, repo *git.Repository, tree string, paths []string) (map[string]treeFile, error) {
+	files := map[string]treeFile{}
+	for _, path := range paths {
+		file, _, err := repo.File(ctx, tree, path)
+		if err != nil {
+			return nil, err
+		}
+		if file.Exists {
+			files[path] = treeFile{blob: model.ObjectID(file.Blob), mode: fmt.Sprintf("%o", file.Mode)}
+		}
+	}
+	return files, nil
+}
+
 // createdPort is the subject of a port this branch's create wrote, where
 // its directory is one create recorded writing and its Portfile isn't in
 // the base: a new port, whoever has edited it since.
@@ -1101,30 +1125,40 @@ func fromEdits(ctx context.Context, repo *git.Repository, baseTree, final, direc
 			return false, "", nil
 		}
 	}
-	state, err := repo.FileBlobs(ctx, baseTree, touched)
+	// The chain carries each file's mode with its blob, so a person's
+	// change of a mode breaks it as a change of content does (#194). A
+	// file an edit from before modes were kept wrote keeps the mode it
+	// had, or a plain file's where it had none.
+	state, err := filesWithModes(ctx, repo, baseTree, touched)
 	if err != nil {
 		return false, "", err
 	}
 	for _, edit := range mine {
 		for _, file := range edit.Files {
-			if model.ObjectID(state[file.Path]) != file.Before {
+			if was := state[file.Path]; was.blob != file.Before || file.BeforeMode != "" && was.mode != file.BeforeMode {
 				return false, "", nil
 			}
 		}
 		for _, file := range edit.Files {
 			if file.After == "" {
 				delete(state, file.Path)
-			} else {
-				state[file.Path] = string(file.After)
+				continue
 			}
+			mode := file.AfterMode
+			if mode == "" {
+				if mode = state[file.Path].mode; mode == "" {
+					mode = plainFileMode
+				}
+			}
+			state[file.Path] = treeFile{blob: file.After, mode: mode}
 		}
 	}
-	finalBlobs, err := repo.FileBlobs(ctx, final, touched)
+	head, err := filesWithModes(ctx, repo, final, touched)
 	if err != nil {
 		return false, "", err
 	}
 	for _, path := range touched {
-		if state[path] != finalBlobs[path] {
+		if state[path] != head[path] {
 			return false, "", nil
 		}
 	}
