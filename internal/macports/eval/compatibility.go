@@ -99,7 +99,27 @@ func decodeRuntime(reply string) (macports.Runtime, error) {
 		return macports.Runtime{}, fmt.Errorf("%w: incomplete runtime reply", macports.ErrStartup)
 	}
 	return macports.Runtime{Platform: platform, BaseVersion: fields["base_version"], TclVersion: fields["tcl_version"],
-		DarwinVersion: fields["os_version"], Xcode: fields["xcode"], Tools: fields["xcodeclt"]}, nil
+		DarwinVersion: reading(fields["os_version"]), Xcode: reading(fields["xcode"]), Tools: reading(fields["xcodeclt"])}, nil
+}
+
+// reading is a variable of Base's as the evaluator said it, with its
+// state (evaluator.tcl): a value Base read, macports.ToolsNone where it
+// read an empty one, macports.ToolsNotRead where it hasn't read it, and
+// empty, unknown, where neither can be told (#194).
+func reading(said string) string {
+	parts, errs := syntax.ListValues(said)
+	if len(errs) > 0 || len(parts) != 2 {
+		return ""
+	}
+	switch {
+	case parts[0] == "pending":
+		return macports.ToolsNotRead
+	case parts[0] == "read" && parts[1] == "":
+		return macports.ToolsNone
+	case parts[0] == "read":
+		return parts[1]
+	}
+	return ""
 }
 
 // decodePlatform reads the interpreter's os_platform, os_major, and

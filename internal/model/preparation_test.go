@@ -39,4 +39,17 @@ func TestScopesCompareOnlyWhenEqualAndKnown(t *testing.T) {
 	require.False(t, ScopesComparable(tahoe, tahoe), "an unknown part (here the variants) compares with nothing")
 	require.False(t, ScopesComparable(PatchScope("2.12.7", "8.6", "darwin 25.1.0 arm64", "26.1", "26.1", "jq", "+universal"), PatchScope("2.12.7", "8.6", "darwin 25.2.0 arm64", "26.1", "26.1", "jq", "+universal")), "the minor version differs")
 	require.False(t, ScopesComparable("", ""), "no scope compares with nothing")
+
+	// The developer tools' part has three states (macports.ToolsNotRead):
+	// not read is a known value, equal to itself; read is equal only to
+	// the same values; unknown compares with nothing.
+	scope := func(xcode string) string {
+		return PatchScope("2.12.7", "8.6", "darwin 25.1.0 arm64", xcode, xcode, "jq", "-")
+	}
+	require.True(t, ScopesComparable(scope("(not read)"), scope("(not read)")), "neither read the tools")
+	require.True(t, ScopesComparable(scope("26.1"), scope("26.1")))
+	require.True(t, ScopesComparable(scope("(none)"), scope("(none)")), "both read them and found none")
+	require.False(t, ScopesComparable(scope("26.1"), scope("(not read)")), "one read the tools and the other didn't")
+	require.False(t, ScopesComparable(scope("26.1"), scope("26.2")))
+	require.False(t, ScopesComparable(scope(""), scope("")), "unknown compares with nothing, itself included")
 }

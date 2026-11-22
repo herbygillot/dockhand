@@ -44,13 +44,18 @@ namespace eval ::dockhand {
         # pending is left alone, since reading it here would answer for every
         # modelled context what each must ask itself (info exists fires it
         # too).
+        # Each is said with its state: pending, Base not having read it;
+        # read, with its value, which can be empty, as xcodeversion is
+        # where Base found no Xcode; or absent, neither.
         set readings [dict create]
         foreach {key variable} {os_version ::macports::os_version xcode ::macports::xcodeversion xcodeclt ::macports::xcodecltversion} {
-            set reading ""
-            if {[trace info variable $variable] eq "" && [info exists $variable]} {
-                set reading [set $variable]
+            if {[trace info variable $variable] ne ""} {
+                dict set readings $key [list pending ""]
+            } elseif {[info exists $variable]} {
+                dict set readings $key [list read [set $variable]]
+            } else {
+                dict set readings $key [list absent ""]
             }
-            dict set readings $key $reading
         }
         return [dict merge [dict create platform [list $::macports::os_platform $::macports::os_major $::macports::build_arch] base_version [base_version] tcl_version [info patchlevel]] $readings]
     }

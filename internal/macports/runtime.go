@@ -18,9 +18,10 @@ type Runtime struct {
 	BaseVersion string
 	TclVersion  string
 	// DarwinVersion is the kernel's full version, 25.1.0, and Xcode and
-	// Tools are xcodeversion and xcodecltversion, as Base read them at the
-	// session's start; empty where Base has none, which a scope takes as
-	// unknown (#194).
+	// Tools are xcodeversion and xcodecltversion, as Base had read them at
+	// the session's start: ToolsNotRead where it hadn't, ToolsNone where it
+	// read nothing, and empty, which a scope takes as unknown, where
+	// neither can be told (#194).
 	DarwinVersion, Xcode, Tools string
 }
 
@@ -28,6 +29,15 @@ type Runtime struct {
 func (r Runtime) Provenance() model.EvaluatedUnder {
 	return model.EvaluatedUnder{BaseVersion: r.BaseVersion, TclVersion: r.TclVersion, Platform: r.Platform, Host: r.Host, DarwinVersion: r.DarwinVersion, Xcode: r.Xcode, Tools: r.Tools}
 }
+
+// ToolsNotRead is a developer tool's version Base hasn't read, which a
+// Portfile that never asks leaves so: a known value, equal to itself.
+// ToolsNone is one Base read and found empty, as xcodeversion is with no
+// Xcode. A part neither read nor pending is empty, and unknown (#194).
+const (
+	ToolsNotRead = "(not read)"
+	ToolsNone    = "(none)"
+)
 
 // PatchScope is the scope a port's patch list was read in: the runtime's
 // provenance, the subport, and the variants, each part Base or the caller
