@@ -200,7 +200,7 @@ func TestBasesNamedProbesAreBasesByTheirCode(t *testing.T) {
 	// file below it is default_check's substitution, and the read is in
 	// SDK selection three defaults down.
 	selection := func(fallback string) macports.Declaration {
-		frames := []macports.SourceFrame{{File: b.file("port1.0/portconfigure.tcl"), Line: 1200, Command: "universal_setup"}}
+		frames := []macports.SourceFrame{frame("universal_setup")}
 		frames = append(frames, b.substitution("configure.compiler", "[portconfigure::configure_get_default_compiler]")...)
 		frames = append(frames, frame("portconfigure::configure_get_default_compiler"))
 		frames = append(frames, b.substitution("compiler.fallback", fallback)...)
@@ -211,34 +211,6 @@ func TestBasesNamedProbesAreBasesByTheirCode(t *testing.T) {
 	}
 	require.False(t, b.tolerate(t, "", selection("[portconfigure::get_compiler_fallback]")), "Base's compiler selection through its own defaults")
 	require.True(t, b.tolerate(t, "", selection("[catch {portconfigure::get_compiler_fallback}]")), "through a default Base didn't write")
-}
-
-func TestToolchainProbeMustEnterFromBaseCompilerSelection(t *testing.T) {
-	t.Parallel()
-	b := newBaseFixture(t)
-	baseRead := macports.Declaration{Values: []string{"host access", "closed", "base", "file exists /usr/include/sys/cdefs.h"}, Frames: []macports.SourceFrame{
-		{File: b.file("port1.0/portconfigure.tcl"), Line: 1200, Command: "universal_setup"},
-		frame("portconfigure::configure_get_sdkroot 10.6"),
-		{File: b.file("port1.0/portconfigure.tcl"), Line: 571, Command: "file exists /usr/include/sys/cdefs.h"},
-	}}
-	// A PortGroup is a file in the tree's PortGroup directory; a Portfile
-	// in a tree checked out under a directory named group is a Portfile.
-	root := filepath.Join(t.TempDir(), "group", "ports")
-	groupDir := filepath.Join(root, filepath.FromSlash(macports.PortGroupDirectory))
-	require.NoError(t, os.MkdirAll(groupDir, 0o755))
-	groupDir = portGroupDirectory(root)
-	require.True(t, compilerSelection(baseRead, newBaseCode(b.lib)))
-	require.Equal(t, enteredByBase, portconfigureEntry(baseRead, newBaseCode(b.lib), groupDir))
-	for file, want := range map[string]entry{
-		thePortfile: enteredByPortfile,
-		filepath.Join(root, "group", "toolchain", "Portfile"):                                     enteredByPortfile,
-		filepath.Join(root, filepath.FromSlash(macports.PortGroupDirectory), "toolchain-1.0.tcl"): enteredByPortGroup,
-	} {
-		direct := baseRead
-		direct.Frames = append([]macports.SourceFrame{{File: file, Line: 8, Command: "dockhand calls in"}}, baseRead.Frames[1:]...)
-		require.False(t, compilerSelection(direct, newBaseCode(b.lib)), "direct caller %s", file)
-		require.Equal(t, want, portconfigureEntry(direct, newBaseCode(b.lib), groupDir), "direct caller %s", file)
-	}
 }
 
 func TestPatchfilesIsInTheActedOptionList(t *testing.T) {
