@@ -1569,9 +1569,9 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 		result, err = e.publish(ctx, plan, worktree)
 		return err
 	})
-	if err != nil {
-		result.Pending = e.pendingAfter(ctx, plan.Branch.ID, err)
-	}
+	// What is still owed is said however it returned: a question nobody
+	// answered is owed after a submission that finished.
+	result.Pending = e.pendingAfter(ctx, plan.Branch.ID, result, err)
 	return result, err
 }
 

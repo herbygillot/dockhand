@@ -487,6 +487,7 @@ func TestTheReviewerQuestionIsRecordedHoweverItWasAnswered(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, submitted.Asked)
 	require.Empty(t, g.Rerequested)
+	require.Equal(t, []Pending{{Step: model.StepRerequest, Reason: PendingAnswer, Detail: "nobody was there to answer whether to ask the reviewers again"}}, submitted.Pending, "said though the submission finished")
 	current, err := e.Branch(t.Context(), branch.ID)
 	require.NoError(t, err)
 	require.NotNil(t, current.Publication, "the question stays owed")
@@ -568,4 +569,33 @@ func TestAContinuationSaysWhatTheEarlierSubmitDidAndWasGiven(t *testing.T) {
 	again, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: current, NoCheck: true, Draft: true, SkipNotification: true})
 	require.NoError(t, err)
 	require.Empty(t, again.Continues().NotCarried, "given again, nothing is left out")
+}
+
+// What a submission still owes is said on every return, each step with its
+// own reason: an opening that got no answer failed, and the ready after it
+// waits on it, not failed with its error (#191, group F).
+func TestEachPendingStepHasItsOwnReason(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Draft: true, Ready: false})
+	require.NoError(t, err)
+	plan.Request.Draft, plan.Request.Ready = false, true
+	fake.CreateFails = true
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.Error(t, err)
+	reasons := map[model.PublicationStep]PendingReason{}
+	for _, owed := range submitted.Pending {
+		reasons[owed.Step] = owed.Reason
+	}
+	require.Equal(t, PendingFailed, reasons[model.StepOpen])
+	require.Equal(t, PendingWaits, reasons[model.StepReady], "not reached")
+	for _, owed := range submitted.Pending {
+		if owed.Step == model.StepReady {
+			require.Equal(t, "waits on opening the pull request", owed.Detail)
+			require.False(t, owed.FailsCommand())
+		}
+	}
 }

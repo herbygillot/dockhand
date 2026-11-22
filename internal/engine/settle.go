@@ -195,6 +195,9 @@ const (
 	PendingRefused PendingReason = "refused"
 	// PendingUnread couldn't be read, and settles on a later read.
 	PendingUnread PendingReason = "unread"
+	// PendingWaits is a later step the failure of an earlier one stopped
+	// before; it is made once that one is.
+	PendingWaits PendingReason = "waits"
 )
 
 // FailsCommand reports whether a pending step fails the command: a step

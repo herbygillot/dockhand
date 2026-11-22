@@ -118,11 +118,13 @@ true, and `replay`, each of the branch's commits in order with its `id`,
 branch, and `commits` is the count the replay would make.
 
 `submit --json` and `ship --json` give the pull request under `pull_request`,
-with `pending`: each step the submission still owes when it returns, as `step`,
-`reason` and `detail`. The reasons are `failed` (with the error),
-`awaits-answer`, `may-have-been-sent` (a reviewer request with no answer, never
-sent again), `refused` (GitHub's words), and `unread`. A pending step that
-failed or was refused fails the command; the next `submit` accounts for it.
+with `pending`: each step the submission still owes when it returns, finished
+or not, as `step`, `reason` and `detail`, and before a pull request is known,
+with `number` 0. The reasons are `failed` (with the error), `awaits-answer`,
+`may-have-been-sent` (a reviewer request with no answer, never sent again),
+`refused` (GitHub's words), `unread`, and `waits` (a later step the failure of
+an earlier one stopped before). A pending step that failed or was refused fails
+the command; the next `submit` accounts for it.
 
 The process exit codes are:
 

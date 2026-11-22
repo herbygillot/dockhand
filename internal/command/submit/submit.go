@@ -324,9 +324,26 @@ func Apply(ctx context.Context, e *engine.Engine, streams term.Streams, plan eng
 	}
 	submitted, err := e.ApplySubmit(ctx, plan, answered)
 	if err != nil && submitted.PullRequest.Ref.Number == 0 {
+		// Before a pull request is known, --json still says what is owed,
+		// a push that landed and an opening that didn't among them (#191,
+		// group F).
+		if len(submitted.Pending) > 0 {
+			result := view.SubmitView(plan)
+			result.PullRequest = &view.SubmittedJSON{Pushed: submitted.Pushed, Draft: plan.Request.Draft, ChangesRequestedBy: []view.ChangesRequestedJSON{}, Pending: pendingJSON(submitted.Pending)}
+			streams.Emit(result)
+		}
 		return submitted, err
 	}
 	return submitted, errors.Join(err, followUp(ctx, e, streams, plan, submitted, rerequest))
+}
+
+// pendingJSON are the steps a submission still owes, as --json says them.
+func pendingJSON(owed []engine.Pending) []view.PendingJSON {
+	pending := []view.PendingJSON{}
+	for _, step := range owed {
+		pending = append(pending, view.PendingJSON{Step: string(step.Step), Reason: string(step.Reason), Detail: step.Detail})
+	}
+	return pending
 }
 
 // StageWords are a submission as ship's stage line says it: the pull
@@ -351,9 +368,7 @@ func followUp(ctx context.Context, e *engine.Engine, streams term.Streams, plan 
 	result := view.SubmitView(plan)
 	result.PullRequest = &view.SubmittedJSON{Number: pr.Ref.Number, URL: pr.Ref.URL, Created: submitted.Created, Pushed: submitted.Pushed, Draft: plan.Request.Draft,
 		UpdatedTitle: submitted.Edited.Title, UpdatedDescription: submitted.Edited.Body, ChangesRequestedBy: []view.ChangesRequestedJSON{}, Pending: []view.PendingJSON{}}
-	for _, owed := range submitted.Pending {
-		result.PullRequest.Pending = append(result.PullRequest.Pending, view.PendingJSON{Step: string(owed.Step), Reason: string(owed.Reason), Detail: owed.Detail})
-	}
+	result.PullRequest.Pending = pendingJSON(submitted.Pending)
 	defer func() { streams.Emit(result) }()
 	switch {
 	case submitted.Created && plan.Request.Draft:

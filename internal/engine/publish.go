@@ -445,18 +445,44 @@ func writeRefused(err error) bool {
 	return errors.Is(err, forge.ErrRejected) || errors.Is(err, forge.ErrAppRestricted) || errors.Is(err, forge.ErrAuthentication) || refusal.KindOf(err) == refusal.Unsupported
 }
 
-// pendingAfter are the steps a submission that returned with err still
-// owes, read from its record, each with why: a reviewer marked as maybe
-// sent, or refused, is said so; any other step failed with err.
-func (e *Engine) pendingAfter(ctx context.Context, branch model.BranchID, err error) []Pending {
+// pendingAfter are the steps a submission still owes when it returns,
+// with err or without, read from its record, each with its own reason
+// (#191, group F): a question about the reviewers nobody answered awaits
+// an answer; the first step the error stopped is failed, refused, or
+// unread as the error says; each step after it waits on it; and a reviewer
+// marked as maybe sent, or refused, is said so.
+func (e *Engine) pendingAfter(ctx context.Context, branch model.BranchID, result Submitted, err error) []Pending {
 	current, readErr := e.Branch(ctx, branch)
 	if readErr != nil || current.Publication == nil {
 		return nil
 	}
 	record := current.Publication
 	var pending []Pending
+	stopped := ""
 	for _, step := range record.Owes {
-		pending = append(pending, Pending{Step: step, Reason: PendingFailed, Detail: err.Error()})
+		switch {
+		case step == model.StepPush && result.Pushed:
+			// This run pushed; the record says so with the opening's
+			// write, which the error came before.
+			continue
+		case step == model.StepRerequest && record.Review != nil && record.Review.Answer == model.ReviewNotAsked:
+			pending = append(pending, Pending{Step: step, Reason: PendingAnswer, Detail: "nobody was there to answer whether to ask the reviewers again"})
+		case err == nil:
+			pending = append(pending, Pending{Step: step, Reason: PendingWaits, Detail: "the next dockhand submit makes it"})
+		case stopped != "":
+			pending = append(pending, Pending{Step: step, Reason: PendingWaits, Detail: stopped})
+		default:
+			reason := PendingFailed
+			var unsettled *unsettledError
+			switch {
+			case errors.As(err, &unsettled):
+				reason = PendingUnread
+			case writeRefused(err):
+				reason = PendingRefused
+			}
+			pending = append(pending, Pending{Step: step, Reason: reason, Detail: err.Error()})
+			stopped = "waits on " + step.Words()
+		}
 	}
 	if record.Review != nil {
 		for _, reviewer := range record.Review.Reviewers {
