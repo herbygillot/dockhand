@@ -854,8 +854,24 @@ type Leftover struct {
 	Execution *model.GuestExecution
 	// Kept says why it stays; empty when it would be removed.
 	Kept string
+	// Spared is retention policy, separate from Kept's live judgment.
+	// SparedUntil is zero for an asked clone and its expiry for a failure clone.
+	Spared      bool
+	SparedUntil time.Time
 	// Done is true once it was removed.
 	Done bool
+}
+
+// SparedReason describes retention applied by clean, not a provider or
+// process judgment in Kept.
+func (l Leftover) SparedReason() string {
+	if !l.Spared {
+		return ""
+	}
+	if l.Failed {
+		return "kept for dockhand shell until " + l.SparedUntil.Local().Format("Jan 2 15:04")
+	}
+	return "kept for dockhand shell"
 }
 
 // Changes are what checks have changed of the person's own, as the local
@@ -904,7 +920,7 @@ func (e *Engine) PutBack(ctx context.Context, run model.Run, progress func(strin
 
 // forgetKept removes the clones the branch's checks kept for dockhand
 // shell (model.Plan.Keep).
-func (e *Engine) forgetKept(ctx context.Context, branch model.BranchID) error {
+func (e *Engine) forgetKept(ctx context.Context, branch model.BranchID, plan model.Plan) error {
 	if !slices.ContainsFunc(slices.Collect(maps.Values(e.Providers)), func(provider buildenv.Provider) bool {
 		_, ok := provider.(buildenv.LeftoverProvider)
 		return ok
@@ -916,18 +932,59 @@ func (e *Engine) forgetKept(ctx context.Context, branch model.BranchID) error {
 		return err
 	}
 	defer session.End(context.WithoutCancel(ctx))
-	leftovers, err := e.PlanLeftovers(ctx, session)
+	leftovers, err := e.planLeftovers(ctx, session, true)
 	if err != nil {
 		return err
 	}
-	leftovers = slices.DeleteFunc(leftovers, func(leftover Leftover) bool {
-		return leftover.KeptAt.IsZero() || leftover.Run == nil || leftover.Run.Branch != branch
-	})
-	_, err = e.RemoveLeftovers(ctx, session, leftovers)
+	var replacing []Leftover
+	for _, leftover := range leftovers {
+		if leftover.KeptAt.IsZero() || leftover.Run == nil || leftover.Kept != "" {
+			continue
+		}
+		remove := leftover.Failed && (leftover.Run.Branch == branch || !leftover.Spared)
+		if !leftover.Failed && leftover.Run.Branch == branch && plan.Keep && leftover.Execution != nil {
+			remove = slices.ContainsFunc(plan.Environments, func(environment model.Environment) bool {
+				return sameTartRelease(leftover.Execution.Environment, environment)
+			})
+		}
+		if remove {
+			leftover.Spared = false
+			replacing = append(replacing, leftover)
+		}
+	}
+	_, err = e.RemoveLeftovers(ctx, session, replacing)
 	return err
 }
 
-// PlanLeftovers finds what providers left of checks, and which clean may
+func sameTartRelease(a, b model.Environment) bool {
+	return a.Provider == b.Provider && a.Platform == b.Platform
+}
+
+func (e *Engine) keptCloneReplacements(ctx context.Context, branch model.BranchID, plan model.Plan) ([]model.KeptCloneReplacement, error) {
+	session, err := e.Session(ctx, model.SessionForeground)
+	if err != nil {
+		return nil, err
+	}
+	defer session.End(context.WithoutCancel(ctx))
+	leftovers, err := e.PlanLeftovers(ctx, session)
+	if err != nil {
+		return nil, err
+	}
+	var replacements []model.KeptCloneReplacement
+	for _, leftover := range leftovers {
+		if !leftover.Spared || leftover.Failed || leftover.Kept != "" || leftover.Run == nil || leftover.Execution == nil || leftover.Run.Branch != branch {
+			continue
+		}
+		if slices.ContainsFunc(plan.Environments, func(environment model.Environment) bool {
+			return sameTartRelease(leftover.Execution.Environment, environment)
+		}) {
+			replacements = append(replacements, model.KeptCloneReplacement{Check: leftover.Run.Name(), Release: checks.DescribeEnvironment(leftover.Execution.Environment)})
+		}
+	}
+	return replacements, nil
+}
+
+// PlanLeftovers finds what providers left of checks, and which plain clean may
 // remove. A provider removes its environment when the attempt using it
 // ends, and a run's next attempt removes an earlier one's, so what is left
 // was either in use or made by a process that died with no later attempt
@@ -936,15 +993,19 @@ func (e *Engine) forgetKept(ctx context.Context, branch model.BranchID) error {
 // its own. One whose check is running is kept, and so is one no check of
 // this checkout made, since another checkout's database may be using it.
 //
-// A clone a check kept for dockhand shell is removed too: clean is the
-// person's asking.
+// Asked clones and unexpired, in-cap failure clones are spared. Failure
+// clones past their age or provider's cap are removable.
 func (e *Engine) PlanLeftovers(ctx context.Context, session *coord.Session) ([]Leftover, error) {
-	return e.planLeftovers(ctx, session, false)
+	return e.planLeftoversWithAsked(ctx, session, true, true)
 }
 
-// planLeftovers is PlanLeftovers, keeping what a check kept for dockhand
-// shell less than KeptFor ago where spareKept, as automatic cleanup does.
+// planLeftovers is PlanLeftovers, sparing asked clones and unexpired failure
+// clones where spareKept, as automatic cleanup does.
 func (e *Engine) planLeftovers(ctx context.Context, session *coord.Session, spareKept bool) ([]Leftover, error) {
+	return e.planLeftoversWithAsked(ctx, session, spareKept, false)
+}
+
+func (e *Engine) planLeftoversWithAsked(ctx context.Context, session *coord.Session, spareKept, preserveAsked bool) ([]Leftover, error) {
 	var all []Leftover
 	for _, name := range slices.Sorted(maps.Keys(e.Providers)) {
 		provider, ok := e.Providers[name].(buildenv.LeftoverProvider)
@@ -963,17 +1024,44 @@ func (e *Engine) planLeftovers(ctx context.Context, session *coord.Session, spar
 					return all, err
 				}
 			}
-			spared := KeptFor
-			if reported.Failed {
-				spared = KeptFailedFor
-			}
-			if until := reported.KeptAt.Add(spared); spareKept && leftover.Kept == "" && !reported.KeptAt.IsZero() && e.now().Before(until) {
-				leftover.Kept = "kept for dockhand shell until " + until.Local().Format("Jan 2 15:04")
+			if !reported.KeptAt.IsZero() && leftover.Kept == "" {
+				if !reported.Failed && (spareKept || preserveAsked) {
+					leftover.Spared = true
+				} else if reported.Failed {
+					until := reported.KeptAt.Add(KeptFailedFor)
+					if spareKept && e.now().Before(until) {
+						leftover.Spared, leftover.SparedUntil = true, until
+					}
+				}
 			}
 			all = append(all, leftover)
 		}
 	}
+	if spareKept {
+		all = capFailureClones(all, 4)
+	}
 	return all, nil
+}
+
+// capFailureClones leaves at most newest failure clones per provider in
+// automatic cleanup's plan. A running clone remains protected by Kept.
+func capFailureClones(leftovers []Leftover, limit int) []Leftover {
+	byProvider := map[string][]int{}
+	for i, leftover := range leftovers {
+		if leftover.Failed && !leftover.KeptAt.IsZero() {
+			byProvider[leftover.Provider] = append(byProvider[leftover.Provider], i)
+		}
+	}
+	for _, indexes := range byProvider {
+		slices.SortFunc(indexes, func(a, b int) int {
+			return leftovers[b].KeptAt.Compare(leftovers[a].KeptAt)
+		})
+		for _, i := range indexes[min(limit, len(indexes)):] {
+			leftovers[i].Spared = false
+			leftovers[i].SparedUntil = time.Time{}
+		}
+	}
+	return leftovers
 }
 
 func (e *Engine) judgeLeftover(ctx context.Context, session *coord.Session, leftover *Leftover) error {
@@ -1037,7 +1125,7 @@ func (e *Engine) BranchLeftovers(ctx context.Context, branches ...model.BranchID
 		return nil, err
 	}
 	defer session.End(context.WithoutCancel(ctx))
-	all, err := e.PlanLeftovers(ctx, session)
+	all, err := e.planLeftoversWithAsked(ctx, session, false, false)
 	return slices.DeleteFunc(all, func(leftover Leftover) bool {
 		return !leftover.ListingProblem() && (leftover.Run == nil || !slices.Contains(branches, leftover.Run.Branch))
 	}), err
@@ -1140,7 +1228,7 @@ func (e *Engine) RemoveLeftovers(ctx context.Context, session *coord.Session, le
 	for i := range leftovers {
 		leftover := &leftovers[i]
 		provider, ok := e.Providers[leftover.Provider].(buildenv.LeftoverProvider)
-		if leftover.Kept != "" || leftover.Run == nil || !ok {
+		if leftover.Kept != "" || leftover.Spared || leftover.Run == nil || !ok {
 			continue
 		}
 		lease, holder, err := session.TakeIfUnattended(ctx, checks.RunResource(leftover.Run.ID))
@@ -1154,6 +1242,10 @@ func (e *Engine) RemoveLeftovers(ctx context.Context, session *coord.Session, le
 		}
 		err = e.removeLeftover(ctx, provider, leftover)
 		releaseErr := session.Release(context.WithoutCancel(ctx), lease)
+		if errors.Is(err, buildenv.ErrLeftoverRunning) && releaseErr == nil {
+			leftover.Kept = "running in dockhand shell"
+			continue
+		}
 		if errors.Is(err, buildenv.ErrLeftoverGone) && releaseErr == nil {
 			// Another process removed it under the same lease first.
 			leftover.Kept = "already removed"

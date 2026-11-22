@@ -51,8 +51,8 @@ esac
 	images, err := client.Images(t.Context(), RunOptions{})
 	require.NoError(t, err)
 	require.Equal(t, []Image{
-		{Name: "dockhand-base-tahoe", Source: "local", Accessed: time.Date(2026, 9, 24, 16, 58, 34, 0, time.UTC)},
-		{Name: "scratch", Source: "local", Running: true, Accessed: time.Date(2026, 9, 24, 17, 0, 0, 0, time.UTC)},
+		{Name: "dockhand-base-tahoe", Source: "local", Size: 28, Accessed: time.Date(2026, 9, 24, 16, 58, 34, 0, time.UTC)},
+		{Name: "scratch", Source: "local", Running: true, Size: 23, Accessed: time.Date(2026, 9, 24, 17, 0, 0, 0, time.UTC)},
 	}, images)
 	vm, err := client.Get(t.Context(), RunOptions{}, "scratch")
 	require.NoError(t, err)
@@ -122,7 +122,7 @@ esac
 	client := Client{Env: os.Environ(), Executable: executable}
 	images, err := client.Images(t.Context(), RunOptions{})
 	require.NoError(t, err)
-	require.Equal(t, []Image{{Name: "gg", Source: "local", Running: true, Accessed: time.Date(2026, 9, 27, 5, 54, 21, 0, time.UTC)}}, images, "with when Tart last opened it")
+	require.Equal(t, []Image{{Name: "gg", Source: "local", Running: true, Size: 35, Accessed: time.Date(2026, 9, 27, 5, 54, 21, 0, time.UTC)}}, images, "with size and when Tart last opened it")
 	vm, err := client.Get(t.Context(), RunOptions{}, "gg")
 	require.NoError(t, err)
 	require.Equal(t, VM{Running: true, DiskFormat: "asif"}, vm)

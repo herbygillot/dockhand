@@ -71,17 +71,14 @@ func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time
 	return e.cleanup(ctx, session, after, true)
 }
 
-// KeptFor is how long automatic cleanup spares a clone a check kept for
-// dockhand shell, unless space is low; clean and the branch's next check
-// remove it any time.
-const KeptFor = 24 * time.Hour
+// KeptFor is the retention period for failure-kept clones.
+const KeptFor = 7 * 24 * time.Hour
 
-// KeptFailedFor is how long automatic cleanup spares a clone kept unasked
-// for a failure in it (providers.tart.keep_failed), unless space is low.
-const KeptFailedFor = 7 * 24 * time.Hour
+// KeptFailedFor remains as an alias for callers naming failure retention.
+const KeptFailedFor = KeptFor
 
-// cleanup is Cleanup, sparing what checks kept (KeptFor) where spareKept,
-// as it does but where space is low.
+// cleanup is Cleanup, retaining asked clones and unexpired failure clones
+// where spareKept, and removing expired failures or failures when space is low.
 func (e *Engine) cleanup(ctx context.Context, session *coord.Session, after time.Duration, spareKept bool) (CleanupReport, error) {
 	var report CleanupReport
 	plans, err := e.PlanClean(ctx)
@@ -97,7 +94,7 @@ func (e *Engine) cleanup(ctx context.Context, session *coord.Session, after time
 	if report.Branches, err = e.ApplyClean(ctx, removable); err != nil {
 		return report, err
 	}
-	leftovers, err := e.planLeftovers(ctx, session, spareKept)
+	leftovers, err := e.planLeftoversWithAsked(ctx, session, spareKept, true)
 	if err != nil {
 		return report, err
 	}

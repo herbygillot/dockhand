@@ -96,6 +96,8 @@ type Image struct {
 	Name    string
 	Source  string
 	Running bool
+	// Size is Tart's listed disk use in GiB, where it supplies one.
+	Size float64
 	// Accessed is when Tart last opened it, as its listing says; zero
 	// where the listing doesn't say.
 	Accessed time.Time
@@ -137,6 +139,7 @@ func (c Client) Images(ctx context.Context, options RunOptions) ([]Image, error)
 	var rows []struct {
 		Name, Source, State *string
 		Running             *bool
+		Size                float64
 		Accessed            string
 	}
 	if err := json.Unmarshal(output, &rows); err != nil {
@@ -149,7 +152,7 @@ func (c Client) Images(ctx context.Context, options RunOptions) ([]Image, error)
 		}
 		running := row.Running != nil && *row.Running || row.State != nil && *row.State == "running"
 		accessed, _ := time.Parse(time.RFC3339, row.Accessed)
-		result = append(result, Image{Name: *row.Name, Source: *row.Source, Running: running, Accessed: accessed})
+		result = append(result, Image{Name: *row.Name, Source: *row.Source, Running: running, Size: row.Size, Accessed: accessed})
 	}
 	return result, nil
 }

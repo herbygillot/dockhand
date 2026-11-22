@@ -506,11 +506,45 @@ blank line or a declared dependency the build already had lints again the
 same way, so `status` shows the Portfile's own lines, not the earlier
 commit's; where lint can't run, the earlier lines stay and say why.
 
-By default, a failed Tart check keeps its clone, stopped, one for each branch
-and release, for `dockhand shell`: the branch's next check or `clean` removes
-it, and serve's daily cleanup removes one older than seven days. `[providers.tart]
-keep_failed = false` turns that off. To retain a passed build too, request
-`--keep` before running it:
+By default, a failed Tart check keeps its clone, stopped, for `dockhand shell`,
+when the check was run by a person. A check started by `serve` or with
+`--yes` leaves no failure clone; `--yes` also runs `--variants each` without
+asking. Failure clones are a cache: the branch's next check removes them, low
+space may remove them, and they expire after seven days. Plain `dockhand clean`
+keeps unexpired failure clones among the four newest in each Tart home, and
+removes expired or excess failure clones. It leaves asked clones alone. Expiry
+and the four-clone cap are also applied when a check starts and in serve's daily
+cleanup; `check --plan` does not mention cleanup. Keeping a fifth removes the
+oldest immediately and reports its name. `dockhand clean --kept` with no
+selector removes only expired failure clones.
+`[providers.tart] keep_failed = false` turns failure clones off.
+
+`--keep` asks to keep a Tart clone for you, whether the check passed or failed.
+It builds fresh if earlier builds could otherwise be reused, and that clone
+has no age limit, is not removed for low space, and survives later checks of
+the branch. A later `--keep` check on the same branch and release replaces its
+asked clone; an ordinary check leaves it in place. Remove one check's clones
+with `dockhand clean --kept check-12`, or all the branch's with
+`dockhand clean --kept -b branch-name`; these leave the branch and its records
+alone. `dockhand clean -b branch-name` without `--kept` is refused; use
+`dockhand clean branch-name` to clean that branch. Removing a branch with
+`clean` also removes its kept clones. A running clone is skipped until a later
+cleanup opportunity. A same-branch, same-release `--keep` check says in its
+plan, and at any confirmation, that the earlier asked clone is removed because
+the new check keeps its own; `--plan` leaves it untouched.
+
+The check's final notice names each kept clone, its size and why it was kept,
+then gives `dockhand shell check-12` to enter and `dockhand clean --kept
+check-12` to remove it. A failure clone's notice also says when its seven days
+are up. `check --json` includes the finished run's `kept_clones`; its plan
+records `unattended` for `--yes`. `dockhand status` lists kept clones with
+their size and age; `status --json` includes them in `kept_clones`, with
+`old_asked` and `removal_command`. An asked clone older than seven days is
+called out with its removal command. Age is informational for an asked clone:
+dockhand never expires it automatically.
+
+On providers without a VM, `--keep` says there is no clone to keep. To retain a
+Tart build for `dockhand shell`, request `--keep` before running it:
 
 ```sh
 dockhand check --keep

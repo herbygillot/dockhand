@@ -27,6 +27,15 @@ import (
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
+func TestStatusCallsOutOldAskedClonesWithTheirRemovalCommand(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	writeKeptClones(&out, []view.KeptCloneJSON{{Check: "check-18", Clone: "dockhand-check-run-18-tahoe-1", SizeGiB: 29.5, Age: "8 days", Reason: "asked", OldAsked: true,
+		ShellCommand: "dockhand shell check-18", RemovalCommand: "dockhand clean --kept check-18"}})
+	require.Contains(t, out.String(), "29.5 GiB · 8 days old · asked")
+	require.Contains(t, out.String(), "Asked clone is older than seven days and stays until removed: dockhand clean --kept check-18")
+}
+
 // A check made before tidy, the order the design gives, checked the files
 // tidy then committed: status credits it to the commit, as submit does.
 func TestStatusCreditsACheckOfTheCommittedFilesToTheCommit(t *testing.T) {

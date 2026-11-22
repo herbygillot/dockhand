@@ -525,6 +525,9 @@ func LeftoversView(leftovers []engine.Leftover) []leftoverJSON {
 	views := []leftoverJSON{}
 	for _, leftover := range leftovers {
 		viewed := leftoverJSON{Provider: leftover.Provider, Ref: leftover.Ref, What: leftover.What, Kept: leftover.Kept, Removed: leftover.Done}
+		if viewed.Kept == "" && leftover.Spared {
+			viewed.Kept = leftover.SparedReason()
+		}
 		if leftover.Run != nil {
 			viewed.Check = leftover.Run.Name()
 		}

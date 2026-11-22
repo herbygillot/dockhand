@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/command/branchflags"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/command/view"
 	"github.com/herbygillot/dockhand/internal/config"
@@ -38,6 +39,8 @@ func cleanStates(merged, closed bool) []model.BranchState {
 
 func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var merged, closed, yes, automatic, forget, plan bool
+	var branch string
+	var keptOnly bool
 	cmd := &cobra.Command{
 		Use:   "clean [branch...] [--merged] [--closed]",
 		Short: "Remove worktrees and branches after merging",
@@ -83,9 +86,17 @@ their checks kept. It also deletes their records, except for check
 results reused by other branches. It asks before proceeding; without a
 terminal, pass --yes.
 
+--kept check-12 removes only that check's kept clones, and --kept -b
+branch-name removes all kept clones for one branch; neither
+touches the branch or its records. A bare -b is refused; clean branch-name
+cleans that branch. With neither selector, --kept removes only expired
+failure clones.
 --plan shows what it would remove, or forget, and removes nothing.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
+			if cmd.Flags().Changed("branch") && !keptOnly {
+				return fmt.Errorf("clean -b %s requires --kept; use clean %s to clean a branch", branch, branch)
+			}
 			e, err := s.Open(ctx)
 			if err != nil {
 				return err
@@ -96,6 +107,19 @@ terminal, pass --yes.
 					return errors.New("--automatic cleans what's due, not branches named")
 				}
 				return cleanAutomatically(ctx, e, streams, s.File)
+			}
+			if keptOnly {
+				if cmd.Flags().Changed("merged") || closed || forget || automatic || branch != "" && len(args) > 0 {
+					return errors.New("clean --kept takes a check name or -b branch, not branch arguments or other clean modes")
+				}
+				check := ""
+				if len(args) > 1 {
+					return errors.New("clean --kept takes at most one check name")
+				}
+				if len(args) == 1 {
+					check = args[0]
+				}
+				return cleanKept(ctx, e, streams, check, branch, yes, plan)
 			}
 			if forget {
 				return forgetBranches(ctx, e, streams, args, yes, plan)
@@ -207,9 +231,79 @@ terminal, pass --yes.
 	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
 	cmd.Flags().BoolVar(&forget, "delete", false, "forget the merged, closed, or archived branches named: their Git branch, worktree, and record")
 	cmd.Flags().BoolVar(&automatic, "automatic", false, "run automatic cleanup's pass, when it is due, as a command starts it once its work is done")
+	cmd.Flags().BoolVar(&keptOnly, "kept", false, "remove kept clones; with a check name, remove that check's clones; without one, remove expired failure clones")
+	cmd.Flags().StringVarP(&branch, "branch", "b", "", "with --kept, remove kept clones for this branch")
+	branchflags.SingleBranch(cmd)
 	_ = cmd.Flags().MarkHidden("automatic")
 	settings.SupportsJSON(cmd)
 	return cmd
+}
+
+func cleanKept(ctx context.Context, e *engine.Engine, streams term.Streams, check, branch string, yes, plan bool) error {
+	session, err := e.Session(ctx, model.SessionForeground)
+	if err != nil {
+		return err
+	}
+	defer session.End(context.WithoutCancel(ctx))
+	leftovers, err := e.PlanLeftovers(ctx, session)
+	if err != nil {
+		return err
+	}
+	var run model.Run
+	var branchID model.BranchID
+	if check != "" {
+		run, err = e.RunNamed(ctx, check)
+		if err != nil {
+			return err
+		}
+	}
+	if branch != "" {
+		record, resolveErr := e.ResolveRecord(ctx, branch)
+		if resolveErr != nil {
+			return resolveErr
+		}
+		branchID = record.ID
+	}
+	leftovers = slices.DeleteFunc(leftovers, func(leftover engine.Leftover) bool {
+		if leftover.KeptAt.IsZero() || leftover.Run == nil {
+			return true
+		}
+		if check != "" && leftover.Run.ID != run.ID || branchID != "" && leftover.Run.Branch != branchID {
+			return true
+		}
+		if check == "" && branchID == "" && (!leftover.Failed || time.Since(leftover.KeptAt) < engine.KeptFailedFor) {
+			return true
+		}
+		return leftover.Kept != "" // running or otherwise protected
+	})
+	for i := range leftovers {
+		leftovers[i].Spared = false
+	}
+	streams.Emit(map[string]any{"leftovers": view.LeftoversView(leftovers), "applied": false})
+	count := writeLeftovers(streams.Prose(), leftovers, false)
+	if count == 0 {
+		fmt.Fprintln(streams.Prose(), "Nothing to remove.")
+		return nil
+	}
+	if plan {
+		fmt.Fprintln(streams.Prose(), "Nothing was removed (--plan).")
+		return nil
+	}
+	ok, _, err := streams.Decide(yes, term.Decision{Question: fmt.Sprintf("? Remove %s? [y/N] ", prose.Plural(count, "clone")), Undone: "nothing was removed", ByYes: "--yes removes these"})
+	if err != nil || !ok {
+		if err == nil {
+			fmt.Fprintln(streams.Prose(), "Nothing was removed.")
+		}
+		return err
+	}
+	removed, err := e.RemoveLeftovers(ctx, session, leftovers)
+	streams.Emit(map[string]any{"leftovers": view.LeftoversView(removed), "applied": true})
+	if streams.Verbose() > 0 {
+		writeLeftovers(streams.Prose(), removed, true)
+	} else {
+		fmt.Fprintf(streams.Prose(), "Removed %s.\n", prose.Plural(count, "kept clone"))
+	}
+	return err
 }
 
 // archivedKeptWords say the archived branches that keep their Git
@@ -345,6 +439,8 @@ func writeLeftovers(out io.Writer, leftovers []engine.Leftover, done bool) int {
 		switch {
 		case leftover.Kept != "":
 			fmt.Fprintf(out, "  keep     %s: %s\n", leftover.What, leftover.Kept)
+		case leftover.Spared:
+			fmt.Fprintf(out, "  keep     %s: %s\n", leftover.What, leftover.SparedReason())
 		case done && leftover.Done:
 			fmt.Fprintf(out, "  removed  %s, %s\n", leftover.What, leftByWords(leftover))
 		default:

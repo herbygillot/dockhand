@@ -2,15 +2,31 @@ package checkrun
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
 )
+
+func TestKeptCloneNoticesGiveTheCompleteShellAndRemovalDetails(t *testing.T) {
+	t.Parallel()
+	run := model.Run{ID: "run_1", Number: 12}
+	asked := engine.Leftover{Leftover: buildenv.Leftover{Ref: "dockhand-check-run-1-tahoe-1", Size: 27.5}}
+	require.Equal(t, "Kept clone dockhand-check-run-1-tahoe-1 (27.5 GiB) because you asked to keep it; enter with dockhand shell check-12; remove with dockhand clean --kept check-12.", keptCloneNotice(asked, run, "dockhand shell check-12"))
+	failed := asked
+	failed.Failed = true
+	failed.KeptAt = time.Date(2026, 11, 1, 8, 0, 0, 0, time.Local)
+	words := keptCloneNotice(failed, run, "dockhand shell check-12")
+	for _, want := range []string{"27.5 GiB", "because its check failed", "dockhand shell check-12", "dockhand clean --kept check-12", "expires after seven days"} {
+		require.True(t, strings.Contains(words, want), words)
+	}
+}
 
 // A failure whose cause a reading of its log found says that cause in one
 // line under the results, with its environment where the plan has

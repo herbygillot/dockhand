@@ -88,7 +88,7 @@ type Sessions interface {
 // which its new check replaces.
 type Admission interface {
 	Covered(ctx context.Context, branch model.BranchID, tree model.ObjectID, want model.Plan) (model.Run, bool, error)
-	ForgetKept(ctx context.Context, branch model.BranchID) error
+	ForgetKept(ctx context.Context, branch model.BranchID, plan model.Plan) error
 }
 
 // Hooks are what the rest of dockhand does as a check is driven, each at

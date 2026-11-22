@@ -36,6 +36,7 @@ type CheckRequest struct {
 	// PlanRequest's.
 	Only, Also  []string
 	Fresh, Keep bool
+	Unattended  bool
 	Variants    map[string]bool
 	// VariantsPort is the port --variants named, as 'curl +sectrust'
 	// names curl; empty where it named none.
@@ -67,7 +68,7 @@ func (e *Engine) ProposeCheck(ctx context.Context, request CheckRequest) (Propos
 	}
 	where := request.Where
 	plan, err := e.PlanCheck(ctx, PlanRequest{Revision: capture.Revision, Environments: where.Environments, Span: where.Span, Profile: where.Profile, Asked: where.Asked,
-		Only: request.Only, Also: request.Also, Tests: cmp.Or(request.Tests, e.options.Tests), Fresh: request.Fresh, Keep: request.Keep, Variants: request.Variants, VariantsPort: request.VariantsPort, EachVariant: request.EachVariant})
+		Only: request.Only, Also: request.Also, Tests: cmp.Or(request.Tests, e.options.Tests), Fresh: request.Fresh, Keep: request.Keep, Unattended: request.Unattended, Variants: request.Variants, VariantsPort: request.VariantsPort, EachVariant: request.EachVariant})
 	if err != nil {
 		return Proposal{Capture: capture, Plan: plan}, err
 	}
@@ -75,7 +76,17 @@ func (e *Engine) ProposeCheck(ctx context.Context, request CheckRequest) (Propos
 	// hold is refused before any VM starts, for check, ship, and serve
 	// alike: ship's check of net-snmp 404'd fetching one on both VMs
 	// (field testing, check-469).
-	return Proposal{Capture: capture, Plan: plan}, e.patchesHeld(ctx, request.Capture.Branch, capture, plan)
+	if err := e.patchesHeld(ctx, request.Capture.Branch, capture, plan); err != nil {
+		return Proposal{Capture: capture, Plan: plan}, err
+	}
+	if plan.Keep {
+		replacements, err := e.keptCloneReplacements(ctx, request.Capture.Branch.ID, plan)
+		if err != nil {
+			return Proposal{Capture: capture, Plan: plan}, err
+		}
+		plan.ReplacesKept = replacements
+	}
+	return Proposal{Capture: capture, Plan: plan}, nil
 }
 
 // BeforeBuilding are the Portfile findings submit would say of a
@@ -166,7 +177,8 @@ type PlanRequest struct {
 	Fresh bool
 	// Keep keeps each environment's clone where its guest finished
 	// (model.Plan.Keep).
-	Keep bool
+	Keep       bool
+	Unattended bool
 	// Span builds each port only on its oldest and newest release of the
 	// environments, a minmax profile's (Where.Span), and Profile is the
 	// profile that named them, and Asked whether the person did, which
@@ -210,7 +222,8 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	if request.Tests != "" && !request.Tests.Valid() {
 		return model.Plan{}, fmt.Errorf("--tests %q is not declared, required, or skip", request.Tests)
 	}
-	plan := model.Plan{ID: model.PlanID(store.NewID("plan")), Revision: revision.ID, Environments: request.Environments, Profile: request.Profile, Asked: request.Asked, Only: request.Only, Also: request.Also, Tests: request.Tests, Fresh: request.Fresh, Keep: request.Keep,
+	keepNeedsVM := request.Keep && slices.ContainsFunc(request.Environments, func(environment model.Environment) bool { return environment.Provider == buildenv.Tart })
+	plan := model.Plan{ID: model.PlanID(store.NewID("plan")), Revision: revision.ID, Environments: request.Environments, Profile: request.Profile, Asked: request.Asked, Only: request.Only, Also: request.Also, Tests: request.Tests, Fresh: request.Fresh || keepNeedsVM, Keep: request.Keep, Unattended: request.Unattended,
 		Variants: model.Target{Variants: request.Variants}.VariantSpec(), EachVariant: request.EachVariant, CreatedAt: e.now()}
 	if len(request.Variants) > 0 && request.EachVariant {
 		return plan, errors.New("--variants each cannot be combined with an explicit variant selection")

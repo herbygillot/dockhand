@@ -45,7 +45,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	// --on ci went with check.on (the person's design, 2026-10-13).
 	out, _, err = cmdtest.Dockhand(t, "check", "--plan", "--keep")
 	require.NoError(t, err)
-	require.Contains(t, out, "Keeps       each Tart VM, stopped after the build, for dockhand shell; clean or the branch's next check removes it\n")
+	require.Contains(t, out, "Keeps       nothing; the selected provider has no VM to keep\n")
 	_, _, err = cmdtest.Dockhand(t, "check", "--baseline", "--keep")
 	require.ErrorContains(t, err, "none of the others can be")
 	_, _, err = cmdtest.Dockhand(t, "check", "--plan", "--build", "minmax")
@@ -492,6 +492,17 @@ func TestAVariantsCheckSaysWhatItBuildsAndAsksFirst(t *testing.T) {
 	view.WriteVariants(&out, single)
 	require.Equal(t, "Variants    jq with its default variants, plus +tests (a -variant leaves a default out), built in place of its default build\n", out.String())
 	require.NoError(t, confirmVariantBuilds(term.Streams{}, single, false), "only each asks")
+}
+
+func TestVariantConfirmationNamesTheKeptCloneItWillReplace(t *testing.T) {
+	t.Parallel()
+	plan := model.Plan{EachVariant: true, Builds: []model.EnvironmentPlan{{Order: make([]model.TargetID, variantBuildsToAsk+1)}},
+		ReplacesKept: []model.KeptCloneReplacement{{Check: "check-12", Release: "tart macOS 26 (Tahoe) arm64"}}}
+	var out strings.Builder
+	streams := term.Streams{In: strings.NewReader("y\n"), Out: &out, Err: &out}.AsTerminal()
+	require.NoError(t, confirmVariantBuilds(streams, plan, false))
+	require.Contains(t, out.String(), "check-12's kept clone of tart macOS 26 (Tahoe) arm64 is removed: this check keeps its own.")
+	require.Contains(t, out.String(), "? --variants each will run 13 full builds. Continue? [y/N] ")
 }
 
 // check --branch from another checkout takes a branch's working files

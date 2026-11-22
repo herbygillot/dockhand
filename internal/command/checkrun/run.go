@@ -423,6 +423,10 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 			return err
 		}
 		result.Targets = view.EvidenceView(evidence)
+		if kept, keptErr := e.KeptClones(ctx); keptErr == nil {
+			kept = slices.DeleteFunc(kept, func(clone engine.Leftover) bool { return clone.Run == nil || clone.Run.ID != run.ID })
+			result.KeptClones = view.KeptClonesView(kept, time.Now())
+		}
 		result.IdentitiesUnread = view.IdentitiesUnreadView(evidence)
 		result.Lint = view.DetailLines(view.LintLines(lint))
 		if linksErr == nil {
@@ -482,6 +486,9 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 			return nil
 		}
 		fmt.Fprintf(out, "%s.\n", passed)
+		for _, line := range keptCloneNoticeLines(ctx, e, run, evidence.Plan) {
+			fmt.Fprintln(out, line)
+		}
 		// A branch that changes nothing is an investigation, said as
 		// status says it, with archive next, where status would have
 		// said submit (field testing's curl +sectrust notes, note 1).
@@ -511,8 +518,8 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 		}
 		// A clone a target failed in is kept for a shell, unasked
 		// (providers.tart.keep_failed), said with what removes it.
-		if len(shells) > 0 && !evidence.Plan.Keep {
-			fmt.Fprintf(out, "Its clone is kept for %s; clean, or the branch's next check, removes it.\n", strings.Join(view.RenderSteps(shells), " or "))
+		for _, line := range keptCloneNoticeLines(ctx, e, run, evidence.Plan) {
+			fmt.Fprintln(out, line)
 		}
 		if err := hintBaseline(ctx, e, out, run); err != nil {
 			fmt.Fprintf(streams.Err, "baseline: %v\n", err)
@@ -525,6 +532,44 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 		return StoppedExit(run, evidence)
 	}
 	return refusal.New(refusal.Attention, "%s needs attention: %s", run.Name(), run.Detail)
+}
+
+func keptCloneNoticeLines(ctx context.Context, e *engine.Engine, run model.Run, plan model.Plan) []string {
+	clones, err := e.KeptClones(ctx)
+	if err != nil {
+		return nil
+	}
+	var lines []string
+	forRun := 0
+	for _, clone := range clones {
+		if clone.Run != nil && clone.Run.ID == run.ID {
+			forRun++
+		}
+	}
+	for _, clone := range clones {
+		if clone.Run == nil || clone.Run.ID != run.ID {
+			continue
+		}
+		shell := "dockhand shell " + run.Name()
+		if forRun > 1 && clone.Execution != nil {
+			shell += " --on " + clone.Execution.Environment.Platform.Version
+		}
+		lines = append(lines, keptCloneNotice(clone, run, shell))
+	}
+	if len(lines) == 0 && plan.Keep && !slices.ContainsFunc(plan.Environments, func(environment model.Environment) bool { return environment.Provider == "tart" }) {
+		lines = append(lines, "Nothing to keep: this check used no VM provider.")
+	}
+	return lines
+}
+
+func keptCloneNotice(clone engine.Leftover, run model.Run, shell string) string {
+	reason, expiry := "because you asked to keep it", ""
+	if clone.Failed {
+		reason = "because its check failed"
+		expiry = fmt.Sprintf("; expires after seven days, on %s", clone.KeptAt.Add(engine.KeptFor).Local().Format("Jan 2 15:04"))
+	}
+	return fmt.Sprintf("Kept clone %s (%.1f GiB) %s; enter with %s; remove with dockhand clean --kept %s%s.",
+		clone.Ref, clone.Size, reason, shell, run.Name(), expiry)
 }
 
 // failureLines is how many of a failed step's last lines a check's

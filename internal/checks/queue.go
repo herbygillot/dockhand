@@ -131,7 +131,7 @@ func (c *Service) QueueCheck(ctx context.Context, request QueueRequest) (Queued,
 	}
 	// The branch's new check replaces the clones its earlier ones kept for
 	// dockhand shell; one that can't be removed is clean's to find.
-	if err := c.Admission.ForgetKept(ctx, request.Branch.ID); err != nil {
+	if err := c.Admission.ForgetKept(ctx, request.Branch.ID, request.Plan); err != nil {
 		progress.Report(ctx, "removing the clones %s's earlier checks kept: %v", request.Branch.ShortName(), err)
 	}
 	return queued, nil

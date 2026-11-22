@@ -515,6 +515,9 @@ type LeftoverProvider interface {
 // came: two checks waiting for a slot may both reclaim it (#239).
 var ErrLeftoverGone = errors.New("already removed")
 
+// ErrLeftoverRunning means dockhand shell holds a kept clone's start lock.
+var ErrLeftoverRunning = errors.New("running in dockhand shell")
+
 // Reclaimer is a Build that can remove, of the environments running that
 // its provider named, those a check left whose owner is gone, as cleanup
 // would remove them: a provider waiting for room it shares, as Tart's
@@ -614,6 +617,8 @@ type Leftover struct {
 	Provider string
 	Ref      string
 	What     string
+	// Size is the provider's reported size in GiB, where available.
+	Size float64
 	// Execution names the attempt whose launch note made it, where Ref
 	// names that note rather than a ProviderRef, as GitHub's does (#241).
 	// The engine's leftoverRun reads it to find the check, and

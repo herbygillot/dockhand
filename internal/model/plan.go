@@ -292,6 +292,12 @@ type Plan struct {
 	// finished, whether its targets passed or failed, for dockhand shell:
 	// a check a person runs, never serve's or ship's.
 	Keep bool `json:",omitempty"`
+	// Unattended marks a person-started check run with --yes. Its failure
+	// clone isn't kept as a cache, since nobody is there to inspect it.
+	Unattended bool `json:",omitempty"`
+	// ReplacesKept names asked clones this plan's --keep will replace,
+	// before its own clones exist.
+	ReplacesKept []KeptCloneReplacement `json:"replaces_kept,omitempty"`
 	// Variants are the variants --variants built its one port with, as
 	// MacPorts writes them, beside its default variants, which MacPorts
 	// adds but where one is negated: a build in place of its default
@@ -305,6 +311,12 @@ type Plan struct {
 	// to print (field testing's curl +sectrust notes, note 8b). Planning's
 	// alone: a recorded plan has none.
 	Evaluated []Evaluated `json:"-"`
+}
+
+// KeptCloneReplacement is an earlier asked clone a new kept check replaces.
+type KeptCloneReplacement struct {
+	Check   string `json:"check"`
+	Release string `json:"release"`
 }
 
 // Evaluated is a planned target as an environment evaluated it: its

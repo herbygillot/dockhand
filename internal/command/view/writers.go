@@ -43,7 +43,11 @@ func WritePushes(out io.Writer, plan model.Plan) {
 		fmt.Fprintf(out, "Won't build %s on github: MacPorts' workflow builds only the ports a commit changes; check %s with Tart, local, or a command provider\n", prose.And(unbuilt), map[bool]string{true: "it", false: "them"}[len(unbuilt) == 1])
 	}
 	if plan.Keep {
-		fmt.Fprintln(out, "Keeps       each Tart VM, stopped after the build, for dockhand shell; clean or the branch's next check removes it")
+		if slices.ContainsFunc(plan.Environments, func(environment model.Environment) bool { return environment.Provider == buildenv.Tart }) {
+			fmt.Fprintln(out, "Keeps       each Tart VM, stopped after the build, for dockhand shell; it stays until removed with clean --kept or its branch")
+		} else {
+			fmt.Fprintln(out, "Keeps       nothing; the selected provider has no VM to keep")
+		}
 	}
 }
 
@@ -178,6 +182,15 @@ func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings engine.S
 	for _, unresolved := range plan.Unresolved {
 		fmt.Fprintf(out, "✗ %s can't be planned: %s\n", unresolved.Target.Name, unresolved.Reason)
 	}
+	for _, replacement := range plan.ReplacesKept {
+		fmt.Fprintln(out, KeptReplacementWords(replacement))
+	}
+}
+
+// KeptReplacementWords says what a same-branch, same-release --keep check
+// replaces before its new clone exists.
+func KeptReplacementWords(replacement model.KeptCloneReplacement) string {
+	return fmt.Sprintf("%s's kept clone of %s is removed: this check keeps its own.", replacement.Check, replacement.Release)
 }
 
 // writeGitSources says what each Git-fetched target's build must fetch:

@@ -99,6 +99,10 @@ standard error separate when parsing standard output. `-v` adds detail about
 the work, and `-vv` adds individual steps. Long human lists can be shortened;
 their JSON lists retain all entries.
 
+When a `--keep` check will replace an asked clone from the same branch and
+release, the plan includes `replaces_kept`, each with the earlier `check` and
+the `release` whose clone will be removed before the new check keeps its own.
+
 Inspect both `exit_code` and `result`. A nonzero exit does not mean nothing
 happened. An update may have left an edited branch, a check may have completed
 some builds, and a submission may have reached a later operation before it
@@ -159,6 +163,11 @@ read at, whom the description mentions, who approved it, the ports still
 `waiting`, and when MacPorts' maintainer timeout ends; `detail.merge` says the
 same as lines. A run's `started_at` and `waited_seconds` say when a check
 started and how long it waited for its slot.
+
+Finished check results may include `kept_clones`, each with its clone name,
+size in GiB, reason, and shell and removal commands. `status --json` includes
+the checkout's kept clones with their age; `old_asked` marks an asked clone
+older than seven days, which remains until explicitly removed.
 
 To follow serve's work from a script or a screen reader, `dockhand console
 --plain` prints status once and then each event as a line; `console` does the

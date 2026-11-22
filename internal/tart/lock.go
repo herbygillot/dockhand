@@ -24,6 +24,23 @@ func AcquireProvisioning(ctx context.Context, home, image string) (*os.File, err
 	return acquire(ctx, home, "setup", image, filelock.Exclusive)
 }
 
+// AcquireClone protects starting a kept clone in shell from its removal.
+func AcquireClone(ctx context.Context, home, clone string) (*os.File, error) {
+	return acquire(ctx, home, "clone", clone, filelock.Exclusive)
+}
+
+// ErrCloneBusy means a shell currently owns the clone's start lock.
+var ErrCloneBusy = filelock.ErrBusy
+
+// TryAcquireClone skips a clone already running in dockhand shell.
+func TryAcquireClone(home, clone string) (*os.File, error) {
+	directory, err := LockDirectory(home)
+	if err != nil {
+		return nil, err
+	}
+	return filelock.TryAcquire(filepath.Join(directory, "clone-"+model.Digest([]byte(clone))+".lock"))
+}
+
 func acquire(ctx context.Context, home, kind, image string, mode filelock.Mode) (*os.File, error) {
 	directory, err := LockDirectory(home)
 	if err != nil {

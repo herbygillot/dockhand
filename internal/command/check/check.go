@@ -140,7 +140,7 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 				return err
 			}
 			proposal, err := e.ProposeCheck(ctx, engine.CheckRequest{Capture: engine.CaptureRequest{Branch: branch, Mode: mode, Named: where.Explicit(), Include: include, Plan: plan}, Where: place,
-				Tests: model.TestPolicy(tests), Only: only, Also: also, Fresh: fresh, Keep: keep, Variants: chosen, VariantsPort: named, EachVariant: each})
+				Tests: model.TestPolicy(tests), Only: only, Also: also, Fresh: fresh, Keep: keep, Unattended: yes, Variants: chosen, VariantsPort: named, EachVariant: each})
 			if err != nil {
 				return err
 			}
@@ -219,6 +219,9 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 					fmt.Fprintln(out, "Reuse       when this check runs, it may reuse passing builds with identical inputs; --fresh rebuilds every port")
 				}
 				return nil
+			}
+			if keep && !fresh && proposed.Fresh {
+				fmt.Fprintln(out, "Building fresh so there's a VM to keep.")
 			}
 			if err := confirmVariantBuilds(streams, proposed, yes); err != nil {
 				return err
@@ -325,7 +328,7 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 	cmd.Flags().BoolVar(&fresh, "fresh", false, "build every port, reusing no earlier build's result")
 	cmd.Flags().BoolVar(&keep, "keep", false, "retain stopped Tart VMs for dockhand shell, or leave the branch's versions active in a local prefix")
 	cmd.Flags().StringVar(&variants, "variants", "", "build the one port checked with these variants, +name -name, or each: its defaults, then each variant it declares")
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --variants each, make its builds without asking")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --variants each, make its builds without asking; keep no failure clone")
 	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
 	cmd.MarkFlagsMutuallyExclusive("baseline", "also")
 	cmd.MarkFlagsMutuallyExclusive("baseline", "keep")
@@ -522,7 +525,15 @@ func confirmVariantBuilds(streams term.Streams, plan model.Plan, yes bool) error
 	if !plan.EachVariant || builds <= variantBuildsToAsk || yes {
 		return nil
 	}
-	ok, _, err := streams.Decide(false, term.Decision{Question: fmt.Sprintf("? --variants each will run %d full builds. Continue? [y/N] ", builds),
+	question := fmt.Sprintf("? --variants each will run %d full builds. Continue? [y/N] ", builds)
+	if len(plan.ReplacesKept) > 0 {
+		var replacements []string
+		for _, replacement := range plan.ReplacesKept {
+			replacements = append(replacements, view.KeptReplacementWords(replacement))
+		}
+		question = strings.Join(replacements, "\n") + "\n" + question
+	}
+	ok, _, err := streams.Decide(false, term.Decision{Question: question,
 		Undone: fmt.Sprintf("nothing was checked (--variants each makes %d builds here)", builds), ByYes: "--yes builds them"})
 	if err != nil {
 		return err

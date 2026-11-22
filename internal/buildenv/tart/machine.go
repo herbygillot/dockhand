@@ -20,6 +20,7 @@ import (
 type machine interface {
 	// Images are the VMs in dockhand's Tart home, running or not.
 	Images(ctx context.Context) ([]string, error)
+	Details(ctx context.Context) ([]tartvm.Image, error)
 	// Running counts the VMs running on the Mac, the person's among them:
 	// the Mac runs two macOS VMs at most, whoever started them.
 	Running(ctx context.Context) (int, error)
@@ -79,6 +80,10 @@ func (n *native) Images(ctx context.Context) ([]string, error) {
 		names = append(names, image.Name)
 	}
 	return names, nil
+}
+
+func (n *native) Details(ctx context.Context) ([]tartvm.Image, error) {
+	return n.Machine.Images(ctx)
 }
 
 func (n *native) Cached(ctx context.Context) ([]tartvm.Image, error) {

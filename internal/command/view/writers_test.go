@@ -2,6 +2,7 @@ package view
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -17,6 +18,41 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
 )
+
+func TestStatusListsKeptCloneSizeAgeAndOldAskedRemoval(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC)
+	clone := engine.Leftover{Leftover: buildenv.Leftover{Ref: "dockhand-check-run-7-tahoe-1", Size: 28, KeptAt: now.Add(-8 * 24 * time.Hour)}, Run: &model.Run{ID: "run_7", Number: 7}}
+	viewed := KeptClonesView([]engine.Leftover{clone}, now)
+	require.Equal(t, []KeptCloneJSON{{Check: "check-7", Clone: clone.Ref, SizeGiB: 28, Age: "8 days", Reason: "asked", OldAsked: true, ShellCommand: "dockhand shell check-7", RemovalCommand: "dockhand clean --kept check-7"}}, viewed)
+	words := KeptCloneWords(viewed[0])
+	require.Contains(t, words, "28.0 GiB")
+	require.Contains(t, words, "8 days old")
+	require.Contains(t, words, "dockhand clean --kept check-7")
+	encoded, err := json.Marshal(StatusJSON{Attention: []attentionJSON{}, KeptClones: viewed})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"attention":[],"kept_clones":[{"check":"check-7","clone":"dockhand-check-run-7-tahoe-1","size_gib":28,"age":"8 days","reason":"asked","old_asked":true,"shell_command":"dockhand shell check-7","removal_command":"dockhand clean --kept check-7"}]}`, string(encoded))
+	second := clone
+	second.Ref = "dockhand-check-run-7-tahoe-2"
+	second.Execution = &model.GuestExecution{Environment: model.Environment{Provider: "tart", Platform: model.Platform{Version: "26"}}}
+	first := clone
+	first.Execution = &model.GuestExecution{Environment: model.Environment{Provider: "tart", Platform: model.Platform{Version: "25"}}}
+	several := KeptClonesView([]engine.Leftover{first, second}, now)
+	require.Equal(t, "dockhand shell check-7 --on 25", several[0].ShellCommand)
+	require.Equal(t, "dockhand shell check-7 --on 26", several[1].ShellCommand)
+}
+
+func TestPlanJSONNamesKeptCloneReplacements(t *testing.T) {
+	t.Parallel()
+	plan := model.Plan{ReplacesKept: []model.KeptCloneReplacement{{Check: "check-12", Release: "tart macOS 26 (Tahoe) arm64"}}}
+	viewed := PlanView(plan)
+	require.Equal(t, plan.ReplacesKept, viewed.ReplacesKept)
+	encoded, err := json.Marshal(struct {
+		ReplacesKept []model.KeptCloneReplacement `json:"replaces_kept,omitempty"`
+	}{viewed.ReplacesKept})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"replaces_kept":[{"check":"check-12","release":"tart macOS 26 (Tahoe) arm64"}]}`, string(encoded))
+}
 
 // A plan names the subport a branch changes, its siblings on a line of
 // their own, built as MacPorts' CI builds every subport of a changed
