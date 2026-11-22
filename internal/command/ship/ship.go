@@ -1044,30 +1044,13 @@ func queueHead(ctx context.Context, s *settings.Settings, e *engine.Engine, stre
 	return &queued.Run, nil
 }
 
-// sayNotices lists what a branch's updates raised (engine.Notices), what
-// holds first, a line each, by port; nothing where they raised nothing.
+// sayNotices lists what a branch's updates raised (engine.Notices),
+// through view.WriteNotices.
 func sayNotices(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch) error {
 	notices, err := e.Notices(ctx, branch)
-	if err != nil || len(notices) == 0 {
+	if err != nil {
 		return err
 	}
-	out := streams.Prose()
-	for _, holds := range []bool{true, false} {
-		heading := "What its updates found that holds it:"
-		if !holds {
-			heading = "What its updates found:"
-		}
-		said := false
-		for _, notice := range notices {
-			if notice.Holds != holds {
-				continue
-			}
-			if !said {
-				fmt.Fprintln(out, heading)
-				said = true
-			}
-			fmt.Fprintf(out, "  %s: %s\n", notice.Port, notice.Words)
-		}
-	}
+	view.WriteNotices(streams.Prose(), notices)
 	return nil
 }

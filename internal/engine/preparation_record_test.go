@@ -151,3 +151,26 @@ func TestANamedVersionOverAnUnwrittenEdit(t *testing.T) {
 	require.Len(t, written, 1)
 	require.Equal(t, "jq: update to 1.8.1", written[0].Subject)
 }
+
+// Settling's own record of an edit written has the uncertain outcome's
+// witness: landed, the edit stands written; not landed, the command says
+// the record isn't complete and the edit waits to be settled again (the
+// sweep's owed recordWritten site; Codex's read of 2c).
+func TestASettlementsUncertainRecordIsReadBack(t *testing.T) {
+	t.Parallel()
+	for _, landed := range []bool{true, false} {
+		e, branch, kept := cutAtStepFive(t)
+		e.Store = &uncertainStore{Store: kept, when: func(tx *watchedTx) bool { return tx.written }, landed: landed}
+		_, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
+		e.Store = kept
+		written, unwritten := unwrittenOf(t, e, branch)
+		if landed {
+			require.NoError(t, err, "the settlement's record landed, so it stands")
+			require.Len(t, written, 1)
+			continue
+		}
+		require.ErrorIs(t, err, store.ErrUncertain)
+		require.ErrorContains(t, err, "its record isn't complete")
+		require.Len(t, unwritten, 1, "it waits to be settled again")
+	}
+}

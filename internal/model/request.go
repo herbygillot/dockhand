@@ -59,3 +59,22 @@ func (t RequestTarget) Outcome(action string) (ActionOutcome, bool) {
 	}
 	return ActionOutcome{}, false
 }
+
+// Finished reports whether a target's version is concluded: by its
+// outcome, by the version it was found current at, or by a written edit
+// of its port at the release kept for it. An edit at another release, an
+// earlier ask's, leaves it unfinished (Codex's read of #194's 2c, P2-2).
+func (t RequestTarget) Finished(edits []Edit) bool {
+	if _, done := t.Outcome("version"); done || t.Current != "" {
+		return true
+	}
+	for _, edit := range edits {
+		if edit.Port != t.Port || edit.Kind != EditUpdate {
+			continue
+		}
+		if t.Release == nil || edit.Release != nil && edit.Release.Version == t.Release.Version {
+			return true
+		}
+	}
+	return false
+}

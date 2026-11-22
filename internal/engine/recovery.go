@@ -62,11 +62,21 @@ func (e *Engine) ResumePrepared(ctx context.Context, where Where, tests model.Te
 		if branch.Origin != model.OriginServe || branch.PullRequest != nil || ran[branch.ID] || ctx.Err() != nil {
 			continue
 		}
-		head, _, err := e.Repo.Branch(ctx, branch.Name)
-		if err != nil {
-			continue
-		}
 		done := Resumed{Branch: branch}
+		// Nothing is asked of Git by a name remembered before the branch's
+		// lock: a rename cut short is finished under it first, and the
+		// branch read as it stands (Codex's read of 2c, P2-1).
+		if branch.RenameTo != "" {
+			if err := e.lockedBranch(ctx, branch.ID, branch.Name, func(ctx context.Context, current model.Branch) error {
+				branch = current
+				return e.finishRename(ctx, &branch)
+			}); err != nil {
+				done.Branch, done.Problem = branch, err.Error()
+				resumed = append(resumed, done)
+				continue
+			}
+			done.Branch = branch
+		}
 		// serve's own preparation that stopped part-way is continued: its
 		// unwritten edits settled, each target with no edit prepared at
 		// the release kept for it, and its edits committed once nothing
@@ -78,9 +88,12 @@ func (e *Engine) ResumePrepared(ctx context.Context, where Where, tests model.Te
 			continue
 		} else if finished {
 			done.Branch = branch
-			if head, _, err = e.Repo.Branch(ctx, branch.Name); err != nil {
-				continue
-			}
+		}
+		head, _, err := e.Repo.Branch(ctx, branch.Name)
+		if err != nil {
+			done.Problem = fmt.Sprintf("reading %s's Git branch: %v", branch.ShortName(), err)
+			resumed = append(resumed, done)
+			continue
 		}
 		if model.ObjectID(head) == branch.Base || !queue {
 			continue

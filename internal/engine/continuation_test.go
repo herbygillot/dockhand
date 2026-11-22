@@ -161,3 +161,80 @@ func TestShipListsItsUpdatesNoticesFromTheRecords(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, notices, again, "read again by another process, the same")
 }
+
+// Recovery finishes a rename cut short after Git moved the branch before
+// it asks Git anything by the branch's name, and queues the check, where
+// it skipped the branch as gone (Codex's read of 2c, P2-1).
+func TestResumePreparedFinishesRenameAfterGitMove(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-work", Origin: model.OriginServe})
+	require.NoError(t, err)
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
+	require.NoError(t, err)
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: reread(t, e, branch.ID)})
+	require.NoError(t, err)
+	_, err = e.ApplyTidy(t.Context(), plan)
+	require.NoError(t, err)
+	current := intentTo(t, e, reread(t, e, branch.ID), "dockhand/jq-moved")
+	require.NoError(t, e.Repo.RenameBranch(t.Context(), current.Name, "dockhand/jq-moved"))
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}})
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
+	resumed, err := e.ResumePrepared(t.Context(), Where{Environments: []model.Environment{{Provider: "command"}}}, "", true)
+	require.NoError(t, err)
+	require.Len(t, resumed, 1, "the branch isn't skipped")
+	require.NotNil(t, resumed[0].Run, resumed[0].Problem)
+	require.Equal(t, "dockhand/jq-moved", reread(t, e, branch.ID).Name, "the rename was finished first")
+}
+
+// A target whose ask changes, a version named in place of another, gets
+// a new request ID and loses the outcome its old ask concluded; a first
+// selection's save keeps the ID (Codex's read of 2c, P2-2).
+func TestChangingANamedVersionClearsItsVersionOutcome(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-work"})
+	require.NoError(t, err)
+	require.NoError(t, e.keepTarget(t.Context(), branch, "update", "jq", func(target *model.RequestTarget) {}))
+	first := requestOf(t, e, branch.ID).ID
+	require.NoError(t, e.keepTarget(t.Context(), reread(t, e, branch.ID), "update", "jq", func(target *model.RequestTarget) {
+		target.Release = &model.Release{Version: "1.8.1"}
+	}))
+	require.Equal(t, first, requestOf(t, e, branch.ID).ID, "a first selection's save keeps the ID")
+	require.NoError(t, e.keepTarget(t.Context(), reread(t, e, branch.ID), "update", "jq", func(target *model.RequestTarget) {
+		concluded(target, model.ActionOutcome{Action: "version", Result: model.ActionDone})
+	}))
+	require.Equal(t, first, requestOf(t, e, branch.ID).ID, "an outcome keeps the ID")
+	require.NoError(t, e.keepTarget(t.Context(), reread(t, e, branch.ID), "update", "jq", func(target *model.RequestTarget) {
+		target.Named, target.Release = "1.8.2", &model.Release{Version: "1.8.2"}
+	}))
+	changed := requestOf(t, e, branch.ID)
+	require.NotEqual(t, first, changed.ID, "a version named is a new ask")
+	_, done := changed.Targets[0].Outcome("version")
+	require.False(t, done, "the old ask's outcome goes with it")
+	require.Empty(t, changed.Targets[0].Current)
+}
+
+// A target is finished by a written edit at the release kept for it: an
+// edit at 1.8.1 doesn't finish a target kept at 1.8.2 (Codex's read of
+// 2c, P2-2).
+func TestAnEditAtAnotherReleaseDoesntFinishATarget(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-work"})
+	require.NoError(t, err)
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
+	require.NoError(t, err)
+	require.NoError(t, e.keepTarget(t.Context(), reread(t, e, branch.ID), "update", "jq", func(target *model.RequestTarget) {
+		target.Named, target.Release = "1.8.2", &model.Release{Version: "1.8.2"}
+	}))
+	open, err := e.UnfinishedTargets(t.Context(), reread(t, e, branch.ID))
+	require.NoError(t, err)
+	require.Len(t, open, 1, "the edit at 1.8.1 isn't the 1.8.2 asked")
+	prepared, err := e.preparation(t.Context(), reread(t, e, branch.ID), false)
+	require.NoError(t, err)
+	require.Contains(t, prepared.Reasons, "jq has no update yet")
+}

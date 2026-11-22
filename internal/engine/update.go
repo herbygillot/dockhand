@@ -346,11 +346,18 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 			return Update{Port: request.Port}, err
 		}
 		// An edit of this port settled finishes what its update didn't:
-		// the record, then step 6, the branch's name for its version.
+		// the record, then step 6, the branch's name for its version, under
+		// the branch's lock as every rename is (P2-3).
 		for _, done := range settled {
 			if (done.Settling.Action == SettleRecord || done.Settling.Action == SettleWrite) && done.Edit.Port == request.Port && done.Edit.Kind == model.EditUpdate && done.Edit.Result != nil {
 				finished := Update{Before: PortVersion{Version: versionOf(done.Edit.Result.Before)}, After: PortVersion{Version: versionOf(done.Edit.Result.After)}}
-				e.renameUpdated(ctx, request, &request.Branch, &finished)
+				if err := e.lockedBranch(ctx, request.Branch.ID, request.Branch.Name, func(ctx context.Context, current model.Branch) error {
+					request.Branch = current
+					e.renameUpdated(ctx, request, &request.Branch, &finished)
+					return nil
+				}); err != nil {
+					return Update{Port: request.Port}, err
+				}
 			}
 		}
 	}

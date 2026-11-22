@@ -29,7 +29,18 @@ func (e *Engine) keepTarget(ctx context.Context, branch model.Branch, origin, po
 			request.ID = store.NewID("rq")
 			i = len(request.Targets) - 1
 		}
+		before := request.Targets[i]
 		change(&request.Targets[i])
+		// A version named, or a release replaced by another, is a new ask:
+		// the request gets a new ID, and the outcome and found version of
+		// the old ask go in the same write. A release saved where there was
+		// none, a version found current, and an outcome are progress, and
+		// keep it (Codex's read of 2c, P2-2).
+		if after := &request.Targets[i]; before.Named != after.Named || before.Release != nil && after.Release != nil && before.Release.Version != after.Release.Version {
+			request.ID = store.NewID("rq")
+			after.Current = ""
+			after.Outcomes = slices.DeleteFunc(after.Outcomes, func(o model.ActionOutcome) bool { return o.Action == "version" })
+		}
 		current.Request = request
 		return store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
 			return tx.SetRequest(current.ID, request)
@@ -61,10 +72,9 @@ func (e *Engine) UnfinishedTargets(ctx context.Context, branch model.Branch) ([]
 	}
 	var open []model.RequestTarget
 	for _, target := range branch.Request.Targets {
-		if _, done := target.Outcome("version"); done || target.Current != "" || slices.ContainsFunc(edits, func(edit model.Edit) bool { return edit.Port == target.Port }) {
-			continue
+		if !target.Finished(edits) {
+			open = append(open, target)
 		}
-		open = append(open, target)
 	}
 	return open, nil
 }

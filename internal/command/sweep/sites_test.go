@@ -292,7 +292,7 @@ var owed = map[string]string{
 	"store.update@engine.(*Engine).carryRename":         "#129: a branch renamed with Git",
 	"store.update@engine.(*Engine).checkOutAgain":       "#129: a worktree clean removed, checked out again",
 	"store.update@engine.(*Engine).cleanup":             "#193: automatic cleanup of what checks left",
-	"store.update@engine.(*Engine).recordWritten":       "#194: settling a record lost at step 5, which needs a world the sweep can't arrange; TestAnUncertainEditRecordIsReadBack",
+	"store.update@engine.(*Engine).recordWritten":       "#194: settling a record lost at step 5, which needs a world the sweep can't arrange; TestASettlementsUncertainRecordIsReadBack",
 	"store.update@engine.(*Engine).settleUnwritten":     "#194: removing an edit never written, which needs a world the sweep can't arrange; TestANamedVersionOverAnUnwrittenEdit",
 	"store.update@engine.(*Engine).applyTidy":           "#194: tidy taking a changed edit as the person's; TestAnEditWhoseFileChangedSinceStopsTheNextCommand",
 	"store.update@engine.(*Engine).keepExcepted":        "#194: the dependents an update leaves out",

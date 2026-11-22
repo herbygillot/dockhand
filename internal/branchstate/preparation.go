@@ -129,10 +129,7 @@ func unfinishedReasons(in Readying) []string {
 					reasons = append(reasons, fmt.Sprintf("%s of %s was refused: %s", outcome.Action, target.Port, outcome.Why))
 				}
 			}
-			if target.Current != "" || slices.ContainsFunc(in.Edits, func(edit model.Edit) bool { return edit.Port == target.Port }) {
-				continue
-			}
-			if _, concluded := target.Outcome("version"); !concluded {
+			if !target.Finished(in.Edits) {
 				reasons = append(reasons, fmt.Sprintf("%s has no update yet", target.Port))
 			}
 		}

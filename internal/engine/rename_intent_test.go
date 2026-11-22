@@ -60,7 +60,9 @@ func TestANameBeingMovedToIsTaken(t *testing.T) {
 	intentTo(t, e, moving, "dockhand/jq-1.8.1")
 	other, err := e.Start(t.Context(), StartRequest{Name: "jq-other"})
 	require.NoError(t, err)
-	err = e.renameWithIntent(t.Context(), &other, "dockhand/jq-1.8.1", "renamed")
+	err = e.lockedBranch(t.Context(), other.ID, other.Name, func(ctx context.Context, current model.Branch) error {
+		return e.renameWithIntent(ctx, &current, "dockhand/jq-1.8.1", "renamed")
+	})
 	require.ErrorContains(t, err, "jq-1.8.1 is jq-1.7.1's, or the name its rename is moving it to")
 	require.Equal(t, "dockhand/jq-other", reread(t, e, other.ID).Name)
 }
@@ -229,4 +231,27 @@ func TestAnUpdateTakesCurrentBranchNameLockAfterRename(t *testing.T) {
 	}
 	require.NoError(t, release())
 	require.NoError(t, <-done)
+}
+
+// A rename is made only under the old name's lock: renameWithIntent
+// refuses without it, and the version rename a settled update finishes
+// takes it (Codex's read of 2c, P2-3).
+func TestSettledVersionRenameRequiresTheOldBranchLock(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-1.7.1"})
+	require.NoError(t, err)
+	err = e.renameWithIntent(t.Context(), &branch, "dockhand/jq-elsewhere", "renamed")
+	require.ErrorContains(t, err, "without its lock")
+	require.Equal(t, "dockhand/jq-1.7.1", reread(t, e, branch.ID).Name)
+
+	kept := e.Store
+	e.Store = &uncertainStore{Store: kept, when: func(tx *watchedTx) bool { return tx.written }, landed: false}
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
+	require.Error(t, err, "the record isn't complete; step 6 didn't run")
+	e.Store = kept
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: reread(t, e, branch.ID), Action: model.EditUpdate, Port: "jq"})
+	require.NoError(t, err)
+	require.Equal(t, "dockhand/jq-1.8.1", reread(t, e, branch.ID).Name, "settled, the update finishes its rename under the lock")
 }

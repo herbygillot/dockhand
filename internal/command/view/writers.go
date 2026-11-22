@@ -566,3 +566,35 @@ func testPolicyWords(policy model.TestPolicy) string {
 	}
 	return "tests " + string(policy)
 }
+
+// WriteNotices lists what a change's updates found (engine.Notices): what
+// holds it first, then what only informs, a line each, by port, ports in
+// the order their notices came; nothing where there are none (#194, N1).
+func WriteNotices(out io.Writer, notices []engine.Notice) {
+	for _, holds := range []bool{true, false} {
+		heading := "What its updates found that holds it:"
+		if !holds {
+			heading = "What its updates found:"
+		}
+		var ports []string
+		byPort := map[string][]string{}
+		for _, notice := range notices {
+			if notice.Holds != holds {
+				continue
+			}
+			if _, seen := byPort[notice.Port]; !seen {
+				ports = append(ports, notice.Port)
+			}
+			byPort[notice.Port] = append(byPort[notice.Port], notice.Words)
+		}
+		if len(ports) == 0 {
+			continue
+		}
+		fmt.Fprintln(out, heading)
+		for _, port := range ports {
+			for _, words := range byPort[port] {
+				fmt.Fprintf(out, "  %s: %s\n", port, words)
+			}
+		}
+	}
+}

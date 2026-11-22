@@ -1476,6 +1476,13 @@ func (e *Engine) renameForVersion(ctx context.Context, branch *model.Branch, por
 // which the next command that takes the branch's lock finishes
 // (finishRename).
 func (e *Engine) renameWithIntent(ctx context.Context, branch *model.Branch, to, words string) error {
+	// Every caller holds the old name's lock (lockedBranch): taken here
+	// without waiting, it must be busy; free, the caller didn't hold it,
+	// and nothing is renamed (Codex's read of 2c, P2-3).
+	if free, err := e.Repo.TryBranchLock(branch.Name); err == nil {
+		_ = free()
+		return fmt.Errorf("%s can't be renamed without its lock", branch.ShortName())
+	}
 	release, err := e.Repo.TryBranchLock(to)
 	if err != nil {
 		return fmt.Errorf("%s is in use by another process, so the branch keeps its name: %w", strings.TrimPrefix(to, model.BranchPrefix), err)
