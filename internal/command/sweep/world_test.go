@@ -390,12 +390,13 @@ func normalize(w world, root string) world {
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {
 		root = resolved
 	}
-	// A time is its day, the local one, and its order among the times of
-	// its own row: a rank in the whole run shifted with every row a retry
-	// rightly adds, and a row's own order, an attempt's start before its
-	// end, a publication's tried before its gone, survives them (#129's
-	// fix list, 6). Order between rows is read where it's recorded, as an
-	// event's or an attempt's number.
+	// A time is its order among the times of its own row: a rank in the
+	// whole run shifted with every row a retry rightly adds, and a row's own
+	// order, an attempt's start before its end, a publication's tried before
+	// its gone, survives them (#129's fix list, 6). Order between rows is
+	// read where it's recorded, as an event's or an attempt's number. Its
+	// day is left out: a run that crossed midnight differed from one that
+	// didn't, with no fault involved (#277).
 	stamp := func(line string) string {
 		var values []int64
 		read := func(m string) (int64, bool) {
@@ -417,11 +418,10 @@ func normalize(w world, root string) world {
 			if !ok {
 				return m
 			}
-			day := "time(" + time.UnixMilli(v).Local().Format("2006-01-02")
 			if len(values) > 1 {
-				day += fmt.Sprintf("#%d", slices.Index(values, v)+1)
+				return fmt.Sprintf("time(#%d)", slices.Index(values, v)+1)
 			}
-			return day + ")"
+			return "time()"
 		}
 		return writtenTimes.ReplaceAllStringFunc(markedTimes.ReplaceAllStringFunc(line, rank), rank)
 	}
