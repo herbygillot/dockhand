@@ -41,12 +41,20 @@ type Transitions struct {
 	// StopAt stops a change at a step, as if its process ended there:
 	// tests set it (Step).
 	StopAt func(step string) error
+	// Before runs first under the lock, as the engine finishes a rename
+	// cut short there (#194); nil runs nothing.
+	Before func(ctx context.Context, branch model.Branch) error
 }
 
 // With runs fn holding the branch's history lock, after finishing
 // whatever a stopped process left.
 func (h *Transitions) With(ctx context.Context, branch model.Branch, fn func(context.Context) error) error {
 	return h.Repo.WithBranchLock(ctx, branch.Name, func(ctx context.Context) error {
+		if h.Before != nil {
+			if err := h.Before(ctx, branch); err != nil {
+				return err
+			}
+		}
 		if err := h.settle(ctx, branch); err != nil {
 			return fmt.Errorf("recovering interrupted history changes on %s: %w", branch.ShortName(), err)
 		}

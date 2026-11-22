@@ -12,12 +12,14 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/failpoint"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -616,6 +618,11 @@ func (e *Engine) Resolve(ctx context.Context, selector string) (model.Branch, er
 	branch, err := e.named(ctx, selector, store.Reader.BranchNamed)
 	if !errors.Is(err, ErrNoBranch) {
 		return branch, err
+	}
+	// The name a rename under way moves a branch to finds it too, before a
+	// rename made by hand is looked for (#194, L3).
+	if renaming, rerr := e.named(ctx, selector, store.Reader.BranchRenamingTo); rerr == nil {
+		return renaming, nil
 	}
 	// A name no record has may be one a branch was renamed to by hand,
 	// which is followed, then found.
@@ -1458,19 +1465,83 @@ func (e *Engine) renameForVersion(ctx context.Context, branch *model.Branch, por
 		return "", err
 	}
 	old := branch.ShortName()
-	if err := e.Repo.RenameBranch(ctx, branch.Name, BranchName(name)); err != nil {
-		return "", err
+	return old, e.renameWithIntent(ctx, branch, BranchName(name), fmt.Sprintf("renamed %s to %s, for the version it now moves to", old, name))
+}
+
+// renameWithIntent renames a branch, its old name's lock held, by its
+// recorded intent (#194, "The lock, and a rename"): the new name's lock
+// taken without waiting, or the branch keeps its name this time; RenameTo
+// saved and read back; Git's branch renamed; the name saved and RenameTo
+// emptied, read back. A process cut short between them leaves the intent,
+// which the next command that takes the branch's lock finishes
+// (finishRename).
+func (e *Engine) renameWithIntent(ctx context.Context, branch *model.Branch, to, words string) error {
+	release, err := e.Repo.TryBranchLock(to)
+	if err != nil {
+		return fmt.Errorf("%s is in use by another process, so the branch keeps its name: %w", strings.TrimPrefix(to, model.BranchPrefix), err)
 	}
-	branch.Name = BranchName(name)
-	err = store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
+	defer func() { _ = release() }()
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error { return nameFree(r, branch.ID, to) }); err != nil {
+		return err
+	}
+	branch.RenameTo = to
+	if err := store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
+		return tx.UpdateBranch(*branch)
+	}, branchRenaming(branch.ID, to)); err != nil {
+		branch.RenameTo = ""
+		return err
+	}
+	failpoint.Hit("rename.intent")
+	if err := e.Repo.RenameBranch(ctx, branch.Name, to); err != nil {
+		return err
+	}
+	failpoint.Hit("rename.git")
+	return e.saveRenamed(ctx, branch, to, words)
+}
+
+// saveRenamed saves a branch's new name and empties its intent, with the
+// rename's event, read back by the new name.
+func (e *Engine) saveRenamed(ctx context.Context, branch *model.Branch, to, words string) error {
+	branch.Name, branch.RenameTo = to, ""
+	return store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
 		if err := tx.UpdateBranch(*branch); err != nil {
 			return err
 		}
-		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchRename, Level: model.LevelInfo,
-			Message: fmt.Sprintf("renamed %s to %s, for the version it now moves to", old, name)})
+		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchRename, Level: model.LevelInfo, Message: words})
 		return err
-	}, branchRecorded(branch.ID))
-	return old, err
+	}, branchRenamed(branch.ID, to))
+}
+
+// nameFree refuses a name another branch has, as its name or as the name
+// a rename is moving it to: a RenameTo names one branch (#194, L2).
+func nameFree(r store.Reader, id model.BranchID, name string) error {
+	for _, lookup := range []func(string) (model.Branch, error){r.BranchNamed, r.BranchRenamingTo} {
+		other, err := lookup(name)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+		case err != nil:
+			return err
+		case other.ID != id:
+			return fmt.Errorf("%s is %s's, or the name its rename is moving it to", strings.TrimPrefix(name, model.BranchPrefix), other.ShortName())
+		}
+	}
+	return nil
+}
+
+// branchRenaming witnesses a rename's intent: the branch's RenameTo.
+func branchRenaming(id model.BranchID, to string) func(store.Reader) bool {
+	return func(r store.Reader) bool {
+		branch, err := r.Branch(id)
+		return err == nil && branch.RenameTo == to
+	}
+}
+
+// branchRenamed witnesses a rename's save: the new name, no intent left.
+func branchRenamed(id model.BranchID, to string) func(store.Reader) bool {
+	return func(r store.Reader) bool {
+		branch, err := r.Branch(id)
+		return err == nil && branch.Name == to && branch.RenameTo == ""
+	}
 }
 
 // ChangesHere reports whether what's checked out where the engine was
@@ -1578,4 +1649,46 @@ func shortID() string {
 		id[i] = alphabet[rand.IntN(len(alphabet))]
 	}
 	return string(id)
+}
+
+// finishRename finishes a rename a process was cut short in, the branch's
+// old name's lock held (#194, L4): it takes the new name's lock without
+// waiting, reads the branch again by its ID and Git's two names, and saves
+// the new name where Git has it alone, renames then saves where Git has
+// the old alone, and stops where it has both or neither. Where the new
+// name's lock is held, it leaves the intent and says a rename is under way.
+func (e *Engine) finishRename(ctx context.Context, branch *model.Branch) error {
+	if branch.RenameTo == "" {
+		return nil
+	}
+	to := branch.RenameTo
+	release, err := e.Repo.TryBranchLock(to)
+	if err != nil {
+		return refusal.New(refusal.Attention, "a rename of %s to %s is under way in another process; run this again once it ends", branch.ShortName(), strings.TrimPrefix(to, model.BranchPrefix))
+	}
+	defer func() { _ = release() }()
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		*branch, err = r.Branch(branch.ID)
+		return err
+	}); err != nil || branch.RenameTo == "" {
+		return err
+	}
+	_, _, oldErr := e.Repo.Branch(ctx, branch.Name)
+	_, _, newErr := e.Repo.Branch(ctx, to)
+	old, renamed := oldErr == nil, newErr == nil
+	if (oldErr != nil && !errors.Is(oldErr, git.ErrBranchMissing)) || (newErr != nil && !errors.Is(newErr, git.ErrBranchMissing)) {
+		return errors.Join(oldErr, newErr)
+	}
+	words := fmt.Sprintf("renamed %s to %s, finishing a rename an earlier run began", branch.ShortName(), strings.TrimPrefix(to, model.BranchPrefix))
+	switch {
+	case renamed && !old:
+		return e.saveRenamed(ctx, branch, to, words)
+	case old && !renamed:
+		if err := e.Repo.RenameBranch(ctx, branch.Name, to); err != nil {
+			return err
+		}
+		return e.saveRenamed(ctx, branch, to, words)
+	}
+	return refusal.New(refusal.Attention, "%s was being renamed to %s, and Git has %s; nothing was guessed. Remove the branch that isn't the work, then run this again", branch.ShortName(), strings.TrimPrefix(to, model.BranchPrefix), map[bool]string{true: "both", false: "neither"}[old])
 }

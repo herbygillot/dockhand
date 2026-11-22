@@ -8,6 +8,12 @@
 // with SIGKILL when it reaches the step. The steps are:
 //   - update.prepared, after an update has fetched and prepared its edit,
 //     before writing it;
+//   - update.recorded, update.written and update.settled, after an
+//     update records its edit, writes its files, and records them written
+//     (#194);
+//   - rename.intent and rename.git, after a rename records the name it
+//     moves to, and after Git's branch is renamed, before the name is
+//     saved (#194);
 //   - tidy.prepared and rebase.prepared, after the checkpoint is recorded,
 //     before the branch moves;
 //   - submit.pushed, after the push, before the pull request opens;

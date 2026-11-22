@@ -341,7 +341,7 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 			return Update{Port: request.Port}, err
 		}
 	default:
-		if _, err := e.settled(ctx, request.Branch, settlerFor); err != nil {
+		if _, err := e.settled(ctx, &request.Branch, settlerFor); err != nil {
 			return Update{Port: request.Port}, err
 		}
 	}
@@ -722,7 +722,12 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	// transitions and settling take too, reading the branch again under
 	// it (#194, "The lock").
 	var locked Update
-	err = e.Repo.WithBranchLock(ctx, branch.Name, func(ctx context.Context) error {
+	err = e.lockedBranch(ctx, branch.ID, branch.Name, func(ctx context.Context, current model.Branch) error {
+		// The branch as read under its lock, whatever name it was come by.
+		branch = current
+		if update.Branch.ID == current.ID {
+			update.Branch = current
+		}
 		var err error
 		locked, err = func() (Update, error) {
 			// A hand edit's attempt is the person's from here: no edit of

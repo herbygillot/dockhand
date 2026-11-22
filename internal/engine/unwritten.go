@@ -219,17 +219,60 @@ func editWritten(id model.EditID) func(store.Reader) bool {
 // settled settles a branch's unwritten edits under its lock, as a command
 // does before it reads the branch's edits (#194): the settler each edit
 // has for this command. A plan settles nothing, and calls none of this.
-func (e *Engine) settled(ctx context.Context, branch model.Branch, settlerFor func(model.Edit) Settler) ([]Settled, error) {
+func (e *Engine) settled(ctx context.Context, branch *model.Branch, settlerFor func(model.Edit) Settler) ([]Settled, error) {
 	if branch.ID == "" || branch.Name == "" {
 		return nil, nil
 	}
 	var settled []Settled
-	err := e.Repo.WithBranchLock(ctx, branch.Name, func(ctx context.Context) error {
+	err := e.lockedBranch(ctx, branch.ID, branch.Name, func(ctx context.Context, current model.Branch) error {
+		*branch = current
+		// A rename cut short is finished first, at the lock, however the
+		// branch was come by (#194, L4 and L5).
+		if err := e.finishRename(ctx, branch); err != nil {
+			return err
+		}
 		var err error
-		settled, err = e.settleUnwritten(ctx, branch, settlerFor)
+		settled, err = e.settleUnwritten(ctx, *branch, settlerFor)
 		return err
 	})
 	return settled, err
+}
+
+// lockedBranch runs fn holding the branch's lock, by its ID and not a name
+// read before (#194, L7; Codex's read of 2a, P2): it takes the name's
+// lock, reads the branch again by ID under it, and where the ID carries
+// another name now, lets go and takes that name's, a few rounds at most.
+// fn gets the branch as read under the lock. A branch gone settles nothing.
+func (e *Engine) lockedBranch(ctx context.Context, id model.BranchID, name string, fn func(context.Context, model.Branch) error) error {
+	for range 4 {
+		var moved string
+		ran := false
+		err := e.Repo.WithBranchLock(ctx, name, func(ctx context.Context) error {
+			var current model.Branch
+			err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+				var err error
+				current, err = r.Branch(id)
+				return err
+			})
+			switch {
+			case errors.Is(err, store.ErrNotFound):
+				ran = true
+				return nil
+			case err != nil:
+				return err
+			case current.Name != name:
+				moved = current.Name
+				return nil
+			}
+			ran = true
+			return fn(ctx, current)
+		})
+		if err != nil || ran {
+			return err
+		}
+		name = moved
+	}
+	return refusal.New(refusal.Attention, "%s keeps being renamed while dockhand takes its lock; run this again once the other command ends", strings.TrimPrefix(name, model.BranchPrefix))
 }
 
 // SettlerFor is one settler for every edit.
@@ -247,7 +290,7 @@ func (e *Engine) UnfinishedGate(ctx context.Context, branch model.Branch, unatte
 	if branch.ID == "" {
 		return nil
 	}
-	if _, err := e.settled(ctx, branch, SettlerFor(SettlerOther)); err != nil {
+	if _, err := e.settled(ctx, &branch, SettlerFor(SettlerOther)); err != nil {
 		if unattended || refusal.Of(err) == nil {
 			return err
 		}

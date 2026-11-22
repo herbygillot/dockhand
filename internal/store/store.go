@@ -140,6 +140,9 @@ type Reader interface {
 	ServeUpgrade() (at time.Time, firstPassDone, ok bool, err error)
 	// BranchNamed finds the branch with a Git name that is not merged.
 	BranchNamed(name string) (model.Branch, error)
+	// BranchRenamingTo is the branch whose rename under way moves it to
+	// name (model.Branch.RenameTo); ErrNotFound where none is (#194).
+	BranchRenamingTo(name string) (model.Branch, error)
 	// MergedBranchNamed finds the newest merged branch with a Git name,
 	// whose record clean keeps; the name may have been used again since.
 	MergedBranchNamed(name string) (model.Branch, error)

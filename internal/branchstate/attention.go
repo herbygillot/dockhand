@@ -46,14 +46,18 @@ const (
 	// an update not written whole, a target not prepared, an action not
 	// concluded or refused (#194). The command that finishes it is named.
 	PreparationUnfinished Reason = "preparation-unfinished"
-	FilesChangedSince     Reason = "files-changed-since"
-	DependencyFailed      Reason = "dependency-failed"
-	TargetFailed          Reason = "target-failed"
-	RunFailed             Reason = "check-failed"
-	RunAttention          Reason = "check-attention"
-	BuildAgain            Reason = "build-again"
-	Unbuilt               Reason = "unbuilt"
-	ExtraFailed           Reason = "extra-failed"
+	// RenameUnderWay is a branch a process was cut short renaming: its
+	// record names the new name, which the next command that changes the
+	// branch finishes the move to; status finishes none (#194, L6).
+	RenameUnderWay    Reason = "rename-under-way"
+	FilesChangedSince Reason = "files-changed-since"
+	DependencyFailed  Reason = "dependency-failed"
+	TargetFailed      Reason = "target-failed"
+	RunFailed         Reason = "check-failed"
+	RunAttention      Reason = "check-attention"
+	BuildAgain        Reason = "build-again"
+	Unbuilt           Reason = "unbuilt"
+	ExtraFailed       Reason = "extra-failed"
 	// LintWarned is a new port lint warned of, which submit asks to fix
 	// or accept (the docs dig's I13).
 	LintWarned      Reason = "lint-warned"
@@ -229,6 +233,11 @@ func Attend(facts Facts) []Attention {
 	}
 	if b.Cleaned {
 		return nil
+	}
+	if to := b.Record.RenameTo; to != "" {
+		return row(NeedsYou, RenameUnderWay, Next{Verb: VerbTidy}, func(a *Attention) {
+			a.Detail = fmt.Sprintf("a rename of %s to %s is under way; the next command that changes the branch finishes it", name, strings.TrimPrefix(to, model.BranchPrefix))
+		})
 	}
 	if b.Missing && b.Record.PullRequest != nil {
 		// Status never reads the network, so it can't know the pull
@@ -566,7 +575,7 @@ func (a Attention) Words(v Vocabulary) string {
 		return fmt.Sprintf("#%d was opened by serve without human review", pr.Number)
 	case OnMaster:
 		return "its changes are on master already, as of " + a.Detail
-	case HeldBeforeItsCheck, PreparationUnfinished:
+	case HeldBeforeItsCheck, PreparationUnfinished, RenameUnderWay:
 		return a.Detail
 	case FilesChangedSince:
 		ended := string(a.Run.State)

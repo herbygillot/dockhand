@@ -86,6 +86,10 @@ func (t *tx) BranchNamed(name string) (model.Branch, error) {
 	return t.scanBranch(t.conn.QueryRowContext(t.ctx, "SELECT "+branchColumns+" FROM branches WHERE repository_id=? AND name=? AND state<>'merged' AND forgotten_at IS NULL", t.repo, name))
 }
 
+func (t *tx) BranchRenamingTo(name string) (model.Branch, error) {
+	return t.scanBranch(t.conn.QueryRowContext(t.ctx, "SELECT "+branchColumns+" FROM branches WHERE repository_id=? AND rename_to=? AND rename_to<>'' AND forgotten_at IS NULL", t.repo, name))
+}
+
 func (t *tx) MergedBranchNamed(name string) (model.Branch, error) {
 	return t.scanBranch(t.conn.QueryRowContext(t.ctx, "SELECT "+branchColumns+" FROM branches WHERE repository_id=? AND name=? AND state='merged' AND forgotten_at IS NULL ORDER BY created_at DESC, id DESC LIMIT 1", t.repo, name))
 }
