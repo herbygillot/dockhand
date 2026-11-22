@@ -61,7 +61,7 @@ With multiple active runs on a branch, `--replace` replaces **only the conflicti
 - Stopping a specific non-conflicting run remains `dockhand cancel check-N`.
 
 ### 4. Kept clones: an asked clone is the person's, a failure clone is a cache (amended 2026-11-22)
-The rule on keeping clones is [#291](https://github.com/herbygillot/dockhand/issues/291)'s, decided by the person on 2026-11-22 and built in v0.9.0 ahead of this page. It replaces this section's first form, where every kept clone lasted while the branch's files matched its tree. What this design adds to it is only how side-by-side checks treat the two kinds.
+The rule on keeping clones is [#291](https://github.com/herbygillot/dockhand/issues/291)'s, decided by the person on 2026-11-22, which v0.9.0 builds before this design is built. It replaces this section's first form, where every kept clone lasted while the branch's files matched its tree. What this design adds to it is only how side-by-side checks treat the two kinds.
 
 - **A clone kept by `--keep`** is not removed by any later check of the branch: not a sibling on another environment, not a check of changed files, not a retry. It goes when the person removes it, when its branch is removed, or when another `--keep` check of the same branch and release replaces it. A run stopped by `--replace` keeps its asked clone too; the replacing check says so.
 - **A clone kept for a failure** follows the branch's files (`Source.Tree`):
