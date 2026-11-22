@@ -9,7 +9,7 @@
 # third closed with an uncommitted edit left in its worktree, and a branch
 # archived. A checkpoint had a person make them, inside the snapshot's
 # window, and the run had none of them by C7 (the rc6 full stage). Its
-# teardown sets the sandbox's master back to MacPorts'.
+# teardown sets the sandbox's master back to where the row found it.
 # prs: ${ACCEPT_GO_PORT} test
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 
@@ -44,6 +44,10 @@ setup() {
 	fi
 	cp "$ROW_DIR/branches.before" "$ROW_DIR/branches.seen"
 	local merged moved closed archived worktree
+	# The sandbox's master as the row found it, which teardown restores:
+	# MacPorts' master moves during a run, and restoring that one tripped
+	# run.sh's fence on the next row (prime-time, v0.8.1-rc1).
+	gh api "repos/${DOCKHAND_PULL_REQUESTS:?}/git/ref/heads/master" --jq .object.sha >"$ROW_DIR/sandbox-master.before" 2>>"$ROW_DIR/out.log" || :
 	# What the row was told to do next with a branch it merges, it merges
 	# past: a merged branch takes no check or tidy, and H6 ran them on the
 	# kept one (the rc10 full stage).
@@ -70,11 +74,13 @@ setup() {
 	c7_reset_sandbox
 }
 
-# c7_reset_sandbox sets the sandbox's master back to MacPorts'.
+# c7_reset_sandbox sets the sandbox's master back to the commit the row
+# found it at, or MacPorts' where that wasn't read.
 c7_reset_sandbox() {
-	local upstream
-	upstream=$(gh api repos/macports/macports-ports/git/ref/heads/master --jq .object.sha 2>>"$ROW_DIR/out.log") || return 0
-	gh api -X PATCH "repos/${DOCKHAND_PULL_REQUESTS:?}/git/refs/heads/master" -f sha="$upstream" -F force=true --silent >>"$ROW_DIR/out.log" 2>&1 || :
+	local found
+	found=$(cat "$ROW_DIR/sandbox-master.before" 2>/dev/null)
+	[ -n "$found" ] || found=$(gh api repos/macports/macports-ports/git/ref/heads/master --jq .object.sha 2>>"$ROW_DIR/out.log") || return 0
+	gh api -X PATCH "repos/${DOCKHAND_PULL_REQUESTS:?}/git/refs/heads/master" -f sha="$found" -F force=true --silent >>"$ROW_DIR/out.log" 2>&1 || :
 }
 
 teardown() {
