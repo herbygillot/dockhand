@@ -43,16 +43,24 @@ func unansweredWords(call string) string {
 // context by (Codex's review of #110 and #125, findings 5 and 6). This
 // Mac's own context is never left: it's read as it stands (#125).
 func Left(ctx context.Context, observed macports.Observation, port string, contents []byte) (string, bool) {
+	reason, left, _, _ := left(ctx, observed, port, contents)
+	return reason, left
+}
+
+// left checks the modeled-context leave rule and retains the tolerated
+// metadata when that check had to run it.
+func left(ctx context.Context, observed macports.Observation, port string, contents []byte) (reason string, leaves bool, metadata macports.PortObservation, checked bool) {
 	if !observed.Modeled {
-		return "", false
+		return "", false, macports.PortObservation{}, false
 	}
 	if observed.Unanswered != "" {
-		return unansweredWords(observed.Unanswered), true
+		return unansweredWords(observed.Unanswered), true, macports.PortObservation{}, false
 	}
-	if read, inconclusive := Tolerate(ctx, observed.Ports[port], contents, observed.Snapshot.Root); inconclusive {
-		return "its reading depends on host state" + HostInputs(read), true
+	metadata, inconclusive := Tolerate(ctx, observed.Ports[port], contents, observed.Snapshot.Root)
+	if inconclusive {
+		return "its reading depends on host state" + HostInputs(metadata), true, metadata, true
 	}
-	return "", false
+	return "", false, metadata, true
 }
 
 // Observe observes one set of contents in every profile at once. The

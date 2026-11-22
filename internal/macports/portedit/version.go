@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/refusal"
@@ -252,21 +253,36 @@ func (r *Result) previousFailed(err error) {
 
 // shippedPlan is MacPorts' own fetch plan for the Portfile as it stands,
 // on this Mac: each archive, with the locations MacPorts would fetch it
-// from, a mirror group such as PyPI's expanded as MacPorts expands it. The
-// new version's archives are fetched from its plan the same way.
+// from, a mirror group such as PyPI's expanded as MacPorts expands it. It
+// asks for a plan, as main did, without judging native host access. The new
+// version's archives are fetched from its plan the same way.
 func shippedPlan(ctx context.Context, input *sourceInput) ([]macports.Distfile, error) {
-	if err := distfetch.CheckPolicy(input.info, input.portdirIn(input.before.Root)); err != nil {
-		return nil, err
+	observed := macports.Observation{
+		Snapshot: macports.Snapshot{Root: input.before.Root, Ports: map[string]macports.PortInfo{input.target.Name: input.info}},
+		Ports:    map[string]macports.PortObservation{input.target.Name: {}},
 	}
-	observations, err := input.observe.Observe(ctx, input.data, []model.Platform{input.before.Platform}, true, true)
-	if err != nil {
-		return nil, err
+	decision := observe.DecideFetch(ctx, observed, input.target.Name, input.data, input.portdirIn(input.before.Root), observe.FetchPlanNeed, func(ctx context.Context) (macports.Observation, error) {
+		if input.observe == nil {
+			return macports.Observation{}, errors.New("fetch observation session is unavailable")
+		}
+		observations, err := input.observe.Observe(ctx, input.data, []model.Platform{input.before.Platform}, true, true)
+		if err != nil {
+			return macports.Observation{}, err
+		}
+		return observations[0], nil
+	})
+	switch decision.Kind {
+	case observe.FetchLeft:
+		return nil, errProbeInconclusive.Because("%s", decision.Reason)
+	case observe.FetchRefused:
+		return nil, decision.Err
+	case observe.FetchInconclusive:
+		if decision.Err != nil {
+			return nil, decision.Err
+		}
+		return nil, errProbeInconclusive.Because("%s", decision.Reason)
 	}
-	plan, err := observations[0].Ports[input.target.Name].FetchPlan()
-	if err != nil {
-		return nil, ErrUnsupported.Because("%w", err)
-	}
-	return plan, nil
+	return decision.Plan, nil
 }
 
 // downloadsOf are the shipped archives' downloads.

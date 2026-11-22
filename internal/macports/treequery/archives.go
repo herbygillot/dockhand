@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -89,14 +90,18 @@ func (p *Reader) ArchivePlan(ctx context.Context, source model.Source, directory
 	}
 	name := targets[i].Name
 	info := observation.Snapshot.Ports[name]
-	own, err := p.withoutVendored(ctx, files, targets[i], info)
+	contents, err := os.ReadFile(filepath.Join(tree.Root(), filepath.FromSlash(targets[i].Portfile)))
+	if err != nil {
+		return info, nil, err
+	}
+	own, contents, err := p.withoutVendored(ctx, files, targets[i], info, contents)
 	if err != nil {
 		return info, nil, err
 	}
 	if own != nil {
 		observation = *own
 	}
-	plan, err := planOf(observation.Snapshot.Ports[name], observation.Ports[name], filepath.Join(tree.Root(), filepath.FromSlash(directory)))
+	plan, err := planOfObserved(ctx, observation, name, contents, filepath.Join(tree.Root(), filepath.FromSlash(directory)))
 	return info, plan, err
 }
 
@@ -104,27 +109,23 @@ func (p *Reader) ArchivePlan(ctx context.Context, source model.Source, directory
 // Portfile declares set aside (ownArchives), so that its fetch
 // plan names its own archives, which a comparison reads the declarations
 // in. Nil for a port that declares none.
-func (p *Reader) withoutVendored(ctx context.Context, files *workspace.Workspace, target model.Target, info macports.PortInfo) (_ *macports.Observation, err error) {
-	contents, err := os.ReadFile(filepath.Join(files.Root(), filepath.FromSlash(target.Portfile)))
-	if err != nil {
-		return nil, err
-	}
+func (p *Reader) withoutVendored(ctx context.Context, files *workspace.Workspace, target model.Target, info macports.PortInfo, contents []byte) (_ *macports.Observation, _ []byte, err error) {
 	stripped, vendored, err := ownArchives(contents, info)
 	if err != nil || !vendored {
-		return nil, err
+		return nil, contents, err
 	}
 	overlay, err := files.Overlay(ctx, []git.FileEdit{{Path: target.Portfile, After: stripped}})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer func() { err = errors.Join(err, overlay.Close()) }()
 	bound, err := overlay.Context(target, model.Platform{})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	observation, err := p.ports.Observe(ctx, bound, macports.ObservationRequest{SelectedOnly: true})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// The overlay is gone once this returns, and with it the files/ its
 	// evaluation's filespath names, which the fetch policy reads the
@@ -137,25 +138,43 @@ func (p *Reader) withoutVendored(ctx context.Context, files *workspace.Workspace
 		observation.Snapshot.Ports = maps.Clone(observation.Snapshot.Ports)
 		observation.Snapshot.Ports[target.Name] = own
 	}
-	return &observation, nil
+	return &observation, stripped, nil
 }
 
 // planOf is the archives a port's fetch plan names, which dockhand fetches
 // as MacPorts would: ErrNoArchives where it names none, MacPorts' reason
 // where it couldn't make one, and the refusal of a fetch the policy leaves
 // to a dedicated preparer.
-func planOf(info macports.PortInfo, observed macports.PortObservation, portdir string) ([]macports.Distfile, error) {
-	plan, err := observed.FetchPlan()
-	switch {
-	case err != nil && len(observed.Problems) == 0:
+func planOf(info macports.PortInfo, port macports.PortObservation, portdir string) ([]macports.Distfile, error) {
+	name := info.Name
+	observed := macports.Observation{
+		Snapshot: macports.Snapshot{Ports: map[string]macports.PortInfo{name: info}},
+		Ports:    map[string]macports.PortObservation{name: port},
+	}
+	// This legacy helper keeps the package test's original call shape; it has
+	// no caller context to pass. ArchivePlan uses planOfObserved with its ctx.
+	return planOfObserved(context.Background(), observed, name, nil, portdir)
+}
+
+// planOfObserved asks for a plan, as main did, without judging native host
+// access: ArchivePlan returns this Mac's own evaluation and plan.
+func planOfObserved(ctx context.Context, observed macports.Observation, name string, contents []byte, portdir string) ([]macports.Distfile, error) {
+	decision := observe.DecideFetch(ctx, observed, name, contents, portdir, observe.FetchPlanNeed, nil)
+	switch decision.Kind {
+	case observe.FetchLeft:
+		return nil, errors.New(decision.Reason)
+	case observe.FetchRefused:
+		return nil, decision.Err
+	case observe.FetchInconclusive:
+		if decision.Err != nil {
+			return nil, decision.Err
+		}
+		return nil, errors.New(decision.Reason)
+	}
+	if len(decision.Plan) == 0 {
 		return nil, ErrNoArchives
-	case err != nil:
-		return nil, err
 	}
-	if err := distfetch.CheckPolicy(info, portdir); err != nil {
-		return nil, err
-	}
-	return plan, nil
+	return decision.Plan, nil
 }
 
 // FetchPlanned fetches each archive of a fetch plan as the port's
