@@ -153,7 +153,8 @@ act() {
 		# guide's goplus became xgo on master, and the plan refused).
 		"dockhand rename "*" --plan") ;;
 		"dockhand rename "* | *jqlang*) why="renames the port the later examples edit; G6 runs a rename whole" ;;
-		"dockhand bump"*) why="goes on to a pull request, and has no --plan" ;;
+		"dockhand bump "*" --plan") ;;
+		"dockhand bump"*) why="goes on to a pull request; its --plan runs" ;;
 		"dockhand serve"*) why="runs or installs serve, which the stage doesn't" ;;
 		"dockhand setup tart"*) why="makes a Tart image" ;;
 		"dockhand setup github"*) why="starts GitHub's device login, which opens a browser and waits for its code; the stage signs in on its own" ;;
