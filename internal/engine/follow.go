@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -142,6 +143,7 @@ func (e *Engine) RefreshPullRequests(ctx context.Context) (RefreshResult, error)
 		}
 		observed = append(observed, o)
 	}
+	others := e.othersPullRequests(ctx, observed)
 	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		result.Branches = nil
 		for _, o := range observed {
@@ -149,6 +151,11 @@ func (e *Engine) RefreshPullRequests(ctx context.Context) (RefreshResult, error)
 			if o.err == nil {
 				if err := recordPullRequest(tx, o.branch, o.next, &refreshed); err != nil {
 					return err
+				}
+				if others[o.branch.ID] {
+					if err := markFound(tx, o.branch.ID, o.branch.PullRequest.Number); err != nil {
+						return err
+					}
 				}
 				for _, failure := range o.ci {
 					if err := tx.AddCIFailure(failure); err != nil {
@@ -165,6 +172,47 @@ func (e *Engine) RefreshPullRequests(ctx context.Context) (RefreshResult, error)
 	}
 	// What was read settles the publications it can (#191, group A).
 	return result, e.settleRefreshed(ctx, observed)
+}
+
+// othersPullRequests are the branches whose old record, with no
+// provenance, is of a pull request GitHub names another author of than the
+// account dockhand acts as: each becomes found at this read. The author is
+// only ever used to withdraw Made, never to state it (docs/designs/
+// publication-record.md, "Existing databases and branches"). The login is
+// asked for only where such a record was read.
+func (e *Engine) othersPullRequests(ctx context.Context, observed []observedPullRequest) map[model.BranchID]bool {
+	others := map[model.BranchID]bool{}
+	account := ""
+	for _, o := range observed {
+		pr := o.branch.PullRequest
+		if o.err != nil || pr == nil || pr.Adopted || pr.Provenance != "" || o.next.Author == "" {
+			continue
+		}
+		if account == "" {
+			login, err := e.forge().Login(ctx)
+			if err != nil || login.Account == "" {
+				return others
+			}
+			account = login.Account
+		}
+		if !strings.EqualFold(o.next.Author, account) {
+			others[o.branch.ID] = true
+		}
+	}
+	return others
+}
+
+// markFound records a branch's pull request as found, where it is still
+// the one numbered so and has no provenance.
+func markFound(tx store.Tx, id model.BranchID, number int) error {
+	branch, err := tx.Branch(id)
+	if err != nil || branch.PullRequest == nil || branch.PullRequest.Number != number || branch.PullRequest.Provenance != "" {
+		return err
+	}
+	pr := *branch.PullRequest
+	pr.Provenance = model.Found
+	branch.PullRequest = &pr
+	return tx.UpdateBranch(branch)
 }
 
 // anonymousReserve is the requests a signed-out refresh leaves of the

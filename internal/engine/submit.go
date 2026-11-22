@@ -449,13 +449,27 @@ func (p SubmitPlan) pushBasis() remotewrite.Basis {
 	return remotewrite.OwnFork
 }
 
-// editBasis is what lets a submission edit its open pull request: an
-// invitation to someone's, else that dockhand made it.
+// editBasis is what lets a submission edit its open pull request, or
+// return it to draft: an invitation to someone's; that dockhand made it,
+// where the record says it opened that pull request, or an old record
+// that isn't adopted says nothing; otherwise the person naming it by
+// submitting to it. A found pull request is never stated as made
+// (docs/designs/publication-record.md, "The gate").
 func (p SubmitPlan) editBasis() remotewrite.Basis {
 	if p.Theirs {
 		return remotewrite.Invited
 	}
-	return remotewrite.Made
+	if pr := p.Branch.PullRequest; p.Existing != nil && pr != nil && pr.Number == p.Existing.PullRequest.Ref.Number && openedByDockhand(pr) {
+		return remotewrite.Made
+	}
+	return remotewrite.Named
+}
+
+// openedByDockhand reports a pull request's record as one dockhand may
+// state it made: GitHub answered its own create with it, or an old record
+// with no provenance that isn't adopted, which keeps the right it had.
+func openedByDockhand(pr *model.PullRequest) bool {
+	return !pr.Adopted && pr.Provenance != model.Found
 }
 
 type forgeIdentity struct{ forge Forge }
@@ -482,6 +496,11 @@ func (e *Engine) RemoteWriteIdentity() remotewrite.IdentityReader {
 // check submit uses before pushing someone's branch (#249).
 func (e *Engine) pullRequestBasis(ctx context.Context, pr *model.PullRequest, login string) (remotewrite.Basis, error) {
 	if pr == nil || !pr.Adopted {
+		// A found pull request is the person naming the action, never
+		// one dockhand made.
+		if pr != nil && !openedByDockhand(pr) {
+			return remotewrite.Named, nil
+		}
 		return remotewrite.Made, nil
 	}
 	ref := pullRequestRef(pr.Repository, pr.Number)
@@ -991,6 +1010,15 @@ func (e *Engine) findDestination(ctx context.Context, worktree *git.Repository, 
 		return fmt.Errorf("#%d is %s; start a new branch for further work (dockhand start)", pr.Ref.Number, pr.State)
 	}
 	plan.Existing = &observed
+	// An old record with no provenance, of a pull request GitHub names
+	// another author of, is found from this read on: the author only ever
+	// withdraws Made (docs/designs/publication-record.md, "Existing
+	// databases and branches").
+	if last := plan.Branch.PullRequest; last != nil && last.Number == pr.Ref.Number && last.Provenance == "" && !last.Adopted && pr.Author != "" && !strings.EqualFold(pr.Author, login) {
+		found := *last
+		found.Provenance = model.Found
+		plan.Branch.PullRequest = &found
+	}
 	if theirRepository(plan.Branch, login) != "" {
 		if err := e.mayPushTheirs(ctx, plan, login, pr); err != nil {
 			return err
@@ -1699,8 +1727,9 @@ func (e *Engine) recordSubmission(tx store.Tx, plan SubmitPlan, result *Submitte
 	pushed := result.Pushed || branch.PullRequest == nil || branch.PullRequest.Pushed != next.Pushed || slices.Contains(plan.settledDone, model.StepPush)
 	if old := branch.PullRequest; old != nil && old.Number == next.Number && old.Repository == next.Repository {
 		next.Observed, next.Adopted, next.Author, next.AuthorHead, next.Rerequested, next.PushedAt = old.Observed, old.Adopted, old.Author, old.AuthorHead, old.Rerequested, old.PushedAt
-		// An old record's empty provenance keeps the rights it has.
-		if provenance == model.Found && old.Provenance != model.Found {
+		// An old record's empty provenance keeps the rights it has, but
+		// where the plan read another author for it.
+		if provenance == model.Found && old.Provenance != model.Found && provenanceOf(plan.Branch.PullRequest, next.Number) != model.Found {
 			next.Provenance = old.Provenance
 		}
 	}

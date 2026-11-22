@@ -363,7 +363,7 @@ func (e *Engine) rerequest(ctx context.Context, branch model.BranchID, record *m
 // as today; otherwise Named, since the person answered yes to this exact
 // request (docs/designs/publication-record.md, "The gate").
 func reviewBasis(pr *model.PullRequest, record *model.Publication) remotewrite.Basis {
-	if !pr.Adopted && pr.Provenance != model.Found {
+	if openedByDockhand(pr) {
 		return remotewrite.Made
 	}
 	if record.Review != nil && record.Review.Answer == model.ReviewYes {
