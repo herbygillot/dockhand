@@ -79,7 +79,9 @@ func without(record model.Publication, steps ...model.PublicationStep) model.Pub
 }
 
 // publicationIs witnesses a write of a branch's publication: the branch's
-// is the one given, by ID and what it owes, or none where want is nil.
+// is the one given, the whole record with its reviewers' marks
+// (model.Publication.Same), or none where want is nil. It compared the ID
+// and the steps owed, so a mark that didn't commit passed (#191, group A).
 func publicationIs(branch model.BranchID, want *model.Publication) func(store.Reader) bool {
 	return func(r store.Reader) bool {
 		got, err := r.Branch(branch)
@@ -89,7 +91,7 @@ func publicationIs(branch model.BranchID, want *model.Publication) func(store.Re
 		if want == nil || got.Publication == nil {
 			return want == nil && got.Publication == nil
 		}
-		return got.Publication.ID == want.ID && slices.Equal(got.Publication.Owes, want.Owes)
+		return got.Publication.Same(*want)
 	}
 }
 

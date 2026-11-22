@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"reflect"
+	"time"
+)
 
 // Publication is a submission of one commit that dockhand has begun and
 // has not yet seen finished (docs/designs/publication-record.md, #191).
@@ -42,6 +45,40 @@ type Publication struct {
 	Review *ReviewAsk `json:",omitempty"`
 	// Owes are the steps still owed, in order.
 	Owes []PublicationStep
+}
+
+// Same reports whether two publications are the same record: every field,
+// the reviewers' marks among them, with times compared as instants and an
+// empty list the same as none, as a record read back from the store has
+// them. A write's witness reads it, so a mark that didn't commit is never
+// taken for one that did (#191).
+func (p Publication) Same(q Publication) bool {
+	return reflect.DeepEqual(p.normal(), q.normal())
+}
+
+// normal is the publication as Same compares it.
+func (p Publication) normal() Publication {
+	p.At = p.At.UTC().Round(0)
+	if len(p.Owes) == 0 {
+		p.Owes = nil
+	}
+	if len(p.Asked.Types) == 0 {
+		p.Asked.Types = nil
+	}
+	if p.Review != nil {
+		review := *p.Review
+		reviewers := make([]Reviewer, 0, len(review.Reviewers))
+		for _, reviewer := range review.Reviewers {
+			reviewer.Reviewed = reviewer.Reviewed.UTC().Round(0)
+			reviewers = append(reviewers, reviewer)
+		}
+		if len(reviewers) == 0 {
+			reviewers = nil
+		}
+		review.Reviewers = reviewers
+		p.Review = &review
+	}
+	return p
 }
 
 // PublicationStep is one of a publication's steps.
