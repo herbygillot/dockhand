@@ -60,18 +60,19 @@ With multiple active runs on a branch, `--replace` replaces **only the conflicti
 - **Same files, overlapping nothing:** Nothing conflicts. `--replace` stops nothing, prints one line naming the untouched sibling(s) (`check-42 builds other environments and keeps running.`), and queues the new run beside them—consistent with [#195](https://github.com/herbygillot/dockhand/issues/195)'s rule that a flag with nothing to do is said and the command goes on.
 - Stopping a specific non-conflicting run remains `dockhand cancel check-N`.
 
-### 4. Kept clones survive for the same files (independent of concurrency)
-This answers the second report directly and can land ahead of the rest:
+### 4. Kept clones: an asked clone is the person's, a failure clone is a cache (amended 2026-11-22)
+The rule on keeping clones is [#291](https://github.com/herbygillot/dockhand/issues/291)'s, decided by the person on 2026-11-22 and built in v0.9.0 ahead of this page. It replaces this section's first form, where every kept clone lasted while the branch's files matched its tree. What this design adds to it is only how side-by-side checks treat the two kinds.
 
-- A clone kept for `dockhand shell` lasts for as long as the branch's files (`Source.Tree`) match the tree it was built from.
-- `Admission.ForgetKept` takes the new check's tree and replaced run IDs—`(ctx, branch, tree, replaced)`—rather than removing every kept clone of the branch (the interface, its one implementation and its two callers change). A kept clone's tree is its run's: a leftover already names the run it was made for, and the run its revision.
-  - A kept clone built from a **different tree** is removed when a new check is queued, as today.
-  - A kept clone belonging to a **replaced run** (`--replace`) is removed when that run is replaced.
-  - A kept clone built from the **same tree** by another check—whether a sibling check on another environment or an earlier variant check on the same release—**stays** until the branch's files change, `clean` removes it, or automatic cleanup ages it out.
-- `Retry` passes the retried run's tree and `[previous.ID]`, so retrying a failed check removes only that failed run's own kept clone (plus any older-tree clones) and leaves other checks' kept clones on the same tree intact.
+- **A clone kept by `--keep`** is not removed by any later check of the branch: not a sibling on another environment, not a check of changed files, not a retry. It goes when the person removes it, when its branch is removed, or when another `--keep` check of the same branch and release replaces it. A run stopped by `--replace` keeps its asked clone too; the replacing check says so.
+- **A clone kept for a failure** follows the branch's files (`Source.Tree`):
+  - built from a **different tree**, it is removed when a new check is queued, as today;
+  - belonging to a **replaced run** (`--replace`), it is removed when that run is replaced;
+  - built from the **same tree** by another check, a sibling on another environment or an earlier variant check on the same release, it **stays**, within #291's cap of four and seven days.
+- `Admission.ForgetKept` takes the new check's tree and replaced run IDs, `(ctx, branch, tree, replaced)`, and considers failure clones only (the interface, its one implementation and its two callers change). A kept clone's tree is its run's: a leftover already names the run it was made for, and the run its revision.
+- `Retry` passes the retried run's tree and `[previous.ID]`, so retrying a failed check removes only that failed run's own failure clone (plus any older-tree failure clones).
 - **Visibility when several clones are kept:**
-  - Because kept clones live longer across checks of the same files, a branch can hold several clones at once (35–65 GB each). This builds after the rule on how long a failed check's clone is kept, and how the check says so, is settled (field testing's report of 2026-11-19, not yet placed).
-  - `status <branch>` detail lists every kept clone of the branch individually (its check name, release, whether it was asked for with `--keep` or kept on failure, and when automatic cleanup will remove it), with the `dockhand shell` and `dockhand clean` commands.
+  - A branch can hold several clones at once (35–65 GB each).
+  - `status <branch>` detail lists every kept clone of the branch individually (its check name, release, whether it was asked for with `--keep` or kept on failure, its size and age, and for a failure clone when it goes), with the `dockhand shell` and removal commands.
   - `clean` and `clean --plan` list each kept clone of the branch on its own line (check name, release, reason) rather than collapsing to one, and remove all of them when the branch is cleaned. `dockhand shell` already requires a check name ([#193](check-lifecycle.md)) and `--on` when one check kept several releases.
 
 ### 5. Sibling cohort and D17's governing ask (amending D17)
@@ -127,7 +128,7 @@ No new capacity mechanism is needed; existing guards compose cleanly:
 
 - **Admission & atomicity:** Same tree + disjoint environments (GitHub + Tart; Tart 15 + Tart 26) admits and runs concurrently; same tree + overlapping environment (including different `--variants` / `--tests` / `--only` / `--fresh`) refuses with `#259`-based `ActiveRunError` naming the overlapping run and environment; same tree + covered (`PlanCovers`) still follows under `BesideFollow` and refuses under `check -d`; different tree conflicts with all active runs; stopped run on disjoint environment does not block, stopped run on overlapping environment returns `ActiveRunError{Stopped: true}`.
 - **`--replace`:** Stops only overlapping run(s) on the same tree and leaves disjoint siblings running; stops nothing and says so when nothing conflicts; stops all active runs on a newer tree.
-- **Kept clones:** A second check (sibling environment or sequential variant check) on the same tree preserves earlier kept clones; `--replace` removes the replaced run's kept clone; a check on a newer tree removes older-tree kept clones; `Retry` removes only the retried run's own kept clone; `status` and `clean` list several kept clones on one branch individually.
+- **Kept clones:** No check, sibling, retry or `--replace` removes a clone kept by `--keep`. For failure clones: a second check on the same tree preserves earlier ones; `--replace` removes the replaced run's; a check on a newer tree removes older-tree ones; `Retry` removes only the retried run's own. `status` and `clean` list several kept clones on one branch individually.
 - **Union ask (D17):** GitHub-then-Tart and Tart-then-GitHub produce the exact same required environments; an older or newer sibling ending in `attention` keeps its environments required; a sibling the person canceled leaves the ask, and a failure it recorded first still blocks; `--replace` starts a fresh cohort without the replaced run's environments.
 - **Capacity & `serve`:** GitHub + Tart run concurrently; two Tart checks both reserve slots (`TartCapacity = 2`) and a third waits in `Reserve` naming both; a check blocked on the 2-VM limit waits in `tart.Provider.slot` naming the holding check's VMs; `serve` drives two queued runs on the same branch concurrently.
 - **Status, submit & ambiguity:** `JudgeStopped` preserves 2 stopped or 2 canceling runs and `Attend` emits a row for each; `status` overview, branch detail, `status --json`, and `console` show both active checks; `submit` blocks with `BlockCheckPending` when sibling A passed and sibling B is still running; bare `cancel`, `wait`, `logs`, and `artifacts` refuse as ambiguous with 2+ active checks (while `logs --on <release>` disambiguates when unique).
@@ -143,5 +144,5 @@ Updated in the same commit:
 
 ## Order
 
-- **Kept-clone survival (§4)** can land independently, once the rule on keeping a failed check's clone is decided.
+- **Kept-clone survival (§4)** follows [#291](https://github.com/herbygillot/dockhand/issues/291), which lands in v0.9.0; what remains here is `ForgetKept`'s tree and replaced-run arguments.
 - **Side-by-side checks** build after [#193](https://github.com/herbygillot/dockhand/issues/193) (v0.9.0, check lifecycle) and [#259](https://github.com/herbygillot/dockhand/issues/259) (v0.9.0, active-check refusal wording). Composes cleanly with [#50](canary-checks.md) (canary checks) in v0.10.0.
