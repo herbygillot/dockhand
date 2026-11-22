@@ -793,6 +793,8 @@ func (s *Service) portGroupChecksums(ctx context.Context, input *sourceInput) er
 	if err != nil {
 		return nil
 	}
+	portfileChecksums := false
+	var groupRefusal error
 	for _, observed := range observations {
 		port := observed.Ports[input.target.Name]
 		for _, declaration := range port.Declarations {
@@ -800,12 +802,42 @@ func (s *Service) portGroupChecksums(ctx context.Context, input *sourceInput) er
 				continue
 			}
 			_, err := portfile.LocateDeclaration(input.data, input.portfileIn(observed.Snapshot.Root), declaration)
-			if group := new(portfile.InPortGroup); errors.As(err, &group) && !portfile.WritesChecksums(input.data, declaration.Values) {
-				return &distfiles.Unlocated{Reason: group}
+			if err == nil {
+				portfileChecksums = true
+			}
+			if group := new(portfile.InPortGroup); errors.As(err, &group) &&
+				!portfile.WritesChecksums(input.data, declaration.Values) && checksumDeclarationMovesVersion(declaration.Values, input.info.Version) {
+				groupRefusal = &distfiles.Unlocated{Reason: group}
 			}
 		}
 	}
+	if groupRefusal != nil {
+		if portfileChecksums {
+			return ErrUnsupported.Because("%w; the Portfile's source archive checksums can still be prepared by --hand-edit", groupRefusal)
+		}
+		return groupRefusal
+	}
 	return nil
+}
+
+// checksumDeclarationMovesVersion reports whether a PortGroup's checksum
+// declaration names a distfile containing the port's current version. Such a
+// declaration covers an archive the update moves; fixed bootstrap archives
+// remain at their declared version and can be left alone.
+func checksumDeclarationMovesVersion(values []string, version string) bool {
+	if version == "" {
+		return true
+	}
+	fields := strings.Fields(strings.Join(values, " "))
+	for i, field := range fields {
+		switch field {
+		case "sha256", "rmd160", "sha1", "md5":
+			if i > 0 && strings.Contains(fields[i-1], version) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // versionOnly is a refused regeneration's version step, the Portfile with

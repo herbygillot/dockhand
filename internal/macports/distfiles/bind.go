@@ -72,6 +72,10 @@ func (u *Undeclared) Unwrap() error { return u.Err }
 type Group struct {
 	Name   string
 	Values map[string]Token
+	// Unlocated is why the declaration could not be resolved to a
+	// Portfile command. It matters only if the fetch plan uses this group;
+	// an unused PortGroup checksum can be preserved during a version edit.
+	Unlocated error
 	// Kinds lists the algorithms in written order; Pairs locates each one
 	// with its value, in the same order.
 	Kinds []string
@@ -202,17 +206,22 @@ func BindResolving(src []byte, path string, info macports.PortInfo, observed mac
 		for i < len(result.Tokens) && portfile.IsChecksumKind(result.Tokens[i].Value) {
 			kind := result.Tokens[i]
 			if kind.Unlocated != nil {
-				return result, &Unlocated{Name: group.Name, Reason: kind.Unlocated}
+				group.Unlocated = kind.Unlocated
 			}
-			if !kind.Literal || i+1 >= len(result.Tokens) {
+			if i+1 >= len(result.Tokens) {
+				return result, portfile.ErrUnsupported.Because("checksum group without a value")
+			}
+			if !kind.Literal && group.Unlocated == nil {
 				return result, portfile.ErrUnsupported.Because("calculated checksum algorithm")
 			}
 			value := result.Tokens[i+1]
 			if value.Unlocated != nil {
-				return result, &Unlocated{Name: group.Name, Reason: value.Unlocated}
+				group.Unlocated = value.Unlocated
 			}
 			if !value.Literal {
-				return result, portfile.ErrUnsupported.Because("checksum value has no unique literal owner")
+				if group.Unlocated == nil {
+					return result, portfile.ErrUnsupported.Because("checksum value has no unique literal owner")
+				}
 			}
 			if _, ok := group.Values[kind.Value]; ok {
 				return result, portfile.ErrUnsupported.Because("duplicate checksum algorithm")
@@ -255,6 +264,9 @@ func BindResolving(src []byte, path string, info macports.PortInfo, observed mac
 				undeclared.Names = append(undeclared.Names, fetched.Name)
 			}
 			return result, undeclared
+		}
+		if group.Unlocated != nil {
+			return result, &Unlocated{Name: file.Name, Reason: group.Unlocated}
 		}
 		var addresses []string
 		for _, address := range file.URLs {
