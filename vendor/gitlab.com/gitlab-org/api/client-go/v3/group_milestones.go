@@ -54,11 +54,16 @@ var _ GroupMilestonesServiceInterface = (*GroupMilestonesService)(nil)
 
 // GroupMilestone represents a GitLab milestone.
 //
+// ListGroupMilestones with IncludeDescendents set also returns the milestones
+// of the projects in the group and its subgroups. Those carry ProjectID and
+// no GroupID.
+//
 // GitLab API docs: https://docs.gitlab.com/api/group_milestones/
 type GroupMilestone struct {
 	ID          int64      `json:"id"`
 	IID         int64      `json:"iid"`
 	GroupID     int64      `json:"group_id"`
+	ProjectID   int64      `json:"project_id"`
 	Title       string     `json:"title"`
 	Description string     `json:"description"`
 	StartDate   *ISOTime   `json:"start_date"`
@@ -87,7 +92,7 @@ type ListGroupMilestonesOptions struct {
 	Search             *string  `url:"search,omitempty" json:"search,omitempty"`
 	SearchTitle        *string  `url:"search_title,omitempty" json:"search_title,omitempty"`
 	IncludeAncestors   *bool    `url:"include_ancestors,omitempty" json:"include_ancestors,omitempty"`
-	IncludeDescendents *bool    `url:"include_descendents,omitempty" json:"include_descendents,omitempty"`
+	IncludeDescendents *bool    `url:"include_descendants,omitempty" json:"include_descendants,omitempty"`
 	UpdatedBefore      *ISOTime `url:"updated_before,omitempty" json:"updated_before,omitempty"`
 	UpdatedAfter       *ISOTime `url:"updated_after,omitempty" json:"updated_after,omitempty"`
 	ContainingDate     *ISOTime `url:"containing_date,omitempty" json:"containing_date,omitempty"`

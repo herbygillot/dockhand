@@ -282,3 +282,33 @@ func TestACarriedResultTakesLintsLinesFromTheHost(t *testing.T) {
 	require.Equal(t, []string{"an earlier line"}, choice.Reused["omnidiff"].Result.Lint)
 	require.False(t, choice.Reused["omnidiff"].Result.Carried.Linted)
 }
+
+// A reused target whose Portfile changed is linted again, regardless of
+// which reuse judgment carried it (#258).
+func TestCarriedOwnPortfileChangesRelintRegardlessOfReusePath(t *testing.T) {
+	t.Parallel()
+	c := service(t)
+	origin := c.queued(t, "omnidiff", model.Environment{Provider: "local", Prefix: "/opt/local"})
+	reader := &linting{said: macports.Lint{Warnings: []string{"current warning"}}}
+	c.Ports = func() (PortReader, DependencyGraphReader, error) { return reader, nil, nil }
+	d := &driver{c: c}
+	target := reuse.Target{PlanTarget: model.PlanTarget{ID: "omnidiff", Target: model.Target{Name: "omnidiff"}, Directory: "textproc/omnidiff"}}
+	paths := []model.InertPort{
+		{Port: "omnidiff"}, // comment or blank line only
+		{Port: "omnidiff", Declared: []string{"libiconv"}},
+		{Port: "omnidiff"}, // subport block
+	}
+	for _, path := range paths {
+		earlier := model.TargetResult{Target: "omnidiff", Outcome: model.OutcomePassed, Lint: []string{"stale warning"}}
+		choice := reuse.Choice{Reused: map[model.TargetID]reuse.Candidate{"omnidiff": {Result: earlier, Origin: model.GuestExecution{Run: origin.ID}}}, Carried: map[model.TargetID][]model.InertPort{"omnidiff": {path}}}
+		require.Empty(t, d.carry(t.Context(), model.Revision{}, []reuse.Target{target}, &choice, map[model.TargetID]lintAnswer{}))
+		require.Equal(t, []string{"current warning"}, choice.Reused["omnidiff"].Result.Lint)
+		require.True(t, choice.Reused["omnidiff"].Result.Carried.Linted)
+	}
+	reader.err = errors.New("lint unavailable")
+	earlier := model.TargetResult{Target: "omnidiff", Outcome: model.OutcomePassed, Lint: []string{"stale warning"}}
+	choice := reuse.Choice{Reused: map[model.TargetID]reuse.Candidate{"omnidiff": {Result: earlier, Origin: model.GuestExecution{Run: origin.ID}}}, Carried: map[model.TargetID][]model.InertPort{"omnidiff": {paths[0]}}}
+	require.Empty(t, d.carry(t.Context(), model.Revision{}, []reuse.Target{target}, &choice, map[model.TargetID]lintAnswer{}))
+	require.Equal(t, []string{"stale warning"}, choice.Reused["omnidiff"].Result.Lint)
+	require.Equal(t, "lint couldn't run on this Mac: lint unavailable", choice.Reused["omnidiff"].Result.Carried.LintKept)
+}

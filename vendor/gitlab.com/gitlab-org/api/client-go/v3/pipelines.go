@@ -372,7 +372,7 @@ func (s *PipelinesService) ListProjectPipelines(pid any, opt *ListProjectPipelin
 // GetPipeline gets a single project pipeline.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pipelines/#get-a-single-pipeline
+// https://docs.gitlab.com/api/pipelines/#retrieve-a-single-pipeline
 func (s *PipelinesService) GetPipeline(pid any, pipeline int64, options ...RequestOptionFunc) (*Pipeline, *Response, error) {
 	return do[*Pipeline](s.client,
 		withPath(routeProjectsIDPipelinesID, ProjectID{pid}, pipeline),
@@ -383,7 +383,7 @@ func (s *PipelinesService) GetPipeline(pid any, pipeline int64, options ...Reque
 // GetPipelineVariables gets the variables of a single project pipeline.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pipelines/#get-variables-of-a-pipeline
+// https://docs.gitlab.com/api/pipelines/#retrieve-pipeline-variables
 func (s *PipelinesService) GetPipelineVariables(pid any, pipeline int64, options ...RequestOptionFunc) ([]*PipelineVariable, *Response, error) {
 	return do[[]*PipelineVariable](s.client,
 		withPath(routeProjectsIDPipelinesIDVariables, ProjectID{pid}, pipeline),
@@ -394,7 +394,7 @@ func (s *PipelinesService) GetPipelineVariables(pid any, pipeline int64, options
 // GetPipelineTestReport gets the test report of a single project pipeline.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pipelines/#get-a-pipelines-test-report
+// https://docs.gitlab.com/api/pipelines/#retrieve-a-test-report-for-a-pipeline
 func (s *PipelinesService) GetPipelineTestReport(pid any, pipeline int64, options ...RequestOptionFunc) (*PipelineTestReport, *Response, error) {
 	return do[*PipelineTestReport](s.client,
 		withPath(routeProjectsIDPipelinesIDTestReport, ProjectID{pid}, pipeline),
@@ -405,7 +405,7 @@ func (s *PipelinesService) GetPipelineTestReport(pid any, pipeline int64, option
 // GetPipelineTestReportSummary gets the test report summary of a single project pipeline.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pipelines/#get-a-test-report-summary-for-a-pipeline
+// https://docs.gitlab.com/api/pipelines/#retrieve-a-test-report-summary-for-a-pipeline
 func (s *PipelinesService) GetPipelineTestReportSummary(pid any, pipeline int64, options ...RequestOptionFunc) (*PipelineTestReportSummary, *Response, error) {
 	return do[*PipelineTestReportSummary](s.client,
 		withPath(routeProjectsIDPipelinesIDTestReportSummary, ProjectID{pid}, pipeline),
@@ -416,7 +416,7 @@ func (s *PipelinesService) GetPipelineTestReportSummary(pid any, pipeline int64,
 // GetLatestPipelineOptions represents the available GetLatestPipeline() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pipelines/#get-the-latest-pipeline
+// https://docs.gitlab.com/api/pipelines/#retrieve-the-latest-pipeline
 type GetLatestPipelineOptions struct {
 	Ref *string `url:"ref,omitempty" json:"ref,omitempty"`
 }
@@ -424,7 +424,7 @@ type GetLatestPipelineOptions struct {
 // GetLatestPipeline gets the latest pipeline for a specific ref in a project.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pipelines/#get-the-latest-pipeline
+// https://docs.gitlab.com/api/pipelines/#retrieve-the-latest-pipeline
 func (s *PipelinesService) GetLatestPipeline(pid any, opt *GetLatestPipelineOptions, options ...RequestOptionFunc) (*Pipeline, *Response, error) {
 	return do[*Pipeline](s.client,
 		withPath(routeProjectsIDPipelinesLatest, ProjectID{pid}),
@@ -560,7 +560,7 @@ func (s *PipelinesService) RetryPipelineBuild(pid any, pipeline int64, options .
 // CancelPipelineBuild cancels a pipeline builds.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pipelines/#cancel-a-pipelines-jobs
+// https://docs.gitlab.com/api/pipelines/#cancel-all-jobs-for-a-pipeline
 func (s *PipelinesService) CancelPipelineBuild(pid any, pipeline int64, options ...RequestOptionFunc) (*Pipeline, *Response, error) {
 	return do[*Pipeline](s.client,
 		withMethod(http.MethodPost),

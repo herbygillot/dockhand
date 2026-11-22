@@ -159,7 +159,7 @@ func (n Note) String() string {
 // ListIssueNotesOptions represents the available ListIssueNotes() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notes/#list-project-issue-notes
+// https://docs.gitlab.com/api/notes/#list-all-issue-notes
 type ListIssueNotesOptions struct {
 	ListOptions
 	OrderBy *string `url:"order_by,omitempty" json:"order_by,omitempty"`
@@ -169,7 +169,7 @@ type ListIssueNotesOptions struct {
 // ListIssueNotes gets a list of all notes for a single issue.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notes/#list-project-issue-notes
+// https://docs.gitlab.com/api/notes/#list-all-issue-notes
 func (s *NotesService) ListIssueNotes(pid any, issue int64, opt *ListIssueNotesOptions, options ...RequestOptionFunc) ([]*Note, *Response, error) {
 	return do[[]*Note](s.client,
 		withPath(routeProjectsIDIssuesIDNotes, ProjectID{pid}, issue),
@@ -181,7 +181,7 @@ func (s *NotesService) ListIssueNotes(pid any, issue int64, opt *ListIssueNotesO
 // GetIssueNote returns a single note for a specific project issue.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notes/#get-single-issue-note
+// https://docs.gitlab.com/api/notes/#retrieve-an-issue-note
 func (s *NotesService) GetIssueNote(pid any, issue, note int64, options ...RequestOptionFunc) (*Note, *Response, error) {
 	return do[*Note](s.client,
 		withPath(routeProjectsIDIssuesIDNotesID, ProjectID{pid}, issue, note),
@@ -193,7 +193,7 @@ func (s *NotesService) GetIssueNote(pid any, issue, note int64, options ...Reque
 // options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notes/#create-new-issue-note
+// https://docs.gitlab.com/api/notes/#create-an-issue-note
 type CreateIssueNoteOptions struct {
 	Body      *string    `url:"body,omitempty" json:"body,omitempty"`
 	CreatedAt *time.Time `url:"created_at,omitempty" json:"created_at,omitempty"`
@@ -203,7 +203,7 @@ type CreateIssueNoteOptions struct {
 // CreateIssueNote creates a new note to a single project issue.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notes/#create-new-issue-note
+// https://docs.gitlab.com/api/notes/#create-an-issue-note
 func (s *NotesService) CreateIssueNote(pid any, issue int64, opt *CreateIssueNoteOptions, options ...RequestOptionFunc) (*Note, *Response, error) {
 	return do[*Note](s.client,
 		withMethod(http.MethodPost),
@@ -217,7 +217,7 @@ func (s *NotesService) CreateIssueNote(pid any, issue int64, opt *CreateIssueNot
 // options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notes/#modify-existing-issue-note
+// https://docs.gitlab.com/api/notes/#update-an-issue-note
 type UpdateIssueNoteOptions struct {
 	Body *string `url:"body,omitempty" json:"body,omitempty"`
 }
@@ -225,7 +225,7 @@ type UpdateIssueNoteOptions struct {
 // UpdateIssueNote modifies existing note of an issue.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notes/#modify-existing-issue-note
+// https://docs.gitlab.com/api/notes/#update-an-issue-note
 func (s *NotesService) UpdateIssueNote(pid any, issue, note int64, opt *UpdateIssueNoteOptions, options ...RequestOptionFunc) (*Note, *Response, error) {
 	return do[*Note](s.client,
 		withMethod(http.MethodPut),
@@ -274,7 +274,7 @@ func (s *NotesService) ListSnippetNotes(pid any, snippet int64, opt *ListSnippet
 // GetSnippetNote returns a single note for a given snippet.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notes/#get-single-snippet-note
+// https://docs.gitlab.com/api/notes/#retrieve-a-snippet-note
 func (s *NotesService) GetSnippetNote(pid any, snippet, note int64, options ...RequestOptionFunc) (*Note, *Response, error) {
 	return do[*Note](s.client,
 		withPath(routeProjectsIDSnippetsIDNotesID, ProjectID{pid}, snippet, note),
@@ -286,7 +286,7 @@ func (s *NotesService) GetSnippetNote(pid any, snippet, note int64, options ...R
 // options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notes/#create-new-snippet-note
+// https://docs.gitlab.com/api/notes/#create-a-snippet-note
 type CreateSnippetNoteOptions struct {
 	Body      *string    `url:"body,omitempty" json:"body,omitempty"`
 	CreatedAt *time.Time `url:"created_at,omitempty" json:"created_at,omitempty"`
@@ -296,7 +296,7 @@ type CreateSnippetNoteOptions struct {
 // comments users can post to a snippet.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notes/#create-new-snippet-note
+// https://docs.gitlab.com/api/notes/#create-a-snippet-note
 func (s *NotesService) CreateSnippetNote(pid any, snippet int64, opt *CreateSnippetNoteOptions, options ...RequestOptionFunc) (*Note, *Response, error) {
 	return do[*Note](s.client,
 		withMethod(http.MethodPost),
@@ -310,7 +310,7 @@ func (s *NotesService) CreateSnippetNote(pid any, snippet int64, opt *CreateSnip
 // options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notes/#modify-existing-snippet-note
+// https://docs.gitlab.com/api/notes/#update-a-snippet-note
 type UpdateSnippetNoteOptions struct {
 	Body *string `url:"body,omitempty" json:"body,omitempty"`
 }
@@ -318,7 +318,7 @@ type UpdateSnippetNoteOptions struct {
 // UpdateSnippetNote modifies existing note of a snippet.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notes/#modify-existing-snippet-note
+// https://docs.gitlab.com/api/notes/#update-a-snippet-note
 func (s *NotesService) UpdateSnippetNote(pid any, snippet, note int64, opt *UpdateSnippetNoteOptions, options ...RequestOptionFunc) (*Note, *Response, error) {
 	return do[*Note](s.client,
 		withMethod(http.MethodPut),
@@ -367,7 +367,7 @@ func (s *NotesService) ListMergeRequestNotes(pid any, mergeRequest int64, opt *L
 // GetMergeRequestNote returns a single note for a given merge request.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notes/#get-single-merge-request-note
+// https://docs.gitlab.com/api/notes/#retrieve-a-merge-request-note
 func (s *NotesService) GetMergeRequestNote(pid any, mergeRequest, note int64, options ...RequestOptionFunc) (*Note, *Response, error) {
 	return do[*Note](s.client,
 		withPath(routeProjectsIDMergeRequestsIDNotesID, ProjectID{pid}, mergeRequest, note),
@@ -379,7 +379,7 @@ func (s *NotesService) GetMergeRequestNote(pid any, mergeRequest, note int64, op
 // CreateMergeRequestNote() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notes/#create-new-merge-request-note
+// https://docs.gitlab.com/api/notes/#create-a-merge-request-note
 type CreateMergeRequestNoteOptions struct {
 	Body                    *string    `url:"body,omitempty" json:"body,omitempty"`
 	CreatedAt               *time.Time `url:"created_at,omitempty" json:"created_at,omitempty"`
@@ -390,7 +390,7 @@ type CreateMergeRequestNoteOptions struct {
 // CreateMergeRequestNote creates a new note for a single merge request.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notes/#create-new-merge-request-note
+// https://docs.gitlab.com/api/notes/#create-a-merge-request-note
 func (s *NotesService) CreateMergeRequestNote(pid any, mergeRequest int64, opt *CreateMergeRequestNoteOptions, options ...RequestOptionFunc) (*Note, *Response, error) {
 	return do[*Note](s.client,
 		withMethod(http.MethodPost),
@@ -404,7 +404,7 @@ func (s *NotesService) CreateMergeRequestNote(pid any, mergeRequest int64, opt *
 // UpdateMergeRequestNote() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notes/#modify-existing-merge-request-note
+// https://docs.gitlab.com/api/notes/#update-a-merge-request-note
 type UpdateMergeRequestNoteOptions struct {
 	Body *string `url:"body,omitempty" json:"body,omitempty"`
 }
@@ -412,7 +412,7 @@ type UpdateMergeRequestNoteOptions struct {
 // UpdateMergeRequestNote modifies existing note of a merge request.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notes/#modify-existing-merge-request-note
+// https://docs.gitlab.com/api/notes/#update-a-merge-request-note
 func (s *NotesService) UpdateMergeRequestNote(pid any, mergeRequest, note int64, opt *UpdateMergeRequestNoteOptions, options ...RequestOptionFunc) (*Note, *Response, error) {
 	return do[*Note](s.client,
 		withMethod(http.MethodPut),
@@ -463,7 +463,7 @@ func (s *NotesService) ListEpicNotes(gid any, epic int64, opt *ListEpicNotesOpti
 // Will be removed in v5 of the API, use Work Items API instead
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notes/#get-single-epic-note
+// https://docs.gitlab.com/api/notes/#retrieve-an-epic-note
 func (s *NotesService) GetEpicNote(gid any, epic, note int64, options ...RequestOptionFunc) (*Note, *Response, error) {
 	return do[*Note](s.client,
 		withPath(routeGroupsIDEpicsIDNotesID, GroupID{gid}, epic, note),
@@ -475,7 +475,7 @@ func (s *NotesService) GetEpicNote(gid any, epic, note int64, options ...Request
 // Will be removed in v5 of the API, use Work Items API instead
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notes/#create-new-epic-note
+// https://docs.gitlab.com/api/notes/#create-an-epic-note
 type CreateEpicNoteOptions struct {
 	Body *string `url:"body,omitempty" json:"body,omitempty"`
 }
@@ -484,7 +484,7 @@ type CreateEpicNoteOptions struct {
 // Will be removed in v5 of the API, use Work Items API instead
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notes/#create-new-epic-note
+// https://docs.gitlab.com/api/notes/#create-an-epic-note
 func (s *NotesService) CreateEpicNote(gid any, epic int64, opt *CreateEpicNoteOptions, options ...RequestOptionFunc) (*Note, *Response, error) {
 	return do[*Note](s.client,
 		withMethod(http.MethodPost),
@@ -498,7 +498,7 @@ func (s *NotesService) CreateEpicNote(gid any, epic int64, opt *CreateEpicNoteOp
 // Will be removed in v5 of the API, use Work Items API instead
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notes/#modify-existing-epic-note
+// https://docs.gitlab.com/api/notes/#update-an-epic-note
 type UpdateEpicNoteOptions struct {
 	Body *string `url:"body,omitempty" json:"body,omitempty"`
 }
@@ -506,7 +506,7 @@ type UpdateEpicNoteOptions struct {
 // UpdateEpicNote modifies existing note of an epic.
 // Will be removed in v5 of the API, use Work Items API instead
 //
-// https://docs.gitlab.com/api/notes/#modify-existing-epic-note
+// https://docs.gitlab.com/api/notes/#update-an-epic-note
 func (s *NotesService) UpdateEpicNote(gid any, epic, note int64, opt *UpdateEpicNoteOptions, options ...RequestOptionFunc) (*Note, *Response, error) {
 	return do[*Note](s.client,
 		withMethod(http.MethodPut),

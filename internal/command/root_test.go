@@ -45,10 +45,12 @@ func TestTheMainHelpNamesTheIssuesPage(t *testing.T) {
 
 func TestVersionNamesTheBuild(t *testing.T) {
 	t.Parallel()
-	var out bytes.Buffer
-	err := cmdtest.RunFor(t, t.Context(), []string{"--version"}, term.Streams{In: strings.NewReader(""), Out: &out, Err: &out})
-	require.NoError(t, err)
-	require.True(t, strings.HasPrefix(out.String(), "dockhand "), out.String())
+	for _, flag := range []string{"--version", "-V"} {
+		var out bytes.Buffer
+		err := cmdtest.RunFor(t, t.Context(), []string{flag}, term.Streams{In: strings.NewReader(""), Out: &out, Err: &out})
+		require.NoError(t, err, flag)
+		require.True(t, strings.HasPrefix(out.String(), "dockhand "), "%s: %s", flag, out.String())
+	}
 }
 
 // The main help opens with dockhand's logo, as earlier generations' did,

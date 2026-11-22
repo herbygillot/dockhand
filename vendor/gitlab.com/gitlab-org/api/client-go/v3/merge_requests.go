@@ -30,6 +30,7 @@ var (
 	routeProjectsIDMergeRequestsID                                = route("projects/%s/merge_requests/%d")
 	routeProjectsIDMergeRequestsIDBlocks                          = route("projects/%s/merge_requests/%d/blocks")
 	routeProjectsIDMergeRequestsIDBlocksID                        = route("projects/%s/merge_requests/%d/blocks/%d")
+	routeProjectsIDMergeRequestsIDCancelAutoMerge                 = route("projects/%s/merge_requests/%d/cancel_auto_merge")
 	routeProjectsIDMergeRequestsIDCancelMergeWhenPipelineSucceeds = route("projects/%s/merge_requests/%d/cancel_merge_when_pipeline_succeeds")
 	routeProjectsIDMergeRequestsIDChanges                         = route("projects/%s/merge_requests/%d/changes")
 	routeProjectsIDMergeRequestsIDClosesIssues                    = route("projects/%s/merge_requests/%d/closes_issues")
@@ -157,15 +158,26 @@ type (
 		// GitLab API docs:
 		// https://docs.gitlab.com/api/merge_requests/#merge-a-merge-request
 		AcceptMergeRequest(pid any, mergeRequest int64, opt *AcceptMergeRequestOptions, options ...RequestOptionFunc) (*MergeRequest, *Response, error)
-		// CancelMergeWhenPipelineSucceeds cancels a merge when pipeline succeeds. If
-		// you don't have permissions to accept this merge request - you'll get a 401.
-		// If the merge request is already merged or closed - you get 405 and error
-		// message 'Method Not Allowed'. In case the merge request is not set to be
-		// merged when the pipeline succeeds, you'll also get a 406 error.
+		// CancelMergeWhenPipelineSucceeds cancels an active auto-merge for a merge
+		// request. GitLab returns a status hash instead of the merge request, so the
+		// returned MergeRequest is empty. If the merge request is not set to
+		// auto-merge, GitLab still returns 201 with an error status, so no Go error
+		// is returned.
+		//
+		// Deprecated: in GitLab 19.5, use CancelAutoMerge instead.
 		//
 		// GitLab API docs:
 		// https://docs.gitlab.com/api/merge_requests/#cancel-merge-when-pipeline-succeeds-deprecated
 		CancelMergeWhenPipelineSucceeds(pid any, mergeRequest int64, options ...RequestOptionFunc) (*MergeRequest, *Response, error)
+		// CancelAutoMerge cancels an active auto-merge for a merge request and
+		// returns the merge request. If the merge request is on a merge train, it is
+		// also removed from the train. If the user is not allowed to cancel the
+		// auto-merge, GitLab returns 403. If the merge request is not set to
+		// auto-merge, GitLab returns 409. Requires GitLab 19.5 or later.
+		//
+		// GitLab API docs:
+		// https://docs.gitlab.com/api/merge_requests/#cancel-auto-merge
+		CancelAutoMerge(pid any, mergeRequest int64, options ...RequestOptionFunc) (*MergeRequest, *Response, error)
 		// RebaseMergeRequest automatically rebases the source_branch of the merge
 		// request against its target_branch. If you don’t have permissions to push
 		// to the merge request’s source branch, you’ll get a 403 Forbidden response.
@@ -950,10 +962,20 @@ func (s *MergeRequestsService) AcceptMergeRequest(pid any, mergeRequest int64, o
 	)
 }
 
+// Deprecated: in GitLab 19.5, use CancelAutoMerge instead.
 func (s *MergeRequestsService) CancelMergeWhenPipelineSucceeds(pid any, mergeRequest int64, options ...RequestOptionFunc) (*MergeRequest, *Response, error) {
 	return do[*MergeRequest](s.client,
 		withMethod(http.MethodPost),
 		withPath(routeProjectsIDMergeRequestsIDCancelMergeWhenPipelineSucceeds, ProjectID{pid}, mergeRequest),
+		withAPIOpts(nil),
+		withRequestOpts(options...),
+	)
+}
+
+func (s *MergeRequestsService) CancelAutoMerge(pid any, mergeRequest int64, options ...RequestOptionFunc) (*MergeRequest, *Response, error) {
+	return do[*MergeRequest](s.client,
+		withMethod(http.MethodPost),
+		withPath(routeProjectsIDMergeRequestsIDCancelAutoMerge, ProjectID{pid}, mergeRequest),
 		withAPIOpts(nil),
 		withRequestOpts(options...),
 	)

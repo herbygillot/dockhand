@@ -90,7 +90,7 @@ type GroupEnvironmentApprovalRule struct {
 // ListGroupProtectedEnvironments() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/group_protected_environments/#list-group-level-protected-environments
+// https://docs.gitlab.com/api/group_protected_environments/#list-all-group-level-protected-environments
 type ListGroupProtectedEnvironmentsOptions struct {
 	ListOptions
 }
@@ -99,7 +99,7 @@ type ListGroupProtectedEnvironmentsOptions struct {
 // a group.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/group_protected_environments/#list-group-level-protected-environments
+// https://docs.gitlab.com/api/group_protected_environments/#list-all-group-level-protected-environments
 func (s *GroupProtectedEnvironmentsService) ListGroupProtectedEnvironments(gid any, opt *ListGroupProtectedEnvironmentsOptions, options ...RequestOptionFunc) ([]*GroupProtectedEnvironment, *Response, error) {
 	return do[[]*GroupProtectedEnvironment](s.client,
 		withPath(routeGroupsIDProtectedEnvironments, GroupID{gid}),
@@ -112,7 +112,7 @@ func (s *GroupProtectedEnvironmentsService) ListGroupProtectedEnvironments(gid a
 // environment.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/group_protected_environments/#get-a-single-protected-environment
+// https://docs.gitlab.com/api/group_protected_environments/#retrieve-a-single-protected-environment
 func (s *GroupProtectedEnvironmentsService) GetGroupProtectedEnvironment(gid any, environment string, options ...RequestOptionFunc) (*GroupProtectedEnvironment, *Response, error) {
 	return do[*GroupProtectedEnvironment](s.client,
 		withPath(routeGroupsIDProtectedEnvironmentsID, GroupID{gid}, environment),

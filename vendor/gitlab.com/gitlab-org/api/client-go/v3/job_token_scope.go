@@ -57,7 +57,7 @@ type JobTokenAccessSettings struct {
 // GetProjectJobTokenAccessSettings fetch the CI/CD job token access settings (job token scope) of a project.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/project_job_token_scopes/#get-a-projects-cicd-job-token-access-settings
+// https://docs.gitlab.com/api/project_job_token_scopes/#retrieve-the-cicd-job-token-access-settings-for-a-project
 func (j *JobTokenScopeService) GetProjectJobTokenAccessSettings(pid any, options ...RequestOptionFunc) (*JobTokenAccessSettings, *Response, error) {
 	return do[*JobTokenAccessSettings](j.client,
 		withPath(routeProjectsIDJobTokenScope, ProjectID{pid}),
@@ -69,7 +69,7 @@ func (j *JobTokenScopeService) GetProjectJobTokenAccessSettings(pid any, options
 // PatchProjectJobTokenAccessSettings() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/project_job_token_scopes/#patch-a-projects-cicd-job-token-access-settings
+// https://docs.gitlab.com/api/project_job_token_scopes/#update-the-cicd-job-token-access-settings-for-a-project
 type PatchProjectJobTokenAccessSettingsOptions struct {
 	Enabled bool `json:"enabled"`
 }
@@ -77,7 +77,7 @@ type PatchProjectJobTokenAccessSettingsOptions struct {
 // PatchProjectJobTokenAccessSettings patch the Limit access to this project setting (job token scope) of a project.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/project_job_token_scopes/#patch-a-projects-cicd-job-token-access-settings
+// https://docs.gitlab.com/api/project_job_token_scopes/#update-the-cicd-job-token-access-settings-for-a-project
 func (j *JobTokenScopeService) PatchProjectJobTokenAccessSettings(pid any, opt *PatchProjectJobTokenAccessSettingsOptions, options ...RequestOptionFunc) (*Response, error) {
 	_, resp, err := do[none](j.client,
 		withMethod(http.MethodPatch),
@@ -100,7 +100,7 @@ type JobTokenInboundAllowItem struct {
 // GetJobTokenInboundAllowList() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/project_job_token_scopes/#get-a-projects-cicd-job-token-inbound-allowlist
+// https://docs.gitlab.com/api/project_job_token_scopes/#list-all-projects-in-a-cicd-job-token-allowlist
 type GetJobTokenInboundAllowListOptions struct {
 	ListOptions
 }
@@ -109,7 +109,7 @@ type GetJobTokenInboundAllowListOptions struct {
 // allowlist (job token scope) of a project.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/project_job_token_scopes/#get-a-projects-cicd-job-token-inbound-allowlist
+// https://docs.gitlab.com/api/project_job_token_scopes/#list-all-projects-in-a-cicd-job-token-allowlist
 func (j *JobTokenScopeService) GetProjectJobTokenInboundAllowList(pid any, opt *GetJobTokenInboundAllowListOptions, options ...RequestOptionFunc) ([]*Project, *Response, error) {
 	return do[[]*Project](j.client,
 		withPath(routeProjectsIDJobTokenScopeAllowlist, ProjectID{pid}),
@@ -122,7 +122,7 @@ func (j *JobTokenScopeService) GetProjectJobTokenInboundAllowList(pid any, opt *
 // AddProjectToJobScopeAllowList() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/project_job_token_scopes/#add-a-project-to-a-cicd-job-token-inbound-allowlist
+// https://docs.gitlab.com/api/project_job_token_scopes/#add-a-project-to-a-cicd-job-token-allowlist
 type JobTokenInboundAllowOptions struct {
 	TargetProjectID *int64 `url:"target_project_id,omitempty" json:"target_project_id,omitempty"`
 }
@@ -131,7 +131,7 @@ type JobTokenInboundAllowOptions struct {
 // inbound allow list.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/project_job_token_scopes/#add-a-project-to-a-cicd-job-token-inbound-allowlist
+// https://docs.gitlab.com/api/project_job_token_scopes/#add-a-project-to-a-cicd-job-token-allowlist
 func (j *JobTokenScopeService) AddProjectToJobScopeAllowList(pid any, opt *JobTokenInboundAllowOptions, options ...RequestOptionFunc) (*JobTokenInboundAllowItem, *Response, error) {
 	return do[*JobTokenInboundAllowItem](j.client,
 		withMethod(http.MethodPost),
@@ -145,7 +145,7 @@ func (j *JobTokenScopeService) AddProjectToJobScopeAllowList(pid any, opt *JobTo
 // token inbound allow list.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/project_job_token_scopes/#remove-a-project-from-a-cicd-job-token-inbound-allowlist
+// https://docs.gitlab.com/api/project_job_token_scopes/#delete-a-project-from-a-cicd-job-token-allowlist
 func (j *JobTokenScopeService) RemoveProjectFromJobScopeAllowList(pid any, targetProject int64, options ...RequestOptionFunc) (*Response, error) {
 	_, resp, err := do[none](j.client,
 		withMethod(http.MethodDelete),
@@ -167,7 +167,7 @@ type JobTokenAllowlistItem struct {
 // GetJobTokenAllowlistGroups() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/project_job_token_scopes/#get-a-projects-cicd-job-token-allowlist-of-groups
+// https://docs.gitlab.com/api/project_job_token_scopes/#list-all-groups-in-a-cicd-job-token-allowlist
 type GetJobTokenAllowlistGroupsOptions struct {
 	ListOptions
 }
@@ -176,7 +176,7 @@ type GetJobTokenAllowlistGroupsOptions struct {
 // (job token scopes) of a project.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/project_job_token_scopes/#get-a-projects-cicd-job-token-allowlist-of-groups
+// https://docs.gitlab.com/api/project_job_token_scopes/#list-all-groups-in-a-cicd-job-token-allowlist
 func (j *JobTokenScopeService) GetJobTokenAllowlistGroups(pid any, opt *GetJobTokenAllowlistGroupsOptions, options ...RequestOptionFunc) ([]*Group, *Response, error) {
 	return do[[]*Group](j.client,
 		withPath(routeProjectsIDJobTokenScopeGroupsAllowlist, ProjectID{pid}),
@@ -212,7 +212,7 @@ func (j *JobTokenScopeService) AddGroupToJobTokenAllowlist(pid any, opt *AddGrou
 // token inbound groups allow list.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/project_job_token_scopes/#remove-a-group-from-a-cicd-job-token-allowlist
+// https://docs.gitlab.com/api/project_job_token_scopes/#delete-a-group-from-a-cicd-job-token-allowlist
 func (j *JobTokenScopeService) RemoveGroupFromJobTokenAllowlist(pid any, targetGroup int64, options ...RequestOptionFunc) (*Response, error) {
 	_, resp, err := do[none](j.client,
 		withMethod(http.MethodDelete),

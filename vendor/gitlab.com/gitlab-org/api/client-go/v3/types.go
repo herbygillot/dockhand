@@ -349,10 +349,12 @@ const (
 	Created            BuildStateValue = "created"
 	WaitingForResource BuildStateValue = "waiting_for_resource"
 	Preparing          BuildStateValue = "preparing"
+	WaitingForCallback BuildStateValue = "waiting_for_callback"
 	Pending            BuildStateValue = "pending"
 	Running            BuildStateValue = "running"
 	Success            BuildStateValue = "success"
 	Failed             BuildStateValue = "failed"
+	Canceling          BuildStateValue = "canceling"
 	Canceled           BuildStateValue = "canceled"
 	Skipped            BuildStateValue = "skipped"
 	Manual             BuildStateValue = "manual"
@@ -571,6 +573,25 @@ const (
 	PackageHidden  GenericPackageStatusValue = "hidden"
 )
 
+// GranularScopeAccessValue represents the resources a granular scope of a
+// fine-grained access token grants access to.
+//
+// GitLab API docs:
+// https://docs.gitlab.com/api/user_tokens/#create-a-personal-access-token-for-a-user
+type GranularScopeAccessValue string
+
+// List of available granular scope access values.
+//
+// GitLab API docs:
+// https://docs.gitlab.com/api/user_tokens/#create-a-personal-access-token-for-a-user
+const (
+	GranularScopeAccessPersonalProjects    GranularScopeAccessValue = "personal_projects"
+	GranularScopeAccessAllMemberships      GranularScopeAccessValue = "all_memberships"
+	GranularScopeAccessSelectedMemberships GranularScopeAccessValue = "selected_memberships"
+	GranularScopeAccessUser                GranularScopeAccessValue = "user"
+	GranularScopeAccessInstance            GranularScopeAccessValue = "instance"
+)
+
 // GroupHookTrigger represents the type of event to trigger for a group
 // hook test.
 type GroupHookTrigger string
@@ -671,13 +692,28 @@ func (l *LabelOptions) MarshalJSON() ([]byte, error) {
 	return json.Marshal(strings.Join(*l, ","))
 }
 
-// UnmarshalJSON implements the json.Unmarshaler interface.
+// UnmarshalJSON implements the json.Unmarshaler interface. It accepts a JSON
+// array of labels as well as the comma-separated string that MarshalJSON
+// writes, so that a LabelOptions value survives a JSON round trip.
 func (l *LabelOptions) UnmarshalJSON(data []byte) error {
 	type alias LabelOptions
-	if !bytes.HasPrefix(data, []byte("[")) {
-		data = fmt.Appendf(nil, "[%s]", string(data))
+	if bytes.HasPrefix(data, []byte("[")) {
+		return json.Unmarshal(data, (*alias)(l))
 	}
-	return json.Unmarshal(data, (*alias)(l))
+	if bytes.Equal(data, []byte("null")) {
+		return nil
+	}
+
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	if s == "" {
+		*l = LabelOptions{}
+		return nil
+	}
+	*l = strings.Split(s, ",")
+	return nil
 }
 
 // EncodeValues implements the query.EncodeValues interface.
@@ -760,6 +796,9 @@ type NotificationLevelValue int
 
 // String implements the fmt.Stringer interface.
 func (l NotificationLevelValue) String() string {
+	if l < 0 || int(l) >= len(notificationLevelNames) {
+		return notificationLevelNames[DisabledNotificationLevel]
+	}
 	return notificationLevelNames[l]
 }
 
@@ -779,7 +818,8 @@ func (l *NotificationLevelValue) UnmarshalJSON(data []byte) error {
 	case float64:
 		*l = NotificationLevelValue(raw)
 	case string:
-		*l = notificationLevelTypes[raw]
+		// Unknown names fall back to DisabledNotificationLevel.
+		*l = NotificationLevelValue(max(slices.Index(notificationLevelNames[:], raw), 0))
 	case nil:
 		// No action needed.
 	default:
@@ -806,15 +846,6 @@ var notificationLevelNames = [...]string{
 	"global",
 	"mention",
 	"custom",
-}
-
-var notificationLevelTypes = map[string]NotificationLevelValue{
-	"disabled":      DisabledNotificationLevel,
-	"participating": ParticipatingNotificationLevel,
-	"watch":         WatchNotificationLevel,
-	"global":        GlobalNotificationLevel,
-	"mention":       MentionNotificationLevel,
-	"custom":        CustomNotificationLevel,
 }
 
 // DependencyPackageManagerValue represents a dependency package manager.

@@ -332,4 +332,4 @@ will respond as soon as they are available to help you.
 - [GitLab Terraform Provider](https://gitlab.com/gitlab-org/terraform-provider-gitlab)
   maintained by the community with support from ~"group::environments"
 - [GitLab CLI (`glab`)](https://gitlab.com/gitlab-org/cli)
-  maintained by ~"group::code review"
+  maintained by ~"group::developer clients"

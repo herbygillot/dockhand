@@ -83,16 +83,17 @@ var _ DeploymentsServiceInterface = (*DeploymentsService)(nil)
 
 // Deployment represents the GitLab deployment
 type Deployment struct {
-	ID          int64                `json:"id"`
-	IID         int64                `json:"iid"`
-	Ref         string               `json:"ref"`
-	SHA         string               `json:"sha"`
-	Status      string               `json:"status"`
-	CreatedAt   *time.Time           `json:"created_at"`
-	UpdatedAt   *time.Time           `json:"updated_at"`
-	User        *ProjectUser         `json:"user"`
-	Environment *Environment         `json:"environment"`
-	Deployable  DeploymentDeployable `json:"deployable"`
+	ID                   int64                `json:"id"`
+	IID                  int64                `json:"iid"`
+	Ref                  string               `json:"ref"`
+	SHA                  string               `json:"sha"`
+	Status               string               `json:"status"`
+	CreatedAt            *time.Time           `json:"created_at"`
+	UpdatedAt            *time.Time           `json:"updated_at"`
+	User                 *ProjectUser         `json:"user"`
+	Environment          *Environment         `json:"environment"`
+	Deployable           DeploymentDeployable `json:"deployable"`
+	PendingApprovalCount *int64               `json:"pending_approval_count"`
 }
 
 // DeploymentDeployable represents the Gitlab deployment deployable

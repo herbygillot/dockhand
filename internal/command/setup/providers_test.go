@@ -21,8 +21,37 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/term"
 )
+
+type closeTrackingStore struct {
+	store.Store
+	closed bool
+}
+
+func (s *closeTrackingStore) Close() error {
+	s.closed = true
+	return s.Store.Close()
+}
+
+// GitHub readiness closes the engine it opens to inspect the fork (#286).
+func TestGitHubReadinessClosesItsEngine(t *testing.T) {
+	t.Parallel()
+	cmdtest.NewWorld(t)
+	cmdtest.Setenv(t, "GH_TOKEN", "test-token")
+	s := cmdtest.TestSettings(t)
+	tracked := &closeTrackingStore{}
+	s.Deps.WrapStore = func(opened store.Store) store.Store {
+		tracked.Store = opened
+		return tracked
+	}
+
+	line := githubReadiness(t.Context(), s)
+	require.Contains(t, line, "✓ with your GitHub token;")
+	require.NotNil(t, s.Opened, "readiness opens an engine for the configured GitHub provider")
+	require.True(t, tracked.closed, "readiness closes the store and its session")
+}
 
 // fakeImages stands in for dockhand's Tart images.
 type fakeImages struct {

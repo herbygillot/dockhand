@@ -18,14 +18,23 @@ package gitlab
 
 import (
 	"io"
+	"net/http"
 )
+
+var routeGroupsIDUploads = route("groups/%s/uploads")
 
 type (
 	GroupMarkdownUploadsServiceInterface interface {
+		// UploadGroupMarkdown uploads a file to a group and returns a
+		// Markdown-formatted link to it.
+		//
+		// GitLab API docs:
+		// https://docs.gitlab.com/api/group_markdown_uploads/#upload-a-file-to-a-group
+		UploadGroupMarkdown(gid any, content io.Reader, filename string, options ...RequestOptionFunc) (*GroupMarkdownUploadedFile, *Response, error)
 		// ListGroupMarkdownUploads gets all markdown uploads for a group.
 		//
 		// GitLab API Docs:
-		// https://docs.gitlab.com/api/group_markdown_uploads/#list-uploads
+		// https://docs.gitlab.com/api/group_markdown_uploads/#list-all-uploads-for-a-group
 		ListGroupMarkdownUploads(gid any, opt *ListMarkdownUploadsOptions, options ...RequestOptionFunc) ([]*GroupMarkdownUpload, *Response, error)
 		// DownloadGroupMarkdownUploadByID downloads a specific upload by ID.
 		//
@@ -71,8 +80,18 @@ var _ GroupMarkdownUploadsServiceInterface = (*GroupMarkdownUploadsService)(nil)
 
 // Type aliases for backward compatibility
 type (
-	GroupMarkdownUpload = MarkdownUpload
+	GroupMarkdownUpload       = MarkdownUpload
+	GroupMarkdownUploadedFile = MarkdownUploadedFile
 )
+
+func (s *GroupMarkdownUploadsService) UploadGroupMarkdown(gid any, content io.Reader, filename string, options ...RequestOptionFunc) (*GroupMarkdownUploadedFile, *Response, error) {
+	return do[*GroupMarkdownUploadedFile](s.client,
+		withMethod(http.MethodPost),
+		withPath(routeGroupsIDUploads, GroupID{gid}),
+		withUpload(content, filename, UploadFile),
+		withRequestOpts(options...),
+	)
+}
 
 func (s *GroupMarkdownUploadsService) ListGroupMarkdownUploads(gid any, opt *ListMarkdownUploadsOptions, options ...RequestOptionFunc) ([]*GroupMarkdownUpload, *Response, error) {
 	return listMarkdownUploads[GroupMarkdownUpload](s.client, GroupResource, GroupID{gid}, opt, options)

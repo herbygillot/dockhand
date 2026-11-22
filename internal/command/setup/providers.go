@@ -340,6 +340,7 @@ func forkWorkflow(ctx context.Context, s *settings.Settings) (string, string, er
 	if err != nil {
 		return "", "", err
 	}
+	defer e.Close()
 	provider, ok := e.Providers[buildenv.GitHub].(*ghactions.Provider)
 	if !ok {
 		return "", "", nil

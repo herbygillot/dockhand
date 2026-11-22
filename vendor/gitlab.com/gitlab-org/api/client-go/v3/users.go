@@ -72,11 +72,11 @@ type (
 	UsersServiceInterface interface {
 		// ListUsers gets a list of users.
 		//
-		// GitLab API docs: https://docs.gitlab.com/api/users/#list-users
+		// GitLab API docs: https://docs.gitlab.com/api/users/#list-all-users
 		ListUsers(opt *ListUsersOptions, options ...RequestOptionFunc) ([]*User, *Response, error)
 		// GetUser gets a single user.
 		//
-		// GitLab API docs: https://docs.gitlab.com/api/users/#get-a-single-user
+		// GitLab API docs: https://docs.gitlab.com/api/users/#retrieve-a-single-user
 		GetUser(user int64, opt *GetUserOptions, options ...RequestOptionFunc) (*User, *Response, error)
 		// CreateUser creates a new user. Note only administrators can create new users.
 		//
@@ -97,12 +97,12 @@ type (
 		DeleteUser(user int64, options ...RequestOptionFunc) (*Response, error)
 		// CurrentUser gets currently authenticated user.
 		//
-		// GitLab API docs: https://docs.gitlab.com/api/users/#get-the-current-user
+		// GitLab API docs: https://docs.gitlab.com/api/users/#retrieve-the-current-user
 		CurrentUser(options ...RequestOptionFunc) (*User, *Response, error)
 		// CurrentUserStatus retrieves the user status
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/users/#get-your-user-status
+		// https://docs.gitlab.com/api/users/#retrieve-your-user-status
 		CurrentUserStatus(options ...RequestOptionFunc) (*UserStatus, *Response, error)
 		// GetUserStatus retrieves a user's status.
 		//
@@ -110,7 +110,7 @@ type (
 		// Other types will cause an error to be returned.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/users/#get-the-status-of-a-user
+		// https://docs.gitlab.com/api/users/#retrieve-the-status-of-a-user
 		GetUserStatus(uid any, options ...RequestOptionFunc) (*UserStatus, *Response, error)
 		// SetUserStatus sets the user's status
 		//
@@ -120,7 +120,7 @@ type (
 		// GetUserAssociationsCount gets a list of a specified user's associations.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/users/#get-a-count-of-a-users-projects-groups-issues-and-merge-requests
+		// https://docs.gitlab.com/api/users/#retrieve-a-count-of-a-users-projects-groups-issues-and-merge-requests
 		GetUserAssociationsCount(user int64, options ...RequestOptionFunc) (*UserAssociationsCount, *Response, error)
 		// ListSSHKeys gets a list of currently authenticated user's SSH keys.
 		//
@@ -136,11 +136,11 @@ type (
 		ListSSHKeysForUser(uid any, opt *ListSSHKeysForUserOptions, options ...RequestOptionFunc) ([]*SSHKey, *Response, error)
 		// GetSSHKey gets a single key.
 		//
-		// GitLab API docs: https://docs.gitlab.com/api/user_keys/#get-an-ssh-key
+		// GitLab API docs: https://docs.gitlab.com/api/user_keys/#retrieve-an-ssh-key
 		GetSSHKey(key int64, options ...RequestOptionFunc) (*SSHKey, *Response, error)
 		// GetSSHKeyForUser gets a single key for a given user.
 		//
-		// GitLab API docs: https://docs.gitlab.com/api/user_keys/#get-an-ssh-key-for-a-user
+		// GitLab API docs: https://docs.gitlab.com/api/user_keys/#retrieve-an-ssh-key-for-a-user
 		GetSSHKeyForUser(user int64, key int64, options ...RequestOptionFunc) (*SSHKey, *Response, error)
 		// AddSSHKey creates a new key owned by the currently authenticated user.
 		//
@@ -170,7 +170,7 @@ type (
 		ListGPGKeys(options ...RequestOptionFunc) ([]*GPGKey, *Response, error)
 		// GetGPGKey gets a specific GPG key of currently authenticated user.
 		//
-		// GitLab API docs: https://docs.gitlab.com/api/user_keys/#get-a-gpg-key
+		// GitLab API docs: https://docs.gitlab.com/api/user_keys/#retrieve-a-gpg-key
 		GetGPGKey(key int64, options ...RequestOptionFunc) (*GPGKey, *Response, error)
 		// AddGPGKey creates a new GPG key owned by the currently authenticated user.
 		//
@@ -187,7 +187,7 @@ type (
 		ListGPGKeysForUser(user int64, options ...RequestOptionFunc) ([]*GPGKey, *Response, error)
 		// GetGPGKeyForUser gets a specific GPG key for a given user.
 		//
-		// GitLab API docs: https://docs.gitlab.com/api/user_keys/#get-a-gpg-key-for-a-user
+		// GitLab API docs: https://docs.gitlab.com/api/user_keys/#retrieve-a-gpg-key-for-a-user
 		GetGPGKeyForUser(user, key int64, options ...RequestOptionFunc) (*GPGKey, *Response, error)
 		// AddGPGKeyForUser creates new GPG key owned by the specified user.
 		//
@@ -213,7 +213,7 @@ type (
 		// GetEmail gets a single email.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/user_email_addresses/#get-details-on-an-email-address
+		// https://docs.gitlab.com/api/user_email_addresses/#retrieve-details-on-an-email-address
 		GetEmail(email int64, options ...RequestOptionFunc) (*Email, *Response, error)
 		// AddEmail creates a new email owned by the currently authenticated user.
 		//
@@ -279,7 +279,7 @@ type (
 		// GetImpersonationToken retrieves an impersonation token of a user.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/user_tokens/#get-an-impersonation-token-for-a-user
+		// https://docs.gitlab.com/api/user_tokens/#retrieve-an-impersonation-token-for-a-user
 		GetImpersonationToken(user, token int64, options ...RequestOptionFunc) (*ImpersonationToken, *Response, error)
 		// CreateImpersonationToken creates an impersonation token.
 		//
@@ -430,9 +430,14 @@ type User struct {
 	Skype                          string             `json:"skype"`
 	Linkedin                       string             `json:"linkedin"`
 	Twitter                        string             `json:"twitter"`
+	Discord                        string             `json:"discord"`
 	WebsiteURL                     string             `json:"website_url"`
+	Github                         string             `json:"github"`
 	Organization                   string             `json:"organization"`
 	JobTitle                       string             `json:"job_title"`
+	Pronouns                       string             `json:"pronouns"`
+	WorkInformation                string             `json:"work_information"`
+	LocalTime                      string             `json:"local_time"`
 	ExternUID                      string             `json:"extern_uid"`
 	Provider                       string             `json:"provider"`
 	ThemeID                        int64              `json:"theme_id"`
@@ -456,6 +461,8 @@ type User struct {
 	SCIMIdentities                 []*SCIMIdentity    `json:"scim_identities"`
 	External                       bool               `json:"external"`
 	PrivateProfile                 bool               `json:"private_profile"`
+	CommitEmail                    string             `json:"commit_email"`
+	PreferredLanguage              string             `json:"preferred_language"`
 	SharedRunnersMinutesLimit      int64              `json:"shared_runners_minutes_limit"`
 	ExtraSharedRunnersMinutesLimit int64              `json:"extra_shared_runners_minutes_limit"`
 	UsingLicenseSeat               bool               `json:"using_license_seat"`
@@ -542,7 +549,7 @@ func (s *UsersService) ListUsers(opt *ListUsersOptions, options ...RequestOption
 
 // GetUserOptions represents the available GetUser() options.
 //
-// GitLab API docs: https://docs.gitlab.com/api/users/#get-a-single-user
+// GitLab API docs: https://docs.gitlab.com/api/users/#retrieve-a-single-user
 type GetUserOptions struct {
 	WithCustomAttributes *bool `url:"with_custom_attributes,omitempty" json:"with_custom_attributes,omitempty"`
 }
@@ -703,7 +710,7 @@ func (s *UsersService) CurrentUserStatus(options ...RequestOptionFunc) (*UserSta
 // is provided with a leading "@" (e.g., "@johndoe"), it will be trimmed.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/users/#get-the-status-of-a-user
+// https://docs.gitlab.com/api/users/#retrieve-the-status-of-a-user
 func (s *UsersService) GetUserStatus(uid any, options ...RequestOptionFunc) (*UserStatus, *Response, error) {
 	return do[*UserStatus](s.client,
 		withPath(routeUsersIDStatus, UserID{uid}),
@@ -745,7 +752,7 @@ type UserAssociationsCount struct {
 // GetUserAssociationsCount gets a list of a specified user associations.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/users/#get-a-count-of-a-users-projects-groups-issues-and-merge-requests
+// https://docs.gitlab.com/api/users/#retrieve-a-count-of-a-users-projects-groups-issues-and-merge-requests
 func (s *UsersService) GetUserAssociationsCount(user int64, options ...RequestOptionFunc) (*UserAssociationsCount, *Response, error) {
 	return do[*UserAssociationsCount](s.client,
 		withPath(routeUsersIDAssociationsCount, user),
@@ -1195,15 +1202,19 @@ func (s *UsersService) RejectUser(user int64, options ...RequestOptionFunc) (*Re
 // GitLab API docs:
 // https://docs.gitlab.com/api/user_tokens/#list-all-impersonation-tokens-for-a-user
 type ImpersonationToken struct {
-	ID         int64      `json:"id"`
-	Name       string     `json:"name"`
-	Active     bool       `json:"active"`
-	Token      string     `json:"token"`
-	Scopes     []string   `json:"scopes"`
-	Revoked    bool       `json:"revoked"`
-	CreatedAt  *time.Time `json:"created_at"`
-	ExpiresAt  *ISOTime   `json:"expires_at"`
-	LastUsedAt *time.Time `json:"last_used_at"`
+	ID          int64      `json:"id"`
+	Name        string     `json:"name"`
+	Description string     `json:"description"`
+	Active      bool       `json:"active"`
+	Token       string     `json:"token"`
+	Scopes      []string   `json:"scopes"`
+	Revoked     bool       `json:"revoked"`
+	CreatedAt   *time.Time `json:"created_at"`
+	ExpiresAt   *ISOTime   `json:"expires_at"`
+	LastUsedAt  *time.Time `json:"last_used_at"`
+	// GranularScopes is only set for fine-grained tokens, which are created
+	// with granular scopes instead of Scopes.
+	GranularScopes []*GranularScope `json:"granular_scopes,omitempty"`
 }
 
 // GetAllImpersonationTokensOptions represents the available
@@ -1231,10 +1242,18 @@ func (s *UsersService) GetImpersonationToken(user, token int64, options ...Reque
 	)
 }
 
+// CreateImpersonationTokenOptions represents the available
+// CreateImpersonationToken() options.
+//
+// GitLab API docs:
+// https://docs.gitlab.com/api/user_tokens/#create-an-impersonation-token
 type CreateImpersonationTokenOptions struct {
-	Name      *string    `url:"name,omitempty" json:"name,omitempty"`
-	Scopes    *[]string  `url:"scopes,omitempty" json:"scopes,omitempty"`
-	ExpiresAt *time.Time `url:"expires_at,omitempty" json:"expires_at,omitempty"`
+	Name        *string    `url:"name,omitempty" json:"name,omitempty"`
+	Description *string    `url:"description,omitempty" json:"description,omitempty"`
+	Scopes      *[]string  `url:"scopes,omitempty" json:"scopes,omitempty"`
+	ExpiresAt   *time.Time `url:"expires_at,omitempty" json:"expires_at,omitempty"`
+	// GranularScopes creates a fine-grained token. Cannot be used with Scopes.
+	GranularScopes []*GranularScopeOptions `url:"granular_scopes,omitempty" json:"granular_scopes,omitempty"`
 }
 
 func (s *UsersService) CreateImpersonationToken(user int64, opt *CreateImpersonationTokenOptions, options ...RequestOptionFunc) (*ImpersonationToken, *Response, error) {
@@ -1265,6 +1284,8 @@ type CreatePersonalAccessTokenOptions struct {
 	Description *string   `url:"description,omitempty" json:"description,omitempty"`
 	ExpiresAt   *ISOTime  `url:"expires_at,omitempty" json:"expires_at,omitempty"`
 	Scopes      *[]string `url:"scopes,omitempty" json:"scopes,omitempty"`
+	// GranularScopes creates a fine-grained token. Cannot be used with Scopes.
+	GranularScopes []*GranularScopeOptions `url:"granular_scopes,omitempty" json:"granular_scopes,omitempty"`
 }
 
 func (s *UsersService) CreatePersonalAccessToken(user int64, opt *CreatePersonalAccessTokenOptions, options ...RequestOptionFunc) (*PersonalAccessToken, *Response, error) {
@@ -1286,6 +1307,8 @@ type CreatePersonalAccessTokenForCurrentUserOptions struct {
 	Description *string   `url:"description,omitempty" json:"description,omitempty"`
 	Scopes      *[]string `url:"scopes,omitempty" json:"scopes,omitempty"`
 	ExpiresAt   *ISOTime  `url:"expires_at,omitempty" json:"expires_at,omitempty"`
+	// GranularScopes creates a fine-grained token. Cannot be used with Scopes.
+	GranularScopes []*GranularScopeOptions `url:"granular_scopes,omitempty" json:"granular_scopes,omitempty"`
 }
 
 func (s *UsersService) CreatePersonalAccessTokenForCurrentUser(opt *CreatePersonalAccessTokenForCurrentUserOptions, options ...RequestOptionFunc) (*PersonalAccessToken, *Response, error) {

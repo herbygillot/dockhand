@@ -118,7 +118,7 @@ func (wa WikiAttachment) String() string {
 // ListWikisOptions represents the available ListWikis options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/wikis/#list-wiki-pages
+// https://docs.gitlab.com/api/wikis/#list-all-wiki-pages
 type ListWikisOptions struct {
 	WithContent *bool `url:"with_content,omitempty" json:"with_content,omitempty"`
 }
@@ -134,7 +134,7 @@ func (s *WikisService) ListWikis(pid any, opt *ListWikisOptions, options ...Requ
 // GetWikiPageOptions represents options to GetWikiPage
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/wikis/#get-a-wiki-page
+// https://docs.gitlab.com/api/wikis/#retrieve-a-wiki-page
 type GetWikiPageOptions struct {
 	RenderHTML *bool   `url:"render_html,omitempty" json:"render_html,omitempty"`
 	Version    *string `url:"version,omitempty" json:"version,omitempty"`
@@ -151,7 +151,7 @@ func (s *WikisService) GetWikiPage(pid any, slug string, opt *GetWikiPageOptions
 // CreateWikiPageOptions represents options to CreateWikiPage.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/wikis/#create-a-new-wiki-page
+// https://docs.gitlab.com/api/wikis/#create-a-wiki-page
 type CreateWikiPageOptions struct {
 	Content *string          `url:"content,omitempty" json:"content,omitempty"`
 	Title   *string          `url:"title,omitempty" json:"title,omitempty"`
@@ -170,7 +170,7 @@ func (s *WikisService) CreateWikiPage(pid any, opt *CreateWikiPageOptions, optio
 // EditWikiPageOptions represents options to EditWikiPage.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/wikis/#edit-an-existing-wiki-page
+// https://docs.gitlab.com/api/wikis/#update-a-wiki-page
 type EditWikiPageOptions struct {
 	Content *string          `url:"content,omitempty" json:"content,omitempty"`
 	Title   *string          `url:"title,omitempty" json:"title,omitempty"`

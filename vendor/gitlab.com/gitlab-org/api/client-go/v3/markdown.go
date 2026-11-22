@@ -30,7 +30,7 @@ type Markdown struct {
 // RenderOptions represents the available Render() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/markdown/#render-an-arbitrary-markdown-document
+// https://docs.gitlab.com/api/markdown/#render-markdown-content
 type RenderOptions struct {
 	Text                    *string `url:"text,omitempty" json:"text,omitempty"`
 	GitlabFlavouredMarkdown *bool   `url:"gfm,omitempty" json:"gfm,omitempty"`
@@ -40,7 +40,7 @@ type RenderOptions struct {
 // Render an arbitrary markdown document.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/markdown/#render-an-arbitrary-markdown-document
+// https://docs.gitlab.com/api/markdown/#render-markdown-content
 func (s *MarkdownService) Render(opt *RenderOptions, options ...RequestOptionFunc) (*Markdown, *Response, error) {
 	return do[*Markdown](s.client,
 		withMethod(http.MethodPost),

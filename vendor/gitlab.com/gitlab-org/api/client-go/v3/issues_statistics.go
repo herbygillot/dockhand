@@ -32,17 +32,17 @@ type (
 		// user has access to.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/issues_statistics/#get-issues-statistics
+		// https://docs.gitlab.com/api/issues_statistics/#retrieve-issues-statistics-for-a-user
 		GetIssuesStatistics(opt *GetIssuesStatisticsOptions, options ...RequestOptionFunc) (*IssuesStatistics, *Response, error)
 		// GetGroupIssuesStatistics gets issues count statistics for given group.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/issues_statistics/#get-group-issues-statistics
+		// https://docs.gitlab.com/api/issues_statistics/#retrieve-issues-statistics-for-a-group
 		GetGroupIssuesStatistics(gid any, opt *GetGroupIssuesStatisticsOptions, options ...RequestOptionFunc) (*IssuesStatistics, *Response, error)
 		// GetProjectIssuesStatistics gets issues count statistics for given project.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/issues_statistics/#get-project-issues-statistics
+		// https://docs.gitlab.com/api/issues_statistics/#retrieve-issues-statistics-for-a-project
 		GetProjectIssuesStatistics(pid any, opt *GetProjectIssuesStatisticsOptions, options ...RequestOptionFunc) (*IssuesStatistics, *Response, error)
 	}
 
@@ -87,7 +87,7 @@ type IssuesStatisticsCounts struct {
 // GetIssuesStatisticsOptions represents the available GetIssuesStatistics() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/issues_statistics/#get-issues-statistics
+// https://docs.gitlab.com/api/issues_statistics/#retrieve-issues-statistics-for-a-user
 type GetIssuesStatisticsOptions struct {
 	Labels           *LabelOptions `url:"labels,omitempty" json:"labels,omitempty"`
 	Milestone        *string       `url:"milestone,omitempty" json:"milestone,omitempty"`
@@ -119,7 +119,7 @@ func (s *IssuesStatisticsService) GetIssuesStatistics(opt *GetIssuesStatisticsOp
 // options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/issues_statistics/#get-group-issues-statistics
+// https://docs.gitlab.com/api/issues_statistics/#retrieve-issues-statistics-for-a-group
 type GetGroupIssuesStatisticsOptions struct {
 	Labels           *LabelOptions `url:"labels,omitempty" json:"labels,omitempty"`
 	IIDs             *[]int64      `url:"iids[],omitempty" json:"iids,omitempty"`
@@ -150,7 +150,7 @@ func (s *IssuesStatisticsService) GetGroupIssuesStatistics(gid any, opt *GetGrou
 // GetProjectIssuesStatistics() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/issues_statistics/#get-project-issues-statistics
+// https://docs.gitlab.com/api/issues_statistics/#retrieve-issues-statistics-for-a-project
 type GetProjectIssuesStatisticsOptions struct {
 	IIDs             *[]int64      `url:"iids[],omitempty" json:"iids,omitempty"`
 	Labels           *LabelOptions `url:"labels,omitempty" json:"labels,omitempty"`

@@ -66,7 +66,40 @@ type PersonalAccessToken struct {
 	LastUsedAt  *time.Time `json:"last_used_at,omitempty"`
 	Active      bool       `json:"active"`
 	ExpiresAt   *ISOTime   `json:"expires_at"`
-	Token       string     `json:"token,omitempty"`
+	// GranularScopes is only set for fine-grained tokens, which are created
+	// with granular scopes instead of Scopes.
+	GranularScopes []*GranularScope `json:"granular_scopes,omitempty"`
+	Token          string           `json:"token,omitempty"`
+}
+
+// GranularScope represents a granular scope of a fine-grained access token.
+// ProjectID or GroupID is set when Access is selected_memberships and the
+// scope targets a project or a group. Both are nil otherwise.
+//
+// GitLab API docs:
+// https://docs.gitlab.com/api/personal_access_tokens/#list-all-personal-access-tokens
+type GranularScope struct {
+	Access      GranularScopeAccessValue `json:"access"`
+	Permissions []string                 `json:"permissions"`
+	ProjectID   *int64                   `json:"project_id"`
+	GroupID     *int64                   `json:"group_id"`
+}
+
+func (g GranularScope) String() string {
+	return Stringify(g)
+}
+
+// GranularScopeOptions represents a granular scope to create a fine-grained
+// access token with. GroupIDs and ProjectIDs are only used when Access is
+// selected_memberships.
+//
+// GitLab API docs:
+// https://docs.gitlab.com/api/user_tokens/#create-a-personal-access-token-for-a-user
+type GranularScopeOptions struct {
+	Access      *GranularScopeAccessValue `url:"access,omitempty" json:"access,omitempty"`
+	Permissions []string                  `url:"permissions,omitempty" json:"permissions,omitempty"`
+	GroupIDs    []int64                   `url:"group_ids,omitempty" json:"group_ids,omitempty"`
+	ProjectIDs  []int64                   `url:"project_ids,omitempty" json:"project_ids,omitempty"`
 }
 
 // ResourceAccessToken represents a generic access token used for both
@@ -116,7 +149,7 @@ func (s *PersonalAccessTokensService) ListPersonalAccessTokens(opt *ListPersonal
 // GetSinglePersonalAccessTokenByID get a single personal access token by its ID.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/personal_access_tokens/#get-details-on-a-personal-access-token
+// https://docs.gitlab.com/api/personal_access_tokens/#retrieve-a-personal-access-token
 func (s *PersonalAccessTokensService) GetSinglePersonalAccessTokenByID(token int64, options ...RequestOptionFunc) (*PersonalAccessToken, *Response, error) {
 	return do[*PersonalAccessToken](s.client,
 		withPath(routePersonalAccessTokensID, token),

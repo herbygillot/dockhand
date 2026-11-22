@@ -50,7 +50,9 @@ dockhand setup
 ```
 
 `setup` checks the tools, registers the checkout, and reports the GitHub login
-and build environments it can use. It finds `port-tclsh`, `tart`, `go2port`, and
+and build environments it can use. When signed in, it also checks your fork's
+workflow and reports whether Actions can run checks there. It finds
+`port-tclsh`, `tart`, `go2port`, and
 `cargo2port` on `PATH`, then in `/opt/local/bin`, so a shell whose `PATH` lacks
 MacPorts' prefix, as one over SSH can, still finds them, unless `--tool`, a
 variable, or `[tools]` names one: `--tool go2port=…`, `GO2PORT_BIN`, or

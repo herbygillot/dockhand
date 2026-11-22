@@ -76,7 +76,7 @@ type PagesDomainCertificate struct {
 // ListPagesDomainsOptions represents the available ListPagesDomains() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pages_domains/#list-pages-domains
+// https://docs.gitlab.com/api/pages_domains/#list-all-pages-domains-in-a-project
 type ListPagesDomainsOptions struct {
 	ListOptions
 }
@@ -84,7 +84,7 @@ type ListPagesDomainsOptions struct {
 // ListPagesDomains gets a list of project pages domains.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pages_domains/#list-pages-domains
+// https://docs.gitlab.com/api/pages_domains/#list-all-pages-domains-in-a-project
 func (s *PagesDomainsService) ListPagesDomains(pid any, opt *ListPagesDomainsOptions, options ...RequestOptionFunc) ([]*PagesDomain, *Response, error) {
 	return do[[]*PagesDomain](s.client,
 		withPath(routeProjectsIDPagesDomains, ProjectID{pid}),
@@ -107,7 +107,7 @@ func (s *PagesDomainsService) ListAllPagesDomains(options ...RequestOptionFunc) 
 // GetPagesDomain get a specific pages domain for a project.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/pages_domains/#single-pages-domain
+// https://docs.gitlab.com/api/pages_domains/#retrieve-a-pages-domain
 func (s *PagesDomainsService) GetPagesDomain(pid any, domain string, options ...RequestOptionFunc) (*PagesDomain, *Response, error) {
 	return do[*PagesDomain](s.client,
 		withPath(routeProjectsIDPagesDomainsID, ProjectID{pid}, domain),

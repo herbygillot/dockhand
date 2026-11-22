@@ -203,6 +203,13 @@ func (s *SecurityCategoriesService) CreateSecurityCategory(namespaceID int64, op
 	if err != nil {
 		return nil, resp, err
 	}
+	if len(result.Errors) != 0 {
+		// A refusal returned ErrNotFound before, and still matches it.
+		return nil, resp, &notFoundGraphQLResponseError{err: &GraphQLResponseError{
+			Err:    errors.New("mutation.securityCategoryCreate failed"),
+			Errors: result.GenericGraphQLErrors,
+		}}
+	}
 	if len(result.Data.SecurityCategoryCreate.Errors) > 0 {
 		return nil, resp, fmt.Errorf("securityCategoryCreate mutation errors: %v", result.Data.SecurityCategoryCreate.Errors)
 	}
@@ -276,6 +283,13 @@ func (s *SecurityCategoriesService) UpdateSecurityCategory(id int64, namespaceID
 	if err != nil {
 		return nil, resp, err
 	}
+	if len(result.Errors) != 0 {
+		// A refusal returned ErrNotFound before, and still matches it.
+		return nil, resp, &notFoundGraphQLResponseError{err: &GraphQLResponseError{
+			Err:    errors.New("mutation.securityCategoryUpdate failed"),
+			Errors: result.GenericGraphQLErrors,
+		}}
+	}
 	if len(result.Data.SecurityCategoryUpdate.Errors) > 0 {
 		return nil, resp, fmt.Errorf("securityCategoryUpdate mutation errors: %v", result.Data.SecurityCategoryUpdate.Errors)
 	}
@@ -321,6 +335,12 @@ func (s *SecurityCategoriesService) DestroySecurityCategory(id int64, options ..
 	resp, err := s.client.GraphQL.Do(mutation, &result, options...)
 	if err != nil {
 		return resp, err
+	}
+	if len(result.Errors) != 0 {
+		return resp, &GraphQLResponseError{
+			Err:    errors.New("mutation.securityCategoryDestroy failed"),
+			Errors: result.GenericGraphQLErrors,
+		}
 	}
 	if len(result.Data.SecurityCategoryDestroy.Errors) > 0 {
 		return resp, fmt.Errorf("securityCategoryDestroy mutation errors: %v", result.Data.SecurityCategoryDestroy.Errors)

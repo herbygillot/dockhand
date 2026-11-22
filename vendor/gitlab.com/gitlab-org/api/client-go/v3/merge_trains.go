@@ -64,7 +64,7 @@ type MergeTrainMergeRequest struct {
 // ListMergeTrainsOptions represents the available ListMergeTrain() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/merge_trains/#list-merge-trains-for-a-project
+// https://docs.gitlab.com/api/merge_trains/#list-all-merge-trains-for-a-project
 type ListMergeTrainsOptions struct {
 	ListOptions
 	Scope *string `url:"scope,omitempty" json:"scope,omitempty"`
@@ -74,7 +74,7 @@ type ListMergeTrainsOptions struct {
 // ListProjectMergeTrains get a list of merge trains in a project.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/merge_trains/#list-merge-trains-for-a-project
+// https://docs.gitlab.com/api/merge_trains/#list-all-merge-trains-for-a-project
 func (s *MergeTrainsService) ListProjectMergeTrains(pid any, opt *ListMergeTrainsOptions, options ...RequestOptionFunc) ([]*MergeTrain, *Response, error) {
 	return do[[]*MergeTrain](s.client,
 		withMethod(http.MethodGet),
@@ -88,7 +88,7 @@ func (s *MergeTrainsService) ListProjectMergeTrains(pid any, opt *ListMergeTrain
 // train for the requested target branch.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/merge_trains/#list-merge-requests-in-a-merge-train
+// https://docs.gitlab.com/api/merge_trains/#list-all-merge-requests-in-a-merge-train
 func (s *MergeTrainsService) ListMergeRequestInMergeTrain(pid any, targetBranch string, opts *ListMergeTrainsOptions, options ...RequestOptionFunc) ([]*MergeTrain, *Response, error) {
 	return do[[]*MergeTrain](s.client,
 		withMethod(http.MethodGet),
@@ -102,7 +102,7 @@ func (s *MergeTrainsService) ListMergeRequestInMergeTrain(pid any, targetBranch 
 // merge request.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/merge_trains/#get-the-status-of-a-merge-request-on-a-merge-train
+// https://docs.gitlab.com/api/merge_trains/#retrieve-merge-train-status
 func (s *MergeTrainsService) GetMergeRequestOnAMergeTrain(pid any, mergeRequest int64, options ...RequestOptionFunc) (*MergeTrain, *Response, error) {
 	return do[*MergeTrain](s.client,
 		withPath(routeProjectsIDMergeTrainsMergeRequestsID, ProjectID{pid}, mergeRequest),

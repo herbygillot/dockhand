@@ -76,7 +76,7 @@ type GroupHook struct {
 // ListGroupHooksOptions represents the available ListGroupHooks() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/group_webhooks/#list-group-hooks
+// https://docs.gitlab.com/api/group_webhooks/#list-all-group-hooks
 type ListGroupHooksOptions struct {
 	ListOptions
 }
@@ -84,7 +84,7 @@ type ListGroupHooksOptions struct {
 // ListGroupHooks gets a list of group hooks.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/group_webhooks/#list-group-hooks
+// https://docs.gitlab.com/api/group_webhooks/#list-all-group-hooks
 func (s *GroupsService) ListGroupHooks(gid any, opt *ListGroupHooksOptions, options ...RequestOptionFunc) ([]*GroupHook, *Response, error) {
 	return do[[]*GroupHook](
 		s.client,
@@ -97,7 +97,7 @@ func (s *GroupsService) ListGroupHooks(gid any, opt *ListGroupHooksOptions, opti
 // GetGroupHook gets a specific hook for a group.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/group_webhooks/#get-a-group-hook
+// https://docs.gitlab.com/api/group_webhooks/#retrieve-a-group-hook
 func (s *GroupsService) GetGroupHook(gid any, hook int64, options ...RequestOptionFunc) (*GroupHook, *Response, error) {
 	return do[*GroupHook](
 		s.client,
@@ -123,7 +123,7 @@ func (s *GroupsService) ResendGroupHookEvent(gid any, hook int64, hookEventID in
 // AddGroupHookOptions represents the available AddGroupHook() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/group_webhooks/#add-a-group-hook
+// https://docs.gitlab.com/api/group_webhooks/#create-a-group-hook
 type AddGroupHookOptions struct {
 	URL                       *string `url:"url,omitempty" json:"url,omitempty"`
 	Name                      *string `url:"name,omitempty" json:"name,omitempty"`
@@ -162,7 +162,7 @@ type AddGroupHookOptions struct {
 // AddGroupHook creates a new group scoped webhook.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/group_webhooks/#add-a-group-hook
+// https://docs.gitlab.com/api/group_webhooks/#create-a-group-hook
 func (s *GroupsService) AddGroupHook(gid any, opt *AddGroupHookOptions, options ...RequestOptionFunc) (*GroupHook, *Response, error) {
 	return do[*GroupHook](
 		s.client,
@@ -176,7 +176,7 @@ func (s *GroupsService) AddGroupHook(gid any, opt *AddGroupHookOptions, options 
 // EditGroupHookOptions represents the available EditGroupHook() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/group_webhooks/#edit-group-hook
+// https://docs.gitlab.com/api/group_webhooks/#update-a-group-hook
 type EditGroupHookOptions struct {
 	URL                       *string `url:"url,omitempty" json:"url,omitempty"`
 	Name                      *string `url:"name,omitempty" json:"name,omitempty"`
@@ -215,7 +215,7 @@ type EditGroupHookOptions struct {
 // EditGroupHook edits a hook for a specified group.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/group_webhooks/#edit-group-hook
+// https://docs.gitlab.com/api/group_webhooks/#update-a-group-hook
 func (s *GroupsService) EditGroupHook(gid any, hook int64, opt *EditGroupHookOptions, options ...RequestOptionFunc) (*GroupHook, *Response, error) {
 	return do[*GroupHook](
 		s.client,
@@ -258,7 +258,7 @@ func (s *GroupsService) TriggerTestGroupHook(pid any, hook int64, trigger GroupH
 // SetGroupCustomHeader creates or updates a group custom webhook header.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/group_webhooks/#set-a-custom-header
+// https://docs.gitlab.com/api/group_webhooks/#update-a-custom-header
 func (s *GroupsService) SetGroupCustomHeader(gid any, hook int64, key string, opt *SetHookCustomHeaderOptions, options ...RequestOptionFunc) (*Response, error) {
 	_, resp, err := do[none](
 		s.client,
@@ -288,7 +288,7 @@ func (s *GroupsService) DeleteGroupCustomHeader(gid any, hook int64, key string,
 // options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/group_webhooks/#set-a-url-variable
+// https://docs.gitlab.com/api/group_webhooks/#update-a-url-variable
 type SetHookURLVariableOptions struct {
 	Value *string `json:"value,omitempty"`
 }
@@ -296,7 +296,7 @@ type SetHookURLVariableOptions struct {
 // SetGroupHookURLVariable sets a group hook URL variable.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/group_webhooks/#set-a-url-variable
+// https://docs.gitlab.com/api/group_webhooks/#update-a-url-variable
 func (s *GroupsService) SetGroupHookURLVariable(gid any, hook int64, key string, opt *SetHookURLVariableOptions, options ...RequestOptionFunc) (*Response, error) {
 	_, resp, err := do[none](
 		s.client,

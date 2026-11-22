@@ -51,32 +51,32 @@ type (
 		// GetCommitRefs gets all references (from branches or tags) a commit is pushed to.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/commits/#get-references-a-commit-is-pushed-to
+		// https://docs.gitlab.com/api/commits/#list-all-references-a-commit-is-pushed-to
 		GetCommitRefs(pid any, sha string, opt *GetCommitRefsOptions, options ...RequestOptionFunc) ([]*CommitRef, *Response, error)
 
 		// GetCommit gets a specific commit identified by the commit hash or name of a
 		// branch or tag.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/commits/#get-a-single-commit
+		// https://docs.gitlab.com/api/commits/#retrieve-a-commit
 		GetCommit(pid any, sha string, opt *GetCommitOptions, options ...RequestOptionFunc) (*Commit, *Response, error)
 
 		// CreateCommit creates a commit with multiple files and actions.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/commits/#create-a-commit-with-multiple-files-and-actions
+		// https://docs.gitlab.com/api/commits/#create-a-commit
 		CreateCommit(pid any, opt *CreateCommitOptions, options ...RequestOptionFunc) (*Commit, *Response, error)
 
 		// GetCommitDiff gets the diff of a commit in a project.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/commits/#get-the-diff-of-a-commit
+		// https://docs.gitlab.com/api/commits/#retrieve-commit-diff
 		GetCommitDiff(pid any, sha string, opt *GetCommitDiffOptions, options ...RequestOptionFunc) ([]*Diff, *Response, error)
 
 		// GetCommitComments gets the comments of a commit in a project.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/commits/#get-the-comments-of-a-commit
+		// https://docs.gitlab.com/api/commits/#list-all-commit-comments
 		GetCommitComments(pid any, sha string, opt *GetCommitCommentsOptions, options ...RequestOptionFunc) ([]*CommitComment, *Response, error)
 
 		// PostCommitComment adds a comment to a commit. Optionally you can post
@@ -90,13 +90,13 @@ type (
 		// GetCommitStatuses gets the statuses of a commit in a project.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/commits/#list-the-statuses-of-a-commit
+		// https://docs.gitlab.com/api/commits/#list-commit-statuses
 		GetCommitStatuses(pid any, sha string, opt *GetCommitStatusesOptions, options ...RequestOptionFunc) ([]*CommitStatus, *Response, error)
 
 		// SetCommitStatus sets the status of a commit in a project.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/commits/#set-the-pipeline-status-of-a-commit
+		// https://docs.gitlab.com/api/commits/#set-commit-pipeline-status
 		SetCommitStatus(pid any, sha string, opt *SetCommitStatusOptions, options ...RequestOptionFunc) (*CommitStatus, *Response, error)
 
 		// ListMergeRequestsByCommit gets merge request associated with a commit.
@@ -120,7 +120,7 @@ type (
 		// GetGPGSignature gets a GPG signature of a commit.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/commits/#get-signature-of-a-commit
+		// https://docs.gitlab.com/api/commits/#retrieve-commit-signature
 		GetGPGSignature(pid any, sha string, options ...RequestOptionFunc) (*GPGSignature, *Response, error)
 	}
 
@@ -139,25 +139,25 @@ var _ CommitsServiceInterface = (*CommitsService)(nil)
 //
 // GitLab API docs: https://docs.gitlab.com/api/commits/
 type Commit struct {
-	ID               string            `json:"id"`
-	ShortID          string            `json:"short_id"`
-	Title            string            `json:"title"`
-	AuthorName       string            `json:"author_name"`
-	AuthorEmail      string            `json:"author_email"`
-	AuthoredDate     *time.Time        `json:"authored_date"`
-	CommitterName    string            `json:"committer_name"`
-	CommitterEmail   string            `json:"committer_email"`
-	CommittedDate    *time.Time        `json:"committed_date"`
-	CreatedAt        *time.Time        `json:"created_at"`
-	Message          string            `json:"message"`
-	ParentIDs        []string          `json:"parent_ids"`
-	Stats            *CommitStats      `json:"stats"`
-	Status           *BuildStateValue  `json:"status"`
-	LastPipeline     *PipelineInfo     `json:"last_pipeline"`
-	ProjectID        int64             `json:"project_id"`
-	Trailers         map[string]string `json:"trailers"`
-	ExtendedTrailers map[string]string `json:"extended_trailers"`
-	WebURL           string            `json:"web_url"`
+	ID               string              `json:"id"`
+	ShortID          string              `json:"short_id"`
+	Title            string              `json:"title"`
+	AuthorName       string              `json:"author_name"`
+	AuthorEmail      string              `json:"author_email"`
+	AuthoredDate     *time.Time          `json:"authored_date"`
+	CommitterName    string              `json:"committer_name"`
+	CommitterEmail   string              `json:"committer_email"`
+	CommittedDate    *time.Time          `json:"committed_date"`
+	CreatedAt        *time.Time          `json:"created_at"`
+	Message          string              `json:"message"`
+	ParentIDs        []string            `json:"parent_ids"`
+	Stats            *CommitStats        `json:"stats"`
+	Status           *BuildStateValue    `json:"status"`
+	LastPipeline     *PipelineInfo       `json:"last_pipeline"`
+	ProjectID        int64               `json:"project_id"`
+	Trailers         map[string]string   `json:"trailers"`
+	ExtendedTrailers map[string][]string `json:"extended_trailers"`
+	WebURL           string              `json:"web_url"`
 }
 
 // CommitStats represents the number of added and deleted files in a commit.
@@ -201,7 +201,7 @@ func (s *CommitsService) ListCommits(pid any, opt *ListCommitsOptions, options .
 // CommitRef represents the reference of branches/tags in a commit.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/commits/#get-references-a-commit-is-pushed-to
+// https://docs.gitlab.com/api/commits/#list-all-references-a-commit-is-pushed-to
 type CommitRef struct {
 	Type string `json:"type"`
 	Name string `json:"name"`
@@ -210,7 +210,7 @@ type CommitRef struct {
 // GetCommitRefsOptions represents the available GetCommitRefs() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/commits/#get-references-a-commit-is-pushed-to
+// https://docs.gitlab.com/api/commits/#list-all-references-a-commit-is-pushed-to
 type GetCommitRefsOptions struct {
 	ListOptions
 	Type *string `url:"type,omitempty" json:"type,omitempty"`
@@ -228,7 +228,7 @@ func (s *CommitsService) GetCommitRefs(pid any, sha string, opt *GetCommitRefsOp
 // GetCommitOptions represents the available GetCommit() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/commits/#get-a-single-commit
+// https://docs.gitlab.com/api/commits/#retrieve-a-commit
 type GetCommitOptions struct {
 	Stats *bool `url:"stats,omitempty" json:"stats,omitempty"`
 }
@@ -248,7 +248,7 @@ func (s *CommitsService) GetCommit(pid any, sha string, opt *GetCommitOptions, o
 
 // CreateCommitOptions represents the available options for a new commit.
 //
-// GitLab API docs: https://docs.gitlab.com/api/commits/#create-a-commit-with-multiple-files-and-actions
+// GitLab API docs: https://docs.gitlab.com/api/commits/#create-a-commit
 type CreateCommitOptions struct {
 	Branch        *string                `url:"branch,omitempty" json:"branch,omitempty"`
 	CommitMessage *string                `url:"commit_message,omitempty" json:"commit_message,omitempty"`
@@ -265,7 +265,7 @@ type CreateCommitOptions struct {
 // CommitActionOptions represents the available options for a new single
 // file action.
 //
-// GitLab API docs: https://docs.gitlab.com/api/commits/#create-a-commit-with-multiple-files-and-actions
+// GitLab API docs: https://docs.gitlab.com/api/commits/#create-a-commit
 type CommitActionOptions struct {
 	Action          *FileActionValue `url:"action,omitempty" json:"action,omitempty"`
 	FilePath        *string          `url:"file_path,omitempty" json:"file_path,omitempty"`
@@ -306,7 +306,7 @@ func (d Diff) String() string {
 // GetCommitDiffOptions represents the available GetCommitDiff() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/commits/#get-the-diff-of-a-commit
+// https://docs.gitlab.com/api/commits/#retrieve-commit-diff
 type GetCommitDiffOptions struct {
 	ListOptions
 	Unidiff *bool `url:"unidiff,omitempty" json:"unidiff,omitempty"`
@@ -350,7 +350,7 @@ func (c CommitComment) String() string {
 // GetCommitCommentsOptions represents the available GetCommitComments() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/commits/#get-the-comments-of-a-commit
+// https://docs.gitlab.com/api/commits/#list-all-commit-comments
 type GetCommitCommentsOptions struct {
 	ListOptions
 }
@@ -387,7 +387,7 @@ func (s *CommitsService) PostCommitComment(pid any, sha string, opt *PostCommitC
 
 // GetCommitStatusesOptions represents the available GetCommitStatuses() options.
 //
-// GitLab API docs: https://docs.gitlab.com/api/commits/#list-the-statuses-of-a-commit
+// GitLab API docs: https://docs.gitlab.com/api/commits/#list-commit-statuses
 type GetCommitStatusesOptions struct {
 	ListOptions
 	Ref        *string `url:"ref,omitempty" json:"ref,omitempty"`
@@ -428,7 +428,7 @@ func (s *CommitsService) GetCommitStatuses(pid any, sha string, opt *GetCommitSt
 
 // SetCommitStatusOptions represents the available SetCommitStatus() options.
 //
-// GitLab API docs: https://docs.gitlab.com/api/commits/#set-the-pipeline-status-of-a-commit
+// GitLab API docs: https://docs.gitlab.com/api/commits/#set-commit-pipeline-status
 type SetCommitStatusOptions struct {
 	State       BuildStateValue `url:"state" json:"state"`
 	Ref         *string         `url:"ref,omitempty" json:"ref,omitempty"`
@@ -493,7 +493,7 @@ func (s *CommitsService) RevertCommit(pid any, sha string, opt *RevertCommitOpti
 // GPGSignature represents a GitLab commit's GPG Signature.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/commits/#get-signature-of-a-commit
+// https://docs.gitlab.com/api/commits/#retrieve-commit-signature
 type GPGSignature struct {
 	KeyID              int64  `json:"gpg_key_id"`
 	KeyPrimaryKeyID    string `json:"gpg_key_primary_keyid"`

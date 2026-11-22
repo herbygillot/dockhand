@@ -58,7 +58,7 @@ type IssueLink struct {
 // IssueRelation gets a relation between two issues.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/issue_links/#list-issue-relations
+// https://docs.gitlab.com/api/issue_links/#list-all-issue-links
 type IssueRelation struct {
 	ID             int64            `json:"id"`
 	IID            int64            `json:"iid"`
@@ -91,7 +91,7 @@ type IssueRelation struct {
 // Issues will be filtered according to the user authorizations.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/issue_links/#list-issue-relations
+// https://docs.gitlab.com/api/issue_links/#list-all-issue-links
 func (s *IssueLinksService) ListIssueRelations(pid any, issue int64, options ...RequestOptionFunc) ([]*IssueRelation, *Response, error) {
 	// Use explicit format string for the path
 	return do[[]*IssueRelation](s.client,
@@ -103,7 +103,7 @@ func (s *IssueLinksService) ListIssueRelations(pid any, issue int64, options ...
 // GetIssueLink gets a specific issue link.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/issue_links/#get-an-issue-link
+// https://docs.gitlab.com/api/issue_links/#retrieve-an-issue-link
 func (s *IssueLinksService) GetIssueLink(pid any, issue, issueLink int64, options ...RequestOptionFunc) (*IssueLink, *Response, error) {
 	// Use explicit format string for the path
 	return do[*IssueLink](s.client,

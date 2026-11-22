@@ -21,42 +21,42 @@ type (
 		// Authentication as Administrator is required.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/audit_events/#retrieve-all-instance-audit-events
+		// https://docs.gitlab.com/api/audit_events/#list-all-instance-audit-events
 		// ListInstanceAuditEvents gets a list of audit events for instance.
 		// Authentication as Administrator is required.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/audit_events/#retrieve-all-instance-audit-events
+		// https://docs.gitlab.com/api/audit_events/#list-all-instance-audit-events
 		ListInstanceAuditEvents(opt *ListAuditEventsOptions, options ...RequestOptionFunc) ([]*AuditEvent, *Response, error)
 
 		// GetInstanceAuditEvent gets a specific instance audit event.
 		// Authentication as Administrator is required.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/audit_events/#retrieve-single-instance-audit-event
+		// https://docs.gitlab.com/api/audit_events/#retrieve-an-instance-audit-event
 		GetInstanceAuditEvent(event int64, options ...RequestOptionFunc) (*AuditEvent, *Response, error)
 
 		// ListGroupAuditEvents gets a list of audit events for the specified group
 		// viewable by the authenticated user.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/audit_events/#retrieve-all-group-audit-events
+		// https://docs.gitlab.com/api/audit_events/#list-all-group-audit-events
 		ListGroupAuditEvents(gid any, opt *ListAuditEventsOptions, options ...RequestOptionFunc) ([]*AuditEvent, *Response, error)
 
 		// GetGroupAuditEvent gets a specific group audit event.
 		//
-		// GitLab API docs: https://docs.gitlab.com/api/audit_events/#retrieve-a-specific-group-audit-event
+		// GitLab API docs: https://docs.gitlab.com/api/audit_events/#retrieve-a-group-audit-event
 		GetGroupAuditEvent(gid any, event int64, options ...RequestOptionFunc) (*AuditEvent, *Response, error)
 
 		// ListProjectAuditEvents gets a list of audit events for the specified project
 		// viewable by the authenticated user.
 		//
-		// GitLab API docs: https://docs.gitlab.com/api/audit_events/#retrieve-all-project-audit-events
+		// GitLab API docs: https://docs.gitlab.com/api/audit_events/#list-all-project-audit-events
 		ListProjectAuditEvents(pid any, opt *ListAuditEventsOptions, options ...RequestOptionFunc) ([]*AuditEvent, *Response, error)
 
 		// GetProjectAuditEvent gets a specific project audit event.
 		//
-		// GitLab API docs: https://docs.gitlab.com/api/audit_events/#retrieve-a-specific-project-audit-event
+		// GitLab API docs: https://docs.gitlab.com/api/audit_events/#retrieve-a-project-audit-event
 		GetProjectAuditEvent(pid any, event int64, options ...RequestOptionFunc) (*AuditEvent, *Response, error)
 	}
 

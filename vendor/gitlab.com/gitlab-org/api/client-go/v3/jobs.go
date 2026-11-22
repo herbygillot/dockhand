@@ -50,13 +50,13 @@ type (
 		// failed, success, canceled, skipped; showing all jobs if none provided
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/jobs/#list-project-jobs
+		// https://docs.gitlab.com/api/jobs/#list-all-jobs-for-a-project
 		ListProjectJobs(pid any, opts *ListJobsOptions, options ...RequestOptionFunc) ([]*Job, *Response, error)
 		// ListPipelineJobs gets a list of jobs for specific pipeline in a
 		// project. If the pipeline ID is not found, it will respond with 404.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/jobs/#list-pipeline-jobs
+		// https://docs.gitlab.com/api/jobs/#list-all-jobs-by-pipeline
 		ListPipelineJobs(pid any, pipelineID int64, opts *ListJobsOptions, options ...RequestOptionFunc) ([]*Job, *Response, error)
 		// ListPipelineBridges gets a list of bridges for specific pipeline in a
 		// project.
@@ -65,7 +65,7 @@ type (
 		// ListPipelineTriggerJobs instead. To be removed in client-go v4.0.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/jobs/#list-pipeline-trigger-jobs
+		// https://docs.gitlab.com/api/jobs/#list-all-trigger-jobs-by-pipeline
 		ListPipelineBridges(pid any, pipelineID int64, opts *ListJobsOptions, options ...RequestOptionFunc) ([]*Bridge, *Response, error)
 		// ListPipelineTriggerJobs gets a list of trigger jobs (bridges) for a
 		// specific pipeline in a project.
@@ -75,12 +75,12 @@ type (
 		ListPipelineTriggerJobs(pid any, pipelineID int64, opts *ListPipelineTriggerJobsOptions, options ...RequestOptionFunc) ([]*TriggerJob, *Response, error)
 		// GetJobTokensJob retrieves the job that generated a job token.
 		//
-		// GitLab API docs: https://docs.gitlab.com/api/jobs/#get-job-tokens-job
+		// GitLab API docs: https://docs.gitlab.com/api/jobs/#retrieve-a-job-by-job-token
 		GetJobTokensJob(opts *GetJobTokensJobOptions, options ...RequestOptionFunc) (*Job, *Response, error)
 		// GetJob gets a single job of a project.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/jobs/#get-a-single-job
+		// https://docs.gitlab.com/api/jobs/#retrieve-a-job-by-job-id
 		GetJob(pid any, jobID int64, options ...RequestOptionFunc) (*Job, *Response, error)
 		// GetJobArtifacts gets jobs artifacts of a project
 		//
@@ -98,7 +98,7 @@ type (
 		// reference name and job provided the job finished successfully.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/job_artifacts/#download-the-artifacts-archive
+		// https://docs.gitlab.com/api/job_artifacts/#download-job-artifacts-by-job-id
 		DownloadArtifactsFile(pid any, refName string, opt *DownloadArtifactsFileOptions, options ...RequestOptionFunc) (*bytes.Reader, *Response, error)
 		// DownloadSingleArtifactsFile downloads a file from the artifacts from the
 		// given reference name and job provided the job finished successfully.
@@ -113,12 +113,12 @@ type (
 		// The file is extracted from the archive and streamed to the client.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/job_artifacts/#download-a-single-artifact-file-from-specific-tag-or-branch
+		// https://docs.gitlab.com/api/job_artifacts/#download-a-single-artifact-file-by-reference-name
 		DownloadSingleArtifactsFileByTagOrBranch(pid any, refName string, artifactPath string, opt *DownloadArtifactsFileOptions, options ...RequestOptionFunc) (*bytes.Reader, *Response, error)
 		// GetTraceFile gets a trace of a specific job of a project
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/jobs/#get-a-log-file
+		// https://docs.gitlab.com/api/jobs/#retrieve-a-log-file-for-a-job
 		GetTraceFile(pid any, jobID int64, options ...RequestOptionFunc) (*bytes.Reader, *Response, error)
 		// CancelJob cancels a single job of a project.
 		//
@@ -147,7 +147,7 @@ type (
 		// expiration is set.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/job_artifacts/#keep-artifacts
+		// https://docs.gitlab.com/api/job_artifacts/#keep-job-artifacts
 		KeepArtifacts(pid any, jobID int64, options ...RequestOptionFunc) (*Job, *Response, error)
 		// PlayJob triggers a manual action to start a job.
 		//
@@ -250,7 +250,7 @@ type JobRunner struct {
 
 // Bridge represents a pipeline bridge.
 //
-// GitLab API docs: https://docs.gitlab.com/api/jobs/#list-pipeline-trigger-jobs
+// GitLab API docs: https://docs.gitlab.com/api/jobs/#list-all-trigger-jobs-by-pipeline
 type Bridge struct {
 	Commit             *Commit       `json:"commit"`
 	Coverage           float64       `json:"coverage"`
@@ -303,7 +303,7 @@ type TriggerJob struct {
 // ListJobsOptions represents the available ListProjectJobs() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/jobs/#list-project-jobs
+// https://docs.gitlab.com/api/jobs/#list-all-jobs-for-a-project
 type ListJobsOptions struct {
 	ListOptions
 	Scope          *[]BuildStateValue `url:"scope[],omitempty" json:"scope,omitempty"`
@@ -360,7 +360,7 @@ func (s *JobsService) ListPipelineTriggerJobs(pid any, pipelineID int64, opts *L
 
 // GetJobTokensJobOptions represents the available GetJobTokensJob() options.
 //
-// GitLab API docs: https://docs.gitlab.com/api/jobs/#get-job-tokens-job
+// GitLab API docs: https://docs.gitlab.com/api/jobs/#retrieve-a-job-by-job-token
 type GetJobTokensJobOptions struct {
 	JobToken *string `url:"job_token,omitempty" json:"job_token,omitempty"`
 }
@@ -386,7 +386,7 @@ func (s *JobsService) GetJob(pid any, jobID int64, options ...RequestOptionFunc)
 // GetJobArtifactsOptions represents the available GetJobArtifacts() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/job_artifacts/#get-job-artifacts
+// https://docs.gitlab.com/api/job_artifacts/#download-job-artifacts-by-job-id
 type GetJobArtifactsOptions struct {
 	FileType *ArtifactFileTypeValue `url:"file_type,omitempty" json:"file_type,omitempty"`
 }
@@ -410,7 +410,7 @@ func (s *JobsService) GetJobArtifactsWithOptions(pid any, jobID int64, opt *GetJ
 // options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/job_artifacts/#download-the-artifacts-archive
+// https://docs.gitlab.com/api/job_artifacts/#download-job-artifacts-by-job-id
 type DownloadArtifactsFileOptions struct {
 	Job *string `url:"job" json:"job"`
 }
