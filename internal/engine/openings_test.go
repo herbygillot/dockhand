@@ -74,3 +74,19 @@ func TestServesCountByItsRows(t *testing.T) {
 	require.False(t, released)
 	require.True(t, back.Gone.IsZero(), "a head found again clears the mark")
 }
+
+// serve's day ends at the next local midnight, not 24 hours on: on the
+// day the clocks go back it is 25 hours long, and a pull request opened in
+// its last hour counts on it, not on the next (#191, group C).
+func TestServesDayEndsAtTheNextLocalMidnight(t *testing.T) {
+	t.Parallel()
+	newYork, err := time.LoadLocation("America/New_York")
+	require.NoError(t, err)
+	fallBack := time.Date(2026, 11, 1, 0, 0, 0, 0, newYork)
+	lastHour := time.Date(2026, 11, 1, 23, 30, 0, 0, newYork)
+	require.True(t, model.ServeOpening{Opened: lastHour}.Counts(fallBack), "the 25-hour day's last hour is its own")
+	require.False(t, model.ServeOpening{Opened: lastHour}.Counts(time.Date(2026, 11, 2, 0, 0, 0, 0, newYork)))
+	springForward := time.Date(2026, 3, 8, 0, 0, 0, 0, newYork)
+	nextDay := time.Date(2026, 3, 9, 0, 30, 0, 0, newYork)
+	require.False(t, model.ServeOpening{Opened: nextDay}.Counts(springForward), "the 23-hour day ends at midnight")
+}

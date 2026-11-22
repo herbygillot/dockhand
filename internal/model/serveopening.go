@@ -31,9 +31,11 @@ type ServeOpening struct {
 // Counts reports whether a row counts against the day that starts at day:
 // a place held counts every day while its publication owes open; a create
 // that may have landed counts every day, since no length of time settles
-// it; an opening counts on the day GitHub says it was created.
+// it; an opening counts on the day GitHub says it was created. The day
+// ends at the next local midnight, which on a day the clocks change is 23
+// or 25 hours on, not 24.
 func (o ServeOpening) Counts(day time.Time) bool {
-	next := day.Add(24 * time.Hour)
+	next := time.Date(day.Year(), day.Month(), day.Day()+1, 0, 0, 0, 0, day.Location())
 	switch {
 	case !o.Opened.IsZero():
 		return !o.Opened.Before(day) && o.Opened.Before(next)
