@@ -147,6 +147,42 @@ func TestMultipleSourcesUseExplicitMasterSiteTags(t *testing.T) {
 	}
 }
 
+func TestSourcesRefusalsNameMasterSiteValues(t *testing.T) {
+	t.Parallel()
+
+	t.Run("unsupported entry", func(t *testing.T) {
+		t.Parallel()
+		const rejected = "file:///private/archive"
+		info := archiveInfo("https://example.invalid/ file:///private/archive")
+
+		_, err := Sources(info, "")
+
+		require.ErrorIs(t, err, portfile.ErrUnsupported)
+		require.ErrorContains(t, err, rejected)
+	})
+
+	t.Run("missing entries", func(t *testing.T) {
+		t.Parallel()
+		info := archiveInfo("")
+
+		_, err := Sources(info, "")
+
+		require.ErrorIs(t, err, portfile.ErrUnsupported)
+		require.ErrorContains(t, err, `master_sites value ""`)
+	})
+
+	t.Run("invalid tag", func(t *testing.T) {
+		t.Parallel()
+		const invalid = "https://example.invalid/:bad/tag"
+		info := archiveInfo(invalid)
+
+		_, err := Sources(info, "")
+
+		require.ErrorIs(t, err, portfile.ErrUnsupported)
+		require.ErrorContains(t, err, invalid)
+	})
+}
+
 func TestCredentialsStopPreparationBeforeDownload(t *testing.T) {
 	t.Parallel()
 	var requests int
