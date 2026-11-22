@@ -771,6 +771,12 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 		return nil, err
 	}
 	defer e.Close()
+	// What its updates raised, read from their records, so a ship run
+	// again after a restart lists them as the first did: what holds apart
+	// from what informs, by port (#194, N1).
+	if err := sayNotices(ctx, e, streams, branch); err != nil {
+		return nil, err
+	}
 	lines.begin("committed")
 	commits, commit := streams.Staged("committing " + branch.ShortName())
 	tidied, err := tidyrun.Stage(ctx, e, commits, branch, "nothing was checked or submitted")
@@ -1036,4 +1042,32 @@ func queueHead(ctx context.Context, s *settings.Settings, e *engine.Engine, stre
 		fmt.Fprintf(streams.Prose(), "%s is already %s for these files; following it.\n", queued.Run.Name(), queued.Run.State)
 	}
 	return &queued.Run, nil
+}
+
+// sayNotices lists what a branch's updates raised (engine.Notices), what
+// holds first, a line each, by port; nothing where they raised nothing.
+func sayNotices(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch) error {
+	notices, err := e.Notices(ctx, branch)
+	if err != nil || len(notices) == 0 {
+		return err
+	}
+	out := streams.Prose()
+	for _, holds := range []bool{true, false} {
+		heading := "What its updates found that holds it:"
+		if !holds {
+			heading = "What its updates found:"
+		}
+		said := false
+		for _, notice := range notices {
+			if notice.Holds != holds {
+				continue
+			}
+			if !said {
+				fmt.Fprintln(out, heading)
+				said = true
+			}
+			fmt.Fprintf(out, "  %s: %s\n", notice.Port, notice.Words)
+		}
+	}
+	return nil
 }

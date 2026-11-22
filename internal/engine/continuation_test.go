@@ -7,6 +7,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -139,4 +140,24 @@ func TestUndoKeepsEdits(t *testing.T) {
 	}))
 	require.Len(t, edits, 1)
 	require.NotNil(t, edits[0].Result)
+}
+
+// ship's notices are read from the records: a rejected patch that stands
+// holds, what the update found and left informs, by port, and a run that
+// reads them again, after a restart, lists the same (#194, N1).
+func TestShipListsItsUpdatesNoticesFromTheRecords(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, p := f.withPreparer(t)
+	p.patches = []patchcheck.Result{{Name: "patch-stale.diff", Checked: true, Detail: "1 out of 1 hunks failed"}}
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-work"})
+	require.NoError(t, err)
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
+	require.NoError(t, err)
+	notices, err := e.Notices(t.Context(), reread(t, e, branch.ID))
+	require.NoError(t, err)
+	require.Contains(t, notices, Notice{Port: "jq", Words: "patch patch-stale.diff doesn't apply", Holds: true})
+	again, err := f.open(t).Notices(t.Context(), reread(t, e, branch.ID))
+	require.NoError(t, err)
+	require.Equal(t, notices, again, "read again by another process, the same")
 }

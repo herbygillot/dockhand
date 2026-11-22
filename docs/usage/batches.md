@@ -156,6 +156,11 @@ the normal output level a batch gives each change a row and lists the ones
 needing attention below it. `-v` expands the stages, and `--json` retains each
 change's partial result.
 
+Before it commits a change, ship lists what the change's updates found, read
+from what each update recorded, so a ship run again after a restart lists the
+same: first what holds the change, such as a patch that no longer applies, then
+what only informs, such as a new `-sys` crate, a line each, by port.
+
 If some changes stop, the rest continue. The batch exit is 0 when all requested
 changes complete, 3 when some complete and others stop, and 1 when none
 complete. A single-target failure retains its own failure or attention code.
