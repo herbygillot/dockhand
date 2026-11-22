@@ -62,6 +62,9 @@ type PullRequest struct {
 // MergeableDetail keeps the forge's own.
 type PullRequestStatus struct {
 	Draft bool `json:",omitempty"`
+	// Head is the commit the pull request was at when this was read; empty
+	// where the forge didn't say.
+	Head model.ObjectID `json:",omitempty"`
 	// Mergeable is "yes", "no", or "unknown" while the forge is still
 	// computing it.
 	Mergeable string

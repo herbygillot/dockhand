@@ -43,6 +43,10 @@ type Publication struct {
 	// reviewers to ask again, where the push calls for it.
 	Asked  Asked      `json:",omitzero"`
 	Review *ReviewAsk `json:",omitempty"`
+	// Drafted is GitHub's answer to returning the pull request to draft,
+	// kept for settling to fold where the branch had no record of the
+	// pull request to take it.
+	Drafted bool `json:",omitempty"`
 	// Owes are the steps still owed, in order.
 	Owes []PublicationStep
 }

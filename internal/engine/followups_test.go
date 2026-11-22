@@ -3,6 +3,8 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -335,4 +337,89 @@ func TestEachReviewerIsAskedForTheirOwnReview(t *testing.T) {
 	require.Contains(t, marks["bo"].Why, "not a collaborator", "the receipt keeps GitHub's words")
 	require.Equal(t, model.ReviewedAgain, marks["cy"].Sent)
 	require.Nil(t, branch.Publication, "every reviewer has an outcome")
+}
+
+// The reviewer step goes by its own reading of the head: where the pull
+// request moved on after the follow-up's check, nobody is asked or marked,
+// and asking stays owed for the commit submitted (#191, group B; Codex's
+// review of c76b6fc0).
+func TestTheReviewerStepGoesByItsOwnReadingOfTheHead(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	g := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	first, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.NoError(t, err)
+	number := first.PullRequest.Ref.Number
+	base := time.Date(2026, 11, 22, 8, 0, 0, 0, time.UTC)
+	g.Status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, ChangesRequestedBy: []string{"ana"}, ReviewedAt: base, LatestReview: map[string]time.Time{"ana": base}}
+	e.options.Now = func() time.Time { return base.Add(time.Hour) }
+	_, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# review addressed\n"})
+	testsupport.Git(t, branch.Worktree, "commit", "-qam", "jq: address review")
+	branch, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Rerequest: true})
+	require.NoError(t, err)
+	moved := testsupport.Git(t, f.clone, "rev-parse", "origin/master")
+	g.Inspecting = func(ref forge.PullRequestRef) {
+		if ref.Number == number {
+			testsupport.Git(t, g.Fork, "update-ref", "refs/heads/"+plan.RemoteBranch(), moved)
+		}
+	}
+	require.Equal(t, []string{"ana"}, plan.Rerequests())
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.ErrorContains(t, err, "so its reviewers weren't asked again")
+	require.Empty(t, submitted.Asked)
+	require.Empty(t, g.RerequestedOn[number], "nobody is asked")
+	branch, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.NotNil(t, branch.Publication)
+	require.Contains(t, branch.Publication.Owes, model.StepRerequest)
+	require.Equal(t, model.NotSent, branch.Publication.Review.Reviewers[0].Sent, "nobody is marked")
+}
+
+// A draft change GitHub answered on a pull request the branch had no
+// record of yet is kept for settling: the push failing after it, the
+// record settling makes says the pull request is a draft, as GitHub has
+// it (#191, group B; Codex's review).
+func TestADraftChangeOnAFoundPullRequestIsFolded(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	_, err = fake.Create(t.Context(), forge.PullRequestInput{Repository: plan.Repository, BaseBranch: UpstreamBranch, HeadRepository: plan.HeadRepository, HeadBranch: plan.RemoteBranch(),
+		Desired: forge.PullRequestContent{Title: "jq: update to 1.8.1", Body: "a person's"}})
+	require.NoError(t, err)
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Draft: true})
+	require.NoError(t, err)
+	require.True(t, plan.ToDraft())
+	require.Nil(t, plan.Branch.PullRequest, "no record of it yet")
+
+	// The fork refuses the push after the draft change landed.
+	require.NoError(t, os.Chmod(filepath.Join(fake.Fork, "objects"), 0o555))
+	t.Cleanup(func() { _ = os.Chmod(filepath.Join(fake.Fork, "objects"), 0o755) })
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.Error(t, err)
+	require.True(t, submitted.Drafted)
+	require.True(t, fake.Draft(plan.Existing.PullRequest.Ref.Number))
+
+	current, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.NotNil(t, current.Publication)
+	worktree, err := e.worktree(t.Context(), current)
+	require.NoError(t, err)
+	_, _, _, err = e.settlePublication(t.Context(), worktree, current, false)
+	require.NoError(t, err)
+	current, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.NotNil(t, current.PullRequest)
+	require.True(t, current.PullRequest.Draft, "GitHub has it as a draft")
 }

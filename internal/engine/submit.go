@@ -1607,6 +1607,7 @@ func (e *Engine) publish(ctx context.Context, plan SubmitPlan, worktree *git.Rep
 		}
 		result.Drafted = true
 		next := without(record, model.StepDraft)
+		next.Drafted = true
 		// The pull request's record takes the draft with the step, so a
 		// push that fails after it doesn't leave it said as ready.
 		if err := e.rewritePublication(ctx, plan.Branch.ID, record.ID, &next, func(tx store.Tx) error {

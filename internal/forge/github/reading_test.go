@@ -71,6 +71,7 @@ func TestPullRequestsAreReadAtOnce(t *testing.T) {
 	require.False(t, open.Partial)
 	require.Equal(t, forge.PullRequestOpen, open.PullRequest.State)
 	require.EqualValues(t, head, open.PullRequest.RemoteHead)
+	require.EqualValues(t, head, open.Status.Head, "the status says the head it was read at")
 	require.Equal(t, "jq: update to 1.8.1", open.PullRequest.Title, "a refresh's reading settles a publication's edit (#191)")
 	require.Equal(t, "changes-requested", open.Status.Review)
 	require.Equal(t, []string{"jmroot"}, open.Status.ChangesRequestedBy)

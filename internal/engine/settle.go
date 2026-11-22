@@ -390,6 +390,13 @@ func (e *Engine) foldSettlement(tx store.Tx, id model.BranchID, record model.Pub
 		found = true
 	}
 	if pr != nil {
+		// A draft change GitHub answered, where there was no record of the
+		// pull request to fold it into then, goes into the record made
+		// now; one that existed took it at the time (#191, group B;
+		// Codex's review).
+		if record.Drafted && found {
+			pr.Draft = true
+		}
 		for _, step := range settled.Done {
 			switch step {
 			case model.StepPush:

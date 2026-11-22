@@ -282,6 +282,15 @@ func (e *Engine) rerequest(ctx context.Context, branch model.BranchID, record *m
 	if err != nil {
 		return nil, nil, fmt.Errorf("reading #%d before asking its reviewers again: %w; asking them is still owed, and dockhand submit %s finishes it", pr.Number, err, current.ShortName())
 	}
+	// This reading's own head decides, not the follow-up's earlier one:
+	// where the pull request moved on since, nobody is asked or marked,
+	// and the step stays owed for its commit. GitHub has no request that
+	// asks only while the head is a given commit, so a push between this
+	// reading and the ask itself isn't caught; that window is accepted
+	// (#191, group B, Codex's review).
+	if status.Head != "" && status.Head != record.Commit {
+		return nil, nil, fmt.Errorf("#%d is now at %s, not %s, which this submission pushed, so its reviewers weren't asked again; asking them is still owed, and dockhand submit %s settles it", pr.Number, status.Head.Short(), record.Commit.Short(), current.ShortName())
+	}
 	ask := *record.Review
 	ask.Reviewers = slices.Clone(ask.Reviewers)
 	var send []string
