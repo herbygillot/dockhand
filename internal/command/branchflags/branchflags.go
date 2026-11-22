@@ -29,6 +29,7 @@ type BranchFlags struct {
 // branches' names.
 func (b *BranchFlags) Register(cmd *cobra.Command, s *settings.Settings, verb string) {
 	cmd.Flags().StringVarP(&b.Branch, "branch", "b", "", verb+" this branch, by its exact name (the dockhand/ prefix is optional)")
+	SingleBranch(cmd)
 	cmd.Flags().StringVarP(&b.Port, "port", "p", "", verb+" the open branch that changes this port")
 	cmd.Flags().IntVar(&b.PR, "pr", 0, verb+" the branch tracking this pull request, by number")
 	cmd.MarkFlagsMutuallyExclusive("branch", "port", "pr")

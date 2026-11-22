@@ -228,6 +228,7 @@ func LatestOf(ctx context.Context, e *engine.Engine, streams term.Streams, where
 // Register adds -b and --new, one at a time, to an authoring command.
 func (c *BranchChoice) Register(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&c.Branch, "branch", "b", "", "work in this existing branch, by its exact name (the dockhand/ prefix is optional); --new=<name> starts one")
+	SingleBranch(cmd)
 	cmd.Flags().StringVar(&c.New, "new", "", "start a new branch for this, in its own worktree; --new=<name> names it")
 	cmd.Flags().Lookup("new").NoOptDefVal = NewNamed
 	cmd.MarkFlagsMutuallyExclusive("branch", "new")
