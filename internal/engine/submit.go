@@ -885,7 +885,7 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 	// carries what the person asked of it (docs/designs/
 	// publication-record.md, "When settling runs").
 	if plan.Branch.Publication != nil {
-		settled, carried, done, err := e.settlePublication(ctx, worktree, plan.Branch, plan.PushURL)
+		settled, carried, done, err := e.settlePublication(ctx, worktree, plan.Branch, plan.PushURL, false)
 		if err != nil {
 			return err
 		}
@@ -1477,9 +1477,10 @@ func (e *Engine) publish(ctx context.Context, plan SubmitPlan, worktree *git.Rep
 	if err != nil {
 		return result, err
 	}
-	// Planning settled any earlier publication; one there now was recorded
-	// since, by another submission.
-	if current.Publication != nil {
+	// Planning settled any earlier publication and kept it where it still
+	// owes steps, for this one to replace (#191, group A); any other there
+	// now was recorded since, by another submission.
+	if current.Publication != nil && (plan.Branch.Publication == nil || current.Publication.ID != plan.Branch.Publication.ID) {
 		return result, fmt.Errorf("%w: another submission of %s began since this one was planned; run dockhand submit again", ErrStaleSubmit, plan.Branch.ShortName())
 	}
 	record := plan.publication(store.NewID("pub"), plan.Login.Account, plan.served)

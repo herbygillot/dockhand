@@ -160,7 +160,13 @@ func (e *Engine) recordPublication(ctx context.Context, plan SubmitPlan, record 
 			}
 			opening = &place
 		}
-		return tx.SetPublication(plan.Branch.ID, "", record)
+		// It replaces the settled publication the plan carried, where one
+		// was kept (settlePublication), and only that one.
+		was := ""
+		if plan.Branch.Publication != nil {
+			was = plan.Branch.Publication.ID
+		}
+		return tx.SetPublication(plan.Branch.ID, was, record)
 	}, publicationIs(plan.Branch.ID, record))
 	if err != nil {
 		return nil, fmt.Errorf("recording the submission before it begins: %w; nothing was pushed", err)

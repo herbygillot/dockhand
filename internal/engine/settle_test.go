@@ -3,11 +3,13 @@ package engine
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
 )
 
 // Settling, one table: a publication and what each read answers, complete
@@ -83,4 +85,38 @@ func TestAPendingStepFailsTheCommandOnlyWhereItFailed(t *testing.T) {
 	} {
 		require.Equal(t, fails, Pending{Step: model.StepReady, Reason: reason}.FailsCommand(), reason)
 	}
+}
+
+// Settling keeps a publication that still owes a step, with what it owes,
+// until a new submission replaces it: a plan alone deleted it, so a --plan
+// lost an owed reviewer yes. Archiving or forgetting the branch ends it
+// (#191, group A).
+func TestSettlingKeepsAPublicationThatStillOwesAStep(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "notes"})
+	require.NoError(t, err)
+	at := time.Date(2026, 11, 22, 8, 0, 0, 0, time.UTC)
+	recorded := &model.Publication{ID: "pub_1", Commit: "abc", At: at, Head: "ada/macports-ports:dockhand/notes", Base: "macports/macports-ports:master",
+		Review: &model.ReviewAsk{Answer: model.ReviewYes, Reviewers: []model.Reviewer{{Login: "reviewer", Reviewed: at}}},
+		Owes:   []model.PublicationStep{model.StepRerequest}}
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.SetPublication(branch.ID, "", recorded) }))
+	branch, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	worktree, err := e.worktree(t.Context(), branch)
+	require.NoError(t, err)
+
+	settled, carried, _, err := e.settlePublication(t.Context(), worktree, branch, "", false)
+	require.NoError(t, err)
+	require.NotNil(t, carried)
+	require.Equal(t, []model.PublicationStep{model.StepRerequest}, carried.Owes)
+	require.NotNil(t, settled.Publication, "a plan keeps the publication that still owes the reviewers")
+	require.True(t, settled.Publication.Same(*recorded))
+
+	_, _, _, err = e.settlePublication(t.Context(), worktree, settled, "", true)
+	require.NoError(t, err)
+	ended, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.Nil(t, ended.Publication, "archiving or forgetting ends it")
 }

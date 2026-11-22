@@ -212,7 +212,7 @@ func (p Pending) FailsCommand() bool {
 // only reads the fork and GitHub. A read that fails leaves it as it is,
 // and the plan is refused with the read named. What the person asked of
 // it that still applies is returned, for the plan to carry.
-func (e *Engine) settlePublication(ctx context.Context, worktree *git.Repository, branch model.Branch, pushURL string) (model.Branch, *model.Publication, []model.PublicationStep, error) {
+func (e *Engine) settlePublication(ctx context.Context, worktree *git.Repository, branch model.Branch, pushURL string, end bool) (model.Branch, *model.Publication, []model.PublicationStep, error) {
 	record := branch.Publication
 	if record == nil {
 		return branch, nil, nil, nil
@@ -231,6 +231,10 @@ func (e *Engine) settlePublication(ctx context.Context, worktree *git.Repository
 			record = nil
 			return nil
 		}
+		// What is settled is the record read under the lock, not the one
+		// read before it, which another process may have written since
+		// (#191, group A).
+		record = current.Publication
 		var reading PublicationReading
 		if pushURL != "" {
 			if head, err := worktree.RemoteHead(ctx, pushURL, headBranch); err == nil {
@@ -255,7 +259,18 @@ func (e *Engine) settlePublication(ctx context.Context, worktree *git.Repository
 			unread = fmt.Errorf("an earlier submission of %s couldn't be accounted for: %s couldn't be read; nothing was done, and dockhand submit tries again", branch.ShortName(), prose.And(settled.Unread))
 			return nil
 		}
-		return e.rewritePublication(ctx, branch.ID, record.ID, nil, func(tx store.Tx) error {
+		// A publication that still owes steps stays, with what it owes and
+		// the pull request found, until a new submission replaces it: a
+		// plan alone deleted it, and a --plan lost an owed ready or a
+		// reviewer yes. One that owes nothing goes; archiving or
+		// forgetting the branch ends it (#191, group A).
+		var next *model.Publication
+		if !settled.Ended && !end && len(settled.Owes) > 0 {
+			kept := *record
+			kept.Owes, kept.Number = settled.Owes, settled.Number
+			next = &kept
+		}
+		return e.rewritePublication(ctx, branch.ID, record.ID, next, func(tx store.Tx) error {
 			return e.foldSettlement(tx, branch.ID, *record, settled, baseRepository)
 		})
 	})
@@ -365,7 +380,7 @@ func (e *Engine) endPublicationFor(ctx context.Context, branch model.Branch, ver
 	if fork, err := e.Fork(ctx, ""); err == nil {
 		pushURL = fork.PushURL
 	}
-	if _, _, _, err := e.settlePublication(ctx, worktree, current, pushURL); err != nil {
+	if _, _, _, err := e.settlePublication(ctx, worktree, current, pushURL, true); err != nil {
 		return fmt.Errorf("%w; %s wasn't %s", err, current.ShortName(), verb)
 	}
 	return nil
