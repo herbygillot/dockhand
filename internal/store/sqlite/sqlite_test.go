@@ -1931,7 +1931,15 @@ func TestAForgottenBranchKeepsOnlyWhatOthersName(t *testing.T) {
 		return tx.RecordResult(model.TargetResult{Execution: theirs.ID, Target: "libharbor", Outcome: model.OutcomePassed, Tests: model.TestsNone, ReusedFrom: built.ID, RecordedAt: at})
 	}))
 	a.State, a.EndedAt = model.BranchArchived, at
-	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(a) }))
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		if err := tx.AddCIFailure(model.CIFailure{Branch: a.ID, Head: "head1", Run: 7, Attempt: 1, Job: 11, Check: "macos-15", Cause: model.CIUnclassified, At: at}); err != nil {
+			return err
+		}
+		if err := tx.SetNetworkHolds(a.ID, "tree1", at, []model.Concern{{Port: "libharbor", Rule: "open", Detail: "held"}}); err != nil {
+			return err
+		}
+		return tx.UpdateBranch(a)
+	}))
 
 	open := a
 	open.ID = "br_3"
@@ -1956,6 +1964,14 @@ func TestAForgottenBranchKeepsOnlyWhatOthersName(t *testing.T) {
 		check, err := rd.Check(reusing.ID)
 		require.NoError(t, err)
 		require.Equal(t, built.ID, check.Origins[built.ID].Execution.ID, "the origin another result names stays")
+		// Nothing reads a forgotten branch's CI failures or network holds
+		// again, so they go with it (#293).
+		failures, err := rd.CIFailures(a.ID, "head1")
+		require.NoError(t, err)
+		require.Empty(t, failures, "its CI failures")
+		holds, _, err := rd.NetworkHolds(a.ID, "tree1")
+		require.NoError(t, err)
+		require.Empty(t, holds, "its network holds")
 		return nil
 	}))
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
@@ -2226,4 +2242,17 @@ func TestPullRequestPushTimeRoundTrips(t *testing.T) {
 		require.Nil(t, got.PullRequest)
 		return nil
 	}))
+}
+
+// Pruning the journal is a write, refused in a read transaction as every
+// other write is: it deleted events and sessions there (#293).
+func TestPruningTheJournalIsRefusedInARead(t *testing.T) {
+	t.Parallel()
+	f := open(t)
+	f.seed(t)
+	err := f.store.View(t.Context(), f.repo, func(rd store.Reader) error {
+		_, _, err := rd.(store.Tx).PruneJournal(at.Add(24 * time.Hour))
+		return err
+	})
+	require.ErrorIs(t, err, model.ErrInvalid)
 }
