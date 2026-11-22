@@ -67,6 +67,27 @@ func SourcesCover(have, want model.Plan) bool {
 	})
 }
 
+// SharedSourcesDiffer reports a changed source only in environments both
+// plans build (#259). An environment present on one side says nothing about
+// whether a source moved on the other.
+func SharedSourcesDiffer(have, want model.Plan) bool {
+	for _, build := range want.Builds {
+		at := slices.IndexFunc(have.Builds, func(b model.EnvironmentPlan) bool { return b.Environment == build.Environment })
+		if at < 0 {
+			continue
+		}
+		for _, id := range build.Order {
+			for _, sources := range [][2]map[model.TargetID]model.GitSource{{have.Builds[at].Git, build.Git}, {have.Builds[at].Tags, build.Tags}} {
+				standing := model.SourceAgainst(sourceOf(sources[0], id), sourceOf(sources[1], id))
+				if standing != model.SourceSame && standing != model.SourceUnresolved {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // FinishedSourcesCover reports whether a finished check's resolved sources
 // stand for another request: a Git source judges same, since what isn't
 // known of a Git fetch stands for nothing, and a tag same or unresolved,

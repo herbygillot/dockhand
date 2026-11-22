@@ -7,6 +7,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
 )
 
 // A check in a prefix on this Mac runs its Portfiles as root there, so
@@ -70,6 +71,78 @@ func TestAnUnresolvedGitSourceJoinsAndDoesntStand(t *testing.T) {
 	// A fetch mode changed between Git and an archive by tag is other.
 	require.False(t, SourcesCover(git, tag))
 	require.False(t, FinishedSourcesCover(git, tag))
+}
+
+// Environments requested only on one side do not show a changed source;
+// a moved source in a shared environment does (#259).
+func TestSharedEnvironmentSourcesDistinguishOtherProvidersFromMovedSources(t *testing.T) {
+	t.Parallel()
+	provider := func(name string) model.Environment { return model.Environment{Provider: name} }
+	base, otherProvider := provider("github"), provider("tart")
+	otherMac := base
+	otherMac.Platform = model.Platform{OS: "darwin", Version: "15", Architecture: "arm64"}
+	plan := func(envs []model.Environment, source string) model.Plan {
+		builds := make([]model.EnvironmentPlan, 0, len(envs))
+		for _, env := range envs {
+			builds = append(builds, model.EnvironmentPlan{Environment: env, Order: []model.TargetID{"libharbor"}, Tags: map[model.TargetID]model.GitSource{"libharbor": {URL: "https://example.invalid/repo", Ref: "v4", Commit: model.ObjectID(source)}}})
+		}
+		return model.Plan{Environments: envs, Builds: builds, Targets: []model.PlanTarget{{ID: "libharbor"}}}
+	}
+	for _, tc := range []struct {
+		name       string
+		have, want model.Plan
+		moved      bool
+	}{
+		{"different provider", plan([]model.Environment{base}, "old"), plan([]model.Environment{otherProvider}, "new"), false},
+		{"another macOS", plan([]model.Environment{base}, "old"), plan([]model.Environment{otherMac}, "new"), false},
+		{"moved in shared environment", plan([]model.Environment{base}, "old"), plan([]model.Environment{base}, "new"), true},
+		{"moved and different provider", plan([]model.Environment{base}, "old"), plan([]model.Environment{base, otherProvider}, "new"), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.moved, SharedSourcesDiffer(tc.have, tc.want))
+		})
+	}
+}
+
+// A request for another environment beside a running check is uncovered,
+// but the environment difference does not say its source moved (#259).
+func TestBesideAnotherEnvironmentDoesNotReportAnotherSource(t *testing.T) {
+	t.Parallel()
+	c := service(t)
+	runningEnvironment := model.Environment{Provider: "github", Platform: model.Platform{OS: "linux", Version: "24.04", Architecture: "arm64"}}
+	requestedEnvironment := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "15", Architecture: "arm64"}}
+	run := c.queued(t, "another-environment", runningEnvironment)
+	runner := c.session(t)
+	_, err := runner.Acquire(t.Context(), RunResource(run.ID))
+	require.NoError(t, err)
+	require.NoError(t, c.Store.Update(t.Context(), c.Repository, func(tx store.Tx) error {
+		run.State, run.StartedAt = model.RunRunning, &at
+		return tx.UpdateRun(run)
+	}))
+	var branch model.Branch
+	var revision model.Revision
+	var plan model.Plan
+	require.NoError(t, c.Store.View(t.Context(), c.Repository, func(r store.Reader) error {
+		var err error
+		branch, err = r.Branch(run.Branch)
+		if err != nil {
+			return err
+		}
+		revision, err = r.Revision(run.Revision)
+		if err != nil {
+			return err
+		}
+		plan, err = r.Plan(run.Plan)
+		return err
+	}))
+	plan.ID, plan.Environments = "requested-plan", []model.Environment{requestedEnvironment}
+	plan.Builds = []model.EnvironmentPlan{{Environment: requestedEnvironment, Order: []model.TargetID{"jq"}}}
+	_, err = c.beside(t.Context(), QueueRequest{Branch: branch, Revision: revision, Plan: plan, Beside: BesideFollow})
+	var active *ActiveRunError
+	require.ErrorAs(t, err, &active)
+	require.True(t, active.Uncovered)
+	require.False(t, active.OtherSource)
 }
 
 // Matching target sets do not cover a request when its dependent is
