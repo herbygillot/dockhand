@@ -982,6 +982,11 @@ func checkHead(ctx context.Context, s *settings.Settings, e *engine.Engine, stre
 // (decision 4). then says what follows it, as ", then submitting it if it
 // passes". tests is --tests, check.tests where it's empty.
 func queueHead(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams, branch model.Branch, place engine.WhereRequest, tests, then string) (*model.Run, error) {
+	// master fetched now, before anything builds: a check of changes
+	// already on master builds for nothing (#181).
+	if err := e.MasterBeforeCheck(ctx, branch); err != nil {
+		return nil, err
+	}
 	where, err := e.Where(ctx, place)
 	if err != nil {
 		return nil, err

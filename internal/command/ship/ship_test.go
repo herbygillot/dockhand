@@ -526,8 +526,9 @@ func TestShipsPlanSaysItCommitsTheEditsFirst(t *testing.T) {
 
 // A branch whose update master has since taken by another commit isn't
 // pushed or submitted: with no fetch between, ship asked GitHub for a
-// pull request that duplicated master's (#164). A master change to the
-// port another way stops it too, offering the rebase; one elsewhere stops
+// pull request that duplicated master's (#164). A resumed ship stops
+// before it checks, building nothing (#181). A master change to the port
+// another way stops it too, offering the rebase; one elsewhere stops
 // nothing.
 func TestShipStopsWhereMasterChangedTheBranchsPorts(t *testing.T) {
 	t.Parallel()
@@ -557,6 +558,13 @@ func TestShipStopsWhereMasterChangedTheBranchsPorts(t *testing.T) {
 			testsupport.Git(t, w.Upstream, "add", "-A")
 			testsupport.Git(t, w.Upstream, "commit", "-q", "-m", "someone else's commit")
 
+			// A resumed ship fetches master before it checks, so it builds
+			// nothing for changes already there, --to check as well (#181).
+			if c.said != "" {
+				_, _, err := cmdtest.Dockhand(t, "ship", "-b", "jq-1.8.1", "--to", "check", "--yes")
+				require.ErrorContains(t, err, c.said)
+				require.ErrorContains(t, err, "This run started no check and submitted nothing.")
+			}
 			out, errs, err := cmdtest.Dockhand(t, "ship", "-b", "jq-1.8.1", "--yes")
 			if c.said == "" {
 				require.NoError(t, err, errs)
@@ -565,7 +573,8 @@ func TestShipStopsWhereMasterChangedTheBranchsPorts(t *testing.T) {
 			}
 			require.Error(t, err, out)
 			require.Contains(t, err.Error(), c.said)
-			require.Contains(t, err.Error(), "The check ran; nothing was pushed or submitted.")
+			require.Contains(t, err.Error(), "This run started no check and submitted nothing.")
+			require.NotContains(t, out, "· checking", "no check was queued")
 			require.Empty(t, g.PRs, "no pull request was asked for")
 			require.Empty(t, testsupport.Git(t, filepath.Join(filepath.Dir(w.Upstream), "fork.git"), "branch", "--list", "jq-1.8.1"), "nothing was pushed")
 			if c.content != "" {

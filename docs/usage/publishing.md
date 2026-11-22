@@ -217,9 +217,11 @@ If master changed them another way, review the rebase before continuing:
 master changed textproc/jq since this branch's base (9b3c5d1 → 4e1f0a2). This run started no check and submitted nothing. Review dockhand rebase -b jq-update --plan before continuing.
 ```
 
-After a check that `ship` ran, the middle sentence is "The check ran; nothing
-was pushed or submitted." A change master made only in other directories stops
-nothing.
+`ship` of a branch already prepared, `--to check` included, fetches master the
+same way before it queues a check, so it builds nothing for changes already on
+master. Where master changes during a check that `ship` ran, the middle sentence
+is "The check ran; nothing was pushed or submitted." A change master made only
+in other directories stops nothing.
 
 Use `--note` for context the generated evidence cannot express:
 

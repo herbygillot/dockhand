@@ -1475,13 +1475,55 @@ func (m *MasterChanged) Said(checkRan bool) string {
 // fetched now is "on master": the plan compared with the branch's base,
 // and the duplicate pull request of #164 was opened with no fetch between.
 func (e *Engine) masterUnchanged(ctx context.Context, plan SubmitPlan) error {
-	base := plan.Branch.Base
-	if len(plan.testedTrees) == 0 || base == "" {
+	if len(plan.testedTrees) == 0 {
+		return nil
+	}
+	return e.masterChanged(ctx, plan.Branch, plan.Commit, slices.Sorted(maps.Keys(plan.testedTrees)), "nothing was pushed or submitted")
+}
+
+// MasterBeforeCheck fetches master before a resumed ship checks a branch,
+// and stops it where master changed a port directory the branch changes
+// since its base, as a submission is stopped (MasterChanged): a check of
+// changes already on master builds for nothing (#181, the build-saving
+// half of #164). It deletes and rebases nothing, and a change master made
+// elsewhere stops nothing.
+func (e *Engine) MasterBeforeCheck(ctx context.Context, branch model.Branch) error {
+	if branch.Base == "" {
+		return nil
+	}
+	worktree, err := e.worktree(ctx, branch)
+	if err != nil {
+		return err
+	}
+	head, _, err := worktree.Branch(ctx, branch.Name)
+	if err != nil {
+		return err
+	}
+	trees, err := e.Repo.CommitTrees(ctx, []string{head})
+	if err != nil {
+		return err
+	}
+	analysis, err := e.analyze(ctx, branch.Base, model.ObjectID(trees[head]))
+	if err != nil {
+		return err
+	}
+	directories, err := statementTrees(ctx, worktree, trees[head], analysis.Scope.Ports)
+	if err != nil || len(directories) == 0 {
+		return err
+	}
+	return e.masterChanged(ctx, branch, head, slices.Sorted(maps.Keys(directories)), "nothing was checked or submitted")
+}
+
+// masterChanged fetches master and returns MasterChanged where it changed
+// any of directories since the branch's base.
+func (e *Engine) masterChanged(ctx context.Context, branch model.Branch, head string, directories []string, nothing string) error {
+	base := branch.Base
+	if base == "" {
 		return nil
 	}
 	master, err := e.fetchMaster(ctx)
 	if err != nil {
-		return fmt.Errorf("%w; nothing was pushed or submitted", err)
+		return fmt.Errorf("%w; %s", err, nothing)
 	}
 	if master == base {
 		return nil
@@ -1490,7 +1532,6 @@ func (e *Engine) masterUnchanged(ctx context.Context, plan SubmitPlan) error {
 	if err != nil {
 		return err
 	}
-	directories := slices.Sorted(maps.Keys(plan.testedTrees))
 	before, err := e.Repo.DirectoryTrees(ctx, trees[string(base)], directories)
 	if err != nil {
 		return err
@@ -1510,11 +1551,11 @@ func (e *Engine) masterUnchanged(ctx context.Context, plan SubmitPlan) error {
 	if len(changed) == 0 {
 		return nil
 	}
-	onMaster, err := e.changesOn(ctx, plan.Branch, plan.Commit, master)
+	onMaster, err := e.changesOn(ctx, branch, head, master)
 	if err != nil {
 		return err
 	}
-	return &MasterChanged{Branch: plan.Branch.ShortName(), Base: base, Master: master, Directories: changed, OnMaster: onMaster}
+	return &MasterChanged{Branch: branch.ShortName(), Base: base, Master: master, Directories: changed, OnMaster: onMaster}
 }
 
 // ApplySubmit pushes the planned commit to your fork, only while the fork's
