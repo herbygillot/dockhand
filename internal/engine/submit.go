@@ -119,6 +119,9 @@ type SubmitPlan struct {
 	// made, which this one's record says in the timeline as a clean run
 	// would: an opening, a push.
 	settledDone []model.PublicationStep
+	// settled is the earlier publication settling left and what it still
+	// asks, for carry to take once the destination is known.
+	settled *model.Publication
 	// admission is serve's limit and clock, read at the admission: serve's
 	// count's rows that count today must be fewer than the limit.
 	admission ServeAdmission
@@ -869,8 +872,20 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 // destination finds where submit pushes: your fork, or for a pull request
 // someone else opened, their branch, when GitHub lets you push to it; the
 // pull request already open for the branch; and the fork's branch as it
-// stands.
+// stands. What an earlier submission asked carries only once all of that
+// is known (carry).
 func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan *SubmitPlan) error {
+	if err := e.findDestination(ctx, worktree, plan); err != nil {
+		return err
+	}
+	plan.carry(plan.settled)
+	if plan.Carried == nil {
+		plan.settledDone = nil
+	}
+	return nil
+}
+
+func (e *Engine) findDestination(ctx context.Context, worktree *git.Repository, plan *SubmitPlan) error {
 	f := e.forge()
 	var err error
 	if plan.Login, err = f.Login(ctx); err != nil {
@@ -911,10 +926,7 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 			return err
 		}
 		plan.Branch, plan.Request.Branch = settled, settled
-		plan.carry(carried)
-		if plan.Carried != nil {
-			plan.settledDone = done
-		}
+		plan.settled, plan.settledDone = carried, done
 	}
 	plan.RemoteHead, err = worktree.RemoteHead(ctx, plan.PushURL, plan.RemoteBranch())
 	// A fork that refuses this Mac's key, or asks credentials it hasn't,
@@ -1782,10 +1794,22 @@ func (e *Engine) followUps(ctx context.Context, plan SubmitPlan, result *Submitt
 
 // carry takes what an earlier submission of the same commit and head
 // still owed that the person asked of it: a ready, unless this run asks
-// for a draft, and a yes to asking the reviewers again. Another commit or
-// another destination carries nothing.
+// for a draft, and a yes to asking the reviewers again. Another commit,
+// another account, or another destination, its head, its base or its pull
+// request, carries nothing (docs/designs/publication-record.md, "Who
+// continues what").
 func (p *SubmitPlan) carry(earlier *model.Publication) {
-	if earlier == nil || earlier.Commit != model.ObjectID(p.Commit) || earlier.Head != p.Head() {
+	if earlier == nil || earlier.Commit != model.ObjectID(p.Commit) || earlier.Head != p.Head() || earlier.Base != p.Repository+":"+UpstreamBranch {
+		return
+	}
+	if earlier.By != "" && !strings.EqualFold(earlier.By, p.Login.Account) {
+		return
+	}
+	number := 0
+	if p.Existing != nil {
+		number = p.Existing.PullRequest.Ref.Number
+	}
+	if earlier.Number != number {
 		return
 	}
 	p.Carried = earlier

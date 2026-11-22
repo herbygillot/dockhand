@@ -305,7 +305,7 @@ func (e *Engine) settleReading(ctx context.Context, worktree *git.Repository, br
 		return branch, nil, nil, err
 	}
 	carried := *record
-	carried.Owes = settled.Owes
+	carried.Owes, carried.Number = settled.Owes, settled.Number
 	return branch, &carried, settled.Done, err
 }
 
