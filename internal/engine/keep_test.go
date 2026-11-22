@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -24,6 +26,18 @@ type keepingProvider struct {
 	// failed are the clones kept for a failure, unasked.
 	failed    map[string]bool
 	judgments map[string]string
+	// running are clones dockhand shell is in, which it won't remove.
+	running map[string]bool
+}
+
+func (p *keepingProvider) RemoveLeftover(ctx context.Context, ref string) error {
+	p.mu.Lock()
+	running := p.running[ref]
+	p.mu.Unlock()
+	if running {
+		return buildenv.ErrLeftoverRunning
+	}
+	return p.leavingProvider.RemoveLeftover(ctx, ref)
 }
 
 func (p *keepingProvider) Execute(ctx context.Context, job buildenv.Job, build buildenv.Build) error {
@@ -407,4 +421,29 @@ func TestARetryRemovesTheCloneTheEarlierCheckKept(t *testing.T) {
 	require.Equal(t, model.RunPassed, done.State)
 	require.NotContains(t, provider.left, old, "a retry is the branch's next check, which should remove its earlier retained clone")
 	require.Len(t, provider.left, 1)
+}
+
+// A clone a check start would replace, left by its provider since dockhand
+// shell is in it, is said as not removed rather than passed over unsaid
+// (field testing's kept-clone pass, #291).
+func TestACloneACheckStartCouldntRemoveIsSaid(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	provider := &keepingProvider{kept: map[string]time.Time{}, failed: map[string]bool{}, running: map[string]bool{}}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	queued := queuedHarborRun(t, e, tahoeArm)
+	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	clone := provider.left[0]
+	provider.mu.Lock()
+	provider.kept[clone] = e.now().Add(-8 * 24 * time.Hour)
+	provider.failed[clone] = true
+	provider.running[clone] = true
+	provider.mu.Unlock()
+	var said []string
+	ctx := progress.WithReporter(t.Context(), func(update progress.Update) { said = append(said, update.Message) })
+	require.NoError(t, e.forgetKept(ctx, "another-branch", model.Plan{}))
+	require.Contains(t, provider.left, clone)
+	require.Contains(t, strings.Join(said, "\n"), ", kept by "+run.Name()+", was not removed: running in dockhand shell")
 }

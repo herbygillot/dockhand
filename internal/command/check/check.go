@@ -188,7 +188,7 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 					fmt.Fprintf(out, "  New port directory %s: run dockhand check --include %s/Portfile to build it. Run git sparse-checkout add %s before staging its files.\n", directory, directory, directory)
 				}
 			}
-			view.WritePlan(out, proposed, e.PlanNotes(ctx, proposed), e.PlanSiblings(ctx, capture.Revision, proposed), e.Remedy, view.ListShown(streams))
+			view.WritePlan(out, proposed, e.PlanNotes(ctx, proposed), e.PlanSiblings(ctx, capture.Revision, proposed), e.Remedy, view.ListShown(streams), plan)
 			// The plan's evaluation, with -v: check --plan -v is the dry
 			// evaluation under a variant set (field testing's curl
 			// +sectrust notes, note 8b).
@@ -428,7 +428,7 @@ func previewBaseline(ctx context.Context, e *engine.Engine, streams term.Streams
 		return err
 	}
 	writeBaselineHeader(streams.Prose(), branch, baseline)
-	view.WritePlan(streams.Prose(), baseline.Plan, e.PlanNotes(ctx, baseline.Plan), engine.Siblings{}, e.Remedy, view.ListShown(streams))
+	view.WritePlan(streams.Prose(), baseline.Plan, e.PlanNotes(ctx, baseline.Plan), engine.Siblings{}, e.Remedy, view.ListShown(streams), true)
 	planned := view.PlanView(baseline.Plan)
 	streams.Emit(view.CheckJSON{Branch: branch.ShortName(), Plan: &planned, Targets: []view.TargetJSON{}})
 	return nil
@@ -529,7 +529,7 @@ func confirmVariantBuilds(streams term.Streams, plan model.Plan, yes bool) error
 	if len(plan.ReplacesKept) > 0 {
 		var replacements []string
 		for _, replacement := range plan.ReplacesKept {
-			replacements = append(replacements, view.KeptReplacementWords(replacement))
+			replacements = append(replacements, view.KeptReplacementWords(replacement, false))
 		}
 		question = strings.Join(replacements, "\n") + "\n" + question
 	}

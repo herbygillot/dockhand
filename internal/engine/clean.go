@@ -21,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/remotewrite"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -952,7 +953,15 @@ func (e *Engine) forgetKept(ctx context.Context, branch model.BranchID, plan mod
 			replacing = append(replacing, leftover)
 		}
 	}
-	_, err = e.RemoveLeftovers(ctx, session, replacing)
+	removed, err := e.RemoveLeftovers(ctx, session, replacing)
+	// The plan said these go; one the provider left, as a clone dockhand
+	// shell is in, is said as not removed (field testing's kept-clone
+	// pass, #291).
+	for _, leftover := range removed {
+		if !leftover.Done && leftover.Kept != "" {
+			progress.Report(ctx, "%s, kept by %s, was not removed: %s", leftover.What, leftover.Run.Name(), leftover.Kept)
+		}
+	}
 	return err
 }
 

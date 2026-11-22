@@ -298,10 +298,28 @@ func cleanKept(ctx context.Context, e *engine.Engine, streams term.Streams, chec
 	}
 	removed, err := e.RemoveLeftovers(ctx, session, leftovers)
 	streams.Emit(map[string]any{"leftovers": view.LeftoversView(removed), "applied": true})
-	if streams.Verbose() > 0 {
+	// What came back says what was removed, not the plan: a clone dockhand
+	// shell is in comes back kept, and the provider left it (field
+	// testing's kept-clone pass, #291).
+	done := 0
+	for _, leftover := range removed {
+		switch {
+		case leftover.Done:
+			done++
+		case leftover.Kept != "":
+			fmt.Fprintf(streams.Prose(), "%s, kept by %s, was not removed: %s\n", leftover.What, leftover.Run.Name(), leftover.Kept)
+		}
+	}
+	switch {
+	case done == 0:
+		fmt.Fprintln(streams.Prose(), "Nothing was removed.")
+		if err == nil {
+			err = &term.ExitError{Code: term.ExitAttention}
+		}
+	case streams.Verbose() > 0:
 		writeLeftovers(streams.Prose(), removed, true)
-	} else {
-		fmt.Fprintf(streams.Prose(), "Removed %s.\n", prose.Plural(count, "kept clone"))
+	default:
+		fmt.Fprintf(streams.Prose(), "Removed %s.\n", prose.Plural(done, "kept clone"))
 	}
 	return err
 }

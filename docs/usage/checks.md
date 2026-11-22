@@ -529,9 +529,13 @@ with `dockhand clean --kept check-12`, or all the branch's with
 alone. `dockhand clean -b branch-name` without `--kept` is refused; use
 `dockhand clean branch-name` to clean that branch. Removing a branch with
 `clean` also removes its kept clones. A running clone is skipped until a later
-cleanup opportunity. A same-branch, same-release `--keep` check says in its
-plan, and at any confirmation, that the earlier asked clone is removed because
-the new check keeps its own; `--plan` leaves it untouched.
+cleanup opportunity. A clone `dockhand shell` is in is never removed:
+`clean --kept` names each clone it left and why, counts only what it removed,
+and where it removed nothing says so and exits 3; a check's start says a clone
+it would have replaced and couldn't. A same-branch, same-release `--keep` check
+says, as it starts and at any confirmation, that the earlier asked clone is
+removed because the new check keeps its own; `--plan` says it would be removed,
+and leaves it untouched.
 
 The check's final notice names each kept clone, its size and why it was kept,
 then gives `dockhand shell check-12` to enter and `dockhand clean --kept

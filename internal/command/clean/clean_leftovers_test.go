@@ -23,6 +23,9 @@ type leavingBuilder struct {
 	left   []string
 	keptAt map[string]time.Time
 	failed map[string]bool
+	// running are clones dockhand shell is in, which the provider
+	// refuses to remove.
+	running map[string]bool
 }
 
 func (p *leavingBuilder) Name() string { return "command" }
@@ -66,6 +69,9 @@ func (p *leavingBuilder) keep(ref string, at time.Time, failed bool) {
 func (p *leavingBuilder) RemoveLeftover(_ context.Context, ref string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.running[ref] {
+		return buildenv.ErrLeftoverRunning
+	}
 	p.left = slices.DeleteFunc(p.left, func(left string) bool { return left == ref })
 	return nil
 }
@@ -193,11 +199,40 @@ func TestKeepPlanAndCheckAnnounceAskedCloneReplacement(t *testing.T) {
 
 	out, _, err := cmdtest.Dockhand(t, "check", "--keep", "--plan")
 	require.NoError(t, err)
-	require.Regexp(t, `check-1's kept clone of .+ is removed: this check keeps its own\.`, out)
+	require.Regexp(t, `check-1's kept clone of .+ would be removed: this check keeps its own\.`, out, "a plan says what it would do")
+	require.NotContains(t, out, "is removed")
 	require.Contains(t, builder.left, clone, "--plan never removes the earlier clone")
 
 	out, _, err = cmdtest.Dockhand(t, "check", "--keep")
 	require.NoError(t, err)
 	require.Regexp(t, `check-1's kept clone of .+ is removed: this check keeps its own\.`, out)
 	require.NotContains(t, builder.left, clone, "the queued check replaces the earlier clone")
+}
+
+// A kept clone the provider won't remove, since dockhand shell is in it,
+// is said as not removed, and a removal that removed nothing exits
+// non-zero: "Removed 1 kept clone." was said of one left in place (field
+// testing's kept-clone pass, #291).
+func TestCleanKeptSaysAClonesInUseWasNotRemoved(t *testing.T) {
+	t.Parallel()
+	cmdtest.CheckedBranch(t)
+	builder := &leavingBuilder{}
+	cmdtest.Stands(t).Leftovers = builder
+	_, _, err := cmdtest.Dockhand(t, "check", "--keep")
+	require.NoError(t, err)
+	clone := builder.left[0]
+	builder.keep(clone, time.Now(), false)
+	builder.running = map[string]bool{clone: true}
+
+	out, _, err := cmdtest.Dockhand(t, "clean", "--kept", "check-1", "--yes")
+	require.Error(t, err, "nothing asked for was removed")
+	require.Contains(t, out, "VM "+clone+", kept by check-1, was not removed: running in dockhand shell")
+	require.Contains(t, out, "Nothing was removed.")
+	require.NotContains(t, out, "Removed")
+	require.Contains(t, builder.left, clone)
+
+	out, _, err = cmdtest.Dockhand(t, "--json", "clean", "--kept", "check-1", "--yes")
+	require.Error(t, err)
+	require.Contains(t, out, `"kept": "running in dockhand shell"`)
+	require.NotContains(t, out, `"removed": true`)
 }

@@ -55,7 +55,7 @@ func WritePushes(out io.Writer, plan model.Plan) {
 // directories no change record narrows (engine.PlanSiblings), remedy
 // saying how to give an environment what a target it can't build needs,
 // and shown how many of a long list a line names (ListShown).
-func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings engine.Siblings, remedy func(model.Unmet) string, shown int) {
+func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings engine.Siblings, remedy func(model.Unmet) string, shown int, planned bool) {
 	var changed, built, extra []string
 	for _, target := range plan.Targets {
 		name := string(target.ID)
@@ -183,14 +183,19 @@ func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings engine.S
 		fmt.Fprintf(out, "✗ %s can't be planned: %s\n", unresolved.Target.Name, unresolved.Reason)
 	}
 	for _, replacement := range plan.ReplacesKept {
-		fmt.Fprintln(out, KeptReplacementWords(replacement))
+		fmt.Fprintln(out, KeptReplacementWords(replacement, planned))
 	}
 }
 
 // KeptReplacementWords says what a same-branch, same-release --keep check
-// replaces before its new clone exists.
-func KeptReplacementWords(replacement model.KeptCloneReplacement) string {
-	return fmt.Sprintf("%s's kept clone of %s is removed: this check keeps its own.", replacement.Check, replacement.Release)
+// replaces before its new clone exists: in a plan, what it would do, which
+// a plan doesn't (field testing's kept-clone pass, #291).
+func KeptReplacementWords(replacement model.KeptCloneReplacement, planned bool) string {
+	verb := "is"
+	if planned {
+		verb = "would be"
+	}
+	return fmt.Sprintf("%s's kept clone of %s %s removed: this check keeps its own.", replacement.Check, replacement.Release, verb)
 }
 
 // writeGitSources says what each Git-fetched target's build must fetch:

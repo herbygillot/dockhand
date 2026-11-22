@@ -84,13 +84,13 @@ func TestAPlanNamesTheChangedSubportAndItsSiblings(t *testing.T) {
 			{Environment: tahoe, Exclusions: excluded, Order: []model.TargetID{"terraform-1.16"}},
 		}}
 	var out bytes.Buffer
-	WritePlan(&out, plan, nil, engine.Siblings{Targets: siblings}, nil, listShown)
+	WritePlan(&out, plan, nil, engine.Siblings{Targets: siblings}, nil, listShown, false)
 	require.Contains(t, out.String(), "Changed     terraform-1.16\n")
 	require.Contains(t, out.String(), "Siblings    terraform_select, terraform-1.0, terraform-1.1, terraform-1.2, terraform-1.3 (MacPorts CI builds every subport of a changed Portfile; use --only to narrow the check)\n")
 	require.Contains(t, out.String(), fmt.Sprintf("Excluded    terraform_select, terraform-1.0, terraform-1.1, terraform-1.2, terraform-1.3: %s\n", minmax))
 
 	out.Reset()
-	WritePlan(&out, plan, nil, engine.Siblings{}, nil, listShown)
+	WritePlan(&out, plan, nil, engine.Siblings{}, nil, listShown, false)
 	require.Contains(t, out.String(), "Changed     terraform-1.16, terraform_select, terraform-1.0, terraform-1.1, terraform-1.2, terraform-1.3\n", "with no record, as before")
 	require.NotContains(t, out.String(), "Siblings")
 }
@@ -107,13 +107,13 @@ func TestAPlanOfARevisionBumpNamesItsSiblingsOrWhyNot(t *testing.T) {
 	}
 	plan := model.Plan{Targets: targets, Environments: []model.Environment{{Provider: "command"}}}
 	var out bytes.Buffer
-	WritePlan(&out, plan, nil, engine.Siblings{Targets: map[model.TargetID]bool{"zdemo-devel": true, "zdemo-legacy": true}}, nil, listShown)
+	WritePlan(&out, plan, nil, engine.Siblings{Targets: map[model.TargetID]bool{"zdemo-devel": true, "zdemo-legacy": true}}, nil, listShown, false)
 	require.Contains(t, out.String(), "Changed     zdemo (revision only)\n")
 	require.Contains(t, out.String(), "Siblings    zdemo-devel, zdemo-legacy (MacPorts CI builds every subport of a changed Portfile; use --only to narrow the check)\n")
 	require.NotContains(t, out.String(), "couldn't be narrowed")
 
 	out.Reset()
-	WritePlan(&out, plan, nil, engine.Siblings{Unnarrowed: []engine.Unnarrowed{{Directory: "devel/zdemo", Reason: "the revision couldn't be evaluated: boom"}}}, nil, listShown)
+	WritePlan(&out, plan, nil, engine.Siblings{Unnarrowed: []engine.Unnarrowed{{Directory: "devel/zdemo", Reason: "the revision couldn't be evaluated: boom"}}}, nil, listShown, false)
 	require.Contains(t, out.String(), "Changed     zdemo (revision only), zdemo-devel (revision only), zdemo-legacy (revision only)\n"+
 		"            every subport of zdemo is listed as changed; they couldn't be narrowed to what changed: the revision couldn't be evaluated: boom\n")
 	require.NotContains(t, out.String(), "Siblings")
@@ -303,12 +303,12 @@ func TestVerboseNamesAWholeList(t *testing.T) {
 	plan := model.Plan{Targets: targets, Environments: []model.Environment{{Provider: "command"}}, Tests: model.TestsDeclared}
 	var out bytes.Buffer
 	streams := term.Begin(term.Streams{Out: &out}, nil)
-	WritePlan(streams.Out, plan, nil, engine.Siblings{}, nil, ListShown(streams))
+	WritePlan(streams.Out, plan, nil, engine.Siblings{}, nil, ListShown(streams), false)
 	require.Contains(t, out.String(), "Changed     20 ports: py300-thing, py301-thing, py302-thing, py303-thing, py304-thing, py305-thing, py306-thing, py307-thing and 12 more\n")
 
 	out.Reset()
 	streams.SetVerbosity(1)
-	WritePlan(&out, plan, nil, engine.Siblings{}, nil, ListShown(streams))
+	WritePlan(&out, plan, nil, engine.Siblings{}, nil, ListShown(streams), false)
 	require.Contains(t, out.String(), "Changed     "+strings.Join(names, ", ")+"\n", "all twenty at -v")
 }
 
@@ -393,7 +393,7 @@ func TestAPlanSaysAMoveAndARemoval(t *testing.T) {
 		Targets: []model.PlanTarget{{ID: "dockhand", Target: model.Target{Name: "dockhand"}, Directory: "macports/dockhand", MovedFrom: "sysutils/dockhand", Kind: model.RevisionOnly, Role: model.Changed}},
 		Removed: []string{"devel/gone"}}
 	var out bytes.Buffer
-	WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8)
+	WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8, false)
 	require.Contains(t, out.String(), "Changed     dockhand (moved from sysutils/dockhand)\n")
 	require.Contains(t, out.String(), "Removed     devel/gone, with no port to build\n")
 	require.Contains(t, out.String(), "github's workflow builds nothing for a moved port")
@@ -402,7 +402,7 @@ func TestAPlanSaysAMoveAndARemoval(t *testing.T) {
 	// Portfile (dockhand rename).
 	plan.Targets = []model.PlanTarget{{ID: "xgo", Target: model.Target{Name: "xgo"}, Directory: "lang/xgo", MovedFrom: "lang/goplus", Kind: model.Substantive, Role: model.Changed}}
 	out.Reset()
-	WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8)
+	WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8, false)
 	require.Contains(t, out.String(), "Changed     xgo (renamed from goplus)\n")
 	require.NotContains(t, out.String(), "github's workflow builds nothing")
 }
