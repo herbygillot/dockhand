@@ -280,6 +280,7 @@ func TestPlanRecordsAnUnattendedCheck(t *testing.T) {
 }
 
 func TestFailureCloneCapKeepsFourNewestPerProvider(t *testing.T) {
+	t.Parallel()
 	at := time.Now()
 	leftovers := make([]Leftover, 5)
 	for i := range leftovers {

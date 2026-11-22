@@ -558,7 +558,8 @@ func (p *Provider) Shell(ctx context.Context, job buildenv.ShellJob) (int, error
 	if err != nil {
 		return -1, err
 	}
-	image, kept := tartvm.KeptFrom(home, job.Ref)
+	// Read again under the clone's guard below, where the image is taken.
+	_, kept := tartvm.KeptFrom(home, job.Ref)
 	if !kept || !strings.HasPrefix(job.Ref, clonePrefixAll) {
 		return -1, fmt.Errorf("%s isn't a clone a check kept; check --keep keeps one", job.Ref)
 	}
@@ -571,7 +572,7 @@ func (p *Provider) Shell(ctx context.Context, job buildenv.ShellJob) (int, error
 		return -1, err
 	}
 	defer guard.Close()
-	image, kept = tartvm.KeptFrom(home, job.Ref)
+	image, kept := tartvm.KeptFrom(home, job.Ref)
 	if !kept {
 		return -1, fmt.Errorf("%s isn't a clone a check kept; check --keep keeps one", job.Ref)
 	}
