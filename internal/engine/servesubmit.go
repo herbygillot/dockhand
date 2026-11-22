@@ -98,7 +98,10 @@ func (e *Engine) serveCandidates(ctx context.Context) ([]ServeCandidate, []model
 		// A serve branch a person checked where they named is theirs to
 		// submit: serve submits what passed where build.unattended builds
 		// (D17).
-		if branch.Origin != model.OriginServe || e.personAsked(status) {
+		// A person's submission, unfinished, is theirs to finish: serve
+		// settles and continues only publications it recorded (#191,
+		// group C).
+		if branch.Origin != model.OriginServe || e.personAsked(status) || branch.Publication != nil && !branch.Publication.Served {
 			yours = append(yours, branch)
 			continue
 		}
@@ -106,6 +109,14 @@ func (e *Engine) serveCandidates(ctx context.Context) ([]ServeCandidate, []model
 		candidate := ServeCandidate{Branch: branch, Plan: plan}
 		if err != nil {
 			candidate.Held = append(candidate.Held, model.Concern{Origin: model.FromSubmission, Rule: "unplanned", Detail: err.Error()})
+			candidates = append(candidates, candidate)
+			continue
+		}
+		// A pull request found open for its head is one serve didn't
+		// open, and serve never writes to one it found (docs/designs/
+		// publication-record.md, "Who continues what").
+		if plan.Existing != nil {
+			candidate.Held = append(candidate.Held, model.Concern{Origin: model.FromSubmission, Rule: "found", Detail: fmt.Sprintf("#%d is already open for its branch, and serve didn't open it; serve leaves it to you", plan.Existing.PullRequest.Ref.Number)})
 			candidates = append(candidates, candidate)
 			continue
 		}
