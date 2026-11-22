@@ -317,6 +317,9 @@ These choices answer different questions:
   other, so a change for another release goes out unbuilt unless a check
   built it there. It cannot be combined with `--draft`, `--accept`, or
   `--standing`.
+  Where a check of the branch passed on an earlier commit, it names that check
+  and its commit, and the files changed since, and says the files submitted
+  were not checked.
 - `submit --accept <port>`: Accept an eligible recorded failure, or a new port's
   lint warnings, for this commit.
 - `submit --accept '<port> +variant'`: Accept a variant build's failure, or a

@@ -766,7 +766,11 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 			plan.block(branchstate.Block{Kind: branchstate.BlockAwaiting, Port: subject, Awaited: decision.Words})
 		}
 	}
-	facts := bodyFacts{Commits: plan.Commits, Evidence: plan.Evidence, NoCheck: request.NoCheck, Accepted: plan.Accepted, Types: request.Types,
+	earlier := ""
+	if request.NoCheck {
+		earlier = e.earlierPass(ctx, branch.ID, model.ObjectID(plan.Tree))
+	}
+	facts := bodyFacts{Commits: plan.Commits, Evidence: plan.Evidence, NoCheck: request.NoCheck, EarlierPass: earlier, Accepted: plan.Accepted, Types: request.Types,
 		Updated:     len(plan.moved) > 0,
 		RulesPassed: !errorsFound, Squashed: squashed, Searched: plan.SearchProblem == "", Others: plan.Others,
 		TestedBinaries: request.TestedBinaries, TestedVariants: request.TestedVariants, SkipNotification: request.SkipNotification, NewPorts: newPorts,

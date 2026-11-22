@@ -599,3 +599,23 @@ func TestEachPendingStepHasItsOwnReason(t *testing.T) {
 		}
 	}
 }
+
+// A --no-check submission names the branch's last check that passed on an
+// earlier commit, and the files changed since, while saying the files
+// submitted weren't checked (#246).
+func TestANoCheckSubmissionNamesTheEarlierPass(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	checked(t, e, branch, model.OutcomePassed, model.OutcomePassed)
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\ndepends_lib port:oniguruma6\n"})
+	testsupport.Git(t, branch.Worktree, "commit", "-qam", "jq: depend on oniguruma6")
+	branch, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	require.Contains(t, plan.Body, "no Dockhand check result is included")
+	require.Regexp(t, `An earlier commit was checked: check-\d+ passed for [0-9a-f]{7}; since then textproc/jq/Portfile changed, which no check here covers\. The files submitted here were not checked\.`, plan.Body)
+}
