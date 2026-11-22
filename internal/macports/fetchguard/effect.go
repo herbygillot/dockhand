@@ -381,12 +381,29 @@ func loopVariables(src []byte, variable syntax.Word) ([]string, bool) {
 		text = braced.Body.Text(src)
 	}
 	names := strings.Fields(text)
-	for _, name := range names {
+	for i, name := range names {
 		if strings.ContainsAny(name, "{}\"$[]\\") {
 			return nil, false
 		}
+		variable, ok := variableName(name)
+		if !ok {
+			return nil, false
+		}
+		names[i] = variable
 	}
 	return names, true
+}
+
+// variableName is the variable a name written in a Portfile names: a
+// leading :: is the global one, ::distfiles being distfiles. A name with
+// :: anywhere else names a namespace's variable, which the grammar cannot
+// read (#293; Codex's review of 78b4e353).
+func variableName(name string) (string, bool) {
+	name = strings.TrimPrefix(name, "::")
+	if name == "" || strings.Contains(name, "::") {
+		return "", false
+	}
+	return name, true
 }
 
 // dictForReason judges dict for as the loop it is: its two variables are
@@ -534,9 +551,13 @@ func conditionEffectReason(src []byte, body textedit.Span, defs Definitions, dep
 // variableReason refuses a write to a variable the fetch reads, or to a
 // variable whose name is computed.
 func variableReason(src []byte, command syntax.Command, variable syntax.Word) refusal {
-	name, ok := variable.Literal(src)
+	written, ok := variable.Literal(src)
 	if !ok {
 		return refuse(command.Span.Start, "writes a computed variable")
+	}
+	name, ok := variableName(written)
+	if !ok {
+		return refuse(command.Span.Start, "writes `%s`, a variable the grammar cannot read", written)
 	}
 	if AffectsFetch(name) {
 		return refuse(command.Span.Start, "writes `%s`", name)

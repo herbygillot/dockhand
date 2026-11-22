@@ -468,14 +468,17 @@ func TestTheGuardJudgesWhatDictAndTheMatchCommandsWrite(t *testing.T) {
 		return Assess(plain, "portfetch::fetch_main", "{global {*}[info globals]\n"+hook+"return -code error no\n}", "", nil, defs)
 	}
 	for hook, writes := range map[string]string{
-		"dict for {k v} $d { distfiles-append x }\n": "distfiles",
-		"dict for {distfiles v} $d { ui_msg $v }\n":  "distfiles",
-		"array set distfiles {a b}\n":                "distfiles",
-		"regsub a b c distfiles\n":                   "distfiles",
-		"regsub -all -- a b c distfiles\n":           "distfiles",
-		"regexp {(.*)} $name all distfiles\n":        "distfiles",
-		"regexp -start 2 {(.*)} $name distfiles\n":   "distfiles",
-		"scan $version %d.%d major distfiles\n":      "distfiles",
+		"dict for {k v} $d { distfiles-append x }\n":  "distfiles",
+		"dict for {distfiles v} $d { ui_msg $v }\n":   "distfiles",
+		"array set distfiles {a b}\n":                 "distfiles",
+		"regsub a b c distfiles\n":                    "distfiles",
+		"regsub -all -- a b c distfiles\n":            "distfiles",
+		"regexp {(.*)} $name all distfiles\n":         "distfiles",
+		"regexp -start 2 {(.*)} $name distfiles\n":    "distfiles",
+		"scan $version %d.%d major distfiles\n":       "distfiles",
+		"dict for {::distfiles v} $d { ui_msg $v }\n": "distfiles",
+		"set ::distfiles x\n":                         "distfiles",
+		"regsub a b c ::distfiles\n":                  "distfiles",
 	} {
 		semantics := assess(hook)
 		require.Equal(t, "custom", semantics.Kind, hook)
