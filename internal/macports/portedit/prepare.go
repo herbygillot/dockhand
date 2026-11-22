@@ -161,6 +161,10 @@ type Result struct {
 	// Patches reports whether each declared patch file still applies to the
 	// candidate source; a rejected patch is a finding, not a refusal.
 	Patches []patchcheck.Result `json:",omitempty"`
+	// PatchesChecked is the edit having come to its patch check with a
+	// port evaluated: false for one that checked nothing, as an update
+	// that only follows a moved repository (Declared).
+	PatchesChecked bool `json:"-"`
 	// Dropped are the patches the update took out, with their files,
 	// since the new source already holds them.
 	Dropped []string `json:",omitempty"`

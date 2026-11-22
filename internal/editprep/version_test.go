@@ -483,6 +483,7 @@ func TestAnUpdateDropsAPatchTheReleaseAlreadyHolds(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"fix.diff"}, result.Dropped)
 	require.Empty(t, result.PatchProblems(), "a patch dropped is no problem")
+	require.Equal(t, &model.PatchCheck{Scope: "s", Declared: []model.PatchResult{}}, result.Declared("s"), "the saved list is the final declaration, the dropped patch absent (#194)")
 	require.Len(t, result.Files, 2)
 	require.NotContains(t, string(result.Files[0].After), "patchfiles")
 	require.Equal(t, git.FileEdit{Path: "devel/fixture/files/fix.diff", Before: result.Files[1].Before, Delete: true}, result.Files[1])
@@ -509,6 +510,7 @@ func TestAPatchWhoseRemovalChangesMoreStays(t *testing.T) {
 	require.Empty(t, result.Dropped)
 	require.Contains(t, string(result.Files[0].After), "patchfiles fix.diff")
 	require.Len(t, result.Files, 1, "its file stays")
+	require.Equal(t, &model.PatchCheck{Scope: "s", Declared: []model.PatchResult{{Name: "fix.diff", State: model.PatchRejected}}}, result.Declared("s"), "a merged patch kept doesn't apply (#194)")
 	require.Contains(t, strings.Join(said, "\n"), "Kept fix.diff, which the new source already holds: dropping it also changes fixture.use_configure changed")
 }
 
