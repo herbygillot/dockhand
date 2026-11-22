@@ -364,19 +364,29 @@ func loopReason(src []byte, command syntax.Command, defs Definitions, depth int)
 }
 
 // loopVariables are the names a loop's variable word binds: a literal
-// name, or a braced list of them, which is literal text too.
+// name, or a braced list of them, which is literal text too. A name that
+// isn't a plain word, as {distfiles} in a list, is one Tcl reads as a list
+// element the grammar would misname, so the list is one it cannot read
+// (#293; Codex's review).
 func loopVariables(src []byte, variable syntax.Word) ([]string, bool) {
-	if names, ok := variable.Literal(src); ok {
-		return strings.Fields(names), true
+	text, ok := variable.Literal(src)
+	if !ok {
+		if variable.Expand || len(variable.Segments) != 1 {
+			return nil, false
+		}
+		braced, isBraced := variable.Segments[0].(syntax.Braced)
+		if !isBraced {
+			return nil, false
+		}
+		text = braced.Body.Text(src)
 	}
-	if variable.Expand || len(variable.Segments) != 1 {
-		return nil, false
+	names := strings.Fields(text)
+	for _, name := range names {
+		if strings.ContainsAny(name, "{}\"$[]\\") {
+			return nil, false
+		}
 	}
-	braced, isBraced := variable.Segments[0].(syntax.Braced)
-	if !isBraced {
-		return nil, false
-	}
-	return strings.Fields(braced.Body.Text(src)), true
+	return names, true
 }
 
 // dictForReason judges dict for as the loop it is: its two variables are

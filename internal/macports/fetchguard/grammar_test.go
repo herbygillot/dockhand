@@ -485,6 +485,8 @@ func TestTheGuardJudgesWhatDictAndTheMatchCommandsWrite(t *testing.T) {
 		"regsub -command {string toupper} a b c out\n",
 		"regsub -unknown a b c out\n",
 		"dict for k $d { ui_msg $k }\n",
+		"dict for {{distfiles} v} $d { ui_msg $v }\n",
+		"foreach {{distfiles} v} $pairs { ui_msg $v }\n",
 	} {
 		require.Equal(t, "custom", assess(hook).Kind, "%s: not followed by the grammar", hook)
 	}
