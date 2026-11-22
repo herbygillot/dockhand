@@ -171,10 +171,12 @@ func Follow(ctx context.Context, e *engine.Engine, session *coord.Session, run m
 // startJournal shows a run's progress as it's journaled, until the stop it
 // returns is called.
 func startJournal(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams) (*journal, func()) {
-	journal := &journal{e: e, run: run.ID, out: streams.Err, verbose: streams.Verbose() > 0}
+	// The journal's lines go through the command's one status line, the
+	// one writer of standard error that progress also says lines through:
+	// a second writer interleaved with it mid-line (#295's race run).
+	journal := &journal{e: e, run: run.ID, status: streams.Status(), verbose: streams.Verbose() > 0}
 	if quiet(streams) {
 		journal.held, journal.live = true, streams.ErrTerminal()
-		journal.status = streams.Status()
 		// Off a terminal, a foreground check's own redrawn line is
 		// printed, a line each time it changes: rc5 printed nothing
 		// between a check's plan and its report, which a session reading
@@ -337,7 +339,6 @@ func stillRunning(run model.Run, journal *journal, bound Bound) error {
 type journal struct {
 	e    *engine.Engine
 	run  model.RunID
-	out  io.Writer
 	last int64
 	// held is a stage's journal, its report held back: its progress is
 	// -v's, and the latest is the redrawn line where it's live. steps
@@ -347,8 +348,10 @@ type journal struct {
 	// verbose shows the steps journaled at --verbose, as each archive a
 	// guest is given.
 	verbose bool
-	status  *term.StatusLine
-	shown   string
+	// status is the command's status line, which every line the journal
+	// prints goes through, and the line redrawn where it's live.
+	status *term.StatusLine
+	shown  string
 	// latest is the latest progress the run journaled, and waited its
 	// latest wait, which a bounded follow's end says.
 	latest, waited string
@@ -374,22 +377,22 @@ func (j *journal) show(ctx context.Context) {
 			if j.live {
 				j.status.Show("⋯ " + event.Message)
 			} else {
-				fmt.Fprintf(j.out, "  %s\n", event.Message)
+				j.status.Say("  " + event.Message)
 			}
 		case model.EventProgress, model.EventTargetResult, model.EventExecutionRetry, model.EventExecutionState:
 			switch {
 			case j.live:
 				j.status.Show("⋯ " + event.Message)
 			case !j.held:
-				fmt.Fprintf(j.out, "  %s\n", event.Message)
+				j.status.Say("  " + event.Message)
 			case j.steps && event.Message != j.shown:
 				j.shown = event.Message
-				fmt.Fprintf(j.out, "  ⋯ %s\n", event.Message)
+				j.status.Say("  ⋯ " + event.Message)
 			}
 		case model.EventArchiveAltered, model.EventArchiveGone:
 			// A kept archive found altered, or gone, is marked, where it
 			// was in the journal alone (the rc8 full stage's D-T1).
-			fmt.Fprintf(j.out, "  ! %s\n", event.Message)
+			j.status.Say("  ! " + event.Message)
 		}
 	}
 }

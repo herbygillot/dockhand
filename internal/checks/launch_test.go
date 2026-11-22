@@ -112,13 +112,19 @@ func TestTheLaunchLockIsHeldByTheLauncherAndWhatItForks(t *testing.T) {
 	c := service(t)
 	environment := model.Environment{Provider: "launching", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
 	inside, leave := make(chan struct{}), make(chan struct{})
-	var child *exec.Cmd
+	// The child is set in the launch's goroutine and read here, so it
+	// is handed over atomically (#295's race run).
+	var forked atomic.Pointer[exec.Cmd]
 	provider := &launching{start: func(ctx context.Context) error {
 		close(inside)
 		<-leave
-		child = exec.Command("/bin/sleep", "30")
+		child := exec.Command("/bin/sleep", "30")
 		child.ExtraFiles = filelock.Carried(ctx)
-		return child.Start()
+		if err := child.Start(); err != nil {
+			return err
+		}
+		forked.Store(child)
+		return nil
 	}}
 	c.Providers = map[string]buildenv.Provider{"launching": provider}
 	run := c.queued(t, "jq-held", environment)
@@ -138,7 +144,8 @@ func TestTheLaunchLockIsHeldByTheLauncherAndWhatItForks(t *testing.T) {
 	require.ErrorContains(t, err, "which is still alive")
 
 	close(leave)
-	require.Eventually(t, func() bool { return provider.started.Load() == 1 && child != nil && child.Process != nil }, 10*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return provider.started.Load() == 1 && forked.Load() != nil }, 10*time.Second, 10*time.Millisecond)
+	child := forked.Load()
 	t.Cleanup(func() { _ = child.Process.Kill() })
 	// The launch has let go, and the child it forked holds the lock.
 	require.Eventually(t, func() bool {
