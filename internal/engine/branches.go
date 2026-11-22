@@ -758,10 +758,13 @@ func (e *Engine) StartAtHead(ctx context.Context) (Adoption, error) {
 	if err != nil {
 		return Adoption{}, err
 	}
+	// The port is named by the tree's own rule for a port's directory,
+	// which a dotfile directory, _resources and a category's own files
+	// aren't (#287).
 	port := ""
 	for _, path := range paths {
-		if parts := strings.Split(path, "/"); len(parts) >= 3 && !strings.HasPrefix(parts[0], "_") {
-			port = parts[1]
+		if directory, ok := macports.PortDirectoryOf(path); ok {
+			port = filepath.Base(directory)
 			break
 		}
 	}
