@@ -161,7 +161,7 @@ Dockhand's workflow guide is built into the binary, so it always matches the ver
 dockhand --help           # command overview
 dockhand <cmd> --help     # flags and options for any command
 dockhand usage            # first-run guide
-dockhand usage --help     # the topics: checks, recovery, batches, unattended, and more
+dockhand usage <topic>    # one workflow, such as checks, recovery, or batches
 dockhand explain <code>   # explain any finding, check result, or branch state
 ```
 
