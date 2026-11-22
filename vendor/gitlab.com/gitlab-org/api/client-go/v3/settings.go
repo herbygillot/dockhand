@@ -308,6 +308,7 @@ type Settings struct {
 	NotesCreateLimit                                       int64                     `json:"notes_create_limit"`
 	NotifyOnUnknownSignIn                                  bool                      `json:"notify_on_unknown_sign_in"`
 	NugetSkipMetadataURLValidation                         bool                      `json:"nuget_skip_metadata_url_validation"`
+	O11yProvisionerURL                                     string                    `json:"o11y_provisioner_url"`
 	OutboundLocalRequestsAllowlistRaw                      string                    `json:"outbound_local_requests_allowlist_raw"`
 	OutboundLocalRequestsWhitelist                         []string                  `json:"outbound_local_requests_whitelist"`
 	PackageMetadataPURLTypes                               []int64                   `json:"package_metadata_purl_types"`
@@ -373,6 +374,7 @@ type Settings struct {
 	ScanExecutionPoliciesActionLimit                       int64                     `json:"scan_execution_policies_action_limit"`
 	ScanExecutionPoliciesScheduleLimit                     int64                     `json:"scan_execution_policies_schedule_limit"`
 	SearchRateLimit                                        int64                     `json:"search_rate_limit"`
+	SearchRateLimitAllowlistRaw                            string                    `json:"search_rate_limit_allowlist_raw"`
 	SearchRateLimitUnauthenticated                         int64                     `json:"search_rate_limit_unauthenticated"`
 	SecretDetectionRevocationTokenTypesURL                 string                    `json:"secret_detection_revocation_token_types_url"`
 	SecretDetectionTokenRevocationEnabled                  bool                      `json:"secret_detection_token_revocation_enabled"`
@@ -847,6 +849,8 @@ type UpdateSettingsOptions struct {
 	NotesCreateLimit                                       *int64                                  `url:"notes_create_limit,omitempty" json:"notes_create_limit,omitempty"`
 	NotifyOnUnknownSignIn                                  *bool                                   `url:"notify_on_unknown_sign_in,omitempty" json:"notify_on_unknown_sign_in,omitempty"`
 	NugetSkipMetadataURLValidation                         *bool                                   `url:"nuget_skip_metadata_url_validation,omitempty" json:"nuget_skip_metadata_url_validation,omitempty"`
+	O11yProvisionerAPIKey                                  *string                                 `url:"o11y_provisioner_api_key,omitempty" json:"o11y_provisioner_api_key,omitempty"`
+	O11yProvisionerURL                                     *string                                 `url:"o11y_provisioner_url,omitempty" json:"o11y_provisioner_url,omitempty"`
 	OutboundLocalRequestsAllowlistRaw                      *string                                 `url:"outbound_local_requests_allowlist_raw,omitempty" json:"outbound_local_requests_allowlist_raw,omitempty"`
 	OutboundLocalRequestsWhitelist                         *[]string                               `url:"outbound_local_requests_whitelist,omitempty" json:"outbound_local_requests_whitelist,omitempty"`
 	PackageMetadataPURLTypes                               *[]int64                                `url:"package_metadata_purl_types,omitempty" json:"package_metadata_purl_types,omitempty"`
@@ -912,6 +916,7 @@ type UpdateSettingsOptions struct {
 	ScanExecutionPoliciesActionLimit                       *int64                                  `url:"scan_execution_policies_action_limit,omitempty" json:"scan_execution_policies_action_limit,omitempty"`
 	ScanExecutionPoliciesScheduleLimit                     *int64                                  `url:"scan_execution_policies_schedule_limit,omitempty" json:"scan_execution_policies_schedule_limit,omitempty"`
 	SearchRateLimit                                        *int64                                  `url:"search_rate_limit,omitempty" json:"search_rate_limit,omitempty"`
+	SearchRateLimitAllowlistRaw                            *string                                 `url:"search_rate_limit_allowlist_raw,omitempty" json:"search_rate_limit_allowlist_raw,omitempty"`
 	SearchRateLimitUnauthenticated                         *int64                                  `url:"search_rate_limit_unauthenticated,omitempty" json:"search_rate_limit_unauthenticated,omitempty"`
 	SecretDetectionRevocationTokenTypesURL                 *string                                 `url:"secret_detection_revocation_token_types_url,omitempty" json:"secret_detection_revocation_token_types_url,omitempty"`
 	SecretDetectionTokenRevocationEnabled                  *bool                                   `url:"secret_detection_token_revocation_enabled,omitempty" json:"secret_detection_token_revocation_enabled,omitempty"`

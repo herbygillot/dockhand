@@ -120,7 +120,7 @@ func (s *NamespacesService) SearchNamespace(query string, options ...RequestOpti
 // GetNamespace gets a namespace by id.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/namespaces/#get-details-on-a-namespace
+// https://docs.gitlab.com/api/namespaces/#retrieve-namespace-details
 func (s *NamespacesService) GetNamespace(id any, options ...RequestOptionFunc) (*Namespace, *Response, error) {
 	namespace, err := parseID(id)
 	if err != nil {

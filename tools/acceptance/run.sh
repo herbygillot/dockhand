@@ -320,7 +320,7 @@ for row in $rows; do
 		stop_before "a pause was asked for (pause.sh)"
 	fi
 	if [ "$fenced" = 1 ]; then
-		moved=$(fence_refs | fence_outside | diff "$ACCEPT_STATE/fence.refs" - | sed -n 's/^[<>] //p' | awk '{print $3}' | sort -u | tr '\n' ' ')
+		moved=$(fence_refs | fence_outside | { diff "$ACCEPT_STATE/fence.refs" - || :; } | sed -n 's/^[<>] //p' | awk '{print $3}' | sort -u | tr '\n' ' ')
 		[ -z "$moved" ] || stop_before "refs outside the run's namespace moved since the stage began: ${moved% }"
 	fi
 	file="$rowdir/$row.sh"

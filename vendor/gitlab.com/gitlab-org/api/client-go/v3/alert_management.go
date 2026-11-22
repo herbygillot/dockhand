@@ -99,7 +99,7 @@ func (s *AlertManagementService) UploadMetricImage(pid any, alertIID int64, cont
 // ListMetricImagesOptions represents the available ListMetricImages() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/alert_management_alerts/#list-metric-images
+// https://docs.gitlab.com/api/alert_management_alerts/#list-all-metric-images
 type ListMetricImagesOptions struct {
 	ListOptions
 }
@@ -116,7 +116,7 @@ func (s *AlertManagementService) ListMetricImages(pid any, alertIID int64, opt *
 // UpdateMetricImageOptions represents the available UpdateMetricImage() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/alert_management_alerts/#update-metric-image
+// https://docs.gitlab.com/api/alert_management_alerts/#update-a-metric-image
 type UpdateMetricImageOptions struct {
 	URL     *string `url:"url,omitempty" json:"url,omitempty"`
 	URLText *string `url:"url_text,omitempty" json:"url_text,omitempty"`

@@ -94,6 +94,7 @@ type ListTopicsOptions struct {
 	ListOptions
 	Search          *string `url:"search,omitempty" json:"search,omitempty"`
 	WithoutProjects *bool   `url:"without_projects,omitempty" json:"without_projects,omitempty"`
+	OrganizationID  *int64  `url:"organization_id,omitempty" json:"organization_id,omitempty"`
 }
 
 func (s *TopicsService) ListTopics(opt *ListTopicsOptions, options ...RequestOptionFunc) ([]*Topic, *Response, error) {
@@ -131,6 +132,8 @@ type CreateTopicOptions struct {
 	Title       *string      `url:"title,omitempty" json:"title,omitempty"`
 	Description *string      `url:"description,omitempty" json:"description,omitempty"`
 	Avatar      *TopicAvatar `url:"-" json:"-"`
+	// Experimental field - may change outside of major releases
+	OrganizationID *int64 `url:"organization_id,omitempty" json:"organization_id,omitempty"`
 }
 
 // TopicAvatar represents a GitLab topic avatar.

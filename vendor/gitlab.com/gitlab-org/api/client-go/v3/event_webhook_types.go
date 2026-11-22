@@ -367,6 +367,8 @@ type IssueEventProject struct {
 	HTTPURL           string          `json:"http_url"`
 	WebURL            string          `json:"web_url"`
 	Visibility        VisibilityValue `json:"visibility"`
+	VisibilityLevel   int64           `json:"visibility_level"`
+	CIConfigPath      string          `json:"ci_config_path"`
 }
 
 type IssueEventObjectAttributes struct {
@@ -399,6 +401,7 @@ type IssueEventObjectAttributes struct {
 	HumanTimeEstimate   string                                     `json:"human_time_estimate"`
 	HumanTimeChange     string                                     `json:"human_time_change"`
 	Weight              int64                                      `json:"weight"`
+	Type                string                                     `json:"type"`
 	IID                 int64                                      `json:"iid"`
 	URL                 string                                     `json:"url"`
 	State               string                                     `json:"state"`
@@ -407,6 +410,7 @@ type IssueEventObjectAttributes struct {
 	EscalationStatus    string                                     `json:"escalation_status"`
 	EscalationPolicy    IssueEventObjectAttributesEscalationPolicy `json:"escalation_policy"`
 	Labels              []*EventLabel                              `json:"labels"`
+	HealthStatus        string                                     `json:"health_status"`
 }
 
 type IssueEventObjectAttributesEscalationPolicy struct {

@@ -25,6 +25,7 @@ var (
 	routeProjectsIDEnvironments       = route("projects/%s/environments")
 	routeProjectsIDEnvironmentsID     = route("projects/%s/environments/%d")
 	routeProjectsIDEnvironmentsIDStop = route("projects/%s/environments/%d/stop")
+	routeProjectsIDEnvironmentsStale  = route("projects/%s/environments/stop_stale")
 )
 
 type (
@@ -41,6 +42,12 @@ type (
 		EditEnvironment(pid any, environment int64, opt *EditEnvironmentOptions, options ...RequestOptionFunc) (*Environment, *Response, error)
 		DeleteEnvironment(pid any, environment int64, options ...RequestOptionFunc) (*Response, error)
 		StopEnvironment(pid any, environmentID int64, opt *StopEnvironmentOptions, options ...RequestOptionFunc) (*Environment, *Response, error)
+		// StopStaleEnvironments stops all environments that were last modified or
+		// deployed to before the given time. Protected environments are excluded.
+		//
+		// GitLab API docs:
+		// https://docs.gitlab.com/api/environments/#stop-stale-environments
+		StopStaleEnvironments(pid any, opt *StopStaleEnvironmentsOptions, options ...RequestOptionFunc) (*StopStaleEnvironmentsResult, *Response, error)
 	}
 
 	// EnvironmentsService handles communication with the environment related methods
@@ -175,6 +182,34 @@ func (s *EnvironmentsService) StopEnvironment(pid any, environmentID int64, opt 
 	return do[*Environment](s.client,
 		withMethod(http.MethodPost),
 		withPath(routeProjectsIDEnvironmentsIDStop, ProjectID{pid}, environmentID),
+		withAPIOpts(opt),
+		withRequestOpts(options...),
+	)
+}
+
+// StopStaleEnvironmentsOptions represents the available StopStaleEnvironments()
+// options.
+//
+// GitLab API docs:
+// https://docs.gitlab.com/api/environments/#stop-stale-environments
+type StopStaleEnvironmentsOptions struct {
+	// Before is required. It must be between 10 years ago and 1 week ago.
+	Before *time.Time `url:"before,omitempty" json:"before,omitempty"`
+}
+
+// StopStaleEnvironmentsResult represents the response of
+// StopStaleEnvironments().
+//
+// GitLab API docs:
+// https://docs.gitlab.com/api/environments/#stop-stale-environments
+type StopStaleEnvironmentsResult struct {
+	Message string `json:"message"`
+}
+
+func (s *EnvironmentsService) StopStaleEnvironments(pid any, opt *StopStaleEnvironmentsOptions, options ...RequestOptionFunc) (*StopStaleEnvironmentsResult, *Response, error) {
+	return do[*StopStaleEnvironmentsResult](s.client,
+		withMethod(http.MethodPost),
+		withPath(routeProjectsIDEnvironmentsStale, ProjectID{pid}),
 		withAPIOpts(opt),
 		withRequestOpts(options...),
 	)

@@ -157,7 +157,7 @@ func (l *labelGQL) unwrap() LabelDetails {
 
 // ListLabelsOptions represents the available ListLabels() options.
 //
-// GitLab API docs: https://docs.gitlab.com/api/labels/#list-labels
+// GitLab API docs: https://docs.gitlab.com/api/labels/#list-all-project-labels
 type ListLabelsOptions struct {
 	ListOptions
 	WithCounts            *bool   `url:"with_counts,omitempty" json:"with_counts,omitempty"`
@@ -203,7 +203,7 @@ func (s *LabelsService) CreateLabel(pid any, opt *CreateLabelOptions, options ..
 
 // DeleteLabelOptions represents the available DeleteLabel() options.
 //
-// GitLab API docs: https://docs.gitlab.com/api/labels/#delete-a-label
+// GitLab API docs: https://docs.gitlab.com/api/labels/#delete-a-project-label
 type DeleteLabelOptions struct {
 	Name *string `url:"name,omitempty" json:"name,omitempty"`
 }

@@ -48,6 +48,7 @@ var (
 	routeGroupsIDSamlGroupLinks     = route("groups/%s/saml_group_links")
 	routeGroupsIDSamlGroupLinksID   = route("groups/%s/saml_group_links/%s")
 	routeGroupsIDSamlUsers          = route("groups/%s/saml_users")
+	routeGroupsIDSharedProjectsID   = route("groups/%s/shared_projects/%d")
 	routeGroupsIDSubgroups          = route("groups/%s/subgroups")
 	routeGroupsIDTransfer           = route("groups/%s/transfer")
 	routeGroupsIDTransferLocations  = route("groups/%s/transfer_locations")
@@ -212,6 +213,12 @@ type (
 		// GitLab API docs:
 		// https://docs.gitlab.com/api/groups/#delete-the-link-that-shares-a-group-with-another-group
 		UnshareGroupFromGroup(gid any, groupID int64, options ...RequestOptionFunc) (*Response, error)
+		// DeleteGroupSharedProject deletes a project shared with a group.
+		// Requires the Owner role for the group.
+		//
+		// GitLab API docs:
+		// https://docs.gitlab.com/api/groups/#delete-a-shared-project
+		DeleteGroupSharedProject(gid any, project int64, options ...RequestOptionFunc) (*Response, error)
 		// GetGroupPushRules gets the push rules of a group.
 		//
 		// GitLab API docs:
@@ -378,6 +385,10 @@ type Group struct {
 	// Math rendering
 	MathRenderingLimitsEnabled     bool `json:"math_rendering_limits_enabled"`
 	LockMathRenderingLimitsEnabled bool `json:"lock_math_rendering_limits_enabled"`
+
+	// Merge request merge settings
+	RequireSHAForMerge     bool `json:"require_sha_for_merge"`
+	LockRequireSHAForMerge bool `json:"lock_require_sha_for_merge"`
 
 	// Customer relations management
 	CRMEnabled bool `json:"crm_enabled"`
@@ -1065,6 +1076,15 @@ func (s *GroupsService) UnshareGroupFromGroup(gid any, groupID int64, options ..
 	_, resp, err := do[none](s.client,
 		withMethod(http.MethodDelete),
 		withPath(routeGroupsIDShareID, GroupID{gid}, groupID),
+		withRequestOpts(options...),
+	)
+	return resp, err
+}
+
+func (s *GroupsService) DeleteGroupSharedProject(gid any, project int64, options ...RequestOptionFunc) (*Response, error) {
+	_, resp, err := do[none](s.client,
+		withMethod(http.MethodDelete),
+		withPath(routeGroupsIDSharedProjectsID, GroupID{gid}, project),
 		withRequestOpts(options...),
 	)
 	return resp, err

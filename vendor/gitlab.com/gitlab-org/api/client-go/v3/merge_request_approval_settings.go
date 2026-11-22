@@ -72,7 +72,7 @@ type MergeRequestApprovalSetting struct {
 // of a group.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/merge_request_approval_settings/#get-group-mr-approval-settings
+// https://docs.gitlab.com/api/merge_request_approval_settings/#retrieve-mr-approval-settings-for-a-group
 func (s *MergeRequestApprovalSettingsService) GetGroupMergeRequestApprovalSettings(gid any, options ...RequestOptionFunc) (*MergeRequestApprovalSettings, *Response, error) {
 	return do[*MergeRequestApprovalSettings](s.client,
 		withPath(routeGroupsIDMergeRequestApprovalSetting, GroupID{gid}),
@@ -127,7 +127,7 @@ func (s *MergeRequestApprovalSettingsService) UpdateGroupMergeRequestApprovalSet
 // of a project.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/merge_request_approval_settings/#get-project-mr-approval-settings
+// https://docs.gitlab.com/api/merge_request_approval_settings/#retrieve-mr-approval-settings-for-a-project
 func (s *MergeRequestApprovalSettingsService) GetProjectMergeRequestApprovalSettings(pid any, options ...RequestOptionFunc) (*MergeRequestApprovalSettings, *Response, error) {
 	return do[*MergeRequestApprovalSettings](s.client,
 		withPath(routeProjectsIDMergeRequestApprovalSetting, ProjectID{pid}),

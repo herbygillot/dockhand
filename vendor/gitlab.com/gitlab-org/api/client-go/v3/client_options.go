@@ -18,6 +18,7 @@ package gitlab
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -103,6 +104,23 @@ func WithCustomRetryWaitMinMax(waitMin, waitMax time.Duration) ClientOptionFunc 
 	}
 }
 
+// WithDetailedNotFoundErrors makes a 404 Not Found response return a
+// per-request *ErrorResponse, as every other error status does, instead of
+// the shared ErrNotFound. The error then names the method and URL of the
+// request, and carries the response and its body.
+//
+// The error still matches errors.Is(err, ErrNotFound) and
+// HasStatusCode(err, http.StatusNotFound), but no longer err == ErrNotFound,
+// so switch such comparisons to errors.Is before enabling this option.
+//
+// This is expected to become the default behavior in 4.0.
+func WithDetailedNotFoundErrors() ClientOptionFunc {
+	return func(c *Client) error {
+		c.detailedNotFoundErrors = true
+		return nil
+	}
+}
+
 // WithErrorHandler can be used to configure a custom error handler.
 func WithErrorHandler(handler retryablehttp.ErrorHandler) ClientOptionFunc {
 	return func(c *Client) error {
@@ -135,6 +153,46 @@ func WithResponseLogHook(hook retryablehttp.ResponseLogHook) ClientOptionFunc {
 	}
 }
 
+// WithRetryAfterBackoff makes the client wait for the time the Retry-After
+// header of a 429 response gives before it retries, when the response has no
+// Ratelimit-Reset header. GitLab's application rate limits answer that way,
+// with the period of the limit: a minute for most of them, and up to a day
+// for some. Without this option such a 429 is retried with the exponential
+// backoff, and the caller gets it back within a few seconds once its retries
+// are spent. Ratelimit-Reset takes precedence over Retry-After either way.
+//
+// A wait that would end after the deadline of the request's context takes
+// the exponential backoff instead, so a caller whose deadline is too short
+// for the wait still gets the 429 back rather than the context error.
+//
+// Waiting for Retry-After is planned to become the default behavior in
+// client-go v5.0, with a call-out in v4.0.
+func WithRetryAfterBackoff() ClientOptionFunc {
+	return func(c *Client) error {
+		c.retryAfterBackoff = true
+		return nil
+	}
+}
+
+// WithRetryAfterMax stops retrying a 429 whose Retry-After exceeds maxWait,
+// unless it has a Ratelimit-Reset header. GitLab's application rate limits
+// send the limit's period, up to a day. The cap is per retry, so the total
+// wait can reach maxWait times the retry count. An unparsable Retry-After
+// is ignored.
+//
+// It is checked by the default retry policy, so WithCustomRetry and
+// WithRequestRetry bypass it.
+func WithRetryAfterMax(maxWait time.Duration) ClientOptionFunc {
+	return func(c *Client) error {
+		if maxWait < 0 {
+			return fmt.Errorf("retry after max must not be negative, got %s", maxWait)
+		}
+		c.retryAfterMax = maxWait
+		c.hasRetryAfterMax = true
+		return nil
+	}
+}
+
 // WithoutRetries disables the default retry logic.
 func WithoutRetries() ClientOptionFunc {
 	return func(c *Client) error {
@@ -155,6 +213,24 @@ func WithoutRetries() ClientOptionFunc {
 func WithOnlyIdempotentRetries() ClientOptionFunc {
 	return func(c *Client) error {
 		c.onlyIdempotentRetries = true
+		return nil
+	}
+}
+
+// WithNilOptionsOmitted makes the client treat an options argument that holds
+// a nil pointer as no options at all, the way it treats an untyped nil. By
+// default a nil *SomeOptions is not equal to nil once held in an any, so a
+// POST, PUT or PATCH request carries the JSON literal null as its body, and a
+// request with any other method has a query already on the URL given to
+// NewRequestToURL replaced with an empty one. Methods that delegate to their
+// WithOptions sibling with a nil options pointer, such as Jobs.CancelJob and
+// DraftNotes.PublishAllDraftNotes, send null that way.
+//
+// This is expected to become the default behavior in 4.0, where this option
+// will have no effect, and the option to be removed in 5.0.
+func WithNilOptionsOmitted() ClientOptionFunc {
+	return func(c *Client) error {
+		c.omitNilOptions = true
 		return nil
 	}
 }

@@ -70,7 +70,7 @@ var _ BulkImportsServiceInterface = (*BulkImportsService)(nil)
 
 // BulkImportStartMigrationConfiguration represents the available configuration options to start a migration.
 //
-// GitLab API docs: https://docs.gitlab.com/api/bulk_imports/#start-a-new-group-or-project-migration
+// GitLab API docs: https://docs.gitlab.com/api/bulk_imports/#start-a-group-or-project-migration
 type BulkImportStartMigrationConfiguration struct {
 	URL         *string `json:"url,omitempty"`
 	AccessToken *string `json:"access_token,omitempty"`
@@ -78,7 +78,7 @@ type BulkImportStartMigrationConfiguration struct {
 
 // BulkImportStartMigrationEntity represents the available entity options to start a migration.
 //
-// GitLab API docs: https://docs.gitlab.com/api/bulk_imports/#start-a-new-group-or-project-migration
+// GitLab API docs: https://docs.gitlab.com/api/bulk_imports/#start-a-group-or-project-migration
 type BulkImportStartMigrationEntity struct {
 	SourceType           *string `json:"source_type,omitempty"`
 	SourceFullPath       *string `json:"source_full_path,omitempty"`
@@ -90,7 +90,7 @@ type BulkImportStartMigrationEntity struct {
 
 // BulkImportStartMigrationOptions represents the available start migration options.
 //
-// GitLab API docs: https://docs.gitlab.com/api/bulk_imports/#start-a-new-group-or-project-migration
+// GitLab API docs: https://docs.gitlab.com/api/bulk_imports/#start-a-group-or-project-migration
 type BulkImportStartMigrationOptions struct {
 	Configuration *BulkImportStartMigrationConfiguration `json:"configuration,omitempty"`
 	Entities      []BulkImportStartMigrationEntity       `json:"entities,omitempty"`
@@ -98,7 +98,7 @@ type BulkImportStartMigrationOptions struct {
 
 // BulkImportStartMigrationResponse represents the start migration response.
 //
-// GitLab API docs: https://docs.gitlab.com/api/bulk_imports/#start-a-new-group-or-project-migration
+// GitLab API docs: https://docs.gitlab.com/api/bulk_imports/#start-a-group-or-project-migration
 type BulkImportStartMigrationResponse struct {
 	ID          int64     `json:"id"`
 	Status      string    `json:"status"`

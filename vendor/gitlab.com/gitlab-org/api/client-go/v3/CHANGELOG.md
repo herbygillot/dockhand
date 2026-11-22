@@ -1,3 +1,400 @@
+## 3.54.1
+
+### 🐛 Bug Fixes
+
+- fix(types): avoid panic on unknown notification level ([!3190](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3190)) by [Oleksandr Redko](https://gitlab.com/alexandear)
+
+
+
+## [3.54.1](https://gitlab.com/gitlab-org/api/client-go/compare/v3.54.0...v3.54.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **types:** avoid panic on unknown notification level ([dcfbdd4](https://gitlab.com/gitlab-org/api/client-go/commit/dcfbdd4ed1b194d08c9d9f43a0c115ab5ea1867b))
+
+## 3.54.0
+
+### 🚀 Features
+
+- feat(attestations): add ListSigningCertificates ([!3183](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3183)) by [Saahil Sabu Hameed](https://gitlab.com/shameed3)
+
+### 🔄 Other Changes
+
+- chore(deps): update module go.yaml.in/yaml/v3 to v4 ([!3186](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3186)) by [GitLab Dependency Bot](https://gitlab.com/gitlab-dependency-update-bot)
+
+
+
+# [3.54.0](https://gitlab.com/gitlab-org/api/client-go/compare/v3.53.1...v3.54.0) (2026-11-20)
+
+
+### Features
+
+* **attestations:** add ListSigningCertificates ([e2966c8](https://gitlab.com/gitlab-org/api/client-go/commit/e2966c8204766ea065fd7a2abc54c728790c7d16))
+
+## 3.53.1
+
+### 🐛 Bug Fixes
+
+- feat(client): add option to keep the request URL on 404 errors ([!3179](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3179)) by [Giannis Kepas](https://gitlab.com/gkepas)
+
+
+
+## [3.53.1](https://gitlab.com/gitlab-org/api/client-go/compare/v3.53.0...v3.53.1) (2026-11-19)
+
+
+### Features
+
+* **client:** add option to keep the request URL on 404 errors ([b52c8f9](https://gitlab.com/gitlab-org/api/client-go/commit/b52c8f9ea445e75c2f71fbf062acb241f6643b0b))
+
+## 3.53.0
+
+### 🚀 Features
+
+- feat(client): add option to cap the Retry-After a 429 is retried for ([!3174](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3174)) by [Jay McCure](https://gitlab.com/jay_mccure)
+
+### 🔄 Other Changes
+
+- chore(deps): update module go.yaml.in/yaml/v3 to v3.0.6 ([!3185](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3185)) by [GitLab Dependency Bot](https://gitlab.com/gitlab-dependency-update-bot)
+- chore(deps): update module go.yaml.in/yaml/v3 to v4 ([!3177](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3177)) by [GitLab Dependency Bot](https://gitlab.com/gitlab-dependency-update-bot)
+
+
+
+# [3.53.0](https://gitlab.com/gitlab-org/api/client-go/compare/v3.52.0...v3.53.0) (2026-11-18)
+
+
+### Features
+
+* **client:** add option to cap the Retry-After a 429 is retried for ([4764293](https://gitlab.com/gitlab-org/api/client-go/commit/476429387b90072cef89b22c1fa273e2c5d79585))
+
+## 3.52.0
+
+### 🚀 Features
+
+- feat(attestations): add SigningMethod to Attestation ([!3182](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3182)) by [Saahil Sabu Hameed](https://gitlab.com/shameed3)
+
+### 🔄 Other Changes
+
+- chore(deps): update docker docker tag to v29.10.0 ([!3184](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3184)) by [GitLab Dependency Bot](https://gitlab.com/gitlab-dependency-update-bot)
+
+
+
+# [3.52.0](https://gitlab.com/gitlab-org/api/client-go/compare/v3.51.0...v3.52.0) (2026-11-17)
+
+
+### Features
+
+* **attestations:** add SigningMethod to Attestation ([15d300d](https://gitlab.com/gitlab-org/api/client-go/commit/15d300d801599f0f6317b4de64ae41c22ecc40ef))
+
+## 3.51.0
+
+### 🚀 Features
+
+- feat(settings): add o11y_provisioner_url and o11y_provisioner_api_key ([!3180](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3180)) by [José M. Requena Plens](https://gitlab.com/jmrp)
+
+### 🔄 Other Changes
+
+- docs(merge_request_approvals): point MergeRequestApprovalState at the right docs section ([!3120](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3120)) by [Anish Kumar](https://gitlab.com/anishisbusy)
+
+
+
+# [3.51.0](https://gitlab.com/gitlab-org/api/client-go/compare/v3.50.0...v3.51.0) (2026-11-15)
+
+
+### Features
+
+* **settings:** add o11y_provisioner_url and o11y_provisioner_api_key ([ca3f779](https://gitlab.com/gitlab-org/api/client-go/commit/ca3f779988e30b25038600e4801646691cfe2f81))
+
+## 3.50.0
+
+### 🚀 Features
+
+- feat(users): add granular scopes support to personal access tokens ([!3178](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3178)) by [Giannis Kepas](https://gitlab.com/gkepas)
+
+### 🔄 Other Changes
+
+- chore(deps): update module go.yaml.in/yaml/v3 to v3.0.6 ([!3176](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3176)) by [GitLab Dependency Bot](https://gitlab.com/gitlab-dependency-update-bot)
+
+
+
+# [3.50.0](https://gitlab.com/gitlab-org/api/client-go/compare/v3.49.0...v3.50.0) (2026-11-14)
+
+
+### Features
+
+* **users:** add granular scopes support to personal access tokens ([d7746ba](https://gitlab.com/gitlab-org/api/client-go/commit/d7746ba3aeef64724554a24d80da904912f41ca0))
+
+## 3.49.0
+
+### 🚀 Features
+
+- feat: add group applications service ([!2995](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/2995)) by [Miguel Sacristan](https://gitlab.com/miguel.sacristan1)
+
+### 🔄 Other Changes
+
+- chore(deps): update module go.yaml.in/yaml/v3 to v4 ([!3175](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3175)) by [GitLab Dependency Bot](https://gitlab.com/gitlab-dependency-update-bot)
+
+
+
+# [3.49.0](https://gitlab.com/gitlab-org/api/client-go/compare/v3.48.0...v3.49.0) (2026-11-14)
+
+
+### Features
+
+* add group applications service ([cb0990b](https://gitlab.com/gitlab-org/api/client-go/commit/cb0990b2dff36231e4f1529b35e24069a9de31a8))
+
+## 3.48.0
+
+### 🚀 Features
+
+- feat(client): add option to honor Retry-After when backing off from a 429 ([!3147](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3147)) by [José M. Requena Plens](https://gitlab.com/jmrp)
+- feat(webhooks): add missing fields to IssueEvent ([!3075](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3075)) by [Zubeen](https://gitlab.com/syedzubeen)
+
+
+
+# [3.48.0](https://gitlab.com/gitlab-org/api/client-go/compare/v3.47.0...v3.48.0) (2026-11-11)
+
+
+### Features
+
+* **client:** add option to honor Retry-After when backing off from a 429 ([f9389ee](https://gitlab.com/gitlab-org/api/client-go/commit/f9389eebd6d94f242adf44a665169b88e918fbfa))
+* **webhooks:** add missing fields to IssueEvent ([c600770](https://gitlab.com/gitlab-org/api/client-go/commit/c600770fc4d5cb7c95a65bafe72ca4ce7261425e))
+
+## 3.47.0
+
+### 🚀 Features
+
+- feat(users): add profile fields to the User struct ([!3107](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3107)) by [Zubeen](https://gitlab.com/syedzubeen)
+
+
+
+# [3.47.0](https://gitlab.com/gitlab-org/api/client-go/compare/v3.46.1...v3.47.0) (2026-11-10)
+
+
+### Features
+
+* **users:** add profile fields to the User struct ([515323d](https://gitlab.com/gitlab-org/api/client-go/commit/515323de40410e26e890a705693c48fc64057272))
+
+## 3.46.1
+
+### 🐛 Bug Fixes
+
+- fix: return the top-level GraphQL errors of eight security mutations ([!3066](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3066)) by [José M. Requena Plens](https://gitlab.com/jmrp)
+
+### 🔄 Other Changes
+
+- feat(deployments): add pending_approval_count ([!3170](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3170)) by [markafarrell](https://gitlab.com/markafarrell)
+- docs: update glab owning group in README ([!3171](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3171)) by [Jay McCure](https://gitlab.com/jay_mccure)
+
+
+
+## [3.46.1](https://gitlab.com/gitlab-org/api/client-go/compare/v3.46.0...v3.46.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* return the top-level GraphQL errors of eight security mutations ([ab3dc78](https://gitlab.com/gitlab-org/api/client-go/commit/ab3dc7870ead5612c57a95fcba428a8fd4d0e8dd))
+
+
+### Features
+
+* **deployments:** add pending_approval_count ([e0ecd46](https://gitlab.com/gitlab-org/api/client-go/commit/e0ecd46efdde0588af2eed6286c32dcdfd8233f3))
+
+## 3.46.0
+
+### 🚀 Features
+
+- feat(topics): add organization_id to ListTopics and CreateTopic options ([!3105](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3105)) by [Zubeen](https://gitlab.com/syedzubeen)
+
+
+
+# [3.46.0](https://gitlab.com/gitlab-org/api/client-go/compare/v3.45.0...v3.46.0) (2026-11-09)
+
+
+### Features
+
+* **topics:** add organization_id to ListTopics and CreateTopic options ([cceb4c7](https://gitlab.com/gitlab-org/api/client-go/commit/cceb4c7b61c291460e4500b1e5f680f8aa792ad8))
+
+## 3.45.0
+
+### 🚀 Features
+
+- feat(types): add canceling and waiting_for_callback build states ([!3124](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3124)) by [Zubeen](https://gitlab.com/syedzubeen)
+- feat(environments): add StopStaleEnvironments to Environments ([!3108](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3108)) by [Zubeen](https://gitlab.com/syedzubeen)
+
+### 🔄 Other Changes
+
+- test(merge_requests): cover untested merge request methods ([!3111](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3111)) by [Zubeen](https://gitlab.com/syedzubeen)
+
+
+
+# [3.45.0](https://gitlab.com/gitlab-org/api/client-go/compare/v3.44.0...v3.45.0) (2026-11-08)
+
+
+### Features
+
+* **environments:** add StopStaleEnvironments to Environments ([48c1ef3](https://gitlab.com/gitlab-org/api/client-go/commit/48c1ef36ce1bf8ad1af39c335e9cc98666681272))
+* **types:** add canceling and waiting_for_callback build states ([224bfc5](https://gitlab.com/gitlab-org/api/client-go/commit/224bfc5197156c8688779a4eba32ae1b76bc3fc4))
+
+## 3.44.0
+
+### 🚀 Features
+
+- feat(projects): add topic_id, updated_after and updated_before to ListProjectsOptions ([!3084](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3084)) by [Zubeen](https://gitlab.com/syedzubeen)
+
+### 🔄 Other Changes
+
+- chore(deps): update docker docker tag to v29.9.3 ([!3167](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3167)) by [GitLab Dependency Bot](https://gitlab.com/gitlab-dependency-update-bot)
+
+
+
+# [3.44.0](https://gitlab.com/gitlab-org/api/client-go/compare/v3.43.0...v3.44.0) (2026-11-06)
+
+
+### Features
+
+* **projects:** add topic_id, updated_after and updated_before to ListProjectsOptions ([92dd2ba](https://gitlab.com/gitlab-org/api/client-go/commit/92dd2ba6c975a43e185150021e933f9759679157))
+
+## 3.43.0
+
+### 🚀 Features
+
+- feat(client): add option to treat nil options pointers as no options ([!3065](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3065)) by [José M. Requena Plens](https://gitlab.com/jmrp)
+
+
+
+# [3.43.0](https://gitlab.com/gitlab-org/api/client-go/compare/v3.42.0...v3.43.0) (2026-11-03)
+
+
+### Features
+
+* **client:** add option to treat nil options pointers as no options ([2d4c2dc](https://gitlab.com/gitlab-org/api/client-go/commit/2d4c2dca2fc226fd79cda82b5e0ef49621996fc5))
+
+## 3.42.0
+
+### 🚀 Features
+
+- feat(groups): add delete a [secure] project from a group ([!3116](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3116)) by [Zubeen](https://gitlab.com/syedzubeen)
+- feat(group_markdown_uploads): add upload a file to a group ([!3115](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3115)) by [Zubeen](https://gitlab.com/syedzubeen)
+- feat(groups): add require_sha_for_merge fields to Group ([!3117](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3117)) by [Zubeen](https://gitlab.com/syedzubeen)
+
+
+
+# [3.42.0](https://gitlab.com/gitlab-org/api/client-go/compare/v3.41.0...v3.42.0) (2026-11-03)
+
+
+### Features
+
+* **group_markdown_uploads:** add upload a file to a group ([3cffccd](https://gitlab.com/gitlab-org/api/client-go/commit/3cffccdec1eaccb2a0da50ea843ee8fa0e84be82))
+* **groups:** add delete a [secure] project from a group ([c1f0b89](https://gitlab.com/gitlab-org/api/client-go/commit/c1f0b89476960bf2f25025afc1154017b07ccb6f))
+* **groups:** add require_sha_for_merge fields to Group ([781df99](https://gitlab.com/gitlab-org/api/client-go/commit/781df99368404704d30e751f6c0ad035b9fe5328))
+
+## 3.41.0
+
+### 🚀 Features
+
+- feat: support search rate limit allowlist setting ([!3156](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3156)) by [Lorenz Vonlanthen](https://gitlab.com/loelu)
+
+
+
+# [3.41.0](https://gitlab.com/gitlab-org/api/client-go/compare/v3.40.3...v3.41.0) (2026-11-02)
+
+
+### Features
+
+* support search rate limit allowlist setting ([8f85d2b](https://gitlab.com/gitlab-org/api/client-go/commit/8f85d2ba58158ed8db0ed54a8e3c2c2ced92b721))
+
+## 3.40.3
+
+### 🐛 Bug Fixes
+
+- fix(commits): decode the lists GitLab sends in extended_trailers ([!3082](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3082)) by [José M. Requena Plens](https://gitlab.com/jmrp)
+
+### 🔄 Other Changes
+
+- chore(deps): update module go.yaml.in/yaml/v3 to v3.0.6 ([!3165](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3165)) by [GitLab Dependency Bot](https://gitlab.com/gitlab-dependency-update-bot)
+
+
+
+## [3.40.3](https://gitlab.com/gitlab-org/api/client-go/compare/v3.40.2...v3.40.3) (2026-11-02)
+
+
+### Bug Fixes
+
+* **commits:** decode the lists GitLab sends in extended_trailers ([7fb50da](https://gitlab.com/gitlab-org/api/client-go/commit/7fb50da6b64813921ef6d0dc5574f27681af7ae5))
+
+## 3.40.2
+
+### 🐛 Bug Fixes
+
+- fix(types): split comma-separated labels when decoding LabelOptions ([!3163](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3163)) by [José M. Requena Plens](https://gitlab.com/jmrp)
+
+
+
+## [3.40.2](https://gitlab.com/gitlab-org/api/client-go/compare/v3.40.1...v3.40.2) (2026-11-02)
+
+
+### Bug Fixes
+
+* **types:** split comma-separated labels when decoding LabelOptions ([ed411eb](https://gitlab.com/gitlab-org/api/client-go/commit/ed411eb60aaf8a604859bf40910df5ce8a8eb705))
+
+## 3.40.1
+
+### 🐛 Bug Fixes
+
+- fix(group_milestones): send include_descendants, decode project_id ([!3164](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3164)) by [José M. Requena Plens](https://gitlab.com/jmrp)
+
+### 🔄 Other Changes
+
+- feat(project): add OnlyAllowMergeIfAllStatusChecksPassed to Project response ([!3162](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3162)) by [Robér Hinz](https://gitlab.com/rhinz-lb)
+- docs: fix stale GitLab API doc anchors in code comments ([!3089](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3089)) by [Zubeen](https://gitlab.com/syedzubeen)
+- fix(orbit): deprecate the methods whose endpoints GitLab removed ([!3161](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3161)) by [José M. Requena Plens](https://gitlab.com/jmrp)
+
+
+
+## [3.40.1](https://gitlab.com/gitlab-org/api/client-go/compare/v3.40.0...v3.40.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* **group_milestones:** send include_descendants, decode project_id ([1695961](https://gitlab.com/gitlab-org/api/client-go/commit/169596195bf1d3bd47a30b139e113f46444a8005))
+* **orbit:** deprecate the methods whose endpoints GitLab removed ([08c37bc](https://gitlab.com/gitlab-org/api/client-go/commit/08c37bcbd3ed4fe16e73e506bd997b406f8f54ca))
+
+
+### Features
+
+* **project:** add OnlyAllowMergeIfAllStatusChecksPassed to Project response ([95e0352](https://gitlab.com/gitlab-org/api/client-go/commit/95e03523c43b0e947c0e0d0b794b448afc0532a0))
+
+## 3.40.0
+
+### 🚀 Features
+
+- feat(merge_requests): add CancelAutoMerge ([!3101](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3101)) by [Hamza Hassanain](https://gitlab.com/HamzaHassanain)
+
+
+
+# [3.40.0](https://gitlab.com/gitlab-org/api/client-go/compare/v3.39.2...v3.40.0) (2026-10-29)
+
+
+### Features
+
+* **merge_requests:** add CancelAutoMerge ([28c27c7](https://gitlab.com/gitlab-org/api/client-go/commit/28c27c7623621ab535bceabe0b599aba3838fe3d))
+
+## 3.39.2
+
+### 🐛 Bug Fixes
+
+- fix(oauth2): stop closing result channels and blocking on sends ([!3008](https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/3008)) by [Giannis Kepas](https://gitlab.com/gkepas)
+
+
+
+## [3.39.2](https://gitlab.com/gitlab-org/api/client-go/compare/v3.39.1...v3.39.2) (2026-10-28)
+
+
+### Bug Fixes
+
+* **oauth2:** stop closing result channels and blocking on sends ([a7bf26f](https://gitlab.com/gitlab-org/api/client-go/commit/a7bf26f0e48655befbe5f9a49d3c70ad0c4773b9))
+
 ## 3.39.1
 
 ### 🐛 Bug Fixes

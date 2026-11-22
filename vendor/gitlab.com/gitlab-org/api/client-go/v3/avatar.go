@@ -27,7 +27,7 @@ type (
 		// GetAvatar gets the avatar URL for a user with the given email address.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/avatar/#get-details-on-an-account-avatar
+		// https://docs.gitlab.com/api/avatar/#retrieve-user-account-avatar
 		GetAvatar(opt *GetAvatarOptions, options ...RequestOptionFunc) (*Avatar, *Response, error)
 	}
 
@@ -52,7 +52,7 @@ type Avatar struct {
 // GetAvatarOptions represents the available GetAvatar() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/avatar/#get-details-on-an-account-avatar
+// https://docs.gitlab.com/api/avatar/#retrieve-user-account-avatar
 type GetAvatarOptions struct {
 	Email *string `url:"email,omitempty" json:"email,omitempty"`
 	Size  *int64  `url:"size,omitempty" json:"size,omitempty"`

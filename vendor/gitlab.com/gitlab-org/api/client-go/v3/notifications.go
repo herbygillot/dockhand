@@ -32,7 +32,7 @@ type (
 		// GetGlobalSettings returns current notification settings and email address.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/notification_settings/#global-notification-settings
+		// https://docs.gitlab.com/api/notification_settings/#retrieve-global-notification-settings
 		GetGlobalSettings(options ...RequestOptionFunc) (*NotificationSettings, *Response, error)
 		// UpdateGlobalSettings updates current notification settings and email address.
 		//
@@ -42,22 +42,22 @@ type (
 		// GetSettingsForGroup returns current group notification settings.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/notification_settings/#group--project-level-notification-settings
+		// https://docs.gitlab.com/api/notification_settings/#retrieve-notification-settings
 		GetSettingsForGroup(gid any, options ...RequestOptionFunc) (*NotificationSettings, *Response, error)
 		// GetSettingsForProject returns current project notification settings.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/notification_settings/#group--project-level-notification-settings
+		// https://docs.gitlab.com/api/notification_settings/#retrieve-notification-settings
 		GetSettingsForProject(pid any, options ...RequestOptionFunc) (*NotificationSettings, *Response, error)
 		// UpdateSettingsForGroup updates current group notification settings.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/notification_settings/#update-groupproject-level-notification-settings
+		// https://docs.gitlab.com/api/notification_settings/#update-group-or-project-notification-settings
 		UpdateSettingsForGroup(gid any, opt *NotificationSettingsOptions, options ...RequestOptionFunc) (*NotificationSettings, *Response, error)
 		// UpdateSettingsForProject updates current project notification settings.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/notification_settings/#update-groupproject-level-notification-settings
+		// https://docs.gitlab.com/api/notification_settings/#update-group-or-project-notification-settings
 		UpdateSettingsForProject(pid any, opt *NotificationSettingsOptions, options ...RequestOptionFunc) (*NotificationSettings, *Response, error)
 	}
 
@@ -75,7 +75,7 @@ var _ NotificationSettingsServiceInterface = (*NotificationSettingsService)(nil)
 // NotificationSettings represents the GitLab notification setting.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notification_settings/#valid-notification-levels
+// https://docs.gitlab.com/api/notification_settings/#notification-levels
 type NotificationSettings struct {
 	Level             NotificationLevelValue `json:"level"`
 	NotificationEmail string                 `json:"notification_email"`
@@ -85,7 +85,7 @@ type NotificationSettings struct {
 // NotificationEvents represents the available notification setting events.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/notification_settings/#valid-notification-levels
+// https://docs.gitlab.com/api/notification_settings/#notification-levels
 type NotificationEvents struct {
 	CloseIssue                bool `json:"close_issue"`
 	CloseMergeRequest         bool `json:"close_merge_request"`

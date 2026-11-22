@@ -15,7 +15,7 @@ var (
 // GroupRelationsScheduleExportOptions represents the available ScheduleExport() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/group_relations_export/#schedule-new-export
+// https://docs.gitlab.com/api/group_relations_export/#schedule-a-new-export-for-a-group
 type GroupRelationsScheduleExportOptions struct {
 	Batched *bool `url:"batched,omitempty" json:"batched,omitempty"`
 }
@@ -23,7 +23,7 @@ type GroupRelationsScheduleExportOptions struct {
 // ListGroupRelationsStatusOptions represents the available ListExportStatus() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/group_relations_export/#export-status
+// https://docs.gitlab.com/api/group_relations_export/#retrieve-the-status-of-an-export
 type ListGroupRelationsStatusOptions struct {
 	ListOptions
 
@@ -33,7 +33,7 @@ type ListGroupRelationsStatusOptions struct {
 // GroupRelationsDownloadOptions represents the available ExportDownload() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/group_relations_export/#download-exported-relations
+// https://docs.gitlab.com/api/group_relations_export/#download-an-export
 type GroupRelationsDownloadOptions struct {
 	Relation    *string `url:"relation,omitempty" json:"relation,omitempty"`
 	Batched     *bool   `url:"batched,omitempty" json:"batched,omitempty"`
@@ -62,15 +62,15 @@ type (
 	GroupRelationsExportServiceInterface interface {
 		// ScheduleExport schedules a new export of group relations.
 		//
-		// GitLab API docs: https://docs.gitlab.com/api/group_relations_export/#schedule-new-export
+		// GitLab API docs: https://docs.gitlab.com/api/group_relations_export/#schedule-a-new-export-for-a-group
 		ScheduleExport(gid any, opt *GroupRelationsScheduleExportOptions, options ...RequestOptionFunc) (*Response, error)
 		// ListExportStatus gets the status of group relations export.
 		//
-		// GitLab API docs: https://docs.gitlab.com/api/group_relations_export/#export-status
+		// GitLab API docs: https://docs.gitlab.com/api/group_relations_export/#retrieve-the-status-of-an-export
 		ListExportStatus(gid any, opt *ListGroupRelationsStatusOptions, options ...RequestOptionFunc) ([]*GroupRelationStatus, *Response, error)
 		// ExportDownload downloads the exported group relations.
 		//
-		// GitLab API docs: https://docs.gitlab.com/api/group_relations_export/#download-exported-relations
+		// GitLab API docs: https://docs.gitlab.com/api/group_relations_export/#download-an-export
 		ExportDownload(gid any, opt *GroupRelationsDownloadOptions, options ...RequestOptionFunc) (*bytes.Reader, *Response, error)
 	}
 

@@ -36,7 +36,7 @@ mkdir -p "$HOME/.local/bin"
 install -m 755 dockhand "$HOME/.local/bin/dockhand"
 ```
 
-Ensure `~/.local/bin` is on your `PATH`. For zsh, bash, or fish completion setup, run `dockhand completion <shell> --help`.
+Ensure `~/.local/bin` is on your `PATH`. For shell completion setup, the help of `completion zsh`, `completion bash` or `completion fish` says how.
 
 </details>
 
@@ -171,6 +171,6 @@ For MacPorts conventions, see the [MacPorts contribution workflow](https://guide
 
 ## Contributing and license
 
-Report bugs or suggest improvements on [GitHub Issues](https://github.com/herbygillot/dockhand/issues) (include `dockhand --version`, the command you ran, and the relevant error or log). To work on Dockhand itself, build with `make build` and run tests with `make test`.
+Report bugs or suggest improvements on [GitHub Issues](https://github.com/herbygillot/dockhand/issues) (include `dockhand --version` or `-V`, the command you ran, and the relevant error or log). To work on Dockhand itself, build with `make build` and run tests with `make test`.
 
 Licensed under the [MIT License](LICENSE).

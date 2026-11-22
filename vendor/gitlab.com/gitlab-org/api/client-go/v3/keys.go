@@ -60,7 +60,7 @@ type Key struct {
 // user information.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/keys/#get-ssh-key-with-user-by-id-of-an-ssh-key
+// https://docs.gitlab.com/api/keys/#retrieve-user-by-ssh-key-id
 func (s *KeysService) GetKeyWithUser(key int64, options ...RequestOptionFunc) (*Key, *Response, error) {
 	return do[*Key](s.client,
 		withPath(routeKeysID, key),
@@ -72,8 +72,8 @@ func (s *KeysService) GetKeyWithUser(key int64, options ...RequestOptionFunc) (*
 // options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/keys/#get-user-by-fingerprint-of-ssh-key
-// https://docs.gitlab.com/api/keys/#get-user-by-deploy-key-fingerprint
+// https://docs.gitlab.com/api/keys/#retrieve-user-by-ssh-key-fingerprint
+// https://docs.gitlab.com/api/keys/#retrieve-user-by-deploy-key-fingerprint
 type GetKeyByFingerprintOptions struct {
 	Fingerprint string `url:"fingerprint" json:"fingerprint"`
 }
@@ -82,8 +82,8 @@ type GetKeyByFingerprintOptions struct {
 // along with the associated user information.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/keys/#get-user-by-fingerprint-of-ssh-key
-// https://docs.gitlab.com/api/keys/#get-user-by-deploy-key-fingerprint
+// https://docs.gitlab.com/api/keys/#retrieve-user-by-ssh-key-fingerprint
+// https://docs.gitlab.com/api/keys/#retrieve-user-by-deploy-key-fingerprint
 func (s *KeysService) GetKeyByFingerprint(opt *GetKeyByFingerprintOptions, options ...RequestOptionFunc) (*Key, *Response, error) {
 	return do[*Key](s.client,
 		withPath(routeKeys),

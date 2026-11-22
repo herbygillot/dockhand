@@ -47,8 +47,12 @@ type (
 		// Note: This API is experimental and may change or be
 		// removed in future versions.
 		//
+		// Deprecated: GitLab removed this endpoint in GitLab 19.6, use
+		// the GraphQL field Query.orbit.serviceStatus instead. To be
+		// removed in client-go v4.0.
+		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/orbit/#get-status
+		// https://docs.gitlab.com/api/orbit/#access-and-cluster-health
 		GetStatus(opt *GetOrbitStatusOptions, options ...RequestOptionFunc) (*OrbitStatus, *Response, error)
 
 		// GetSchema returns the Orbit graph ontology (domains, nodes,
@@ -56,6 +60,10 @@ type (
 		//
 		// Note: This API is experimental and may change or be
 		// removed in future versions.
+		//
+		// Deprecated: GitLab removed this endpoint in GitLab 19.6, use
+		// the GraphQL field Query.orbit.schema instead. To be removed
+		// in client-go v4.0.
 		//
 		// GitLab API docs:
 		// https://docs.gitlab.com/api/orbit/#get-schema
@@ -65,6 +73,11 @@ type (
 		//
 		// Note: This API is experimental and may change or be
 		// removed in future versions.
+		//
+		// Deprecated: GitLab removed this endpoint in GitLab 19.6, use
+		// the tools/list method of the Orbit MCP endpoint
+		// (POST /api/v4/orbit/mcp) instead. To be removed in client-go
+		// v4.0.
 		//
 		// GitLab API docs:
 		// https://docs.gitlab.com/api/orbit/#get-tools
@@ -83,6 +96,12 @@ type (
 		// Note: This API is experimental and may change or be
 		// removed in future versions.
 		//
+		// Deprecated: GitLab removed this endpoint and the JSON query
+		// DSL in GitLab 19.6. Queries are written in the Orbit query
+		// language instead, see
+		// https://docs.gitlab.com/orbit/queries/query-language/. To be
+		// removed in client-go v4.0.
+		//
 		// GitLab API docs:
 		// https://docs.gitlab.com/api/orbit/#get-dsl
 		GetDsl(opt *GetOrbitDslOptions, options ...RequestOptionFunc) (string, *Response, error)
@@ -93,7 +112,7 @@ type (
 		// removed in future versions.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/orbit/#post-query
+		// https://docs.gitlab.com/api/orbit/#run-a-query
 		Query(opt *OrbitQueryRequest, options ...RequestOptionFunc) (*OrbitQueryResult, *Response, error)
 
 		// QueryRaw executes an Orbit (Knowledge Graph) query and
@@ -106,7 +125,7 @@ type (
 		// removed in future versions.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/orbit/#post-query
+		// https://docs.gitlab.com/api/orbit/#run-a-query
 		QueryRaw(opt *OrbitQueryRequest, w io.Writer, options ...RequestOptionFunc) (*Response, error)
 
 		// GetGraphStatus returns the indexing status of the Knowledge
@@ -114,6 +133,10 @@ type (
 		//
 		// Note: This API is experimental and may change or be
 		// removed in future versions.
+		//
+		// Deprecated: GitLab removed this endpoint in GitLab 19.6, use
+		// the GraphQL fields Group.orbit and Project.orbit (indexing
+		// and itemCounts) instead. To be removed in client-go v4.0.
 		//
 		// GitLab API docs:
 		// https://docs.gitlab.com/api/orbit/#get-graph-status
@@ -145,7 +168,10 @@ var _ OrbitServiceInterface = (*OrbitService)(nil)
 
 // GetOrbitStatusOptions represents the available GetStatus() options.
 //
-// GitLab API docs: https://docs.gitlab.com/api/orbit/#get-status
+// Deprecated: used only by the deprecated GetStatus. To be removed in
+// client-go v4.0.
+//
+// GitLab API docs: https://docs.gitlab.com/api/orbit/#access-and-cluster-health
 type GetOrbitStatusOptions struct {
 	// ResponseFormat selects the response shape: "raw" (structured
 	// JSON, default) or "llm" (compact text for LLM consumption).
@@ -170,6 +196,9 @@ type GetOrbitStatusOptions struct {
 // promoted into the flat fields automatically via a custom
 // UnmarshalJSON. Callers that only read the flat fields continue to
 // work unchanged; new callers can inspect User and System directly.
+//
+// Deprecated: used only by the deprecated GetStatus. To be removed in
+// client-go v4.0.
 //
 // GitLab API docs: https://docs.gitlab.com/api/orbit/#get-status
 type OrbitStatus struct {
@@ -228,6 +257,9 @@ func (s *OrbitStatus) UnmarshalJSON(data []byte) error {
 // OrbitStatusUser represents user-level access information in the
 // new nested response shape of `GET /api/v4/orbit/status`.
 //
+// Deprecated: used only by the deprecated GetStatus. To be removed in
+// client-go v4.0.
+//
 // GitLab API docs: https://docs.gitlab.com/api/orbit/#get-status
 type OrbitStatusUser struct {
 	Available bool `json:"available"`
@@ -238,6 +270,9 @@ type OrbitStatusUser struct {
 // the same fields that the old flat OrbitStatus shape had, plus an
 // Error field emitted when the backend cannot reach the gRPC
 // cluster (status will be "unknown" in that case).
+//
+// Deprecated: used only by the deprecated GetStatus. To be removed in
+// client-go v4.0.
 //
 // GitLab API docs: https://docs.gitlab.com/api/orbit/#get-status
 type OrbitStatusSystem struct {
@@ -252,6 +287,9 @@ type OrbitStatusSystem struct {
 // OrbitStatusComponent represents a single Orbit subsystem in the
 // status response.
 //
+// Deprecated: used only by the deprecated GetStatus. To be removed in
+// client-go v4.0.
+//
 // GitLab API docs: https://docs.gitlab.com/api/orbit/#get-status
 type OrbitStatusComponent struct {
 	Name     string               `json:"name,omitempty"`
@@ -263,6 +301,9 @@ type OrbitStatusComponent struct {
 // OrbitStatusReplicas represents the ready/desired replica counts of
 // a single Orbit subsystem.
 //
+// Deprecated: used only by the deprecated GetStatus. To be removed in
+// client-go v4.0.
+//
 // GitLab API docs: https://docs.gitlab.com/api/orbit/#get-status
 type OrbitStatusReplicas struct {
 	Ready   int64 `json:"ready"`
@@ -270,6 +311,9 @@ type OrbitStatusReplicas struct {
 }
 
 // GetOrbitSchemaOptions represents the available GetSchema() options.
+//
+// Deprecated: used only by the deprecated GetSchema. To be removed in
+// client-go v4.0.
 //
 // GitLab API docs: https://docs.gitlab.com/api/orbit/#get-schema
 type GetOrbitSchemaOptions struct {
@@ -293,6 +337,9 @@ type GetOrbitSchemaOptions struct {
 // `properties`, `style`, and incoming/outgoing edge lists, while
 // unmatched nodes remain summary-only in the same response.
 //
+// Deprecated: used only by the deprecated GetSchema. To be removed in
+// client-go v4.0.
+//
 // GitLab API docs: https://docs.gitlab.com/api/orbit/#get-schema
 type OrbitSchema struct {
 	SchemaVersion string               `json:"schema_version,omitempty"`
@@ -304,6 +351,9 @@ type OrbitSchema struct {
 // OrbitSchemaDomain represents a logical grouping of nodes in the
 // graph ontology.
 //
+// Deprecated: used only by the deprecated GetSchema. To be removed in
+// client-go v4.0.
+//
 // GitLab API docs: https://docs.gitlab.com/api/orbit/#get-schema
 type OrbitSchemaDomain struct {
 	Name        string   `json:"name,omitempty"`
@@ -314,6 +364,9 @@ type OrbitSchemaDomain struct {
 // OrbitSchemaEdge represents an edge type in the graph ontology and
 // the source/target node combinations it connects.
 //
+// Deprecated: used only by the deprecated GetSchema. To be removed in
+// client-go v4.0.
+//
 // GitLab API docs: https://docs.gitlab.com/api/orbit/#get-schema
 type OrbitSchemaEdge struct {
 	Name        string                    `json:"name,omitempty"`
@@ -323,6 +376,9 @@ type OrbitSchemaEdge struct {
 
 // OrbitSchemaEdgeVariant represents a single source/target pair for
 // an edge type.
+//
+// Deprecated: used only by the deprecated GetSchema. To be removed in
+// client-go v4.0.
 //
 // GitLab API docs: https://docs.gitlab.com/api/orbit/#get-schema
 type OrbitSchemaEdgeVariant struct {
@@ -337,6 +393,9 @@ type OrbitSchemaEdgeVariant struct {
 // On the wire the response body is a bare JSON array of tool
 // definitions; the typed wrapper here exposes a named Tools field for
 // convenience and decodes the bare array via a custom UnmarshalJSON.
+//
+// Deprecated: used only by the deprecated GetTools. To be removed in
+// client-go v4.0.
 //
 // GitLab API docs: https://docs.gitlab.com/api/orbit/#get-tools
 type OrbitTools struct {
@@ -365,6 +424,9 @@ func (t OrbitTools) MarshalJSON() ([]byte, error) {
 
 // OrbitTool represents a single MCP tool definition.
 //
+// Deprecated: used only by the deprecated GetTools. To be removed in
+// client-go v4.0.
+//
 // GitLab API docs: https://docs.gitlab.com/api/orbit/#get-tools
 type OrbitTool struct {
 	Name        string          `json:"name,omitempty"`
@@ -373,6 +435,9 @@ type OrbitTool struct {
 }
 
 // GetOrbitDslOptions represents the available GetDsl() options.
+//
+// Deprecated: used only by the deprecated GetDsl. To be removed in
+// client-go v4.0.
 //
 // GitLab API docs: https://docs.gitlab.com/api/orbit/#get-dsl
 type GetOrbitDslOptions struct {
@@ -385,16 +450,17 @@ type GetOrbitDslOptions struct {
 // OrbitQueryRequest represents the JSON body sent to
 // `POST /api/v4/orbit/query`.
 //
-// Query is the structured DSL query object. It is left as
-// json.RawMessage so callers (and `glab orbit query`) can pass the
-// authoritative DSL through unchanged — the live JSON Schema is
-// available from `GET /api/v4/orbit/tools` and is the source of truth
-// for query shape.
+// Query is the query text in the Orbit query language, passed as a
+// JSON string, for example
+// json.RawMessage(`"MATCH (p:Project {id: 1}) RETURN p.name"`).
+// Since GitLab 19.6 the endpoint no longer accepts a JSON query
+// object and answers 400 Bad Request for one. See
+// https://docs.gitlab.com/orbit/queries/query-language/.
 //
 // ResponseFormat selects the response shape: "raw" (structured JSON)
 // or "llm" (compact text optimized for LLM consumption).
 //
-// GitLab API docs: https://docs.gitlab.com/api/orbit/#post-query
+// GitLab API docs: https://docs.gitlab.com/api/orbit/#run-a-query
 type OrbitQueryRequest struct {
 	Query          json.RawMessage           `json:"query"`
 	ResponseFormat *OrbitResponseFormatValue `json:"response_format,omitempty"`
@@ -409,7 +475,7 @@ type OrbitQueryRequest struct {
 // themselves JSON-encoded objects (not raw SQL) — each describes a
 // compiled query stage produced by the Knowledge Graph engine.
 //
-// GitLab API docs: https://docs.gitlab.com/api/orbit/#post-query
+// GitLab API docs: https://docs.gitlab.com/api/orbit/#run-a-query
 type OrbitQueryResult struct {
 	Result          json.RawMessage `json:"result,omitempty"`
 	QueryType       string          `json:"query_type,omitempty"`
@@ -423,7 +489,11 @@ type OrbitQueryResult struct {
 // Note: This API is experimental and may change or be removed in
 // future versions.
 //
-// GitLab API docs: https://docs.gitlab.com/api/orbit/#get-status
+// Deprecated: GitLab removed this endpoint in GitLab 19.6, use the
+// GraphQL field Query.orbit.serviceStatus instead. To be removed in
+// client-go v4.0.
+//
+// GitLab API docs: https://docs.gitlab.com/api/orbit/#access-and-cluster-health
 func (s *OrbitService) GetStatus(opt *GetOrbitStatusOptions, options ...RequestOptionFunc) (*OrbitStatus, *Response, error) {
 	return do[*OrbitStatus](
 		s.client,
@@ -439,6 +509,10 @@ func (s *OrbitService) GetStatus(opt *GetOrbitStatusOptions, options ...RequestO
 //
 // Note: This API is experimental and may change or be removed in
 // future versions.
+//
+// Deprecated: GitLab removed this endpoint in GitLab 19.6, use the
+// GraphQL field Query.orbit.schema instead. To be removed in
+// client-go v4.0.
 //
 // GitLab API docs: https://docs.gitlab.com/api/orbit/#get-schema
 func (s *OrbitService) GetSchema(opt *GetOrbitSchemaOptions, options ...RequestOptionFunc) (*OrbitSchema, *Response, error) {
@@ -456,6 +530,10 @@ func (s *OrbitService) GetSchema(opt *GetOrbitSchemaOptions, options ...RequestO
 //
 // Note: This API is experimental and may change or be removed in
 // future versions.
+//
+// Deprecated: GitLab removed this endpoint in GitLab 19.6, use the
+// tools/list method of the Orbit MCP endpoint
+// (POST /api/v4/orbit/mcp) instead. To be removed in client-go v4.0.
 //
 // GitLab API docs: https://docs.gitlab.com/api/orbit/#get-tools
 func (s *OrbitService) GetTools(options ...RequestOptionFunc) (*OrbitTools, *Response, error) {
@@ -478,6 +556,11 @@ func (s *OrbitService) GetTools(options ...RequestOptionFunc) (*OrbitTools, *Res
 // Note: This API is experimental and may change or be removed in
 // future versions.
 //
+// Deprecated: GitLab removed this endpoint and the JSON query DSL in
+// GitLab 19.6. Queries are written in the Orbit query language
+// instead, see https://docs.gitlab.com/orbit/queries/query-language/.
+// To be removed in client-go v4.0.
+//
 // GitLab API docs: https://docs.gitlab.com/api/orbit/#get-dsl
 func (s *OrbitService) GetDsl(opt *GetOrbitDslOptions, options ...RequestOptionFunc) (string, *Response, error) {
 	req, err := s.client.NewRequest(http.MethodGet, "orbit/schema/dsl", opt, options)
@@ -498,9 +581,7 @@ func (s *OrbitService) GetDsl(opt *GetOrbitDslOptions, options ...RequestOptionF
 // `POST /api/v4/orbit/query`.
 //
 // The request body is a typed OrbitQueryRequest whose Query member is
-// passed through as raw JSON; this preserves the authoritative DSL
-// shape served by `GET /api/v4/orbit/tools` without forcing a static
-// type that would lag the server. NewRequest serializes the body and
+// passed through as raw JSON. NewRequest serializes the body and
 // sets `Content-Type: application/json` automatically — there is no
 // need to manage the header manually.
 //
@@ -513,7 +594,7 @@ func (s *OrbitService) GetDsl(opt *GetOrbitDslOptions, options ...RequestOptionF
 // Note: This API is experimental and may change or be removed in
 // future versions.
 //
-// GitLab API docs: https://docs.gitlab.com/api/orbit/#post-query
+// GitLab API docs: https://docs.gitlab.com/api/orbit/#run-a-query
 func (s *OrbitService) Query(opt *OrbitQueryRequest, options ...RequestOptionFunc) (*OrbitQueryResult, *Response, error) {
 	return do[*OrbitQueryResult](
 		s.client,
@@ -547,7 +628,7 @@ func (s *OrbitService) Query(opt *OrbitQueryRequest, options ...RequestOptionFun
 // Note: This API is experimental and may change or be removed in
 // future versions.
 //
-// GitLab API docs: https://docs.gitlab.com/api/orbit/#post-query
+// GitLab API docs: https://docs.gitlab.com/api/orbit/#run-a-query
 func (s *OrbitService) QueryRaw(opt *OrbitQueryRequest, w io.Writer, options ...RequestOptionFunc) (*Response, error) {
 	req, err := s.client.NewRequest(http.MethodPost, "orbit/query", opt, options)
 	if err != nil {
@@ -560,6 +641,9 @@ func (s *OrbitService) QueryRaw(opt *OrbitQueryRequest, w io.Writer, options ...
 // GetGraphStatusOptions represents the available GetGraphStatus()
 // options. Exactly one of NamespaceID, ProjectID, or FullPath must be
 // provided; the server returns 400 otherwise.
+//
+// Deprecated: used only by the deprecated GetGraphStatus. To be removed
+// in client-go v4.0.
 //
 // GitLab API docs:
 // https://docs.gitlab.com/api/orbit/#get-graph-status
@@ -587,6 +671,9 @@ type GetGraphStatusOptions struct {
 // empty. When ResponseFormat is "llm", only FormattedText is populated
 // and the structured fields are absent.
 //
+// Deprecated: used only by the deprecated GetGraphStatus. To be removed
+// in client-go v4.0.
+//
 // GitLab API docs:
 // https://docs.gitlab.com/api/orbit/#get-graph-status
 type OrbitGraphStatus struct {
@@ -599,6 +686,9 @@ type OrbitGraphStatus struct {
 // OrbitGraphStatusProjects holds the indexed vs total project counts
 // for the queried namespace or project.
 //
+// Deprecated: used only by the deprecated GetGraphStatus. To be removed
+// in client-go v4.0.
+//
 // GitLab API docs:
 // https://docs.gitlab.com/api/orbit/#get-graph-status
 type OrbitGraphStatusProjects struct {
@@ -609,6 +699,9 @@ type OrbitGraphStatusProjects struct {
 // OrbitGraphStatusDomain represents a single domain (e.g. "SDLC") in
 // the graph status response and its node-level item counts.
 //
+// Deprecated: used only by the deprecated GetGraphStatus. To be removed
+// in client-go v4.0.
+//
 // GitLab API docs:
 // https://docs.gitlab.com/api/orbit/#get-graph-status
 type OrbitGraphStatusDomain struct {
@@ -618,6 +711,9 @@ type OrbitGraphStatusDomain struct {
 
 // OrbitGraphStatusDomainItem represents the count of a single node
 // type within a domain.
+//
+// Deprecated: used only by the deprecated GetGraphStatus. To be removed
+// in client-go v4.0.
 //
 // GitLab API docs:
 // https://docs.gitlab.com/api/orbit/#get-graph-status
@@ -631,6 +727,9 @@ type OrbitGraphStatusDomainItem struct {
 //
 // Possible State values: "not_indexed", "backfilling", "indexed",
 // "error", "indexing", "unknown".
+//
+// Deprecated: used only by the deprecated GetGraphStatus. To be removed
+// in client-go v4.0.
 //
 // GitLab API docs:
 // https://docs.gitlab.com/api/orbit/#get-graph-status
@@ -651,6 +750,10 @@ type OrbitGraphStatusIndexing struct {
 //
 // Note: This API is experimental and may change or be removed in
 // future versions.
+//
+// Deprecated: GitLab removed this endpoint in GitLab 19.6, use the
+// GraphQL fields Group.orbit and Project.orbit (indexing and
+// itemCounts) instead. To be removed in client-go v4.0.
 //
 // GitLab API docs:
 // https://docs.gitlab.com/api/orbit/#get-graph-status

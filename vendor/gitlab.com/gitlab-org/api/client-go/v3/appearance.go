@@ -25,7 +25,7 @@ type (
 		// GetAppearance gets the current appearance configuration of the GitLab instance.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/appearance/#get-details-on-current-application-appearance
+		// https://docs.gitlab.com/api/appearance/#retrieve-application-appearance
 		GetAppearance(options ...RequestOptionFunc) (*Appearance, *Response, error)
 
 		// ChangeAppearance changes the appearance configuration.

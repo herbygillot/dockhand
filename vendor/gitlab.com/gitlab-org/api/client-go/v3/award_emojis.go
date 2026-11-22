@@ -33,132 +33,132 @@ type (
 		// ListMergeRequestAwardEmoji gets a list of all award emoji on the merge request.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/emoji_reactions/#list-an-awardables-emoji-reactions
+		// https://docs.gitlab.com/api/emoji_reactions/#list-all-emoji-reactions-for-a-resource
 		ListMergeRequestAwardEmoji(pid any, mergeRequestIID int64, opt *ListAwardEmojiOptions, options ...RequestOptionFunc) ([]*AwardEmoji, *Response, error)
 
 		// ListIssueAwardEmoji gets a list of all award emoji on the issue.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/emoji_reactions/#list-an-awardables-emoji-reactions
+		// https://docs.gitlab.com/api/emoji_reactions/#list-all-emoji-reactions-for-a-resource
 		ListIssueAwardEmoji(pid any, issueIID int64, opt *ListAwardEmojiOptions, options ...RequestOptionFunc) ([]*AwardEmoji, *Response, error)
 
 		// ListSnippetAwardEmoji gets a list of all award emoji on the snippet.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/emoji_reactions/#list-an-awardables-emoji-reactions
+		// https://docs.gitlab.com/api/emoji_reactions/#list-all-emoji-reactions-for-a-resource
 		ListSnippetAwardEmoji(pid any, snippetID int64, opt *ListAwardEmojiOptions, options ...RequestOptionFunc) ([]*AwardEmoji, *Response, error)
 
 		// GetMergeRequestAwardEmoji get an award emoji from merge request.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/emoji_reactions/#get-single-emoji-reaction
+		// https://docs.gitlab.com/api/emoji_reactions/#retrieve-an-emoji-reaction-from-a-resource
 		GetMergeRequestAwardEmoji(pid any, mergeRequestIID, awardID int64, options ...RequestOptionFunc) (*AwardEmoji, *Response, error)
 
 		// GetIssueAwardEmoji get an award emoji from issue.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/emoji_reactions/#get-single-emoji-reaction
+		// https://docs.gitlab.com/api/emoji_reactions/#retrieve-an-emoji-reaction-from-a-resource
 		GetIssueAwardEmoji(pid any, issueIID, awardID int64, options ...RequestOptionFunc) (*AwardEmoji, *Response, error)
 
 		// GetSnippetAwardEmoji get an award emoji from snippet.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/emoji_reactions/#get-single-emoji-reaction
+		// https://docs.gitlab.com/api/emoji_reactions/#retrieve-an-emoji-reaction-from-a-resource
 		GetSnippetAwardEmoji(pid any, snippetID, awardID int64, options ...RequestOptionFunc) (*AwardEmoji, *Response, error)
 
 		// CreateMergeRequestAwardEmoji get an award emoji from merge request.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/emoji_reactions/#add-a-new-emoji-reaction
+		// https://docs.gitlab.com/api/emoji_reactions/#add-an-emoji-reaction-to-a-resource
 		CreateMergeRequestAwardEmoji(pid any, mergeRequestIID int64, opt *CreateAwardEmojiOptions, options ...RequestOptionFunc) (*AwardEmoji, *Response, error)
 
 		// CreateIssueAwardEmoji get an award emoji from issue.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/emoji_reactions/#add-a-new-emoji-reaction
+		// https://docs.gitlab.com/api/emoji_reactions/#add-an-emoji-reaction-to-a-resource
 		CreateIssueAwardEmoji(pid any, issueIID int64, opt *CreateAwardEmojiOptions, options ...RequestOptionFunc) (*AwardEmoji, *Response, error)
 
 		// CreateSnippetAwardEmoji get an award emoji from snippet.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/emoji_reactions/#add-a-new-emoji-reaction
+		// https://docs.gitlab.com/api/emoji_reactions/#add-an-emoji-reaction-to-a-resource
 		CreateSnippetAwardEmoji(pid any, snippetID int64, opt *CreateAwardEmojiOptions, options ...RequestOptionFunc) (*AwardEmoji, *Response, error)
 
 		// DeleteIssueAwardEmoji delete award emoji on an issue.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/emoji_reactions/#delete-an-emoji-reaction
+		// https://docs.gitlab.com/api/emoji_reactions/#delete-an-emoji-reaction-from-a-resource
 		DeleteIssueAwardEmoji(pid any, issueIID, awardID int64, options ...RequestOptionFunc) (*Response, error)
 
 		// DeleteMergeRequestAwardEmoji delete award emoji on a merge request.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/emoji_reactions/#delete-an-emoji-reaction
+		// https://docs.gitlab.com/api/emoji_reactions/#delete-an-emoji-reaction-from-a-resource
 		DeleteMergeRequestAwardEmoji(pid any, mergeRequestIID, awardID int64, options ...RequestOptionFunc) (*Response, error)
 
 		// DeleteSnippetAwardEmoji delete award emoji on a snippet.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/emoji_reactions/#delete-an-emoji-reaction
+		// https://docs.gitlab.com/api/emoji_reactions/#delete-an-emoji-reaction-from-a-resource
 		DeleteSnippetAwardEmoji(pid any, snippetID, awardID int64, options ...RequestOptionFunc) (*Response, error)
 
 		// ListIssuesAwardEmojiOnNote gets a list of all award emoji on a note from the
 		// issue.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/emoji_reactions/#list-a-comments-emoji-reactions
+		// https://docs.gitlab.com/api/emoji_reactions/#list-all-emoji-reactions-for-a-comment
 		ListIssuesAwardEmojiOnNote(pid any, issueID, noteID int64, opt *ListAwardEmojiOptions, options ...RequestOptionFunc) ([]*AwardEmoji, *Response, error)
 
 		// ListMergeRequestAwardEmojiOnNote gets a list of all award emoji on a note
 		// from the merge request.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/emoji_reactions/#list-a-comments-emoji-reactions
+		// https://docs.gitlab.com/api/emoji_reactions/#list-all-emoji-reactions-for-a-comment
 		ListMergeRequestAwardEmojiOnNote(pid any, mergeRequestIID, noteID int64, opt *ListAwardEmojiOptions, options ...RequestOptionFunc) ([]*AwardEmoji, *Response, error)
 
 		// ListSnippetAwardEmojiOnNote gets a list of all award emoji on a note from the
 		// snippet.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/emoji_reactions/#list-a-comments-emoji-reactions
+		// https://docs.gitlab.com/api/emoji_reactions/#list-all-emoji-reactions-for-a-comment
 		ListSnippetAwardEmojiOnNote(pid any, snippetIID, noteID int64, opt *ListAwardEmojiOptions, options ...RequestOptionFunc) ([]*AwardEmoji, *Response, error)
 
 		// GetIssuesAwardEmojiOnNote gets an award emoji on a note from an issue.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/emoji_reactions/#get-an-emoji-reaction-for-a-comment
+		// https://docs.gitlab.com/api/emoji_reactions/#retrieve-an-emoji-reaction-from-a-comment
 		GetIssuesAwardEmojiOnNote(pid any, issueID, noteID, awardID int64, options ...RequestOptionFunc) (*AwardEmoji, *Response, error)
 
 		// GetMergeRequestAwardEmojiOnNote gets an award emoji on a note from a
 		// merge request.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/emoji_reactions/#get-an-emoji-reaction-for-a-comment
+		// https://docs.gitlab.com/api/emoji_reactions/#retrieve-an-emoji-reaction-from-a-comment
 		GetMergeRequestAwardEmojiOnNote(pid any, mergeRequestIID, noteID, awardID int64, options ...RequestOptionFunc) (*AwardEmoji, *Response, error)
 
 		// GetSnippetAwardEmojiOnNote gets an award emoji on a note from a snippet.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/emoji_reactions/#get-an-emoji-reaction-for-a-comment
+		// https://docs.gitlab.com/api/emoji_reactions/#retrieve-an-emoji-reaction-from-a-comment
 		GetSnippetAwardEmojiOnNote(pid any, snippetIID, noteID, awardID int64, options ...RequestOptionFunc) (*AwardEmoji, *Response, error)
 
 		// CreateIssuesAwardEmojiOnNote gets an award emoji on a note from an issue.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/emoji_reactions/#add-a-new-emoji-reaction-to-a-comment
+		// https://docs.gitlab.com/api/emoji_reactions/#add-an-emoji-reaction-to-a-comment
 		CreateIssuesAwardEmojiOnNote(pid any, issueID, noteID int64, opt *CreateAwardEmojiOptions, options ...RequestOptionFunc) (*AwardEmoji, *Response, error)
 
 		// CreateMergeRequestAwardEmojiOnNote gets an award emoji on a note from a
 		// merge request.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/emoji_reactions/#add-a-new-emoji-reaction-to-a-comment
+		// https://docs.gitlab.com/api/emoji_reactions/#add-an-emoji-reaction-to-a-comment
 		CreateMergeRequestAwardEmojiOnNote(pid any, mergeRequestIID, noteID int64, opt *CreateAwardEmojiOptions, options ...RequestOptionFunc) (*AwardEmoji, *Response, error)
 
 		// CreateSnippetAwardEmojiOnNote gets an award emoji on a note from a snippet.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/emoji_reactions/#add-a-new-emoji-reaction-to-a-comment
+		// https://docs.gitlab.com/api/emoji_reactions/#add-an-emoji-reaction-to-a-comment
 		CreateSnippetAwardEmojiOnNote(pid any, snippetIID, noteID int64, opt *CreateAwardEmojiOptions, options ...RequestOptionFunc) (*AwardEmoji, *Response, error)
 
 		// DeleteIssuesAwardEmojiOnNote deletes an award emoji on a note from an issue.
@@ -265,7 +265,7 @@ func (s *AwardEmojiService) getAwardEmoji(pid any, resource string, resourceID, 
 // for a resource
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/emoji_reactions/#add-a-new-emoji-reaction
+// https://docs.gitlab.com/api/emoji_reactions/#add-an-emoji-reaction-to-a-resource
 type CreateAwardEmojiOptions struct {
 	Name string `json:"name"`
 }
@@ -306,7 +306,7 @@ func (s *AwardEmojiService) DeleteSnippetAwardEmoji(pid any, snippetID, awardID 
 // DeleteAwardEmoji Delete an award emoji on the specified resource.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/emoji_reactions/#delete-an-emoji-reaction
+// https://docs.gitlab.com/api/emoji_reactions/#delete-an-emoji-reaction-from-a-resource
 func (s *AwardEmojiService) deleteAwardEmoji(pid any, resource string, resourceID, awardID int64, options ...RequestOptionFunc) (*Response, error) {
 	_, resp, err := do[none](s.client,
 		withMethod(http.MethodDelete),
@@ -373,7 +373,7 @@ func (s *AwardEmojiService) CreateSnippetAwardEmojiOnNote(pid any, snippetIID, n
 // CreateAwardEmojiOnNote award emoji on a note.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/emoji_reactions/#add-a-new-emoji-reaction-to-a-comment
+// https://docs.gitlab.com/api/emoji_reactions/#add-an-emoji-reaction-to-a-comment
 func (s *AwardEmojiService) createAwardEmojiOnNote(pid any, resource string, resourceID, noteID int64, opt *CreateAwardEmojiOptions, options ...RequestOptionFunc) (*AwardEmoji, *Response, error) {
 	return do[*AwardEmoji](s.client,
 		withMethod(http.MethodPost),

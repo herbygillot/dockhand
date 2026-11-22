@@ -26,7 +26,7 @@ type (
 		// GetCompliancePolicySettings gets the current security policy settings for the GitLab instance.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/compliance_policy_settings/#get-security-policy-settings
+		// https://docs.gitlab.com/api/compliance_policy_settings/#retrieve-security-policy-settings
 		GetCompliancePolicySettings(options ...RequestOptionFunc) (*AdminCompliancePolicySettings, *Response, error)
 
 		// UpdateCompliancePolicySettings updates the security policy settings for the GitLab instance.

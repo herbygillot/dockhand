@@ -23,7 +23,7 @@ type (
 		// GetApplicationStatistics gets details on the current application statistics.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/statistics/#get-details-on-current-application-statistics
+		// https://docs.gitlab.com/api/statistics/#retrieve-application-statistics
 		GetApplicationStatistics(options ...RequestOptionFunc) (*ApplicationStatistics, *Response, error)
 	}
 

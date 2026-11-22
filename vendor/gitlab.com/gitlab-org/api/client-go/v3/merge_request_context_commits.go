@@ -13,19 +13,19 @@ type (
 		// ListMergeRequestContextCommits gets a list of merge request context commits.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/merge_request_context_commits/#list-mr-context-commits
+		// https://docs.gitlab.com/api/merge_request_context_commits/#list-context-commits-for-a-merge-request
 		ListMergeRequestContextCommits(pid any, mergeRequest int64, options ...RequestOptionFunc) ([]*Commit, *Response, error)
 		// CreateMergeRequestContextCommits creates a list of merge request context
 		// commits.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/merge_request_context_commits/#create-mr-context-commits
+		// https://docs.gitlab.com/api/merge_request_context_commits/#create-context-commits-for-a-merge-request
 		CreateMergeRequestContextCommits(pid any, mergeRequest int64, opt *CreateMergeRequestContextCommitsOptions, options ...RequestOptionFunc) ([]*Commit, *Response, error)
 		// DeleteMergeRequestContextCommits deletes a list of merge request context
 		// commits.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/merge_request_context_commits/#delete-mr-context-commits
+		// https://docs.gitlab.com/api/merge_request_context_commits/#delete-context-commits-from-a-merge-request
 		DeleteMergeRequestContextCommits(pid any, mergeRequest int64, opt *DeleteMergeRequestContextCommitsOptions, options ...RequestOptionFunc) (*Response, error)
 	}
 
@@ -52,7 +52,7 @@ func (s *MergeRequestContextCommitsService) ListMergeRequestContextCommits(pid a
 // CreateMergeRequestContextCommits() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/merge_request_context_commits/#create-mr-context-commits
+// https://docs.gitlab.com/api/merge_request_context_commits/#create-context-commits-for-a-merge-request
 type CreateMergeRequestContextCommitsOptions struct {
 	Commits *[]string `url:"commits,omitempty" json:"commits,omitempty"`
 }
@@ -70,7 +70,7 @@ func (s *MergeRequestContextCommitsService) CreateMergeRequestContextCommits(pid
 // DeleteMergeRequestContextCommits() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/merge_request_context_commits/#delete-mr-context-commits
+// https://docs.gitlab.com/api/merge_request_context_commits/#delete-context-commits-from-a-merge-request
 type DeleteMergeRequestContextCommitsOptions struct {
 	Commits *[]string `url:"commits,omitempty" json:"commits,omitempty"`
 }

@@ -31,13 +31,13 @@ type (
 		// ListBranches gets a list of repository branches from a project, sorted by name alphabetically.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/branches/#list-repository-branches
+		// https://docs.gitlab.com/api/branches/#list-all-repository-branches
 		ListBranches(pid any, opts *ListBranchesOptions, options ...RequestOptionFunc) ([]*Branch, *Response, error)
 
 		// GetBranch gets a single project repository branch.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/branches/#get-single-repository-branch
+		// https://docs.gitlab.com/api/branches/#retrieve-a-repository-branch
 		GetBranch(pid any, branch string, options ...RequestOptionFunc) (*Branch, *Response, error)
 
 		// CreateBranch creates branch from commit SHA or existing branch.
@@ -55,7 +55,7 @@ type (
 		// DeleteMergedBranches deletes all branches that are merged into the project's default branch.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/branches/#delete-merged-branches
+		// https://docs.gitlab.com/api/branches/#delete-all-merged-branches
 		DeleteMergedBranches(pid any, options ...RequestOptionFunc) (*Response, error)
 	}
 
@@ -92,7 +92,7 @@ func (b Branch) String() string {
 // ListBranchesOptions represents the available ListBranches() options.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/branches/#list-repository-branches
+// https://docs.gitlab.com/api/branches/#list-all-repository-branches
 type ListBranchesOptions struct {
 	ListOptions
 	Search *string `url:"search,omitempty" json:"search,omitempty"`

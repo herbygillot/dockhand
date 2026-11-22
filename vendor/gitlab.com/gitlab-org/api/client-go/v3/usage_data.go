@@ -28,27 +28,27 @@ type (
 		// leaking the underlying response body.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/usage_data/#export-metric-definitions-as-a-single-yaml-file
+		// https://docs.gitlab.com/api/usage_data/#export-metric-definitions
 		GetMetricDefinitionsAsYAML(options ...RequestOptionFunc) (io.ReadCloser, *Response, error)
 		// GetQueries gets all raw SQL queries used to compute service ping.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/usage_data/#export-service-ping-sql-queries
+		// https://docs.gitlab.com/api/usage_data/#list-all-service-ping-sql-queries
 		GetQueries(options ...RequestOptionFunc) (*ServicePingQueries, *Response, error)
 		// GetNonSQLMetrics gets all non-SQL metrics data used in the service ping.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/usage_data/#usagedatanonsqlmetrics-api
+		// https://docs.gitlab.com/api/usage_data/#list-all-non-sql-metrics
 		GetNonSQLMetrics(options ...RequestOptionFunc) (*ServicePingNonSQLMetrics, *Response, error)
 		// TrackEvent tracks an internal GitLab event.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/usage_data/#events-tracking-api
+		// https://docs.gitlab.com/api/usage_data/#track-internal-events
 		TrackEvent(opt *TrackEventOptions, options ...RequestOptionFunc) (*Response, error)
 		// TrackEvents tracks multiple internal GitLab events.
 		//
 		// GitLab API docs:
-		// https://docs.gitlab.com/api/usage_data/#events-tracking-api
+		// https://docs.gitlab.com/api/usage_data/#track-internal-events
 		TrackEvents(opt *TrackEventsOptions, options ...RequestOptionFunc) (*Response, error)
 	}
 
@@ -81,7 +81,7 @@ func (s *UsageDataService) GetServicePing(options ...RequestOptionFunc) (*Servic
 // leaking the underlying response body.
 //
 // GitLab API docs:
-// https://docs.gitlab.com/api/usage_data/#export-metric-definitions-as-a-single-yaml-file
+// https://docs.gitlab.com/api/usage_data/#export-metric-definitions
 func (s *UsageDataService) GetMetricDefinitionsAsYAML(options ...RequestOptionFunc) (io.ReadCloser, *Response, error) {
 	r, resp, err := do[bodyReader](s.client,
 		withPath(routeUsageDataMetricDefinitions),
