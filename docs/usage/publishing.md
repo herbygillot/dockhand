@@ -387,6 +387,9 @@ evidence ordinary submit requires. The pull request is marked ready after the
 push, before any reviewers are asked to review again. If GitHub's organization policy refuses
 dockhand's app, dockhand can use an installed GitHub CLI signed in as the same
 account to mark it ready, or prints the remaining action when it cannot.
+Marking ready and asking the reviewers again are for the commit submitted:
+just before each, submit reads the pull request's head, and where someone has
+pushed another commit to the branch since, neither is done and submit says so.
 
 ## Continue after a reviewer responds
 

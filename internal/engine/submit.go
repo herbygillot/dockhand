@@ -1315,6 +1315,11 @@ type Submitted struct {
 	Ready, ReadyByCLI bool
 	// Asked are the reviewers asked to review again after the push.
 	Asked []string
+	// MovedTo is the commit the pull request's head was found at, other
+	// than the one submitted, just before a follow-up: the publication
+	// ended there, and Dropped are the follow-ups it owed for its commit.
+	MovedTo model.ObjectID
+	Dropped []model.PublicationStep
 	// Pending are the steps the submission still owes when it returned,
 	// with why, as --json says them.
 	Pending []Pending
@@ -1577,7 +1582,7 @@ func (e *Engine) publish(ctx context.Context, plan SubmitPlan, worktree *git.Rep
 		return result, fmt.Errorf("pull request #%d is open with commit %s, but dockhand could not save its record: %w; run dockhand submit again to find and record it", observed.PullRequest.Ref.Number, model.ObjectID(plan.Commit).Short(), err)
 	}
 	record = next
-	if err := e.followUps(ctx, plan, &result, &record); err != nil {
+	if err := e.followUps(ctx, plan, &result, &record); err != nil || result.MovedTo != "" {
 		return result, err
 	}
 	return result, e.endPublication(ctx, plan.Branch.ID, record)
@@ -1691,10 +1696,35 @@ func (e *Engine) recordSubmission(tx store.Tx, plan SubmitPlan, result *Submitte
 // request marked ready where --ready asked, then, after a push to one
 // whose reviewers requested changes, those reviewers asked to review again
 // where the person said yes before the push. Each is made only while the
-// fork's branch is at the commit, and each leaves the publication in the
-// transaction that follows it.
+// pull request's head is at the commit, read just before its call, and
+// each leaves the publication in the transaction that follows it. Where
+// the head is at another commit, the publication ends and what it still
+// owed is dropped, for the command to say (docs/designs/
+// publication-record.md, "Follow-ups are for the commit").
 func (e *Engine) followUps(ctx context.Context, plan SubmitPlan, result *Submitted, record *model.Publication) error {
+	ref := result.PullRequest.Ref
+	// atCommit reads the pull request's head once more; false is the head
+	// moved, and the publication ended.
+	atCommit := func() (bool, error) {
+		observed, err := e.forge().Observe(ctx, ref)
+		if err != nil {
+			return false, fmt.Errorf("reading #%d's head before its follow-up: %w; the follow-up stays owed, for dockhand submit to settle", ref.Number, err)
+		}
+		if head := observed.PullRequest.RemoteHead; head != "" && head != record.Commit {
+			result.MovedTo, result.Dropped = head, slices.DeleteFunc(slices.Clone(record.Owes), func(step model.PublicationStep) bool {
+				return step != model.StepReady && step != model.StepRerequest
+			})
+			return false, e.rewritePublication(ctx, plan.Branch.ID, record.ID, nil, nil)
+		}
+		return true, nil
+	}
 	if slices.Contains(record.Owes, model.StepReady) {
+		if at, err := atCommit(); !at {
+			if err == nil {
+				record.Owes = nil
+			}
+			return err
+		}
 		_, byCLI, err := e.Ready(ctx, plan.Branch)
 		if err != nil {
 			// Ready's own words say how to mark it; the step stays owed,
@@ -1710,6 +1740,12 @@ func (e *Engine) followUps(ctx context.Context, plan SubmitPlan, result *Submitt
 	}
 	if !slices.Contains(record.Owes, model.StepRerequest) || record.Review == nil {
 		return nil
+	}
+	if at, err := atCommit(); !at {
+		if err == nil {
+			record.Owes = nil
+		}
+		return err
 	}
 	asked, err := e.rerequest(ctx, plan.Branch.ID, record)
 	result.Asked = asked

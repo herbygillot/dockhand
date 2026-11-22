@@ -127,6 +127,9 @@ type GitHub struct {
 	// opened, now where nil.
 	Person string
 	Clock  func() time.Time
+	// Observing, where set, runs before each Observe answers, as another
+	// process's push between two reads would.
+	Observing func(forge.PullRequestRef)
 }
 
 // refused is a write's refusal where GitHub refuses it (Refuse).
@@ -286,6 +289,9 @@ func (g *GitHub) Find(_ context.Context, q forge.PullRequestQuery) (forge.PullRe
 
 func (g *GitHub) Observe(_ context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {
 	g.Observed++
+	if g.Observing != nil {
+		g.Observing(ref)
+	}
 	if g.ObserveErr != nil {
 		return forge.PullRequestObservation{}, g.ObserveErr
 	}
