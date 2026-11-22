@@ -2,6 +2,7 @@ package observe
 
 import (
 	"context"
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -37,7 +38,7 @@ func TestDecideFetchOrdersLeftPolicyVerdictAndUsablePlan(t *testing.T) {
 	}{
 		{name: "left before policy", context: observed(macports.PortInfo{}, macports.PortObservation{}, true, "exec"), need: FetchPlanNeed, want: FetchLeft},
 		{name: "policy refusal for a plan", context: observed(macports.PortInfo{}, macports.PortObservation{Distfiles: []macports.Distfile{{Name: "fixture.tar.gz"}}}, false, ""), need: FetchPlanNeed, want: FetchRefused},
-		{name: "empty plan skips archive policy", context: observed(macports.PortInfo{}, macports.PortObservation{}, false, ""), need: FetchPlanNeed, want: FetchUsable},
+		{name: "empty plan has its own result", context: observed(usableInfo, macports.PortObservation{}, false, ""), need: FetchPlanNeed, want: FetchNoPlan},
 		{name: "revision-only Git path skips policy and plan", context: observed(macports.PortInfo{Name: port, Options: map[string]string{"fetch.type": "git"}}, macports.PortObservation{Distfiles: []macports.Distfile{{Name: "fixture.tar.gz"}}}, false, ""), need: FetchRevisionOnly, want: FetchUsable},
 		{name: "plan reader still applies Git fetch policy", context: observed(macports.PortInfo{Name: port, Options: map[string]string{"fetch.type": "git"}}, macports.PortObservation{Distfiles: []macports.Distfile{{Name: "fixture.tar.gz"}}}, false, ""), need: FetchPlanNeed, want: FetchRefused},
 		{name: "native host read at plan level", context: observed(usableInfo, macports.PortObservation{HostAccess: true, Distfiles: []macports.Distfile{{Name: "fixture.tar.gz"}}}, false, ""), need: FetchPlanNeed, want: FetchUsable, wantPlan: 1},
@@ -46,8 +47,12 @@ func TestDecideFetchOrdersLeftPolicyVerdictAndUsablePlan(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got := DecideFetch(context.Background(), test.context, port, nil, "", test.need, nil)
+			got, err := DecideFetch(context.Background(), test.context, port, nil, "", test.need, false, nil)
+			require.NoError(t, err)
 			require.Equal(t, test.want, got.Kind)
+			if got.Kind == FetchInconclusive {
+				require.NotEmpty(t, got.Reason)
+			}
 			if test.want == FetchUsable && test.wantPlan > 0 {
 				require.Equal(t, "fixture.tar.gz", got.Plan[0].Name)
 			}
@@ -57,6 +62,44 @@ func TestDecideFetchOrdersLeftPolicyVerdictAndUsablePlan(t *testing.T) {
 			require.Len(t, got.Plan, test.wantPlan)
 		})
 	}
+}
+
+func TestDecideFetchDoesNotTurnAToleratedEmptyPlanIntoAnInconclusiveVerdict(t *testing.T) {
+	t.Parallel()
+	b := newBaseFixture(t)
+	declaration := b.lookup("make", "base", b.substitution("build.cmd", "[portbuild::build_getmaketype]"), b.getmaketype())
+	problem := declaration.Values[0]
+	port := "fixture"
+	info := macports.PortInfo{Name: port, Options: map[string]string{
+		"fetch.type": "standard", "fetch.archive_compatible": "1", "fetch.ignore_sslcert": "0", "fetch.has_credentials": "0",
+	}}
+	observed := macports.Observation{
+		Snapshot: macports.Snapshot{Root: t.TempDir(), Ports: map[string]macports.PortInfo{port: info}},
+		Ports: map[string]macports.PortObservation{port: {
+			HostAccess: true, Problems: []string{problem}, Declarations: []macports.Declaration{declaration}, BaseLibrary: b.lib,
+		}},
+	}
+
+	decision, err := DecideFetch(t.Context(), observed, port, []byte("PortSystem 1.0\nbuild.args ${build.cmd}\n"), "", FetchJudgedPlan, false, nil)
+	require.NoError(t, err)
+	require.Equal(t, FetchNoPlan, decision.Kind, "Tolerate removed the only problem and the empty plan is not a host-state verdict")
+	require.Empty(t, decision.Plan)
+	require.Empty(t, decision.Metadata.Problems)
+	require.False(t, decision.HadProblems)
+}
+
+func TestDecideFetchReturnsLoadFailuresAsErrors(t *testing.T) {
+	t.Parallel()
+	loadErr := errors.New("observation session unavailable")
+	decision, err := DecideFetch(t.Context(), macports.Observation{
+		Snapshot: macports.Snapshot{Ports: map[string]macports.PortInfo{"fixture": {Name: "fixture", Options: map[string]string{
+			"fetch.type": "standard", "fetch.archive_compatible": "1", "fetch.ignore_sslcert": "0", "fetch.has_credentials": "0",
+		}}}},
+	}, "fixture", nil, "", FetchPlanNeed, false, func(context.Context) (macports.Observation, error) {
+		return macports.Observation{}, loadErr
+	})
+	require.ErrorIs(t, err, loadErr)
+	require.Zero(t, decision)
 }
 
 func TestFetchDecisionRulesHaveOneProductionCaller(t *testing.T) {

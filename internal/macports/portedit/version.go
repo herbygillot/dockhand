@@ -261,7 +261,7 @@ func shippedPlan(ctx context.Context, input *sourceInput) ([]macports.Distfile, 
 		Snapshot: macports.Snapshot{Root: input.before.Root, Ports: map[string]macports.PortInfo{input.target.Name: input.info}},
 		Ports:    map[string]macports.PortObservation{input.target.Name: {}},
 	}
-	decision := observe.DecideFetch(ctx, observed, input.target.Name, input.data, input.portdirIn(input.before.Root), observe.FetchPlanNeed, func(ctx context.Context) (macports.Observation, error) {
+	decision, err := observe.DecideFetch(ctx, observed, input.target.Name, input.data, input.portdirIn(input.before.Root), observe.FetchPlanNeed, false, func(ctx context.Context) (macports.Observation, error) {
 		if input.observe == nil {
 			return macports.Observation{}, errors.New("fetch observation session is unavailable")
 		}
@@ -271,16 +271,18 @@ func shippedPlan(ctx context.Context, input *sourceInput) ([]macports.Distfile, 
 		}
 		return observations[0], nil
 	})
+	if err != nil {
+		return nil, err
+	}
 	switch decision.Kind {
 	case observe.FetchLeft:
 		return nil, errProbeInconclusive.Because("%s", decision.Reason)
 	case observe.FetchRefused:
 		return nil, decision.Err
 	case observe.FetchInconclusive:
-		if decision.Err != nil {
-			return nil, decision.Err
-		}
 		return nil, errProbeInconclusive.Because("%s", decision.Reason)
+	case observe.FetchNoPlan:
+		return nil, ErrUnsupported.Because("%w", decision.Err)
 	}
 	return decision.Plan, nil
 }

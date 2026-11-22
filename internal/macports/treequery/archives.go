@@ -159,19 +159,21 @@ func planOf(info macports.PortInfo, port macports.PortObservation, portdir strin
 // planOfObserved asks for a plan, as main did, without judging native host
 // access: ArchivePlan returns this Mac's own evaluation and plan.
 func planOfObserved(ctx context.Context, observed macports.Observation, name string, contents []byte, portdir string) ([]macports.Distfile, error) {
-	decision := observe.DecideFetch(ctx, observed, name, contents, portdir, observe.FetchPlanNeed, nil)
+	decision, err := observe.DecideFetch(ctx, observed, name, contents, portdir, observe.FetchPlanNeed, false, nil)
+	if err != nil {
+		return nil, err
+	}
 	switch decision.Kind {
 	case observe.FetchLeft:
 		return nil, errors.New(decision.Reason)
 	case observe.FetchRefused:
 		return nil, decision.Err
 	case observe.FetchInconclusive:
-		if decision.Err != nil {
+		return nil, errors.New(decision.Reason)
+	case observe.FetchNoPlan:
+		if decision.HadProblems {
 			return nil, decision.Err
 		}
-		return nil, errors.New(decision.Reason)
-	}
-	if len(decision.Plan) == 0 {
 		return nil, ErrNoArchives
 	}
 	return decision.Plan, nil

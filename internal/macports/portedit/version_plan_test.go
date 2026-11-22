@@ -21,3 +21,12 @@ func TestTheShippedPlanKeepsTheFetchPolicy(t *testing.T) {
 	require.ErrorIs(t, err, ErrUnsupported)
 	require.ErrorContains(t, err, "cannot be prepared automatically here")
 }
+
+func TestTheShippedPlanRefusesAPortWithNoArchives(t *testing.T) {
+	t.Parallel()
+	_, _, input := probeFixture(t, "github.setup owner fixture 1.2.3 v\ndistfiles\nlivecheck.type none")
+	plan, err := shippedPlan(t.Context(), input)
+	require.Empty(t, plan)
+	require.ErrorIs(t, err, ErrUnsupported)
+	require.ErrorContains(t, err, "MacPorts' fetch plan names no archives")
+}

@@ -480,11 +480,17 @@ func (s *Service) checksumsToWrite(ctx context.Context, input *sourceInput, refu
 	var sums []portfile.Checksum
 	agree := true
 	for _, observed := range observations {
-		decision := observe.DecideFetch(ctx, observed, input.target.Name, input.data, input.portdirIn(observed.Snapshot.Root), observe.FetchPlanNeed, nil)
+		decision, decisionErr := observe.DecideFetch(ctx, observed, input.target.Name, input.data, input.portdirIn(observed.Snapshot.Root), observe.FetchPlanNeed, false, nil)
+		if decisionErr != nil {
+			return refusal
+		}
 		if decision.Kind == observe.FetchLeft {
 			continue
 		}
 		if decision.Kind == observe.FetchRefused || decision.Kind == observe.FetchInconclusive {
+			return refusal
+		}
+		if decision.Kind == observe.FetchNoPlan && decision.HadProblems {
 			return refusal
 		}
 		info := decision.Info

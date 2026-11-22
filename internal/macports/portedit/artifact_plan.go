@@ -75,7 +75,10 @@ func (s *Service) bindArchivesOn(ctx context.Context, input *sourceInput, conten
 	if observed.Snapshot.Ports[input.target.Name].GitFetched() {
 		need = observe.FetchRevisionOnly
 	}
-	decision := observe.DecideFetch(ctx, observed, input.target.Name, contents, input.portdirIn(observed.Snapshot.Root), need, nil)
+	decision, err := observe.DecideFetch(ctx, observed, input.target.Name, contents, input.portdirIn(observed.Snapshot.Root), need, false, nil)
+	if err != nil {
+		return distfiles.Binding{}, err
+	}
 	if decision.Kind == observe.FetchLeft {
 		return distfiles.Binding{}, errProbeInconclusive.Because("%s", decision.Reason)
 	}
@@ -86,6 +89,9 @@ func (s *Service) bindArchivesOn(ctx context.Context, input *sourceInput, conten
 		return distfiles.Binding{}, errProbeInconclusive.Because("%s", decision.Reason)
 	}
 	port, info := decision.Metadata, decision.Info
+	if decision.Kind == observe.FetchNoPlan && decision.HadProblems {
+		return distfiles.Binding{}, ErrUnsupported.Because("%v", port.Problems)
+	}
 	var resolve distfiles.Resolver
 	if here {
 		resolve = func(matches []syntax.Command) (syntax.Command, error) {
@@ -146,7 +152,10 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 				observed macports.Observation
 				contents []byte
 			}{{before, input.data}, {after, contents}} {
-				decision := observe.DecideFetch(ctx, read.observed, member.target.Name, read.contents, member.portdirIn(read.observed.Snapshot.Root), observe.FetchRevisionOnly, nil)
+				decision, err := observe.DecideFetch(ctx, read.observed, member.target.Name, read.contents, member.portdirIn(read.observed.Snapshot.Root), observe.FetchRevisionOnly, false, nil)
+				if err != nil {
+					return err
+				}
 				if decision.Kind != observe.FetchLeft {
 					continue
 				}

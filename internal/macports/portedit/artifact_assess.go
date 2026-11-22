@@ -27,7 +27,16 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 	}
 	for i, profile := range profiles {
 		observed := observations[i]
-		decision := observe.DecideFetch(ctx, observed, input.target.Name, input.data, input.portdirIn(observed.Snapshot.Root), observe.FetchJudgedPlan, nil)
+		need, policyWithoutArchives := observe.FetchJudgedPlan, true
+		if obsoleteIn(observed.Snapshot.Ports[input.target.Name]) {
+			// Main left an obsolete follower before applying archive policy or
+			// judging its plan; keep only the leave check for that context.
+			need, policyWithoutArchives = observe.FetchRevisionOnly, false
+		}
+		decision, err := observe.DecideFetch(ctx, observed, input.target.Name, input.data, input.portdirIn(observed.Snapshot.Root), need, policyWithoutArchives, nil)
+		if err != nil {
+			return contexts, err, nil
+		}
 		info := decision.Info
 		contexts = append(contexts, ContextCoverage{Platform: profile, Modeled: observed.Modeled, Fetch: info.Fetch})
 		if decision.Kind == observe.FetchLeft {
@@ -46,6 +55,9 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 			return contexts, errProbeInconclusive.Because("%s", decision.Reason), nil
 		}
 		metadata := decision.Metadata
+		if decision.Kind == observe.FetchNoPlan && decision.HadProblems {
+			return contexts, ErrUnsupported.Because("%v", metadata.Problems), nil
+		}
 		if len(metadata.Problems) > 0 {
 			return contexts, ErrUnsupported.Because("%v", metadata.Problems), nil
 		}
