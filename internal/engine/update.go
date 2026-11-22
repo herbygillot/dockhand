@@ -20,6 +20,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
+	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
@@ -217,6 +218,9 @@ type Update struct {
 	// Differing are the archives whose checksums weren't as the Portfile
 	// declared them, for a checksum refresh.
 	Differing []string
+	// patches are the preparer's checks of the port's patches, whose
+	// rejected ones' details a recorded finding keeps whole.
+	patches []patchcheck.Result
 	// PatchProblems name the port's patches that no longer apply, and
 	// PatchesUnchecked those no check reached before the build;
 	// PatchesApplied counts those checked that apply.
@@ -1026,7 +1030,7 @@ func changedSinceBase(ctx context.Context, worktree *git.Repository, captured st
 
 // describe reads what the preparation found.
 func describe(branch model.Branch, selector string, result editprep.Result) Update {
-	update := Update{Branch: branch, Port: result.Target.Name, Release: result.Release, PatchProblems: result.PatchProblems(), PatchesUnchecked: result.UncheckedPatches(), PatchesApplied: result.PatchesApplied(),
+	update := Update{Branch: branch, Port: result.Target.Name, Release: result.Release, PatchProblems: result.PatchProblems(), PatchesUnchecked: result.UncheckedPatches(), PatchesApplied: result.PatchesApplied(), patches: result.Patches,
 		MissingWorksrcdir: result.MissingWorksrcdir(), Distfiles: len(result.Downloads), Regenerated: result.Regenerated, PatchesDropped: result.Dropped}
 	for _, refreshed := range result.Refreshed {
 		update.PatchesRefreshed = append(update.PatchesRefreshed, refreshed.Name+": "+refreshed.Words)

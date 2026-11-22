@@ -56,6 +56,32 @@ type Finding struct {
 	Detail []string `json:",omitempty"`
 }
 
+// The kinds of finding an update records (docs/designs/
+// preparation-and-request.md, "What is stored of engine.Update"). Left,
+// unless the edit dealt with it.
+const (
+	FindingPatchRejected     = "patch-rejected"
+	FindingPatchUnchecked    = "patch-unchecked"
+	FindingWorksrcdirMissing = "worksrcdir-missing"
+	FindingInstruction       = "instruction"
+	FindingPlainHTTP         = "plain-http"
+	FindingOtherPullRequest  = "other-pull-request"
+	FindingClosedBefore      = "closed-before"
+	FindingCrossesMajor      = "crosses-major"
+	FindingLeavesStable      = "leaves-stable"
+	FindingRenamed           = "renamed"
+	FindingStealth           = "stealth"
+	FindingChecksumLeft      = "checksum-left"
+	FindingChecksumDiffers   = "checksum-differs"
+	// Fixed.
+	FindingPatchDropped      = "patch-dropped"
+	FindingPatchRefreshed    = "patch-refreshed"
+	FindingFollowed          = "followed"
+	FindingRegenerated       = "regenerated"
+	FindingLintFixed         = "lint-fixed"
+	FindingDistSubdirRemoved = "dist-subdir-removed"
+)
+
 // ScopeUnknown stands for a part of a scope the evaluator couldn't name.
 // A scope with one compares with no scope, itself included: two unknowns
 // are never taken as equal.
