@@ -73,9 +73,11 @@ type GitHub struct {
 	// ObserveErr fails every Observe, as a credential GitHub rejects does;
 	// Observed counts the reads.
 	ObserveErr error
-	Observed   int
-	Quiet      int
-	Searches   int
+	// FindErr, where set, is every Find's answer.
+	FindErr  error
+	Observed int
+	Quiet    int
+	Searches int
 	// Readied are the pull requests marked ready; ReadyRefused is GitHub
 	// refusing to mark one.
 	Readied      []int
@@ -127,6 +129,9 @@ type GitHub struct {
 	// opened, now where nil.
 	Person string
 	Clock  func() time.Time
+	// Observing, where set, runs before each Observe answers, as another
+	// process's push between two reads would.
+	Observing func(forge.PullRequestRef)
 }
 
 // refused is a write's refusal where GitHub refuses it (Refuse).
@@ -270,6 +275,9 @@ func (g *GitHub) observe(pr *forge.PullRequest) forge.PullRequestObservation {
 }
 
 func (g *GitHub) Find(_ context.Context, q forge.PullRequestQuery) (forge.PullRequestObservation, error) {
+	if g.FindErr != nil {
+		return forge.PullRequestObservation{}, g.FindErr
+	}
 	// As GitHub's: the open one, else the latest.
 	var found *forge.PullRequest
 	for _, number := range slices.Sorted(maps.Keys(g.PRs)) {
@@ -286,6 +294,9 @@ func (g *GitHub) Find(_ context.Context, q forge.PullRequestQuery) (forge.PullRe
 
 func (g *GitHub) Observe(_ context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {
 	g.Observed++
+	if g.Observing != nil {
+		g.Observing(ref)
+	}
 	if g.ObserveErr != nil {
 		return forge.PullRequestObservation{}, g.ObserveErr
 	}

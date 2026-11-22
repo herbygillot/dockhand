@@ -355,6 +355,19 @@ func followUp(ctx context.Context, e *engine.Engine, streams term.Streams, plan 
 	default:
 		fmt.Fprintln(streams.Prose(), updatedWords(submitted.Edited, pr.Ref.Number))
 	}
+	// A follow-up found the head at another commit: what it owed was for
+	// this one, and is said as dropped.
+	if submitted.MovedTo != "" {
+		words := make([]string, 0, len(submitted.Dropped))
+		for _, step := range submitted.Dropped {
+			words = append(words, step.Words())
+		}
+		verb, were := "weren't", "they were"
+		if len(words) == 1 {
+			verb, were = "wasn't", "it was"
+		}
+		fmt.Fprintf(streams.Prose(), "#%d's branch is now at %s, which this submission didn't push, so %s %s done; %s for %s.\n", pr.Ref.Number, submitted.MovedTo.Short(), prose.And(words), verb, were, model.ObjectID(plan.Commit).Short())
+	}
 	// Ready comes before the reviewers, as the submission's steps run.
 	if submitted.Ready {
 		if submitted.ReadyByCLI {
@@ -371,9 +384,15 @@ func followUp(ctx context.Context, e *engine.Engine, streams term.Streams, plan 
 	for _, login := range observed.Observed.ChangesRequestedBy {
 		result.PullRequest.ChangesRequestedBy = append(result.PullRequest.ChangesRequestedBy, view.ChangesRequestedJSON{Login: login, Rerequested: slices.Contains(submitted.Asked, login)})
 	}
-	who := "@" + strings.Join(observed.Observed.ChangesRequestedBy, ", @")
+	if len(submitted.ReviewedSince) > 0 {
+		verb := "wasn't"
+		if len(submitted.ReviewedSince) > 1 {
+			verb = "weren't"
+		}
+		fmt.Fprintf(streams.Prose(), "@%s reviewed since you answered, so %s asked again.\n", strings.Join(submitted.ReviewedSince, ", @"), verb)
+	}
 	if len(submitted.Asked) > 0 {
-		fmt.Fprintf(streams.Prose(), "Asked %s to review again.\n", who)
+		fmt.Fprintf(streams.Prose(), "Asked %s to review again.\n", "@"+strings.Join(submitted.Asked, ", @"))
 		return nil
 	}
 	return nil

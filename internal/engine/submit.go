@@ -9,6 +9,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
@@ -119,6 +120,13 @@ type SubmitPlan struct {
 	// made, which this one's record says in the timeline as a clean run
 	// would: an opening, a push.
 	settledDone []model.PublicationStep
+	// settled is the earlier publication settling left and what it still
+	// asks, for carry to take once the destination is known.
+	settled *model.Publication
+	// reviewedBy is when each login last reviewed the pull request, read
+	// with the plan where it asks reviewers again: the review each one's
+	// answer is for.
+	reviewedBy map[string]time.Time
 	// admission is serve's limit and clock, read at the admission: serve's
 	// count's rows that count today must be fewer than the limit.
 	admission ServeAdmission
@@ -394,6 +402,45 @@ func (e *Engine) unchangedSince(ctx context.Context, plan *SubmitPlan) error {
 	return nil
 }
 
+// foldDraft writes a pull request's draft state, as a draft change GitHub
+// answered left it, into the branch's record.
+func foldDraft(tx store.Tx, id model.BranchID, draft bool) error {
+	branch, err := tx.Branch(id)
+	if err != nil || branch.PullRequest == nil {
+		return err
+	}
+	pr := *branch.PullRequest
+	pr.Draft = draft
+	if pr.Observed != nil {
+		observed := *pr.Observed
+		observed.Draft = draft
+		pr.Observed = &observed
+	}
+	branch.PullRequest = &pr
+	return tx.UpdateBranch(branch)
+}
+
+// textChangedSince reads a pull request's title and description once more,
+// just before the edit, and names which of them is no longer what the plan
+// saw: the read before the push can be long before (docs/designs/
+// publication-record.md, "One read before the pull request is written").
+// GitHub has no conditional write for either, so the window left is one
+// request wide.
+func (e *Engine) textChangedSince(ctx context.Context, saw forge.PullRequestObservation) ([]string, error) {
+	fresh, err := e.forge().Observe(ctx, saw.PullRequest.Ref)
+	if err != nil {
+		return nil, err
+	}
+	var changed []string
+	if fresh.PullRequest.Title != saw.PullRequest.Title {
+		changed = append(changed, "title")
+	}
+	if fresh.PullRequest.Body != saw.PullRequest.Body {
+		changed = append(changed, "description")
+	}
+	return changed, nil
+}
+
 // Head is the fork's head as "owner/repo:branch".
 func (p SubmitPlan) Head() string { return p.HeadRepository + ":" + p.RemoteBranch() }
 
@@ -407,13 +454,27 @@ func (p SubmitPlan) pushBasis() remotewrite.Basis {
 	return remotewrite.OwnFork
 }
 
-// editBasis is what lets a submission edit its open pull request: an
-// invitation to someone's, else that dockhand made it.
+// editBasis is what lets a submission edit its open pull request, or
+// return it to draft: an invitation to someone's; that dockhand made it,
+// where the record says it opened that pull request, or an old record
+// that isn't adopted says nothing; otherwise the person naming it by
+// submitting to it. A found pull request is never stated as made
+// (docs/designs/publication-record.md, "The gate").
 func (p SubmitPlan) editBasis() remotewrite.Basis {
 	if p.Theirs {
 		return remotewrite.Invited
 	}
-	return remotewrite.Made
+	if pr := p.Branch.PullRequest; p.Existing != nil && pr != nil && pr.Number == p.Existing.PullRequest.Ref.Number && openedByDockhand(pr) {
+		return remotewrite.Made
+	}
+	return remotewrite.Named
+}
+
+// openedByDockhand reports a pull request's record as one dockhand may
+// state it made: GitHub answered its own create with it, or an old record
+// with no provenance that isn't adopted, which keeps the right it had.
+func openedByDockhand(pr *model.PullRequest) bool {
+	return !pr.Adopted && pr.Provenance != model.Found
 }
 
 type forgeIdentity struct{ forge Forge }
@@ -440,6 +501,11 @@ func (e *Engine) RemoteWriteIdentity() remotewrite.IdentityReader {
 // check submit uses before pushing someone's branch (#249).
 func (e *Engine) pullRequestBasis(ctx context.Context, pr *model.PullRequest, login string) (remotewrite.Basis, error) {
 	if pr == nil || !pr.Adopted {
+		// A found pull request is the person naming the action, never
+		// one dockhand made.
+		if pr != nil && !openedByDockhand(pr) {
+			return remotewrite.Named, nil
+		}
 		return remotewrite.Made, nil
 	}
 	ref := pullRequestRef(pr.Repository, pr.Number)
@@ -848,8 +914,28 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []stri
 // destination finds where submit pushes: your fork, or for a pull request
 // someone else opened, their branch, when GitHub lets you push to it; the
 // pull request already open for the branch; and the fork's branch as it
-// stands.
+// stands. What an earlier submission asked carries only once all of that
+// is known (carry).
 func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan *SubmitPlan) error {
+	if err := e.findDestination(ctx, worktree, plan); err != nil {
+		return err
+	}
+	plan.carry(plan.settled)
+	if plan.Carried == nil {
+		plan.settledDone = nil
+	}
+	// The question about the reviewers is for each one's own latest
+	// review, read now: the recorded verdict's time is one review's, and
+	// another reviewer's newer one would read as an answer it isn't.
+	if plan.Carried == nil && plan.Existing != nil && len(plan.Rerequests()) > 0 {
+		if status, err := e.forge().Inspect(ctx, plan.Existing.PullRequest.Ref); err == nil {
+			plan.reviewedBy = status.LatestReview
+		}
+	}
+	return nil
+}
+
+func (e *Engine) findDestination(ctx context.Context, worktree *git.Repository, plan *SubmitPlan) error {
 	f := e.forge()
 	var err error
 	if plan.Login, err = f.Login(ctx); err != nil {
@@ -885,15 +971,12 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 	// carries what the person asked of it (docs/designs/
 	// publication-record.md, "When settling runs").
 	if plan.Branch.Publication != nil {
-		settled, carried, done, err := e.settlePublication(ctx, worktree, plan.Branch, plan.PushURL)
+		settled, carried, done, err := e.settlePublication(ctx, worktree, plan.Branch, false)
 		if err != nil {
 			return err
 		}
 		plan.Branch, plan.Request.Branch = settled, settled
-		plan.carry(carried)
-		if plan.Carried != nil {
-			plan.settledDone = done
-		}
+		plan.settled, plan.settledDone = carried, done
 	}
 	plan.RemoteHead, err = worktree.RemoteHead(ctx, plan.PushURL, plan.RemoteBranch())
 	// A fork that refuses this Mac's key, or asks credentials it hasn't,
@@ -940,6 +1023,15 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 		return fmt.Errorf("#%d is %s; start a new branch for further work (dockhand start)", pr.Ref.Number, pr.State)
 	}
 	plan.Existing = &observed
+	// An old record with no provenance, of a pull request GitHub names
+	// another author of, is found from this read on: the author only ever
+	// withdraws Made (docs/designs/publication-record.md, "Existing
+	// databases and branches").
+	if last := plan.Branch.PullRequest; last != nil && last.Number == pr.Ref.Number && last.Provenance == "" && !last.Adopted && pr.Author != "" && !strings.EqualFold(pr.Author, login) {
+		found := *last
+		found.Provenance = model.Found
+		plan.Branch.PullRequest = &found
+	}
 	if theirRepository(plan.Branch, login) != "" {
 		if err := e.mayPushTheirs(ctx, plan, login, pr); err != nil {
 			return err
@@ -1313,8 +1405,15 @@ type Submitted struct {
 	// ReadyByCLI marked so by the GitHub CLI where an organization refuses
 	// dockhand's app.
 	Ready, ReadyByCLI bool
-	// Asked are the reviewers asked to review again after the push.
-	Asked []string
+	// Asked are the reviewers asked to review again after the push, and
+	// ReviewedSince those not asked, having reviewed since the question was
+	// put.
+	Asked, ReviewedSince []string
+	// MovedTo is the commit the pull request's head was found at, other
+	// than the one submitted, just before a follow-up: the publication
+	// ended there, and Dropped are the follow-ups it owed for its commit.
+	MovedTo model.ObjectID
+	Dropped []model.PublicationStep
 	// Pending are the steps the submission still owes when it returned,
 	// with why, as --json says them.
 	Pending []Pending
@@ -1477,9 +1576,10 @@ func (e *Engine) publish(ctx context.Context, plan SubmitPlan, worktree *git.Rep
 	if err != nil {
 		return result, err
 	}
-	// Planning settled any earlier publication; one there now was recorded
-	// since, by another submission.
-	if current.Publication != nil {
+	// Planning settled any earlier publication and kept it where it still
+	// owes steps, for this one to replace (#191, group A); any other there
+	// now was recorded since, by another submission.
+	if current.Publication != nil && (plan.Branch.Publication == nil || current.Publication.ID != plan.Branch.Publication.ID) {
 		return result, fmt.Errorf("%w: another submission of %s began since this one was planned; run dockhand submit again", ErrStaleSubmit, plan.Branch.ShortName())
 	}
 	record := plan.publication(store.NewID("pub"), plan.Login.Account, plan.served)
@@ -1497,13 +1597,21 @@ func (e *Engine) publish(ctx context.Context, plan SubmitPlan, worktree *git.Rep
 	// pushes what may be failing work to it (ToDraft).
 	if slices.Contains(record.Owes, model.StepDraft) {
 		// GitHub's refusal is an answer: nothing was done, nothing is
-		// owed, and the publication ends with the refusal said.
+		// owed, and the publication ends with the refusal said. Any other
+		// error may have been done, and the step stays owed for settling.
 		if err := e.draftFirst(ctx, plan); err != nil {
-			return result, errors.Join(err, e.endRefused(ctx, plan.Branch.ID, record))
+			if writeRefused(err) {
+				return result, errors.Join(err, e.endRefused(ctx, plan.Branch.ID, record))
+			}
+			return result, owing(model.StepDraft, err)
 		}
 		result.Drafted = true
 		next := without(record, model.StepDraft)
-		if err := e.rewritePublication(ctx, plan.Branch.ID, record.ID, &next, nil); err != nil {
+		// The pull request's record takes the draft with the step, so a
+		// push that fails after it doesn't leave it said as ready.
+		if err := e.rewritePublication(ctx, plan.Branch.ID, record.ID, &next, func(tx store.Tx) error {
+			return foldDraft(tx, plan.Branch.ID, true)
+		}); err != nil {
 			return result, err
 		}
 		record = next
@@ -1543,6 +1651,13 @@ func (e *Engine) publish(ctx context.Context, plan SubmitPlan, worktree *git.Rep
 		} else {
 			e.answeredCreate(ctx, opening, err)
 			observed, err = e.createdAnyway(ctx, plan, err)
+			// GitHub's refusal of the create is its answer: nothing was
+			// opened, open ends as refused, and the publication ends with
+			// nothing owed. "One is already open" isn't a refusal: open
+			// stays owed until a read finds it.
+			if err != nil && writeRefused(err) && !errors.Is(err, forge.ErrPullRequestExists) {
+				return result, errors.Join(fmt.Errorf("pushed %s to %s, but GitHub refused to open the pull request: %w; nothing was opened, and the next dockhand submit tries again", model.ObjectID(plan.Commit).Short(), plan.Head(), err), e.endRefused(ctx, plan.Branch.ID, record))
+			}
 		}
 	} else {
 		ref := plan.Existing.PullRequest.Ref
@@ -1553,6 +1668,13 @@ func (e *Engine) publish(ctx context.Context, plan SubmitPlan, worktree *git.Rep
 			result.Edited = SubmitEdits{Title: plan.Title != plan.Existing.PullRequest.Title, Body: plan.Body != plan.Existing.PullRequest.Body}
 		}
 		if result.Edited.Title || result.Edited.Body {
+			if changed, readErr := e.textChangedSince(ctx, *plan.Existing); readErr != nil || len(changed) > 0 {
+				result.Edited = SubmitEdits{}
+				if readErr != nil {
+					return result, owing(model.StepEdit, fmt.Errorf("pushed %s to %s, but could not read #%d again before updating it: %w; dockhand submit updates it", model.ObjectID(plan.Commit).Short(), plan.Head(), ref.Number, readErr))
+				}
+				return result, owing(model.StepEdit, fmt.Errorf("pushed %s to %s, but #%d's %s changed on GitHub during the submission, so it wasn't updated; dockhand submit plans against the new text", model.ObjectID(plan.Commit).Short(), plan.Head(), ref.Number, prose.And(changed)))
+			}
 			observed, err = remotewrite.Edit(ctx, e.pullRequests(), plan.editBasis(), input)
 		}
 	}
@@ -1576,7 +1698,13 @@ func (e *Engine) publish(ctx context.Context, plan SubmitPlan, worktree *git.Rep
 		return result, fmt.Errorf("pull request #%d is open with commit %s, but dockhand could not save its record: %w; run dockhand submit again to find and record it", observed.PullRequest.Ref.Number, model.ObjectID(plan.Commit).Short(), err)
 	}
 	record = next
-	if err := e.followUps(ctx, plan, &result, &record); err != nil {
+	if err := e.followUps(ctx, plan, &result, &record); err != nil || result.MovedTo != "" {
+		// A follow-up that failed with nothing left owed, as a reviewer
+		// GitHub refused, still ends the publication; endPublication
+		// leaves one that owes a step.
+		if err != nil && result.MovedTo == "" {
+			err = errors.Join(err, e.endPublication(ctx, plan.Branch.ID, record))
+		}
 		return result, err
 	}
 	return result, e.endPublication(ctx, plan.Branch.ID, record)
@@ -1620,8 +1748,9 @@ func (e *Engine) recordSubmission(tx store.Tx, plan SubmitPlan, result *Submitte
 	pushed := result.Pushed || branch.PullRequest == nil || branch.PullRequest.Pushed != next.Pushed || slices.Contains(plan.settledDone, model.StepPush)
 	if old := branch.PullRequest; old != nil && old.Number == next.Number && old.Repository == next.Repository {
 		next.Observed, next.Adopted, next.Author, next.AuthorHead, next.Rerequested, next.PushedAt = old.Observed, old.Adopted, old.Author, old.AuthorHead, old.Rerequested, old.PushedAt
-		// An old record's empty provenance keeps the rights it has.
-		if provenance == model.Found && old.Provenance != model.Found {
+		// An old record's empty provenance keeps the rights it has, but
+		// where the plan read another author for it.
+		if provenance == model.Found && old.Provenance != model.Found && provenanceOf(plan.Branch.PullRequest, next.Number) != model.Found {
 			next.Provenance = old.Provenance
 		}
 	}
@@ -1690,10 +1819,35 @@ func (e *Engine) recordSubmission(tx store.Tx, plan SubmitPlan, result *Submitte
 // request marked ready where --ready asked, then, after a push to one
 // whose reviewers requested changes, those reviewers asked to review again
 // where the person said yes before the push. Each is made only while the
-// fork's branch is at the commit, and each leaves the publication in the
-// transaction that follows it.
+// pull request's head is at the commit, read just before its call, and
+// each leaves the publication in the transaction that follows it. Where
+// the head is at another commit, the publication ends and what it still
+// owed is dropped, for the command to say (docs/designs/
+// publication-record.md, "Follow-ups are for the commit").
 func (e *Engine) followUps(ctx context.Context, plan SubmitPlan, result *Submitted, record *model.Publication) error {
+	ref := result.PullRequest.Ref
+	// atCommit reads the pull request's head once more; false is the head
+	// moved, and the publication ended.
+	atCommit := func() (bool, error) {
+		observed, err := e.forge().Observe(ctx, ref)
+		if err != nil {
+			return false, fmt.Errorf("reading #%d's head before its follow-up: %w; the follow-up stays owed, for dockhand submit to settle", ref.Number, err)
+		}
+		if head := observed.PullRequest.RemoteHead; head != "" && head != record.Commit {
+			result.MovedTo, result.Dropped = head, slices.DeleteFunc(slices.Clone(record.Owes), func(step model.PublicationStep) bool {
+				return step != model.StepReady && step != model.StepRerequest
+			})
+			return false, e.rewritePublication(ctx, plan.Branch.ID, record.ID, nil, nil)
+		}
+		return true, nil
+	}
 	if slices.Contains(record.Owes, model.StepReady) {
+		if at, err := atCommit(); !at {
+			if err == nil {
+				record.Owes = nil
+			}
+			return err
+		}
 		_, byCLI, err := e.Ready(ctx, plan.Branch)
 		if err != nil {
 			// Ready's own words say how to mark it; the step stays owed,
@@ -1710,17 +1864,35 @@ func (e *Engine) followUps(ctx context.Context, plan SubmitPlan, result *Submitt
 	if !slices.Contains(record.Owes, model.StepRerequest) || record.Review == nil {
 		return nil
 	}
-	asked, err := e.rerequest(ctx, plan.Branch.ID, record)
-	result.Asked = asked
+	if at, err := atCommit(); !at {
+		if err == nil {
+			record.Owes = nil
+		}
+		return err
+	}
+	asked, since, err := e.rerequest(ctx, plan.Branch.ID, record)
+	result.Asked, result.ReviewedSince = asked, since
 	return err
 }
 
 // carry takes what an earlier submission of the same commit and head
 // still owed that the person asked of it: a ready, unless this run asks
-// for a draft, and a yes to asking the reviewers again. Another commit or
-// another destination carries nothing.
+// for a draft, and a yes to asking the reviewers again. Another commit,
+// another account, or another destination, its head, its base or its pull
+// request, carries nothing (docs/designs/publication-record.md, "Who
+// continues what").
 func (p *SubmitPlan) carry(earlier *model.Publication) {
-	if earlier == nil || earlier.Commit != model.ObjectID(p.Commit) || earlier.Head != p.Head() {
+	if earlier == nil || earlier.Commit != model.ObjectID(p.Commit) || earlier.Head != p.Head() || earlier.Base != p.Repository+":"+UpstreamBranch {
+		return
+	}
+	if earlier.By != "" && !strings.EqualFold(earlier.By, p.Login.Account) {
+		return
+	}
+	number := 0
+	if p.Existing != nil {
+		number = p.Existing.PullRequest.Ref.Number
+	}
+	if earlier.Number != number {
 		return
 	}
 	p.Carried = earlier

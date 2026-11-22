@@ -28,12 +28,14 @@ func fakeGuest(t *testing.T) *Guest {
 while [ $# -gt 0 ]; do
   case "$1" in
     -F|-o|-O) shift 2 ;;
+    -tt) terminal=1; shift ;;
     *) break ;;
   esac
 done
 address=$1
 shift
 if [ "$address" = unreachable ]; then echo "ssh: connect to host unreachable port 22: No route to host" >&2; exit 255; fi
+if [ -n "$FAKE_CALLS" ]; then printf x >> "$FAKE_CALLS"; fi
 command=$(printf '%s' "$1" | sed "s#^'/usr/bin/sudo' '-n' ##")
 case "$command" in
   "'/bin/cat' "*)
@@ -44,6 +46,7 @@ case "$command" in
       exit 0
     fi ;;
 esac
+if [ "$terminal" = 1 ]; then exec /bin/sh -c "$command" 2>&1; fi
 exec /bin/sh -c "$command"
 `)
 	return &Guest{Env: os.Environ(), Address: "guest", Image: "dockhand-base-fixture", Keys: Keys{Directory: filepath.Join(directory, "keys")}, Executable: ssh}
@@ -142,6 +145,100 @@ func TestMissingFilesAndLostConnectionsAreNamed(t *testing.T) {
 	require.False(t, errors.As(err, &exit), "ssh's own status is not the command's")
 	_, err = g.Read(t.Context(), missing, false)
 	require.ErrorIs(t, err, ErrTransport)
+}
+
+// #251: ssh uses 255 both for a remote command's status and its own failure;
+// only the guest status marker distinguishes the two.
+func TestCommand255IsNotRetriedAsLostConnection(t *testing.T) {
+	g := fakeGuest(t)
+	g.Address = "guest-status-255"
+	calls := filepath.Join(t.TempDir(), "calls")
+	g.Env = append(g.Env, "FAKE_CALLS="+calls)
+	_, err := g.Command(t.Context(), nil, "/bin/sh", "-c", "exit 255")
+	var exit *exec.ExitError
+	require.ErrorAs(t, err, &exit)
+	require.Equal(t, 255, exit.ExitCode())
+	require.False(t, errors.Is(err, ErrTransport))
+	count, readErr := os.ReadFile(calls)
+	require.NoError(t, readErr)
+	require.Equal(t, "x", string(count), "a guest exit is never retried")
+}
+
+func TestCommand255WithoutMarkerIsLostConnection(t *testing.T) {
+	g := fakeGuest(t)
+	g.Address = "unreachable"
+	_, err := g.Command(t.Context(), nil, "/bin/true")
+	require.ErrorIs(t, err, ErrTransport)
+}
+
+func TestAttachReportsGuestExit255(t *testing.T) {
+	g := fakeGuest(t)
+	status, err := g.Attach(t.Context(), nil, &bytes.Buffer{}, false, "", "/bin/sh", "-c", "exit 255")
+	require.NoError(t, err)
+	require.Equal(t, 255, status)
+}
+
+func TestCommandStreamsCombinedOutputInWriteOrder(t *testing.T) {
+	g := fakeGuest(t)
+	var streamed bytes.Buffer
+	g.Output = &streamed
+	output, err := g.Command(t.Context(), nil, "/bin/sh", "-c", "printf 'stdout one\\n'; printf 'stderr two\\n' >&2; printf 'stdout three\\n'")
+	require.NoError(t, err)
+	want := "stdout one\nstderr two\nstdout three\n"
+	require.Equal(t, want, streamed.String())
+	require.Equal(t, want, string(output))
+}
+
+// The marker's own newline isn't the command's: output that ends without
+// one comes back without one, streamed and returned (#251).
+func TestCommandOutputWithoutAFinalNewlineComesBackAsWritten(t *testing.T) {
+	g := fakeGuest(t)
+	var streamed bytes.Buffer
+	g.Output = &streamed
+	output, err := g.Command(t.Context(), nil, "/bin/sh", "-c", "printf 'one\\n\\ntwo'")
+	require.NoError(t, err)
+	require.Equal(t, "one\n\ntwo", streamed.String())
+	require.Equal(t, "one\n\ntwo", string(output))
+}
+
+// Whatever pieces the output arrives in, only the marker's lines are taken
+// out of it.
+func TestMarkerFilterTakesOnlyTheMarkerOutOfAnySplit(t *testing.T) {
+	for _, output := range []string{"", "a", "a\n", "a\n\n", "\n", "DOCKHAND-EXIT:x\n", "a\r\nb"} {
+		raw := []byte(output + "\nDOCKHAND-EXIT:3\n")
+		for size := 1; size <= len(raw); size++ {
+			var kept bytes.Buffer
+			filter := &markerFilter{destination: &kept}
+			for i := 0; i < len(raw); i += size {
+				_, err := filter.Write(raw[i:min(i+size, len(raw))])
+				require.NoError(t, err)
+			}
+			require.NoError(t, filter.Flush())
+			status, marked := filter.exited()
+			require.Equal(t, output, kept.String(), "split %d", size)
+			require.True(t, marked)
+			require.Equal(t, 3, status)
+		}
+	}
+}
+
+func TestAttachLongStderrAndExit255RemainsCommandStatus(t *testing.T) {
+	g := fakeGuest(t)
+	var output bytes.Buffer
+	status, err := g.Attach(t.Context(), nil, &output, false, "", "/bin/sh", "-c", "head -c 70000 /dev/zero | tr '\\000' x >&2; exit 255")
+	require.NoError(t, err)
+	require.Equal(t, 255, status)
+	require.True(t, strings.HasPrefix(output.String(), strings.Repeat("x", 70000)))
+}
+
+func TestAttachTerminalDoesNotPrintExitMarker(t *testing.T) {
+	g := fakeGuest(t)
+	var output bytes.Buffer
+	status, err := g.Attach(t.Context(), nil, &output, true, "", "/bin/sh", "-c", "printf 'terminal output\\n'; exit 7")
+	require.NoError(t, err)
+	require.Equal(t, 7, status)
+	require.Equal(t, "terminal output\n", output.String())
+	require.NotContains(t, output.String(), "DOCKHAND-EXIT:")
 }
 
 // ssh reads none of the person's configuration, holds the guest to the

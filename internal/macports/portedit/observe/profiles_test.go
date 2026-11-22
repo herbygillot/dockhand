@@ -78,9 +78,6 @@ func TestUnmodeledReadsAreGapsOnlyWhereTheyCanSelectSources(t *testing.T) {
     macosx_deployment_target 14.0
 }`,
 		`platform darwin { if { [vercmp ${macosx_deployment_target} >= 15.0]} { macosx_deployment_target 14.0 } }`,
-		`if {[vercmp $macosx_deployment_target 10.12] < 0} { patchfiles-append patch-old.diff }`,
-		// Patch selection never reaches the archive plan; the patch check reads the native selection.
-		`variant legacy { patchfiles-append legacy-${macosx_deployment_target}.diff }`,
 		`if {[vercmp $macosx_deployment_target 10.12] < 0} { legacysupport.use_mp_libcxx yes }`,
 		`build.env-append MACOSX_DEPLOYMENT_TARGET=[shellescape ${macosx_deployment_target}]`,
 		`post-patch { reinplace "s/X/${macosx_deployment_target}/" ${worksrcpath}/Info.plist }`,
@@ -108,6 +105,8 @@ func TestUnmodeledReadsAreGapsOnlyWhereTheyCanSelectSources(t *testing.T) {
 		})
 	}
 	for _, source := range []string{
+		`if {[vercmp $macosx_deployment_target 10.12] < 0} { patchfiles-append patch-old.diff }`,
+		`variant legacy { patchfiles-append legacy-${macosx_deployment_target}.diff }`,
 		`set target ${macosx_deployment_target}; distname fixture-${target}`,
 		`set target ${macosx_deployment_target}; set copy $target; master_sites https://example.invalid/${copy}`,
 		`distname fixture-${macosx_deployment_target}`,

@@ -2,12 +2,15 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -39,7 +42,7 @@ func (e *Engine) settleServe(ctx context.Context) (opens bool, err error) {
 				return false, err
 			}
 		}
-		if _, _, _, err := e.settlePublication(ctx, worktree, branch, fork.PushURL); err != nil {
+		if _, _, _, err := e.settlePublication(ctx, worktree, branch, false); err != nil {
 			return false, err
 		}
 	}
@@ -81,6 +84,7 @@ func (e *Engine) serveFirstPass(ctx context.Context, branches []model.Branch, fo
 		return false, err
 	}
 	base := e.PullRequestRepository() + ":" + UpstreamBranch
+	held := false
 	for _, branch := range branches {
 		if branch.Origin != model.OriginServe || branch.PullRequest != nil || branch.Publication != nil {
 			continue
@@ -89,39 +93,80 @@ func (e *Engine) serveFirstPass(ctx context.Context, branches []model.Branch, fo
 		if hasRow(rows, base, head) {
 			continue
 		}
-		remote, err := e.Repo.RemoteHead(ctx, fork.PushURL, branch.Name)
-		if err != nil {
-			return false, fmt.Errorf("reading %s on the fork: %w", branch.Name, err)
-		}
-		if !remote.Exists {
+		// Read and written under the head's lock, the branch and the rows
+		// read again under it: a submission working on the head now
+		// records its own (#191, group A). One another process holds is
+		// read on a later pass, and this one isn't done.
+		var row *model.ServeOpening
+		err := e.Repo.WithHeadLock(ctx, head, func(ctx context.Context) error {
+			var err error
+			row, err = e.firstPassRow(ctx, branch.ID, base, head, branch.Name, fork, at)
+			return err
+		})
+		var busy *git.HeadHeldError
+		if errors.As(err, &busy) {
+			held = true
 			continue
 		}
-		found, err := e.forge().Find(ctx, forge.PullRequestQuery{Repository: e.PullRequestRepository(), HeadRepository: fork.Repository, HeadBranch: branch.Name, BaseBranch: UpstreamBranch})
 		if err != nil {
-			return false, fmt.Errorf("looking for %s's pull request: %w", branch.Name, err)
-		}
-		row := model.ServeOpening{Base: base, Head: head, Tried: at, Unanswered: true}
-		if found.Found {
-			pr := found.PullRequest
-			created := pr.CreatedAt.In(e.now().Location())
-			switch {
-			case pr.State == forge.PullRequestOpen:
-				row, _ = row.FoundFor(pr.Ref.Number, pr.CreatedAt)
-			case !dayStart(created).After(dayStart(at.In(e.now().Location()))):
-				row.After = pr.Ref.Number
-			default:
-				row, _ = row.FoundFor(pr.Ref.Number, pr.CreatedAt)
-			}
-		}
-		if err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-			_, err := tx.AddServeOpening(row)
-			return err
-		}); err != nil {
 			return false, err
 		}
-		rows = append(rows, row)
+		if row != nil {
+			rows = append(rows, *row)
+		}
+	}
+	if held {
+		return false, nil
 	}
 	return true, e.Store.Update(ctx, e.Repository, func(tx store.Tx) error { return tx.SetServeFirstPassDone() })
+}
+
+// firstPassRow is serveFirstPass's reading of one branch, under its head's
+// lock, and the row it writes, nil where it writes none.
+func (e *Engine) firstPassRow(ctx context.Context, id model.BranchID, base, head, name string, fork buildenv.Fork, at time.Time) (*model.ServeOpening, error) {
+	var skip bool
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		current, err := r.Branch(id)
+		if err != nil {
+			return err
+		}
+		rows, err := r.ServeOpenings()
+		skip = current.PullRequest != nil || current.Publication != nil || hasRow(rows, base, head)
+		return err
+	}); err != nil || skip {
+		return nil, err
+	}
+	remote, err := e.Repo.RemoteHead(ctx, fork.PushURL, name)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s on the fork: %w", name, err)
+	}
+	if !remote.Exists {
+		return nil, nil
+	}
+	found, err := e.forge().Find(ctx, forge.PullRequestQuery{Repository: e.PullRequestRepository(), HeadRepository: fork.Repository, HeadBranch: name, BaseBranch: UpstreamBranch})
+	if err != nil {
+		return nil, fmt.Errorf("looking for %s's pull request: %w", name, err)
+	}
+	row := model.ServeOpening{Base: base, Head: head, Tried: at, Unanswered: true}
+	if found.Found {
+		pr := found.PullRequest
+		created := pr.CreatedAt.In(e.now().Location())
+		switch {
+		case pr.State == forge.PullRequestOpen:
+			row, _ = row.FoundFor(pr.Ref.Number, pr.CreatedAt)
+		case !dayStart(created).After(dayStart(at.In(e.now().Location()))):
+			row.After = pr.Ref.Number
+		default:
+			row, _ = row.FoundFor(pr.Ref.Number, pr.CreatedAt)
+		}
+	}
+	if err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		_, err := tx.AddServeOpening(row)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	return &row, nil
 }
 
 // hasRow reports a row of serve's count already written for a head.
@@ -152,39 +197,71 @@ func (e *Engine) settleTriedRows(ctx context.Context, branches []model.Branch, f
 		if row.Tried.IsZero() || !row.Opened.IsZero() || publishing(branches, row.Head) {
 			continue
 		}
-		baseRepository, baseBranch, _ := strings.Cut(row.Base, ":")
-		headRepository, headBranch, _ := strings.Cut(row.Head, ":")
-		found, err := e.forge().Find(ctx, forge.PullRequestQuery{Repository: baseRepository, HeadRepository: headRepository, HeadBranch: headBranch, BaseBranch: baseBranch})
-		if err != nil {
-			continue
-		}
-		next, release := row, false
-		if found.Found {
-			if charged, ok := row.FoundFor(found.PullRequest.Ref.Number, found.PullRequest.CreatedAt); ok {
-				next = charged
-			}
-		}
-		if next.Opened.IsZero() && fork.PushURL != "" && headRepository == fork.Repository {
-			remote, err := e.Repo.RemoteHead(ctx, fork.PushURL, headBranch)
-			if err != nil {
-				continue
-			}
-			next, release = next.GoneLook(remote.Exists, e.now())
-		}
-		err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-			if release {
-				return tx.ReleaseServeOpening(row.ID)
-			}
-			if next == row {
-				return nil
-			}
-			return tx.UpdateServeOpening(next)
+		// Read and written under the head's lock, the row and the
+		// publications read again under it (#191, group A); a head another
+		// process holds is read on a later pass.
+		err := e.Repo.WithHeadLock(ctx, row.Head, func(ctx context.Context) error {
+			return e.settleTriedRow(ctx, row.ID, fork)
 		})
-		if err != nil {
+		var busy *git.HeadHeldError
+		if err != nil && !errors.As(err, &busy) {
 			return err
 		}
 	}
 	return nil
+}
+
+// settleTriedRow is settleTriedRows' reading of one row, under its head's
+// lock: the row as it is now, unless it opened or a publication works on
+// its head since.
+func (e *Engine) settleTriedRow(ctx context.Context, id int64, fork buildenv.Fork) error {
+	var row model.ServeOpening
+	var gone bool
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		rows, err := r.ServeOpenings()
+		if err != nil {
+			return err
+		}
+		i := slices.IndexFunc(rows, func(o model.ServeOpening) bool { return o.ID == id })
+		if i < 0 {
+			gone = true
+			return nil
+		}
+		row = rows[i]
+		branches, err := r.Branches(store.BranchFilter{States: []model.BranchState{model.BranchOpen}})
+		gone = publishing(branches, row.Head)
+		return err
+	}); err != nil || gone || row.Tried.IsZero() || !row.Opened.IsZero() {
+		return err
+	}
+	baseRepository, baseBranch, _ := strings.Cut(row.Base, ":")
+	headRepository, headBranch, _ := strings.Cut(row.Head, ":")
+	found, err := e.forge().Find(ctx, forge.PullRequestQuery{Repository: baseRepository, HeadRepository: headRepository, HeadBranch: headBranch, BaseBranch: baseBranch})
+	if err != nil {
+		return nil
+	}
+	next, release := row, false
+	if found.Found {
+		if charged, ok := row.FoundFor(found.PullRequest.Ref.Number, found.PullRequest.CreatedAt); ok {
+			next = charged
+		}
+	}
+	if next.Opened.IsZero() && fork.PushURL != "" && headRepository == fork.Repository {
+		remote, err := e.Repo.RemoteHead(ctx, fork.PushURL, headBranch)
+		if err != nil {
+			return nil
+		}
+		next, release = next.GoneLook(remote.Exists, e.now())
+	}
+	return e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		if release {
+			return tx.ReleaseServeOpening(row.ID)
+		}
+		if next == row {
+			return nil
+		}
+		return tx.UpdateServeOpening(next)
+	})
 }
 
 // publishing reports a head an unfinished publication still works on,

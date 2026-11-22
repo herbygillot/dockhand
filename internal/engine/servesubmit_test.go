@@ -1140,3 +1140,36 @@ func TestServesPlaceCountsAnOpeningItCouldntRecord(t *testing.T) {
 	require.False(t, ServeAdmits(rows, dayStart(e.now()), 1), "the next pass waits: the opening counts though it went unrecorded")
 	require.False(t, ServeAdmits(rows, dayStart(e.now().AddDate(0, 0, 3)), 1), "no length of time settles a create that may have landed")
 }
+
+// serve leaves a person's unfinished submission and a pull request it
+// found to the person: the branch is theirs, and a pull request open for
+// its head that serve didn't open holds it, said (#191, group C).
+func TestServeLeavesAPersonsPublicationAndAFoundPullRequestAlone(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := servePrepared(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch})
+	require.NoError(t, err)
+
+	// A person's submission of it, unfinished.
+	theirs := plan.publication(store.NewID("pub"), plan.Login.Account, false)
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.SetPublication(branch.ID, "", &theirs) }))
+	candidates, yours, err := e.serveCandidates(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, candidates)
+	require.Len(t, yours, 1, "a person's submission is theirs to finish")
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.SetPublication(branch.ID, theirs.ID, nil) }))
+
+	// A pull request open for its head that serve didn't open.
+	_, err = fake.Create(t.Context(), forge.PullRequestInput{Repository: plan.Repository, BaseBranch: UpstreamBranch, HeadRepository: plan.HeadRepository, HeadBranch: plan.RemoteBranch(),
+		Desired: forge.PullRequestContent{Title: "jq: a person's pull request", Body: "theirs"}})
+	require.NoError(t, err)
+	candidates, _, err = e.serveCandidates(t.Context())
+	require.NoError(t, err)
+	require.Len(t, candidates, 1)
+	require.Len(t, candidates[0].Held, 1)
+	require.Equal(t, "found", candidates[0].Held[0].Rule)
+	require.Contains(t, candidates[0].Held[0].Detail, "serve didn't open it")
+}

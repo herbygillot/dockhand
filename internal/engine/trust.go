@@ -220,5 +220,11 @@ func (e *Engine) AdoptedDiff(ctx context.Context, branch model.Branch) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	return e.Repo.DiffTrees(ctx, trees[string(branch.Base)], trees[head], code(changed)...)
+	// No path, no diff, as ReviewDiff: an empty selection diffs every
+	// file (#293).
+	paths := code(changed)
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	return e.Repo.DiffTrees(ctx, trees[string(branch.Base)], trees[head], paths...)
 }

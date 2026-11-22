@@ -111,6 +111,10 @@ func (s Store) Put(ctx context.Context, key credential.Key, secret string) error
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		// Locked is said as Get's and Delete's is (#293).
+		if isLocked(err) {
+			return errLocked
+		}
 		var failed *subprocess.Error
 		if errors.As(err, &failed) {
 			err = failed.Cause

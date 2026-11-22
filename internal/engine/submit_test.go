@@ -1222,10 +1222,10 @@ func TestADraftSubmissionReturnsAReadyPullRequestToDraft(t *testing.T) {
 	require.True(t, draft.ToDraft())
 
 	// Refused, nothing is pushed.
-	fake.DraftRefused = errors.New("github: not allowed")
+	fake.DraftRefused = fmt.Errorf("%w: github: not allowed", forge.ErrRejected)
 	before := fake.ForkHead(draft.RemoteBranch())
 	_, err = e.ApplySubmit(t.Context(), draft, model.AnsweredAsked)
-	require.ErrorContains(t, err, fmt.Sprintf("returning #%d to draft: github: not allowed\nNothing was pushed.", first.PullRequest.Ref.Number))
+	require.ErrorContains(t, err, fmt.Sprintf("returning #%d to draft: %s: github: not allowed\nNothing was pushed.", first.PullRequest.Ref.Number, forge.ErrRejected))
 	require.ErrorContains(t, err, fmt.Sprintf("gh pr ready %d --undo --repo", first.PullRequest.Ref.Number))
 	require.Equal(t, before, fake.ForkHead(draft.RemoteBranch()))
 

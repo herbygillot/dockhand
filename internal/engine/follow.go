@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -55,6 +56,7 @@ const PullRequestRefresh = 5 * time.Minute
 type observedPullRequest struct {
 	branch model.Branch
 	next   model.PullRequestObservation
+	read   pullRequestRead
 	err    error
 	// ci are its head's failed CI jobs newly classified (classifyCI).
 	ci []model.CIFailure
@@ -64,7 +66,7 @@ type observedPullRequest struct {
 // from the forge (Design v3 §6.13): its state, reviews, and checks, all of
 // them first, outside any transaction, as the store's rule is, and then
 // writes what was read in one (the SQL study's O8, which status and serve
-// share). A merged pull request marks its branch merged, and a closed one
+// share), then settles from it the publications it can (settleRefreshed). A merged pull request marks its branch merged, and a closed one
 // closed; what changed is recorded as events. A pull request that can't be
 // read is reported and the rest are read; the error is the store's.
 func (e *Engine) RefreshPullRequests(ctx context.Context) (RefreshResult, error) {
@@ -119,7 +121,8 @@ func (e *Engine) RefreshPullRequests(ctx context.Context) (RefreshResult, error)
 		if budget > 0 {
 			budget--
 		}
-		next, err := read(ctx, branch.PullRequest)
+		got, err := read(ctx, branch.PullRequest)
+		next := got.next
 		if refused(err) {
 			result.Refused = err
 			break
@@ -134,12 +137,13 @@ func (e *Engine) RefreshPullRequests(ctx context.Context) (RefreshResult, error)
 			result.RetryAt = limit.RetryAt
 			break
 		}
-		o := observedPullRequest{branch: branch, next: next, err: err}
+		o := observedPullRequest{branch: branch, next: next, read: got, err: err}
 		if err == nil && signedIn {
 			o.ci = e.classifyCI(ctx, branch, next)
 		}
 		observed = append(observed, o)
 	}
+	others := e.othersPullRequests(ctx, observed)
 	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		result.Branches = nil
 		for _, o := range observed {
@@ -147,6 +151,11 @@ func (e *Engine) RefreshPullRequests(ctx context.Context) (RefreshResult, error)
 			if o.err == nil {
 				if err := recordPullRequest(tx, o.branch, o.next, &refreshed); err != nil {
 					return err
+				}
+				if others[o.branch.ID] {
+					if err := markFound(tx, o.branch.ID, o.branch.PullRequest.Number); err != nil {
+						return err
+					}
 				}
 				for _, failure := range o.ci {
 					if err := tx.AddCIFailure(failure); err != nil {
@@ -158,7 +167,52 @@ func (e *Engine) RefreshPullRequests(ctx context.Context) (RefreshResult, error)
 		}
 		return nil
 	})
-	return result, err
+	if err != nil {
+		return result, err
+	}
+	// What was read settles the publications it can (#191, group A).
+	return result, e.settleRefreshed(ctx, observed)
+}
+
+// othersPullRequests are the branches whose old record, with no
+// provenance, is of a pull request GitHub names another author of than the
+// account dockhand acts as: each becomes found at this read. The author is
+// only ever used to withdraw Made, never to state it (docs/designs/
+// publication-record.md, "Existing databases and branches"). The login is
+// asked for only where such a record was read.
+func (e *Engine) othersPullRequests(ctx context.Context, observed []observedPullRequest) map[model.BranchID]bool {
+	others := map[model.BranchID]bool{}
+	account := ""
+	for _, o := range observed {
+		pr := o.branch.PullRequest
+		if o.err != nil || pr == nil || pr.Adopted || pr.Provenance != "" || o.next.Author == "" {
+			continue
+		}
+		if account == "" {
+			login, err := e.forge().Login(ctx)
+			if err != nil || login.Account == "" {
+				return others
+			}
+			account = login.Account
+		}
+		if !strings.EqualFold(o.next.Author, account) {
+			others[o.branch.ID] = true
+		}
+	}
+	return others
+}
+
+// markFound records a branch's pull request as found, where it is still
+// the one numbered so and has no provenance.
+func markFound(tx store.Tx, id model.BranchID, number int) error {
+	branch, err := tx.Branch(id)
+	if err != nil || branch.PullRequest == nil || branch.PullRequest.Number != number || branch.PullRequest.Provenance != "" {
+		return err
+	}
+	pr := *branch.PullRequest
+	pr.Provenance = model.Found
+	branch.PullRequest = &pr
+	return tx.UpdateBranch(branch)
 }
 
 // anonymousReserve is the requests a signed-out refresh leaves of the
@@ -170,13 +224,13 @@ const anonymousReserve = 10
 // they were, since reading them is four requests more. Its opening,
 // author, and description come with the one request, so a merge's
 // fitness is read signed out as well, its approvals as recorded.
-func (e *Engine) observeState(ctx context.Context, pr *model.PullRequest) (model.PullRequestObservation, error) {
+func (e *Engine) observeState(ctx context.Context, pr *model.PullRequest) (pullRequestRead, error) {
 	observed, err := e.forge().Observe(ctx, pullRequestRef(pr.Repository, pr.Number))
 	if errors.Is(err, forge.ErrNotFound) {
-		return model.PullRequestObservation{}, fmt.Errorf("#%d was not found", pr.Number)
+		return pullRequestRead{}, fmt.Errorf("#%d was not found", pr.Number)
 	}
 	if err != nil {
-		return model.PullRequestObservation{}, err
+		return pullRequestRead{}, err
 	}
 	next := e.observation(observed.PullRequest, forge.PullRequestStatus{})
 	if was := pr.Observed; was != nil && next.State == model.PullRequestOpen {
@@ -184,7 +238,7 @@ func (e *Engine) observeState(ctx context.Context, pr *model.PullRequest) (model
 		next.CommentedAt = was.CommentedAt
 		next.Checks, next.Failing = was.Checks, was.Failing
 	}
-	return next, nil
+	return pullRequestRead{next: next, pr: observed.PullRequest}, nil
 }
 
 // openNewestFirst are the open branches with a pull request, the newest
@@ -213,10 +267,10 @@ func refused(err error) bool {
 // the forge can't read many at once. A read over all of them that fails,
 // but for a refusal, leaves each to its own. signedIn is false where the
 // forge has no credentials, so each read is one of its anonymous ones.
-func (e *Engine) readPullRequests(ctx context.Context, branches []model.Branch) (_ func(context.Context, *model.PullRequest) (model.PullRequestObservation, error), signedIn bool, _ error) {
+func (e *Engine) readPullRequests(ctx context.Context, branches []model.Branch) (_ func(context.Context, *model.PullRequest) (pullRequestRead, error), signedIn bool, _ error) {
 	reader, ok := e.forge().(forge.PullRequestReader)
 	if !ok {
-		return e.observePullRequest, true, nil
+		return e.readPullRequest, true, nil
 	}
 	var refs []forge.PullRequestRef
 	for _, branch := range branches {
@@ -225,26 +279,26 @@ func (e *Engine) readPullRequests(ctx context.Context, branches []model.Branch) 
 		}
 	}
 	if len(refs) == 0 {
-		return e.observePullRequest, true, nil
+		return e.readPullRequest, true, nil
 	}
 	readings, err := reader.ReadPullRequests(ctx, refs)
 	switch {
 	// GitHub's GraphQL API takes only a signed-in request, and a public
 	// pull request is read without one, a request at a time.
 	case errors.Is(err, github.ErrNoCredentials):
-		return e.observePullRequest, false, nil
+		return e.readPullRequest, false, nil
 	case err != nil:
-		return e.observePullRequest, true, err
+		return e.readPullRequest, true, err
 	}
 	byNumber := map[forge.PullRequestRef]forge.PullRequestReading{}
 	for _, reading := range readings {
 		byNumber[reading.Ref] = reading
 	}
-	return func(ctx context.Context, pr *model.PullRequest) (model.PullRequestObservation, error) {
+	return func(ctx context.Context, pr *model.PullRequest) (pullRequestRead, error) {
 		reading, ok := byNumber[pullRequestRef(pr.Repository, pr.Number)]
 		switch {
 		case !ok:
-			return e.observePullRequest(ctx, pr)
+			return e.readPullRequest(ctx, pr)
 		case reading.Partial:
 			// Keep the conversation from the partial read if the fallback
 			// cannot read it itself (#248).
@@ -256,17 +310,21 @@ func (e *Engine) readPullRequests(ctx context.Context, branches []model.Branch) 
 				}
 				prior.CommentedBy, prior.CommentedAt, prior.CommentsRead = reading.Status.CommentedBy, reading.Status.CommentedAt, true
 				copyPR.Observed = &prior
-				return e.observePullRequest(ctx, &copyPR)
+				return e.readPullRequest(ctx, &copyPR)
 			}
-			return e.observePullRequest(ctx, pr)
+			return e.readPullRequest(ctx, pr)
 		case !reading.Found:
-			return model.PullRequestObservation{}, fmt.Errorf("#%d was not found", pr.Number)
+			return pullRequestRead{}, fmt.Errorf("#%d was not found", pr.Number)
 		}
 		next := e.observation(reading.PullRequest, reading.Status)
 		if !reading.Status.CommentsRead && pr.Observed != nil {
 			next.CommentedBy, next.CommentedAt, next.CommentsRead = pr.Observed.CommentedBy, pr.Observed.CommentedAt, pr.Observed.CommentsRead
 		}
-		return next, nil
+		got := pullRequestRead{next: next, pr: reading.PullRequest}
+		if reading.PullRequest.State == forge.PullRequestOpen {
+			got.status = &reading.Status
+		}
+		return got, nil
 	}, true, nil
 }
 
@@ -290,27 +348,42 @@ func (e *Engine) observation(now forge.PullRequest, status forge.PullRequestStat
 // observePullRequest reads a pull request, its reviews and checks with it
 // while it's open.
 func (e *Engine) observePullRequest(ctx context.Context, pr *model.PullRequest) (model.PullRequestObservation, error) {
+	got, err := e.readPullRequest(ctx, pr)
+	return got.next, err
+}
+
+// pullRequestRead is a pull request as a refresh read it: what its branch
+// records of it, and GitHub's answer, which settles a publication for it
+// (settleRefreshed). status is nil where its draft state wasn't read.
+type pullRequestRead struct {
+	next   model.PullRequestObservation
+	pr     forge.PullRequest
+	status *forge.PullRequestStatus
+}
+
+// readPullRequest is observePullRequest with GitHub's answer kept.
+func (e *Engine) readPullRequest(ctx context.Context, pr *model.PullRequest) (pullRequestRead, error) {
 	ref := pullRequestRef(pr.Repository, pr.Number)
 	observed, err := e.forge().Observe(ctx, ref)
 	if errors.Is(err, forge.ErrNotFound) {
-		return model.PullRequestObservation{}, fmt.Errorf("#%d was not found", pr.Number)
+		return pullRequestRead{}, fmt.Errorf("#%d was not found", pr.Number)
 	}
 	if err != nil {
-		return model.PullRequestObservation{}, err
+		return pullRequestRead{}, err
 	}
 	if observed.PullRequest.State != forge.PullRequestOpen {
-		return e.observation(observed.PullRequest, forge.PullRequestStatus{}), nil
+		return pullRequestRead{next: e.observation(observed.PullRequest, forge.PullRequestStatus{}), pr: observed.PullRequest}, nil
 	}
 	status, err := e.forge().Inspect(ctx, ref)
 	if err != nil {
-		return model.PullRequestObservation{}, err
+		return pullRequestRead{}, err
 	}
 	next := e.observation(observed.PullRequest, status)
 	// An unread conversation cannot erase the earlier answer (#248).
 	if !status.CommentsRead && pr.Observed != nil {
 		next.CommentedBy, next.CommentedAt, next.CommentsRead = pr.Observed.CommentedBy, pr.Observed.CommentedAt, pr.Observed.CommentsRead
 	}
-	return next, nil
+	return pullRequestRead{next: next, pr: observed.PullRequest, status: &status}, nil
 }
 
 // checksOf is how a pull request's checks stand, from their counts.

@@ -30,7 +30,7 @@ dockhand check --on github -d              # queues check-42 (github: macOS 15)
 dockhand check --on tart:26                # queues check-43 (tart: macOS 26) beside check-42
 ```
 
-Two or more checks of the same branch may be queued or running at once when they check **the exact same files** (same captured `Source.Tree`) and build **disjoint environments** (`model.Environment`). Each request remains its own immutable run with its own lease, stay policy, and cancellation handle; their combined environments form the branch's required ask; and a kept clone survives for as long as the branch's files match what it was built from.
+Two or more checks of the same branch may be queued or running at once when they check **the exact same files** (same captured `Source.Tree`) and build **disjoint environments** (`model.Environment`). Each request remains its own immutable run with its own lease, stay policy, and cancellation handle; their combined environments form the branch's required ask; and a clone kept by `--keep` stays until the person removes it, while a clone kept for a failure survives for as long as the branch's files match what it was built from (§4).
 
 ## Rules
 
@@ -61,7 +61,11 @@ With multiple active runs on a branch, `--replace` replaces **only the conflicti
 - Stopping a specific non-conflicting run remains `dockhand cancel check-N`.
 
 ### 4. Kept clones: an asked clone is the person's, a failure clone is a cache (amended 2026-11-22)
+<<<<<<< HEAD
 The rule on keeping clones is [#291](https://github.com/herbygillot/dockhand/issues/291)'s, decided by the person on 2026-11-22 and built in v0.9.0 ahead of this page. It replaces this section's first form, where every kept clone lasted while the branch's files matched its tree. What this design adds to it is only how side-by-side checks treat the two kinds.
+=======
+The rule on keeping clones is [#291](https://github.com/herbygillot/dockhand/issues/291)'s, decided by the person on 2026-11-22, which v0.9.0 builds before this design is built. It replaces this section's first form, where every kept clone lasted while the branch's files matched its tree. What this design adds to it is only how side-by-side checks treat the two kinds.
+>>>>>>> origin/main
 
 - **A clone kept by `--keep`** is not removed by any later check of the branch: not a sibling on another environment, not a check of changed files, not a retry. It goes when the person removes it, when its branch is removed, or when another `--keep` check of the same branch and release replaces it. A run stopped by `--replace` keeps its asked clone too; the replacing check says so.
 - **A clone kept for a failure** follows the branch's files (`Source.Tree`):
@@ -137,7 +141,7 @@ No new capacity mechanism is needed; existing guards compose cleanly:
 ## Usage docs
 
 Updated in the same commit:
-- `docs/usage/checks.md` (running checks on different environments of the same commit side by side; kept clones surviving across checks of the same files; `--replace`, `cancel`, `wait`, `logs`, and `--variants each`).
+- `docs/usage/checks.md` (running checks on different environments of the same commit side by side; asked clones surviving every later check and failure clones surviving checks of the same files; `--replace`, `cancel`, `wait`, `logs`, and `--variants each`).
 - `docs/usage/branches.md` (`status` and `console` with multiple active checks and multiple kept clones).
 - `docs/decisions.md` (done at adoption: the one-check entry reopened for the same files on other environments, and D17's ask the union of checks started beside each other; the code's "decision 29" comments are corrected when this is built).
 - Command help of `check`, `cancel`, `wait`, `logs`, and `clean`.

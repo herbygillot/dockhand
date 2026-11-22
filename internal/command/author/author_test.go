@@ -65,6 +65,16 @@ func TestUpdateInTheBranchCheckedOutHere(t *testing.T) {
 	require.Contains(t, out, "jq 1.8.1\nUpdated checksums.\n")
 }
 
+// edit's branch selector refuses a second -b before opening a port or editor (#282).
+func TestEditRefusesARepeatedBranchSelector(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	out, _, err := cmdtest.Dockhand(t, "edit", "jq", "-b", "one", "-b", "two")
+	require.ErrorContains(t, err, "--branch takes one branch")
+	require.Empty(t, out)
+	require.Empty(t, testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/*"))
+}
+
 func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 	t.Parallel()
 	w := cmdtest.NewWorld(t)

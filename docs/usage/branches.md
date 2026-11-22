@@ -54,6 +54,14 @@ whole branch, including `check`, `tidy`, `submit`, `diff`, `rebase`, and
 `dockhand logs -b jq-update` finds that branch's latest check, while
 `dockhand logs check-42 jq` names a particular check and port.
 
+`-b` names one branch and cannot be repeated. Run a branch command once for
+each branch; `ship` accepts several port names as operands when you want to
+ship more than one port:
+
+```sh
+dockhand ship jq curl
+```
+
 A selector overrides the branch checked out where you run the command. Dockhand
 says so when they differ. `-p` can be ambiguous when more than one open branch
 changes the port: at a terminal dockhand offers the choices; without a terminal

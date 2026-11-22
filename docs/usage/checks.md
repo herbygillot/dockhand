@@ -205,6 +205,8 @@ available for later checks. A cancel stops each clone the check made and
 deletes it once its VM has gone, also for a check whose dockhand was killed;
 until then the cancel stays unfinished and `status` says which clone. A clone
 an attempt kept for `dockhand shell` stays, and the canceled check says so.
+Guest command failures retain the command's exit status; a lost SSH connection
+is reported separately and is the only case that can be retried.
 
 ```sh
 dockhand setup tart
@@ -395,8 +397,10 @@ journal's newest events under them; it replaces `status --watch`.
 One branch runs one check at a time. A new request follows an active check only
 if it covers the requested files, targets, environments, and policy. Otherwise
 it refuses, as it does where a tag or branch a port fetches moved since the
-active check was planned. `--replace` stops the active request, keeps completed
-results, and queues the new one. `dockhand cancel` of a GitHub check whose
+active check was planned. A request for an environment the active check
+does not build is reported as an environment difference, not as a moved source.
+`--replace` stops the active request, keeps completed results, and queues the new
+one. `dockhand cancel` of a GitHub check whose
 driver stopped cancels its workflow run on your fork too, and the check stays
 unfinished, `canceling` in `status`, until GitHub reports the run completed. Read `dockhand usage recovery` before choosing between wait,
 retry, replacement, and cancellation.

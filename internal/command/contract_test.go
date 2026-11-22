@@ -127,6 +127,24 @@ func TestEveryCommandPlansOrSaysWhyNot(t *testing.T) {
 	}
 }
 
+// A repeated branch selector is refused while flags are parsed, before any
+// command that binds it can act on the last value alone (#282).
+func TestARepeatedBranchSelectorIsRefusedAcrossCommands(t *testing.T) {
+	t.Parallel()
+	for name, cmd := range commands(t) {
+		if cmd.Flags().Lookup("branch") == nil {
+			continue
+		}
+		err := cmd.ParseFlags([]string{"-b", "one", "-b", "two"})
+		require.ErrorContains(t, err, "--branch takes one branch", name)
+		if name == "ship" {
+			require.ErrorContains(t, err, "pass the ports as operands", name)
+		} else {
+			require.ErrorContains(t, err, "run the command once per branch", name)
+		}
+	}
+}
+
 // An edit's --plan with no branch to plan in plans on master as fetched
 // now, and starts nothing, with or without --new: update's did, and
 // revbump's and checksums' refused (field testing, 2026-10-02).

@@ -251,7 +251,7 @@ func (t *tx) ForgetBranch(id model.BranchID, at time.Time) (store.Pruned, error)
 	if branch.State == model.BranchOpen || !branch.ForgottenAt.IsZero() {
 		return store.Pruned{}, fmt.Errorf("%w: only an ended branch is forgotten, and once", store.ErrConflict)
 	}
-	for _, table := range []string{"events", "edits", "decisions", "checkpoints"} {
+	for _, table := range []string{"events", "edits", "decisions", "checkpoints", "ci_failures", "network_holds"} {
 		if _, err := t.conn.ExecContext(t.ctx, "DELETE FROM "+table+" WHERE repository_id=? AND branch_id=?", t.repo, id); err != nil {
 			return store.Pruned{}, storageError(err)
 		}

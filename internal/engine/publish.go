@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/remotewrite"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -62,8 +63,13 @@ func (p SubmitPlan) publication(id, by string, served bool) model.Publication {
 		record.Owes = append(record.Owes, model.StepRerequest)
 	} else if logins := p.Rerequests(); p.Request.Rerequest && len(logins) > 0 {
 		ask := &model.ReviewAsk{Answer: model.ReviewYes}
-		reviewed := p.Branch.PullRequest.Observed.ReviewedAt
+		// Each login's answer is for its own latest review, where the plan
+		// read it; the verdict's time where it couldn't.
 		for _, login := range logins {
+			reviewed, ok := p.reviewedBy[login]
+			if !ok {
+				reviewed = p.Branch.PullRequest.Observed.ReviewedAt
+			}
 			ask.Reviewers = append(ask.Reviewers, model.Reviewer{Login: login, Reviewed: reviewed})
 		}
 		record.Review = ask
@@ -79,7 +85,9 @@ func without(record model.Publication, steps ...model.PublicationStep) model.Pub
 }
 
 // publicationIs witnesses a write of a branch's publication: the branch's
-// is the one given, by ID and what it owes, or none where want is nil.
+// is the one given, the whole record with its reviewers' marks
+// (model.Publication.Same), or none where want is nil. It compared the ID
+// and the steps owed, so a mark that didn't commit passed (#191, group A).
 func publicationIs(branch model.BranchID, want *model.Publication) func(store.Reader) bool {
 	return func(r store.Reader) bool {
 		got, err := r.Branch(branch)
@@ -89,7 +97,7 @@ func publicationIs(branch model.BranchID, want *model.Publication) func(store.Re
 		if want == nil || got.Publication == nil {
 			return want == nil && got.Publication == nil
 		}
-		return got.Publication.ID == want.ID && slices.Equal(got.Publication.Owes, want.Owes)
+		return got.Publication.Same(*want)
 	}
 }
 
@@ -138,16 +146,30 @@ func (e *Engine) recordPublication(ctx context.Context, plan SubmitPlan, record 
 		if plan.served && slices.Contains(record.Owes, model.StepOpen) {
 			now := cmp.Or(plan.admission.Now, e.now())
 			day := dayStart(now)
+			rows, err := tx.ServeOpenings()
+			if err != nil {
+				return err
+			}
+			// Every try of a row shares its place: a retry of a create that
+			// got no answer, or of a place held, takes the row it holds, and
+			// goes only where that row is among the first that count today,
+			// oldest first (serve's count).
+			if i := slices.IndexFunc(rows, func(o model.ServeOpening) bool {
+				return o.Base == record.Base && o.Head == record.Head && o.Opened.IsZero() && (o.Holding || !o.Tried.IsZero())
+			}); i >= 0 {
+				if !ServeMaySend(rows, i, day, plan.admission.Limit) {
+					return &ServeLimitReached{Limit: plan.admission.Limit}
+				}
+				held := rows[i]
+				opening = &held
+				return tx.SetPublication(plan.Branch.ID, replacedPublication(plan), record)
+			}
 			at, _, ok, err := tx.ServeUpgrade()
 			if err != nil {
 				return err
 			}
 			if ok && !dayStart(at.In(now.Location())).Before(day) {
 				return &ServeLimitReached{Limit: plan.admission.Limit, Upgraded: true}
-			}
-			rows, err := tx.ServeOpenings()
-			if err != nil {
-				return err
 			}
 			if !ServeAdmits(rows, day, plan.admission.Limit) {
 				return &ServeLimitReached{Limit: plan.admission.Limit}
@@ -158,12 +180,22 @@ func (e *Engine) recordPublication(ctx context.Context, plan SubmitPlan, record 
 			}
 			opening = &place
 		}
-		return tx.SetPublication(plan.Branch.ID, "", record)
+		return tx.SetPublication(plan.Branch.ID, replacedPublication(plan), record)
 	}, publicationIs(plan.Branch.ID, record))
 	if err != nil {
 		return nil, fmt.Errorf("recording the submission before it begins: %w; nothing was pushed", err)
 	}
 	return opening, nil
+}
+
+// replacedPublication is the publication a submission's record replaces: the settled
+// one its plan carried, where one was kept (settlePublication), and only
+// that one.
+func replacedPublication(plan SubmitPlan) string {
+	if plan.Branch.Publication != nil {
+		return plan.Branch.Publication.ID
+	}
+	return ""
 }
 
 // markTried records serve's create as tried before it is sent, seen
@@ -234,30 +266,35 @@ func (e *Engine) endPublication(ctx context.Context, branch model.BranchID, reco
 // recorded, then asked, and its answer leaves the mark (ReviewerAnswered).
 // No login is sent two requests by one publication. The receipt goes onto
 // the pull request's record when the publication ends.
-func (e *Engine) rerequest(ctx context.Context, branch model.BranchID, record *model.Publication) ([]string, error) {
+func (e *Engine) rerequest(ctx context.Context, branch model.BranchID, record *model.Publication) (asked, since []string, err error) {
 	current, err := e.Branch(ctx, branch)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	pr := current.PullRequest
 	if pr == nil {
-		return nil, fmt.Errorf("%s has no pull request recorded; asking the reviewers again is still owed", current.ShortName())
+		return nil, nil, fmt.Errorf("%s has no pull request recorded; asking the reviewers again is still owed", current.ShortName())
 	}
 	ref := pullRequestRef(pr.Repository, pr.Number)
 	// Follow-ups are for the commit: the fork's branch is read, through
 	// the pull request, just before the call.
 	status, err := e.forge().Inspect(ctx, ref)
 	if err != nil {
-		return nil, fmt.Errorf("reading #%d before asking its reviewers again: %w; asking them is still owed, and dockhand submit %s finishes it", pr.Number, err, current.ShortName())
+		return nil, nil, fmt.Errorf("reading #%d before asking its reviewers again: %w; asking them is still owed, and dockhand submit %s finishes it", pr.Number, err, current.ShortName())
 	}
 	ask := *record.Review
 	ask.Reviewers = slices.Clone(ask.Reviewers)
-	var asked, send []string
+	var send []string
 	var why []string
 	for i, reviewer := range ask.Reviewers {
 		switch ReviewerStep(reviewer, status) {
 		case ReviewerUnread:
-			return nil, fmt.Errorf("#%d's pending review requests couldn't be read whole; asking the reviewers again is still owed, and dockhand submit %s finishes it", pr.Number, current.ShortName())
+			return nil, nil, fmt.Errorf("#%d's pending review requests couldn't be read whole; asking the reviewers again is still owed, and dockhand submit %s finishes it", pr.Number, current.ShortName())
+		case ReviewedSince:
+			// The answer was for an older review of theirs: dropped, and
+			// said (#191, group D).
+			ask.Reviewers[i].Sent = model.ReviewedAgain
+			since = append(since, reviewer.Login)
 		case ReviewerSend:
 			ask.Reviewers[i].Sent = model.MaySent
 			send = append(send, reviewer.Login)
@@ -269,34 +306,37 @@ func (e *Engine) rerequest(ctx context.Context, branch model.BranchID, record *m
 		marked := *record
 		marked.Review = &ask
 		if err := e.rewritePublication(ctx, branch, record.ID, &marked, nil); err != nil {
-			return nil, err
+			return nil, since, err
 		}
 		*record = marked
 		account := record.By
 		if account == "" {
 			login, loginErr := e.forge().Login(ctx)
 			if loginErr != nil {
-				return asked, loginErr
+				return asked, since, loginErr
 			}
 			account = login.Account
 		}
 		ctx = e.writeAccount(ctx, account)
-		err := remotewrite.Ask(ctx, e.pullRequests(), reviewBasis(pr, record), ref, send)
-		sent, words := ReviewerAnswered(err)
+		// One call a login, each with its own outcome: one call for all
+		// gave every login the answer of the whole (#191, group D).
 		for i, reviewer := range ask.Reviewers {
-			if slices.Contains(send, reviewer.Login) {
-				ask.Reviewers[i].Sent, ask.Reviewers[i].Why = sent, words
+			if !slices.Contains(send, reviewer.Login) {
+				continue
 			}
-		}
-		switch sent {
-		case model.SentRequest:
-			asked = append(asked, send...)
-		case model.RefusedToAsk:
-			why = append(why, fmt.Sprintf("GitHub refused to ask %s: %s", strings.Join(send, ", "), words))
-		case model.MaySent:
-			why = append(why, fmt.Sprintf("asking %s to review again got no answer (%v), so it may have been sent, and isn't sent again; ask on GitHub if it wasn't", strings.Join(send, ", "), err))
-		case model.NotSent:
-			why = append(why, fmt.Sprintf("asking %s: %v", strings.Join(send, ", "), err))
+			err := remotewrite.Ask(ctx, e.pullRequests(), reviewBasis(pr, record), ref, []string{reviewer.Login})
+			sent, words := ReviewerAnswered(err)
+			ask.Reviewers[i].Sent, ask.Reviewers[i].Why = sent, words
+			switch sent {
+			case model.SentRequest:
+				asked = append(asked, reviewer.Login)
+			case model.RefusedToAsk:
+				why = append(why, fmt.Sprintf("GitHub refused to ask %s: %s", reviewer.Login, words))
+			case model.MaySent:
+				why = append(why, fmt.Sprintf("asking %s to review again got no answer (%v), so it may have been sent, and isn't sent again; ask on GitHub if it wasn't", reviewer.Login, err))
+			case model.NotSent:
+				why = append(why, fmt.Sprintf("asking %s: %v", reviewer.Login, err))
+			}
 		}
 	}
 	done := *record
@@ -321,14 +361,16 @@ func (e *Engine) rerequest(ctx context.Context, branch model.BranchID, record *m
 			Message: fmt.Sprintf("asked %s to review #%d again", "@"+strings.Join(asked, ", @"), pr.Number)})
 		return err
 	})
-	*record = done
+	// The record moves on only with the write: one that failed leaves it
+	// owing the step, its marks as recorded, for settling to read.
 	if err != nil {
-		return asked, err
+		return asked, since, err
 	}
+	*record = done
 	if len(why) > 0 {
-		return asked, errors.New(strings.Join(why, "; "))
+		return asked, since, errors.New(strings.Join(why, "; "))
 	}
-	return asked, nil
+	return asked, since, nil
 }
 
 // reviewBasis is the basis a reviewer request states to the gate: Made on
@@ -336,7 +378,7 @@ func (e *Engine) rerequest(ctx context.Context, branch model.BranchID, record *m
 // as today; otherwise Named, since the person answered yes to this exact
 // request (docs/designs/publication-record.md, "The gate").
 func reviewBasis(pr *model.PullRequest, record *model.Publication) remotewrite.Basis {
-	if !pr.Adopted && pr.Provenance != model.Found {
+	if openedByDockhand(pr) {
 		return remotewrite.Made
 	}
 	if record.Review != nil && record.Review.Answer == model.ReviewYes {
@@ -365,6 +407,14 @@ func (e *Engine) endRefused(ctx context.Context, branch model.BranchID, record m
 		}
 		return nil
 	})
+}
+
+// writeRefused reports a write answered with a refusal, so nothing of it
+// was done: GitHub refusing it, the organization refusing dockhand's app,
+// a login refused, or dockhand's own gate refusing it before it was sent.
+// Any other error, no answer among them, may have been done.
+func writeRefused(err error) bool {
+	return errors.Is(err, forge.ErrRejected) || errors.Is(err, forge.ErrAppRestricted) || errors.Is(err, forge.ErrAuthentication) || refusal.KindOf(err) == refusal.Unsupported
 }
 
 // pendingAfter are the steps a submission that returned with err still

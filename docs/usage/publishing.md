@@ -273,6 +273,10 @@ unchanged text. Subsequent submissions refresh the sections dockhand still owns.
 `--rewrite-description` explicitly replaces the full description with dockhand's
 version, preserving your stored note; inspect that preview before choosing it.
 For someone else's adopted pull request, their description stays theirs.
+Just before it updates the title or description, submit reads both once more;
+where either changed on GitHub during the submission, it leaves them as they
+are, says which changed, and the next `dockhand submit` plans against the new
+text.
 
 Before its first push, submit records what it sets out to do: the commit, the
 fork's branch and the pull request, the title and description it writes, and
@@ -387,6 +391,9 @@ evidence ordinary submit requires. The pull request is marked ready after the
 push, before any reviewers are asked to review again. If GitHub's organization policy refuses
 dockhand's app, dockhand can use an installed GitHub CLI signed in as the same
 account to mark it ready, or prints the remaining action when it cannot.
+Marking ready and asking the reviewers again are for the commit submitted:
+just before each, submit reads the pull request's head, and where someone has
+pushed another commit to the branch since, neither is done and submit says so.
 
 ## Continue after a reviewer responds
 
@@ -409,7 +416,11 @@ step, after marking the pull request ready where `--ready` asked.
 `dockhand usage configuration`. If the request fails after the push, the next
 `submit` of the same commit makes it, even though it pushes nothing. A request
 that got no answer may have been sent, so it is never sent again; status says
-which reviewers were asked and which may not have been.
+which reviewers were asked and which may not have been. Each reviewer is asked
+on their own, so GitHub refusing one leaves the others asked, and status gives
+GitHub's words for the refusal. Your answer is for each reviewer's latest review
+when you gave it: one who has reviewed again since isn't asked, and submit says
+so.
 
 While the pull request is open, status says when it may be merged under
 MacPorts' maintainer policy (the MacPorts Guide, section 7.4.1). The branch's

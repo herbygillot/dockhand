@@ -156,6 +156,7 @@ since a rebuild has its own reason.`,
 		},
 	}
 	cmd.Flags().StringVarP(&selector, "branch", "b", "", "work in this existing branch, by its exact name (the dockhand/ prefix is optional)")
+	branchflags.SingleBranch(cmd)
 	cmd.Flags().StringVar(&newName, "new", "", "start a new branch of this name for the rebuild")
 	cmd.MarkFlagsMutuallyExclusive("branch", "new")
 	cmd.Flags().StringVar(&subject, "subject", "", "the reason, which becomes each commit's subject after the port's name")

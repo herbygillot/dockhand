@@ -42,7 +42,7 @@ func (g *Guest) Upload(ctx context.Context, local, path string, sudo bool) error
 		if err != nil {
 			return err
 		}
-		_, err = g.run(ctx, file, nil, true, Quote(elevate(sudo, "/bin/sh", "-c", `umask 077; cat > "$1"`, "dockhand", path)...))
+		_, err = g.run(ctx, file, nil, Quote(elevate(sudo, "/bin/sh", "-c", `umask 077; cat > "$1"`, "dockhand", path)...))
 		file.Close()
 		if err != nil {
 			return fmt.Errorf("channel: sending %s: %w", path, err)
@@ -140,7 +140,7 @@ func (g *Guest) stream(ctx context.Context, w io.Writer, args ...string) error {
 		return err
 	}
 	defer cleanup()
-	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "ssh", Command: "guest", Path: g.executable(), Args: append(arguments, g.Address, Quote(args...)), Env: environment, Stdout: w, StdoutOnly: true, Limit: 1 << 20})
+	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "ssh", Command: "guest", Path: g.executable(), Args: append(arguments, g.Address, markExit(Quote(args...))), Env: environment, Stdout: w, StdoutOnly: true, Limit: 1 << 20})
 	return classify(g.Address, result, err)
 }
 
@@ -150,7 +150,7 @@ func (g *Guest) digest(ctx context.Context, path string, sudo bool) (int64, stri
 		return 0, "", err
 	}
 	defer cleanup()
-	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "ssh", Command: "guest", Path: g.executable(), Args: append(arguments, g.Address, Quote(elevate(sudo, "/bin/sh", "-c", digestScript, "dockhand", path)...)), Env: environment, Limit: 1 << 20})
+	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "ssh", Command: "guest", Path: g.executable(), Args: append(arguments, g.Address, markExit(Quote(elevate(sudo, "/bin/sh", "-c", digestScript, "dockhand", path)...))), Env: environment, Limit: 1 << 20})
 	if err := classify(g.Address, result, err); err != nil {
 		return 0, "", err
 	}
@@ -175,6 +175,9 @@ func classify(address string, result subprocess.Result, err error) error {
 		case missing:
 			return fmt.Errorf("%w: %w", os.ErrNotExist, err)
 		case 255:
+			if _, status, marked := unmark(result.Stderr); marked && status == 255 {
+				return err
+			}
 			return fmt.Errorf("%w: %s: %v", ErrTransport, address, err)
 		}
 	}

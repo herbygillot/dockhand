@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -47,6 +48,19 @@ func TestTwoCleanRunsCompareTheSame(t *testing.T) {
 	a, ga := updated(t)
 	b, gb := updated(t)
 	require.Empty(t, differences(snapshot(t, a, ga), snapshot(t, b, gb)))
+}
+
+// A recovered run that crossed midnight compares the same as a clean run
+// that didn't: times keep their presence and their order within a row, not
+// their day (#277).
+func TestTimesAcrossMidnightCompareTheSame(t *testing.T) {
+	t.Parallel()
+	day := func(hour, minute int) string {
+		return fmt.Sprintf("«t:%d»", time.Date(2026, 11, 15, hour, minute, 0, 0, time.Local).UnixMilli())
+	}
+	clean := world{"table attempts": {`id="att_aaaaaaaaaaaaaaaa" started_at=` + day(12, 0) + ` ended_at=` + day(12, 2)}, "table checkpoints": {`at=` + day(12, 1)}}
+	crossed := world{"table attempts": {`id="att_aaaaaaaaaaaaaaaa" started_at=` + day(23, 59) + ` ended_at=` + day(24, 1)}, "table checkpoints": {`at=` + day(24, 3)}}
+	require.Empty(t, differences(normalize(clean, "/unused"), normalize(crossed, "/unused")))
 }
 
 // Two worlds made different on purpose compare different: a commit with

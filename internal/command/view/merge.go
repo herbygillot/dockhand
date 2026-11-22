@@ -169,7 +169,7 @@ func ReviewReceiptWords(pr *model.PullRequest) string {
 	if receipt.Unasked {
 		return "the reviewers who requested changes may not have been asked to review again after an earlier push; ask them on GitHub"
 	}
-	var asked, maybe, refused []string
+	var asked, maybe, refused, since []string
 	for _, reviewer := range receipt.Reviewers {
 		switch reviewer.Sent {
 		case model.SentRequest:
@@ -177,7 +177,14 @@ func ReviewReceiptWords(pr *model.PullRequest) string {
 		case model.MaySent:
 			maybe = append(maybe, "@"+reviewer.Login)
 		case model.RefusedToAsk:
-			refused = append(refused, "@"+reviewer.Login)
+			// GitHub's own words for the refusal (#191, group D).
+			if reviewer.Why != "" {
+				refused = append(refused, "@"+reviewer.Login+" ("+reviewer.Why+")")
+			} else {
+				refused = append(refused, "@"+reviewer.Login)
+			}
+		case model.ReviewedAgain:
+			since = append(since, "@"+reviewer.Login)
 		}
 	}
 	var parts []string
@@ -189,6 +196,13 @@ func ReviewReceiptWords(pr *model.PullRequest) string {
 	}
 	if len(refused) > 0 {
 		parts = append(parts, "GitHub refused to ask "+prose.And(refused))
+	}
+	if len(since) > 0 {
+		verb := "wasn't"
+		if len(since) > 1 {
+			verb = "weren't"
+		}
+		parts = append(parts, prose.And(since)+" reviewed since, so "+verb+" asked again")
 	}
 	return strings.Join(parts, "; ")
 }

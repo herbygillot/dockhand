@@ -159,6 +159,9 @@ func (t *tx) AppendEvent(e model.Event) (int64, error) {
 }
 
 func (t *tx) PruneJournal(before time.Time) (int, int, error) {
+	if err := t.write(); err != nil {
+		return 0, 0, err
+	}
 	events, err := t.conn.ExecContext(t.ctx, "DELETE FROM events WHERE repository_id=? AND at<?", t.repo, millis(before))
 	if err != nil {
 		return 0, 0, storageError(err)

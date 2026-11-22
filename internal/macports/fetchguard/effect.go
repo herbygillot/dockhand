@@ -66,7 +66,7 @@ var harmlessBuiltins = withWorkerAliasReads(map[string]bool{
 	"ui_error": true, "ui_warn": true, "ui_msg": true, "ui_info": true, "ui_notice": true, "ui_debug": true,
 	"global": true, "variable": true, "expr": true, "string": true, "format": true, "join": true, "split": true, "concat": true,
 	"list": true, "lindex": true, "llength": true, "lrange": true, "lsearch": true, "lsort": true, "lreverse": true, "lrepeat": true,
-	"regexp": true, "regsub": true, "scan": true, "vercmp": true, "variant_isset": true, "variant_exists": true, "fortran_variant_name": true, "mpi_variant_name": true,
+	"vercmp": true, "variant_isset": true, "variant_exists": true, "fortran_variant_name": true, "mpi_variant_name": true,
 	"info": true, "return": true, "error": true, "break": true, "continue": true, "puts": true,
 })
 
@@ -166,7 +166,12 @@ func effectReason(src []byte, command syntax.Command, defs Definitions, depth in
 			return refuse(command.Span.Start, "is not followed by the grammar")
 		}
 		switch sub {
-		case "get", "exists", "keys", "values", "size", "names", "for", "create":
+		case "for":
+			if name == "dict" {
+				return dictForReason(src, command, defs, depth)
+			}
+			return refuse(command.Span.Start, "is not followed by the grammar")
+		case "get", "exists", "keys", "values", "size", "names", "create":
 			return argumentsReason(src, words[2:], defs, depth)
 		case "set", "lappend", "append", "incr", "unset":
 			if len(words) < 3 {
@@ -178,6 +183,8 @@ func effectReason(src []byte, command syntax.Command, defs Definitions, depth in
 			return argumentsReason(src, words[3:], defs, depth)
 		}
 		return refuse(command.Span.Start, "is not followed by the grammar")
+	case "regexp", "regsub", "scan":
+		return matchReason(src, command, defs, depth)
 	}
 	if variableWriters[name] {
 		if len(words) < 2 {
@@ -320,19 +327,11 @@ func loopReason(src []byte, command syntax.Command, defs Definitions, depth int)
 		variables = command.Words[2:]
 	}
 	for _, variable := range variables {
-		names, ok := variable.Literal(src)
+		names, ok := loopVariables(src, variable)
 		if !ok {
-			// A braced list of loop variables is literal text too.
-			if variable.Expand || len(variable.Segments) != 1 {
-				return refuse(variable.Span.Start, "is a %s the grammar cannot read", name)
-			}
-			braced, isBraced := variable.Segments[0].(syntax.Braced)
-			if !isBraced {
-				return refuse(variable.Span.Start, "is a %s the grammar cannot read", name)
-			}
-			names = braced.Body.Text(src)
+			return refuse(variable.Span.Start, "is a %s the grammar cannot read", name)
 		}
-		for _, variable := range strings.Fields(names) {
+		for _, variable := range names {
 			if AffectsFetch(variable) {
 				return refuse(command.Span.Start, "writes `%s`", variable)
 			}
@@ -362,6 +361,109 @@ func loopReason(src []byte, command syntax.Command, defs Definitions, depth int)
 		}
 	}
 	return accepted
+}
+
+// loopVariables are the names a loop's variable word binds: a literal
+// name, or a braced list of them, which is literal text too.
+func loopVariables(src []byte, variable syntax.Word) ([]string, bool) {
+	if names, ok := variable.Literal(src); ok {
+		return strings.Fields(names), true
+	}
+	if variable.Expand || len(variable.Segments) != 1 {
+		return nil, false
+	}
+	braced, isBraced := variable.Segments[0].(syntax.Braced)
+	if !isBraced {
+		return nil, false
+	}
+	return strings.Fields(braced.Body.Text(src)), true
+}
+
+// dictForReason judges dict for as the loop it is: its two variables are
+// written on every turn, so neither may be one the fetch reads; the
+// dictionary is a harmless argument; and its body is a harmless script.
+// Taken as a read, its body went unjudged (#293).
+func dictForReason(src []byte, command syntax.Command, defs Definitions, depth int) refusal {
+	words := command.Words
+	if len(words) != 5 {
+		return refuse(command.Span.Start, "is a dict for the grammar cannot read")
+	}
+	names, ok := loopVariables(src, words[2])
+	if !ok || len(names) != 2 {
+		return refuse(words[2].Span.Start, "is a dict for the grammar cannot read")
+	}
+	for _, variable := range names {
+		if AffectsFetch(variable) {
+			return refuse(command.Span.Start, "writes `%s`", variable)
+		}
+	}
+	if refused := argumentsReason(src, words[3:4], defs, depth); refused.text != "" {
+		return refused
+	}
+	block, ok := words[4].BracedScript(src)
+	if !ok {
+		return refuse(words[4].Span.Start, "is a dict for the grammar cannot read")
+	}
+	return scriptReason(src, block.Direct(), defs, depth, "")
+}
+
+// matchReason judges regexp, regsub and scan: each writes the variables
+// named after its fixed arguments, which go through the check a set's
+// does; the rest are harmless arguments (#293). A switch the grammar
+// doesn't know, or a computed one, is refused, since it could move which
+// word is a variable.
+func matchReason(src []byte, command syntax.Command, defs Definitions, depth int) refusal {
+	name, _ := command.Name(src)
+	words := command.Words[1:]
+	if name != "scan" {
+		for len(words) > 0 {
+			flag, ok := words[0].Literal(src)
+			if !ok || !strings.HasPrefix(flag, "-") {
+				break
+			}
+			words = words[1:]
+			switch {
+			case flag == "--":
+			case flag == "-start":
+				if len(words) == 0 {
+					return refuse(command.Span.Start, "is not followed by the grammar")
+				}
+				if refused := argumentsReason(src, words[:1], defs, depth); refused.text != "" {
+					return refused
+				}
+				words = words[1:]
+				continue
+			case matchSwitches[name][flag]:
+				continue
+			default:
+				return refuse(command.Span.Start, "is not followed by the grammar")
+			}
+			break
+		}
+	}
+	// regexp exp string ?var ...?, regsub exp string subSpec ?var?, and
+	// scan string format ?var ...?.
+	fixed := map[string]int{"regexp": 2, "regsub": 3, "scan": 2}[name]
+	if len(words) < fixed {
+		return refuse(command.Span.Start, "is not followed by the grammar")
+	}
+	if refused := argumentsReason(src, words[:fixed], defs, depth); refused.text != "" {
+		return refused
+	}
+	for _, variable := range words[fixed:] {
+		if refused := variableReason(src, command, variable); refused.text != "" {
+			return refused
+		}
+	}
+	return accepted
+}
+
+// matchSwitches are the switches regexp and regsub take that bind no
+// argument of their own. regsub's -command isn't one: it runs its
+// substitution as a command, so it is refused.
+var matchSwitches = map[string]map[string]bool{
+	"regexp": {"-about": true, "-expanded": true, "-indices": true, "-line": true, "-linestop": true, "-lineanchor": true, "-nocase": true, "-all": true, "-inline": true},
+	"regsub": {"-all": true, "-expanded": true, "-line": true, "-linestop": true, "-lineanchor": true, "-nocase": true},
 }
 
 // switchReason judges a switch: its options, the string it switches on,
