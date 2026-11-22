@@ -78,6 +78,11 @@ jobs:
       - name: Build
         run: make build
 
+      # The acceptance build, failpoints compiled in, is otherwise first
+      # built at release acceptance (#295).
+      - name: Acceptance build
+        run: go build -mod=vendor -tags acceptance -o /dev/null ./cmd/dockhand
+
   # The suite on Linux, where dockhand is built and its tests run though
   # it checks on Macs: what a Linux host runs differently, GNU patch and
   # stat among them, is said there, not first by someone building it
