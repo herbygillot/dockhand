@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -151,4 +153,33 @@ func TestSettlingReadsTheRecordedHeadsRepository(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []model.PublicationStep{model.StepPush}, done)
 	require.Nil(t, settled.Publication, "the push landed in the head's own repository")
+}
+
+// A read that failed keeps the publication, even where the branch moved:
+// a pull request the failed read would have found isn't folded yet, so
+// the publication isn't ended over it (#191, group B).
+func TestAFailedReadKeepsAPublicationWhoseBranchMoved(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	commit := testsupport.Git(t, f.clone, "rev-parse", branch.Name)
+	third := testsupport.Git(t, f.clone, "rev-parse", "origin/master")
+	testsupport.Git(t, f.clone, "push", "-q", fake.Fork, third+":refs/heads/dockhand/notes")
+	fake.FindErr = errors.New("GitHub answered 502")
+
+	recorded := &model.Publication{ID: "pub_moved", Commit: model.ObjectID(commit), At: time.Now().UTC(), Head: forgetest.ForkRepository + ":dockhand/notes", Base: e.PullRequestRepository() + ":" + UpstreamBranch,
+		Owes: []model.PublicationStep{model.StepPush, model.StepOpen}}
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.SetPublication(branch.ID, "", recorded) }))
+	branch, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	worktree, err := e.worktree(t.Context(), branch)
+	require.NoError(t, err)
+	_, _, _, err = e.settlePublication(t.Context(), worktree, branch, false)
+	require.ErrorContains(t, err, "the pull request couldn't be read")
+	kept, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.NotNil(t, kept.Publication)
+	require.True(t, kept.Publication.Same(*recorded))
 }

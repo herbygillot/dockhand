@@ -291,7 +291,10 @@ func (e *Engine) settleReading(ctx context.Context, worktree *git.Repository, br
 		// (#191, group A).
 		record = current.Publication
 		settled = Settle(*record, current.PullRequest, read(ctx, *record))
-		if len(settled.Unread) > 0 && !settled.Ended {
+		// A read that failed keeps the publication as it is, even where
+		// the branch moved or the pull request closed: what it would have
+		// shown isn't folded yet (#191, group B).
+		if len(settled.Unread) > 0 {
 			unread = &unsettledError{fmt.Sprintf("an earlier submission of %s couldn't be accounted for: %s couldn't be read; nothing was done, and dockhand submit tries again", branch.ShortName(), prose.And(settled.Unread))}
 			return nil
 		}
