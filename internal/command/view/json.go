@@ -690,6 +690,8 @@ type linkLineJSON struct {
 	// finding's line (LinkDetail).
 	Unlinked *unlinkedJSON `json:"unlinked,omitempty"`
 	Through  *throughJSON  `json:"through,omitempty"`
+	// Unowned marks a library with no active port owner.
+	Unowned bool `json:"unowned,omitempty"`
 }
 
 type unlinkedJSON struct {
@@ -713,6 +715,9 @@ func LinkDetail(findings []engine.LinkFinding) []linkLineJSON {
 		for _, finding := range findings {
 			if finding.Unread || LinkWords(finding) != line.Words {
 				continue
+			}
+			if finding.Unowned {
+				detail.Unowned = true
 			}
 			if finding.Unlinked {
 				detail.Unlinked = &unlinkedJSON{Port: finding.Port, Option: finding.Option, Line: finding.Line}

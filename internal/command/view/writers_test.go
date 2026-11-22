@@ -102,6 +102,40 @@ func TestWriteLinks(t *testing.T) {
 		"    jq links no other port's libraries\n", out.String())
 }
 
+func TestLinkReportNamesLibraryWithNoOwner(t *testing.T) {
+	t.Parallel()
+	findings := []engine.LinkFinding{{Target: "jq", Library: "/opt/local/lib/libxml2.2.dylib", Unowned: true}}
+	var out bytes.Buffer
+	WriteLinks(&out, findings)
+	require.Equal(t, "Links\n    jq links /opt/local/lib/libxml2.2.dylib, which no active port owns in this environment\n", out.String())
+	detail := LinkDetail(findings)
+	require.Len(t, detail, 1)
+	require.Equal(t, linkLineJSON{Mark: Unmarked, Words: "jq links /opt/local/lib/libxml2.2.dylib, which no active port owns in this environment", Unowned: true}, detail[0])
+}
+
+func TestLinkReportAndJSONRetainEveryUndeclaredPort(t *testing.T) {
+	t.Parallel()
+	findings := []engine.LinkFinding{
+		{Target: "jq", Port: "libffi", Library: "/opt/local/lib/libffi.8.dylib"},
+		{Target: "jq", Port: "libxml2", Library: "/opt/local/lib/libxml2.2.dylib"},
+		{Target: "jq", Port: "zlib", Library: "/opt/local/lib/libz.1.dylib"},
+	}
+	var out bytes.Buffer
+	WriteLinks(&out, findings)
+	for _, port := range []string{"libffi", "libxml2", "zlib"} {
+		require.Contains(t, out.String(), "from "+port)
+	}
+	lines := LinkDetail(findings)
+	require.Len(t, lines, 3)
+	for _, line := range lines {
+		require.Contains(t, []string{
+			"jq links libffi.8.dylib from libffi, which it doesn't declare in depends_lib. Declare it with depends_lib-append port:libffi; dockhand tidy can write this line",
+			"jq links libxml2.2.dylib from libxml2, which it doesn't declare in depends_lib. Declare it with depends_lib-append port:libxml2; dockhand tidy can write this line",
+			"jq links libz.1.dylib from zlib, which it doesn't declare in depends_lib. Declare it with depends_lib-append port:zlib; dockhand tidy can write this line",
+		}, line.Words)
+	}
+}
+
 // A declaration nothing links is a notice with where it belongs instead,
 // and an undeclared link a declared port's pkg-config brought in says it,
 // and the other way out; each line's JSON carries its fields.

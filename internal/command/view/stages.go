@@ -82,6 +82,9 @@ func LinkWords(finding engine.LinkFinding) string {
 		}
 		return words
 	}
+	if finding.Unowned {
+		return fmt.Sprintf("%s links %s, which no active port owns in this environment", finding.Target, finding.Library)
+	}
 	more := ""
 	if finding.Libraries > 1 {
 		more = fmt.Sprintf(" (and %d more of its libraries)", finding.Libraries-1)
@@ -160,7 +163,7 @@ func LinkLines(findings []engine.LinkFinding) []LinkLine {
 // LinkMark is a link finding's mark: !, a notice, where a port is linked
 // and not declared, and none otherwise.
 func LinkMark(finding engine.LinkFinding) string {
-	if finding.Unread || finding.Clean {
+	if finding.Unread || finding.Clean || finding.Unowned {
 		return Unmarked
 	}
 	return Look

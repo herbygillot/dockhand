@@ -93,7 +93,8 @@ followed. `tidy --json` lists a declaration's commit, `<port>: declare
 libiconv`, among `commits` after the branch's, and `not_declared` says the
 findings it leaves to you. A check's `portfile_findings` are the
 Portfile findings submit would say, each with its `code`, `severity`, `where`,
-and `message`, which the check said before building. Keep
+and `message`, which the check said before building. A link with no active
+owner carries `unowned: true`. Keep
 standard error separate when parsing standard output. `-v` adds detail about
 the work, and `-vv` adds individual steps. Long human lists can be shortened;
 their JSON lists retain all entries.

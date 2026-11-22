@@ -726,7 +726,7 @@ func (e *Engine) linkHolds(ctx context.Context, checked *Evidence) ([]model.Conc
 			unlinked = append(unlinked, finding)
 			continue
 		}
-		if finding.Unread || finding.Clean || finding.Port == "" {
+		if finding.Unread || finding.Clean || finding.Unowned || finding.Port == "" {
 			continue
 		}
 		port := string(finding.Target)
