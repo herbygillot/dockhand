@@ -288,7 +288,12 @@ fork and GitHub to see what each owed step left: a push that landed, a pull
 request GitHub opened whose reply was lost, a description GitHub took. It
 records what it finds, then plans as usual. It writes nothing to GitHub until a
 read shows a step isn't done. What you asked of the earlier submit for the same
-commit stands: a `--ready` still owed, and your answer about the reviewers. Do
+commit stands: a `--ready` still owed, and your answer about the reviewers.
+The plan says what the earlier submit did and what it carries, and where the
+pull request was found open rather than opened by dockhand. `--draft`,
+`--no-check`, `--type` and `--skip-notification` don't carry yet: the plan
+names any the earlier submit was given that this one leaves out, so give them
+again to keep them. Do
 not create a replacement branch merely because the final confirmation did not
 print. Another submission of the same fork branch, from another terminal, is
 refused while one runs, and names the process; if it hangs, stop that process.

@@ -538,3 +538,34 @@ func TestAReviewThePlanCouldntReadDropsNobody(t *testing.T) {
 	require.Equal(t, []string{"ana"}, submitted.Asked, "the reviewer step's own reading decides")
 	require.Empty(t, submitted.ReviewedSince)
 }
+
+// A plan that continues an earlier submission of its commit says what that
+// one did, and, until the request carries them (#195), the flags it was
+// given that this run leaves out: a --draft submission whose opening
+// failed, continued plain, would open ready, unsaid (#191, group F).
+func TestAContinuationSaysWhatTheEarlierSubmitDidAndWasGiven(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Draft: true, SkipNotification: true})
+	require.NoError(t, err)
+	testsupport.Git(t, f.clone, "push", "-q", fake.Fork, plan.Commit+":refs/heads/"+plan.RemoteBranch())
+	earlier := plan.publication(store.NewID("pub"), plan.Login.Account, false)
+	earlier.Owes = []model.PublicationStep{model.StepPush, model.StepOpen}
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.SetPublication(branch.ID, "", &earlier) }))
+
+	current, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	next, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: current, NoCheck: true})
+	require.NoError(t, err)
+	said := next.Continues()
+	require.NotNil(t, said)
+	require.Equal(t, []string{"pushed " + model.ObjectID(plan.Commit).Short()}, said.Did)
+	require.Equal(t, []string{"--draft", "--skip-notification"}, said.NotCarried)
+
+	again, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: current, NoCheck: true, Draft: true, SkipNotification: true})
+	require.NoError(t, err)
+	require.Empty(t, again.Continues().NotCarried, "given again, nothing is left out")
+}

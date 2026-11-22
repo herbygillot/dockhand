@@ -102,6 +102,7 @@ func WriteSubmitPlan(out io.Writer, plan engine.SubmitPlan, noteStill bool) {
 	}
 	fmt.Fprintf(out, "  Other PRs  %s\n", otherWords(plan))
 	fmt.Fprintf(out, "  PR       %s\n", PullRequestWords(plan))
+	writeEarlier(out, plan)
 	if plan.Note != "" {
 		fmt.Fprintf(out, "  Note     %s\n", noteLine(plan))
 	} else if noteStill && plan.DescriptionSaysNothing() {
@@ -225,6 +226,34 @@ func UnfoundBuildWords(build engine.UnfoundBuild) string {
 	return words + ", which recorded no commit, so its source cannot be identified"
 }
 
+// writeEarlier says what the earlier submission of this commit did, what
+// this run carries of it, and, until the request carries them (#195), the
+// flags it gave that this run leaves out, so a continuation doesn't do the
+// opposite of what was asked unsaid (#191, group F).
+func writeEarlier(out io.Writer, plan engine.SubmitPlan) {
+	earlier := plan.Continues()
+	if earlier == nil {
+		return
+	}
+	var parts []string
+	if len(earlier.Did) > 0 {
+		parts = append(parts, "the last submit of this commit "+prose.And(earlier.Did))
+	}
+	if len(earlier.Carries) > 0 {
+		parts = append(parts, "carries "+strings.Join(earlier.Carries, "; "))
+	}
+	if len(parts) > 0 {
+		fmt.Fprintf(out, "  Earlier  %s\n", strings.Join(parts, "; this one "))
+	}
+	if len(earlier.NotCarried) > 0 {
+		which, it := "which this one doesn't carry", "it"
+		if len(earlier.NotCarried) > 1 {
+			which, it = "which this one doesn't carry", "them"
+		}
+		fmt.Fprintf(out, "  ! the last submit of this commit was given %s, %s: give %s again to keep %s\n", prose.And(earlier.NotCarried), which, it, it)
+	}
+}
+
 func PullRequestWords(plan engine.SubmitPlan) string {
 	if plan.Existing == nil {
 		words := "opens a new one"
@@ -237,6 +266,10 @@ func PullRequestWords(plan engine.SubmitPlan) string {
 		return words
 	}
 	words := fmt.Sprintf("updates #%d", plan.Existing.PullRequest.Ref.Number)
+	// One a read found, not one dockhand opened, is said so (#191).
+	if pr := plan.Branch.PullRequest; pr == nil || pr.Number != plan.Existing.PullRequest.Ref.Number || pr.Provenance == model.Found {
+		words += ", found open for this branch"
+	}
 	switch {
 	case plan.ToDraft() && !plan.WasDraft():
 		words += ", returning it to draft before it pushes"

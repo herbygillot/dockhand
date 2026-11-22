@@ -1933,6 +1933,82 @@ func (p *SubmitPlan) carry(earlier *model.Publication) {
 	}
 }
 
+// EarlierSubmit is what a plan says of the earlier submission of its
+// commit it continues: what settling found it did, what of it this run
+// carries, and what it asked that this run doesn't carry yet (docs/
+// designs/publication-record.md, "Who continues what"). Nil where the
+// plan continues none.
+type EarlierSubmit struct {
+	Did, Carries, NotCarried []string
+}
+
+// Continues is the plan's EarlierSubmit, in words a person reads.
+func (p SubmitPlan) Continues() *EarlierSubmit {
+	c := p.Carried
+	if c == nil {
+		return nil
+	}
+	var said EarlierSubmit
+	for _, step := range p.settledDone {
+		switch step {
+		case model.StepPush:
+			said.Did = append(said.Did, "pushed "+c.Commit.Short())
+		case model.StepOpen:
+			said.Did = append(said.Did, fmt.Sprintf("opened #%d", c.Number))
+		case model.StepEdit:
+			said.Did = append(said.Did, "updated the title and description")
+		case model.StepDraft:
+			said.Did = append(said.Did, "returned the pull request to draft")
+		case model.StepReady:
+			said.Did = append(said.Did, "marked the pull request ready")
+		}
+	}
+	if slices.Contains(c.Owes, model.StepReady) && p.Request.Ready {
+		said.Carries = append(said.Carries, "marking the pull request ready")
+	}
+	if c.Review != nil && slices.Contains(c.Owes, model.StepRerequest) {
+		var pending, maybe, refused []string
+		for _, reviewer := range c.Review.Reviewers {
+			switch reviewer.Sent {
+			case model.MaySent:
+				maybe = append(maybe, "@"+reviewer.Login)
+			case model.RefusedToAsk:
+				refused = append(refused, "@"+reviewer.Login)
+			case model.NotSent:
+				pending = append(pending, "@"+reviewer.Login)
+			}
+		}
+		switch {
+		case c.Review.Answer == model.ReviewYes && len(pending) > 0:
+			said.Carries = append(said.Carries, "your yes to asking "+prose.And(pending)+" to review again")
+		case c.Review.Answer == model.ReviewNotAsked && len(pending) > 0:
+			said.Carries = append(said.Carries, "the question about asking "+prose.And(pending)+", which nobody answered")
+		}
+		if len(maybe) > 0 {
+			said.Carries = append(said.Carries, prose.And(maybe)+" may already have been asked, so won't be again")
+		}
+		if len(refused) > 0 {
+			said.Carries = append(said.Carries, "GitHub refused to ask "+prose.And(refused))
+		}
+	}
+	// What a continuation doesn't carry until the request does (#195): a
+	// flag the earlier run gave that this one leaves out.
+	asked := c.Asked
+	if asked.Draft && !p.Request.Draft && !p.Request.Ready {
+		said.NotCarried = append(said.NotCarried, "--draft")
+	}
+	if asked.NoCheck && !p.Request.NoCheck {
+		said.NotCarried = append(said.NotCarried, "--no-check")
+	}
+	if asked.SkipNotification && !p.Request.SkipNotification {
+		said.NotCarried = append(said.NotCarried, "--skip-notification")
+	}
+	if len(asked.Types) > 0 && !slices.Equal(asked.Types, p.Request.Types) {
+		said.NotCarried = append(said.NotCarried, "--type "+strings.Join(asked.Types, ","))
+	}
+	return &said
+}
+
 // Pushes reports whether the plan pushes: the fork's branch isn't at its
 // commit.
 func (p SubmitPlan) Pushes() bool {

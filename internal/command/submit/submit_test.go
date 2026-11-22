@@ -348,7 +348,7 @@ func TestTidyWarnsOfAModifiedBuild(t *testing.T) {
 // submit would write, and the preview says so.
 func TestAPullRequestOfSomeoneElsesStaysTheirs(t *testing.T) {
 	t.Parallel()
-	plan := engine.SubmitPlan{Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 34905}}}, Theirs: true, Sections: engine.DescriptionSections{Types: engine.SectionRefreshed}}
+	plan := engine.SubmitPlan{Branch: model.Branch{PullRequest: &model.PullRequest{Number: 34905}}, Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 34905}}}, Theirs: true, Sections: engine.DescriptionSections{Types: engine.SectionRefreshed}}
 	require.Equal(t, "updates #34905; the author wrote its title and description, and Dockhand will preserve them", view.PullRequestWords(plan))
 	plan.Theirs = false
 	plan.BodyKept = true
@@ -359,7 +359,7 @@ func TestAPullRequestOfSomeoneElsesStaysTheirs(t *testing.T) {
 // the preview says so (field testing's croc update, 2026-11-01).
 func TestThePreviewSaysARetitle(t *testing.T) {
 	t.Parallel()
-	plan := engine.SubmitPlan{Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 36310}, Title: "croc: update to 11.6.1"}},
+	plan := engine.SubmitPlan{Branch: model.Branch{PullRequest: &model.PullRequest{Number: 36310}}, Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 36310}, Title: "croc: update to 11.6.1"}},
 		Title: "croc: update to 11.6.2", Retitled: true}
 	require.Equal(t, "updates #36310; retitles #36310 to 'croc: update to 11.6.2'; the pull request description is current", view.PullRequestWords(plan))
 	plan.Retitled, plan.Title = false, "croc: update to 11.6.1"
@@ -435,7 +435,7 @@ func TestAResubmitRefreshesTheDescriptionItWrote(t *testing.T) {
 // Every part refreshed is named, in the description's order.
 func TestTheRefreshedPartsAreNamed(t *testing.T) {
 	t.Parallel()
-	plan := engine.SubmitPlan{Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 34905}}},
+	plan := engine.SubmitPlan{Branch: model.Branch{PullRequest: &model.PullRequest{Number: 34905}}, Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 34905}}},
 		Sections: engine.DescriptionSections{Description: engine.SectionRefreshed, Types: engine.SectionRefreshed, TestedOn: engine.SectionRefreshed}}
 	require.Equal(t, "updates #34905; refreshes its Description section, its Type(s) and its description from Tested on down", view.PullRequestWords(plan))
 	plan.Sections.Types = engine.SectionCurrent
