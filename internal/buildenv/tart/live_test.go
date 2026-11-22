@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	tartvm "github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -34,7 +35,8 @@ func TestLiveCheckInATahoeGuest(t *testing.T) {
 	require.NoError(t, err)
 	treeID, err := e.Repo.Resolve(t.Context(), "HEAD^{tree}")
 	require.NoError(t, err)
-	p := &Provider{Repo: e.Repo, Index: e.PortIndex}
+	home, env := testsupport.LiveTart()
+	p := &Provider{Repo: e.Repo, Index: e.PortIndex, Tart: tartvm.Client{Home: home, Env: env}}
 	job := buildenv.Job{
 		Run:         model.Run{ID: "run_live", Number: 1},
 		Execution:   model.GuestExecution{ID: "ex_live", Attempt: 1},

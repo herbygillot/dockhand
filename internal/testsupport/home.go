@@ -20,7 +20,16 @@ func IsolateHome() func() {
 
 // liveTart are the variables that opt a test binary into its live Tart
 // tests.
-var liveTart = []string{"DOCKHAND_TEST_TART_LIVE", "DOCKHAND_TEST_BOOTSTRAP_VM", "DOCKHAND_TEST_TART_IMAGE"}
+var liveTart = []string{"DOCKHAND_TEST_TART_LIVE", "DOCKHAND_TEST_BOOTSTRAP_VM", "DOCKHAND_TEST_TART_IMAGE", "DOCKHAND_TEST_TART_ASIF_SOURCE"}
+
+// LiveTart is the Tart home and environment a live Tart test runs Tart
+// with, as IsolateHomeKeepingTart pinned them: tart.Client{Home: home,
+// Env: env}. An empty client is refused, so every live test failed before
+// reaching Tart (#294). The client isn't built here, since the tart
+// package's own tests use this package.
+func LiveTart() (home string, env []string) {
+	return os.Getenv("DOCKHAND_TART_HOME"), os.Environ()
+}
 
 // IsolateHomeKeepingTart is IsolateHome for packages with opt-in live Tart
 // tests: where one is asked for, it first pins dockhand's Tart home,

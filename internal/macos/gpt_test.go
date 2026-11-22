@@ -49,23 +49,42 @@ func TestRemoveRecoveryPartitionDoesNothingWithoutRecoveryEntry(t *testing.T) {
 	require.Equal(t, before, after)
 }
 
+// A backup entry table whose own checksum is right but which disagrees
+// with the primary's is refused as disagreeing, and the image is left as
+// it was. The test corrupted the backup without its checksum, so it met
+// the checksum refusal and never this one (#294).
 func TestRemoveRecoveryPartitionRefusesDisagreeingTables(t *testing.T) {
+	path := writeGPTFixtureWith(t, true, func(backup []byte) { backup[0] = 0xff })
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+	_, err = RemoveRecoveryPartition(path)
+	require.ErrorContains(t, err, "primary and backup GPT entry tables disagree")
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, before, after)
+}
+
+// A backup entry table corrupted without its checksum is refused by that
+// checksum.
+func TestRemoveRecoveryPartitionRefusesABadBackupChecksum(t *testing.T) {
 	path := writeGPTFixture(t, true)
 	file, err := os.OpenFile(path, os.O_RDWR, 0)
 	require.NoError(t, err)
 	_, err = file.WriteAt([]byte{0xff}, 90*gptSectorSize)
 	require.NoError(t, err)
 	require.NoError(t, file.Close())
-	before, err := os.ReadFile(path)
-	require.NoError(t, err)
 	_, err = RemoveRecoveryPartition(path)
 	require.ErrorContains(t, err, "backup GPT entry checksum is invalid")
-	after, err := os.ReadFile(path)
-	require.NoError(t, err)
-	require.Equal(t, before, after)
 }
 
 func writeGPTFixture(t *testing.T, recovery bool) string {
+	t.Helper()
+	return writeGPTFixtureWith(t, recovery, nil)
+}
+
+// writeGPTFixtureWith is writeGPTFixture with the backup entry table
+// changed by backup, where given, its header's checksum made for it.
+func writeGPTFixtureWith(t *testing.T, recovery bool, backup func([]byte)) string {
 	t.Helper()
 	const sectors = 100
 	data := make([]byte, sectors*gptSectorSize)
@@ -74,10 +93,17 @@ func writeGPTFixture(t *testing.T, recovery bool) string {
 	if recovery {
 		copy(entries[128:144], apfsRecoveryType[:])
 	}
+	backupEntries := append([]byte(nil), entries...)
+	if backup != nil {
+		backup(backupEntries)
+	}
 	copy(data[2*gptSectorSize:], entries)
-	copy(data[90*gptSectorSize:], entries)
-	entriesCRC := crc32.ChecksumIEEE(entries)
+	copy(data[90*gptSectorSize:], backupEntries)
 	writeHeader := func(lba, alternate, entriesLBA uint64) {
+		entriesCRC := crc32.ChecksumIEEE(entries)
+		if lba == 99 {
+			entriesCRC = crc32.ChecksumIEEE(backupEntries)
+		}
 		sector := data[int(lba)*gptSectorSize : int(lba+1)*gptSectorSize]
 		copy(sector, "EFI PART")
 		binary.LittleEndian.PutUint32(sector[8:12], 0x00010000)

@@ -614,6 +614,10 @@ func TestASavedPlanWithLintFixesApplies(t *testing.T) {
 	require.NoError(t, err)
 	_, err = e.ApplyTidy(t.Context(), loaded)
 	require.NoError(t, err)
+	// What was applied is the saved plan: its subject, and the lint fix
+	// that takes the trailing spaces (#294).
+	require.Equal(t, "yq: update to 4.54.2", testsupport.Git(t, branch.Worktree, "log", "-1", "--format=%s"))
+	require.Equal(t, "name yq\nversion 4.54.2", testsupport.Git(t, branch.Worktree, "show", "HEAD:textproc/yq/Portfile"))
 }
 
 // tidy --restyle restyles a misaligned Portfile whole, in one commit of

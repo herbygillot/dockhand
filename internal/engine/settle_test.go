@@ -37,8 +37,6 @@ func TestSettlingReadsWhatEachStepLeft(t *testing.T) {
 	}{
 		{"A. the create's reply was lost: the push and the pull request are there, found", func(r PublicationReading) PublicationReading { return r },
 			Settlement{Done: []model.PublicationStep{model.StepPush, model.StepOpen}, Owes: []model.PublicationStep{model.StepReady}, Number: 41, Provenance: model.Found, Body: body}},
-		{"F. --ready asked and not yet made", func(r PublicationReading) PublicationReading { return r },
-			Settlement{Done: []model.PublicationStep{model.StepPush, model.StepOpen}, Owes: []model.PublicationStep{model.StepReady}, Number: 41, Provenance: model.Found, Body: body}},
 		{"nothing pushed yet: the branch is where the plan saw it", func(r PublicationReading) PublicationReading { r.HeadAt, r.Found = expected, false; return r },
 			Settlement{Owes: []model.PublicationStep{model.StepPush, model.StepOpen, model.StepReady}}},
 		{"AN. only an earlier pull request is found, which settles nothing", func(r PublicationReading) PublicationReading {
@@ -76,6 +74,15 @@ func TestSettlingReadsWhatEachStepLeft(t *testing.T) {
 	settled = Settle(update, recorded, edited)
 	require.Equal(t, []model.PublicationStep{model.StepEdit}, settled.Owes, "the description isn't what it sent")
 	require.Equal(t, "#### Description\n\njq: update to 1.7\n\n###### Tested on\n\nevidence\n", settled.Body, "Tested on landed; the Description stays as recorded, for the merge to keep as theirs")
+
+	// F. --ready asked, and the run lost before it: only ready is owed, on
+	// the pull request already recorded. A draft still owes it; one GitHub
+	// shows ready settles it. The row was case A's again (#294).
+	ready := model.Publication{Commit: commit, Number: 41, Owes: []model.PublicationStep{model.StepReady}}
+	require.Equal(t, Settlement{Owes: []model.PublicationStep{model.StepReady}, Number: 41}, Settle(ready, &model.PullRequest{Number: 41}, read))
+	marked := read
+	marked.Status.Draft = false
+	require.Equal(t, Settlement{Done: []model.PublicationStep{model.StepReady}, Number: 41}, Settle(ready, &model.PullRequest{Number: 41}, marked))
 }
 
 // A step still owed fails the command only where it failed or GitHub

@@ -71,11 +71,18 @@ func TestLiveAgentRegistration(t *testing.T) {
 	if name == "" {
 		t.Skip("set DOCKHAND_TEST_BOOTSTRAP_VM to an owned running disposable VM")
 	}
-	runtime, err := (tart.Client{}).Resolve()
+	runtime, err := liveClient()
 	require.NoError(t, err)
 	n := newNative(Config{Env: os.Environ(), Executable: runtime.Executable, Home: runtime.Home}, os.Stdout)
 	require.NoError(t, n.BootstrapAgent(t.Context(), name))
 	require.NoError(t, n.ReadyAgent(t.Context(), name))
 	require.NoError(t, n.BootstrapAgent(t.Context(), name))
 	require.NoError(t, n.ReadyAgent(t.Context(), name))
+}
+
+// liveClient is the person's Tart, as the live tests reach it
+// (testsupport.LiveTart).
+func liveClient() (tart.Client, error) {
+	home, env := testsupport.LiveTart()
+	return (tart.Client{Home: home, Env: env}).Resolve()
 }

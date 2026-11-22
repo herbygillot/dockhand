@@ -68,17 +68,19 @@ func TestCommitTreesRejectsMalformedBatchResponses(t *testing.T) {
 	commit, tree := strings.Repeat("a", 40), strings.Repeat("b", 40)
 	root := t.TempDir()
 	wrapper := filepath.Join(root, "git-wrapper")
-	repo := git.Repository{Root: root, Executable: wrapper}
-	for _, output := range []string{
-		commit + " commit\n",
-		tree + " commit\n" + tree + " tree\n",
-		commit + " tag\n" + tree + " tree\n",
-		commit + " commit\nmissing tree\n",
-		commit + " commit\n" + tree + " blob\n",
+	// With an environment, so the stand-in is what answers: without one
+	// git was refused first, and every case passed on that (#294).
+	repo := git.Repository{Root: root, Program: git.Program{Executable: wrapper, Env: testsupport.GitEnv(t)}}
+	for output, want := range map[string]string{
+		commit + " commit\n":                    "incomplete commit/tree lookup",
+		tree + " commit\n" + tree + " tree\n":   "cannot read commit",
+		commit + " tag\n" + tree + " tree\n":    "cannot read commit",
+		commit + " commit\nmissing tree\n":      "cannot resolve tree",
+		commit + " commit\n" + tree + " blob\n": "cannot resolve tree",
 	} {
 		testsupport.WriteExecutable(t, wrapper, "#!/bin/sh\ncat >/dev/null\nprintf '%s' "+quote(output)+"\n")
 		result, err := repo.CommitTrees(t.Context(), []string{commit})
-		require.Error(t, err)
+		require.ErrorContains(t, err, want, "reply %q", output)
 		require.Nil(t, result)
 	}
 }
