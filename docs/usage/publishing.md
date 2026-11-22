@@ -413,7 +413,9 @@ reviewer requested changes, submit asks whether to request their review again
 with the plan, before it pushes, and makes the request as the submission's last
 step, after marking the pull request ready where `--ready` asked.
 `submit.rerequest_review` controls that behavior; see
-`dockhand usage configuration`. If the request fails after the push, the next
+`dockhand usage configuration`. With nobody at the terminal to answer, the
+question stays owed: status says so, nobody is asked, and the next `submit`
+you run puts it to you. A no is kept, and that push isn't asked about again. If the request fails after the push, the next
 `submit` of the same commit makes it, even though it pushes nothing. A request
 that got no answer may have been sent, so it is never sent again; status says
 which reviewers were asked and which may not have been. Each reviewer is asked

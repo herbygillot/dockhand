@@ -76,6 +76,11 @@ type SubmitRequest struct {
 	// asking the reviewers who requested changes to review again
 	// (SubmitPlan.Rerequests). Both are steps of ApplySubmit, ready first.
 	Ready, Rerequest bool
+	// RerequestAnswer is the person's answer to that question where it was
+	// put: yes, no, or not asked where nobody was there to answer. A no is
+	// recorded and not asked again; a question nobody answered stays owed
+	// for the next run a person attends (#191, group E).
+	RerequestAnswer model.ReviewAnswer
 	// TestedBinaries and TestedVariants are the person's statements for
 	// the template's last two items; WithdrawBinaries and WithdrawVariants
 	// are their saying no, --tested-binaries=false, which removes a kept
@@ -1879,7 +1884,8 @@ func (e *Engine) followUps(ctx context.Context, plan SubmitPlan, result *Submitt
 		}
 		*record = next
 	}
-	if !slices.Contains(record.Owes, model.StepRerequest) || record.Review == nil {
+	// Only a yes is acted on; a question nobody answered stays owed.
+	if !slices.Contains(record.Owes, model.StepRerequest) || record.Review == nil || record.Review.Answer != model.ReviewYes {
 		return nil
 	}
 	if at, err := atCommit(); !at {

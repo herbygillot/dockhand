@@ -294,21 +294,30 @@ func Apply(ctx context.Context, e *engine.Engine, streams term.Streams, plan eng
 	// the submission, whose last step it is (#191).
 	// An answer an earlier submission of this commit recorded stands, and
 	// isn't asked again (#191).
-	if logins := plan.Rerequests(); len(logins) > 0 && rerequest != "never" && !plan.Request.Rerequest {
+	if logins := plan.Rerequests(); len(logins) > 0 && !plan.Request.Rerequest {
 		who := "@" + strings.Join(logins, ", @")
-		again := rerequest == "always"
-		if !again {
-			var how model.Answered
-			var err error
-			again, how, err = streams.Decide(false, term.Decision{Question: fmt.Sprintf("? ask %s to review again? [Y/n] ", who), Yes: true, Nobody: term.Answer(false)})
+		// The answer is recorded however it comes: always and never are
+		// the person's standing word, and nobody there leaves the
+		// question for the next run they attend (#191, group E).
+		switch rerequest {
+		case "always":
+			plan.Request.Rerequest, plan.Request.RerequestAnswer = true, model.ReviewYes
+		case "never":
+			plan.Request.RerequestAnswer = model.ReviewNo
+		default:
+			again, how, err := streams.Decide(false, term.Decision{Question: fmt.Sprintf("? ask %s to review again? [Y/n] ", who), Yes: true, Nobody: term.Answer(false)})
 			if err != nil {
 				return engine.Submitted{}, err
 			}
-			if how == model.AnsweredNobody {
-				fmt.Fprintf(streams.Prose(), "%s requested changes; ask them to review again on GitHub, or set submit.rerequest_review = \"always\"\n", who)
+			switch {
+			case how == model.AnsweredNobody:
+				fmt.Fprintf(streams.Prose(), "%s requested changes, and nobody was here to say whether to ask them to review again; the next dockhand submit asks, or set submit.rerequest_review = \"always\"\n", who)
+			case again:
+				plan.Request.Rerequest, plan.Request.RerequestAnswer = true, model.ReviewYes
+			default:
+				plan.Request.RerequestAnswer = model.ReviewNo
 			}
 		}
-		plan.Request.Rerequest = again
 	}
 	submitted, err := e.ApplySubmit(ctx, plan, answered)
 	if err != nil && submitted.PullRequest.Ref.Number == 0 {

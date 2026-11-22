@@ -55,14 +55,25 @@ func (p SubmitPlan) publication(id, by string, served bool) model.Publication {
 	if p.Request.Ready {
 		record.Owes = append(record.Owes, model.StepReady)
 	}
-	if c := p.Carried; p.Request.Rerequest && c != nil && c.Review != nil && slices.Contains(c.Owes, model.StepRerequest) {
+	// The question about the reviewers is recorded however it was
+	// answered: a yes is acted on, a no is kept and not asked again, and a
+	// question nobody answered stays owed for the next run a person
+	// attends (#191, group E).
+	answer := p.Request.RerequestAnswer
+	if p.Request.Rerequest {
+		answer = model.ReviewYes
+	}
+	if c := p.Carried; c != nil && c.Review != nil && slices.Contains(c.Owes, model.StepRerequest) {
 		// The marks come along, so no login is sent a second request.
 		ask := *c.Review
 		ask.Reviewers = slices.Clone(c.Review.Reviewers)
+		ask.Answer = answer
 		record.Review = &ask
-		record.Owes = append(record.Owes, model.StepRerequest)
-	} else if logins := p.Rerequests(); p.Request.Rerequest && len(logins) > 0 {
-		ask := &model.ReviewAsk{Answer: model.ReviewYes}
+		if answer != model.ReviewNo {
+			record.Owes = append(record.Owes, model.StepRerequest)
+		}
+	} else if logins := p.Rerequests(); len(logins) > 0 {
+		ask := &model.ReviewAsk{Answer: answer}
 		// Each login's answer is for its own latest review, where the plan
 		// read it; the verdict's time where it couldn't.
 		for _, login := range logins {
@@ -73,7 +84,9 @@ func (p SubmitPlan) publication(id, by string, served bool) model.Publication {
 			ask.Reviewers = append(ask.Reviewers, model.Reviewer{Login: login, Reviewed: reviewed})
 		}
 		record.Review = ask
-		record.Owes = append(record.Owes, model.StepRerequest)
+		if answer != model.ReviewNo {
+			record.Owes = append(record.Owes, model.StepRerequest)
+		}
 	}
 	return record
 }

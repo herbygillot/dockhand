@@ -881,7 +881,7 @@ func TestSubmitAsksTheReviewersBack(t *testing.T) {
 	fix("# drop the patch")
 	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err, out)
-	require.Contains(t, out, "@ryandesign requested changes; ask them to review again on GitHub, or set submit.rerequest_review =\n  \"always\"\n")
+	require.Contains(t, out, "@ryandesign requested changes, and nobody was here to say whether to ask them to review again; the\n  next dockhand submit asks, or set submit.rerequest_review = \"always\"\n")
 	require.Empty(t, g.Rerequested)
 
 	fix("# and the docs")

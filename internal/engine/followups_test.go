@@ -446,3 +446,61 @@ func TestTheFirstTransactionWritesWhatThePersonGave(t *testing.T) {
 	require.Equal(t, "jq: update to 1.8.1, upstream moved", branch.Title)
 	require.Equal(t, note, branch.Note)
 }
+
+// The question about the reviewers is recorded however it was answered: a
+// no is kept and owes nothing, and a question nobody was there to answer
+// stays owed, nobody asked, until a run a person attends answers it
+// (#191, group E).
+func TestTheReviewerQuestionIsRecordedHoweverItWasAnswered(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	g := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.NoError(t, err)
+	base := time.Date(2026, 11, 22, 8, 0, 0, 0, time.UTC)
+	g.Status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, ChangesRequestedBy: []string{"ana"}, ReviewedAt: base, LatestReview: map[string]time.Time{"ana": base}}
+	e.options.Now = func() time.Time { return base.Add(time.Hour) }
+	_, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	commit := func(line string) model.Branch {
+		testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n" + line + "\n"})
+		testsupport.Git(t, branch.Worktree, "commit", "-qam", "jq: "+line)
+		current, err := e.Branch(t.Context(), branch.ID)
+		require.NoError(t, err)
+		return current
+	}
+
+	// No: recorded, nothing owed.
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: commit("# a no"), NoCheck: true, RerequestAnswer: model.ReviewNo})
+	require.NoError(t, err)
+	require.Equal(t, model.ReviewNo, plan.publication("pub_no", "", false).Review.Answer)
+	require.NotContains(t, plan.publication("pub_no", "", false).Owes, model.StepRerequest)
+
+	// Nobody there: owed, nobody asked; the next attended yes asks.
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: commit("# nobody"), NoCheck: true})
+	require.NoError(t, err)
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.NoError(t, err)
+	require.Empty(t, submitted.Asked)
+	require.Empty(t, g.Rerequested)
+	current, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.NotNil(t, current.Publication, "the question stays owed")
+	require.Equal(t, model.ReviewNotAsked, current.Publication.Review.Answer)
+	require.Contains(t, current.Publication.Owes, model.StepRerequest)
+
+	again, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: current, NoCheck: true})
+	require.NoError(t, err)
+	require.Equal(t, []string{"ana"}, again.Rerequests(), "the next run puts the question")
+	again.Request.Rerequest, again.Request.RerequestAnswer = true, model.ReviewYes
+	submitted, err = e.ApplySubmit(t.Context(), again, model.AnsweredAsked)
+	require.NoError(t, err)
+	require.Equal(t, []string{"ana"}, submitted.Asked)
+	current, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.Nil(t, current.Publication)
+}
