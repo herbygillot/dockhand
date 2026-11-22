@@ -757,7 +757,7 @@ func TestTidyCommitsEachSubportsUpdate(t *testing.T) {
 			{Port: "kubectl-1.34", Subject: "kubectl-1.34: update to 1.34.13", Files: []model.EditedFile{{Path: "sysutils/kubectl/Portfile", Before: blob(base), After: blob(first)}}},
 			{Port: "kubectl-1.35", Subject: "kubectl-1.35: update to 1.35.9", Files: []model.EditedFile{{Path: "sysutils/kubectl/Portfile", Before: blob(first), After: blob(second)}}},
 		} {
-			edit.ID, edit.Branch, edit.Kind, edit.Directory, edit.At = model.EditID(fmt.Sprint("ed_", i)), branch.ID, model.EditUpdate, "sysutils/kubectl", at
+			edit.ID, edit.Branch, edit.Kind, edit.Directory, edit.At, edit.Written = model.EditID(fmt.Sprint("ed_", i)), branch.ID, model.EditUpdate, "sysutils/kubectl", at, at
 			if err := tx.AddEdit(edit); err != nil {
 				return err
 			}

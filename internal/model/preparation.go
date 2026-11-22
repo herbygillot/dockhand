@@ -90,13 +90,26 @@ const ScopeUnknown = "?"
 // ScopeSeparator joins a scope's parts.
 const ScopeSeparator = "\x1f"
 
+// scopeToolsPrefix marks a scope's developer-tools part (ScopeTools).
+const scopeToolsPrefix = "tools:"
+
+// ScopeTools is a scope's developer-tools part: the Xcode and Command Line
+// Tools versions as the evaluator saw them, each read, not read, or
+// unknown (macports.ToolsNotRead). It is recorded and never compared
+// (amended 2026-11-22): MacPorts reads the Xcode version for every port,
+// so comparing it would leave a rejection no later update could end after
+// any Xcode update.
+func ScopeTools(xcode, tools string) string {
+	return scopeToolsPrefix + strings.ReplaceAll(xcode+","+tools, ScopeSeparator, "")
+}
+
 // PatchScope is the scope a patch list was read in, from its parts in a
 // fixed order (macports.PatchScope names them). A part left empty is
-// unknown.
+// unknown; the tools part (ScopeTools) is kept as it is.
 func PatchScope(parts ...string) string {
 	named := make([]string, len(parts))
 	for i, part := range parts {
-		if part == "" || strings.Contains(part, ScopeSeparator) {
+		if !strings.HasPrefix(part, scopeToolsPrefix) && (part == "" || strings.Contains(part, ScopeSeparator)) {
 			part = ScopeUnknown
 		}
 		named[i] = part
@@ -105,15 +118,23 @@ func PatchScope(parts ...string) string {
 }
 
 // ScopesComparable reports whether two patch lists' scopes let one be
-// compared with the other: equal, and with no part unknown. Equal scopes
-// are the standard for comparing, and no proof: a Portfile can read what
-// no record names.
+// compared with the other: every part equal and known, but the tools part,
+// which is recorded and not compared (ScopeTools). Equal scopes are the
+// standard for comparing, and no proof: a Portfile can read what no record
+// names. This is the one place scopes are compared.
 func ScopesComparable(a, b string) bool {
-	if a == "" || a != b {
+	if a == "" || b == "" {
 		return false
 	}
-	for _, part := range strings.Split(a, ScopeSeparator) {
-		if part == ScopeUnknown {
+	left, right := strings.Split(a, ScopeSeparator), strings.Split(b, ScopeSeparator)
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if strings.HasPrefix(left[i], scopeToolsPrefix) && strings.HasPrefix(right[i], scopeToolsPrefix) {
+			continue
+		}
+		if left[i] != right[i] || left[i] == ScopeUnknown {
 			return false
 		}
 	}

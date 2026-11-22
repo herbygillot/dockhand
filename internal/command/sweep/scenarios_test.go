@@ -187,12 +187,10 @@ func scenarios() []scenario {
 				"store.update@engine.(*Engine).rewritePublication#2/not-landed-unknown": "#191: the mark's write didn't land and said so, and the ask went anyway",
 			},
 		},
-		{name: "update", arrange: started, steps: [][]string{{"update", "jq", "-b", "jq-update"}},
-			known: map[string]string{
-				// The edit made, its record failed: update again says jq is
-				// already at 1.8.1, and tidy calls the edit foreign.
-				"store.update@engine.(*Engine).update#1/!landed-unknown": "#194's agreement case: the edit is never recorded",
-			}},
+		// #194's agreement case: the edit is recorded before its files, so
+		// a record lost at either step leaves what the next command
+		// finishes, as the clean run's.
+		{name: "update", arrange: started, steps: [][]string{{"update", "jq", "-b", "jq-update"}}},
 		{name: "tidy", arrange: edited, steps: [][]string{{"tidy", "-b", "jq-update", "-y"}}},
 		{name: "undo", arrange: tidied, steps: [][]string{{"undo", "-b", "jq-update"}}},
 		{

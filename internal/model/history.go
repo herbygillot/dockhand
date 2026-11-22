@@ -78,10 +78,6 @@ type Edit struct {
 	// move, which tidy's commit and the pull request say; nil for every
 	// other edit.
 	Source *SourceMove `json:",omitempty"`
-	// Held are, for an update an unattended ship held before its check,
-	// the patch problems it held it for: serve's recovery leaves it held,
-	// where it queued its check (Codex's review of 275125ff, finding 2).
-	Held []string `json:",omitempty"`
 	// Written is when the edit's files were seen written; zero until
 	// then, where the edit is recorded before its files are (#194).
 	Written time.Time `json:",omitzero"`

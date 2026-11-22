@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/editprep"
@@ -315,6 +316,32 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	} else {
 		var err error
 		if ctx, err = e.evaluating(ctx, request.Branch); err != nil {
+			return Update{Port: request.Port}, err
+		}
+	}
+	// A branch's unwritten edits are settled first: an update of their
+	// port finishes them, any other stops at one cut short (#194). A plan
+	// settles nothing, and says what settling would do (T2). A version the
+	// person named, not one outdated found, replaces an edit none of whose
+	// files is written (T5).
+	named := request.Version != "" && request.Release == nil && request.Action == model.EditUpdate
+	settlerFor := func(edit model.Edit) Settler {
+		switch {
+		case edit.Port == request.Port && named:
+			return SettlerNamed
+		case edit.Port == request.Port:
+			return SettlerOwner
+		}
+		return SettlerOther
+	}
+	switch {
+	case request.Start != nil || request.FromMaster:
+	case request.Plan:
+		if err := e.SayUnsettled(ctx, request.Branch, settlerFor); err != nil {
+			return Update{Port: request.Port}, err
+		}
+	default:
+		if _, err := e.settled(ctx, request.Branch, settlerFor); err != nil {
 			return Update{Port: request.Port}, err
 		}
 	}
@@ -691,92 +718,123 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		update.Branch, update.Started = branch, true
 	}
 
-	if err := expandFor(ctx, worktree, update.Files); err != nil {
-		return Update{}, err
-	}
-	if err := worktree.ApplyToWorkingFiles(ctx, result.Files); err != nil {
-		if errors.Is(err, git.ErrWorkingFile) {
-			return Update{}, fmt.Errorf("%w; nothing was written, so run it again", err)
-		}
-		return Update{}, err
-	}
-	update.Applied = true
-	if request.Start == nil && request.Action == model.EditUpdate {
-		renamed, err := e.renameForVersion(ctx, &branch, request.Port, update.Before.Version, update.After.Version)
-		switch {
-		case err != nil:
-			progress.VerboseReport(ctx, "%s keeps its name: %v", branch.ShortName(), err)
-		case renamed != "":
-			update.RenamedFrom, update.Branch = renamed, branch
-		}
-	}
-	// A hand edit's attempt is the person's from here: no edit of
-	// dockhand's is recorded, and the refusal it answers is, for status,
-	// the hold, and the pull request to say (Then's item 3).
-	if result.Refused != nil {
-		return e.recordHandEdit(ctx, branch, update, result)
-	}
-	edit, err := e.editRecord(ctx, worktree, branch, request, update, result)
-	if err != nil {
-		return update, err
-	}
-	change := "refreshed checksums"
-	switch request.Action {
-	case model.EditUpdate:
-		change = fmt.Sprintf("%s → %s", update.Before, update.After)
-	case model.EditRevbump:
-		change = fmt.Sprintf("revision %d → %d", update.Before.Revision, update.After.Revision)
-	}
-	applied, primed, record, err := e.editFindings(ctx, worktree, branch, base, captured, edit, update, result, compare)
-	if err != nil {
-		return update, err
-	}
-	update.Instructions = instructionLines(worktree.Root, edit.Directory, update.Port)
-	// The files are written; a record that landed though its commit's
-	// outcome is unknown stands, where saying the update failed would
-	// leave the person to edit again what's there (store.Recorded).
-	err = store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
-		if err := tx.AddEdit(edit); err != nil {
-			return err
-		}
-		// The tickets it closes join the branch's, each once.
-		if len(request.Closes) > 0 {
-			current, err := tx.Branch(branch.ID)
-			if err != nil {
-				return err
-			}
-			for _, ticket := range request.Closes {
-				if !slices.Contains(current.Closes, ticket) {
-					current.Closes = append(current.Closes, ticket)
+	// Steps 3 to 6 run under the branch's lock, which history's
+	// transitions and settling take too, reading the branch again under
+	// it (#194, "The lock").
+	var locked Update
+	err = e.Repo.WithBranchLock(ctx, branch.Name, func(ctx context.Context) error {
+		var err error
+		locked, err = func() (Update, error) {
+			// A hand edit's attempt is the person's from here: no edit of
+			// dockhand's is recorded, and the refusal it answers is, for status,
+			// the hold, and the pull request to say (Then's item 3). It records no
+			// edit before its files, since none of dockhand's is made (#194).
+			if result.Refused != nil {
+				if err := e.writeEdit(ctx, worktree, update.Files, result.Files); err != nil {
+					return Update{}, err
 				}
+				update.Applied = true
+				e.renameUpdated(ctx, request, &branch, &update)
+				return e.recordHandEdit(ctx, branch, update, result)
 			}
-			if err := tx.UpdateBranch(current); err != nil {
+			// Step 3: the edit is recorded before its files are written, with what
+			// preparing it found and the prepared tree's assessment and change
+			// record, so a run cut short after the write leaves a record a later
+			// one finishes with no preparer and no download (#194).
+			edit, err := e.editRecord(ctx, worktree, branch, request, update, result)
+			if err != nil {
+				return update, err
+			}
+			update.Instructions = preparedInstructions(ctx, worktree, string(result.PreparedTree), edit.Directory, update.Port)
+			edit.Result = editResult(update, result)
+			change := editChange(edit)
+			prepared := string(result.PreparedTree)
+			primed, record, err := e.editFindings(ctx, worktree, branch, base, captured, prepared, edit, update, result, compare)
+			if err != nil {
+				return update, err
+			}
+			if err := store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
+				if err := tx.AddUnwritten(edit); err != nil {
+					return err
+				}
+				// The tickets it closes join the branch's, each once.
+				if len(request.Closes) > 0 {
+					current, err := tx.Branch(branch.ID)
+					if err != nil {
+						return err
+					}
+					for _, ticket := range request.Closes {
+						if !slices.Contains(current.Closes, ticket) {
+							current.Closes = append(current.Closes, ticket)
+						}
+					}
+					if err := tx.UpdateBranch(current); err != nil {
+						return err
+					}
+				}
+				if primed != nil {
+					if err := tx.RecordAssessment(*primed); err != nil {
+						return err
+					}
+				}
+				if record != nil {
+					return tx.RecordChange(*record)
+				}
+				return nil
+			}, editRecordedUnwritten(edit.ID)); err != nil {
+				return update, err
+			}
+			failpoint.Hit("update.recorded")
+			// Step 4: the files are written, each checked again first; one changed
+			// while the edit was prepared leaves every file as it was, and the
+			// record just made goes.
+			if err := e.writeEdit(ctx, worktree, update.Files, result.Files); err != nil {
+				if errors.Is(err, git.ErrWorkingFile) || errors.Is(err, errNotExpanded) {
+					if removeErr := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error { return tx.RemoveUnwritten(edit.ID) }); removeErr != nil {
+						return Update{}, errors.Join(err, removeErr)
+					}
+				}
+				return Update{}, err
+			}
+			update.Applied = true
+			failpoint.Hit("update.written")
+			// Step 5: the record says they're written, and the event says the
+			// edit; its witness passes only where Written is set.
+			err = store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
+				if err := tx.SetWritten(edit.ID, e.now()); err != nil {
+					return err
+				}
+				_, err := tx.AppendEvent(model.Event{At: edit.At, Branch: branch.ID, Kind: model.EventBranchEdit, Level: model.LevelInfo,
+					Message: fmt.Sprintf("%s: %s (%s)", update.Port, change, listPaths(update.Files))})
 				return err
+			}, editWritten(edit.ID))
+			if err != nil {
+				return update, fmt.Errorf("the files of %s are written and its record isn't complete; the next command run on the branch completes it: %w", edit.Subject, err)
 			}
-		}
-		if primed != nil {
-			if err := tx.RecordAssessment(*primed); err != nil {
-				return err
+			failpoint.Hit("update.settled")
+			// The assessment and the change record are the prepared tree's. Where
+			// the files written make that tree, they're the working tree's too;
+			// where another tracked file differs, they stay the prepared tree's,
+			// and the working tree's are made when they're asked for (#194, E4).
+			_, applied, err := worktree.WorkingTree(ctx)
+			if err != nil {
+				return update, err
 			}
-		}
-		if record != nil {
-			if err := tx.RecordChange(*record); err != nil {
-				return err
+			// Step 6: the branch is renamed for its version, where that applies.
+			e.renameUpdated(ctx, request, &branch, &update)
+			if record != nil && applied == prepared {
+				return update, nil
 			}
-		}
-		_, err := tx.AppendEvent(model.Event{At: edit.At, Branch: branch.ID, Kind: model.EventBranchEdit, Level: model.LevelInfo,
-			Message: fmt.Sprintf("%s: %s (%s)", update.Port, change, listPaths(update.Files))})
+			// The record is what the files say, made again whenever it's read
+			// for; one this edit couldn't make is no failure of the edit.
+			if _, err := e.revisionChanges(ctx, branch.ID, base, model.ObjectID(applied), true); err != nil {
+				progress.VerboseReport(ctx, "%s: what this revision changes wasn't recorded: %v", edit.Directory, err)
+			}
+			return update, nil
+		}()
 		return err
-	}, editRecorded(branch.ID, edit.ID))
-	if err != nil || record != nil {
-		return update, err
-	}
-	// The record is what the files say, made again whenever it's read
-	// for; one this edit couldn't make is no failure of the edit.
-	if _, err := e.revisionChanges(ctx, branch.ID, base, model.ObjectID(applied), true); err != nil {
-		progress.VerboseReport(ctx, "%s: what this revision changes wasn't recorded: %v", edit.Directory, err)
-	}
-	return update, nil
+	})
+	return locked, err
 }
 
 // followMoves notes a GitHub repository that answers by another name, and
@@ -852,8 +910,9 @@ func (e *Engine) followMoves(ctx context.Context, request UpdateRequest, worktre
 // where the branch was as its base before the edit, as a new one is: its
 // comparison their assessment, and its evaluations their change record.
 // Elsewhere both are made from the base when they're read for. applied is
-// the tree of the files the edit leaves.
-func (e *Engine) editFindings(ctx context.Context, worktree *git.Repository, branch model.Branch, base model.ObjectID, captured string, edit model.Edit, update Update, result editprep.Result, compare bool) (applied string, primed *model.Assessment, record *model.ChangeRecord, err error) {
+// the prepared tree, the files the edit leaves, read before they're
+// written (#194, E2).
+func (e *Engine) editFindings(ctx context.Context, worktree *git.Repository, branch model.Branch, base model.ObjectID, captured, applied string, edit model.Edit, update Update, result editprep.Result, compare bool) (primed *model.Assessment, record *model.ChangeRecord, err error) {
 	// Where the branch was as its base before the edit, as a new one is,
 	// the update's own comparison is the assessment of the files it
 	// leaves: its before is the base and its after the revision, and it
@@ -863,13 +922,9 @@ func (e *Engine) editFindings(ctx context.Context, worktree *git.Repository, bra
 	// when it's collected.
 	trees, err := worktree.CommitTrees(ctx, []string{string(base)})
 	if err != nil {
-		return "", nil, nil, err
+		return nil, nil, err
 	}
 	atBase := trees[string(base)] == captured
-	_, applied, err = worktree.WorkingTree(ctx)
-	if err != nil {
-		return "", nil, nil, err
-	}
 	if after, _ := result.PortAfter(update.Port); compare && update.Upstream != nil && !after.GitFetched() && atBase {
 		primed = &model.Assessment{Branch: branch.ID, Tree: model.ObjectID(applied), Base: base, Port: update.Port, Directory: edit.Directory,
 			Comparison: *update.Upstream, Policy: assess.Policy, At: edit.At}
@@ -900,7 +955,7 @@ func (e *Engine) editFindings(ctx context.Context, worktree *git.Repository, bra
 			record = &made
 		}
 	}
-	return applied, primed, record, nil
+	return primed, record, nil
 }
 
 // updateSource is what an update is prepared from: the branch's working
@@ -964,7 +1019,10 @@ func (e *Engine) editRecord(ctx context.Context, worktree *git.Repository, branc
 		}
 	}
 	for _, file := range result.Files {
-		recorded := model.EditedFile{Path: file.Path, Before: model.ObjectID(file.Before.Blob)}
+		recorded := model.EditedFile{Path: file.Path, Before: model.ObjectID(file.Before.Blob), BeforeMode: modeWords(file.Before)}
+		if !file.Delete {
+			recorded.AfterMode = strconv.FormatUint(uint64(file.Mode), 8)
+		}
 		if !file.Delete {
 			// Written, not only hashed: tidy reads it back to commit
 			// this edit alone, one of several updates in its directory
@@ -1419,4 +1477,91 @@ func instructionLines(root, directory, port string) []string {
 		lines = append(lines, fmt.Sprintf("%s/Portfile:%d: %s", directory, found.Line, found.Text))
 	}
 	return lines
+}
+
+// writeEdit writes an edit's files into the worktree, each checked again
+// first (ApplyToWorkingFiles): one changed while the edit was prepared
+// leaves every file as it was.
+func (e *Engine) writeEdit(ctx context.Context, worktree *git.Repository, paths []string, files []git.FileEdit) error {
+	if err := expandFor(ctx, worktree, paths); err != nil {
+		return fmt.Errorf("%w: %w", errNotExpanded, err)
+	}
+	if err := worktree.ApplyToWorkingFiles(ctx, files); err != nil {
+		if errors.Is(err, git.ErrWorkingFile) {
+			return fmt.Errorf("%w; nothing was written, so run it again", err)
+		}
+		return err
+	}
+	return nil
+}
+
+// renameUpdated renames the branch for the version an update moved it to,
+// where the update didn't start it; a branch that keeps its name says why
+// at -v.
+func (e *Engine) renameUpdated(ctx context.Context, request UpdateRequest, branch *model.Branch, update *Update) {
+	if request.Start != nil || request.Action != model.EditUpdate {
+		return
+	}
+	renamed, err := e.renameForVersion(ctx, branch, request.Port, update.Before.Version, update.After.Version)
+	switch {
+	case err != nil:
+		progress.VerboseReport(ctx, "%s keeps its name: %v", branch.ShortName(), err)
+	case renamed != "":
+		update.RenamedFrom, update.Branch = renamed, *branch
+	}
+}
+
+// editResult is what the edit's record keeps of what preparing it found
+// and did (#194): the versions, its findings field by field, and the
+// port's patches as the final evaluation declares them, in the scope that
+// evaluation was read in.
+func editResult(update Update, result editprep.Result) *model.EditResult {
+	port := result.Target.Subport
+	if port == "" {
+		port = result.Target.Name
+	}
+	scope := result.Prepared.Runtime.PatchScope(port, strings.Fields(result.Target.VariantSpec()))
+	return &model.EditResult{Before: update.Before.String(), After: update.After.String(), Patches: result.Declared(scope), Findings: update.findings()}
+}
+
+// preparedInstructions are the Portfile's instructions as the prepared tree
+// has them (instructionLines), read before the files are written.
+func preparedInstructions(ctx context.Context, worktree *git.Repository, tree, directory, port string) []string {
+	file, data, err := worktree.File(ctx, tree, directory+"/Portfile")
+	if err != nil || !file.Exists {
+		return nil
+	}
+	var lines []string
+	for _, found := range portfile.Instructions(data, port) {
+		lines = append(lines, fmt.Sprintf("%s/Portfile:%d: %s", directory, found.Line, found.Text))
+	}
+	return lines
+}
+
+// errNotExpanded is a sparse checkout that couldn't take an edit's files
+// in, before any was written.
+var errNotExpanded = errors.New("the worktree couldn't take the edit's files in; nothing was written")
+
+// editChange is what an edit changed, as its event says it: the versions
+// its result keeps, the revisions, or the checksums. Settling says it as
+// the update did.
+func editChange(edit model.Edit) string {
+	if edit.Result == nil {
+		return edit.Subject
+	}
+	switch edit.Kind {
+	case model.EditUpdate:
+		return fmt.Sprintf("%s → %s", edit.Result.Before, edit.Result.After)
+	case model.EditRevbump:
+		return fmt.Sprintf("revision %s → %s", revisionOf(edit.Result.Before), revisionOf(edit.Result.After))
+	}
+	return "refreshed checksums"
+}
+
+// revisionOf is a version_revision's revision, 0 where it has none.
+func revisionOf(version string) string {
+	if i := strings.LastIndex(version, "_"); i >= 0 {
+		return version[i+1:]
+	}
+	return "0"
 }

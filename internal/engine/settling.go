@@ -27,6 +27,10 @@ const (
 	// SettlerTidyAttended is tidy with a person looking, who takes files
 	// someone changed as their own.
 	SettlerTidyAttended
+	// SettlerNamed is an update of the edit's port to a version the
+	// person named: it replaces an edit none of whose files is written,
+	// and finishes one partly written first, as the owner does (#194, T5).
+	SettlerNamed
 )
 
 // SettleAction is what settling an unwritten edit does.
@@ -48,6 +52,9 @@ const (
 	// SettleTheirs commits the files as the person's and removes the
 	// unwritten edit (tidy, attended).
 	SettleTheirs SettleAction = "theirs"
+	// SettleReplaced removes an edit none of whose files is written, which
+	// a version the person named replaces.
+	SettleReplaced SettleAction = "replaced"
 	// SettlePrepareAgain removes the edit, whose kept blobs are gone and
 	// whose files were never written, and prepares the port again.
 	SettlePrepareAgain SettleAction = "prepare-again"
@@ -99,6 +106,8 @@ func settling(edit model.Edit, worktree map[string]WorkingFile, missing map[mode
 	}
 	if len(written) == 0 {
 		switch {
+		case settler == SettlerNamed:
+			return Settling{Action: SettleReplaced}
 		case settler != SettlerOwner:
 			return Settling{Action: SettleGoOn}
 		case len(gone) > 0:
@@ -109,7 +118,7 @@ func settling(edit model.Edit, worktree map[string]WorkingFile, missing map[mode
 	switch {
 	case len(gone) > 0:
 		return Settling{Action: SettleBlobsGone, Files: gone}
-	case settler != SettlerOwner:
+	case settler != SettlerOwner && settler != SettlerNamed:
 		return Settling{Action: SettleUnfinished, Files: unwritten}
 	}
 	return Settling{Action: SettleWrite, Files: unwritten}

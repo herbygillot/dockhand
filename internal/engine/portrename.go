@@ -261,6 +261,8 @@ func (e *Engine) RenamePort(ctx context.Context, request PortRenameRequest) (Ren
 		edit.Files = append(edit.Files, recorded)
 	}
 	return renamed, store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
+		// Recorded after its files, at its own time (#194, R7).
+		edit.Written = edit.At
 		if err := tx.AddEdit(edit); err != nil {
 			return err
 		}

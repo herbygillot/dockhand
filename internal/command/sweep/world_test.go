@@ -355,7 +355,10 @@ func cell(column string, value any) string {
 	case []byte:
 		return strconv.Quote(string(v))
 	case int64:
-		if strings.HasSuffix(column, "_at") || column == "heartbeat" || column == "at" {
+		// An edit's written time is a time where it's set; zero, an edit
+		// recorded and not written, stays zero, which the comparison sees
+		// (#194).
+		if strings.HasSuffix(column, "_at") || column == "heartbeat" || column == "at" || column == "written" && v != 0 {
 			return fmt.Sprintf("«t:%d»", v)
 		}
 		return strconv.FormatInt(v, 10)

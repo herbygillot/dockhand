@@ -61,13 +61,24 @@ func (e *Engine) ResumePrepared(ctx context.Context, where Where, tests model.Te
 			continue
 		}
 		head, _, err := e.Repo.Branch(ctx, branch.Name)
-		if err != nil || model.ObjectID(head) == branch.Base {
+		if err != nil {
 			continue
 		}
 		done := Resumed{Branch: branch}
+		// A branch at its base with dockhand's own edits not committed, or
+		// one recorded and not written, is a preparation not finished:
+		// until it can be finished here, it is left and said, never
+		// committed (#194).
+		if model.ObjectID(head) == branch.Base {
+			if prepared, err := e.preparation(ctx, branch, false); err == nil && prepared.Disposition == branchstate.UnfinishedPreparation {
+				done.Problem = preparedWords(prepared, branch, nil)
+				resumed = append(resumed, done)
+			}
+			continue
+		}
 		// What ship would queue, recovery queues: neither a branch with
 		// hand edits nor one ship held for a patch (finding 2).
-		if prepared, err := e.preparation(ctx, branch); err != nil || prepared.Disposition != branchstate.ReadyToCheck {
+		if prepared, err := e.preparation(ctx, branch, false); err != nil || prepared.Disposition != branchstate.ReadyToCheck {
 			done.HandEdits = err == nil && prepared.Disposition == branchstate.HandEditsToCarry
 			done.Held = err == nil && prepared.Disposition == branchstate.HeldBeforeCheck
 			done.Problem = preparedWords(prepared, branch, err)

@@ -284,6 +284,31 @@ selections. The provider-specific setup commands, local-prefix behavior, and
 timeout settings are in `dockhand usage checks` and
 `dockhand usage configuration`.
 
+## An update that didn't finish
+
+An update records its edit before it writes the files, so one that stops
+partway is finished, not repeated. The next command on the branch looks at the
+edit's files first. Where they were all written and only the record was lost,
+it finishes the record. Where none was written, `update` or `ship` of that port
+writes them and goes on, and other commands say so and work with the files as
+they are. Where the write was cut short, other commands stop and name the
+command that finishes it:
+
+```text
+jq: update to 1.8.1 was cut short: textproc/jq/files/fix.diff aren't written yet; dockhand update jq finishes it
+```
+
+Where you changed one of its files since, nothing is written and the command
+names the file. Look at the files; `dockhand tidy` at a terminal then commits
+them as yours and drops the edit's record. A version you name with `update`
+replaces an edit none of whose files was written. A `--plan` says what any of
+this would do and does none of it.
+
+`dockhand status` says a branch whose preparation didn't finish, and
+`dockhand ship -b <branch>` finishes it. With nobody there, nothing checks or
+submits past it; your own `check` or `submit` says what isn't in the files and
+goes on.
+
 ## A submission that didn't finish
 
 When submit stops partway, as when the push lands and opening the pull request

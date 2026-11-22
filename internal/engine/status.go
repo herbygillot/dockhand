@@ -63,10 +63,13 @@ type BranchStatus struct {
 	Commits int
 	// Edited lists tracked files changed and not committed.
 	Edited []string
-	// Edits are the branch's recorded edits, which say a hold before its
-	// check (branchstate.Preparation).
-	Edits []model.Edit
-	Scope Scope
+	// Edits are the branch's written edits, and Prepared its preparation
+	// verdict, which says a hold before its check or a preparation not
+	// finished (branchstate.PreparationOf), as serve would be told for its
+	// own branch and a person for theirs.
+	Edits    []model.Edit
+	Prepared branchstate.Readied
+	Scope    Scope
 	// Changes are the change records of the files as they are now, by
 	// directory, where they've been made; status makes none.
 	Changes map[string]model.ChangeRecord
@@ -401,7 +404,7 @@ func (s BranchStatus) Check() branchstate.Check {
 // Facts are what's recorded of the branch, as the verdict reads it
 // (branchstate.Facts).
 func (s BranchStatus) Facts() branchstate.Facts {
-	b := branchstate.Branch{Record: s.Branch, Missing: s.Missing, Cleaned: s.Cleaned(), OnMaster: s.OnMaster, Revision: s.LatestRevision, Commits: s.Commits, Edited: s.Edited, Edits: s.Edits,
+	b := branchstate.Branch{Record: s.Branch, Missing: s.Missing, Cleaned: s.Cleaned(), OnMaster: s.OnMaster, Revision: s.LatestRevision, Commits: s.Commits, Edited: s.Edited, Prepared: s.Prepared,
 		Held: s.Held, Moved: s.Moved, Awaiting: s.Awaiting, NotAssessed: s.Assessment == AssessmentPending, NoFork: s.NoFork, Pushed: s.Pushed(), OthersPushed: s.SomeoneElsePushed(),
 		Failing: s.Failing(), CI: s.CI, Ports: s.Scope.PortNames(), Wider: s.Wider, PastMerge: s.PastMerge}
 	if s.Evidence != nil {
@@ -637,6 +640,11 @@ func (e *Engine) branchStatus(ctx context.Context, branch model.Branch, noFork b
 		if err := e.readOpen(ctx, &status, worktree); err != nil {
 			return status, err
 		}
+		in, err := e.readyingWith(ctx, branch, branch.Origin != model.OriginServe, worktree, status.Edited)
+		if err != nil {
+			return status, err
+		}
+		status.Prepared = branchstate.PreparationOf(in)
 	}
 	var checks []model.Run
 	var edits []model.Edit

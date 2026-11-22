@@ -101,10 +101,12 @@ type Options struct {
 	Quiet func() ([]int, error)
 }
 
-// quietSchema is the first schema whose migration waits for quiet: the
-// publication record's, which a paused older submit could push and write
-// to GitHub past with no record.
-const quietSchema = 61
+// quietSchema is the latest schema whose migration waits for quiet, so a
+// database before it migrates only while no other dockhand runs: the
+// preparation record's (#194), which an older update paused between its
+// files and its record would write past with no record explaining its
+// files, as the publication record's (61) was for a paused submit.
+const quietSchema = 65
 
 // Store is a dockhand v3 database.
 type Store struct {

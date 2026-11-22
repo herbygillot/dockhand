@@ -14,52 +14,23 @@ type Disposition string
 const (
 	// ReadyToCheck is a branch whose check may be queued.
 	ReadyToCheck Disposition = "ready"
-	// HeldBeforeCheck is one an unattended ship held at its committed
-	// edit, a patch not applying (model.Edit.Held).
+	// HeldBeforeCheck is one a caller nobody attends stops before its
+	// check: a patch rejection stands that holds.allow doesn't let go
+	// (StandingRejections).
 	HeldBeforeCheck Disposition = "held"
 	// HandEditsToCarry is one whose worktree holds edits not committed,
 	// the person's to carry on.
 	HandEditsToCarry Disposition = "hand-edits"
 )
 
-// Prepared is a branch's preparation verdict, and why where it isn't
-// ready.
-type Prepared struct {
-	Disposition Disposition
-	Why         string
-}
-
-// Preparation is the one verdict on whether a branch's check may be
-// queued: ship's pre-check decision and serve's recovery both ask it, where
-// recovery queued the check of a branch ship had held for a patch that
-// doesn't apply (Codex's review of 275125ff, finding 2). Edits not
-// committed are the person's; the newest edit of each port held is held,
-// as no edit after it took it on.
-func Preparation(b Branch) Prepared {
-	if len(b.Edited) > 0 {
-		return Prepared{Disposition: HandEditsToCarry, Why: "its worktree holds edits not committed"}
+// HeldWords say a branch held before its check, whether its changes are
+// committed, and what lets it build.
+func HeldWords(reasons []string, committed bool) string {
+	state := "committed"
+	if !committed {
+		state = "not committed"
 	}
-	newest := map[string]model.Edit{}
-	var ports []string
-	for _, edit := range b.Edits {
-		if _, seen := newest[edit.Port]; !seen {
-			ports = append(ports, edit.Port)
-		}
-		newest[edit.Port] = edit
-	}
-	var held []string
-	for _, port := range ports {
-		held = append(held, newest[port].Held...)
-	}
-	if len(held) > 0 {
-		return Prepared{Disposition: HeldBeforeCheck, Why: strings.Join(held, "; ")}
-	}
-	return Prepared{Disposition: ReadyToCheck}
-}
-
-// HeldWords say a branch held before its check, and what lets it build.
-func HeldWords(why string) string {
-	return fmt.Sprintf("held before its check, with its changes committed: %s; holds.allow = [\"patch-rejected\"] lets it build", why)
+	return fmt.Sprintf("held before its check, with its changes %s: %s; holds.allow = [\"patch-rejected\"] lets it build", state, strings.Join(reasons, "; "))
 }
 
 // UnfinishedPreparation is a branch whose preparation stopped part-way: an edit not
@@ -96,6 +67,12 @@ type Readied struct {
 	Disposition Disposition
 	Reasons     []string
 	Committed   bool
+	// Pending is an unfinished answer for more than dockhand's own edits
+	// not committed: an edit not written, a target not prepared, or an
+	// action not concluded or refused, which status says (the design's
+	// table); edits not committed alone are a person's to check as they
+	// are, and ship's to commit.
+	Pending bool
 }
 
 // PreparationOf answers the first that applies, in order: hand-edits,
@@ -115,7 +92,8 @@ func PreparationOf(in Readying) Readied {
 		return Readied{Disposition: HandEditsToCarry, Reasons: reasons, Committed: committed}
 	}
 	if reasons = unfinishedReasons(in); len(reasons) > 0 {
-		return Readied{Disposition: UnfinishedPreparation, Reasons: reasons, Committed: committed}
+		pending := len(in.Unwritten) > 0 || len(reasons) > 1 || len(in.Explained) == 0
+		return Readied{Disposition: UnfinishedPreparation, Reasons: reasons, Committed: committed, Pending: pending}
 	}
 	if !in.Attended {
 		for _, port := range portsOf(in.Edits) {

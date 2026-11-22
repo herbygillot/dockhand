@@ -112,6 +112,10 @@ func (g *TidyGroup) needsSubject(why string) {
 // branch head and working files it was made from.
 type TidyPlan struct {
 	Branch model.Branch
+	// Attended is a tidy a person runs at a terminal, who takes as their
+	// own the files of an edit recorded before them that changed since
+	// (#194, "Settling").
+	Attended bool
 	// Base and Head are commits; Final is the tree the series ends at,
 	// the working files as they were captured, and BaseTree the base's.
 	Base, Head, Final, BaseTree string
@@ -1509,6 +1513,33 @@ func (e *Engine) ApplyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 // applyTidy makes a tidy's commits and moves the branch to them, holding
 // the branch's history lock (withHistory).
 func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, error) {
+	// The branch's unwritten edits are settled first, under the lock this
+	// holds: one whose files changed since stops the tidy, but a person's
+	// at a terminal, which commits them as theirs and removes the edit.
+	settler := SettlerOther
+	if plan.Attended {
+		settler = SettlerTidyAttended
+	}
+	settled, err := e.settleUnwritten(ctx, plan.Branch, SettlerFor(settler))
+	if err != nil {
+		return TidyResult{}, err
+	}
+	result, err := e.commitTidy(ctx, plan)
+	if err != nil {
+		return result, err
+	}
+	for _, done := range settled {
+		if done.Settling.Action == SettleTheirs {
+			if err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error { return tx.RemoveUnwritten(done.Edit.ID) }); err != nil {
+				return result, err
+			}
+		}
+	}
+	return result, nil
+}
+
+// commitTidy makes the plan's commits, its branch's edits settled.
+func (e *Engine) commitTidy(ctx context.Context, plan TidyPlan) (TidyResult, error) {
 	worktree, err := e.worktree(ctx, plan.Branch)
 	if err != nil {
 		return TidyResult{}, err

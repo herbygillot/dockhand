@@ -26,7 +26,10 @@ func TestEvaluatedUnderKeepsTheFullDarwinVersionAndTools(t *testing.T) {
 	later := runtime
 	later.DarwinVersion = "25.2.0"
 	require.False(t, model.ScopesComparable(scope, later.PatchScope("foo", nil)), "a point release of the kernel is a different scope")
+	otherXcode := runtime
+	otherXcode.Xcode = "26.2"
+	require.True(t, model.ScopesComparable(scope, otherXcode.PatchScope("foo", nil)), "the tools are recorded, not compared")
 	unknown := runtime
-	unknown.Tools = ""
+	unknown.DarwinVersion = ""
 	require.False(t, model.ScopesComparable(unknown.PatchScope("foo", nil), unknown.PatchScope("foo", nil)), "an unknown part compares with nothing, itself included")
 }

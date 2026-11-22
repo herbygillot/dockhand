@@ -199,6 +199,25 @@ func (p *fakePreparer) Prepare(ctx context.Context, r editprep.Request) (editpre
 		result.Prepared = snapshot(next, nextRevision, options[1])
 		result.Prepared.Ports[r.Selection.Selector] = port(r.Selection.Selector, p.dependencies...)
 	}
+	// The final evaluation declares the patches checked, which the edit's
+	// saved list is read from (#194).
+	if len(p.patches) > 0 {
+		if result.Prepared.Ports == nil {
+			result.Prepared = snapshot(next, nextRevision, maps.Clone(options[1]))
+		}
+		info := result.Prepared.Ports[r.Selection.Selector]
+		info.Options = maps.Clone(info.Options)
+		if info.Options == nil {
+			info.Options = map[string]string{}
+		}
+		var names []string
+		for _, patch := range p.patches {
+			names = append(names, patch.Name)
+		}
+		info.Options["patchfiles"] = strings.Join(names, " ")
+		result.Prepared.Ports[r.Selection.Selector] = info
+		result.PatchesChecked = true
+	}
 	result.Commits = []editprep.CommitIntent{{Subject: r.Selection.Selector + ": update to " + next}}
 	if r.Action == model.EditRevbump {
 		result.Commits[0].Subject = r.Selection.Selector + ": " + r.Subject

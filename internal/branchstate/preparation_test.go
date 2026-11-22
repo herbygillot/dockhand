@@ -65,12 +65,12 @@ func TestPreparation(t *testing.T) {
 		{"an unwritten edit with a file it can't settle over", Readying{Unwritten: []UnwrittenEdit{{Edit: model.Edit{Port: "foo"}, Changed: []string{"devel/foo/Portfile"}}}},
 			Readied{Disposition: HandEditsToCarry, Reasons: []string{"devel/foo/Portfile changed since foo's update was prepared"}, Committed: true}},
 		{"an unwritten edit", Readying{Unwritten: []UnwrittenEdit{{Edit: model.Edit{Port: "foo"}}}},
-			Readied{Disposition: UnfinishedPreparation, Reasons: []string{"an update of foo wasn't finished"}, Committed: true}},
+			Readied{Disposition: UnfinishedPreparation, Reasons: []string{"an update of foo wasn't finished"}, Committed: true, Pending: true}},
 		{"a target whose update failed is tried again (E)", Readying{Edits: []model.Edit{rejected}, Request: request, Allowed: none},
-			Readied{Disposition: UnfinishedPreparation, Reasons: []string{"bar has no update yet"}, Committed: true}},
+			Readied{Disposition: UnfinishedPreparation, Reasons: []string{"bar has no update yet"}, Committed: true, Pending: true}},
 		{"a refusal blocks (AX)", Readying{Edits: []model.Edit{clean}, Request: &model.ChangeRequest{ID: "r2", Targets: []model.RequestTarget{
 			{Port: "bar", Action: "update", Outcomes: []model.ActionOutcome{{Action: "version", Result: model.ActionDone}, {Action: "source", Result: model.ActionRefused, Why: "--source tarball: bar has no tarball"}}}}}},
-			Readied{Disposition: UnfinishedPreparation, Reasons: []string{"source of bar was refused: --source tarball: bar has no tarball"}, Committed: true}},
+			Readied{Disposition: UnfinishedPreparation, Reasons: []string{"source of bar was refused: --source tarball: bar has no tarball"}, Committed: true, Pending: true}},
 		{"a port found current and a clean sibling are ready", Readying{Edits: []model.Edit{clean}, Request: &model.ChangeRequest{ID: "r3", Targets: []model.RequestTarget{
 			{Port: "bar", Action: "update"}, {Port: "baz", Action: "update", Current: "3.0"}}}}, Readied{Disposition: ReadyToCheck, Committed: true}},
 	} {
@@ -129,4 +129,25 @@ func TestADroppedPatchEndsItsRejectionInItsOwnScope(t *testing.T) {
 	// nothing there.
 	conditional := updateEdit("foo", list(hereScope, patch("fix.diff", model.PatchRejected)))
 	require.True(t, slices.Equal([]Rejection{{Patch: "fix.diff", Scope: hereScope}}, StandingRejections("foo", []model.Edit{recorded, conditional})))
+}
+
+// The developer tools are recorded with a scope and not compared (amended
+// 2026-11-22): a rejection recorded under one Xcode is ended by a later
+// update under the same Darwin and another Xcode that applies the patch,
+// as it is where the earlier evaluation had read no tools at all.
+func TestARejectionEndsUnderAnotherXcodeOnTheSameDarwin(t *testing.T) {
+	t.Parallel()
+	scope := func(darwin string, tools string) string {
+		return model.PatchScope("2.12.7", "8.6.17", "darwin 25 arm64", "-", darwin, tools, "foo", "-")
+	}
+	for name, before := range map[string]string{
+		"Xcode 26.1":     model.ScopeTools("26.1", "26.1.0.0.1"),
+		"tools not read": model.ScopeTools("(not read)", "(not read)"),
+	} {
+		recorded := updateEdit("foo", list(scope("25.1.0", before), patch("fix.diff", model.PatchRejected)))
+		fixed := updateEdit("foo", list(scope("25.1.0", model.ScopeTools("26.2", "26.2.0.0.1")), patch("fix.diff", model.PatchApplied)))
+		require.Empty(t, StandingRejections("foo", []model.Edit{recorded, fixed}), name)
+		elsewhere := updateEdit("foo", list(scope("25.2.0", model.ScopeTools("26.2", "26.2.0.0.1")), patch("fix.diff", model.PatchApplied)))
+		require.NotEmpty(t, StandingRejections("foo", []model.Edit{recorded, elsewhere}), "%s: another Darwin still ends nothing", name)
+	}
 }

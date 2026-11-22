@@ -42,14 +42,18 @@ const (
 	OpenedByServe      Reason = "opened-by-serve"
 	OnMaster           Reason = "on-master"
 	HeldBeforeItsCheck Reason = "held-before-check"
-	FilesChangedSince  Reason = "files-changed-since"
-	DependencyFailed   Reason = "dependency-failed"
-	TargetFailed       Reason = "target-failed"
-	RunFailed          Reason = "check-failed"
-	RunAttention       Reason = "check-attention"
-	BuildAgain         Reason = "build-again"
-	Unbuilt            Reason = "unbuilt"
-	ExtraFailed        Reason = "extra-failed"
+	// PreparationUnfinished is a branch whose preparation stopped part-way:
+	// an update not written whole, a target not prepared, an action not
+	// concluded or refused (#194). The command that finishes it is named.
+	PreparationUnfinished Reason = "preparation-unfinished"
+	FilesChangedSince     Reason = "files-changed-since"
+	DependencyFailed      Reason = "dependency-failed"
+	TargetFailed          Reason = "target-failed"
+	RunFailed             Reason = "check-failed"
+	RunAttention          Reason = "check-attention"
+	BuildAgain            Reason = "build-again"
+	Unbuilt               Reason = "unbuilt"
+	ExtraFailed           Reason = "extra-failed"
 	// LintWarned is a new port lint warned of, which submit asks to fix
 	// or accept (the docs dig's I13).
 	LintWarned      Reason = "lint-warned"
@@ -113,9 +117,9 @@ type Branch struct {
 	// Edited its files edited and not committed.
 	Commits int
 	Edited  []string
-	// Edits are the branch's recorded edits, oldest first, which say a
-	// hold before its check (Preparation).
-	Edits []model.Edit
+	// Prepared is the branch's preparation verdict (PreparationOf), which
+	// says a hold before its check.
+	Prepared Readied
 	// Held are what holds its submission, from its recorded assessments;
 	// Moved the Git sources whose tag moved before its check.
 	Held, Moved []model.Concern
@@ -275,8 +279,13 @@ func Attend(facts Facts) []Attention {
 	standing := check.Standing()
 	// A branch an unattended ship held at its committed edit, a patch not
 	// applying, has no check to say; it says the hold (finding 2).
-	if prepared := Preparation(b); standing == NotChecked && prepared.Disposition == HeldBeforeCheck {
-		return row(NeedsYou, HeldBeforeItsCheck, Next{Verb: VerbCheck}, func(a *Attention) { a.Detail = prepared.Why })
+	if prepared := b.Prepared; standing == NotChecked && prepared.Disposition == UnfinishedPreparation && prepared.Pending {
+		return row(NeedsYou, PreparationUnfinished, Next{External: "dockhand ship -b " + b.Record.ShortName()}, func(a *Attention) {
+			a.Detail = strings.Join(prepared.Reasons, "; ") + "; dockhand ship -b " + b.Record.ShortName() + " finishes it"
+		})
+	}
+	if prepared := b.Prepared; standing == NotChecked && prepared.Disposition == HeldBeforeCheck {
+		return row(NeedsYou, HeldBeforeItsCheck, Next{Verb: VerbCheck}, func(a *Attention) { a.Detail = HeldWords(prepared.Reasons, prepared.Committed) })
 	}
 	if standing == Checking || standing == NotChecked {
 		return nil
@@ -557,8 +566,8 @@ func (a Attention) Words(v Vocabulary) string {
 		return fmt.Sprintf("#%d was opened by serve without human review", pr.Number)
 	case OnMaster:
 		return "its changes are on master already, as of " + a.Detail
-	case HeldBeforeItsCheck:
-		return HeldWords(a.Detail)
+	case HeldBeforeItsCheck, PreparationUnfinished:
+		return a.Detail
 	case FilesChangedSince:
 		ended := string(a.Run.State)
 		if a.Run.State == model.RunAttention {

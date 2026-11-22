@@ -139,6 +139,15 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 			if err != nil {
 				return err
 			}
+			// An update not finished is said before the files are taken;
+			// a plan settles nothing and says it as it stands (#194).
+			if plan {
+				if err := e.SayUnsettled(ctx, branch, engine.SettlerFor(engine.SettlerOther)); err != nil {
+					return err
+				}
+			} else if err := e.UnfinishedGate(ctx, branch, yes, "the check builds"); err != nil {
+				return err
+			}
 			proposal, err := e.ProposeCheck(ctx, engine.CheckRequest{Capture: engine.CaptureRequest{Branch: branch, Mode: mode, Named: where.Explicit(), Include: include, Plan: plan}, Where: place,
 				Tests: model.TestPolicy(tests), Only: only, Also: also, Fresh: fresh, Keep: keep, Unattended: yes, Variants: chosen, VariantsPort: named, EachVariant: each})
 			if err != nil {

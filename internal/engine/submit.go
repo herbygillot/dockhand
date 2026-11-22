@@ -1582,6 +1582,11 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 	if err := e.pullRequestHere(plan.Branch); err != nil {
 		return Submitted{}, err
 	}
+	// An update not finished isn't submitted where nobody looks; a person
+	// is told and goes on (#194, T3).
+	if err := e.UnfinishedGate(ctx, plan.Branch, answered == model.AnsweredNobody, "the submission publishes"); err != nil {
+		return Submitted{}, err
+	}
 	// GitHub refuses a body past its limit after the push, so no pull
 	// request opens; dockhand's own parts are trimmed under it, and a
 	// person's kept part that passes it is said before anything is pushed.

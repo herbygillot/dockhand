@@ -261,6 +261,9 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 	edit := model.Edit{ID: model.EditID(store.NewID("ed")), Branch: request.Branch.ID, Kind: model.EditCreate, Port: name, Directory: directory,
 		Subject: subject, At: e.now(), Files: []model.EditedFile{{Path: portfile, After: model.ObjectID(blob)}}}
 	if err := store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
+		// Its files are written; the edit is recorded after them at its
+		// own time, which is when they were (#194, R7).
+		edit.Written = edit.At
 		if err := tx.AddEdit(edit); err != nil {
 			return err
 		}
@@ -391,6 +394,7 @@ func (e *Engine) moveCreated(ctx context.Context, worktree *git.Repository, bran
 		moved.Files = append(moved.Files, model.EditedFile{Path: to + strings.TrimPrefix(file.Path, from), After: file.After})
 	}
 	if err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		moved.Written = moved.At
 		if err := tx.AddEdit(moved); err != nil {
 			return err
 		}

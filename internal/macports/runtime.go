@@ -54,7 +54,7 @@ func (r Runtime) PatchScope(subport string, variants []string) string {
 		}
 		return p.OS + " " + p.Version + " " + p.Architecture
 	}
-	return model.PatchScope(r.BaseVersion, r.TclVersion, platform(r.Platform), platform(r.Host), r.DarwinVersion, r.Xcode, r.Tools, subport, selected)
+	return model.PatchScope(r.BaseVersion, r.TclVersion, platform(r.Platform), platform(r.Host), r.DarwinVersion, model.ScopeTools(r.Xcode, r.Tools), subport, selected)
 }
 
 // Modeled reports whether every context of this runtime is a model: MacPorts

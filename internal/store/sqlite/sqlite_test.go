@@ -2084,18 +2084,18 @@ func TestAPublicationIsWrittenOnlyOverTheOneItsWriterRead(t *testing.T) {
 	require.Nil(t, read().Publication)
 }
 
-// The publication record's migration waits for quiet: refused, with each
-// process to stop and nothing migrated, while another dockhand runs on
-// this Mac, and where the process list can't be read; it goes ahead with
-// none, and a new database isn't asked (#191).
-func TestThePublicationMigrationWaitsForQuiet(t *testing.T) {
+// A migration to the latest quiet schema waits for quiet: refused, with
+// each process to stop and nothing migrated, while another dockhand runs
+// on this Mac, and where the process list can't be read; it goes ahead
+// with none, and a new database isn't asked (#191; #194's 064 to 065).
+func TestTheQuietMigrationWaitsForQuiet(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {
 		name  string
 		quiet func() ([]int, error)
 		words string
 	}{
-		{"two running", func() ([]int, error) { return []int{101, 202}, nil }, "2 other dockhand processes are running on this Mac, and migrating this database from schema 60 to"},
+		{"two running", func() ([]int, error) { return []int{101, 202}, nil }, "2 other dockhand processes are running on this Mac, and migrating this database from schema 64 to"},
 		{"unreadable", func() ([]int, error) { return nil, errors.New("operation not permitted") }, "this Mac's process list can't be read here (operation not permitted)"},
 	} {
 		path := schemaAt(t, quietSchema-1, schema23Records)
@@ -2142,7 +2142,7 @@ INSERT INTO events(repository_id, at, session_id, branch_id, run_id, target_id, 
  ('repo_1', 1794336000000, '', 'br_1', '', '', 'branch.push', 'verbose', 'pushed abc to #7'),
  ('repo_1', 1794336000000, '', 'br_2', '', '', 'branch.push', 'verbose', 'pushed abc to #7'),
  ('repo_1', 1794336100000, '', 'br_2', '', '', 'branch.rerequest', 'info', 'asked @bob to review #7 again');`
-	path := schemaAt(t, quietSchema-1, setup)
+	path := schemaAt(t, 60, setup)
 	s, err := Open(t.Context(), path, Options{})
 	require.NoError(t, err)
 	defer s.Close()

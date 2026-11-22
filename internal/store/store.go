@@ -202,8 +202,15 @@ type Reader interface {
 	// CountEvents counts the events of a kind journaled at or after a time.
 	CountEvents(kind model.EventKind, since time.Time) (int, error)
 
-	// Edits lists a branch's authoring records, oldest first.
+	// Edits lists a branch's written authoring records, oldest first: an
+	// edit recorded before its files and not yet seen written is the
+	// settler's, read through UnwrittenEdits (#194).
 	Edits(branch model.BranchID) ([]model.Edit, error)
+	// UnwrittenEdits lists a branch's edits not yet seen written.
+	UnwrittenEdits(branch model.BranchID) ([]model.Edit, error)
+	// Edit is one edit by its ID, written or not, which the record's two
+	// witnesses read; found is false where there is none.
+	Edit(id model.EditID) (edit model.Edit, found bool, err error)
 	// Assessments lists what was recorded of what upstream's change means
 	// for the ports revisions change, newest first.
 	Assessments(filter AssessmentFilter) ([]model.Assessment, error)
@@ -347,14 +354,18 @@ type Tx interface {
 	// one a lease still names; it says how many of each.
 	PruneJournal(before time.Time) (events, sessions int, err error)
 
+	// AddEdit records an edit whose files are written, Written set; one
+	// with it zero is refused.
 	AddEdit(edit model.Edit) error
+	// AddUnwritten records an edit before its files are written, Written
+	// zero (#194, step 3); SetWritten records that they are, and
+	// RemoveUnwritten removes one never written, and no written edit.
+	AddUnwritten(edit model.Edit) error
+	SetWritten(edit model.EditID, at time.Time) error
+	RemoveUnwritten(edit model.EditID) error
 	// SetExcepted records the dependents --except left out of an update's
 	// rebuild on its edit, where no revision bump's edit keeps them.
 	SetExcepted(edit model.EditID, excepted []string) error
-	// SetHeld records the patch problems an unattended ship held an
-	// update's edit before its check for (model.Edit.Held); none clears
-	// it.
-	SetHeld(edit model.EditID, problems []string) error
 	// RecordAssessment records a revision's assessment of a port,
 	// replacing one recorded for the same revision, base, and port.
 	RecordAssessment(assessment model.Assessment) error

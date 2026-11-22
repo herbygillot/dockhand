@@ -2,6 +2,32 @@ namespace eval ::dockhand {
     # probe loads the macports package without initializing it and says
     # which Base it is, so the version can be judged before mportinit
     # reads the host's configuration.
+    # tool_readings are the kernel's full version and the developer tools'
+    # versions as Base has read them so far, which a patch list's scope
+    # names (#194), each with its state: pending, Base not having read it;
+    # read, with its value, which can be empty, as xcodeversion is where
+    # Base found no Xcode; or absent, neither. Base reads the tools only
+    # when first asked, by a read trace that runs xcode-select and
+    # xcodebuild: one still pending is left alone, since reading it here
+    # would answer for every modelled context what each must ask itself
+    # (info exists fires it too). Asked after an evaluation, it says
+    # whether anything up to then read them: once read they stay read, so
+    # a later evaluation that didn't is said as read, which compares only
+    # with the same values, never as not read.
+    proc tool_readings {} {
+        set readings [dict create]
+        foreach {key variable} {os_version ::macports::os_version xcode ::macports::xcodeversion xcodeclt ::macports::xcodecltversion} {
+            if {[trace info variable $variable] ne ""} {
+                dict set readings $key [list pending ""]
+            } elseif {[info exists $variable]} {
+                dict set readings $key [list read [set $variable]]
+            } else {
+                dict set readings $key [list absent ""]
+            }
+        }
+        return $readings
+    }
+
     proc probe {} {
         package require macports
         return [base_version]
@@ -37,27 +63,7 @@ namespace eval ::dockhand {
             set ::macports::sources_default [list $url]
             set ::macports::porturl_prefix_map [dict create $url $url]
         }
-        # The kernel's full version and the developer tools' versions as Base
-        # has read them, which a patch list's scope names (#194); empty where
-        # Base has none yet. Base reads the tools only when first asked, by
-        # a read trace that runs xcode-select and xcodebuild: one still
-        # pending is left alone, since reading it here would answer for every
-        # modelled context what each must ask itself (info exists fires it
-        # too).
-        # Each is said with its state: pending, Base not having read it;
-        # read, with its value, which can be empty, as xcodeversion is
-        # where Base found no Xcode; or absent, neither.
-        set readings [dict create]
-        foreach {key variable} {os_version ::macports::os_version xcode ::macports::xcodeversion xcodeclt ::macports::xcodecltversion} {
-            if {[trace info variable $variable] ne ""} {
-                dict set readings $key [list pending ""]
-            } elseif {[info exists $variable]} {
-                dict set readings $key [list read [set $variable]]
-            } else {
-                dict set readings $key [list absent ""]
-            }
-        }
-        return [dict merge [dict create platform [list $::macports::os_platform $::macports::os_major $::macports::build_arch] base_version [base_version] tcl_version [info patchlevel]] $readings]
+        return [dict merge [dict create platform [list $::macports::os_platform $::macports::os_major $::macports::build_arch] base_version [base_version] tcl_version [info patchlevel]] [tool_readings]]
     }
 
     # bootstrap_reads are what mportinit read, when a survey records
@@ -660,6 +666,7 @@ namespace eval ::dockhand {
     }
 }
 ::tclrpc::register probe ::dockhand::probe
+::tclrpc::register tool_readings ::dockhand::tool_readings
 ::tclrpc::register initialize ::dockhand::initialize
 ::tclrpc::register model_platform ::dockhand::model_platform
 ::tclrpc::register metadata ::dockhand::metadata

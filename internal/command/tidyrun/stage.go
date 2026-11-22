@@ -94,6 +94,7 @@ func editSubjects(streams term.Streams, plan *engine.TidyPlan) error {
 }
 
 func Apply(ctx context.Context, e *engine.Engine, streams term.Streams, plan engine.TidyPlan) error {
+	plan.Attended = streams.Terminal()
 	result, err := e.ApplyTidy(ctx, plan)
 	if err != nil {
 		return err

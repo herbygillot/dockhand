@@ -182,7 +182,18 @@ type watchedTx struct {
 	settled  model.CheckpointState
 	branch   bool
 	edit     bool
+	written  bool
 	restored bool
+}
+
+func (t *watchedTx) AddUnwritten(edit model.Edit) error {
+	t.edit = true
+	return t.Tx.AddUnwritten(edit)
+}
+
+func (t *watchedTx) SetWritten(edit model.EditID, at time.Time) error {
+	t.written = true
+	return t.Tx.SetWritten(edit, at)
 }
 
 func (t *watchedTx) AddEdit(edit model.Edit) error {
@@ -341,28 +352,59 @@ func TestAnUncertainBranchRecordIsReadBack(t *testing.T) {
 // code-organization review's finding 24).
 func TestAnUncertainEditRecordIsReadBack(t *testing.T) {
 	t.Parallel()
-	edits := func(tx *watchedTx) bool { return tx.edit }
-	for _, landed := range []bool{true, false} {
+	recordedFirst := func(tx *watchedTx) bool { return tx.edit }
+	writtenAfter := func(tx *watchedTx) bool { return tx.written }
+	for _, test := range []struct {
+		name   string
+		when   func(*watchedTx) bool
+		landed bool
+	}{{"step 3 landed", recordedFirst, true}, {"step 3 not landed", recordedFirst, false}, {"step 5 landed", writtenAfter, true}, {"step 5 not landed", writtenAfter, false}} {
 		f := setup(t)
 		e, _ := f.withPreparer(t)
 		branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
 		require.NoError(t, err)
-		e.Store = &uncertainStore{Store: e.Store, when: edits, landed: landed}
+		kept := e.Store
+		e.Store = &uncertainStore{Store: kept, when: test.when, landed: test.landed}
 		update, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
-		require.True(t, update.Applied, "the files are written first")
-		var recorded []model.Edit
-		require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		var written, unwritten []model.Edit
+		require.NoError(t, kept.View(t.Context(), e.Repository, func(r store.Reader) error {
 			var read error
-			recorded, read = r.Edits(branch.ID)
+			if written, read = r.Edits(branch.ID); read != nil {
+				return read
+			}
+			unwritten, read = r.UnwrittenEdits(branch.ID)
 			return read
 		}))
-		if landed {
-			require.NoError(t, err, "the record landed, so the update stands")
-			require.Len(t, recorded, 1)
-			continue
+		switch {
+		case test.landed:
+			// The witness reads the edit back by its ID, so a record that
+			// landed stands at either step.
+			require.NoError(t, err, test.name)
+			require.True(t, update.Applied, test.name)
+			require.Len(t, written, 1, test.name)
+		case !test.landed && test.name == "step 3 not landed":
+			// Nothing recorded, nothing written: the command fails clean.
+			require.ErrorIs(t, err, store.ErrUncertain, test.name)
+			require.False(t, update.Applied, "no file is written without its record")
+			require.Empty(t, written)
+			require.Empty(t, unwritten)
+		default:
+			// The files are written and the record isn't complete: the
+			// command says so, and the edit waits to be settled.
+			require.ErrorIs(t, err, store.ErrUncertain, test.name)
+			require.ErrorContains(t, err, "the files of jq: update to 1.8.1 are written and its record isn't complete")
+			require.Empty(t, written)
+			require.Len(t, unwritten, 1)
+			e.Store = kept
+			_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
+			require.NoError(t, err, "the next update settles it, with nothing to change")
+			require.NoError(t, kept.View(t.Context(), e.Repository, func(r store.Reader) error {
+				var read error
+				written, read = r.Edits(branch.ID)
+				return read
+			}))
+			require.Len(t, written, 1, "settled: the record finished, not made again")
 		}
-		require.ErrorIs(t, err, store.ErrUncertain)
-		require.Empty(t, recorded)
 	}
 }
 

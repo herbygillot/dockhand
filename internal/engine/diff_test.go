@@ -202,7 +202,7 @@ func TestRevbumpLinkedBumpsEachLinkedPortForTidy(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
 		return tx.AddEdit(model.Edit{ID: "ed_alone", Branch: other.ID, Kind: model.EditUpdate, Port: "jq", Directory: "textproc/jq", Subject: "jq: update to 1.8.1",
-			Files: []model.EditedFile{{Path: "textproc/jq/Portfile", Before: "b1", After: "b2"}}, At: time.Now()})
+			Files: []model.EditedFile{{Path: "textproc/jq/Portfile", Before: "b1", After: "b2"}}, At: time.Now(), Written: time.Now()})
 	}))
 	alone, err := e.RevbumpLinked(t.Context(), other, update, []string{"gojq", "yq"}, false)
 	require.NoError(t, err)
