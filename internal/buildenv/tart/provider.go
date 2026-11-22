@@ -571,7 +571,10 @@ func (p *Provider) Shell(ctx context.Context, job buildenv.ShellJob) (int, error
 	if err != nil {
 		return -1, err
 	}
-	defer guard.Close()
+	// Let go for every holder once the clone is stopped (the deferred
+	// Stop below runs first): a forked child keeping the file kept the
+	// clone "running in dockhand shell" after its shell ended (#291).
+	defer func() { _ = tartvm.ReleaseClone(guard) }()
 	image, kept := tartvm.KeptFrom(home, job.Ref)
 	if !kept {
 		return -1, fmt.Errorf("%s isn't a clone a check kept; check --keep keeps one", job.Ref)
@@ -658,7 +661,7 @@ func (p *Provider) RemoveLeftover(ctx context.Context, ref string) error {
 		}
 		return err
 	}
-	defer guard.Close()
+	defer func() { _ = tartvm.ReleaseClone(guard) }()
 	// One already gone was removed by another process, as the second of
 	// two checks waiting for a slot finds it (#239).
 	images, err := m.Images(ctx)
