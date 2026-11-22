@@ -24,12 +24,12 @@ sudo port install dockhand
 - **Go and Rust ports:** install `go2port` or `cargo2port` via MacPorts to regenerate `go.vendors` and `cargo.crates`.
 
 <details>
-<summary>Build from source (v0.8.0) or configure shell completion</summary>
+<summary>Build from source (v0.8.1) or configure shell completion</summary>
 
 Requires Go 1.27.1 or later (dependencies are vendored):
 
 ```sh
-git clone --branch v0.8.0 https://github.com/herbygillot/dockhand.git
+git clone --branch v0.8.1 https://github.com/herbygillot/dockhand.git
 cd dockhand
 make build
 mkdir -p "$HOME/.local/bin"
