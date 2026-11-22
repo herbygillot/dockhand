@@ -100,3 +100,46 @@ func TestServesTriedRowsWaitForTheirHead(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, row().Gone.IsZero(), "the head gone from the fork is looked at once it's free")
 }
+
+// A retry of serve's create takes the place its row already holds, not a
+// new one, so a day at its limit with that row counting still lets the
+// retry go; under a lowered limit only the oldest row's retry goes (#191,
+// group C; docs/designs/publication-record.md, "serve's count").
+func TestServesRetryTakesThePlaceItsRowHolds(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	base := "macports/macports-ports:master"
+	older, newer := "ada/macports-ports:dockhand/older", "ada/macports-ports:dockhand/newer"
+	now := e.now()
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		for i, head := range []string{older, newer} {
+			if _, err := tx.AddServeOpening(model.ServeOpening{Base: base, Head: head, Tried: now.Add(time.Duration(i-48) * time.Hour), Unanswered: true}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	retry := func(name, head string) error {
+		branch, err := e.Start(t.Context(), StartRequest{Name: name})
+		require.NoError(t, err)
+		plan := SubmitPlan{Branch: branch, served: true, admission: ServeAdmission{Limit: 1, Now: now}}
+		record := model.Publication{ID: store.NewID("pub"), Commit: "abc", At: now, Head: head, Base: base, Served: true, Owes: []model.PublicationStep{model.StepPush, model.StepOpen}}
+		opening, err := e.recordPublication(t.Context(), plan, &record)
+		if err == nil {
+			require.NotNil(t, opening)
+			require.Equal(t, head, opening.Head, "the row it holds")
+		}
+		return err
+	}
+	var limited *ServeLimitReached
+	require.ErrorAs(t, retry("newer", newer), &limited, "only the oldest row's create goes under a limit of one")
+	require.NoError(t, retry("older", older))
+	var rows []model.ServeOpening
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		var err error
+		rows, err = r.ServeOpenings()
+		return err
+	}))
+	require.Len(t, rows, 2, "no new place was written")
+}

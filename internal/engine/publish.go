@@ -141,16 +141,30 @@ func (e *Engine) recordPublication(ctx context.Context, plan SubmitPlan, record 
 		if plan.served && slices.Contains(record.Owes, model.StepOpen) {
 			now := cmp.Or(plan.admission.Now, e.now())
 			day := dayStart(now)
+			rows, err := tx.ServeOpenings()
+			if err != nil {
+				return err
+			}
+			// Every try of a row shares its place: a retry of a create that
+			// got no answer, or of a place held, takes the row it holds, and
+			// goes only where that row is among the first that count today,
+			// oldest first (serve's count).
+			if i := slices.IndexFunc(rows, func(o model.ServeOpening) bool {
+				return o.Base == record.Base && o.Head == record.Head && o.Opened.IsZero() && (o.Holding || !o.Tried.IsZero())
+			}); i >= 0 {
+				if !ServeMaySend(rows, i, day, plan.admission.Limit) {
+					return &ServeLimitReached{Limit: plan.admission.Limit}
+				}
+				held := rows[i]
+				opening = &held
+				return tx.SetPublication(plan.Branch.ID, replacedPublication(plan), record)
+			}
 			at, _, ok, err := tx.ServeUpgrade()
 			if err != nil {
 				return err
 			}
 			if ok && !dayStart(at.In(now.Location())).Before(day) {
 				return &ServeLimitReached{Limit: plan.admission.Limit, Upgraded: true}
-			}
-			rows, err := tx.ServeOpenings()
-			if err != nil {
-				return err
 			}
 			if !ServeAdmits(rows, day, plan.admission.Limit) {
 				return &ServeLimitReached{Limit: plan.admission.Limit}
@@ -161,18 +175,22 @@ func (e *Engine) recordPublication(ctx context.Context, plan SubmitPlan, record 
 			}
 			opening = &place
 		}
-		// It replaces the settled publication the plan carried, where one
-		// was kept (settlePublication), and only that one.
-		was := ""
-		if plan.Branch.Publication != nil {
-			was = plan.Branch.Publication.ID
-		}
-		return tx.SetPublication(plan.Branch.ID, was, record)
+		return tx.SetPublication(plan.Branch.ID, replacedPublication(plan), record)
 	}, publicationIs(plan.Branch.ID, record))
 	if err != nil {
 		return nil, fmt.Errorf("recording the submission before it begins: %w; nothing was pushed", err)
 	}
 	return opening, nil
+}
+
+// replacedPublication is the publication a submission's record replaces: the settled
+// one its plan carried, where one was kept (settlePublication), and only
+// that one.
+func replacedPublication(plan SubmitPlan) string {
+	if plan.Branch.Publication != nil {
+		return plan.Branch.Publication.ID
+	}
+	return ""
 }
 
 // markTried records serve's create as tried before it is sent, seen
