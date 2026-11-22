@@ -205,6 +205,8 @@ available for later checks. A cancel stops each clone the check made and
 deletes it once its VM has gone, also for a check whose dockhand was killed;
 until then the cancel stays unfinished and `status` says which clone. A clone
 an attempt kept for `dockhand shell` stays, and the canceled check says so.
+Guest command failures retain the command's exit status; a lost SSH connection
+is reported separately and is the only case that can be retried.
 
 ```sh
 dockhand setup tart

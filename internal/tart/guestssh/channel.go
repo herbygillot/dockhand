@@ -69,7 +69,7 @@ type Guest struct {
 // fails returns its output and an error carrying its exit status; a
 // connection that fails returns ErrTransport.
 func (g *Guest) Command(ctx context.Context, input io.Reader, args ...string) ([]byte, error) {
-	return g.run(ctx, input, g.Output, true, Quote(args...))
+	return g.run(ctx, input, g.Output, Quote(args...))
 }
 
 // Attach runs a command on the guest, its arguments quoted for the guest's
@@ -90,7 +90,19 @@ func (g *Guest) Attach(ctx context.Context, input io.Reader, output io.Writer, t
 	if directory != "" {
 		command = "cd " + Quote(directory) + " && " + command
 	}
-	_, err = subprocess.Run(ctx, subprocess.Spec{Tool: "ssh", Command: "guest", Path: g.executable(), Args: append(arguments, g.Address, command), Env: environment, Stdin: input, Stdout: output, Combined: true, Limit: 1 << 16, Drain: true})
+	if terminal {
+		_, err = subprocess.Run(ctx, subprocess.Spec{Tool: "ssh", Command: "guest", Path: g.executable(), Args: append(arguments, g.Address, command), Env: environment, Stdin: input, Stdout: output, Combined: true, Limit: 1 << 16, Drain: true})
+	} else {
+		filtered := &markerFilter{destination: output}
+		_, err = subprocess.Run(ctx, subprocess.Spec{Tool: "ssh", Command: "guest", Path: g.executable(), Args: append(arguments, g.Address, markExit(command)), Env: environment, Stdin: input, Stdout: filtered, Combined: true, Limit: 1 << 16, Drain: true})
+		if flushErr := filtered.Flush(); err == nil {
+			err = flushErr
+		}
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() == 255 && markedExit255(filtered) {
+			return 255, nil
+		}
+	}
 	var exit *exec.ExitError
 	switch {
 	case err == nil:
@@ -108,24 +120,123 @@ func (g *Guest) Script(ctx context.Context, input io.Reader, script string, args
 	return g.Command(ctx, input, append([]string{"/bin/sh", "-c", script, "dockhand"}, args...)...)
 }
 
-func (g *Guest) run(ctx context.Context, input io.Reader, stream io.Writer, combined bool, command string) ([]byte, error) {
+func (g *Guest) run(ctx context.Context, input io.Reader, stream io.Writer, command string) ([]byte, error) {
 	arguments, environment, cleanup, err := g.invocation()
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
-	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "ssh", Command: "guest", Path: g.executable(), Args: append(arguments, g.Address, command), Env: environment, Stdin: input, Stdout: stream, Combined: combined})
+	filtered := &markerFilter{destination: stream}
+	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "ssh", Command: "guest", Path: g.executable(), Args: append(arguments, g.Address, markExit(command)), Env: environment, Stdin: input, Stdout: filtered, Combined: true})
+	if flushErr := filtered.Flush(); err == nil {
+		err = flushErr
+	}
+	output, _, _ := unmark(result.Output)
 	if err != nil {
 		var exit *exec.ExitError
-		if errors.As(err, &exit) && exit.ExitCode() == 255 {
-			// The exit status is ssh's, not the command's, so it is not
-			// passed on: a caller reading exit statuses as the command's
-			// verdict would take a lost connection for a failed check.
-			return result.Output, fmt.Errorf("%w: %s: %v", ErrTransport, g.Address, err)
+		if errors.As(err, &exit) && exit.ExitCode() == 255 && !markedExit255(filtered) {
+			return output, fmt.Errorf("%w: %s: %v", ErrTransport, g.Address, err)
 		}
-		return result.Output, err
+		return output, err
 	}
-	return result.Output, nil
+	return output, nil
+}
+
+// markExit lets the host distinguish ssh's 255 from a guest command's 255
+// (#251). The marker travels on stderr so streamed file data stays intact.
+func markExit(command string) string {
+	return command + `; dockhand_status=$?; printf '\nDOCKHAND-EXIT:%s\n' "$dockhand_status" >&2; exit "$dockhand_status"`
+}
+
+// markerFilter forwards a guest command's output as it arrives and drops
+// markExit's status line. A line's newline is held until the next line
+// shows it isn't the one markExit wrote before its marker, so what passes
+// through is the command's output byte for byte (#251), except a line of
+// the command's own that is exactly a marker, which is dropped too.
+type markerFilter struct {
+	destination io.Writer
+	line        []byte
+	newline     bool
+	marked      bool
+	status      int
+}
+
+func (f *markerFilter) Write(p []byte) (int, error) {
+	for _, b := range p {
+		f.line = append(f.line, b)
+		if b == '\n' {
+			if err := f.flushLine(true); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return len(p), nil
+}
+
+// Flush forwards an unfinished last line and a newline still held: the
+// command ended without the marker.
+func (f *markerFilter) Flush() error {
+	if len(f.line) > 0 {
+		if err := f.flushLine(false); err != nil {
+			return err
+		}
+	}
+	if f.newline {
+		f.newline = false
+		return f.write([]byte("\n"))
+	}
+	return nil
+}
+
+// exited is the status the marker gave, where the output ended with it.
+func (f *markerFilter) exited() (int, bool) { return f.status, f.marked }
+
+func (f *markerFilter) flushLine(terminated bool) error {
+	line := f.line
+	f.line = nil
+	if terminated {
+		line = line[:len(line)-1]
+	}
+	if text, ok := strings.CutPrefix(strings.TrimSuffix(string(line), "\r"), "DOCKHAND-EXIT:"); ok {
+		if status, err := strconv.Atoi(text); err == nil && status >= 0 && status <= 255 {
+			f.marked, f.status, f.newline = true, status, false
+			return nil
+		}
+	}
+	f.marked = false
+	if f.newline {
+		if err := f.write([]byte("\n")); err != nil {
+			return err
+		}
+	}
+	f.newline = terminated
+	return f.write(line)
+}
+
+func (f *markerFilter) write(p []byte) error {
+	if f.destination == nil || len(p) == 0 {
+		return nil
+	}
+	_, err := f.destination.Write(p)
+	return err
+}
+
+// markedExit255 is whether the marker said the guest command itself exited
+// 255, which ssh's own 255 is otherwise indistinguishable from.
+func markedExit255(f *markerFilter) bool {
+	status, marked := f.exited()
+	return marked && status == 255
+}
+
+// unmark is a finished command's output without markExit's lines, and the
+// status the marker gave, where it did.
+func unmark(output []byte) ([]byte, int, bool) {
+	var kept bytes.Buffer
+	filter := &markerFilter{destination: &kept}
+	_, _ = filter.Write(output)
+	_ = filter.Flush()
+	status, marked := filter.exited()
+	return kept.Bytes(), status, marked
 }
 
 // Route is the interface this Mac routes an address through, as
