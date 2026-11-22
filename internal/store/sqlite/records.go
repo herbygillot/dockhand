@@ -225,8 +225,8 @@ func (t *tx) UpdateBranch(b model.Branch) error {
 		return err
 	}
 	pr := pullRequestColumns(b.PullRequest)
-	return t.update("branch "+string(b.ID), "UPDATE branches SET name=?, base=?, worktree=?, managed=?, title=?, state=?, pr_repository=?, pr_number=?, pr_head=?, pr_pushed=?, pr_body=?, pr_draft=?, pr_observed=?, pr_adopted=?, note=?, ended_at=?, ports=?, clean_kept=?, closes=?, pr_author=?, tested=?, pr_author_head=?, pr_provenance=?, pr_rerequested=?, pr_pushed_at=?, request=?, rename_to=? WHERE repository_id=? AND id=? AND forgotten_at IS NULL",
-		b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, pr.repository, pr.number, pr.head, pr.pushed, pr.body, pr.draft, pr.observed, pr.adopted, b.Note, ended, strings.Join(b.Ports, " "), b.CleanKept, strings.Join(b.Closes, " "), pr.author, testedWords(b), pr.authorHead, pr.provenance, pr.rerequested, pr.pushedAt, requestColumn(b.Request), b.RenameTo, t.repo, b.ID)
+	return t.update("branch "+string(b.ID), "UPDATE branches SET name=?, base=?, worktree=?, managed=?, title=?, state=?, pr_repository=?, pr_number=?, pr_head=?, pr_pushed=?, pr_body=?, pr_draft=?, pr_observed=?, pr_adopted=?, note=?, ended_at=?, ports=?, clean_kept=?, closes=?, pr_author=?, tested=?, pr_author_head=?, pr_provenance=?, pr_rerequested=?, pr_pushed_at=? WHERE repository_id=? AND id=? AND forgotten_at IS NULL",
+		b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, pr.repository, pr.number, pr.head, pr.pushed, pr.body, pr.draft, pr.observed, pr.adopted, b.Note, ended, strings.Join(b.Ports, " "), b.CleanKept, strings.Join(b.Closes, " "), pr.author, testedWords(b), pr.authorHead, pr.provenance, pr.rerequested, pr.pushedAt, t.repo, b.ID)
 }
 
 // SetPublication replaces a branch's publication while the one recorded is
@@ -1114,4 +1114,18 @@ func requestColumn(request *model.ChangeRequest) string {
 	}
 	data, _ := json.Marshal(request)
 	return string(data)
+}
+
+// SetRequest replaces what was asked of a branch's work. UpdateBranch
+// leaves it, so a writer holding a branch read earlier never puts back an
+// older request (#194).
+func (t *tx) SetRequest(branch model.BranchID, request *model.ChangeRequest) error {
+	return t.update("branch "+string(branch), "UPDATE branches SET request=? WHERE repository_id=? AND id=? AND forgotten_at IS NULL", requestColumn(request), t.repo, branch)
+}
+
+// SetRenameTo records or empties the name a rename is moving a branch to.
+// UpdateBranch leaves it, so a writer holding a branch read earlier never
+// drops an intent another process recorded (#194).
+func (t *tx) SetRenameTo(branch model.BranchID, to string) error {
+	return t.update("branch "+string(branch), "UPDATE branches SET rename_to=? WHERE repository_id=? AND id=? AND forgotten_at IS NULL", to, t.repo, branch)
 }

@@ -38,7 +38,7 @@ func TestServeResumesABranchItPreparedAndDidntQueue(t *testing.T) {
 	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}})
 	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
 
-	resumed, err := e.ResumePrepared(t.Context(), Where{Environments: []model.Environment{{Provider: "command"}}}, "")
+	resumed, err := e.ResumePrepared(t.Context(), Where{Environments: []model.Environment{{Provider: "command"}}}, "", true)
 	require.NoError(t, err)
 	require.Len(t, resumed, 2, "serve's two, not the person's")
 	byName := map[string]Resumed{}
@@ -49,7 +49,7 @@ func TestServeResumesABranchItPreparedAndDidntQueue(t *testing.T) {
 	require.True(t, byName[edited.ShortName()].HandEdits)
 	require.Contains(t, byName[edited.ShortName()].Problem, "dockhand ship -b "+edited.ShortName())
 
-	again, err := e.ResumePrepared(t.Context(), Where{Environments: []model.Environment{{Provider: "command"}}}, "")
+	again, err := e.ResumePrepared(t.Context(), Where{Environments: []model.Environment{{Provider: "command"}}}, "", true)
 	require.NoError(t, err)
 	require.Len(t, again, 1, "one with a run now isn't resumed again")
 }

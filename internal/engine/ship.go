@@ -88,6 +88,26 @@ func (e *Engine) ship(ctx context.Context, target shipTarget, options shipOption
 	done.Update, err = e.Update(ctx, UpdateRequest{Start: &StartRequest{Name: target.Name, Origin: options.Origin}, Action: model.EditUpdate, Port: target.Port, Version: target.Version,
 		Release: target.Release, CompareUpstream: true, Batch: true, Unattended: options.Unattended()})
 	done.Branch = done.Update.Branch
+	// The other ports of the Portfile are targets from the start, each
+	// with the release outdated found for it, so a port whose update fails
+	// is one the branch still owes, not one forgotten (#194, H1).
+	if done.Branch.ID != "" {
+		origin := "ship"
+		if options.Origin == model.OriginServe {
+			origin = "serve"
+		}
+		for _, also := range target.Also {
+			release := also.Release
+			if err := e.keepTarget(ctx, done.Branch, origin, also.Port, func(t *model.RequestTarget) {
+				if t.Release == nil {
+					t.Release = release
+				}
+			}); err != nil {
+				done.Problem = err.Error()
+				return done
+			}
+		}
+	}
 	// Each port's own update, whose patch problems hold its own edit: the
 	// last one's alone were read, on the first port's edit (Codex's
 	// workflow review of 1caa6c3d, finding 2).
@@ -137,6 +157,14 @@ func (e *Engine) ship(ctx context.Context, target shipTarget, options shipOption
 	// go. No hold is stored: the preparation verdict reads the rejection
 	// from the edits' results each time it's asked, the commit first
 	// (#194).
+	// Nothing is committed unattended until every target has a written
+	// edit or was found current, and nothing unwritten waits (#194, C1).
+	if options.Unattended() {
+		if prepared, err := e.preparation(ctx, branch, false); err != nil || prepared.Disposition == branchstate.UnfinishedPreparation && prepared.Pending {
+			done.Problem = preparedWords(prepared, branch, err)
+			return done
+		}
+	}
 	tidy, err := e.PlanTidy(ctx, TidyRequest{Branch: branch})
 	if err != nil {
 		done.Problem = err.Error()

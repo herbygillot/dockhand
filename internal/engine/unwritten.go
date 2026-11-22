@@ -180,6 +180,12 @@ func (e *Engine) recordWritten(ctx context.Context, branch model.Branch, edit mo
 		if err := tx.SetWritten(edit.ID, e.now()); err != nil {
 			return err
 		}
+		// The version it concludes, as the update's own step 5 records it.
+		if edit.Kind == model.EditUpdate {
+			if err := concludeVersion(tx, branch.ID, edit.Port); err != nil {
+				return err
+			}
+		}
 		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchEdit, Level: model.LevelInfo,
 			Message: fmt.Sprintf("%s: %s (%s)", edit.Port, editChange(edit), listEditedPaths(edit))})
 		return err

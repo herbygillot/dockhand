@@ -364,6 +364,10 @@ type Tx interface {
 	// zero (#194, step 3); SetWritten records that they are, and
 	// RemoveUnwritten removes one never written, and no written edit.
 	AddUnwritten(edit model.Edit) error
+	// SetRequest and SetRenameTo write a branch's request and its rename
+	// intent, which UpdateBranch leaves as they are (#194).
+	SetRequest(branch model.BranchID, request *model.ChangeRequest) error
+	SetRenameTo(branch model.BranchID, to string) error
 	SetWritten(edit model.EditID, at time.Time) error
 	RemoveUnwritten(edit model.EditID) error
 	// SetExcepted records the dependents --except left out of an update's

@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/checks"
@@ -39,7 +41,7 @@ type Resumed struct {
 // already in hand, with no run for the queue's recovery or the submit
 // pass to find (Codex's review of 2ad896d2, W6). One with uncommitted
 // edits is left for the person, said.
-func (e *Engine) ResumePrepared(ctx context.Context, where Where, tests model.TestPolicy) ([]Resumed, error) {
+func (e *Engine) ResumePrepared(ctx context.Context, where Where, tests model.TestPolicy, queue bool) ([]Resumed, error) {
 	var branches []model.Branch
 	ran := map[model.BranchID]bool{}
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
@@ -65,23 +67,43 @@ func (e *Engine) ResumePrepared(ctx context.Context, where Where, tests model.Te
 			continue
 		}
 		done := Resumed{Branch: branch}
-		// A branch at its base with dockhand's own edits not committed, or
-		// one recorded and not written, is a preparation not finished:
-		// until it can be finished here, it is left and said, never
-		// committed (#194).
-		if model.ObjectID(head) == branch.Base {
-			if prepared, err := e.preparation(ctx, branch, false); err == nil && prepared.Disposition == branchstate.UnfinishedPreparation {
-				done.Problem = preparedWords(prepared, branch, nil)
-				resumed = append(resumed, done)
+		// serve's own preparation that stopped part-way is continued: its
+		// unwritten edits settled, each target with no edit prepared at
+		// the release kept for it, and its edits committed once nothing
+		// is owed; what can't be finished is left and said, never
+		// committed (#194, C3).
+		if finished, problem := e.continuePreparation(ctx, &branch); problem != "" {
+			done.Branch, done.Problem = branch, problem
+			resumed = append(resumed, done)
+			continue
+		} else if finished {
+			done.Branch = branch
+			if head, _, err = e.Repo.Branch(ctx, branch.Name); err != nil {
+				continue
 			}
+		}
+		if model.ObjectID(head) == branch.Base || !queue {
 			continue
 		}
 		// What ship would queue, recovery queues: neither a branch with
-		// hand edits nor one ship held for a patch (finding 2).
+		// hand edits nor one held for a patch (finding 2).
 		if prepared, err := e.preparation(ctx, branch, false); err != nil || prepared.Disposition != branchstate.ReadyToCheck {
 			done.HandEdits = err == nil && prepared.Disposition == branchstate.HandEditsToCarry
 			done.Held = err == nil && prepared.Disposition == branchstate.HeldBeforeCheck
 			done.Problem = preparedWords(prepared, branch, err)
+			resumed = append(resumed, done)
+			continue
+		}
+		// Its commits are exactly dockhand's: the newest tidy applied and
+		// not put back made the head, and every changed path is the chain
+		// of its written edits from the base, as tidy tells them; a commit
+		// on top, a rebase, or a person's change between two edits leaves
+		// it, named (#194, C4 to C8).
+		if why, err := e.committedAsPrepared(ctx, branch, head); err != nil || why != "" {
+			done.Problem = why
+			if err != nil {
+				done.Problem = err.Error()
+			}
 			resumed = append(resumed, done)
 			continue
 		}
@@ -98,4 +120,122 @@ func (e *Engine) ResumePrepared(ctx context.Context, where Where, tests model.Te
 		resumed = append(resumed, done)
 	}
 	return resumed, nil
+}
+
+// continuePreparation continues serve's own preparation that stopped
+// part-way (#194, C3, H3): its unwritten edits settled as their own
+// commands settle them, each target with no edit prepared at the release
+// kept for it, and the edits committed once nothing is owed. finished
+// says it committed; problem says what it couldn't finish, which is left
+// and never committed.
+func (e *Engine) continuePreparation(ctx context.Context, branch *model.Branch) (finished bool, problem string) {
+	prepared, err := e.preparation(ctx, *branch, false)
+	if err != nil {
+		return false, err.Error()
+	}
+	if prepared.Disposition != branchstate.UnfinishedPreparation {
+		return false, ""
+	}
+	if _, err := e.settled(ctx, branch, SettlerFor(SettlerOwner)); err != nil {
+		return false, err.Error()
+	}
+	open, err := e.UnfinishedTargets(ctx, *branch)
+	if err != nil {
+		return false, err.Error()
+	}
+	for _, target := range open {
+		request := UpdateRequest{Branch: *branch, Action: model.EditUpdate, Port: target.Port, Version: target.Named, Release: target.Release, CompareUpstream: true, Batch: true, Unattended: true}
+		if target.Release != nil {
+			request.Version = target.Release.Version
+		}
+		update, err := e.Update(ctx, request)
+		if err != nil {
+			return false, fmt.Sprintf("%s: %v", target.Port, err)
+		}
+		if update.Branch.ID != "" {
+			*branch = update.Branch
+		}
+	}
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		*branch, err = r.Branch(branch.ID)
+		return err
+	}); err != nil {
+		return false, err.Error()
+	}
+	if prepared, err = e.preparation(ctx, *branch, false); err != nil || prepared.Disposition == branchstate.UnfinishedPreparation && prepared.Pending || prepared.Disposition == branchstate.HandEditsToCarry {
+		return false, preparedWords(prepared, *branch, err)
+	}
+	if prepared.Disposition != branchstate.UnfinishedPreparation {
+		return false, ""
+	}
+	tidy, err := e.PlanTidy(ctx, TidyRequest{Branch: *branch})
+	if err != nil {
+		return false, err.Error()
+	}
+	if err := commitUnasked(shipOptions{Origin: model.OriginServe, Answered: model.AnsweredNobody}, tidy); err != nil {
+		return false, err.Error()
+	}
+	if _, err := e.ApplyTidy(ctx, tidy); err != nil {
+		return false, err.Error()
+	}
+	return true, ""
+}
+
+// committedAsPrepared is why a branch's commits aren't exactly what
+// dockhand committed of its edits, empty where they are (#194, C4 to C8):
+// the newest history change applied is a tidy, not put back, that made
+// the head; and every path the head changes from the base lies in a port
+// directory whose files are the chain of the branch's written edits, as
+// tidy itself tells them (fromEdits), modes included. A path outside any
+// port's directory, a directory with no edit, a commit on top or a rebase
+// leaves the branch, named.
+func (e *Engine) committedAsPrepared(ctx context.Context, branch model.Branch, head string) (string, error) {
+	var checkpoints []model.Checkpoint
+	var edits []model.Edit
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		if checkpoints, err = r.Checkpoints(branch.ID); err != nil {
+			return err
+		}
+		edits, err = r.Edits(branch.ID)
+		return err
+	}); err != nil {
+		return "", err
+	}
+	var newest *model.Checkpoint
+	for i := range checkpoints {
+		if checkpoints[i].State == model.CheckpointApplied {
+			newest = &checkpoints[i]
+		}
+	}
+	if newest == nil || newest.Kind != model.CheckpointTidy || newest.RestoredAt != nil || string(newest.After) != head {
+		return fmt.Sprintf("%s's head isn't the commit dockhand's tidy made of its edits; it's left for you", branch.ShortName()), nil
+	}
+	trees, err := e.Repo.CommitTrees(ctx, []string{string(branch.Base), head})
+	if err != nil {
+		return "", err
+	}
+	base, final := trees[string(branch.Base)], trees[head]
+	changed, err := e.Repo.ChangedPaths(ctx, base, final)
+	if err != nil {
+		return "", err
+	}
+	byDirectory := map[string][]string{}
+	for _, path := range changed {
+		byDirectory[groupOf(path)] = append(byDirectory[groupOf(path)], path)
+	}
+	for directory, paths := range byDirectory {
+		if directory == "" {
+			return fmt.Sprintf("%s changes %s, outside any port's directory; it's left for you", branch.ShortName(), strings.Join(paths, ", ")), nil
+		}
+		chained, _, err := fromEdits(ctx, e.Repo, base, final, directory, paths, edits)
+		if err != nil {
+			return "", err
+		}
+		if !chained {
+			return fmt.Sprintf("%s's %s isn't exactly what dockhand's edits wrote; it's left for you", branch.ShortName(), directory), nil
+		}
+	}
+	return "", nil
 }

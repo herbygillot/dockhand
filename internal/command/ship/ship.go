@@ -196,7 +196,25 @@ func ShipTargets(ctx context.Context, e *engine.Engine, streams term.Streams, po
 		if err := branchflags.MayEvaluate(ctx, e, streams, branch); err != nil {
 			return nil, err
 		}
-		return []shipTarget{{Branch: &branch}}, nil
+		// A preparation that stopped part-way is continued: each target
+		// with no edit is prepared again, at the release kept for it, in
+		// this branch (#194, H3).
+		open, err := e.UnfinishedTargets(ctx, branch)
+		if err != nil {
+			return nil, err
+		}
+		if len(open) == 0 {
+			return []shipTarget{{Branch: &branch}}, nil
+		}
+		var targets []shipTarget
+		for _, target := range open {
+			continued := shipTarget{Port: target.Port, Branch: &branch, Version: target.Named, Release: target.Release}
+			if target.Release != nil {
+				continued.Version = target.Release.Version
+			}
+			targets = append(targets, continued)
+		}
+		return targets, nil
 	}
 	var targets []shipTarget
 	for _, port := range ports {

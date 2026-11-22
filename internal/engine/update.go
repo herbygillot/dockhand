@@ -341,8 +341,17 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 			return Update{Port: request.Port}, err
 		}
 	default:
-		if _, err := e.settled(ctx, &request.Branch, settlerFor); err != nil {
+		settled, err := e.settled(ctx, &request.Branch, settlerFor)
+		if err != nil {
 			return Update{Port: request.Port}, err
+		}
+		// An edit of this port settled finishes what its update didn't:
+		// the record, then step 6, the branch's name for its version.
+		for _, done := range settled {
+			if (done.Settling.Action == SettleRecord || done.Settling.Action == SettleWrite) && done.Edit.Port == request.Port && done.Edit.Kind == model.EditUpdate && done.Edit.Result != nil {
+				finished := Update{Before: PortVersion{Version: versionOf(done.Edit.Result.Before)}, After: PortVersion{Version: versionOf(done.Edit.Result.After)}}
+				e.renameUpdated(ctx, request, &request.Branch, &finished)
+			}
 		}
 	}
 	update, err := e.updateWithObsolete(ctx, request)
@@ -549,6 +558,20 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 			return byHand(unindexed(err))
 		}
 		input.Release = &release
+		// The release is kept on the branch's target the moment it's
+		// selected, before anything is downloaded, so the same command
+		// again prepares it and not a newer one (#194, H1).
+		if !request.Plan && request.Start == nil && !release.NoUpdate {
+			named := ""
+			if request.Release == nil {
+				named = request.Version
+			}
+			if err := e.keepTarget(ctx, branch, "update", request.Port, func(target *model.RequestTarget) {
+				target.Named, target.Release = named, &release
+			}); err != nil {
+				return Update{}, err
+			}
+		}
 		// A release outdated found already was chosen automatically, and
 		// asks for no version of its own: the editor holds the version it
 		// edits to the release's request, which update --outdated gave as
@@ -694,6 +717,18 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	}
 	if len(result.Files) == 0 {
 		update.Current = true
+		// A port found current concludes its version, saved where the
+		// branch exists so a continuation doesn't look again (#194).
+		if !request.Plan && request.Start == nil && request.Action == model.EditUpdate {
+			if err := e.keepTarget(ctx, branch, "update", request.Port, func(target *model.RequestTarget) {
+				// A version an edit concluded already is done, not found.
+				if _, done := target.Outcome("version"); !done {
+					target.Current = update.After.String()
+				}
+			}); err != nil {
+				return update, err
+			}
+		}
 		return update, nil
 	}
 	// An unattended update looked before its edit, and found none.
@@ -716,6 +751,30 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 			return update, err
 		}
 		update.Branch, update.Started = branch, true
+		// A new branch's request carries the release step 1 selected; no
+		// second look is made for it (#194).
+		if request.Action == model.EditUpdate && update.Release != nil {
+			origin := "update"
+			if request.Start.Origin == model.OriginServe {
+				origin = "serve"
+			}
+			if err := e.keepTarget(ctx, branch, origin, request.Port, func(target *model.RequestTarget) {
+				target.Release = update.Release
+				if request.Release == nil {
+					target.Named = request.Version
+				}
+			}); err != nil {
+				return update, err
+			}
+			if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+				var err error
+				branch, err = r.Branch(branch.ID)
+				return err
+			}); err != nil {
+				return update, err
+			}
+			update.Branch = branch
+		}
 	}
 
 	// Steps 3 to 6 run under the branch's lock, which history's
@@ -727,6 +786,12 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		branch = current
 		if update.Branch.ID == current.ID {
 			update.Branch = current
+		}
+		// What was asked is read again under the lock: a port no longer
+		// its target, or kept at another release than this edit was
+		// prepared at, records nothing, to be prepared again (#194, E5).
+		if changed := askChanged(current.Request, request.Port, update.Release); changed != "" && request.Action == model.EditUpdate {
+			return refusal.New(refusal.Attention, "what was asked of %s changed while %s was prepared (%s); nothing was recorded or written, so run it again", current.ShortName(), request.Port, changed)
 		}
 		var err error
 		locked, err = func() (Update, error) {
@@ -808,6 +873,13 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 			err = store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
 				if err := tx.SetWritten(edit.ID, e.now()); err != nil {
 					return err
+				}
+				// The version this edit concludes, on the branch's target, in the
+				// transaction that records it written (#194, H2).
+				if request.Action == model.EditUpdate {
+					if err := concludeVersion(tx, branch.ID, request.Port); err != nil {
+						return err
+					}
 				}
 				_, err := tx.AppendEvent(model.Event{At: edit.At, Branch: branch.ID, Kind: model.EventBranchEdit, Level: model.LevelInfo,
 					Message: fmt.Sprintf("%s: %s (%s)", update.Port, change, listPaths(update.Files))})
@@ -1569,4 +1641,14 @@ func revisionOf(version string) string {
 		return version[i+1:]
 	}
 	return "0"
+}
+
+// versionOf is a version_revision's version.
+func versionOf(versionRevision string) string {
+	if i := strings.LastIndex(versionRevision, "_"); i >= 0 {
+		if _, err := strconv.Atoi(versionRevision[i+1:]); err == nil {
+			return versionRevision[:i]
+		}
+	}
+	return versionRevision
 }

@@ -18,7 +18,7 @@ import (
 func intentTo(t *testing.T, e *Engine, branch model.Branch, to string) model.Branch {
 	t.Helper()
 	branch.RenameTo = to
-	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(branch) }))
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.SetRenameTo(branch.ID, to) }))
 	return branch
 }
 

@@ -1486,7 +1486,7 @@ func (e *Engine) renameWithIntent(ctx context.Context, branch *model.Branch, to,
 	}
 	branch.RenameTo = to
 	if err := store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
-		return tx.UpdateBranch(*branch)
+		return tx.SetRenameTo(branch.ID, to)
 	}, branchRenaming(branch.ID, to)); err != nil {
 		branch.RenameTo = ""
 		return err
@@ -1505,6 +1505,9 @@ func (e *Engine) saveRenamed(ctx context.Context, branch *model.Branch, to, word
 	branch.Name, branch.RenameTo = to, ""
 	return store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
 		if err := tx.UpdateBranch(*branch); err != nil {
+			return err
+		}
+		if err := tx.SetRenameTo(branch.ID, ""); err != nil {
 			return err
 		}
 		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchRename, Level: model.LevelInfo, Message: words})

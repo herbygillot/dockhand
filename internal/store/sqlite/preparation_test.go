@@ -112,7 +112,8 @@ INSERT INTO edits(repository_id, id, branch_id, kind, port, directory, subject, 
 }
 
 // A branch keeps what was asked of it and the name a rename is moving it
-// to (#194).
+// to, which UpdateBranch from a copy read earlier leaves as they are
+// (#194).
 func TestABranchKeepsItsRequestAndRenameIntent(t *testing.T) {
 	t.Parallel()
 	f := open(t)
@@ -121,7 +122,10 @@ func TestABranchKeepsItsRequestAndRenameIntent(t *testing.T) {
 		Outcomes: []model.ActionOutcome{{Action: "version", Result: model.ActionDone}}}}}
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.AddBranch(b) }))
 	b.RenameTo = "dockhand/jq-1.8.1"
-	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(b) }))
+	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.SetRenameTo(b.ID, b.RenameTo) }))
+	stale := b
+	stale.Request, stale.RenameTo, stale.Title = nil, "", "a title"
+	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(stale) }), "a writer holding the branch read before")
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
 		got, err := tx.Branch(b.ID)
 		require.Equal(t, b.Request, got.Request)

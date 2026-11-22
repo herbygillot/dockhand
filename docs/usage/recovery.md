@@ -305,9 +305,15 @@ replaces an edit none of whose files was written. A `--plan` says what any of
 this would do and does none of it.
 
 `dockhand status` says a branch whose preparation didn't finish, and
-`dockhand ship -b <branch>` finishes it. With nobody there, nothing checks or
-submits past it; your own `check` or `submit` says what isn't in the files and
-goes on.
+`dockhand ship -b <branch>` finishes it: each port it was asked to update that
+has no edit yet is prepared again at the release chosen for it, not a newer
+one. serve takes up its own unfinished preparations at each day's look, before
+it looks for new releases, and never a person's. With nobody there, nothing
+commits, checks or submits past an unfinished one; your own `check` or
+`submit` says what isn't in the files and goes on. serve queues the check of a
+branch it committed only where its commits are exactly what it committed of
+its edits; a commit on top, a rebase or a change of yours between two of its
+edits leaves the branch for you, named.
 
 ## A submission that didn't finish
 

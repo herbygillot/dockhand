@@ -205,7 +205,7 @@ func TestAPatchThatDoesntApplyHoldsAnUnattendedShipBeforeItsCheck(t *testing.T) 
 	// serve started over it leaves it held, where its recovery queued the
 	// check ship held back, and status says the hold (Codex's review of
 	// 275125ff, finding 2).
-	resumed, err := e.ResumePrepared(t.Context(), Where{Environments: []model.Environment{{Provider: "command"}}}, "")
+	resumed, err := e.ResumePrepared(t.Context(), Where{Environments: []model.Environment{{Provider: "command"}}}, "", true)
 	require.NoError(t, err)
 	require.Len(t, resumed, 1)
 	require.True(t, resumed[0].Held)

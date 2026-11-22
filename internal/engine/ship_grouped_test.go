@@ -116,7 +116,7 @@ func TestAPatchHoldIsReadFromTheRecordsAtEachLook(t *testing.T) {
 	require.Contains(t, done.Problem, "patch patch-jq doesn't apply")
 	require.True(t, done.Tidied, "committed, held before its check")
 	require.Nil(t, done.Run)
-	resumed, err := e.ResumePrepared(t.Context(), where, model.TestsDeclared)
+	resumed, err := e.ResumePrepared(t.Context(), where, model.TestsDeclared, true)
 	require.NoError(t, err)
 	for _, r := range resumed {
 		require.Nil(t, r.Run, "recovery queues no check of an update whose patch was rejected: %+v", r)
