@@ -129,7 +129,7 @@ func TestAClosedReadIsWeighedAsAHostRead(t *testing.T) {
 	library := "/opt/local/libexec/macports/lib"
 	closed := func(command string) macports.Declaration {
 		return macports.Declaration{Command: "dockhand.host-access", Values: []string{problem, "closed", "base", "file exists /usr/include/sys/cdefs.h"},
-			Frames: []macports.SourceFrame{{Line: 1, Command: command}, {File: library + "/port1.0/portconfigure.tcl", Line: 1, Command: "file exists /usr/include/sys/cdefs.h"}}}
+			Frames: []macports.SourceFrame{{File: library + "/port1.0/portconfigure.tcl", Line: 1, Command: command}, {File: library + "/port1.0/portconfigure.tcl", Line: 1, Command: "file exists /usr/include/sys/cdefs.h"}}}
 	}
 	ledger := []macports.LedgerEntry{{Command: "file", Subcommand: "exists", Source: "closed", Count: 1}}
 	observed := func(declaration macports.Declaration) macports.PortObservation {

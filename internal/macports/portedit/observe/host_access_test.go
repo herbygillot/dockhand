@@ -26,7 +26,7 @@ func newBaseFixture(t *testing.T) baseFixture {
 		"port1.0/portbuild.tcl":     "default build.cmd {[portbuild::build_getmaketype]}\ndefault build.jobs {[portbuild::build_getjobs]}\n",
 		"port1.0/portmain.tcl":      "options prefix name version revision epoch \\\n    categories maintainers\ndefault source_date_epoch {[portmain::get_source_date_epoch]}\n",
 		"port1.0/portfetch.tcl":     "options master_sites patch_sites distfiles patchfiles \\\n    dist_subdir checksums\n",
-		"port1.0/portconfigure.tcl": "namespace eval portconfigure {}\ndefault configure.sdkroot {[portconfigure::configure_get_sdkroot ${configure.sdk_version}]}\ndefault configure.compiler {[portconfigure::configure_get_default_compiler]}\ndefault compiler.fallback {[portconfigure::get_compiler_fallback]}\n",
+		"port1.0/portconfigure.tcl": "namespace eval portconfigure {}\nforeach _portconfigure_tool {cc objc cpp f77 f90 fc javac} { default configure.$_portconfigure_tool \"\\[portconfigure::configure_get_compiler $_portconfigure_tool\\]\" }\ndefault configure.developer_dir {[portconfigure::configure_get_developer_dir]}\ndefault configure.sdkroot {[portconfigure::configure_get_sdkroot ${configure.sdk_version}]}\ndefault configure.compiler {[portconfigure::configure_get_default_compiler]}\ndefault compiler.fallback {[portconfigure::get_compiler_fallback]}\n",
 		"port1.0/portutil.tcl":      "proc default_check {optionName index op} {}\n",
 	} {
 		path := filepath.Join(lib, filepath.FromSlash(name))
@@ -89,12 +89,136 @@ func (b baseFixture) lookup(program, owner string, frames ...[]macports.SourceFr
 
 func (b baseFixture) tolerate(t *testing.T, contents string, d macports.Declaration) bool {
 	t.Helper()
+	return b.tolerateAt(t, t.TempDir(), contents, d)
+}
+
+func (b baseFixture) tolerateAt(t *testing.T, root, contents string, d macports.Declaration) bool {
+	t.Helper()
 	port := macports.PortObservation{ModeledHostAccess: true, Problems: []string{d.Values[0]}, Declarations: []macports.Declaration{d}, BaseLibrary: b.lib, MachineReadExperiment: &macports.MachineReadExperiment{Outcome: "same", Varied: []int{0}}}
 	if !strings.HasPrefix(d.Values[3], "findBinary ") {
 		port.MachineReadExperiment = nil
 	}
-	_, inconclusive := Tolerate(t.Context(), port, []byte("PortSystem 1.0\nname x\nversion 1\n"+contents+"\n"), t.TempDir())
+	_, inconclusive := Tolerate(t.Context(), port, []byte("PortSystem 1.0\nname x\nversion 1\n"+contents+"\n"), root)
 	return inconclusive
+}
+
+func (b baseFixture) toolchainRead(frames ...macports.SourceFrame) macports.Declaration {
+	return macports.Declaration{
+		Command: "dockhand.host-access",
+		Values:  []string{"modeled context depends on filesystem state outside the captured ports tree", "closed", "base", "file exists /usr/lib/libxcselect.dylib"},
+		Frames:  append(frames, macports.SourceFrame{File: b.file("port1.0/portconfigure.tcl"), Line: 700, Command: "file exists /usr/lib/libxcselect.dylib"}),
+	}
+}
+
+func (b baseFixture) configureCCDefault() []macports.SourceFrame {
+	return []macports.SourceFrame{
+		frame("default_check configure.cc {} read"),
+		{File: b.file("port1.0/portutil.tcl"), Line: 520, Command: "uplevel #0 [list subst [dict get $option_defaults $optionName]]"},
+		frame("subst {[portconfigure::configure_get_compiler cc]}"),
+		frame("portconfigure::configure_get_compiler cc"),
+		frame("default_check configure.developer_dir {} read"),
+		{File: b.file("port1.0/portutil.tcl"), Line: 520, Command: "uplevel #0 [list subst [dict get $option_defaults $optionName]]"},
+		frame("subst {[portconfigure::configure_get_developer_dir]}"),
+		frame("portconfigure::configure_get_developer_dir"),
+	}
+}
+
+func TestToolchainProbeRequiresBaseToWriteTheOutermostCall(t *testing.T) {
+	t.Parallel()
+	b := newBaseFixture(t)
+	baseCall := b.toolchainRead(b.configureCCDefault()...)
+	portfileCall := b.toolchainRead(
+		frame("source "+thePortfile),
+		macports.SourceFrame{File: thePortfile, Line: 4, Command: "distfiles x-[file tail [portconfigure::configure_get_sdkroot 10.6]].tar.gz"},
+		frame("portconfigure::configure_get_sdkroot 10.6"),
+	)
+	portfileDefault := b.toolchainRead(
+		frame("default_check fixture.sdk {} read"),
+		macports.SourceFrame{File: b.file("port1.0/portutil.tcl"), Line: 520, Command: "uplevel #0 [list subst [dict get $option_defaults $optionName]]"},
+		frame("subst {[portconfigure::configure_get_sdkroot 10.6]}"),
+		frame("portconfigure::configure_get_sdkroot 10.6"),
+	)
+
+	require.False(t, b.tolerate(t, "build.args ${configure.cc}", baseCall), "Base's nested defaults explain the compiler probe")
+	t.Run("Portfile call", func(t *testing.T) {
+		require.True(t, b.tolerate(t, "distfiles x-[file tail [portconfigure::configure_get_sdkroot 10.6]].tar.gz", portfileCall), "a call written by the Portfile stays inconclusive")
+	})
+	t.Run("Portfile lazy default", func(t *testing.T) {
+		require.True(t, b.tolerate(t, "options fixture.sdk\ndefault fixture.sdk {[portconfigure::configure_get_sdkroot 10.6]}\nbuild.args ${fixture.sdk}", portfileDefault), "a Portfile's lazy default is not Base's")
+	})
+}
+
+func TestDefaultDeclaredInsideBaseForeachBelongsToBase(t *testing.T) {
+	t.Parallel()
+	b := newBaseFixture(t)
+	frames := []macports.SourceFrame{
+		frame("default_check configure.cc {} read"),
+		{File: b.file("port1.0/portutil.tcl"), Line: 520, Command: "uplevel #0 [list subst [dict get $option_defaults $optionName]]"},
+		frame("subst {[portconfigure::configure_get_compiler cc]}"),
+		frame("portconfigure::configure_get_compiler cc"),
+		{File: b.file("port1.0/portconfigure.tcl"), Line: 1378, Command: "set v [compiler.command_line_tools_version $c]"},
+	}
+	require.True(t, newBaseCode(b.lib).defaultIsBases(frames, len(frames)), "Base declares configure.cc in its foreach-generated defaults")
+}
+
+func TestToolchainProbeStillUsesToolchainReadGate(t *testing.T) {
+	t.Parallel()
+	b := newBaseFixture(t)
+	declaration := b.toolchainRead(b.configureCCDefault()...)
+	for _, tc := range []struct {
+		name     string
+		contents string
+		want     bool
+	}{
+		{"Gyoto build-only condition", `if {[string match *clang* ${configure.cxx}]} { build.args CC=${configure.cc} }`, false},
+		{"condition writes distfiles", `if {[string match *clang* ${configure.cxx}]} { distfiles other.tar.gz }`, true},
+		{"condition writes master_sites", `if {[string match *clang* ${configure.cxx}]} { master_sites https://example.invalid }`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.want, b.tolerate(t, tc.contents, declaration))
+		})
+	}
+}
+
+func TestPortGroupDirectToolchainCallNeedsABuildOnlyRead(t *testing.T) {
+	t.Parallel()
+	b := newBaseFixture(t)
+	for _, tc := range []struct {
+		name         string
+		group        string
+		portfile     string
+		inconclusive bool
+	}{
+		{
+			name:     "build-only",
+			group:    "if {[string match *clang* ${configure.cxx}]} {\n    build.args CC=[portconfigure::configure_get_compiler cc]\n}\n",
+			portfile: "PortGroup hostcall 1.0",
+		},
+		{
+			name:         "fetch input",
+			group:        "distfiles x-[file tail [portconfigure::configure_get_compiler cc]].tar.gz\n",
+			portfile:     "PortGroup hostcall 1.0",
+			inconclusive: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			groupPath := filepath.Join(root, "_resources", "port1.0", "group", "hostcall-1.0.tcl")
+			require.NoError(t, os.MkdirAll(filepath.Dir(groupPath), 0o755))
+			require.NoError(t, os.WriteFile(groupPath, []byte(tc.group), 0o644))
+			line := 1
+			if strings.HasPrefix(tc.group, "if ") {
+				line = 2
+			}
+			declaration := b.toolchainRead(
+				macports.SourceFrame{File: groupPath, Line: 1, Command: strings.TrimSpace(strings.Split(tc.group, "\n")[0])},
+				macports.SourceFrame{File: groupPath, Line: line, Command: "portconfigure::configure_get_compiler cc"},
+			)
+			require.Equal(t, tc.inconclusive, b.tolerateAt(t, root, tc.portfile, declaration))
+		})
+	}
 }
 
 const thePortfile = "/tree/devel/x/Portfile"

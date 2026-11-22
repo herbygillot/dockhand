@@ -370,13 +370,9 @@ func knownGapVerdict(t *testing.T, platform model.Platform, setup func(string), 
 	return inconclusive, got.Snapshot.Ports["effects"].Options["distfiles"], got.Ports["effects"]
 }
 
-// Known gap, filed as #247, pinned as it stands, not fixed in #110's round (architecture's
-// ruling): a Portfile calling Base's portconfigure procedure itself, as
-// hdhomerun calls configure_get_universal_archflags, is taken for Base's
-// compiler selection, so on Darwin 10 the SDK the host's files would
-// choose reaches distfiles and the context reads as conclusive. When the
-// gap is closed this test fails, and flips.
-func TestKnownGapAPortfilesOwnCallOfBasesToolchainProcedureIsExplained(t *testing.T) {
+// A Portfile's own call of a Base portconfigure procedure is not Base's
+// compiler selection, even when the result reaches a fetch field (#247).
+func TestAPortfilesOwnCallOfBasesToolchainProcedureIsInconclusive(t *testing.T) {
 	t.Parallel()
 	snowLeopard := model.Platform{OS: "darwin", Version: "10", Architecture: "x86_64"}
 	contents := "PortSystem 1.0\nname effects\nversion 1\ndistfiles x-[file tail [portconfigure::configure_get_sdkroot 10.6]].tar.gz\n"
@@ -389,7 +385,15 @@ func TestKnownGapAPortfilesOwnCallOfBasesToolchainProcedureIsExplained(t *testin
 	}
 	require.True(t, own, "the Portfile's own call closes a host read: %v", port.Problems)
 	require.Equal(t, "x-.tar.gz", distfiles, "the empty Mac's SDK answer in a fetch field")
-	require.False(t, inconclusive, "known toolchain gap remains held in #247")
+	require.True(t, inconclusive, "a direct Portfile call cannot explain the host read")
+}
+
+func TestAPortfilesLazyToolchainDefaultIsInconclusive(t *testing.T) {
+	t.Parallel()
+	contents := "PortSystem 1.0\nname effects\nversion 1\noptions fixture.sdk\ndefault fixture.sdk {[portconfigure::configure_get_sdkroot 10.6]}\nbuild.args SDK=${fixture.sdk}\n"
+	inconclusive, _, port := knownGapVerdict(t, model.Platform{OS: "darwin", Version: "10", Architecture: "x86_64"}, nil, contents)
+	require.True(t, inconclusive, "a lazy default written by the Portfile is not Base's")
+	require.Contains(t, port.Problems, "modeled context depends on filesystem state outside the captured ports tree")
 }
 
 // Known gap, filed as #247, pinned as it stands, not fixed in #110's round (architecture's

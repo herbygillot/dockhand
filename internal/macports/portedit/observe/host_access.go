@@ -110,18 +110,32 @@ func sourceDateEpochLookup(declaration macports.Declaration, base *baseCode) boo
 	return false
 }
 
+// portconfigureCallIsBases reports whether the outermost portconfigure call
+// was written in Base's library or in the text of a default Base declared.
+// A call with no file is Base's only when default_check's substitution can
+// be matched to that declared default; an evaluated Portfile or PortGroup
+// default has no source file of its own, but is still its author's call.
+func portconfigureCallIsBases(frames []macports.SourceFrame, call int, base *baseCode) bool {
+	if call < 0 || call >= len(frames) {
+		return false
+	}
+	if frames[call].File != "" {
+		return base.has(frames[call].File) && base.bodyIsBases(frames[call+1:])
+	}
+	_, option, text, ok := innermostDefault(frames, call+1)
+	return ok && slices.Contains(baseDefaults(base.library)[option], text) && base.bodyIsBases(frames[call+1:])
+}
+
 // toolchainProbe reports whether a recorded host access came from MacPorts
 // compiler selection. Such probes look for compilers the modeled profile
 // lacks; when the Portfile reads toolchain options only in build positions,
-// they cannot change any source declaration. The outermost frame calling
-// a procedure in portconfigure is the probe, and Base's only where every
-// frame below it is Base's library (bodyIsBases): a procedure a Portfile
-// names into portconfigure has its file on its body (architecture's point
-// 4).
+// they cannot change any source declaration. The call's author is the file
+// or declared default that wrote the outermost portconfigure:: call, not a
+// caller above it that merely read a toolchain option.
 func toolchainProbe(declaration macports.Declaration, base *baseCode) bool {
 	for i, frame := range declaration.Frames {
 		if name, _, _ := strings.Cut(strings.TrimSpace(frame.Command), " "); strings.HasPrefix(name, "portconfigure::") {
-			return base.bodyIsBases(declaration.Frames[i+1:])
+			return portconfigureCallIsBases(declaration.Frames, i, base)
 		}
 	}
 	return false
