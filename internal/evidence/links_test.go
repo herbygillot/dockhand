@@ -54,6 +54,15 @@ func TestUndeclaredLinksReportsLibrariesWithNoOwner(t *testing.T) {
 	}})
 	require.Len(t, found, 1)
 	require.Equal(t, []LinkFinding{{Target: "jq", Library: "/opt/local/lib/libxml2.2.dylib", Binary: "/opt/local/bin/jq", Unowned: true}}, found)
+
+	// A library a path: dependency declares says nothing, whatever owner
+	// came back for it, none included.
+	declared := UndeclaredLinks([]LinkedBuild{{
+		Result: model.TargetResult{Target: "jq", Outcome: model.OutcomePassed, Links: []model.Link{{
+			Binary: "/opt/local/bin/jq", Library: "/opt/local/lib/libxml2.2.dylib", Declared: "path:lib/libxml2.2.dylib:libxml2",
+		}}},
+	}})
+	require.Equal(t, []LinkFinding{{Target: "jq", Clean: true}}, declared)
 }
 
 func TestUndeclaredLinksKeepsEveryUndeclaredOwnerFromOneBuild(t *testing.T) {

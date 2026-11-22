@@ -128,16 +128,17 @@ func UndeclaredLinks(builds []LinkedBuild) []LinkFinding {
 			if link.Port != "" && !slices.ContainsFunc(build.Own, func(name string) bool { return strings.EqualFold(name, link.Port) }) {
 				linked[result.Target][link.Port] = true
 			}
+			// A port a path: dependency reaches through its links is
+			// declared by it, as curl's path:lib/libssl.dylib:openssl
+			// declares openssl3, whatever owner came back for it, none
+			// included.
+			if link.Declared != "" {
+				continue
+			}
 			if link.Port == "" {
 				k := string(result.Target) + "\x00" + strings.ToLower(link.Library)
 				unowned[k] = LinkFinding{Target: result.Target, Library: link.Library, Binary: link.Binary, Unowned: true}
 				unownedTargets[result.Target] = true
-				continue
-			}
-			// A port a path: dependency reaches through its links is
-			// declared by it, as curl's path:lib/libssl.dylib:openssl
-			// declares openssl3.
-			if link.Declared != "" {
 				continue
 			}
 			declared := slices.ContainsFunc(build.Declared, func(name string) bool { return strings.EqualFold(name, link.Port) })
