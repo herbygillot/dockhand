@@ -1084,6 +1084,7 @@ func Landed(observed, sent, written, recorded string) string {
 		return written
 	}
 	landed := recorded
+	took := false
 	take := func(span func(string) (int, int, bool)) {
 		from, to, found := span(observed)
 		wrote, wroteEnd, inWritten := span(written)
@@ -1091,6 +1092,7 @@ func Landed(observed, sent, written, recorded string) string {
 		if !found || !inWritten || observed[from:to] != written[wrote:wroteEnd] {
 			return
 		}
+		took = true
 		if inRecorded {
 			landed = landed[:at] + written[wrote:wroteEnd] + landed[atEnd:]
 		}
@@ -1099,10 +1101,18 @@ func Landed(observed, sent, written, recorded string) string {
 	take(typesSpan)
 	if at, ok := ownedSpan(observed); ok {
 		if wrote, ok := ownedSpan(written); ok && observed[at:] == written[wrote:] {
+			took = true
 			if was, ok := ownedSpan(landed); ok {
 				landed = landed[:was] + written[wrote:]
 			}
 		}
+	}
+	// Nothing recorded before, as for a pull request found with no record:
+	// where any part landed, the record is what dockhand wrote. A part that
+	// landed then reads as dockhand's, and one GitHub holds otherwise as a
+	// person's, which the merge keeps (#157's last case).
+	if recorded == "" && took {
+		return written
 	}
 	return landed
 }
