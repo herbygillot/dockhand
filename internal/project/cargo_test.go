@@ -176,3 +176,21 @@ func TestACargoTargetIsReadForMacOS(t *testing.T) {
 		require.Error(t, err, key)
 	}
 }
+
+func TestACargoPackageVersionResolvesFromItsWorkspace(t *testing.T) {
+	root, err := ReadCargoManifest([]byte(`[workspace]
+members = ["crates/demo"]
+
+[workspace.package]
+version = "2.3.4"
+`))
+	require.NoError(t, err)
+	member, err := ReadCargoManifest([]byte(`[package]
+name = "demo"
+version.workspace = true
+`))
+	require.NoError(t, err)
+	require.Equal(t, []string{"version"}, member.Package.Inherited)
+	resolved := member.Inherit(root)
+	require.Equal(t, "2.3.4", resolved.Package.Version)
+}

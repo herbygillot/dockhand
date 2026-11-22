@@ -102,7 +102,7 @@ func CargoPrograms(files map[string][]byte, conventional func(dir string) bool, 
 // CargoPackageInfo is a Cargo.toml's [package], or a workspace's
 // [workspace.package].
 type CargoPackageInfo struct {
-	Name, License, Description string
+	Name, Version, License, Description string
 	// Inherited are the fields it takes from its workspace, by name, which
 	// stay empty until they're resolved.
 	Inherited []string
@@ -173,6 +173,8 @@ func (m CargoManifest) Inherit(root CargoManifest) CargoManifest {
 func (p *CargoPackageInfo) inherit(workspace CargoPackageInfo) {
 	for _, field := range p.Inherited {
 		switch field {
+		case "version":
+			p.Version = workspace.Version
 		case "license":
 			p.License = workspace.License
 		case "description":
@@ -243,7 +245,7 @@ func ReadCargoManifest(data []byte) (CargoManifest, error) {
 	if pkg, ok := manifest["package"].(map[string]any); ok {
 		found.Package = &CargoPackageInfo{}
 		found.Package.Name, _ = pkg["name"].(string)
-		for field, value := range map[string]*string{"license": &found.Package.License, "description": &found.Package.Description} {
+		for field, value := range map[string]*string{"version": &found.Package.Version, "license": &found.Package.License, "description": &found.Package.Description} {
 			switch given := pkg[field].(type) {
 			case string:
 				*value = given
@@ -258,6 +260,7 @@ func ReadCargoManifest(data []byte) (CargoManifest, error) {
 	if workspace, ok := manifest["workspace"].(map[string]any); ok {
 		found.Workspace = &CargoWorkspace{Members: cargoStrings(workspace["members"]), Exclude: cargoStrings(workspace["exclude"])}
 		if pkg, ok := workspace["package"].(map[string]any); ok {
+			found.Workspace.Package.Version, _ = pkg["version"].(string)
 			found.Workspace.Package.License, _ = pkg["license"].(string)
 			found.Workspace.Package.Description, _ = pkg["description"].(string)
 		}

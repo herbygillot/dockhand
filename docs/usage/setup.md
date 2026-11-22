@@ -212,6 +212,13 @@ submitting. With `cargo.update` on, or with a `Cargo.lock` only somewhere other
 than worksrcdir or above it, the update refuses, naming each lock it found. An
 update to the version the port is already at says so: `jq is already at 1.8.1`.
 
+When the new source has a `Cargo.lock`, update also holds if a local package's
+locked version differs from the version in its `Cargo.toml`; a version inherited
+from `[workspace.package]` is resolved. A patchfile that touches `Cargo.lock`
+suppresses this hold and is reported as a patched lock. This check catches a
+lock stale in a package's own version, not one stale only in dependency
+requirements.
+
 `diff` shows the change; `impact` shows the changed ports and dependents worth
 checking, and, where ports.macports.org answers, whether MacPorts' builders
 built each changed port on each macOS release. `tidy` makes the commits.

@@ -104,6 +104,13 @@ branch still changes the port, and only a later update of the port replaces
 it, or for a move, `update --follow-moves`. Read the list against the new source, then
 decide on it as on any concern below, or let `holds.allow` name it.
 
+An update also leaves a `cargo-lock-stale` finding when a local package's
+locked version disagrees with its manifest version. The finding holds the
+submission like any other concern. It does not hold the check, which runs and
+fails at its build, where Cargo refuses to update the lock. A patch that
+refreshes `Cargo.lock` clears the hold, and
+`holds.allow` may name `cargo-lock-stale` to let the submission through.
+
 A patch that no longer applies holds an unattended update before its check,
 its edits committed (`patch-rejected`). The hold is read from the update's
 record each time, never stored: a later update of the port on the same macOS

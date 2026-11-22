@@ -224,6 +224,9 @@ be compared remain a hold. `link-undeclared` holds only where tidy couldn't
 write the declaration a check's link finding names; elsewhere tidy writes it.
 `crates-unlocked`, a crate list an update left as it was because the new source
 ships no `Cargo.lock`, holds like any other rule, and the list may name it.
+`cargo-lock-stale` holds when a local package's locked version disagrees with
+its manifest; `cargo-lock-patched` is a notice where a patchfile touches the
+lock.
 An unrecognized rule is refused with the known rule
 names; the rule for a GitHub port's source is `source`, and its earlier name,
 `github-tarball`, is refused like any other. `not-distributable`, a change that

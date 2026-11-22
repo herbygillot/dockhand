@@ -13,6 +13,10 @@ import (
 type Patch struct {
 	patchcheck.Result
 	Dropped bool
+	// Content is the patchfile's text, where read, for checks whose rule
+	// depends on the paths it changes.
+	Content      []byte
+	ContentKnown bool
 }
 
 // patches are the candidate's patches that don't apply to its source, and

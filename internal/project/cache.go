@@ -24,9 +24,11 @@ import (
 // below the root a port's build reads them from (Spec.Directories).
 // 9: the Go packages' files a port's -X arguments name (Spec.GoPackages),
 // which 8's readings were kept without (Codex's sixth review, #74). 10:
-// those files kept apart from the build files (GoFiles). A change to what
+// those files kept apart from the build files (GoFiles). 11: every Cargo
+// manifest retained for lock checks, including path dependencies outside
+// a workspace's member list. A change to what
 // read.go reads, or how, raises it.
-const ReaderVersion = 10
+const ReaderVersion = 11
 
 // Cache keeps readings on disk by what they read: an archive's content, by
 // its sha256, and where in it the project is, with the reader's version

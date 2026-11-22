@@ -195,6 +195,20 @@ func (c Collector) patchesFor(ctx context.Context, request patchRequest) []asses
 		return nil
 	}
 	var found []assess.Patch
+	read := func(side int, name string) ([]byte, string) {
+		where, ok := infos[side].FilesPath(portdirs[side], name)
+		if !ok {
+			return nil, "its filespath isn't below the port's directory"
+		}
+		data, exists, err := c.Files.File(ctx, sources[side].Tree, where)
+		switch {
+		case err != nil:
+			return nil, err.Error()
+		case !exists:
+			return nil, where + " isn't in the tree"
+		}
+		return data, ""
+	}
 	unchecked := func(why string) []assess.Patch {
 		for _, name := range own {
 			found = append(found, assess.Patch{Result: patchcheck.Result{Name: name, Detail: why}})
@@ -217,7 +231,11 @@ func (c Collector) patchesFor(ctx context.Context, request patchRequest) []asses
 				found = append(found, assess.Patch{Result: patchcheck.Result{Name: name, Detail: "the update didn't check it"}})
 				continue
 			}
-			found = append(found, assess.Patch{Result: request.checked[at]})
+			patch := assess.Patch{Result: request.checked[at]}
+			if data, why := read(1, name); why == "" {
+				patch.Content, patch.ContentKnown = data, true
+			}
+			found = append(found, patch)
 		}
 		if checking = nil; len(dropped) == 0 {
 			return found
@@ -260,21 +278,8 @@ func (c Collector) patchesFor(ctx context.Context, request patchRequest) []asses
 	}
 	own = checking
 	var patches []patchcheck.Patch
-	read := func(side int, name string) ([]byte, string) {
-		where, ok := infos[side].FilesPath(portdirs[side], name)
-		if !ok {
-			return nil, "its filespath isn't below the port's directory"
-		}
-		data, exists, err := c.Files.File(ctx, sources[side].Tree, where)
-		switch {
-		case err != nil:
-			return nil, err.Error()
-		case !exists:
-			return nil, where + " isn't in the tree"
-		}
-		return data, ""
-	}
 	var unreadable []assess.Patch
+	contents := map[string][]byte{}
 	for side, names := range [][]string{dropped, own} {
 		for _, name := range names {
 			data, why := read(side, name)
@@ -283,6 +288,7 @@ func (c Collector) patchesFor(ctx context.Context, request patchRequest) []asses
 				continue
 			}
 			patches = append(patches, patchcheck.Patch{Name: name, Data: data})
+			contents[name] = data
 		}
 	}
 	results, err := patchcheck.Port(ctx, c.PatchTools, infos[1], paths, patches, false)
@@ -290,7 +296,8 @@ func (c Collector) patchesFor(ctx context.Context, request patchRequest) []asses
 		return unchecked(err.Error())
 	}
 	for _, result := range results {
-		found = append(found, assess.Patch{Result: result, Dropped: slices.Contains(dropped, result.Name)})
+		data, ok := contents[result.Name]
+		found = append(found, assess.Patch{Result: result, Dropped: slices.Contains(dropped, result.Name), Content: data, ContentKnown: ok})
 	}
 	return append(found, unreadable...)
 }
