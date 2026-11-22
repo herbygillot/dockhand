@@ -1711,6 +1711,42 @@ func (e *Engine) publish(ctx context.Context, plan SubmitPlan, worktree *git.Rep
 	return result, e.endPublication(ctx, plan.Branch.ID, record)
 }
 
+// recordAsked writes what the person gave with the plan into the
+// records that hold it, in a submission's first transaction: the title,
+// the note and the tested statements on the branch, and the decisions.
+// Each stands even where the publication then fails; AddDecision's key
+// keeps a second run from recording one twice (docs/designs/
+// publication-record.md, "The record").
+func (e *Engine) recordAsked(tx store.Tx, plan SubmitPlan) error {
+	branch, err := tx.Branch(plan.Branch.ID)
+	if err != nil {
+		return err
+	}
+	if plan.Request.Title != "" {
+		branch.Title = plan.Request.Title
+	}
+	if plan.Request.Note != nil {
+		branch.Note = plan.Note
+	}
+	branch.TestedBinaries = keptStatement(branch.TestedBinaries, plan.Request.TestedBinaries, plan.Request.WithdrawBinaries, plan.testedTrees)
+	branch.TestedVariants = keptStatement(branch.TestedVariants, plan.Request.TestedVariants, plan.Request.WithdrawVariants, plan.testedTrees)
+	if err := tx.UpdateBranch(branch); err != nil {
+		return err
+	}
+	for _, build := range plan.Accept {
+		if err := tx.AddDecision(model.Decision{Branch: branch.ID, Finding: model.FindingFailure, Subject: build, Evidence: plan.Commit, Answer: model.Accepted, At: e.now()}); err != nil {
+			return err
+		}
+	}
+	for _, decision := range plan.Standing {
+		decision.At = e.now()
+		if err := tx.AddDecision(decision); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // recordSubmission writes a submission's pull request into the branch's
 // record, in the transaction that ends its push, open and edit: what
 // dockhand wrote, how it knows the pull request, the person's statements
@@ -1759,27 +1795,8 @@ func (e *Engine) recordSubmission(tx store.Tx, plan SubmitPlan, result *Submitte
 		next.PushedAt = e.now()
 	}
 	branch.PullRequest = &next
-	if plan.Request.Title != "" {
-		branch.Title = plan.Request.Title
-	}
-	if plan.Request.Note != nil {
-		branch.Note = plan.Note
-	}
-	branch.TestedBinaries = keptStatement(branch.TestedBinaries, plan.Request.TestedBinaries, plan.Request.WithdrawBinaries, plan.testedTrees)
-	branch.TestedVariants = keptStatement(branch.TestedVariants, plan.Request.TestedVariants, plan.Request.WithdrawVariants, plan.testedTrees)
 	if err := tx.UpdateBranch(branch); err != nil {
 		return err
-	}
-	for _, build := range plan.Accept {
-		if err := tx.AddDecision(model.Decision{Branch: branch.ID, Finding: model.FindingFailure, Subject: build, Evidence: plan.Commit, Answer: model.Accepted, At: e.now()}); err != nil {
-			return err
-		}
-	}
-	for _, decision := range plan.Standing {
-		decision.At = e.now()
-		if err := tx.AddDecision(decision); err != nil {
-			return err
-		}
 	}
 	// A pull request found open with no record of it, as an earlier
 	// submit whose record failed leaves one, is the submission's

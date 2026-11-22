@@ -143,6 +143,9 @@ func (e *Engine) recordPublication(ctx context.Context, plan SubmitPlan, record 
 	var opening *model.ServeOpening
 	err := store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
 		opening = nil
+		if err := e.recordAsked(tx, plan); err != nil {
+			return err
+		}
 		if plan.served && slices.Contains(record.Owes, model.StepOpen) {
 			now := cmp.Or(plan.admission.Now, e.now())
 			day := dayStart(now)

@@ -423,3 +423,26 @@ func TestADraftChangeOnAFoundPullRequestIsFolded(t *testing.T) {
 	require.NotNil(t, current.PullRequest)
 	require.True(t, current.PullRequest.Draft, "GitHub has it as a draft")
 }
+
+// What the person gave with the plan is written in the submission's first
+// transaction, before any remote effect: the title and the note stand
+// though the push then fails (#191, group E; docs/designs/
+// publication-record.md, "The record").
+func TestTheFirstTransactionWritesWhatThePersonGave(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	note := "Upstream moved its tarballs."
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Title: "jq: update to 1.8.1, upstream moved", Note: &note})
+	require.NoError(t, err)
+	require.NoError(t, os.Chmod(filepath.Join(fake.Fork, "objects"), 0o555))
+	t.Cleanup(func() { _ = os.Chmod(filepath.Join(fake.Fork, "objects"), 0o755) })
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.Error(t, err, "the fork refuses the push")
+	branch, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.Equal(t, "jq: update to 1.8.1, upstream moved", branch.Title)
+	require.Equal(t, note, branch.Note)
+}
