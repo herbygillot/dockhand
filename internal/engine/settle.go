@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -213,12 +214,47 @@ func (p Pending) FailsCommand() bool {
 // and the plan is refused with the read named. What the person asked of
 // it that still applies is returned, for the plan to carry.
 func (e *Engine) settlePublication(ctx context.Context, worktree *git.Repository, branch model.Branch, pushURL string, end bool) (model.Branch, *model.Publication, []model.PublicationStep, error) {
+	return e.settleReading(ctx, worktree, branch, end, func(ctx context.Context, record model.Publication) PublicationReading {
+		return e.readPublication(ctx, worktree, record, pushURL)
+	})
+}
+
+// readPublication reads what settling a publication reads: the fork's
+// head branch, the pull request by head and base, and its draft state.
+func (e *Engine) readPublication(ctx context.Context, worktree *git.Repository, record model.Publication, pushURL string) PublicationReading {
+	headRepository, headBranch, _ := strings.Cut(record.Head, ":")
+	baseRepository, baseBranch, _ := strings.Cut(record.Base, ":")
+	var reading PublicationReading
+	if pushURL != "" {
+		if head, err := worktree.RemoteHead(ctx, pushURL, headBranch); err == nil {
+			reading.HeadRead, reading.HeadExists, reading.HeadAt = true, head.Exists, model.ObjectID(head.Object)
+		}
+	}
+	found, err := e.forge().Find(ctx, forge.PullRequestQuery{Repository: baseRepository, HeadRepository: headRepository, HeadBranch: headBranch, BaseBranch: baseBranch})
+	if err == nil {
+		reading.FoundRead, reading.Found, reading.PullRequest = true, found.Found, found.PullRequest
+	}
+	number := record.Number
+	if reading.Found && number == 0 && found.PullRequest.Ref.Number > record.Earlier {
+		number = found.PullRequest.Ref.Number
+	}
+	if number != 0 {
+		if status, err := e.forge().Inspect(ctx, pullRequestRef(baseRepository, number)); err == nil {
+			reading.StatusRead, reading.Status = true, status
+		}
+	}
+	return reading
+}
+
+// settleReading settles a branch's publication, under its head's lock,
+// from what read gives for the record read under that lock, and writes
+// what it found (settlePublication).
+func (e *Engine) settleReading(ctx context.Context, worktree *git.Repository, branch model.Branch, end bool, read func(context.Context, model.Publication) PublicationReading) (model.Branch, *model.Publication, []model.PublicationStep, error) {
 	record := branch.Publication
 	if record == nil {
 		return branch, nil, nil, nil
 	}
-	headRepository, headBranch, _ := strings.Cut(record.Head, ":")
-	baseRepository, baseBranch, _ := strings.Cut(record.Base, ":")
+	baseRepository, _, _ := strings.Cut(record.Base, ":")
 	var settled Settlement
 	var unread error
 	err := worktree.WithHeadLock(ctx, record.Head, func(ctx context.Context) error {
@@ -235,28 +271,9 @@ func (e *Engine) settlePublication(ctx context.Context, worktree *git.Repository
 		// read before it, which another process may have written since
 		// (#191, group A).
 		record = current.Publication
-		var reading PublicationReading
-		if pushURL != "" {
-			if head, err := worktree.RemoteHead(ctx, pushURL, headBranch); err == nil {
-				reading.HeadRead, reading.HeadExists, reading.HeadAt = true, head.Exists, model.ObjectID(head.Object)
-			}
-		}
-		found, err := e.forge().Find(ctx, forge.PullRequestQuery{Repository: baseRepository, HeadRepository: headRepository, HeadBranch: headBranch, BaseBranch: baseBranch})
-		if err == nil {
-			reading.FoundRead, reading.Found, reading.PullRequest = true, found.Found, found.PullRequest
-		}
-		number := record.Number
-		if reading.Found && number == 0 && found.PullRequest.Ref.Number > record.Earlier {
-			number = found.PullRequest.Ref.Number
-		}
-		if number != 0 {
-			if status, err := e.forge().Inspect(ctx, pullRequestRef(baseRepository, number)); err == nil {
-				reading.StatusRead, reading.Status = true, status
-			}
-		}
-		settled = Settle(*record, current.PullRequest, reading)
+		settled = Settle(*record, current.PullRequest, read(ctx, *record))
 		if len(settled.Unread) > 0 && !settled.Ended {
-			unread = fmt.Errorf("an earlier submission of %s couldn't be accounted for: %s couldn't be read; nothing was done, and dockhand submit tries again", branch.ShortName(), prose.And(settled.Unread))
+			unread = &unsettledError{fmt.Sprintf("an earlier submission of %s couldn't be accounted for: %s couldn't be read; nothing was done, and dockhand submit tries again", branch.ShortName(), prose.And(settled.Unread))}
 			return nil
 		}
 		// A publication that still owes steps stays, with what it owes and
@@ -290,6 +307,47 @@ func (e *Engine) settlePublication(ctx context.Context, worktree *git.Repository
 	carried := *record
 	carried.Owes = settled.Owes
 	return branch, &carried, settled.Done, err
+}
+
+// unsettledError is a publication a read it needed left as it was.
+type unsettledError struct{ why string }
+
+func (e *unsettledError) Error() string { return e.why }
+
+// settleRefreshed settles, from a refresh's reading of the pull requests,
+// each publication of the pull request read, by its number: where status
+// reads a pull request anyway, that reading settles what it can, and
+// status makes no read of its own for a publication (docs/designs/
+// publication-record.md, "When settling runs"). Its head is what GitHub
+// says the open pull request is at, and its draft state is what was read
+// with it. A publication whose head another process holds, or which needs
+// a read the refresh didn't make, stays as it is for the process or the
+// next submission to settle (#191, group A).
+func (e *Engine) settleRefreshed(ctx context.Context, observed []observedPullRequest) error {
+	for _, o := range observed {
+		record, pr := o.branch.Publication, o.branch.PullRequest
+		if o.err != nil || record == nil || pr == nil || record.Number != pr.Number {
+			continue
+		}
+		if baseRepository, _, _ := strings.Cut(record.Base, ":"); !strings.EqualFold(baseRepository, pr.Repository) {
+			continue
+		}
+		reading := PublicationReading{FoundRead: true, Found: true, PullRequest: o.read.pr}
+		reading.PullRequest.Ref = pullRequestRef(pr.Repository, pr.Number)
+		if o.read.status != nil {
+			reading.StatusRead, reading.Status = true, *o.read.status
+		}
+		if o.read.pr.State == forge.PullRequestOpen && o.read.pr.RemoteHead != "" {
+			reading.HeadRead, reading.HeadExists, reading.HeadAt = true, true, o.read.pr.RemoteHead
+		}
+		_, _, _, err := e.settleReading(ctx, e.Repo, o.branch, false, func(context.Context, model.Publication) PublicationReading { return reading })
+		var held *git.HeadHeldError
+		var unsettled *unsettledError
+		if err != nil && !errors.As(err, &held) && !errors.As(err, &unsettled) {
+			return err
+		}
+	}
+	return nil
 }
 
 // foldSettlement writes what settling found into the branch's record,

@@ -24,7 +24,7 @@ const readingChunk = 25
 // more is Partial, and Inspect reads it. The opening and the description
 // are fields of the same request, so a merge's fitness costs no request
 // more (macports.MergeFitness).
-const pullRequestFields = `number state isDraft headRefOid mergeable createdAt body author { login }
+const pullRequestFields = `number state isDraft headRefOid mergeable createdAt title body author { login }
 latestOpinionatedReviews(first: 100) { totalCount nodes { state submittedAt author { login } } }
 comments(last: 100) { pageInfo { hasPreviousPage } nodes { createdAt author { __typename login } } }
 commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { totalCount nodes {
@@ -56,6 +56,7 @@ type graphPullRequest struct {
 	IsDraft    bool      `json:"isDraft"`
 	HeadRefOID string    `json:"headRefOid"`
 	CreatedAt  time.Time `json:"createdAt"`
+	Title      string    `json:"title"`
 	Body       string    `json:"body"`
 	Author     *struct {
 		Login string `json:"login"`
@@ -183,7 +184,7 @@ func readingOf(ref forge.PullRequestRef, pr graphPullRequest, account string) (f
 	if state == "" {
 		return forge.PullRequestReading{}, fmt.Errorf("github: pull request #%d is %q", pr.Number, pr.State)
 	}
-	reading := forge.PullRequestReading{Ref: ref, Found: true, PullRequest: forge.PullRequest{Ref: ref, State: state, RemoteHead: model.ObjectID(pr.HeadRefOID), Body: pr.Body, CreatedAt: pr.CreatedAt.UTC(), Mentions: mentions(pr.Body)}}
+	reading := forge.PullRequestReading{Ref: ref, Found: true, PullRequest: forge.PullRequest{Ref: ref, State: state, RemoteHead: model.ObjectID(pr.HeadRefOID), Title: pr.Title, Body: pr.Body, CreatedAt: pr.CreatedAt.UTC(), Mentions: mentions(pr.Body)}}
 	if pr.Author != nil {
 		reading.PullRequest.Author = pr.Author.Login
 	}

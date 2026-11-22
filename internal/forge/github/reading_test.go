@@ -41,7 +41,7 @@ func TestPullRequestsAreReadAtOnce(t *testing.T) {
 		fmt.Fprintf(w, `{"data": {
   "viewer": {"login":"herbygillot"},
   "p0": {"pullRequest": {"number": 34901, "state": "OPEN", "isDraft": false, "headRefOid": %[1]q, "mergeable": "CONFLICTING",
-    "createdAt": "2026-10-14T09:00:00Z", "body": "jq: update to 1.8.1\n\ncc @ryandesign", "author": {"login": "herbygillot"},
+    "createdAt": "2026-10-14T09:00:00Z", "title": "jq: update to 1.8.1", "body": "jq: update to 1.8.1\n\ncc @ryandesign", "author": {"login": "herbygillot"},
     "latestOpinionatedReviews": {"totalCount": 2, "nodes": [
       {"state": "APPROVED", "submittedAt": "2026-10-15T08:00:00Z", "author": {"login": "ryandesign"}},
       {"state": "CHANGES_REQUESTED", "submittedAt": "2026-10-15T09:00:00Z", "author": {"login": "jmroot"}}]},
@@ -71,6 +71,7 @@ func TestPullRequestsAreReadAtOnce(t *testing.T) {
 	require.False(t, open.Partial)
 	require.Equal(t, forge.PullRequestOpen, open.PullRequest.State)
 	require.EqualValues(t, head, open.PullRequest.RemoteHead)
+	require.Equal(t, "jq: update to 1.8.1", open.PullRequest.Title, "a refresh's reading settles a publication's edit (#191)")
 	require.Equal(t, "changes-requested", open.Status.Review)
 	require.Equal(t, []string{"jmroot"}, open.Status.ChangesRequestedBy)
 	require.Equal(t, []string{"ryandesign"}, open.Status.ApprovedBy, "who approved, which a merge's fitness reads")
