@@ -20,6 +20,9 @@ import (
 type Settings struct {
 	Tree     string
 	Database string
+	// MigrateDatabase is --migrate-database: consent, for this run, to a
+	// build that isn't a release migrating the default database (#281).
+	MigrateDatabase bool
 	// ToolFlags are --tool's values as given, name=path, and Tools them
 	// parsed, by name, a later one for a name winning (ParseTools).
 	ToolFlags []string
@@ -106,6 +109,7 @@ func SourceFlag(cmd *cobra.Command, s *Settings) {
 func (s *Settings) Flags(root *cobra.Command) {
 	root.PersistentFlags().StringVarP(&s.Tree, "tree", "t", "", "the ports checkout (default $MACPORTS_TREE, else the current directory)")
 	root.PersistentFlags().StringVar(&s.Database, "db", "", "the database (default $DOCKHAND_DB, else ~/.dockhand/dockhand.db)")
+	root.PersistentFlags().BoolVar(&s.MigrateDatabase, "migrate-database", false, "let a build that isn't a release migrate the default database, for this run, keeping a copy of it")
 	root.PersistentFlags().StringArrayVar(&s.ToolFlags, "tool", nil, "name=path for a program dockhand runs, ahead of its *_BIN variable, [tools], and PATH: git, port-tclsh, tart, go2port, cargo2port, xcodes, gh, patch, or diff; repeatable")
 }
 
@@ -129,7 +133,7 @@ const PullRequestsVariable = compose.PullRequestsVariable
 
 // ComposeOptions are the command line's selections, as compose takes them.
 func (s *Settings) ComposeOptions() compose.Options {
-	return compose.Options{Tree: s.Tree, Database: s.Database, Tools: s.Tools, NamesBranch: s.NamesBranch, Unattended: s.Unattended || !s.Streams.Terminal(), KeepHTTP: s.KeepHTTP, Source: s.Source, Env: s.Env, Dir: s.Dir}
+	return compose.Options{Tree: s.Tree, Database: s.Database, MigrateDevelopment: s.MigrateDatabase, Tools: s.Tools, NamesBranch: s.NamesBranch, Unattended: s.Unattended || !s.Streams.Terminal(), KeepHTTP: s.KeepHTTP, Source: s.Source, Env: s.Env, Dir: s.Dir}
 }
 
 // Options resolves the engine's options, reading the configuration file
@@ -166,6 +170,18 @@ func (s *Settings) Open(ctx context.Context) (*engine.Engine, error) {
 		}
 		if migrate {
 			options.MigrateRelease = true
+			assembly, err = compose.Open(ctx, options, s.Dependencies())
+		}
+	}
+	if refused := new(engine.DevelopmentMigrationError); errors.As(err, &refused) && s.Streams.Terminal() {
+		// A build that isn't a release, opening the default database: the
+		// person decides, and --yes isn't their answer to this (#281).
+		migrate, askErr := s.Streams.AskYes(fmt.Sprintf("%v.\n? Migrate it? A copy using schema %d will be kept at %s. [y/N] ", refused.DevelopmentMigrationError, refused.From, refused.Copy), false)
+		if askErr != nil {
+			return nil, askErr
+		}
+		if migrate {
+			options.MigrateDevelopment = true
 			assembly, err = compose.Open(ctx, options, s.Dependencies())
 		}
 	}

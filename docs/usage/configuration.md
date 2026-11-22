@@ -366,8 +366,11 @@ older dockhand can't open it after. Where something already at that name isn't
 a usable copy, such as an empty file, a directory or a link, nothing is
 migrated, and dockhand names the path to move aside. A
 development or rc build asks, on a terminal, before it migrates the default
-database a release last opened; a copy named with `DOCKHAND_DB`, such as one
-`dockhand backup` made, migrates without asking.
+database, whoever last opened it, naming the schemas and the copy it keeps;
+without a terminal it refuses, every command alike, `serve` included, and
+`--migrate-database` lets that one run migrate it. `--yes` isn't an answer to
+this. A copy named with `--db` or `DOCKHAND_DB`, such as one `dockhand backup`
+made, migrates without asking.
 
 Credentials use `GH_TOKEN`, then `GITHUB_TOKEN`, then Dockhand's stored login,
 then the GitHub CLI. Never put a token in the TOML file or a service command

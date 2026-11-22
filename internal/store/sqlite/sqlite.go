@@ -77,6 +77,11 @@ type Options struct {
 	// is otherwise refused (store.ReleaseUnderMigrationError).
 	Build          string
 	MigrateRelease bool
+	// Default is the database being the default one, named neither by
+	// --db nor DOCKHAND_DB, and MigrateDevelopment a person's consent, by
+	// its own flag, to this build migrating it where it isn't a release
+	// (store.DevelopmentMigrationError, #281).
+	Default, MigrateDevelopment bool
 	// LiveWithin is how recent a heartbeat says a process is working,
 	// coord.DefaultHungAfter, which the engine gives; where it's zero,
 	// every session not ended is working.
@@ -279,6 +284,9 @@ func (s *Store) initialize(ctx context.Context) error {
 	if err := s.refuseReleaseMigration(ctx); err != nil {
 		return err
 	}
+	if err := s.refuseDevelopmentMigration(ctx); err != nil {
+		return err
+	}
 	if err := s.keepBeforeMigrating(ctx); err != nil {
 		return err
 	}
@@ -393,6 +401,29 @@ func (s *Store) refuseReleaseMigration(ctx context.Context) error {
 		return nil
 	}
 	return &store.ReleaseUnderMigrationError{Release: release, Copy: fmt.Sprintf("%s.schema-%d", s.path, version), From: version, To: schemaVersion, Live: s.liveProcesses(ctx, s.db, s.options.LiveWithin)}
+}
+
+// refuseDevelopmentMigration refuses a build that isn't a release, a
+// release candidate included, migrating the default database, unless the
+// person consented by the flag or answered the release's question: a
+// build of main tried once beside a release took its database with it
+// (#281). A new database, one at this build's schema, and one named
+// explicitly are left to the rules above.
+func (s *Store) refuseDevelopmentMigration(ctx context.Context) error {
+	if s.options.Build == "" || !s.options.Default || s.options.MigrateDevelopment || s.options.MigrateRelease {
+		return nil
+	}
+	if _, release := buildinfo.Released(s.options.Build); release {
+		return nil
+	}
+	version, app, err := schemaOf(ctx, s.db)
+	if err != nil {
+		return err
+	}
+	if app != applicationID || version == 0 || version >= schemaVersion {
+		return nil
+	}
+	return &store.DevelopmentMigrationError{Build: s.options.Build, Copy: fmt.Sprintf("%s.schema-%d", s.path, version), From: version, To: schemaVersion}
 }
 
 // schemaOf reads a database's schema version and application ID.

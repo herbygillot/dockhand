@@ -506,6 +506,24 @@ func (e *ReleaseUnderMigrationError) Error() string {
 
 func (e *ReleaseUnderMigrationError) Unwrap() error { return ErrReleaseUnderMigration }
 
+// ErrDevelopmentMigration refuses a migration of the default database by
+// a build that isn't a release, which a person consents to by its own
+// flag (#281).
+var ErrDevelopmentMigration error = refusal.New(refusal.Attention, "a build that isn't a release would migrate the default database")
+
+// DevelopmentMigrationError is that migration refused: the build, and the
+// schemas and copy the migration would go from and keep.
+type DevelopmentMigrationError struct {
+	Build, Copy string
+	From, To    int
+}
+
+func (e *DevelopmentMigrationError) Error() string {
+	return fmt.Sprintf("dockhand %s isn't a release, and opening the default database would migrate it from schema %d to %d, which a release on schema %d can't open after", e.Build, e.From, e.To, e.From)
+}
+
+func (e *DevelopmentMigrationError) Unwrap() error { return ErrDevelopmentMigration }
+
 // Check is a check's records read in one call, where four places read a
 // run's executions and each one's results row by row (the SQL study's
 // O2): the run, its plan, its executions by attempt, each one's results in

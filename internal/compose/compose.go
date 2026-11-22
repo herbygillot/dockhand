@@ -58,6 +58,9 @@ type Options struct {
 	// MigrateRelease migrates a database a release last opened with a
 	// build that isn't one, as the person answered.
 	MigrateRelease bool
+	// MigrateDevelopment is --migrate-database: the person's consent to a
+	// build that isn't a release migrating the default database (#281).
+	MigrateDevelopment bool
 	// NamesBranch is a command naming a branch, which run outside any
 	// checkout finds the one the database registered (registeredCheckout).
 	NamesBranch bool
@@ -403,15 +406,16 @@ func Settings(ctx context.Context, options Options, dependencies Dependencies) (
 		// Readings are a saving: where the cache can't be placed, none
 		// are kept; port indexes are staged, so their cache is refused
 		// when they're staged.
-		Readings:         readings,
-		Indexes:          indexes,
-		IndexMirror:      options.Getenv("DOCKHAND_INDEX_MIRROR"),
-		Home:             places.Home,
-		MigrateUnderLive: options.MigrateUnderLive,
-		MigrateRelease:   options.MigrateRelease,
-		NamedDatabase:    !standard,
-		KeepHTTP:         options.KeepHTTP || file.Update.KeepHTTP,
-		Source:           cmp.Or(options.Source, file.Update.Source),
+		Readings:           readings,
+		Indexes:            indexes,
+		IndexMirror:        options.Getenv("DOCKHAND_INDEX_MIRROR"),
+		Home:               places.Home,
+		MigrateUnderLive:   options.MigrateUnderLive,
+		MigrateRelease:     options.MigrateRelease,
+		MigrateDevelopment: options.MigrateDevelopment,
+		NamedDatabase:      !standard,
+		KeepHTTP:           options.KeepHTTP || file.Update.KeepHTTP,
+		Source:             cmp.Or(options.Source, file.Update.Source),
 	}, file, configPath, nil
 }
 

@@ -119,6 +119,10 @@ type Options struct {
 	// MigrateRelease migrates a database a release last opened though this
 	// build isn't one, a person's answer to ReleaseUnderMigrationError.
 	MigrateRelease bool
+	// MigrateDevelopment migrates the default database though this build
+	// isn't a release, the person's consent by --migrate-database to
+	// DevelopmentMigrationError (#281).
+	MigrateDevelopment bool
 	// KeepHTTP is --keep-http, or [update] keep_http: every update,
 	// create, and checksums refresh, serve's among them, leaves plain-HTTP
 	// links as they are, asking nothing and saying nothing of them, where
@@ -390,6 +394,9 @@ func Checkouts(ctx context.Context, options Options) ([]string, error) {
 	if refused := new(store.ReleaseUnderMigrationError); errors.As(err, &refused) {
 		return nil, &ReleaseUnderMigrationError{refused}
 	}
+	if refused := new(store.DevelopmentMigrationError); errors.As(err, &refused) {
+		return nil, &DevelopmentMigrationError{refused}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -432,6 +439,9 @@ func Open(ctx context.Context, options Options) (*Engine, error) {
 	}
 	if refused := new(store.ReleaseUnderMigrationError); errors.As(err, &refused) {
 		return nil, &ReleaseUnderMigrationError{refused}
+	}
+	if refused := new(store.DevelopmentMigrationError); errors.As(err, &refused) {
+		return nil, &DevelopmentMigrationError{refused}
 	}
 	if err != nil {
 		return nil, err
@@ -585,7 +595,8 @@ func (o Options) storeOptions() sqlite.Options {
 	if quiet == nil {
 		quiet = otherDockhands
 	}
-	return sqlite.Options{MigrateUnderLive: o.MigrateUnderLive, MigrateRelease: o.MigrateRelease || o.NamedDatabase, Build: buildinfo.Current().String(), LiveWithin: coord.DefaultHungAfter, Heartbeat: coord.DefaultHeartbeat, Quiet: quiet}
+	return sqlite.Options{MigrateUnderLive: o.MigrateUnderLive, MigrateRelease: o.MigrateRelease || o.NamedDatabase, Default: !o.NamedDatabase, MigrateDevelopment: o.MigrateDevelopment,
+		Build: buildinfo.Current().String(), LiveWithin: coord.DefaultHungAfter, Heartbeat: coord.DefaultHeartbeat, Quiet: quiet}
 }
 
 // ReleaseUnderMigrationError is a migration Open refused, since a release
@@ -610,6 +621,19 @@ func (e *ReleaseUnderMigrationError) Working() string {
 }
 
 func (e *ReleaseUnderMigrationError) Unwrap() error { return e.ReleaseUnderMigrationError }
+
+// DevelopmentMigrationError is a migration Open refused, since this build
+// isn't a release and the database is the default one; the person
+// consents by --migrate-database, or answers at a terminal (#281).
+type DevelopmentMigrationError struct {
+	*store.DevelopmentMigrationError
+}
+
+func (e *DevelopmentMigrationError) Error() string {
+	return e.DevelopmentMigrationError.Error() + fmt.Sprintf(". Nothing was migrated. To migrate it, run this again with --migrate-database, which keeps its schema %d form at %s; to try this build without touching it, point DOCKHAND_DB at a copy made with sqlite3 <database> \".backup <file>\"", e.From, e.Copy)
+}
+
+func (e *DevelopmentMigrationError) Unwrap() error { return e.DevelopmentMigrationError }
 
 // LiveUnderMigrationError is a migration Open refused, since dockhand
 // processes that read the older schema are working, said with the way on;

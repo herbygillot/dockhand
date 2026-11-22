@@ -2256,3 +2256,44 @@ func TestPruningTheJournalIsRefusedInARead(t *testing.T) {
 	})
 	require.ErrorIs(t, err, model.ErrInvalid)
 }
+
+// A build that isn't a release, a candidate included, doesn't migrate the
+// default database unasked, whoever last opened it: a build of main tried
+// once beside a release took its database with it (#281). Consent by the
+// flag migrates it, keeping the copy; a database named explicitly, a
+// release build, a new database, and one at this schema are as before.
+func TestABuildThatIsntAReleaseAsksBeforeMigratingTheDefaultDatabase(t *testing.T) {
+	t.Parallel()
+	ended := "INSERT INTO repositories VALUES('repo_1', '/src/macports-ports/.git', 0);\n" +
+		"INSERT INTO sessions(repository_id, id, kind, pid, process_start, version, started_at, heartbeat_at, ended_at) VALUES('repo_1','ses_1','foreground',101,'p','v0.4.1-0.20261024120000-0123456789ab',1,1,2);"
+	for _, build := range []string{"devel (abcdef123456)", "v0.9.0-rc1 (6246e4b9eb84)"} {
+		path := schemaAt(t, 32, ended)
+		_, err := Open(t.Context(), path, Options{Build: build, Default: true})
+		refused := new(store.DevelopmentMigrationError)
+		require.ErrorAs(t, err, &refused, build)
+		require.Equal(t, store.DevelopmentMigrationError{Build: build, Copy: path + ".schema-32", From: 32, To: schemaVersion}, *refused)
+		require.ErrorIs(t, err, store.ErrDevelopmentMigration)
+		db, err := sql.Open("sqlite", path)
+		require.NoError(t, err)
+		var version int
+		require.NoError(t, db.QueryRow("PRAGMA user_version").Scan(&version))
+		require.NoError(t, db.Close())
+		require.Equal(t, 32, version, "nothing migrated")
+		require.NoFileExists(t, path+".schema-32")
+
+		consented, err := Open(t.Context(), path, Options{Build: build, Default: true, MigrateDevelopment: true})
+		require.NoError(t, err)
+		require.Equal(t, &Migration{From: 32, To: schemaVersion, Copy: path + ".schema-32"}, consented.Migration())
+		require.FileExists(t, path+".schema-32", "the copy is kept")
+		require.NoError(t, consented.Close())
+	}
+	named, err := Open(t.Context(), schemaAt(t, 32, ended), Options{Build: "devel (abcdef123456)"})
+	require.NoError(t, err, "a database named explicitly migrates as before")
+	require.NoError(t, named.Close())
+	released, err := Open(t.Context(), schemaAt(t, 32, ended), Options{Build: "v0.9.0", Default: true})
+	require.NoError(t, err, "a release migrates the default database as before")
+	require.NoError(t, released.Close())
+	fresh, err := Open(t.Context(), filepath.Join(t.TempDir(), "dockhand.db"), Options{Build: "devel (abcdef123456)", Default: true})
+	require.NoError(t, err, "a new database is never asked about")
+	require.NoError(t, fresh.Close())
+}
