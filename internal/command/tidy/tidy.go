@@ -218,6 +218,7 @@ func applySaved(ctx context.Context, e *engine.Engine, streams term.Streams, fil
 // items: git restore restores files, and dockhand's restores history).
 func UndoCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
+	var plan bool
 	cmd := &cobra.Command{
 		Use: "undo [<checkpoint> | <check>]",
 		// v0.3.0's restore points here, not run as an alias.
@@ -252,7 +253,13 @@ checked out here.`,
 					return errors.New("a checkpoint or check identifies its branch; name it or select a branch, not both")
 				}
 				if model.IsRunName(args[0]) {
+					if plan {
+						return showUndoPlan(ctx, e, streams, args[0])
+					}
 					return putBack(ctx, e, streams, args[0])
+				}
+				if plan {
+					return showUndoPlan(ctx, e, streams, args[0])
 				}
 				return restoreCheckpoint(ctx, e, streams, args[0])
 			}
@@ -264,12 +271,51 @@ checked out here.`,
 			if err != nil {
 				return err
 			}
+			if plan {
+				return showUndoPlan(ctx, e, streams, name)
+			}
 			return restoreCheckpoint(ctx, e, streams, name)
 		},
 	}
 	where.Register(cmd, s, "undo in")
+	cmd.Flags().BoolVar(&plan, "plan", false, "show what undo would restore and change nothing")
 	settings.SupportsJSON(cmd)
 	return cmd
+}
+
+// showUndoPlan prints the engine's read-only description of a checkpoint or
+// a check's prefix restoration.
+func showUndoPlan(ctx context.Context, e *engine.Engine, streams term.Streams, name string) error {
+	proposal, err := e.PlanUndo(ctx, name)
+	if err != nil {
+		return err
+	}
+	streams.Emit(proposal)
+	out := streams.Prose()
+	if proposal.Checkpoint != nil {
+		checkpoint := proposal.Checkpoint
+		fmt.Fprintf(out, "%s · %s\n", proposal.Branch.ShortName(), checkpoint.Name())
+		if checkpoint.Kind == model.CheckpointRebase {
+			fmt.Fprintf(out, "Restore history and files to %s, on master %s again.\n", checkpoint.Before.Short(), proposal.Branch.Base.Short())
+		} else {
+			fmt.Fprintf(out, "Restore history to %s. The files are unchanged.\n", checkpoint.Before.Short())
+		}
+		fmt.Fprintln(out, "Nothing was restored (--plan).")
+		return nil
+	}
+	fmt.Fprintf(out, "%s · prefix changes left by the check\n", proposal.Run.Name())
+	for _, prefix := range proposal.Prefixes {
+		fmt.Fprintf(out, "  %s · MacPorts snapshot %s\n", prefix.Place, prefix.Snapshot)
+		for _, change := range prefix.Changes {
+			if change.Previous == "" {
+				fmt.Fprintf(out, "    deactivate %s @%s\n", change.Port, change.Current)
+			} else {
+				fmt.Fprintf(out, "    %s @%s → @%s\n", change.Port, change.Current, change.Previous)
+			}
+		}
+	}
+	fmt.Fprintln(out, "Nothing was restored (--plan).")
+	return nil
 }
 
 // putBack puts back what a check changed of the person's own and left,

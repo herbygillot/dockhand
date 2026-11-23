@@ -260,6 +260,11 @@ Or use the checkpoint name dockhand reported:
 dockhand undo tidy-3
 ```
 
+Add `--plan` to either form to read the checkpoint and see the history (and,
+for a rebase, files and base) it would restore. A check name such as
+`check-12 --plan` reads the saved MacPorts snapshot and active ports, then
+shows the versions it would reactivate or deactivate. It changes nothing.
+
 A named checkpoint already identifies its branch, so do not add `-b` to that
 form. Undo requires the branch still to match the history the operation left;
 later commits can make it refuse. After undoing tidy, your working files stay in
@@ -275,9 +280,9 @@ These operations have different purposes:
 | Intent | Command | What remains |
 | --- | --- | --- |
 | Pause an open change | `dockhand archive jq-update` | Git branch, record, checks/checkpoints subject to retention, fork branch, and pull request. |
-| Resume an archived change | `dockhand archive --undo jq-update` | The branch returns to open work; its worktree is available again when needed. |
+| Resume an archived change | `dockhand archive --undo -b jq-update` | The branch returns to open work; its worktree is available again when needed. |
 | Remove merged worktrees and branches | `dockhand clean --plan`, then `dockhand clean` | The tracking record remains, so `status --all` can still explain the branch. |
-| Forget an ended change entirely | `dockhand clean --delete jq-update` | The preview identifies the worktree, Git branch, unmerged work, the clones its checks kept, and record to remove. |
+| Forget an ended change entirely | `dockhand clean --delete -b jq-update` | The preview identifies the worktree, Git branch, unmerged work, the clones its checks kept, and record to remove. |
 
 Archiving hides the branch from the ordinary overview. It does not close a pull
 request. With uncommitted edits or untracked files, the terminal offers how to

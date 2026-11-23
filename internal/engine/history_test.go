@@ -55,6 +55,24 @@ func baseOf(t *testing.T, e *Engine, branch model.Branch) model.ObjectID {
 	return current.Base
 }
 
+func TestPlanUndoDoesNotWriteStoreOrChangeRefs(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, tidy := updated(t, e)
+	result, err := e.ApplyTidy(t.Context(), tidy)
+	require.NoError(t, err)
+	refs := testsupport.Git(t, branch.Worktree, "show-ref")
+	writes := &writeCountingStore{Store: e.Store}
+	e.Store = writes
+	plan, err := e.PlanUndo(t.Context(), result.Checkpoint.Name())
+	require.NoError(t, err)
+	require.Equal(t, result.Checkpoint.Name(), plan.Checkpoint.Name())
+	require.Equal(t, branch.ID, plan.Branch.ID)
+	require.Zero(t, writes.writes)
+	require.Equal(t, refs, testsupport.Git(t, branch.Worktree, "show-ref"))
+}
+
 // A tidy or rebase that stopped after recording its checkpoint and before
 // its Git change leaves a prepared checkpoint, which the next history
 // change on the branch abandons, removing what it made. (The architecture

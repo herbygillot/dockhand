@@ -361,6 +361,26 @@ func TestUndoPutsBackAPrefixACheckLeftOrKept(t *testing.T) {
 	require.NoDirExists(t, kept)
 }
 
+func TestPlanPutBackReadsRecordedAndActivePortsWithoutChangingThem(t *testing.T) {
+	t.Parallel()
+	path, active := registry(t, "  zlib @1.4.0_0 (active)\n  libharbor @9.9_0 (active)\n")
+	prefix, env, _ := fakePrefix(t, active)
+	l := localProvider(t, env)
+	left := leftBehind(t, l.Temp, prefix)
+	refs := readRegistry(t, path)
+	plan, found, err := l.PlanPutBack(t.Context(), "check-9")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, prefix, plan.Place)
+	require.Equal(t, "7", plan.Snapshot)
+	require.Equal(t, []buildenv.PutBackChange{
+		{Port: "libharbor", Current: "9.9_0"},
+		{Port: "zlib", Current: "1.4.0_0", Previous: "1.3.2_0"},
+	}, plan.Changes)
+	require.Equal(t, refs, readRegistry(t, path))
+	require.DirExists(t, left)
+}
+
 // Where dockhand's put-back can't run, port restore is offered as what it
 // is, the ports requested before, with the rest that were active from the
 // check's record.

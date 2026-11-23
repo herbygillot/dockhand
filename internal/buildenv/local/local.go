@@ -907,6 +907,45 @@ func (l *Local) PutBack(ctx context.Context, check string, progress func(string)
 	return "", false, nil
 }
 
+// PlanPutBack reads the before snapshot and currently active versions for
+// a check without locking or changing the prefix.
+func (l *Local) PlanPutBack(ctx context.Context, check string) (buildenv.PutBackPlan, bool, error) {
+	for _, left := range l.left() {
+		if left.owner.Check != check || left.snapshot == "" || left.restored {
+			continue
+		}
+		if left.unreadable != nil {
+			return buildenv.PutBackPlan{}, true, left.unreadable
+		}
+		before, err := os.ReadFile(filepath.Join(left.dir, "before.txt"))
+		if err != nil {
+			return buildenv.PutBackPlan{}, true, err
+		}
+		active, err := l.command(ctx, nil, filepath.Join(left.owner.Prefix, "bin", "port"), "-q", "installed", "active")
+		if err != nil {
+			return buildenv.PutBackPlan{}, true, err
+		}
+		previous, current := activePorts(string(before)), activePorts(string(active))
+		ports := slices.Sorted(maps.Keys(previous))
+		for port := range current {
+			if !slices.Contains(ports, port) {
+				ports = append(ports, port)
+			}
+		}
+		slices.Sort(ports)
+		plan := buildenv.PutBackPlan{Place: left.owner.Prefix, Snapshot: left.snapshot}
+		for _, port := range ports {
+			if previous[port] != current[port] {
+				plan.Changes = append(plan.Changes, buildenv.PutBackChange{Port: port, Current: strings.TrimPrefix(current[port], "@"), Previous: strings.TrimPrefix(previous[port], "@")})
+			}
+		}
+		return plan, true, nil
+	}
+	return buildenv.PutBackPlan{}, false, nil
+}
+
+var _ buildenv.PutBackPlanner = (*Local)(nil)
+
 // saying is a put-back's progress, as a check's build says it: the prefix
 // waited for and root asked for are all a put-back says, and none of a
 // build's other methods is called.

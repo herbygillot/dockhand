@@ -48,6 +48,28 @@ func TestTidyAppliesDockhandsOwnEditsAndUndoPutsThemBack(t *testing.T) {
 	require.Equal(t, "M textproc/jq/Portfile", testsupport.Git(t, dir, "status", "--porcelain"))
 }
 
+func TestUndoPlanShowsCheckpointWithoutMovingGitRefs(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "tidy")
+	require.NoError(t, err)
+	refs := testsupport.Git(t, dir, "show-ref")
+	out, _, err := cmdtest.Dockhand(t, "undo", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq-update · tidy-1")
+	require.Contains(t, out, "Restore history")
+	require.Contains(t, out, "Nothing was restored (--plan).")
+	require.Equal(t, refs, testsupport.Git(t, dir, "show-ref"))
+}
+
 func TestTidyAsksAboutAPersonsCommits(t *testing.T) {
 	t.Parallel()
 	w := cmdtest.NewWorld(t)

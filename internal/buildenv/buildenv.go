@@ -574,6 +574,25 @@ type PuttingBackProvider interface {
 	PutBack(ctx context.Context, check string, progress func(string)) (place string, found bool, err error)
 }
 
+// PutBackChange is one active port version the put-back would change.
+// Previous is empty when the check would deactivate the port.
+type PutBackChange struct {
+	Port, Current, Previous string
+}
+
+// PutBackPlan describes a check's recorded prefix restoration without
+// applying it.
+type PutBackPlan struct {
+	Place, Snapshot string
+	Changes         []PutBackChange
+}
+
+// PutBackPlanner reads the restoration record and current active ports,
+// without changing the prefix.
+type PutBackPlanner interface {
+	PlanPutBack(ctx context.Context, check string) (plan PutBackPlan, found bool, err error)
+}
+
 // An InstalledProvider says what an environment has installed already, for
 // a check's estimate of what it installs: a local prefix's active ports,
 // and the global variants its variants.conf sets, under which a dependency
