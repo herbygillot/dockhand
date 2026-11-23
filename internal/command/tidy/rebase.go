@@ -16,7 +16,7 @@ import (
 
 func RebaseCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
-	var plan bool
+	var plan, yes bool
 	cmd := &cobra.Command{
 		Use:   "rebase",
 		Short: "Rebase the branch onto the latest master",
@@ -87,6 +87,8 @@ rebase that conflicts is abandoned with the branch as it was.`,
 		},
 	}
 	cmd.Flags().BoolVar(&plan, "plan", false, "show what the rebase would replay, and onto what, and change nothing")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "accepted for consistency; rebase asks nothing")
+	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
 	where.Register(cmd, s, "rebase")
 	settings.SupportsJSON(cmd)
 	return cmd

@@ -206,6 +206,9 @@ dockhand status -b jq-update
 `--plan` fetches master and says what the rebase would replay, drop as already
 on master, or stop at, and moves nothing.
 
+`rebase` accepts `--yes` like the other commands; it asks nothing, so the flag
+changes nothing.
+
 `rebase` requires committed work, fetches master, and replays the branch's own
 commits, leaving out commits already contained in a master this checkout has.
 If Git has already moved the branch onto newer master, rebase records that base

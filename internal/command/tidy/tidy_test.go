@@ -124,6 +124,21 @@ func TestTidyYesAppliesAPersonsPlanAsShown(t *testing.T) {
 	require.Empty(t, testsupport.Git(t, w.Clone, "status", "--porcelain"))
 }
 
+func TestRebaseAcceptsYesWithoutChangingItsBehavior(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	_, _, err := cmdtest.Dockhand(t, "start", "notes")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "notes")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	before := testsupport.Git(t, dir, "rev-parse", "HEAD")
+
+	out, _, err := cmdtest.Dockhand(t, "rebase", "--yes")
+	require.NoError(t, err)
+	require.Contains(t, out, "notes already starts from master ")
+	require.Equal(t, before, testsupport.Git(t, dir, "rev-parse", "HEAD"), "--yes changes nothing when rebase asks nothing")
+}
+
 func TestTidyRegroupsAndAppliesASavedPlan(t *testing.T) {
 	t.Parallel()
 	w := cmdtest.NewWorld(t)

@@ -115,6 +115,19 @@ func TestTheSharedFlagsMeanOneThing(t *testing.T) {
 	}
 }
 
+// These commands take --yes as the common script answer for an action or
+// plan that can otherwise ask. Rebase currently asks nothing, but accepts
+// the flag so scripts can pass it uniformly.
+func TestCommandsThatAcceptYes(t *testing.T) {
+	t.Parallel()
+	found := commands(t)
+	for _, name := range []string{"check", "clean", "rebase", "setup", "ship", "submit", "tidy", "update"} {
+		cmd, ok := found[name]
+		require.True(t, ok, "%s is a runnable command", name)
+		require.NotNil(t, cmd.Flags().Lookup("yes"), "%s accepts --yes", name)
+	}
+}
+
 // Every command takes --plan but those that say why not.
 func TestEveryCommandPlansOrSaysWhyNot(t *testing.T) {
 	t.Parallel()
