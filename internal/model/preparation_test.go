@@ -51,3 +51,25 @@ func TestScopesCompareOnlyWhenEqualAndKnown(t *testing.T) {
 	require.False(t, ScopesComparable(scope("25.1.0", read("26.1")), scope("25.2.0", read("26.1"))), "the Darwin version still counts")
 	require.False(t, ScopesComparable(scope("", read("26.1")), scope("", read("26.1"))), "any other unknown part still compares with nothing")
 }
+
+// A change request's flags round-trip, a flag left out told from one given
+// false or empty (#195).
+func TestAChangeRequestKeepsWhatWasGivenApartFromWhatWasLeftOut(t *testing.T) {
+	t.Parallel()
+	request := ChangeRequest{ID: "rq_1", Origin: "ship", Shared: Set(false), Source: SourceAsk{Source: Set("releases"), KeepHTTP: Set(false)},
+		Actions: ActionsAsk{Except: Set([]string{"py-foo"}), Closes: Set([]string{})}, To: Set("check"),
+		Check: CheckAsk{On: Set([]string{"tahoe"}), Tests: Set("required")}, Publish: PublishAsk{Draft: Set(true), Type: Set([]string{"bugfix"})}}
+	data, err := json.Marshal(request)
+	require.NoError(t, err)
+	var back ChangeRequest
+	require.NoError(t, json.Unmarshal(data, &back))
+	require.Equal(t, request.Shared, back.Shared, "given false is given")
+	require.Equal(t, request.Source, back.Source)
+	require.Equal(t, request.Check, back.Check)
+	require.Equal(t, request.Publish, back.Publish)
+	require.Equal(t, request.To, back.To)
+	require.True(t, back.Actions.Closes.Given, "given empty is given")
+	require.False(t, back.Actions.WithObsolete.Given, "left out is left out")
+	require.Equal(t, "fallback", Flag[string]{}.Or("fallback"))
+	require.Empty(t, Set("").Or("fallback"), "given empty is the value given")
+}

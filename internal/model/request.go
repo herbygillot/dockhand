@@ -10,6 +10,80 @@ type ChangeRequest struct {
 	// Origin is the command that asked: update, bump, ship or serve.
 	Origin  string
 	Targets []RequestTarget `json:",omitempty"`
+	// Shared is --shared-release.
+	Shared Flag[bool] `json:",omitzero"`
+	// Source is how the edit is shaped: --source, --keep-http,
+	// --keep-old-checksums, --keep-modeline and --follow-moves.
+	Source SourceAsk `json:",omitzero"`
+	// Actions are what is asked beside the version: --with-obsolete,
+	// --revbump-dependents with --except, and --closes.
+	Actions ActionsAsk `json:",omitzero"`
+	// Outcomes are the request's own actions' outcomes, the dependents'
+	// and the tickets', once each is concluded; a target's are on it.
+	Outcomes []ActionOutcome `json:",omitempty"`
+	// To is ship's stage, where --to was given: commit, check or submit.
+	To Flag[string] `json:",omitzero"`
+	// Check is the check's place, --on or --build as one choice, and its
+	// --tests.
+	Check CheckAsk `json:",omitzero"`
+	// Publish is the submission's: --draft, --type, --skip-notification,
+	// and the tested statements as asked, until they are bound.
+	Publish PublishAsk `json:",omitzero"`
+}
+
+// Flag is a flag with whether it was given: a flag left out is told from
+// one given false or empty (#195). (The design calls it Asked, which a
+// publication's record already names.)
+type Flag[T any] struct {
+	Given bool `json:",omitempty"`
+	Value T    `json:",omitzero"`
+}
+
+// Set is a flag given with value.
+func Set[T any](value T) Flag[T] { return Flag[T]{Given: true, Value: value} }
+
+// Or is the flag's value where it was given, else fallback.
+func (a Flag[T]) Or(fallback T) T {
+	if a.Given {
+		return a.Value
+	}
+	return fallback
+}
+
+// SourceAsk is how the edit is shaped.
+type SourceAsk struct {
+	Source           Flag[string] `json:",omitzero"`
+	KeepHTTP         Flag[bool]   `json:",omitzero"`
+	KeepOldChecksums Flag[bool]   `json:",omitzero"`
+	KeepModeline     Flag[bool]   `json:",omitzero"`
+	FollowMoves      Flag[bool]   `json:",omitzero"`
+}
+
+// ActionsAsk is what is asked beside the version.
+type ActionsAsk struct {
+	WithObsolete      Flag[bool]     `json:",omitzero"`
+	RevbumpDependents Flag[bool]     `json:",omitzero"`
+	Except            Flag[[]string] `json:",omitzero"`
+	Closes            Flag[[]string] `json:",omitzero"`
+}
+
+// CheckAsk is the check's place and tests. The place is one choice:
+// --on and --build each replace the other.
+type CheckAsk struct {
+	On    Flag[[]string] `json:",omitzero"`
+	Build Flag[string]   `json:",omitzero"`
+	Tests Flag[string]   `json:",omitzero"`
+}
+
+// PublishAsk is the submission's flags, and the tested statements as
+// asked, which are bound to their files where they are bound today and
+// taken out of the request then.
+type PublishAsk struct {
+	Draft            Flag[bool]     `json:",omitzero"`
+	Type             Flag[[]string] `json:",omitzero"`
+	SkipNotification Flag[bool]     `json:",omitzero"`
+	TestedBinaries   Flag[bool]     `json:",omitzero"`
+	TestedVariants   Flag[bool]     `json:",omitzero"`
 }
 
 // RequestTarget is one port of a branch's work.

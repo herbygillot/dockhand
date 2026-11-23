@@ -7,9 +7,11 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
+	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -187,4 +189,38 @@ func TestAQuestionWithoutATerminalIsRefusedAlike(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check")
 	require.Equal(t, term.ExitFailure, term.ExitCode(err))
 	require.EqualError(t, err, "nothing was submitted: without a terminal, --yes submits exactly what is shown")
+}
+
+// changeCommands are the commands whose flags the flag table answers for
+// (#195).
+var changeCommands = []string{"update", "bump", "ship", "submit", "check", "edit", "revbump"}
+
+// Every flag of the commands that change a port has a row in the flag
+// table, which says what it means and how long it lasts, or names the
+// contract that owns it; and every row's flag is one of theirs.
+func TestEveryChangeFlagHasARowAndEveryRowAFlag(t *testing.T) {
+	t.Parallel()
+	found := commands(t)
+	seen := map[string]bool{}
+	for _, name := range changeCommands {
+		cmd, ok := found[name]
+		require.True(t, ok, "%s is a command", name)
+		visit := func(flag *pflag.Flag) {
+			if flag.Name == "help" {
+				return
+			}
+			seen["--"+flag.Name] = true
+			_, has := engine.FlagRowOf(flag.Name)
+			require.True(t, has, "%s's --%s has no row in engine.FlagTable", name, flag.Name)
+		}
+		cmd.LocalFlags().VisitAll(visit)
+		cmd.InheritedFlags().VisitAll(visit)
+	}
+	for _, row := range engine.FlagTable {
+		for _, flag := range row.Flags {
+			if strings.HasPrefix(flag, "--") {
+				require.True(t, seen[flag], "engine.FlagTable's %s is no flag of %s", flag, strings.Join(changeCommands, ", "))
+			}
+		}
+	}
 }
