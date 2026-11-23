@@ -515,8 +515,14 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	// Mac to have one; a prefix is checked when a check names it.
 	if local.Supported() {
 		settings := file.Providers.Local
-		e.Providers[buildenv.Local] = &local.Local{Repo: e.Repo, Index: e.PortIndex, Prefix: settings.Prefix, Keep: settings.Keep, Clean: settings.Clean,
+		provider := &local.Local{Repo: e.Repo, Index: e.PortIndex, Prefix: settings.Prefix, Keep: settings.Keep, Clean: settings.Clean,
 			TestTimeout: settings.Timeout(), BuildTimeout: settings.BuildBound(), Env: options.Env, Starter: self}
+		// The probe of this Mac's sudo is the person's, kept in their own
+		// dockhand directory.
+		if home := options.Places().Home; home != "" {
+			provider.Proofs = filepath.Join(home, ".dockhand", "local")
+		}
+		e.Providers[buildenv.Local] = provider
 		e.LocalServe = settings.Serve
 	}
 	if dependencies.Leftovers != nil {

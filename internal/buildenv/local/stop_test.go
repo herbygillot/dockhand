@@ -88,8 +88,8 @@ func keepRootProof(t *testing.T, l *Local, sudo string, proved bool) {
 	require.NoError(t, err)
 	data, err := json.Marshal(RootProof{Sudo: identity, Proved: proved, Found: []string{"without a terminal: standard input the lock: false"}, At: time.Now()})
 	require.NoError(t, err)
-	require.NoError(t, os.MkdirAll(l.locks(), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(l.locks(), rootProofName), data, 0o644))
+	require.NoError(t, os.MkdirAll(l.Proofs, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(l.Proofs, rootProofName), data, 0o600))
 }
 
 // A root build handed its stop is stopped only where this Mac's sudo has
@@ -100,7 +100,7 @@ func TestARootBuildIsStoppedOnlyUnderAProvedSudo(t *testing.T) {
 	t.Parallel()
 	sudo := filepath.Join(t.TempDir(), "sudo")
 	testsupport.WriteExecutable(t, sudo, "#!/bin/sh\nexec \"$@\"\n")
-	l := &Local{Temp: t.TempDir(), Locks: t.TempDir(), sudo: []string{sudo}}
+	l := &Local{Temp: t.TempDir(), Proofs: t.TempDir(), sudo: []string{sudo}}
 	dir := t.TempDir()
 	owned, err := json.Marshal(owner{PID: 1, Check: "check-12", Prefix: "/opt/local", Root: true, RootStop: true})
 	require.NoError(t, err)

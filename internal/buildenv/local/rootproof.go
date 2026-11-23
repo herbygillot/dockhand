@@ -37,11 +37,15 @@ func sudoIdentity(path string) (SudoIdentity, error) {
 	return SudoIdentity{Path: path, Size: info.Size(), ModTime: info.ModTime().UTC()}, nil
 }
 
-// RootProof is what a probe of this Mac's sudo found, the lifecycle
-// design's test of a root build's stop (rule 4), run once for each sudo
-// binary: whether its command is handed the launch lock as its standard
-// input and holds it while it lives, and whether a SIGTERM reaches it,
-// with and without a terminal. Proved only where every part held.
+// RootProof is what a probe of this Mac's sudo found for this person, the
+// lifecycle design's test of a root build's stop (rule 4), run once for
+// each sudo binary: whether its command is handed the very opening of the
+// launch lock that was locked, as its standard input, and holds it while
+// it lives, and whether a SIGTERM reaches it, with and without a terminal.
+// Proved only where every part held. It is the person's, kept in their own
+// dockhand directory: it proves their sudo rule as much as the Mac's sudo,
+// and a proof another account could write would let a stop say a live
+// root build ended (architecture's ruling of 2026-11-23).
 type RootProof struct {
 	Sudo   SudoIdentity `json:"sudo"`
 	Proved bool         `json:"proved"`
@@ -54,9 +58,13 @@ type RootProof struct {
 // it saw.
 type ProbeCase struct {
 	Terminal bool
-	// StdinIsLock, LockHeld, SignalReached and LockFreed are the four
-	// parts that must hold.
-	StdinIsLock, LockHeld, SignalReached, LockFreed bool
+	// StdinIsLock, LockHeld, SignalReached, SameOpening and LockFreed are
+	// the parts that must hold. SameOpening is the lock still held, after
+	// the sudo and its command have ended, by what the command handed its
+	// standard input on to: it holds the lock only where that input is the
+	// opening the launcher locked, not the same file opened again, which
+	// the command's own check can't tell (Codex's read of 25ee3c59).
+	StdinIsLock, LockHeld, SignalReached, SameOpening, LockFreed bool
 	// SelfSignals is whether this process may signal the root sudo, else
 	// the root stop under sudo -n sent it; KeepsGroup and KeepsSession
 	// whether the command stayed in the sudo's group and session.
@@ -68,7 +76,7 @@ type ProbeCase struct {
 
 // Held reports whether every part of the case held.
 func (c ProbeCase) Held() bool {
-	return c.StdinIsLock && c.LockHeld && c.SignalReached && c.LockFreed
+	return c.StdinIsLock && c.LockHeld && c.SignalReached && c.SameOpening && c.LockFreed
 }
 
 // Words is the case as a line of the proof.
@@ -78,7 +86,8 @@ func (c ProbeCase) Words() string {
 		terminal = "with a terminal"
 	}
 	parts := []string{fmt.Sprintf("standard input the lock: %v", c.StdinIsLock), fmt.Sprintf("lock held: %v", c.LockHeld),
-		fmt.Sprintf("SIGTERM reached the command: %v", c.SignalReached), fmt.Sprintf("lock freed: %v", c.LockFreed),
+		fmt.Sprintf("SIGTERM reached the command: %v", c.SignalReached), fmt.Sprintf("the opening locked: %v", c.SameOpening),
+		fmt.Sprintf("lock freed: %v", c.LockFreed),
 		fmt.Sprintf("this process signals the sudo: %v", c.SelfSignals), fmt.Sprintf("keeps the sudo's group: %v", c.KeepsGroup)}
 	if !c.StdinIsLock && c.Input != "" {
 		parts = append(parts, "its standard input was a "+c.Input)
@@ -91,14 +100,17 @@ const probeBound = 30 * time.Second
 
 // ProbeRootStop runs the probe once, in dir, with a terminal or without:
 // the prefix's port-tclsh under sudo -n, the probe's lock as its standard
-// input, which reports whether that input is the lock's file and then
-// waits; the lock is read as held after the launcher lets go of its own
-// copy; a SIGTERM goes to the sudo, from this process where that's
-// permitted, else from the root stop, port-tclsh under sudo -n; and the
-// command and the lock are seen to end and be freed. The live test and
+// input, which hands that input on to a holder that ignores the stop,
+// reports whether the input is the lock's file, and waits; the lock is
+// read as held after the launcher lets go of its own copy; a SIGTERM goes
+// to the sudo, from this process where that's permitted, else from the
+// root stop, port-tclsh under sudo -n; the command is seen to end, the
+// lock still held by the holder alone, and then, the holder let go, freed.
+// Everything the probe starts ends by itself once it's let go, on every
+// path out, and within a bound where nothing lets it go. The live test and
 // the first root launch on a Mac run this one implementation. An error is
 // a probe that couldn't be made, not a part that failed.
-func ProbeRootStop(ctx context.Context, sudo []string, tclsh, dir string, terminal bool) (ProbeCase, error) {
+func ProbeRootStop(ctx context.Context, sudo, env []string, tclsh, dir string, terminal bool) (ProbeCase, error) {
 	found := ProbeCase{Terminal: terminal}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return found, err
@@ -107,13 +119,22 @@ func ProbeRootStop(ctx context.Context, sudo []string, tclsh, dir string, termin
 		path := filepath.Join(dir, name)
 		return path, os.WriteFile(path, []byte(script), 0o644)
 	}
+	release := filepath.Join(dir, "release")
+	_ = os.Remove(release)
+	bound := strconv.Itoa(int(3 * probeBound / time.Second))
 	probe, err := write("probe.tcl", string(guest.StdinIs)+`set out [lindex $argv 0]
 set lock [lindex $argv 1]
+set release [lindex $argv 2]
+set bound [lindex $argv 3]
+# The holder keeps this command's standard input as it came, ignores the
+# stop, and ends once let go, or by the bound.
+set holder [exec /bin/sh -c {trap '' TERM HUP INT; n=0; while [ ! -e "$0" ] && [ $n -lt $(($1 * 20)) ]; do sleep 0.05; n=$((n+1)); done} $release $bound >/dev/null 2>/dev/null &]
 set f [open $out.tmp w]
-puts $f "[pid] [stdin_is $lock] [exec /usr/bin/stat -f %HT]"
+puts $f "[pid] $holder [stdin_is $lock] [exec /usr/bin/stat -f %HT]"
 close $f
 file rename -force $out.tmp $out
-after 600000
+set deadline [expr {[clock seconds] + $bound}]
+while {![file exists $release] && [clock seconds] < $deadline} { after 50 }
 `)
 	if err != nil {
 		return found, err
@@ -129,9 +150,9 @@ after 600000
 	}
 	out := filepath.Join(dir, "probe")
 	_ = os.Remove(out)
-	args := append(append([]string(nil), sudo[1:]...), "-n", tclsh, probe, out, lockPath)
+	args := append(append([]string(nil), sudo[1:]...), "-n", tclsh, probe, out, lockPath, release, bound)
 	command := exec.CommandContext(ctx, sudo[0], args...)
-	command.Stdin = lock
+	command.Stdin, command.Env = lock, env
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if terminal {
 		ptm, tty, err := openTerminal()
@@ -148,13 +169,19 @@ after 600000
 		_ = lock.Close()
 		return found, err
 	}
-	ended := make(chan error, 1)
-	go func() { ended <- command.Wait() }()
+	// ended is closed once the sudo has ended, so every look at it, the
+	// last on the way out included, sees it; waited is how.
+	ended := make(chan struct{})
+	var waited error
+	go func() { waited = command.Wait(); close(ended) }()
+	// On every path out, everything the probe started is let go, and ends
+	// by itself: a root command this process can't signal, and a sudo
+	// that wouldn't pass a SIGKILL on, alike.
 	defer func() {
+		_ = os.WriteFile(release, nil, 0o644)
 		select {
 		case <-ended:
-		default:
-			_ = command.Process.Kill()
+		case <-time.After(probeBound):
 		}
 	}()
 	// The launcher's own copy goes: from here only the sudo and its command
@@ -165,7 +192,7 @@ after 600000
 	var said []string
 	for deadline := time.Now().Add(probeBound); ; {
 		data, err := os.ReadFile(out)
-		if said = strings.Fields(string(data)); err == nil && len(said) >= 3 {
+		if said = strings.Fields(string(data)); err == nil && len(said) >= 4 {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -174,8 +201,8 @@ after 600000
 		select {
 		case <-ctx.Done():
 			return found, ctx.Err()
-		case err := <-ended:
-			return found, fmt.Errorf("sudo -n %s ended before its command reported: %v", tclsh, err)
+		case <-ended:
+			return found, fmt.Errorf("sudo -n %s ended before its command reported: %v", tclsh, waited)
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
@@ -183,10 +210,8 @@ after 600000
 	if err != nil {
 		return found, fmt.Errorf("the probe's command reported %q", strings.Join(said, " "))
 	}
-	found.StdinIsLock, found.Input = said[1] == "1", strings.Join(said[2:], " ")
-	if _, err := filelock.TryAcquire(lockPath); errors.Is(err, filelock.ErrBusy) {
-		found.LockHeld = true
-	}
+	found.StdinIsLock, found.Input = said[2] == "1", strings.Join(said[3:], " ")
+	found.LockHeld = lockBusy(lockPath)
 	group, _ := unix.Getpgid(pid)
 	session, _ := unix.Getsid(pid)
 	found.KeepsGroup, found.KeepsSession = group == command.Process.Pid, session == command.Process.Pid
@@ -194,6 +219,7 @@ after 600000
 		found.SelfSignals = true
 	} else {
 		root := exec.CommandContext(ctx, sudo[0], append(append([]string(nil), sudo[1:]...), "-n", tclsh, stop, strconv.Itoa(command.Process.Pid))...)
+		root.Env = env
 		if out, err := root.CombinedOutput(); err != nil {
 			return found, fmt.Errorf("the root stop under sudo -n: %v %s", err, strings.TrimSpace(string(out)))
 		}
@@ -209,22 +235,42 @@ after 600000
 			break
 		}
 	}
-	if free, err := filelock.TryAcquire(lockPath); err == nil {
-		found.LockFreed = true
-		_ = free.Close()
+	// The sudo and its command have ended: only the holder can hold the
+	// lock now, and only where its input is the opening that was locked.
+	found.SameOpening = lockBusy(lockPath)
+	if err := os.WriteFile(release, nil, 0o644); err != nil {
+		return found, err
+	}
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		if free, err := filelock.TryAcquire(lockPath); err == nil {
+			found.LockFreed = true
+			_ = free.Close()
+			break
+		}
 	}
 	return found, nil
 }
 
+// lockBusy reports whether another opening holds the lock at path; an
+// opening the probe gets is let go at once, so the probe never holds it
+// itself past the look.
+func lockBusy(path string) bool {
+	file, err := filelock.TryAcquire(path)
+	if err == nil {
+		_ = file.Close()
+	}
+	return errors.Is(err, filelock.ErrBusy)
+}
+
 // proveRoot runs the probe in both cases and makes the proof of it.
-func proveRoot(ctx context.Context, sudo []string, tclsh, dir string, identity SudoIdentity, now time.Time) RootProof {
+func proveRoot(ctx context.Context, sudo, env []string, tclsh, dir string, identity SudoIdentity, now time.Time) RootProof {
 	proof := RootProof{Sudo: identity, Proved: true, At: now}
 	for _, terminal := range []bool{false, true} {
 		name := "plain"
 		if terminal {
 			name = "terminal"
 		}
-		found, err := ProbeRootStop(ctx, sudo, tclsh, filepath.Join(dir, name), terminal)
+		found, err := ProbeRootStop(ctx, sudo, env, tclsh, filepath.Join(dir, name), terminal)
 		if err != nil {
 			proof.Proved = false
 			proof.Found = append(proof.Found, fmt.Sprintf("%s: the probe couldn't be made: %v", found.Words(), err))
@@ -236,15 +282,26 @@ func proveRoot(ctx context.Context, sudo []string, tclsh, dir string, identity S
 	return proof
 }
 
-// rootProofName is this Mac's proof of its sudo, beside the prefixes'
-// locks, which every dockhand on the Mac shares whatever its user or
-// database: the proof is of the Mac's sudo, not of a store.
+// rootProofName is the person's proof of this Mac's sudo, in Proofs.
 const rootProofName = "root-stop-proof.json"
 
 // readRootProof reads the proof kept for this Mac's sudo; found false
-// where none is kept, or one of another sudo binary.
+// where none is kept, where Proofs is unset, where the file isn't this
+// account's alone (its owner, and writable by no one else), where it can't
+// be read, or where it is of another sudo binary.
 func (l *Local) readRootProof(identity SudoIdentity) (RootProof, bool) {
-	data, err := os.ReadFile(filepath.Join(l.locks(), rootProofName))
+	if l.Proofs == "" {
+		return RootProof{}, false
+	}
+	path := filepath.Join(l.Proofs, rootProofName)
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o022 != 0 {
+		return RootProof{}, false
+	}
+	if stat, ok := info.Sys().(*syscall.Stat_t); !ok || int(stat.Uid) != os.Getuid() {
+		return RootProof{}, false
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return RootProof{}, false
 	}
@@ -266,7 +323,10 @@ func (l *Local) rootStopProved(sudo []string) (bool, string) {
 		return false, fmt.Sprintf("%s couldn't be read: %v", sudo[0], err)
 	}
 	proof, found := l.readRootProof(identity)
-	if !found {
+	switch {
+	case !found && l.Proofs == "":
+		return false, "dockhand has no directory of yours to keep a probe of this Mac's sudo in"
+	case !found:
 		return false, "this Mac's sudo hasn't been probed yet; the first root build probes it"
 	}
 	if !proof.Proved {
@@ -281,7 +341,7 @@ func (l *Local) rootStopProved(sudo []string) (bool, string) {
 // is kept as that; the build starts all the same.
 func (l *Local) proveRootOnce(ctx context.Context, sudo []string, tclsh string, say func(string)) {
 	identity, err := sudoIdentity(sudo[0])
-	if err != nil {
+	if err != nil || l.Proofs == "" {
 		return
 	}
 	if _, found := l.readRootProof(identity); found {
@@ -293,13 +353,13 @@ func (l *Local) proveRootOnce(ctx context.Context, sudo []string, tclsh string, 
 	}
 	say("probing this Mac's sudo once, for how a root build is stopped")
 	defer os.RemoveAll(dir)
-	proof := proveRoot(ctx, sudo, tclsh, dir, identity, time.Now().UTC())
+	proof := proveRoot(ctx, sudo, l.Env, tclsh, dir, identity, time.Now().UTC())
 	data, err := json.Marshal(proof)
 	if err != nil {
 		return
 	}
-	if err := os.MkdirAll(l.locks(), 0o777); err != nil {
+	if err := os.MkdirAll(l.Proofs, 0o700); err != nil {
 		return
 	}
-	_ = atomicfile.Write(filepath.Join(l.locks(), rootProofName), data, 0o644)
+	_ = atomicfile.Write(filepath.Join(l.Proofs, rootProofName), data, 0o600)
 }
