@@ -37,6 +37,11 @@ type Asking struct {
 	// Branch is the branch the request is for; its Request is the one
 	// kept, and its Closes the tickets it closes already.
 	Branch *model.Branch
+	// Title and Note are the pull request's title and note as given, the
+	// branch's own fields, saved with the request's first save so a ship
+	// killed before its commit keeps them (#195, AL); an empty Note given
+	// clears it (--no-note).
+	Title, Note model.Flag[string]
 }
 
 // Unresolved is a fact the request carries as asked, resolved at its
@@ -81,6 +86,9 @@ func ResolveRequest(asking Asking) (Resolved, error) {
 	if hasKept {
 		kept = *asking.Branch.Request
 		kept.Targets = slices.Clone(kept.Targets)
+		for i := range kept.Targets {
+			kept.Targets[i].Outcomes = slices.Clone(kept.Targets[i].Outcomes)
+		}
 		kept.Outcomes = slices.Clone(kept.Outcomes)
 	}
 	resolved := Resolved{}
@@ -97,6 +105,7 @@ func ResolveRequest(asking Asking) (Resolved, error) {
 				resolved.Said = append(resolved.Said, fmt.Sprintf("%s %v replaces the kept %v", flag, words(given), words(before)))
 			}
 		}
+		was := shapingValues(request)
 		replace(&request.Shared, asked.Shared, "--shared-release", "Shared", changed, say)
 		replace(&request.Source.Source, asked.Source.Source, "--source", "Source.Source", changed, say)
 		replace(&request.Source.KeepHTTP, asked.Source.KeepHTTP, "--keep-http", "Source.KeepHTTP", changed, say)
@@ -134,7 +143,8 @@ func ResolveRequest(asking Asking) (Resolved, error) {
 		replace(&request.Publish.NoCheck, asked.Publish.NoCheck, "--no-check", "Publish.NoCheck", changed, say)
 		replace(&request.Publish.TestedBinaries, asked.Publish.TestedBinaries, "--tested-binaries", "Publish.TestedBinaries", changed, say)
 		replace(&request.Publish.TestedVariants, asked.Publish.TestedVariants, "--tested-variants", "Publish.TestedVariants", changed, say)
-		removeJudged(&request, changed)
+		shaped := shapedAfterEdit(&request, was, changed)
+		removeJudged(&request, changed, shaped)
 		if len(changed) > 0 {
 			request.ID = ""
 		}
@@ -225,7 +235,7 @@ var judgedBy = map[string][]string{
 
 // removeJudged makes each action an ask it was judged by changed owed
 // again, on the targets and on the request.
-func removeJudged(request *model.ChangeRequest, changed map[string]bool) {
+func removeJudged(request *model.ChangeRequest, changed map[string]bool, shaped map[string]bool) {
 	var stale []string
 	for action, asks := range judgedBy {
 		if slices.ContainsFunc(asks, func(ask string) bool { return changed[ask] }) {
@@ -238,9 +248,85 @@ func removeJudged(request *model.ChangeRequest, changed map[string]bool) {
 	}
 	for i := range request.Targets {
 		for _, action := range stale {
+			// A version the shaping rule decided keeps what it decided.
+			if action == "version" && shaped[request.Targets[i].Port] {
+				continue
+			}
 			request.Targets[i].Unconclude(action)
 		}
 	}
+}
+
+// shaping are the asks that shape a version's edit as it is made, which
+// nothing applies to a version already written (#195, AW).
+var shaping = []struct{ ask, flag string }{
+	{"Source.KeepHTTP", "--keep-http"}, {"Source.KeepOldChecksums", "--keep-old-checksums"},
+	{"Source.KeepModeline", "--keep-modeline"}, {"Shared", "--shared-release"},
+}
+
+// shapingValues are the shaping asks' values in a request, as compared.
+func shapingValues(request model.ChangeRequest) map[string]string {
+	return map[string]string{
+		"Source.KeepHTTP":         fmt.Sprint(request.Source.KeepHTTP.Value),
+		"Source.KeepOldChecksums": fmt.Sprint(request.Source.KeepOldChecksums.Value),
+		"Source.KeepModeline":     fmt.Sprint(request.Source.KeepModeline.Value),
+		"Shared":                  fmt.Sprint(request.Shared.Value),
+	}
+}
+
+// shapedAfterEdit is the rule for a shaping ask changed after its version's
+// edit was written, and the one place it is decided: such a flag is
+// refused by name, the refusal kept as the version's outcome and blocking,
+// with the asks the edit was made with; given as it was again, the
+// refusal goes and the version is done again. A flag changed before any
+// edit is the new ask, left to removeJudged. Nothing here reads the
+// Portfile: the design's "already so" is amended to "refused" pending the
+// person's word, and its judges would go where the refusal is decided. It
+// returns the targets whose version it decided.
+func shapedAfterEdit(request *model.ChangeRequest, was map[string]string, changed map[string]bool) map[string]bool {
+	now := shapingValues(*request)
+	decided := map[string]bool{}
+	for i := range request.Targets {
+		target := &request.Targets[i]
+		outcome, ok := target.Outcome("version")
+		if !ok {
+			continue
+		}
+		switch outcome.Result {
+		case model.ActionDone:
+			var flags []string
+			applied := map[string]string{}
+			for _, s := range shaping {
+				if changed[s.ask] && was[s.ask] != now[s.ask] {
+					flags = append(flags, s.flag)
+					applied[s.ask] = was[s.ask]
+				}
+			}
+			if len(flags) == 0 {
+				continue
+			}
+			version := "its release"
+			if target.Release != nil {
+				version = target.Release.Version
+			}
+			concluded(target, model.ActionOutcome{Action: "version", Result: model.ActionRefused, AppliedWith: applied,
+				Why: fmt.Sprintf("%s changed after %s's edit to %s, which no edit applies to a version already written; give %s as it was, or apply it by hand", strings.Join(flags, " and "), target.Port, version, map[bool]string{true: "it", false: "them"}[len(flags) == 1])})
+			decided[target.Port] = true
+		case model.ActionRefused:
+			if len(outcome.AppliedWith) == 0 {
+				continue
+			}
+			decided[target.Port] = true
+			asWas := true
+			for ask, value := range outcome.AppliedWith {
+				asWas = asWas && now[ask] == value
+			}
+			if asWas {
+				concluded(target, model.ActionOutcome{Action: "version", Result: model.ActionDone})
+			}
+		}
+	}
+	return decided
 }
 
 // settable are the asks a setting supplies where no flag gives them.

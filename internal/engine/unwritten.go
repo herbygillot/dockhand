@@ -317,6 +317,12 @@ func (e *Engine) UnfinishedGate(ctx context.Context, branch model.Branch, unatte
 	if err != nil || prepared.Disposition != branchstate.UnfinishedPreparation {
 		return err
 	}
+	// A refusal is kept and lets nothing go on, whoever is there: every
+	// gate that asks whether the actions are concluded asks for done or
+	// already so (#195, "Readiness").
+	if refused := refusedReasons(branch); len(refused) > 0 {
+		return refusal.New(refusal.Attention, "%s: %s; nothing goes on until the ask changes", branch.ShortName(), strings.Join(refused, "; "))
+	}
 	words := fmt.Sprintf("%s's preparation isn't finished: %s", branch.ShortName(), strings.Join(prepared.Reasons, "; "))
 	if unattended {
 		return refusal.New(refusal.Attention, "%s; dockhand ship -b %s finishes it", words, branch.ShortName())
@@ -378,4 +384,26 @@ func settlingWords(s Settling) string {
 		return "it was cut short, and Git no longer has what it would write of " + files + "; the command would stop"
 	}
 	return string(s.Action)
+}
+
+// refusedReasons are the actions the branch's request has refused, each
+// with why, read fresh by the caller's branch.
+func refusedReasons(branch model.Branch) []string {
+	if branch.Request == nil {
+		return nil
+	}
+	var reasons []string
+	for _, target := range branch.Request.Targets {
+		for _, outcome := range target.Outcomes {
+			if outcome.Result == model.ActionRefused {
+				reasons = append(reasons, outcome.Why)
+			}
+		}
+	}
+	for _, outcome := range branch.Request.Outcomes {
+		if outcome.Result == model.ActionRefused {
+			reasons = append(reasons, outcome.Why)
+		}
+	}
+	return reasons
 }

@@ -1,6 +1,7 @@
 package ship_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -78,4 +79,55 @@ func TestBumpReachesTheResolverAndItsPublicationTakesTheRequest(t *testing.T) {
 	require.NoError(t, err, errs)
 	require.Len(t, g.PRs, 1, "bump goes to submit")
 	require.Nil(t, cmdtest.KeptRequest(t, "jq-1.8.1"), "the finished publication ended the request it took")
+}
+
+// A shaping flag changed after the version's edit is refused by name and
+// stops the branch, attended or not, until it is given as it was (#195,
+// AW).
+func TestAShapingFlagChangedAfterTheEditStopsShip(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithScript(t, w, "passed")
+	g := cmdtest.WithGitHub(t, w)
+	g.Others = nil
+	_, errs, err := cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err, errs)
+	for _, args := range [][]string{{"ship", "jq", "--keep-http", "--yes"}, {"bump", "jq", "--keep-http"}} {
+		out, errs, err := cmdtest.Dockhand(t, args...)
+		require.Error(t, err, "%v", args)
+		require.Contains(t, out+errs+err.Error(), "--keep-http changed after jq's edit to 1.8.1", "%v", args)
+		require.Empty(t, g.PRs, "%v", args)
+	}
+	_, errs, err = cmdtest.Dockhand(t, "ship", "jq", "--keep-http=false", "--yes")
+	require.NoError(t, err, errs)
+	require.Len(t, g.PRs, 1, "given as it was, the work goes on")
+}
+
+// ship --plan's JSON carries what its prose says: each target, how far it
+// goes and whether that was kept, and what isn't resolved now (#195).
+func TestShipsPlanJSONCarriesTheValue(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	out, errs, err := cmdtest.Dockhand(t, "ship", "jq", "--plan", "--json")
+	require.NoError(t, err, errs)
+	var result struct {
+		Result struct {
+			Plan []struct {
+				Target, Stage string
+				StageKept     bool `json:"stage_kept"`
+				Unresolved    []struct{ What, When string }
+			}
+		}
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &result), out)
+	require.Len(t, result.Result.Plan, 1, out)
+	row := result.Result.Plan[0]
+	require.Equal(t, "jq", row.Target)
+	require.Equal(t, "submit", row.Stage)
+	require.False(t, row.StageKept)
+	require.Contains(t, row.Unresolved, struct{ What, When string }{"the destination", "decided at submit"})
 }

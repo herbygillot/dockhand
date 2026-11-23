@@ -70,6 +70,7 @@ dockhand can't. The check builds where build.unattended's profile says;
 			}
 			whole := &view.BatchJSON{}
 			streams.LinkSteps(whole)
+			var planned []view.ShipPlanJSON
 			e, err := s.Open(ctx)
 			if err != nil {
 				return err
@@ -79,13 +80,15 @@ dockhand can't. The check builds where build.unattended's profile says;
 				targets[0].Version = args[1]
 			}
 			if err == nil {
-				ship.WriteShipPlan(ctx, e, streams.Prose(), targets, engine.ShipSubmit, true, version)
+				planned = ship.WriteShipPlan(ctx, e, streams.Prose(), targets, engine.ShipSubmit, true, version)
 			}
 			e.Close()
 			if err != nil {
 				return err
 			}
 			if plan {
+				// The plan is the result where it is all that runs.
+				streams.Emit(planned)
 				fmt.Fprintln(streams.Prose(), "Nothing was shipped (--plan).")
 				return nil
 			}

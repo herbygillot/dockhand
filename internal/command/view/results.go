@@ -850,6 +850,25 @@ func OutdatedView(report engine.OutdatedReport) map[string]any {
 
 // SkippedJSON is a port a batch left alone, and why: an update already in
 // a branch, one it couldn't check, or one held for a look.
+// ShipPlanJSON is one target of ship's plan: what it is, how far it goes
+// and whether that stage was kept, the release it goes on with where one
+// is kept or named, and each fact not resolved now with when it is.
+type ShipPlanJSON struct {
+	Target     string           `json:"target"`
+	From       string           `json:"from"`
+	Stage      string           `json:"stage"`
+	StageKept  bool             `json:"stage_kept"`
+	Release    string           `json:"release,omitempty"`
+	Unresolved []UnresolvedJSON `json:"unresolved"`
+}
+
+// UnresolvedJSON is a fact a request carries as asked, and when it is
+// resolved.
+type UnresolvedJSON struct {
+	What string `json:"what"`
+	When string `json:"when"`
+}
+
 type SkippedJSON struct {
 	Port   string `json:"port"`
 	Reason string `json:"reason"`
@@ -862,6 +881,9 @@ type SkippedJSON struct {
 type BatchJSON struct {
 	Changes []updateJSON  `json:"changes"`
 	Skipped []SkippedJSON `json:"skipped"`
+	// Plan is ship's and bump's plan, a row each target, as the prose
+	// plan says it (#195, "ship --plan").
+	Plan []ShipPlanJSON `json:"plan,omitempty"`
 	// at is the change being gathered, whose steps follow it.
 	at *updateJSON
 }
@@ -884,6 +906,10 @@ func (b *BatchJSON) Gather(step any) {
 		b.Skipped = append(b.Skipped, skipped...)
 		return
 	}
+	if plan, ok := step.([]ShipPlanJSON); ok {
+		b.Plan = plan
+		return
+	}
 	if b.at == nil {
 		b.Next()
 	}
@@ -892,7 +918,7 @@ func (b *BatchJSON) Gather(step any) {
 
 func (b *BatchJSON) Result() any {
 	changes := slices.DeleteFunc(slices.Clone(b.Changes), func(change updateJSON) bool { return reflect.ValueOf(change).IsZero() })
-	return BatchJSON{Changes: append([]updateJSON{}, changes...), Skipped: append([]SkippedJSON{}, b.Skipped...)}
+	return BatchJSON{Changes: append([]updateJSON{}, changes...), Skipped: append([]SkippedJSON{}, b.Skipped...), Plan: b.Plan}
 }
 
 // plainHTTPJSON is a URL a port names over plain HTTP, its https form, and

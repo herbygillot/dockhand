@@ -79,3 +79,34 @@ func TestAPersonsOwnSubmitTakesNoRequest(t *testing.T) {
 	require.NotNil(t, current.Request)
 	require.Equal(t, branch.Request.ID, current.Request.ID)
 }
+
+// A person's own submit that goes on with a publication a stage's
+// submission recorded keeps no request ID: its finishing ends nothing, and
+// the request stays with what it still asks (#195).
+func TestAPersonsSubmitGoingOnWithAStagesPublicationEndsNoRequest(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := keptOn(t, e, committedUpdate(t, e), model.PublishAsk{NoCheck: model.Set(true), Type: model.Set([]string{"enhancement"})})
+	stage := SubmitRequestFor(*branch.Request, branch, false)
+	stage.PendingCheck = false
+	plan, err := e.PlanSubmit(t.Context(), stage)
+	require.NoError(t, err)
+	fake.CreateFails = true
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.Error(t, err)
+	current, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.NotNil(t, current.Publication, "the stage's publication owes its open")
+	require.Equal(t, branch.Request.ID, current.Publication.RequestID, "and took the request")
+
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: current, NoCheck: true, Types: []string{"enhancement"}})
+	require.NoError(t, err)
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.NoError(t, err)
+	current, err = e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.NotNil(t, current.Request, "the person's submit, going on, ended no request")
+	require.Equal(t, branch.Request.ID, current.Request.ID)
+}

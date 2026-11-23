@@ -133,6 +133,11 @@ type ActionOutcome struct {
 	// gives now; an input a flag gave is the ask's, and isn't here
 	// (#195, Codex's read of step 3, P2-2).
 	JudgedBy map[string]string `json:",omitempty"`
+	// AppliedWith are the shaping asks a written edit was made with, as
+	// "Source.KeepHTTP": "false", on a version refused because one of
+	// them changed after the edit: given as it was again, the refusal
+	// goes and the version is done again (#195, AW).
+	AppliedWith map[string]string `json:",omitempty"`
 }
 
 // ActionResult is how an action was concluded.

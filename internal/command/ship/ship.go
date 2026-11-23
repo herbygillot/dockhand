@@ -96,6 +96,7 @@ need review.`,
 			}
 			whole := &view.BatchJSON{}
 			streams.LinkSteps(whole)
+			var planned []view.ShipPlanJSON
 			e, err := s.Open(ctx)
 			if err != nil {
 				return err
@@ -110,7 +111,7 @@ need review.`,
 				targets, err = ShipTargets(ctx, e, streams, args, where)
 			}
 			if err == nil && len(targets) > 0 {
-				WriteShipPlan(ctx, e, streams.Prose(), targets, stage, cmd.Flags().Changed("to"), version)
+				planned = WriteShipPlan(ctx, e, streams.Prose(), targets, stage, cmd.Flags().Changed("to"), version)
 			}
 			e.Close()
 			if err != nil {
@@ -121,6 +122,8 @@ need review.`,
 				return nil
 			}
 			if plan {
+				// The plan is the result where it is all that runs.
+				streams.Emit(planned)
 				fmt.Fprintln(streams.Prose(), "Nothing was shipped (--plan).")
 				return nil
 			}
@@ -331,7 +334,8 @@ func passingTargets(ctx context.Context, e *engine.Engine) ([]shipTarget, error)
 // far it goes; under a branch going on to its pull request, its
 // submission as it stands, and what holds it, as submit --passing showed
 // each (decision 2: one plan listing every branch with its holds).
-func WriteShipPlan(ctx context.Context, e *engine.Engine, out io.Writer, targets []shipTarget, asked engine.ShipStage, toGiven bool, version author.VersionUpdate) {
+func WriteShipPlan(ctx context.Context, e *engine.Engine, out io.Writer, targets []shipTarget, asked engine.ShipStage, toGiven bool, version author.VersionUpdate) []view.ShipPlanJSON {
+	var rows []view.ShipPlanJSON
 	width := 0
 	for _, target := range targets {
 		width = max(width, len(target.Name()))
@@ -363,15 +367,18 @@ func WriteShipPlan(ctx context.Context, e *engine.Engine, out io.Writer, targets
 			stage, kept = engine.ShipStage(request.To.Value), ", as kept"
 		}
 		fmt.Fprintf(out, "  %-*s  %s, to %s%s\n", width, target.Name(), from, stage, kept)
+		row := view.ShipPlanJSON{Target: target.Name(), From: from, Stage: string(stage), StageKept: kept != "", Release: cmp.Or(target.Version, keptReleaseOfTarget(target)), Unresolved: []view.UnresolvedJSON{}}
 		// A branch shipped where it stands prepares nothing: its
 		// submission's row below says what stands.
 		if target.Port != "" {
-			writeUnresolved(out, strings.Repeat(" ", width+4), target, version)
+			row.Unresolved = writeUnresolved(out, strings.Repeat(" ", width+4), target, version)
 		}
+		rows = append(rows, row)
 		if target.Branch != nil && stage == engine.ShipSubmit {
 			writeSubmitRow(ctx, e, out, strings.Repeat(" ", width+4), *target.Branch)
 		}
 	}
+	return rows
 }
 
 // writeSubmitRow is a branch's submission as it stands, under its row:
@@ -803,7 +810,7 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 	// A branch shipped where it stands keeps what this ship asked, as an
 	// update keeps it before its edit (#195).
 	if target.Port == "" {
-		resolved, kept, err := e.KeepAsked(ctx, branch, engine.Asking{Origin: cmp.Or(version.Origin, "ship"), Asked: version.Asking, Settings: version.Settings})
+		resolved, kept, err := e.KeepAsked(ctx, branch, engine.Asking{Origin: cmp.Or(version.Origin, "ship"), Asked: version.Asking, Settings: version.Settings, Title: version.Title, Note: version.Note})
 		if err != nil {
 			return nil, err
 		}
@@ -868,6 +875,11 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 		return nil, nil
 	}
 	branch = tidied.Branch
+	// Nothing is checked past a preparation that isn't finished, or an
+	// action refused, which stops whoever is there (#194, #195).
+	if err := e.UnfinishedGate(ctx, branch, linked.Unattended, "the check builds"); err != nil {
+		return nil, err
+	}
 	place := engine.WhereRequestFor(request, linked.Unattended)
 	linked.Tests = request.Check.Tests.Value
 	queues, queued := streams.Staged("queueing " + branch.ShortName() + "'s check")
@@ -1215,7 +1227,7 @@ func rejudged(ctx context.Context, e *engine.Engine, was engine.SubmitRequest) (
 // writeUnresolved is what a target's request carries as asked, under its
 // plan row, as the plan resolves it and saves nothing (#195, "ship
 // --plan"): each fact not resolved now with when it is.
-func writeUnresolved(out io.Writer, indent string, target shipTarget, version author.VersionUpdate) {
+func writeUnresolved(out io.Writer, indent string, target shipTarget, version author.VersionUpdate) []view.UnresolvedJSON {
 	asking := engine.Asking{Origin: cmp.Or(version.Origin, "ship"), Asked: version.Asking, Settings: version.Settings}
 	for _, port := range append([]shipTarget{target}, target.Also...) {
 		if port.Port != "" {
@@ -1229,17 +1241,28 @@ func writeUnresolved(out io.Writer, indent string, target shipTarget, version au
 	resolved, err := engine.ResolveRequest(asking)
 	if err != nil {
 		fmt.Fprintf(out, "%s✗ %v\n", indent, err)
-		return
+		return []view.UnresolvedJSON{}
 	}
-	var facts []string
+	facts, rows := []string{}, []view.UnresolvedJSON{}
 	for _, fact := range resolved.Unresolved {
 		// A release outdated found already is resolved now.
 		if target.Release != nil && strings.HasSuffix(fact.What, "'s release") {
 			continue
 		}
 		facts = append(facts, fact.What+" ("+fact.Why+")")
+		rows = append(rows, view.UnresolvedJSON{What: fact.What, When: fact.Why})
 	}
 	if len(facts) > 0 {
 		fmt.Fprintf(out, "%snot resolved now: %s\n", indent, strings.Join(facts, "; "))
 	}
+	return rows
+}
+
+// keptReleaseOfTarget is the release kept for a target on its branch,
+// empty where none is.
+func keptReleaseOfTarget(target shipTarget) string {
+	if target.Branch == nil || target.Port == "" {
+		return ""
+	}
+	return keptReleaseOf(*target.Branch, target.Port)
 }

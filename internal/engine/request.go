@@ -171,7 +171,21 @@ func (e *Engine) keepRequest(ctx context.Context, branch model.Branch, asking As
 		request := resolved.Request
 		kept = current
 		kept.Request = &request
+		titled := asking.Title.Given && current.Title != asking.Title.Value || asking.Note.Given && current.Note != asking.Note.Value
+		if asking.Title.Given {
+			kept.Title = asking.Title.Value
+		}
+		if asking.Note.Given {
+			kept.Note = asking.Note.Value
+		}
 		return store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
+			// The title and the note, the branch's own, are saved with
+			// the request, from the start (#195, AL).
+			if titled {
+				if err := tx.UpdateBranch(kept); err != nil {
+					return err
+				}
+			}
 			return tx.SetRequest(current.ID, &request)
 		}, branchRecorded(current.ID))
 	})

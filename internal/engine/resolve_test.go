@@ -81,7 +81,10 @@ func TestAFlagGivenReplacesTheKeptAndItsOutcomes(t *testing.T) {
 	require.NoError(t, err)
 	request := resolved.Request
 	require.NotEqual(t, "rq-kept", request.ID, "a changed ask is a new one")
-	require.Equal(t, []model.ActionOutcome{{Action: "stub", Result: model.ActionDone}}, request.Targets[0].Outcomes, "--keep-http judged the version alone")
+	stub, _ := request.Targets[0].Outcome("stub")
+	require.Equal(t, model.ActionDone, stub.Result, "--keep-http judged the version alone")
+	version, _ := request.Targets[0].Outcome("version")
+	require.Equal(t, model.ActionRefused, version.Result, "changed after the version's edit (AW)")
 	require.Equal(t, model.Set([]string{"sequoia"}), request.Check.On)
 	require.False(t, request.Check.Build.Given, "--on replaces a kept --build: one place")
 	require.Equal(t, []string{"--to submit replaces the kept check", "--on sequoia replaces the kept --build minmax", "jq goes on with 1.8, the release kept"}, resolved.Said)
@@ -332,4 +335,45 @@ func TestAPendingStatementIsDroppedWhenTheWorkChanges(t *testing.T) {
 	draft, err := ResolveRequest(Asking{Origin: "ship", Branch: branch, Asked: model.ChangeRequest{Publish: model.PublishAsk{Draft: model.Set(false)}}})
 	require.NoError(t, err)
 	require.Equal(t, model.Set(true), draft.Request.Publish.TestedBinaries, "the files are the same")
+}
+
+// A shaping flag changed after its version's edit was written is refused
+// by name, the refusal the version's outcome; given as it was again, the
+// refusal goes and the version is done again; changed before any edit, it
+// is just the new ask (#195, AW, option A pending the person's word).
+func TestAShapingFlagChangedAfterItsEditIsRefusedUntilGivenAsItWas(t *testing.T) {
+	t.Parallel()
+	for _, flag := range []struct {
+		name string
+		ask  model.ChangeRequest
+		back model.ChangeRequest
+	}{
+		{"--keep-http", model.ChangeRequest{Source: model.SourceAsk{KeepHTTP: model.Set(true)}}, model.ChangeRequest{Source: model.SourceAsk{KeepHTTP: model.Set(false)}}},
+		{"--keep-old-checksums", model.ChangeRequest{Source: model.SourceAsk{KeepOldChecksums: model.Set(true)}}, model.ChangeRequest{Source: model.SourceAsk{KeepOldChecksums: model.Set(false)}}},
+		{"--keep-modeline", model.ChangeRequest{Source: model.SourceAsk{KeepModeline: model.Set(true)}}, model.ChangeRequest{Source: model.SourceAsk{KeepModeline: model.Set(false)}}},
+		{"--shared-release", model.ChangeRequest{Shared: model.Set(true)}, model.ChangeRequest{Shared: model.Set(false)}},
+	} {
+		refused, err := ResolveRequest(Asking{Origin: "ship", Branch: keptBranch(), Asked: flag.ask})
+		require.NoError(t, err, flag.name)
+		version, _ := refused.Request.Targets[0].Outcome("version")
+		require.Equal(t, model.ActionRefused, version.Result, flag.name)
+		require.Equal(t, flag.name+" changed after jq's edit to 1.8, which no edit applies to a version already written; give it as it was, or apply it by hand", version.Why)
+
+		back, err := ResolveRequest(Asking{Origin: "ship", Branch: &model.Branch{Request: &refused.Request}, Asked: flag.back})
+		require.NoError(t, err, flag.name)
+		version, _ = back.Request.Targets[0].Outcome("version")
+		require.Equal(t, model.ActionDone, version.Result, "%s given as it was", flag.name)
+
+		other, err := ResolveRequest(Asking{Origin: "ship", Branch: &model.Branch{Request: &refused.Request}, Asked: model.ChangeRequest{Publish: model.PublishAsk{Draft: model.Set(true)}}})
+		require.NoError(t, err, flag.name)
+		version, _ = other.Request.Targets[0].Outcome("version")
+		require.Equal(t, model.ActionRefused, version.Result, "%s: another ask leaves the refusal", flag.name)
+	}
+	before := keptBranch()
+	before.Request.Targets[0].Outcomes = nil
+	before.Request.Targets[0].Current = "1.8"
+	fresh, err := ResolveRequest(Asking{Origin: "ship", Branch: before, Asked: model.ChangeRequest{Source: model.SourceAsk{KeepHTTP: model.Set(true)}}})
+	require.NoError(t, err)
+	_, has := fresh.Request.Targets[0].Outcome("version")
+	require.False(t, has, "before any edit, the new ask is owed")
 }

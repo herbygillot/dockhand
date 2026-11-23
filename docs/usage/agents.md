@@ -115,6 +115,13 @@ the `baseline` that `check.baseline` ran after it; that baseline's
 `run.baseline_of` identifies the original check. Do not infer completion from
 the presence of a branch alone.
 
+`ship --plan --json` and `bump --plan --json` return `plan`, a row for each
+target: `target`, `from`, `stage`, `stage_kept` (true where the stage is the
+one an earlier ship kept on the branch), `release` where one is kept or
+named, and `unresolved`, each fact the request carries as asked with `what`
+and `when` it is resolved, such as the destination, decided at submit. A plan
+saves nothing.
+
 `rebase --json` gives `branch`, `from`, `to`, `up_to_date`, `commits`, and,
 once it moves the branch, `checkpoint`. `rebase --plan --json` adds `plan`,
 true, and `replay`, each of the branch's commits in order with its `id`,

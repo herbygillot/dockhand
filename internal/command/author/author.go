@@ -361,6 +361,9 @@ type VersionUpdate struct {
 	Origin   string
 	Asking   model.ChangeRequest
 	Settings engine.RequestSettings
+	// Title and Note are --title and --note (--no-note an empty one) as
+	// given, saved with the request from the start.
+	Title, Note model.Flag[string]
 }
 
 // Read takes what the command asked from its parsed flags: the flags as
@@ -369,6 +372,15 @@ type VersionUpdate struct {
 func (v *VersionUpdate) Read(cmd *cobra.Command, s *settings.Settings, origin string) {
 	v.Origin, v.Asking, v.Settings = origin, v.Asked(cmd, s), RequestSettings(s)
 	v.Withdrawn(cmd)
+	if cmd.Flags().Lookup("title") != nil && cmd.Flags().Changed("title") {
+		v.Title = model.Set(v.Linked.Title)
+	}
+	switch {
+	case cmd.Flags().Lookup("note") != nil && cmd.Flags().Changed("note"):
+		v.Note = model.Set(v.Linked.Note)
+	case v.NoNote:
+		v.Note = model.Set("")
+	}
 }
 
 // flags adds the edit's flags, which update, ship, and bump share, those
@@ -498,7 +510,7 @@ func (v VersionUpdate) StageReady() error {
 // or the one the request resolves: the engine's, from what was asked
 // (engine.AskUpdate).
 func (v VersionUpdate) Request(args []string, plan bool) (engine.UpdateRequest, error) {
-	asking := engine.Asking{Origin: cmp.Or(v.Origin, "update"), Asked: v.Asking, Settings: v.Settings}
+	asking := engine.Asking{Origin: cmp.Or(v.Origin, "update"), Asked: v.Asking, Settings: v.Settings, Title: v.Title, Note: v.Note}
 	if len(args) == 2 {
 		asking.Named = args[1]
 	}
