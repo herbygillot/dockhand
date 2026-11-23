@@ -3,7 +3,7 @@ package model
 import "strings"
 
 // EditResult is what preparing one edit found and did (docs/designs/
-// preparation-and-request.md, "The records", #194).
+// preparation-and-request.md at 6829407e, "The records", #194).
 type EditResult struct {
 	// Before and After are the port's version and revision on each side.
 	Before, After string
@@ -57,7 +57,7 @@ type Finding struct {
 }
 
 // The kinds of finding an update records (docs/designs/
-// preparation-and-request.md, "What is stored of engine.Update"). Left,
+// preparation-and-request.md at 6829407e, "What is stored of engine.Update"). Left,
 // unless the edit dealt with it.
 const (
 	FindingPatchRejected     = "patch-rejected"

@@ -13,7 +13,7 @@ import (
 
 // RequestSettings are the settings a request falls back on where no flag
 // was given and nothing is kept: the source policy, read when the request
-// is built (docs/designs/preparation-and-request.md, "The request").
+// is built (docs/designs/preparation-and-request.md at 6829407e, "The request").
 type RequestSettings struct {
 	Source       string
 	KeepHTTP     bool
@@ -75,7 +75,7 @@ var testPolicies = []string{"declared", "required", "skip"}
 // wrong: --except with no --revbump-dependents, a ticket that isn't a
 // number, a version named for several ports, and a --tests that isn't one
 // of the three. An outcome judged by an ask that changed is removed, so
-// the action is owed again. No caller reaches it until #195's step 5.
+// the action is owed again.
 func ResolveRequest(asking Asking) (Resolved, error) {
 	asked := asking.Asked
 	if err := refuseAsked(asking); err != nil {
@@ -218,7 +218,7 @@ func replace[T any](field *model.Flag[T], given model.Flag[T], flag, name string
 
 // judgedBy are the asks each outcome was judged by, beside the release
 // selected; the version's include the source policy, which the version's
-// edit is made under (docs/designs/preparation-and-request.md, "Each action has its
+// edit is made under (docs/designs/preparation-and-request.md at 6829407e, "Each action has its
 // own outcome"): an outcome is removed when any of them changes.
 var judgedBy = map[string][]string{
 	"version":    {"Shared", "Source.Source", "Source.KeepHTTP", "Source.KeepOldChecksums", "Source.KeepModeline"},
@@ -276,9 +276,10 @@ func shapingValues(request model.ChangeRequest) map[string]string {
 // with the asks the edit was made with; given as it was again, the
 // refusal goes and the version is done again. A flag changed before any
 // edit is the new ask, left to removeJudged. Nothing here reads the
-// Portfile: the design's "already so" is amended to "refused" pending the
-// person's word, and its judges would go where the refusal is decided. It
-// returns the targets whose version it decided.
+// Portfile: such a flag is always refused, the person's amendment of
+// 2026-11-23 (docs/decisions.md); the judges an "already so" would need,
+// #304, would go where the refusal is decided. It returns the targets
+// whose version it decided.
 func shapedAfterEdit(request *model.ChangeRequest, was map[string]string, changed map[string]bool) map[string]bool {
 	now := shapingValues(*request)
 	decided := map[string]bool{}
@@ -546,8 +547,8 @@ func words(value any) string {
 
 // UpdateRequestFor is the update stage's request for one target, built
 // from the request: the version named or the release kept, and the edit's
-// intent. The source policy, HTTP and modeline reach the preparer through
-// the engine's options until #195's step 4.
+// intent. The source policy, HTTP and modeline reach the preparer from
+// the request resolved under the branch's lock (Engine.update).
 func UpdateRequestFor(request model.ChangeRequest, target model.RequestTarget) UpdateRequest {
 	update := UpdateRequest{Action: model.EditUpdate, Port: target.Port, Version: target.Named, Release: target.Release, fromRequest: true,
 		EditIntent:   model.EditIntent{SharedRelease: request.Shared.Value, KeepOldChecksums: request.Source.KeepOldChecksums.Value},

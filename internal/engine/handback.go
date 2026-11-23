@@ -5,16 +5,14 @@ import (
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
-// The hand-back (#195, amending "none is copied back", pending the
-// person's word on architecture's card): a publication that took a
+// The hand-back (#195, the person's amendment of 2026-11-23 to "none is
+// copied back"; docs/decisions.md): a publication that took a
 // stage's change request and delivered nothing gives the submission's
 // asks it took back to that request, where the request's ID is still the
 // one it took, so the next submission is a new attempt under the request
 // with what it asked. A request changed since keeps its own asks; a
 // person's own submit took none and hands nothing back; a publication
-// waiting for a person's answer keeps its record, and nothing moves. Kept
-// to these two functions, so keeping the page as adopted is deleting them
-// and their two calls.
+// waiting for a person's answer keeps its record, and nothing moves.
 
 // handBack gives a publication that ends without delivering, refused,
 // its Asked back to the request it took, in tx.

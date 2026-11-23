@@ -123,7 +123,7 @@ func TestARefusedPublicationLeavesTheRequest(t *testing.T) {
 // handed back and the newer asks stand; a submission for another commit
 // under the same request plans with the asks the undelivered publication
 // took; one that delivered and finished hands nothing back, the request
-// ended (#195, amendment pending the person's word).
+// ended (#195, the person's amendment of 2026-11-23).
 func TestTheHandBackGoesOnlyToTheRequestItTook(t *testing.T) {
 	t.Parallel()
 	f := setup(t)

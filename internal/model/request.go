@@ -6,7 +6,7 @@ import (
 )
 
 // ChangeRequest is what was asked of one branch's work, one value kept
-// with the branch (docs/designs/preparation-and-request.md, "The
+// with the branch (docs/designs/preparation-and-request.md at 6829407e, "The
 // request"). #194 keeps its targets, each with the actions concluded for
 // it; the flags as asked are #195's.
 type ChangeRequest struct {

@@ -15,7 +15,7 @@ type WorkingFile struct {
 }
 
 // Settler is who settles an unwritten edit, which decides what a cut
-// write does (docs/designs/preparation-and-request.md, "Settling").
+// write does (docs/designs/preparation-and-request.md at 6829407e, "Settling").
 type Settler int
 
 const (

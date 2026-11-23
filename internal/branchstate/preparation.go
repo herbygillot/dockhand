@@ -47,7 +47,7 @@ type UnwrittenEdit struct {
 }
 
 // Readying is what preparation's verdict reads (docs/designs/
-// preparation-and-request.md, "Readiness"): the edits written and not,
+// preparation-and-request.md at 6829407e, "Readiness"): the edits written and not,
 // the uncommitted paths the edits explain, as tidy tells them, and the
 // others, what was asked, whether a person is there, and the kinds each
 // port's holds.allow names now.

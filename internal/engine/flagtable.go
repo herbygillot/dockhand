@@ -6,7 +6,7 @@ import (
 )
 
 // FlagRow is one row of the flag check's table (docs/designs/
-// preparation-and-request.md, "The flag check's table", #195): flags that
+// preparation-and-request.md at 6829407e, "The flag check's table", #195): flags that
 // mean one thing, the request's field that keeps them, the commands that
 // take them, the stage that reads them, what leaving them out means, what
 // false or empty means, how long they last, and their outcomes. A flag

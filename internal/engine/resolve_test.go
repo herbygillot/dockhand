@@ -341,7 +341,7 @@ func TestAPendingStatementIsDroppedWhenTheWorkChanges(t *testing.T) {
 // A shaping flag changed after its version's edit was written is refused
 // by name, the refusal the version's outcome; given as it was again, the
 // refusal goes and the version is done again; changed before any edit, it
-// is just the new ask (#195, AW, option A pending the person's word).
+// is just the new ask (#195, AW, always refused: the person's amendment of 2026-11-23).
 func TestAShapingFlagChangedAfterItsEditIsRefusedUntilGivenAsItWas(t *testing.T) {
 	t.Parallel()
 	for _, flag := range []struct {

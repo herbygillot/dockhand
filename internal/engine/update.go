@@ -498,6 +498,11 @@ func (e *Engine) resolveFor(ctx context.Context, request *UpdateRequest, branch 
 		if resolved, *branch, err = e.keepRequest(ctx, *branch, asking); err != nil {
 			return nil, err
 		}
+		// Asked again of the request resolved under the lock: a refusal
+		// another process stored since the look above stops it too.
+		if refused := refusedFor(resolved.Request, request.Port); refused != "" {
+			return nil, refusal.New(refusal.Attention, "%s; nothing was written: that ask is refused until it changes", refused)
+		}
 	} else {
 		if branch.ID != "" {
 			asking.Branch = branch

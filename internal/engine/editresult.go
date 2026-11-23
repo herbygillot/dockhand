@@ -11,7 +11,7 @@ import (
 )
 
 // findings are what an update found and did, as its edit's result keeps
-// them, field by field (docs/designs/preparation-and-request.md, "What is
+// them, field by field (docs/designs/preparation-and-request.md at 6829407e, "What is
 // stored of engine.Update"): data, worded when shown (FindingWords). The
 // rest of Update is on the edit or the branch, worked out from the
 // records, or printed once and not read again.
