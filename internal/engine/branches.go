@@ -1456,7 +1456,7 @@ func (b *openBranch) files(ctx context.Context) (model.ObjectID, error) {
 // and stays (design v3, §3). The worktree stays where it is, since a
 // person may be in it; its Git branch and record follow. It says the old
 // name, or nothing where the branch keeps its name.
-func (e *Engine) renameForVersion(ctx context.Context, branch *model.Branch, port, from, to string) (string, error) {
+func (e *Engine) renameForVersion(ctx context.Context, held *heldLock, branch *model.Branch, port, from, to string) (string, error) {
 	if branch.PullRequest != nil || from == "" || from == to || branch.ShortName() != refSafe(port+"-"+from) {
 		return "", nil
 	}
@@ -1465,7 +1465,7 @@ func (e *Engine) renameForVersion(ctx context.Context, branch *model.Branch, por
 		return "", err
 	}
 	old := branch.ShortName()
-	return old, e.renameWithIntent(ctx, branch, BranchName(name), fmt.Sprintf("renamed %s to %s, for the version it now moves to", old, name))
+	return old, e.renameWithIntent(ctx, held, branch, BranchName(name), fmt.Sprintf("renamed %s to %s, for the version it now moves to", old, name))
 }
 
 // renameWithIntent renames a branch, its old name's lock held, by its
@@ -1475,12 +1475,10 @@ func (e *Engine) renameForVersion(ctx context.Context, branch *model.Branch, por
 // emptied, read back. A process cut short between them leaves the intent,
 // which the next command that takes the branch's lock finishes
 // (finishRename).
-func (e *Engine) renameWithIntent(ctx context.Context, branch *model.Branch, to, words string) error {
-	// Every caller holds the old name's lock (lockedBranch): taken here
-	// without waiting, it must be busy; free, the caller didn't hold it,
-	// and nothing is renamed (Codex's read of 2c, P2-3).
-	if free, err := e.Repo.TryBranchLock(branch.Name); err == nil {
-		_ = free()
+func (e *Engine) renameWithIntent(ctx context.Context, held *heldLock, branch *model.Branch, to, words string) error {
+	// The old name's lock is the caller's, handed out by lockedBranch for
+	// this branch and not yet spent; anything else renames nothing (P3).
+	if held == nil || held.released || held.name != branch.Name {
 		return fmt.Errorf("%s can't be renamed without its lock", branch.ShortName())
 	}
 	release, err := e.Repo.TryBranchLock(to)

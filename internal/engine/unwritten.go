@@ -230,7 +230,7 @@ func (e *Engine) settled(ctx context.Context, branch *model.Branch, settlerFor f
 		return nil, nil
 	}
 	var settled []Settled
-	err := e.lockedBranch(ctx, branch.ID, branch.Name, func(ctx context.Context, current model.Branch) error {
+	err := e.lockedBranch(ctx, branch.ID, branch.Name, func(ctx context.Context, current model.Branch, _ *heldLock) error {
 		*branch = current
 		// A rename cut short is finished first, at the lock, however the
 		// branch was come by (#194, L4 and L5).
@@ -244,12 +244,21 @@ func (e *Engine) settled(ctx context.Context, branch *model.Branch, settlerFor f
 	return settled, err
 }
 
+// heldLock is a branch name's lock as lockedBranch holds it for fn's
+// call: a rename takes one, so a rename without its old name's lock can't
+// be written to work (Codex's confirmation of #194, P3). Only lockedBranch
+// makes one, and it is spent once fn returns.
+type heldLock struct {
+	name     string
+	released bool
+}
+
 // lockedBranch runs fn holding the branch's lock, by its ID and not a name
 // read before (#194, L7; Codex's read of 2a, P2): it takes the name's
 // lock, reads the branch again by ID under it, and where the ID carries
 // another name now, lets go and takes that name's, a few rounds at most.
 // fn gets the branch as read under the lock. A branch gone settles nothing.
-func (e *Engine) lockedBranch(ctx context.Context, id model.BranchID, name string, fn func(context.Context, model.Branch) error) error {
+func (e *Engine) lockedBranch(ctx context.Context, id model.BranchID, name string, fn func(context.Context, model.Branch, *heldLock) error) error {
 	for range 4 {
 		var moved string
 		ran := false
@@ -271,7 +280,9 @@ func (e *Engine) lockedBranch(ctx context.Context, id model.BranchID, name strin
 				return nil
 			}
 			ran = true
-			return fn(ctx, current)
+			held := &heldLock{name: name}
+			defer func() { held.released = true }()
+			return fn(ctx, current, held)
 		})
 		if err != nil || ran {
 			return err

@@ -67,7 +67,7 @@ func (e *Engine) ResumePrepared(ctx context.Context, where Where, tests model.Te
 		// lock: a rename cut short is finished under it first, and the
 		// branch read as it stands (Codex's read of 2c, P2-1).
 		if branch.RenameTo != "" {
-			if err := e.lockedBranch(ctx, branch.ID, branch.Name, func(ctx context.Context, current model.Branch) error {
+			if err := e.lockedBranch(ctx, branch.ID, branch.Name, func(ctx context.Context, current model.Branch, _ *heldLock) error {
 				branch = current
 				return e.finishRename(ctx, &branch)
 			}); err != nil {

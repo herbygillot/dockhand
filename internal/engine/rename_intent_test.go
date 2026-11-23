@@ -60,8 +60,8 @@ func TestANameBeingMovedToIsTaken(t *testing.T) {
 	intentTo(t, e, moving, "dockhand/jq-1.8.1")
 	other, err := e.Start(t.Context(), StartRequest{Name: "jq-other"})
 	require.NoError(t, err)
-	err = e.lockedBranch(t.Context(), other.ID, other.Name, func(ctx context.Context, current model.Branch) error {
-		return e.renameWithIntent(ctx, &current, "dockhand/jq-1.8.1", "renamed")
+	err = e.lockedBranch(t.Context(), other.ID, other.Name, func(ctx context.Context, current model.Branch, held *heldLock) error {
+		return e.renameWithIntent(ctx, held, &current, "dockhand/jq-1.8.1", "renamed")
 	})
 	require.ErrorContains(t, err, "jq-1.8.1 is jq-1.7.1's, or the name its rename is moving it to")
 	require.Equal(t, "dockhand/jq-other", reread(t, e, other.ID).Name)
@@ -242,7 +242,7 @@ func TestSettledVersionRenameRequiresTheOldBranchLock(t *testing.T) {
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-1.7.1"})
 	require.NoError(t, err)
-	err = e.renameWithIntent(t.Context(), &branch, "dockhand/jq-elsewhere", "renamed")
+	err = e.renameWithIntent(t.Context(), nil, &branch, "dockhand/jq-elsewhere", "renamed")
 	require.ErrorContains(t, err, "without its lock")
 	require.Equal(t, "dockhand/jq-1.7.1", reread(t, e, branch.ID).Name)
 
@@ -254,4 +254,25 @@ func TestSettledVersionRenameRequiresTheOldBranchLock(t *testing.T) {
 	_, err = e.Update(t.Context(), UpdateRequest{Branch: reread(t, e, branch.ID), Action: model.EditUpdate, Port: "jq"})
 	require.NoError(t, err)
 	require.Equal(t, "dockhand/jq-1.8.1", reread(t, e, branch.ID).Name, "settled, the update finishes its rename under the lock")
+}
+
+// A rename is refused where only another process holds the old name's
+// lock: holding isn't shown by the lock being busy, but by the value
+// lockedBranch hands its caller, which nothing else makes (Codex's
+// confirmation of #194, P3).
+func TestRenameWithIntentRefusesWhenOnlyAnotherProcessHoldsOldLock(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-1.7.1"})
+	require.NoError(t, err)
+	release, err := e.Repo.TryBranchLock(branch.Name)
+	require.NoError(t, err, "another process holds the old name's lock")
+	defer func() { _ = release() }()
+	err = e.renameWithIntent(t.Context(), nil, &branch, "dockhand/jq-1.8.1", "renamed")
+	require.ErrorContains(t, err, "without its lock")
+	err = e.renameWithIntent(t.Context(), &heldLock{name: branch.Name, released: true}, &branch, "dockhand/jq-1.8.1", "renamed")
+	require.ErrorContains(t, err, "without its lock", "a lock spent once its holder returned")
+	require.Equal(t, "dockhand/jq-1.7.1", reread(t, e, branch.ID).Name)
+	require.Empty(t, reread(t, e, branch.ID).RenameTo, "no intent was recorded")
 }

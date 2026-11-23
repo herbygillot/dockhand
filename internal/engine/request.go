@@ -18,7 +18,7 @@ func (e *Engine) keepTarget(ctx context.Context, branch model.Branch, origin, po
 	if branch.ID == "" {
 		return nil
 	}
-	return e.lockedBranch(ctx, branch.ID, branch.Name, func(ctx context.Context, current model.Branch) error {
+	return e.lockedBranch(ctx, branch.ID, branch.Name, func(ctx context.Context, current model.Branch, _ *heldLock) error {
 		request := current.Request
 		if request == nil {
 			request = &model.ChangeRequest{Origin: origin}

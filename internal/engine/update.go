@@ -351,9 +351,9 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		for _, done := range settled {
 			if (done.Settling.Action == SettleRecord || done.Settling.Action == SettleWrite) && done.Edit.Port == request.Port && done.Edit.Kind == model.EditUpdate && done.Edit.Result != nil {
 				finished := Update{Before: PortVersion{Version: versionOf(done.Edit.Result.Before)}, After: PortVersion{Version: versionOf(done.Edit.Result.After)}}
-				if err := e.lockedBranch(ctx, request.Branch.ID, request.Branch.Name, func(ctx context.Context, current model.Branch) error {
+				if err := e.lockedBranch(ctx, request.Branch.ID, request.Branch.Name, func(ctx context.Context, current model.Branch, held *heldLock) error {
 					request.Branch = current
-					e.renameUpdated(ctx, request, &request.Branch, &finished)
+					e.renameUpdated(ctx, held, request, &request.Branch, &finished)
 					return nil
 				}); err != nil {
 					return Update{Port: request.Port}, err
@@ -788,7 +788,7 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	// transitions and settling take too, reading the branch again under
 	// it (#194, "The lock").
 	var locked Update
-	err = e.lockedBranch(ctx, branch.ID, branch.Name, func(ctx context.Context, current model.Branch) error {
+	err = e.lockedBranch(ctx, branch.ID, branch.Name, func(ctx context.Context, current model.Branch, held *heldLock) error {
 		// The branch as read under its lock, whatever name it was come by.
 		branch = current
 		if update.Branch.ID == current.ID {
@@ -811,7 +811,7 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 					return Update{}, err
 				}
 				update.Applied = true
-				e.renameUpdated(ctx, request, &branch, &update)
+				e.renameUpdated(ctx, held, request, &branch, &update)
 				return e.recordHandEdit(ctx, branch, update, result)
 			}
 			// Step 3: the edit is recorded before its files are written, with what
@@ -905,7 +905,7 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 				return update, err
 			}
 			// Step 6: the branch is renamed for its version, where that applies.
-			e.renameUpdated(ctx, request, &branch, &update)
+			e.renameUpdated(ctx, held, request, &branch, &update)
 			if record != nil && applied == prepared {
 				return update, nil
 			}
@@ -1582,11 +1582,11 @@ func (e *Engine) writeEdit(ctx context.Context, worktree *git.Repository, paths 
 // renameUpdated renames the branch for the version an update moved it to,
 // where the update didn't start it; a branch that keeps its name says why
 // at -v.
-func (e *Engine) renameUpdated(ctx context.Context, request UpdateRequest, branch *model.Branch, update *Update) {
+func (e *Engine) renameUpdated(ctx context.Context, held *heldLock, request UpdateRequest, branch *model.Branch, update *Update) {
 	if request.Start != nil || request.Action != model.EditUpdate {
 		return
 	}
-	renamed, err := e.renameForVersion(ctx, branch, request.Port, update.Before.Version, update.After.Version)
+	renamed, err := e.renameForVersion(ctx, held, branch, request.Port, update.Before.Version, update.After.Version)
 	switch {
 	case err != nil:
 		progress.VerboseReport(ctx, "%s keeps its name: %v", branch.ShortName(), err)
