@@ -507,6 +507,25 @@ func TestAnUncertainNewestReleaseIsNamedNotChosen(t *testing.T) {
 	require.Contains(t, out, "jq: 1.7.1 → 1.9.0")
 }
 
+func TestHandEditPlanDoesNotPrintEmptyVersions(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return unevaluableBumper{cmdtest.Bumper{Repo: e.Repo}} }
+	out, _, err := cmdtest.Dockhand(t, "update", "jq", "--new", "--hand-edit", "--plan")
+	require.NoError(t, err)
+	require.NotContains(t, out, "jq:  →    (GitHub tag")
+	require.Contains(t, out, "jq: versions couldn't be evaluated")
+}
+
+type unevaluableBumper struct{ cmdtest.Bumper }
+
+func (b unevaluableBumper) Prepare(ctx context.Context, request editprep.Request) (editprep.Result, error) {
+	result, err := b.Bumper.Prepare(ctx, request)
+	result.Fidelity = nil
+	return result, err
+}
+
 // regenerating is a preparer whose update wrote a dependency block again.
 type regenerating struct{ cmdtest.Bumper }
 

@@ -29,9 +29,11 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "submit",
 		Short: "Open or update the pull request",
-		Long: `Pushes the branch's committed head to your fork and opens its pull
-request against macports/macports-ports, or updates the existing one. The
-preview shows the commits, where they will be pushed, the title, the
+		Long: `Commits uncommitted edits first, then pushes the branch's committed
+head to your fork and opens its pull request against
+macports/macports-ports, or updates the existing one. --head
+leaves uncommitted edits out. The preview shows the commits, where they
+will be pushed, the title, the
 checks, the commit rules, and any other open pull requests for the same
 ports.
 

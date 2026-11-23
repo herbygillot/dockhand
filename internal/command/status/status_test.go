@@ -127,6 +127,21 @@ func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
 	require.Equal(t, "No open branch touches fd yet. dockhand update fd starts one.\n", out)
 }
 
+func TestStatusNamesHowToAddAnUntrackedPortOutsideTheSparseWorktree(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	started, err := cmdtest.JSONOf(t, "start", "py-pyaml")
+	require.NoError(t, err)
+	branch := cmdtest.Dig(t, started.Result, "branch", "worktree").(string)
+	require.NoError(t, os.MkdirAll(filepath.Join(branch, "python/py-pyaml"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(branch, "python/py-pyaml/notes.txt"), []byte("new port draft\n"), 0o644))
+	cmdtest.Setenv(t, "MACPORTS_TREE", branch)
+	out, _, err := cmdtest.Dockhand(t, "status")
+	require.NoError(t, err)
+	require.Contains(t, out, "Run git sparse-checkout add python/py-pyaml")
+}
+
 func TestQueueWaitCancelAndLogs(t *testing.T) {
 	t.Parallel()
 	w := cmdtest.NewWorld(t)

@@ -684,7 +684,11 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 		// update read "py314-textual-fastdatatable: 0.19.0 → 0.19.3", the
 		// subport the edit evaluated (field testing at 23c5e2aa).
 		named := cmp.Or(request.Port, update.Port)
-		fmt.Fprintf(out, "%s: %s → %s%s\n", named, update.Before, update.After, source)
+		if update.Before.Version == "" || update.After.Version == "" {
+			fmt.Fprintf(out, "%s: versions couldn't be evaluated%s\n", named, source)
+		} else {
+			fmt.Fprintf(out, "%s: %s → %s%s\n", named, update.Before, update.After, source)
+		}
 		// A plain bump read the same for semgrep's 0.14.0 to 1.179.0
 		// (field testing, 2026-10-02).
 		if update.CrossesMajor {

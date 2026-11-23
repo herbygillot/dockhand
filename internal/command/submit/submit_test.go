@@ -115,6 +115,16 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 	require.Equal(t, testsupport.Git(t, dir, "rev-parse", "HEAD"), testsupport.Git(t, g.Fork, "rev-parse", "dockhand/jq-update"))
 }
 
+func TestSubmitHelpSaysItCommitsEditsBeforePushing(t *testing.T) {
+	t.Parallel()
+	out, _, err := cmdtest.Dockhand(t, "submit", "--help")
+	require.NoError(t, err)
+	paragraph := cmdtest.Flat(strings.SplitN(out, "\n\n", 2)[0])
+	require.Contains(t, paragraph, "Commits uncommitted edits first")
+	require.Contains(t, paragraph, "--head")
+	require.Contains(t, paragraph, "leaves uncommitted edits out")
+}
+
 // The preview says what comparing the upstream archives found, as update
 // did and ship --passing does, and its JSON carries it: a person's own
 // submission shows it, and isn't held for it (D4).

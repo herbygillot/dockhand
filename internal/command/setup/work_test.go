@@ -175,6 +175,21 @@ func TestCommandsRefuseADirectoryThatIsNotAPortsTree(t *testing.T) {
 	require.ErrorContains(t, err, "not in a Git checkout")
 }
 
+func TestCheckoutDiagnosticsAreVerboseOnly(t *testing.T) {
+	t.Parallel()
+	cmdtest.NewWorld(t)
+	outside := t.TempDir()
+	plain, plainVerbose, err := cmdtest.Dockhand(t, "--tree", outside, "path")
+	require.ErrorContains(t, err, "is not in a Git checkout (select one with --tree or MACPORTS_TREE)")
+	require.NotContains(t, err.Error(), "fatal: not a git repository")
+	require.NotContains(t, plain, "fatal: not a git repository")
+	require.NotContains(t, plainVerbose, "fatal: not a git repository")
+
+	_, verbose, err := cmdtest.Dockhand(t, "--tree", outside, "path", "-v")
+	require.ErrorContains(t, err, "is not in a Git checkout")
+	require.Contains(t, verbose, "fatal: not a git repository")
+}
+
 // setup refuses a Git older than dockhand works with, before recording
 // anything, and says how to get a newer one.
 func TestSetupRefusesAnOldGit(t *testing.T) {

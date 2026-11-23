@@ -112,6 +112,22 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	require.ErrorContains(t, err, "--phase requires a port name")
 }
 
+func TestCheckNamesSparseAddCommandForANewPort(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithScript(t, w, "passed")
+	started, err := cmdtest.JSONOf(t, "start", "py-pyaml")
+	require.NoError(t, err)
+	branch := cmdtest.Dig(t, started.Result, "branch", "worktree").(string)
+	require.NoError(t, os.MkdirAll(filepath.Join(branch, "python/py-pyaml"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(branch, "python/py-pyaml/notes.txt"), []byte("new port draft\n"), 0o644))
+	cmdtest.Setenv(t, "MACPORTS_TREE", branch)
+	out, _, err := cmdtest.Dockhand(t, "check", "--plan")
+	require.ErrorContains(t, err, "nothing was checked")
+	require.Contains(t, cmdtest.Flat(out), "Run git sparse-checkout add python/py-pyaml")
+}
+
 // A narrowed plan says what --only left out, and that submit still needs
 // it checked (Design v3 §7).
 // A check asked while the branch's check of the same files is queued

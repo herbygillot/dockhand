@@ -63,6 +63,11 @@ type BranchStatus struct {
 	Commits int
 	// Edited lists tracked files changed and not committed.
 	Edited []string
+	// SparseAdds are port directories with untracked files outside the
+	// worktree's sparse cone, which Git needs added to the cone before it
+	// can stage them.
+	SparseAdds []string
+	untracked  []string
 	// Edits are the branch's written edits, and Prepared its preparation
 	// verdict, which says a hold before its check or a preparation not
 	// finished (branchstate.PreparationOf), as serve would be told for its
@@ -236,7 +241,7 @@ func (e *Engine) readFiles(ctx context.Context, status *BranchStatus, reads *sta
 	// for it, so its files are the branch's committed ones.
 	worktree := reads.worktree(e, branch)
 	if worktree != nil {
-		if status.Edited, err = worktree.TrackedChanges(ctx); err != nil {
+		if status.Edited, status.untracked, err = worktree.WorkingChanges(ctx, branch.State == model.BranchOpen); err != nil {
 			return nil, nil, err
 		}
 		if len(status.Edited) > 0 {
@@ -824,6 +829,11 @@ func (e *Engine) readOpen(ctx context.Context, status *BranchStatus, worktree *g
 	// for each: paused where serve prepared it, and for a person's own, what
 	// submit shows (C2, where it was serve's alone).
 	var err error
+	if worktree != nil && len(status.untracked) > 0 {
+		if status.SparseAdds, err = sparseAdds(ctx, worktree, status.untracked); err != nil {
+			return err
+		}
+	}
 	if status.Held, status.assessed, status.Assessment, err = e.assessedHolds(ctx, status.Branch, model.ObjectID(status.Tree), status.Scope.Ports); err != nil {
 		return err
 	}
@@ -867,6 +877,23 @@ func (e *Engine) readOpen(ctx context.Context, status *BranchStatus, worktree *g
 		}
 	}
 	return nil
+}
+
+// sparseAdds maps untracked paths outside a sparse cone to the MacPorts port
+// directories the person must add before staging them.
+func sparseAdds(ctx context.Context, worktree *git.Repository, untracked []string) ([]string, error) {
+	outside, err := worktree.OutsideSparse(ctx, untracked)
+	if err != nil {
+		return nil, err
+	}
+	var directories []string
+	for _, file := range outside {
+		if directory, ok := macports.PortDirectoryOf(file); ok && !slices.Contains(directories, directory) {
+			directories = append(directories, directory)
+		}
+	}
+	slices.Sort(directories)
+	return directories, nil
 }
 
 // readDecisions reads what publication reads of a branch beside its

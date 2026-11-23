@@ -759,6 +759,7 @@ func OpenPortsTree(ctx context.Context, dir string, program git.Program) (*git.R
 	}
 	repo, err := git.Open(ctx, dir, program)
 	if err != nil {
+		progress.VerboseReport(ctx, "%v", err)
 		return nil, &notCheckout{dir: dir, err: err}
 	}
 	if macports.ValidatePortsTree(repo.Root, dir) == nil || branchHoldsPorts(ctx, repo) {
@@ -776,7 +777,7 @@ type notCheckout struct {
 }
 
 func (n *notCheckout) Error() string {
-	return fmt.Sprintf("%s is not in a Git checkout (select one with --tree or MACPORTS_TREE): %v", n.dir, n.err)
+	return fmt.Sprintf("%s is not in a Git checkout (select one with --tree or MACPORTS_TREE)", n.dir)
 }
 
 func (n *notCheckout) Unwrap() []error { return []error{ErrNotPortsTree, n.err} }

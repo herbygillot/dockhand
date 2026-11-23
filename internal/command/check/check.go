@@ -210,8 +210,16 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 				// one Git doesn't track yet, and the worktree's sparse
 				// checkout keeps git add from taking it: the commands are
 				// said whole (the Vx port's field testing, 2026-10-03).
+				newPorts := make(map[string]bool, len(capture.NewPorts))
 				for _, directory := range capture.NewPorts {
-					fmt.Fprintf(out, "  New port directory %s: run dockhand check --include %s/Portfile to build it. Run git sparse-checkout add %s before staging its files.\n", directory, directory, directory)
+					newPorts[directory] = true
+					fmt.Fprintf(out, "  New port directory %s: run dockhand check --include %s/Portfile to build it.\n", directory, directory)
+				}
+				for _, directory := range capture.SparseAdds {
+					if !newPorts[directory] {
+						fmt.Fprintf(out, "  Files in %s are outside this worktree's sparse checkout.\n", directory)
+					}
+					fmt.Fprintf(out, "  Run git sparse-checkout add %s\n", directory)
 				}
 			}
 			view.WritePlan(out, proposed, e.PlanNotes(ctx, proposed), e.PlanSiblings(ctx, capture.Revision, proposed), e.Remedy, view.ListShown(streams), plan)

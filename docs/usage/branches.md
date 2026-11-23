@@ -206,7 +206,9 @@ A tracked file you edit in a directory outside the worktree's sparse checkout
 is still built: Git reports it as modified, so a check of the working files
 includes it. `git add` refuses it, though, until the directory is added to the
 checkout, so the check marks it with `!` and gives the `git sparse-checkout add`
-command to run.
+command to run. The same applies to untracked files: `status` and `check` name
+the command for their port directory, including a new port directory created
+by hand in a sparse branch worktree.
 
 After tidy commits the work, a directory the branch does not change may be left
 out again. Worktrees you created yourself retain their own width. Ordinary Git

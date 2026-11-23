@@ -505,6 +505,9 @@ func showBranch(out io.Writer, places config.Places, status engine.BranchStatus,
 		if len(status.Edited) > 0 {
 			fmt.Fprintf(out, "  Edited   %s\n", strings.Join(status.Edited, ", "))
 		}
+		for _, directory := range status.SparseAdds {
+			fmt.Fprintf(out, "  Sparse   files in %s are outside this worktree's sparse checkout\n           Run git sparse-checkout add %s\n", directory, directory)
+		}
 		fmt.Fprintf(out, "  Checks   %s\n", view.CheckState(status))
 		if status.Evidence != nil {
 			if status.CheckStanding() == branchstate.CheckedOlder {

@@ -129,30 +129,58 @@ func (r *Repository) SparseCone(ctx context.Context) ([]string, error) {
 }
 
 // OutsideSparse are the paths given that lie outside the worktree's sparse
-// cone: git status reports a tracked file there that is on disk as
-// modified, so a capture of the working files reads it, while git add and
-// git commit -a decline it without --sparse. None where the checkout isn't
-// sparse, or its patterns aren't cone mode, which this doesn't read. The
+// cone. A tracked changed file there is read as it is on disk, but git add
+// declines it without --sparse; an untracked file there also needs the
+// directory added before it can be staged. None where the checkout isn't
+// sparse, or its patterns aren't cone mode. The
 // cone is matched as git-sparse-checkout(1) defines it: every file at the
 // top, those directly in each directory above a cone directory, and all
 // under one; git sparse-checkout check-rules, which would say it, needs
 // Git 2.42, newer than MinimumVersion.
 func (r *Repository) OutsideSparse(ctx context.Context, paths []string) ([]string, error) {
-	cone, err := r.SparseCone(ctx)
-	if err != nil || len(cone) == 0 {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	enabled, coneMode, err := r.sparseModes(ctx)
+	if err != nil || !enabled || !coneMode {
 		return nil, err
 	}
-	mode, err := r.output(ctx, "config", "--type=bool", "--default=false", "core.sparseCheckoutCone")
-	if err != nil || strings.TrimSpace(string(mode)) != "true" {
+	cone, err := r.output(ctx, "sparse-checkout", "list")
+	if err != nil {
 		return nil, err
 	}
+	directories := strings.Fields(string(cone))
 	var outside []string
 	for _, name := range paths {
-		if !inCone(cone, name) {
+		if !inCone(directories, name) {
 			outside = append(outside, name)
 		}
 	}
 	return outside, nil
+}
+
+// sparseModes reads both sparse-checkout settings in one Git process.
+func (r *Repository) sparseModes(ctx context.Context) (enabled, cone bool, err error) {
+	data, status, err := r.runStatus(ctx, "config", "--bool", "--get-regexp", `^core\.sparseCheckout(Cone)?$`)
+	if err != nil {
+		return false, false, err
+	}
+	if status != 0 {
+		return false, false, nil
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		key, value, ok := strings.Cut(line, " ")
+		if !ok {
+			continue
+		}
+		switch strings.ToLower(key) {
+		case "core.sparsecheckout":
+			enabled = strings.EqualFold(value, "true")
+		case "core.sparsecheckoutcone":
+			cone = strings.EqualFold(value, "true")
+		}
+	}
+	return enabled, cone, nil
 }
 
 // inCone says whether a file is inside a sparse cone (OutsideSparse).
@@ -188,28 +216,44 @@ func (r *Repository) RemoveUnchangedWorktree(ctx context.Context, directory stri
 // from HEAD: the work a branch switch could displace. A rename lists both
 // its paths. Untracked files are not listed.
 func (r *Repository) TrackedChanges(ctx context.Context) ([]string, error) {
-	out, err := r.output(ctx, "status", "--porcelain=v1", "-z", "--untracked-files=no", "--ignore-submodules=none")
-	if err != nil {
-		return nil, err
+	tracked, _, err := r.WorkingChanges(ctx, false)
+	return tracked, err
+}
+
+// WorkingChanges lists tracked paths changed from HEAD and, when requested,
+// untracked files in one porcelain status read.
+func (r *Repository) WorkingChanges(ctx context.Context, includeUntracked bool) (tracked, untracked []string, err error) {
+	mode := "--untracked-files=no"
+	if includeUntracked {
+		mode = "--untracked-files=all"
 	}
-	var paths []string
+	out, err := r.output(ctx, "status", "--porcelain=v1", "-z", mode, "--ignore-submodules=none")
+	if err != nil {
+		return nil, nil, err
+	}
 	fields := strings.Split(string(out), "\x00")
 	for i := 0; i < len(fields); i++ {
 		entry := fields[i]
-		if len(entry) < 4 {
+		if len(entry) < 3 {
 			continue
 		}
-		paths = append(paths, entry[3:])
+		if entry[0] == '?' && entry[1] == '?' {
+			if includeUntracked {
+				untracked = append(untracked, entry[3:])
+			}
+			continue
+		}
+		tracked = append(tracked, entry[3:])
 		// A rename or copy is followed by its source path, which a rename
 		// deletes.
 		if (entry[0] == 'R' || entry[0] == 'C') && i+1 < len(fields) {
 			i++
 			if entry[0] == 'R' && fields[i] != "" {
-				paths = append(paths, fields[i])
+				tracked = append(tracked, fields[i])
 			}
 		}
 	}
-	return paths, nil
+	return tracked, untracked, nil
 }
 
 // Switch checks out an existing local branch in this checkout. Git refuses
