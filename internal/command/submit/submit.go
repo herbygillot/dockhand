@@ -73,6 +73,13 @@ write, keeping your --note.
 				return err
 			}
 			defer e.Close()
+			// Which of the submission's own flags were given, false
+			// included: one left out is carried from an earlier submission
+			// this one continues (#195, E3).
+			request.Given = map[string]bool{}
+			for _, flag := range []string{"draft", "no-check", "type", "skip-notification"} {
+				request.Given[flag] = cmd.Flags().Changed(flag)
+			}
 			request.TestedBinaries, request.TestedVariants = testedBinaries, testedVariants
 			// =false withdraws a kept statement, which leaving the flag out
 			// keeps (#153).

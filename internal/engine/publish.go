@@ -480,6 +480,9 @@ func reviewBasis(pr *model.PullRequest, record *model.Publication) remotewrite.B
 // attempt. serve's place, never tried, goes with it.
 func (e *Engine) endRefused(ctx context.Context, branch model.BranchID, record model.Publication) error {
 	return e.rewritePublication(ctx, branch, record.ID, nil, func(tx store.Tx) error {
+		if err := handBack(tx, branch, record); err != nil {
+			return err
+		}
 		if !record.Served {
 			return nil
 		}

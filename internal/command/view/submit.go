@@ -267,13 +267,6 @@ func writeEarlier(out io.Writer, plan engine.SubmitPlan) {
 	if len(parts) > 0 {
 		fmt.Fprintf(out, "  Earlier  %s\n", strings.Join(parts, "; this one "))
 	}
-	if len(earlier.NotCarried) > 0 {
-		which, it := "which this one doesn't carry", "it"
-		if len(earlier.NotCarried) > 1 {
-			which, it = "which this one doesn't carry", "them"
-		}
-		fmt.Fprintf(out, "  ! the last submit of this commit was given %s, %s: give %s again to keep %s\n", prose.And(earlier.NotCarried), which, it, it)
-	}
 }
 
 func PullRequestWords(plan engine.SubmitPlan) string {

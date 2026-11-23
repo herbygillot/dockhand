@@ -366,12 +366,12 @@ func (i *sourceInput) scratchDir(request Request) (string, error) {
 // SourceRefused is the source action's refusal (#16, #195): a --source
 // asked that this port's preparation can't carry out, with its reason. It
 // is an ErrUnsupported refusal, and its words name the flag.
-type SourceRefused struct{ err error }
+type SourceRefused struct{ Err error }
 
-func (r *SourceRefused) Error() string { return r.err.Error() }
-func (r *SourceRefused) Unwrap() error { return r.err }
+func (r *SourceRefused) Error() string { return r.Err.Error() }
+func (r *SourceRefused) Unwrap() error { return r.Err }
 
 // sourceRefused is a source action refused, in the words given.
 func sourceRefused(format string, args ...any) error {
-	return &SourceRefused{err: ErrUnsupported.Because(format, args...)}
+	return &SourceRefused{Err: ErrUnsupported.Because(format, args...)}
 }

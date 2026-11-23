@@ -581,9 +581,10 @@ func CheckRequestFor(request model.ChangeRequest, branch model.Branch, where Whe
 // none. The submission carries the request's ID, which its publication
 // takes where the request is still that one (takeRequest).
 func SubmitRequestFor(request model.ChangeRequest, branch model.Branch, unattended bool) SubmitRequest {
-	publish := request.Publish
+	publish := takenAsks(request, branch)
 	submit := SubmitRequest{Branch: branch, RequestID: request.ID, Draft: publish.Draft.Value, Types: publish.Type.Value, SkipNotification: publish.SkipNotification.Value,
 		NoCheck: publish.NoCheck.Value, PendingCheck: !publish.NoCheck.Value, Where: WhereRequestFor(request, unattended), Tests: model.TestPolicy(request.Check.Tests.Value)}
+	submit.Given = map[string]bool{"draft": publish.Draft.Given, "no-check": publish.NoCheck.Given, "type": publish.Type.Given, "skip-notification": publish.SkipNotification.Given}
 	if publish.TestedBinaries.Given {
 		submit.TestedBinaries, submit.WithdrawBinaries = publish.TestedBinaries.Value, !publish.TestedBinaries.Value
 	}

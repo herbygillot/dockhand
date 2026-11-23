@@ -313,7 +313,8 @@ func TestTheStagesRequestsComeFromTheRequest(t *testing.T) {
 	require.Equal(t, branch, check.Capture.Branch)
 	submit := SubmitRequestFor(request, branch, false)
 	require.Equal(t, SubmitRequest{Branch: branch, RequestID: request.ID, Draft: true, Types: []string{"bugfix"}, SkipNotification: true, PendingCheck: true,
-		Where: WhereRequest{Build: "minmax"}, Tests: "required", WithdrawVariants: true}, submit)
+		Where: WhereRequest{Build: "minmax"}, Tests: "required", WithdrawVariants: true,
+		Given: map[string]bool{"draft": true, "no-check": false, "type": true, "skip-notification": true}}, submit)
 }
 
 // A tested statement pending is for the work it was given for: a version

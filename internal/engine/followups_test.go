@@ -541,10 +541,12 @@ func TestAReviewThePlanCouldntReadDropsNobody(t *testing.T) {
 }
 
 // A plan that continues an earlier submission of its commit says what that
-// one did, and, until the request carries them (#195), the flags it was
-// given that this run leaves out: a --draft submission whose opening
-// failed, continued plain, would open ready, unsaid (#191, group F).
-func TestAContinuationSaysWhatTheEarlierSubmitDidAndWasGiven(t *testing.T) {
+// one did, and carries what it was given that this run leaves out: a
+// --draft --no-check submission whose opening failed, continued with no
+// flags, stays a draft and doesn't check; continued with --draft=false, it
+// is made ready; and the carry holds across the store opened again (#195,
+// E3).
+func TestAContinuationCarriesWhatTheEarlierSubmitWasGiven(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
@@ -559,16 +561,49 @@ func TestAContinuationSaysWhatTheEarlierSubmitDidAndWasGiven(t *testing.T) {
 
 	current, err := e.Branch(t.Context(), branch.ID)
 	require.NoError(t, err)
-	next, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: current, NoCheck: true})
+	next, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: current, Given: map[string]bool{}})
 	require.NoError(t, err)
 	said := next.Continues()
 	require.NotNil(t, said)
 	require.Equal(t, []string{"pushed " + model.ObjectID(plan.Commit).Short()}, said.Did)
-	require.Equal(t, []string{"--draft", "--skip-notification"}, said.NotCarried)
+	require.Equal(t, []string{"--draft", "--skip-notification"}, said.Carries, "a draft carries no --no-check, which --draft replaces")
+	require.True(t, next.Request.Draft, "continued with no flags, it stays a draft")
+	require.True(t, next.Request.SkipNotification)
+	require.Empty(t, next.Blocking, "a draft needs no check")
 
-	again, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: current, NoCheck: true, Draft: true, SkipNotification: true})
+	again := f.open(t)
+	again.Forge, again.Preparer, again.Ports = e.Forge, e.Preparer, e.Ports
+	reopened, err := again.PlanSubmit(t.Context(), SubmitRequest{Branch: current, Given: map[string]bool{}})
 	require.NoError(t, err)
-	require.Empty(t, again.Continues().NotCarried, "given again, nothing is left out")
+	require.True(t, reopened.Request.Draft, "the carry is read from the record, across the store opened again")
+
+	ready, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: current, Given: map[string]bool{"draft": true}})
+	require.NoError(t, err)
+	require.False(t, ready.Request.Draft, "--draft=false given: made ready")
+	require.NotContains(t, ready.Continues().Carries, "--draft")
+}
+
+// A continuation of a --no-check submission, given no flags, doesn't check.
+func TestAContinuationCarriesNoCheck(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Types: []string{"bugfix"}})
+	require.NoError(t, err)
+	testsupport.Git(t, f.clone, "push", "-q", fake.Fork, plan.Commit+":refs/heads/"+plan.RemoteBranch())
+	earlier := plan.publication(store.NewID("pub"), plan.Login.Account, false)
+	earlier.Owes = []model.PublicationStep{model.StepPush, model.StepOpen}
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.SetPublication(branch.ID, "", &earlier) }))
+	current, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	next, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: current, Given: map[string]bool{}})
+	require.NoError(t, err)
+	require.True(t, next.Request.NoCheck)
+	require.Equal(t, []string{"bugfix"}, next.Request.Types)
+	require.Empty(t, next.Blocking, "no check is asked of it")
+	require.Equal(t, []string{"--no-check", "--type bugfix"}, next.Continues().Carries)
 }
 
 // What a submission still owes is said on every return, each step with its

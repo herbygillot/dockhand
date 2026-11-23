@@ -300,11 +300,13 @@ read shows a step isn't done. What you asked of the earlier submit for the same
 commit stands: a `--ready` still owed, and your answer about the reviewers.
 The plan says what the earlier submit did and what it carries, and where the
 pull request was found open rather than opened by dockhand. `--draft`,
-`--no-check`, `--type` and `--skip-notification` don't carry from an earlier
-submit: the plan names any the earlier submit was given that this one leaves
-out, so give them again to keep them. Those a ship or bump kept on the branch
-are read where this submit isn't given them, and said: `Taken from what the
-branch's request kept: --draft, --type bugfix`. Do
+`--no-check`, `--type` and `--skip-notification` the earlier submit was given
+carry too, each this one leaves out, and the plan says which: a flag given,
+false included, is this run's own, so `--draft=false` makes it ready. Those a
+ship or bump kept on the branch are read where this submit isn't given them,
+and said: `Taken from what the branch's request kept: --draft, --type bugfix`;
+an earlier submit's stand over them. Where GitHub refused a ship's or serve's
+submission, what it asked stays with the branch for the next attempt. Do
 not create a replacement branch merely because the final confirmation did not
 print. Another submission of the same fork branch, from another terminal, is
 refused while one runs, and names the process; if it hangs, stop that process.

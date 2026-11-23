@@ -93,6 +93,11 @@ type SubmitRequest struct {
 	// writing, is otherwise theirs and stays (#34756 kept September's
 	// Tested on under the v0.3.0 commit). Never someone else's.
 	Rewrite bool
+	// Given are the submission's own flags given on this run, by name:
+	// draft, no-check, type and skip-notification. One left out is carried
+	// from an earlier submission of the commit this one continues; one
+	// given, false included, is this run's (#195, E3).
+	Given map[string]bool
 	// RequestID is the branch's change request this submission was
 	// planned and judged under, a stage's (ship, bump, serve): its
 	// publication takes that request, compared in its first transaction;
@@ -720,17 +725,21 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	}); err != nil {
 		return plan, err
 	}
-	// The phases, in order: the evidence and what blocks publishing it;
-	// where submit pushes, and the pull request open there (Existing),
+	// The phases, in order: where submit pushes, and the pull request open
+	// there (Existing), with what an earlier submission of the commit
+	// carries, its --draft, --no-check, types and --skip-notification
+	// among them (#195, E3), so the evidence is judged under what this
+	// submission asks; then the evidence and what blocks publishing it,
 	// which the title and the search for others read.
+	if err := e.destination(ctx, worktree, &plan); err != nil {
+		return plan, err
+	}
+	request.Draft, request.NoCheck, request.Types, request.SkipNotification, request.Ready = plan.Request.Draft, plan.Request.NoCheck, plan.Request.Types, plan.Request.SkipNotification, plan.Request.Ready
 	if err := e.evidence(ctx, &plan, accepted, standing); err != nil {
 		return plan, err
 	}
 	plan.Moved = append(e.movedSources(ctx, plan.Evidence), identitiesUnread(plan.Evidence)...)
 	moved := plan.Moved
-	if err := e.destination(ctx, worktree, &plan); err != nil {
-		return plan, err
-	}
 	plan.Note = branch.Note
 	if request.Note != nil {
 		plan.Note = strings.TrimSpace(strings.ReplaceAll(*request.Note, "\r\n", "\n"))
@@ -1983,6 +1992,21 @@ func (p *SubmitPlan) carry(earlier *model.Publication) {
 		return
 	}
 	p.Carried = earlier
+	// What the earlier submission asked, each flag this run left out: a
+	// flag given, false included, is this run's own (#195, E3).
+	asked := earlier.Asked
+	if !p.Request.Given["draft"] && !p.Request.Given["no-check"] {
+		p.Request.Draft = asked.Draft
+	}
+	if !p.Request.Given["no-check"] && !p.Request.Given["draft"] {
+		p.Request.NoCheck = asked.NoCheck && !p.Request.Draft
+	}
+	if !p.Request.Given["type"] && len(asked.Types) > 0 {
+		p.Request.Types = asked.Types
+	}
+	if !p.Request.Given["skip-notification"] {
+		p.Request.SkipNotification = asked.SkipNotification
+	}
 	if slices.Contains(earlier.Owes, model.StepReady) && !p.Request.Draft {
 		p.Request.Ready = true
 	}
@@ -1992,12 +2016,12 @@ func (p *SubmitPlan) carry(earlier *model.Publication) {
 }
 
 // EarlierSubmit is what a plan says of the earlier submission of its
-// commit it continues: what settling found it did, what of it this run
-// carries, and what it asked that this run doesn't carry yet (docs/
-// designs/publication-record.md at 0e0ad767, "Who continues what"). Nil where the
-// plan continues none.
+// commit it continues: what settling found it did, and what of it this run
+// carries, the flags it was given that this run leaves out among them
+// (docs/designs/publication-record.md at 0e0ad767, "Who continues what";
+// #195, E3). Nil where the plan continues none.
 type EarlierSubmit struct {
-	Did, Carries, NotCarried []string
+	Did, Carries []string
 }
 
 // Continues is the plan's EarlierSubmit, in words a person reads.
@@ -2049,20 +2073,20 @@ func (p SubmitPlan) Continues() *EarlierSubmit {
 			said.Carries = append(said.Carries, "GitHub refused to ask "+prose.And(refused))
 		}
 	}
-	// What a continuation doesn't carry until the request does (#195): a
-	// flag the earlier run gave that this one leaves out.
+	// The earlier run's flags this one left out and carries (#195, E3).
 	asked := c.Asked
-	if asked.Draft && !p.Request.Draft && !p.Request.Ready {
-		said.NotCarried = append(said.NotCarried, "--draft")
+	given := p.Request.Given
+	if asked.Draft && !given["draft"] && !given["no-check"] {
+		said.Carries = append(said.Carries, "--draft")
 	}
-	if asked.NoCheck && !p.Request.NoCheck {
-		said.NotCarried = append(said.NotCarried, "--no-check")
+	if asked.NoCheck && p.Request.NoCheck && !given["no-check"] && !given["draft"] {
+		said.Carries = append(said.Carries, "--no-check")
 	}
-	if asked.SkipNotification && !p.Request.SkipNotification {
-		said.NotCarried = append(said.NotCarried, "--skip-notification")
+	if asked.SkipNotification && !given["skip-notification"] {
+		said.Carries = append(said.Carries, "--skip-notification")
 	}
-	if len(asked.Types) > 0 && !slices.Equal(asked.Types, p.Request.Types) {
-		said.NotCarried = append(said.NotCarried, "--type "+strings.Join(asked.Types, ","))
+	if len(asked.Types) > 0 && !given["type"] {
+		said.Carries = append(said.Carries, "--type "+strings.Join(asked.Types, ","))
 	}
 	return &said
 }
