@@ -1073,7 +1073,7 @@ func TestAnObsoleteStubMovesWithItsReplacementWhenAsked(t *testing.T) {
 
 	moved, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq", WithObsolete: true})
 	require.NoError(t, err)
-	require.Equal(t, &ObsoleteStub{Port: "jq-old", Version: "1.7.1", Moved: true}, moved.Obsolete)
+	require.Equal(t, &ObsoleteStub{Port: "jq-old", Version: "1.7.1", Moved: true, Updated: true}, moved.Obsolete)
 	require.Equal(t, modelineHead+"name jq-old\nversion 1.8.1\n", read(t, filepath.Join(branch.Worktree, "textproc/jq-old/Portfile")))
 	var edits []model.Edit
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {

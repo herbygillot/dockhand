@@ -185,6 +185,14 @@ Define your own profile with `dockhand usage configuration`.
 Use `--on local` for a host MacPorts prefix; `local` is no build profile, and
 `--build local` is refused.
 
+Where a ship or bump kept a place or a test policy on the branch, `check`
+reads it where it's given neither `--on` nor `--build`, or no `--tests`, and
+says so: `Taken from what the branch's request kept: --build minmax, --tests
+required`. `check` never changes what's kept. `--on` given to a ship replaces a
+kept `--build`, and the other way round: they are one choice, the place.
+`check --baseline` builds as the check it compares with was built, and reads
+nothing kept.
+
 Where you name where a check builds, with `--on` or `--build`, submission needs
 exactly that: `check --on local` then `submit` passes on the prefix alone, even
 where Tart is set up. Where you name neither, it needs `build.default`'s

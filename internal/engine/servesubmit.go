@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"path"
@@ -105,7 +106,7 @@ func (e *Engine) serveCandidates(ctx context.Context) ([]ServeCandidate, []model
 			yours = append(yours, branch)
 			continue
 		}
-		plan, err := e.PlanSubmit(ctx, SubmitRequest{Branch: branch})
+		plan, err := e.PlanSubmit(ctx, checkedSubmitRequest(branch))
 		candidate := ServeCandidate{Branch: branch, Plan: plan}
 		if err != nil {
 			candidate.Held = append(candidate.Held, model.Concern{Origin: model.FromSubmission, Rule: "unplanned", Detail: err.Error()})
@@ -689,9 +690,30 @@ func (e *Engine) SubmitForServe(ctx context.Context, candidate ServeCandidate, a
 		return Submitted{}, fmt.Errorf("%s needs review before submission: %s", candidate.Branch.ShortName(), strings.Join(HoldLines(candidate.Held), "; "))
 	}
 	plan := candidate.Plan
-	plan.Body = plan.Body + "\n\n" + ServeNote + "\n"
-	plan.served, plan.admission = true, admission
-	return e.ApplySubmit(ctx, plan, model.AnsweredNobody)
+	// Where another command changed the branch's request while serve
+	// judged it, nothing was recorded: it is planned and judged again under
+	// the request as it stands, a few rounds, its holds read anew (#195).
+	for round := 0; ; round++ {
+		plan.Body = plan.Body + "\n\n" + ServeNote + "\n"
+		plan.served, plan.admission = true, admission
+		submitted, err := e.ApplySubmit(ctx, plan, model.AnsweredNobody)
+		if !errors.Is(err, ErrRequestChanged) {
+			return submitted, err
+		}
+		if round == 2 {
+			return submitted, fmt.Errorf("%s's request kept changing while serve submitted it; nothing was pushed, and serve tries again at its next look", candidate.Branch.ShortName())
+		}
+		branch, err := e.Branch(ctx, candidate.Branch.ID)
+		if err != nil {
+			return submitted, err
+		}
+		if plan, err = e.PlanSubmit(ctx, checkedSubmitRequest(branch)); err != nil {
+			return submitted, err
+		}
+		if held := plan.Held(); len(held) > 0 {
+			return submitted, fmt.Errorf("%s needs review before submission: %s", branch.ShortName(), strings.Join(HoldLines(held), "; "))
+		}
+	}
 }
 
 // majorRule is the hold on an update whose major version moves.

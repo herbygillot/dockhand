@@ -143,8 +143,13 @@ tarball or Git sources. It preserves the source, except that legacy tarballs
 move to GitHub's archive format for the tag. For example, a notice may say
 `release 2.5.0's mindforger_2.5.0_tarball.tgz carries the source, doc, and
 deps/cmark-gfm; update --source releases, run instead of this update, fetches
-it`. The move belongs to the update that changes the version: once the port is
-at that version, `--source releases` doesn't move it yet.
+it`. A port already at its newest version can still take the move: `update
+--source releases` or `update --source archive` on it moves the source at the
+version it is at, writes the new archive's checksums, and leaves the version
+and the revision as they are. A source that can't move is refused with its
+reason, and one that already fetches that way is left alone. The setting
+`[update] source` alone asks nothing of a current port: a plain `update` of it
+stays "already at 1.8.1; nothing to change".
 
 `--source releases` requests a release asset and refuses one that does not
 qualify. `--source choose` can move legacy tarballs or Git checkouts to a

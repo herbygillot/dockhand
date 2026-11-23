@@ -319,24 +319,24 @@ func (s *Service) planSourceOnCurrent(ctx context.Context, request Request, inpu
 	}
 	satisfied := archivePlan{result: Result{Target: input.target, Release: release, SourceOutcome: model.ActionSatisfied, Fidelity: []Fidelity{{Before: family, After: family}}}}
 	if input.info.GitFetched() && request.SourceMode == SourceArchive {
-		return archivePlan{}, ErrUnsupported.Because("--source archive: GitHub's archive of the tag leaves out the Git submodules %s clones", input.target.Name)
+		return archivePlan{}, sourceRefused("--source archive: GitHub's archive of the tag leaves out the Git submodules %s clones", input.target.Name)
 	}
 	contents, after := input.data, family
 	var choice chosenSource
 	if request.SourceMode == SourceArchive && input.info.Options["github.tarball_from"] == "tarball" && !input.info.GitFetched() {
 		moved, ok := portfile.ArchiveFromTarball(contents, input.target.Subport)
 		if !ok {
-			return archivePlan{}, ErrUnsupported.Because("--source archive: github.tarball_from tarball isn't set by one literal command")
+			return archivePlan{}, sourceRefused("--source archive: github.tarball_from tarball isn't set by one literal command")
 		}
 		evaluated, err := s.evaluateEdit(ctx, input, moved)
 		if err != nil {
 			if ctx.Err() != nil {
 				return archivePlan{}, ctx.Err()
 			}
-			return archivePlan{}, ErrUnsupported.Because("--source archive: the Portfile couldn't be evaluated fetching GitHub's archive (%v)", err)
+			return archivePlan{}, sourceRefused("--source archive: the Portfile couldn't be evaluated fetching GitHub's archive (%v)", err)
 		}
 		if evaluated.after.Ports[input.target.Name].Options["github.tarball_from"] != "archive" {
-			return archivePlan{}, ErrUnsupported.Because("--source archive: the Portfile didn't evaluate github.tarball_from archive")
+			return archivePlan{}, sourceRefused("--source archive: the Portfile didn't evaluate github.tarball_from archive")
 		}
 		choice = chosenSource{contents: moved, after: evaluated.after, moved: &MovedSource{From: "tarball", To: "archive"}}
 	} else {

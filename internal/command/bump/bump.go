@@ -60,6 +60,7 @@ dockhand can't. The check builds where build.unattended's profile says;
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
+			version.Read(cmd, s, "bump")
 			version.Linked.NoteSet = cmd.Flags().Changed("note") || version.NoNote
 			if version.NoNote {
 				version.Linked.Note = ""
@@ -78,7 +79,7 @@ dockhand can't. The check builds where build.unattended's profile says;
 				targets[0].Version = args[1]
 			}
 			if err == nil {
-				ship.WriteShipPlan(ctx, e, streams.Prose(), targets, engine.ShipSubmit)
+				ship.WriteShipPlan(ctx, e, streams.Prose(), targets, engine.ShipSubmit, true, version)
 			}
 			e.Close()
 			if err != nil {
@@ -90,7 +91,6 @@ dockhand can't. The check builds where build.unattended's profile says;
 			}
 			// A statement said false withdraws the one kept, as ship's and
 			// submit's do, where bump read it as the flag left out (#198).
-			version.Withdrawn(cmd)
 			return ship.ShipAll(ctx, s, streams, whole, targets, engine.ShipSubmit, model.AnsweredYes, version)
 		},
 	}

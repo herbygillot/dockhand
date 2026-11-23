@@ -266,6 +266,9 @@ func (e *Engine) RenamePort(ctx context.Context, request PortRenameRequest) (Ren
 		if err := tx.AddEdit(edit); err != nil {
 			return err
 		}
+		if err := dropPendingIn(tx, request.Branch.ID); err != nil {
+			return err
+		}
 		_, err := tx.AppendEvent(model.Event{At: edit.At, Branch: request.Branch.ID, Kind: model.EventBranchEdit, Level: model.LevelInfo,
 			Message: fmt.Sprintf("%s: %s, from %s to %s", name, edit.Kind, from, to)})
 		return err

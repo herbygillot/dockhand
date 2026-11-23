@@ -23,6 +23,7 @@ binary can read every topic without a Dockhand source checkout.
 | [Reviewing pull requests](usage/review.md) | `dockhand usage review` | Inspect, adopt, check, and review another pull request |
 | [Scripts and agents](usage/agents.md) | `dockhand usage agents` | Explicit context, JSON, exit codes, scratch state, and automation |
 | [Configuration](usage/configuration.md) | `dockhand usage configuration` | Profiles, holds, service settings, paths, and retention |
+| [Flags](usage/flags.md) | `dockhand usage flags` | What each flag of the commands that change a port means, and how long it lasts |
 
 Start with the default guide, then choose the workflow you need. Each page
 states its starting context, shows commands with expected outcomes, and names

@@ -120,7 +120,9 @@ func (e *Engine) ResumePrepared(ctx context.Context, where Where, tests model.Te
 			resumed = append(resumed, done)
 			continue
 		}
-		proposal, err := e.ProposeCheck(ctx, CheckRequest{Capture: CaptureRequest{Branch: branch, Mode: CaptureHead}, Where: where, Tests: tests})
+		check := CheckRequestFor(noRequest, branch, where, false)
+		check.Capture.Mode, check.Tests = CaptureHead, tests
+		proposal, err := e.ProposeCheck(ctx, check)
 		if err == nil {
 			var queued checks.Queued
 			if queued, err = e.QueueCheck(ctx, checks.QueueRequest{Branch: branch, Revision: proposal.Capture.Revision, Plan: proposal.Plan, Origin: model.OriginServe}); err == nil {
@@ -157,10 +159,8 @@ func (e *Engine) continuePreparation(ctx context.Context, branch *model.Branch) 
 		return false, err.Error()
 	}
 	for _, target := range open {
-		request := UpdateRequest{Branch: *branch, Action: model.EditUpdate, Port: target.Port, Version: target.Named, Release: target.Release, CompareUpstream: true, Batch: true, Unattended: true}
-		if target.Release != nil {
-			request.Version = target.Release.Version
-		}
+		request := UpdateRequestFor(*branch.Request, target)
+		request.Branch, request.Batch, request.Unattended, request.LookForOthers = *branch, true, true, false
 		update, err := e.Update(ctx, request)
 		if err != nil {
 			return false, fmt.Sprintf("%s: %v", target.Port, err)

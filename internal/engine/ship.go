@@ -85,17 +85,18 @@ func (e *Engine) ship(ctx context.Context, target shipTarget, options shipOption
 	// a major version and another open pull request for the port among
 	// them, as the command's ship does: serve's prepared and checked one
 	// before the hold came at submission (Codex's review, high 1).
-	done.Update, err = e.Update(ctx, UpdateRequest{Start: &StartRequest{Name: target.Name, Origin: options.Origin}, Action: model.EditUpdate, Port: target.Port, Version: target.Version,
-		Release: target.Release, CompareUpstream: true, Batch: true, Unattended: options.Unattended()})
+	origin := "ship"
+	if options.Origin == model.OriginServe {
+		origin = "serve"
+	}
+	first := e.askedUpdate(origin, target.Port, target.Version, target.Release, options.Unattended())
+	first.Start = &StartRequest{Name: target.Name, Origin: options.Origin}
+	done.Update, err = e.Update(ctx, first)
 	done.Branch = done.Update.Branch
 	// The other ports of the Portfile are targets from the start, each
 	// with the release outdated found for it, so a port whose update fails
 	// is one the branch still owes, not one forgotten (#194, H1).
 	if done.Branch.ID != "" {
-		origin := "ship"
-		if options.Origin == model.OriginServe {
-			origin = "serve"
-		}
 		for _, also := range target.Also {
 			release := also.Release
 			if err := e.keepTarget(ctx, done.Branch, origin, also.Port, func(t *model.RequestTarget) {
@@ -118,7 +119,7 @@ func (e *Engine) ship(ctx context.Context, target shipTarget, options shipOption
 		if err != nil {
 			break
 		}
-		request := UpdateRequest{Action: model.EditUpdate, Port: also.Port, Version: also.Newest, Release: also.Release, CompareUpstream: true, Batch: true, Unattended: options.Unattended()}
+		request := e.askedUpdate(origin, also.Port, also.Newest, also.Release, options.Unattended())
 		if done.Update.Current && done.Branch.ID == "" {
 			request.Start = &StartRequest{Name: target.Name, Origin: options.Origin}
 		} else {
@@ -189,7 +190,9 @@ func (e *Engine) ship(ctx context.Context, target shipTarget, options shipOption
 		done.Problem = preparedWords(prepared, branch, err)
 		return done
 	}
-	proposal, err := e.ProposeCheck(ctx, CheckRequest{Capture: CaptureRequest{Branch: branch, Mode: CaptureHead}, Where: options.Where, Tests: options.Tests})
+	check := CheckRequestFor(noRequest, branch, options.Where, options.Unattended())
+	check.Capture.Mode, check.Tests, check.Unattended = CaptureHead, options.Tests, false
+	proposal, err := e.ProposeCheck(ctx, check)
 	if err != nil {
 		done.Problem = err.Error()
 		return done

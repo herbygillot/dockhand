@@ -174,6 +174,21 @@ dockhand status --branch kubectl
 dockhand ship --branch kubectl --to check
 ```
 
+Ship keeps what it was asked on the branch, from the first edit until the
+submission that takes it has finished. A later ship of the branch goes on
+with the release kept for each port, saying `jq goes on with 1.8.1, the
+release kept`, and doesn't look for a newer one; `update jq 1.9` or `bump jq
+1.9`, a version named, replaces it and says so. A `--to` given is kept: a
+later ship without `--to` stops at the same stage and says `stays at --to
+check, as kept; ship --to submit goes further`, and its plan's row ends `to
+check, as kept`. `bump` always goes to submit. A flag given replaces the one
+kept and is said; a flag left out leaves it. A ship that stops before a later
+stage says the flags kept for it: `Kept for the check: --on sequoia, --tests
+required.` and `Kept for the submit: --draft, --type bugfix.` The selections
+that make targets (`--mine`, `--maintainer`, `--category`, `--not-maintainer`,
+`--passing`), `--yes` and the branch flags belong to the command typed and
+aren't kept. `dockhand usage flags` lists every flag with how long it lasts.
+
 Use the actual branch name from the batch's output. A branch-specific ship
 resumes from its current state; it can follow an active check that covers the
 request and use passing evidence that still stands. `ship --passing --plan`

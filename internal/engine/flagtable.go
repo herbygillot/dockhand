@@ -24,10 +24,10 @@ type FlagRow struct {
 	Owner        string
 }
 
-// FlagTable is every flag of update, bump, ship, submit, check, edit and
-// revbump, a row each, or a row naming the contract that owns it. The
+// FlagTable is every flag of update, bump, ship, submit, check, edit,
+// revbump, rebase and clean, a row each, or a row naming the contract that owns it. The
 // contract test fails for a flag with no row and a row with no flag, and
-// its page is made from it (FlagsPage).
+// docs/usage/flags.md is made from it (FlagsPage).
 var FlagTable = []FlagRow{
 	{Flags: []string{"[version]"}, Field: "Targets[].Named", TakenBy: "update, bump; ship through a pinned target", ReadAt: "edit", LeftOut: "the newest release, or the one kept", Lasts: "with the target's release, on the request", Outcomes: "done, satisfied, refused"},
 	{Flags: []string{"--shared-release"}, Field: "Shared", TakenBy: "update, bump, ship", ReadAt: "edit", LeftOut: "each port its own release", FalseOrEmpty: "as left out", Lasts: "the request", Outcomes: "done; satisfied with no sibling"},
@@ -41,11 +41,11 @@ var FlagTable = []FlagRow{
 	{Flags: []string{"--except"}, Field: "Actions.Except", TakenBy: "update, bump, ship", ReadAt: "edit", LeftOut: "none left out", FalseOrEmpty: "as left out", Lasts: "the request; the edit's Excepted", Outcomes: "done; refused alone"},
 	{Flags: []string{"--closes"}, Field: "Actions.Closes", TakenBy: "update, bump, ship", ReadAt: "edit", LeftOut: "none", Lasts: "the branch's Closes", Outcomes: "done, satisfied; refused with nothing else to change"},
 	{Flags: []string{"--hand-edit"}, Field: "none: the attempt's own", TakenBy: "update", ReadAt: "edit", Lasts: "the hand edit's record", Outcomes: "as today"},
-	{Flags: []string{"--branch", "--new", "--port", "--pr"}, Field: "none: they choose the branch", TakenBy: "update, ship, submit, check, edit, revbump", ReadAt: "before the request", LeftOut: "the port's branch, started where none is", Lasts: "the command", Outcomes: "done, refused"},
+	{Flags: []string{"--branch", "--new", "--port", "--pr"}, Field: "none: they choose the branch", TakenBy: "update, ship, submit, check, edit, revbump, rebase, clean", ReadAt: "before the request", LeftOut: "the port's branch, started where none is", Lasts: "the command", Outcomes: "done, refused"},
 	{Flags: []string{"--mine", "--maintainer", "--category", "--not-maintainer", "--passing"}, Field: "none: they make targets", TakenBy: "update, ship", ReadAt: "before the request", Lasts: "the command", Outcomes: "targets, or none"},
 	{Flags: []string{"--over-allowance"}, Field: "none: the lookup's", TakenBy: "update, ship", ReadAt: "before the request", LeftOut: "false", Lasts: "the command", Outcomes: "as today"},
 	{Flags: []string{"--to"}, Field: "To", TakenBy: "ship; bump as --to submit", ReadAt: "every stage", LeftOut: "what is kept, else submit", Lasts: "the request, where given", Outcomes: "done; kept; replaced by a later one given"},
-	{Flags: []string{"--yes"}, Field: "none: the caller's", TakenBy: "update, ship, submit, check; bump fixed", ReadAt: "every stage", LeftOut: "a person answers", Lasts: "the command", Outcomes: "as today"},
+	{Flags: []string{"--yes"}, Field: "none: the caller's", TakenBy: "update, ship, submit, check, rebase, clean; bump fixed", ReadAt: "every stage", LeftOut: "a person answers", Lasts: "the command", Outcomes: "as today"},
 	{Flags: []string{"--on", "--build"}, Field: "Check.On, Check.Build: one place", TakenBy: "bump, ship, check", ReadAt: "the check", LeftOut: "the place kept, else the settings of that moment", Lasts: "the request; either replaces the other", Outcomes: "done; kept below the check; not read by --baseline"},
 	{Flags: []string{"--tests"}, Field: "Check.Tests", TakenBy: "bump, ship, check", ReadAt: "the check", LeftOut: "what is kept, else the settings of that moment", Lasts: "the request", Outcomes: "done; kept below the check; not read by --baseline"},
 	{Flags: []string{"--draft", "--type", "--skip-notification"}, Field: "Publish.Draft, Publish.Type, Publish.SkipNotification", TakenBy: "bump, ship, submit", ReadAt: "submit", LeftOut: "what is kept, else not a draft, the type worked out, notified", FalseOrEmpty: "false, over a kept true", Lasts: "the request, then the publication", Outcomes: "done, kept"},
@@ -55,17 +55,18 @@ var FlagTable = []FlagRow{
 	{Flags: []string{"--ready", "--accept", "--standing", "--remote", "--rewrite-description"}, Field: "submit's own", TakenBy: "submit", ReadAt: "submit", Owner: "the publication record (#191); a continued submit carries --draft, --no-check, --type and --skip-notification, a flag left out told from false"},
 	{Flags: []string{"--head"}, Field: "submit's and check's own", TakenBy: "submit, check", ReadAt: "submit; the check", Owner: "the publication record (#191) and the check lifecycle (#193)"},
 	{Flags: []string{"--fresh", "--only", "--also", "--variants", "--keep", "--staged", "--working-tree", "--include", "--replace", "--baseline", "--of", "--enqueue", "--for"}, Field: "check's own", TakenBy: "check", ReadAt: "the check", Owner: "the check lifecycle (#193)"},
-	{Flags: []string{"--plan"}, Field: "none", TakenBy: "update, bump, ship, check, submit, revbump", Outcomes: "writes nothing"},
+	{Flags: []string{"--closed", "--merged", "--kept", "--delete", "--automatic"}, Field: "clean's own", TakenBy: "clean", ReadAt: "clean", Owner: "clean's selection of branches to remove, under its own gates; --delete removes an open branch whose changes master has already, re-reading its pull request first (#185); --automatic, hidden, is the daily cleanup's own run"},
+	{Flags: []string{"--plan"}, Field: "none", TakenBy: "update, bump, ship, check, submit, revbump, rebase, clean", Outcomes: "writes nothing"},
 	{Flags: []string{"--subject", "--no-open"}, Field: "a primitive's own", TakenBy: "revbump, edit", Outcomes: "as today"},
 	{Flags: []string{"--tree", "--db", "--tool", "--json", "--verbose", "--migrate-database"}, Field: "settings'", TakenBy: "all", Owner: "settings (--migrate-database: #281)"},
 }
 
-// FlagsPage is the flags page, made from FlagTable: the page is never
+// FlagsPage is docs/usage/flags.md, made from FlagTable: the page is never
 // edited by hand, and a test fails where it and the table differ.
 func FlagsPage() string {
 	var b strings.Builder
 	b.WriteString("# Flags\n\n")
-	b.WriteString("Every flag of `update`, `bump`, `ship`, `submit`, `check`, `edit` and `revbump`: what keeps it, which commands take it, the stage that reads it, what leaving it out means, what false or empty means, how long it lasts, and what can become of it. A flag another part of dockhand owns names it. This page is made from dockhand's own table; a test fails where the two differ.\n\n")
+	b.WriteString("Every flag of `update`, `bump`, `ship`, `submit`, `check`, `edit`, `revbump`, `rebase` and `clean`: what keeps it, which commands take it, the stage that reads it, what leaving it out means, what false or empty means, how long it lasts, and what can become of it. A flag another part of dockhand owns names it. This page is made from dockhand's own table; a test fails where the two differ.\n\n")
 	b.WriteString("| Flag | Kept in | Taken by | Read at | Left out | False or empty | Lasts | Outcomes |\n")
 	b.WriteString("| --- | --- | --- | --- | --- | --- | --- | --- |\n")
 	for _, row := range FlagTable {

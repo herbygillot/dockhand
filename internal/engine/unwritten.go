@@ -182,7 +182,7 @@ func (e *Engine) recordWritten(ctx context.Context, branch model.Branch, edit mo
 		}
 		// The version it concludes, as the update's own step 5 records it.
 		if edit.Kind == model.EditUpdate {
-			if err := concludeVersion(tx, branch.ID, edit.Port); err != nil {
+			if err := concludeVersion(tx, branch.ID, edit.Port, e.requestSettings()); err != nil {
 				return err
 			}
 		}

@@ -27,7 +27,7 @@ import (
 func (p SubmitPlan) publication(id, by string, served bool) model.Publication {
 	record := model.Publication{ID: id, Commit: model.ObjectID(p.Commit), By: by, Served: served,
 		Head: p.Head(), Base: p.Repository + ":" + UpstreamBranch, Expected: "",
-		Asked: model.Asked{Draft: p.Request.Draft, NoCheck: p.Request.NoCheck, SkipNotification: p.Request.SkipNotification, Rewrite: p.Request.Rewrite, Types: p.Request.Types}}
+		Asked: model.Asked{Draft: p.Request.Draft, NoCheck: p.Request.NoCheck, SkipNotification: p.Request.SkipNotification, Rewrite: p.Request.Rewrite, Types: p.Request.Types}, RequestID: p.Request.RequestID}
 	if p.RemoteHead.Exists {
 		record.Expected = model.ObjectID(p.RemoteHead.Object)
 	}
@@ -163,6 +163,9 @@ func (e *Engine) recordPublication(ctx context.Context, plan SubmitPlan, record 
 		if err := e.recordAsked(tx, plan); err != nil {
 			return err
 		}
+		if err := takeRequest(tx, plan.Branch.ID, record); err != nil {
+			return err
+		}
 		if plan.served && slices.Contains(record.Owes, model.StepOpen) {
 			now := cmp.Or(plan.admission.Now, e.now())
 			day := dayStart(now)
@@ -271,12 +274,56 @@ func provenanceOf(pr *model.PullRequest, number int) model.Provenance {
 	return pr.Provenance
 }
 
-// endPublication ends a publication that owes nothing more, seen recorded.
+// endPublication ends a publication that owes nothing more, seen
+// recorded, and the request it took with it, where that is still the
+// branch's (endRequest).
 func (e *Engine) endPublication(ctx context.Context, branch model.BranchID, record model.Publication) error {
 	if len(record.Owes) > 0 {
 		return nil
 	}
-	return e.rewritePublication(ctx, branch, record.ID, nil, nil)
+	return e.rewritePublication(ctx, branch, record.ID, nil, func(tx store.Tx) error { return endRequest(tx, branch, record) })
+}
+
+// ErrRequestChanged is a stage's submission whose request another command
+// changed while it was planned and judged: nothing was recorded, and it is
+// planned and judged again under the request as it stands (#195).
+var ErrRequestChanged = errors.New("the branch's request changed while this submission was judged; nothing was pushed")
+
+// takeRequest is the hand-over of a change request to the publication a
+// stage's submission records, in its first transaction (#195, "Where the
+// request meets its neighbours"): the request it was judged under is
+// compared with the branch's; equal, the submission's asks move to the
+// publication, emptied in the request, and the publication keeps its ID;
+// not equal, nothing is recorded. A person's own submit takes none, and a
+// publication it goes on with keeps none.
+func takeRequest(tx store.Tx, id model.BranchID, record *model.Publication) error {
+	if record.RequestID == "" {
+		return nil
+	}
+	branch, err := tx.Branch(id)
+	if err != nil {
+		return err
+	}
+	if branch.Request == nil || branch.Request.ID != record.RequestID {
+		return ErrRequestChanged
+	}
+	request := *branch.Request
+	request.Publish = model.PublishAsk{}
+	return tx.SetRequest(id, &request)
+}
+
+// endRequest ends the request a finished publication took, where the
+// branch's request is still that one: a request changed since, by a version
+// named or another ask, is new work the publication never took, and stays.
+func endRequest(tx store.Tx, id model.BranchID, record model.Publication) error {
+	if record.RequestID == "" {
+		return nil
+	}
+	branch, err := tx.Branch(id)
+	if err != nil || branch.Request == nil || branch.Request.ID != record.RequestID {
+		return err
+	}
+	return tx.SetRequest(id, nil)
 }
 
 // rerequest asks the publication's reviewers to review again, login by

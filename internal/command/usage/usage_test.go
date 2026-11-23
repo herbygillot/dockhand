@@ -13,6 +13,7 @@ import (
 
 	guide "github.com/herbygillot/dockhand/docs/usage"
 	"github.com/herbygillot/dockhand/internal/config"
+	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
@@ -47,7 +48,7 @@ func TestEveryTopicPrintsItsPage(t *testing.T) {
 func TestAnUnknownTopicNamesTheTopics(t *testing.T) {
 	t.Parallel()
 	_, err := Page("hand-edit")
-	require.EqualError(t, err, "no usage topic hand-edit: the topics are branches, hand-edits, checks, publishing, recovery, batches, unattended, new-port, review, agents, and configuration")
+	require.EqualError(t, err, "no usage topic hand-edit: the topics are branches, hand-edits, checks, publishing, recovery, batches, unattended, new-port, review, agents, configuration, and flags")
 }
 
 // Every TOML example is a configuration dockhand reads, its keys all
@@ -90,4 +91,19 @@ func fenced(text, language string) []string {
 		}
 	}
 	return blocks
+}
+
+// The flags page is made from the engine's flag table and never edited by
+// hand (#195): it and the table say the same, and
+// DOCKHAND_WRITE_FLAGS_PAGE=1 writes the page from the table.
+func TestTheFlagsPageIsTheFlagTable(t *testing.T) {
+	t.Parallel()
+	page := engine.FlagsPage()
+	if os.Getenv("DOCKHAND_WRITE_FLAGS_PAGE") == "1" {
+		require.NoError(t, os.WriteFile(filepath.Join("..", "..", "..", "docs", "usage", "flags.md"), []byte(page), 0o644))
+		return
+	}
+	data, err := fs.ReadFile(guide.Pages, "flags.md")
+	require.NoError(t, err)
+	require.Equal(t, page, string(data), "docs/usage/flags.md is the table's; write it with DOCKHAND_WRITE_FLAGS_PAGE=1 go test ./internal/command/usage -run TestTheFlagsPageIsTheFlagTable")
 }

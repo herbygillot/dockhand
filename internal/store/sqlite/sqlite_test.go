@@ -2095,7 +2095,7 @@ func TestTheQuietMigrationWaitsForQuiet(t *testing.T) {
 		quiet func() ([]int, error)
 		words string
 	}{
-		{"two running", func() ([]int, error) { return []int{101, 202}, nil }, "2 other dockhand processes are running on this Mac, and migrating this database from schema 64 to"},
+		{"two running", func() ([]int, error) { return []int{101, 202}, nil }, "2 other dockhand processes are running on this Mac, and migrating this database from schema 65 to"},
 		{"unreadable", func() ([]int, error) { return nil, errors.New("operation not permitted") }, "this Mac's process list can't be read here (operation not permitted)"},
 	} {
 		path := schemaAt(t, quietSchema-1, schema23Records)

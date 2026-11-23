@@ -58,6 +58,9 @@ type Settlement struct {
 	// commit: Why says how, for the person.
 	Ended bool
 	Why   string
+	// Closed is the ending found where its pull request was merged or
+	// closed, which ends the request it took too (#195).
+	Closed bool
 	// Unread are the reads that failed, each named for the person: the
 	// publication stays as it is for what they would have settled.
 	Unread []string
@@ -155,7 +158,7 @@ func Settle(publication model.Publication, recorded *model.PullRequest, reading 
 		}
 	}
 	if terminal {
-		s.Ended, s.Why = true, fmt.Sprintf("#%d was %s", pr.Ref.Number, pr.State)
+		s.Ended, s.Closed, s.Why = true, true, fmt.Sprintf("#%d was %s", pr.Ref.Number, pr.State)
 	}
 	if s.Ended {
 		// Its remaining steps were for Commit; what landed is folded first.
@@ -313,7 +316,16 @@ func (e *Engine) settleReading(ctx context.Context, worktree *git.Repository, br
 			next = &kept
 		}
 		return e.rewritePublication(ctx, branch.ID, record.ID, next, func(tx store.Tx) error {
-			return e.foldSettlement(tx, branch.ID, *record, settled, baseRepository)
+			if err := e.foldSettlement(tx, branch.ID, *record, settled, baseRepository); err != nil {
+				return err
+			}
+			// A publication that finished every step, or whose pull
+			// request was merged or closed, ends the request it took,
+			// where that is still the branch's (#195).
+			if next == nil && (settled.Closed || !settled.Ended && len(settled.Owes) == 0) {
+				return endRequest(tx, branch.ID, *record)
+			}
+			return nil
 		})
 	})
 	if err != nil {

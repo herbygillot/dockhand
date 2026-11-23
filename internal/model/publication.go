@@ -43,6 +43,11 @@ type Publication struct {
 	// reviewers to ask again, where the push calls for it.
 	Asked  Asked      `json:",omitzero"`
 	Review *ReviewAsk `json:",omitempty"`
+	// RequestID is the ID of the branch's change request this publication
+	// took, a stage's submission planned and judged under it; empty for a
+	// person's own submit, which takes none. Its finishing ends the
+	// request only where the request's ID is still this one (#195).
+	RequestID string `json:",omitempty"`
 	// Drafted is GitHub's answer to returning the pull request to draft,
 	// kept for settling to fold where the branch had no record of the
 	// pull request to take it.

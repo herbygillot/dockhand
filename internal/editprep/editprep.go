@@ -59,6 +59,11 @@ const (
 )
 
 var ErrUnsupported = portedit.ErrUnsupported
+
+// SourceRefused is the source action's refusal, a --source the port's
+// preparation can't carry out.
+type SourceRefused = portedit.SourceRefused
+
 var ErrFidelity = portedit.ErrFidelity
 
 // Result is the editor's result, carried whole, with its files as Git

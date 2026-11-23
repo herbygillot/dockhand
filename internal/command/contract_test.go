@@ -206,7 +206,7 @@ func TestAQuestionWithoutATerminalIsRefusedAlike(t *testing.T) {
 
 // changeCommands are the commands whose flags the flag table answers for
 // (#195).
-var changeCommands = []string{"update", "bump", "ship", "submit", "check", "edit", "revbump"}
+var changeCommands = []string{"update", "bump", "ship", "submit", "check", "edit", "revbump", "rebase", "clean"}
 
 // Every flag of the commands that change a port has a row in the flag
 // table, which says what it means and how long it lasts, or names the

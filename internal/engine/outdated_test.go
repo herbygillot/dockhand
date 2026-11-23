@@ -74,6 +74,12 @@ func TestOutdatedPortsArePreparedOneBranchEach(t *testing.T) {
 	stored, err := e.Branch(t.Context(), done.Branch.ID)
 	require.NoError(t, err)
 	require.Equal(t, model.OriginServe, stored.Origin, "the record says serve started it")
+	// serve reaches the resolver: its request is kept, origin and targets
+	// alone, each action reading the process's settings then (#195).
+	require.NotNil(t, stored.Request)
+	require.Equal(t, "serve", stored.Request.Origin)
+	require.Equal(t, "jq", stored.Request.Targets[0].Port)
+	require.Equal(t, model.SourceAsk{}, stored.Request.Source, "serve keeps no asks")
 
 	again, err := e.PlanOutdated(t.Context(), report)
 	require.NoError(t, err)

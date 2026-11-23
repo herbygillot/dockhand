@@ -301,7 +301,7 @@ func TestTheStagesRequestsComeFromTheRequest(t *testing.T) {
 		Publish: model.PublishAsk{Draft: model.Set(true), Type: model.Set([]string{"bugfix"}), SkipNotification: model.Set(true), TestedVariants: model.Set(false)}}
 	update := UpdateRequestFor(request, model.RequestTarget{Port: "jq", Release: release})
 	require.Equal(t, UpdateRequest{Action: model.EditUpdate, Port: "jq", Version: "1.8", Release: release, EditIntent: model.EditIntent{SharedRelease: true, KeepOldChecksums: true},
-		WithObsolete: true, FollowMoves: true, Closes: []string{"71234"}, CompareUpstream: true, LookForOthers: true}, update)
+		WithObsolete: true, FollowMoves: true, Closes: []string{"71234"}, CompareUpstream: true, LookForOthers: true, fromRequest: true}, update)
 	require.Equal(t, "1.9", UpdateRequestFor(request, model.RequestTarget{Port: "jq", Named: "1.9"}).Version)
 	require.Equal(t, WhereRequest{Build: "minmax", Unattended: true}, WhereRequestFor(request, true))
 	branch := model.Branch{Name: "jq"}
@@ -309,6 +309,27 @@ func TestTheStagesRequestsComeFromTheRequest(t *testing.T) {
 	require.Equal(t, model.TestPolicy("required"), check.Tests)
 	require.Equal(t, branch, check.Capture.Branch)
 	submit := SubmitRequestFor(request, branch, false)
-	require.Equal(t, SubmitRequest{Branch: branch, Draft: true, Types: []string{"bugfix"}, SkipNotification: true, PendingCheck: true,
+	require.Equal(t, SubmitRequest{Branch: branch, RequestID: request.ID, Draft: true, Types: []string{"bugfix"}, SkipNotification: true, PendingCheck: true,
 		Where: WhereRequest{Build: "minmax"}, Tests: "required", WithdrawVariants: true}, submit)
+}
+
+// A tested statement pending is for the work it was given for: a version
+// named, a target added, or a source ask changed drops one not given
+// again, and says so; a flag of the submission alone leaves it.
+func TestAPendingStatementIsDroppedWhenTheWorkChanges(t *testing.T) {
+	t.Parallel()
+	branch := keptBranch()
+	branch.Request.Publish.TestedBinaries = model.Set(true)
+	named, err := ResolveRequest(Asking{Origin: "bump", Branch: branch, Ports: []string{"jq"}, Named: "1.9"})
+	require.NoError(t, err)
+	require.False(t, named.Request.Publish.TestedBinaries.Given)
+	require.Contains(t, named.Said, "The tested statement --tested-binaries was given for other files and was dropped; give it again for these")
+	again, err := ResolveRequest(Asking{Origin: "bump", Branch: keptBranch(), Ports: []string{"jq"}, Named: "1.9", Asked: model.ChangeRequest{Publish: model.PublishAsk{TestedBinaries: model.Set(true)}}})
+	require.NoError(t, err)
+	require.Equal(t, model.Set(true), again.Request.Publish.TestedBinaries, "given again for the new work")
+	branch = keptBranch()
+	branch.Request.Publish.TestedBinaries = model.Set(true)
+	draft, err := ResolveRequest(Asking{Origin: "ship", Branch: branch, Asked: model.ChangeRequest{Publish: model.PublishAsk{Draft: model.Set(false)}}})
+	require.NoError(t, err)
+	require.Equal(t, model.Set(true), draft.Request.Publish.TestedBinaries, "the files are the same")
 }

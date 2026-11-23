@@ -86,12 +86,12 @@ func ResolveRequest(asking Asking) (Resolved, error) {
 	resolved := Resolved{}
 	request := kept
 	request.Origin = asking.Origin
+	changed := map[string]bool{}
 	if asking.Origin == "serve" {
 		// serve's request holds its origin and targets: each of its
 		// actions reads the process's configuration then ("serve").
 		request.Shared, request.Source, request.Actions, request.To, request.Check, request.Publish = model.Flag[bool]{}, model.SourceAsk{}, model.ActionsAsk{}, model.Flag[string]{}, model.CheckAsk{}, model.PublishAsk{}
 	} else {
-		changed := map[string]bool{}
 		say := func(flag string, given, before any) {
 			if hasKept {
 				resolved.Said = append(resolved.Said, fmt.Sprintf("%s %v replaces the kept %v", flag, words(given), words(before)))
@@ -143,12 +143,22 @@ func ResolveRequest(asking Asking) (Resolved, error) {
 	// it, given or kept, and is not kept as an ask: a later command reads
 	// its own settings. An outcome a setting judged is judged again where
 	// the setting gives another value now, on the same ask.
-	resolved.Policy = RequestSettings{Source: request.Source.Source.Or(asking.Settings.Source),
-		KeepHTTP: request.Source.KeepHTTP.Or(asking.Settings.KeepHTTP), KeepModeline: request.Source.KeepModeline.Or(asking.Settings.KeepModeline)}
+	resolved.Policy = policyOf(request, asking.Settings)
 	rejudge(&request, resolved.Policy)
 	targetsChanged := resolveTargets(&request, asking, &resolved)
 	if targetsChanged {
 		request.Outcomes = slices.DeleteFunc(request.Outcomes, func(o model.ActionOutcome) bool { return o.Action == "dependents" })
+	}
+	// A tested statement pending is for the work it was given for: where
+	// what the files will be changes, a target or a release, a source ask
+	// or a side action, one not given again now is dropped, and said
+	// (#195, "What is kept").
+	workChanged := targetsChanged
+	for ask := range changed {
+		workChanged = workChanged || ask == "Shared" || strings.HasPrefix(ask, "Source.") || strings.HasPrefix(ask, "Actions.")
+	}
+	if workChanged {
+		resolved.Said = append(resolved.Said, dropPending(&request, asked.Publish)...)
 	}
 	if request.ID == "" || targetsChanged {
 		request.ID = store.NewID("rq")
@@ -457,7 +467,7 @@ func words(value any) string {
 // intent. The source policy, HTTP and modeline reach the preparer through
 // the engine's options until #195's step 4.
 func UpdateRequestFor(request model.ChangeRequest, target model.RequestTarget) UpdateRequest {
-	update := UpdateRequest{Action: model.EditUpdate, Port: target.Port, Version: target.Named, Release: target.Release,
+	update := UpdateRequest{Action: model.EditUpdate, Port: target.Port, Version: target.Named, Release: target.Release, fromRequest: true,
 		EditIntent:   model.EditIntent{SharedRelease: request.Shared.Value, KeepOldChecksums: request.Source.KeepOldChecksums.Value},
 		WithObsolete: request.Actions.WithObsolete.Value, FollowMoves: request.Source.FollowMoves.Value,
 		Closes: request.Actions.Closes.Value, CompareUpstream: true, LookForOthers: true}
@@ -482,10 +492,11 @@ func CheckRequestFor(request model.ChangeRequest, branch model.Branch, where Whe
 // SubmitRequestFor is the submit stage's request, built from the request:
 // the publication's asks, and the check it asked for as asked, so evidence
 // that stands is judged against them (coversAsked); --no-check asks for
-// none.
+// none. The submission carries the request's ID, which its publication
+// takes where the request is still that one (takeRequest).
 func SubmitRequestFor(request model.ChangeRequest, branch model.Branch, unattended bool) SubmitRequest {
 	publish := request.Publish
-	submit := SubmitRequest{Branch: branch, Draft: publish.Draft.Value, Types: publish.Type.Value, SkipNotification: publish.SkipNotification.Value,
+	submit := SubmitRequest{Branch: branch, RequestID: request.ID, Draft: publish.Draft.Value, Types: publish.Type.Value, SkipNotification: publish.SkipNotification.Value,
 		NoCheck: publish.NoCheck.Value, PendingCheck: !publish.NoCheck.Value, Where: WhereRequestFor(request, unattended), Tests: model.TestPolicy(request.Check.Tests.Value)}
 	if publish.TestedBinaries.Given {
 		submit.TestedBinaries, submit.WithdrawBinaries = publish.TestedBinaries.Value, !publish.TestedBinaries.Value
@@ -494,4 +505,75 @@ func SubmitRequestFor(request model.ChangeRequest, branch model.Branch, unattend
 		submit.TestedVariants, submit.WithdrawVariants = publish.TestedVariants.Value, !publish.TestedVariants.Value
 	}
 	return submit
+}
+
+// AskUpdate is the update stage's request for one port, from what a
+// command asked: the resolver refuses what it can before anything is
+// opened, and the update resolves the request again under the branch's
+// lock, from the request kept there then (Engine.update, keepRequest).
+func AskUpdate(asking Asking, port string) (UpdateRequest, error) {
+	asking.Ports = []string{port}
+	resolved, err := ResolveRequest(asking)
+	if err != nil {
+		return UpdateRequest{}, err
+	}
+	i := slices.IndexFunc(resolved.Request.Targets, func(t model.RequestTarget) bool { return t.Port == port })
+	update := UpdateRequestFor(resolved.Request, resolved.Request.Targets[i])
+	update.Asking = &asking
+	return update, nil
+}
+
+// checkedSubmitRequest is serve's submission of a branch whose check has
+// run, built from the request kept on it: the publication's asks and the
+// request's ID, with no check pending (#195).
+func checkedSubmitRequest(branch model.Branch) SubmitRequest {
+	var request model.ChangeRequest
+	if branch.Request != nil {
+		request = *branch.Request
+	}
+	submit := SubmitRequestFor(request, branch, true)
+	submit.PendingCheck, submit.Where, submit.Tests = false, WhereRequest{}, ""
+	return submit
+}
+
+// requestSettings are the settings the process was started with, which
+// serve's request reads at each action (#195, "serve").
+func (e *Engine) requestSettings() RequestSettings {
+	return RequestSettings{Source: e.options.Source, KeepHTTP: e.options.KeepHTTP, KeepModeline: e.KeepModeline}
+}
+
+// askedUpdate is a driver's update of one port, through the resolver, as
+// origin asks it with no flags: serve's, or ship's engine path.
+func (e *Engine) askedUpdate(origin, port, version string, release *model.Release, unattended bool) UpdateRequest {
+	// Nothing is asked, so nothing is refused.
+	request, _ := AskUpdate(Asking{Origin: origin, Settings: e.requestSettings()}, port)
+	request.Version, request.Release, request.Batch, request.Unattended, request.LookForOthers = version, release, true, unattended, false
+	return request
+}
+
+// noRequest is the request of a check no request asks: recovery's and
+// serve's, which read the process's settings (#195, "serve").
+var noRequest model.ChangeRequest
+
+// policyOf is the source policy a request resolves to under the settings:
+// each ask a flag gave, given now or kept, else the setting.
+func policyOf(request model.ChangeRequest, settings RequestSettings) RequestSettings {
+	return RequestSettings{Source: request.Source.Source.Or(settings.Source),
+		KeepHTTP: request.Source.KeepHTTP.Or(settings.KeepHTTP), KeepModeline: request.Source.KeepModeline.Or(settings.KeepModeline)}
+}
+
+// dropPending takes the tested statements pending in the request out,
+// but one given now, and says each: a statement is of the files it was
+// given for, and bound to nothing else.
+func dropPending(request *model.ChangeRequest, givenNow model.PublishAsk) []string {
+	var said []string
+	if request.Publish.TestedBinaries.Given && !givenNow.TestedBinaries.Given {
+		request.Publish.TestedBinaries = model.Flag[bool]{}
+		said = append(said, "The tested statement --tested-binaries was given for other files and was dropped; give it again for these")
+	}
+	if request.Publish.TestedVariants.Given && !givenNow.TestedVariants.Given {
+		request.Publish.TestedVariants = model.Flag[bool]{}
+		said = append(said, "The tested statement --tested-variants was given for other files and was dropped; give it again for these")
+	}
+	return said
 }

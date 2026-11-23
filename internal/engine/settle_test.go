@@ -49,7 +49,7 @@ func TestSettlingReadsWhatEachStepLeft(t *testing.T) {
 			r.PullRequest = found(41, forge.PullRequestMerged, body)
 			return r
 		},
-			Settlement{Done: []model.PublicationStep{model.StepPush, model.StepOpen}, Number: 41, Provenance: model.Found, Body: body, Ended: true, Why: "#41 was merged"}},
+			Settlement{Done: []model.PublicationStep{model.StepPush, model.StepOpen}, Number: 41, Provenance: model.Found, Body: body, Ended: true, Closed: true, Why: "#41 was merged"}},
 		{"U. GitHub can't be read: nothing is settled, and each read is named", func(r PublicationReading) PublicationReading {
 			r.FoundRead, r.StatusRead = false, false
 			return r

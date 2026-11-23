@@ -131,6 +131,23 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 				return runBaseline(ctx, e, streams, request, enqueue, limit, s)
 			}
 			mode := captureMode(head, staged, workingTree)
+			// The place and the tests the branch's request kept are read
+			// where they weren't given, and said; check never changes the
+			// request (#195).
+			if kept := branch.Request; kept != nil {
+				var took []string
+				if !cmd.Flags().Changed("on") && !cmd.Flags().Changed("build") && (kept.Check.On.Given || kept.Check.Build.Given) {
+					on, build = kept.Check.On.Value, kept.Check.Build.Value
+					took = append(took, map[bool]string{true: "--on " + strings.Join(on, ","), false: "--build " + build}[len(on) > 0])
+				}
+				if !cmd.Flags().Changed("tests") && kept.Check.Tests.Given {
+					tests = kept.Check.Tests.Value
+					took = append(took, "--tests "+tests)
+				}
+				if len(took) > 0 {
+					fmt.Fprintf(streams.Prose(), "Taken from what the branch's request kept: %s\n", strings.Join(took, ", "))
+				}
+			}
 			place, err := e.Where(ctx, engine.WhereRequest{On: on, Build: build})
 			if err != nil {
 				return err

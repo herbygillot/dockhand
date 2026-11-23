@@ -105,8 +105,10 @@ type Options struct {
 // database before it migrates only while no other dockhand runs: the
 // preparation record's (#194), which an older update paused between its
 // files and its record would write past with no record explaining its
-// files, as the publication record's (61) was for a paused submit.
-const quietSchema = 65
+// files, as the publication record's (61) was for a paused submit; and the
+// change request's (#195, 66), which an older build would save with its
+// asks dropped.
+const quietSchema = 66
 
 // Store is a dockhand v3 database.
 type Store struct {

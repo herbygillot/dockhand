@@ -89,6 +89,7 @@ need review.`,
 			if err := version.StageReady(); err != nil {
 				return err
 			}
+			version.Read(cmd, s, "ship")
 			mine := selectors.Chosen()
 			if chosen := len(args) > 0 || mine || passing; chosen && where.Explicit() || len(args) > 0 && (mine || passing) || mine && passing {
 				return errors.New("choose one target source: port names, a selection (--mine, --maintainer, --category), --passing, or a branch")
@@ -109,7 +110,7 @@ need review.`,
 				targets, err = ShipTargets(ctx, e, streams, args, where)
 			}
 			if err == nil && len(targets) > 0 {
-				WriteShipPlan(ctx, e, streams.Prose(), targets, stage)
+				WriteShipPlan(ctx, e, streams.Prose(), targets, stage, cmd.Flags().Changed("to"), version)
 			}
 			e.Close()
 			if err != nil {
@@ -138,7 +139,6 @@ need review.`,
 				}
 				answered = model.AnsweredAsked
 			}
-			version.Withdrawn(cmd)
 			return ShipAll(ctx, s, streams, whole, targets, stage, answered, version)
 		},
 	}
@@ -331,7 +331,7 @@ func passingTargets(ctx context.Context, e *engine.Engine) ([]shipTarget, error)
 // far it goes; under a branch going on to its pull request, its
 // submission as it stands, and what holds it, as submit --passing showed
 // each (decision 2: one plan listing every branch with its holds).
-func WriteShipPlan(ctx context.Context, e *engine.Engine, out io.Writer, targets []shipTarget, stage engine.ShipStage) {
+func WriteShipPlan(ctx context.Context, e *engine.Engine, out io.Writer, targets []shipTarget, asked engine.ShipStage, toGiven bool, version author.VersionUpdate) {
 	width := 0
 	for _, target := range targets {
 		width = max(width, len(target.Name()))
@@ -350,10 +350,24 @@ func WriteShipPlan(ctx context.Context, e *engine.Engine, out io.Writer, targets
 			// pin or the newest, where it isn't there: neither submitting
 			// an older version nor refusing (the roadmap's rule for ship).
 			from = "existing branch; update if needed to " + cmp.Or(target.Version, "the newest release")
+			if kept := keptReleaseOf(*target.Branch, target.Port); kept != "" && target.Version == "" {
+				from = "existing branch; goes on with " + kept + ", the release kept"
+			}
 		case target.Branch != nil:
 			from = "its branch, where it stands"
 		}
-		fmt.Fprintf(out, "  %-*s  %s, to %s\n", width, target.Name(), from, stage)
+		// A stage kept on the branch's request is gone on with where --to
+		// wasn't given, and said kept (#195).
+		stage, kept := asked, ""
+		if request := branchRequest(target); !toGiven && request != nil && request.To.Given {
+			stage, kept = engine.ShipStage(request.To.Value), ", as kept"
+		}
+		fmt.Fprintf(out, "  %-*s  %s, to %s%s\n", width, target.Name(), from, stage, kept)
+		// A branch shipped where it stands prepares nothing: its
+		// submission's row below says what stands.
+		if target.Port != "" {
+			writeUnresolved(out, strings.Repeat(" ", width+4), target, version)
+		}
 		if target.Branch != nil && stage == engine.ShipSubmit {
 			writeSubmitRow(ctx, e, out, strings.Repeat(" ", width+4), *target.Branch)
 		}
@@ -364,7 +378,13 @@ func WriteShipPlan(ctx context.Context, e *engine.Engine, out io.Writer, targets
 // its title, checks, and pull request, what upstream showed, and what
 // holds it.
 func writeSubmitRow(ctx context.Context, e *engine.Engine, out io.Writer, indent string, branch model.Branch) {
-	plan, err := e.PlanSubmit(ctx, engine.SubmitRequest{Branch: branch, PendingCheck: true})
+	var request model.ChangeRequest
+	if branch.Request != nil {
+		request = *branch.Request
+	}
+	// The preview is of the submission the request asks, its check still
+	// to run; Where and Tests as asked judge the evidence that stands.
+	plan, err := e.PlanSubmit(ctx, engine.SubmitRequestFor(request, branch, false))
 	// Edits ship commits itself, at its tidy stage, before it submits,
 	// aren't what holds the submission: dua-cli's row said ✗ for them and
 	// ship went on (field testing). The preview follows the commit.
@@ -704,7 +724,7 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 	if target.Port != "" {
 		if stage != engine.ShipCommit {
 			// Where to check is settled before anything is edited.
-			if err := whereReady(ctx, s, linked); err != nil {
+			if err := whereReady(ctx, s, linked, version); err != nil {
 				return nil, err
 			}
 		}
@@ -716,13 +736,22 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 		}
 		var applied []string
 		for i, port := range append([]shipTarget{target}, target.Also...) {
-			request, err := version.Request([]string{port.Port}, false)
+			// bump's [version] is a version named; a release a lookup found
+			// is gone on with only where none is kept (#195).
+			args := []string{port.Port}
+			if port.Version != "" && port.Release == nil {
+				args = append(args, port.Version)
+			}
+			request, err := version.Request(args, false)
 			if err != nil {
 				return nil, err
 			}
 			// A batch, or a ship nobody looks over, starts no branch for an
 			// edit dockhand can't make (UpdateRequest.HandBranch).
-			request.Version, request.Release, request.Unattended, request.Batch = port.Version, port.Release, unattended, batch
+			request.Release, request.Unattended, request.Batch = port.Release, unattended, batch
+			if port.Release != nil {
+				request.Version = port.Release.Version
+			}
 			where := branchflags.BranchChoice{New: named}
 			if target.Branch != nil {
 				where = branchflags.BranchChoice{Branch: target.Branch.ShortName()}
@@ -771,6 +800,18 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 		return nil, err
 	}
 	defer e.Close()
+	// A branch shipped where it stands keeps what this ship asked, as an
+	// update keeps it before its edit (#195).
+	if target.Port == "" {
+		resolved, kept, err := e.KeepAsked(ctx, branch, engine.Asking{Origin: cmp.Or(version.Origin, "ship"), Asked: version.Asking, Settings: version.Settings})
+		if err != nil {
+			return nil, err
+		}
+		branch, target.Branch = kept, &kept
+		for _, said := range resolved.Said {
+			fmt.Fprintln(streams.Err, said)
+		}
+	}
 	// What its updates raised, read from their records, so a ship run
 	// again after a restart lists them as the first did: what holds apart
 	// from what informs, by port (#194, N1).
@@ -785,22 +826,50 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 		return nil, err
 	}
 	lines.done(commit, "committed", strings.Join(tidied.Subjects, "; "), "")
+	// The request kept on the branch says how far ship goes where --to
+	// wasn't given, where the check builds and with what tests, and what
+	// the submission asks: this run's flags over what an earlier command
+	// kept (#195).
+	request, err := keptRequest(tidied.Branch, version)
+	if err != nil {
+		return nil, err
+	}
+	if version.Origin == "ship" && !version.Asking.To.Given && request.To.Given && engine.ShipStage(request.To.Value) != stage {
+		stage = engine.ShipStage(request.To.Value)
+		if stage != engine.ShipSubmit {
+			fmt.Fprintf(streams.Err, "%s stays at --to %s, as kept; ship --to submit goes further\n", tidied.Branch.ShortName(), stage)
+		}
+	}
+	// The tested statements bound now: those given on this ship, and
+	// those an earlier command kept where the branch is dockhand's own
+	// work from its base (#195).
+	tested, dropped, err := e.TestedToBind(ctx, tidied.Branch, version.Asking.Publish, stage != engine.ShipSubmit)
+	if err != nil {
+		return nil, err
+	}
+	for _, line := range dropped {
+		fmt.Fprintln(streams.Err, line)
+	}
 	// A title and note for the pull request, where ship stops before it,
 	// are kept for the submit that follows.
-	if stage != engine.ShipSubmit && (linked.Title != "" || linked.NoteSet || linked.TestedBinaries || linked.TestedVariants || linked.WithdrawBinaries || linked.WithdrawVariants) {
+	if stage != engine.ShipSubmit && (linked.Title != "" || linked.NoteSet || tested != (engine.TestedSaid{})) {
 		var note *string
 		if linked.NoteSet {
 			note = &linked.Note
 		}
-		if err := e.KeepForSubmit(ctx, tidied.Branch.ID, linked.Title, note, engine.TestedSaid{Binaries: linked.TestedBinaries, Variants: linked.TestedVariants, WithdrawBinaries: linked.WithdrawBinaries, WithdrawVariants: linked.WithdrawVariants}); err != nil {
+		if err := e.KeepForSubmit(ctx, tidied.Branch.ID, linked.Title, note, tested); err != nil {
 			return nil, err
 		}
 	}
 	if stage == engine.ShipCommit {
+		for _, line := range engine.KeptForLater(request, engine.ShipCommit) {
+			fmt.Fprintln(streams.Err, line)
+		}
 		return nil, nil
 	}
 	branch = tidied.Branch
-	place := engine.WhereRequest{On: linked.On, Build: linked.Build, Unattended: linked.Unattended}
+	place := engine.WhereRequestFor(request, linked.Unattended)
+	linked.Tests = request.Check.Tests.Value
 	queues, queued := streams.Staged("queueing " + branch.ShortName() + "'s check")
 	done := &carried{target: target, lines: lines, queued: queued}
 	if batch && target.row == nil {
@@ -809,6 +878,9 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 		done.lines = &stageLines{heading: branch.ShortName()}
 	}
 	if stage == engine.ShipCheck {
+		for _, line := range engine.KeptForLater(request, engine.ShipCheck) {
+			fmt.Fprintln(streams.Err, line)
+		}
 		lines.begin("checked")
 		run, err := checkHead(ctx, s, e, queues, branch, place, linked.Tests)
 		if err != nil || run == nil {
@@ -822,11 +894,13 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 	// Its submission is previewed, and held where it would be, before its
 	// check is queued.
 	lines.begin("submitted")
-	request := engine.SubmitRequest{Branch: branch, TestedBinaries: linked.TestedBinaries, TestedVariants: linked.TestedVariants, WithdrawBinaries: linked.WithdrawBinaries, WithdrawVariants: linked.WithdrawVariants, Title: linked.Title, SkipNotification: linked.SkipNotification, Types: linked.Types, Draft: linked.Draft}
+	submit := engine.SubmitRequestFor(request, branch, linked.Unattended)
+	submit.TestedBinaries, submit.TestedVariants, submit.WithdrawBinaries, submit.WithdrawVariants = tested.Binaries, tested.Variants, tested.WithdrawBinaries, tested.WithdrawVariants
+	submit.Title = linked.Title
 	if linked.NoteSet {
-		request.Note = &linked.Note
+		submit.Note = &linked.Note
 	}
-	pending, run, err := prepareSubmit(ctx, s, e, queues, request, place, linked.Tests)
+	pending, run, err := prepareSubmit(ctx, s, e, queues, submit, place, linked.Tests)
 	if err != nil {
 		queued.Say()
 		return nil, err
@@ -952,13 +1026,32 @@ func prepareSubmit(ctx context.Context, s *settings.Settings, e *engine.Engine, 
 // exactly the commit it was bound to, and, where nobody looks, only what
 // holds nothing.
 func submitPassed(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams, pending pendingSubmit) (engine.Submitted, error) {
-	plan, err := e.PlanSubmit(ctx, pending.request)
-	if err != nil {
-		return engine.Submitted{}, err
+	var plan engine.SubmitPlan
+	var submitted engine.Submitted
+	var err error
+	// Where another command changed the branch's request while this
+	// submission was judged, nothing was recorded: it is planned and
+	// judged again under the request as it stands, a few rounds (#195).
+	for round := 0; ; round++ {
+		if plan, err = e.PlanSubmit(ctx, pending.request); err != nil {
+			return engine.Submitted{}, err
+		}
+		if round > 0 && plan.CheckNeeded {
+			return engine.Submitted{}, fmt.Errorf("%s's request now asks for a check that hasn't run; nothing was submitted, and dockhand ship -b %s runs it", plan.Branch.ShortName(), plan.Branch.ShortName())
+		}
+		streams.Emit(view.SubmitView(plan))
+		fmt.Fprintln(streams.Prose())
+		submitted, err = submit.Apply(ctx, e, streams, plan, s.File.Submit.RerequestReview, pending.answered)
+		if !errors.Is(err, engine.ErrRequestChanged) {
+			break
+		}
+		if round == 2 {
+			return submitted, fmt.Errorf("%s's request kept changing while it was submitted; nothing was pushed, and dockhand ship -b %s submits it once it settles", plan.Branch.ShortName(), plan.Branch.ShortName())
+		}
+		if pending.request, err = rejudged(ctx, e, pending.request); err != nil {
+			return submitted, err
+		}
 	}
-	streams.Emit(view.SubmitView(plan))
-	fmt.Fprintln(streams.Prose())
-	submitted, err := submit.Apply(ctx, e, streams, plan, s.File.Submit.RerequestReview, pending.answered)
 	// The gate is the engine's (branchstate.Publish); ship words what it
 	// refused as ship says it.
 	refused := refusal.Of(err)
@@ -981,13 +1074,17 @@ func submitPassed(ctx context.Context, s *settings.Settings, e *engine.Engine, s
 
 // whereReady settles where a change's check builds before anything is
 // edited, so stopping there changes nothing.
-func whereReady(ctx context.Context, s *settings.Settings, linked author.LinkedOptions) error {
+func whereReady(ctx context.Context, s *settings.Settings, linked author.LinkedOptions, version author.VersionUpdate) error {
 	e, err := s.Open(ctx)
 	if err != nil {
 		return err
 	}
 	defer e.Close()
-	if _, err := e.Where(ctx, engine.WhereRequest{On: linked.On, Build: linked.Build, Unattended: linked.Unattended}); err != nil {
+	asked, err := keptRequest(model.Branch{}, version)
+	if err != nil {
+		return err
+	}
+	if _, err := e.Where(ctx, engine.WhereRequestFor(asked, linked.Unattended)); err != nil {
 		return fmt.Errorf("%w; nothing was changed", err)
 	}
 	return nil
@@ -1015,7 +1112,10 @@ func queueHead(ctx context.Context, s *settings.Settings, e *engine.Engine, stre
 	if err != nil {
 		return nil, err
 	}
-	proposal, err := e.ProposeCheck(ctx, engine.CheckRequest{Capture: engine.CaptureRequest{Branch: branch, Mode: engine.CaptureHead}, Where: where, Tests: model.TestPolicy(tests)})
+	var none model.ChangeRequest
+	check := engine.CheckRequestFor(none, branch, where, false)
+	check.Capture.Mode, check.Tests = engine.CaptureHead, model.TestPolicy(tests)
+	proposal, err := e.ProposeCheck(ctx, check)
 	if err != nil {
 		return nil, err
 	}
@@ -1053,4 +1153,93 @@ func sayNotices(ctx context.Context, e *engine.Engine, streams term.Streams, bra
 	}
 	view.WriteNotices(streams.Prose(), notices)
 	return nil
+}
+
+// keptRequest is the request a ship goes on under: the one kept on the
+// branch, which this run's flags were resolved into before its edit, or,
+// on a branch with none, what this run asked, resolved alone.
+func keptRequest(branch model.Branch, version author.VersionUpdate) (model.ChangeRequest, error) {
+	if branch.Request != nil {
+		return *branch.Request, nil
+	}
+	resolved, err := engine.ResolveRequest(engine.Asking{Origin: cmp.Or(version.Origin, "ship"), Asked: version.Asking, Settings: version.Settings})
+	// Kept nowhere, it is taken by no publication.
+	resolved.Request.ID = ""
+	return resolved.Request, err
+}
+
+// branchRequest is the request kept on a target's branch, nil where it
+// has none.
+func branchRequest(target shipTarget) *model.ChangeRequest {
+	if target.Branch == nil {
+		return nil
+	}
+	return target.Branch.Request
+}
+
+// keptReleaseOf is the release kept for a port on a branch's request,
+// empty where none is.
+func keptReleaseOf(branch model.Branch, port string) string {
+	if branch.Request == nil {
+		return ""
+	}
+	for _, target := range branch.Request.Targets {
+		if target.Port == port && target.Release != nil && target.Named == "" {
+			return target.Release.Version
+		}
+	}
+	return ""
+}
+
+// rejudged is a stage's submission again under the branch's request as it
+// stands now: the request's asks and ID, with this run's title, note,
+// statements and the commit it is bound to.
+func rejudged(ctx context.Context, e *engine.Engine, was engine.SubmitRequest) (engine.SubmitRequest, error) {
+	branch, err := e.Branch(ctx, was.Branch.ID)
+	if err != nil {
+		return was, err
+	}
+	var request model.ChangeRequest
+	if branch.Request != nil {
+		request = *branch.Request
+	}
+	next := engine.SubmitRequestFor(request, branch, was.Where.Unattended)
+	if branch.Request == nil {
+		next.RequestID = ""
+	}
+	next.Head, next.Bound, next.PendingCheck, next.Title, next.Note = was.Head, was.Bound, false, was.Title, was.Note
+	next.TestedBinaries, next.TestedVariants, next.WithdrawBinaries, next.WithdrawVariants = was.TestedBinaries, was.TestedVariants, was.WithdrawBinaries, was.WithdrawVariants
+	return next, nil
+}
+
+// writeUnresolved is what a target's request carries as asked, under its
+// plan row, as the plan resolves it and saves nothing (#195, "ship
+// --plan"): each fact not resolved now with when it is.
+func writeUnresolved(out io.Writer, indent string, target shipTarget, version author.VersionUpdate) {
+	asking := engine.Asking{Origin: cmp.Or(version.Origin, "ship"), Asked: version.Asking, Settings: version.Settings}
+	for _, port := range append([]shipTarget{target}, target.Also...) {
+		if port.Port != "" {
+			asking.Ports = append(asking.Ports, port.Port)
+		}
+	}
+	if target.Version != "" && target.Release == nil && len(asking.Ports) == 1 {
+		asking.Named = target.Version
+	}
+	asking.Branch = target.Branch
+	resolved, err := engine.ResolveRequest(asking)
+	if err != nil {
+		fmt.Fprintf(out, "%s✗ %v\n", indent, err)
+		return
+	}
+	var facts []string
+	for _, fact := range resolved.Unresolved {
+		// A release outdated found already is resolved now.
+		if target.Release != nil && strings.HasSuffix(fact.What, "'s release") {
+			continue
+		}
+		facts = append(facts, fact.What+" ("+fact.Why+")")
+	}
+	if len(facts) > 0 {
+		fmt.Fprintf(out, "%snot resolved now: %s\n", indent, strings.Join(facts, "; "))
+	}
 }

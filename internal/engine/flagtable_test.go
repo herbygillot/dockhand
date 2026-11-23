@@ -1,8 +1,6 @@
 package engine
 
 import (
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -43,21 +41,4 @@ func TestEveryAskTheRequestKeepsHasARow(t *testing.T) {
 	for ask := range asks {
 		require.True(t, named[ask], "the request keeps %s, which no row of FlagTable names", ask)
 	}
-}
-
-// The flags page is made from the flag table and never edited by hand: it
-// and the table say the same, and DOCKHAND_WRITE_FLAGS_PAGE=1 writes it.
-// It waits in testdata until #195's step 5 makes it true of the binary,
-// and moves to docs/usage then.
-func TestTheFlagsPageIsTheFlagTable(t *testing.T) {
-	t.Parallel()
-	page := FlagsPage()
-	path := filepath.Join("testdata", "flags.md")
-	if os.Getenv("DOCKHAND_WRITE_FLAGS_PAGE") == "1" {
-		require.NoError(t, os.WriteFile(path, []byte(page), 0o644))
-		return
-	}
-	data, err := os.ReadFile(path)
-	require.NoError(t, err)
-	require.Equal(t, page, string(data), "testdata/flags.md is the table's; write it with DOCKHAND_WRITE_FLAGS_PAGE=1 go test ./internal/engine -run TestTheFlagsPageIsTheFlagTable")
 }

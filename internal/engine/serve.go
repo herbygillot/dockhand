@@ -722,7 +722,7 @@ func (s *server) resumePrepared(ctx context.Context) {
 	if to != ShipCommit && to != ShipCheck && to != ShipSubmit {
 		return
 	}
-	where, err := s.e.Where(ctx, WhereRequest{Unattended: true})
+	where, err := s.e.Where(ctx, WhereRequestFor(noRequest, true))
 	if err != nil && to != ShipCommit {
 		return
 	}
@@ -1235,7 +1235,7 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 		prepare.To = ShipCheck
 	}
 	if prepare.To == ShipCheck {
-		if prepare.Where, err = e.Where(ctx, WhereRequest{Unattended: true}); err != nil {
+		if prepare.Where, err = e.Where(ctx, WhereRequestFor(noRequest, true)); err != nil {
 			report(fmt.Sprintf("serve: serve.ship_to = %q: %v", to, err))
 			prepare.To = ShipCommit
 		}

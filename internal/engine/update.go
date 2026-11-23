@@ -80,6 +80,16 @@ type UpdateRequest struct {
 	Excepted []string
 	// Plan prepares the edit and changes nothing.
 	Plan bool
+	// fromRequest is an edit the request's own preparation makes: a
+	// continuation's, the stub's, the dependents' bump. Any other edit
+	// (a checksum refresh, revbump) drops the tested statements pending
+	// in the request, which were for other files (#195).
+	fromRequest bool
+	// Asking is what update, bump, ship and serve asked, which the update
+	// resolves into the branch's request and keeps before its edit, under
+	// the branch's lock (#195): the release kept is gone on with, and the
+	// source policy is the request's. A primitive asks none.
+	Asking *Asking
 	// FromMaster plans against master as fetched now, with no branch: a
 	// look before starting one. It goes only with Plan.
 	FromMaster bool
@@ -173,6 +183,9 @@ type ChecksumsToWrite = editprep.ChecksumsToWrite
 
 // Update reports an update or checksum refresh.
 type Update struct {
+	// Said is what resolving the request said of what was kept: a release
+	// gone on with, a flag given over a kept one (#195).
+	Said   []string
 	Branch model.Branch
 	// Base is the commit the update was prepared on: the branch's base, or
 	// master as fetched for a plan from master.
@@ -362,6 +375,11 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		}
 	}
 	update, err := e.updateWithObsolete(ctx, request)
+	if err == nil && request.Asking != nil && !request.Plan && request.Action == model.EditUpdate {
+		if err = e.concludeSideActions(ctx, request, &update); err != nil {
+			return update, err
+		}
+	}
 	if err == nil && request.Action == model.EditUpdate && !update.Current && update.Port != "" {
 		closed, ok, closedErr := e.ClosedAt(ctx, update.Port, update.After.Version)
 		if closedErr != nil {
@@ -410,7 +428,7 @@ func (e *Engine) updateWithObsolete(ctx context.Context, request UpdateRequest) 
 		return update, nil
 	}
 	follow := UpdateRequest{Branch: update.Branch, Action: model.EditUpdate, Port: update.Obsolete.Port, Version: update.After.Version,
-		Plan: request.Plan, FromMaster: request.FromMaster, subject: update.Subject}
+		Plan: request.Plan, FromMaster: request.FromMaster, subject: update.Subject, fromRequest: true}
 	if request.Plan {
 		// A plan changes nothing, so the stub's edit is planned on the
 		// files as they are, and said beside the port's.
@@ -420,7 +438,7 @@ func (e *Engine) updateWithObsolete(ctx context.Context, request UpdateRequest) 
 	if err != nil {
 		return update, fmt.Errorf("%s moved to %s, but its obsolete %s couldn't: %w", update.Port, update.After.Version, update.Obsolete.Port, err)
 	}
-	update.Obsolete.Moved = true
+	update.Obsolete.Moved, update.Obsolete.Updated = true, true
 	update.Files = append(update.Files, moved.Files...)
 	update.Diff += moved.Diff
 	return update, nil
@@ -432,6 +450,9 @@ func (e *Engine) updateWithObsolete(ctx context.Context, request UpdateRequest) 
 type ObsoleteStub struct {
 	Port, Version string
 	Moved         bool
+	// Updated is the stub's own edit made, --with-obsolete's, where
+	// Moved alone may be its moving with the port's edit.
+	Updated bool
 }
 
 // obsoleteStub is the updated port's obsolete stub, in the family the
@@ -445,6 +466,48 @@ func obsoleteStub(update Update) *ObsoleteStub {
 		}
 	}
 	return nil
+}
+
+// resolveFor resolves an update's request where it asks one: kept under
+// the branch's lock before the edit, where the branch is there and the
+// update isn't a plan; resolved and not kept otherwise, a plan saving
+// nothing and a branch not started yet keeping it once it is (start). The
+// release kept is the one gone on with, where no version was named.
+func (e *Engine) resolveFor(ctx context.Context, request *UpdateRequest, branch *model.Branch) (*Resolved, error) {
+	if request.Asking == nil || request.Action != model.EditUpdate {
+		return nil, nil
+	}
+	asking := *request.Asking
+	var resolved Resolved
+	var err error
+	if branch.ID != "" && !request.Plan && request.Start == nil {
+		if resolved, *branch, err = e.keepRequest(ctx, *branch, asking); err != nil {
+			return nil, err
+		}
+	} else {
+		if branch.ID != "" {
+			asking.Branch = branch
+		}
+		if resolved, err = ResolveRequest(asking); err != nil {
+			return nil, err
+		}
+	}
+	// A release kept is gone on with where no version was named, over one
+	// a lookup found again (#195, "What is kept").
+	if asking.Named == "" && branch.ID != "" {
+		var edits []model.Edit
+		if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+			var err error
+			edits, err = r.Edits(branch.ID)
+			return err
+		}); err != nil {
+			return nil, err
+		}
+		if release := keptTarget(resolved, request.Port, edits); release != nil {
+			request.Release, request.Version = release, release.Version
+		}
+	}
+	return &resolved, nil
 }
 
 func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, error) {
@@ -493,6 +556,12 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		if branch, err = e.Start(ctx, started); err != nil {
 			return err
 		}
+		// The request is kept on the branch it starts, before the edit.
+		if request.Asking != nil && request.Action == model.EditUpdate && !request.Plan {
+			if _, branch, err = e.keepRequest(ctx, branch, *request.Asking); err != nil {
+				return err
+			}
+		}
 		worktree, err = e.worktree(ctx, branch)
 		return err
 	}
@@ -505,6 +574,10 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 			}
 			return Update{Branch: branch, Base: base, Port: request.Port, Started: true}, err
 		}
+		return Update{}, err
+	}
+	resolved, err := e.resolveFor(ctx, &request, &branch)
+	if err != nil {
 		return Update{}, err
 	}
 	preparer, err := e.preparer()
@@ -534,10 +607,18 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		Attended:   !request.Unattended,
 		SourceMode: editprep.SourceMode(e.options.Source),
 	}
+	keepHTTP := e.options.KeepHTTP
+	if resolved != nil {
+		// The request's source policy, the settings' where no flag gave
+		// it; an explicit --source is carried out on a port already
+		// current (#121).
+		input.SourceMode, keepHTTP = editprep.SourceMode(resolved.Policy.Source), resolved.Policy.KeepHTTP
+		input.ActOnCurrent = resolved.Request.Source.Source.Given
+	}
 	// The port's plain-HTTP links that answer over HTTPS are switched as
 	// part of the edit, asked from the run's answers (the person's "Let's
 	// try to get HTTP to HTTPS into 0.7.0", 2026-10-29).
-	if (request.Action == model.EditUpdate || request.Action == model.EditChecksums) && !e.options.KeepHTTP {
+	if (request.Action == model.EditUpdate || request.Action == model.EditChecksums) && !keepHTTP {
 		input.HTTPS = httpsAnswers{e}
 	}
 	if request.Action == model.EditChecksums {
@@ -611,17 +692,34 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	}
 	result, err := preparer.Prepare(ctx, input)
 	if err != nil {
+		// A --source the port's preparation refused is the source
+		// action's outcome, kept, which lets nothing go on until the ask
+		// changes (#195, "Readiness").
+		if refused := new(editprep.SourceRefused); errors.As(err, &refused) && resolved != nil && resolved.Request.Source.Source.Given && !request.Plan && branch.ID != "" {
+			if keepErr := e.keepTarget(ctx, branch, resolved.Request.Origin, request.Port, func(target *model.RequestTarget) {
+				concluded(target, model.ActionOutcome{Action: "source", Result: model.ActionRefused, Why: refusal.WordsOf(err)})
+			}); keepErr != nil {
+				return Update{}, errors.Join(err, keepErr)
+			}
+		}
 		return byHand(unindexed(err))
 	}
 	failpoint.Hit("update.prepared")
 	update := describe(branch, request.Port, result)
+	if resolved != nil {
+		update.Said = resolved.Said
+	}
 	update.Base = base
 	followOnly, err := e.followMoves(ctx, request, worktree, captured, &update, &result)
 	if err != nil {
 		return Update{}, err
 	}
 	modelined := false
-	if !e.KeepModeline {
+	keepModeline := e.KeepModeline
+	if resolved != nil {
+		keepModeline = keepModeline || resolved.Policy.KeepModeline
+	}
+	if !keepModeline {
 		modelined = withModelines(&result)
 	}
 	fixed, reread, err := withLintFixes(ctx, worktree, captured, &result)
@@ -731,6 +829,9 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 				// A version an edit concluded already is done, not found.
 				if _, done := target.Outcome("version"); !done {
 					target.Current = update.After.String()
+				}
+				for _, outcome := range concludeWith(resolved, result, false) {
+					concluded(target, outcome)
 				}
 			}); err != nil {
 				return update, err
@@ -884,7 +985,12 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 				// The version this edit concludes, on the branch's target, in the
 				// transaction that records it written (#194, H2).
 				if request.Action == model.EditUpdate {
-					if err := concludeVersion(tx, branch.ID, request.Port); err != nil {
+					if err := concludeVersion(tx, branch.ID, request.Port, e.requestSettings(), concludeWith(resolved, result, true)...); err != nil {
+						return err
+					}
+				}
+				if request.Asking == nil && !request.fromRequest {
+					if err := dropPendingIn(tx, branch.ID); err != nil {
 						return err
 					}
 				}
@@ -1528,6 +1634,11 @@ func (e *Engine) recordHandEdit(ctx context.Context, branch model.Branch, update
 	decision := model.Decision{Branch: branch.ID, Finding: model.FindingHandEdit, Subject: directory, Evidence: attemptDigest(result.Files), Answer: model.ByHand, Words: update.HandEdit, At: e.now()}
 	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		if err := tx.AddDecision(decision); err != nil {
+			return err
+		}
+		// A hand edit's record changes the files a pending tested
+		// statement was given for.
+		if err := dropPendingIn(tx, branch.ID); err != nil {
 			return err
 		}
 		_, err := tx.AppendEvent(model.Event{At: decision.At, Branch: branch.ID, Kind: model.EventBranchEdit, Level: model.LevelInfo,

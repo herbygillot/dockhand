@@ -158,7 +158,7 @@ func (s *Service) chooseSource(ctx context.Context, request Request, input *sour
 	spec, err := portsource.Interpret(input.info, portsource.Edit)
 	if err != nil || spec.Forge != portsource.GitHub || release == nil || release.Pinned || release.Tag == "" {
 		if mode == SourceReleases || mode == SourceArchive {
-			return kept, ErrUnsupported.Because("--source %s is for a port on the github PortGroup updating to a release's tag", mode)
+			return kept, sourceRefused("--source %s is for a port on the github PortGroup updating to a release's tag", mode)
 		}
 		return kept, nil
 	}
@@ -170,11 +170,11 @@ func (s *Service) chooseSource(ctx context.Context, request Request, input *sour
 	case from == "releases" && mode == SourceArchive:
 		// Kept, it updated, fetched the release's assets, and said nothing
 		// of the policy it didn't follow (#123).
-		return kept, ErrUnsupported.Because("--source archive: %s fetches a release asset, and update doesn't move a port back to GitHub's archive of the tag", input.target.Name)
+		return kept, sourceRefused("--source archive: %s fetches a release asset, and update doesn't move a port back to GitHub's archive of the tag", input.target.Name)
 	case from == "releases":
 		return kept, nil
 	case from == "git" && mode == SourceArchive:
-		return kept, ErrUnsupported.Because("--source archive: GitHub's archive of the tag leaves out the Git submodules %s clones", input.target.Name)
+		return kept, sourceRefused("--source archive: GitHub's archive of the tag leaves out the Git submodules %s clones", input.target.Name)
 	case from == "git":
 		wantRelease = mode == SourceReleases || mode == SourceSuggest || ChooseMovesGitPorts
 	case from == "tarball":
@@ -192,7 +192,7 @@ func (s *Service) chooseSource(ctx context.Context, request Request, input *sour
 	}
 	refuse := func(words string) (chosenSource, error) {
 		if asked {
-			return kept, ErrUnsupported.Because("--source releases: %s", words)
+			return kept, sourceRefused("--source releases: %s", words)
 		}
 		kept.notice = words + ", " + stay
 		return kept, nil
@@ -361,4 +361,17 @@ func (i *sourceInput) scratchDir(request Request) (string, error) {
 	}
 	i.scratch = append(i.scratch, directory)
 	return directory, nil
+}
+
+// SourceRefused is the source action's refusal (#16, #195): a --source
+// asked that this port's preparation can't carry out, with its reason. It
+// is an ErrUnsupported refusal, and its words name the flag.
+type SourceRefused struct{ err error }
+
+func (r *SourceRefused) Error() string { return r.err.Error() }
+func (r *SourceRefused) Unwrap() error { return r.err }
+
+// sourceRefused is a source action refused, in the words given.
+func sourceRefused(format string, args ...any) error {
+	return &SourceRefused{err: ErrUnsupported.Because(format, args...)}
 }

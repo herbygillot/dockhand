@@ -93,6 +93,11 @@ type SubmitRequest struct {
 	// writing, is otherwise theirs and stays (#34756 kept September's
 	// Tested on under the v0.3.0 commit). Never someone else's.
 	Rewrite bool
+	// RequestID is the branch's change request this submission was
+	// planned and judged under, a stage's (ship, bump, serve): its
+	// publication takes that request, compared in its first transaction;
+	// empty for a person's own submit, which takes none (#195).
+	RequestID string
 	// Note replaces the branch's note, which the description gives under
 	// Description (model.Branch.Note), and empty clears it; nil keeps the
 	// one recorded. It is recorded once the submission is applied.
