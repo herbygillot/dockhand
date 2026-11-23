@@ -315,6 +315,25 @@ branch it committed only where its commits are exactly what it committed of
 its edits; a commit on top, a rebase or a change of yours between two of its
 edits leaves the branch for you, named.
 
+## A flag that was refused
+
+What a command asked is kept on the branch, and each thing it asked has its
+own outcome. One that can't be carried out is refused by name, and the refusal
+stops the branch, a person's `check` and `submit` included, until the flag is
+given another way. `--source releases` where the release carries no usable
+source, and `--follow-moves` where GitHub answers another name the update
+didn't follow, are refused at the port's turn. A flag that shapes how a
+version's edit is made, `--keep-http`, `--keep-old-checksums`,
+`--keep-modeline` or `--shared-release`, is refused where it changes after that
+edit was written:
+
+```text
+jq-1.8.1: --keep-http changed after jq's edit to 1.8.1, which no edit applies to a version already written; give it as it was, or apply it by hand; nothing goes on until the ask changes
+```
+
+Give the flag as it was, and the work goes on; or edit the Portfile yourself.
+`dockhand status` names what was refused.
+
 ## A submission that didn't finish
 
 When submit stops partway, as when the push lands and opening the pull request
@@ -324,6 +343,13 @@ finishes it:
 ```text
 pushed 1a2b3c4 to ada/macports-ports:dockhand/jq-update, but could not create or update the pull request: …; opening the pull request is still owed, and dockhand submit jq-update finishes it
 ```
+
+Where a ship or serve was submitting and another command changed what the
+branch asks meanwhile, as `update jq 2.0` or a ship that asks another check,
+nothing is recorded or pushed: the submission is judged again under what the
+branch asks now, up to three times, and then stops, saying the request keeps
+changing. A submission finishing ends only what it was judged under, so newer
+work asked meanwhile stays.
 
 Run that submit; don't open a pull request by hand or start another branch. It
 reads the fork and GitHub first and records what landed, so a pull request

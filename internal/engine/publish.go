@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/failpoint"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -281,7 +282,12 @@ func (e *Engine) endPublication(ctx context.Context, branch model.BranchID, reco
 	if len(record.Owes) > 0 {
 		return nil
 	}
-	return e.rewritePublication(ctx, branch, record.ID, nil, func(tx store.Tx) error { return endRequest(tx, branch, record) })
+	if err := e.rewritePublication(ctx, branch, record.ID, nil, func(tx store.Tx) error { return endRequest(tx, branch, record) }); err != nil {
+		return err
+	}
+	// The publication ended, and the request it took with it (#195).
+	failpoint.Hit("submit.ended")
+	return nil
 }
 
 // ErrRequestChanged is a stage's submission whose request another command
@@ -548,4 +554,60 @@ func (e *Engine) pendingAfter(ctx context.Context, branch model.BranchID, result
 		}
 	}
 	return pending
+}
+
+// SubmitUnderRequest plans a stage's submission and makes it with apply,
+// and where another command changed the branch's request meanwhile, so
+// that nothing was recorded (ErrRequestChanged), plans and judges it again
+// under the request as it stands: three rounds, then it says the request
+// keeps changing, nothing pushed. A request that now asks for a check that
+// hasn't run stops it (#195, "Where the request meets its neighbours").
+// It returns the last plan, for the caller's words.
+func (e *Engine) SubmitUnderRequest(ctx context.Context, request SubmitRequest, apply func(SubmitPlan) (Submitted, error)) (SubmitPlan, Submitted, error) {
+	for round := 0; ; round++ {
+		plan, err := e.PlanSubmit(ctx, request)
+		if err != nil {
+			return plan, Submitted{}, err
+		}
+		if round > 0 && plan.CheckNeeded {
+			return plan, Submitted{}, fmt.Errorf("%s's request now asks for a check that hasn't run; nothing was submitted, and dockhand ship -b %s runs it", plan.Branch.ShortName(), plan.Branch.ShortName())
+		}
+		if e.beforeStageApply != nil {
+			e.beforeStageApply(round)
+		}
+		submitted, err := apply(plan)
+		if !errors.Is(err, ErrRequestChanged) {
+			return plan, submitted, err
+		}
+		if round == 2 {
+			return plan, submitted, fmt.Errorf("%s's request kept changing while it was submitted; nothing was pushed, and dockhand ship -b %s submits it once it settles", plan.Branch.ShortName(), plan.Branch.ShortName())
+		}
+		if request, err = e.rejudged(ctx, request); err != nil {
+			return plan, submitted, err
+		}
+	}
+}
+
+// rejudged is a stage's submission again under the branch's request as it
+// stands now: the request's asks and ID, with the run's title, note,
+// statements, head and the commit it is bound to.
+func (e *Engine) rejudged(ctx context.Context, was SubmitRequest) (SubmitRequest, error) {
+	branch, err := e.Branch(ctx, was.Branch.ID)
+	if err != nil {
+		return was, err
+	}
+	var request model.ChangeRequest
+	if branch.Request != nil {
+		request = *branch.Request
+	}
+	next := SubmitRequestFor(request, branch, was.Where.Unattended)
+	if branch.Request == nil {
+		next.RequestID = ""
+	}
+	next.Head, next.Bound, next.PendingCheck, next.Title, next.Note = was.Head, was.Bound, was.PendingCheck, was.Title, was.Note
+	next.TestedBinaries, next.TestedVariants, next.WithdrawBinaries, next.WithdrawVariants = was.TestedBinaries, was.TestedVariants, was.WithdrawBinaries, was.WithdrawVariants
+	if !was.PendingCheck && len(was.Where.On) == 0 && was.Where.Build == "" && was.Tests == "" {
+		next.Where, next.Tests = WhereRequest{}, ""
+	}
+	return next, nil
 }

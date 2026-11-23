@@ -1655,6 +1655,9 @@ func (e *Engine) publish(ctx context.Context, plan SubmitPlan, worktree *git.Rep
 	if err != nil {
 		return result, err
 	}
+	// The publication is recorded, and with it the request a stage's
+	// submission took: its Publish moved, the request's ID kept (#195).
+	failpoint.Hit("submit.recorded")
 	owing := func(step model.PublicationStep, err error) error {
 		return fmt.Errorf("%w; %s is still owed, and dockhand submit %s finishes it", err, step.Words(), plan.Branch.ShortName())
 	}

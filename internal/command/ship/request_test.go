@@ -131,3 +131,32 @@ func TestShipsPlanJSONCarriesTheValue(t *testing.T) {
 	require.False(t, row.StageKept)
 	require.Contains(t, row.Unresolved, struct{ What, When string }{"the destination", "decided at submit"})
 }
+
+// check and submit read what a ship kept, where they aren't given it, and
+// say which; neither changes the request (#195).
+func TestCheckAndSubmitReadWhatShipKept(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithScript(t, w, "passed")
+	g := cmdtest.WithGitHub(t, w)
+	g.Others = nil
+	_, errs, err := cmdtest.Dockhand(t, "ship", "jq", "--to", "commit", "--on", "command", "--tests", "skip", "--draft", "--type", "bugfix", "--yes")
+	require.NoError(t, err, errs)
+	kept := cmdtest.KeptRequest(t, "jq-1.8.1")
+	require.NotNil(t, kept)
+
+	out, errs, err := cmdtest.Dockhand(t, "check", "-b", "jq-1.8.1", "--plan")
+	require.NoError(t, err, errs)
+	require.Contains(t, out, "Taken from what the branch's request kept: --on command, --tests skip")
+	out, _, _ = cmdtest.Dockhand(t, "check", "-b", "jq-1.8.1", "--plan", "--tests", "declared")
+	require.Contains(t, out, "Taken from what the branch's request kept: --on command\n", "a flag given is this check's own")
+
+	out, _, _ = cmdtest.Dockhand(t, "submit", "-b", "jq-1.8.1", "--plan")
+	require.Contains(t, out, "Taken from what the branch's request kept: --draft, --type bugfix")
+	after := cmdtest.KeptRequest(t, "jq-1.8.1")
+	require.Equal(t, kept.ID, after.ID, "neither changed the request")
+	require.Equal(t, kept.Check, after.Check)
+	require.Equal(t, kept.Publish, after.Publish)
+}

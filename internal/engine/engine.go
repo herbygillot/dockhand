@@ -220,9 +220,12 @@ func (o Options) git() git.Program {
 
 // Engine is bound to one ports checkout and its registered repository.
 type Engine struct {
-	Repo       *git.Repository
-	Store      store.Store
-	Repository model.RepositoryID
+	// beforeStageApply, a test's, runs before each round of a stage's
+	// submission is made (SubmitUnderRequest).
+	beforeStageApply func(round int)
+	Repo             *git.Repository
+	Store            store.Store
+	Repository       model.RepositoryID
 	// Preparer edits ports; MacPorts' own evaluator when nil.
 	Preparer Preparer
 	// KeepModeline leaves the first line of every Portfile an edit writes

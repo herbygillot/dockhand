@@ -131,6 +131,18 @@ to a different version, before it has a pull request. Its worktree can retain
 its old directory name. Ask `path` for its location rather than constructing a
 path from the branch name.
 
+A port already at its newest version can still take what you ask beside the
+version: `--source releases` or `--source archive` moves its source at the
+version it is at, `--with-obsolete` moves its obsolete stub, `--follow-moves`
+follows a moved repository, and `--revbump-dependents` bumps what links it,
+each said as done, or as already so where there was nothing to do. `--closes`
+with nothing else to change is refused: a ticket alone starts no branch.
+
+What a command asks is kept on the branch until the submission that takes it
+has finished: a later command goes on with the release kept and the flags
+kept, a flag given replaces the kept one and is said, and a flag left out
+leaves it. `dockhand usage flags` lists every flag with how long it lasts.
+
 ## Bring your existing Git work into dockhand
 
 Use `adopt` when the branch already exists and should retain its work:

@@ -189,6 +189,12 @@ not a replacement for a continuing service.
 
 ## Configure daily updates before enabling them
 
+serve reads its settings at each new action: a branch it prepares keeps no
+copy of them, so an `[update] source` or `keep_http` changed counts from
+serve's next start, for the next stage it runs. An outcome judged under one
+setting is judged again under the new one. A check serve queued keeps its
+plan, and a submission it recorded keeps what it set out to do.
+
 Edit the configuration file that `dockhand config` reports. For example, these
 sections ask for checks of your maintained ports each morning, with no automatic
 publication:

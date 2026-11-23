@@ -367,3 +367,31 @@ func TestAPortsChangeIsReadOnce(t *testing.T) {
 	require.Equal(t, PortRevisionOnly, PortDiff{Kind: model.RevisionOnly}.Change())
 	require.Equal(t, PortChanged, PortDiff{Kind: model.Substantive}.Change())
 }
+
+// The dependents are an action of the request, concluded on it: done where
+// some were bumped, satisfied where every one was left out or none needed
+// it (#195).
+func TestTheDependentsConcludeOnTheRequest(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/yq/Portfile": "name yq\nversion 1\n"})
+	testsupport.Git(t, f.upstream, "add", "-A")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "yq")
+	e, _ := f.withPreparer(t)
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}, "textproc/yq": {port("yq", "jq")}}})
+	update := Update{Port: "jq", After: PortVersion{Version: "1.8.1"}}
+	for _, c := range []struct {
+		except []string
+		want   model.ActionResult
+	}{{nil, model.ActionDone}, {[]string{"yq"}, model.ActionSatisfied}} {
+		branch, err := e.Start(t.Context(), StartRequest{Name: "jq-" + string(c.want)})
+		require.NoError(t, err)
+		_, branch, err = e.keepRequest(t.Context(), branch, Asking{Origin: "update", Ports: []string{"jq"}, Asked: model.ChangeRequest{Actions: model.ActionsAsk{RevbumpDependents: model.Set(true)}}})
+		require.NoError(t, err)
+		_, err = e.RevbumpLinked(t.Context(), branch, update, c.except, false)
+		require.NoError(t, err)
+		current, err := e.Branch(t.Context(), branch.ID)
+		require.NoError(t, err)
+		require.Equal(t, []model.ActionOutcome{{Action: "dependents", Result: c.want}}, current.Request.Outcomes)
+	}
+}

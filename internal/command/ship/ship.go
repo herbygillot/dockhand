@@ -1038,32 +1038,13 @@ func prepareSubmit(ctx context.Context, s *settings.Settings, e *engine.Engine, 
 // exactly the commit it was bound to, and, where nobody looks, only what
 // holds nothing.
 func submitPassed(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams, pending pendingSubmit) (engine.Submitted, error) {
-	var plan engine.SubmitPlan
-	var submitted engine.Submitted
-	var err error
 	// Where another command changed the branch's request while this
-	// submission was judged, nothing was recorded: it is planned and
-	// judged again under the request as it stands, a few rounds (#195).
-	for round := 0; ; round++ {
-		if plan, err = e.PlanSubmit(ctx, pending.request); err != nil {
-			return engine.Submitted{}, err
-		}
-		if round > 0 && plan.CheckNeeded {
-			return engine.Submitted{}, fmt.Errorf("%s's request now asks for a check that hasn't run; nothing was submitted, and dockhand ship -b %s runs it", plan.Branch.ShortName(), plan.Branch.ShortName())
-		}
+	// submission was judged, the engine judges it again (#195).
+	plan, submitted, err := e.SubmitUnderRequest(ctx, pending.request, func(plan engine.SubmitPlan) (engine.Submitted, error) {
 		streams.Emit(view.SubmitView(plan))
 		fmt.Fprintln(streams.Prose())
-		submitted, err = submit.Apply(ctx, e, streams, plan, s.File.Submit.RerequestReview, pending.answered)
-		if !errors.Is(err, engine.ErrRequestChanged) {
-			break
-		}
-		if round == 2 {
-			return submitted, fmt.Errorf("%s's request kept changing while it was submitted; nothing was pushed, and dockhand ship -b %s submits it once it settles", plan.Branch.ShortName(), plan.Branch.ShortName())
-		}
-		if pending.request, err = rejudged(ctx, e, pending.request); err != nil {
-			return submitted, err
-		}
-	}
+		return submit.Apply(ctx, e, streams, plan, s.File.Submit.RerequestReview, pending.answered)
+	})
 	// The gate is the engine's (branchstate.Publish); ship words what it
 	// refused as ship says it.
 	refused := refusal.Of(err)
@@ -1201,27 +1182,6 @@ func keptReleaseOf(branch model.Branch, port string) string {
 		}
 	}
 	return ""
-}
-
-// rejudged is a stage's submission again under the branch's request as it
-// stands now: the request's asks and ID, with this run's title, note,
-// statements and the commit it is bound to.
-func rejudged(ctx context.Context, e *engine.Engine, was engine.SubmitRequest) (engine.SubmitRequest, error) {
-	branch, err := e.Branch(ctx, was.Branch.ID)
-	if err != nil {
-		return was, err
-	}
-	var request model.ChangeRequest
-	if branch.Request != nil {
-		request = *branch.Request
-	}
-	next := engine.SubmitRequestFor(request, branch, was.Where.Unattended)
-	if branch.Request == nil {
-		next.RequestID = ""
-	}
-	next.Head, next.Bound, next.PendingCheck, next.Title, next.Note = was.Head, was.Bound, false, was.Title, was.Note
-	next.TestedBinaries, next.TestedVariants, next.WithdrawBinaries, next.WithdrawVariants = was.TestedBinaries, was.TestedVariants, was.WithdrawBinaries, was.WithdrawVariants
-	return next, nil
 }
 
 // writeUnresolved is what a target's request carries as asked, under its
