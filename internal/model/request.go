@@ -1,6 +1,9 @@
 package model
 
-import "slices"
+import (
+	"maps"
+	"slices"
+)
 
 // ChangeRequest is what was asked of one branch's work, one value kept
 // with the branch (docs/designs/preparation-and-request.md, "The
@@ -180,4 +183,36 @@ func (t RequestTarget) Finished(edits []Edit) bool {
 		}
 	}
 	return false
+}
+
+// Clone is a deep copy of the request: its targets with their releases
+// and outcomes, every ask's list, and each outcome's JudgedBy and
+// AppliedWith, so a change to the copy never reaches the request it was
+// made from.
+func (r ChangeRequest) Clone() ChangeRequest {
+	clone := r
+	clone.Targets = slices.Clone(r.Targets)
+	for i, target := range clone.Targets {
+		if target.Release != nil {
+			release := *target.Release
+			clone.Targets[i].Release = &release
+		}
+		clone.Targets[i].Outcomes = cloneOutcomes(target.Outcomes)
+	}
+	clone.Outcomes = cloneOutcomes(r.Outcomes)
+	clone.Actions.Except.Value = slices.Clone(r.Actions.Except.Value)
+	clone.Actions.Closes.Value = slices.Clone(r.Actions.Closes.Value)
+	clone.Check.On.Value = slices.Clone(r.Check.On.Value)
+	clone.Publish.Type.Value = slices.Clone(r.Publish.Type.Value)
+	return clone
+}
+
+// cloneOutcomes is a deep copy of outcomes, their maps included.
+func cloneOutcomes(outcomes []ActionOutcome) []ActionOutcome {
+	cloned := slices.Clone(outcomes)
+	for i := range cloned {
+		cloned[i].JudgedBy = maps.Clone(cloned[i].JudgedBy)
+		cloned[i].AppliedWith = maps.Clone(cloned[i].AppliedWith)
+	}
+	return cloned
 }

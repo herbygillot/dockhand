@@ -28,7 +28,7 @@ import (
 func (p SubmitPlan) publication(id, by string, served bool) model.Publication {
 	record := model.Publication{ID: id, Commit: model.ObjectID(p.Commit), By: by, Served: served,
 		Head: p.Head(), Base: p.Repository + ":" + UpstreamBranch, Expected: "",
-		Asked: model.Asked{Draft: p.Request.Draft, NoCheck: p.Request.NoCheck, SkipNotification: p.Request.SkipNotification, Rewrite: p.Request.Rewrite, Types: p.Request.Types}, RequestID: p.Request.RequestID}
+		Asked: p.Request.asked(), RequestID: p.Request.RequestID}
 	if p.RemoteHead.Exists {
 		record.Expected = model.ObjectID(p.RemoteHead.Object)
 	}
@@ -613,4 +613,12 @@ func (e *Engine) rejudged(ctx context.Context, was SubmitRequest) (SubmitRequest
 		next.Where, next.Tests = WhereRequest{}, ""
 	}
 	return next, nil
+}
+
+// asked is what a submission was asked, as its publication keeps it: each
+// of its own flags with whether it was given on the run that recorded it.
+func (r SubmitRequest) asked() model.Asked {
+	return model.Asked{Draft: model.Flag[bool]{Given: r.Given["draft"], Value: r.Draft}, NoCheck: model.Flag[bool]{Given: r.Given["no-check"], Value: r.NoCheck},
+		SkipNotification: model.Flag[bool]{Given: r.Given["skip-notification"], Value: r.SkipNotification}, Rewrite: r.Rewrite,
+		Types: model.Flag[[]string]{Given: r.Given["type"], Value: r.Types}}
 }

@@ -492,6 +492,12 @@ func (e *Engine) resolveFor(ctx context.Context, request *UpdateRequest, branch 
 			return nil, err
 		}
 	}
+	// A refusal is kept and not tried again: the same ask stops here, by
+	// name, and writes nothing; a changed ask removed it in the resolver,
+	// so it is judged again (#195, "Readiness").
+	if refused := refusedFor(resolved.Request, request.Port); refused != "" && !request.Plan {
+		return nil, refusal.New(refusal.Attention, "%s; nothing was written: that ask is refused until it changes", refused)
+	}
 	// A release kept is gone on with where no version was named, over one
 	// a lookup found again (#195, "What is kept").
 	if asking.Named == "" && branch.ID != "" {
@@ -831,6 +837,10 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 					target.Current = update.After.String()
 				}
 				for _, outcome := range concludeWith(resolved, result, false) {
+					// A refusal stands until its ask changes.
+					if kept, ok := target.Outcome(outcome.Action); ok && kept.Result == model.ActionRefused {
+						continue
+					}
 					concluded(target, outcome)
 				}
 			}); err != nil {

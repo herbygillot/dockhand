@@ -17,26 +17,42 @@ import (
 // request by the engine (#195, "What it replaces").
 var stageRequests = []string{"UpdateRequest", "WhereRequest", "CheckRequest", "SubmitRequest"}
 
-// drivers are the engine's files that carry work through its stages, as
-// the commands do: serve, its submissions, ship's engine path and
-// recovery. They build no stage's request themselves.
-var drivers = []string{"internal/engine/serve.go", "internal/engine/servesubmit.go", "internal/engine/ship.go", "internal/engine/recovery.go"}
-
-// stageLiteralsAllowed are the named exceptions, each with why: the
-// primitives keep their literals, and check, submit and review on their
-// own build theirs from their own flags.
+// stageLiteralsAllowed are the named exceptions, by file and function,
+// each with why: the primitives keep their literals, the engine's place
+// for a check no request asks is the settings', and the resolver's
+// builders make them. A directory named whole is check's, submit's and
+// review's own, which build theirs from their own flags.
 var stageLiteralsAllowed = map[string]string{
-	"internal/command/author/author.go": "the checksum refresh, a primitive",
-	"internal/command/author/edit.go":   "revbump, a primitive",
-	"internal/command/check/":           "check on its own, which reads the kept place and never changes the request",
-	"internal/command/submit/":          "submit on its own, a person's, which takes no request",
-	"internal/command/review/":          "review's check of another's pull request, which has no request",
+	"internal/command/author/author.go#ChecksumsCommand": "the checksum refresh, a primitive",
+	"internal/command/author/edit.go#RevbumpCommand":     "revbump, a primitive",
+	"internal/command/check/":                            "check on its own, which reads the kept place and never changes the request",
+	"internal/command/submit/":                           "submit on its own, a person's, which takes no request",
+	"internal/command/review/":                           "review's check of another's pull request, which has no request",
+	"internal/engine/resolve.go":                         "the resolver and the stages' builders",
+	"internal/engine/publish.go#rejudged":                "a stage's submission built again from the request as it stands",
+	"internal/engine/create.go#Create":                   "create's checksum update, a primitive",
+	"internal/engine/diff.go#RevbumpLinked":              "the dependents' bump, a primitive",
+	"internal/engine/update.go#updateWithObsolete":       "the stub's update, a primitive",
+	"internal/engine/evidence.go#requiredEnvironments":   "the settings' default place, which no request asks",
+	"internal/engine/provider.go#Environments":           "the settings' default place, which no request asks",
+}
+
+// allowedAt reports whether a literal in the function named of the file is
+// a named exception.
+func allowedAt(rel, function string) bool {
+	for key := range stageLiteralsAllowed {
+		file, fn, named := strings.Cut(key, "#")
+		if named && rel == file && fn == function || !named && (rel == file || strings.HasSuffix(file, "/") && strings.HasPrefix(rel, file)) {
+			return true
+		}
+	}
+	return false
 }
 
 // The change request is made only by the resolver, the store's decoding
-// and tests; the stages' requests are built from it, never by a command
-// or a driver, but for the named primitives and check, submit and review
-// on their own (#195, "The boundary test").
+// and tests; the stages' requests are built from it, never by a command or
+// anywhere else in the engine, but for the named exceptions (#195, "The
+// boundary test"; Codex's read of steps 4 and 5).
 func TestTheRequestIsBuiltOnlyByTheResolver(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join("..", "..")
@@ -53,26 +69,27 @@ func TestTheRequestIsBuiltOnlyByTheResolver(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		command := strings.HasPrefix(rel, "internal/command/")
-		driver := slices.Contains(drivers, rel)
-		allowed := false
-		for prefix := range stageLiteralsAllowed {
-			allowed = allowed || strings.HasPrefix(rel, prefix)
-		}
-		ast.Inspect(file, func(n ast.Node) bool {
-			literal, ok := n.(*ast.CompositeLit)
-			if !ok {
+		checked := strings.HasPrefix(rel, "internal/command/") || strings.HasPrefix(rel, "internal/engine/")
+		for _, decl := range file.Decls {
+			function := ""
+			if fn, ok := decl.(*ast.FuncDecl); ok {
+				function = fn.Name.Name
+			}
+			ast.Inspect(decl, func(n ast.Node) bool {
+				literal, ok := n.(*ast.CompositeLit)
+				if !ok {
+					return true
+				}
+				name := typeName(literal.Type)
+				if name == "ChangeRequest" && rel != "internal/engine/resolve.go" && !strings.HasPrefix(rel, "internal/store/") && !strings.HasPrefix(rel, "internal/model/") {
+					t.Errorf("%s builds a ChangeRequest; only the resolver does", rel)
+				}
+				if slices.Contains(stageRequests, name) && checked && !allowedAt(rel, function) {
+					t.Errorf("%s's %s builds a %s; the engine builds it from the request (%sFor)", rel, function, name, name)
+				}
 				return true
-			}
-			name := typeName(literal.Type)
-			if name == "ChangeRequest" && rel != "internal/engine/resolve.go" && !strings.HasPrefix(rel, "internal/store/") && !strings.HasPrefix(rel, "internal/model/") {
-				t.Errorf("%s builds a ChangeRequest; only the resolver does", rel)
-			}
-			if slices.Contains(stageRequests, name) && (command || driver) && !allowed {
-				t.Errorf("%s builds a %s; the engine builds it from the request (%sFor)", rel, name, name)
-			}
-			return true
-		})
+			})
+		}
 		return nil
 	})
 	require.NoError(t, err)

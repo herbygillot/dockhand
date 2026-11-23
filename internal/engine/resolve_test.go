@@ -156,7 +156,7 @@ func TestAFlagGivenRecordsNoJudgedBy(t *testing.T) {
 	resolved, err := ResolveRequest(Asking{Origin: "ship", Ports: []string{"jq"}, Settings: RequestSettings{KeepHTTP: true},
 		Asked: model.ChangeRequest{Source: model.SourceAsk{KeepHTTP: model.Set(true), KeepModeline: model.Set(false)}}})
 	require.NoError(t, err)
-	require.Equal(t, map[string]string(nil), JudgedBy(resolved.Request, resolved.Policy, "version"))
+	require.Equal(t, map[string]string{"Source.Source": ""}, JudgedBy(resolved.Request, resolved.Policy, "version"), "the flags given record nothing; the source setting does")
 	require.Equal(t, map[string]string{"Source.Source": ""}, JudgedBy(resolved.Request, resolved.Policy, "source"))
 }
 

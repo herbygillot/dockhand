@@ -596,6 +596,11 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	}
 	request.Branch = branch
 	plan := SubmitPlan{Request: request, Branch: branch, Repository: e.PullRequestRepository()}
+	// An action the branch's request refused blocks the plan as it will
+	// the submission, by the one judgement every gate asks (refusedIn).
+	if err := refusedIn(branch); err != nil {
+		plan.block(branchstate.Block{Kind: branchstate.BlockRefused, Refused: refusal.WordsOf(err)})
+	}
 	if err := e.pullRequestHere(branch); err != nil {
 		return plan, err
 	}
@@ -1996,16 +2001,16 @@ func (p *SubmitPlan) carry(earlier *model.Publication) {
 	// flag given, false included, is this run's own (#195, E3).
 	asked := earlier.Asked
 	if !p.Request.Given["draft"] && !p.Request.Given["no-check"] {
-		p.Request.Draft = asked.Draft
+		p.Request.Draft = asked.Draft.Value
 	}
 	if !p.Request.Given["no-check"] && !p.Request.Given["draft"] {
-		p.Request.NoCheck = asked.NoCheck && !p.Request.Draft
+		p.Request.NoCheck = asked.NoCheck.Value && !p.Request.Draft
 	}
-	if !p.Request.Given["type"] && len(asked.Types) > 0 {
-		p.Request.Types = asked.Types
+	if !p.Request.Given["type"] && len(asked.Types.Value) > 0 {
+		p.Request.Types = asked.Types.Value
 	}
 	if !p.Request.Given["skip-notification"] {
-		p.Request.SkipNotification = asked.SkipNotification
+		p.Request.SkipNotification = asked.SkipNotification.Value
 	}
 	if slices.Contains(earlier.Owes, model.StepReady) && !p.Request.Draft {
 		p.Request.Ready = true
@@ -2076,17 +2081,17 @@ func (p SubmitPlan) Continues() *EarlierSubmit {
 	// The earlier run's flags this one left out and carries (#195, E3).
 	asked := c.Asked
 	given := p.Request.Given
-	if asked.Draft && !given["draft"] && !given["no-check"] {
+	if asked.Draft.Value && !given["draft"] && !given["no-check"] {
 		said.Carries = append(said.Carries, "--draft")
 	}
-	if asked.NoCheck && p.Request.NoCheck && !given["no-check"] && !given["draft"] {
+	if asked.NoCheck.Value && p.Request.NoCheck && !given["no-check"] && !given["draft"] {
 		said.Carries = append(said.Carries, "--no-check")
 	}
-	if asked.SkipNotification && !given["skip-notification"] {
+	if asked.SkipNotification.Value && !given["skip-notification"] {
 		said.Carries = append(said.Carries, "--skip-notification")
 	}
-	if len(asked.Types) > 0 && !given["type"] {
-		said.Carries = append(said.Carries, "--type "+strings.Join(asked.Types, ","))
+	if len(asked.Types.Value) > 0 && !given["type"] {
+		said.Carries = append(said.Carries, "--type "+strings.Join(asked.Types.Value, ","))
 	}
 	return &said
 }

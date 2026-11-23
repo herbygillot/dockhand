@@ -412,3 +412,19 @@ func (e *Engine) concludeOnRequest(ctx context.Context, branch model.Branch, out
 func (e *Engine) KeepAsked(ctx context.Context, branch model.Branch, asking Asking) (Resolved, model.Branch, error) {
 	return e.keepRequest(ctx, branch, asking)
 }
+
+// refusedFor is why an action asked of a port was refused, where one was
+// and still stands; empty where none was.
+func refusedFor(request model.ChangeRequest, port string) string {
+	for _, target := range request.Targets {
+		if target.Port != port {
+			continue
+		}
+		for _, outcome := range target.Outcomes {
+			if outcome.Result == model.ActionRefused {
+				return outcome.Why
+			}
+		}
+	}
+	return ""
+}

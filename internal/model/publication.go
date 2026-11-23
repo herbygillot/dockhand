@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"reflect"
 	"time"
 )
@@ -71,8 +72,8 @@ func (p Publication) normal() Publication {
 	if len(p.Owes) == 0 {
 		p.Owes = nil
 	}
-	if len(p.Asked.Types) == 0 {
-		p.Asked.Types = nil
+	if len(p.Asked.Types.Value) == 0 {
+		p.Asked.Types.Value = nil
 	}
 	if p.Review != nil {
 		review := *p.Review
@@ -126,10 +127,36 @@ func (s PublicationStep) Words() string {
 var PublicationSteps = []PublicationStep{StepDraft, StepPush, StepOpen, StepEdit, StepReady, StepRerequest}
 
 // Asked is what a person chose for a submission, kept so that finishing
-// it needs none of it typed again.
+// it needs none of it typed again: each of --draft, --no-check,
+// --skip-notification and the types as taken, with whether it was given,
+// so a false given is told from one left out (#195). A record from before
+// holds plain values, read as not given (UnmarshalJSON).
 type Asked struct {
-	Draft, NoCheck, SkipNotification, Rewrite bool
-	Types                                     []string `json:",omitempty"`
+	Draft, NoCheck, SkipNotification Flag[bool]
+	Rewrite                          bool
+	Types                            Flag[[]string] `json:",omitzero"`
+}
+
+// UnmarshalJSON reads an Asked as recorded now, or as a publication
+// recorded before its asks kept their given-ness had it: plain booleans
+// and a list, each read as its value, not given.
+func (a *Asked) UnmarshalJSON(data []byte) error {
+	type current Asked
+	var now current
+	if err := json.Unmarshal(data, &now); err == nil {
+		*a = Asked(now)
+		return nil
+	}
+	var before struct {
+		Draft, NoCheck, SkipNotification, Rewrite bool
+		Types                                     []string
+	}
+	if err := json.Unmarshal(data, &before); err != nil {
+		return err
+	}
+	*a = Asked{Draft: Flag[bool]{Value: before.Draft}, NoCheck: Flag[bool]{Value: before.NoCheck}, SkipNotification: Flag[bool]{Value: before.SkipNotification},
+		Rewrite: before.Rewrite, Types: Flag[[]string]{Value: before.Types}}
+	return nil
 }
 
 // ReviewAsk is "ask them to review again?", its answer, and what became

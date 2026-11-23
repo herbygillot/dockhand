@@ -84,12 +84,7 @@ func ResolveRequest(asking Asking) (Resolved, error) {
 	var kept model.ChangeRequest
 	hasKept := asking.Branch != nil && asking.Branch.Request != nil
 	if hasKept {
-		kept = *asking.Branch.Request
-		kept.Targets = slices.Clone(kept.Targets)
-		for i := range kept.Targets {
-			kept.Targets[i].Outcomes = slices.Clone(kept.Targets[i].Outcomes)
-		}
-		kept.Outcomes = slices.Clone(kept.Outcomes)
+		kept = asking.Branch.Request.Clone()
 	}
 	resolved := Resolved{}
 	request := kept
@@ -222,10 +217,11 @@ func replace[T any](field *model.Flag[T], given model.Flag[T], flag, name string
 }
 
 // judgedBy are the asks each outcome was judged by, beside the release
-// selected (docs/designs/preparation-and-request.md, "Each action has its
+// selected; the version's include the source policy, which the version's
+// edit is made under (docs/designs/preparation-and-request.md, "Each action has its
 // own outcome"): an outcome is removed when any of them changes.
 var judgedBy = map[string][]string{
-	"version":    {"Shared", "Source.KeepHTTP", "Source.KeepOldChecksums", "Source.KeepModeline"},
+	"version":    {"Shared", "Source.Source", "Source.KeepHTTP", "Source.KeepOldChecksums", "Source.KeepModeline"},
 	"source":     {"Source.Source", "Shared"},
 	"moved":      {"Source.FollowMoves"},
 	"stub":       {"Actions.WithObsolete"},

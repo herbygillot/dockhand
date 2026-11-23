@@ -129,7 +129,7 @@ func TestTheHandBackGoesOnlyToTheRequestItTook(t *testing.T) {
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch := keptOn(t, e, committedUpdate(t, e), model.PublishAsk{Type: model.Set([]string{"security fix"})})
-	took := model.Publication{ID: "pub_old", RequestID: "rq_other", Asked: model.Asked{NoCheck: true, Types: []string{"bugfix"}}}
+	took := model.Publication{ID: "pub_old", RequestID: "rq_other", Asked: model.Asked{NoCheck: model.Set(true), Types: model.Set([]string{"bugfix"})}}
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.SetPublication(branch.ID, "", &took) }))
 	require.NoError(t, e.endRefused(t.Context(), branch.ID, took))
 	current, err := e.Branch(t.Context(), branch.ID)
@@ -140,7 +140,7 @@ func TestTheHandBackGoesOnlyToTheRequestItTook(t *testing.T) {
 	// Another commit, the same request: an undelivered publication's asks
 	// are planned under.
 	current.Request.Publish = model.PublishAsk{}
-	current.Publication = &model.Publication{ID: "pub_a", RequestID: current.Request.ID, Asked: model.Asked{NoCheck: true, Types: []string{"bugfix"}}}
+	current.Publication = &model.Publication{ID: "pub_a", RequestID: current.Request.ID, Asked: model.Asked{NoCheck: model.Set(true), Types: model.Set([]string{"bugfix"})}}
 	submit := SubmitRequestFor(*current.Request, current, false)
 	require.True(t, submit.NoCheck)
 	require.Equal(t, []string{"bugfix"}, submit.Types)
@@ -148,7 +148,7 @@ func TestTheHandBackGoesOnlyToTheRequestItTook(t *testing.T) {
 	require.False(t, SubmitRequestFor(*current.Request, current, false).NoCheck, "one that opened its pull request delivered")
 
 	// A person's own submit took none, and hands nothing back.
-	own := model.Publication{ID: "pub_own", Asked: model.Asked{Draft: true}}
+	own := model.Publication{ID: "pub_own", Asked: model.Asked{Draft: model.Set(true)}}
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return handBack(tx, branch.ID, own) }))
 	current, err = e.Branch(t.Context(), branch.ID)
 	require.NoError(t, err)

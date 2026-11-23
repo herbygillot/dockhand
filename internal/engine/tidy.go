@@ -1547,6 +1547,12 @@ func (e *Engine) ApplyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 	if blocking := plan.Blocking(); len(blocking) > 0 {
 		return TidyResult{}, fmt.Errorf("the plan can't be applied yet: %s", strings.Join(blocking, "; "))
 	}
+	// Nothing commits past an action the branch's request refused, whoever
+	// is there: the commit is where every path to a check goes through
+	// (#195, "Readiness").
+	if err := e.refusedGate(ctx, plan.Branch); err != nil {
+		return TidyResult{}, err
+	}
 	var result TidyResult
 	err := e.history().With(ctx, plan.Branch, func(ctx context.Context) error {
 		var err error

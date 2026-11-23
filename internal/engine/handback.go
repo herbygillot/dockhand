@@ -32,20 +32,28 @@ func handBack(tx store.Tx, id model.BranchID, record model.Publication) error {
 }
 
 // askedBack is a request's submission asks with a publication's put back
-// where the request gives none: a value asked is given again; one left at
-// false was, as far as the record says, not asked.
+// where the request gives none: each as taken, a false given included; a
+// publication recorded before its asks kept their given-ness gives back
+// what was set, as given.
 func askedBack(publish model.PublishAsk, asked model.Asked) model.PublishAsk {
-	if !publish.Draft.Given && asked.Draft {
-		publish.Draft = model.Set(true)
+	back := func(field *model.Flag[bool], taken model.Flag[bool]) {
+		switch {
+		case field.Given:
+		case taken.Given:
+			*field = taken
+		case taken.Value:
+			*field = model.Set(true)
+		}
 	}
-	if !publish.NoCheck.Given && asked.NoCheck {
-		publish.NoCheck = model.Set(true)
-	}
-	if !publish.Type.Given && len(asked.Types) > 0 {
-		publish.Type = model.Set(asked.Types)
-	}
-	if !publish.SkipNotification.Given && asked.SkipNotification {
-		publish.SkipNotification = model.Set(true)
+	back(&publish.Draft, asked.Draft)
+	back(&publish.NoCheck, asked.NoCheck)
+	back(&publish.SkipNotification, asked.SkipNotification)
+	switch {
+	case publish.Type.Given:
+	case asked.Types.Given:
+		publish.Type = asked.Types
+	case len(asked.Types.Value) > 0:
+		publish.Type = model.Set(asked.Types.Value)
 	}
 	return publish
 }
