@@ -288,9 +288,20 @@ func TestAGuestKilledFromOutsideIsntTriedAgain(t *testing.T) {
 	build.mu.Unlock()
 	found, err := exec.Command("pgrep", "-f", filepath.Join(dir, "guest.tcl")).Output()
 	require.NoError(t, err)
-	pid, err := strconv.Atoi(strings.Fields(string(found))[0])
-	require.NoError(t, err)
-	require.NoError(t, syscall.Kill(-pid, syscall.SIGKILL), "the guest's whole group, as G9 killed it")
+	// pgrep names the starter too, whose arguments hold the guest's path:
+	// the guest's group is the one led by a process it names, whichever
+	// pid comes first; under load pids wrap, and the first named was the
+	// starter, no group's leader (#302).
+	group := 0
+	for _, field := range strings.Fields(string(found)) {
+		pid, err := strconv.Atoi(field)
+		require.NoError(t, err)
+		if leader, err := syscall.Getpgid(pid); err == nil && leader == pid {
+			group = pid
+		}
+	}
+	require.NotZero(t, group, "the guest leads its own group: %s", found)
+	require.NoError(t, syscall.Kill(-group, syscall.SIGKILL), "the guest's whole group, as G9 killed it")
 	err = <-done
 	require.ErrorIs(t, err, buildenv.ErrNeedsAttention)
 	require.True(t, buildenv.SaysWhyNotTried(err))

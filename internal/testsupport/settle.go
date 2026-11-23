@@ -10,3 +10,19 @@ import "time"
 // install beside the full suite (rc6's gate). A wait that asserts
 // something happens within a time keeps its own bound and says so.
 const Settle = 2 * time.Minute
+
+// UntilDeadline bounds a wait on a whole flow, such as serve preparing,
+// checking and submitting, by the test's own deadline alone, less a
+// margin to report it: such a flow on a machine the full suite loads can
+// pass Settle without anything being wrong (#302). Without a deadline it
+// is ten Settles.
+func UntilDeadline(t interface{ Deadline() (time.Time, bool) }) time.Duration {
+	deadline, ok := t.Deadline()
+	if !ok {
+		return 10 * Settle
+	}
+	if left := time.Until(deadline) - 30*time.Second; left > Settle {
+		return left
+	}
+	return Settle
+}

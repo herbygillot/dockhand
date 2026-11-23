@@ -23,6 +23,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // concerned is bumper with what an update can find that a check can't:
@@ -204,7 +205,9 @@ func serveWith(t *testing.T, concerns concerned, search error) (bool, string) {
 		}
 		return false
 	}
-	for deadline := time.Now().Add(cmdtest.Settle); !ended() && time.Now().Before(deadline); {
+	// The whole flow is waited on, bounded by the test's own deadline, not
+	// Settle (#302).
+	for deadline := time.Now().Add(testsupport.UntilDeadline(t)); !ended() && time.Now().Before(deadline); {
 		time.Sleep(10 * time.Millisecond)
 	}
 	require.True(t, ended(), served.String())

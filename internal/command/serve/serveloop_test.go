@@ -17,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/term"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
@@ -56,7 +57,9 @@ func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
 			done <- cmdtest.RunFor(t, ctx, append([]string{"serve"}, args...), term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 		}()
 		for _, text := range until {
-			require.Eventually(t, func() bool { return strings.Contains(served.String(), text) }, cmdtest.Settle, 10*time.Millisecond, served.String())
+			// The whole flow is waited on, bounded by the test's own
+			// deadline, not Settle (#302).
+			require.Eventually(t, func() bool { return strings.Contains(served.String(), text) }, testsupport.UntilDeadline(t), 10*time.Millisecond, served.String())
 		}
 		stop()
 		require.NoError(t, <-done)
