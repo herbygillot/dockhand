@@ -810,13 +810,6 @@ func (l *Local) restoreLeft(ctx context.Context, prefix string, build buildenv.B
 	return nil
 }
 
-// buildingNow are the checks building in a prefix now, by their dockhand
-// or their program, as Changes says them.
-func (l *Local) buildingNow() []buildenv.Change {
-	changes, _ := l.Changes(context.Background())
-	return slices.DeleteFunc(changes, func(change buildenv.Change) bool { return !change.Building })
-}
-
 // Changes are the prefixes checks are building in now, and those checks
 // left changed when their process ended first, each with how to put it
 // back (buildenv.ChangingProvider). One the person has put back already,
@@ -870,78 +863,129 @@ func (l *Local) Changes(ctx context.Context) ([]buildenv.Change, error) {
 // here to put back (buildenv.PuttingBackProvider).
 func (l *Local) PutBack(ctx context.Context, check string, progress func(string)) (string, bool, error) {
 	build := saying{say: progress}
-	// One building still, by its dockhand or its program, puts the prefix
-	// back itself when it ends.
-	for _, change := range l.buildingNow() {
-		if change.Check == check {
-			return change.Place, true, fmt.Errorf("%s is building in %s now, and puts it back when it ends; dockhand cancel %s stops it, putting it back", check, change.Place, check)
+	selected := l.selectPutBack(check)
+	if selected.building != nil {
+		return selected.place, true, fmt.Errorf("%s is building in %s now, and puts it back when it ends; dockhand cancel %s stops it, putting it back", check, selected.place, check)
+	}
+	if selected.left == nil {
+		return "", false, nil
+	}
+	left, prefix := selected.left, selected.place
+	if left.unreadable != nil {
+		return prefix, true, buildenv.NeedsAttention("%s", unreadableWords(check, prefix, left.dir, left.unreadable))
+	}
+	letGo, err := l.own(ctx, prefix, check, build)
+	if err != nil {
+		return prefix, true, err
+	}
+	defer letGo()
+	sudo, err := l.asRoot(ctx, prefix, build)
+	if err != nil {
+		return prefix, true, err
+	}
+	build.Progress(fmt.Sprintf("putting %s back as it was before %s", prefix, check))
+	if err := l.restore(ctx, left.dir, prefix, check, sudo); err != nil {
+		if ctx.Err() != nil {
+			return prefix, true, ctx.Err()
 		}
+		return prefix, true, buildenv.NeedsAttention("%s couldn't be put back as it was before %s: %v. %s", prefix, check, err, l.byHand(left.dir, check, left.snapshot))
+	}
+	remove(left.dir, build)
+	return prefix, true, nil
+}
+
+type putBackSelection struct {
+	place    string
+	building *buildenv.Change
+	left     *leftDirectory
+}
+
+// selectPutBack is the read-only choice shared by putting a check back and
+// its plan, including an active build and an unreadable restoration record.
+func (l *Local) selectPutBack(check string) putBackSelection {
+	if place, ok := l.buildingCheck(check); ok {
+		change := buildenv.Change{Check: check, Place: place, Building: true}
+		return putBackSelection{place: place, building: &change}
 	}
 	for _, left := range l.left() {
-		if left.owner.Check == check && left.unreadable != nil {
-			return left.owner.Prefix, true, buildenv.NeedsAttention("%s", unreadableWords(check, left.owner.Prefix, left.dir, left.unreadable))
-		}
-		if left.owner.Check != check || left.snapshot == "" || left.restored {
+		if left.owner.Check != check {
 			continue
 		}
-		prefix := left.owner.Prefix
-		letGo, err := l.own(ctx, prefix, check, build)
-		if err != nil {
-			return prefix, true, err
+		if left.unreadable != nil {
+			return putBackSelection{place: left.owner.Prefix, left: &left}
 		}
-		defer letGo()
-		sudo, err := l.asRoot(ctx, prefix, build)
-		if err != nil {
-			return prefix, true, err
+		if left.snapshot != "" && !left.restored {
+			return putBackSelection{place: left.owner.Prefix, left: &left}
 		}
-		build.Progress(fmt.Sprintf("putting %s back as it was before %s", prefix, check))
-		if err := l.restore(ctx, left.dir, prefix, check, sudo); err != nil {
-			if ctx.Err() != nil {
-				return prefix, true, ctx.Err()
-			}
-			return prefix, true, buildenv.NeedsAttention("%s couldn't be put back as it was before %s: %v. %s", prefix, check, err, l.byHand(left.dir, check, left.snapshot))
-		}
-		remove(left.dir, build)
-		return prefix, true, nil
 	}
-	return "", false, nil
+	return putBackSelection{}
+}
+
+// buildingCheck reads whether this check is still running without using
+// Changes, which may remove a leftover the person already restored.
+func (l *Local) buildingCheck(check string) (string, bool) {
+	entries, err := os.ReadDir(l.temp())
+	if err != nil {
+		return "", false
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), localDirectory) {
+			continue
+		}
+		dir := filepath.Join(l.temp(), entry.Name())
+		data, err := os.ReadFile(filepath.Join(dir, "owner.json"))
+		var made owner
+		if err != nil || json.Unmarshal(data, &made) != nil || made.Check != check {
+			continue
+		}
+		if _, ours := l.building.Load(dir); ours {
+			return made.Prefix, true
+		}
+		results, readErr := (&guest.Follower{Root: dir}).Read(context.Background(), hostGuest{})
+		if building(dir, made, results) && (readErr != nil || results.Environment["snapshot"] != "" && results.Environment["restored"] != "yes" && results.Environment["restored"] != "kept") {
+			return made.Prefix, true
+		}
+	}
+	return "", false
 }
 
 // PlanPutBack reads the before snapshot and currently active versions for
 // a check without locking or changing the prefix.
 func (l *Local) PlanPutBack(ctx context.Context, check string) (buildenv.PutBackPlan, bool, error) {
-	for _, left := range l.left() {
-		if left.owner.Check != check || left.snapshot == "" || left.restored {
-			continue
-		}
-		if left.unreadable != nil {
-			return buildenv.PutBackPlan{}, true, left.unreadable
-		}
-		before, err := os.ReadFile(filepath.Join(left.dir, "before.txt"))
-		if err != nil {
-			return buildenv.PutBackPlan{}, true, err
-		}
-		active, err := l.command(ctx, nil, filepath.Join(left.owner.Prefix, "bin", "port"), "-q", "installed", "active")
-		if err != nil {
-			return buildenv.PutBackPlan{}, true, err
-		}
-		previous, current := activePorts(string(before)), activePorts(string(active))
-		ports := slices.Sorted(maps.Keys(previous))
-		for port := range current {
-			if !slices.Contains(ports, port) {
-				ports = append(ports, port)
-			}
-		}
-		slices.Sort(ports)
-		plan := buildenv.PutBackPlan{Place: left.owner.Prefix, Snapshot: left.snapshot}
-		for _, port := range ports {
-			if previous[port] != current[port] {
-				plan.Changes = append(plan.Changes, buildenv.PutBackChange{Port: port, Current: strings.TrimPrefix(current[port], "@"), Previous: strings.TrimPrefix(previous[port], "@")})
-			}
-		}
-		return plan, true, nil
+	selected := l.selectPutBack(check)
+	if selected.building != nil {
+		return buildenv.PutBackPlan{}, true, fmt.Errorf("%s is building in %s now, and puts it back when it ends; dockhand cancel %s stops it, putting it back", check, selected.place, check)
 	}
-	return buildenv.PutBackPlan{}, false, nil
+	if selected.left == nil {
+		return buildenv.PutBackPlan{}, false, nil
+	}
+	left := selected.left
+	if left.unreadable != nil {
+		return buildenv.PutBackPlan{}, true, buildenv.NeedsAttention("%s", unreadableWords(check, left.owner.Prefix, left.dir, left.unreadable))
+	}
+	before, err := os.ReadFile(filepath.Join(left.dir, "before.txt"))
+	if err != nil {
+		return buildenv.PutBackPlan{}, true, err
+	}
+	active, err := l.command(ctx, nil, filepath.Join(left.owner.Prefix, "bin", "port"), "-q", "installed", "active")
+	if err != nil {
+		return buildenv.PutBackPlan{}, true, err
+	}
+	previous, current := activePorts(string(before)), activePorts(string(active))
+	ports := slices.Sorted(maps.Keys(previous))
+	for port := range current {
+		if !slices.Contains(ports, port) {
+			ports = append(ports, port)
+		}
+	}
+	slices.Sort(ports)
+	plan := buildenv.PutBackPlan{Place: left.owner.Prefix, Snapshot: left.snapshot}
+	for _, port := range ports {
+		if previous[port] != current[port] {
+			plan.Changes = append(plan.Changes, buildenv.PutBackChange{Port: port, Current: strings.TrimPrefix(current[port], "@"), Previous: strings.TrimPrefix(previous[port], "@")})
+		}
+	}
+	return plan, true, nil
 }
 
 var _ buildenv.PutBackPlanner = (*Local)(nil)

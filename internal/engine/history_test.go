@@ -95,6 +95,8 @@ func TestAHistoryChangeStoppedBeforeItsGitChangeIsAbandoned(t *testing.T) {
 	require.Equal(t, model.CheckpointAbandoned, checkpointNumbered(t, restarted, 1).State)
 	_, _, err = restarted.Restore(t.Context(), "tidy-1")
 	require.ErrorContains(t, err, "tidy-1 was not applied because dockhand stopped before making changes; there is nothing to restore")
+	_, planErr := restarted.PlanUndo(t.Context(), "tidy-1")
+	require.EqualError(t, planErr, err.Error())
 
 	testsupport.WriteFiles(t, f.upstream, map[string]string{"devel/other/Portfile": "name other\n"})
 	testsupport.Git(t, f.upstream, "add", "devel/other/Portfile")
@@ -554,6 +556,8 @@ func TestARestoreOfAnUnresolvedCheckpointIsRefused(t *testing.T) {
 	e.stopAt = nil
 	_, _, err = e.Restore(t.Context(), "tidy-1")
 	require.ErrorContains(t, err, "tidy-1 has an unresolved state: "+branch.Name+" is not checked out, so dockhand cannot determine whether the operation was applied")
+	_, planErr := e.PlanUndo(t.Context(), "tidy-1")
+	require.EqualError(t, planErr, err.Error())
 	require.Equal(t, model.CheckpointPrepared, checkpointNumbered(t, e, 1).State)
 }
 

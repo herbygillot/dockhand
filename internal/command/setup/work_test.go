@@ -88,6 +88,11 @@ func TestAdoptPlanReadsLocalBranchWithoutChangingIt(t *testing.T) {
 	require.Contains(t, out, "Nothing was adopted (--plan).")
 	require.Equal(t, before, testsupport.Git(t, w.Clone, "show-ref"), "plan leaves Git refs unchanged")
 	require.NotContains(t, out, "already tracks")
+	_, _, err = cmdtest.Dockhand(t, "adopt", "plan-jq")
+	require.NoError(t, err)
+	out, _, err = cmdtest.Dockhand(t, "adopt", "plan-jq", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "Already tracks plan-jq:")
 }
 
 func TestAdoptPullRequestPlanUsesForgeReadAndFetchesNothing(t *testing.T) {
@@ -110,6 +115,40 @@ func TestAdoptPullRequestPlanUsesForgeReadAndFetchesNothing(t *testing.T) {
 	require.Contains(t, out, "Nothing was adopted (--plan).")
 	require.Equal(t, refs, testsupport.Git(t, w.Clone, "show-ref"), "plan does not fetch refs or create a branch")
 	require.Equal(t, 1, g.Observed, "plan reads the forge once")
+
+	testsupport.Git(t, w.Upstream, "update-ref", "refs/pull/35174/head", "master")
+	_, _, err = cmdtest.Dockhand(t, "adopt", "--pr", "35174")
+	require.NoError(t, err)
+	out, _, err = cmdtest.Dockhand(t, "adopt", "--pr", "35174", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "Already tracks pr-35174.")
+	tracked, err := cmdtest.JSONOf(t, "adopt", "--pr", "35174", "--plan")
+	require.NoError(t, err)
+	require.Equal(t, "pr-35174", cmdtest.Dig(t, tracked.Result, "Branch"))
+	require.Equal(t, true, cmdtest.Dig(t, tracked.Result, "Already"))
+}
+
+func TestAdoptPullRequestPlanSharesLocalRefusalWithApply(t *testing.T) {
+	for _, blocker := range []string{"branch", "directory"} {
+		t.Run(blocker, func(t *testing.T) {
+			t.Parallel()
+			w := cmdtest.NewWorld(t)
+			g := cmdtest.WithGitHub(t, w)
+			g.Theirs = map[int]forge.PullRequest{35175: {
+				Ref:            forge.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 35175},
+				HeadRepository: "ada/macports-ports", HeadBranch: "review", BaseBranch: "master", RemoteHead: model.ObjectID(strings.Repeat("a", 40)),
+				Commits: 1, State: forge.PullRequestOpen,
+			}}
+			if blocker == "branch" {
+				testsupport.Git(t, w.Clone, "branch", "pr-35175")
+			} else {
+				require.NoError(t, os.MkdirAll(filepath.Join(w.Home, "Source", "macports-branches", "pr-35175"), 0o755))
+			}
+			_, _, planErr := cmdtest.Dockhand(t, "adopt", "--pr", "35175", "--plan")
+			_, _, applyErr := cmdtest.Dockhand(t, "adopt", "--pr", "35175")
+			require.EqualError(t, planErr, applyErr.Error())
+		})
+	}
 }
 
 func TestSetupRemembersAChosenWorktreesDirectory(t *testing.T) {

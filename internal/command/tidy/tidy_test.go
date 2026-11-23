@@ -9,10 +9,26 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
+	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
+
+func TestUndoCheckPlanNamesTheActivePortComparison(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	writeUndoPlan(&out, engine.UndoPlan{
+		Run: &model.Run{Number: 12},
+		Prefixes: []buildenv.PutBackPlan{{Place: "/opt/local", Snapshot: "7", Changes: []buildenv.PutBackChange{
+			{Port: "jq", Current: "1.8.1_0", Previous: "1.7.1_0"},
+			{Port: "zlib", Current: "1.4.0_0"},
+		}}},
+	})
+	require.Equal(t, "check-12 · active ports that differ from the snapshot\n  /opt/local · MacPorts snapshot 7\n    jq @1.8.1_0 → @1.7.1_0\n    deactivate zlib @1.4.0_0\nNo prefix or store record was changed.\nNothing was restored (--plan).\n", out.String())
+}
 
 func TestTidyAppliesDockhandsOwnEditsAndUndoPutsThemBack(t *testing.T) {
 	t.Parallel()
@@ -68,6 +84,35 @@ func TestUndoPlanShowsCheckpointWithoutMovingGitRefs(t *testing.T) {
 	require.Contains(t, out, "Restore history")
 	require.Contains(t, out, "No Git ref, index, file, or store record was changed.")
 	require.Contains(t, out, "Nothing was restored (--plan).")
+	require.Equal(t, refs, testsupport.Git(t, dir, "show-ref"))
+}
+
+func TestUndoPlanNamesRebaseFilesAndItsConditionalRefusal(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	testsupport.Git(t, dir, "commit", "-q", "-am", "jq: update to 1.8.1")
+	testsupport.WriteFiles(t, w.Upstream, map[string]string{"devel/other/Portfile": "name other\n"})
+	testsupport.Git(t, w.Upstream, "add", "devel/other/Portfile")
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-m", "other: add port")
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
+	_, _, err = cmdtest.Dockhand(t, "start", "master-refresh")
+	require.NoError(t, err)
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "rebase", "--yes")
+	require.NoError(t, err)
+	refs := testsupport.Git(t, dir, "show-ref")
+	out, _, err := cmdtest.Dockhand(t, "undo", "rebase-1", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "Restore history and files to")
+	require.Contains(t, out, "An uncommitted change to a file master changed would stop restoration.")
 	require.Equal(t, refs, testsupport.Git(t, dir, "show-ref"))
 }
 

@@ -253,6 +253,45 @@ func TestCleanDeleteSelectorsForgetOpenBranchWhoseChangesAreOnMaster(t *testing.
 	}
 }
 
+func TestCleanPortSelectorFindsMergedBranchWhoseGitBranchWasDeleted(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	testsupport.Git(t, dir, "commit", "-q", "-am", "jq: update to 1.8.1")
+	_, _, err = cmdtest.Dockhand(t, "tidy")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	portfile := testsupport.Git(t, dir, "show", "HEAD:textproc/jq/Portfile")
+	testsupport.WriteFiles(t, w.Upstream, map[string]string{"textproc/jq/Portfile": portfile + "\n"})
+	testsupport.Git(t, w.Upstream, "add", "textproc/jq/Portfile")
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-m", "jq: update to 1.8.1")
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
+	_, _, err = cmdtest.Dockhand(t, "start", "master-refresh")
+	require.NoError(t, err)
+	testsupport.Git(t, w.Clone, "worktree", "remove", "--force", dir)
+	testsupport.Git(t, w.Clone, "branch", "-D", "dockhand/jq-update")
+	g.PRs[34901].State = forge.PullRequestMerged
+	_, _, err = cmdtest.Dockhand(t, "status", "--refresh")
+	require.NoError(t, err)
+
+	out, _, err := cmdtest.Dockhand(t, "clean", "--delete", "--plan", "-p", "jq")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq-update · merged")
+	require.Contains(t, out, "Nothing was forgotten (--plan).")
+	out, _, err = cmdtest.Dockhand(t, "clean", "--delete", "--yes", "-p", "jq")
+	require.NoError(t, err)
+	require.Contains(t, out, "Forgot jq-update.")
+}
+
 func TestCleanRefusesWordsAndBranchSelectorTogether(t *testing.T) {
 	t.Parallel()
 	cmdtest.CheckedBranch(t)

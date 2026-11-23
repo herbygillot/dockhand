@@ -52,3 +52,28 @@ func TestPlanAdoptDoesNotWriteStoreOrChangeRefs(t *testing.T) {
 	require.Zero(t, writes.writes)
 	require.Equal(t, refs, testsupport.Git(t, f.clone, "show-ref"))
 }
+
+func TestPlanAdoptUsesTheSameLocalBranchJudgementAsAdopt(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	_, err := e.PlanAdopt(t.Context(), AdoptRequest{Branch: "missing"}, 0)
+	_, applyErr := e.Adopt(t.Context(), AdoptRequest{Branch: "missing"})
+	require.EqualError(t, err, applyErr.Error())
+	require.EqualError(t, err, "there is no local branch missing")
+
+	branch, err := e.Start(t.Context(), StartRequest{Name: "renamed-old"})
+	require.NoError(t, err)
+	head, _, err := e.Repo.Branch(t.Context(), branch.Name)
+	require.NoError(t, err)
+	err = e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		branch.Base = model.ObjectID(head)
+		return tx.UpdateBranch(branch)
+	})
+	require.NoError(t, err)
+	testsupport.Git(t, branch.Worktree, "branch", "-m", "renamed-new")
+	plan, err := e.PlanAdopt(t.Context(), AdoptRequest{Branch: "renamed-new"}, 0)
+	require.NoError(t, err)
+	require.True(t, plan.Already)
+	require.Equal(t, "renamed-old", plan.Renamed)
+}

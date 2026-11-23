@@ -273,6 +273,7 @@ type AdoptRequest struct {
 // the head or master, so their changed-port scope is unknown.
 type AdoptionPlan struct {
 	Branch      string
+	Renamed     string
 	Head        model.ObjectID
 	Base        string
 	Commits     int
@@ -283,69 +284,174 @@ type AdoptionPlan struct {
 	Already     bool
 }
 
-// PlanAdopt reads what adoption would use without fetching, creating a
-// branch/worktree, or writing the store.
-func (e *Engine) PlanAdopt(ctx context.Context, request AdoptRequest, prNumber int) (AdoptionPlan, error) {
-	if prNumber > 0 {
-		observed, err := e.forge().Observe(ctx, pullRequestRef(e.PullRequestRepository(), prNumber))
+type adoptionFront struct {
+	name      string
+	head      string
+	tracked   model.Branch
+	hasRecord bool
+	renamed   model.Branch
+	hasRename bool
+}
+
+// inspectAdoption is the local, read-only front shared by Adopt and its
+// plan: resolve the branch, its record, and any record carried by a Git rename.
+func (e *Engine) inspectAdoption(ctx context.Context, request AdoptRequest) (adoptionFront, error) {
+	front := adoptionFront{name: request.Branch}
+	if front.name == "" {
+		current, err := e.Repo.CurrentBranch(ctx)
 		if err != nil {
-			return AdoptionPlan{}, e.readingPullRequest(prNumber, err)
+			return front, fmt.Errorf("this checkout is not on a branch; name one: dockhand adopt <branch>")
 		}
-		if !observed.Found {
-			return AdoptionPlan{}, fmt.Errorf("couldn't find pull request #%d", prNumber)
-		}
-		pr := observed.PullRequest
-		if pr.State != forge.PullRequestOpen {
-			return AdoptionPlan{}, fmt.Errorf("#%d is %s; only an open pull request can be worked on", prNumber, pr.State)
-		}
-		plan := AdoptionPlan{Branch: fmt.Sprintf("pr-%d", prNumber), Head: pr.RemoteHead, Base: pr.BaseBranch, Commits: pr.Commits, Directory: e.worktreeDirectory(fmt.Sprintf("pr-%d", prNumber)), PullRequest: &pr}
-		return plan, nil
+		front.name = current
 	}
-	name := request.Branch
-	if name == "" {
-		var err error
-		name, err = e.Repo.CurrentBranch(ctx)
-		if err != nil {
-			return AdoptionPlan{}, fmt.Errorf("this checkout is not on a branch; name one: dockhand adopt <branch>")
-		}
+	if front.name == "master" || front.name == "main" {
+		return front, fmt.Errorf("%s is what branches start from; start a branch with dockhand start <name>", front.name)
 	}
-	if name == "master" || name == "main" {
-		return AdoptionPlan{}, fmt.Errorf("%s is what branches start from; start a branch with dockhand start <name>", name)
+	head, _, err := e.Repo.Branch(ctx, front.name)
+	front.head = head
+	if errors.Is(err, git.ErrBranchMissing) {
+		return front, fmt.Errorf("there is no local branch %s", front.name)
 	}
-	head, _, err := e.Repo.Branch(ctx, name)
 	if err != nil {
-		return AdoptionPlan{}, err
-	}
-	master, _, err := e.Repo.Branch(ctx, "master")
-	if err != nil {
-		return AdoptionPlan{}, err
-	}
-	base, err := e.Repo.MergeBase(ctx, head, master)
-	if err != nil {
-		return AdoptionPlan{}, fmt.Errorf("%s shares no history with master: %w", name, err)
-	}
-	commits, scope, err := e.changes(ctx, model.ObjectID(base), head)
-	if err != nil {
-		return AdoptionPlan{}, err
-	}
-	plan := AdoptionPlan{Branch: name, Head: model.ObjectID(head), Base: base, Commits: commits, Ports: scope.PortNames(), ScopeKnown: true, Directory: e.worktreeDirectory(name)}
-	if checkouts, err := e.Repo.Checkouts(ctx, name); err == nil && len(checkouts) > 0 {
-		plan.Directory = checkouts[0]
+		return front, err
 	}
 	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		branch, err := r.BranchNamed(name)
+		branch, err := r.BranchNamed(front.name)
 		if err == nil {
-			plan.Already = true
-			if branch.Worktree != "" {
-				plan.Directory = branch.Worktree
-			}
+			front.tracked, front.hasRecord = branch, true
+			return nil
 		}
 		if errors.Is(err, store.ErrNotFound) {
 			return nil
 		}
 		return err
 	})
-	return plan, err
+	if err != nil {
+		return front, err
+	}
+	if !front.hasRecord {
+		front.renamed, front.hasRename, err = e.renamedFrom(ctx, front.name, front.head)
+		if err != nil {
+			return front, err
+		}
+	}
+	return front, nil
+}
+
+// PlanAdopt reads what adoption would use without fetching, creating a
+// branch/worktree, or writing the store.
+func (e *Engine) PlanAdopt(ctx context.Context, request AdoptRequest, prNumber int) (AdoptionPlan, error) {
+	if prNumber > 0 {
+		front, err := e.inspectPullRequestAdoption(ctx, prNumber)
+		if err != nil {
+			return AdoptionPlan{}, err
+		}
+		pr := front.pr
+		plan := AdoptionPlan{Branch: front.name, Head: pr.RemoteHead, Base: pr.BaseBranch, Commits: pr.Commits, Directory: front.directory, PullRequest: &pr, Already: front.tracked != nil}
+		if front.tracked != nil {
+			plan.Branch, plan.Head = front.tracked.Name, model.ObjectID(front.head)
+			plan.Base = string(front.tracked.Base)
+			if front.head != "" {
+				plan.Commits, _, err = e.changes(ctx, front.tracked.Base, front.head)
+				if err != nil {
+					return AdoptionPlan{}, err
+				}
+			}
+			plan.ScopeKnown = true
+			return plan, nil
+		}
+		return plan, nil
+	}
+	front, err := e.inspectAdoption(ctx, request)
+	if err != nil {
+		return AdoptionPlan{}, err
+	}
+	base := string(front.tracked.Base)
+	already, renamed := front.hasRecord, ""
+	if front.hasRename {
+		base, already, renamed = string(front.renamed.Base), true, front.renamed.ShortName()
+	}
+	if !already {
+		master, _, err := e.Repo.Branch(ctx, "master")
+		if err != nil {
+			return AdoptionPlan{}, err
+		}
+		base, err = e.Repo.MergeBase(ctx, front.head, master)
+		if err != nil {
+			return AdoptionPlan{}, fmt.Errorf("%s shares no history with master: %w", front.name, err)
+		}
+	}
+	commits, scope, err := e.changes(ctx, model.ObjectID(base), front.head)
+	if err != nil {
+		return AdoptionPlan{}, err
+	}
+	plan := AdoptionPlan{Branch: front.name, Renamed: renamed, Head: model.ObjectID(front.head), Base: base, Commits: commits, Ports: scope.PortNames(), ScopeKnown: true, Already: already, Directory: e.worktreeDirectory(front.name)}
+	if front.hasRecord && front.tracked.Worktree != "" {
+		plan.Directory = front.tracked.Worktree
+	} else if front.hasRename && front.renamed.Worktree != "" {
+		plan.Directory = front.renamed.Worktree
+	} else if checkouts, err := e.Repo.Checkouts(ctx, front.name); err == nil && len(checkouts) > 0 {
+		plan.Directory = checkouts[0]
+	}
+	return plan, nil
+}
+
+type pullRequestAdoptionFront struct {
+	name      string
+	directory string
+	pr        forge.PullRequest
+	tracked   *model.Branch
+	head      string
+}
+
+// inspectPullRequestAdoption is the read-only front shared by adoption and
+// its plan. It checks the forge, other records, the local branch name, and
+// the destination directory before either path can fetch or create anything.
+func (e *Engine) inspectPullRequestAdoption(ctx context.Context, number int) (pullRequestAdoptionFront, error) {
+	front := pullRequestAdoptionFront{name: fmt.Sprintf("pr-%d", number)}
+	if err := e.TrackedElsewhere(ctx, number); err != nil {
+		return front, err
+	}
+	observed, err := e.forge().Observe(ctx, pullRequestRef(e.PullRequestRepository(), number))
+	if err != nil {
+		return front, e.readingPullRequest(number, err)
+	}
+	if !observed.Found {
+		return front, fmt.Errorf("couldn't find pull request #%d", number)
+	}
+	front.pr = observed.PullRequest
+	if front.pr.State != forge.PullRequestOpen {
+		return front, fmt.Errorf("#%d is %s; only an open pull request can be worked on", number, front.pr.State)
+	}
+	var tracked []model.Branch
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		tracked, err = r.Branches(store.BranchFilter{})
+		return err
+	}); err != nil {
+		return front, err
+	}
+	for i := range tracked {
+		branch := tracked[i]
+		if branch.PullRequest != nil && branch.PullRequest.Repository == e.PullRequestRepository() && branch.PullRequest.Number == number {
+			front.tracked = &branch
+			if head, _, err := e.Repo.Branch(ctx, branch.Name); err == nil {
+				front.head = head
+			}
+			front.name, front.directory = branch.Name, branch.Worktree
+			return front, nil
+		}
+	}
+	if _, _, err := e.Repo.Branch(ctx, front.name); err == nil {
+		return front, fmt.Errorf("%w: %s; remove it or rename it, then adopt again", git.ErrBranchExists, front.name)
+	} else if !errors.Is(err, git.ErrBranchMissing) {
+		return front, err
+	}
+	front.directory = e.worktreeDirectory(front.name)
+	if exists(front.directory) {
+		return front, fmt.Errorf("%s already exists; remove it, then adopt again", front.directory)
+	}
+	return front, nil
 }
 
 // Adoption reports what adopt found.
@@ -371,40 +477,14 @@ type Adoption struct {
 // Adopt tracks a branch dockhand did not create, as it stands: nothing is
 // moved or rewritten. Its base is where it leaves freshly fetched master.
 func (e *Engine) Adopt(ctx context.Context, request AdoptRequest) (Adoption, error) {
-	name := request.Branch
-	if name == "" {
-		current, err := e.Repo.CurrentBranch(ctx)
-		if err != nil {
-			return Adoption{}, fmt.Errorf("this checkout is not on a branch; name one: dockhand adopt <branch>")
-		}
-		name = current
-	}
-	if name == "master" || name == "main" {
-		return Adoption{}, fmt.Errorf("%s is what branches start from; start a branch with dockhand start <name>", name)
-	}
-	head, _, err := e.Repo.Branch(ctx, name)
-	if errors.Is(err, git.ErrBranchMissing) {
-		return Adoption{}, fmt.Errorf("there is no local branch %s", name)
-	}
+	front, err := e.inspectAdoption(ctx, request)
 	if err != nil {
 		return Adoption{}, err
 	}
+	name, head := front.name, front.head
 	var adoption Adoption
-	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		existing, err := r.BranchNamed(name)
-		if err == nil {
-			adoption.Branch, adoption.Already = existing, true
-			return nil
-		}
-		if errors.Is(err, store.ErrNotFound) {
-			return nil
-		}
-		return err
-	})
-	if err != nil {
-		return adoption, err
-	}
-	if adoption.Already {
+	if front.hasRecord {
+		adoption.Branch, adoption.Already = front.tracked, true
 		if adoption.Commits, adoption.Scope, err = e.changes(ctx, adoption.Branch.Base, head); err != nil {
 			return adoption, err
 		}
@@ -415,15 +495,12 @@ func (e *Engine) Adopt(ctx context.Context, request AdoptRequest) (Adoption, err
 		adoption.Uncommitted = e.uncommittedPorts(ctx, adoption.Branch, adoption.Scope)
 		return adoption, nil
 	}
-	if renamed, ok, err := e.renamedFrom(ctx, name, head); err != nil || ok {
-		if err != nil {
+	if front.hasRename {
+		adoption.Renamed = front.renamed.Name
+		if adoption.Commits, adoption.Scope, err = e.changes(ctx, front.renamed.Base, head); err != nil {
 			return adoption, err
 		}
-		adoption.Renamed = renamed.Name
-		if adoption.Commits, adoption.Scope, err = e.changes(ctx, renamed.Base, head); err != nil {
-			return adoption, err
-		}
-		adoption.Branch, err = e.carryRename(ctx, renamed, name)
+		adoption.Branch, err = e.carryRename(ctx, front.renamed, name)
 		return adoption, err
 	}
 
@@ -1019,45 +1096,21 @@ type PullRequestAdoption struct {
 // already, as Review's fetch left it.
 func (e *Engine) AdoptPullRequest(ctx context.Context, number int, at model.ObjectID) (PullRequestAdoption, error) {
 	var adoption PullRequestAdoption
-	if err := e.TrackedElsewhere(ctx, number); err != nil {
-		return adoption, err
-	}
-	ref := pullRequestRef(e.PullRequestRepository(), number)
-	observed, err := e.forge().Observe(ctx, ref)
+	front, err := e.inspectPullRequestAdoption(ctx, number)
 	if err != nil {
-		return adoption, e.readingPullRequest(number, err)
-	}
-	pr := observed.PullRequest
-	adoption.Title, adoption.Author, adoption.MaintainerCanModify = pr.Title, pr.Author, pr.MaintainerCanModify
-	if pr.State != forge.PullRequestOpen {
-		return adoption, fmt.Errorf("#%d is %s; only an open pull request can be worked on", number, pr.State)
-	}
-	var tracked []model.Branch
-	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		tracked, err = r.Branches(store.BranchFilter{})
-		return err
-	}); err != nil {
 		return adoption, err
 	}
-	for _, branch := range tracked {
-		if branch.PullRequest != nil && branch.PullRequest.Repository == e.PullRequestRepository() && branch.PullRequest.Number == number {
-			adoption.Branch, adoption.Already = branch, true
-			if head, _, err := e.Repo.Branch(ctx, branch.Name); err == nil {
-				adoption.Head = model.ObjectID(head)
-				adoption.Commits, adoption.Scope, err = e.changes(ctx, branch.Base, head)
-				return adoption, err
-			}
-			return adoption, nil
+	pr := front.pr
+	adoption.Title, adoption.Author, adoption.MaintainerCanModify = pr.Title, pr.Author, pr.MaintainerCanModify
+	if front.tracked != nil {
+		adoption.Branch, adoption.Already = *front.tracked, true
+		if front.head != "" {
+			adoption.Head = model.ObjectID(front.head)
+			adoption.Commits, adoption.Scope, err = e.changes(ctx, front.tracked.Base, front.head)
 		}
+		return adoption, err
 	}
-	name := fmt.Sprintf("pr-%d", number)
-	if _, _, err := e.Repo.Branch(ctx, name); err == nil {
-		return adoption, fmt.Errorf("%w: %s; remove it or rename it, then adopt again", git.ErrBranchExists, name)
-	}
-	directory := e.worktreeDirectory(name)
-	if exists(directory) {
-		return adoption, fmt.Errorf("%s already exists; remove it, then adopt again", directory)
-	}
+	name, directory := front.name, front.directory
 	var head string
 	if at != "" {
 		if head, err = e.Repo.Resolve(ctx, string(at)+"^{commit}"); err != nil || head != string(at) {
@@ -1253,7 +1306,30 @@ func (e *Engine) BranchesChangingAny(ctx context.Context, port string) ([]model.
 			continue
 		}
 		head, _, err := e.Repo.Branch(ctx, branch.Name)
+		if errors.Is(err, git.ErrBranchMissing) {
+			if slices.Contains(branch.Ports, port) || branch.Request != nil && slices.ContainsFunc(branch.Request.Targets, func(target model.RequestTarget) bool { return target.Port == port }) {
+				found = append(found, branch)
+				continue
+			}
+			var records []model.ChangeRecord
+			if readErr := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+				var readErr error
+				records, readErr = r.ChangeRecords(store.AssessmentFilter{Branch: branch.ID})
+				return readErr
+			}); readErr != nil {
+				return nil, readErr
+			}
+			if slices.ContainsFunc(records, func(record model.ChangeRecord) bool {
+				return slices.ContainsFunc(record.Ports, func(change model.SubportChange) bool { return change.Port == port })
+			}) {
+				found = append(found, branch)
+			}
+			continue
+		}
 		if err != nil {
+			return nil, fmt.Errorf("could not read branch %s while looking for changes to %s: %w", branch.ShortName(), port, err)
+		}
+		if head == "" {
 			continue
 		}
 		paths, err := e.Repo.ChangedPaths(ctx, string(branch.Base), head)

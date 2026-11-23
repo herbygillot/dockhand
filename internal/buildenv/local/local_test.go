@@ -381,6 +381,22 @@ func TestPlanPutBackReadsRecordedAndActivePortsWithoutChangingThem(t *testing.T)
 	require.DirExists(t, left)
 }
 
+func TestPlanPutBackMatchesABuildingCheck(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	dir := filepath.Join(root, localDirectory+"building")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	data, err := json.Marshal(owner{PID: os.Getpid(), Check: "check-7", Prefix: "/fake-prefix"})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "owner.json"), data, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "results.json"), []byte(`{"protocol":2,"state":"running","environment":{"snapshot":"7"}}`), 0o644))
+	l := &Local{Temp: root}
+	_, _, planErr := l.PlanPutBack(t.Context(), "check-7")
+	_, _, putBackErr := l.PutBack(t.Context(), "check-7", func(string) {})
+	require.EqualError(t, planErr, putBackErr.Error())
+	require.ErrorContains(t, planErr, "puts it back when it ends")
+}
+
 // Where dockhand's put-back can't run, port restore is offered as what it
 // is, the ports requested before, with the rest that were active from the
 // check's record.
@@ -582,6 +598,9 @@ func TestAnUnreadableRecordRefusesTheNextCheckThere(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(directory, "owner.json"), data, 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(directory, "results.json"), []byte("{corrupt final result"), 0644))
 	build := &fakeBuild{}
+	_, _, planErr := (&Local{Temp: root}).PlanPutBack(t.Context(), "check-7")
+	_, _, putBackErr := (&Local{Temp: root}).PutBack(t.Context(), "check-7", func(string) {})
+	require.EqualError(t, planErr, putBackErr.Error())
 	err = (&Local{Temp: root}).restoreLeft(t.Context(), "/fake-prefix", build)
 	_, retained := os.Stat(before)
 	require.NoError(t, retained)

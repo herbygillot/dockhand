@@ -367,6 +367,7 @@ scripts, and a new head from the author asks again.`,
 				if err != nil {
 					return err
 				}
+				streams.Emit(proposal)
 				writeAdoptPlan(streams.Prose(), proposal, s.Places())
 				return nil
 			}
@@ -413,9 +414,21 @@ scripts, and a new head from the author asks again.`,
 func writeAdoptPlan(out io.Writer, plan engine.AdoptionPlan, places config.Places) {
 	if pr := plan.PullRequest; pr != nil {
 		fmt.Fprintf(out, "#%d · %q by @%s\n", pr.Ref.Number, pr.Title, pr.Author)
-		fmt.Fprintf(out, "Would fetch %s:%s and master; track as %s.\n", pr.HeadRepository, pr.HeadBranch, plan.Branch)
+		if plan.Already {
+			fmt.Fprintf(out, "Already tracks %s.\n", plan.Branch)
+		} else {
+			fmt.Fprintf(out, "Would fetch %s:%s and master; track as %s.\n", pr.HeadRepository, pr.HeadBranch, plan.Branch)
+		}
 		fmt.Fprintf(out, "Head %s · %s · base %s.\n", plan.Head.Short(), prose.Plural(plan.Commits, "commit"), plan.Base)
-		fmt.Fprintln(out, "Changed ports are unknown without fetching the pull request head.")
+		if plan.ScopeKnown {
+			ports := "no ports"
+			if len(plan.Ports) > 0 {
+				ports = prose.Few(plan.Ports, 5, "port")
+			}
+			fmt.Fprintf(out, "Changes %s.\n", ports)
+		} else {
+			fmt.Fprintln(out, "Changed ports are unknown without fetching the pull request head.")
+		}
 		fmt.Fprintf(out, "Directory: %s\n", places.Tilde(plan.Directory))
 		fmt.Fprintln(out, "No head was fetched, and no Git ref, worktree, or store record was created or written.")
 		fmt.Fprintln(out, "Nothing was adopted (--plan).")
@@ -429,7 +442,11 @@ func writeAdoptPlan(out io.Writer, plan engine.AdoptionPlan, places config.Place
 	if len(plan.Ports) > 0 {
 		ports = strings.Join(plan.Ports, ", ")
 	}
-	fmt.Fprintf(out, "%s %s: %s above master %s, changing %s.\n", state, plan.Branch, prose.Plural(plan.Commits, "commit"), model.ObjectID(plan.Base).Short(), ports)
+	if plan.Renamed != "" {
+		fmt.Fprintf(out, "%s %s (renamed from %s): %s above master %s as last fetched, changing %s.\n", state, plan.Branch, plan.Renamed, prose.Plural(plan.Commits, "commit"), model.ObjectID(plan.Base).Short(), ports)
+	} else {
+		fmt.Fprintf(out, "%s %s: %s above master %s as last fetched, changing %s.\n", state, plan.Branch, prose.Plural(plan.Commits, "commit"), model.ObjectID(plan.Base).Short(), ports)
+	}
 	fmt.Fprintf(out, "Directory: %s\n", places.Tilde(plan.Directory))
 	fmt.Fprintln(out, "No Git ref, worktree, or store record was created or written.")
 	fmt.Fprintln(out, "Nothing was adopted (--plan).")

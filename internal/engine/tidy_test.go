@@ -77,6 +77,8 @@ func TestTidyCommitsAnUpdateUnambiguouslyAndRestoreUndoesIt(t *testing.T) {
 	require.Equal(t, "M textproc/jq/Portfile", testsupport.Git(t, branch.Worktree, "status", "--porcelain"), "the edit reads as uncommitted again")
 	_, _, err = e.Restore(t.Context(), "tidy-1")
 	require.ErrorContains(t, err, "already restored")
+	_, planErr := e.PlanUndo(t.Context(), "tidy-1")
+	require.EqualError(t, planErr, err.Error())
 }
 
 func TestTidySquashesCorrectionsAndKeepsTheirTrailers(t *testing.T) {
@@ -179,6 +181,8 @@ func TestTidyAsksWhatItCannotKnow(t *testing.T) {
 	commitAs(t, dir, "Ada ada@example.org", "jq: another note")
 	_, _, err = e.Restore(t.Context(), "tidy-1")
 	require.ErrorContains(t, err, "has moved on since tidy-1")
+	_, planErr := e.PlanUndo(t.Context(), "tidy-1")
+	require.EqualError(t, planErr, err.Error())
 	_, _, err = e.Restore(t.Context(), "tidy-9")
 	require.ErrorContains(t, err, "no checkpoint tidy-9")
 
@@ -234,6 +238,8 @@ func TestRestorePutsTheStagedVersionBack(t *testing.T) {
 	testsupport.Git(t, branch.Worktree, "add", "textproc/jq/Portfile")
 	_, _, err = e.Restore(t.Context(), tidied.Checkpoint.Name())
 	require.ErrorContains(t, err, "dockhand/jq-update has changes staged after "+tidied.Checkpoint.Name())
+	_, planErr := e.PlanUndo(t.Context(), tidied.Checkpoint.Name())
+	require.EqualError(t, planErr, err.Error())
 	testsupport.Git(t, branch.Worktree, "reset", "-q")
 	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# working version\n"})
 

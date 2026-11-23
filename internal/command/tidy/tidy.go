@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -291,20 +292,25 @@ func showUndoPlan(ctx context.Context, e *engine.Engine, streams term.Streams, n
 		return err
 	}
 	streams.Emit(proposal)
-	out := streams.Prose()
+	writeUndoPlan(streams.Prose(), proposal)
+	return nil
+}
+
+func writeUndoPlan(out io.Writer, proposal engine.UndoPlan) {
 	if proposal.Checkpoint != nil {
 		checkpoint := proposal.Checkpoint
 		fmt.Fprintf(out, "%s · %s\n", proposal.Branch.ShortName(), checkpoint.Name())
 		if checkpoint.Kind == model.CheckpointRebase {
 			fmt.Fprintf(out, "Restore history and files to %s, on master %s again.\n", checkpoint.Before.Short(), proposal.Branch.Base.Short())
+			fmt.Fprintln(out, "An uncommitted change to a file master changed would stop restoration.")
 		} else {
 			fmt.Fprintf(out, "Restore history to %s. The files are unchanged.\n", checkpoint.Before.Short())
 		}
 		fmt.Fprintln(out, "No Git ref, index, file, or store record was changed.")
 		fmt.Fprintln(out, "Nothing was restored (--plan).")
-		return nil
+		return
 	}
-	fmt.Fprintf(out, "%s · prefix changes left by the check\n", proposal.Run.Name())
+	fmt.Fprintf(out, "%s · active ports that differ from the snapshot\n", proposal.Run.Name())
 	for _, prefix := range proposal.Prefixes {
 		fmt.Fprintf(out, "  %s · MacPorts snapshot %s\n", prefix.Place, prefix.Snapshot)
 		for _, change := range prefix.Changes {
@@ -317,7 +323,6 @@ func showUndoPlan(ctx context.Context, e *engine.Engine, streams term.Streams, n
 	}
 	fmt.Fprintln(out, "No prefix or store record was changed.")
 	fmt.Fprintln(out, "Nothing was restored (--plan).")
-	return nil
 }
 
 // putBack puts back what a check changed of the person's own and left,

@@ -53,5 +53,8 @@ func (e *Engine) PlanUndo(ctx context.Context, name string) (UndoPlan, error) {
 	if err != nil {
 		return UndoPlan{}, err
 	}
+	if _, err := e.restoreFront(ctx, checkpoint, branch, false); err != nil {
+		return UndoPlan{}, err
+	}
 	return UndoPlan{Checkpoint: &checkpoint, Branch: branch}, nil
 }

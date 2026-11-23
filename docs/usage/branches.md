@@ -154,10 +154,13 @@ dockhand status -b my-jq-fix
 ```
 
 Add `--plan` to inspect what adoption would track without fetching or
-recording it. For a pull request, the plan reads forge metadata and shows the
-reported head, commit count, and base; it cannot know the changed ports
-without fetching the head. The ordinary adoption command fetches the needed
-Git objects when it runs.
+recording it. For a local branch, it reads the branch and any existing record,
+and counts commits against the master last fetched; it does not fetch. A branch
+already tracked, including one renamed with Git, is identified as such. For a
+pull request, the plan reads forge metadata and shows the reported head,
+commit count, and base; it cannot know changed ports without fetching the
+head. It also checks whether another record, a local branch, or the destination
+directory already prevents adoption. `--json` includes the plan result.
 
 With no argument, `adopt` tracks the branch checked out here. It finds the base
 where the branch leaves freshly fetched master; it does not rewrite your commits
@@ -261,9 +264,13 @@ dockhand undo tidy-3
 ```
 
 Add `--plan` to either form to read the checkpoint and see the history (and,
-for a rebase, files and base) it would restore. A check name such as
-`check-12 --plan` reads the saved MacPorts snapshot and active ports, then
-shows the versions it would reactivate or deactivate. It changes nothing.
+for a rebase, files and base) it would restore. It checks the same checkpoint
+state, branch head, and staged index as undo; a refused restore is refused by
+the plan too. For a rebase, an uncommitted change to a file master changed can
+still stop restoration. A check name such as `check-12 --plan` reads the saved
+MacPorts snapshot and active ports, then shows the active ports that differ
+from the snapshot. A check still building is put back when it ends. The plan
+changes nothing.
 
 A named checkpoint already identifies its branch, so do not add `-b` to that
 form. Undo requires the branch still to match the history the operation left;
