@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/filelock"
 	"github.com/herbygillot/dockhand/internal/procid"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 func TestMain(m *testing.M) {
@@ -38,10 +40,41 @@ func (l lockAt) Hold(ctx context.Context, within time.Duration) (func(), error) 
 	return func() { _ = filelock.Release(file) }, nil
 }
 
+// output is a build's output as the test reads it while the build writes.
+type output struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (o *output) Write(p []byte) (int, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.buf.Write(p)
+}
+
+func (o *output) String() string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.buf.String()
+}
+
 // launched starts command through the starter, as a launcher does: holding
 // the attempt's lock, handing it on, and letting go of its own file once
 // the starter is forked.
-func launched(t *testing.T, command ...string) (*exec.Cmd, string, lockAt, *bytes.Buffer) {
+func launched(t *testing.T, command ...string) (*exec.Cmd, string, lockAt, *output) {
+	t.Helper()
+	return launchedWith(t, false, command...)
+}
+
+// launchedWith is launched, with the lock handed to the command as its
+// standard input where stdinLock, as a root build's sudo is.
+func launchedWith(t *testing.T, stdinLock bool, command ...string) (*exec.Cmd, string, lockAt, *output) {
+	t.Helper()
+	return launchedSpec(t, func(spec *Spec) { spec.StdinLock = stdinLock }, command...)
+}
+
+// launchedSpec is launched, with the spec changed by change first.
+func launchedSpec(t *testing.T, change func(*Spec), command ...string) (*exec.Cmd, string, lockAt, *output) {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(t.TempDir(), "attempt.lock")
@@ -49,8 +82,10 @@ func launched(t *testing.T, command ...string) (*exec.Cmd, string, lockAt, *byte
 	require.NoError(t, err)
 	program, err := Self()
 	require.NoError(t, err)
-	var out bytes.Buffer
-	started, err := Start(Spec{Program: program, Directory: dir, Signal: syscall.SIGTERM, Grace: 2 * time.Second, Lock: file, Command: command, Stdout: &out, Stderr: &out})
+	var out output
+	spec := Spec{Program: program, Directory: dir, Signal: syscall.SIGTERM, Grace: 2 * time.Second, Lock: file, Command: command, Stdout: &out, Stderr: &out}
+	change(&spec)
+	started, err := Start(spec)
 	require.NoError(t, err)
 	require.NoError(t, file.Close(), "the launcher lets go; the starter holds it")
 	t.Cleanup(func() {
@@ -261,4 +296,106 @@ func TestAStopReadsTheRecordAgainOnceItHasTheLock(t *testing.T) {
 	err = Stop(t.Context(), dir, hook, time.Second)
 	require.NoError(t, syscall.Kill(-pid, 0), "its child runs still, unsignalled")
 	require.ErrorContains(t, err, "process group "+strconv.Itoa(pid)+" still has processes")
+}
+
+// A root build's command is handed the attempt's locked file as its
+// standard input, through a sudo that leaves it as it came: the command
+// reads that its standard input is the lock's file, and holds the lock
+// for as long as it lives, after the starter has ended; free once it has
+// (the lifecycle design's rule 4).
+func TestARootBuildIsHandedTheLockAsItsStandardInput(t *testing.T) {
+	t.Parallel()
+	sudo := filepath.Join(t.TempDir(), "sudo")
+	testsupport.WriteExecutable(t, sudo, "#!/bin/sh\n[ \"$1\" = -n ] && shift\nexec \"$@\"\n")
+	report := filepath.Join(t.TempDir(), "stdin")
+	release := filepath.Join(t.TempDir(), "release")
+	started, _, lock, out := launchedWith(t, true, sudo, "-n", "/bin/sh", "-c",
+		"/usr/bin/stat -f '%d %i' > "+report+".tmp; mv "+report+".tmp "+report+"; (while [ ! -e "+release+" ]; do sleep 0.05; done) <&0 >/dev/null 2>&1 &")
+	require.Eventually(t, func() bool { _, err := os.Stat(report); return err == nil }, 10*time.Second, 10*time.Millisecond, "%s", out)
+	said, err := os.ReadFile(report)
+	require.NoError(t, err)
+	var held syscall.Stat_t
+	require.NoError(t, syscall.Stat(string(lock), &held))
+	require.Equal(t, fmt.Sprintf("%d %d", held.Dev, held.Ino), strings.TrimSpace(string(said)), "the command's standard input is the lock's file")
+	_ = started.Wait()
+	_, err = lock.Hold(t.Context(), 200*time.Millisecond)
+	require.Error(t, err, "the build's own child kept its standard input, and holds the lock after the starter ended")
+	require.NoError(t, os.WriteFile(release, nil, 0o644))
+	unlock, err := lock.Hold(t.Context(), 10*time.Second)
+	require.NoError(t, err, "free once it has ended")
+	unlock()
+}
+
+// rootStandIns are a sudo that ignores SIGTERM, as a root sudo this process
+// can't signal is, for the starter's purpose, and passes its standard input
+// on, and a root stop that logs what it was asked and sends it as this
+// user: the starter's sequence for a root build, without root.
+func rootStandIns(t *testing.T) (sudo, rootStop, asked string) {
+	t.Helper()
+	dir := t.TempDir()
+	sudo, rootStop, asked = filepath.Join(dir, "sudo"), filepath.Join(dir, "root-stop"), filepath.Join(dir, "asked")
+	testsupport.WriteExecutable(t, sudo, "#!/bin/sh\n[ \"$1\" = -n ] && shift\ntrap '' TERM\n\"$@\"\n")
+	testsupport.WriteExecutable(t, rootStop, "#!/bin/sh\n[ \"$1\" = --stop ] || exit 2\necho \"$2 $3 $4\" >> "+asked+"\n"+
+		"case $3 in group) /bin/kill -$2 -- -$4 ;; *) /bin/kill -$2 $4 ;; esac\n")
+	return sudo, rootStop, asked
+}
+
+// guestSays is a stand-in guest's script: it records its PID in the
+// build's results, as the guest's first save does, then waits.
+func guestSays(dir string) string {
+	return "printf '{\"environment\":{\"pid\":\"%s\"}}' $$ > " + filepath.Join(dir, "results.json") + "; exec /bin/sleep 60"
+}
+
+// A root build's sudo that doesn't end on SIGTERM has its guest sent
+// root's SIGKILL by the root stop, by the PID the guest recorded and its
+// start time; once the sudo has ended, the starter's group is sent root's
+// SIGKILL too, and the stop sees the build end (the lifecycle design's
+// rule 4, ruling of 2026-11-23).
+func TestARootBuildsGuestIsKilledByTheRootStop(t *testing.T) {
+	t.Parallel()
+	sudo, rootStop, asked := rootStandIns(t)
+	var dir string
+	started, dir, lock, out := launchedSpec(t, func(spec *Spec) {
+		spec.StdinLock, spec.RootStop = true, []string{rootStop}
+		dir = spec.Directory
+		spec.Command = []string{sudo, "-n", "/bin/sh", "-c", guestSays(dir)}
+	})
+	require.Eventually(t, func() bool { _, err := os.Stat(filepath.Join(dir, "results.json")); return err == nil }, 10*time.Second, 10*time.Millisecond, "%s", out)
+	waited := make(chan error, 1)
+	go func() { waited <- started.Wait() }()
+	require.NoError(t, Stop(t.Context(), dir, lock, 15*time.Second), "%s", out)
+	select {
+	case <-waited:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the starter never ended")
+	}
+	said, err := os.ReadFile(asked)
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimSpace(string(said)), "\n")
+	require.Len(t, lines, 2, "%s", said)
+	require.Regexp(t, `^KILL process [0-9]+$`, lines[0], "the guest, alone: it leads no group of its own")
+	require.Equal(t, "KILL group "+strconv.Itoa(started.Process.Pid), lines[1], "the starter's group, once the sudo ended")
+}
+
+// A root build whose guest recorded nothing, and whose sudo doesn't end,
+// is never signalled past its sudo: the starter stays, keeping the lock,
+// and the stop isn't known.
+func TestARootBuildThatRecordedNothingKeepsItsLock(t *testing.T) {
+	t.Parallel()
+	sudo, rootStop, asked := rootStandIns(t)
+	marker := filepath.Join(t.TempDir(), "started")
+	started, dir, lock, out := launchedSpec(t, func(spec *Spec) {
+		spec.StdinLock, spec.RootStop, spec.Grace = true, []string{rootStop}, 200*time.Millisecond
+	}, sudo, "-n", "/bin/sh", "-c", "touch "+marker+"; exec /bin/sleep 60")
+	// The stand-in sudo ignores SIGTERM once it runs its command, as a root
+	// one can't be sent it.
+	require.Eventually(t, func() bool { _, err := os.Stat(marker); return err == nil }, 10*time.Second, 10*time.Millisecond, "the build started")
+	err := Stop(t.Context(), dir, lock, 2*time.Second)
+	require.ErrorContains(t, err, "was asked to stop", "%s", out)
+	require.NoError(t, started.Process.Signal(syscall.Signal(0)), "the starter stays")
+	_, err = os.Stat(asked)
+	require.ErrorIs(t, err, os.ErrNotExist, "the root stop was never asked: the sudo was this user's to signal, and nothing else was known")
+	require.Eventually(t, func() bool {
+		return strings.Contains(out.String(), "keeps its lock")
+	}, 5*time.Second, 10*time.Millisecond, "the starter said why it stays")
 }

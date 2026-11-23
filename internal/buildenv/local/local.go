@@ -176,6 +176,10 @@ type owner struct {
 	// Root is a build run as root under sudo, which a stop doesn't signal
 	// on a Mac whose sudo hasn't passed the lifecycle design's test.
 	Root bool `json:"root,omitempty"`
+	// RootStop is a root build its starter was handed the root stop for,
+	// its sudo handed the lock (the lifecycle design's rule 4): one an
+	// older dockhand started, or the put-back, isn't stopped as one.
+	RootStop bool `json:"root_stop,omitempty"`
 }
 
 // Execute builds the job's targets in the environment's prefix. A prefix
@@ -215,6 +219,12 @@ func (l *Local) Execute(ctx context.Context, job buildenv.Job, build buildenv.Bu
 	sudo, err := l.asRoot(ctx, prefix, build)
 	if err != nil {
 		return err
+	}
+	// A root build's first launch on this Mac probes its sudo once, for the
+	// stop (the lifecycle design's rule 4): whatever it finds, the build
+	// starts.
+	if len(sudo) > 0 {
+		l.proveRootOnce(ctx, sudo[:len(sudo)-1], filepath.Join(prefix, "bin", macports.TclShell), build.Progress)
 	}
 	build.Progress("staging the revision for " + prefix)
 	dir, err := os.MkdirTemp(l.temp(), localDirectory)
@@ -436,10 +446,7 @@ func (l *Local) asRoot(ctx context.Context, prefix string, build buildenv.Build)
 	if syscall.Access(filepath.Join(prefix, "var", "macports", "registry"), 2) == nil {
 		return nil, nil
 	}
-	sudo := l.sudo
-	if sudo == nil {
-		sudo = []string{"/usr/bin/sudo"}
-	}
+	sudo := l.sudoCommand()
 	// An empty script: the interpreter as root, asked to do nothing.
 	tclsh := filepath.Join(prefix, "bin", macports.TclShell)
 	if _, err := subprocess.Run(ctx, subprocess.Spec{Tool: "sudo", Path: sudo[0], Args: append(slices.Clone(sudo[1:]), "-n", tclsh, os.DevNull), Env: l.Env}); err == nil {
@@ -520,7 +527,7 @@ func (n launchNote) String() string {
 // launch lock, lock, for as long as it lives.
 func (l *Local) start(dir, prefix, check string, sudo []string, lock *os.File) (*localRun, error) {
 	self, _ := procid.Self()
-	owned, err := json.Marshal(owner{PID: os.Getpid(), Start: self.Start, Check: check, Prefix: prefix, Root: len(sudo) > 0})
+	owned, err := json.Marshal(owner{PID: os.Getpid(), Start: self.Start, Check: check, Prefix: prefix, Root: len(sudo) > 0, RootStop: len(sudo) > 0})
 	if err != nil {
 		return nil, err
 	}
@@ -534,8 +541,19 @@ func (l *Local) start(dir, prefix, check string, sudo []string, lock *os.File) (
 	// One command, the prefix's port-tclsh, which one sudoers line names;
 	// the program sets MacPorts' PORTSRC and PATH from its directory.
 	args := append(slices.Clone(sudo), filepath.Join(prefix, "bin", macports.TclShell), filepath.Join(dir, "guest.tcl"), dir)
-	started, err := starter.Start(starter.Spec{Program: l.Starter, Directory: dir, Signal: syscall.SIGTERM, Grace: stopGrace, Lock: lock,
-		Command: args, Env: l.Env, Stdout: log, Stderr: log})
+	// A root build's guest is handed the attempt's lock through its sudo as
+	// its standard input, and given the lock's path to check that it was
+	// (the lifecycle design's rule 4).
+	if len(sudo) > 0 {
+		args = append(args, lock.Name())
+	}
+	spec := starter.Spec{Program: l.Starter, Directory: dir, Signal: syscall.SIGTERM, Grace: stopGrace, Lock: lock,
+		Command: args, StdinLock: len(sudo) > 0, Env: l.Env, Stdout: log, Stderr: log}
+	if len(sudo) > 0 {
+		// The root stop: the same program, as root, only to stop.
+		spec.RootStop = append(slices.Clone(sudo), filepath.Join(prefix, "bin", macports.TclShell), filepath.Join(dir, "guest.tcl"))
+	}
+	started, err := starter.Start(spec)
 	if err != nil {
 		log.Close()
 		return nil, err
@@ -1166,3 +1184,12 @@ func (hostGuest) Close(context.Context) {}
 // Supported says whether the local provider can build here: on a Mac,
 // MacPorts' own.
 func Supported() bool { return runtime.GOOS == "darwin" }
+
+// sudoCommand is the sudo a root build runs under, without -n: the one
+// given, else /usr/bin/sudo.
+func (l *Local) sudoCommand() []string {
+	if l.sudo == nil {
+		return []string{"/usr/bin/sudo"}
+	}
+	return l.sudo
+}

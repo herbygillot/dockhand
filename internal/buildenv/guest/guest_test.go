@@ -998,3 +998,36 @@ func TestTheGuestSaysWhatADeclaredPortInstalls(t *testing.T) {
 	require.Nil(t, results.Targets[0].Declared)
 	require.Nil(t, results.Targets[0].MachOs)
 }
+
+// A root build's guest is given its launch lock's path, and checks first
+// that its standard input is that file, as its sudo should have handed it
+// on: where it isn't, as under a sudo that logs a command's input and puts
+// a pipe there, it says so and ends, having started nothing; where it is,
+// it builds (the lifecycle design's rule 4).
+func TestARootBuildsGuestChecksItHoldsTheLockFirst(t *testing.T) {
+	t.Parallel()
+	for _, held := range []bool{false, true} {
+		root := t.TempDir()
+		lock := filepath.Join(t.TempDir(), "attempt.lock")
+		file, err := os.OpenFile(lock, os.O_CREATE|os.O_RDWR, 0o644)
+		require.NoError(t, err)
+		command := guestCommand(t, root, twoTargets("declared"))
+		command.Args = append(command.Args, root, lock)
+		if held {
+			command.Stdin = file
+		}
+		output, _ := command.CombinedOutput()
+		require.NoError(t, file.Close())
+		results, err := readResults(root)
+		require.NoError(t, err, "%s", output)
+		commands, _ := os.ReadFile(filepath.Join(root, "port.log"))
+		if held {
+			require.NotEqual(t, "refused", results.State, "%s", output)
+			require.NotEmpty(t, commands, "it built")
+			continue
+		}
+		require.Equal(t, "refused", results.State, "a refusal another attempt won't change")
+		require.Contains(t, results.Detail, "dockhand starts no root build under such a sudo")
+		require.Empty(t, commands, "it started nothing")
+	}
+}

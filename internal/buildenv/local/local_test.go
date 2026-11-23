@@ -486,7 +486,7 @@ func TestRootStepsRunThePrefixsPortTclsh(t *testing.T) {
 	<-run.Done()
 	said, err = os.ReadFile(called)
 	require.NoError(t, err)
-	require.Equal(t, "-n "+tclsh+" "+filepath.Join(dir, "guest.tcl")+" "+dir, strings.Split(strings.TrimSpace(string(said)), "\n")[1], "one command, no /usr/bin/env")
+	require.Equal(t, "-n "+tclsh+" "+filepath.Join(dir, "guest.tcl")+" "+dir+" "+lock.Name(), strings.Split(strings.TrimSpace(string(said)), "\n")[1], "one command, no /usr/bin/env, given the lock's path to check it holds it")
 
 	l.terminal = filepath.Join(t.TempDir(), "no-terminal")
 	require.NoError(t, os.WriteFile(answer, []byte("1"), 0o644))
