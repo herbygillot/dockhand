@@ -166,7 +166,7 @@ func TestForgetRefusesOpenBranchOnMasterWithAPullRequest(t *testing.T) {
 	before, err := e.Branch(t.Context(), branch.ID)
 	require.NoError(t, err)
 	_, err = e.PlanForget(t.Context(), branch)
-	require.ErrorContains(t, err, "jq-update's pull request is still open; close it, or archive the branch; dockhand clean --delete jq-update then forgets it for good")
+	require.ErrorContains(t, err, "jq-update's pull request is still open; close it, or archive the branch; dockhand clean --delete -b jq-update then forgets it for good")
 	require.Equal(t, forkHead, fake.ForkHead(branch.Name), "the pull request's head remains on the fork")
 	after, err := e.Branch(t.Context(), branch.ID)
 	require.NoError(t, err)
@@ -198,7 +198,7 @@ func TestForgetRefusesWhenAPullRequestIsRecordedAfterThePlan(t *testing.T) {
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(branch) }))
 
 	_, err = e.Forget(t.Context(), &plan)
-	require.ErrorContains(t, err, "jq-update's pull request is still open; close it, or archive the branch; dockhand clean --delete jq-update then forgets it for good")
+	require.ErrorContains(t, err, "jq-update's pull request is still open; close it, or archive the branch; dockhand clean --delete -b jq-update then forgets it for good")
 	require.DirExists(t, plan.Worktree)
 	require.Equal(t, head, testsupport.Git(t, e.Repo.Root, "rev-parse", "refs/heads/"+branch.Name), "the Git branch remains")
 	require.Equal(t, forkHead, fake.ForkHead(branch.Name), "the fork head remains")

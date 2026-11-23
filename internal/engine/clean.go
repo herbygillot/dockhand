@@ -151,14 +151,14 @@ func (e *Engine) PlanCleanBranches(ctx context.Context, branches []model.Branch)
 }
 
 // ForgetWords say how a branch set aside is thrown away, where archive
-// keeps its Git branch for --undo: "dockhand clean --delete am-utils-6.2
+// keeps its Git branch for --undo: "dockhand clean --delete -b am-utils-6.2
 // then forgets it for good". clean refused the open branch, archive kept
 // the Git branch, and a clean then said "Nothing to remove" with
 // dockhand/am-utils-6.2 still there (field testing, the outdated-ports
 // session's note 24); archive's undo and delete's forgetting stay two
 // steps.
 func ForgetWords(branch model.Branch) string {
-	return fmt.Sprintf("dockhand clean --delete %s then forgets it for good", branch.ShortName())
+	return fmt.Sprintf("dockhand clean --delete -b %s then forgets it for good", branch.ShortName())
 }
 
 // ArchivedKept are the archived branches whose Git branch is still there,

@@ -340,7 +340,7 @@ func (e *Engine) planRebase(ctx context.Context, branch model.Branch) (rebasePla
 		// its pull request or another's, and moving it onto master would
 		// leave a branch that changes nothing.
 		plan.Refused = fmt.Sprintf("master %s already has every change %s makes, so there's nothing to rebase", master.Short(), current.ShortName())
-		plan.refusal = fmt.Errorf("%s; dockhand clean %s removes it once its pull request is merged", plan.Refused, current.ShortName())
+		plan.refusal = fmt.Errorf("%s; dockhand clean -b %s removes it once its pull request is merged", plan.Refused, current.ShortName())
 		return plan, nil
 	}
 	plan.Commits = len(replayed)
@@ -531,9 +531,9 @@ func ended(branch model.Branch) error {
 	}
 	switch branch.State {
 	case model.BranchMerged:
-		return fmt.Errorf("#%d merged, so %s has nothing to rebase; dockhand clean %s removes what it leaves", number, branch.ShortName(), branch.ShortName())
+		return fmt.Errorf("#%d merged, so %s has nothing to rebase; dockhand clean -b %s removes what it leaves", number, branch.ShortName(), branch.ShortName())
 	case model.BranchClosed:
-		return fmt.Errorf("#%d was closed without merging, so %s has nothing to rebase; dockhand archive %s sets it aside", number, branch.ShortName(), branch.ShortName())
+		return fmt.Errorf("#%d was closed without merging, so %s has nothing to rebase; dockhand archive -b %s sets it aside", number, branch.ShortName(), branch.ShortName())
 	}
 	return nil
 }

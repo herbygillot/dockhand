@@ -300,6 +300,7 @@ func showUndoPlan(ctx context.Context, e *engine.Engine, streams term.Streams, n
 		} else {
 			fmt.Fprintf(out, "Restore history to %s. The files are unchanged.\n", checkpoint.Before.Short())
 		}
+		fmt.Fprintln(out, "No Git ref, index, file, or store record was changed.")
 		fmt.Fprintln(out, "Nothing was restored (--plan).")
 		return nil
 	}
@@ -314,6 +315,7 @@ func showUndoPlan(ctx context.Context, e *engine.Engine, streams term.Streams, n
 			}
 		}
 	}
+	fmt.Fprintln(out, "No prefix or store record was changed.")
 	fmt.Fprintln(out, "Nothing was restored (--plan).")
 	return nil
 }

@@ -95,7 +95,7 @@ removes only expired failure clones.
 --plan shows what it would remove, or forget, and removes nothing.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			if len(args) > 0 && where.Explicit() && !keptOnly {
+			if len(args) > 0 && where.Explicit() {
 				return errors.New("clean takes branch words or one selector, not both")
 			}
 			e, err := s.Open(ctx)
@@ -349,7 +349,7 @@ func cleanKept(ctx context.Context, e *engine.Engine, streams term.Streams, chec
 // archivedKeptWords say the archived branches that keep their Git
 // branches for archive --undo, and that clean --delete forgets them: "1
 // archived branch, am-utils-6.2, keeps its Git branch for archive --undo;
-// dockhand clean --delete am-utils-6.2 then forgets it for good"; empty
+// dockhand clean --delete -b am-utils-6.2 then forgets it for good"; empty
 // where none does.
 func archivedKeptWords(kept []model.Branch) string {
 	switch len(kept) {
@@ -358,7 +358,7 @@ func archivedKeptWords(kept []model.Branch) string {
 	case 1:
 		return fmt.Sprintf("1 archived branch, %s, keeps its Git branch for archive --undo; %s.", kept[0].ShortName(), engine.ForgetWords(kept[0]))
 	}
-	return fmt.Sprintf("%d archived branches keep their Git branches for archive --undo; dockhand clean --delete <branch> forgets one for good, and status --all lists them.", len(kept))
+	return fmt.Sprintf("%d archived branches keep their Git branches for archive --undo; dockhand clean --delete -b <branch> forgets one for good, and status --all lists them.", len(kept))
 }
 
 // cleanAutomatically is decision 36's automatic pass, as a command starts it

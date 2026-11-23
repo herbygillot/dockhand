@@ -284,7 +284,7 @@ func Attend(facts Facts) []Attention {
 	// checks. Archive sets it aside; clean --delete forgets it for good
 	// (cleaning up duckdb-cxx14, finding 1; #185).
 	if b.OnMaster != "" && b.Record.PullRequest == nil {
-		return row(Ready, OnMaster, Next{External: "permanently remove: dockhand clean --delete " + b.Record.ShortName()}, func(a *Attention) { a.Detail = string(b.OnMaster.Short()) })
+		return row(Ready, OnMaster, Next{External: "permanently remove: dockhand clean --delete -b " + b.Record.ShortName()}, func(a *Attention) { a.Detail = string(b.OnMaster.Short()) })
 	}
 	standing := check.Standing()
 	// A branch an unattended ship held at its committed edit, a patch not
@@ -575,7 +575,7 @@ func (a Attention) Words(v Vocabulary) string {
 	case OpenedByServe:
 		return fmt.Sprintf("#%d was opened by serve without human review", pr.Number)
 	case OnMaster:
-		return "its changes are on master already, as of " + a.Detail + "; dockhand archive " + a.Branch + " sets it aside"
+		return "its changes are on master already, as of " + a.Detail + "; dockhand archive -b " + a.Branch + " sets it aside"
 	case HeldBeforeItsCheck, PreparationUnfinished, RenameUnderWay:
 		return a.Detail
 	case FilesChangedSince:

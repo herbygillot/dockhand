@@ -253,7 +253,7 @@ with a short ID.`,
 					if renameErr != nil {
 						return renameErr
 					}
-					fmt.Fprintf(streams.Prose(), "Renamed the archived %s to %s; dockhand archive --undo %s brings it back.\n", taken.Branch.ShortName(), renamed.ShortName(), renamed.ShortName())
+					fmt.Fprintf(streams.Prose(), "Renamed the archived %s to %s; dockhand archive --undo -b %s brings it back.\n", taken.Branch.ShortName(), renamed.ShortName(), renamed.ShortName())
 					branch, err = e.Start(ctx, engine.StartRequest{Name: name, Here: here, Ports: ports})
 				}
 			}
@@ -405,7 +405,7 @@ scripts, and a new head from the author asks again.`,
 	}
 	cmd.Flags().IntVar(&pr, "pr", 0, "bring someone's pull request, by number, into a branch of its own")
 	cmd.Flags().BoolVar(&evaluate, "evaluate", false, "with --pr, allow dockhand to evaluate the pull request's Portfiles on this Mac at the head adopted")
-	cmd.Flags().BoolVar(&plan, "plan", false, "show what it would fetch and track, and change nothing")
+	cmd.Flags().BoolVar(&plan, "plan", false, "show what it would track, and change nothing")
 	settings.SupportsJSON(cmd)
 	return cmd
 }
@@ -417,6 +417,7 @@ func writeAdoptPlan(out io.Writer, plan engine.AdoptionPlan, places config.Place
 		fmt.Fprintf(out, "Head %s · %s · base %s.\n", plan.Head.Short(), prose.Plural(plan.Commits, "commit"), plan.Base)
 		fmt.Fprintln(out, "Changed ports are unknown without fetching the pull request head.")
 		fmt.Fprintf(out, "Directory: %s\n", places.Tilde(plan.Directory))
+		fmt.Fprintln(out, "No head was fetched, and no Git ref, worktree, or store record was created or written.")
 		fmt.Fprintln(out, "Nothing was adopted (--plan).")
 		return
 	}
@@ -430,6 +431,7 @@ func writeAdoptPlan(out io.Writer, plan engine.AdoptionPlan, places config.Place
 	}
 	fmt.Fprintf(out, "%s %s: %s above master %s, changing %s.\n", state, plan.Branch, prose.Plural(plan.Commits, "commit"), model.ObjectID(plan.Base).Short(), ports)
 	fmt.Fprintf(out, "Directory: %s\n", places.Tilde(plan.Directory))
+	fmt.Fprintln(out, "No Git ref, worktree, or store record was created or written.")
 	fmt.Fprintln(out, "Nothing was adopted (--plan).")
 }
 

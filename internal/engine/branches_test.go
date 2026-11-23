@@ -35,7 +35,7 @@ func TestAGoneBranchSaysHowToSetItAside(t *testing.T) {
 	testsupport.Git(t, f.clone, "worktree", "prune")
 	testsupport.Git(t, f.clone, "branch", "-D", branch.Name)
 	_, err = e.Path(t.Context(), "poppler-25.09")
-	require.ErrorContains(t, err, "are both missing. Run dockhand archive poppler-25.09 to set the branch record aside; the name stays reserved, so start the work again under another name")
+	require.ErrorContains(t, err, "are both missing. Run dockhand archive -b poppler-25.09 to set the branch record aside; the name stays reserved, so start the work again under another name")
 	_, err = e.ArchiveBranch(t.Context(), ArchiveRequest{Branch: branch})
 	require.NoError(t, err, "as the refusal says")
 

@@ -140,7 +140,7 @@ func writeRebasePlan(streams term.Streams, branch model.Branch, rebased engine.R
 		fmt.Fprintf(streams.Prose(), "dockhand rebase would stop here, with %s as it is; resolve it by hand with git rebase %s, or ask for help on the PR.\n", name, rebased.To.Short())
 		return
 	case rebased.Refused != "":
-		fmt.Fprintf(streams.Prose(), "%s; dockhand clean %s removes it once its pull request is merged.\nNothing moved.\n", rebased.Refused, name)
+		fmt.Fprintf(streams.Prose(), "%s; dockhand clean -b %s removes it once its pull request is merged.\nNothing moved.\n", rebased.Refused, name)
 		return
 	}
 	if len(rebased.OlderBuilds) > 0 {

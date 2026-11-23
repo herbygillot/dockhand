@@ -41,14 +41,14 @@ func TestArchiveTakesTheWorktreeAndPathBringsItBack(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("mine\n"), 0o644))
 	archived, _, err := cmdtest.Dockhand(t, "archive", "jq-update")
 	require.NoError(t, err)
-	require.Contains(t, cmdtest.Flat(archived), "Archived jq-update; its worktree was kept because it has untracked files: notes.txt. dockhand archive --discard jq-update removes the worktree and its edits.")
+	require.Contains(t, cmdtest.Flat(archived), "Archived jq-update; its worktree was kept because it has untracked files: notes.txt. dockhand archive --discard -b jq-update removes the worktree and its edits.")
 	// Throwing it away is said where it's asked (the outdated-ports
 	// session's note 24).
-	require.Contains(t, cmdtest.Flat(archived), "dockhand clean --delete jq-update then forgets it for good.")
+	require.Contains(t, cmdtest.Flat(archived), "dockhand clean --delete -b jq-update then forgets it for good.")
 	require.DirExists(t, dir)
 	out, _, err := cmdtest.Dockhand(t, "clean")
 	require.NoError(t, err)
-	require.Equal(t, "Nothing to remove.\n1 archived branch, jq-update, keeps its Git branch for archive --undo; dockhand clean --delete jq-update then forgets it for good.\n", cmdtest.Flat(out),
+	require.Equal(t, "Nothing to remove.\n1 archived branch, jq-update, keeps its Git branch for archive --undo; dockhand clean --delete -b jq-update then forgets it for good.\n", cmdtest.Flat(out),
 		"plain clean is merged branches only, and says the archived branch it leaves")
 
 	// What Git ignores goes with the worktree, and is said, as nothing
@@ -57,7 +57,7 @@ func TestArchiveTakesTheWorktreeAndPathBringsItBack(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "build.log"), []byte("built\n"), 0o644))
 	archived, _, err = cmdtest.Dockhand(t, "archive", "--discard", "jq-update")
 	require.NoError(t, err)
-	require.Contains(t, cmdtest.Flat(archived), "Archived jq-update and removed its worktree. The Git branch remains. Run dockhand archive --undo jq-update to restore the archived branch.")
+	require.Contains(t, cmdtest.Flat(archived), "Archived jq-update and removed its worktree. The Git branch remains. Run dockhand archive --undo -b jq-update to restore the archived branch.")
 	require.Contains(t, archived, "Its ignored files went with it: build.log\n")
 	require.NoDirExists(t, dir)
 	require.Equal(t, head, strings.TrimSpace(testsupport.Git(t, w.Clone, "rev-parse", "dockhand/jq-update")), "the branch and its work stay")
@@ -180,7 +180,7 @@ func TestCleanDeleteForgetsAnArchivedBranch(t *testing.T) {
 	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
 
 	_, _, err = cmdtest.Dockhand(t, "clean", "--delete", "--yes", "jq-update")
-	require.ErrorContains(t, err, "jq-update is open; clean --delete forgets a merged, closed, or archived branch, or open work whose changes are on master; dockhand archive sets an open one aside; dockhand clean --delete jq-update then forgets it for good")
+	require.ErrorContains(t, err, "jq-update is open; clean --delete forgets a merged, closed, or archived branch, or open work whose changes are on master; dockhand archive sets an open one aside; dockhand clean --delete -b jq-update then forgets it for good")
 	_, _, err = cmdtest.Dockhand(t, "archive", "jq-update")
 	require.NoError(t, err)
 

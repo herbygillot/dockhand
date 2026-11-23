@@ -2,13 +2,16 @@ package command
 
 import (
 	"bytes"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
+	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/term"
 )
 
@@ -26,6 +29,68 @@ func TestBareDockhandSaysHowToStart(t *testing.T) {
 	require.NotContains(t, out.String(), "update <port> --new")
 	require.NotContains(t, out.String(), "v2-final")
 	require.True(t, strings.HasSuffix(out.String(), "for more information about a command.\n\nReport problems at "+buildinfo.ProjectURL+"/issues\n"), "the main help's foot names the issues page: %s", out.String())
+}
+
+// Branch hints are kept in the spelling each command accepts. Walk the
+// command paths and flags in the real Cobra tree so a hint can't drift away
+// from its command's registered surface.
+func TestBranchHintsNameFlagsTheirCommandsAccept(t *testing.T) {
+	t.Parallel()
+	root := newRoot(&settings.Settings{}, term.Streams{})
+	hints := []struct {
+		command       string
+		branchFlagged bool
+	}{
+		{"dockhand adopt dockhand/theirs", false},
+		{"dockhand archive -b jq-update", true},
+		{"dockhand archive --undo -b jq-update", true},
+		{"dockhand archive --discard -b jq-update", true},
+		{"dockhand clean -b jq-update", true},
+		{"dockhand clean --delete -b jq-update", true},
+		{"dockhand edit jq -b jq-update", true},
+		{"dockhand undo tidy-3", false},
+		{"dockhand check -b jq-update", true},
+		{"dockhand tidy --branch jq-update", true},
+	}
+	for _, hint := range hints {
+		words := strings.Fields(hint.command)
+		require.Equal(t, "dockhand", words[0])
+		cmd := root
+		for i := 1; i < len(words); i++ {
+			word := strings.Trim(words[i], ",.;")
+			if strings.HasPrefix(word, "-") {
+				name := strings.TrimLeft(word, "-")
+				flag := cmd.Flags().Lookup(name)
+				if len(word) == 2 {
+					flag = cmd.Flags().ShorthandLookup(name)
+				}
+				if flag == nil {
+					flag = cmd.InheritedFlags().Lookup(name)
+					if len(word) == 2 {
+						flag = cmd.InheritedFlags().ShorthandLookup(name)
+					}
+				}
+				require.NotNil(t, flag, "%q uses %s, which %s does not accept", hint.command, word, cmd.CommandPath())
+				continue
+			}
+			if next := commandChild(cmd, word); next != nil {
+				cmd = next
+			}
+		}
+		if hint.branchFlagged {
+			words := strings.Fields(hint.command)
+			require.True(t, slices.Contains(words, "-b") || slices.Contains(words, "--branch"), "%q should name its branch with a selector", hint.command)
+		}
+	}
+}
+
+func commandChild(parent *cobra.Command, name string) *cobra.Command {
+	for _, child := range parent.Commands() {
+		if child.Name() == name {
+			return child
+		}
+	}
+	return nil
 }
 
 // The main help ends with the issues page, after Cobra's line on each

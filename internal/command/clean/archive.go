@@ -33,7 +33,7 @@ terminal: commit them, as tidy would, where its plan needs no words from
 you; discard them; or keep the worktree. A script keeps it and says so;
 --discard removes it, edits and all, and --keep-worktree keeps any worktree.
 A pull request still open is said, with how to close it: archive never
-closes it. To forget an archived branch for good, run dockhand clean --delete
+closes it. To forget an archived branch for good, run dockhand clean --delete -b
 BRANCH; add --plan to see what it will remove first.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -77,20 +77,20 @@ BRANCH; add --plan to see what it will remove first.`,
 				if branch.PullRequest != nil {
 					remains = "The Git branch and pull request remain."
 				}
-				fmt.Fprintf(out, "Archived %s and removed its worktree. %s Run dockhand archive --undo %s to restore the archived branch.\n", branch.ShortName(), remains, branch.ShortName())
+				fmt.Fprintf(out, "Archived %s and removed its worktree. %s Run dockhand archive --undo -b %s to restore the archived branch.\n", branch.ShortName(), remains, branch.ShortName())
 				// What Git ignores goes with the worktree, and no branch
 				// keeps it: said, as nothing else lists it.
 				if ignored := archived.IgnoredRemoved; len(ignored) > 0 {
 					fmt.Fprintf(out, "Its ignored files went with it: %s\n", prose.Few(ignored, 5, "file"))
 				}
 			case archived.Kept != "":
-				fmt.Fprintf(out, "Archived %s; its worktree was kept because %s. dockhand archive --discard %s removes the worktree and its edits.\n", branch.ShortName(), archived.Kept, branch.ShortName())
+				fmt.Fprintf(out, "Archived %s; its worktree was kept because %s. dockhand archive --discard -b %s removes the worktree and its edits.\n", branch.ShortName(), archived.Kept, branch.ShortName())
 			default:
 				remains := "its files and Git branch are unchanged"
 				if branch.PullRequest != nil {
 					remains = "its files, Git branch, and pull request are unchanged"
 				}
-				fmt.Fprintf(out, "Archived %s; %s. Run dockhand archive --undo %s to restore the archived branch.\n", branch.ShortName(), remains, branch.ShortName())
+				fmt.Fprintf(out, "Archived %s; %s. Run dockhand archive --undo -b %s to restore the archived branch.\n", branch.ShortName(), remains, branch.ShortName())
 			}
 			if pr := branch.PullRequest; pr != nil && archived.PullRequestOpen {
 				fmt.Fprintf(out, "Pull request #%d is still open; archiving does not close it. Close it on GitHub or run: gh pr close %d --repo %s\n", pr.Number, pr.Number, pr.Repository)

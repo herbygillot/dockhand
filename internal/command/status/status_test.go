@@ -520,9 +520,9 @@ func TestStatusSaysABranchsWorkIsOnMasterAlready(t *testing.T) {
 	t.Parallel()
 	branch := model.Branch{Name: "dockhand/duckdb-cxx14", State: model.BranchOpen}
 	status := engine.BranchStatus{Branch: branch, OnMaster: model.ObjectID(strings.Repeat("e", 40))}
-	require.Equal(t, []view.Attention{{Kind: view.AttentionReady, Branch: "duckdb-cxx14", What: "its changes are on master already, as of eeeeeee; dockhand archive duckdb-cxx14 sets it aside", Next: "permanently remove: dockhand clean --delete duckdb-cxx14"}}, view.AttentionFor(status))
+	require.Equal(t, []view.Attention{{Kind: view.AttentionReady, Branch: "duckdb-cxx14", What: "its changes are on master already, as of eeeeeee; dockhand archive -b duckdb-cxx14 sets it aside", Next: "permanently remove: dockhand clean --delete -b duckdb-cxx14"}}, view.AttentionFor(status))
 	status.Branch.PullRequest = &model.PullRequest{Number: 35100}
-	require.NotContains(t, view.AttentionFor(status), view.Attention{Kind: view.AttentionReady, Branch: "duckdb-cxx14", What: "its changes are on master already, as of eeeeeee; dockhand archive duckdb-cxx14 sets it aside", Next: "permanently remove: dockhand clean --delete duckdb-cxx14"})
+	require.NotContains(t, view.AttentionFor(status), view.Attention{Kind: view.AttentionReady, Branch: "duckdb-cxx14", What: "its changes are on master already, as of eeeeeee; dockhand archive -b duckdb-cxx14 sets it aside", Next: "permanently remove: dockhand clean --delete -b duckdb-cxx14"})
 }
 
 // A submission's JSON lists its concerns, a moved tag's among them, with

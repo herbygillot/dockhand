@@ -258,6 +258,8 @@ func TestCleanRefusesWordsAndBranchSelectorTogether(t *testing.T) {
 	cmdtest.CheckedBranch(t)
 	_, _, err := cmdtest.Dockhand(t, "clean", "jq-update", "-b", "jq-update")
 	require.EqualError(t, err, "clean takes branch words or one selector, not both")
+	_, _, err = cmdtest.Dockhand(t, "clean", "--kept", "jq-update", "-b", "jq-update")
+	require.EqualError(t, err, "clean takes branch words or one selector, not both")
 }
 
 func TestCleanKeptSelectsPullRequestBranch(t *testing.T) {

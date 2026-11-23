@@ -41,7 +41,6 @@ var noJSON = map[string]string{
 // (the roadmap's bump and clean fix, 2026-10-22). Every other command
 // takes --plan, so a new one says here why it doesn't.
 var noPlan = map[string]string{
-	"adopt":        "records a branch that exists, which archive sets aside again",
 	"archive":      "sets a branch aside, which archive --undo brings back",
 	"cancel":       "stops a check, keeping what it finished",
 	"config":       "shows or sets one setting, which it names",
@@ -67,7 +66,6 @@ var noPlan = map[string]string{
 	"shell":        "prints a shell's completion script",
 	"start":        "starts a branch, which archive sets aside",
 	"status":       "reads only",
-	"undo":         "restores a checkpoint, keeping the one it replaces",
 	"wait":         "follows a check",
 }
 

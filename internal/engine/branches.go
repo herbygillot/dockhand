@@ -952,7 +952,7 @@ func (e *Engine) checkOutAgain(ctx context.Context, branch model.Branch) error {
 		if branch.State == model.BranchArchived {
 			return fmt.Errorf("The worktree at %[2]s and Git branch %[1]s are both missing. The branch record is already archived and keeps the name: on a terminal, dockhand start %[3]s offers to rename it aside and start afresh, or start the work under another name", branch.Name, branch.Worktree, branch.ShortName())
 		}
-		return fmt.Errorf("The worktree at %[2]s and Git branch %[1]s are both missing. Run dockhand archive %[3]s to set the branch record aside; the name stays reserved, so start the work again under another name", branch.Name, branch.Worktree, branch.ShortName())
+		return fmt.Errorf("The worktree at %[2]s and Git branch %[1]s are both missing. Run dockhand archive -b %[3]s to set the branch record aside; the name stays reserved, so start the work again under another name", branch.Name, branch.Worktree, branch.ShortName())
 	}
 	if err != nil {
 		return err

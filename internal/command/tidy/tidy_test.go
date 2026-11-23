@@ -66,6 +66,7 @@ func TestUndoPlanShowsCheckpointWithoutMovingGitRefs(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update · tidy-1")
 	require.Contains(t, out, "Restore history")
+	require.Contains(t, out, "No Git ref, index, file, or store record was changed.")
 	require.Contains(t, out, "Nothing was restored (--plan).")
 	require.Equal(t, refs, testsupport.Git(t, dir, "show-ref"))
 }
