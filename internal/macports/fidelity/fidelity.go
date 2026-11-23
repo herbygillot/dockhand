@@ -984,3 +984,30 @@ func DependenciesByPort(snapshot *macports.Snapshot) *macports.Snapshot {
 	}
 	return &read
 }
+
+// SourceMove expects the selected port's source to move at the version it
+// is at, as --source asked of a port already current (#121, #195): its
+// fetch fields, checksums and fetch and extract dependencies follow the
+// move, and its version, epoch, revision and every other port stay.
+func SourceMove(before, after macports.Snapshot, selected, checksums string) Report {
+	prediction := Predict(before)
+	old := prediction.Port(selected)
+	next := ComparablePort(after.Ports[selected], after.Root)
+	next.Version, next.Epoch, next.Revision = old.Version, old.Epoch, old.Revision
+	others := func(all []macports.Dependency) []macports.Dependency {
+		return slices.DeleteFunc(slices.Clone(all), func(d macports.Dependency) bool { return slices.Contains(sourcePhases, d.Phase) })
+	}
+	if !slices.Equal(others(old.Dependencies), others(next.Dependencies)) {
+		next.Dependencies = old.Dependencies
+	}
+	prediction.Expect(selected, next, selected+".source moves, with its fetch and extract dependencies", selected+".distfiles and checksums")
+	prediction.leaveFetchless(before, after, selected)
+	report := prediction.Observe(before, after)
+	actual, errs := syntax.ListValues(after.Ports[selected].Options["checksums"])
+	expected, expectedErrs := syntax.ListValues(checksums)
+	if len(errs) > 0 || len(expectedErrs) > 0 || !slices.Equal(actual, expected) {
+		report.UnexpectedChanges = append(report.UnexpectedChanges, selected+".checksums differ from intended values")
+	}
+	slices.Sort(report.UnexpectedChanges)
+	return report
+}

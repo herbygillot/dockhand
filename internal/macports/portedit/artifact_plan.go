@@ -176,7 +176,7 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 			progress.VerboseReport(ctx, "%s is obsolete on %s %s %s; no archive to cover there", member.target.Name, profile.OS, profile.Version, profile.Architecture)
 			return nil
 		}
-		affected := old.Version != next.Version
+		affected := affectedMember(request, input, member, old, next)
 		if next.Fetch != nil && next.Fetch.Rejected {
 			progress.VerboseReport(ctx, "Preserving rejection-only fetch guard for %s %s %s; archive coverage does not establish build support", profile.OS, profile.Version, profile.Architecture)
 		}
@@ -420,4 +420,13 @@ func firstDigest(src []byte, cmd syntax.Command) (textedit.Span, bool) {
 		}
 	}
 	return textedit.Span{}, false
+}
+
+// affectedMember is whether a member's archives may move in a context:
+// where its version moved, or, asked of a port already current
+// (Request.ActOnCurrent), where its source moved at the version it is at
+// (planSourceOnCurrent). Without ActOnCurrent it is the version alone, as
+// before #195.
+func affectedMember(request Request, input, member *sourceInput, old, next macports.PortInfo) bool {
+	return old.Version != next.Version || request.ActOnCurrent && request.Release.NoUpdate && input.sourceMoved != nil && member == input
 }
