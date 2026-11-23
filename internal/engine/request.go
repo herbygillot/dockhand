@@ -38,8 +38,7 @@ func (e *Engine) keepTarget(ctx context.Context, branch model.Branch, origin, po
 		// keep it (Codex's read of 2c, P2-2).
 		if after := &request.Targets[i]; before.Named != after.Named || before.Release != nil && after.Release != nil && before.Release.Version != after.Release.Version {
 			request.ID = store.NewID("rq")
-			after.Current = ""
-			after.Outcomes = slices.DeleteFunc(after.Outcomes, func(o model.ActionOutcome) bool { return o.Action == "version" })
+			after.Unconclude("version")
 		}
 		current.Request = request
 		return store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {

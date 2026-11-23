@@ -120,14 +120,18 @@ func ResolveRequest(asking Asking) (Resolved, error) {
 		if asked.Check.On.Given || asked.Check.Build.Given {
 			before := placeWords(request.Check)
 			request.Check.On, request.Check.Build = asked.Check.On, asked.Check.Build
-			if after := placeWords(request.Check); hasKept && before != "" && before != after {
-				resolved.Said = append(resolved.Said, fmt.Sprintf("%s replaces the kept %s", after, before))
+			if after := placeWords(request.Check); before != after {
+				changed["Check.On"], changed["Check.Build"] = true, true
+				if hasKept && before != "" {
+					resolved.Said = append(resolved.Said, fmt.Sprintf("%s replaces the kept %s", after, before))
+				}
 			}
 		}
 		replace(&request.Check.Tests, asked.Check.Tests, "--tests", "Check.Tests", changed, say)
 		replace(&request.Publish.Draft, asked.Publish.Draft, "--draft", "Publish.Draft", changed, say)
 		replace(&request.Publish.Type, asked.Publish.Type, "--type", "Publish.Type", changed, say)
 		replace(&request.Publish.SkipNotification, asked.Publish.SkipNotification, "--skip-notification", "Publish.SkipNotification", changed, say)
+		replace(&request.Publish.NoCheck, asked.Publish.NoCheck, "--no-check", "Publish.NoCheck", changed, say)
 		replace(&request.Publish.TestedBinaries, asked.Publish.TestedBinaries, "--tested-binaries", "Publish.TestedBinaries", changed, say)
 		replace(&request.Publish.TestedVariants, asked.Publish.TestedVariants, "--tested-variants", "Publish.TestedVariants", changed, say)
 		removeJudged(&request, changed)
@@ -135,6 +139,13 @@ func ResolveRequest(asking Asking) (Resolved, error) {
 			request.ID = ""
 		}
 	}
+	// The source policy is resolved from the settings where no flag gives
+	// it, given or kept, and is not kept as an ask: a later command reads
+	// its own settings. An outcome a setting judged is judged again where
+	// the setting gives another value now, on the same ask.
+	resolved.Policy = RequestSettings{Source: request.Source.Source.Or(asking.Settings.Source),
+		KeepHTTP: request.Source.KeepHTTP.Or(asking.Settings.KeepHTTP), KeepModeline: request.Source.KeepModeline.Or(asking.Settings.KeepModeline)}
+	rejudge(&request, resolved.Policy)
 	targetsChanged := resolveTargets(&request, asking, &resolved)
 	if targetsChanged {
 		request.Outcomes = slices.DeleteFunc(request.Outcomes, func(o model.ActionOutcome) bool { return o.Action == "dependents" })
@@ -143,11 +154,6 @@ func ResolveRequest(asking Asking) (Resolved, error) {
 		request.ID = store.NewID("rq")
 	}
 	resolved.Request = request
-	// The source policy is resolved from the settings where no flag gives
-	// it, given or kept, and is not kept: nothing of the configuration is
-	// kept on the branch, so a later command reads its own ("serve").
-	resolved.Policy = RequestSettings{Source: request.Source.Source.Or(asking.Settings.Source),
-		KeepHTTP: request.Source.KeepHTTP.Or(asking.Settings.KeepHTTP), KeepModeline: request.Source.KeepModeline.Or(asking.Settings.KeepModeline)}
 	resolved.Outcomes = judgedNow(request, asking.Branch)
 	resolved.Unresolved = unresolvedOf(request)
 	return resolved, nil
@@ -207,21 +213,94 @@ var judgedBy = map[string][]string{
 	"ticket":     {"Actions.Closes"},
 }
 
-// removeJudged removes each outcome an ask it was judged by changed, on
-// the targets and on the request, so the action is owed again.
+// removeJudged makes each action an ask it was judged by changed owed
+// again, on the targets and on the request.
 func removeJudged(request *model.ChangeRequest, changed map[string]bool) {
-	stale := func(o model.ActionOutcome) bool {
-		return slices.ContainsFunc(judgedBy[o.Action], func(ask string) bool { return changed[ask] })
-	}
-	request.Outcomes = slices.DeleteFunc(request.Outcomes, stale)
-	for i := range request.Targets {
-		request.Targets[i].Outcomes = slices.DeleteFunc(slices.Clone(request.Targets[i].Outcomes), stale)
-		if len(request.Targets[i].Outcomes) == 0 {
-			request.Targets[i].Outcomes = nil
+	var stale []string
+	for action, asks := range judgedBy {
+		if slices.ContainsFunc(asks, func(ask string) bool { return changed[ask] }) {
+			stale = append(stale, action)
 		}
 	}
+	request.Outcomes = slices.DeleteFunc(request.Outcomes, func(o model.ActionOutcome) bool { return slices.Contains(stale, o.Action) })
 	if len(request.Outcomes) == 0 {
 		request.Outcomes = nil
+	}
+	for i := range request.Targets {
+		for _, action := range stale {
+			request.Targets[i].Unconclude(action)
+		}
+	}
+}
+
+// settable are the asks a setting supplies where no flag gives them.
+var settable = []string{"Source.Source", "Source.KeepHTTP", "Source.KeepModeline"}
+
+// policyValue is an ask a setting can supply, as the policy gives it.
+func policyValue(policy RequestSettings, ask string) string {
+	switch ask {
+	case "Source.Source":
+		return policy.Source
+	case "Source.KeepHTTP":
+		return fmt.Sprint(policy.KeepHTTP)
+	case "Source.KeepModeline":
+		return fmt.Sprint(policy.KeepModeline)
+	}
+	return ""
+}
+
+// askGiven reports whether a flag gives a settable ask, given now or kept.
+func askGiven(request model.ChangeRequest, ask string) bool {
+	switch ask {
+	case "Source.Source":
+		return request.Source.Source.Given
+	case "Source.KeepHTTP":
+		return request.Source.KeepHTTP.Given
+	case "Source.KeepModeline":
+		return request.Source.KeepModeline.Given
+	}
+	return false
+}
+
+// JudgedBy is what an action's outcome records of what judged it: each
+// input of the action a setting supplied, with the value the policy gave
+// it. An input a flag gave is the ask's, and isn't recorded; none is nil.
+func JudgedBy(request model.ChangeRequest, policy RequestSettings, action string) map[string]string {
+	var judged map[string]string
+	for _, ask := range judgedBy[action] {
+		if !slices.Contains(settable, ask) || askGiven(request, ask) {
+			continue
+		}
+		if judged == nil {
+			judged = map[string]string{}
+		}
+		judged[ask] = policyValue(policy, ask)
+	}
+	return judged
+}
+
+// rejudge makes owed again each outcome a setting judged where the policy
+// gives that input another value now. An outcome with no JudgedBy is
+// judged by the ask alone.
+func rejudge(request *model.ChangeRequest, policy RequestSettings) {
+	moved := func(o model.ActionOutcome) bool {
+		for ask, value := range o.JudgedBy {
+			if policyValue(policy, ask) != value {
+				return true
+			}
+		}
+		return false
+	}
+	request.Outcomes = slices.DeleteFunc(request.Outcomes, moved)
+	if len(request.Outcomes) == 0 {
+		request.Outcomes = nil
+	}
+	for i := range request.Targets {
+		for _, outcome := range slices.Clone(request.Targets[i].Outcomes) {
+			if moved(outcome) {
+				request.Targets[i].Unconclude(outcome.Action)
+			}
+		}
 	}
 }
 
@@ -329,6 +408,9 @@ func KeptForLater(request model.ChangeRequest, stopped ShipStage) []string {
 		if publish.SkipNotification.Given {
 			submit = append(submit, flagWords("--skip-notification", publish.SkipNotification.Value))
 		}
+		if publish.NoCheck.Given {
+			submit = append(submit, flagWords("--no-check", publish.NoCheck.Value))
+		}
 		if publish.TestedBinaries.Given {
 			submit = append(submit, flagWords("--tested-binaries", publish.TestedBinaries.Value))
 		}
@@ -399,11 +481,12 @@ func CheckRequestFor(request model.ChangeRequest, branch model.Branch, where Whe
 
 // SubmitRequestFor is the submit stage's request, built from the request:
 // the publication's asks, and the check it asked for as asked, so evidence
-// that stands is judged against them (coversAsked).
+// that stands is judged against them (coversAsked); --no-check asks for
+// none.
 func SubmitRequestFor(request model.ChangeRequest, branch model.Branch, unattended bool) SubmitRequest {
 	publish := request.Publish
 	submit := SubmitRequest{Branch: branch, Draft: publish.Draft.Value, Types: publish.Type.Value, SkipNotification: publish.SkipNotification.Value,
-		PendingCheck: true, Where: WhereRequestFor(request, unattended), Tests: model.TestPolicy(request.Check.Tests.Value)}
+		NoCheck: publish.NoCheck.Value, PendingCheck: !publish.NoCheck.Value, Where: WhereRequestFor(request, unattended), Tests: model.TestPolicy(request.Check.Tests.Value)}
 	if publish.TestedBinaries.Given {
 		submit.TestedBinaries, submit.WithdrawBinaries = publish.TestedBinaries.Value, !publish.TestedBinaries.Value
 	}

@@ -97,19 +97,152 @@ func TestAFlagGivenAsKeptChangesNothing(t *testing.T) {
 	require.Len(t, resolved.Request.Targets[0].Outcomes, 2)
 }
 
-// The settings are never kept: a changed setting is the policy resolved,
-// and leaves the request and its outcomes as they were; a flag kept wins
-// over the setting.
+// The settings are never kept as an ask: no ask field holds one, and an
+// outcome judged under a setting is judged again when the setting moves,
+// keeping the request's ID; a flag kept wins over the setting.
 func TestASettingIsReadAndNeverKept(t *testing.T) {
 	t.Parallel()
 	branch := keptBranch()
 	branch.Request.Source.KeepModeline = model.Set(false)
+	branch.Request.Targets[0].Outcomes[0].JudgedBy = map[string]string{"Source.KeepHTTP": "false"}
 	resolved, err := ResolveRequest(Asking{Origin: "ship", Branch: branch, Settings: RequestSettings{KeepHTTP: true, KeepModeline: true}})
 	require.NoError(t, err)
-	require.Equal(t, "rq-kept", resolved.Request.ID)
-	require.Len(t, resolved.Request.Targets[0].Outcomes, 2)
+	require.Equal(t, "rq-kept", resolved.Request.ID, "re-judging is progress on the same ask")
+	require.Equal(t, []model.ActionOutcome{{Action: "stub", Result: model.ActionDone}}, resolved.Request.Targets[0].Outcomes)
 	require.Equal(t, RequestSettings{KeepHTTP: true}, resolved.Policy)
-	require.False(t, resolved.Request.Source.KeepHTTP.Given)
+	require.Equal(t, model.SourceAsk{KeepModeline: model.Set(false)}, resolved.Request.Source, "no ask field holds a setting")
+}
+
+// An outcome judged under one effective policy is not taken for done under
+// another (Codex's read of step 3, P2-2).
+func TestASettingChangeRejudgesOutcomeUsingEffectivePolicy(t *testing.T) {
+	t.Parallel()
+	first, err := ResolveRequest(Asking{Origin: "ship", Ports: []string{"jq"}, Settings: RequestSettings{KeepHTTP: true}})
+	require.NoError(t, err)
+	request := first.Request
+	request.Targets[0].Current = "1.8"
+	request.Targets[0].Outcomes = []model.ActionOutcome{{Action: "version", Result: model.ActionSatisfied, JudgedBy: JudgedBy(request, first.Policy, "version")}}
+	same, err := ResolveRequest(Asking{Origin: "ship", Branch: &model.Branch{Request: &request}, Settings: RequestSettings{KeepHTTP: true}})
+	require.NoError(t, err)
+	require.True(t, same.Request.Targets[0].Finished(nil), "the same policy leaves it done")
+	moved, err := ResolveRequest(Asking{Origin: "ship", Branch: &model.Branch{Request: &request}, Settings: RequestSettings{KeepHTTP: false}})
+	require.NoError(t, err)
+	require.False(t, moved.Request.Targets[0].Finished(nil), "judged under keep_http, read without it")
+	require.Equal(t, request.ID, moved.Request.ID)
+}
+
+// serve keeps no asks, and its outcomes are judged again after a setting
+// changes.
+func TestServeRejudgesAfterASettingChange(t *testing.T) {
+	t.Parallel()
+	first, err := ResolveRequest(Asking{Origin: "serve", Ports: []string{"jq"}, Settings: RequestSettings{Source: "choose"}})
+	require.NoError(t, err)
+	request := first.Request
+	request.Targets[0].Outcomes = []model.ActionOutcome{{Action: "source", Result: model.ActionDone, JudgedBy: JudgedBy(request, first.Policy, "source")}}
+	require.Equal(t, map[string]string{"Source.Source": "choose"}, request.Targets[0].Outcomes[0].JudgedBy)
+	moved, err := ResolveRequest(Asking{Origin: "serve", Branch: &model.Branch{Request: &request}, Settings: RequestSettings{Source: "keep"}})
+	require.NoError(t, err)
+	require.Empty(t, moved.Request.Targets[0].Outcomes)
+	require.Equal(t, model.SourceAsk{}, moved.Request.Source)
+}
+
+// A flag given records no JudgedBy, though it equals the setting: the ask
+// alone judges it.
+func TestAFlagGivenRecordsNoJudgedBy(t *testing.T) {
+	t.Parallel()
+	resolved, err := ResolveRequest(Asking{Origin: "ship", Ports: []string{"jq"}, Settings: RequestSettings{KeepHTTP: true},
+		Asked: model.ChangeRequest{Source: model.SourceAsk{KeepHTTP: model.Set(true), KeepModeline: model.Set(false)}}})
+	require.NoError(t, err)
+	require.Equal(t, map[string]string(nil), JudgedBy(resolved.Request, resolved.Policy, "version"))
+	require.Equal(t, map[string]string{"Source.Source": ""}, JudgedBy(resolved.Request, resolved.Policy, "source"))
+}
+
+// Changing the check's place alone is a new ask (Codex's read of step 3,
+// P2-1).
+func TestChangingOnlyCheckPlaceRotatesRequestID(t *testing.T) {
+	t.Parallel()
+	resolved, err := ResolveRequest(Asking{Origin: "ship", Branch: keptBranch(), Asked: model.ChangeRequest{Check: model.CheckAsk{On: model.Set([]string{"sequoia"})}}})
+	require.NoError(t, err)
+	require.Equal(t, model.Set([]string{"sequoia"}), resolved.Request.Check.On)
+	require.NotEqual(t, "rq-kept", resolved.Request.ID)
+}
+
+// Each ask the request keeps gives a new ID when given another value, and
+// keeps it given the same value or left out.
+func TestEveryAskChangesTheIDOnlyWhenItsValueDoes(t *testing.T) {
+	t.Parallel()
+	kept := func() *model.Branch {
+		return &model.Branch{Request: &model.ChangeRequest{ID: "rq-kept", Origin: "ship", Targets: []model.RequestTarget{{Port: "jq", Action: "update"}},
+			Shared:  model.Set(false),
+			Source:  model.SourceAsk{Source: model.Set("keep"), KeepHTTP: model.Set(false), KeepOldChecksums: model.Set(false), KeepModeline: model.Set(false), FollowMoves: model.Set(false)},
+			Actions: model.ActionsAsk{WithObsolete: model.Set(false), RevbumpDependents: model.Set(true), Except: model.Set([]string{"a"}), Closes: model.Set([]string{"1"})},
+			To:      model.Set("check"), Check: model.CheckAsk{Build: model.Set("minmax"), Tests: model.Set("declared")},
+			Publish: model.PublishAsk{Draft: model.Set(false), Type: model.Set([]string{"bugfix"}), SkipNotification: model.Set(false), NoCheck: model.Set(false), TestedBinaries: model.Set(false), TestedVariants: model.Set(false)}}}
+	}
+	for ask, other := range map[string]model.ChangeRequest{
+		"Shared":                    {Shared: model.Set(true)},
+		"Source.Source":             {Source: model.SourceAsk{Source: model.Set("choose")}},
+		"Source.KeepHTTP":           {Source: model.SourceAsk{KeepHTTP: model.Set(true)}},
+		"Source.KeepOldChecksums":   {Source: model.SourceAsk{KeepOldChecksums: model.Set(true)}},
+		"Source.KeepModeline":       {Source: model.SourceAsk{KeepModeline: model.Set(true)}},
+		"Source.FollowMoves":        {Source: model.SourceAsk{FollowMoves: model.Set(true)}},
+		"Actions.WithObsolete":      {Actions: model.ActionsAsk{WithObsolete: model.Set(true)}},
+		"Actions.RevbumpDependents": {Actions: model.ActionsAsk{RevbumpDependents: model.Set(false)}},
+		"Actions.Except":            {Actions: model.ActionsAsk{RevbumpDependents: model.Set(true), Except: model.Set([]string{"b"})}},
+		"Actions.Closes":            {Actions: model.ActionsAsk{Closes: model.Set([]string{"2"})}},
+		"To":                        {To: model.Set("submit")},
+		"Check.On":                  {Check: model.CheckAsk{On: model.Set([]string{"sequoia"})}},
+		"Check.Build":               {Check: model.CheckAsk{Build: model.Set("all")}},
+		"Check.Tests":               {Check: model.CheckAsk{Tests: model.Set("required")}},
+		"Publish.Draft":             {Publish: model.PublishAsk{Draft: model.Set(true)}},
+		"Publish.Type":              {Publish: model.PublishAsk{Type: model.Set([]string{"security fix"})}},
+		"Publish.SkipNotification":  {Publish: model.PublishAsk{SkipNotification: model.Set(true)}},
+		"Publish.NoCheck":           {Publish: model.PublishAsk{NoCheck: model.Set(true)}},
+		"Publish.TestedBinaries":    {Publish: model.PublishAsk{TestedBinaries: model.Set(true)}},
+		"Publish.TestedVariants":    {Publish: model.PublishAsk{TestedVariants: model.Set(true)}},
+	} {
+		changed, err := ResolveRequest(Asking{Origin: "ship", Branch: kept(), Asked: other})
+		require.NoError(t, err, ask)
+		require.NotEqual(t, "rq-kept", changed.Request.ID, "%s given another value", ask)
+		same, err := ResolveRequest(Asking{Origin: "ship", Branch: kept(), Asked: *kept().Request})
+		require.NoError(t, err, ask)
+		require.Equal(t, "rq-kept", same.Request.ID, "%s given the same value", ask)
+		none, err := ResolveRequest(Asking{Origin: "ship", Branch: kept()})
+		require.NoError(t, err, ask)
+		require.Equal(t, "rq-kept", none.Request.ID, "%s left out", ask)
+	}
+}
+
+// A changed shaping ask un-concludes the version, Current with it (Codex's
+// read of step 3, P2-3).
+func TestAChangedShapingAskClearsCurrent(t *testing.T) {
+	t.Parallel()
+	branch := keptBranch()
+	branch.Request.Targets[0].Outcomes = nil
+	branch.Request.Targets[0].Current = "1.8"
+	resolved, err := ResolveRequest(Asking{Origin: "ship", Branch: branch, Asked: model.ChangeRequest{Source: model.SourceAsk{KeepHTTP: model.Set(true)}}})
+	require.NoError(t, err)
+	require.Empty(t, resolved.Request.Targets[0].Current)
+	require.False(t, resolved.Request.Targets[0].Finished(nil))
+}
+
+// A continued submit carries --no-check as kept, and a --no-check=false
+// given replaces it (Codex's read of step 3, P2-4; E3).
+func TestAContinuedSubmitCarriesNoCheckAndAllowsFalseOverride(t *testing.T) {
+	t.Parallel()
+	stopped, err := ResolveRequest(Asking{Origin: "ship", Ports: []string{"jq"}, Asked: model.ChangeRequest{To: model.Set("check"), Publish: model.PublishAsk{NoCheck: model.Set(true)}}})
+	require.NoError(t, err)
+	require.Contains(t, KeptForLater(stopped.Request, ShipCheck), "Kept for the submit: --no-check.")
+	going, err := ResolveRequest(Asking{Origin: "ship", Branch: &model.Branch{Request: &stopped.Request}})
+	require.NoError(t, err)
+	submit := SubmitRequestFor(going.Request, model.Branch{}, false)
+	require.True(t, submit.NoCheck)
+	require.False(t, submit.PendingCheck)
+	withdrawn, err := ResolveRequest(Asking{Origin: "ship", Branch: &model.Branch{Request: &stopped.Request}, Asked: model.ChangeRequest{Publish: model.PublishAsk{NoCheck: model.Set(false)}}})
+	require.NoError(t, err)
+	submit = SubmitRequestFor(withdrawn.Request, model.Branch{}, false)
+	require.False(t, submit.NoCheck)
+	require.True(t, submit.PendingCheck)
 }
 
 // A version named replaces the kept release, and is said; the outcomes of

@@ -1,5 +1,7 @@
 package model
 
+import "slices"
+
 // ChangeRequest is what was asked of one branch's work, one value kept
 // with the branch (docs/designs/preparation-and-request.md, "The
 // request"). #194 keeps its targets, each with the actions concluded for
@@ -82,6 +84,7 @@ type PublishAsk struct {
 	Draft            Flag[bool]     `json:",omitzero"`
 	Type             Flag[[]string] `json:",omitzero"`
 	SkipNotification Flag[bool]     `json:",omitzero"`
+	NoCheck          Flag[bool]     `json:",omitzero"`
 	TestedBinaries   Flag[bool]     `json:",omitzero"`
 	TestedVariants   Flag[bool]     `json:",omitzero"`
 }
@@ -103,12 +106,33 @@ type RequestTarget struct {
 	Outcomes []ActionOutcome `json:",omitempty"`
 }
 
+// Unconclude makes an action owed again: its outcome goes, and for the
+// version the version found current goes too, since Current concludes it
+// as an outcome does (Finished). The one rule for an outcome whose ask or
+// judgment changed (#194's H5, #195).
+func (t *RequestTarget) Unconclude(action string) {
+	t.Outcomes = slices.DeleteFunc(slices.Clone(t.Outcomes), func(o ActionOutcome) bool { return o.Action == action })
+	if len(t.Outcomes) == 0 {
+		t.Outcomes = nil
+	}
+	if action == "version" {
+		t.Current = ""
+	}
+}
+
 // ActionOutcome is what became of one action of a request.
 type ActionOutcome struct {
 	// Action is version, source, moves, obsolete, dependents or closes.
 	Action string
 	Result ActionResult
 	Why    string `json:",omitempty"`
+	// JudgedBy are the inputs a setting supplied when the action was
+	// judged, each with its value then, as "Source.KeepHTTP": "true": a
+	// fact of a past judgment, not configuration carried forward. The
+	// outcome is judged again where one differs from what the setting
+	// gives now; an input a flag gave is the ask's, and isn't here
+	// (#195, Codex's read of step 3, P2-2).
+	JudgedBy map[string]string `json:",omitempty"`
 }
 
 // ActionResult is how an action was concluded.
