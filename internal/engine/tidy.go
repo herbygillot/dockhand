@@ -28,6 +28,9 @@ import (
 // TidyRequest asks what a branch's commits should be (Design v3 §8).
 type TidyRequest struct {
 	Branch model.Branch
+	// Attended is a tidy plan made while a person is present, as the
+	// command's terminal stream says.
+	Attended bool
 	// Squash makes one commit of the whole branch, with Message.
 	Squash  bool
 	Message string
@@ -142,9 +145,9 @@ type TidyPlan struct {
 	// them (tidyWorkingFiles).
 	Taken, LeftOut, Ignored []string
 	// Fixed are the lint findings the plan fixes on the lines the branch
-	// adds or alters, as dockhand's own edits, each with its Portfile
-	// (tidyWorkingFiles); applying commits them and writes them into the
-	// working files.
+	// adds or alters, and the final newline an attended tidy adds, each
+	// with its Portfile (tidyWorkingFiles); applying commits them and
+	// writes them into the working files.
 	Fixed []string
 	// Declare is the commit after the groups that declares what the
 	// branch's passed check found its builds link and not declare
@@ -299,12 +302,12 @@ func (e *Engine) planTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 	if err != nil {
 		return TidyPlan{}, err
 	}
-	files, err := tidyWorkingFiles(ctx, worktree, trees[base], final)
+	files, err := tidyWorkingFiles(ctx, worktree, trees[base], final, request.Attended)
 	if err != nil {
 		return TidyPlan{}, err
 	}
 	final = files.final
-	plan := TidyPlan{Branch: branch, Base: base, Head: head, Final: final, BaseTree: trees[base], History: history, Index: index,
+	plan := TidyPlan{Branch: branch, Attended: request.Attended, Base: base, Head: head, Final: final, BaseTree: trees[base], History: history, Index: index,
 		Taken: files.taken, LeftOut: files.leftOut, Ignored: files.ignored, Fixed: files.words}
 	changed, err := worktree.ChangedPaths(ctx, trees[base], final)
 	if err != nil {
@@ -766,7 +769,7 @@ type tidyFiles struct {
 // said; a named file Git ignores is left out as git add leaves it. The
 // plan and its application each make it, so a file added or removed
 // between them makes the plan stale.
-func tidyWorkingFiles(ctx context.Context, worktree *git.Repository, baseTree, final string) (tidyFiles, error) {
+func tidyWorkingFiles(ctx context.Context, worktree *git.Repository, baseTree, final string, attended bool) (tidyFiles, error) {
 	files := tidyFiles{final: final}
 	changed, err := worktree.ChangedPaths(ctx, baseTree, final)
 	if err != nil {
@@ -810,7 +813,7 @@ func tidyWorkingFiles(ctx context.Context, worktree *git.Repository, baseTree, f
 			return tidyFiles{}, err
 		}
 	}
-	return files, tidyLintFixes(ctx, worktree, baseTree, &files)
+	return files, tidyLintFixes(ctx, worktree, baseTree, &files, attended)
 }
 
 // tidyLintFixes fixes, in each Portfile the branch changes, the lint
@@ -818,13 +821,56 @@ func tidyWorkingFiles(ctx context.Context, worktree *git.Repository, baseTree, f
 // since its base, as dockhand's own edits (lintFixes): a hand edit's
 // trailing spaces and swallowing \ are committed fixed, their untouched
 // neighbours as they were.
-func tidyLintFixes(ctx context.Context, worktree *git.Repository, baseTree string, files *tidyFiles) error {
+func tidyLintFixes(ctx context.Context, worktree *git.Repository, baseTree string, files *tidyFiles, attended bool) error {
 	var err error
-	if files.fixed, files.words, err = lintFixes(ctx, worktree, baseTree, files.final); err != nil || len(files.fixed) == 0 {
+	if files.fixed, files.words, err = lintFixes(ctx, worktree, baseTree, files.final); err != nil {
 		return err
 	}
-	files.final, err = worktree.EditTree(ctx, files.final, files.fixed)
-	return err
+	if len(files.fixed) > 0 {
+		files.final, err = worktree.EditTree(ctx, files.final, files.fixed)
+		if err != nil {
+			return err
+		}
+	}
+	if attended {
+		newlines, words, err := tidyFinalNewlineFixes(ctx, worktree, baseTree, files.final)
+		if err != nil {
+			return err
+		}
+		files.fixed = append(files.fixed, newlines...)
+		files.words = append(files.words, words...)
+		if len(newlines) > 0 {
+			files.final, err = worktree.EditTree(ctx, files.final, newlines)
+		}
+		return err
+	}
+	return nil
+}
+
+// tidyFinalNewlineFixes adds a missing final newline to each changed
+// Portfile tidy will commit, as tidy's own rewrite and report.
+func tidyFinalNewlineFixes(ctx context.Context, worktree *git.Repository, baseTree, tree string) ([]git.FileEdit, []string, error) {
+	changed, err := worktree.ChangedPaths(ctx, baseTree, tree)
+	if err != nil {
+		return nil, nil, err
+	}
+	var edits []git.FileEdit
+	var words []string
+	for _, name := range changed {
+		if path.Base(name) != "Portfile" {
+			continue
+		}
+		state, data, err := worktree.File(ctx, tree, name)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !state.Exists || len(data) == 0 || data[len(data)-1] == '\n' {
+			continue
+		}
+		edits = append(edits, git.FileEdit{Path: name, Before: state, After: append(data, '\n'), Mode: state.Mode})
+		words = append(words, name+": added the final newline")
+	}
+	return edits, words, nil
 }
 
 // lintFixes are the fixes, as edits of tree's files, of the lint findings
@@ -1552,7 +1598,7 @@ func (e *Engine) commitTidy(ctx context.Context, plan TidyPlan) (TidyResult, err
 	if err != nil {
 		return TidyResult{}, err
 	}
-	files, err := tidyWorkingFiles(ctx, worktree, trees[plan.Base], final)
+	files, err := tidyWorkingFiles(ctx, worktree, trees[plan.Base], final, plan.Attended)
 	if err != nil {
 		return TidyResult{}, err
 	}

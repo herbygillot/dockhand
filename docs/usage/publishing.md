@@ -51,8 +51,10 @@ bracketed code can be explained with `dockhand explain <code>` using the code
 printed in your output.
 
 Tidy usually preserves the final files, but it also fixes deterministic lint
-findings on lines your branch changes and reports those fixes. Check makes the
-same fixes before capturing files. Whole-file formatting is separate:
+findings on lines your branch changes and, when run attended, adds a missing
+final newline to a Portfile; it reports those fixes. Check makes the same
+deterministic lint fixes before capturing files, but does not add a missing
+final newline. Whole-file formatting is separate:
 `tidy --restyle` makes up to two final commits of their own: `<port>:
 whitespace`, for the Portfiles it can restyle whole, and `<port>: path-style
 dependencies`, writing each `port:` dependency the tree writes path-style as

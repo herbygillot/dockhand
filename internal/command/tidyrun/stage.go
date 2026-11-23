@@ -94,7 +94,6 @@ func editSubjects(streams term.Streams, plan *engine.TidyPlan) error {
 }
 
 func Apply(ctx context.Context, e *engine.Engine, streams term.Streams, plan engine.TidyPlan) error {
-	plan.Attended = streams.Terminal()
 	result, err := e.ApplyTidy(ctx, plan)
 	if err != nil {
 		return err
@@ -151,7 +150,7 @@ type Tidied struct {
 func Stage(ctx context.Context, e *engine.Engine, streams term.Streams, branch model.Branch, undone string) (Tidied, error) {
 	out := streams.Prose()
 	tidied := Tidied{Branch: branch}
-	proposal, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch})
+	proposal, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch, Attended: streams.Terminal()})
 	if err != nil {
 		return tidied, err
 	}

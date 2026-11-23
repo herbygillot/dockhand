@@ -94,12 +94,12 @@ commits, and its files are as they were when it was saved.`,
 			// one makes, as a branch of edits alone and no commits yet
 			// has (field testing on v0.7.0, #53); a plan of several asks
 			// for --squash.
-			proposal, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch, Squash: squash || message != "", Message: message, Author: author, Restyle: restyle})
+			proposal, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch, Attended: streams.Terminal(), Squash: squash || message != "", Message: message, Author: author, Restyle: restyle})
 			if err != nil {
 				return err
 			}
 			if message != "" && !squash {
-				plain, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch, Author: author, Restyle: restyle})
+				plain, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch, Attended: streams.Terminal(), Author: author, Restyle: restyle})
 				if err != nil {
 					return err
 				}
