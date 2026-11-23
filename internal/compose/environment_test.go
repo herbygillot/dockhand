@@ -41,13 +41,13 @@ var readersBelow = map[string]int{
 	"failpoint":       2,
 	// The starter starts a local or a script build: itself, with the Env
 	// its launcher gives, the build as its child, which inherits it, and,
-	// for a root build, the root stop, which inherits it too.
-	"buildenv/starter": 3,
-	// The probe of this Mac's sudo starts a command it holds as a process,
-	// in a session of its own, with a terminal or without, which
-	// subprocess.Run can't; it hands both its programs the Env compose
-	// gives (rootproof.go).
-	"buildenv/local": 2,
+	// for a root build, the root stop, handed the starter's own
+	// environment, the composed one, explicitly: one read of it.
+	"buildenv/starter": 4,
+	// The probe of this Mac's sudo holds its command as a process, in a
+	// session of its own, with a terminal or without, which subprocess.Run
+	// can't; it hands it the Env compose gives (rootproof.go).
+	"buildenv/local": 1,
 }
 
 // Nothing below compose reads the process's environment itself

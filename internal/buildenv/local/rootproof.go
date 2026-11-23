@@ -18,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"github.com/herbygillot/dockhand/internal/buildenv/guest"
 	"github.com/herbygillot/dockhand/internal/filelock"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
 // SudoIdentity is the sudo binary a proof is of: its path, size and
@@ -151,6 +152,11 @@ while {![file exists $release] && [clock seconds] < $deadline} { after 50 }
 	out := filepath.Join(dir, "probe")
 	_ = os.Remove(out)
 	args := append(append([]string(nil), sudo[1:]...), "-n", tclsh, probe, out, lockPath, release, bound)
+	// Not subprocess.Run: the probe holds the sudo as a process while it
+	// runs, signals it and watches it end, in a session of its own, with
+	// a controlling terminal or without, which Run, a call that returns
+	// once its program has ended, can't give. Its Env is the one compose
+	// gives, handed on explicitly.
 	command := exec.CommandContext(ctx, sudo[0], args...)
 	command.Stdin, command.Env = lock, env
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -218,10 +224,8 @@ while {![file exists $release] && [clock seconds] < $deadline} { after 50 }
 	if err := syscall.Kill(command.Process.Pid, syscall.SIGTERM); err == nil {
 		found.SelfSignals = true
 	} else {
-		root := exec.CommandContext(ctx, sudo[0], append(append([]string(nil), sudo[1:]...), "-n", tclsh, stop, strconv.Itoa(command.Process.Pid))...)
-		root.Env = env
-		if out, err := root.CombinedOutput(); err != nil {
-			return found, fmt.Errorf("the root stop under sudo -n: %v %s", err, strings.TrimSpace(string(out)))
+		if _, err := subprocess.Run(ctx, subprocess.Spec{Tool: "sudo", Path: sudo[0], Args: append(append([]string(nil), sudo[1:]...), "-n", tclsh, stop, strconv.Itoa(command.Process.Pid)), Env: env}); err != nil {
+			return found, fmt.Errorf("the root stop under sudo -n: %w", err)
 		}
 	}
 	select {

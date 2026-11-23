@@ -445,7 +445,12 @@ func stopSudo(child *exec.Cmd, ended <-chan error, directory string, self procid
 		if now, err := procid.Start(pid); err != nil || now != start {
 			return false
 		}
+		// Not subprocess.Run, which the starter doesn't import: it is the
+		// process its launcher started with the Env compose composed, so
+		// that environment is its own, read once here and handed on
+		// explicitly rather than left to be inherited.
 		command := exec.Command(rootStop[0], append(append([]string(nil), rootStop[1:]...), "--stop", signal, how, strconv.Itoa(pid), seconds)...)
+		command.Env = os.Environ()
 		command.Stdout, command.Stderr = os.Stderr, os.Stderr
 		return command.Run() == nil
 	}
