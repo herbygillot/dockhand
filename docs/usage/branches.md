@@ -54,8 +54,9 @@ it, the following selectors make your intent explicit:
 | `--pr <number>` | The tracked branch associated with that pull request. | `dockhand status --pr 35174` |
 
 Choose one selector at a time. These selectors are available on commands about a
-whole branch, including `check`, `tidy`, `submit`, `diff`, `rebase`, and
-`archive`. The check-history commands also accept them:
+whole branch, including `check`, `tidy`, `submit`, `diff`, `rebase`, `archive`,
+and `clean`. `clean --kept` uses them to select which branch's kept clones to
+remove. The check-history commands also accept them:
 `dockhand logs -b jq-update` finds that branch's latest check, while
 `dockhand logs check-42 jq` names a particular check and port.
 
@@ -325,7 +326,9 @@ operation is never allowed in the upstream repository, regardless of ownership`.
 
 `clean --closed` also considers pull requests closed without merging, while
 preserving local work master lacks. A named `clean jq-update` considers only
-that ended branch; an open branch must first be finished or archived. Use
+that ended branch; an open branch must first be finished or archived. Select
+one branch with `-b`, `-p`, or `--pr`, or name several as words; do not mix
+selectors and words. The port selector considers ended branches too. Use
 `status --all` to inspect the records left behind. `clean --delete` is the
 explicit step that forgets an ended branch; its preview matters because unmerged
 commits can go with it. A worktree with uncommitted edits or untracked files is

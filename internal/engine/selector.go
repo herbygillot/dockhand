@@ -56,6 +56,26 @@ func (e *Engine) PullRequestBranch(ctx context.Context, number int) (model.Branc
 	return found, err
 }
 
+// PullRequestBranchAny finds a tracked pull request regardless of branch
+// state, for commands such as clean that operate on ended branches too.
+func (e *Engine) PullRequestBranchAny(ctx context.Context, number int) (model.Branch, error) {
+	var found model.Branch
+	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		branches, err := r.Branches(store.BranchFilter{})
+		if err != nil {
+			return err
+		}
+		for _, branch := range branches {
+			if pr := branch.PullRequest; pr != nil && pr.Repository == e.PullRequestRepository() && pr.Number == number {
+				found = branch
+				return nil
+			}
+		}
+		return fmt.Errorf("%w tracks pull request %d; dockhand adopt --pr %d tracks it", ErrNoBranch, number, number)
+	})
+	return found, err
+}
+
 // OpenBranches are the open branches, as shell completion offers them.
 func (e *Engine) OpenBranches(ctx context.Context) ([]model.Branch, error) {
 	var open []model.Branch
@@ -91,6 +111,9 @@ const (
 	// branch, and else the branch checked out here; a command that reads
 	// or acts on a whole branch.
 	SelectExisting SelectPolicy = iota
+	// SelectAnyExisting finds a branch by port regardless of its state,
+	// for cleanup operations that must select ended branches too.
+	SelectAnyExisting
 	// SelectOrStart works where the command runs, else in the port's open
 	// branch, and starts one for the port where none changes it: an
 	// authoring command.
@@ -206,12 +229,20 @@ func (e *Engine) Select(ctx context.Context, selector Selector, work Work) (Sele
 		}
 		return Selection{}, err
 	case selector.PR != 0:
-		branch, err := e.PullRequestBranch(ctx, selector.PR)
+		var branch model.Branch
+		var err error
+		if selector.Policy == SelectAnyExisting {
+			branch, err = e.PullRequestBranchAny(ctx, selector.PR)
+		} else {
+			branch, err = e.PullRequestBranch(ctx, selector.PR)
+		}
 		return Selection{Branch: branch}, err
 	case selector.New:
 		return e.startRequest(ctx, selector.Port, selector.NewName, work)
 	case selector.Policy == SelectExisting && selector.Port != "":
 		return e.portSelection(ctx, selector.Port, false, work)
+	case selector.Policy == SelectAnyExisting && selector.Port != "":
+		return e.portSelectionAny(ctx, selector.Port)
 	}
 	branch, err := e.Current(ctx)
 	if err == nil && selector.Policy == SelectOrStart {
@@ -232,6 +263,25 @@ func (e *Engine) Select(ctx context.Context, selector Selector, work Work) (Sele
 		return Selection{}, err
 	}
 	return e.portSelection(ctx, selector.Port, true, work)
+}
+
+func (e *Engine) portSelectionAny(ctx context.Context, port string) (Selection, error) {
+	branches, err := e.BranchesChangingAny(ctx, port)
+	if err != nil {
+		return Selection{}, err
+	}
+	found := make([]PortBranch, len(branches))
+	for i, branch := range branches {
+		found[i] = PortBranch{Branch: branch}
+	}
+	switch len(found) {
+	case 0:
+		return Selection{}, fmt.Errorf("%w changes %s; dockhand status -p %s lists every branch touching it", ErrNoBranch, port, port)
+	case 1:
+		return Selection{Branch: found[0].Branch}, nil
+	default:
+		return Selection{Choices: found}, nil
+	}
 }
 
 // Untracked is the branch checked out here where it's one a person made

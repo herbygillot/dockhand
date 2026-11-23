@@ -39,8 +39,8 @@ func cleanStates(merged, closed bool) []model.BranchState {
 
 func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var merged, closed, yes, automatic, forget, plan bool
-	var branch string
 	var keptOnly bool
+	var where branchflags.BranchFlags
 	cmd := &cobra.Command{
 		Use:   "clean [branch...] [--merged] [--closed]",
 		Short: "Remove worktrees and branches after merging",
@@ -88,16 +88,15 @@ their checks kept. It also deletes their records, except for check
 results reused by other branches. It asks before proceeding; without a
 terminal, pass --yes.
 
---kept check-12 removes only that check's kept clones, and --kept -b
-branch-name removes all kept clones for one branch; neither
-touches the branch or its records. A bare -b is refused; clean branch-name
-cleans that branch. With neither selector, --kept removes only expired
-failure clones.
+--kept check-12 removes only that check's kept clones; --kept with -b,
+-p, or --pr removes all kept clones for that branch. These leave the
+branch and its records alone. With no check or branch selector, --kept
+removes only expired failure clones.
 --plan shows what it would remove, or forget, and removes nothing.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			if cmd.Flags().Changed("branch") && !keptOnly {
-				return fmt.Errorf("clean -b %s requires --kept; use clean %s to clean a branch", branch, branch)
+			if len(args) > 0 && where.Explicit() && !keptOnly {
+				return errors.New("clean takes branch words or one selector, not both")
 			}
 			e, err := s.Open(ctx)
 			if err != nil {
@@ -105,14 +104,17 @@ failure clones.
 			}
 			defer e.Close()
 			if automatic {
-				if len(args) > 0 {
+				if len(args) > 0 || where.Explicit() {
 					return errors.New("--automatic cleans what's due, not branches named")
+				}
+				if keptOnly || forget {
+					return errors.New("clean --automatic cannot be combined with --kept or --delete")
 				}
 				return cleanAutomatically(ctx, e, streams, s.File)
 			}
 			if keptOnly {
-				if cmd.Flags().Changed("merged") || closed || forget || automatic || branch != "" && len(args) > 0 {
-					return errors.New("clean --kept takes a check name or -b branch, not branch arguments or other clean modes")
+				if cmd.Flags().Changed("merged") || closed || forget {
+					return errors.New("clean --kept takes a check name or one branch selector, not other clean modes")
 				}
 				check := ""
 				if len(args) > 1 {
@@ -121,10 +123,29 @@ failure clones.
 				if len(args) == 1 {
 					check = args[0]
 				}
+				branch := ""
+				if where.Explicit() {
+					chosen, err := where.ResolveForClean(ctx, e, streams)
+					if err != nil {
+						return err
+					}
+					branch = chosen.ShortName()
+				}
+				if branch != "" && check != "" {
+					return errors.New("clean --kept takes a check name or one branch selector, not both")
+				}
 				return cleanKept(ctx, e, streams, check, branch, yes, plan)
 			}
+			names := args
+			if where.Explicit() {
+				chosen, err := where.ResolveForClean(ctx, e, streams)
+				if err != nil {
+					return err
+				}
+				names = []string{chosen.ShortName()}
+			}
 			if forget {
-				return forgetBranches(ctx, e, streams, args, yes, plan)
+				return forgetBranches(ctx, e, streams, names, yes, plan)
 			}
 			// Which branches merged is their pull requests' to say, read
 			// now: two merged a minute before were left out, unsaid, until
@@ -133,9 +154,9 @@ failure clones.
 				fmt.Fprintf(streams.Err, "%v; clean goes by the states last read\n", err)
 			}
 			var plans []engine.CleanBranch
-			if len(args) > 0 {
+			if len(names) > 0 {
 				var named []model.Branch
-				for _, name := range args {
+				for _, name := range names {
 					branch, err := e.ResolveRecord(ctx, name)
 					if err != nil {
 						return err
@@ -163,7 +184,7 @@ failure clones.
 			// left, the clones they kept above all: what other branches'
 			// checks left is for a clean that names none.
 			var leftovers []engine.Leftover
-			if len(args) == 0 {
+			if len(names) == 0 {
 				if leftovers, err = e.PlanLeftovers(ctx, session); err != nil {
 					return err
 				}
@@ -187,9 +208,9 @@ failure clones.
 				if err != nil {
 					return err
 				}
-				if len(args) > 0 {
+				if len(names) > 0 {
 					kept = slices.DeleteFunc(kept, func(branch model.Branch) bool {
-						return !slices.ContainsFunc(args, func(name string) bool { return name == branch.ShortName() || name == branch.Name })
+						return !slices.ContainsFunc(names, func(name string) bool { return name == branch.ShortName() || name == branch.Name })
 					})
 				}
 				if words := archivedKeptWords(kept); words != "" {
@@ -233,9 +254,8 @@ failure clones.
 	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
 	cmd.Flags().BoolVar(&forget, "delete", false, "forget merged, closed, archived, or open branches with no pull request whose changes are on master")
 	cmd.Flags().BoolVar(&automatic, "automatic", false, "run automatic cleanup's pass, when it is due, as a command starts it once its work is done")
-	cmd.Flags().BoolVar(&keptOnly, "kept", false, "remove kept clones; with a check name, remove that check's clones; without one, remove expired failure clones")
-	cmd.Flags().StringVarP(&branch, "branch", "b", "", "with --kept, remove kept clones for this branch")
-	branchflags.SingleBranch(cmd)
+	cmd.Flags().BoolVar(&keptOnly, "kept", false, "remove kept clones; with a check name, remove that check's clones; with a branch selector, remove that branch's clones")
+	where.Register(cmd, s, "clean")
 	_ = cmd.Flags().MarkHidden("automatic")
 	settings.SupportsJSON(cmd)
 	return cmd

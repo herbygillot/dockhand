@@ -48,7 +48,17 @@ func (b BranchFlags) Explicit() bool {
 // with their exact names. A flag beats where the command runs, and says
 // so where the two differ.
 func (b BranchFlags) Resolve(ctx context.Context, e *engine.Engine, streams term.Streams) (model.Branch, error) {
-	selection, err := e.Select(ctx, engine.Selector{Branch: b.Branch, PR: b.PR, Port: b.Port, Policy: engine.SelectExisting}, engine.WorkNone)
+	return b.resolve(ctx, e, streams, engine.SelectExisting)
+}
+
+// ResolveForClean resolves a port across ended as well as open branches,
+// which clean can remove after a merge, close, or archive.
+func (b BranchFlags) ResolveForClean(ctx context.Context, e *engine.Engine, streams term.Streams) (model.Branch, error) {
+	return b.resolve(ctx, e, streams, engine.SelectAnyExisting)
+}
+
+func (b BranchFlags) resolve(ctx context.Context, e *engine.Engine, streams term.Streams, policy engine.SelectPolicy) (model.Branch, error) {
+	selection, err := e.Select(ctx, engine.Selector{Branch: b.Branch, PR: b.PR, Port: b.Port, Policy: policy}, engine.WorkNone)
 	// A checkout dockhand doesn't track is offered what tracks it, on a
 	// terminal, where nothing else could be meant; a script is refused,
 	// naming it (the roadmap's part 3, by the command-line UX review's §2).

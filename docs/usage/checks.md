@@ -533,9 +533,9 @@ has no age limit, is not removed for low space, and survives later checks of
 the branch. A later `--keep` check on the same branch and release replaces its
 asked clone; an ordinary check leaves it in place. Remove one check's clones
 with `dockhand clean --kept check-12`, or all the branch's with
-`dockhand clean --kept -b branch-name`; these leave the branch and its records
-alone. `dockhand clean -b branch-name` without `--kept` is refused; use
-`dockhand clean branch-name` to clean that branch. Removing a branch with
+`dockhand clean --kept -b branch-name`, `--kept -p port`, or
+`--kept --pr number`; these leave the branch and its records alone. Without
+`--kept`, those selectors clean the named branch. Removing a branch with
 `clean` also removes its kept clones. A running clone is skipped until a later
 cleanup opportunity. A clone `dockhand shell` is in is never removed:
 `clean --kept` names each clone it left and why, counts only what it removed,

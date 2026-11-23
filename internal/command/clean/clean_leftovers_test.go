@@ -2,7 +2,10 @@ package clean
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -11,8 +14,10 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // leavingBuilder passes every target, names its environment on the
@@ -172,11 +177,22 @@ func TestPlainCleanKeepsOnlyUnexpiredInCapFailureClones(t *testing.T) {
 	require.Contains(t, builder.left, current)
 }
 
-func TestCleanBranchSelectorRequiresKept(t *testing.T) {
+func TestCleanBranchSelectorCleansTheSelectedBranch(t *testing.T) {
 	t.Parallel()
 	cmdtest.CheckedBranch(t)
-	_, _, err := cmdtest.Dockhand(t, "clean", "-b", "jq-update")
-	require.ErrorContains(t, err, "clean -b jq-update requires --kept; use clean jq-update to clean a branch")
+	_, _, err := cmdtest.Dockhand(t, "tidy", "--yes")
+	require.NoError(t, err)
+	out, _, err := cmdtest.Dockhand(t, "clean", "--kept", "-p", "jq", "--plan")
+	require.NoError(t, err)
+	require.Equal(t, "Nothing to remove.\n", out)
+	_, _, err = cmdtest.Dockhand(t, "archive", "-b", "jq-update", "--keep-worktree")
+	require.NoError(t, err)
+	out, _, err = cmdtest.Dockhand(t, "clean", "-b", "jq-update", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq-update")
+	out, _, err = cmdtest.Dockhand(t, "clean", "--delete", "-b", "jq-update", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq-update · archived")
 }
 
 func TestCleanKeptAllowsOneBranchSelector(t *testing.T) {
@@ -185,6 +201,88 @@ func TestCleanKeptAllowsOneBranchSelector(t *testing.T) {
 	out, _, err := cmdtest.Dockhand(t, "clean", "--kept", "-b", "jq-update")
 	require.NoError(t, err)
 	require.Equal(t, "Nothing to remove.\n", out)
+}
+
+func TestCleanSelectorsResolveForBranchesAndKeptClones(t *testing.T) {
+	t.Parallel()
+	cmdtest.CheckedBranch(t)
+	_, _, err := cmdtest.Dockhand(t, "tidy", "--yes")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "archive", "-b", "jq-update", "--keep-worktree")
+	require.NoError(t, err)
+	for _, args := range [][]string{{"-b", "jq-update"}, {"-p", "jq"}} {
+		out, _, err := cmdtest.Dockhand(t, append([]string{"clean"}, append(args, "--plan")...)...)
+		require.NoError(t, err, "%v", args)
+		require.Contains(t, out, "jq-update")
+	}
+}
+
+func TestCleanDeleteSelectorsForgetOpenBranchWhoseChangesAreOnMaster(t *testing.T) {
+	for _, selector := range [][]string{{"-b", "jq-update"}, {"-p", "jq"}} {
+		name := strings.Join(selector, "-")
+		t.Run(name, func(t *testing.T) {
+			w := cmdtest.NewWorld(t)
+			cmdtest.Versioned(t, w)
+			cmdtest.WithBumper(t)
+			_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
+			require.NoError(t, err)
+			dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+			cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+			_, _, err = cmdtest.Dockhand(t, "update", "jq")
+			require.NoError(t, err)
+			testsupport.Git(t, dir, "commit", "-q", "-am", "jq: update to 1.8.1")
+			portfile := testsupport.Git(t, dir, "show", "HEAD:textproc/jq/Portfile")
+			testsupport.WriteFiles(t, w.Upstream, map[string]string{"textproc/jq/Portfile": portfile + "\n"})
+			testsupport.Git(t, w.Upstream, "add", "textproc/jq/Portfile")
+			testsupport.Git(t, w.Upstream, "commit", "-q", "-m", "jq: update to 1.8.1")
+			cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
+			_, _, err = cmdtest.Dockhand(t, "start", "master-refresh")
+			require.NoError(t, err)
+
+			args := append([]string{"clean", "--delete", "--plan"}, selector...)
+			out, _, err := cmdtest.Dockhand(t, args...)
+			require.NoError(t, err)
+			require.Contains(t, out, "jq-update · open")
+			require.Contains(t, out, "Nothing was forgotten (--plan).")
+
+			args = append([]string{"clean", "--delete", "--yes"}, selector...)
+			out, _, err = cmdtest.Dockhand(t, args...)
+			require.NoError(t, err)
+			require.Contains(t, out, "Forgot jq-update.")
+		})
+	}
+}
+
+func TestCleanRefusesWordsAndBranchSelectorTogether(t *testing.T) {
+	t.Parallel()
+	cmdtest.CheckedBranch(t)
+	_, _, err := cmdtest.Dockhand(t, "clean", "jq-update", "-b", "jq-update")
+	require.EqualError(t, err, "clean takes branch words or one selector, not both")
+}
+
+func TestCleanKeptSelectsPullRequestBranch(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	g := cmdtest.WithGitHub(t, w)
+	testsupport.Git(t, w.Upstream, "switch", "-q", "-c", "contrib")
+	require.NoError(t, os.WriteFile(filepath.Join(w.Upstream, "textproc/jq/Portfile"), []byte("name jq\n# docs\n"), 0o644))
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-am", "jq: document options")
+	testsupport.Git(t, w.Upstream, "update-ref", "refs/pull/35174/head", "contrib")
+	testsupport.Git(t, w.Upstream, "switch", "-q", "master")
+	g.Theirs = map[int]forge.PullRequest{35174: {
+		Ref:            forge.PullRequestRef{Forge: forge.GitHub, Repository: "macports/macports-ports", Number: 35174},
+		HeadRepository: "ada/macports-ports", HeadBranch: "contrib", BaseBranch: "master", State: forge.PullRequestOpen,
+	}}
+	_, _, err := cmdtest.Dockhand(t, "adopt", "--pr", "35174")
+	require.NoError(t, err)
+	out, _, err := cmdtest.Dockhand(t, "clean", "--kept", "--pr", "35174", "--plan")
+	require.NoError(t, err)
+	require.Equal(t, "Nothing to remove.\n", out)
+	_, _, err = cmdtest.Dockhand(t, "archive", "--pr", "35174", "--keep-worktree")
+	require.NoError(t, err)
+	out, _, err = cmdtest.Dockhand(t, "clean", "--pr", "35174", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "pr-35174")
 }
 
 func TestKeepPlanAndCheckAnnounceAskedCloneReplacement(t *testing.T) {

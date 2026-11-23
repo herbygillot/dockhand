@@ -1225,6 +1225,48 @@ func (e *Engine) BranchesChanging(ctx context.Context, port string) ([]model.Bra
 	return work.BranchesChanging(ctx, port)
 }
 
+// BranchesChangingAny lists tracked branches in every state whose recorded
+// base-to-head change touches port. Cleanup selectors need ended branches,
+// which OpenWork intentionally excludes.
+func (e *Engine) BranchesChangingAny(ctx context.Context, port string) ([]model.Branch, error) {
+	open, err := e.PortBranches(ctx, port)
+	if err != nil {
+		return nil, err
+	}
+	found := make([]model.Branch, 0, len(open))
+	seen := make(map[model.BranchID]bool, len(open))
+	for _, branch := range open {
+		found = append(found, branch.Branch)
+		seen[branch.Branch.ID] = true
+	}
+	var branches []model.Branch
+	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		branches, err = r.Branches(store.BranchFilter{})
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, branch := range branches {
+		if seen[branch.ID] {
+			continue
+		}
+		head, _, err := e.Repo.Branch(ctx, branch.Name)
+		if err != nil {
+			continue
+		}
+		paths, err := e.Repo.ChangedPaths(ctx, string(branch.Base), head)
+		if err != nil {
+			return nil, err
+		}
+		if slices.Contains(macports.ScopeOf(paths).PortNames(), port) {
+			found = append(found, branch)
+		}
+	}
+	return found, nil
+}
+
 // PortBranch is an open branch that changes a port, and whether its
 // change record says it changes only the port's revision, as a branch of
 // --revbump-dependents does.
