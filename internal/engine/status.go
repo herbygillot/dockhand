@@ -83,6 +83,10 @@ type BranchStatus struct {
 	Latest   *model.Run
 	Active   []model.Run
 	Evidence *Evidence
+	// HistoricalResults says, for each checked port and each port changed
+	// since the check, whether its files changed after the checked tree or
+	// the port wasn't in that check. It is populated only for CheckedOlder.
+	HistoricalResults []HistoricalPortResult
 	// Current is true when Latest checked exactly the files as they are
 	// now, whatever their history.
 	Current bool
@@ -148,6 +152,22 @@ type BranchStatus struct {
 	// there's no open pull request.
 	Merge             *macports.Merge
 	MaintainersUnread []string
+}
+
+// HistoricalPortState is a port's relation to a check of earlier files.
+type HistoricalPortState string
+
+const (
+	HistoricalPortUnchanged  HistoricalPortState = "unchanged"
+	HistoricalPortChanged    HistoricalPortState = "changed"
+	HistoricalPortNotInCheck HistoricalPortState = "not-in-check"
+)
+
+// HistoricalPortResult is the check's per-port result in relation to the
+// branch's files now.
+type HistoricalPortResult struct {
+	Port  string
+	State HistoricalPortState
 }
 
 // PortRelease is the release an update chose for a port.
@@ -726,6 +746,11 @@ func (e *Engine) branchStatus(ctx context.Context, branch model.Branch, noFork b
 	}
 	evidence, err := e.evidenceNow(ctx, *status.Latest, checks)
 	status.Evidence = &evidence
+	if err == nil && status.CheckStanding() == branchstate.CheckedOlder {
+		if historical, compareErr := e.historicalResults(ctx, status); compareErr == nil {
+			status.HistoricalResults = historical
+		}
+	}
 	if status.Current {
 		// Each lets go where a person's decision answers its commits, as
 		// submit's do (D1).
@@ -742,6 +767,51 @@ func (e *Engine) branchStatus(ctx context.Context, branch model.Branch, noFork b
 		err = e.readDecisions(ctx, &status)
 	}
 	return status, err
+}
+
+// historicalResults compares the checked tree with the current files once,
+// then answers each checked port from the paths that changed in its own
+// directory. Current changed ports absent from the check are listed last.
+func (e *Engine) historicalResults(ctx context.Context, status BranchStatus) ([]HistoricalPortResult, error) {
+	changed, err := e.Repo.ChangedPaths(ctx, string(status.LatestRevision.Source.Tree), status.Tree)
+	if err != nil {
+		return nil, err
+	}
+	changedIn := func(directory string) bool {
+		if directory == "" {
+			return false
+		}
+		for _, file := range changed {
+			if file == directory || strings.HasPrefix(file, directory+"/") {
+				return true
+			}
+		}
+		return false
+	}
+
+	results := make([]HistoricalPortResult, 0, len(status.Evidence.Targets))
+	checked := map[string]bool{}
+	for _, target := range status.Evidence.Targets {
+		port := target.Target.Target.Name
+		if port == "" || checked[port] {
+			continue
+		}
+		checked[port] = true
+		state := HistoricalPortUnchanged
+		if changedIn(target.Target.Directory) {
+			state = HistoricalPortChanged
+		}
+		results = append(results, HistoricalPortResult{Port: port, State: state})
+	}
+	current, _ := status.ChangedPorts()
+	for _, port := range current {
+		if port == macports.ResourcesDirectory || checked[port] {
+			continue
+		}
+		checked[port] = true
+		results = append(results, HistoricalPortResult{Port: port, State: HistoricalPortNotInCheck})
+	}
+	return results, nil
 }
 
 // readOpen reads what status says of an open branch beside its files:

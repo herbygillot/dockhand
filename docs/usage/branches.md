@@ -34,6 +34,11 @@ and, while its pull request is open, a Merge section on who may merge it and
 when, which `dockhand usage publishing` explains. `path` prints the worktree
 directory, suitable for an editor or a shell:
 
+When the latest check passed for an earlier version of a branch's files,
+detail labels its results with the check number. Results for ports changed
+since then are marked, and ports absent from that check are listed as
+`not checked by check-<n>`.
+
 ```sh
 cd "$(dockhand path jq-update)"
 dockhand status

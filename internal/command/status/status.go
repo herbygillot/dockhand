@@ -507,8 +507,12 @@ func showBranch(out io.Writer, places config.Places, status engine.BranchStatus,
 		}
 		fmt.Fprintf(out, "  Checks   %s\n", view.CheckState(status))
 		if status.Evidence != nil {
-			// status has no plan above it, so one environment is named.
-			view.WriteResults(out, "           ", *status.Evidence, true)
+			if status.CheckStanding() == branchstate.CheckedOlder {
+				view.WriteHistoricalResults(out, "           ", *status.Evidence, status.HistoricalResults)
+			} else {
+				// status has no plan above it, so one environment is named.
+				view.WriteResults(out, "           ", *status.Evidence, true)
+			}
 			if status.Evidence.Problem != "" {
 				fmt.Fprintf(out, "           ! %s\n", status.Evidence.Problem)
 			}

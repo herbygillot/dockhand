@@ -308,20 +308,51 @@ func writeExclusions(out io.Writer, plan model.Plan, shown int) {
 // in full. Each target built says how long it took, and each release how
 // long the check ran there, under the results (the docs dig's I38).
 func WriteResults(out io.Writer, indent string, evidence engine.Evidence, where bool) {
+	writeResults(out, indent, evidence, where, nil)
+}
+
+// WriteHistoricalResults shows a check's results for earlier files, with
+// the engine's per-port comparisons to the branch's files now.
+func WriteHistoricalResults(out io.Writer, indent string, evidence engine.Evidence, results []engine.HistoricalPortResult) {
+	check := evidence.Run.Name()
+	fmt.Fprintf(out, "%s%s: results for earlier files\n", indent, check)
+	writeResults(out, indent, evidence, true, results)
+}
+
+func writeResults(out io.Writer, indent string, evidence engine.Evidence, where bool, historical []engine.HistoricalPortResult) {
 	defer writeTook(out, indent, evidence)
 	defer writeStanding(out, indent, evidence)
 	environments := evidence.Plan.Environments
+	check := evidence.Run.Name()
+	states := make(map[string]engine.HistoricalPortState, len(historical))
+	for _, result := range historical {
+		states[result.Port] = result.State
+	}
+	seen := map[string]bool{}
+	label := func(target engine.TargetEvidence) string {
+		port := target.Target.Target.Name
+		seen[port] = true
+		name := string(target.Target.ID)
+		if states[port] == engine.HistoricalPortChanged {
+			name += " (files changed since " + check + ")"
+		}
+		return name
+	}
 	// The releases a profile chose not to build on are left out, as the
 	// pull request leaves them out, and so are those build.default
 	// requires that no check planned: a check on 12 and 27 is of those
 	// two, and which releases nothing covered is submit's to say.
 	shown := evidence.Checked()
+	labels := make([]string, len(evidence.Targets))
+	for i, target := range evidence.Targets {
+		labels[i] = label(target)
+	}
 	if len(shown) <= 1 {
 		width := 0
-		for _, target := range evidence.Targets {
-			width = max(width, len(target.Target.ID))
+		for _, name := range labels {
+			width = max(width, len(name))
 		}
-		for _, target := range evidence.Targets {
+		for i, target := range evidence.Targets {
 			var cells []string
 			for _, i := range shown {
 				cell := resultWords(evidence, target, i) + targetTook(evidence, target, i)
@@ -330,8 +361,9 @@ func WriteResults(out io.Writer, indent string, evidence engine.Evidence, where 
 				}
 				cells = append(cells, cell)
 			}
-			fmt.Fprintf(out, "%s%-*s  %s\n", indent, width, target.Target.ID, strings.Join(cells, "   "))
+			fmt.Fprintf(out, "%s%-*s  %s\n", indent, width, labels[i], strings.Join(cells, "   "))
 		}
+		writeNotChecked(out, indent, check, historical, seen)
 		return
 	}
 	grid := tabwriter.NewWriter(out, 0, 0, 3, ' ', 0)
@@ -340,14 +372,24 @@ func WriteResults(out io.Writer, indent string, evidence engine.Evidence, where 
 		fmt.Fprintf(grid, "\t%s", engine.EnvironmentHeading(environments[i], environments))
 	}
 	fmt.Fprintln(grid)
-	for _, target := range evidence.Targets {
-		fmt.Fprintf(grid, "%s%s", indent, target.Target.ID)
+	for i, target := range evidence.Targets {
+		fmt.Fprintf(grid, "%s%s", indent, labels[i])
 		for _, i := range shown {
 			fmt.Fprintf(grid, "\t%s", resultWords(evidence, target, i)+targetTook(evidence, target, i))
 		}
 		fmt.Fprintln(grid)
 	}
 	_ = grid.Flush()
+	writeNotChecked(out, indent, check, historical, seen)
+}
+
+func writeNotChecked(out io.Writer, indent, check string, historical []engine.HistoricalPortResult, seen map[string]bool) {
+	for _, result := range historical {
+		if result.State == engine.HistoricalPortNotInCheck && !seen[result.Port] {
+			fmt.Fprintf(out, "%s%s  not checked by %s\n", indent, result.Port, check)
+			seen[result.Port] = true
+		}
+	}
 }
 
 // saysTook is the least time a report says: a port's build takes
