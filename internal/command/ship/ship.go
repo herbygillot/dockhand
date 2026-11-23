@@ -1040,7 +1040,7 @@ func prepareSubmit(ctx context.Context, s *settings.Settings, e *engine.Engine, 
 func submitPassed(ctx context.Context, s *settings.Settings, e *engine.Engine, streams term.Streams, pending pendingSubmit) (engine.Submitted, error) {
 	// Where another command changed the branch's request while this
 	// submission was judged, the engine judges it again (#195).
-	plan, submitted, err := e.SubmitUnderRequest(ctx, pending.request, func(plan engine.SubmitPlan) (engine.Submitted, error) {
+	plan, submitted, err := e.SubmitUnderRequest(ctx, pending.request, nil, func(plan engine.SubmitPlan) (engine.Submitted, error) {
 		streams.Emit(view.SubmitView(plan))
 		fmt.Fprintln(streams.Prose())
 		return submit.Apply(ctx, e, streams, plan, s.File.Submit.RerequestReview, pending.answered)

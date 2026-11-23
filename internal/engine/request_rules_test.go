@@ -100,7 +100,7 @@ func TestARefusedPublicationLeavesTheRequest(t *testing.T) {
 		require.NoError(t, err)
 		request := SubmitRequestFor(*current.Request, current, false)
 		request.PendingCheck = false
-		_, _, err = e.SubmitUnderRequest(t.Context(), request, func(plan SubmitPlan) (Submitted, error) {
+		_, _, err = e.SubmitUnderRequest(t.Context(), request, nil, func(plan SubmitPlan) (Submitted, error) {
 			return e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 		})
 		return err

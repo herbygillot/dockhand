@@ -565,11 +565,16 @@ func (e *Engine) pendingAfter(ctx context.Context, branch model.BranchID, result
 // under the request as it stands: three rounds, then it says the request
 // keeps changing, nothing pushed. A request that now asks for a check that
 // hasn't run stops it (#195, "Where the request meets its neighbours").
-// It returns the last plan, for the caller's words.
-func (e *Engine) SubmitUnderRequest(ctx context.Context, request SubmitRequest, apply func(SubmitPlan) (Submitted, error)) (SubmitPlan, Submitted, error) {
+// It returns the last plan, for the caller's words. A caller that planned
+// the submission already gives that plan as first, and it is made as it
+// is, planned again only where the request changed.
+func (e *Engine) SubmitUnderRequest(ctx context.Context, request SubmitRequest, first *SubmitPlan, apply func(SubmitPlan) (Submitted, error)) (SubmitPlan, Submitted, error) {
 	for round := 0; ; round++ {
-		plan, err := e.PlanSubmit(ctx, request)
-		if err != nil {
+		var plan SubmitPlan
+		var err error
+		if round == 0 && first != nil {
+			plan = *first
+		} else if plan, err = e.PlanSubmit(ctx, request); err != nil {
 			return plan, Submitted{}, err
 		}
 		if round > 0 && plan.CheckNeeded {

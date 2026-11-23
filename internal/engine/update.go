@@ -480,6 +480,20 @@ func (e *Engine) resolveFor(ctx context.Context, request *UpdateRequest, branch 
 	asking := *request.Asking
 	var resolved Resolved
 	var err error
+	// A refusal is kept and not tried again: the ask resolved against the
+	// request as it stands, a refusal still standing for the port stops
+	// here, by name, before anything is written; a changed ask removed it
+	// in the resolver, so it is judged again (#195, "Readiness").
+	if branch.ID != "" && !request.Plan {
+		look := asking
+		look.Branch = branch
+		if resolved, err = ResolveRequest(look); err != nil {
+			return nil, err
+		}
+		if refused := refusedFor(resolved.Request, request.Port); refused != "" {
+			return nil, refusal.New(refusal.Attention, "%s; nothing was written: that ask is refused until it changes", refused)
+		}
+	}
 	if branch.ID != "" && !request.Plan && request.Start == nil {
 		if resolved, *branch, err = e.keepRequest(ctx, *branch, asking); err != nil {
 			return nil, err
@@ -491,12 +505,6 @@ func (e *Engine) resolveFor(ctx context.Context, request *UpdateRequest, branch 
 		if resolved, err = ResolveRequest(asking); err != nil {
 			return nil, err
 		}
-	}
-	// A refusal is kept and not tried again: the same ask stops here, by
-	// name, and writes nothing; a changed ask removed it in the resolver,
-	// so it is judged again (#195, "Readiness").
-	if refused := refusedFor(resolved.Request, request.Port); refused != "" && !request.Plan {
-		return nil, refusal.New(refusal.Attention, "%s; nothing was written: that ask is refused until it changes", refused)
 	}
 	// A release kept is gone on with where no version was named, over one
 	// a lookup found again (#195, "What is kept").

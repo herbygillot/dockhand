@@ -165,7 +165,7 @@ func TestAStagesSubmissionIsJudgedAgainWhenItsRequestChanges(t *testing.T) {
 			}
 			request := SubmitRequestFor(*branch.Request, branch, false)
 			request.PendingCheck = false
-			_, submitted, err := e.SubmitUnderRequest(t.Context(), request, func(plan SubmitPlan) (Submitted, error) {
+			_, submitted, err := e.SubmitUnderRequest(t.Context(), request, nil, func(plan SubmitPlan) (Submitted, error) {
 				return e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 			})
 			current, getErr := e.Branch(t.Context(), branch.ID)
@@ -228,7 +228,7 @@ func TestAShipFindingItsWorkDeliveredEndsOnlyItsRequest(t *testing.T) {
 		deliver := func(branch model.Branch) error {
 			request := SubmitRequestFor(*branch.Request, branch, false)
 			request.PendingCheck = false
-			_, _, err := e.SubmitUnderRequest(t.Context(), request, func(plan SubmitPlan) (Submitted, error) {
+			_, _, err := e.SubmitUnderRequest(t.Context(), request, nil, func(plan SubmitPlan) (Submitted, error) {
 				return e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 			})
 			return err

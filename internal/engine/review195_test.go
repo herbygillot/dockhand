@@ -39,13 +39,16 @@ func TestReview195ResolverDoesNotAliasOutcomeJudgedBy(t *testing.T) {
 	branch := keptBranch()
 	branch.Request.Targets[0].Outcomes[0].JudgedBy = map[string]string{"Source.KeepHTTP": "false"}
 	branch.Request.Targets[0].Outcomes[0].AppliedWith = map[string]string{"Shared": "false"}
+	branch.Request.Targets[0].Release.Listing = &model.ReleaseListing{URL: "https://example.com/jq-1.8.tar.gz"}
 	resolved, err := ResolveRequest(Asking{Origin: "ship", Branch: branch})
 	require.NoError(t, err)
 	version := &resolved.Request.Targets[0].Outcomes[0]
 	version.JudgedBy["Source.KeepHTTP"] = "true"
 	version.AppliedWith["Shared"] = "true"
+	resolved.Request.Targets[0].Release.Listing.URL = "https://example.com/changed"
 	require.Equal(t, "false", branch.Request.Targets[0].Outcomes[0].JudgedBy["Source.KeepHTTP"])
 	require.Equal(t, "false", branch.Request.Targets[0].Outcomes[0].AppliedWith["Shared"])
+	require.Equal(t, "https://example.com/jq-1.8.tar.gz", branch.Request.Targets[0].Release.Listing.URL, "the release's listing too")
 }
 
 // The version's outcome records update.source where the setting gave it,
@@ -127,8 +130,13 @@ func TestReview195UpdateDoesNotRejudgeARefusalWithoutAskChange(t *testing.T) {
 	current, err := e.Branch(t.Context(), branch.ID)
 	require.NoError(t, err)
 	request.Branch = current
+	// A store that refuses every write: the refusal is decided before
+	// anything is written, so it is still what the command says.
+	kept := e.Store
+	e.Store = refusingAfter(kept, 0)
 	_, err = e.Update(t.Context(), request)
-	require.ErrorContains(t, err, "carries no source archive", "the same ask again: the refusal stands, by name")
+	e.Store = kept
+	require.ErrorContains(t, err, "carries no source archive", "the same ask again: the refusal stands, by name, nothing written")
 	current, err = e.Branch(t.Context(), branch.ID)
 	require.NoError(t, err)
 	outcome, _ := current.Request.Targets[0].Outcome("source")
@@ -204,7 +212,7 @@ func TestReview195HandBackRestoresAnExplicitFalseExactly(t *testing.T) {
 	request := SubmitRequestFor(*current.Request, current, false)
 	request.PendingCheck = false
 	fake.Refuse = map[string]string{"Create": "Validation Failed"}
-	_, _, err = e.SubmitUnderRequest(t.Context(), request, func(plan SubmitPlan) (Submitted, error) {
+	_, _, err = e.SubmitUnderRequest(t.Context(), request, nil, func(plan SubmitPlan) (Submitted, error) {
 		return e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
 	})
 	require.Error(t, err)

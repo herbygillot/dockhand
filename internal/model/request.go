@@ -195,6 +195,10 @@ func (r ChangeRequest) Clone() ChangeRequest {
 	for i, target := range clone.Targets {
 		if target.Release != nil {
 			release := *target.Release
+			if release.Listing != nil {
+				listing := *release.Listing
+				release.Listing = &listing
+			}
 			clone.Targets[i].Release = &release
 		}
 		clone.Targets[i].Outcomes = cloneOutcomes(target.Outcomes)

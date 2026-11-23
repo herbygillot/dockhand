@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -172,6 +173,10 @@ func (e *Engine) keepRequest(ctx context.Context, branch model.Branch, asking As
 		kept = current
 		kept.Request = &request
 		titled := asking.Title.Given && current.Title != asking.Title.Value || asking.Note.Given && current.Note != asking.Note.Value
+		// An unchanged request is no write (#195).
+		if !titled && current.Request != nil && reflect.DeepEqual(*current.Request, request) {
+			return nil
+		}
 		if asking.Title.Given {
 			kept.Title = asking.Title.Value
 		}

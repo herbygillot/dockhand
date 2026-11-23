@@ -691,17 +691,15 @@ func (e *Engine) SubmitForServe(ctx context.Context, candidate ServeCandidate, a
 	// Where another command changed the branch's request while serve
 	// judged it, nothing was recorded: it is planned and judged again under
 	// the request as it stands, its holds read anew (#195).
-	request := candidate.Plan.Request
-	first := true
-	_, submitted, err := e.SubmitUnderRequest(ctx, request, func(plan SubmitPlan) (Submitted, error) {
-		if !first {
+	planned := candidate.Plan
+	rounds := 0
+	_, submitted, err := e.SubmitUnderRequest(ctx, planned.Request, &planned, func(plan SubmitPlan) (Submitted, error) {
+		// A plan made again under a changed request reads its holds anew.
+		if rounds++; rounds > 1 {
 			if held := plan.Held(); len(held) > 0 {
 				return Submitted{}, fmt.Errorf("%s needs review before submission: %s", plan.Branch.ShortName(), strings.Join(HoldLines(held), "; "))
 			}
-		} else {
-			plan = candidate.Plan
 		}
-		first = false
 		plan.Body = plan.Body + "\n\n" + ServeNote + "\n"
 		plan.served, plan.admission = true, admission
 		return e.ApplySubmit(ctx, plan, model.AnsweredNobody)
