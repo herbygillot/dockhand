@@ -80,6 +80,10 @@ type Local struct {
 	// process on the Mac, whatever its user or database: dockhand-locks
 	// in Temp when empty (own).
 	Locks string
+	// Proofs is the person's own directory where the probe of this Mac's
+	// sudo is kept (rootproof.go); no probe is kept or read without one,
+	// and no root build is stopped.
+	Proofs string
 	// Starter is the program the guest program is started through
 	// (starter.Self, as compose gives it).
 	Starter starter.Program

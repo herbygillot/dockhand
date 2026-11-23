@@ -3,6 +3,7 @@
 package local
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -29,10 +30,13 @@ func TestARootProbeProvesOnlyASudoThatHandsTheLockOn(t *testing.T) {
 	}{
 		{"hands it on", "#!/bin/sh\n[ \"$1\" = -n ] && shift\nexec \"$@\"\n", true},
 		{"logs its input", "#!/bin/sh\n[ \"$1\" = -n ] && shift\ncat | \"$@\"\n", false},
+		// The same file opened again: the command's own check passes,
+		// and only what it hands its input on to shows it holds no lock.
+		{"opens the lock again", "#!/bin/sh\n[ \"$1\" = -n ] && shift\nexec \"$@\" < \"$4\"\n", false},
 	} {
 		sudo := filepath.Join(t.TempDir(), "sudo")
 		testsupport.WriteExecutable(t, sudo, c.script)
-		l := &Local{Temp: t.TempDir(), Locks: t.TempDir()}
+		l := &Local{Temp: t.TempDir(), Proofs: filepath.Join(t.TempDir(), "local")}
 		proved, why := l.rootStopProved([]string{sudo})
 		require.False(t, proved, c.name)
 		require.Contains(t, why, "hasn't been probed yet", c.name)
@@ -42,8 +46,12 @@ func TestARootProbeProvesOnlyASudoThatHandsTheLockOn(t *testing.T) {
 		require.Len(t, said, 1, "%s: the probe is said once", c.name)
 		proved, why = l.rootStopProved([]string{sudo})
 		require.Equal(t, c.proved, proved, "%s: %s", c.name, why)
-		if !c.proved {
+		switch c.name {
+		case "logs its input":
 			require.Contains(t, why, "standard input the lock: false")
+		case "opens the lock again":
+			require.Contains(t, why, "standard input the lock: true")
+			require.Contains(t, why, "the opening locked: false")
 		}
 
 		said = nil
@@ -55,4 +63,37 @@ func TestARootProbeProvesOnlyASudoThatHandsTheLockOn(t *testing.T) {
 		require.False(t, proved, "%s: another binary is probed again", c.name)
 		require.Contains(t, why, "hasn't been probed yet")
 	}
+}
+
+// A proof counts only where it is this account's alone and of this sudo
+// binary: one unreadable, writable by others, or kept nowhere is not
+// proved (architecture's ruling of 2026-11-23).
+func TestARootProofIsTrustedOnlyWhereItIsThePersonsOwn(t *testing.T) {
+	t.Parallel()
+	sudo := filepath.Join(t.TempDir(), "sudo")
+	testsupport.WriteExecutable(t, sudo, "#!/bin/sh\nexec \"$@\"\n")
+	identity, err := sudoIdentity(sudo)
+	require.NoError(t, err)
+	proved, err := json.Marshal(RootProof{Sudo: identity, Proved: true, At: time.Now()})
+	require.NoError(t, err)
+	for _, c := range []struct {
+		name string
+		data []byte
+		mode os.FileMode
+	}{
+		{"its own, proved", proved, 0o600},
+		{"unreadable", []byte("{not json"), 0o600},
+		{"writable by others", proved, 0o666},
+		{"group-writable", proved, 0o620},
+	} {
+		l := &Local{Proofs: t.TempDir()}
+		path := filepath.Join(l.Proofs, rootProofName)
+		require.NoError(t, os.WriteFile(path, c.data, 0o600))
+		require.NoError(t, os.Chmod(path, c.mode))
+		ok, why := l.rootStopProved([]string{sudo})
+		require.Equal(t, c.name == "its own, proved", ok, "%s: %s", c.name, why)
+	}
+	ok, why := (&Local{}).rootStopProved([]string{sudo})
+	require.False(t, ok)
+	require.Contains(t, why, "no directory of yours")
 }

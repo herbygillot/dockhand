@@ -433,9 +433,16 @@ func stopSudo(child *exec.Cmd, ended <-chan error, directory string, self procid
 		guestPID = 0
 	default:
 	}
+	// The root stop compares a start time to the second, all root reads;
+	// so this process, which reads it exactly, makes rule 2's exact test
+	// of each target first, and the root stop's is the second check
+	// (architecture's ruling of 2026-11-23).
 	root := func(signal, how string, pid int, start string) bool {
 		seconds, ok := procid.Seconds(start)
 		if len(rootStop) == 0 || !ok {
+			return false
+		}
+		if now, err := procid.Start(pid); err != nil || now != start {
 			return false
 		}
 		command := exec.Command(rootStop[0], append(append([]string(nil), rootStop[1:]...), "--stop", signal, how, strconv.Itoa(pid), seconds)...)

@@ -60,7 +60,7 @@ func TestLiveSudoHandsTheLockToItsCommand(t *testing.T) {
 			name = "with a terminal"
 		}
 		t.Run(name, func(t *testing.T) {
-			found, err := ProbeRootStop(t.Context(), sudo, tclsh, filepath.Join(dir, strings.ReplaceAll(name, " ", "-")), terminal)
+			found, err := ProbeRootStop(t.Context(), sudo, os.Environ(), tclsh, filepath.Join(dir, strings.ReplaceAll(name, " ", "-")), terminal)
 			require.NoError(t, err, "the probe")
 			t.Log(found.Words())
 			require.True(t, found.StdinIsLock, "the command's standard input is the lock's file, not a %s sudo put there", found.Input)
