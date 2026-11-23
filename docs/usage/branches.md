@@ -55,8 +55,8 @@ it, the following selectors make your intent explicit:
 
 Choose one selector at a time. These selectors are available on commands about a
 whole branch, including `check`, `tidy`, `submit`, `diff`, `rebase`, `archive`,
-and `clean`. `clean --kept` uses them to select which branch's kept clones to
-remove. The check-history commands also accept them:
+`clean`, `edit`, and `undo`. `clean --kept` uses them to select which branch's
+kept clones to remove. The check-history commands also accept them:
 `dockhand logs -b jq-update` finds that branch's latest check, while
 `dockhand logs check-42 jq` names a particular check and port.
 
@@ -195,6 +195,9 @@ not lost repository contents. Bring another port into the branch with:
 ```sh
 dockhand edit libharbor -b jq-fix
 ```
+
+`edit` also accepts `-p` or `--pr` to choose the branch by its changed port or
+tracked pull request. These selectors cannot be combined with `--new`.
 
 A tracked file you edit in a directory outside the worktree's sparse checkout
 is still built: Git reports it as modified, so a check of the working files

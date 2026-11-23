@@ -17,6 +17,8 @@ import (
 // BranchChoice is the branch an authoring command was pointed at.
 type BranchChoice struct {
 	Branch string
+	Port   string
+	PR     int
 	// New is --new's name, or newNamed where it named none; empty where
 	// --new wasn't given.
 	New string
@@ -76,7 +78,11 @@ type ChosenBranch struct {
 // where none changes it, said first. Where several change it, a terminal
 // is asked once which, or for a new one, and a script is told them.
 func ChooseBranch(ctx context.Context, e *engine.Engine, streams term.Streams, where BranchChoice, port string, work engine.Work) (ChosenBranch, error) {
-	selection, err := e.Select(ctx, engine.Selector{Branch: where.Branch, New: where.IsNew(), NewName: where.NewName(), Port: port, Policy: engine.SelectOrStart}, work)
+	selectedPort := port
+	if where.Port != "" {
+		selectedPort = where.Port
+	}
+	selection, err := e.Select(ctx, engine.Selector{Branch: where.Branch, PR: where.PR, New: where.IsNew(), NewName: where.NewName(), Port: selectedPort, Policy: engine.SelectOrStart}, work)
 	if err != nil {
 		return ChosenBranch{}, err
 	}
@@ -232,4 +238,16 @@ func (c *BranchChoice) Register(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&c.New, "new", "", "start a new branch for this, in its own worktree; --new=<name> names it")
 	cmd.Flags().Lookup("new").NoOptDefVal = NewNamed
 	cmd.MarkFlagsMutuallyExclusive("branch", "new")
+}
+
+// RegisterWithSelectors adds shared port and pull request selectors to an
+// authoring command that also supports --new.
+func (c *BranchChoice) RegisterWithSelectors(cmd *cobra.Command) {
+	cmd.Flags().StringVarP(&c.Branch, "branch", "b", "", "work in this existing branch, by its exact name (the dockhand/ prefix is optional)")
+	SingleBranch(cmd)
+	cmd.Flags().StringVarP(&c.Port, "port", "p", "", "work in the open branch that changes this port")
+	cmd.Flags().IntVar(&c.PR, "pr", 0, "work in the branch tracking this pull request, by number")
+	cmd.Flags().StringVar(&c.New, "new", "", "start a new branch for this, in its own worktree; --new=<name> names it")
+	cmd.Flags().Lookup("new").NoOptDefVal = NewNamed
+	cmd.MarkFlagsMutuallyExclusive("branch", "port", "pr", "new")
 }
