@@ -73,14 +73,16 @@ so a branch merged since dockhand last looked is cleaned with the rest.
 Naming branches cleans those alone, each as its state has it, merged,
 closed, or archived, and nothing else: no other branch, nothing another
 branch's checks left, and no branch from before v3; the named branches'
-own kept clones go with them. An open branch has nothing to clean.
+own kept clones go with them. --delete may also forget an open branch with no
+pull request whose changes are already on master.
 
 It shows what it would remove first; on a terminal it asks, and a script
 passes --yes. archive hides a branch; clean removes a merged one's files;
 cancel stops a check. None means another.
 
---delete permanently removes the named merged, closed, or archived
-branches: their Git branches, including any unmerged commits listed in
+--delete permanently removes the named merged, closed, or archived branches,
+and open branches with no pull request whose changes are already on master:
+their Git branches, including any unmerged commits listed in
 the preview, their worktrees, eligible fork branches, and the clones
 their checks kept. It also deletes their records, except for check
 results reused by other branches. It asks before proceeding; without a
@@ -229,7 +231,7 @@ failure clones.
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "remove without asking")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show what it would remove and change nothing")
 	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
-	cmd.Flags().BoolVar(&forget, "delete", false, "forget the merged, closed, or archived branches named: their Git branch, worktree, and record")
+	cmd.Flags().BoolVar(&forget, "delete", false, "forget merged, closed, archived, or open branches with no pull request whose changes are on master")
 	cmd.Flags().BoolVar(&automatic, "automatic", false, "run automatic cleanup's pass, when it is due, as a command starts it once its work is done")
 	cmd.Flags().BoolVar(&keptOnly, "kept", false, "remove kept clones; with a check name, remove that check's clones; without one, remove expired failure clones")
 	cmd.Flags().StringVarP(&branch, "branch", "b", "", "with --kept, remove kept clones for this branch")
@@ -571,7 +573,7 @@ func writeCleanDone(out io.Writer, plans []engine.CleanBranch, places config.Pla
 // with what goes, its unmerged commits listed, then forgotten once asked.
 func forgetBranches(ctx context.Context, e *engine.Engine, streams term.Streams, names []string, yes, plan bool) error {
 	if len(names) == 0 {
-		return errors.New("--delete forgets merged, closed, or archived branches named; name each")
+		return errors.New("--delete forgets merged, closed, archived, or open branches with no pull request whose changes are on master; name each")
 	}
 	var plans []engine.ForgetPlan
 	for _, name := range names {

@@ -234,13 +234,14 @@ func (t *tx) PruneAssessments(before time.Time) (int, error) {
 	return total, nil
 }
 
-// ForgetBranch forgets an ended branch (clean --delete): its events,
+// ForgetBranch forgets an ended branch (clean --delete), or an open
+// branch whose changes the caller proved are already on master: its events,
 // edits, decisions, and checkpoints go, and what it recorded of its
 // checks goes as history does (pruneBranchHistory), its latest check too,
 // keeping only what reuse may still choose or another result names; its
 // record stays, marked forgotten at, which no read of branches returns,
 // and its name and pull request are free.
-func (t *tx) ForgetBranch(id model.BranchID, at time.Time) (store.Pruned, error) {
+func (t *tx) ForgetBranch(id model.BranchID, at time.Time, openChangesOnMaster bool) (store.Pruned, error) {
 	if err := t.write(); err != nil {
 		return store.Pruned{}, err
 	}
@@ -248,7 +249,7 @@ func (t *tx) ForgetBranch(id model.BranchID, at time.Time) (store.Pruned, error)
 	if err != nil {
 		return store.Pruned{}, err
 	}
-	if branch.State == model.BranchOpen || !branch.ForgottenAt.IsZero() {
+	if branch.State == model.BranchOpen && !openChangesOnMaster || !branch.ForgottenAt.IsZero() {
 		return store.Pruned{}, fmt.Errorf("%w: only an ended branch is forgotten, and once", store.ErrConflict)
 	}
 	for _, table := range []string{"events", "edits", "decisions", "checkpoints", "ci_failures", "network_holds"} {

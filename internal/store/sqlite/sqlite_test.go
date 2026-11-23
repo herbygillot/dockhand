@@ -1944,9 +1944,9 @@ func TestAForgottenBranchKeepsOnlyWhatOthersName(t *testing.T) {
 	open := a
 	open.ID = "br_3"
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
-		_, err := tx.ForgetBranch(other.ID, at)
+		_, err := tx.ForgetBranch(other.ID, at, false)
 		require.ErrorIs(t, err, store.ErrConflict, "an open branch is not forgotten")
-		pruned, err := tx.ForgetBranch(a.ID, at.Add(time.Hour))
+		pruned, err := tx.ForgetBranch(a.ID, at.Add(time.Hour), false)
 		require.Equal(t, 1, pruned.Executions, "ex_lone; ex_built is another's result's origin")
 		require.Equal(t, 1, pruned.Runs)
 		return err
@@ -1975,7 +1975,7 @@ func TestAForgottenBranchKeepsOnlyWhatOthersName(t *testing.T) {
 		return nil
 	}))
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
-		_, err := tx.ForgetBranch(a.ID, at)
+		_, err := tx.ForgetBranch(a.ID, at, false)
 		require.ErrorIs(t, err, store.ErrConflict, "once")
 		return tx.AddBranch(open)
 	}), "its name is free")

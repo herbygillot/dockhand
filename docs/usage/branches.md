@@ -262,11 +262,14 @@ request. With uncommitted edits or untracked files, the terminal offers how to
 handle them; a nonterminal invocation keeps the worktree. `--keep-worktree`
 makes that choice explicit. `--discard` removes the worktree and those files.
 Ignored files in a removed worktree go with it too; they are not preserved by a
-Git commit. Archiving keeps the Git branch for `--undo`, so throwing a change
-away is two steps, `archive` then `clean --delete` (add `--plan` first to
-preview what it removes), and archive's last line,
-like clean's refusal of an open branch, names the second. A clean that removes
-nothing says how many archived branches still keep their Git branches.
+Git commit. Archiving keeps the Git branch for `--undo`. For ordinary open
+work, throwing a change away is two steps, `archive` then `clean --delete`
+(add `--plan` first to preview what it removes), and archive's last line names
+the second. When an open branch with no pull request has changes already on
+master, `clean --delete --plan` can show the permanent removal directly.
+Status offers archive to set the branch aside and names `clean --delete` as
+the permanent choice. A clean that removes nothing says how many archived
+branches still keep their Git branches.
 
 Status names a submission that didn't finish, `an earlier submit didn't finish:
 opening the pull request may still be owed`, with `dockhand submit` as its next

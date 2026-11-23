@@ -512,17 +512,17 @@ func TestAnArchivedBranchAsksNothingOfItsChecks(t *testing.T) {
 	require.Equal(t, "previous check passed; a new check is required", view.CheckState(status))
 }
 
-// A branch whose work is on master already, landed by another route, asks
-// only to be set aside, not to be committed for review (cleaning up
-// duckdb-cxx14, finding 1); one with a pull request is its pull request's
-// to say.
+// A branch whose work is on master already, landed by another route, offers
+// permanent removal while keeping archive as the recoverable choice
+// (cleaning up duckdb-cxx14, finding 1); one with a pull request is its pull
+// request's to say.
 func TestStatusSaysABranchsWorkIsOnMasterAlready(t *testing.T) {
 	t.Parallel()
 	branch := model.Branch{Name: "dockhand/duckdb-cxx14", State: model.BranchOpen}
 	status := engine.BranchStatus{Branch: branch, OnMaster: model.ObjectID(strings.Repeat("e", 40))}
-	require.Equal(t, []view.Attention{{Kind: view.AttentionReady, Branch: "duckdb-cxx14", What: "its changes are on master already, as of eeeeeee", Next: "dockhand archive duckdb-cxx14"}}, view.AttentionFor(status))
+	require.Equal(t, []view.Attention{{Kind: view.AttentionReady, Branch: "duckdb-cxx14", What: "its changes are on master already, as of eeeeeee; dockhand archive duckdb-cxx14 sets it aside", Next: "permanently remove: dockhand clean --delete duckdb-cxx14"}}, view.AttentionFor(status))
 	status.Branch.PullRequest = &model.PullRequest{Number: 35100}
-	require.NotContains(t, view.AttentionFor(status), view.Attention{Kind: view.AttentionReady, Branch: "duckdb-cxx14", What: "its changes are on master already, as of eeeeeee", Next: "dockhand archive duckdb-cxx14"})
+	require.NotContains(t, view.AttentionFor(status), view.Attention{Kind: view.AttentionReady, Branch: "duckdb-cxx14", What: "its changes are on master already, as of eeeeeee; dockhand archive duckdb-cxx14 sets it aside", Next: "permanently remove: dockhand clean --delete duckdb-cxx14"})
 }
 
 // A submission's JSON lists its concerns, a moved tag's among them, with
