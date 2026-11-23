@@ -2000,7 +2000,9 @@ func (p *SubmitPlan) carry(earlier *model.Publication) {
 	// What the earlier submission asked, each flag this run left out: a
 	// flag given, false included, is this run's own (#195, E3).
 	asked := earlier.Asked
-	if !p.Request.Given["draft"] && !p.Request.Given["no-check"] {
+	// A ready still owed was asked after any draft, and stands over it.
+	readyOwed := slices.Contains(earlier.Owes, model.StepReady)
+	if !p.Request.Given["draft"] && !p.Request.Given["no-check"] && !readyOwed {
 		p.Request.Draft = asked.Draft.Value
 	}
 	if !p.Request.Given["no-check"] && !p.Request.Given["draft"] {
@@ -2081,7 +2083,7 @@ func (p SubmitPlan) Continues() *EarlierSubmit {
 	// The earlier run's flags this one left out and carries (#195, E3).
 	asked := c.Asked
 	given := p.Request.Given
-	if asked.Draft.Value && !given["draft"] && !given["no-check"] {
+	if asked.Draft.Value && p.Request.Draft && !given["draft"] && !given["no-check"] {
 		said.Carries = append(said.Carries, "--draft")
 	}
 	if asked.NoCheck.Value && p.Request.NoCheck && !given["no-check"] && !given["draft"] {
