@@ -190,7 +190,7 @@ func (c *UpstreamComparison) Concerns(port string) []Concern {
 	var concerns []Concern
 	for _, change := range c.Changes {
 		if change.Hold {
-			concerns = append(concerns, Concern{Origin: FromUpstream, Port: port, Rule: change.Rule, Source: change.Source, Path: change.Path, Subject: change.Subject, Class: change.Class, Detail: change.Message})
+			concerns = append(concerns, change.Concern(port))
 		}
 	}
 	if c.Problem != "" {
@@ -223,6 +223,11 @@ type UpstreamChange struct {
 	// fetches more than one: two archives' LICENSE changes are two
 	// findings. Empty for a port of one archive.
 	Source string `json:"source,omitempty"`
+}
+
+// Concern is the upstream hold raised by this finding for port.
+func (c UpstreamChange) Concern(port string) Concern {
+	return Concern{Origin: FromUpstream, Port: port, Rule: c.Rule, Source: c.Source, Path: c.Path, Subject: c.Subject, Class: c.Class, Detail: c.Message}
 }
 
 // Key identifies a finding: its rule, source, path, and subject, or where

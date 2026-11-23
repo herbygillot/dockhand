@@ -137,7 +137,8 @@ func (e *Engine) decided(ctx context.Context, branch model.BranchID, tree string
 // one awaiting something still holds.
 func undecided(concerns []model.Concern, decided map[string]model.Decision) []model.Concern {
 	return slices.DeleteFunc(slices.Clone(concerns), func(c model.Concern) bool {
-		return c.Rule != "" && decided[model.ConcernSubject(c)].Answer == model.Accepted
+		_, accepted := acceptedDecision(c, decided)
+		return accepted
 	})
 }
 

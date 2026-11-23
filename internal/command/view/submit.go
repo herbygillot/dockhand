@@ -3,7 +3,6 @@ package view
 import (
 	"fmt"
 	"io"
-	"maps"
 	"slices"
 	"strings"
 
@@ -93,12 +92,12 @@ func WriteSubmitPlan(out io.Writer, plan engine.SubmitPlan, noteStill bool) {
 	}
 	// The person's decisions on what holds it, which the description
 	// gives under Reviewed (the person's voice).
-	for i, subject := range slices.Sorted(maps.Keys(plan.Decided)) {
+	for i, decision := range plan.ConcernDecisions() {
 		label := "           "
 		if i == 0 {
 			label = "  Decided  "
 		}
-		fmt.Fprintf(out, "%s%s\n", label, engine.DecisionWords(plan.Decided[subject]))
+		fmt.Fprintf(out, "%s%s\n", label, engine.DecisionWords(decision))
 	}
 	fmt.Fprintf(out, "  Other PRs  %s\n", otherWords(plan))
 	fmt.Fprintf(out, "  PR       %s\n", PullRequestWords(plan))
@@ -178,13 +177,36 @@ func noteLine(plan engine.SubmitPlan) string {
 // port when the branch updated several, and, under the Upstream label
 // every list of them has, doesn't say upstream again.
 func UpstreamLines(plan engine.SubmitPlan) []string {
-	lines := ComparisonLines(plan.Upstream)
+	lines := previewComparisonLines(plan.PreviewUpstream())
 	// A Git-fetched port whose tag has moved since its check: the check
 	// built another source than this would submit.
 	for _, moved := range plan.Moved {
 		lines = append(lines, Look+" held: "+engine.WithRule(moved.Detail, moved.Rule))
 	}
 	return lines
+}
+
+func previewComparisonLines(previews []engine.PreviewUpstreamComparison) []string {
+	var comparisons []engine.PortComparison
+	for _, preview := range previews {
+		comparison := model.UpstreamComparison{Problem: preview.Problem, Coverage: preview.Coverage}
+		for _, finding := range preview.Changes {
+			change := finding.Change
+			switch {
+			case finding.Accepted != "":
+				change = engine.UnderUpstream(change)
+				change.Message = "accepted: " + engine.WithRule(change.Message, change.Rule) + "; acceptable because " + finding.Accepted
+				change.Rule = ""
+			case finding.Allowed:
+				change = engine.UnderUpstream(change)
+				change.Message = "allowed by holds.allow: " + engine.WithRule(change.Message, change.Rule)
+				change.Rule = ""
+			}
+			comparison.Changes = append(comparison.Changes, change)
+		}
+		comparisons = append(comparisons, engine.PortComparison{Port: preview.Port, Comparison: comparison})
+	}
+	return ComparisonLines(comparisons)
 }
 
 func otherWords(plan engine.SubmitPlan) string {
@@ -329,19 +351,7 @@ func loginWords(plan engine.SubmitPlan) string {
 // answers it (the person's voice); one the person accepted holds nothing,
 // and none hold a person's own submission.
 func ServeHolds(plan engine.SubmitPlan) []string {
-	var words []string
-	for _, holds := range [][]model.Concern{plan.Majors, plan.Floors, plan.After, plan.Undeclared} {
-		for _, hold := range holds {
-			if hold.Detail == "" || slices.Contains(words, hold.Detail) || plan.Decided[model.ConcernSubject(hold)].Answer == model.Accepted {
-				continue
-			}
-			words = append(words, hold.Detail)
-			if hold.Rule != "" && hold.Port != "" {
-				words = append(words, "  answer it: "+engine.DecideCommand(hold))
-			}
-		}
-	}
-	return words
+	return plan.ServeHolds()
 }
 
 // FromWords are where a submission pushes from, the fork and its branch:

@@ -11,6 +11,41 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
+func TestThePreviewListsAcceptedUpstreamFindingsAsAccepted(t *testing.T) {
+	t.Parallel()
+	license := model.UpstreamChange{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed", Hold: true, Rule: "license-changed"}
+	plan := engine.SubmitPlan{
+		Branch:   model.Branch{Name: "dockhand/neonmodem-update"},
+		Upstream: []engine.PortComparison{{Port: "neonmodem", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{license}}}},
+		Decided:  map[string]model.Decision{"neonmodem license-changed": {Subject: "neonmodem license-changed", Answer: model.Accepted, Words: "the license remains free"}},
+	}
+	var out bytes.Buffer
+	WriteSubmitPlan(&out, plan, false)
+	words := out.String()
+	require.Contains(t, words, "accepted: LICENSE changed [license-changed]")
+	require.Contains(t, words, "the license remains free")
+	require.NotContains(t, words, "! held: LICENSE changed")
+	require.NotContains(t, words, "Serve and ship --yes wait on these")
+
+	plan.Decided = nil
+	out.Reset()
+	WriteSubmitPlan(&out, plan, false)
+	require.Contains(t, out.String(), "! held: LICENSE changed [license-changed]")
+	require.Contains(t, out.String(), "Serve and ship --yes wait on these")
+}
+
+func TestThePreviewNamesFindingsAllowedByHoldsAllow(t *testing.T) {
+	t.Parallel()
+	lines := previewComparisonLines([]engine.PreviewUpstreamComparison{{
+		Port: "neonmodem",
+		Changes: []engine.PreviewUpstreamFinding{{
+			Change:  model.UpstreamChange{Kind: "dependency", Path: "go.mod", Message: "upstream: go.mod changed", Rule: "local-policy"},
+			Allowed: true,
+		}},
+	}})
+	require.Equal(t, []string{"  allowed by holds.allow: go.mod changed [local-policy]"}, lines)
+}
+
 // The preview says what would hold serve's submission, which a person's
 // own goes ahead of: a major version, a raised floor, and a port its
 // holds name first, each once, under Serve (the M1's C15 on rc2).

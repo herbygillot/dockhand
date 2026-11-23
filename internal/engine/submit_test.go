@@ -27,6 +27,39 @@ import (
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
+func TestSubmitPlanPreviewUpstreamAgreesWithPublicationHolds(t *testing.T) {
+	t.Parallel()
+	accepted := model.UpstreamChange{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed", Hold: true, Rule: "license-changed"}
+	undecided := model.UpstreamChange{Kind: "build", Path: "Makefile", Message: "upstream's Makefile changed", Hold: true, Rule: "build-file"}
+	allowed := model.UpstreamChange{Kind: "dependency", Path: "go.mod", Message: "upstream: go.mod changed", Hold: true, Rule: "local-policy"}
+	plan := SubmitPlan{
+		Upstream: []PortComparison{{Port: "neonmodem", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{accepted, undecided, allowed}}}},
+		Decided: map[string]model.Decision{"neonmodem license-changed": {
+			Subject: "neonmodem license-changed", Answer: model.Accepted, Words: "the license remains free",
+		}},
+		allowed: func(port string) []string {
+			if port == "neonmodem" {
+				return []string{"local-policy"}
+			}
+			return nil
+		},
+	}
+
+	preview := plan.PreviewUpstream()
+	require.Len(t, preview, 1)
+	var previewHolds []model.Concern
+	for _, finding := range preview[0].Changes {
+		if finding.Change.Hold {
+			previewHolds = append(previewHolds, finding.Change.Concern("neonmodem"))
+		}
+	}
+	require.Equal(t, plan.PublicationHolds(), previewHolds, "the preview and the publication gate use the same hold judgment")
+	require.Equal(t, "the license remains free", preview[0].Changes[0].Accepted)
+	require.False(t, preview[0].Changes[0].Change.Hold)
+	require.True(t, preview[0].Changes[2].Allowed, "the view words this finding as allowed by holds.allow")
+	require.False(t, preview[0].Changes[2].Change.Hold, "today the preview shows a holds.allow finding as held even though the gate lets it through")
+}
+
 func TestAdoptedPullRequestBasisAndPushUseTheSameFreshAuthorization(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

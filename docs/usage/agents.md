@@ -131,6 +131,11 @@ with `number` 0. The reasons are `failed` (with the error), `awaits-answer`,
 an earlier one stopped before). A pending step that failed or was refused fails
 the command; the next `submit` accounts for it.
 
+In a submission plan's `upstream[].changes`, `hold` says whether that finding
+still holds unattended submission. A standing acceptance sets `hold` to false
+and adds the decision's reason as `accepted`; `holds.allow` sets `hold` to false
+and `allowed` to true. The text preview shows the same disposition.
+
 The process exit codes are:
 
 | Code | Meaning |

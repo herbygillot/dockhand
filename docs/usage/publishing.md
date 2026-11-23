@@ -158,7 +158,12 @@ Check four things in its output:
 3. **Review findings:** commit rules, what upstream changed, other pull
    requests, and concerns a passing build cannot settle. `!` marks what wants
    your look, a line that would hold an unattended submission says `held`,
-   and a line for your information carries no mark. For a Rust port, the
+   and a line for your information carries no mark. A concern with a standing
+   acceptance is listed as accepted with its reason; a finding named by
+   `holds.allow` is listed as `allowed by holds.allow`. Neither counts among
+   findings that hold serve or `ship --yes`. The plan's JSON reports an accepted
+   finding with `hold: false` and its reason in `accepted`; a `holds.allow`
+   finding has `hold: false` and `allowed: true`. For a Rust port, the
    Upstream list names the native libraries the crates Cargo.lock pins link,
    leaving out the -sys crates the check didn't compile, said once as `the
    check compiled none of libgit2-sys, libsqlite3-sys, which Cargo.lock pins

@@ -1574,7 +1574,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 	// The one gate of a submission, whoever submits it: what blocks it,
 	// the commit it was bound to, and, where nobody looks, what holds it
 	// (branchstate.Publish; R3-10, where ship and serve each held it).
-	publication := branchstate.Publication{Branch: plan.Branch.ShortName(), Blocks: plan.Blocks, Holds: undecided(holding(plan.Concerns(), plan.allowed), plan.Decided),
+	publication := branchstate.Publication{Branch: plan.Branch.ShortName(), Blocks: plan.Blocks, Holds: plan.PublicationHolds(),
 		Commit: model.ObjectID(plan.Commit), Bound: model.ObjectID(plan.Request.Bound)}
 	if refusal := branchstate.Publish(publication, branchstate.Mode{Answered: answered}, Vocabulary{}); refusal != nil {
 		return Submitted{}, refusal

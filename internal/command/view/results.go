@@ -134,10 +134,12 @@ type portUpstreamJSON struct {
 }
 
 type upstreamChangeJSON struct {
-	Kind    string `json:"kind"`
-	Path    string `json:"path"`
-	Message string `json:"message"`
-	Hold    bool   `json:"hold"`
+	Kind     string `json:"kind"`
+	Path     string `json:"path"`
+	Message  string `json:"message"`
+	Hold     bool   `json:"hold"`
+	Accepted string `json:"accepted,omitempty"`
+	Allowed  bool   `json:"allowed,omitempty"`
 	// Rule, with the source, path, and subject, is what identifies it;
 	// class is how the candidate stands against its base on it. Source is
 	// the archive it was found in, where the port fetches more than one.
@@ -451,8 +453,21 @@ func SubmitView(plan engine.SubmitPlan) submitJSON {
 		Account: plan.Login.Account, LoginSource: plan.Login.Source, ForkOwner: owner,
 		Push: PushWords(plan), Checks: CheckWords(plan), ChecksProblem: checksProblem(plan), Findings: findingsView(plan.Findings), Blocking: NonNil(plan.Blocking), LeftOut: NonNil(plan.LeftOut), ChangedPatches: NonNil(plan.ChangedPatches), Body: plan.Body,
 		Upstream: []portUpstreamJSON{}, ModifiedBuilds: NonNil(plan.ModifiedBuilds), UnfoundBuilds: []unfoundBuildJSON{}, BuildsProblem: plan.BuildsProblem}
-	for _, found := range plan.Upstream {
-		viewed.Upstream = append(viewed.Upstream, portUpstreamJSON{Port: found.Port, upstreamJSON: UpstreamView(found.Comparison)})
+	for _, preview := range plan.PreviewUpstream() {
+		comparison := model.UpstreamComparison{Problem: preview.Problem, Coverage: preview.Coverage}
+		var accepted []string
+		var allowed []bool
+		for _, finding := range preview.Changes {
+			comparison.Changes = append(comparison.Changes, finding.Change)
+			accepted = append(accepted, finding.Accepted)
+			allowed = append(allowed, finding.Allowed)
+		}
+		upstream := UpstreamView(comparison)
+		for i := range upstream.Changes {
+			upstream.Changes[i].Accepted = accepted[i]
+			upstream.Changes[i].Allowed = allowed[i]
+		}
+		viewed.Upstream = append(viewed.Upstream, portUpstreamJSON{Port: preview.Port, upstreamJSON: upstream})
 	}
 	for _, build := range plan.UnfoundBuilds {
 		viewed.UnfoundBuilds = append(viewed.UnfoundBuilds, unfoundBuildJSON{Build: build.Build, Commits: build.Commits, Commit: build.Source.Commit, Release: build.Source.Release})
