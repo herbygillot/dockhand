@@ -16,6 +16,9 @@
 # unless the prefix is one dockhand may clean, makes a port snapshot
 # before it changes anything, and puts the prefix back after, unless it
 # is asked to keep what it built active.
+# Run only to stop, as root under sudo -n, it signals the targets it is
+# given, tested first, and nothing else (stop.tcl).
+if {[lindex $argv 0] eq "--stop"} { exit [root_stop [lrange $argv 1 end]] }
 package require json
 package require json::write
 package require sha1
@@ -1322,6 +1325,19 @@ if {[llength $local] && [dict exists $local restore] && [dict get $local restore
     exit 0
 }
 
+# A root build's guest is handed the attempt's launch lock through its
+# sudo as its standard input, the lock's path its second argument; its
+# first act, before its first save and before it starts anything, is to
+# see that its standard input is that file. A sudo that logs a command's
+# input puts a pipe there, and the lock wouldn't reach the build: the
+# guest says so and ends, having started nothing (the lifecycle design's
+# rule 4). A guest run only to put back, above, makes no such check.
+if {[llength $argv] > 1 && ![stdin_is [lindex $argv 1]]} {
+    save refused "this Mac's sudo didn't hand the build its standard input as it came, as a sudo set to log a command's input doesn't, so the launch lock wouldn't reach it and dockhand couldn't see the build end; dockhand starts no root build under such a sudo"
+    exit 1
+}
+# Its PID is on record from its first save, for the stop of a root build.
+dict set environment pid [pid]
 save running
 try {
     dict set environment user [fact /usr/bin/id -un]

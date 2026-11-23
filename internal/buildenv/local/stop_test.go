@@ -6,7 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -58,8 +60,8 @@ func TestALocalStopEndsTheGuestAndThePrefixIsPutBack(t *testing.T) {
 	require.Eventually(t, func() bool { return readRegistry(t, path) == "  zlib @1.3.2_0 (active)\n" }, testsupport.Settle, 10*time.Millisecond, "the prefix is as it was")
 }
 
-// A root build isn't signalled until this Mac's sudo has passed the
-// design's test: its stop isn't known, with the command to stop it by hand
+// A root build an older dockhand started isn't signalled: its stop isn't
+// known, with the command to stop it by hand
 // and the one to run after. A directory that's gone, or that was never
 // made, is ended once the lock is had.
 func TestARootBuildsStopSaysHowToStopItByHand(t *testing.T) {
@@ -72,8 +74,68 @@ func TestARootBuildsStopSaysHowToStopItByHand(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "starter.json"), []byte(`{"pid":4321,"start":"x","boot":"b"}`), 0o644))
 	lock := pathLock(filepath.Join(t.TempDir(), "attempt.lock"))
 	_, err = l.Stop(t.Context(), buildenv.StopRequest{Execution: model.GuestExecution{Attempt: 1, Launch: `{"directory":"` + dir + `"}`}, Lock: lock})
-	require.EqualError(t, err, "check-12 builds in /opt/local as root, and dockhand doesn't stop a root build until this Mac's sudo has passed its test of a stop; stop it by hand, sudo kill -TERM -4321, then dockhand cancel check-12 asks again")
+	require.EqualError(t, err, "check-12 builds in /opt/local as root, and dockhand doesn't stop this root build: it was started before dockhand handed a root build its stop; stop it by hand, sudo kill -TERM -4321, then dockhand cancel check-12 asks again")
 
 	_, err = l.Stop(t.Context(), buildenv.StopRequest{Execution: model.GuestExecution{Attempt: 1, Launch: `{"directory":"` + filepath.Join(t.TempDir(), "gone") + `"}`}, Lock: lock})
 	require.NoError(t, err)
+}
+
+// keepRootProof keeps a proof, proved or not, for the sudo at path, as the
+// probe does.
+func keepRootProof(t *testing.T, l *Local, sudo string, proved bool) {
+	t.Helper()
+	identity, err := sudoIdentity(sudo)
+	require.NoError(t, err)
+	data, err := json.Marshal(RootProof{Sudo: identity, Proved: proved, Found: []string{"without a terminal: standard input the lock: false"}, At: time.Now()})
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(l.locks(), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(l.locks(), rootProofName), data, 0o644))
+}
+
+// A root build handed its stop is stopped only where this Mac's sudo has
+// passed the probe: not probed, or failed, its stop isn't known, saying
+// which, with what the probe found; proved, it is stopped as any build
+// is, its starter's lock had (the lifecycle design's rule 4).
+func TestARootBuildIsStoppedOnlyUnderAProvedSudo(t *testing.T) {
+	t.Parallel()
+	sudo := filepath.Join(t.TempDir(), "sudo")
+	testsupport.WriteExecutable(t, sudo, "#!/bin/sh\nexec \"$@\"\n")
+	l := &Local{Temp: t.TempDir(), Locks: t.TempDir(), sudo: []string{sudo}}
+	dir := t.TempDir()
+	owned, err := json.Marshal(owner{PID: 1, Check: "check-12", Prefix: "/opt/local", Root: true, RootStop: true})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "owner.json"), owned, 0o644))
+	request := buildenv.StopRequest{Execution: model.GuestExecution{Attempt: 1, Launch: `{"directory":"` + dir + `"}`}, Lock: pathLock(filepath.Join(t.TempDir(), "attempt.lock"))}
+
+	_, err = l.Stop(t.Context(), request)
+	require.ErrorContains(t, err, "dockhand doesn't stop this root build: this Mac's sudo hasn't been probed yet")
+
+	keepRootProof(t, l, sudo, false)
+	_, err = l.Stop(t.Context(), request)
+	require.ErrorContains(t, err, "this Mac's sudo failed the probe of a root build's stop: without a terminal: standard input the lock: false")
+
+	keepRootProof(t, l, sudo, true)
+	_, err = l.Stop(t.Context(), request)
+	require.NoError(t, err, "no starter recorded itself, and the lock is had")
+}
+
+// A proved root build's stop sees its guest's group gone too: a group the
+// guest leads that still has members, as something it started that let go
+// of the lock would, isn't known to be gone, and isn't signalled.
+func TestARootBuildsStopSeesItsGuestsGroupGone(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	member := exec.Command("/bin/sleep", "60")
+	member.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	require.NoError(t, member.Start())
+	t.Cleanup(func() { _ = member.Process.Kill(); _, _ = member.Process.Wait() })
+	pid := strconv.Itoa(member.Process.Pid)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "results.json"), []byte(`{"environment":{"pid":"`+pid+`"}}`), 0o644))
+	err := guestGroupGone(t.Context(), dir)
+	require.ErrorContains(t, err, "process group "+pid+" with members")
+	require.NoError(t, member.Process.Signal(syscall.Signal(0)), "not signalled")
+
+	require.NoError(t, member.Process.Kill())
+	_, _ = member.Process.Wait()
+	require.NoError(t, guestGroupGone(t.Context(), dir))
 }

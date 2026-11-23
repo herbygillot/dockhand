@@ -76,10 +76,20 @@ type Spec struct {
 	// Command is the build's, run as the starter's child, in Dir with Env,
 	// this process's environment where Env is nil.
 	Command []string
-	Dir     string
-	Env     []string
-	Stdout  io.Writer
-	Stderr  io.Writer
+	// StdinLock hands the build's command the attempt's locked file as its
+	// standard input, for a command that is a sudo: whatever runs as root
+	// holds the lock through it for as long as it lives, so a root build's
+	// end is shown by the lock (the lifecycle design's rule 4).
+	StdinLock bool
+	// RootStop is how the starter stops a root build it can't signal
+	// itself: the guest program run as root under sudo -n only to stop,
+	// sudo, its arguments, port-tclsh and the program, to which the
+	// targets are added (the lifecycle design's rule 4).
+	RootStop []string
+	Dir      string
+	Env      []string
+	Stdout   io.Writer
+	Stderr   io.Writer
 }
 
 // Start forks the starter, which holds the lock from that moment, and
@@ -93,7 +103,14 @@ func Start(spec Spec) (*exec.Cmd, error) {
 		return nil, buildenv.ErrDockhandFault.Because("a build was started with no launch lock")
 	}
 	args := append([]string(nil), spec.Program.Args...)
-	args = append(args, Command, "-record", spec.Directory, "-signal", strconv.Itoa(int(spec.Signal)), "-grace", spec.Grace.String(), "-lock", spec.Lock.Name(), "--")
+	args = append(args, Command, "-record", spec.Directory, "-signal", strconv.Itoa(int(spec.Signal)), "-grace", spec.Grace.String(), "-lock", spec.Lock.Name())
+	if spec.StdinLock {
+		args = append(args, "-stdin-lock")
+	}
+	for _, word := range spec.RootStop {
+		args = append(args, "-root-stop", word)
+	}
+	args = append(args, "--")
 	command := exec.Command(spec.Program.Path, append(args, spec.Command...)...)
 	command.Dir = spec.Dir
 	// No Env and no program's leaves the starter this process's, as exec
@@ -168,6 +185,9 @@ func Main(args []string) int {
 	signalNumber := flags.Int("signal", int(syscall.SIGTERM), "")
 	grace := flags.Duration("grace", 30*time.Second, "")
 	lockPath := flags.String("lock", "", "")
+	stdinLock := flags.Bool("stdin-lock", false, "")
+	var rootStop words
+	flags.Var(&rootStop, "root-stop", "")
 	if err := flags.Parse(args); err != nil || *directory == "" || flags.NArg() == 0 {
 		fmt.Fprintln(os.Stderr, "dockhand: the starter needs -record, the lock, and a command")
 		return 2
@@ -181,6 +201,12 @@ func Main(args []string) int {
 	// The lock, descriptor 3, is the starter's alone: its child isn't
 	// handed it on exec.
 	syscall.CloseOnExec(3)
+	stop := syscall.Signal(*signalNumber)
+	// It ignores the stop it sends its group, and the one Stop sends it,
+	// from before its record says it can be sent one: a stop that comes
+	// before its build has started is seen once it has.
+	asked := make(chan os.Signal, 1)
+	signal.Notify(asked, syscall.SIGTERM, syscall.SIGINT, stop)
 	self, err := procid.Self()
 	if err == nil {
 		var boot string
@@ -196,12 +222,15 @@ func Main(args []string) int {
 		fmt.Fprintf(os.Stderr, "dockhand: the starter couldn't record itself, so nothing was started: %v\n", err)
 		return noRecord
 	}
-	stop := syscall.Signal(*signalNumber)
-	// It ignores the stop it sends its group, and the one Stop sends it.
-	asked := make(chan os.Signal, 1)
-	signal.Notify(asked, syscall.SIGTERM, syscall.SIGINT, stop)
 	child := exec.Command(flags.Arg(0), flags.Args()[1:]...)
 	child.Stdout, child.Stderr = os.Stdout, os.Stderr
+	if *stdinLock {
+		// The same open file the starter holds locked, handed on as the
+		// command's standard input: a sudo leaves it to the command it runs
+		// as it came, so the root build holds the lock (rule 4). The guest
+		// checks that it did, before it starts anything.
+		child.Stdin = os.NewFile(3, *lockPath)
+	}
 	if err := child.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "dockhand: the starter couldn't start the build: %v\n", err)
 		return 127
@@ -212,6 +241,9 @@ func Main(args []string) int {
 	case err := <-ended:
 		return exitOf(err)
 	case <-asked:
+	}
+	if *stdinLock {
+		return stopSudo(child, ended, *directory, self, stop, *grace, rootStop)
 	}
 	// Stopped: the group gets the provider's own stop, which the starter
 	// ignores itself, and the grace to end in, the build's own child
@@ -366,4 +398,111 @@ func Building(ctx context.Context, directory string) bool {
 		_ = filelock.Release(file)
 	}
 	return false
+}
+
+// words is a flag given once for each word, in order.
+type words []string
+
+func (w *words) String() string     { return strings.Join(*w, " ") }
+func (w *words) Set(s string) error { *w = append(*w, s); return nil }
+
+// stopSudo is the starter's stop of a root build, its child a sudo whose
+// command is the guest (the lifecycle design's rule 4, as the last look and
+// architecture's ruling of 2026-11-23 left it). Nothing of dockhand's sends
+// a sudo a SIGKILL:
+//   - the guest's start time is read by its PID, which its first save
+//     records, and kept only where the sudo is still this process's
+//     running, uncollected child after the read, so the PID is still that
+//     guest's; otherwise the guest is taken to have recorded nothing;
+//   - the sudo is sent SIGTERM by its PID, by this process where that's
+//     permitted, else by the root stop;
+//   - where it hasn't ended by the grace, root's SIGKILL goes to the
+//     guest, tested first: its group where it leads one, else the guest
+//     alone;
+//   - where it still hasn't, or the guest recorded nothing, the starter
+//     stays, keeping the lock, and the stop answers not known;
+//   - with the sudo ended, the last SIGKILL to the starter's group is
+//     root's, sent by the root stop, which the starter dies by.
+func stopSudo(child *exec.Cmd, ended <-chan error, directory string, self procid.Process, stop syscall.Signal, grace time.Duration, rootStop []string) int {
+	sudo := child.Process.Pid
+	sudoStart, _ := procid.Start(sudo)
+	guestPID, guestStart := guestReading(directory)
+	select {
+	case <-ended:
+		// The sudo was collected: the PID read no longer says whose it is.
+		guestPID = 0
+	default:
+	}
+	root := func(signal, how string, pid int, start string) bool {
+		seconds, ok := procid.Seconds(start)
+		if len(rootStop) == 0 || !ok {
+			return false
+		}
+		command := exec.Command(rootStop[0], append(append([]string(nil), rootStop[1:]...), "--stop", signal, how, strconv.Itoa(pid), seconds)...)
+		command.Stdout, command.Stderr = os.Stderr, os.Stderr
+		return command.Run() == nil
+	}
+	if err := syscall.Kill(sudo, stop); err != nil && !errors.Is(err, syscall.ESRCH) {
+		root("TERM", "process", sudo, sudoStart)
+	}
+	select {
+	case <-ended:
+		return finishSudo(self, root)
+	case <-time.After(grace):
+	}
+	if guestPID > 0 && guestStart != "" {
+		how := "process"
+		if group, err := syscall.Getpgid(guestPID); err == nil && group == guestPID {
+			how = "group"
+		}
+		root("KILL", how, guestPID, guestStart)
+		select {
+		case <-ended:
+			return finishSudo(self, root)
+		case <-time.After(grace):
+		}
+	}
+	// Nothing gave way, or the guest recorded nothing: the starter stays,
+	// keeping the lock, so the stop answers not known, naming it and the
+	// sudo, until the sudo ends.
+	fmt.Fprintf(os.Stderr, "dockhand: the root build's sudo, PID %d, didn't end; the starter keeps its lock until it does\n", sudo)
+	<-ended
+	return finishSudo(self, root)
+}
+
+// finishSudo is the starter's last act once its sudo has ended: what is
+// left in its group is root's, so the SIGKILL to the group is root's too,
+// sent by the root stop, which the starter dies by; where that can't be
+// sent, its own SIGKILL to its group, which leaves root's members for the
+// stop to name.
+func finishSudo(self procid.Process, root func(signal, how string, pid int, start string) bool) int {
+	root("KILL", "group", self.PID, self.Start)
+	// Reached only where the root stop couldn't send it.
+	_ = syscall.Kill(0, syscall.SIGKILL)
+	return 137
+}
+
+// guestReading is the guest's PID, as its first save records it in the
+// build's results, and its start time by that PID; zero and empty where
+// none can be read.
+func guestReading(directory string) (int, string) {
+	data, err := os.ReadFile(filepath.Join(directory, "results.json"))
+	if err != nil {
+		return 0, ""
+	}
+	var results struct {
+		Environment map[string]string `json:"environment"`
+	}
+	if json.Unmarshal(data, &results) != nil {
+		return 0, ""
+	}
+	pid, err := strconv.Atoi(results.Environment["pid"])
+	if err != nil || pid <= 1 {
+		return 0, ""
+	}
+	start, err := procid.Start(pid)
+	if err != nil {
+		return 0, ""
+	}
+	return pid, start
 }
