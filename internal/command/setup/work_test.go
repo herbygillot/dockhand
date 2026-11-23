@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
+	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -70,6 +72,42 @@ func TestSetupStartPathAndAdopt(t *testing.T) {
 	out, _, err = cmdtest.Dockhand(t, "adopt")
 	require.NoError(t, err)
 	require.Regexp(t, `^Adopted edits-only: 0 commits above master [0-9a-f]{7}, with edits not yet committed to jq and _resources\.\n`, cmdtest.Flat(out))
+}
+
+func TestAdoptPlanReadsLocalBranchWithoutChangingIt(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	testsupport.Git(t, w.Clone, "switch", "-q", "-c", "plan-jq")
+	require.NoError(t, os.WriteFile(filepath.Join(w.Clone, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n"), 0o644))
+	testsupport.Git(t, w.Clone, "commit", "-q", "-am", "Update jq")
+	before := testsupport.Git(t, w.Clone, "show-ref")
+	out, _, err := cmdtest.Dockhand(t, "adopt", "plan-jq", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "plan-jq")
+	require.Contains(t, out, "Nothing was adopted (--plan).")
+	require.Equal(t, before, testsupport.Git(t, w.Clone, "show-ref"), "plan leaves Git refs unchanged")
+	require.NotContains(t, out, "already tracks")
+}
+
+func TestAdoptPullRequestPlanUsesForgeReadAndFetchesNothing(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	g := cmdtest.WithGitHub(t, w)
+	g.Theirs = map[int]forge.PullRequest{35174: {
+		Ref:            forge.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 35174},
+		HeadRepository: "ada/macports-ports", HeadBranch: "review", BaseBranch: "master", RemoteHead: model.ObjectID("1234567890123456789012345678901234567890"),
+		Commits: 2, Title: "Fix jq", Author: "ada", State: forge.PullRequestOpen,
+	}}
+	refs := testsupport.Git(t, w.Clone, "show-ref")
+	out, _, err := cmdtest.Dockhand(t, "adopt", "--pr", "35174", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "#35174 · \"Fix jq\" by @ada")
+	require.Contains(t, out, "Would fetch ada/macports-ports:review and master; track as pr-35174.")
+	require.Contains(t, out, "Head 1234567 · 2 commits · base master.")
+	require.Contains(t, out, "Changed ports are unknown without fetching the pull request head.")
+	require.Contains(t, out, "Nothing was adopted (--plan).")
+	require.Equal(t, refs, testsupport.Git(t, w.Clone, "show-ref"), "plan does not fetch refs or create a branch")
+	require.Equal(t, 1, g.Observed, "plan reads the forge once")
 }
 
 func TestSetupRemembersAChosenWorktreesDirectory(t *testing.T) {

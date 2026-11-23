@@ -268,6 +268,86 @@ type AdoptRequest struct {
 	Branch string
 }
 
+// AdoptionPlan is the read-only account of what Adopt or AdoptPullRequest
+// would track. PR plans use only the forge's observation; they never fetch
+// the head or master, so their changed-port scope is unknown.
+type AdoptionPlan struct {
+	Branch      string
+	Head        model.ObjectID
+	Base        string
+	Commits     int
+	Ports       []string
+	Directory   string
+	PullRequest *forge.PullRequest
+	ScopeKnown  bool
+	Already     bool
+}
+
+// PlanAdopt reads what adoption would use without fetching, creating a
+// branch/worktree, or writing the store.
+func (e *Engine) PlanAdopt(ctx context.Context, request AdoptRequest, prNumber int) (AdoptionPlan, error) {
+	if prNumber > 0 {
+		observed, err := e.forge().Observe(ctx, pullRequestRef(e.PullRequestRepository(), prNumber))
+		if err != nil {
+			return AdoptionPlan{}, e.readingPullRequest(prNumber, err)
+		}
+		if !observed.Found {
+			return AdoptionPlan{}, fmt.Errorf("couldn't find pull request #%d", prNumber)
+		}
+		pr := observed.PullRequest
+		if pr.State != forge.PullRequestOpen {
+			return AdoptionPlan{}, fmt.Errorf("#%d is %s; only an open pull request can be worked on", prNumber, pr.State)
+		}
+		plan := AdoptionPlan{Branch: fmt.Sprintf("pr-%d", prNumber), Head: pr.RemoteHead, Base: pr.BaseBranch, Commits: pr.Commits, Directory: e.worktreeDirectory(fmt.Sprintf("pr-%d", prNumber)), PullRequest: &pr}
+		return plan, nil
+	}
+	name := request.Branch
+	if name == "" {
+		var err error
+		name, err = e.Repo.CurrentBranch(ctx)
+		if err != nil {
+			return AdoptionPlan{}, fmt.Errorf("this checkout is not on a branch; name one: dockhand adopt <branch>")
+		}
+	}
+	if name == "master" || name == "main" {
+		return AdoptionPlan{}, fmt.Errorf("%s is what branches start from; start a branch with dockhand start <name>", name)
+	}
+	head, _, err := e.Repo.Branch(ctx, name)
+	if err != nil {
+		return AdoptionPlan{}, err
+	}
+	master, _, err := e.Repo.Branch(ctx, "master")
+	if err != nil {
+		return AdoptionPlan{}, err
+	}
+	base, err := e.Repo.MergeBase(ctx, head, master)
+	if err != nil {
+		return AdoptionPlan{}, fmt.Errorf("%s shares no history with master: %w", name, err)
+	}
+	commits, scope, err := e.changes(ctx, model.ObjectID(base), head)
+	if err != nil {
+		return AdoptionPlan{}, err
+	}
+	plan := AdoptionPlan{Branch: name, Head: model.ObjectID(head), Base: base, Commits: commits, Ports: scope.PortNames(), ScopeKnown: true, Directory: e.worktreeDirectory(name)}
+	if checkouts, err := e.Repo.Checkouts(ctx, name); err == nil && len(checkouts) > 0 {
+		plan.Directory = checkouts[0]
+	}
+	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		branch, err := r.BranchNamed(name)
+		if err == nil {
+			plan.Already = true
+			if branch.Worktree != "" {
+				plan.Directory = branch.Worktree
+			}
+		}
+		if errors.Is(err, store.ErrNotFound) {
+			return nil
+		}
+		return err
+	})
+	return plan, err
+}
+
 // Adoption reports what adopt found.
 type Adoption struct {
 	Branch model.Branch

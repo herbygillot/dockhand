@@ -152,6 +152,12 @@ dockhand adopt my-jq-fix
 dockhand status -b my-jq-fix
 ```
 
+Add `--plan` to inspect what adoption would track without fetching or
+recording it. For a pull request, the plan reads forge metadata and shows the
+reported head, commit count, and base; it cannot know the changed ports
+without fetching the head. The ordinary adoption command fetches the needed
+Git objects when it runs.
+
 With no argument, `adopt` tracks the branch checked out here. It finds the base
 where the branch leaves freshly fetched master; it does not rewrite your commits
 or move the branch tip. If the branch is already checked out, dockhand records

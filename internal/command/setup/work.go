@@ -331,7 +331,7 @@ func startFrom(ctx context.Context, s *settings.Settings, streams term.Streams, 
 
 func AdoptCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var pr int
-	var evaluate bool
+	var evaluate, plan bool
 	cmd := &cobra.Command{
 		Use:   "adopt [branch]",
 		Short: "Track an existing branch without changing it",
@@ -355,6 +355,21 @@ scripts, and a new head from the author asks again.`,
 				return err
 			}
 			defer e.Close()
+			if plan {
+				if pr > 0 && len(args) > 0 {
+					return errors.New("--pr names the pull request; adopt takes a branch or --pr, not both")
+				}
+				branch := ""
+				if len(args) == 1 {
+					branch = args[0]
+				}
+				proposal, err := e.PlanAdopt(cmd.Context(), engine.AdoptRequest{Branch: branch}, pr)
+				if err != nil {
+					return err
+				}
+				writeAdoptPlan(streams.Prose(), proposal, s.Places())
+				return nil
+			}
 			if pr > 0 {
 				if len(args) > 0 {
 					return errors.New("--pr names the pull request; adopt takes a branch or --pr, not both")
@@ -390,8 +405,32 @@ scripts, and a new head from the author asks again.`,
 	}
 	cmd.Flags().IntVar(&pr, "pr", 0, "bring someone's pull request, by number, into a branch of its own")
 	cmd.Flags().BoolVar(&evaluate, "evaluate", false, "with --pr, allow dockhand to evaluate the pull request's Portfiles on this Mac at the head adopted")
+	cmd.Flags().BoolVar(&plan, "plan", false, "show what it would fetch and track, and change nothing")
 	settings.SupportsJSON(cmd)
 	return cmd
+}
+
+func writeAdoptPlan(out io.Writer, plan engine.AdoptionPlan, places config.Places) {
+	if pr := plan.PullRequest; pr != nil {
+		fmt.Fprintf(out, "#%d · %q by @%s\n", pr.Ref.Number, pr.Title, pr.Author)
+		fmt.Fprintf(out, "Would fetch %s:%s and master; track as %s.\n", pr.HeadRepository, pr.HeadBranch, plan.Branch)
+		fmt.Fprintf(out, "Head %s · %s · base %s.\n", plan.Head.Short(), prose.Plural(plan.Commits, "commit"), plan.Base)
+		fmt.Fprintln(out, "Changed ports are unknown without fetching the pull request head.")
+		fmt.Fprintf(out, "Directory: %s\n", places.Tilde(plan.Directory))
+		fmt.Fprintln(out, "Nothing was adopted (--plan).")
+		return
+	}
+	state := "Would track"
+	if plan.Already {
+		state = "Already tracks"
+	}
+	ports := "no ports"
+	if len(plan.Ports) > 0 {
+		ports = strings.Join(plan.Ports, ", ")
+	}
+	fmt.Fprintf(out, "%s %s: %s above master %s, changing %s.\n", state, plan.Branch, prose.Plural(plan.Commits, "commit"), model.ObjectID(plan.Base).Short(), ports)
+	fmt.Fprintf(out, "Directory: %s\n", places.Tilde(plan.Directory))
+	fmt.Fprintln(out, "Nothing was adopted (--plan).")
 }
 
 // writePlaced says where adopting checked a branch out that wasn't
