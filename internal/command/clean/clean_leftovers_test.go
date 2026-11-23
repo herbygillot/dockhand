@@ -218,9 +218,11 @@ func TestCleanSelectorsResolveForBranchesAndKeptClones(t *testing.T) {
 }
 
 func TestCleanDeleteSelectorsForgetOpenBranchWhoseChangesAreOnMaster(t *testing.T) {
+	t.Parallel()
 	for _, selector := range [][]string{{"-b", "jq-update"}, {"-p", "jq"}} {
 		name := strings.Join(selector, "-")
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			w := cmdtest.NewWorld(t)
 			cmdtest.Versioned(t, w)
 			cmdtest.WithBumper(t)

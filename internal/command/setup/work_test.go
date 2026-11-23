@@ -129,6 +129,7 @@ func TestAdoptPullRequestPlanUsesForgeReadAndFetchesNothing(t *testing.T) {
 }
 
 func TestAdoptPullRequestPlanSharesLocalRefusalWithApply(t *testing.T) {
+	t.Parallel()
 	for _, blocker := range []string{"branch", "directory"} {
 		t.Run(blocker, func(t *testing.T) {
 			t.Parallel()
