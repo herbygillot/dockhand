@@ -33,6 +33,9 @@ import (
 //     terminal sudo put in its place;
 //   - the lock stays held while the command lives, after the launcher's
 //     own copy is closed, and is free once it has ended;
+//   - after the sudo and the command have ended, what the command handed
+//     its input on to still holds the lock: the very opening that was
+//     locked, not the file opened again;
 //   - a SIGTERM reaches the command: sent to the sudo by this process
 //     where that's permitted, or else by the root stop, port-tclsh run
 //     under sudo -n to send it, as the rule names;
@@ -66,6 +69,8 @@ func TestLiveSudoHandsTheLockToItsCommand(t *testing.T) {
 			require.True(t, found.StdinIsLock, "the command's standard input is the lock's file, not a %s sudo put there", found.Input)
 			require.True(t, found.LockHeld, "the lock is held while the command lives")
 			require.True(t, found.SignalReached, "the SIGTERM reached the command")
+			require.True(t, found.SameOpening, "what the command handed its input on to holds the lock: the opening that was locked, not the file opened again")
+			require.True(t, found.Held(), "every part held")
 			require.True(t, found.LockFreed, "the lock is free once the command has ended")
 			t.Logf("this process signals the root sudo: %v; the command keeps the sudo's group: %v, its session: %v", found.SelfSignals, found.KeepsGroup, found.KeepsSession)
 		})
