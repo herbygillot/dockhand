@@ -31,8 +31,9 @@ func (b Bumper) ResolveRelease(ctx context.Context, r editprep.Request) (model.R
 		version = "1.8.1"
 	}
 	// A word with no digit names no release, as upstream's evidence
-	// answers for one it doesn't hold.
-	if !strings.ContainsAny(version, "0123456789") {
+	// answers for one it doesn't hold, nor does 9.9, a version upstream
+	// hasn't released.
+	if !strings.ContainsAny(version, "0123456789") || version == "9.9" {
 		return model.Release{}, fmt.Errorf("%w: %q", upstream.ErrReleaseMissing, version)
 	}
 	// As discovery does, it says a release the port is at already is no

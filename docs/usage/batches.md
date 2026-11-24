@@ -128,7 +128,12 @@ checked on the same branch.`) rather than refusing it.
 Where each commit updates one port to the same version, submit titles the pull
 request for them, as `ace, tao: update to 8.0.8`. A version is supplied with a
 lone port: `update jq 1.8.1` means a version update because the second word is
-not a port name. Choose currently existing port names in your checkout.
+not a port name. Choose currently existing port names in your checkout. The
+version may be written as `outdated` prints it, the port's form, or as
+upstream's tag spells it: for a Portfile that turns the tag `2026-11-23` into
+the version `20261123`, either word selects that release. A version that
+matches no release in either form is refused, naming the nearest releases in
+both forms.
 
 Discovery and batch planning avoid repeating existing work. A port already
 changed by an open branch is left out of a new selection batch, with its branch

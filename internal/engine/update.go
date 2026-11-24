@@ -173,6 +173,11 @@ var ErrFidelity = editprep.ErrFidelity
 // as the version (#216).
 var ErrReleaseMissing = upstream.ErrReleaseMissing
 
+// ReadsAsVersion reports whether a word named to update reads as a version,
+// 9.9, rather than a name, my-branch: a version upstream has no release
+// of is a release not found, never a branch named by mistake (#305).
+func ReadsAsVersion(word string) bool { return version.Classify(word) != version.Unknown }
+
 // Unlocated is a checksum declaration dockhand can't find in the Portfile
 // to edit, an unsupported edit that names the archive and why.
 type Unlocated = editprep.Unlocated

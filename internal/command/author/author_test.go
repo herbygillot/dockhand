@@ -202,6 +202,11 @@ func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "update", "jq", "--new", "my-branch", "--plan")
 	require.ErrorIs(t, err, upstream.ErrReleaseMissing)
 	require.ErrorContains(t, err, `"my-branch"; to name the new branch my-branch, write --new=my-branch`)
+	// A word that reads as a version names a release dockhand didn't find,
+	// not a branch: no such hint (#305).
+	_, _, err = cmdtest.Dockhand(t, "update", "jq", "--new", "9.9", "--plan")
+	require.ErrorIs(t, err, upstream.ErrReleaseMissing)
+	require.NotContains(t, err.Error(), "to name the new branch")
 }
 
 // A plan in a branch named with --branch is planned there, though the
