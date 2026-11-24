@@ -178,7 +178,8 @@ func TestAnUnreadIdentityIsNoEnvironmentThatCanReuse(t *testing.T) {
 // environment it couldn't identify, saying so, and opens nothing for it.
 // A publication serve already accepted, its push made and its opening
 // owed, goes on by its record (#191) and is not judged again: the opening
-// is made though the identity can't be read now.
+// is made though the identity can't be read now. A record of another
+// commit is no continuation: the submission is judged, and held.
 func TestServeHoldsAnUnreadIdentityButNotAPublicationItAccepted(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
@@ -213,7 +214,35 @@ func TestServeHoldsAnUnreadIdentityButNotAPublicationItAccepted(t *testing.T) {
 	require.True(t, branches[0].Publication.Served)
 	require.Contains(t, branches[0].Publication.Owes, model.StepOpen)
 
+	// A record of another commit is no continuation of this one: this
+	// submission is a new one, judged, and held where the identity can't
+	// be read.
+	accepted := *branches[0].Publication
+	other := accepted
+	other.Commit = model.ObjectID(strings.Repeat("b", 40))
+	setPublication := func(next model.Publication) {
+		require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+			current, err := tx.Branch(branches[0].ID)
+			if err != nil {
+				return err
+			}
+			was := ""
+			if current.Publication != nil {
+				was = current.Publication.ID
+			}
+			return tx.SetPublication(branches[0].ID, was, &next)
+		}))
+	}
+	setPublication(other)
 	e.Providers["command"] = unreadEnvironment{Provider: readable}
+	current, err := e.Branch(t.Context(), branches[0].ID)
+	require.NoError(t, err)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: current})
+	require.NoError(t, err)
+	require.Nil(t, plan.Carried, "another commit carries nothing")
+	require.NotEmpty(t, identityHolds(plan.Held()), "a new submission is judged, and held: %v", plan.Held())
+	setPublication(accepted)
+
 	pass()
 	require.Len(t, fake.PRs, 1, "the publication it accepted goes on: %q", said)
 }
