@@ -3,6 +3,7 @@ package local
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -138,4 +139,16 @@ func TestARootBuildsStopSeesItsGuestsGroupGone(t *testing.T) {
 	require.NoError(t, member.Process.Kill())
 	_, _ = member.Process.Wait()
 	require.NoError(t, guestGroupGone(t.Context(), dir))
+}
+
+// A proved root build its starter couldn't stop, as where sudo -n now asks
+// for a password, is not known, with the one command to stop it by hand,
+// as on a Mac never proved (the design's rule 4).
+func TestARootStopNotSeenSaysHowToStopItByHand(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "starter.json"), []byte(`{"pid":4321,"start":"x","boot":"b"}`), 0o644))
+	made := owner{Check: "check-12", Prefix: "/opt/local", Root: true, RootStop: true}
+	err := (&Local{}).rootStopUnseen(dir, made, errors.New("its starter, PID 4321, was asked to stop, and its launch lock is still held"))
+	require.EqualError(t, err, "check-12 builds in /opt/local as root, and it was asked to stop but wasn't seen to end: its starter, PID 4321, was asked to stop, and its launch lock is still held; stop it by hand, sudo kill -TERM -4321, then dockhand cancel check-12 asks again")
 }

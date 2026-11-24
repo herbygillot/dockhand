@@ -399,3 +399,30 @@ func TestARootBuildThatRecordedNothingKeepsItsLock(t *testing.T) {
 		return strings.Contains(out.String(), "keeps its lock")
 	}, 5*time.Second, 10*time.Millisecond, "the starter said why it stays")
 }
+
+// A root stop sudo -n refuses, as on a Mac whose rule was taken away after
+// its probe passed, kills nothing: the starter stays, keeping the lock,
+// and the stop answers not known within its bound, never ended, and never
+// waits on a prompt (architecture's question of 2026-11-24).
+func TestARootStopSudoRefusesIsNotKnown(t *testing.T) {
+	t.Parallel()
+	sudo, _, _ := rootStandIns(t)
+	refused := filepath.Join(t.TempDir(), "root-stop")
+	asked := filepath.Join(t.TempDir(), "asked")
+	testsupport.WriteExecutable(t, refused, "#!/bin/sh\necho \"$*\" >> "+asked+"\necho 'sudo: a password is required' >&2\nexit 1\n")
+	var dir string
+	started, dir, lock, out := launchedSpec(t, func(spec *Spec) {
+		spec.StdinLock, spec.RootStop, spec.Grace = true, []string{refused}, 200*time.Millisecond
+		dir = spec.Directory
+		spec.Command = []string{sudo, "-n", "/bin/sh", "-c", guestSays(dir)}
+	})
+	require.Eventually(t, func() bool { _, err := os.Stat(filepath.Join(dir, "results.json")); return err == nil }, 10*time.Second, 10*time.Millisecond, "%s", out)
+	begun := time.Now()
+	err := Stop(t.Context(), dir, lock, 3*time.Second)
+	require.ErrorContains(t, err, "was asked to stop", "not known: %s", out)
+	require.Less(t, time.Since(begun), 10*time.Second, "within its bound, with no prompt waited on")
+	require.NoError(t, started.Process.Signal(syscall.Signal(0)), "the starter stays")
+	said, err := os.ReadFile(asked)
+	require.NoError(t, err)
+	require.Regexp(t, `^--stop KILL process [0-9]+ [0-9]+\n$`, string(said), "root's SIGKILL to the guest was asked once, refused, and nothing after")
+}
