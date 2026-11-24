@@ -5,27 +5,14 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/forge"
 )
 
 // ValidRepositoryName reports whether value is a repository's owner/name,
-// each in the characters GitHub allows.
-func ValidRepositoryName(value string) bool {
-	parts := strings.Split(value, "/")
-	if len(parts) != 2 {
-		return false
-	}
-	for _, part := range parts {
-		if part == "" || part == "." || part == ".." {
-			return false
-		}
-		for _, r := range part {
-			if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.') {
-				return false
-			}
-		}
-	}
-	return true
-}
+// each in the characters GitHub allows, as forge.ValidGitHubRepositoryName
+// says.
+func ValidRepositoryName(value string) bool { return forge.ValidGitHubRepositoryName(value) }
 
 // RemoteRepository is the owner/name of the github.com repository a Git
 // remote's URL names, over HTTPS or SSH: https://github.com/owner/name,
