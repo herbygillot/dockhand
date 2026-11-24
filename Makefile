@@ -51,6 +51,7 @@ COMMAND_PACKAGE := github.com/herbygillot/dockhand/internal/command
 COMMAND_SHARDS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null | awk '{ n = int($$1 / 2); print (n < 1 ? 1 : (n > 6 ? 6 : n)) }')
 
 test:
+	@tools/heavy_test.sh
 	@$(GO) test -timeout $(TEST_TIMEOUT) $$($(GO) list ./... | grep -vxF $(COMMAND_PACKAGE)) & others=$$!; \
 	GO="$(GO)" tools/shard-test.sh $(COMMAND_PACKAGE) $(COMMAND_SHARDS) $(TEST_TIMEOUT); command=$$?; \
 	wait $$others; others=$$?; [ $$others = 0 ] && [ $$command = 0 ]
@@ -161,7 +162,7 @@ test-corpus:
 # fails; the harness's self-test runs beside them. golangci-lint's govet
 # runs go vet's analyzers, so vet isn't run twice.
 gate:
-	@tools/heavy sh -c '$(MAKE) fmt-check && $(MAKE) lint && $(MAKE) vendor-check && $(MAKE) deadcode && $(MAKE) path-check && \
+	@tools/heavy sh -c '$(MAKE) fmt-check && $(MAKE) lint && $(MAKE) vendor-check && $(MAKE) deadcode && $(MAKE) path-check && tools/heavy_test.sh && \
 	{ $(MAKE) acceptance-selftest & selftest=$$!; \
 	DOCKHAND_TEST_MACPORTS_TCLSH=$${DOCKHAND_TEST_MACPORTS_TCLSH:-/opt/local/bin/port-tclsh} $(GO) test -timeout $(TEST_TIMEOUT) ./... && \
 	$(GO) test -tags acceptance ./internal/failpoint/; tests=$$?; wait $$selftest; selftest=$$?; [ $$tests = 0 ] && [ $$selftest = 0 ]; }'

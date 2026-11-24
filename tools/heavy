@@ -32,20 +32,53 @@ export DOCKHAND_HEAVY_HELD
 exec /usr/bin/perl -e '
 	use strict;
 	use Fcntl qw(:flock SEEK_SET);
+	use Errno qw(EINTR);
 	$^F = 255;
 	my $lock = shift;
 	open(my $fh, "+>>", $lock) or die "heavy: $lock: $!\n";
-	if (!flock($fh, LOCK_EX | LOCK_NB)) {
+	my $acquired = flock($fh, LOCK_EX | LOCK_NB);
+	if (!$acquired) {
 		seek($fh, 0, SEEK_SET);
 		my $holder = <$fh> // "";
 		chomp $holder;
 		$holder = "another run" if $holder eq "";
 		print STDERR "heavy: waiting for $holder\n";
 		flock($fh, LOCK_EX) or die "heavy: $lock: $!\n";
+	} else {
+		seek($fh, 0, SEEK_SET);
+		my $previous = <$fh> // "";
+		if ($previous =~ /\(pid (\d+),/ && !kill(0, $1)) {
+			print STDERR "heavy: holder $1 is gone\n";
+		}
+	}
+	my @signals = qw(INT TERM HUP);
+	my %forward = map { $_ => !defined($SIG{$_}) || $SIG{$_} ne "IGNORE" } @signals;
+	my $started = localtime;
+	my $pid = fork();
+	die "heavy: fork: $!\n" unless defined $pid;
+	if ($pid == 0) {
+		exec { $ARGV[0] } @ARGV or die "heavy: $ARGV[0]: $!\n";
+	}
+	# At a terminal the command gets a Ctrl-C twice, from the terminal and
+	# from this forward. The forward stays for a signal sent to the pid of
+	# this wrapper from another session, which is how sessions stop the
+	# runs of others, and a second INT to a command already unwinding is
+	# harmless for what runs under heavy. (No apostrophe here: this Perl
+	# is inside a single-quoted shell string.)
+	for my $signal (@signals) {
+		next unless $forward{$signal};
+		$SIG{$signal} = sub { kill $signal, $pid; };
 	}
 	truncate($fh, 0);
-	my $started = localtime;
-	print $fh "@ARGV (pid $$, in $ENV{PWD}, since $started)\n";
+	print $fh "@ARGV (pid $pid, in $ENV{PWD}, since $started)\n";
 	$fh->flush;
-	exec { $ARGV[0] } @ARGV or die "heavy: $ARGV[0]: $!\n";
+	my $waited;
+	do {
+		$waited = waitpid($pid, 0);
+	} while ($waited == -1 && $! == EINTR);
+	die "heavy: waitpid: $!\n" if $waited == -1;
+	my $status = $?;
+	truncate($fh, 0) or die "heavy: $lock: $!\n";
+	$fh->flush;
+	exit($status == -1 ? 127 : ($status & 127 ? 128 + ($status & 127) : $status >> 8));
 ' "$lock" "$@"
