@@ -152,7 +152,12 @@ func Follow(ctx context.Context, e *engine.Engine, session *coord.Session, run m
 	journal, stop := startJournal(ctx, e, run, streams)
 	// A serve that started meanwhile may have taken the run; then it is
 	// followed instead, and said.
-	run, taker, err := e.SeeThrough(ctx, session, run.ID, before)
+	seen, taker, err := e.SeeThrough(ctx, session, run.ID, before)
+	// An interrupted see-through answers no run: the run followed is
+	// still the one named, not a zero one, "check-0".
+	if seen.ID != "" {
+		run = seen
+	}
 	if taker != nil {
 		fmt.Fprintf(streams.Err, "%s was taken by serve (pid %d); following it.\n", run.Name(), taker.PID)
 	}
