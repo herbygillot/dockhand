@@ -380,17 +380,15 @@ func readsPlatform(src []byte, controls []syntax.Word) bool {
 // of lines, after their common start and end.
 func changedLines(before, after []byte) [2][]textedit.Span {
 	a, b := lineSpans(before), lineSpans(after)
-	from, _ := textedit.Match(len(a), len(b), func(i, j int) bool {
+	gone, come := textedit.Changed(len(a), len(b), func(i, j int) bool {
 		return bytes.Equal(before[a[i].Start:a[i].End], after[b[j].Start:b[j].End])
 	})
 	var changed [2][]textedit.Span
-	for _, i := range textedit.Unmatched(len(a), from) {
+	for _, i := range gone {
 		changed[0] = append(changed[0], a[i])
 	}
-	for j, i := range from {
-		if i < 0 {
-			changed[1] = append(changed[1], b[j])
-		}
+	for _, j := range come {
+		changed[1] = append(changed[1], b[j])
 	}
 	return changed
 }
