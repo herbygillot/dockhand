@@ -20,7 +20,7 @@ func WithModeline(src []byte) (_ []byte, changed bool) {
 	text := string(src)
 	first, rest, _ := strings.Cut(text, "\n")
 	switch {
-	case first == Modeline:
+	case isModeline(first) && settingsMatch(first):
 		return src, false
 	case isModeline(first) && conflicts(first):
 		return src, false
@@ -43,10 +43,41 @@ func isModeline(line string) bool {
 	return strings.HasPrefix(strings.TrimSpace(line), "#") && (emacsLine.MatchString(line) || vimLine.MatchString(line))
 }
 
-// conflicts reports whether a modeline sets anything other than MacPorts'
-// settings: another mode or encoding, tabs, or a width other than 4. One
-// it doesn't set is no conflict.
+// conflicts reports whether a modeline sets any MacPorts option to a
+// different value. One it doesn't set is no conflict.
 func conflicts(line string) bool {
+	settings := readSettings(line)
+	for key, expected := range expectedSettings {
+		if value, exists := settings[key]; exists && value != expected {
+			return true
+		}
+	}
+	return false
+}
+
+var expectedSettings = map[string]string{
+	"coding": "utf-8", "mode": "tcl", "tab-width": "4", "indent-tabs-mode": "nil", "c-basic-offset": "4",
+	"vim.fileencoding": "utf-8", "vim.filetype": "tcl", "vim.expandtab": "true", "vim.shiftwidth": "4", "vim.tabstop": "4", "vim.softtabstop": "4",
+}
+
+// settingsMatch reports whether both halves of the modeline set exactly the
+// options MacPorts asks for, independent of spelling and order.
+func settingsMatch(line string) bool {
+	settings := readSettings(line)
+	if len(settings) != len(expectedSettings) {
+		return false
+	}
+	for key, want := range expectedSettings {
+		if settings[key] != want {
+			return false
+		}
+	}
+	return true
+}
+
+// readSettings reads the key/value pairs in an Emacs modeline and the options
+// in either Vim modeline form into canonical option names and values.
+func readSettings(line string) map[string]string {
 	settings := map[string]string{}
 	if m := emacsLine.FindStringSubmatch(line); m != nil {
 		for _, part := range strings.Split(m[1], ";") {
@@ -58,21 +89,33 @@ func conflicts(line string) bool {
 	}
 	if m := vimLine.FindStringSubmatch(line); m != nil {
 		for _, part := range strings.FieldsFunc(m[1], func(r rune) bool { return r == ':' || r == ' ' || r == '\t' }) {
-			key, value, _ := strings.Cut(part, "=")
-			settings["vim."+strings.ToLower(key)] = strings.ToLower(value)
+			key, value, hasValue := strings.Cut(part, "=")
+			key = strings.ToLower(key)
+			canonical, known := vimOptionNames[key]
+			if !known {
+				canonical = key
+			}
+			if !hasValue {
+				switch key {
+				case "et", "expandtab":
+					value = "true"
+				case "noet", "noexpandtab":
+					canonical, value = "expandtab", "false"
+				default:
+					value = "true"
+				}
+			}
+			settings["vim."+canonical] = strings.ToLower(value)
 		}
 	}
-	want := map[string]string{
-		"coding": "utf-8", "mode": "tcl", "tab-width": "4", "indent-tabs-mode": "nil", "c-basic-offset": "4",
-		"vim.fenc": "utf-8", "vim.fileencoding": "utf-8", "vim.ft": "tcl", "vim.filetype": "tcl",
-		"vim.sw": "4", "vim.shiftwidth": "4", "vim.ts": "4", "vim.tabstop": "4", "vim.sts": "4", "vim.softtabstop": "4",
-	}
-	for key, value := range settings {
-		if expected, known := want[key]; known && value != expected {
-			return true
-		}
-	}
-	_, noet := settings["vim.noet"]
-	_, noexpand := settings["vim.noexpandtab"]
-	return noet || noexpand
+	return settings
+}
+
+var vimOptionNames = map[string]string{
+	"fenc": "fileencoding", "fileencoding": "fileencoding",
+	"ft": "filetype", "filetype": "filetype",
+	"et": "expandtab", "expandtab": "expandtab",
+	"sw": "shiftwidth", "shiftwidth": "shiftwidth",
+	"ts": "tabstop", "tabstop": "tabstop",
+	"sts": "softtabstop", "softtabstop": "softtabstop",
 }
