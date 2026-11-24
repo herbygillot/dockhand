@@ -170,22 +170,7 @@ func numericVersion(value string) ([]int, bool) {
 func compareNumericVersion(left, right string) int {
 	a, _ := numericVersion(left)
 	b, _ := numericVersion(right)
-	for i := 0; i < max(len(a), len(b)); i++ {
-		var x, y int
-		if i < len(a) {
-			x = a[i]
-		}
-		if i < len(b) {
-			y = b[i]
-		}
-		if x < y {
-			return -1
-		}
-		if x > y {
-			return 1
-		}
-	}
-	return 0
+	return compareNumericParts(a, b)
 }
 
 // SameXcode reports whether two Xcode versions are one: Xcode_27.xip's 27
