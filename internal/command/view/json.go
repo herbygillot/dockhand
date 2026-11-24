@@ -258,7 +258,7 @@ func PlanView(plan model.Plan) planJSON {
 	}
 	for _, evaluated := range plan.Evaluated {
 		viewed.Evaluated = append(viewed.Evaluated, evaluatedJSON{Target: string(evaluated.Target), Environment: EnvironmentView(evaluated.Environment),
-			Variants: orEmpty(evaluated.Variants), DependsBuild: orEmpty(evaluated.DependsBuild), DependsLib: orEmpty(evaluated.DependsLib), DependsRun: orEmpty(evaluated.DependsRun),
+			Variants: NonNil(evaluated.Variants), DependsBuild: NonNil(evaluated.DependsBuild), DependsLib: NonNil(evaluated.DependsLib), DependsRun: NonNil(evaluated.DependsRun),
 			ConfigureArgs: evaluated.ConfigureArgs, ConfigureEnv: evaluated.ConfigureEnv})
 	}
 	viewed.Builds = []buildJSON{}
@@ -1046,14 +1046,6 @@ type handEditJSON struct {
 	Directory string `json:"directory"`
 	Refused   string `json:"refused"`
 	Adjusted  bool   `json:"adjusted"`
-}
-
-// orEmpty is a list for JSON: empty, never null, where it has none.
-func orEmpty(list []string) []string {
-	if list == nil {
-		return []string{}
-	}
-	return list
 }
 
 // IdentitiesUnreadView are an evidence's environments whose identity
