@@ -2,12 +2,10 @@ package provision
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"os"
 
+	"github.com/herbygillot/dockhand/internal/filedigest"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/installation"
@@ -92,12 +90,11 @@ func fileDigest(path string) (macos.ArchiveDigest, error) {
 		return macos.ArchiveDigest{}, err
 	}
 	defer file.Close()
-	hash := sha256.New()
-	size, err := io.Copy(hash, file)
+	digest, err := filedigest.Sum(context.Background(), file)
 	if err != nil {
 		return macos.ArchiveDigest{}, err
 	}
-	return macos.ArchiveDigest{Size: size, SHA256: hex.EncodeToString(hash.Sum(nil))}, nil
+	return macos.ArchiveDigest{Size: digest.Size, SHA256: digest.SHA256}, nil
 }
 
 // InstallMacPorts installs MacPorts, keeping each port's archive: a check
