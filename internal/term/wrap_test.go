@@ -139,3 +139,16 @@ func TestAPayloadLineThatBeginsWithAMarkIsNotColoured(t *testing.T) {
 	_, _ = streams.Plain().Prose().Write([]byte("✗ dockhand's own\n"))
 	require.Equal(t, "✗ dockhand's own\n", out.String(), "Plain reaches the mark writer through Prose")
 }
+
+// A prose tap reads what Prose writes, wrapped, as it goes to Out, and
+// nothing Out is given raw: a test's "said once" holds dockhand's own
+// words, and a payload as wide as it came isn't held to it (#94).
+func TestAProseTapReadsOnlyProse(t *testing.T) {
+	t.Parallel()
+	var out, tapped bytes.Buffer
+	streams := Begin(Streams{Out: &out}.WithDisplay(Display{Columns: 20}).WithProseTap(&tapped), nil)
+	_, _ = streams.Prose().Write([]byte("a sentence of dockhand's own words\n"))
+	_, _ = streams.Out.Write([]byte("a payload line that runs past twenty columns\n"))
+	require.Equal(t, "a sentence of\n  dockhand's own\n  words\n", tapped.String())
+	require.Equal(t, "a sentence of\n  dockhand's own\n  words\na payload line that runs past twenty columns\n", out.String())
+}

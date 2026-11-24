@@ -46,7 +46,7 @@ func TestAFailureSaysTheCauseItsLogGave(t *testing.T) {
 		{Target: model.PlanTarget{ID: "iperf3"}, Outcomes: []engine.Cell{failed(model.PhaseInstall, "Failed to build iperf3")}},
 	}}
 	var out bytes.Buffer
-	writeFailureLines(&out, evidence)
+	writeFailureLines(&out, &out, evidence)
 	require.Equal(t, "sslscan failed at install: ./sslscan.h:282:23: error: field has incomplete type 'ASN1_OCTET_STRING'\n\n"+
 		"socat: a dependency failed on tart macOS 26 (Tahoe) arm64: openssl4 failed to build\n\n", out.String(), "iperf3 has no log, so no last lines")
 
@@ -55,7 +55,7 @@ func TestAFailureSaysTheCauseItsLogGave(t *testing.T) {
 	evidence.Plan.Environments = []model.Environment{sequoia, tahoe}
 	evidence.Targets = []engine.TargetEvidence{{Target: model.PlanTarget{ID: "sslscan"}, Outcomes: []engine.Cell{{Kind: engine.CellRecorded, TargetResult: model.TargetResult{Outcome: model.OutcomePassed}}, failed(model.PhaseInstall, cause)}}}
 	out.Reset()
-	writeFailureLines(&out, evidence)
+	writeFailureLines(&out, &out, evidence)
 	require.Equal(t, "sslscan failed at install on tart macOS 26 (Tahoe) arm64: ./sslscan.h:282:23: error: field has incomplete type 'ASN1_OCTET_STRING'\n\n", out.String())
 }
 

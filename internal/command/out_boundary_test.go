@@ -13,10 +13,9 @@ import (
 )
 
 // outAssignAllowed are the files that may assign a Streams' Out, each with
-// why.
-var outAssignAllowed = map[string]string{
-	"internal/command/cmdtest/stands.go": "RunFor puts the said-once check under a test's output, before Begin",
-}
+// why: none, since RunFor reads Prose by a tap (WithProseTap) and no longer
+// puts its said-once check under Out.
+var outAssignAllowed = map[string]string{}
 
 // No command file assigns a Streams' Out, nor builds Streams over another's
 // writer: Out is the raw standard output Begin switched for --json, and
