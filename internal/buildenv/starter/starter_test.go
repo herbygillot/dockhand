@@ -341,9 +341,11 @@ func rootStandIns(t *testing.T) (sudo, rootStop, asked string) {
 }
 
 // guestSays is a stand-in guest's script: it records its PID in the
-// build's results, as the guest's first save does, then waits.
+// build's results, whole, by a rename, as the guest's first save does,
+// then waits.
 func guestSays(dir string) string {
-	return "printf '{\"environment\":{\"pid\":\"%s\"}}' $$ > " + filepath.Join(dir, "results.json") + "; exec /bin/sleep 60"
+	results := filepath.Join(dir, "results.json")
+	return "printf '{\"environment\":{\"pid\":\"%s\"}}' $$ > " + results + ".tmp && mv " + results + ".tmp " + results + "; exec /bin/sleep 60"
 }
 
 // A root build's sudo that doesn't end on SIGTERM has its guest sent
