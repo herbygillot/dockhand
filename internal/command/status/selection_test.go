@@ -3,6 +3,7 @@ package status
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"regexp"
 	"testing"
@@ -292,8 +293,15 @@ func (keptOnTwoReleases) RemoveLeftover(context.Context, string) error { return 
 
 func (p keptOnTwoReleases) Shell(_ context.Context, job buildenv.ShellJob) (int, error) {
 	*p.shells = append(*p.shells, job)
+	if job.Output != nil {
+		fmt.Fprintln(job.Output, shellsLine)
+	}
 	return 7, nil
 }
+
+// shellsLine is a line the clone's command prints, wider than any width a
+// test sets.
+const shellsLine = "a line of the command's own output in the clone, running past twenty columns"
 
 // shell, the command, chooses among the clones a check kept by --on: with
 // several and no --on it refuses, naming each release; an --on the check
@@ -364,6 +372,13 @@ func TestShellChoosesAmongTheClonesACheckKept(t *testing.T) {
 	require.Equal(t, 7, term.ExitCode(err))
 	require.Len(t, shells, 2)
 	require.Equal(t, "clone-sequoia", shells[1].Ref, "a bare number is the check")
+
+	// The command's output is its own, payload, whole at any width: shell
+	// gave it Prose, and a long line came back wrapped (#94, Codex's read).
+	cmdtest.Setenv(t, "COLUMNS", "20")
+	out, _, err := cmdtest.Dockhand(t, "shell", "check-2", "--on", "tahoe", "--", "ls")
+	require.Equal(t, 7, term.ExitCode(err))
+	require.Contains(t, out, shellsLine+"\n")
 }
 
 // A check cleanup removed is said to be gone, to every command that names
