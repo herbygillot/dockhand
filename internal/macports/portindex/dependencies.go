@@ -43,6 +43,26 @@ func dependencyName(value string) string {
 	return value
 }
 
+// Dependencies are the ports the entry's fields name, in field and word
+// order, as written: each field read as a Tcl list, as MacPorts reads it,
+// and each word's port after its last colon. A field that isn't a Tcl
+// list names none, as dependencyEdges counts it unread.
+func (e Entry) Dependencies(fields ...string) []string {
+	var names []string
+	for _, field := range fields {
+		items, failures := syntax.ListValues(e.Fields[field])
+		if len(failures) != 0 {
+			continue
+		}
+		for _, item := range items {
+			if name := dependencyName(item); name != "" {
+				names = append(names, name)
+			}
+		}
+	}
+	return names
+}
+
 func (e Entry) dependencyEdges(fields []string) (map[string][]string, []Unread) {
 	edges := map[string][]string{}
 	var unread []Unread
