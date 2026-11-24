@@ -59,6 +59,9 @@ type Concern struct {
 	Detail string
 }
 
+// ConcernNotCompared names an upstream comparison that couldn't be made.
+const ConcernNotCompared = "not-compared"
+
 // ConcernOrigin is where a concern came from.
 type ConcernOrigin string
 

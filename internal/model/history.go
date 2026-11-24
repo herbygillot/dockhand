@@ -194,7 +194,7 @@ func (c *UpstreamComparison) Concerns(port string) []Concern {
 		}
 	}
 	if c.Problem != "" {
-		concerns = append(concerns, Concern{Origin: FromUpstream, Port: port, Rule: "not-compared", Class: UnknownBaseline,
+		concerns = append(concerns, Concern{Origin: FromUpstream, Port: port, Rule: ConcernNotCompared, Class: UnknownBaseline,
 			Detail: "the upstream archives couldn't be compared: " + c.Problem})
 	}
 	return concerns
