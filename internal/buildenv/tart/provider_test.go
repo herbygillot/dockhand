@@ -55,6 +55,12 @@ type fakeMac struct {
 	// slot.
 	beforeStop func()
 	cloneErr   error
+	// lostReply is a clone made whose answer was lost: Clone makes it and
+	// answers this.
+	lostReply error
+	// onStop, where set, runs as Tart is asked to stop a VM, before it
+	// answers.
+	onStop func(vm string)
 	// stopErr and deleteErr are how Tart answers a stop or a delete.
 	stopErr, deleteErr error
 	running            []int // counts Running reports, one per call, the last repeating
@@ -139,7 +145,7 @@ func (m *fakeMac) Clone(_ context.Context, image, vm string) error {
 	m.mu.Lock()
 	m.images = append(m.images, vm)
 	m.mu.Unlock()
-	return nil
+	return m.lostReply
 }
 func (m *fakeMac) Start(vm string, _ ...*os.File) (run, error) {
 	m.log("start " + vm)
@@ -176,7 +182,20 @@ func (r *liveRun) Stop(context.Context, time.Duration) error {
 	})
 	return nil
 }
-func (m *fakeMac) Stop(_ context.Context, vm string) error { m.log("stop " + vm); return m.stopErr }
+func (m *fakeMac) Stop(_ context.Context, vm string) error {
+	m.log("stop " + vm)
+	if m.onStop != nil {
+		m.onStop(vm)
+	}
+	return m.stopErr
+}
+
+// logged are the events so far, read while another goroutine adds to them.
+func (m *fakeMac) logged() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.events)
+}
 func (m *fakeMac) Delete(_ context.Context, vm string) error {
 	m.log("delete " + vm)
 	if m.deleteErr != nil {
