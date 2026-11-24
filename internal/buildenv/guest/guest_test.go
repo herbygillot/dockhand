@@ -1031,3 +1031,19 @@ func TestARootBuildsGuestChecksItHoldsTheLockFirst(t *testing.T) {
 		require.Empty(t, commands, "it started nothing")
 	}
 }
+
+// A guest that can't save its record starts nothing: its first save comes
+// before anything it starts, so a failed save ends it with nothing run
+// (the lifecycle design's rule 4: "a guest that can't save its record
+// starts nothing either, as for the starter").
+func TestAGuestThatCantSaveStartsNothing(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	command := guestCommand(t, root, twoTargets("declared"))
+	// The save's file a directory: the save can't write it.
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "results.json.tmp"), 0o755))
+	output, err := command.CombinedOutput()
+	require.Error(t, err, "%s", output)
+	commands, _ := os.ReadFile(filepath.Join(root, "port.log"))
+	require.Empty(t, strings.TrimSpace(string(commands)), "it started nothing: %s", output)
+}

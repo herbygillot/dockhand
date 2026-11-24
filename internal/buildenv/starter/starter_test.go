@@ -24,7 +24,33 @@ import (
 
 func TestMain(m *testing.M) {
 	RunIfAsked()
+	if dir := os.Getenv("STARTER_TEST_DRIVER"); dir != "" {
+		os.Exit(drive(dir))
+	}
 	os.Exit(m.Run())
+}
+
+// drive is a driver in a process of its own, as dockhand's is: it takes
+// the attempt's lock, starts a build through the starter, lets go of its
+// own copy, and waits to be killed.
+func drive(dir string) int {
+	file, err := filelock.Acquire(context.Background(), filepath.Join(dir, "attempt.lock"), filelock.Exclusive)
+	if err != nil {
+		return 1
+	}
+	program, err := Self()
+	if err != nil {
+		return 1
+	}
+	record := filepath.Join(dir, "record")
+	if err := os.MkdirAll(record, 0o755); err != nil {
+		return 1
+	}
+	if _, err := Start(Spec{Program: program, Directory: record, Signal: syscall.SIGTERM, Grace: 2 * time.Second, Lock: file, Command: []string{"/bin/sleep", "60"}}); err != nil {
+		return 1
+	}
+	_ = file.Close()
+	select {}
 }
 
 // lockAt is a launch lock by its path, as the checks service's is.
@@ -411,7 +437,8 @@ func TestARootStopSudoRefusesIsNotKnown(t *testing.T) {
 	sudo, _, _ := rootStandIns(t)
 	refused := filepath.Join(t.TempDir(), "root-stop")
 	asked := filepath.Join(t.TempDir(), "asked")
-	testsupport.WriteExecutable(t, refused, "#!/bin/sh\necho \"$*\" >> "+asked+"\necho 'sudo: a password is required' >&2\nexit 1\n")
+	input := filepath.Join(t.TempDir(), "input")
+	testsupport.WriteExecutable(t, refused, "#!/bin/sh\necho \"$*\" >> "+asked+"\necho \"$(/usr/bin/stat -f %r) $(/usr/bin/stat -f %r /dev/null)\" > "+input+"\necho 'sudo: a password is required' >&2\nexit 1\n")
 	var dir string
 	started, dir, lock, out := launchedSpec(t, func(spec *Spec) {
 		spec.StdinLock, spec.RootStop, spec.Grace = true, []string{refused}, 200*time.Millisecond
@@ -427,4 +454,122 @@ func TestARootStopSudoRefusesIsNotKnown(t *testing.T) {
 	said, err := os.ReadFile(asked)
 	require.NoError(t, err)
 	require.Regexp(t, `^--stop KILL process [0-9]+ [0-9]+\n$`, string(said), "root's SIGKILL to the guest was asked once, refused, and nothing after")
+	devices, err := os.ReadFile(input)
+	require.NoError(t, err)
+	both := strings.Fields(string(devices))
+	require.Len(t, both, 2)
+	require.Equal(t, both[1], both[0], "the stop-only guest is given /dev/null")
+}
+
+// A driver killed after its starter recorded itself leaves the build
+// running in the starter's own session; a stop from another process finds
+// it by the record, and sees it end (the design's Tests: "the driver
+// killed ... after" the starter's record).
+func TestAStopAfterTheDriverWasKilledSeesTheBuildEnd(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	driver := exec.Command(os.Args[0])
+	driver.Env = append(os.Environ(), "STARTER_TEST_DRIVER="+dir)
+	require.NoError(t, driver.Start())
+	record := filepath.Join(dir, "record")
+	require.Eventually(t, func() bool {
+		_, found, _ := ReadRecord(record)
+		return found
+	}, 10*time.Second, 10*time.Millisecond, "the starter recorded itself")
+	require.NoError(t, driver.Process.Kill())
+	_, _ = driver.Process.Wait()
+	starter, found, err := ReadRecord(record)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.NoError(t, syscall.Kill(starter.PID, 0), "the build outlived its driver")
+	require.NoError(t, Stop(t.Context(), record, lockAt(filepath.Join(dir, "attempt.lock")), 10*time.Second))
+	require.ErrorIs(t, syscall.Kill(-starter.PID, 0), syscall.ESRCH, "the group is gone")
+}
+
+// sessionOf is a command run in a session of its own, keeping its
+// standard input, as a sudo may run its command.
+func sessionOf(command string) string {
+	return "/opt/local/bin/perl -e 'use POSIX; POSIX::setsid(); exec @ARGV' /bin/sh -c '" + command + "'"
+}
+
+// Codex's shapes under sudo: a guest in a session of its own that recorded
+// nothing, its starter and its sudo gone however each went, killed, dead
+// of another signal, or left after only signalling its command, holds the
+// lock it was handed: the stop is not known while it lives, and ended once
+// it is gone (the design's Tests, A6).
+func TestAGuestLeftInASessionOfItsOwnKeepsTheStopNotKnown(t *testing.T) {
+	t.Parallel()
+	if _, err := os.Stat("/opt/local/bin/perl"); err != nil {
+		t.Skip("MacPorts' perl makes the guest's session")
+	}
+	for _, shape := range []struct{ name, sudo string }{
+		{"killed", "#!/bin/sh\n[ \"$1\" = -n ] && shift\n\"$@\"\n"},
+		{"dead of another signal", "#!/bin/sh\n[ \"$1\" = -n ] && shift\n\"$@\"\n"},
+		{"left after signalling its command", "#!/bin/sh\n[ \"$1\" = -n ] && shift\n\"$@\" &\ncommand=$!\ntrap 'kill -TERM $command; exit 1' TERM\nwait\n"},
+	} {
+		t.Run(shape.name, func(t *testing.T) {
+			t.Parallel()
+			sudo := filepath.Join(t.TempDir(), "sudo")
+			testsupport.WriteExecutable(t, sudo, shape.sudo)
+			pidFile := filepath.Join(t.TempDir(), "guest")
+			started, dir, lock, out := launchedSpec(t, func(spec *Spec) {
+				spec.StdinLock, spec.Grace = true, 200*time.Millisecond
+			}, sudo, "-n", "/bin/sh", "-c", sessionOf("trap \"\" TERM HUP INT; echo $$ > "+pidFile+".tmp; mv "+pidFile+".tmp "+pidFile+"; exec /bin/sleep 60"))
+			require.Eventually(t, func() bool { _, err := os.Stat(pidFile); return err == nil }, 10*time.Second, 10*time.Millisecond, "%s", out)
+			data, err := os.ReadFile(pidFile)
+			require.NoError(t, err)
+			guest, err := strconv.Atoi(strings.TrimSpace(string(data)))
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = syscall.Kill(guest, syscall.SIGKILL) })
+			sudoPID := 0
+			require.Eventually(t, func() bool {
+				listed, _ := exec.Command("/usr/bin/pgrep", "-P", strconv.Itoa(started.Process.Pid)).Output()
+				sudoPID, _ = strconv.Atoi(strings.TrimSpace(string(listed)))
+				return sudoPID > 0
+			}, 10*time.Second, 10*time.Millisecond)
+			switch shape.name {
+			case "killed":
+				require.NoError(t, started.Process.Kill())
+				_ = syscall.Kill(sudoPID, syscall.SIGKILL)
+			case "dead of another signal":
+				require.NoError(t, syscall.Kill(sudoPID, syscall.SIGSEGV))
+			case "left after signalling its command":
+				require.NoError(t, syscall.Kill(sudoPID, syscall.SIGTERM))
+			}
+			err = Stop(t.Context(), dir, lock, time.Second)
+			require.Error(t, err, "not known while the guest lives")
+			require.NoError(t, syscall.Kill(guest, 0), "the guest lives, never signalled")
+			require.NoError(t, syscall.Kill(guest, syscall.SIGKILL))
+			require.Eventually(t, func() bool { return syscall.Kill(guest, 0) != nil }, 10*time.Second, 10*time.Millisecond)
+			_ = syscall.Kill(started.Process.Pid, syscall.SIGKILL)
+			_, _ = started.Process.Wait()
+			require.NoError(t, Stop(t.Context(), dir, lock, 10*time.Second), "ended once it is gone")
+		})
+	}
+}
+
+// A guest that leads a group of its own is sent root's SIGKILL as that
+// group, by the root stop, its PID and start time tested first.
+func TestARootBuildsGuestLeadingAGroupIsKilledAsTheGroup(t *testing.T) {
+	t.Parallel()
+	if _, err := os.Stat("/opt/local/bin/perl"); err != nil {
+		t.Skip("MacPorts' perl makes the guest's group")
+	}
+	sudo, rootStop, asked := rootStandIns(t)
+	var dir string
+	started, dir, lock, out := launchedSpec(t, func(spec *Spec) {
+		spec.StdinLock, spec.RootStop, spec.Grace = true, []string{rootStop}, 500*time.Millisecond
+		dir = spec.Directory
+		results := filepath.Join(dir, "results.json")
+		spec.Command = []string{sudo, "-n", "/opt/local/bin/perl", "-e", "setpgrp(0,0); exec @ARGV", "/bin/sh", "-c",
+			"printf '{\"environment\":{\"pid\":\"%s\"}}' $$ > " + results + ".tmp && mv " + results + ".tmp " + results + "; exec /bin/sleep 60"}
+	})
+	require.Eventually(t, func() bool { _, err := os.Stat(filepath.Join(dir, "results.json")); return err == nil }, 10*time.Second, 10*time.Millisecond, "%s", out)
+	waited := make(chan error, 1)
+	go func() { waited <- started.Wait() }()
+	require.NoError(t, Stop(t.Context(), dir, lock, 15*time.Second), "%s", out)
+	<-waited
+	said, err := os.ReadFile(asked)
+	require.NoError(t, err)
+	require.Regexp(t, `^KILL group [0-9]+\n`, string(said), "the guest's own group")
 }

@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -96,4 +98,31 @@ func TestARootProofIsTrustedOnlyWhereItIsThePersonsOwn(t *testing.T) {
 	ok, why := (&Local{}).rootStopProved([]string{sudo})
 	require.False(t, ok)
 	require.Contains(t, why, "no directory of yours")
+}
+
+// A root build's first launch probes this Mac's sudo, and a probe that
+// fails still lets the build start and finish, through Execute: here a
+// sudo that opens the lock's file again, which the guest's own check can't
+// tell, builds, and the proof kept says what the probe found (the
+// lifecycle design's rule 4, as amended 2026-11-23).
+func TestAFailedProbeStillStartsTheBuild(t *testing.T) {
+	t.Parallel()
+	path, active := registry(t, "  zlib @1.3.2_0 (active)\n")
+	prefix, env, _ := fakePrefix(t, active, "DEPS=libharbor=zlib harbor-cli=libharbor")
+	registryDir := filepath.Join(prefix, "var", "macports", "registry")
+	require.NoError(t, os.Chmod(registryDir, 0o555))
+	t.Cleanup(func() { _ = os.Chmod(registryDir, 0o755) })
+	sudo := filepath.Join(t.TempDir(), "sudo")
+	testsupport.WriteExecutable(t, sudo, "#!/bin/sh\n[ \"$1\" = -n ] && shift\nif [ -n \"$4\" ]; then exec \"$@\" < \"$4\"; fi\nexec \"$@\"\n")
+	l := localProvider(t, env)
+	l.sudo, l.Proofs = []string{sudo}, filepath.Join(t.TempDir(), "local")
+	build := &fakeBuild{}
+	require.NoError(t, l.Execute(t.Context(), localJob(t, prefix), build))
+	require.Len(t, build.results, 2, "the build ran")
+	require.Equal(t, model.OutcomePassed, build.results[0].Outcome)
+	require.Contains(t, strings.Join(build.progress, "\n"), "probing this Mac's sudo once")
+	proved, why := l.rootStopProved([]string{sudo})
+	require.False(t, proved)
+	require.Contains(t, why, "the opening locked: false")
+	require.Equal(t, "  zlib @1.3.2_0 (active)\n", readRegistry(t, path), "and the prefix put back")
 }
