@@ -7,7 +7,6 @@ import (
 	"maps"
 	"os"
 	"path"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -525,18 +524,6 @@ func (e *Engine) checkedOut(ctx context.Context, branch, removing string) (strin
 		}
 	}
 	return "", nil
-}
-
-// samePath reports whether two paths name the same directory, through any
-// links, as Git reports a worktree's.
-func samePath(a, b string) bool {
-	resolved := func(path string) string {
-		if real, err := filepath.EvalSymlinks(path); err == nil {
-			return real
-		}
-		return filepath.Clean(path)
-	}
-	return resolved(a) == resolved(b)
 }
 
 // planCleanWorktree plans removing an unmerged branch's worktree, and its
