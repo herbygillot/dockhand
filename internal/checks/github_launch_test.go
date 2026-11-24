@@ -20,6 +20,12 @@ import (
 )
 
 // ada is the GitHub account the tests write as.
+// forkNamer names the test's fork remote, as a forge names a push URL,
+// which a remote write is bound to (#288).
+type forkNamer map[string]string
+
+func (n forkNamer) NameFromRemote(remote string) (string, error) { return n[remote], nil }
+
 type ada struct{}
 
 func (ada) Current(context.Context) (github.Identity, error) {
@@ -102,7 +108,7 @@ func TestAGitHubRerunAskedWhileACancelIsRecordedRunsNothingAgain(t *testing.T) {
 	c := service(t)
 	c.Poll = time.Hour
 	api := &stoppedShortActions{}
-	c.Providers = map[string]buildenv.Provider{buildenv.GitHub: &ghactions.Provider{Repo: repo, API: api, Identity: ada{},
+	c.Providers = map[string]buildenv.Provider{buildenv.GitHub: &ghactions.Provider{Repo: repo, API: api, Identity: ada{}, RemoteNamer: forkNamer{fork: "ada/macports-ports"},
 		Sleep: func(context.Context, time.Duration) error { return nil },
 		Fork: func(context.Context) (buildenv.Fork, error) {
 			return buildenv.Fork{Repository: "ada/macports-ports", PushURL: fork}, nil
