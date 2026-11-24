@@ -150,7 +150,7 @@ removes only expired failure clones.
 			// Which branches merged is their pull requests' to say, read
 			// now: two merged a minute before were left out, unsaid, until
 			// status --refresh (field testing, 2026-10-02).
-			if err := readAndSay(ctx, e, streams.Err); err != nil {
+			if err := view.ReadAndSay(ctx, e, streams.Err); err != nil {
 				fmt.Fprintf(streams.Err, "%v; clean goes by the states last read\n", err)
 			}
 			var plans []engine.CleanBranch
@@ -683,14 +683,4 @@ func forgetBranches(ctx context.Context, e *engine.Engine, streams term.Streams,
 	}
 	streams.Emit(map[string]any{"forgotten": forgotten, "branches": planned})
 	return nil
-}
-
-// readAndSay reads the pull requests and says what it found
-// (view.WriteRefreshed).
-func readAndSay(ctx context.Context, e *engine.Engine, out io.Writer) error {
-	refreshed, err := e.RefreshPullRequests(ctx)
-	if err != nil {
-		return err
-	}
-	return view.WriteRefreshed(out, refreshed)
 }
