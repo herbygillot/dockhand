@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/buildenv/guest"
 	"github.com/herbygillot/dockhand/internal/filelock"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -50,9 +51,18 @@ func TestALocalStopEndsTheGuestAndThePrefixIsPutBack(t *testing.T) {
 	build.mu.Lock()
 	note, lock, dir := build.launches[0], build.lock, build.refs[0]
 	build.mu.Unlock()
-	_, err := l.Stop(t.Context(), buildenv.StopRequest{Execution: model.GuestExecution{Attempt: 1, ProviderRef: dir, Launch: note}, Lock: pathLock(lock)})
+	// The guest that builds, by the PID its first save recorded: once the
+	// stop is through, it is gone. A pgrep of the directory's guest.tcl
+	// also found the put-back, the same program run again from the same
+	// directory by the driver's settle once the build ended, which a
+	// loaded Mac could still be running (architecture's second sighting).
+	results, err := (&guest.Follower{Root: dir}).Read(t.Context(), hostGuest{})
 	require.NoError(t, err)
-	require.Error(t, exec.Command("pgrep", "-f", filepath.Join(dir, "guest.tcl")).Run(), "nothing of the guest runs")
+	building, err := strconv.Atoi(results.Environment["pid"])
+	require.NoError(t, err)
+	_, err = l.Stop(t.Context(), buildenv.StopRequest{Execution: model.GuestExecution{Attempt: 1, ProviderRef: dir, Launch: note}, Lock: pathLock(lock)})
+	require.NoError(t, err)
+	require.ErrorIs(t, syscall.Kill(building, 0), syscall.ESRCH, "the guest that built is gone once the stop is through")
 	select {
 	case <-done:
 	case <-time.After(testsupport.Settle):
