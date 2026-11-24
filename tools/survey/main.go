@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -68,14 +69,14 @@ func main() {
 
 func survey() (err error) {
 	var ports, maintainers, notMaintainers, categories list
-	tree := flag.String("tree", firstOf(os.Getenv("MACPORTS_TREE"), "."), "ports tree to survey, at its committed HEAD")
+	tree := flag.String("tree", cmp.Or(os.Getenv("MACPORTS_TREE"), "."), "ports tree to survey, at its committed HEAD")
 	journalPath := flag.String("journal", "", "journal to write, one JSON line per port; a rerun with the same file continues it")
 	prefix := flag.String("prefix", "", "MacPorts prefix whose port-tclsh and portindex evaluate; the ones on PATH when empty")
 	gitBin := flag.String("git", "", "git executable; git on PATH when empty")
 	parallel := flag.Int("parallel", Concurrency, "Portfiles assessed at once")
 	indexCache := flag.String("index-cache", "", "port index cache; $DOCKHAND_INDEX_CACHE, else dockhand/indexes in the user cache directory")
-	go2port := flag.String("go2port", firstOf(os.Getenv("GO2PORT_BIN"), lookPath("go2port")), "go2port, for Go dependency blocks")
-	cargo2port := flag.String("cargo2port", firstOf(os.Getenv("CARGO2PORT_BIN"), lookPath("cargo2port")), "cargo2port, for Cargo dependency blocks")
+	go2port := flag.String("go2port", cmp.Or(os.Getenv("GO2PORT_BIN"), lookPath("go2port")), "go2port, for Go dependency blocks")
+	cargo2port := flag.String("cargo2port", cmp.Or(os.Getenv("CARGO2PORT_BIN"), lookPath("cargo2port")), "cargo2port, for Cargo dependency blocks")
 	cpuProfile := flag.String("cpuprofile", "", "write a CPU profile of the survey itself")
 	ledgerPath := flag.String("ledger", "", "write each observed port's dispatcher ledger to this file, one JSON line per port and context")
 	dbPath := flag.String("db", "", "record to write, one SQLite file per snapshot of the tree, never dockhand's own database; a rerun continues it")
@@ -377,15 +378,6 @@ func lookPath(name string) string {
 		return ""
 	}
 	return path
-}
-
-func firstOf(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 func shortID(id string) string {
