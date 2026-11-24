@@ -1252,7 +1252,7 @@ func (e *Engine) RemoveLeftovers(ctx context.Context, session *coord.Session, le
 		err = e.removeLeftover(ctx, provider, leftover)
 		releaseErr := session.Release(context.WithoutCancel(ctx), lease)
 		if errors.Is(err, buildenv.ErrLeftoverRunning) && releaseErr == nil {
-			leftover.Kept = "running in dockhand shell"
+			leftover.Kept = buildenv.ErrLeftoverRunning.Error()
 			continue
 		}
 		if errors.Is(err, buildenv.ErrLeftoverGone) && releaseErr == nil {

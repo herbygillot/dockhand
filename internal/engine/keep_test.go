@@ -445,5 +445,5 @@ func TestACloneACheckStartCouldntRemoveIsSaid(t *testing.T) {
 	ctx := progress.WithReporter(t.Context(), func(update progress.Update) { said = append(said, update.Message) })
 	require.NoError(t, e.forgetKept(ctx, "another-branch", model.Plan{}))
 	require.Contains(t, provider.left, clone)
-	require.Contains(t, strings.Join(said, "\n"), ", kept by "+run.Name()+", was not removed: running in dockhand shell")
+	require.Contains(t, strings.Join(said, "\n"), ", kept by "+run.Name()+", was not removed: in use by dockhand shell or another dockhand removing it")
 }

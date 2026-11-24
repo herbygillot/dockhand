@@ -515,8 +515,10 @@ type LeftoverProvider interface {
 // came: two checks waiting for a slot may both reclaim it (#239).
 var ErrLeftoverGone = errors.New("already removed")
 
-// ErrLeftoverRunning means dockhand shell holds a kept clone's start lock.
-var ErrLeftoverRunning = errors.New("running in dockhand shell")
+// ErrLeftoverRunning means a kept clone's guard is held: by dockhand
+// shell, or by another dockhand removing it, which the guard can't tell
+// apart.
+var ErrLeftoverRunning = errors.New("in use by dockhand shell or another dockhand removing it")
 
 // Reclaimer is a Build that can remove, of the environments running that
 // its provider named, those a check left whose owner is gone, as cleanup

@@ -58,26 +58,43 @@ func KeptFor(home, name string) string {
 
 // KeptAt is when a clone was kept, and false for one that wasn't.
 func KeptAt(home, name string) (time.Time, bool) {
+	info, kept := keptMarker(home, name)
+	if info == nil {
+		return time.Time{}, kept
+	}
+	return info.ModTime(), kept
+}
+
+// keptMarker is the one reading of whether a clone is kept: its marker is
+// there. A marker that is there but can't be read, or can't be stat'd for
+// any reason but its absence, is kept all the same, so a stop never deletes
+// a clone the person asked to keep (architecture's ruling of 2026-11-24).
+// info is the marker's, where it could be read.
+func keptMarker(home, name string) (os.FileInfo, bool) {
 	directory, err := keptDirectory(home)
 	if err != nil {
-		return time.Time{}, false
+		return nil, false
 	}
 	info, err := os.Stat(filepath.Join(directory, name))
 	if err != nil {
-		return time.Time{}, false
+		return nil, !errors.Is(err, os.ErrNotExist)
 	}
-	return info.ModTime(), true
+	return info, true
 }
 
 // KeptFrom is the image a kept clone was cloned from, and false for a
-// clone that wasn't kept.
+// clone that wasn't kept: kept as keptMarker reads it, its image empty
+// where the marker can't be read.
 func KeptFrom(home, name string) (string, bool) {
-	directory, err := keptDirectory(home)
-	if err != nil {
+	if _, kept := keptMarker(home, name); !kept {
 		return "", false
 	}
-	image, err := os.ReadFile(filepath.Join(directory, name))
-	return string(image), err == nil
+	directory, err := keptDirectory(home)
+	if err != nil {
+		return "", true
+	}
+	image, _ := os.ReadFile(filepath.Join(directory, name))
+	return string(image), true
 }
 
 // ForgetClone takes a clone's mark away, as it's deleted.

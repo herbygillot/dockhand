@@ -367,13 +367,14 @@ func TestCleanKeptSaysAClonesInUseWasNotRemoved(t *testing.T) {
 
 	out, _, err := cmdtest.Dockhand(t, "clean", "--kept", "check-1", "--yes")
 	require.Error(t, err, "nothing asked for was removed")
-	require.Contains(t, out, "VM "+clone+", kept by check-1, was not removed: running in dockhand shell")
+	// The line wraps at the terminal's width; its words are read whole.
+	require.Contains(t, strings.Join(strings.Fields(out), " "), "VM "+clone+", kept by check-1, was not removed: in use by dockhand shell or another dockhand removing it")
 	require.Contains(t, out, "Nothing was removed.")
 	require.NotContains(t, out, "Removed")
 	require.Contains(t, builder.left, clone)
 
 	out, _, err = cmdtest.Dockhand(t, "--json", "clean", "--kept", "check-1", "--yes")
 	require.Error(t, err)
-	require.Contains(t, out, `"kept": "running in dockhand shell"`)
+	require.Contains(t, out, `"kept": "in use by dockhand shell or another dockhand removing it"`)
 	require.NotContains(t, out, `"removed": true`)
 }

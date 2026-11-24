@@ -762,7 +762,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 							build.Progress("removed oldest failure clone(s) " + strings.Join(removed, ", ") + "; only the four newest failure clones are kept")
 						}
 						if len(skipped) > 0 {
-							build.Progress("skipped failure clone(s) " + strings.Join(skipped, ", ") + " because they are running in dockhand shell; cleanup will retry")
+							build.Progress("skipped failure clone(s) " + strings.Join(skipped, ", ") + " because they are in use by dockhand shell or another dockhand removing them; cleanup will retry")
 						}
 					}
 					return

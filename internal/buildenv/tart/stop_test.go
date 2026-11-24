@@ -368,7 +368,9 @@ func TestCleanAndARetryRemoveAKeptCloneOnce(t *testing.T) {
 	first := make(chan error, 1)
 	go func() { first <- p.RemoveLeftover(t.Context(), clone) }()
 	<-asked
-	require.ErrorIs(t, p.RemoveLeftover(t.Context(), clone), buildenv.ErrLeftoverRunning, "refused while the other holds the guard")
+	competing := p.RemoveLeftover(t.Context(), clone)
+	require.ErrorIs(t, competing, buildenv.ErrLeftoverRunning, "refused while the other holds the guard")
+	require.EqualError(t, competing, "in use by dockhand shell or another dockhand removing it", "a competing removal isn't called a shell")
 	close(resume)
 	require.NoError(t, <-first)
 	mac.onStop = nil
@@ -384,4 +386,30 @@ func TestCleanAndARetryRemoveAKeptCloneOnce(t *testing.T) {
 	require.NotContains(t, mac.images, clone)
 	_, marked := tartvm.KeptAt(p.Tart.Home, clone)
 	require.False(t, marked, "its marker is forgotten")
+}
+
+// A kept clone whose marker can't be read is still kept: a stop leaves
+// it, as the marker's presence alone says, and never deletes a clone the
+// person asked to keep (architecture's ruling of 2026-11-24: KeptFrom read
+// an unreadable marker as not kept, where KeptAt read it as kept).
+func TestATartStopLeavesAKeptCloneWhoseMarkerCantBeRead(t *testing.T) {
+	t.Parallel()
+	mac, p := stopping(t)
+	clone := clonePrefix("run_7", "tahoe") + "-1"
+	mac.images = append(mac.images, clone)
+	require.NoError(t, tartvm.KeepClone(p.Tart.Home, clone, "dockhand-base-tahoe", tartvm.KeptFailed))
+	marker := filepath.Join(keptDirectory(t, p.Tart.Home), clone)
+	require.NoError(t, os.Chmod(marker, 0o000))
+	t.Cleanup(func() { _ = os.Chmod(marker, 0o644) })
+	_, readable := os.ReadFile(marker)
+	if readable == nil {
+		t.Skip("this user reads a mode-000 file")
+	}
+	execution := model.GuestExecution{ID: "ex_1", Attempt: 1, ProviderRef: clone, Launch: launchNote{Clone: clone}.String()}
+	mac.events = nil
+	left, err := p.Stop(t.Context(), buildenv.StopRequest{Execution: execution, Attempts: []model.GuestExecution{execution}, Lock: &lock{}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"the clone " + clone + ", kept for dockhand shell, which dockhand clean removes"}, left)
+	require.Empty(t, mac.events, "neither stopped nor deleted")
+	require.Contains(t, mac.images, clone)
 }
