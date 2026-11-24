@@ -58,7 +58,13 @@ useful for temporary failures, such as a mirror refusing an archive.`,
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(streams.Prose(), "%s repeats %s: %s\n", run.Name(), previous.Name(), checks.Describe(revision))
+			if enqueue {
+				// -d's line names the new check, with the wait that
+				// follows it; this one names it once there ("said once").
+				fmt.Fprintf(streams.Prose(), "Repeating %s: %s\n", previous.Name(), checks.Describe(revision))
+			} else {
+				fmt.Fprintf(streams.Prose(), "%s repeats %s: %s\n", run.Name(), previous.Name(), checks.Describe(revision))
+			}
 			return checkrun.See(ctx, e, checks.Queued{Run: run}, streams, s.Places(), checkrun.Stay{Detach: enqueue}, s.Drain)
 		},
 	}
