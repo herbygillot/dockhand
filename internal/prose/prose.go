@@ -103,6 +103,28 @@ func And(words []string) string {
 	return strings.Join(words[:len(words)-1], ", ") + ", and " + words[len(words)-1]
 }
 
+// Or is a list of alternatives: "A", "A or B", "A, B, or C".
+func Or(words []string) string {
+	switch len(words) {
+	case 0:
+		return ""
+	case 1:
+		return words[0]
+	case 2:
+		return words[0] + " or " + words[1]
+	}
+	return strings.Join(words[:len(words)-1], ", ") + ", or " + words[len(words)-1]
+}
+
+// Truncate joins items, showing at most shown and then the count left.
+// moreSep is the wording before that count, such as " and " or ", and ".
+func Truncate(items []string, shown int, sep, moreSep string) string {
+	if len(items) <= shown {
+		return strings.Join(items, sep)
+	}
+	return strings.Join(items[:shown], sep) + moreSep + fmt.Sprintf("%d more", len(items)-shown)
+}
+
 // FirstSentence is text's first sentence, up to its first ". ".
 func FirstSentence(text string) string {
 	if i := strings.Index(text, ". "); i >= 0 {

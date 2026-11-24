@@ -9,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/project"
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 // A Python project's requires-python is its own line, as go.mod's go
@@ -217,11 +218,5 @@ func (a *assessment) pythonPin() (model.UpstreamChange, bool) {
 // series says Python versions for a person: 3.9, or 3.9 and 3.10, or 3.9,
 // 3.10, and 3.11.
 func series(pythons []string) string {
-	switch len(pythons) {
-	case 1:
-		return pythons[0]
-	case 2:
-		return pythons[0] + " and " + pythons[1]
-	}
-	return strings.Join(pythons[:len(pythons)-1], ", ") + ", and " + pythons[len(pythons)-1]
+	return prose.And(pythons)
 }

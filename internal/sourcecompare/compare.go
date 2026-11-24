@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/herbygillot/dockhand/internal/project"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
@@ -1018,15 +1019,7 @@ func autoconfWords(old, now project.AutoconfFacts, sets func(string) bool) strin
 // orList joins words as a sentence lists alternatives: "A", "A or B", "A,
 // B, or C".
 func orList(words []string) string {
-	switch len(words) {
-	case 0:
-		return ""
-	case 1:
-		return words[0]
-	case 2:
-		return words[0] + " or " + words[1]
-	}
-	return strings.Join(words[:len(words)-1], ", ") + ", or " + words[len(words)-1]
+	return prose.Or(words)
 }
 
 // subset reports whether every version in some is in all.

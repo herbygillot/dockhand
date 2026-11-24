@@ -19,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -1052,10 +1053,7 @@ func (e *Engine) checkOutAgain(ctx context.Context, branch model.Branch) error {
 }
 
 func listPaths(paths []string) string {
-	if len(paths) > 3 {
-		return strings.Join(paths[:3], ", ") + fmt.Sprintf(" and %d more", len(paths)-3)
-	}
-	return strings.Join(paths, ", ")
+	return prose.Truncate(paths, 3, ", ", " and ")
 }
 
 // Branch reads a tracked branch by its ID.

@@ -44,6 +44,17 @@ func TestAndListsWordsAsASentenceDoes(t *testing.T) {
 	require.Empty(t, And(nil))
 }
 
+func TestOrAndTruncate(t *testing.T) {
+	t.Parallel()
+	require.Empty(t, Or(nil))
+	require.Equal(t, "one", Or([]string{"one"}))
+	require.Equal(t, "one or two", Or([]string{"one", "two"}))
+	require.Equal(t, "one, two, or three", Or([]string{"one", "two", "three"}))
+	require.Equal(t, "a, b and 2 more", Truncate([]string{"a", "b", "c", "d"}, 2, ", ", " and "))
+	require.Equal(t, "a, b, and 2 more", Truncate([]string{"a", "b", "c", "d"}, 2, ", ", ", and "))
+	require.Equal(t, "a, b", Truncate([]string{"a", "b"}, 2, ", ", " and "))
+}
+
 func TestCountSetsThousandsApart(t *testing.T) {
 	for n, want := range map[int]string{0: "0", 999: "999", 2200: "2,200", 1234567: "1,234,567", -5000: "-5,000"} {
 		require.Equal(t, want, Count(n))
