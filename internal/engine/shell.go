@@ -78,8 +78,7 @@ func (e *Engine) Shell(ctx context.Context, request ShellRequest) (int, error) {
 	case len(kept) > 1:
 		var releases []string
 		for _, leftover := range kept {
-			darwin, _ := strconv.Atoi(leftover.Execution.Environment.Platform.Version)
-			if release, err := macos.ReleaseForDarwin(darwin); err == nil {
+			if release, err := macos.ReleaseForDarwinText(leftover.Execution.Environment.Platform.Version); err == nil {
 				releases = append(releases, "--on "+release.Slug)
 			}
 		}
@@ -153,8 +152,7 @@ func (e *Engine) shellRunning(ctx context.Context, request ShellRequest) (int, e
 	case len(live) > 1:
 		var releases []string
 		for _, execution := range live {
-			darwin, _ := strconv.Atoi(execution.Environment.Platform.Version)
-			if release, err := macos.ReleaseForDarwin(darwin); err == nil {
+			if release, err := macos.ReleaseForDarwinText(execution.Environment.Platform.Version); err == nil {
 				releases = append(releases, "--on "+release.Slug)
 			}
 		}
@@ -209,9 +207,8 @@ func (e *Engine) ShellSteps(ctx context.Context, run model.Run) ([]refusal.Next,
 		if leftover.Run.ID != run.ID {
 			continue
 		}
-		darwin, _ := strconv.Atoi(leftover.Execution.Environment.Platform.Version)
 		slug := leftover.Execution.Environment.Platform.Version
-		if release, err := macos.ReleaseForDarwin(darwin); err == nil {
+		if release, err := macos.ReleaseForDarwinText(slug); err == nil {
 			slug = release.Slug
 		}
 		releases = append(releases, slug)

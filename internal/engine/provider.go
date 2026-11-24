@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
@@ -140,11 +139,7 @@ func OnValues(environments []model.Environment) ([]string, bool) {
 			}
 			continue
 		}
-		darwin, err := strconv.Atoi(environment.Platform.Version)
-		if err != nil {
-			return nil, false
-		}
-		release, err := macos.ReleaseForDarwin(darwin)
+		release, err := macos.ReleaseForDarwinText(environment.Platform.Version)
 		if err != nil {
 			return nil, false
 		}

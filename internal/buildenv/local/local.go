@@ -295,11 +295,7 @@ func (l *Local) Execute(ctx context.Context, job buildenv.Job, build buildenv.Bu
 
 // hostRelease is the macOS release a local environment's platform is.
 func hostRelease(platform model.Platform) (macos.Release, error) {
-	darwin, err := strconv.Atoi(platform.Version)
-	if err != nil {
-		return macos.Release{}, err
-	}
-	return macos.ReleaseForDarwin(darwin)
+	return macos.ReleaseForDarwinText(platform.Version)
 }
 
 // settle says how the check left the prefix, from what the guest program

@@ -111,3 +111,19 @@ func TestReleasesRunOnTheArchitecturesTheirBuildersDo(t *testing.T) {
 	require.False(t, RunsOn(19, "arm64"))
 	require.False(t, RunsOn(25, "ppc"))
 }
+
+// A platform's Darwin version as text is a release in one step: the
+// number read, then its release, an error naming the text where it isn't
+// a number and the release where it isn't known (#150).
+func TestAReleaseIsReadFromDarwinText(t *testing.T) {
+	t.Parallel()
+	release, err := ReleaseForDarwinText("25")
+	require.NoError(t, err)
+	require.Equal(t, "26", release.Product)
+	_, err = ReleaseForDarwinText("x")
+	require.ErrorIs(t, err, ErrDarwinVersion)
+	require.EqualError(t, err, `macos: invalid Darwin version "x"`)
+	_, err = ReleaseForDarwinText("99")
+	require.NotErrorIs(t, err, ErrDarwinVersion)
+	require.EqualError(t, err, "macos: unknown release for Darwin 99")
+}

@@ -1,9 +1,9 @@
 package tart
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
-	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macos"
@@ -19,13 +19,12 @@ func ReleaseForPlatform(platform model.Platform) (macos.Release, error) {
 	if platform.OS != "darwin" || platform.Architecture != "arm64" {
 		return macos.Release{}, fmt.Errorf("tart: unsupported setup platform %s %s", platform.OS, platform.Architecture)
 	}
-	darwin, err := strconv.Atoi(platform.Version)
-	if err != nil {
+	release, err := macos.ReleaseForDarwinText(platform.Version)
+	if errors.Is(err, macos.ErrDarwinVersion) {
 		return macos.Release{}, fmt.Errorf("tart: invalid Darwin version %q", platform.Version)
 	}
-	release, err := macos.ReleaseForDarwin(darwin)
 	if err != nil {
-		return macos.Release{}, fmt.Errorf("tart: no provisionable macOS image for Darwin %d", darwin)
+		return macos.Release{}, fmt.Errorf("tart: no provisionable macOS image for Darwin %s", platform.Version)
 	}
 	return release, nil
 }

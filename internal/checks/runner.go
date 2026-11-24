@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1564,10 +1563,8 @@ func environmentSlug(environment model.Environment) string {
 		release := platform.OS + platform.Version
 		if platform.OS == "darwin" || platform.OS == "" {
 			release = "darwin" + platform.Version
-			if darwin, err := strconv.Atoi(platform.Version); err == nil {
-				if known, err := macos.ReleaseForDarwin(darwin); err == nil {
-					release = "macos" + known.Product
-				}
+			if known, err := macos.ReleaseForDarwinText(platform.Version); err == nil {
+				release = "macos" + known.Product
 			}
 		}
 		parts = append(parts, release)

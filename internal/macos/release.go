@@ -1,6 +1,7 @@
 package macos
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -75,6 +76,20 @@ func ReleaseForDarwin(darwin int) (Release, error) {
 	return release, nil
 }
 
+// ErrDarwinVersion is a Darwin version that isn't a number.
+var ErrDarwinVersion = errors.New("invalid Darwin version")
+
+// ReleaseForDarwinText is the release a Darwin version written as text
+// names, as a platform carries it: "25" is macOS 26. The one reading of
+// that text, where callers each parsed the number first (#150).
+func ReleaseForDarwinText(version string) (Release, error) {
+	darwin, err := strconv.Atoi(version)
+	if err != nil {
+		return Release{}, fmt.Errorf("macos: %w %q", ErrDarwinVersion, version)
+	}
+	return ReleaseForDarwin(darwin)
+}
+
 // ParseRelease accepts a macOS release name or major product version.
 func ParseRelease(value string) (Release, error) {
 	value = strings.ToLower(strings.TrimSpace(value))
@@ -125,10 +140,8 @@ func RunsOn(darwin int, architecture string) bool {
 // their own (the architecture review of 5897a82, R3-29).
 func ReleaseName(platform model.Platform) string {
 	if platform.OS == "darwin" || platform.OS == "" {
-		if darwin, err := strconv.Atoi(platform.Version); err == nil {
-			if release, err := ReleaseForDarwin(darwin); err == nil {
-				return "macOS " + release.Product
-			}
+		if release, err := ReleaseForDarwinText(platform.Version); err == nil {
+			return "macOS " + release.Product
 		}
 		return "Darwin " + platform.Version
 	}
@@ -141,10 +154,8 @@ func ReleaseName(platform model.Platform) string {
 func Describe(platform model.Platform) string {
 	parts := []string{ReleaseName(platform)}
 	if platform.OS == "darwin" || platform.OS == "" {
-		if major, err := strconv.Atoi(platform.Version); err == nil {
-			if release, err := ReleaseForDarwin(major); err == nil {
-				parts = []string{"macOS", release.Product, "(" + release.Name + ")"}
-			}
+		if release, err := ReleaseForDarwinText(platform.Version); err == nil {
+			parts = []string{"macOS", release.Product, "(" + release.Name + ")"}
 		}
 	}
 	if platform.Architecture != "" {
