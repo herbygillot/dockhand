@@ -105,3 +105,37 @@ func (p prefixWriter) Write(b []byte) (int, error) {
 	_, err := p.w.Write(append([]byte("> "), b...))
 	return len(b), err
 }
+
+// A payload line that reads as a table, a Portfile's long_description
+// wider than the terminal, comes back whole through Out on a terminal,
+// where Prose cuts a table's line at the width with "…" (#94).
+func TestAPayloadLineThatReadsAsATableIsNeverCut(t *testing.T) {
+	t.Parallel()
+	line := "long_description    a description that runs on well past twenty columns\n"
+	var out bytes.Buffer
+	streams := Begin(Streams{Out: &out}.AsTerminal().WithDisplay(Display{Columns: 20}), nil)
+	_, _ = streams.Out.Write([]byte(line))
+	require.Equal(t, line, out.String(), "whole through Out")
+	out.Reset()
+	_, _ = streams.Prose().Write([]byte(line))
+	require.Equal(t, "long_description…\n", out.String(), "a table's line through Prose is cut")
+}
+
+// A payload line that begins with a mark is never coloured: Prose passes
+// through the mark writer and Out never does. A test's stand-in terminal
+// colours nothing (colourMarks), so Prose is built here as Begin builds
+// it on a real one (#94).
+func TestAPayloadLineThatBeginsWithAMarkIsNotColoured(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	streams := Streams{Out: &switchWriter{w: &out}}
+	streams.prose = streams.proseOver(streams.Out, true)
+	_, _ = streams.Out.Write([]byte("✗ a line of a log\n"))
+	require.Equal(t, "✗ a line of a log\n", out.String(), "Out is raw")
+	out.Reset()
+	_, _ = streams.Prose().Write([]byte("✗ dockhand's own\n"))
+	require.Equal(t, red+"✗"+reset+" dockhand's own\n", out.String(), "Prose colours the mark")
+	out.Reset()
+	_, _ = streams.Plain().Prose().Write([]byte("✗ dockhand's own\n"))
+	require.Equal(t, "✗ dockhand's own\n", out.String(), "Plain reaches the mark writer through Prose")
+}
