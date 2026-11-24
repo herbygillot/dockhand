@@ -2,7 +2,6 @@ package distfiles
 
 import (
 	"slices"
-	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
@@ -31,7 +30,7 @@ func ManifestCandidates(info macports.PortInfo, names []string) ([]string, error
 	}
 	var result []string
 	for _, file := range extracted {
-		name, _, _ := strings.Cut(file, ":")
+		name, _ := macports.DistfileTag(file)
 		if !slices.Contains(names, name) {
 			return nil, portfile.ErrUnsupported.Because("extracted file %s has no source archive", name)
 		}

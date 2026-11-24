@@ -149,7 +149,7 @@ func Sources(info macports.PortInfo, portdir string) ([]Source, error) {
 	seen := map[string]bool{}
 	var result []Source
 	for _, file := range files {
-		name, tag, _ := strings.Cut(file, ":")
+		name, tag := macports.DistfileTag(file)
 		if name == "" || !portfile.Literal(name) || name == "." || name == ".." || seen[name] || (tag != "" && !portfile.Literal(tag)) {
 			return nil, portfile.ErrUnsupported.Because("ambiguous distfile %s", file)
 		}
