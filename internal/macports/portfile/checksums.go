@@ -15,6 +15,17 @@ import (
 // `port checksum` suggests it.
 var ModernChecksumKinds = []string{"rmd160", "sha256", "size"}
 
+// placeholderChecksums are the words of a checksums group written before
+// its values are known: each of ModernChecksumKinds with 0, the kinds
+// padded to one column, as `rmd160  0`, `sha256  0`, `size    0`.
+func placeholderChecksums() []string {
+	lines := make([]string, len(ModernChecksumKinds))
+	for i, kind := range ModernChecksumKinds {
+		lines[i] = fmt.Sprintf("%-8s0", kind)
+	}
+	return lines
+}
+
 // LegacyChecksums reports whether a group written with these algorithms is
 // rewritten as a whole: it names md5 or sha1, which MacPorts no longer
 // accepts as a sole guarantee, or it lacks sha256. Groups made only of
