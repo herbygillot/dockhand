@@ -63,17 +63,21 @@ func TestTidysDiffFromTheConsoleIsWhole(t *testing.T) {
 // answerThroughTheConsole answers a command the console runs. Over a test's
 // pipe the console's key reader may be waiting in a read the screen's
 // suspension can't end, as a terminal's raw read of a tenth of a second
-// does, and take the first line typed: a line no prompt takes is typed
-// first, which either the reader takes, or the command asks again for,
-// and then the answer.
+// does, and take the first line typed. So a line no prompt takes is typed,
+// again until the command asks again for it, which shows input now reaches
+// the command, and then the answer; a command that never asks again fails
+// the test.
 func answerThroughTheConsole(t *testing.T, viewed *cmdtest.SyncBuffer, send func(string), prompt, answer string) {
 	t.Helper()
 	asked := strings.Count(viewed.String(), prompt)
-	send("z\n")
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) && strings.Count(viewed.String(), prompt) == asked {
-		time.Sleep(20 * time.Millisecond)
+	reasked := func() bool { return strings.Count(viewed.String(), prompt) > asked }
+	for tries := 0; tries < 3 && !reasked(); tries++ {
+		send("z\n")
+		for deadline := time.Now().Add(time.Second); time.Now().Before(deadline) && !reasked(); {
+			time.Sleep(20 * time.Millisecond)
+		}
 	}
+	require.True(t, reasked(), "the command never asked again: %s", viewed.String())
 	send(answer + "\n")
 }
 
