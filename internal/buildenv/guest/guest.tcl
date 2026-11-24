@@ -607,8 +607,7 @@ proc consumed {name} {
     # A list that couldn't be read leaves what the build read unknown, and
     # its result isn't reused; read as none, it said the build read no
     # other port (Codex's review, checked against a268b6e5).
-    foreach line [split [known $port -q installed active] \n] {
-        if {![regexp {^\s*(\S+) (@\S+) \(active\)$} $line -> other spec]} { continue }
+    dict for {other spec} [actives [known $port -q installed active]] {
         if {[string equal -nocase $other $name]} {
             set own [list $other $spec]
         } else {
@@ -743,21 +742,6 @@ proc links {contents {paths {}}} {
         if {$owner ne "" && [dict exists $declaring $owner]} { dict set link declared [dict get $declaring $owner] }
         set link
     }]
-}
-
-# lexical is a path with its . and .. parts taken out by their names
-# alone, as port provides names files: file normalize would resolve the
-# directories' own links, /var's to /private/var among them.
-proc lexical {path} {
-    set parts {}
-    foreach part [file split $path] {
-        switch -- $part {
-            . {}
-            .. { if {[llength $parts] > 1} { set parts [lrange $parts 0 end-1] } }
-            default { lappend parts $part }
-        }
-    }
-    return [file join {*}$parts]
 }
 
 # declared are what each port a target's depends_lib names installs that
