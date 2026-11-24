@@ -1,6 +1,7 @@
 package treequery
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -81,4 +82,17 @@ func TestPlanOfMapsAnEmptyPlanAndMacPortsProblem(t *testing.T) {
 
 	_, err = planOf(info, macports.PortObservation{Problems: []string{"native fetch plan unavailable: no sites"}}, "")
 	require.EqualError(t, err, "MacPorts' fetch plan names no archives: native fetch plan unavailable: no sites")
+}
+
+// planOf is the archives one port's fetch plan names, its observation
+// built from info and port as ArchivePlan's evaluation would give them:
+// the tests' form of planOfObserved, which production calls with its
+// own context (#150's dead-code audit).
+func planOf(info macports.PortInfo, port macports.PortObservation, portdir string) ([]macports.Distfile, error) {
+	name := info.Name
+	observed := macports.Observation{
+		Snapshot: macports.Snapshot{Ports: map[string]macports.PortInfo{name: info}},
+		Ports:    map[string]macports.PortObservation{name: port},
+	}
+	return planOfObserved(context.Background(), observed, name, nil, portdir)
 }

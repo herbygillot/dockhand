@@ -1152,6 +1152,9 @@ func (e Evidence) missing() bool {
 // result fills a cell (#236). Its test policy does not decide that: a
 // result keeps the policy of the check that recorded it, and reads under
 // it (decision D1, Evidence.Words).
+//
+// Production asks countsRefusal, for the reason a result fails; Counts is
+// the rule as yes or no, by the name docs/architecture.md gives it.
 func Counts(recorded model.Plan, execution model.GuestExecution, id model.TargetID, now string, git *model.GitSource, fetched model.ObjectID, other bool) bool {
 	return countsRefusal(recorded, execution, id, now, git, fetched, other) == nil
 }

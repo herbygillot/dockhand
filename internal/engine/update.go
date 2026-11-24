@@ -10,7 +10,6 @@ import (
 	"maps"
 	"os"
 	"path"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -1687,21 +1686,6 @@ func attemptDigest(files []git.FileEdit) string {
 	return hex.EncodeToString(sum.Sum(nil))
 }
 
-// instructionLines are a port's Portfile's comments that read as a
-// maintainer's instruction, as update, status, and serve quote them:
-// "textproc/jq/Portfile:4: Do not update past 3.8.3".
-func instructionLines(root, directory, port string) []string {
-	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(directory), "Portfile"))
-	if err != nil {
-		return nil
-	}
-	var lines []string
-	for _, found := range portfile.Instructions(data, port) {
-		lines = append(lines, fmt.Sprintf("%s/Portfile:%d: %s", directory, found.Line, found.Text))
-	}
-	return lines
-}
-
 // writeEdit writes an edit's files into the worktree, each checked again
 // first (ApplyToWorkingFiles): one changed while the edit was prepared
 // leaves every file as it was.
@@ -1748,7 +1732,8 @@ func editResult(update Update, result editprep.Result) *model.EditResult {
 }
 
 // preparedInstructions are the Portfile's instructions as the prepared tree
-// has them (instructionLines), read before the files are written.
+// has them, as update, status, and serve quote them, "textproc/jq/Portfile:4:
+// Do not update past 3.8.3", read before the files are written.
 func preparedInstructions(ctx context.Context, worktree *git.Repository, tree, directory, port string) []string {
 	file, data, err := worktree.File(ctx, tree, directory+"/Portfile")
 	if err != nil || !file.Exists {
