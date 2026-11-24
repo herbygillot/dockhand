@@ -293,10 +293,6 @@ func WritesChecksums(src []byte, values []string) bool {
 	return true
 }
 
-// portGroupFile is a PortGroup's file, <name>-<version>.tcl in a
-// port1.0/group directory.
-var portGroupFile = regexp.MustCompile(`(?:^|/)(_resources/port1\.0/group/([A-Za-z0-9_+-]+)-([0-9][0-9.]*)\.tcl)$`)
-
 // portTable is a Tcl array a command reads an element of, as [set
 // crossbinutils.versions_info($version)] or ${name(key)}.
 var portTable = regexp.MustCompile(`(?:\[set\s+|\$\{?)([A-Za-z_][A-Za-z0-9_.:]*)\(`)
@@ -326,11 +322,11 @@ func portGroupFrame(path string, declaration macports.Declaration) (*InPortGroup
 		if filepath.Clean(frame.File) == filepath.Clean(path) {
 			return nil, false
 		}
-		match := portGroupFile.FindStringSubmatch(filepath.ToSlash(frame.File))
-		if match == nil {
+		file, pg, ok := portGroupFile(filepath.ToSlash(frame.File))
+		if !ok {
 			return nil, false
 		}
-		group := &InPortGroup{Group: match[2] + " " + match[3], File: match[1], Line: frame.Line}
+		group := &InPortGroup{Group: pg.Name + " " + pg.Version, File: file, Line: frame.Line}
 		for _, table := range portTable.FindAllStringSubmatch(declaration.Frames[command].Command, -1) {
 			if !slices.Contains(group.Tables, table[1]) {
 				group.Tables = append(group.Tables, table[1])
@@ -339,4 +335,17 @@ func portGroupFrame(path string, declaration macports.Declaration) (*InPortGroup
 		return group, true
 	}
 	return nil, false
+}
+
+// portGroupFile is the tree-relative path of a PortGroup's file that a
+// frame's file is, wherever the tree is, and the PortGroup it holds, as
+// macports.PortGroupAt names it.
+func portGroupFile(file string) (string, macports.PortGroup, bool) {
+	at := strings.LastIndex(file, macports.PortGroupDirectory+"/")
+	if at < 0 || at > 0 && file[at-1] != '/' {
+		return "", macports.PortGroup{}, false
+	}
+	relative := file[at:]
+	group, ok := macports.PortGroupAt(relative)
+	return relative, group, ok
 }
