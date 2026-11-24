@@ -510,7 +510,7 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 		}
 		return nil
 	case model.RunFailed:
-		writeFailureLines(out, evidence)
+		writeFailureLines(out, streams.Out, evidence)
 		// A failure a standing decision accepts is named, as submit takes
 		// it without a baseline.
 		if standing, err := e.StandingAccepted(ctx, evidence); err == nil {
@@ -586,8 +586,9 @@ const failureLines = 15
 
 // writeFailureLines shows, for each failure a reading of its log
 // explained, that cause, and for each it didn't, the last lines its
-// failed step printed.
-func writeFailureLines(out io.Writer, evidence engine.Evidence) {
+// failed step printed: its own sentences to out, dockhand's prose, and
+// the log's lines to raw, standard output as it is (#94).
+func writeFailureLines(out, raw io.Writer, evidence engine.Evidence) {
 	for _, target := range evidence.Targets {
 		for i := range target.Outcomes {
 			// A dependency's failure is said with MacPorts' line naming the
@@ -617,8 +618,10 @@ func writeFailureLines(out io.Writer, evidence engine.Evidence) {
 				continue
 			}
 			fmt.Fprintf(out, "%s failed%s. Last output:\n", target.Target.ID, where)
+			// The log's own lines are payload, written raw, never wrapped
+			// as dockhand's prose (#94, Codex's read).
 			for _, line := range lines {
-				fmt.Fprintf(out, "    %s\n", line)
+				fmt.Fprintf(raw, "    %s\n", line)
 			}
 			// A note read from the lines shown, never a hold (the abook
 			// session, 2026-10-28).

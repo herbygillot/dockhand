@@ -3,7 +3,6 @@ package cmdtest
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"os"
 	"regexp"
 	"slices"
@@ -113,19 +112,17 @@ func saidOnceChecked(args []string, streams term.Streams) bool {
 	return true
 }
 
-// saidOnceOut gathers a command line's standard output beside where the
-// test reads it, for SaidOnce.
+// saidOnceOut gathers what a command line's Prose writes, beside where
+// the test reads it, for SaidOnce.
 type saidOnceOut struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
-	to  io.Writer
 }
 
 func (w *saidOnceOut) Write(p []byte) (int, error) {
 	w.mu.Lock()
-	w.buf.Write(p)
-	w.mu.Unlock()
-	return w.to.Write(p)
+	defer w.mu.Unlock()
+	return w.buf.Write(p)
 }
 
 // checkSaidOnce reports what the output broke: in the test, or where

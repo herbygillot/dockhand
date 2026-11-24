@@ -23,6 +23,8 @@ type Streams struct {
 	Err io.Writer
 	// prose is Prose's writer, built over Out by Begin and Staged.
 	prose io.Writer
+	// proseTap reads what Prose writes, as it goes to Out (WithProseTap).
+	proseTap io.Writer
 	// interactive stands in for a terminal in tests (AsTerminal).
 	interactive bool
 	// lines reads answers from In; one reader for the whole command, so
@@ -80,6 +82,9 @@ func (s Streams) Prose() io.Writer {
 // proseOver is Prose's writer over w: the marks coloured where colour
 // says, then wrapped.
 func (s Streams) proseOver(w io.Writer, colour bool) io.Writer {
+	if s.proseTap != nil {
+		w = teeWriter{w: w, tap: s.proseTap}
+	}
 	if colour {
 		w = &markWriter{w: w}
 	}
@@ -221,4 +226,22 @@ func underlying(stream any) any {
 			return stream
 		}
 	}
+}
+
+// WithProseTap are the streams with what Prose writes read by tap as well,
+// as it goes to Out, wrapped and coloured, and nothing Out is given raw: a
+// test's reading of dockhand's own words, which a payload, as wide as it
+// came, isn't held to (#94).
+func (s Streams) WithProseTap(tap io.Writer) Streams {
+	s.proseTap = tap
+	return s
+}
+
+// teeWriter writes to w, and what w took to tap.
+type teeWriter struct{ w, tap io.Writer }
+
+func (t teeWriter) Write(p []byte) (int, error) {
+	n, err := t.w.Write(p)
+	_, _ = t.tap.Write(p[:n])
+	return n, err
 }
