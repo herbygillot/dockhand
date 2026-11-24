@@ -3,6 +3,7 @@ package upstream_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -382,4 +383,36 @@ func TestResolveTakesAVersionInThePortsForm(t *testing.T) {
 	_, err = service.Resolve(t.Context(), datedPort(), "20261123")
 	require.ErrorIs(t, err, upstream.ErrReleaseMissing)
 	require.ErrorContains(t, err, "rate limited")
+}
+
+// A large catalog is read against a version in the port's form only so
+// far: at most a hundred releases, those whose digits are the word's
+// first, each read being a Portfile's evaluation; a miss says how many
+// weren't read (architecture's measure of be6713b6: some 30ms a read).
+func TestResolveReadsALargeCatalogOnlyAsFarAsItMust(t *testing.T) {
+	t.Parallel()
+	c := &catalog{}
+	service := datedService(c)
+	for year := 2000; year < 2025; year++ {
+		for month := 1; month <= 12; month++ {
+			c.tags = append(c.tags, forge.Tag{Name: fmt.Sprintf("%d-%02d-01", year, month)})
+		}
+	}
+	reads := 0
+	evaluate := service.EvaluateVersion
+	service.EvaluateVersion = func(ctx context.Context, source string) (string, error) {
+		reads++
+		return evaluate(ctx, source)
+	}
+	release, err := service.Resolve(t.Context(), datedPort(), "20261123")
+	require.NoError(t, err)
+	require.Equal(t, "2026-11-23", release.Tag)
+	require.LessOrEqual(t, reads, 101, "a hundred read, and the one selected evaluated")
+
+	reads = 0
+	_, err = service.Resolve(t.Context(), datedPort(), "20261124")
+	require.ErrorIs(t, err, upstream.ErrReleaseMissing)
+	require.LessOrEqual(t, reads, 100)
+	require.ErrorContains(t, err, "tag 2026-11-23, version 20261123")
+	require.ErrorContains(t, err, "203 of owner/project's 303 releases, whose digits are furthest from it, weren't read")
 }

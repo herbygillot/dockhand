@@ -273,22 +273,32 @@ func (s *Service) byPortVersion(ctx context.Context, port macports.PortInfo, spe
 	if err != nil {
 		return Selection{}, err
 	}
-	var candidates []macports.VersionCandidate
-	var tags []string
-	var pending []int
+	var captures, listed []string
 	for _, release := range observations {
 		capture, matches := spec.Pattern.Version(release.Tag)
 		if release.Draft || !matches {
 			continue
 		}
-		candidate := macports.VersionCandidate{CaptureVersion: capture}
-		if capture == spec.SourceVersion {
+		captures, listed = append(captures, capture), append(listed, release.Tag)
+	}
+	// Each read is a Portfile's evaluation, some 30ms though the
+	// interpreter is shared, and a catalog may list thousands: only the
+	// releases likeliest to be the word are read, those whose digits are
+	// its digits, then those sharing the longest start of them.
+	order := likeliestFirst(requested, captures)
+	unread := max(0, len(order)-portVersionReads)
+	var candidates []macports.VersionCandidate
+	var tags []string
+	var pending []int
+	for _, index := range order[:len(order)-unread] {
+		candidate := macports.VersionCandidate{CaptureVersion: captures[index]}
+		if captures[index] == spec.SourceVersion {
 			candidate.Version = port.Version
 		} else {
 			pending = append(pending, len(candidates))
 		}
 		candidates = append(candidates, candidate)
-		tags = append(tags, release.Tag)
+		tags = append(tags, listed[index])
 	}
 	if err := s.evaluateCandidates(ctx, candidates, tags, pending); err != nil {
 		return Selection{}, err
@@ -301,7 +311,11 @@ func (s *Service) byPortVersion(ctx context.Context, port macports.PortInfo, spe
 	}
 	switch len(found) {
 	case 0:
-		return Selection{}, fmt.Errorf("%w: %q%s", ErrReleaseMissing, requested, nearestWords(requested, candidates, tags))
+		var rest string
+		if unread > 0 {
+			rest = fmt.Sprintf("; %d of %s's %d releases, whose digits are furthest from it, weren't read as the port's versions", unread, repository.Name(), len(order))
+		}
+		return Selection{}, fmt.Errorf("%w: %q%s%s", ErrReleaseMissing, requested, nearestWords(requested, candidates, tags), rest)
 	case 1:
 	default:
 		matched := make([]string, 0, len(found))
@@ -321,6 +335,43 @@ func (s *Service) byPortVersion(ctx context.Context, port macports.PortInfo, spe
 	}
 	commits[tag.Name] = tag.Commit
 	return Selection{Candidate: Candidate{Version: candidates[index].CaptureVersion, Release: forge.Release{Tag: tag.Name}}}, nil
+}
+
+// portVersionReads is how many of a catalog's releases a version in the
+// port's form is read against, at most.
+const portVersionReads = 100
+
+// likeliestFirst orders the captures, by index, likeliest first to be the
+// source of the port version requested: those whose digits, in order, are
+// its digits, then those sharing the longest start of them, then in the
+// catalog's order.
+func likeliestFirst(requested string, captures []string) []int {
+	digits := func(text string) string {
+		return strings.Map(func(r rune) rune {
+			if '0' <= r && r <= '9' {
+				return r
+			}
+			return -1
+		}, text)
+	}
+	want := digits(requested)
+	rank := make([]int, len(captures))
+	for i, capture := range captures {
+		have := digits(capture)
+		if have == want {
+			rank[i] = len(want) + 1
+			continue
+		}
+		for rank[i] < len(have) && rank[i] < len(want) && have[rank[i]] == want[rank[i]] {
+			rank[i]++
+		}
+	}
+	order := make([]int, len(captures))
+	for i := range order {
+		order[i] = i
+	}
+	slices.SortStableFunc(order, func(a, b int) int { return rank[b] - rank[a] })
+	return order
 }
 
 // nearestReleases is how many releases a refusal names.
