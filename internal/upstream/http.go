@@ -25,22 +25,11 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 			result.Detail, result.RetryAt = err.Error(), retryAt(err)
 		}
 	}()
-	// The listing is compared against the source's own spelling of the
-	// version, as Base compares it against livecheck.version; the port
-	// version is evaluated from the selected spelling afterwards.
+	page, validators, candidates, from, passed, err := s.livecheck(ctx, port, spec)
+	if err != nil {
+		return result, err
+	}
 	current := spec.SourceVersion
-	if !automatic(current) {
-		return result, fmt.Errorf("%w: require a stable or prerelease numeric version", ErrAutomaticUnsupported)
-	}
-	page, validators, err := s.listing(ctx, port, spec)
-	if err != nil {
-		return result, err
-	}
-	versions, err := s.Versions.ExtractVersions(ctx, spec.Livecheck.Regex, string(page), spec.Livecheck.Multiline)
-	if err != nil {
-		return result, err
-	}
-	candidates, from, passed := listed(current, string(page), versions)
 	if len(candidates) == 0 && passed != "" {
 		digest := sha256.Sum256(page)
 		result.onlyPrerelease(model.Release{Archive: true, Listing: &model.ReleaseListing{URL: spec.Livecheck.URL, ETag: validators.Get("ETag"), LastModified: validators.Get("Last-Modified"), SHA256: hex.EncodeToString(digest[:])}}, port.Version, passed)
