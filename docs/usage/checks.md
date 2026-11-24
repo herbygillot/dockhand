@@ -282,7 +282,9 @@ cancel unfinished, however long ago it was, since its run can still start:
 `status` keeps its line, and each `cancel`, and serve as it passes, looks
 again. A push git reported rejected, or one dockhand refused before sending,
 needs no run. A rerun GitHub refused is not yet read as having started
-nothing, since GitHub doesn't say what its refusals mean.
+nothing, since GitHub doesn't say what its refusals mean: dockhand keeps
+GitHub's status and body on the attempt, and the cancel's line names the
+status while it waits for the run.
 
 Each macOS release in the workflow's matrix is its own environment, with its own
 column, and one run builds them all. `--on github` asks for every release;

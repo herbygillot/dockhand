@@ -2,6 +2,9 @@ package ghactions
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
@@ -10,6 +13,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/git"
+	githubapi "github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -189,4 +193,95 @@ func TestAMatrixJobWaitingForARunnerCountsAgainstTheBound(t *testing.T) {
 	require.ErrorContains(t, err, "the run exceeded the 1m0s build timeout")
 	require.ErrorContains(t, err, "macos-26's job before any runner took it", "the job that never started is named")
 	require.ErrorContains(t, err, "the matrix is incomplete")
+}
+
+// refusedRerunAPI is a run whose attempt 2 failed, and whose rerun GitHub
+// answers as server does: through the Actions API as dockhand asks it.
+type refusedRerunAPI struct {
+	rerunAPI
+	github GitHub
+}
+
+func (a *refusedRerunAPI) Rerun(ctx context.Context, repository string, id int64) error {
+	a.reruns++
+	return a.github.Rerun(ctx, repository, id)
+}
+
+// A rerun GitHub refuses keeps GitHub's HTTP status and body on the
+// attempt's note as they came, and isn't taken as having started nothing:
+// GitHub documents nothing of what its refusals mean, so the note's
+// launch stays one a run must answer for, and a stop of it is not known
+// until the run shows the attempt asked of it (the lifecycle design's
+// "GitHub").
+func TestARerunGitHubRefusesKeepsItsAnswerAndIsNotKnown(t *testing.T) {
+	t.Parallel()
+	const body = `{"message":"This workflow run cannot be rerun","documentation_url":"https://docs.github.com/rest"}`
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/repos/ada/macports-ports/actions/runs/1/rerun-failed-jobs" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(body))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	root := t.TempDir()
+	clone, fork := filepath.Join(root, "clone"), filepath.Join(root, "fork.git")
+	testsupport.Git(t, root, "init", "-q", clone)
+	testsupport.Git(t, clone, "commit", "-q", "--allow-empty", "-m", "checked")
+	commit := testsupport.Git(t, clone, "rev-parse", "HEAD")
+	testsupport.Git(t, root, "init", "-q", "--bare", fork)
+	run := model.Run{ID: "run_abcdefghijklmnop", Number: 3}
+	branch := buildenv.CheckBranch(commit, run.ID)
+	testsupport.Git(t, clone, "push", "-q", fork, commit+":refs/heads/"+branch)
+	repo, err := git.Open(t.Context(), clone, git.Program{Env: testsupport.GitEnv(t)})
+	require.NoError(t, err)
+	api := &refusedRerunAPI{github: GitHub{Client: &githubapi.Client{HTTP: server.Client(), Config: githubapi.Config{BaseURL: server.URL + "/api/", Token: "fixture-token"}}}}
+	p := &Provider{Repo: repo, API: api, Identity: accountIdentity("ada"),
+		Fork: func(context.Context) (buildenv.Fork, error) {
+			return buildenv.Fork{Repository: "ada/macports-ports", PushURL: fork}, nil
+		},
+		Sleep: func(context.Context, time.Duration) error { return nil },
+	}
+	pushed := newLaunch("ada/macports-ports", branch, buildenv.Job{Run: run, Commit: commit}, launchPush)
+	job := buildenv.Job{Run: run, Directory: t.TempDir(), Commit: commit, Launched: []string{pushed.String()},
+		Execution: model.GuestExecution{Attempt: 2},
+		Targets:   []buildenv.Target{{PlanTarget: model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}}}},
+	}
+	build := &noting{}
+	err = p.Execute(t.Context(), job, build)
+	require.ErrorContains(t, err, "running https://github.com/ada/macports-ports/actions/runs/1 again")
+	require.ErrorContains(t, err, "403")
+	require.Equal(t, 1, api.reruns, "asked once")
+	// The attempt found the branch at its commit and took its run, then
+	// asked to run it again: the rerun's note, as first saved and as the
+	// start handed it back.
+	require.Len(t, build.notes, 4)
+	require.Contains(t, build.notes[0], `"action":"attach"`)
+	var first, after launchNote
+	require.NoError(t, json.Unmarshal([]byte(build.notes[2]), &first))
+	require.NoError(t, json.Unmarshal([]byte(build.notes[3]), &after))
+	require.Equal(t, launchRerun, first.Action)
+	require.Zero(t, first.Status, "saved before the rerun was asked")
+	require.Equal(t, http.StatusForbidden, after.Status, "GitHub's status, as it came")
+	require.Equal(t, body, after.Body, "GitHub's body, as it came")
+	require.Empty(t, after.Nothing, "a refused rerun isn't taken as having started nothing")
+	require.Equal(t, int64(1), after.Run)
+	require.Equal(t, 2, after.Attempt)
+
+	// A stop of the check reads the kept note: the run is listed at the
+	// attempt the rerun noted, so the rerun isn't answered for, and the
+	// stop is not known, saying GitHub's answer.
+	stopped := &stopAPI{}
+	stopped.add(1, "completed")
+	stopped.runs[0].Attempt = 2
+	executions := []model.GuestExecution{{ID: "github_1", Attempt: 1, Launch: pushed.String()}, {ID: "github_2", Attempt: 2, Launch: build.notes[3]}}
+	err = stop(t, stopped, executions)
+	require.ErrorContains(t, err, "run 1 hasn't shown the 1 attempt asked of it")
+	require.ErrorContains(t, err, "GitHub answered a rerun of it 403")
+	// The attempt it asked for shows after all: answered, and ended.
+	stopped.runs[0].Attempt = 3
+	require.NoError(t, stop(t, stopped, executions))
 }

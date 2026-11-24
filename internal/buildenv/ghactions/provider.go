@@ -449,7 +449,14 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		note.Run, note.Attempt = run.ID, run.Attempt
 		if err := build.Launch(note.String(), func(ctx context.Context) (string, error) {
 			ctx = remotewrite.ForAccount(ctx, account, p.Identity)
-			return note.String(), remotewrite.Rerun(ctx, p.API, remotewrite.Made, fork.Repository, run.ID)
+			err := remotewrite.Rerun(ctx, p.API, remotewrite.Made, fork.Repository, run.ID)
+			// A rerun GitHub refused keeps GitHub's status and body as
+			// they came, and stays a launch a run must answer for: no
+			// refusal is taken as proof that nothing started.
+			if answer := new(Answer); errors.As(err, &answer) {
+				note.Status, note.Body = answer.Status, answer.Body
+			}
+			return note.String(), err
 		}); err != nil {
 			if errors.Is(err, buildenv.ErrNotLaunched) {
 				return err

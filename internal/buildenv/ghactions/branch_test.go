@@ -86,6 +86,9 @@ func (n *noting) Launch(note string, start func(context.Context) (string, error)
 	return err
 }
 
+func (*noting) Refer(string) error { return nil }
+func (*noting) Canceled() bool     { return false }
+
 // The check's branch is its own, the commit's and the check's ID's: one
 // already at the commit that no attempt of the check noted pushing is
 // refused by name, and a push the remote rejects is written down as

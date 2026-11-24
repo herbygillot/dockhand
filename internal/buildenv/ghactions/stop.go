@@ -27,7 +27,10 @@ import (
 // what it is about to do. A push keeps the newest run listed for the
 // branch and commit before it (Before); a rerun the run and the attempt
 // it had; an attach the run it took, having pushed nothing. Nothing says
-// why a launch is known to have started nothing, where it is.
+// why a launch is known to have started nothing, where it is. A rerun
+// GitHub refused keeps GitHub's HTTP status and body as they came (Status,
+// Body), and is not among those: GitHub doesn't say what its refusals
+// mean.
 type launchNote struct {
 	ID         string `json:"id"`
 	Repository string `json:"repository"`
@@ -40,6 +43,8 @@ type launchNote struct {
 	Run        int64  `json:"run,omitempty"`
 	Attempt    int    `json:"attempt,omitempty"`
 	Nothing    string `json:"nothing,omitempty"`
+	Status     int    `json:"status,omitempty"`
+	Body       string `json:"body,omitempty"`
 }
 
 // The actions a launch note names.
@@ -312,6 +317,7 @@ func answered(notes []launchNote, runs []Run) []string {
 	var words []string
 	var pushes []launchNote
 	reruns := map[int64][]int{}
+	refused := map[int64][]int{}
 	var rerunOrder []int64
 	for _, note := range notes {
 		if note.Nothing != "" {
@@ -325,6 +331,9 @@ func answered(notes []launchNote, runs []Run) []string {
 				rerunOrder = append(rerunOrder, note.Run)
 			}
 			reruns[note.Run] = append(reruns[note.Run], note.Attempt)
+			if note.Status != 0 {
+				refused[note.Run] = append(refused[note.Run], note.Status)
+			}
 		case launchAttach:
 			if _, ok := listed[note.Run]; !ok {
 				words = append(words, fmt.Sprintf("GitHub lists no run %d, which an attempt took", note.Run))
@@ -361,7 +370,13 @@ func answered(notes []launchNote, runs []Run) []string {
 			}
 		}
 		if short {
-			words = append(words, fmt.Sprintf("run %d hasn't shown the %s asked of it", id, prose.Plural(len(attempts), "attempt")))
+			said := fmt.Sprintf("run %d hasn't shown the %s asked of it", id, prose.Plural(len(attempts), "attempt"))
+			// A refusal is said as GitHub gave it, and still waits on
+			// the run: what it means isn't known.
+			for _, status := range refused[id] {
+				said += fmt.Sprintf(", though GitHub answered a rerun of it %d", status)
+			}
+			words = append(words, said)
 		}
 	}
 	return words

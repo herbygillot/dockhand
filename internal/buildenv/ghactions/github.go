@@ -125,8 +125,36 @@ func (g GitHub) Rerun(ctx context.Context, repository string, id int64) error {
 	if err != nil {
 		return err
 	}
-	_, err = service.RerunFailedJobsByID(ctx, owner, name, id)
-	return githubapi.RateLimitError(err)
+	response, err := service.RerunFailedJobsByID(ctx, owner, name, id)
+	return withAnswer(response, githubapi.RateLimitError(err))
+}
+
+// Answer is GitHub's answer to a request it didn't take, as it came: its
+// HTTP status and its body, beside the error said of it. GitHub documents
+// the answer to a rerun that worked and nothing of what its refusals mean,
+// so a rerun's is kept on its launch note and read for no meaning (the
+// lifecycle design's "GitHub").
+type Answer struct {
+	Status int
+	Body   string
+	err    error
+}
+
+func (a *Answer) Error() string { return a.err.Error() }
+func (a *Answer) Unwrap() error { return a.err }
+
+// withAnswer is err with GitHub's answer kept on it, where GitHub gave one:
+// go-github leaves a refusal's body in its response to be read again.
+func withAnswer(response *gh.Response, err error) error {
+	if err == nil || response == nil || response.Response == nil {
+		return err
+	}
+	answer := &Answer{Status: response.StatusCode, err: err}
+	if response.Body != nil {
+		body, _ := io.ReadAll(response.Body)
+		answer.Body = string(body)
+	}
+	return answer
 }
 
 func (g GitHub) Cancel(ctx context.Context, repository string, id int64) error {
