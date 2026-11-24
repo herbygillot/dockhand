@@ -29,7 +29,7 @@ import (
 // comment on ASIFReady, and #94 gave what Tart and the guest's commands
 // print a writer of its own, apart from setup's sentences, none of which
 // changes an image.
-const setupPin = "8d7e633d6087d701d5d2dd1d5acc2eb96ed54005777e7d46590b4451fc882042"
+const setupPin = "65d6068f94bf00b9c8631b03934ee164c746caff23357b5e96778c12077a9366"
 
 // What setup puts in an image is identified by tart.SetupProtocol, which
 // evidence's reuse compares (decision 28). A change to the provisioning
