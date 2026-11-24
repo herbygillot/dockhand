@@ -21,7 +21,7 @@ var outAssignAllowed = map[string]string{}
 // writer: Out is the raw standard output Begin switched for --json, and
 // Prose is built over it, so an Out replaced afterwards, or wrapped and
 // put back, leaves Prose writing past it, as serve's stamp missed "serve:
-// stopped", or wraps a payload (#94, docs/designs/prose-stream.md). The
+// stopped", or wraps a payload (#94, docs/designs/prose-stream.md at 36675f0d). The
 // streams' own methods (Stamped, Staged) change the writers together. The
 // check is by syntax: any X.Out assigned is taken as a Streams', which
 // no other type in the command layer has today.
