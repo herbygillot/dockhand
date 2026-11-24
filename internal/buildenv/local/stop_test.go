@@ -125,20 +125,30 @@ func TestARootBuildIsStoppedOnlyUnderAProvedSudo(t *testing.T) {
 // of the lock would, isn't known to be gone, and isn't signalled.
 func TestARootBuildsStopSeesItsGuestsGroupGone(t *testing.T) {
 	t.Parallel()
+	sudo := filepath.Join(t.TempDir(), "sudo")
+	testsupport.WriteExecutable(t, sudo, "#!/bin/sh\nexec \"$@\"\n")
+	l := &Local{Temp: t.TempDir(), Locks: filepath.Join(t.TempDir(), "locks"), Proofs: t.TempDir(), sudo: []string{sudo}}
+	keepRootProof(t, l, sudo, true)
 	dir := t.TempDir()
+	owned, err := json.Marshal(owner{PID: 1, Check: "check-12", Prefix: t.TempDir(), Root: true, RootStop: true})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "owner.json"), owned, 0o644))
 	member := exec.Command("/bin/sleep", "60")
 	member.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	require.NoError(t, member.Start())
 	t.Cleanup(func() { _ = member.Process.Kill(); _, _ = member.Process.Wait() })
 	pid := strconv.Itoa(member.Process.Pid)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "results.json"), []byte(`{"environment":{"pid":"`+pid+`"}}`), 0o644))
-	err := guestGroupGone(t.Context(), dir)
+	request := buildenv.StopRequest{Execution: model.GuestExecution{Attempt: 1, Launch: `{"directory":"` + dir + `"}`}, Lock: pathLock(filepath.Join(t.TempDir(), "attempt.lock"))}
+	_, err = l.Stop(t.Context(), request)
 	require.ErrorContains(t, err, "process group "+pid+" with members")
+	require.ErrorContains(t, err, "stop it by hand")
 	require.NoError(t, member.Process.Signal(syscall.Signal(0)), "not signalled")
 
 	require.NoError(t, member.Process.Kill())
 	_, _ = member.Process.Wait()
-	require.NoError(t, guestGroupGone(t.Context(), dir))
+	_, err = l.Stop(t.Context(), request)
+	require.NoError(t, err, "ended once the guest's group is gone")
 }
 
 // A proved root build its starter couldn't stop, as where sudo -n now asks
