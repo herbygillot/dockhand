@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 // ErrInvalid reports a record that breaks one of this package's rules.
@@ -344,13 +345,10 @@ func (b Branch) ShortName() string { return strings.TrimPrefix(b.Name, BranchPre
 // BranchPrefix begins the name of every branch dockhand creates.
 const BranchPrefix = "dockhand/"
 
-// validRefName applies the parts of git check-ref-format that a branch name
-// dockhand stores can break, as git.ValidBranchName does, which a test
-// holds them to; Git remains the authority when it creates one. Each
-// component is held to them: dockhand/a.lock/b passed here where Git
-// refuses it (the architecture review's H8).
+// validRefName applies the branch-name rule also kept by git.ValidBranchName;
+// internal/model/branchname_test.go holds the two together.
 func validRefName(name string) bool {
-	if name == "" || strings.HasSuffix(name, ".") || strings.Contains(name, "..") || strings.Contains(name, "@{") || name == "@" {
+	if name == "" || !utf8.ValidString(name) || strings.HasPrefix(name, "-") || strings.HasSuffix(name, ".") || strings.Contains(name, "..") || strings.Contains(name, "@{") || name == "@" {
 		return false
 	}
 	for _, c := range name {

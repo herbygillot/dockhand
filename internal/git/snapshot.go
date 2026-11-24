@@ -39,6 +39,8 @@ func (r *Repository) Branch(ctx context.Context, name string) (commit, tree stri
 	return ref.Object, trees[ref.Object], nil
 }
 
+// ValidBranchName validates a branch name; model keeps the same rule, and
+// internal/model/branchname_test.go holds the two implementations together.
 func ValidBranchName(name string) bool {
 	return name != "" && utf8.ValidString(name) && !strings.HasPrefix(name, "refs/") && !strings.HasPrefix(name, "-") && validRefName("refs/heads/"+name)
 }
