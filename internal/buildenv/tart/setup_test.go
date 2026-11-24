@@ -52,9 +52,9 @@ func TestSetupNamesItsCost(t *testing.T) {
 	// The provisioner finds no Tart, so it stops after the listing.
 	p.Tart = tartvm.Client{Env: os.Environ(), Executable: "/nonexistent/tart", Home: t.TempDir()}
 
-	_, err := p.Setup(t.Context(), SetupOptions{Check: true, Rebuild: true}, nil)
+	_, err := p.Setup(t.Context(), SetupOptions{Check: true, Rebuild: true}, nil, nil)
 	require.ErrorContains(t, err, "--check and --rebuild cannot be used together")
-	_, err = p.Setup(t.Context(), SetupOptions{Release: "leopard"}, nil)
+	_, err = p.Setup(t.Context(), SetupOptions{Release: "leopard"}, nil, nil)
 	require.ErrorContains(t, err, "unknown release")
 
 	for _, test := range []struct {
@@ -71,7 +71,7 @@ func TestSetupNamesItsCost(t *testing.T) {
 	} {
 		options, costly := test.options, test.costly
 		var progress bytes.Buffer
-		_, err := p.Setup(t.Context(), options, &progress)
+		_, err := p.Setup(t.Context(), options, &progress, &progress)
 		require.Error(t, err, "%+v", options)
 		image, disk := "dockhand-base-", "60 GB"
 		if options.Xcode != "" {
@@ -88,7 +88,7 @@ func TestSetupNamesItsCost(t *testing.T) {
 	// An Xcode image without its base image is refused before it costs
 	// anything, since no check could build on it (the rc3 full run).
 	var progress bytes.Buffer
-	_, err = p.Setup(t.Context(), SetupOptions{Release: "sequoia", Xcode: "/x"}, &progress)
+	_, err = p.Setup(t.Context(), SetupOptions{Release: "sequoia", Xcode: "/x"}, &progress, &progress)
 	require.ErrorContains(t, err, "is missing; run dockhand setup tart sequoia first, then rerun with --xcode")
 	require.Empty(t, progress.String())
 }

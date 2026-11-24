@@ -77,14 +77,16 @@ func (f *fakeImages) DownloadXcode(_ context.Context, missing *tart.MissingXcode
 		fmt.Fprint(out, f.failure)
 		return "", fmt.Errorf("%w: xcodes download %s: exit status 1", tart.ErrXcodes, missing.Version)
 	}
+	fmt.Fprintln(out, xcodesLine)
 	return filepath.Join(missing.Folder, "Xcode-"+missing.Version+".0+15F31d.xip"), nil
 }
 
 func (f *fakeImages) Status(context.Context) (tart.Status, error) { return f.status, f.err }
 
-func (f *fakeImages) Setup(_ context.Context, options tart.SetupOptions, progress io.Writer) (tart.SetupResult, error) {
+func (f *fakeImages) Setup(_ context.Context, options tart.SetupOptions, progress, output io.Writer) (tart.SetupResult, error) {
 	f.asked = append(f.asked, options)
 	fmt.Fprintln(progress, "Checking Tart images for Sonoma...")
+	fmt.Fprintln(output, toolLine)
 	if len(f.errs) > 0 {
 		err := f.errs[0]
 		f.errs = f.errs[1:]
@@ -92,6 +94,13 @@ func (f *fakeImages) Setup(_ context.Context, options tart.SetupOptions, progres
 	}
 	return f.result, f.err
 }
+
+// toolLine and xcodesLine are what Tart's or the guest's command and
+// xcodes print as setup runs them, wider than any width a test sets.
+const (
+	toolLine   = "a line a guest's command prints as setup provisions the image, past twenty columns"
+	xcodesLine = "a line xcodes prints as it downloads Xcode, running well past twenty columns"
+)
 
 func useImages(t *testing.T, images *fakeImages) {
 	t.Helper()
@@ -233,10 +242,19 @@ func TestSetupTart(t *testing.T) {
 	require.Equal(t, tart.SetupOptions{Release: "tahoe", Xcode: "/Volumes/Xcodes"}, images.asked[2])
 	require.Contains(t, cmdtest.Flat(out), cmdtest.Flat("Made dockhand-xcode-tahoe: macOS 26 (Tahoe) with Xcode 26.1, Command Line Tools 26.6, and MacPorts "+tart.DefaultMacPorts+".\n"))
 
+	// What Tart and the guest's commands print is theirs, payload, whole
+	// at any width; setup's own words wrap (#94, Codex's read: setup gave
+	// the provisioner Prose).
+	cmdtest.Setenv(t, "COLUMNS", "20")
+	out, _, err = cmdtest.Dockhand(t, "setup", "tart", "--check")
+	require.NoError(t, err)
+	require.Contains(t, out, toolLine+"\n")
+	cmdtest.Setenv(t, "COLUMNS", "100")
+
 	images.err = errors.New("setup: image dockhand-base-sonoma failed validation")
 	_, _, err = cmdtest.Dockhand(t, "setup", "tart", "--rebuild")
 	require.ErrorContains(t, err, "failed validation")
-	require.Equal(t, tart.SetupOptions{Rebuild: true}, images.asked[3])
+	require.Equal(t, tart.SetupOptions{Rebuild: true}, images.asked[4])
 }
 
 func TestSetupShowsTheProviders(t *testing.T) {
@@ -336,6 +354,16 @@ func TestSetupOffersToDownloadAMissingXcode(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes")
 	require.ErrorContains(t, err, "download Xcode 15.4 from https://developer.apple.com/download/all/; or install xcodes (sudo port install xcodes), and setup downloads it with your Apple ID")
 	require.Len(t, images.downloaded, 1, "only what xcodes was asked for")
+
+	// What xcodes prints at the terminal is its own, payload, whole at any
+	// width, where setup's own words wrap (#94, Codex's read: setup gave
+	// xcodes Prose).
+	images.errs, images.downloaded, images.failure, images.xcodes = []error{missing}, nil, "", true
+	cmdtest.Setenv(t, "COLUMNS", "20")
+	var narrow bytes.Buffer
+	err = cmdtest.RunFor(t, t.Context(), []string{"setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes"}, term.Streams{In: strings.NewReader("y\n"), Out: &narrow, Err: &errs}.AsTerminal())
+	require.NoError(t, err, errs.String())
+	require.Contains(t, narrow.String(), xcodesLine+"\n")
 }
 
 // providers is setup's Providers rows, as the configuration file has them,

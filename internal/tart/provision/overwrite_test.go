@@ -32,7 +32,7 @@ esac
 func TestSetupRefusesToOverwriteAListedVM(t *testing.T) {
 	t.Parallel()
 	config, calls := listingTart(t, "dockhand-base-tahoe-next")
-	n := newNative(config, nil)
+	n := newNative(config, nil, nil)
 	err := n.Clone(t.Context(), "ghcr.io/cirruslabs/macos-tahoe-vanilla:latest", "dockhand-base-tahoe-next")
 	require.ErrorContains(t, err, "tart: refusing to overwrite existing VM dockhand-base-tahoe-next")
 	require.NoFileExists(t, calls, "nothing cloned")

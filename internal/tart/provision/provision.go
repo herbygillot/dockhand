@@ -111,8 +111,12 @@ type machine interface {
 }
 
 type Provisioner struct {
-	Config   Config
+	Config Config
+	// Progress takes setup's own sentences; Output what Tart and the
+	// guest's commands print, as they print it: a tool's lines are payload,
+	// never wrapped as dockhand's prose (#94).
 	Progress io.Writer
+	Output   io.Writer
 	// Digest reads what a source names at its registry; the OCI
 	// distribution API's answer (tart.Registry) when nil.
 	Digest func(ctx context.Context, source string) (string, error)
@@ -172,7 +176,7 @@ func (p *Provisioner) Run(ctx context.Context, options Options) (Result, error) 
 	}
 	machine := p.backend
 	if machine == nil {
-		machine = newNative(config, p.Progress)
+		machine = newNative(config, p.Progress, p.Output)
 	}
 	setupLock, err := machine.LockSetup(ctx, config.Image)
 	if err != nil {
