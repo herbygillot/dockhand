@@ -17,8 +17,11 @@ import (
 // Unmerged, which go with it; and its record, but for what other
 // branches' results name of its checks.
 type ForgetPlan struct {
-	Branch   model.Branch
-	Worktree string
+	Branch model.Branch
+	// OpenChangesOnMaster is true only when planning proved that master's
+	// fetched tree already has every path this open branch changed.
+	OpenChangesOnMaster bool
+	Worktree            string
 	// KeptWorktree is the branch's checkout that stays, one dockhand
 	// didn't make: the person's own, as an adopted or --here branch
 	// records, which archive leaves too.
@@ -37,12 +40,30 @@ type ForgetPlan struct {
 
 // PlanForget is what forgetting branch would remove; a merged, closed, or
 // archived branch is forgotten, so a person can end a merged branch's
-// listing that clean keeps (field testing's xapian-core-dsq3), but not an
-// open one, which dockhand archive sets aside first.
+// listing that clean keeps (field testing's xapian-core-dsq3). An open
+// branch is forgotten only when its changes are already on master; otherwise
+// dockhand archive sets it aside first.
 func (e *Engine) PlanForget(ctx context.Context, branch model.Branch) (ForgetPlan, error) {
 	plan := ForgetPlan{Branch: branch}
 	if branch.State == model.BranchOpen {
-		return plan, fmt.Errorf("%s is open; clean --delete forgets a merged, closed, or archived branch, and dockhand archive sets an open one aside; %s", branch.ShortName(), ForgetWords(branch))
+		if branch.PullRequest != nil {
+			return plan, openPullRequestRefusal(branch)
+		}
+		head, _, err := e.Repo.Branch(ctx, branch.Name)
+		if err != nil && !errors.Is(err, git.ErrBranchMissing) {
+			return plan, err
+		}
+		onMaster := false
+		if err == nil {
+			onMaster, err = e.changesOnMaster(ctx, branch, head)
+			if err != nil {
+				return plan, err
+			}
+		}
+		if !onMaster {
+			return plan, fmt.Errorf("%s is open; clean --delete forgets a merged, closed, or archived branch, or open work whose changes are on master; dockhand archive sets an open one aside; %s", branch.ShortName(), ForgetWords(branch))
+		}
+		plan.OpenChangesOnMaster = true
 	}
 	if branch.Worktree != "" && exists(branch.Worktree) {
 		if !branch.Managed {
@@ -88,10 +109,27 @@ func (e *Engine) PlanForget(ctx context.Context, branch model.Branch) (ForgetPla
 	return plan, nil
 }
 
+func openPullRequestRefusal(branch model.Branch) error {
+	return fmt.Errorf("%s's pull request is still open; close it, or archive the branch; %s", branch.ShortName(), ForgetWords(branch))
+}
+
 // Forget removes what plan says, worktree, Git branch, then record, the
 // Git branch only while it's still at the commit planned, so one someone
 // moved since stays, and the record isn't forgotten.
 func (e *Engine) Forget(ctx context.Context, plan *ForgetPlan) (store.Pruned, error) {
+	if plan.OpenChangesOnMaster {
+		var branch model.Branch
+		if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+			var err error
+			branch, err = r.Branch(plan.Branch.ID)
+			return err
+		}); err != nil {
+			return store.Pruned{}, err
+		}
+		if branch.PullRequest != nil {
+			return store.Pruned{}, openPullRequestRefusal(branch)
+		}
+	}
 	// The worktree's work may have come since the plan: nothing goes, the
 	// fork's branch neither, and git's own removal refuses what comes
 	// after this look.
@@ -135,7 +173,7 @@ func (e *Engine) Forget(ctx context.Context, plan *ForgetPlan) (store.Pruned, er
 	var pruned store.Pruned
 	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		var err error
-		pruned, err = tx.ForgetBranch(plan.Branch.ID, e.now())
+		pruned, err = tx.ForgetBranch(plan.Branch.ID, e.now(), plan.OpenChangesOnMaster)
 		return err
 	})
 	return pruned, err

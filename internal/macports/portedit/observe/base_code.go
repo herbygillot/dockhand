@@ -215,25 +215,92 @@ func baseDefaults(library string) map[string][]string {
 		if len(errs) > 0 {
 			continue
 		}
-		for cmd := range script.Commands(src, func(syntax.Command) bool { return true }) {
-			if name, _ := cmd.Name(src); name != "default" || len(cmd.Words) != 3 {
-				continue
-			}
-			option, ok := cmd.Words[1].Literal(src)
-			if !ok {
-				continue
-			}
-			text, ok := cmd.Words[2].Literal(src)
-			if !ok && len(cmd.Words[2].Segments) == 1 {
-				if braced, isBraced := cmd.Words[2].Segments[0].(syntax.Braced); isBraced {
-					text, ok = continuedLine.ReplaceAllString(braced.Body.Text(src), " "), true
-				}
-			}
-			if ok {
-				found[option] = append(found[option], text)
-			}
-		}
+		collectBaseDefaults(src, script, nil, found)
 	}
 	baseDefaultsCache[library] = found
 	return found
+}
+
+// collectBaseDefaults records Base defaults, including defaults declared in
+// simple foreach loops such as portconfigure.tcl's compiler-option defaults.
+// The loop values are source text, so this recognizes declarations without
+// evaluating Tcl or any host-dependent default.
+func collectBaseDefaults(src []byte, script *syntax.Script, variables map[string]string, found map[string][]string) {
+	for _, item := range script.Items {
+		cmd, ok := item.(syntax.Command)
+		if !ok {
+			continue
+		}
+		name, _ := cmd.Name(src)
+		if name == "default" && len(cmd.Words) == 3 {
+			option, optionOK := baseDefaultWord(src, cmd.Words[1], variables)
+			text, textOK := baseDefaultWord(src, cmd.Words[2], variables)
+			if !textOK && len(cmd.Words[2].Segments) == 1 {
+				if braced, isBraced := cmd.Words[2].Segments[0].(syntax.Braced); isBraced {
+					text, textOK = continuedLine.ReplaceAllString(braced.Body.Text(src), " "), true
+				}
+			}
+			if optionOK && textOK {
+				found[option] = append(found[option], text)
+			}
+			continue
+		}
+		if name != "foreach" || len(cmd.Words) != 4 {
+			continue
+		}
+		variableText, variableOK := baseListWord(src, cmd.Words[1])
+		valuesText, valuesOK := baseListWord(src, cmd.Words[2])
+		body, bodyOK := cmd.Words[3].BracedScript(src)
+		if !variableOK || !valuesOK || !bodyOK {
+			continue
+		}
+		variablesInLoop, variableErrs := syntax.ListValues(variableText)
+		values, valueErrs := syntax.ListValues(valuesText)
+		if len(variableErrs) > 0 || len(valueErrs) > 0 || len(variablesInLoop) != 1 {
+			continue
+		}
+		for _, value := range values {
+			loopVariables := make(map[string]string, len(variables)+1)
+			for key, value := range variables {
+				loopVariables[key] = value
+			}
+			loopVariables[variablesInLoop[0]] = value
+			collectBaseDefaults(src, body, loopVariables, found)
+		}
+	}
+}
+
+func baseListWord(src []byte, word syntax.Word) (string, bool) {
+	if value, ok := word.Literal(src); ok {
+		return value, true
+	}
+	if len(word.Segments) == 1 {
+		if braced, ok := word.Segments[0].(syntax.Braced); ok {
+			return braced.Body.Text(src), true
+		}
+	}
+	return "", false
+}
+
+func baseDefaultWord(src []byte, word syntax.Word, variables map[string]string) (string, bool) {
+	if value, ok := word.Literal(src); ok {
+		return value, true
+	}
+	if len(variables) == 0 {
+		return "", false
+	}
+	text := word.Span.Text(src)
+	for name, value := range variables {
+		text = strings.ReplaceAll(text, "${"+name+"}", value)
+		text = strings.ReplaceAll(text, "$"+name, value)
+	}
+	text = strings.Trim(text, "\"{}")
+	text = strings.ReplaceAll(text, `\[`, "[")
+	text = strings.ReplaceAll(text, `\]`, "]")
+	for name := range variables {
+		if strings.Contains(text, "$"+name) || strings.Contains(text, "${"+name+"}") {
+			return "", false
+		}
+	}
+	return text, true
 }

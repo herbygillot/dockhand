@@ -129,6 +129,11 @@ func TestProcessExitReportsStderr(t *testing.T) {
 	_, err := s.Call(t.Context(), "eval", "puts stderr {fatal fixture diagnostic}; flush stderr; exit 7")
 	require.ErrorIs(t, err, rpc.ErrBrokenSession)
 	require.ErrorContains(t, err, "fatal fixture diagnostic")
+	// The worker's last line is kept on the error, for a person to be
+	// told what ended it (#253).
+	var broken *rpc.BrokenError
+	require.ErrorAs(t, err, &broken)
+	require.Equal(t, "fatal fixture diagnostic", broken.Stderr)
 }
 
 func TestCancellationKillsInFlightSession(t *testing.T) {

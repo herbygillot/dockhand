@@ -23,7 +23,7 @@ func TestReadinessAsksTheGuestOverSSH(t *testing.T) {
 	answers := filepath.Join(t.TempDir(), "answers")
 	ssh := filepath.Join(t.TempDir(), "ssh")
 	testsupport.WriteExecutable(t, ssh, "#!/bin/sh\nif [ -f "+answers+" ]; then exit 0; fi\necho 'ssh: connect to host guest port 22: Connection refused' >&2\nexit 255\n")
-	n := newNative(Config{}, nil)
+	n := newNative(Config{}, nil, nil)
 	n.guests["candidate"] = &guestssh.Guest{Env: os.Environ(), Address: "guest", Image: "fixture", Keys: guestssh.Keys{Directory: t.TempDir()}, Executable: ssh}
 	ctx, cancel := context.WithTimeout(t.Context(), 1500*time.Millisecond)
 	defer cancel()
@@ -36,7 +36,7 @@ func TestReadinessAsksTheGuestOverSSH(t *testing.T) {
 	require.NoError(t, os.Remove(answers))
 	script := filepath.Join(t.TempDir(), "tart")
 	testsupport.WriteExecutable(t, script, "#!/bin/sh\n[ \"$1\" != run ] || echo 'fixture VM exited' >&2\nexit 1\n")
-	exited := newNative(Config{Env: os.Environ(), Executable: script}, nil)
+	exited := newNative(Config{Env: os.Environ(), Executable: script}, nil, nil)
 	run, err := exited.vm().StartForeground("candidate")
 	require.NoError(t, err)
 	<-run.Done()
@@ -45,7 +45,8 @@ func TestReadinessAsksTheGuestOverSSH(t *testing.T) {
 }
 
 // Setup's guest commands go over SSH, with the command's output shown as
-// it arrives and its exit status kept.
+// it arrives, to the provisioner's Output and never its Progress, setup's
+// own words (#94), and its exit status kept.
 func TestProvisioningGuestTransportPreservesStreamingAndFailure(t *testing.T) {
 	t.Parallel()
 	ssh := filepath.Join(t.TempDir(), "ssh")
@@ -56,8 +57,8 @@ done
 shift
 exec /bin/sh -c "$1"
 `)
-	var progress bytes.Buffer
-	n := newNative(Config{}, &progress)
+	var progress, shown bytes.Buffer
+	n := newNative(Config{}, &progress, &shown)
 	n.guests["candidate"] = &guestssh.Guest{Env: os.Environ(), Address: "guest", Image: "fixture", Keys: guestssh.Keys{Directory: t.TempDir()}, Executable: ssh}
 	output, err := n.guestStream(t.Context(), "candidate", strings.NewReader("payload\n"), "/bin/sh", "-c", `
 cat
@@ -66,8 +67,9 @@ exit 7
 `)
 	require.ErrorContains(t, err, "exit status 7")
 	require.Equal(t, "payload\ndiagnostic\n", string(output))
-	require.Contains(t, progress.String(), "payload")
-	require.Contains(t, progress.String(), "diagnostic")
+	require.Contains(t, shown.String(), "payload")
+	require.Contains(t, shown.String(), "diagnostic")
+	require.Empty(t, progress.String(), "nothing of the command's in setup's own words")
 	_, err = n.guest(t.Context(), "unreached", nil, "/usr/bin/true")
 	require.ErrorContains(t, err, "unreached has not been reached over SSH")
 }
@@ -84,7 +86,7 @@ func TestConfigureSizesAnASIFDiskAndEditsNothing(t *testing.T) {
 	format := filepath.Join(dir, "format")
 	testsupport.WriteExecutable(t, script, "#!/bin/sh\necho \"$*\" >> "+calls+"\nif [ \"$1\" = get ]; then printf '{\"Running\":false,\"State\":\"stopped\",\"DiskFormat\":\"%s\"}' \"$(cat "+format+")\"; fi\n")
 	require.NoError(t, os.WriteFile(format, []byte("asif"), 0o644))
-	n := newNative(Config{Env: os.Environ(), Executable: script, Home: dir}, nil)
+	n := newNative(Config{Env: os.Environ(), Executable: script, Home: dir}, nil, nil)
 	require.NoError(t, n.Configure(t.Context(), "dockhand-base-golden-gate-next"))
 	recorded, err := os.ReadFile(calls)
 	require.NoError(t, err)
@@ -108,7 +110,7 @@ func TestABlockedListingIsWaitedOnlySoLong(t *testing.T) {
 	listingRetry, listingBound = time.Millisecond, 3*time.Millisecond
 	t.Cleanup(func() { listingRetry, listingBound = retry, bound })
 	var said bytes.Buffer
-	n := newNative(Config{}, &said)
+	n := newNative(Config{}, &said, &said)
 	for range 3 {
 		require.NoError(t, n.waitListing(t.Context()))
 	}

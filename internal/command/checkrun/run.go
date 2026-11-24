@@ -24,7 +24,7 @@ import (
 )
 
 // Stay is how long a command stays with a check it asked for
-// (docs/designs/check-lifecycle.md, "Staying"): to its end, the zero
+// (docs/designs/check-lifecycle.md at bbb4c0b7, "Staying"): to its end, the zero
 // value; Detach, -d, queued and returned; For, --for, followed this long.
 type Stay struct {
 	Detach bool
@@ -152,7 +152,12 @@ func Follow(ctx context.Context, e *engine.Engine, session *coord.Session, run m
 	journal, stop := startJournal(ctx, e, run, streams)
 	// A serve that started meanwhile may have taken the run; then it is
 	// followed instead, and said.
-	run, taker, err := e.SeeThrough(ctx, session, run.ID, before)
+	seen, taker, err := e.SeeThrough(ctx, session, run.ID, before)
+	// An interrupted see-through answers no run: the run followed is
+	// still the one named, not a zero one, "check-0".
+	if seen.ID != "" {
+		run = seen
+	}
 	if taker != nil {
 		fmt.Fprintf(streams.Err, "%s was taken by serve (pid %d); following it.\n", run.Name(), taker.PID)
 	}
@@ -171,10 +176,12 @@ func Follow(ctx context.Context, e *engine.Engine, session *coord.Session, run m
 // startJournal shows a run's progress as it's journaled, until the stop it
 // returns is called.
 func startJournal(ctx context.Context, e *engine.Engine, run model.Run, streams term.Streams) (*journal, func()) {
-	journal := &journal{e: e, run: run.ID, out: streams.Err, verbose: streams.Verbose() > 0}
+	// The journal's lines go through the command's one status line, the
+	// one writer of standard error that progress also says lines through:
+	// a second writer interleaved with it mid-line (#295's race run).
+	journal := &journal{e: e, run: run.ID, status: streams.Status(), verbose: streams.Verbose() > 0}
 	if quiet(streams) {
 		journal.held, journal.live = true, streams.ErrTerminal()
-		journal.status = streams.Status()
 		// Off a terminal, a foreground check's own redrawn line is
 		// printed, a line each time it changes: rc5 printed nothing
 		// between a check's plan and its report, which a session reading
@@ -337,7 +344,6 @@ func stillRunning(run model.Run, journal *journal, bound Bound) error {
 type journal struct {
 	e    *engine.Engine
 	run  model.RunID
-	out  io.Writer
 	last int64
 	// held is a stage's journal, its report held back: its progress is
 	// -v's, and the latest is the redrawn line where it's live. steps
@@ -347,8 +353,10 @@ type journal struct {
 	// verbose shows the steps journaled at --verbose, as each archive a
 	// guest is given.
 	verbose bool
-	status  *term.StatusLine
-	shown   string
+	// status is the command's status line, which every line the journal
+	// prints goes through, and the line redrawn where it's live.
+	status *term.StatusLine
+	shown  string
 	// latest is the latest progress the run journaled, and waited its
 	// latest wait, which a bounded follow's end says.
 	latest, waited string
@@ -374,22 +382,22 @@ func (j *journal) show(ctx context.Context) {
 			if j.live {
 				j.status.Show("⋯ " + event.Message)
 			} else {
-				fmt.Fprintf(j.out, "  %s\n", event.Message)
+				j.status.Say("  " + event.Message)
 			}
 		case model.EventProgress, model.EventTargetResult, model.EventExecutionRetry, model.EventExecutionState:
 			switch {
 			case j.live:
 				j.status.Show("⋯ " + event.Message)
 			case !j.held:
-				fmt.Fprintf(j.out, "  %s\n", event.Message)
+				j.status.Say("  " + event.Message)
 			case j.steps && event.Message != j.shown:
 				j.shown = event.Message
-				fmt.Fprintf(j.out, "  ⋯ %s\n", event.Message)
+				j.status.Say("  ⋯ " + event.Message)
 			}
 		case model.EventArchiveAltered, model.EventArchiveGone:
 			// A kept archive found altered, or gone, is marked, where it
 			// was in the journal alone (the rc8 full stage's D-T1).
-			fmt.Fprintf(j.out, "  ! %s\n", event.Message)
+			j.status.Say("  ! " + event.Message)
 		}
 	}
 }
@@ -423,6 +431,10 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 			return err
 		}
 		result.Targets = view.EvidenceView(evidence)
+		if kept, keptErr := e.KeptClones(ctx); keptErr == nil {
+			kept = slices.DeleteFunc(kept, func(clone engine.Leftover) bool { return clone.Run == nil || clone.Run.ID != run.ID })
+			result.KeptClones = view.KeptClonesView(kept, time.Now())
+		}
 		result.IdentitiesUnread = view.IdentitiesUnreadView(evidence)
 		result.Lint = view.DetailLines(view.LintLines(lint))
 		if linksErr == nil {
@@ -482,6 +494,9 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 			return nil
 		}
 		fmt.Fprintf(out, "%s.\n", passed)
+		for _, line := range keptCloneNoticeLines(ctx, e, run, evidence.Plan) {
+			fmt.Fprintln(out, line)
+		}
 		// A branch that changes nothing is an investigation, said as
 		// status says it, with archive next, where status would have
 		// said submit (field testing's curl +sectrust notes, note 1).
@@ -495,7 +510,7 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 		}
 		return nil
 	case model.RunFailed:
-		writeFailureLines(out, evidence)
+		writeFailureLines(out, streams.Out, evidence)
 		// A failure a standing decision accepts is named, as submit takes
 		// it without a baseline.
 		if standing, err := e.StandingAccepted(ctx, evidence); err == nil {
@@ -511,8 +526,8 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 		}
 		// A clone a target failed in is kept for a shell, unasked
 		// (providers.tart.keep_failed), said with what removes it.
-		if len(shells) > 0 && !evidence.Plan.Keep {
-			fmt.Fprintf(out, "Its clone is kept for %s; clean, or the branch's next check, removes it.\n", strings.Join(view.RenderSteps(shells), " or "))
+		for _, line := range keptCloneNoticeLines(ctx, e, run, evidence.Plan) {
+			fmt.Fprintln(out, line)
 		}
 		if err := hintBaseline(ctx, e, out, run); err != nil {
 			fmt.Fprintf(streams.Err, "baseline: %v\n", err)
@@ -527,14 +542,53 @@ func Report(ctx context.Context, e *engine.Engine, run model.Run, streams term.S
 	return refusal.New(refusal.Attention, "%s needs attention: %s", run.Name(), run.Detail)
 }
 
+func keptCloneNoticeLines(ctx context.Context, e *engine.Engine, run model.Run, plan model.Plan) []string {
+	clones, err := e.KeptClones(ctx)
+	if err != nil {
+		return nil
+	}
+	var lines []string
+	forRun := 0
+	for _, clone := range clones {
+		if clone.Run != nil && clone.Run.ID == run.ID {
+			forRun++
+		}
+	}
+	for _, clone := range clones {
+		if clone.Run == nil || clone.Run.ID != run.ID {
+			continue
+		}
+		shell := "dockhand shell " + run.Name()
+		if forRun > 1 && clone.Execution != nil {
+			shell += " --on " + clone.Execution.Environment.Platform.Version
+		}
+		lines = append(lines, keptCloneNotice(clone, run, shell))
+	}
+	if len(lines) == 0 && plan.Keep && !slices.ContainsFunc(plan.Environments, func(environment model.Environment) bool { return environment.Provider == "tart" }) {
+		lines = append(lines, "Nothing to keep: this check used no VM provider.")
+	}
+	return lines
+}
+
+func keptCloneNotice(clone engine.Leftover, run model.Run, shell string) string {
+	reason, expiry := "because you asked to keep it", ""
+	if clone.Failed {
+		reason = "because its check failed"
+		expiry = fmt.Sprintf("; expires after seven days, on %s", clone.KeptAt.Add(engine.KeptFor).Local().Format("Jan 2 15:04"))
+	}
+	return fmt.Sprintf("Kept clone %s (%.1f GiB) %s; enter with %s; remove with dockhand clean --kept %s%s.",
+		clone.Ref, clone.Size, reason, shell, run.Name(), expiry)
+}
+
 // failureLines is how many of a failed step's last lines a check's
 // report shows.
 const failureLines = 15
 
 // writeFailureLines shows, for each failure a reading of its log
 // explained, that cause, and for each it didn't, the last lines its
-// failed step printed.
-func writeFailureLines(out io.Writer, evidence engine.Evidence) {
+// failed step printed: its own sentences to out, dockhand's prose, and
+// the log's lines to raw, standard output as it is (#94).
+func writeFailureLines(out, raw io.Writer, evidence engine.Evidence) {
 	for _, target := range evidence.Targets {
 		for i := range target.Outcomes {
 			// A dependency's failure is said with MacPorts' line naming the
@@ -553,6 +607,9 @@ func writeFailureLines(out io.Writer, evidence engine.Evidence) {
 			// A cause a reading of its log found is said in one line,
 			// where the row said only the phase (the openssl4 session's
 			// note 6: sslscan's compiler error, found and unsaid).
+			// The cause is quoted in dockhand's own sentence, so it wraps
+			// with it, as a path named in one does; payload is what comes
+			// as lines of its own, the last output below, written raw (#94).
 			if cell := target.Outcomes[i]; cell.Kind == engine.CellRecorded && cell.Outcome == model.OutcomeFailed {
 				if _, cause, found := strings.Cut(cell.Detail, checks.FromItsLog); found && cause != "" {
 					fmt.Fprintf(out, "%s failed%s: %s\n\n", target.Target.ID, where, cause)
@@ -564,8 +621,10 @@ func writeFailureLines(out io.Writer, evidence engine.Evidence) {
 				continue
 			}
 			fmt.Fprintf(out, "%s failed%s. Last output:\n", target.Target.ID, where)
+			// The log's own lines are payload, written raw, never wrapped
+			// as dockhand's prose (#94, Codex's read).
 			for _, line := range lines {
-				fmt.Fprintf(out, "    %s\n", line)
+				fmt.Fprintf(raw, "    %s\n", line)
 			}
 			// A note read from the lines shown, never a hold (the abook
 			// session, 2026-10-28).

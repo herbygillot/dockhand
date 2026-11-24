@@ -51,7 +51,7 @@ func TestEditsCheckpointsAndDecisions(t *testing.T) {
 	b.PullRequest = &model.PullRequest{Repository: "macports/macports-ports", Number: 34901, Head: "ada/macports-ports:dockhand/jq-4k2p", Pushed: "abc", Body: "body", Draft: true,
 		Observed: &model.PullRequestObservation{State: "open", Review: "changes-requested", Checks: "failing", Failing: []string{"macOS 15"}, Head: "abc", At: at}}
 	edit := model.Edit{ID: "ed_1", Branch: b.ID, Kind: model.EditUpdate, Port: "jq", Directory: "textproc/jq", Subject: "jq: update to 1.8.1",
-		Files: []model.EditedFile{{Path: "textproc/jq/Portfile", Before: "b1", After: "b2"}}, At: at,
+		Files: []model.EditedFile{{Path: "textproc/jq/Portfile", Before: "b1", After: "b2"}}, At: at, Written: at,
 		Release: &model.Release{Version: "1.8.1", Forge: "github", Repository: "jqlang/jq", Tag: "jq-1.8.1", Commit: "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b"},
 		HTTPS:   []model.HTTPSLink{{Option: "homepage", URL: "http://jqlang.example/"}},
 		Source:  &model.SourceMove{From: "tarball", To: "releases", Release: "jq-1.8.1", Asset: "jq-1.8.1.tar.gz", Lines: []string{"github.tarball_from releases"}}}
@@ -265,7 +265,7 @@ func TestAnEditKeepsItsUpstreamComparisonAndABranchItsOrigin(t *testing.T) {
 	b.Origin = model.OriginServe
 	compared := &model.UpstreamComparison{Changes: []model.UpstreamChange{{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed", Hold: true}}}
 	edit := model.Edit{ID: "ed_1", Branch: b.ID, Kind: model.EditUpdate, Port: "croc", Directory: "net/croc", Subject: "croc: update to 10.2.5",
-		Files: []model.EditedFile{{Path: "net/croc/Portfile", Before: "b1", After: "b2"}}, At: at, Upstream: compared}
+		Files: []model.EditedFile{{Path: "net/croc/Portfile", Before: "b1", After: "b2"}}, At: at, Written: at, Upstream: compared}
 	plain := edit
 	plain.ID, plain.Upstream = "ed_2", nil
 	require.NoError(t, f.update(t, func(tx store.Tx) error {

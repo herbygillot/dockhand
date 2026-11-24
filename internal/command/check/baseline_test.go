@@ -163,3 +163,28 @@ func TestABaselineRefusesVariantsNamingTheChecks(t *testing.T) {
 	err := baselineFlags(cmd, true, "", func() (string, string) { return "check-770", "+gnutls +sectrust" })
 	require.EqualError(t, err, "--baseline builds at master as check-770 built, in its environments, with its variants (+gnutls +sectrust) and tests, so it takes no --variants")
 }
+
+// A baseline builds as the check it compares with was built, and reads
+// nothing a ship kept on the branch: not the place, not the tests (#195,
+// Codex's read of steps 4 and 5).
+func TestABaselineReadsNothingKept(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	next := cmdtest.WithOutcomeScript(t, w, "")
+	g := cmdtest.WithGitHub(t, w)
+	g.Others = nil
+	_, errs, err := cmdtest.Dockhand(t, "ship", "jq", "--to", "commit", "--tests", "skip", "--yes")
+	require.NoError(t, err, errs)
+	cmdtest.Setenv(t, "MACPORTS_TREE", filepath.Join(w.Home, "Source", "macports-branches", "jq-1.8.1"))
+	next("failed")
+	out, _, err := cmdtest.Dockhand(t, "check", "--tests", "declared")
+	require.Equal(t, 2, term.ExitCode(err), out)
+	require.NotContains(t, out, "Taken from what the branch's request kept: --tests", "--tests given is the check's own")
+
+	previewed, _, err := cmdtest.Dockhand(t, "check", "--baseline", "--plan")
+	require.NoError(t, err)
+	require.NotContains(t, previewed, "Taken from what the branch's request kept")
+	require.Contains(t, previewed, "tests where declared", "built as the check it compares with, not the kept --tests skip")
+}

@@ -9,7 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
-// Serve's count by its rows (schema 61, docs/designs/publication-record.md,
+// Serve's count by its rows (schema 61, docs/designs/publication-record.md at 0e0ad767,
 // "serve's count"): a row is one pull request serve opened, may have
 // opened, or holds a place to open, and outlives its branch.
 

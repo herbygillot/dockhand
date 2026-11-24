@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/failpoint"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
@@ -16,7 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
-// The publication record's working half (docs/designs/publication-record.md):
+// The publication record's working half (docs/designs/publication-record.md at 0e0ad767):
 // a submission records what it sets out to do before its first remote
 // effect, and each step leaves what it owes in the transaction that writes
 // its result. settle.go reads what an earlier one left.
@@ -27,7 +28,7 @@ import (
 func (p SubmitPlan) publication(id, by string, served bool) model.Publication {
 	record := model.Publication{ID: id, Commit: model.ObjectID(p.Commit), By: by, Served: served,
 		Head: p.Head(), Base: p.Repository + ":" + UpstreamBranch, Expected: "",
-		Asked: model.Asked{Draft: p.Request.Draft, NoCheck: p.Request.NoCheck, SkipNotification: p.Request.SkipNotification, Rewrite: p.Request.Rewrite, Types: p.Request.Types}}
+		Asked: p.Request.asked(), RequestID: p.Request.RequestID}
 	if p.RemoteHead.Exists {
 		record.Expected = model.ObjectID(p.RemoteHead.Object)
 	}
@@ -55,25 +56,42 @@ func (p SubmitPlan) publication(id, by string, served bool) model.Publication {
 	if p.Request.Ready {
 		record.Owes = append(record.Owes, model.StepReady)
 	}
-	if c := p.Carried; p.Request.Rerequest && c != nil && c.Review != nil && slices.Contains(c.Owes, model.StepRerequest) {
+	// The question about the reviewers is recorded however it was
+	// answered: a yes is acted on, a no is kept and not asked again, and a
+	// question nobody answered stays owed for the next run a person
+	// attends (#191, group E).
+	answer := p.Request.RerequestAnswer
+	if p.Request.Rerequest {
+		answer = model.ReviewYes
+	}
+	if c := p.Carried; c != nil && c.Review != nil && slices.Contains(c.Owes, model.StepRerequest) {
 		// The marks come along, so no login is sent a second request.
 		ask := *c.Review
 		ask.Reviewers = slices.Clone(c.Review.Reviewers)
+		ask.Answer = answer
 		record.Review = &ask
-		record.Owes = append(record.Owes, model.StepRerequest)
-	} else if logins := p.Rerequests(); p.Request.Rerequest && len(logins) > 0 {
-		ask := &model.ReviewAsk{Answer: model.ReviewYes}
-		// Each login's answer is for its own latest review, where the plan
-		// read it; the verdict's time where it couldn't.
+		if answer != model.ReviewNo {
+			record.Owes = append(record.Owes, model.StepRerequest)
+		}
+	} else if c != nil && c.Review != nil && c.Review.Answer == model.ReviewNo {
+		// The no carries, owing nothing, as the person gave it for this
+		// commit.
+		ask := *c.Review
+		ask.Reviewers = slices.Clone(c.Review.Reviewers)
+		record.Review = &ask
+	} else if logins := p.Rerequests(); len(logins) > 0 {
+		ask := &model.ReviewAsk{Answer: answer}
+		// Each login's answer is for its own latest review, as the plan
+		// read it. An unread review is no answer's: the time stays empty,
+		// never the pull request's one verdict time, and the reviewer
+		// step's own reading decides (#191, Codex's review of group D).
 		for _, login := range logins {
-			reviewed, ok := p.reviewedBy[login]
-			if !ok {
-				reviewed = p.Branch.PullRequest.Observed.ReviewedAt
-			}
-			ask.Reviewers = append(ask.Reviewers, model.Reviewer{Login: login, Reviewed: reviewed})
+			ask.Reviewers = append(ask.Reviewers, model.Reviewer{Login: login, Reviewed: p.reviewedBy[login]})
 		}
 		record.Review = ask
-		record.Owes = append(record.Owes, model.StepRerequest)
+		if answer != model.ReviewNo {
+			record.Owes = append(record.Owes, model.StepRerequest)
+		}
 	}
 	return record
 }
@@ -143,6 +161,12 @@ func (e *Engine) recordPublication(ctx context.Context, plan SubmitPlan, record 
 	var opening *model.ServeOpening
 	err := store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
 		opening = nil
+		if err := e.recordAsked(tx, plan); err != nil {
+			return err
+		}
+		if err := takeRequest(tx, plan.Branch.ID, record); err != nil {
+			return err
+		}
 		if plan.served && slices.Contains(record.Owes, model.StepOpen) {
 			now := cmp.Or(plan.admission.Now, e.now())
 			day := dayStart(now)
@@ -251,12 +275,61 @@ func provenanceOf(pr *model.PullRequest, number int) model.Provenance {
 	return pr.Provenance
 }
 
-// endPublication ends a publication that owes nothing more, seen recorded.
+// endPublication ends a publication that owes nothing more, seen
+// recorded, and the request it took with it, where that is still the
+// branch's (endRequest).
 func (e *Engine) endPublication(ctx context.Context, branch model.BranchID, record model.Publication) error {
 	if len(record.Owes) > 0 {
 		return nil
 	}
-	return e.rewritePublication(ctx, branch, record.ID, nil, nil)
+	if err := e.rewritePublication(ctx, branch, record.ID, nil, func(tx store.Tx) error { return endRequest(tx, branch, record) }); err != nil {
+		return err
+	}
+	// The publication ended, and the request it took with it (#195).
+	failpoint.Hit("submit.ended")
+	return nil
+}
+
+// ErrRequestChanged is a stage's submission whose request another command
+// changed while it was planned and judged: nothing was recorded, and it is
+// planned and judged again under the request as it stands (#195).
+var ErrRequestChanged = errors.New("the branch's request changed while this submission was judged; nothing was pushed")
+
+// takeRequest is the hand-over of a change request to the publication a
+// stage's submission records, in its first transaction (#195, "Where the
+// request meets its neighbours"): the request it was judged under is
+// compared with the branch's; equal, the submission's asks move to the
+// publication, emptied in the request, and the publication keeps its ID;
+// not equal, nothing is recorded. A person's own submit takes none, and a
+// publication it goes on with keeps none.
+func takeRequest(tx store.Tx, id model.BranchID, record *model.Publication) error {
+	if record.RequestID == "" {
+		return nil
+	}
+	branch, err := tx.Branch(id)
+	if err != nil {
+		return err
+	}
+	if branch.Request == nil || branch.Request.ID != record.RequestID {
+		return ErrRequestChanged
+	}
+	request := *branch.Request
+	request.Publish = model.PublishAsk{}
+	return tx.SetRequest(id, &request)
+}
+
+// endRequest ends the request a finished publication took, where the
+// branch's request is still that one: a request changed since, by a version
+// named or another ask, is new work the publication never took, and stays.
+func endRequest(tx store.Tx, id model.BranchID, record model.Publication) error {
+	if record.RequestID == "" {
+		return nil
+	}
+	branch, err := tx.Branch(id)
+	if err != nil || branch.Request == nil || branch.Request.ID != record.RequestID {
+		return err
+	}
+	return tx.SetRequest(id, nil)
 }
 
 // rerequest asks the publication's reviewers to review again, login by
@@ -282,6 +355,15 @@ func (e *Engine) rerequest(ctx context.Context, branch model.BranchID, record *m
 	if err != nil {
 		return nil, nil, fmt.Errorf("reading #%d before asking its reviewers again: %w; asking them is still owed, and dockhand submit %s finishes it", pr.Number, err, current.ShortName())
 	}
+	// This reading's own head decides, not the follow-up's earlier one:
+	// where the pull request moved on since, nobody is asked or marked,
+	// and the step stays owed for its commit. GitHub has no request that
+	// asks only while the head is a given commit, so a push between this
+	// reading and the ask itself isn't caught; that window is accepted
+	// (#191, group B, Codex's review).
+	if status.Head != "" && status.Head != record.Commit {
+		return nil, nil, fmt.Errorf("#%d is now at %s, not %s, which this submission pushed, so its reviewers weren't asked again; asking them is still owed, and dockhand submit %s settles it", pr.Number, status.Head.Short(), record.Commit.Short(), current.ShortName())
+	}
 	ask := *record.Review
 	ask.Reviewers = slices.Clone(ask.Reviewers)
 	var send []string
@@ -299,7 +381,12 @@ func (e *Engine) rerequest(ctx context.Context, branch model.BranchID, record *m
 			ask.Reviewers[i].Sent = model.MaySent
 			send = append(send, reviewer.Login)
 		case ReviewerPending:
+			ask.Reviewers[i].Lapsed = false
 			asked = append(asked, reviewer.Login)
+		case ReviewerNoLongerPending:
+			// Asked, and said so: the request is no longer pending (#191,
+			// Codex's review of group D).
+			ask.Reviewers[i].Lapsed = true
 		}
 	}
 	if len(send) > 0 {
@@ -376,7 +463,7 @@ func (e *Engine) rerequest(ctx context.Context, branch model.BranchID, record *m
 // reviewBasis is the basis a reviewer request states to the gate: Made on
 // a pull request dockhand opened, or on an old record that isn't adopted,
 // as today; otherwise Named, since the person answered yes to this exact
-// request (docs/designs/publication-record.md, "The gate").
+// request (docs/designs/publication-record.md at 0e0ad767, "The gate").
 func reviewBasis(pr *model.PullRequest, record *model.Publication) remotewrite.Basis {
 	if openedByDockhand(pr) {
 		return remotewrite.Made
@@ -393,6 +480,9 @@ func reviewBasis(pr *model.PullRequest, record *model.Publication) remotewrite.B
 // attempt. serve's place, never tried, goes with it.
 func (e *Engine) endRefused(ctx context.Context, branch model.BranchID, record model.Publication) error {
 	return e.rewritePublication(ctx, branch, record.ID, nil, func(tx store.Tx) error {
+		if err := handBack(tx, branch, record); err != nil {
+			return err
+		}
 		if !record.Served {
 			return nil
 		}
@@ -417,18 +507,44 @@ func writeRefused(err error) bool {
 	return errors.Is(err, forge.ErrRejected) || errors.Is(err, forge.ErrAppRestricted) || errors.Is(err, forge.ErrAuthentication) || refusal.KindOf(err) == refusal.Unsupported
 }
 
-// pendingAfter are the steps a submission that returned with err still
-// owes, read from its record, each with why: a reviewer marked as maybe
-// sent, or refused, is said so; any other step failed with err.
-func (e *Engine) pendingAfter(ctx context.Context, branch model.BranchID, err error) []Pending {
+// pendingAfter are the steps a submission still owes when it returns,
+// with err or without, read from its record, each with its own reason
+// (#191, group F): a question about the reviewers nobody answered awaits
+// an answer; the first step the error stopped is failed, refused, or
+// unread as the error says; each step after it waits on it; and a reviewer
+// marked as maybe sent, or refused, is said so.
+func (e *Engine) pendingAfter(ctx context.Context, branch model.BranchID, result Submitted, err error) []Pending {
 	current, readErr := e.Branch(ctx, branch)
 	if readErr != nil || current.Publication == nil {
 		return nil
 	}
 	record := current.Publication
 	var pending []Pending
+	stopped := ""
 	for _, step := range record.Owes {
-		pending = append(pending, Pending{Step: step, Reason: PendingFailed, Detail: err.Error()})
+		switch {
+		case step == model.StepPush && result.Pushed:
+			// This run pushed; the record says so with the opening's
+			// write, which the error came before.
+			continue
+		case step == model.StepRerequest && record.Review != nil && record.Review.Answer == model.ReviewNotAsked:
+			pending = append(pending, Pending{Step: step, Reason: PendingAnswer, Detail: "nobody was there to answer whether to ask the reviewers again"})
+		case err == nil:
+			pending = append(pending, Pending{Step: step, Reason: PendingWaits, Detail: "the next dockhand submit makes it"})
+		case stopped != "":
+			pending = append(pending, Pending{Step: step, Reason: PendingWaits, Detail: stopped})
+		default:
+			reason := PendingFailed
+			var unsettled *unsettledError
+			switch {
+			case errors.As(err, &unsettled):
+				reason = PendingUnread
+			case writeRefused(err):
+				reason = PendingRefused
+			}
+			pending = append(pending, Pending{Step: step, Reason: reason, Detail: err.Error()})
+			stopped = "waits on " + step.Words()
+		}
 	}
 	if record.Review != nil {
 		for _, reviewer := range record.Review.Reviewers {
@@ -441,4 +557,73 @@ func (e *Engine) pendingAfter(ctx context.Context, branch model.BranchID, err er
 		}
 	}
 	return pending
+}
+
+// SubmitUnderRequest plans a stage's submission and makes it with apply,
+// and where another command changed the branch's request meanwhile, so
+// that nothing was recorded (ErrRequestChanged), plans and judges it again
+// under the request as it stands: three rounds, then it says the request
+// keeps changing, nothing pushed. A request that now asks for a check that
+// hasn't run stops it (#195, "Where the request meets its neighbours").
+// It returns the last plan, for the caller's words. A caller that planned
+// the submission already gives that plan as first, and it is made as it
+// is, planned again only where the request changed.
+func (e *Engine) SubmitUnderRequest(ctx context.Context, request SubmitRequest, first *SubmitPlan, apply func(SubmitPlan) (Submitted, error)) (SubmitPlan, Submitted, error) {
+	for round := 0; ; round++ {
+		var plan SubmitPlan
+		var err error
+		if round == 0 && first != nil {
+			plan = *first
+		} else if plan, err = e.PlanSubmit(ctx, request); err != nil {
+			return plan, Submitted{}, err
+		}
+		if round > 0 && plan.CheckNeeded {
+			return plan, Submitted{}, fmt.Errorf("%s's request now asks for a check that hasn't run; nothing was submitted, and dockhand ship -b %s runs it", plan.Branch.ShortName(), plan.Branch.ShortName())
+		}
+		if e.beforeStageApply != nil {
+			e.beforeStageApply(round)
+		}
+		submitted, err := apply(plan)
+		if !errors.Is(err, ErrRequestChanged) {
+			return plan, submitted, err
+		}
+		if round == 2 {
+			return plan, submitted, fmt.Errorf("%s's request kept changing while it was submitted; nothing was pushed, and dockhand ship -b %s submits it once it settles", plan.Branch.ShortName(), plan.Branch.ShortName())
+		}
+		if request, err = e.rejudged(ctx, request); err != nil {
+			return plan, submitted, err
+		}
+	}
+}
+
+// rejudged is a stage's submission again under the branch's request as it
+// stands now: the request's asks and ID, with the run's title, note,
+// statements, head and the commit it is bound to.
+func (e *Engine) rejudged(ctx context.Context, was SubmitRequest) (SubmitRequest, error) {
+	branch, err := e.Branch(ctx, was.Branch.ID)
+	if err != nil {
+		return was, err
+	}
+	var request model.ChangeRequest
+	if branch.Request != nil {
+		request = *branch.Request
+	}
+	next := SubmitRequestFor(request, branch, was.Where.Unattended)
+	if branch.Request == nil {
+		next.RequestID = ""
+	}
+	next.Head, next.Bound, next.PendingCheck, next.Title, next.Note = was.Head, was.Bound, was.PendingCheck, was.Title, was.Note
+	next.TestedBinaries, next.TestedVariants, next.WithdrawBinaries, next.WithdrawVariants = was.TestedBinaries, was.TestedVariants, was.WithdrawBinaries, was.WithdrawVariants
+	if !was.PendingCheck && len(was.Where.On) == 0 && was.Where.Build == "" && was.Tests == "" {
+		next.Where, next.Tests = WhereRequest{}, ""
+	}
+	return next, nil
+}
+
+// asked is what a submission was asked, as its publication keeps it: each
+// of its own flags with whether it was given on the run that recorded it.
+func (r SubmitRequest) asked() model.Asked {
+	return model.Asked{Draft: model.Flag[bool]{Given: r.Given["draft"], Value: r.Draft}, NoCheck: model.Flag[bool]{Given: r.Given["no-check"], Value: r.NoCheck},
+		SkipNotification: model.Flag[bool]{Given: r.Given["skip-notification"], Value: r.SkipNotification}, Rewrite: r.Rewrite,
+		Types: model.Flag[[]string]{Given: r.Given["type"], Value: r.Types}}
 }

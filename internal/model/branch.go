@@ -258,9 +258,16 @@ type Branch struct {
 	PullRequest *PullRequest
 	// Publication is a submission of the branch dockhand began and hasn't
 	// seen finished, with what it still owes; nil where there is none
-	// (docs/designs/publication-record.md).
+	// (docs/designs/publication-record.md at 0e0ad767).
 	Publication *Publication
-	CreatedAt   time.Time
+	// Request is what was asked of the branch's work: its targets and
+	// what became of each action (#194; #195 keeps the rest). Nil on a
+	// branch from before it was kept.
+	Request *ChangeRequest `json:",omitempty"`
+	// RenameTo is the name a rename is moving the branch to, recorded
+	// before Git's branch is renamed; empty but while one is under way.
+	RenameTo  string `json:",omitempty"`
+	CreatedAt time.Time
 	// Origin is who started it: a person, or serve for your outdated
 	// ports. serve submits only its own (Design v3 §11).
 	Origin Origin

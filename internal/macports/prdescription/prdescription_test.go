@@ -450,4 +450,15 @@ func TestADescriptionThatLandedIsRecordedAsWritten(t *testing.T) {
 
 	// Nothing landed: the record stays.
 	require.Equal(t, a, Landed(a, b, b, a))
+
+	// Nothing recorded before, as a pull request found with no record:
+	// what landed is taken part by part all the same. Tested on landed and
+	// the Description is a person's, so the record is what dockhand wrote,
+	// and the merge keeps the person's part (#157's last case, #191).
+	recorded = Landed(edited, b, b, "")
+	require.Equal(t, b, recorded)
+	merged, sections = Merge(edited, recorded, c, false)
+	require.Equal(t, body("my own words", "1.8.1's evidence"), merged)
+	require.Equal(t, Kept, sections.Description)
+	require.Empty(t, Landed(body("my own words", "their evidence"), b, b, ""), "nothing landed and nothing recorded")
 }

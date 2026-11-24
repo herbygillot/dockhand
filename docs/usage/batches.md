@@ -128,7 +128,12 @@ checked on the same branch.`) rather than refusing it.
 Where each commit updates one port to the same version, submit titles the pull
 request for them, as `ace, tao: update to 8.0.8`. A version is supplied with a
 lone port: `update jq 1.8.1` means a version update because the second word is
-not a port name. Choose currently existing port names in your checkout.
+not a port name. Choose currently existing port names in your checkout. The
+version may be written as `outdated` prints it, the port's form, or as
+upstream's tag spells it: for a Portfile that turns the tag `2026-11-23` into
+the version `20261123`, either word selects that release. A version that
+matches no release in either form is refused, naming the nearest releases in
+both forms.
 
 Discovery and batch planning avoid repeating existing work. A port already
 changed by an open branch is left out of a new selection batch, with its branch
@@ -156,6 +161,11 @@ the normal output level a batch gives each change a row and lists the ones
 needing attention below it. `-v` expands the stages, and `--json` retains each
 change's partial result.
 
+Before it commits a change, ship lists what the change's updates found, read
+from what each update recorded, so a ship run again after a restart lists the
+same: first what holds the change, such as a patch that no longer applies, then
+what only informs, such as a new `-sys` crate, a line each, by port.
+
 If some changes stop, the rest continue. The batch exit is 0 when all requested
 changes complete, 3 when some complete and others stop, and 1 when none
 complete. A single-target failure retains its own failure or attention code.
@@ -168,6 +178,21 @@ dockhand status
 dockhand status --branch kubectl
 dockhand ship --branch kubectl --to check
 ```
+
+Ship keeps what it was asked on the branch, from the first edit until the
+submission that takes it has finished. A later ship of the branch goes on
+with the release kept for each port, saying `jq goes on with 1.8.1, the
+release kept`, and doesn't look for a newer one; `update jq 1.9` or `bump jq
+1.9`, a version named, replaces it and says so. A `--to` given is kept: a
+later ship without `--to` stops at the same stage and says `stays at --to
+check, as kept; ship --to submit goes further`, and its plan's row ends `to
+check, as kept`. `bump` always goes to submit. A flag given replaces the one
+kept and is said; a flag left out leaves it. A ship that stops before a later
+stage says the flags kept for it: `Kept for the check: --on sequoia, --tests
+required.` and `Kept for the submit: --draft, --type bugfix.` The selections
+that make targets (`--mine`, `--maintainer`, `--category`, `--not-maintainer`,
+`--passing`), `--yes` and the branch flags belong to the command typed and
+aren't kept. `dockhand usage flags` lists every flag with how long it lasts.
 
 Use the actual branch name from the batch's output. A branch-specific ship
 resumes from its current state; it can follow an active check that covers the

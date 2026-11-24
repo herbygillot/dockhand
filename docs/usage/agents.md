@@ -93,10 +93,15 @@ followed. `tidy --json` lists a declaration's commit, `<port>: declare
 libiconv`, among `commits` after the branch's, and `not_declared` says the
 findings it leaves to you. A check's `portfile_findings` are the
 Portfile findings submit would say, each with its `code`, `severity`, `where`,
-and `message`, which the check said before building. Keep
+and `message`, which the check said before building. A link with no active
+owner carries `unowned: true`. Keep
 standard error separate when parsing standard output. `-v` adds detail about
 the work, and `-vv` adds individual steps. Long human lists can be shortened;
 their JSON lists retain all entries.
+
+When a `--keep` check will replace an asked clone from the same branch and
+release, the plan includes `replaces_kept`, each with the earlier `check` and
+the `release` whose clone will be removed before the new check keeps its own.
 
 Inspect both `exit_code` and `result`. A nonzero exit does not mean nothing
 happened. An update may have left an edited branch, a check may have completed
@@ -110,6 +115,13 @@ the `baseline` that `check.baseline` ran after it; that baseline's
 `run.baseline_of` identifies the original check. Do not infer completion from
 the presence of a branch alone.
 
+`ship --plan --json` and `bump --plan --json` return `plan`, a row for each
+target: `target`, `from`, `stage`, `stage_kept` (true where the stage is the
+one an earlier ship kept on the branch), `release` where one is kept or
+named, and `unresolved`, each fact the request carries as asked with `what`
+and `when` it is resolved, such as the destination, decided at submit. A plan
+saves nothing.
+
 `rebase --json` gives `branch`, `from`, `to`, `up_to_date`, `commits`, and,
 once it moves the branch, `checkpoint`. `rebase --plan --json` adds `plan`,
 true, and `replay`, each of the branch's commits in order with its `id`,
@@ -118,11 +130,18 @@ true, and `replay`, each of the branch's commits in order with its `id`,
 branch, and `commits` is the count the replay would make.
 
 `submit --json` and `ship --json` give the pull request under `pull_request`,
-with `pending`: each step the submission still owes when it returns, as `step`,
-`reason` and `detail`. The reasons are `failed` (with the error),
-`awaits-answer`, `may-have-been-sent` (a reviewer request with no answer, never
-sent again), `refused` (GitHub's words), and `unread`. A pending step that
-failed or was refused fails the command; the next `submit` accounts for it.
+with `pending`: each step the submission still owes when it returns, finished
+or not, as `step`, `reason` and `detail`, and before a pull request is known,
+with `number` 0. The reasons are `failed` (with the error), `awaits-answer`,
+`may-have-been-sent` (a reviewer request with no answer, never sent again),
+`refused` (GitHub's words), `unread`, and `waits` (a later step the failure of
+an earlier one stopped before). A pending step that failed or was refused fails
+the command; the next `submit` accounts for it.
+
+In a submission plan's `upstream[].changes`, `hold` says whether that finding
+still holds unattended submission. A standing acceptance sets `hold` to false
+and adds the decision's reason as `accepted`; `holds.allow` sets `hold` to false
+and `allowed` to true. The text preview shows the same disposition.
 
 The process exit codes are:
 
@@ -156,6 +175,11 @@ read at, whom the description mentions, who approved it, the ports still
 `waiting`, and when MacPorts' maintainer timeout ends; `detail.merge` says the
 same as lines. A run's `started_at` and `waited_seconds` say when a check
 started and how long it waited for its slot.
+
+Finished check results may include `kept_clones`, each with its clone name,
+size in GiB, reason, and shell and removal commands. `status --json` includes
+the checkout's kept clones with their age; `old_asked` marks an asked clone
+older than seven days, which remains until explicitly removed.
 
 To follow serve's work from a script or a screen reader, `dockhand console
 --plain` prints status once and then each event as a line; `console` does the

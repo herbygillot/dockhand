@@ -303,6 +303,11 @@ type Reading struct {
 	// manifests, and Cargo.lock, and the package.json of each Node
 	// workspace the root's names, each by its path below Top.
 	Files map[string]File
+	// CargoManifests are Cargo.toml files outside Files' ordinary selection,
+	// by path below Top, including path dependencies outside a workspace's
+	// member list. A Cargo.lock can pin such a package as local even when
+	// ordinary dependency reach doesn't read its manifest.
+	CargoManifests map[string]File `json:"cargoManifests"`
 	// GoFiles are the Go files of the packages a port's -X arguments name
 	// (Spec.GoPackages), by their path below Top, kept apart from Files:
 	// they're read for the variable an argument sets, and aren't build
@@ -685,11 +690,21 @@ func (r *Reading) cmakeIncludes(modules map[string]File) {
 	}
 }
 
-// cargoMembers keeps the Cargo.toml of each member a Cargo workspace's
-// root names, by its members globs less what it excludes (The Cargo
-// Book, "Workspaces"), from manifests, every one the archive holds by its
-// whole path.
+// cargoMembers keeps all manifest paths for lock comparison, and adds the
+// Cargo.toml of each member a Cargo workspace's root names to Files, by its
+// members globs less what it excludes (The Cargo Book, "Workspaces").
 func (r *Reading) cargoMembers(manifests map[string]File) {
+	r.CargoManifests = map[string]File{}
+	for name, file := range manifests {
+		rest := name
+		if r.Top != "" {
+			var ok bool
+			if rest, ok = strings.CutPrefix(name, r.Top+"/"); !ok {
+				continue
+			}
+		}
+		r.CargoManifests[rest] = file
+	}
 	root, ok := r.RootFile("Cargo.toml")
 	if !ok || root.Truncated {
 		return

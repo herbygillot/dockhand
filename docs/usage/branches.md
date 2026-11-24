@@ -34,6 +34,11 @@ and, while its pull request is open, a Merge section on who may merge it and
 when, which `dockhand usage publishing` explains. `path` prints the worktree
 directory, suitable for an editor or a shell:
 
+When the latest check passed for an earlier version of a branch's files,
+detail labels its results with the check number. Results for ports changed
+since then are marked, and ports absent from that check are listed as
+`not checked by check-<n>`.
+
 ```sh
 cd "$(dockhand path jq-update)"
 dockhand status
@@ -49,8 +54,9 @@ it, the following selectors make your intent explicit:
 | `--pr <number>` | The tracked branch associated with that pull request. | `dockhand status --pr 35174` |
 
 Choose one selector at a time. These selectors are available on commands about a
-whole branch, including `check`, `tidy`, `submit`, `diff`, `rebase`, and
-`archive`. The check-history commands also accept them:
+whole branch, including `check`, `tidy`, `submit`, `diff`, `rebase`, `archive`,
+`clean`, `edit`, and `undo`. `clean --kept` uses them to select which branch's
+kept clones to remove. The check-history commands also accept them:
 `dockhand logs -b jq-update` finds that branch's latest check, while
 `dockhand logs check-42 jq` names a particular check and port.
 
@@ -126,6 +132,18 @@ to a different version, before it has a pull request. Its worktree can retain
 its old directory name. Ask `path` for its location rather than constructing a
 path from the branch name.
 
+A port already at its newest version can still take what you ask beside the
+version: `--source releases` or `--source archive` moves its source at the
+version it is at, `--with-obsolete` moves its obsolete stub, `--follow-moves`
+follows a moved repository, and `--revbump-dependents` bumps what links it,
+each said as done, or as already so where there was nothing to do. `--closes`
+with nothing else to change is refused: a ticket alone starts no branch.
+
+What a command asks is kept on the branch until the submission that takes it
+has finished: a later command goes on with the release kept and the flags
+kept, a flag given replaces the kept one and is said, and a flag left out
+leaves it. `dockhand usage flags` lists every flag with how long it lasts.
+
 ## Bring your existing Git work into dockhand
 
 Use `adopt` when the branch already exists and should retain its work:
@@ -134,6 +152,15 @@ Use `adopt` when the branch already exists and should retain its work:
 dockhand adopt my-jq-fix
 dockhand status -b my-jq-fix
 ```
+
+Add `--plan` to inspect what adoption would track without fetching or
+recording it. For a local branch, it reads the branch and any existing record,
+and counts commits against the master last fetched; it does not fetch. A branch
+already tracked, including one renamed with Git, is identified as such. For a
+pull request, the plan reads forge metadata and shows the reported head,
+commit count, and base; it cannot know changed ports without fetching the
+head. It also checks whether another record, a local branch, or the destination
+directory already prevents adoption. `--json` includes the plan result.
 
 With no argument, `adopt` tracks the branch checked out here. It finds the base
 where the branch leaves freshly fetched master; it does not rewrite your commits
@@ -172,11 +199,16 @@ not lost repository contents. Bring another port into the branch with:
 dockhand edit libharbor -b jq-fix
 ```
 
+`edit` also accepts `-p` or `--pr` to choose the branch by its changed port or
+tracked pull request. These selectors cannot be combined with `--new`.
+
 A tracked file you edit in a directory outside the worktree's sparse checkout
 is still built: Git reports it as modified, so a check of the working files
 includes it. `git add` refuses it, though, until the directory is added to the
 checkout, so the check marks it with `!` and gives the `git sparse-checkout add`
-command to run.
+command to run. The same applies to untracked files: `status` and `check` name
+the command for their port directory, including a new port directory created
+by hand in a sparse branch worktree.
 
 After tidy commits the work, a directory the branch does not change may be left
 out again. Worktrees you created yourself retain their own width. Ordinary Git
@@ -200,6 +232,9 @@ dockhand status -b jq-update
 
 `--plan` fetches master and says what the rebase would replay, drop as already
 on master, or stop at, and moves nothing.
+
+`rebase` accepts `--yes` like the other commands; it asks nothing, so the flag
+changes nothing.
 
 `rebase` requires committed work, fetches master, and replays the branch's own
 commits, leaving out commits already contained in a master this checkout has.
@@ -230,6 +265,15 @@ Or use the checkpoint name dockhand reported:
 dockhand undo tidy-3
 ```
 
+Add `--plan` to either form to read the checkpoint and see the history (and,
+for a rebase, files and base) it would restore. It checks the same checkpoint
+state, branch head, and staged index as undo; a refused restore is refused by
+the plan too. For a rebase, an uncommitted change to a file master changed can
+still stop restoration. A check name such as `check-12 --plan` reads the saved
+MacPorts snapshot and active ports, then shows the active ports that differ
+from the snapshot. A check still building is put back when it ends. The plan
+changes nothing.
+
 A named checkpoint already identifies its branch, so do not add `-b` to that
 form. Undo requires the branch still to match the history the operation left;
 later commits can make it refuse. After undoing tidy, your working files stay in
@@ -245,20 +289,23 @@ These operations have different purposes:
 | Intent | Command | What remains |
 | --- | --- | --- |
 | Pause an open change | `dockhand archive jq-update` | Git branch, record, checks/checkpoints subject to retention, fork branch, and pull request. |
-| Resume an archived change | `dockhand archive --undo jq-update` | The branch returns to open work; its worktree is available again when needed. |
+| Resume an archived change | `dockhand archive --undo -b jq-update` | The branch returns to open work; its worktree is available again when needed. |
 | Remove merged worktrees and branches | `dockhand clean --plan`, then `dockhand clean` | The tracking record remains, so `status --all` can still explain the branch. |
-| Forget an ended change entirely | `dockhand clean --delete jq-update` | The preview identifies the worktree, Git branch, unmerged work, the clones its checks kept, and record to remove. |
+| Forget an ended change entirely | `dockhand clean --delete -b jq-update` | The preview identifies the worktree, Git branch, unmerged work, the clones its checks kept, and record to remove. |
 
 Archiving hides the branch from the ordinary overview. It does not close a pull
 request. With uncommitted edits or untracked files, the terminal offers how to
 handle them; a nonterminal invocation keeps the worktree. `--keep-worktree`
 makes that choice explicit. `--discard` removes the worktree and those files.
 Ignored files in a removed worktree go with it too; they are not preserved by a
-Git commit. Archiving keeps the Git branch for `--undo`, so throwing a change
-away is two steps, `archive` then `clean --delete` (add `--plan` first to
-preview what it removes), and archive's last line,
-like clean's refusal of an open branch, names the second. A clean that removes
-nothing says how many archived branches still keep their Git branches.
+Git commit. Archiving keeps the Git branch for `--undo`. For ordinary open
+work, throwing a change away is two steps, `archive` then `clean --delete`
+(add `--plan` first to preview what it removes), and archive's last line names
+the second. When an open branch with no pull request has changes already on
+master, `clean --delete --plan` can show the permanent removal directly.
+Status offers archive to set the branch aside and names `clean --delete` as
+the permanent choice. A clean that removes nothing says how many archived
+branches still keep their Git branches.
 
 Status names a submission that didn't finish, `an earlier submit didn't finish:
 opening the pull request may still be owed`, with `dockhand submit` as its next
@@ -296,7 +343,9 @@ operation is never allowed in the upstream repository, regardless of ownership`.
 
 `clean --closed` also considers pull requests closed without merging, while
 preserving local work master lacks. A named `clean jq-update` considers only
-that ended branch; an open branch must first be finished or archived. Use
+that ended branch; an open branch must first be finished or archived. Select
+one branch with `-b`, `-p`, or `--pr`, or name several as words; do not mix
+selectors and words. The port selector considers ended branches too. Use
 `status --all` to inspect the records left behind. `clean --delete` is the
 explicit step that forgets an ended branch; its preview matters because unmerged
 commits can go with it. A worktree with uncommitted edits or untracked files is

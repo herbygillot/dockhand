@@ -421,8 +421,16 @@ func evaluateIn(ctx context.Context, session *rpc.Session, runtime macports.Runt
 			ports[sub] = recordPortGroups(ctx, value, []string{source.Root(), source.Base()}, blobs)
 		}
 	}
-	snapshot := macports.Snapshot{Source: source.Source(), Target: source.Target(), Platform: runtime.Platform, Runtime: runtime, Ports: ports, Root: source.Root()}
 	other := request != nil && modelsContext(runtime, request)
+	// The tools' part of the runtime is as Base had read them when this
+	// evaluation ended, not at the session's start: a Portfile that reads
+	// them leaves them read (#194). A modelled context answers its own.
+	if !other && !runtime.Modeled() {
+		if readings, err := session.Call(ctx, "tool_readings"); err == nil {
+			runtime = withToolReadings(runtime, readings)
+		}
+	}
+	snapshot := macports.Snapshot{Source: source.Source(), Target: source.Target(), Platform: runtime.Platform, Runtime: runtime, Ports: ports, Root: source.Root()}
 	if other && request.Platform != (model.Platform{}) {
 		snapshot.Platform = request.Platform
 	}
@@ -490,6 +498,9 @@ func evaluateOne(ctx context.Context, session *rpc.Session, source macports.Cont
 	}
 	reply, err := session.Call(ctx, "metadata", args...)
 	if err != nil {
+		if exited := macports.Exited(source.Target().Portfile, err); exited != err {
+			return macports.PortInfo{}, nil, exited
+		}
 		return macports.PortInfo{}, nil, fmt.Errorf("macports: evaluating %s (%s): %w", source.Target().Portfile, subport, err)
 	}
 	return decodeMetadata(reply)

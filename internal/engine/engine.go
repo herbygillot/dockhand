@@ -119,6 +119,10 @@ type Options struct {
 	// MigrateRelease migrates a database a release last opened though this
 	// build isn't one, a person's answer to ReleaseUnderMigrationError.
 	MigrateRelease bool
+	// MigrateDevelopment migrates the default database though this build
+	// isn't a release, the person's consent by --migrate-database to
+	// DevelopmentMigrationError (#281).
+	MigrateDevelopment bool
 	// KeepHTTP is --keep-http, or [update] keep_http: every update,
 	// create, and checksums refresh, serve's among them, leaves plain-HTTP
 	// links as they are, asking nothing and saying nothing of them, where
@@ -216,9 +220,12 @@ func (o Options) git() git.Program {
 
 // Engine is bound to one ports checkout and its registered repository.
 type Engine struct {
-	Repo       *git.Repository
-	Store      store.Store
-	Repository model.RepositoryID
+	// beforeStageApply, a test's, runs before each round of a stage's
+	// submission is made (SubmitUnderRequest).
+	beforeStageApply func(round int)
+	Repo             *git.Repository
+	Store            store.Store
+	Repository       model.RepositoryID
 	// Preparer edits ports; MacPorts' own evaluator when nil.
 	Preparer Preparer
 	// KeepModeline leaves the first line of every Portfile an edit writes
@@ -390,6 +397,9 @@ func Checkouts(ctx context.Context, options Options) ([]string, error) {
 	if refused := new(store.ReleaseUnderMigrationError); errors.As(err, &refused) {
 		return nil, &ReleaseUnderMigrationError{refused}
 	}
+	if refused := new(store.DevelopmentMigrationError); errors.As(err, &refused) {
+		return nil, &DevelopmentMigrationError{refused}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -432,6 +442,9 @@ func Open(ctx context.Context, options Options) (*Engine, error) {
 	}
 	if refused := new(store.ReleaseUnderMigrationError); errors.As(err, &refused) {
 		return nil, &ReleaseUnderMigrationError{refused}
+	}
+	if refused := new(store.DevelopmentMigrationError); errors.As(err, &refused) {
+		return nil, &DevelopmentMigrationError{refused}
 	}
 	if err != nil {
 		return nil, err
@@ -585,7 +598,8 @@ func (o Options) storeOptions() sqlite.Options {
 	if quiet == nil {
 		quiet = otherDockhands
 	}
-	return sqlite.Options{MigrateUnderLive: o.MigrateUnderLive, MigrateRelease: o.MigrateRelease || o.NamedDatabase, Build: buildinfo.Current().String(), LiveWithin: coord.DefaultHungAfter, Heartbeat: coord.DefaultHeartbeat, Quiet: quiet}
+	return sqlite.Options{MigrateUnderLive: o.MigrateUnderLive, MigrateRelease: o.MigrateRelease || o.NamedDatabase, Default: !o.NamedDatabase, MigrateDevelopment: o.MigrateDevelopment,
+		Build: buildinfo.Current().String(), LiveWithin: coord.DefaultHungAfter, Heartbeat: coord.DefaultHeartbeat, Quiet: quiet}
 }
 
 // ReleaseUnderMigrationError is a migration Open refused, since a release
@@ -610,6 +624,19 @@ func (e *ReleaseUnderMigrationError) Working() string {
 }
 
 func (e *ReleaseUnderMigrationError) Unwrap() error { return e.ReleaseUnderMigrationError }
+
+// DevelopmentMigrationError is a migration Open refused, since this build
+// isn't a release and the database is the default one; the person
+// consents by --migrate-database, or answers at a terminal (#281).
+type DevelopmentMigrationError struct {
+	*store.DevelopmentMigrationError
+}
+
+func (e *DevelopmentMigrationError) Error() string {
+	return e.DevelopmentMigrationError.Error() + fmt.Sprintf(". Nothing was migrated. To migrate it, run this again with --migrate-database, which keeps its schema %d form at %s; to try this build without touching it, point DOCKHAND_DB at a copy made with sqlite3 <database> \".backup <file>\"", e.From, e.Copy)
+}
+
+func (e *DevelopmentMigrationError) Unwrap() error { return e.DevelopmentMigrationError }
 
 // LiveUnderMigrationError is a migration Open refused, since dockhand
 // processes that read the older schema are working, said with the way on;
@@ -732,6 +759,7 @@ func OpenPortsTree(ctx context.Context, dir string, program git.Program) (*git.R
 	}
 	repo, err := git.Open(ctx, dir, program)
 	if err != nil {
+		progress.VerboseReport(ctx, "%v", err)
 		return nil, &notCheckout{dir: dir, err: err}
 	}
 	if macports.ValidatePortsTree(repo.Root, dir) == nil || branchHoldsPorts(ctx, repo) {
@@ -749,7 +777,7 @@ type notCheckout struct {
 }
 
 func (n *notCheckout) Error() string {
-	return fmt.Sprintf("%s is not in a Git checkout (select one with --tree or MACPORTS_TREE): %v", n.dir, n.err)
+	return fmt.Sprintf("%s is not in a Git checkout (select one with --tree or MACPORTS_TREE)", n.dir)
 }
 
 func (n *notCheckout) Unwrap() []error { return []error{ErrNotPortsTree, n.err} }
@@ -832,13 +860,13 @@ func (e *Engine) fetchMaster(ctx context.Context) (model.ObjectID, error) {
 	// It can take a while, and a bump said nothing for twenty seconds
 	// before "Started" (field testing, 2026-10-02); a quick one says
 	// nothing, and serve's, which nobody waits on, says nothing at all.
-	say := progress.Report
+	after := progress.After
 	if serving(ctx) {
-		say = progress.VerboseReport
+		after = progress.VerboseAfter
 	}
-	slow := time.AfterFunc(fetchSaid, func() { say(ctx, "Fetching master from %s", e.Upstream()) })
+	stop := after(ctx, fetchSaid, "Fetching master from %s", e.Upstream())
 	commit, _, err := e.Repo.FetchBranch(ctx, e.Upstream(), "master")
-	slow.Stop()
+	stop()
 	if err != nil {
 		return "", fmt.Errorf("fetching master from %s: %w", e.Upstream(), err)
 	}

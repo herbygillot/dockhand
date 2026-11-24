@@ -105,6 +105,109 @@ func TestCleanRemovesARetidiedBranchWhoseChangesAreOnMaster(t *testing.T) {
 	require.NoDirExists(t, branch.Worktree)
 }
 
+// clean --delete may forget open work only when master already has every
+// changed file as the branch has it; the open branch is otherwise protected.
+func TestForgetAllowsOpenBranchWhoseChangesAreOnMaster(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch := committedUpdate(t, e)
+	portfile := testsupport.Git(t, branch.Worktree, "show", "HEAD:textproc/jq/Portfile")
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": portfile + "\n"})
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.1")
+	_, err := e.fetchMaster(t.Context())
+	require.NoError(t, err)
+
+	plan, err := e.PlanForget(t.Context(), branch)
+	require.NoError(t, err)
+	require.True(t, plan.OpenChangesOnMaster)
+	require.Empty(t, plan.Unmerged)
+	_, err = e.Forget(t.Context(), &plan)
+	require.NoError(t, err)
+
+	remaining, err := e.Status(t.Context(), model.BranchOpen)
+	require.NoError(t, err)
+	require.Empty(t, remaining, "the open branch's record is forgotten")
+}
+
+func TestForgetStillRefusesOpenBranchWithChangesNotOnMaster(t *testing.T) {
+	t.Parallel()
+	_, e, _, branch := mergedBranch(t)
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\n"})
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: update to 1.8.2")
+	branch.State = model.BranchOpen
+	branch.PullRequest = nil
+	_, err := e.PlanForget(t.Context(), branch)
+	require.ErrorContains(t, err, "jq-update is open; clean --delete forgets a merged, closed, or archived branch, or open work whose changes are on master")
+}
+
+func TestForgetRefusesOpenBranchOnMasterWithAPullRequest(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	head := testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")
+	testsupport.Git(t, branch.Worktree, "push", "-q", fake.Fork, "HEAD:refs/heads/"+branch.Name)
+	branch.PullRequest = &model.PullRequest{Repository: UpstreamRepository, Number: 34999,
+		Head: "ada/macports-ports:" + branch.Name, Pushed: model.ObjectID(head)}
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(branch) }))
+
+	portfile := testsupport.Git(t, branch.Worktree, "show", "HEAD:textproc/jq/Portfile")
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": portfile + "\n"})
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.1")
+	_, err := e.fetchMaster(t.Context())
+	require.NoError(t, err)
+	onMaster, err := e.changesOnMaster(t.Context(), branch, head)
+	require.NoError(t, err)
+	require.True(t, onMaster)
+
+	forkHead := fake.ForkHead(branch.Name)
+	before, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	_, err = e.PlanForget(t.Context(), branch)
+	require.ErrorContains(t, err, "jq-update's pull request is still open; close it, or archive the branch; dockhand clean --delete -b jq-update then forgets it for good")
+	require.Equal(t, forkHead, fake.ForkHead(branch.Name), "the pull request's head remains on the fork")
+	after, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.Equal(t, before, after, "the open pull request record remains unchanged")
+}
+
+func TestForgetRefusesWhenAPullRequestIsRecordedAfterThePlan(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	head := testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")
+	testsupport.Git(t, branch.Worktree, "push", "-q", fake.Fork, "HEAD:refs/heads/"+branch.Name)
+	portfile := testsupport.Git(t, branch.Worktree, "show", "HEAD:textproc/jq/Portfile")
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": portfile + "\n"})
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.1")
+	_, err := e.fetchMaster(t.Context())
+	require.NoError(t, err)
+
+	plan, err := e.PlanForget(t.Context(), branch)
+	require.NoError(t, err)
+	require.True(t, plan.OpenChangesOnMaster)
+	forkHead := fake.ForkHead(branch.Name)
+	require.Equal(t, model.ObjectID(head), forkHead)
+
+	branch.PullRequest = &model.PullRequest{Repository: UpstreamRepository, Number: 35000,
+		Head: "ada/macports-ports:" + branch.Name, Pushed: model.ObjectID(head)}
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(branch) }))
+
+	_, err = e.Forget(t.Context(), &plan)
+	require.ErrorContains(t, err, "jq-update's pull request is still open; close it, or archive the branch; dockhand clean --delete -b jq-update then forgets it for good")
+	require.DirExists(t, plan.Worktree)
+	require.Equal(t, head, testsupport.Git(t, e.Repo.Root, "rev-parse", "refs/heads/"+branch.Name), "the Git branch remains")
+	require.Equal(t, forkHead, fake.ForkHead(branch.Name), "the fork head remains")
+	remaining, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.Zero(t, remaining.ForgottenAt)
+	require.Equal(t, branch.PullRequest, remaining.PullRequest)
+}
+
 // A fork branch no remote pushes to is a step no clean can take: the clean
 // that first keeps it says so and records it, and later cleans don't list
 // it again, as pr-34539's was on every one (field testing). clean --delete

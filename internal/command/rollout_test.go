@@ -115,7 +115,7 @@ func TestStartOffersAnArchivedBranchsName(t *testing.T) {
 	err = cmdtest.RunFor(t, t.Context(), []string{"start", "notes"}, term.Streams{In: strings.NewReader("y\n"), Out: &out, Err: &errs}.AsTerminal())
 	require.NoError(t, err, errs.String())
 	require.Contains(t, errs.String(), "? notes is archived. Rename the archived branch to free this name? [y/N] ")
-	require.Contains(t, out.String(), "Renamed the archived notes to notes-archived; dockhand archive --undo notes-archived brings it back.\n")
+	require.Contains(t, cmdtest.Flat(out.String()), "Renamed the archived notes to notes-archived; dockhand archive --undo -b notes-archived brings it back.")
 	require.Contains(t, out.String(), "Created dockhand/notes from master ")
 	require.Contains(t, testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/notes-archived"), "dockhand/notes-archived")
 

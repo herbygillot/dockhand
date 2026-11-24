@@ -75,6 +75,42 @@ func (p *Prediction) leaveFetchless(before, after macports.Snapshot, except ...s
 	}
 }
 
+// predictObsoleteMetadata predicts an obsolete port's complete evaluation
+// when it names selected as its replacement, as long as its own version,
+// revision, and epoch stay put, or it follows the root as followsObsolete
+// allows. Its metadata is handled separately from the live port's update.
+func (p *Prediction) predictObsoleteMetadata(before, after macports.Snapshot, selected string) {
+	for _, name := range slices.Sorted(maps.Keys(before.Ports)) {
+		if name == selected {
+			continue
+		}
+		next, exists := after.Ports[name]
+		if !exists {
+			continue
+		}
+		oldInfo := before.Ports[name]
+		oldObsolete, oldErr := oldInfo.Obsolete()
+		nextObsolete, nextErr := next.Obsolete()
+		oldReplacement, oldReplacementErr := oldInfo.ReplacedBy()
+		nextReplacement, nextReplacementErr := next.ReplacedBy()
+		if oldErr != nil || nextErr != nil || oldReplacementErr != nil || nextReplacementErr != nil ||
+			!oldObsolete || !nextObsolete || oldReplacement != selected || nextReplacement != selected {
+			continue
+		}
+		ownStateUnchanged := oldInfo.Version == next.Version && oldInfo.Revision == next.Revision && oldInfo.Epoch == next.Epoch
+		followsRoot := false
+		if oldRoot, hasOldRoot := before.Ports[selected]; hasOldRoot {
+			if nextRoot, hasNextRoot := after.Ports[selected]; hasNextRoot {
+				followsRoot = followsObsolete(name, selected, oldInfo, next, oldRoot, nextRoot)
+			}
+		}
+		if !ownStateUnchanged && !followsRoot {
+			continue
+		}
+		p.Expect(name, ComparablePort(next, after.Root), name+" is obsolete and inherits the update's metadata")
+	}
+}
+
 // Expect predicts a port's state, saying why.
 func (p *Prediction) Expect(name string, port macports.PortInfo, why ...string) {
 	p.Ports[name] = port

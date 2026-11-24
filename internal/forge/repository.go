@@ -42,7 +42,7 @@ var ErrIncomplete = errors.New("the repository returned incomplete information")
 // ErrPullRequestExists is a create the forge refused because a pull request
 // is already open for its head: it says one exists, not that nothing was
 // opened, so a create whose earlier answer was lost reads it back rather
-// than taking it as a refusal (docs/designs/publication-record.md). It is
+// than taking it as a refusal (docs/designs/publication-record.md at 0e0ad767). It is
 // returned wrapping ErrRejected too, which every caller before it handled.
 var ErrPullRequestExists = errors.New("a pull request is already open for this head")
 

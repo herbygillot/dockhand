@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -105,12 +107,19 @@ func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 			return err
 		}
 		status := report.Statuses[0]
+		var kept []engine.Leftover
+		if !attentionOnly {
+			kept, _ = statusKeptClones(ctx, e, &branch, streams.Err)
+		}
 		if streams.JSON() {
 			viewed := view.BranchView(status)
 			viewed.Detail = view.BranchDetail(status, report)
-			streams.Emit(view.StatusJSON{Attention: view.AttentionView(view.AttentionFor(status)), Branches: []view.BranchJSON{viewed}})
+			streams.Emit(view.StatusJSON{Attention: view.AttentionView(view.AttentionFor(status)), Branches: []view.BranchJSON{viewed}, KeptClones: view.KeptClonesView(kept, time.Now())})
 		}
 		showBranch(streams.Prose(), places, status, report)
+		if len(kept) > 0 {
+			writeKeptClones(streams.Prose(), view.KeptClonesView(kept, time.Now()))
+		}
 		return nil
 	}
 	// A read reaches a merged branch's record, as path does.
@@ -142,6 +151,10 @@ func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 		return err
 	}
 	statuses := report.Statuses
+	var kept []engine.Leftover
+	if !attentionOnly {
+		kept, _ = statusKeptClones(ctx, e, nil, streams.Err)
+	}
 	if port != "" {
 		// For a read, several aren't ambiguous: one is shown in detail,
 		// and several listed (the second look's §3).
@@ -162,6 +175,7 @@ func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 	if streams.JSON() {
 		result := view.StatusJSON{Attention: view.AttentionView(rows)}
 		if !attentionOnly {
+			result.KeptClones = view.KeptClonesView(kept, time.Now())
 			result.Branches = []view.BranchJSON{}
 			for _, status := range statuses {
 				result.Branches = append(result.Branches, view.BranchView(status))
@@ -188,6 +202,10 @@ func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 		}
 	}
 	writeOverview(out, streams, statuses, rows, processes, all)
+	if len(kept) > 0 {
+		fmt.Fprintln(out)
+		writeKeptClones(out, view.KeptClonesView(kept, time.Now()))
+	}
 	if len(changes) > 0 {
 		fmt.Fprintln(out)
 		for _, change := range changes {
@@ -213,6 +231,31 @@ func ShowStatus(ctx context.Context, e *engine.Engine, streams term.Streams, arg
 	}
 	fmt.Fprintf(out, "\n%s\n", view.ServeWords(serve))
 	return nil
+}
+
+func statusKeptClones(ctx context.Context, e *engine.Engine, branch *model.Branch, errOut io.Writer) ([]engine.Leftover, error) {
+	kept, err := e.KeptClones(ctx)
+	if err != nil {
+		fmt.Fprintf(errOut, "kept clones could not be listed: %v\n", err)
+		return nil, err
+	}
+	if branch != nil {
+		kept = slices.DeleteFunc(kept, func(clone engine.Leftover) bool { return clone.Run == nil || clone.Run.Branch != branch.ID })
+	}
+	return kept, nil
+}
+
+func writeKeptClones(out io.Writer, clones []view.KeptCloneJSON) {
+	if len(clones) == 0 {
+		return
+	}
+	fmt.Fprintln(out, "Kept clones")
+	for _, clone := range clones {
+		fmt.Fprintln(out, "  "+view.KeptCloneWords(clone))
+		if clone.OldAsked {
+			fmt.Fprintf(out, "  ! Asked clone is older than seven days and stays until removed: %s\n", clone.RemovalCommand)
+		}
+	}
 }
 
 // writeOverview is the branches by bucket (branchstate.BucketOf): what
@@ -462,10 +505,17 @@ func showBranch(out io.Writer, places config.Places, status engine.BranchStatus,
 		if len(status.Edited) > 0 {
 			fmt.Fprintf(out, "  Edited   %s\n", strings.Join(status.Edited, ", "))
 		}
+		for _, directory := range status.SparseAdds {
+			fmt.Fprintf(out, "  Sparse   files in %s are outside this worktree's sparse checkout\n           Run git sparse-checkout add %s\n", directory, directory)
+		}
 		fmt.Fprintf(out, "  Checks   %s\n", view.CheckState(status))
 		if status.Evidence != nil {
-			// status has no plan above it, so one environment is named.
-			view.WriteResults(out, "           ", *status.Evidence, true)
+			if status.CheckStanding() == branchstate.CheckedOlder {
+				view.WriteHistoricalResults(out, "           ", *status.Evidence, status.HistoricalResults)
+			} else {
+				// status has no plan above it, so one environment is named.
+				view.WriteResults(out, "           ", *status.Evidence, true)
+			}
 			if status.Evidence.Problem != "" {
 				fmt.Fprintf(out, "           ! %s\n", status.Evidence.Problem)
 			}
@@ -550,7 +600,7 @@ func showBranch(out io.Writer, places config.Places, status engine.BranchStatus,
 	}
 	fmt.Fprintf(out, "  PR       %s\n", pr)
 	// What became of the last reviewer request, as its receipt says it
-	// (docs/designs/publication-record.md).
+	// (docs/designs/publication-record.md at 0e0ad767).
 	if line := view.ReviewReceiptWords(status.Branch.PullRequest); line != "" {
 		fmt.Fprintf(out, "  Review   %s\n", line)
 	}

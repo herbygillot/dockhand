@@ -51,8 +51,10 @@ bracketed code can be explained with `dockhand explain <code>` using the code
 printed in your output.
 
 Tidy usually preserves the final files, but it also fixes deterministic lint
-findings on lines your branch changes and reports those fixes. Check makes the
-same fixes before capturing files. Whole-file formatting is separate:
+findings on lines your branch changes and, when run attended, adds a missing
+final newline to a Portfile; it reports those fixes. Check makes the same
+deterministic lint fixes before capturing files, but does not add a missing
+final newline. Whole-file formatting is separate:
 `tidy --restyle` makes up to two final commits of their own: `<port>:
 whitespace`, for the Portfiles it can restyle whole, and `<port>: path-style
 dependencies`, writing each `port:` dependency the tree writes path-style as
@@ -158,7 +160,12 @@ Check four things in its output:
 3. **Review findings:** commit rules, what upstream changed, other pull
    requests, and concerns a passing build cannot settle. `!` marks what wants
    your look, a line that would hold an unattended submission says `held`,
-   and a line for your information carries no mark. For a Rust port, the
+   and a line for your information carries no mark. A concern with a standing
+   acceptance is listed as accepted with its reason; a finding named by
+   `holds.allow` is listed as `allowed by holds.allow`. Neither counts among
+   findings that hold serve or `ship --yes`. The plan's JSON reports an accepted
+   finding with `hold: false` and its reason in `accepted`; a `holds.allow`
+   finding has `hold: false` and `allowed: true`. For a Rust port, the
    Upstream list names the native libraries the crates Cargo.lock pins link,
    leaving out the -sys crates the check didn't compile, said once as `the
    check compiled none of libgit2-sys, libsqlite3-sys, which Cargo.lock pins
@@ -192,8 +199,19 @@ dockhand submit -b jq-update
 At a terminal, submit offers a description preview or edit and asks for the
 final submission. Without a terminal, `--yes` is required. A direct submission
 shows concerns for you to weigh; the automatic path used by bump and serve holds
-on those concerns. Structural blocks, such as missing required evidence, someone
-else's intervening push, or an explicit waiting decision, still need resolving.
+on those concerns. One exception applies to `submit --no-check`: a hold whose
+rule states that the build fails, `patch-rejected` or `cargo-lock-stale`, refuses
+the submission until you decide the hold or allow its rule with `holds.allow`.
+`cargo-lock-stale` applies while Cargo's build keeps `--frozen` or `--locked`;
+unknown build arguments retain the cargo PortGroup's `--frozen` assumption.
+When the Portfile explicitly drops both flags, the finding is quiet; `--offline`
+alone still allows Cargo to update the lock. A missing `worksrcpath` directory
+remains a review concern because the Portfile may use it conditionally.
+The `--plan` preview names the hold and both ways to let it go. A hold that asks
+for judgment, such as a changed license or a patch that applies only with fuzz,
+still lets your own submit proceed. Structural blocks, such as missing required
+evidence, someone else's intervening push, or an explicit waiting decision, still
+need resolving.
 
 The command pushes your committed branch to the selected fork and opens a pull
 request against `macports/macports-ports`, or updates the pull request already
@@ -217,9 +235,11 @@ If master changed them another way, review the rebase before continuing:
 master changed textproc/jq since this branch's base (9b3c5d1 → 4e1f0a2). This run started no check and submitted nothing. Review dockhand rebase -b jq-update --plan before continuing.
 ```
 
-After a check that `ship` ran, the middle sentence is "The check ran; nothing
-was pushed or submitted." A change master made only in other directories stops
-nothing.
+`ship` of a branch already prepared, `--to check` included, fetches master the
+same way before it queues a check, so it builds nothing for changes already on
+master. Where master changes during a check that `ship` ran, the middle sentence
+is "The check ran; nothing was pushed or submitted." A change master made only
+in other directories stops nothing.
 
 Use `--note` for context the generated evidence cannot express:
 
@@ -288,7 +308,16 @@ fork and GitHub to see what each owed step left: a push that landed, a pull
 request GitHub opened whose reply was lost, a description GitHub took. It
 records what it finds, then plans as usual. It writes nothing to GitHub until a
 read shows a step isn't done. What you asked of the earlier submit for the same
-commit stands: a `--ready` still owed, and your answer about the reviewers. Do
+commit stands: a `--ready` still owed, and your answer about the reviewers.
+The plan says what the earlier submit did and what it carries, and where the
+pull request was found open rather than opened by dockhand. `--draft`,
+`--no-check`, `--type` and `--skip-notification` the earlier submit was given
+carry too, each this one leaves out, and the plan says which: a flag given,
+false included, is this run's own, so `--draft=false` makes it ready. Those a
+ship or bump kept on the branch are read where this submit isn't given them,
+and said: `Taken from what the branch's request kept: --draft, --type bugfix`;
+an earlier submit's stand over them. Where GitHub refused a ship's or serve's
+submission, what it asked stays with the branch for the next attempt. Do
 not create a replacement branch merely because the final confirmation did not
 print. Another submission of the same fork branch, from another terminal, is
 refused while one runs, and names the process; if it hangs, stop that process.
@@ -310,6 +339,9 @@ These choices answer different questions:
   other, so a change for another release goes out unbuilt unless a check
   built it there. It cannot be combined with `--draft`, `--accept`, or
   `--standing`.
+  Where a check of the branch passed on an earlier commit, it names that check
+  and its commit, and the files changed since, and says the files submitted
+  were not checked.
 - `submit --accept <port>`: Accept an eligible recorded failure, or a new port's
   lint warnings, for this commit.
 - `submit --accept '<port> +variant'`: Accept a variant build's failure, or a
@@ -413,7 +445,9 @@ reviewer requested changes, submit asks whether to request their review again
 with the plan, before it pushes, and makes the request as the submission's last
 step, after marking the pull request ready where `--ready` asked.
 `submit.rerequest_review` controls that behavior; see
-`dockhand usage configuration`. If the request fails after the push, the next
+`dockhand usage configuration`. With nobody at the terminal to answer, the
+question stays owed: status says so, nobody is asked, and the next `submit`
+you run puts it to you. A no is kept, and that push isn't asked about again. If the request fails after the push, the next
 `submit` of the same commit makes it, even though it pushes nothing. A request
 that got no answer may have been sent, so it is never sent again; status says
 which reviewers were asked and which may not have been. Each reviewer is asked

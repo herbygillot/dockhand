@@ -3,6 +3,7 @@ package upstream_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -33,6 +34,9 @@ type tagRepository struct {
 }
 
 func (r *tagRepository) Name() string { return r.name }
+
+// ListTags lists no tag: a repository looked up only by name.
+func (r *tagRepository) ListTags(context.Context) ([]forge.Tag, error) { return nil, nil }
 func (r *tagRepository) Tag(ctx context.Context, name string) (forge.Tag, error) {
 	return r.tag(ctx, r.name, name)
 }
@@ -323,4 +327,92 @@ func TestASavedReleaseIsCheckedAgainstThePortfileAndTheForge(t *testing.T) {
 	err = forged.Check(t.Context(), githubPort(), release)
 	require.ErrorIs(t, err, upstream.ErrSourceChanged)
 	require.ErrorContains(t, err, "v2.0 disappeared")
+}
+
+// datedPort is rust-analyzer's shape: upstream tags 2026-11-16, and the
+// Portfile maps the tag to the version 20261116 (#305).
+func datedPort() macports.PortInfo {
+	return macports.PortInfo{Name: "dated", Version: "20261116", Options: map[string]string{"github.author": "owner", "github.project": "project", "github.version": "2026-11-16", "github.tag_prefix": "", "github.tag_suffix": "", "git.branch": "2026-11-16"}}
+}
+
+// datedService answers the dated tags, and evaluates a source version as
+// the Portfile's string map does.
+func datedService(c *catalog) upstream.Service {
+	c.tags = []forge.Tag{{Name: "2026-11-09"}, {Name: "2026-11-16"}, {Name: "2026-11-23"}}
+	c.tag = tagFunc(func(_ context.Context, _ string, name string) (forge.Tag, error) {
+		for _, tag := range c.tags {
+			if tag.Name == name {
+				return forge.Tag{Name: name, Commit: strings.Repeat("a", 40)}, nil
+			}
+		}
+		return forge.Tag{}, forge.ErrNotFound
+	})
+	return upstream.Service{
+		EvaluateVersion: func(_ context.Context, source string) (string, error) {
+			return strings.ReplaceAll(source, "-", ""), nil
+		},
+		Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: c},
+	}
+}
+
+// A version named in the port's form, as outdated prints it, selects the
+// release whose tag the Portfile maps to it, as the tag's form does; one
+// neither form matches is refused naming both forms of the nearest
+// releases (#305).
+func TestResolveTakesAVersionInThePortsForm(t *testing.T) {
+	t.Parallel()
+	for _, request := range []string{"20261123", "2026-11-23"} {
+		t.Run(request, func(t *testing.T) {
+			service := datedService(&catalog{})
+			release, err := service.Resolve(t.Context(), datedPort(), request)
+			require.NoError(t, err)
+			require.Equal(t, "20261123", release.Version)
+			require.Equal(t, "2026-11-23", release.Tag)
+			require.Equal(t, request, release.Requested)
+		})
+	}
+	service := datedService(&catalog{})
+	_, err := service.Resolve(t.Context(), datedPort(), "20261124")
+	require.ErrorIs(t, err, upstream.ErrReleaseMissing)
+	require.ErrorContains(t, err, "tag 2026-11-23, version 20261123")
+
+	// Releases that can't be listed leave the request missing, saying why.
+	unlisted := &catalog{}
+	service = datedService(unlisted)
+	unlisted.err = errors.New("rate limited")
+	_, err = service.Resolve(t.Context(), datedPort(), "20261123")
+	require.ErrorIs(t, err, upstream.ErrReleaseMissing)
+	require.ErrorContains(t, err, "rate limited")
+}
+
+// A large catalog is read against a version in the port's form only so
+// far: at most a hundred releases, those whose digits are the word's
+// first, each read being a Portfile's evaluation; a miss says how many
+// weren't read (architecture's measure of be6713b6: some 30ms a read).
+func TestResolveReadsALargeCatalogOnlyAsFarAsItMust(t *testing.T) {
+	t.Parallel()
+	c := &catalog{}
+	service := datedService(c)
+	for year := 2000; year < 2025; year++ {
+		for month := 1; month <= 12; month++ {
+			c.tags = append(c.tags, forge.Tag{Name: fmt.Sprintf("%d-%02d-01", year, month)})
+		}
+	}
+	reads := 0
+	evaluate := service.EvaluateVersion
+	service.EvaluateVersion = func(ctx context.Context, source string) (string, error) {
+		reads++
+		return evaluate(ctx, source)
+	}
+	release, err := service.Resolve(t.Context(), datedPort(), "20261123")
+	require.NoError(t, err)
+	require.Equal(t, "2026-11-23", release.Tag)
+	require.LessOrEqual(t, reads, 101, "a hundred read, and the one selected evaluated")
+
+	reads = 0
+	_, err = service.Resolve(t.Context(), datedPort(), "20261124")
+	require.ErrorIs(t, err, upstream.ErrReleaseMissing)
+	require.LessOrEqual(t, reads, 100)
+	require.ErrorContains(t, err, "tag 2026-11-23, version 20261123")
+	require.ErrorContains(t, err, "203 of owner/project's 303 releases, whose digits are furthest from it, weren't read")
 }

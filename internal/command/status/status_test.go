@@ -27,6 +27,15 @@ import (
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
+func TestStatusCallsOutOldAskedClonesWithTheirRemovalCommand(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	writeKeptClones(&out, []view.KeptCloneJSON{{Check: "check-18", Clone: "dockhand-check-run-18-tahoe-1", SizeGiB: 29.5, Age: "8 days", Reason: "asked", OldAsked: true,
+		ShellCommand: "dockhand shell check-18", RemovalCommand: "dockhand clean --kept check-18"}})
+	require.Contains(t, out.String(), "29.5 GiB · 8 days old · asked")
+	require.Contains(t, out.String(), "Asked clone is older than seven days and stays until removed: dockhand clean --kept check-18")
+}
+
 // A check made before tidy, the order the design gives, checked the files
 // tidy then committed: status credits it to the commit, as submit does.
 func TestStatusCreditsACheckOfTheCommittedFilesToTheCommit(t *testing.T) {
@@ -116,6 +125,21 @@ func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
 	out, _, err = cmdtest.Dockhand(t, "status", "--port", "fd")
 	require.NoError(t, err)
 	require.Equal(t, "No open branch touches fd yet. dockhand update fd starts one.\n", out)
+}
+
+func TestStatusNamesHowToAddAnUntrackedPortOutsideTheSparseWorktree(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	started, err := cmdtest.JSONOf(t, "start", "py-pyaml")
+	require.NoError(t, err)
+	branch := cmdtest.Dig(t, started.Result, "branch", "worktree").(string)
+	require.NoError(t, os.MkdirAll(filepath.Join(branch, "python/py-pyaml"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(branch, "python/py-pyaml/notes.txt"), []byte("new port draft\n"), 0o644))
+	cmdtest.Setenv(t, "MACPORTS_TREE", branch)
+	out, _, err := cmdtest.Dockhand(t, "status")
+	require.NoError(t, err)
+	require.Contains(t, out, "Run git sparse-checkout add python/py-pyaml")
 }
 
 func TestQueueWaitCancelAndLogs(t *testing.T) {
@@ -503,17 +527,17 @@ func TestAnArchivedBranchAsksNothingOfItsChecks(t *testing.T) {
 	require.Equal(t, "previous check passed; a new check is required", view.CheckState(status))
 }
 
-// A branch whose work is on master already, landed by another route, asks
-// only to be set aside, not to be committed for review (cleaning up
-// duckdb-cxx14, finding 1); one with a pull request is its pull request's
-// to say.
+// A branch whose work is on master already, landed by another route, offers
+// permanent removal while keeping archive as the recoverable choice
+// (cleaning up duckdb-cxx14, finding 1); one with a pull request is its pull
+// request's to say.
 func TestStatusSaysABranchsWorkIsOnMasterAlready(t *testing.T) {
 	t.Parallel()
 	branch := model.Branch{Name: "dockhand/duckdb-cxx14", State: model.BranchOpen}
 	status := engine.BranchStatus{Branch: branch, OnMaster: model.ObjectID(strings.Repeat("e", 40))}
-	require.Equal(t, []view.Attention{{Kind: view.AttentionReady, Branch: "duckdb-cxx14", What: "its changes are on master already, as of eeeeeee", Next: "dockhand archive duckdb-cxx14"}}, view.AttentionFor(status))
+	require.Equal(t, []view.Attention{{Kind: view.AttentionReady, Branch: "duckdb-cxx14", What: "its changes are on master already, as of eeeeeee; dockhand archive -b duckdb-cxx14 sets it aside", Next: "permanently remove: dockhand clean --delete -b duckdb-cxx14"}}, view.AttentionFor(status))
 	status.Branch.PullRequest = &model.PullRequest{Number: 35100}
-	require.NotContains(t, view.AttentionFor(status), view.Attention{Kind: view.AttentionReady, Branch: "duckdb-cxx14", What: "its changes are on master already, as of eeeeeee", Next: "dockhand archive duckdb-cxx14"})
+	require.NotContains(t, view.AttentionFor(status), view.Attention{Kind: view.AttentionReady, Branch: "duckdb-cxx14", What: "its changes are on master already, as of eeeeeee; dockhand archive -b duckdb-cxx14 sets it aside", Next: "permanently remove: dockhand clean --delete -b duckdb-cxx14"})
 }
 
 // A submission's JSON lists its concerns, a moved tag's among them, with

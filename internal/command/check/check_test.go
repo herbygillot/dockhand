@@ -45,7 +45,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	// --on ci went with check.on (the person's design, 2026-10-13).
 	out, _, err = cmdtest.Dockhand(t, "check", "--plan", "--keep")
 	require.NoError(t, err)
-	require.Contains(t, out, "Keeps       each Tart VM, stopped after the build, for dockhand shell; clean or the branch's next check removes it\n")
+	require.Contains(t, out, "Keeps       nothing; the selected provider has no VM to keep\n")
 	_, _, err = cmdtest.Dockhand(t, "check", "--baseline", "--keep")
 	require.ErrorContains(t, err, "none of the others can be")
 	_, _, err = cmdtest.Dockhand(t, "check", "--plan", "--build", "minmax")
@@ -92,7 +92,10 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	require.Equal(t, 2, term.ExitCode(err), "a failed check exits 2")
 	require.ErrorContains(t, err, "check-3 failed for snapshot 1: jq did not pass\nNext: dockhand explain check-3")
 	require.Contains(t, out, "  jq  ✗ failed at install\n")
-	require.Contains(t, out, "jq failed at install. Last output:\n    building from\n      ", "what no reading of its log explained (the Vx port's field testing)")
+	// The log's last lines are its own, never wrapped as dockhand's prose,
+	// though the path runs past the width (#94, Codex's read: Report wrote
+	// them through Prose).
+	require.Regexp(t, `jq failed at install\. Last output:\n    building from /[^\n]{60,}\n`, out, "what no reading of its log explained (the Vx port's field testing)")
 	// Where each failure's log is, by environment and attempt, where it
 	// said only dockhand logs check-N (the exiv2 field notes, 2026-10-19).
 	require.Regexp(t, `\nLogs:\n  jq on command, attempt 1: ~/\.dockhand/logs/check-3/command-1/command\.log(\.gz)?\n`, out)
@@ -110,6 +113,22 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	require.ErrorContains(t, err, "--phase takes one of the steps a build takes: deactivate, clean, lint, dependencies, fetch, checksum, install, test")
 	_, _, err = cmdtest.Dockhand(t, "logs", "check-3", "--phase", "fetch")
 	require.ErrorContains(t, err, "--phase requires a port name")
+}
+
+func TestCheckNamesSparseAddCommandForANewPort(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithScript(t, w, "passed")
+	started, err := cmdtest.JSONOf(t, "start", "py-pyaml")
+	require.NoError(t, err)
+	branch := cmdtest.Dig(t, started.Result, "branch", "worktree").(string)
+	require.NoError(t, os.MkdirAll(filepath.Join(branch, "python/py-pyaml"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(branch, "python/py-pyaml/notes.txt"), []byte("new port draft\n"), 0o644))
+	cmdtest.Setenv(t, "MACPORTS_TREE", branch)
+	out, _, err := cmdtest.Dockhand(t, "check", "--plan")
+	require.ErrorContains(t, err, "nothing was checked")
+	require.Contains(t, cmdtest.Flat(out), "Run git sparse-checkout add python/py-pyaml")
 }
 
 // A narrowed plan says what --only left out, and that submit still needs
@@ -182,7 +201,7 @@ func TestCheckPlanNamesWhatOnlyLeftOut(t *testing.T) {
 		Targets:      []model.PlanTarget{{ID: "jq", Target: model.Target{Name: "jq"}, Kind: model.Substantive, Role: model.Changed}},
 		Omitted:      []model.PlanTarget{{ID: "libharbor", Target: model.Target{Name: "libharbor"}, Kind: model.Substantive, Role: model.Changed}},
 		Tests:        model.TestsDeclared,
-	}, nil, engine.Siblings{}, nil, 8)
+	}, nil, engine.Siblings{}, nil, 8, false)
 	require.Contains(t, out.String(), "Changed     jq\nLeft out    libharbor (excluded by --only; submission still requires checks for these ports)\n")
 }
 
@@ -206,7 +225,7 @@ func TestCheckPlanSaysWhatAGitFetchMustCheckOut(t *testing.T) {
 			{Environment: intel, Order: []model.TargetID{"libharbor", "harbor-cli"}, Git: map[model.TargetID]model.GitSource{"libharbor": tag}},
 		}}
 	var out bytes.Buffer
-	view.WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8)
+	view.WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8, false)
 	require.Contains(t, out.String(), "Git         libharbor: git.branch v4 names 1a2b3c4 now, which its build must fetch\n"+
 		"            harbor-cli: which commit git.branch v2 names isn't known (its refs couldn't be read: timed out); its build records what it fetches, and stands for no later check\n")
 
@@ -244,7 +263,7 @@ func TestCheckPlanShowsTheGitSourcesOfWhatOnlyLeftOut(t *testing.T) {
 		Builds: []model.EnvironmentPlan{{Environment: arm, Order: []model.TargetID{"harbor-cli"},
 			Git: map[model.TargetID]model.GitSource{"harbor-cli": cli, "libharbor": tag, "harbor-viewer": viewer}}}}
 	var out bytes.Buffer
-	view.WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8)
+	view.WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8, false)
 	require.Contains(t, out.String(), "Git         harbor-cli: git.branch v2 names 9f8e7d6 now, which its build must fetch\n"+
 		"            libharbor (left out): git.branch v4 names 1a2b3c4 now, which an earlier check's build of it must have fetched to stand\n"+
 		"            harbor-viewer (left out): which commit git.branch v1 names isn't known (the repository has no branch or tag v1); no earlier check's result of it stands\n")
@@ -323,7 +342,7 @@ func TestCheckPlanShowsEachEnvironmentsOrder(t *testing.T) {
 				Exclusions: []model.Exclusion{old}},
 		}}
 	var out bytes.Buffer
-	view.WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8)
+	view.WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8, false)
 	require.Contains(t, out.String(), "Order       on tart macOS 26 (Tahoe) arm64: harbor-cli → libharbor\n"+
 		"            on tart macOS 26 (Tahoe) x86_64: libharbor → harbor-cli → harbor-intel\n"+
 		"Excluded    harbor-cli-old: replaced by harbor-cli\n"+
@@ -332,7 +351,7 @@ func TestCheckPlanShowsEachEnvironmentsOrder(t *testing.T) {
 	plan.Builds[0].Order, plan.Builds[0].Dependencies = []model.TargetID{"libharbor", "harbor-cli"}, map[model.TargetID][]model.TargetID{"harbor-cli": {"libharbor"}}
 	plan.Targets = []model.PlanTarget{target("libharbor"), target("harbor-cli"), target("harbor-intel")}
 	out.Reset()
-	view.WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8)
+	view.WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8, false)
 	require.Contains(t, out.String(), "Order       libharbor → harbor-cli → harbor-intel\n", "where they agree, one line")
 }
 
@@ -433,11 +452,11 @@ func TestAPlanRequiringTestsNamesWhatDeclaresNone(t *testing.T) {
 		Targets: []model.PlanTarget{{ID: "ov", Target: model.Target{Name: "ov"}, Kind: model.Substantive, Role: model.Changed}, {ID: "jq", Target: model.Target{Name: "jq"}, Kind: model.Substantive, Role: model.Changed}},
 		Builds:  []model.EnvironmentPlan{{Environment: tahoe, Order: []model.TargetID{"ov", "jq"}, Untested: []model.TargetID{"ov"}}}}
 	var out bytes.Buffer
-	view.WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8)
+	view.WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8, false)
 	require.Contains(t, out.String(), "Tests       jq, which must pass\nNo tests    ov declares no tests; --tests required adds no test requirement for this port\n", "which do is said beside which don't")
 	plan.Builds[0].Untested = []model.TargetID{"ov", "jq"}
 	out.Reset()
-	view.WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8)
+	view.WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8, false)
 	require.Contains(t, out.String(), "No tests    none of its targets declares tests (ov, jq); --tests required adds no test requirement for these ports\n")
 	require.NotContains(t, out.String(), "Tests       ")
 	// Where declared, the policy is said as one, and the targets that
@@ -445,12 +464,12 @@ func TestAPlanRequiringTestsNamesWhatDeclaresNone(t *testing.T) {
 	// declaring them (ace's plan, 2026-10-28).
 	plan.Tests = model.TestsDeclared
 	out.Reset()
-	view.WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8)
+	view.WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8, false)
 	require.Contains(t, out.String(), "· tests where declared\n")
 	require.Contains(t, out.String(), "No tests    none of its targets declares tests (ov, jq)\n")
 	plan.Builds[0].Untested = nil
 	out.Reset()
-	view.WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8)
+	view.WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8, false)
 	require.NotContains(t, out.String(), "No tests")
 }
 
@@ -492,6 +511,17 @@ func TestAVariantsCheckSaysWhatItBuildsAndAsksFirst(t *testing.T) {
 	view.WriteVariants(&out, single)
 	require.Equal(t, "Variants    jq with its default variants, plus +tests (a -variant leaves a default out), built in place of its default build\n", out.String())
 	require.NoError(t, confirmVariantBuilds(term.Streams{}, single, false), "only each asks")
+}
+
+func TestVariantConfirmationNamesTheKeptCloneItWillReplace(t *testing.T) {
+	t.Parallel()
+	plan := model.Plan{EachVariant: true, Builds: []model.EnvironmentPlan{{Order: make([]model.TargetID, variantBuildsToAsk+1)}},
+		ReplacesKept: []model.KeptCloneReplacement{{Check: "check-12", Release: "tart macOS 26 (Tahoe) arm64"}}}
+	var out strings.Builder
+	streams := term.Streams{In: strings.NewReader("y\n"), Out: &out, Err: &out}.AsTerminal()
+	require.NoError(t, confirmVariantBuilds(streams, plan, false))
+	require.Contains(t, out.String(), "check-12's kept clone of tart macOS 26 (Tahoe) arm64 is removed: this check keeps its own.")
+	require.Contains(t, out.String(), "? --variants each will run 13 full builds. Continue? [y/N] ")
 }
 
 // check --branch from another checkout takes a branch's working files

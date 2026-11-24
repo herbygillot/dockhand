@@ -10,8 +10,8 @@ import (
 )
 
 // A passed build's links from a port it doesn't declare in depends_lib are
-// a finding a port, counting its libraries; a declared port, itself, its
-// siblings, and a library no port provides are none; a build whose links
+// a finding a port, counting its libraries; a declared port and itself
+// are none; a library no port provides is named; a build whose links
 // weren't read says so, unless another environment's were. Each build is
 // judged by its own environment's declarations (C8-2).
 func TestUndeclaredLinks(t *testing.T) {
@@ -35,11 +35,53 @@ func TestUndeclaredLinks(t *testing.T) {
 	}
 	found := UndeclaredLinks(builds)
 	require.Equal(t, []LinkFinding{
+		{Target: "harbor", Library: "/opt/local/lib/libbundled.dylib", Binary: "/opt/local/bin/harbor", Unowned: true},
 		{Target: "harbor", Port: "oniguruma", Library: "/opt/local/lib/libonig.5.dylib", Binary: "/opt/local/bin/harbor", Libraries: 2, Environments: []model.Environment{arm}},
 		{Target: "harbor-cli", Unread: true},
 	}, found)
-	require.Equal(t, "harbor links oniguruma", found[0].Subject())
+	require.Equal(t, "harbor links oniguruma", found[1].Subject())
 	require.Equal(t, []LinkFinding{{Target: "harbor", Clean: true}}, UndeclaredLinks([]LinkedBuild{{Result: model.TargetResult{Target: "harbor", Outcome: model.OutcomePassed, Links: []model.Link{}}}}), "nothing links, read")
+}
+
+// A library under the MacPorts prefix whose file has no active owner is
+// still surfaced, so the person can see that the link was not attributed
+// to a declared port (#257).
+func TestUndeclaredLinksReportsLibrariesWithNoOwner(t *testing.T) {
+	found := UndeclaredLinks([]LinkedBuild{{
+		Result: model.TargetResult{Target: "jq", Outcome: model.OutcomePassed, Links: []model.Link{{
+			Binary: "/opt/local/bin/jq", Library: "/opt/local/lib/libxml2.2.dylib",
+		}}},
+	}})
+	require.Len(t, found, 1)
+	require.Equal(t, []LinkFinding{{Target: "jq", Library: "/opt/local/lib/libxml2.2.dylib", Binary: "/opt/local/bin/jq", Unowned: true}}, found)
+
+	// A library a path: dependency declares says nothing, whatever owner
+	// came back for it, none included.
+	declared := UndeclaredLinks([]LinkedBuild{{
+		Result: model.TargetResult{Target: "jq", Outcome: model.OutcomePassed, Links: []model.Link{{
+			Binary: "/opt/local/bin/jq", Library: "/opt/local/lib/libxml2.2.dylib", Declared: "path:lib/libxml2.2.dylib:libxml2",
+		}}},
+	}})
+	require.Equal(t, []LinkFinding{{Target: "jq", Clean: true}}, declared)
+}
+
+func TestUndeclaredLinksKeepsEveryUndeclaredOwnerFromOneBuild(t *testing.T) {
+	environment := model.Environment{Provider: "tart"}
+	links := []model.Link{
+		{Binary: "/opt/local/bin/jq", Library: "/opt/local/lib/libffi.8.dylib", Port: "libffi"},
+		{Binary: "/opt/local/bin/jq", Library: "/opt/local/lib/libxml2.2.dylib", Port: "libxml2"},
+		{Binary: "/opt/local/bin/jq", Library: "/opt/local/lib/libz.1.dylib", Port: "zlib"},
+	}
+	found := UndeclaredLinks([]LinkedBuild{{
+		Declared:    []string{"jq", "libiconv"},
+		Environment: environment,
+		Result:      model.TargetResult{Target: "jq", Outcome: model.OutcomePassed, Links: links},
+	}})
+	require.Equal(t, []LinkFinding{
+		{Target: "jq", Port: "libffi", Library: "/opt/local/lib/libffi.8.dylib", Binary: "/opt/local/bin/jq", Libraries: 1, Environments: []model.Environment{environment}},
+		{Target: "jq", Port: "libxml2", Library: "/opt/local/lib/libxml2.2.dylib", Binary: "/opt/local/bin/jq", Libraries: 1, Environments: []model.Environment{environment}},
+		{Target: "jq", Port: "zlib", Library: "/opt/local/lib/libz.1.dylib", Binary: "/opt/local/bin/jq", Libraries: 1, Environments: []model.Environment{environment}},
+	}, found)
 }
 
 // A target whose read builds link only ports it declares is said, the

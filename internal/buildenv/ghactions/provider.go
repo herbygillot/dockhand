@@ -166,9 +166,10 @@ func (p *Provider) ForkWorkflow(ctx context.Context) (string, string, error) {
 type Provider struct {
 	Repo *git.Repository
 	// Fork finds your fork and the remote that pushes to it.
-	Fork     func(ctx context.Context) (buildenv.Fork, error)
-	API      API
-	Identity remotewrite.IdentityReader
+	Fork        func(ctx context.Context) (buildenv.Fork, error)
+	API         API
+	Identity    remotewrite.IdentityReader
+	RemoteNamer remotewrite.RemoteNamer
 	// Sleep, when set, stands in for waiting.
 	Sleep func(ctx context.Context, d time.Duration) error
 	// BuildTimeout is how long a run may build before dockhand cancels it,
@@ -213,7 +214,12 @@ func (p *Provider) accountContext(ctx context.Context) (context.Context, string,
 	if err := ctx.Err(); err != nil {
 		return nil, "", err
 	}
-	return remotewrite.ForAccount(ctx, identity.Account, p.Identity), identity.Account, nil
+	return p.writeContext(ctx, identity.Account), identity.Account, nil
+}
+
+func (p *Provider) writeContext(ctx context.Context, account string) context.Context {
+	ctx = remotewrite.ForAccount(ctx, account, p.Identity)
+	return remotewrite.ForRemote(ctx, p.RemoteNamer)
 }
 
 // runWatch is the newest listing of a repository's workflow runs, which
@@ -356,7 +362,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		note := newLaunch(fork.Repository, branch, job, launchPush)
 		note.Before = before
 		if err := build.Launch(note.String(), func(ctx context.Context) (string, error) {
-			ctx = remotewrite.ForAccount(ctx, account, p.Identity)
+			ctx = p.writeContext(ctx, account)
 			report, err := remotewrite.Push(ctx, p.Repo, remotewrite.OwnFork, fork.Repository, git.Push{Remote: fork.PushURL, Branch: branch, Commit: job.Commit, ExpectedRemote: head})
 			// A push known to have started nothing is written down as that,
 			// in these cases and no others: nothing was sent, or git push's
@@ -448,8 +454,15 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		note := newLaunch(fork.Repository, branch, job, launchRerun)
 		note.Run, note.Attempt = run.ID, run.Attempt
 		if err := build.Launch(note.String(), func(ctx context.Context) (string, error) {
-			ctx = remotewrite.ForAccount(ctx, account, p.Identity)
-			return note.String(), remotewrite.Rerun(ctx, p.API, remotewrite.Made, fork.Repository, run.ID)
+			ctx = p.writeContext(ctx, account)
+			err := remotewrite.Rerun(ctx, p.API, remotewrite.Made, fork.Repository, run.ID)
+			// A rerun GitHub refused keeps GitHub's status and body as
+			// they came, and stays a launch a run must answer for: no
+			// refusal is taken as proof that nothing started.
+			if answer := new(Answer); errors.As(err, &answer) {
+				note.Status, note.Body = answer.Status, answer.Body
+			}
+			return note.String(), err
 		}); err != nil {
 			if errors.Is(err, buildenv.ErrNotLaunched) {
 				return err

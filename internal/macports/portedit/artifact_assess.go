@@ -3,11 +3,12 @@ package portedit
 import (
 	"context"
 
-	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 )
 
+// assessArchives asks for a judged plan: on main it left the context, applied
+// archive policy, and required a conclusive verdict before measuring coverage.
 func (s *Service) assessArchives(ctx context.Context, request Request, input *sourceInput) (contexts []ContextCoverage, fetchErr, checksumErr error) {
 	if input.info.GitFetched() {
 		return []ContextCoverage{{Fetch: input.info.Fetch, Platform: input.before.Platform}}, checkGitSource(input.info), nil
@@ -26,12 +27,20 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 	}
 	for i, profile := range profiles {
 		observed := observations[i]
-		info := observed.Snapshot.Ports[input.target.Name]
+		need, policyWithoutArchives := observe.FetchJudgedPlan, true
+		if obsoleteIn(observed.Snapshot.Ports[input.target.Name]) {
+			// Main left an obsolete follower before applying archive policy or
+			// judging its plan; keep only the leave check for that context.
+			need, policyWithoutArchives = observe.FetchRevisionOnly, false
+		}
+		decision, err := observe.DecideFetch(ctx, observed, input.target.Name, input.data, input.portdirIn(observed.Snapshot.Root), need, policyWithoutArchives, nil)
+		if err != nil {
+			return contexts, err, nil
+		}
+		info := decision.Info
 		contexts = append(contexts, ContextCoverage{Platform: profile, Modeled: observed.Modeled, Fetch: info.Fetch})
-		// A context modelled on another Mac that can't be read is left, as
-		// update leaves it, and said (#125); this Mac's reading isn't.
-		if reason, leaves := observe.Left(ctx, observed, input.target.Name, input.data); leaves {
-			contexts[len(contexts)-1].Left = reason
+		if decision.Kind == observe.FetchLeft {
+			contexts[len(contexts)-1].Left = decision.Reason
 			left = true
 			continue
 		}
@@ -39,12 +48,15 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 			// An obsolete follower has no archive in this context by design.
 			continue
 		}
-		if err := distfetch.CheckPolicy(info, input.portdirIn(observed.Snapshot.Root)); err != nil {
-			return contexts, err, nil
+		if decision.Kind == observe.FetchRefused {
+			return contexts, decision.Err, nil
 		}
-		metadata, inconclusive := observe.Tolerate(ctx, observed.Ports[input.target.Name], input.data, observed.Snapshot.Root)
-		if inconclusive {
-			return contexts, errProbeInconclusive.Because("modeled context depends on host state%s", observe.HostInputs(metadata)), nil
+		if decision.Kind == observe.FetchInconclusive {
+			return contexts, errProbeInconclusive.Because("%s", decision.Reason), nil
+		}
+		metadata := decision.Metadata
+		if decision.Kind == observe.FetchNoPlan && decision.HadProblems {
+			return contexts, ErrUnsupported.Because("%v", metadata.Problems), nil
 		}
 		if len(metadata.Problems) > 0 {
 			return contexts, ErrUnsupported.Because("%v", metadata.Problems), nil

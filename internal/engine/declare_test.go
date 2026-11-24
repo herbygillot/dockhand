@@ -41,6 +41,30 @@ func TestTidyDeclaresWhatTheCheckFoundLinked(t *testing.T) {
 	require.Equal(t, "jq: declare xz", testsupport.Git(t, branch.Worktree, "log", "-1", "--format=%s"))
 }
 
+func TestTidyDeclaresEveryUndeclaredLinkFromOneCheck(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\nchecksums           sha256  0\n"})
+	testsupport.Git(t, f.upstream, "commit", "-qam", "jq: checksums")
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	links := map[model.TargetID][]model.Link{"jq": {
+		{Binary: "/opt/local/bin/jq", Library: "/opt/local/lib/libffi.8.dylib", Port: "libffi"},
+		{Binary: "/opt/local/bin/jq", Library: "/opt/local/lib/libxml2.2.dylib", Port: "libxml2"},
+		{Binary: "/opt/local/bin/jq", Library: "/opt/local/lib/libz.1.dylib", Port: "zlib"},
+	}}
+	branch := preparedWith(t, e, model.OriginServe, &scriptedProvider{active: []model.ActivePort{{Name: "libffi"}, {Name: "libxml2"}, {Name: "zlib"}}, readsLinks: true, links: links}, port("jq", "libiconv"))
+
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.NotNil(t, plan.Declare)
+	_, portfile, err := e.Repo.File(t.Context(), plan.Declared, "textproc/jq/Portfile")
+	require.NoError(t, err)
+	for _, dependency := range []string{"port:libffi", "port:libxml2", "port:zlib"} {
+		require.Contains(t, string(portfile), dependency)
+	}
+}
+
 // A finding tidy can't write is said and left to the person: a variant
 // build's, a subport's of a Portfile with several, and libiconv where the
 // port links the system's with rust.system_libiconv yes, whose build

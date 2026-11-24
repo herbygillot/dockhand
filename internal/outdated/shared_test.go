@@ -34,6 +34,11 @@ func TestSubportsSharingASourceAreLookedUpOnce(t *testing.T) {
 	require.Equal(t, same, lookupKey("lang/php/Portfile", port("8.3.1", "php-src")))
 	require.NotEqual(t, same, lookupKey("lang/php/Portfile", port("8.2.9", "php-src")), "another version")
 	require.NotEqual(t, same, lookupKey("lang/php/Portfile", port("8.3.1", "pecl")), "another source")
+	archive := port("8.3.1", "php-src")
+	archive.Options["github.tarball_from"] = "archive"
+	releases := port("8.3.1", "php-src")
+	releases.Options["github.tarball_from"] = "releases"
+	require.NotEqual(t, lookupKey("lang/php/Portfile", archive), lookupKey("lang/php/Portfile", releases), "another GitHub release source")
 	require.Empty(t, lookupKey("", port("8.3.1", "php-src")))
 	// A subport whose name keeps it in a series is looked up apart from
 	// one that isn't, at the same version and source (#120).

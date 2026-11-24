@@ -30,3 +30,15 @@ func TestOneGateForEverySubmission(t *testing.T) {
 	require.Equal(t, refusal.Failed, blocked.Kind())
 	require.Contains(t, blocked.Error(), "can't submit yet: the pull request needs a title")
 }
+
+func TestUncheckedBuildHoldUsesDecisionAsItsNext(t *testing.T) {
+	hold := model.Concern{Origin: model.FromUpstream, Port: "jq", Rule: "patch-rejected", Detail: "patch.diff doesn't apply"}
+	p := Publication{Branch: "jq-1.8.2", Blocks: []Block{{Kind: BlockNoCheckBuildHold, Holds: []model.Concern{hold}}}}
+	refused := Publish(p, Mode{Answered: model.AnsweredAsked}, words{})
+	require.Contains(t, refused.Error(), "the build fails")
+	require.Contains(t, refused.Error(), "patch-rejected")
+	require.Len(t, refused.Next, 2, "decide and holds.allow are the two ways on")
+	require.Equal(t, Next{Verb: VerbDecide, Branch: "jq-1.8.2", Args: []string{"patch-rejected", "jq", "--because", `"…"`}}, refused.Next[0])
+	require.Contains(t, refused.Next[1].External, "holds.allow")
+	require.NotEqual(t, AfterEdit, refused.Next[0].After)
+}

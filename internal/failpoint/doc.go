@@ -8,11 +8,22 @@
 // with SIGKILL when it reaches the step. The steps are:
 //   - update.prepared, after an update has fetched and prepared its edit,
 //     before writing it;
+//   - update.recorded, update.written and update.settled, after an
+//     update records its edit, writes its files, and records them written
+//     (#194);
+//   - rename.intent and rename.git, after a rename records the name it
+//     moves to, and after Git's branch is renamed, before the name is
+//     saved (#194);
 //   - tidy.prepared and rebase.prepared, after the checkpoint is recorded,
 //     before the branch moves;
 //   - submit.pushed, after the push, before the pull request opens;
+//   - submit.recorded, once a submission's publication is recorded,
+//     before its first remote effect: a stage's has taken its change
+//     request (#195);
 //   - submit.created, once GitHub has opened the pull request, before
 //     dockhand records it;
+//   - submit.ended, once a finished publication has ended, and the
+//     change request it took with it (#195);
 //   - check.running, once a check's provider run is recorded running;
 //   - ship.committed, once ship or serve has committed a prepared
 //     branch's edits, before its check is queued.

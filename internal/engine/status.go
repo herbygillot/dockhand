@@ -63,10 +63,18 @@ type BranchStatus struct {
 	Commits int
 	// Edited lists tracked files changed and not committed.
 	Edited []string
-	// Edits are the branch's recorded edits, which say a hold before its
-	// check (branchstate.Preparation).
-	Edits []model.Edit
-	Scope Scope
+	// SparseAdds are port directories with untracked files outside the
+	// worktree's sparse cone, which Git needs added to the cone before it
+	// can stage them.
+	SparseAdds []string
+	untracked  []string
+	// Edits are the branch's written edits, and Prepared its preparation
+	// verdict, which says a hold before its check or a preparation not
+	// finished (branchstate.PreparationOf), as serve would be told for its
+	// own branch and a person for theirs.
+	Edits    []model.Edit
+	Prepared branchstate.Readied
+	Scope    Scope
 	// Changes are the change records of the files as they are now, by
 	// directory, where they've been made; status makes none.
 	Changes map[string]model.ChangeRecord
@@ -80,6 +88,10 @@ type BranchStatus struct {
 	Latest   *model.Run
 	Active   []model.Run
 	Evidence *Evidence
+	// HistoricalResults says, for each checked port and each port changed
+	// since the check, whether its files changed after the checked tree or
+	// the port wasn't in that check. It is populated only for CheckedOlder.
+	HistoricalResults []HistoricalPortResult
 	// Current is true when Latest checked exactly the files as they are
 	// now, whatever their history.
 	Current bool
@@ -145,6 +157,22 @@ type BranchStatus struct {
 	// there's no open pull request.
 	Merge             *macports.Merge
 	MaintainersUnread []string
+}
+
+// HistoricalPortState is a port's relation to a check of earlier files.
+type HistoricalPortState string
+
+const (
+	HistoricalPortUnchanged  HistoricalPortState = "unchanged"
+	HistoricalPortChanged    HistoricalPortState = "changed"
+	HistoricalPortNotInCheck HistoricalPortState = "not-in-check"
+)
+
+// HistoricalPortResult is the check's per-port result in relation to the
+// branch's files now.
+type HistoricalPortResult struct {
+	Port  string
+	State HistoricalPortState
 }
 
 // PortRelease is the release an update chose for a port.
@@ -213,7 +241,7 @@ func (e *Engine) readFiles(ctx context.Context, status *BranchStatus, reads *sta
 	// for it, so its files are the branch's committed ones.
 	worktree := reads.worktree(e, branch)
 	if worktree != nil {
-		if status.Edited, err = worktree.TrackedChanges(ctx); err != nil {
+		if status.Edited, status.untracked, err = worktree.WorkingChanges(ctx, branch.State == model.BranchOpen); err != nil {
 			return nil, nil, err
 		}
 		if len(status.Edited) > 0 {
@@ -401,7 +429,7 @@ func (s BranchStatus) Check() branchstate.Check {
 // Facts are what's recorded of the branch, as the verdict reads it
 // (branchstate.Facts).
 func (s BranchStatus) Facts() branchstate.Facts {
-	b := branchstate.Branch{Record: s.Branch, Missing: s.Missing, Cleaned: s.Cleaned(), OnMaster: s.OnMaster, Revision: s.LatestRevision, Commits: s.Commits, Edited: s.Edited, Edits: s.Edits,
+	b := branchstate.Branch{Record: s.Branch, Missing: s.Missing, Cleaned: s.Cleaned(), OnMaster: s.OnMaster, Revision: s.LatestRevision, Commits: s.Commits, Edited: s.Edited, Prepared: s.Prepared,
 		Held: s.Held, Moved: s.Moved, Awaiting: s.Awaiting, NotAssessed: s.Assessment == AssessmentPending, NoFork: s.NoFork, Pushed: s.Pushed(), OthersPushed: s.SomeoneElsePushed(),
 		Failing: s.Failing(), CI: s.CI, Ports: s.Scope.PortNames(), Wider: s.Wider, PastMerge: s.PastMerge}
 	if s.Evidence != nil {
@@ -637,6 +665,11 @@ func (e *Engine) branchStatus(ctx context.Context, branch model.Branch, noFork b
 		if err := e.readOpen(ctx, &status, worktree); err != nil {
 			return status, err
 		}
+		in, err := e.readyingWith(ctx, branch, branch.Origin != model.OriginServe, worktree, status.Edited)
+		if err != nil {
+			return status, err
+		}
+		status.Prepared = branchstate.PreparationOf(in)
 	}
 	var checks []model.Run
 	var edits []model.Edit
@@ -718,6 +751,11 @@ func (e *Engine) branchStatus(ctx context.Context, branch model.Branch, noFork b
 	}
 	evidence, err := e.evidenceNow(ctx, *status.Latest, checks)
 	status.Evidence = &evidence
+	if err == nil && status.CheckStanding() == branchstate.CheckedOlder {
+		if historical, compareErr := e.historicalResults(ctx, status); compareErr == nil {
+			status.HistoricalResults = historical
+		}
+	}
 	if status.Current {
 		// Each lets go where a person's decision answers its commits, as
 		// submit's do (D1).
@@ -736,6 +774,51 @@ func (e *Engine) branchStatus(ctx context.Context, branch model.Branch, noFork b
 	return status, err
 }
 
+// historicalResults compares the checked tree with the current files once,
+// then answers each checked port from the paths that changed in its own
+// directory. Current changed ports absent from the check are listed last.
+func (e *Engine) historicalResults(ctx context.Context, status BranchStatus) ([]HistoricalPortResult, error) {
+	changed, err := e.Repo.ChangedPaths(ctx, string(status.LatestRevision.Source.Tree), status.Tree)
+	if err != nil {
+		return nil, err
+	}
+	changedIn := func(directory string) bool {
+		if directory == "" {
+			return false
+		}
+		for _, file := range changed {
+			if file == directory || strings.HasPrefix(file, directory+"/") {
+				return true
+			}
+		}
+		return false
+	}
+
+	results := make([]HistoricalPortResult, 0, len(status.Evidence.Targets))
+	checked := map[string]bool{}
+	for _, target := range status.Evidence.Targets {
+		port := target.Target.Target.Name
+		if port == "" || checked[port] {
+			continue
+		}
+		checked[port] = true
+		state := HistoricalPortUnchanged
+		if changedIn(target.Target.Directory) {
+			state = HistoricalPortChanged
+		}
+		results = append(results, HistoricalPortResult{Port: port, State: state})
+	}
+	current, _ := status.ChangedPorts()
+	for _, port := range current {
+		if port == macports.ResourcesDirectory || checked[port] {
+			continue
+		}
+		checked[port] = true
+		results = append(results, HistoricalPortResult{Port: port, State: HistoricalPortNotInCheck})
+	}
+	return results, nil
+}
+
 // readOpen reads what status says of an open branch beside its files:
 // what holds it, its hand edits, and what its last submission plan found
 // that took the network. An ended branch, merged, closed, or archived,
@@ -746,6 +829,11 @@ func (e *Engine) readOpen(ctx context.Context, status *BranchStatus, worktree *g
 	// for each: paused where serve prepared it, and for a person's own, what
 	// submit shows (C2, where it was serve's alone).
 	var err error
+	if worktree != nil && len(status.untracked) > 0 {
+		if status.SparseAdds, err = sparseAdds(ctx, worktree, status.untracked); err != nil {
+			return err
+		}
+	}
 	if status.Held, status.assessed, status.Assessment, err = e.assessedHolds(ctx, status.Branch, model.ObjectID(status.Tree), status.Scope.Ports); err != nil {
 		return err
 	}
@@ -789,6 +877,23 @@ func (e *Engine) readOpen(ctx context.Context, status *BranchStatus, worktree *g
 		}
 	}
 	return nil
+}
+
+// sparseAdds maps untracked paths outside a sparse cone to the MacPorts port
+// directories the person must add before staging them.
+func sparseAdds(ctx context.Context, worktree *git.Repository, untracked []string) ([]string, error) {
+	outside, err := worktree.OutsideSparse(ctx, untracked)
+	if err != nil {
+		return nil, err
+	}
+	var directories []string
+	for _, file := range outside {
+		if directory, ok := macports.PortDirectoryOf(file); ok && !slices.Contains(directories, directory) {
+			directories = append(directories, directory)
+		}
+	}
+	slices.Sort(directories)
+	return directories, nil
 }
 
 // readDecisions reads what publication reads of a branch beside its
@@ -901,7 +1006,7 @@ var checkName = regexp.MustCompile(`^(check-)?[0-9]+$`)
 func IsCheckName(name string) bool { return checkName.MatchString(name) }
 
 // SelectionKind is the kind of name a build selection was made from
-// (docs/designs/check-lifecycle.md, "Selection").
+// (docs/designs/check-lifecycle.md at bbb4c0b7, "Selection").
 type SelectionKind string
 
 const (
@@ -967,7 +1072,7 @@ const (
 )
 
 // SelectBuild resolves what a command names once, in one place
-// (docs/designs/check-lifecycle.md, "Selection"; Codex's review of #193,
+// (docs/designs/check-lifecycle.md at bbb4c0b7, "Selection"; Codex's review of #193,
 // findings 1 and 4): the check and the attempts, and a port the check
 // doesn't build refused by name, a running check's too, where it was said
 // to have recorded no log yet. With nothing named and no branch checked

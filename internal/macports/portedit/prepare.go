@@ -68,6 +68,12 @@ type Request struct {
 	// SourceMode is what a version update does about a GitHub port's
 	// source (chooseSource); empty chooses.
 	SourceMode SourceMode
+	// ActOnCurrent plans what --source asks of a port already at its
+	// release: an explicit releases or archive is carried out at the
+	// version it is at, or refused with its reason, where today the
+	// update stops at the current version (#121). Nothing sets it until
+	// #195's step 5.
+	ActOnCurrent bool
 	// downloadsNothing is an assessment's plan, which chooses no source,
 	// since choosing downloads the release's files.
 	downloadsNothing bool
@@ -161,6 +167,10 @@ type Result struct {
 	// Patches reports whether each declared patch file still applies to the
 	// candidate source; a rejected patch is a finding, not a refusal.
 	Patches []patchcheck.Result `json:",omitempty"`
+	// PatchesChecked is the edit having come to its patch check with a
+	// port evaluated: false for one that checked nothing, as an update
+	// that only follows a moved repository (Declared).
+	PatchesChecked bool `json:"-"`
 	// Dropped are the patches the update took out, with their files,
 	// since the new source already holds them.
 	Dropped []string `json:",omitempty"`
@@ -185,6 +195,10 @@ type Result struct {
 	// lacks deps/cmark-gfm, so the port stays on its clone".
 	SourceMoved  *MovedSource `json:",omitempty"`
 	SourceNotice string       `json:",omitempty"`
+	// SourceOutcome is what became of a source asked of a port already
+	// current (Request.ActOnCurrent): done where it moved, satisfied where
+	// the Portfile fetches that way already; empty where none was asked.
+	SourceOutcome model.ActionResult `json:",omitempty"`
 	// Unchanged is the port as it stands where nothing was edited, as for
 	// an update to the version it already has: what it is at, which no
 	// fidelity report says then. Nil when there was an edit.

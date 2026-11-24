@@ -35,7 +35,7 @@ import (
 
 // Program is the guest program, guest.tcl, which its provider stages
 // beside its input, with StdinIs before it.
-var Program = append(append([]byte{}, StdinIs...), program...)
+var Program = append(append(append([]byte{}, StdinIs...), RootStop...), program...)
 
 //go:embed guest.tcl
 var program []byte
@@ -46,6 +46,13 @@ var program []byte
 //
 //go:embed stdin.tcl
 var StdinIs []byte
+
+// RootStop is the guest program's stop-only mode, stop.tcl's root_stop and
+// process_start, which the program runs where its first argument is
+// --stop.
+//
+//go:embed stop.tcl
+var RootStop []byte
 
 // Guest is where the program runs, as its provider reaches it: a clone
 // over dockhand's SSH channel, or this Mac's own files.

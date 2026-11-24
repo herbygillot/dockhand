@@ -110,70 +110,32 @@ func sourceDateEpochLookup(declaration macports.Declaration, base *baseCode) boo
 	return false
 }
 
-// entry is who made a host read that reached Base's portconfigure.
-type entry int
-
-const (
-	notPortconfigure entry = iota
-	enteredByBase
-	enteredByPortGroup
-	enteredByPortfile
-)
-
-// portconfigureEntry says whether a host read reached Base's portconfigure
-// and who entered it: the code nearest the portconfigure frame that isn't
-// Base's library, a PortGroup or the Portfile, or Base where every caller
-// is Base's own (#247). groupDir is the tree's PortGroup directory
-// (portGroupDirectory).
-func portconfigureEntry(declaration macports.Declaration, base *baseCode, groupDir string) entry {
-	for i, frame := range declaration.Frames {
-		if name, _, _ := strings.Cut(strings.TrimSpace(frame.Command), " "); !strings.HasPrefix(name, "portconfigure::") {
-			continue
-		}
-		for j := i - 1; j >= 0; j-- {
-			file := declaration.Frames[j].File
-			switch {
-			case file == "" || base.has(file):
-				continue
-			case inPortGroupDirectory(file, groupDir):
-				return enteredByPortGroup
-			default:
-				return enteredByPortfile
-			}
-		}
-		return enteredByBase
+// portconfigureCallIsBases reports whether the outermost portconfigure call
+// was written in Base's library or in the text of a default Base declared.
+// A call with no file is Base's only when default_check's substitution can
+// be matched to that declared default; an evaluated Portfile or PortGroup
+// default has no source file of its own, but is still its author's call.
+func portconfigureCallIsBases(frames []macports.SourceFrame, call int, base *baseCode) bool {
+	if call < 0 || call >= len(frames) {
+		return false
 	}
-	return notPortconfigure
-}
-
-// compilerSelection reports whether Base's own compiler selection entered
-// portconfigure for a host read: universal_setup in Base's library among
-// its callers, or a default Base evaluates, with every frame Base's own. A
-// read whose callers name no file at all is not taken for it (#247).
-func compilerSelection(declaration macports.Declaration, base *baseCode) bool {
-	for i, frame := range declaration.Frames {
-		if name, _, _ := strings.Cut(strings.TrimSpace(frame.Command), " "); strings.HasPrefix(name, "portconfigure::") {
-			caller := declaration.Frames[:i]
-			selected := slices.ContainsFunc(caller, func(frame macports.SourceFrame) bool {
-				return strings.TrimSpace(frame.Command) == "universal_setup" && base.has(frame.File)
-			})
-			return (selected || base.defaultIsBases(declaration.Frames, i)) &&
-				base.bodyIsBases(caller) && base.bodyIsBases(declaration.Frames[i+1:])
-		}
+	if frames[call].File != "" {
+		return base.has(frames[call].File) && base.bodyIsBases(frames[call+1:])
 	}
-	return false
+	_, option, text, ok := innermostDefault(frames, call+1)
+	return ok && slices.Contains(baseDefaults(base.library)[option], text) && base.bodyIsBases(frames[call+1:])
 }
 
 // toolchainProbe reports whether a recorded host access came from MacPorts
-// compiler selection's procedures. The outermost frame calling a
-// procedure in portconfigure is the probe, and Base's only where every
-// frame below it is Base's library (bodyIsBases): a procedure a Portfile
-// names into portconfigure has its file on its body (architecture's point
-// 4). Who entered portconfigure is portconfigureEntry's to say (#247).
+// compiler selection. Such probes look for compilers the modeled profile
+// lacks; when the Portfile reads toolchain options only in build positions,
+// they cannot change any source declaration. The call's author is the file
+// or declared default that wrote the outermost portconfigure:: call, not a
+// caller above it that merely read a toolchain option.
 func toolchainProbe(declaration macports.Declaration, base *baseCode) bool {
 	for i, frame := range declaration.Frames {
 		if name, _, _ := strings.Cut(strings.TrimSpace(frame.Command), " "); strings.HasPrefix(name, "portconfigure::") {
-			return base.bodyIsBases(declaration.Frames[i+1:])
+			return portconfigureCallIsBases(declaration.Frames, i, base)
 		}
 	}
 	return false
@@ -186,9 +148,17 @@ func toolchainProbe(declaration macports.Declaration, base *baseCode) bool {
 // read shapes the build and can reach no source declaration, so the modeled
 // context stays conclusive. groups caches the PortGroup files read.
 func portGroupReadBenign(root string, frames []macports.SourceFrame, groups map[string][]byte) bool {
-	groupDir := portGroupDirectory(root)
-	if groupDir == "" {
+	if root == "" {
 		return false
+	}
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+	groupDir := filepath.Join(root, filepath.FromSlash(macports.PortGroupDirectory))
+	// An overlay links the tree's PortGroups rather than copying them, so
+	// their frames name the linked directory.
+	if resolved, err := filepath.EvalSymlinks(groupDir); err == nil {
+		groupDir = resolved
 	}
 	for i := len(frames) - 1; i >= 0; i-- {
 		frame := frames[i]
@@ -213,40 +183,6 @@ func portGroupReadBenign(root string, frames []macports.SourceFrame, groups map[
 		return benignAt(src, frame.Line)
 	}
 	return false
-}
-
-// portGroupDirectory is the ports tree's PortGroup directory, its links
-// resolved, or empty where there is no tree: an overlay links the tree's
-// PortGroups rather than copying them, so their frames name the linked
-// directory.
-func portGroupDirectory(root string) string {
-	if root == "" {
-		return ""
-	}
-	if resolved, err := filepath.EvalSymlinks(root); err == nil {
-		root = resolved
-	}
-	groupDir := filepath.Join(root, filepath.FromSlash(macports.PortGroupDirectory))
-	if resolved, err := filepath.EvalSymlinks(groupDir); err == nil {
-		groupDir = resolved
-	}
-	return groupDir
-}
-
-// inPortGroupDirectory reports a frame's file to be one of the tree's
-// PortGroups: in its PortGroup directory, not merely under a directory
-// named group.
-func inPortGroupDirectory(file, groupDir string) bool {
-	if groupDir == "" || file == "" {
-		return false
-	}
-	dir := filepath.Dir(file)
-	if resolved, err := filepath.EvalSymlinks(file); err == nil {
-		dir = filepath.Dir(resolved)
-	} else if resolved, err := filepath.EvalSymlinks(dir); err == nil {
-		dir = resolved
-	}
-	return dir == groupDir
 }
 
 // benignAt judges the command that starts on the given line of a PortGroup
@@ -329,7 +265,6 @@ func Tolerate(ctx context.Context, port macports.PortObservation, contents []byt
 	toolchainBenign := false
 	toolchainChecked := false
 	groups := map[string][]byte{}
-	groupDir := portGroupDirectory(root)
 	base := newBaseCode(port.BaseLibrary)
 	explained := map[string]bool{}
 	for id, declaration := range port.Declarations {
@@ -363,25 +298,6 @@ func Tolerate(ctx context.Context, port macports.PortObservation, contents []byt
 			if !toolchainBenign {
 				progress.DebugReport(ctx, "Host access is a compiler probe but the Portfile reads toolchain options outside build positions: %s; frames: %s", macports.HostCallText(declaration.Values[0]), strings.Join(where, " <- "))
 				return port, true
-			}
-			// Only Base's own compiler selection is explained here: a
-			// PortGroup's entry is the PortGroup rule's to judge, and the
-			// Portfile's own is unexplained, no later rule taking it (#247).
-			switch portconfigureEntry(declaration, base, groupDir) {
-			case enteredByPortfile:
-				progress.DebugReport(ctx, "Host access not explained: the Portfile itself entered portconfigure: %s; frames: %s", macports.HostCallText(declaration.Values[0]), strings.Join(where, " <- "))
-				return port, true
-			case enteredByPortGroup:
-				if !portGroupReadBenign(root, declaration.Frames, groups) {
-					progress.DebugReport(ctx, "Host access not explained: a PortGroup entered portconfigure, and its read isn't build-only: %s; frames: %s", macports.HostCallText(declaration.Values[0]), strings.Join(where, " <- "))
-					return port, true
-				}
-				progress.DebugReport(ctx, "Host access explained as a PortGroup's build-only read: %s; frames: %s", macports.HostCallText(declaration.Values[0]), strings.Join(where, " <- "))
-			default:
-				if !compilerSelection(declaration, base) {
-					progress.DebugReport(ctx, "Host access not explained: portconfigure was entered, but not by Base's compiler selection: %s; frames: %s", macports.HostCallText(declaration.Values[0]), strings.Join(where, " <- "))
-					return port, true
-				}
 			}
 		case portGroupReadBenign(root, declaration.Frames, groups):
 			progress.DebugReport(ctx, "Host access explained as a PortGroup's build-only read: %s; frames: %s", macports.HostCallText(declaration.Values[0]), strings.Join(where, " <- "))

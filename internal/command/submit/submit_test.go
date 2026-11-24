@@ -22,8 +22,11 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
+	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/scratch"
+	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/store/sqlite"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -113,6 +116,76 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 	require.Contains(t, body, "- [ ] checked that there aren't other open [pull requests](https://github.com/macports/macports-ports/pulls) for the same change? (open for the same ports: #34777)")
 	require.Contains(t, cmdtest.Flat(stdout.String()), cmdtest.Flat(body), "the preview showed the description")
 	require.Equal(t, testsupport.Git(t, dir, "rev-parse", "HEAD"), testsupport.Git(t, g.Fork, "rev-parse", "dockhand/jq-update"))
+}
+
+func TestSubmitHelpSaysItCommitsEditsBeforePushing(t *testing.T) {
+	t.Parallel()
+	out, _, err := cmdtest.Dockhand(t, "submit", "--help")
+	require.NoError(t, err)
+	paragraph := cmdtest.Flat(strings.SplitN(out, "\n\n", 2)[0])
+	require.Contains(t, paragraph, "Commits uncommitted edits first")
+	require.Contains(t, paragraph, "--head")
+	require.Contains(t, paragraph, "leaves uncommitted edits out")
+}
+
+func TestSubmitNoCheckPlanJSONCarriesTheBuildHoldBlock(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithGitHub(t, w)
+	started, err := cmdtest.JSONOf(t, "start", "jq-update")
+	require.NoError(t, err)
+	branch := cmdtest.Dig(t, started.Result, "branch").(map[string]any)
+	dir := branch["worktree"].(string)
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "tidy")
+	require.NoError(t, err)
+
+	tree := testsupport.Git(t, dir, "rev-parse", "HEAD^{tree}")
+	database := filepath.Join(w.Home, ".dockhand", "dockhand.db")
+	s, err := sqlite.Open(t.Context(), database, sqlite.Options{})
+	require.NoError(t, err)
+	repo, err := s.Register(t.Context(), filepath.Join(w.Clone, ".git"))
+	require.NoError(t, err)
+	var storedBranch model.Branch
+	err = s.View(t.Context(), repo, func(reader store.Reader) error {
+		branches, err := reader.Branches(store.BranchFilter{})
+		if err != nil {
+			return err
+		}
+		for _, candidate := range branches {
+			if candidate.Name == "dockhand/jq-update" {
+				storedBranch = candidate
+				break
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, storedBranch.ID)
+	err = s.Update(t.Context(), repo, func(tx store.Tx) error {
+		return tx.RecordAssessment(model.Assessment{
+			Branch: storedBranch.ID,
+			Tree:   model.ObjectID(tree),
+			Base:   storedBranch.Base,
+			Port:   "jq", Directory: "textproc/jq", Policy: assess.Policy, At: time.Now(),
+			Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{{
+				Kind: "patch", Path: "patch.diff", Message: "patch.diff doesn't apply", Hold: true, Rule: "patch-rejected",
+			}}},
+		})
+	})
+	require.NoError(t, err)
+	require.NoError(t, s.Close())
+
+	preview, err := cmdtest.JSONOf(t, "submit", "--no-check", "--plan")
+	require.Error(t, err, "the preview is refused by its publication block")
+	blocks := cmdtest.Dig(t, preview.Result, "blocks").([]any)
+	require.Len(t, blocks, 1)
+	require.Equal(t, "no-check-build-hold", cmdtest.Dig(t, preview.Result, "blocks", 0, "kind"))
+	require.Contains(t, cmdtest.Dig(t, preview.Result, "blocking", 0), "patch-rejected")
 }
 
 // The preview says what comparing the upstream archives found, as update
@@ -348,7 +421,7 @@ func TestTidyWarnsOfAModifiedBuild(t *testing.T) {
 // submit would write, and the preview says so.
 func TestAPullRequestOfSomeoneElsesStaysTheirs(t *testing.T) {
 	t.Parallel()
-	plan := engine.SubmitPlan{Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 34905}}}, Theirs: true, Sections: engine.DescriptionSections{Types: engine.SectionRefreshed}}
+	plan := engine.SubmitPlan{Branch: model.Branch{PullRequest: &model.PullRequest{Number: 34905}}, Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 34905}}}, Theirs: true, Sections: engine.DescriptionSections{Types: engine.SectionRefreshed}}
 	require.Equal(t, "updates #34905; the author wrote its title and description, and Dockhand will preserve them", view.PullRequestWords(plan))
 	plan.Theirs = false
 	plan.BodyKept = true
@@ -359,7 +432,7 @@ func TestAPullRequestOfSomeoneElsesStaysTheirs(t *testing.T) {
 // the preview says so (field testing's croc update, 2026-11-01).
 func TestThePreviewSaysARetitle(t *testing.T) {
 	t.Parallel()
-	plan := engine.SubmitPlan{Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 36310}, Title: "croc: update to 11.6.1"}},
+	plan := engine.SubmitPlan{Branch: model.Branch{PullRequest: &model.PullRequest{Number: 36310}}, Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 36310}, Title: "croc: update to 11.6.1"}},
 		Title: "croc: update to 11.6.2", Retitled: true}
 	require.Equal(t, "updates #36310; retitles #36310 to 'croc: update to 11.6.2'; the pull request description is current", view.PullRequestWords(plan))
 	plan.Retitled, plan.Title = false, "croc: update to 11.6.1"
@@ -435,7 +508,7 @@ func TestAResubmitRefreshesTheDescriptionItWrote(t *testing.T) {
 // Every part refreshed is named, in the description's order.
 func TestTheRefreshedPartsAreNamed(t *testing.T) {
 	t.Parallel()
-	plan := engine.SubmitPlan{Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 34905}}},
+	plan := engine.SubmitPlan{Branch: model.Branch{PullRequest: &model.PullRequest{Number: 34905}}, Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 34905}}},
 		Sections: engine.DescriptionSections{Description: engine.SectionRefreshed, Types: engine.SectionRefreshed, TestedOn: engine.SectionRefreshed}}
 	require.Equal(t, "updates #34905; refreshes its Description section, its Type(s) and its description from Tested on down", view.PullRequestWords(plan))
 	plan.Sections.Types = engine.SectionCurrent
@@ -881,7 +954,7 @@ func TestSubmitAsksTheReviewersBack(t *testing.T) {
 	fix("# drop the patch")
 	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err, out)
-	require.Contains(t, out, "@ryandesign requested changes; ask them to review again on GitHub, or set submit.rerequest_review =\n  \"always\"\n")
+	require.Contains(t, out, "@ryandesign requested changes, and nobody was here to say whether to ask them to review again; the\n  next dockhand submit asks, or set submit.rerequest_review = \"always\"\n")
 	require.Empty(t, g.Rerequested)
 
 	fix("# and the docs")
@@ -1149,7 +1222,7 @@ func TestCleanNamesOneBranch(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "start", "open-work")
 	require.NoError(t, err)
 	_, _, err = cmdtest.Dockhand(t, "clean", "open-work")
-	require.ErrorContains(t, err, "open-work is open, so there's nothing to clean; clean takes a merged, closed, or archived branch, and dockhand archive sets one aside; dockhand clean --delete open-work then forgets it for good")
+	require.ErrorContains(t, err, "open-work is open, so there's nothing to clean; clean takes a merged, closed, or archived branch, and dockhand archive sets one aside; dockhand clean --delete -b open-work then forgets it for good")
 
 	out, _, err = cmdtest.Dockhand(t, "clean", "jq-update")
 	require.Equal(t, term.ExitFailure, term.ExitCode(err))

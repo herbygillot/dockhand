@@ -3,7 +3,6 @@ package view
 import (
 	"fmt"
 	"io"
-	"maps"
 	"slices"
 	"strings"
 
@@ -93,15 +92,16 @@ func WriteSubmitPlan(out io.Writer, plan engine.SubmitPlan, noteStill bool) {
 	}
 	// The person's decisions on what holds it, which the description
 	// gives under Reviewed (the person's voice).
-	for i, subject := range slices.Sorted(maps.Keys(plan.Decided)) {
+	for i, decision := range plan.ConcernDecisions() {
 		label := "           "
 		if i == 0 {
 			label = "  Decided  "
 		}
-		fmt.Fprintf(out, "%s%s\n", label, engine.DecisionWords(plan.Decided[subject]))
+		fmt.Fprintf(out, "%s%s\n", label, engine.DecisionWords(decision))
 	}
 	fmt.Fprintf(out, "  Other PRs  %s\n", otherWords(plan))
 	fmt.Fprintf(out, "  PR       %s\n", PullRequestWords(plan))
+	writeEarlier(out, plan)
 	if plan.Note != "" {
 		fmt.Fprintf(out, "  Note     %s\n", noteLine(plan))
 	} else if noteStill && plan.DescriptionSaysNothing() {
@@ -177,13 +177,36 @@ func noteLine(plan engine.SubmitPlan) string {
 // port when the branch updated several, and, under the Upstream label
 // every list of them has, doesn't say upstream again.
 func UpstreamLines(plan engine.SubmitPlan) []string {
-	lines := ComparisonLines(plan.Upstream)
+	lines := previewComparisonLines(plan.PreviewUpstream())
 	// A Git-fetched port whose tag has moved since its check: the check
 	// built another source than this would submit.
 	for _, moved := range plan.Moved {
 		lines = append(lines, Look+" held: "+engine.WithRule(moved.Detail, moved.Rule))
 	}
 	return lines
+}
+
+func previewComparisonLines(previews []engine.PreviewUpstreamComparison) []string {
+	var comparisons []engine.PortComparison
+	for _, preview := range previews {
+		comparison := model.UpstreamComparison{Problem: preview.Problem, Coverage: preview.Coverage}
+		for _, finding := range preview.Changes {
+			change := finding.Change
+			switch {
+			case finding.Accepted != "":
+				change = engine.UnderUpstream(change)
+				change.Message = "accepted: " + engine.WithRule(change.Message, change.Rule) + "; acceptable because " + finding.Accepted
+				change.Rule = ""
+			case finding.Allowed:
+				change = engine.UnderUpstream(change)
+				change.Message = "allowed by holds.allow: " + engine.WithRule(change.Message, change.Rule)
+				change.Rule = ""
+			}
+			comparison.Changes = append(comparison.Changes, change)
+		}
+		comparisons = append(comparisons, engine.PortComparison{Port: preview.Port, Comparison: comparison})
+	}
+	return ComparisonLines(comparisons)
 }
 
 func otherWords(plan engine.SubmitPlan) string {
@@ -225,6 +248,27 @@ func UnfoundBuildWords(build engine.UnfoundBuild) string {
 	return words + ", which recorded no commit, so its source cannot be identified"
 }
 
+// writeEarlier says what the earlier submission of this commit did, what
+// this run carries of it, and, until the request carries them (#195), the
+// flags it gave that this run leaves out, so a continuation doesn't do the
+// opposite of what was asked unsaid (#191, group F).
+func writeEarlier(out io.Writer, plan engine.SubmitPlan) {
+	earlier := plan.Continues()
+	if earlier == nil {
+		return
+	}
+	var parts []string
+	if len(earlier.Did) > 0 {
+		parts = append(parts, "the last submit of this commit "+prose.And(earlier.Did))
+	}
+	if len(earlier.Carries) > 0 {
+		parts = append(parts, "carries "+strings.Join(earlier.Carries, "; "))
+	}
+	if len(parts) > 0 {
+		fmt.Fprintf(out, "  Earlier  %s\n", strings.Join(parts, "; this one "))
+	}
+}
+
 func PullRequestWords(plan engine.SubmitPlan) string {
 	if plan.Existing == nil {
 		words := "opens a new one"
@@ -237,6 +281,10 @@ func PullRequestWords(plan engine.SubmitPlan) string {
 		return words
 	}
 	words := fmt.Sprintf("updates #%d", plan.Existing.PullRequest.Ref.Number)
+	// One a read found, not one dockhand opened, is said so (#191).
+	if pr := plan.Branch.PullRequest; pr == nil || pr.Number != plan.Existing.PullRequest.Ref.Number || pr.Provenance == model.Found {
+		words += ", found open for this branch"
+	}
 	switch {
 	case plan.ToDraft() && !plan.WasDraft():
 		words += ", returning it to draft before it pushes"
@@ -296,19 +344,7 @@ func loginWords(plan engine.SubmitPlan) string {
 // answers it (the person's voice); one the person accepted holds nothing,
 // and none hold a person's own submission.
 func ServeHolds(plan engine.SubmitPlan) []string {
-	var words []string
-	for _, holds := range [][]model.Concern{plan.Majors, plan.Floors, plan.After, plan.Undeclared} {
-		for _, hold := range holds {
-			if hold.Detail == "" || slices.Contains(words, hold.Detail) || plan.Decided[model.ConcernSubject(hold)].Answer == model.Accepted {
-				continue
-			}
-			words = append(words, hold.Detail)
-			if hold.Rule != "" && hold.Port != "" {
-				words = append(words, "  answer it: "+engine.DecideCommand(hold))
-			}
-		}
-	}
-	return words
+	return plan.ServeHolds()
 }
 
 // FromWords are where a submission pushes from, the fork and its branch:

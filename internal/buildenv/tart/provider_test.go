@@ -55,6 +55,12 @@ type fakeMac struct {
 	// slot.
 	beforeStop func()
 	cloneErr   error
+	// lostReply is a clone made whose answer was lost: Clone makes it and
+	// answers this.
+	lostReply error
+	// onStop, where set, runs as Tart is asked to stop a VM, before it
+	// answers.
+	onStop func(vm string)
 	// stopErr and deleteErr are how Tart answers a stop or a delete.
 	stopErr, deleteErr error
 	running            []int // counts Running reports, one per call, the last repeating
@@ -97,6 +103,15 @@ func (m *fakeMac) Images(context.Context) ([]string, error) {
 	defer m.mu.Unlock()
 	return slices.Clone(m.images), nil
 }
+func (m *fakeMac) Details(context.Context) ([]tartvm.Image, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	images := make([]tartvm.Image, 0, len(m.images))
+	for _, name := range m.images {
+		images = append(images, tartvm.Image{Name: name, Size: 28})
+	}
+	return images, nil
+}
 func (m *fakeMac) Running(context.Context) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -130,7 +145,7 @@ func (m *fakeMac) Clone(_ context.Context, image, vm string) error {
 	m.mu.Lock()
 	m.images = append(m.images, vm)
 	m.mu.Unlock()
-	return nil
+	return m.lostReply
 }
 func (m *fakeMac) Start(vm string, _ ...*os.File) (run, error) {
 	m.log("start " + vm)
@@ -167,7 +182,20 @@ func (r *liveRun) Stop(context.Context, time.Duration) error {
 	})
 	return nil
 }
-func (m *fakeMac) Stop(_ context.Context, vm string) error { m.log("stop " + vm); return m.stopErr }
+func (m *fakeMac) Stop(_ context.Context, vm string) error {
+	m.log("stop " + vm)
+	if m.onStop != nil {
+		m.onStop(vm)
+	}
+	return m.stopErr
+}
+
+// logged are the events so far, read while another goroutine adds to them.
+func (m *fakeMac) logged() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.events)
+}
 func (m *fakeMac) Delete(_ context.Context, vm string) error {
 	m.log("delete " + vm)
 	if m.deleteErr != nil {
@@ -452,7 +480,7 @@ var tahoe = model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
 
 func tartJob(t *testing.T, attempt int) buildenv.Job {
 	return buildenv.Job{
-		Run:         model.Run{ID: "run_7", Number: 3},
+		Run:         model.Run{ID: "run_7", Number: 3, Origin: model.OriginPerson},
 		Execution:   model.GuestExecution{ID: "ex_1", Attempt: attempt},
 		Plan:        model.Plan{Tests: model.TestsDeclared},
 		Environment: model.Environment{Provider: "tart", Platform: tahoe},
@@ -863,11 +891,13 @@ func TestLeftoversAreOnlyCheckClones(t *testing.T) {
 	mac.images = []string{"dockhand-base-tahoe", "dockhand-golden-tahoe", "dockhand-xcode-tahoe", "dockhand-golden-xcode-tahoe",
 		"dockhand-base-tahoe-check", "ghcr.io/cirruslabs/macos-tahoe-vanilla:latest", "dockhand-check-run-7-tahoe-1", "dockhand-check-run-8-sonoma-2"}
 	p := testProvider(mac)
+	p.Tart = tartvm.Client{Home: filepath.Join(t.TempDir(), ".dockhand", "tart"), Env: os.Environ()}
+	require.NoError(t, os.MkdirAll(p.Tart.Home, 0o700))
 	leftovers, err := p.Leftovers(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []buildenv.Leftover{
-		{Ref: "dockhand-check-run-7-tahoe-1", What: "Tart clone dockhand-check-run-7-tahoe-1"},
-		{Ref: "dockhand-check-run-8-sonoma-2", What: "Tart clone dockhand-check-run-8-sonoma-2"},
+		{Ref: "dockhand-check-run-7-tahoe-1", What: "Tart clone dockhand-check-run-7-tahoe-1", Size: 28},
+		{Ref: "dockhand-check-run-8-sonoma-2", What: "Tart clone dockhand-check-run-8-sonoma-2", Size: 28},
 	}, leftovers)
 
 	require.NoError(t, p.RemoveLeftover(t.Context(), "dockhand-check-run-7-tahoe-1"))
@@ -879,6 +909,22 @@ func TestLeftoversAreOnlyCheckClones(t *testing.T) {
 	require.Contains(t, mac.images, "dockhand-base-tahoe")
 	require.ErrorIs(t, p.RemoveLeftover(t.Context(), "dockhand-check-run-7-tahoe-1"), buildenv.ErrLeftoverGone, "already removed, as by another waiter")
 	require.Len(t, mac.events, 2)
+}
+
+func TestRemovingACloneHeldByShellSkipsItForLaterCleanup(t *testing.T) {
+	t.Parallel()
+	mac := newMac()
+	clone := "dockhand-check-run-7-tahoe-1"
+	mac.images = append(mac.images, clone)
+	p := testProvider(mac)
+	p.Tart = tartvm.Client{Home: filepath.Join(t.TempDir(), ".dockhand", "tart"), Env: os.Environ()}
+	require.NoError(t, os.MkdirAll(p.Tart.Home, 0o700))
+	held, err := tartvm.AcquireClone(t.Context(), p.Tart.Home, clone)
+	require.NoError(t, err)
+	defer held.Close()
+	require.ErrorIs(t, p.RemoveLeftover(t.Context(), clone), buildenv.ErrLeftoverRunning)
+	require.NotContains(t, mac.events, "stop "+clone)
+	require.NotContains(t, mac.events, "delete "+clone)
 }
 
 // A canceled check stops, and its clone goes.
@@ -1226,17 +1272,25 @@ func TestAFailedChecksCloneIsKept(t *testing.T) {
 		result     guestprogram.Result
 		keepFailed bool
 		kept       bool
+		unattended bool
 	}{
-		"failed, kept":         {failed, true, true},
-		"passed, deleted":      {passed, true, false},
-		"failed, not kept off": {failed, false, false},
+		"failed, kept":            {result: failed, keepFailed: true, kept: true},
+		"serve failure, not kept": {result: failed, keepFailed: true, kept: false},
+		"yes failure, not kept":   {result: failed, keepFailed: true, kept: false, unattended: true},
+		"passed, deleted":         {result: passed, keepFailed: true, kept: false},
+		"failed, not kept off":    {result: failed, keepFailed: false, kept: false},
 	} {
 		mac := newMac(guestprogram.Results{State: "finished", Targets: []guestprogram.Result{test.result}})
 		p := testProvider(mac)
 		p.Tart = tartvm.Client{Home: filepath.Join(t.TempDir(), ".dockhand", "tart"), Env: os.Environ()}
 		require.NoError(t, os.MkdirAll(p.Tart.Home, 0o700))
 		p.KeepFailed = test.keepFailed
-		require.NoError(t, p.Execute(t.Context(), tartJob(t, 1), &fakeBuild{}), name)
+		job := tartJob(t, 1)
+		if name == "serve failure, not kept" {
+			job.Run.Origin = model.OriginServe
+		}
+		job.Plan.Unattended = test.unattended
+		require.NoError(t, p.Execute(t.Context(), job, &fakeBuild{}), name)
 		require.Equal(t, !test.kept, slices.Contains(mac.events, "delete "+vm), name)
 		_, kept := tartvm.KeptAt(p.Tart.Home, vm)
 		require.Equal(t, test.kept, kept, name)
@@ -1245,6 +1299,75 @@ func TestAFailedChecksCloneIsKept(t *testing.T) {
 			require.True(t, mac.run.stopped, "stopped, kept")
 		}
 	}
+}
+
+func TestKeepingAFifthFailureCloneRemovesAndReportsTheOldest(t *testing.T) {
+	t.Parallel()
+	failed := guestprogram.Result{ID: "libharbor", Outcome: "failed", Phase: "install", Log: "target-1.log", Detail: "Failed to install libharbor"}
+	mac := newMac(guestprogram.Results{State: "finished", Targets: []guestprogram.Result{failed}})
+	p := testProvider(mac)
+	p.Tart = tartvm.Client{Home: filepath.Join(t.TempDir(), ".dockhand", "tart"), Env: os.Environ()}
+	require.NoError(t, os.MkdirAll(p.Tart.Home, 0o700))
+	p.KeepFailed = true
+	var first string
+	var fifth *fakeBuild
+	for i := 1; i <= 5; i++ {
+		job := tartJob(t, i)
+		job.Run.ID = model.RunID(fmt.Sprintf("run_%d", i))
+		job.Execution.ID = model.ExecutionID(fmt.Sprintf("ex_%d", i))
+		build := &fakeBuild{}
+		require.NoError(t, p.Execute(t.Context(), job, build))
+		if i == 1 {
+			first = clonePrefix(string(job.Run.ID), "tahoe") + "-1"
+		}
+		if i == 5 {
+			fifth = build
+		}
+	}
+	images, err := mac.Images(t.Context())
+	require.NoError(t, err)
+	require.NotContains(t, images, first, "the oldest fifth-clone eviction is immediate")
+	require.True(t, slices.ContainsFunc(fifth.progress, func(line string) bool { return strings.Contains(line, first) && strings.Contains(line, "removed") }), "the fifth check reports its eviction")
+}
+
+func TestFailureCloneCapSkipsRunningOldestAndContinues(t *testing.T) {
+	t.Parallel()
+	failed := guestprogram.Result{ID: "libharbor", Outcome: "failed", Phase: "install", Log: "target-1.log", Detail: "Failed to install libharbor"}
+	mac := newMac(guestprogram.Results{State: "finished", Targets: []guestprogram.Result{failed}})
+	p := testProvider(mac)
+	p.Tart = tartvm.Client{Home: filepath.Join(t.TempDir(), ".dockhand", "tart"), Env: os.Environ()}
+	require.NoError(t, os.MkdirAll(p.Tart.Home, 0o700))
+	p.KeepFailed = true
+	canonical, err := tartvm.CanonicalDirectory(p.Tart.Home)
+	require.NoError(t, err)
+	state, err := tartvm.StateDirectory(p.Tart.Home)
+	require.NoError(t, err)
+	keptDirectory := filepath.Join(state, "tart-kept", model.Digest([]byte(canonical)))
+	refs := make([]string, 5)
+	base := time.Now().Add(-time.Hour)
+	for i := range refs {
+		refs[i] = clonePrefix(fmt.Sprintf("run-%d", i+1), "tahoe") + "-1"
+		mac.images = append(mac.images, refs[i])
+		require.NoError(t, tartvm.KeepClone(p.Tart.Home, refs[i], "dockhand-base-tahoe", tartvm.KeptFailed))
+		at := base.Add(time.Duration(i) * time.Minute)
+		require.NoError(t, os.Chtimes(filepath.Join(keptDirectory, refs[i]), at, at))
+	}
+	guard, err := tartvm.AcquireClone(t.Context(), p.Tart.Home, refs[0])
+	require.NoError(t, err)
+	defer guard.Close()
+
+	job := tartJob(t, 1)
+	job.Run.ID, job.Execution.ID = "run_6", "ex_6"
+	build := &fakeBuild{}
+	require.NoError(t, p.Execute(t.Context(), job, build), "a clone in a dockhand shell is skipped, not a cap failure")
+	require.Contains(t, mac.events, "delete "+refs[1])
+	require.NotContains(t, mac.events, "delete "+refs[0])
+	require.True(t, slices.ContainsFunc(build.progress, func(line string) bool {
+		return strings.Contains(line, "skipped") && strings.Contains(line, refs[0])
+	}), "the running clone is named as skipped")
+	require.True(t, slices.ContainsFunc(build.progress, func(line string) bool {
+		return strings.Contains(line, "removed") && strings.Contains(line, refs[1])
+	}), "the next excess clone is removed and reported")
 }
 
 // A shell in a running check's clone reaches it by its image's keys and

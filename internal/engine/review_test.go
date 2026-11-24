@@ -155,6 +155,10 @@ func TestAdoptSomeonesPullRequestAndPushOnlyWhereGitHubAllows(t *testing.T) {
 	again, err := e.AdoptPullRequest(t.Context(), 34905, "")
 	require.NoError(t, err)
 	require.True(t, again.Already)
+	adoptionPlan, err := e.PlanAdopt(t.Context(), AdoptRequest{}, 34905)
+	require.NoError(t, err)
+	require.True(t, adoptionPlan.Already)
+	require.Equal(t, adopted.Branch.Name, adoptionPlan.Branch)
 
 	testsupport.WriteFiles(t, adopted.Branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 0\n# docs\n"})
 	testsupport.Git(t, adopted.Branch.Worktree, "commit", "-q", "-am", "jq: reset revision")
@@ -520,6 +524,8 @@ func TestABranchOfAnotherRepositorysPullRequestIsRefused(t *testing.T) {
 			observed := fake.Observed
 			_, err = e.AdoptPullRequest(t.Context(), 34905, "")
 			refused(err)
+			_, planErr := e.PlanAdopt(t.Context(), AdoptRequest{}, 34905)
+			require.EqualError(t, planErr, err.Error())
 			require.Equal(t, observed, fake.Observed, "nothing was read of the pull request")
 			refused(e.TrackedElsewhere(t.Context(), 34905))
 			_, err = e.RefreshAdopted(t.Context(), adopted.Branch, head)

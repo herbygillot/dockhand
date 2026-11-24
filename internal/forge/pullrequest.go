@@ -62,6 +62,9 @@ type PullRequest struct {
 // MergeableDetail keeps the forge's own.
 type PullRequestStatus struct {
 	Draft bool `json:",omitempty"`
+	// Head is the commit the pull request was at when this was read; empty
+	// where the forge didn't say.
+	Head model.ObjectID `json:",omitempty"`
 	// Mergeable is "yes", "no", or "unknown" while the forge is still
 	// computing it.
 	Mergeable string
@@ -82,7 +85,7 @@ type PullRequestStatus struct {
 	// Requested are the logins whose review is requested and still
 	// pending, sorted, and RequestedRead whether that list is complete: a
 	// reading that couldn't take it, or took it cut short, says so, and an
-	// absent login then settles nothing (docs/designs/publication-record.md).
+	// absent login then settles nothing (docs/designs/publication-record.md at 0e0ad767).
 	Requested     []string `json:",omitempty"`
 	RequestedRead bool     `json:",omitempty"`
 	// LatestReview is when each login last reviewed it, a review of any

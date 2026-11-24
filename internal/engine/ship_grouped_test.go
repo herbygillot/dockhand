@@ -2,10 +2,10 @@ package engine
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -44,8 +44,14 @@ func (p groupedPreparer) Prepare(ctx context.Context, r editprep.Request) (editp
 	tree, err := p.repo.EditTree(ctx, string(r.Source.Tree), []git.FileEdit{edit})
 	result := editprep.Result{Target: model.Target{Name: r.Selection.Selector, Portfile: file}, Release: r.Release,
 		PreparedTree: model.ObjectID(tree), Files: []git.FileEdit{edit}, Fidelity: []portedit.Fidelity{{Before: was, After: snapshot(after)}}}
+	// The final evaluation declares the broken port's patch, which the
+	// edit's saved list is read from (#194).
+	result.Prepared, result.PatchesChecked = snapshot(after), true
 	if r.Selection.Selector == p.broken {
 		result.Patches = []patchcheck.Result{{Name: "patch-" + p.broken, Checked: true, Detail: "1 out of 1 hunks failed"}}
+		info := result.Prepared.Ports[p.broken]
+		info.Options = map[string]string{"patchfiles": "patch-" + p.broken}
+		result.Prepared.Ports[p.broken] = info
 	}
 	return result, err
 }
@@ -77,9 +83,9 @@ func TestEachGroupedSubportsPatchHoldsItsOwnEdit(t *testing.T) {
 			var heldPort string
 			require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 				edits, err := r.Edits(done.Branch.ID)
-				for _, edit := range edits {
-					if len(edit.Held) > 0 {
-						heldPort = edit.Port
+				for _, port := range []string{"jq", "jq-doc"} {
+					if len(branchstate.StandingRejections(port, edits)) > 0 {
+						heldPort = port
 					}
 				}
 				return err
@@ -90,24 +96,11 @@ func TestEachGroupedSubportsPatchHoldsItsOwnEdit(t *testing.T) {
 	}
 }
 
-// holdFailureStore is a store whose every patch hold fails to record.
-type holdFailureStore struct{ store.Store }
-
-type holdFailureTx struct{ store.Tx }
-
-func (s holdFailureStore) Update(ctx context.Context, repo model.RepositoryID, fn func(store.Tx) error) error {
-	return s.Store.Update(ctx, repo, func(tx store.Tx) error { return fn(holdFailureTx{tx}) })
-}
-
-func (holdFailureTx) SetHeld(model.EditID, []string) error {
-	return errors.New("recording the patch hold failed")
-}
-
-// An unattended ship records a rejected patch's hold before it commits
-// the branch: committed first, a hold that failed to record, or a serve
-// stopped between the two, left a branch the next serve's recovery
-// queued unheld (#116; Codex's review of b2e7b616, its probe).
-func TestAPatchHoldIsRecordedBeforeShipCommits(t *testing.T) {
+// An unattended ship commits an update whose patch was rejected and stops
+// before its check, and serve's recovery queues none: no hold is stored
+// to fail or be lost, the verdict reads the rejection from the edit's
+// record each time it's asked (#116, #194).
+func TestAPatchHoldIsReadFromTheRecordsAtEachLook(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\nrevision 0\nsubport jq-doc {\nversion 1.0.1\n}\n"})
@@ -117,16 +110,13 @@ func TestAPatchHoldIsRecordedBeforeShipCommits(t *testing.T) {
 	e.Preparer = groupedPreparer{p, "jq"}
 	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq"), port("jq-doc")}}})
 	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
-	kept := e.Store
-	e.Store = holdFailureStore{kept}
 	release := &model.Release{ReleaseSelection: model.ReleaseSelection{Requested: "1.8.1", CurrentVersion: "1.7.1"}, Version: "1.8.1", Forge: "github", Tag: "v1.8.1"}
 	where := Where{Environments: []model.Environment{{Provider: "command"}}}
 	done := e.ship(t.Context(), shipTarget{Port: "jq", Version: "1.8.1", Release: release, Name: "held-recovery"}, shipOptions{Origin: model.OriginServe, To: ShipCheck, Where: where, Answered: model.AnsweredNobody})
-	require.Contains(t, done.Problem, "recording the patch hold failed")
-	require.False(t, done.Tidied, "nothing committed")
+	require.Contains(t, done.Problem, "patch patch-jq doesn't apply")
+	require.True(t, done.Tidied, "committed, held before its check")
 	require.Nil(t, done.Run)
-	e.Store = kept
-	resumed, err := e.ResumePrepared(t.Context(), where, model.TestsDeclared)
+	resumed, err := e.ResumePrepared(t.Context(), where, model.TestsDeclared, true)
 	require.NoError(t, err)
 	for _, r := range resumed {
 		require.Nil(t, r.Run, "recovery queues no check of an update whose patch was rejected: %+v", r)

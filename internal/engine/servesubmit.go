@@ -105,7 +105,7 @@ func (e *Engine) serveCandidates(ctx context.Context) ([]ServeCandidate, []model
 			yours = append(yours, branch)
 			continue
 		}
-		plan, err := e.PlanSubmit(ctx, SubmitRequest{Branch: branch})
+		plan, err := e.PlanSubmit(ctx, checkedSubmitRequest(branch))
 		candidate := ServeCandidate{Branch: branch, Plan: plan}
 		if err != nil {
 			candidate.Held = append(candidate.Held, model.Concern{Origin: model.FromSubmission, Rule: "unplanned", Detail: err.Error()})
@@ -114,7 +114,7 @@ func (e *Engine) serveCandidates(ctx context.Context) ([]ServeCandidate, []model
 		}
 		// A pull request found open for its head is one serve didn't
 		// open, and serve never writes to one it found (docs/designs/
-		// publication-record.md, "Who continues what").
+		// publication-record.md at 0e0ad767, "Who continues what").
 		if plan.Existing != nil {
 			candidate.Held = append(candidate.Held, model.Concern{Origin: model.FromSubmission, Rule: "found", Detail: fmt.Sprintf("#%d is already open for its branch, and serve didn't open it; serve leaves it to you", plan.Existing.PullRequest.Ref.Number)})
 			candidates = append(candidates, candidate)
@@ -170,7 +170,7 @@ func (p SubmitPlan) Held() []model.Concern {
 	for _, blocking := range p.Blocking {
 		held = append(held, model.Concern{Origin: model.FromSubmission, Rule: "blocking", Detail: blocking})
 	}
-	return append(held, undecided(holding(p.Concerns(), p.allowed), p.Decided)...)
+	return append(held, p.PublicationHolds()...)
 }
 
 // HoldLines are concerns as they're said, a line each, the same finding of
@@ -265,6 +265,143 @@ func (p SubmitPlan) Concerns() []model.Concern {
 		add(concern)
 	}
 	return concerns
+}
+
+// PreviewUpstream gives each upstream finding the same held state as the
+// publication gate, with the reason an accepted decision or holds.allow lets
+// it go.
+func (p SubmitPlan) PreviewUpstream() []PreviewUpstreamComparison {
+	_, judgments := p.publicationJudgment()
+	var preview []PreviewUpstreamComparison
+	for _, comparison := range p.Upstream {
+		view := PreviewUpstreamComparison{Port: comparison.Port, Problem: comparison.Comparison.Problem, Coverage: comparison.Comparison.Coverage}
+		for _, change := range comparison.Comparison.Changes {
+			finding := PreviewUpstreamFinding{Change: change}
+			if judgment, found := judgments[change.Concern(comparison.Port).Key()]; found {
+				finding.Change.Hold = judgment.held
+				finding.Accepted = judgment.accepted
+				finding.Allowed = judgment.allowed
+			}
+			view.Changes = append(view.Changes, finding)
+		}
+		preview = append(preview, view)
+	}
+	return preview
+}
+
+// PreviewUpstreamFinding is one upstream comparison and the judgment that
+// lets a held finding go, where there is one.
+type PreviewUpstreamFinding struct {
+	Change   model.UpstreamChange
+	Accepted string
+	Allowed  bool
+}
+
+// PreviewUpstreamComparison is a port's upstream comparison as it stands
+// under the publication gate.
+type PreviewUpstreamComparison struct {
+	Port     string
+	Problem  string
+	Coverage []model.Coverage
+	Changes  []PreviewUpstreamFinding
+}
+
+type concernJudgment struct {
+	held          bool
+	accepted      string
+	allowed       bool
+	blocksNoCheck bool
+}
+
+func (p SubmitPlan) publicationJudgment() ([]model.Concern, map[string]concernJudgment) {
+	var held []model.Concern
+	judgments := map[string]concernJudgment{}
+	for _, concern := range p.Concerns() {
+		judgment := concernJudgment{held: true, blocksNoCheck: concern.Origin == model.FromUpstream && assess.BlocksNoCheck(concern.Rule)}
+		switch {
+		case allowedConcern(concern, p.allowed):
+			judgment.held, judgment.allowed = false, true
+		default:
+			if decision, accepted := acceptedDecision(concern, p.Decided); accepted {
+				judgment.held = false
+				judgment.accepted = decision.Words
+			} else {
+				held = append(held, concern)
+			}
+		}
+		judgments[concern.Key()] = judgment
+	}
+	return held, judgments
+}
+
+// NoCheckHolds are unresolved publication holds whose rules establish that
+// the branch cannot build. A person's unchecked submission cannot waive them.
+func (p SubmitPlan) NoCheckHolds() []model.Concern {
+	if !p.Request.NoCheck {
+		return nil
+	}
+	_, judgments := p.publicationJudgment()
+	var held []model.Concern
+	for _, concern := range p.Concerns() {
+		judgment := judgments[concern.Key()]
+		if judgment.held && judgment.blocksNoCheck {
+			held = append(held, concern)
+		}
+	}
+	return held
+}
+
+func (p *SubmitPlan) blockNoCheckBuildHolds() {
+	if held := p.NoCheckHolds(); len(held) > 0 {
+		p.block(branchstate.Block{Kind: branchstate.BlockNoCheckBuildHold, Holds: held})
+	}
+}
+
+// PublicationHolds are the concerns the publication gate leaves held after
+// holds.allow and standing acceptances have been applied.
+func (p SubmitPlan) PublicationHolds() []model.Concern {
+	held, _ := p.publicationJudgment()
+	return held
+}
+
+func allowedConcern(concern model.Concern, allowed func(port string) []string) bool {
+	return concern.Origin != model.FromSubmission && concern.Rule != "not-compared" && allowed != nil && slices.Contains(allowed(concern.Port), concern.Rule)
+}
+
+func acceptedDecision(concern model.Concern, decided map[string]model.Decision) (model.Decision, bool) {
+	decision, ok := decided[model.ConcernSubject(concern)]
+	return decision, concern.Rule != "" && ok && decision.Answer == model.Accepted
+}
+
+// ConcernDecisions are this plan's standing decisions in subject order.
+func (p SubmitPlan) ConcernDecisions() []model.Decision {
+	var decisions []model.Decision
+	for _, subject := range slices.Sorted(maps.Keys(p.Decided)) {
+		decisions = append(decisions, p.Decided[subject])
+	}
+	return decisions
+}
+
+// ServeHolds are the concerns serve or ship --yes still waits on, after
+// decisions have been applied.
+func (p SubmitPlan) ServeHolds() []string {
+	var words []string
+	remaining := p.PublicationHolds()
+	for _, holds := range [][]model.Concern{p.Majors, p.Floors, p.After, p.Undeclared} {
+		for _, hold := range holds {
+			if !slices.ContainsFunc(remaining, func(c model.Concern) bool { return c.Key() == hold.Key() }) {
+				continue
+			}
+			if hold.Detail == "" || slices.Contains(words, hold.Detail) {
+				continue
+			}
+			words = append(words, hold.Detail)
+			if hold.Rule != "" && hold.Port != "" {
+				words = append(words, "  answer it: "+DecideCommand(hold))
+			}
+		}
+	}
+	return words
 }
 
 // movedSources are the Git-fetched ports whose git.branch names another
@@ -575,10 +712,23 @@ func (e *Engine) SubmitForServe(ctx context.Context, candidate ServeCandidate, a
 	if len(candidate.Held) > 0 {
 		return Submitted{}, fmt.Errorf("%s needs review before submission: %s", candidate.Branch.ShortName(), strings.Join(HoldLines(candidate.Held), "; "))
 	}
-	plan := candidate.Plan
-	plan.Body = plan.Body + "\n\n" + ServeNote + "\n"
-	plan.served, plan.admission = true, admission
-	return e.ApplySubmit(ctx, plan, model.AnsweredNobody)
+	// Where another command changed the branch's request while serve
+	// judged it, nothing was recorded: it is planned and judged again under
+	// the request as it stands, its holds read anew (#195).
+	planned := candidate.Plan
+	rounds := 0
+	_, submitted, err := e.SubmitUnderRequest(ctx, planned.Request, &planned, func(plan SubmitPlan) (Submitted, error) {
+		// A plan made again under a changed request reads its holds anew.
+		if rounds++; rounds > 1 {
+			if held := plan.Held(); len(held) > 0 {
+				return Submitted{}, fmt.Errorf("%s needs review before submission: %s", plan.Branch.ShortName(), strings.Join(HoldLines(held), "; "))
+			}
+		}
+		plan.Body = plan.Body + "\n\n" + ServeNote + "\n"
+		plan.served, plan.admission = true, admission
+		return e.ApplySubmit(ctx, plan, model.AnsweredNobody)
+	})
+	return submitted, err
 }
 
 // majorRule is the hold on an update whose major version moves.
@@ -606,7 +756,7 @@ func HoldRules() []string {
 // are still said.
 func holding(concerns []model.Concern, allowed func(port string) []string) []model.Concern {
 	return slices.DeleteFunc(slices.Clone(concerns), func(c model.Concern) bool {
-		return c.Origin != model.FromSubmission && c.Rule != "not-compared" && allowed != nil && slices.Contains(allowed(c.Port), c.Rule)
+		return allowedConcern(c, allowed)
 	})
 }
 
@@ -726,7 +876,7 @@ func (e *Engine) linkHolds(ctx context.Context, checked *Evidence) ([]model.Conc
 			unlinked = append(unlinked, finding)
 			continue
 		}
-		if finding.Unread || finding.Clean || finding.Port == "" {
+		if finding.Unread || finding.Clean || finding.Unowned || finding.Port == "" {
 			continue
 		}
 		port := string(finding.Target)

@@ -334,3 +334,45 @@ func TestAnAdoptedBranchsPortfilesNeedTheAnswer(t *testing.T) {
 	require.NoError(t, err, said)
 	require.Contains(t, out, "Passed")
 }
+
+// review --check's row of the Staying matrix: a check running that covers
+// the one it asks for is joined and seen to its end through See, as wait
+// sees one (docs/designs/check-lifecycle.md at bbb4c0b7, "Staying"): nobody leads it,
+// so it is driven here, said as it starts, and reported.
+func TestReviewCheckJoinsACoveringCheckAndSeesItThrough(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.WithScript(t, w, "passed")
+	g := cmdtest.WithGitHub(t, w)
+	testsupport.Git(t, w.Upstream, "switch", "-q", "-c", "contrib")
+	require.NoError(t, os.WriteFile(filepath.Join(w.Upstream, "textproc/jq/Portfile"), []byte("name jq\n# docs\n"), 0o644))
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-am", "jq: document the options")
+	head := testsupport.Git(t, w.Upstream, "rev-parse", "HEAD")
+	testsupport.Git(t, w.Upstream, "update-ref", "refs/pull/34905/head", "contrib")
+	testsupport.Git(t, w.Upstream, "switch", "-q", "master")
+	g.Theirs = map[int]forge.PullRequest{34905: {Ref: forge.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 34905},
+		HeadRepository: "newcontrib/macports-ports", HeadBranch: "patch-1", RemoteHead: model.ObjectID(head), Title: "jq: document the options", State: forge.PullRequestOpen, Author: "newcontrib", MaintainerCanModify: true}}
+	_, said, err := cmdtest.Dockhand(t, "adopt", "--pr", "34905", "--evaluate")
+	require.NoError(t, err, said)
+	// A check of the head it reviews is queued, and nothing runs it.
+	var drained int
+	cmdtest.Hosted(t).StartDrain = func(engine.Options) (int, error) { drained++; return 4242, nil }
+	_, said, err = cmdtest.Dockhand(t, "check", "-d", "--head", "-b", "pr-34905", "--on", "command")
+	require.NoError(t, err, said)
+	require.Equal(t, 1, drained)
+
+	// -v: the joined check is reported as wait reports one, "Passed for
+	// commit …", after the review named that commit, which the default
+	// level's "said once" refuses; as before See, kept by the design.
+	out, errs, err := cmdtest.Dockhand(t, "review", "34905", "--check", "--on", "command", "--evaluate", "-v")
+	require.NoError(t, err, errs)
+	require.Contains(t, errs, "check-1 is already queued and covers this check; following it.\n")
+	require.Contains(t, errs, "No dockhand serve is running, so check-1 will run here.", "joined, with nobody leading, it's driven here")
+	require.Contains(t, out, "Passed")
+	require.Equal(t, 1, drained, "to its end starts no worker")
+	result, err := cmdtest.JSONOf(t, "logs", "check-1")
+	require.NoError(t, err)
+	require.Equal(t, "passed", cmdtest.Dig(t, result.Result, "run", "state"))
+	_, _, err = cmdtest.Dockhand(t, "logs", "check-2")
+	require.ErrorContains(t, err, "there is no run check-2", "nothing new was queued")
+}

@@ -715,15 +715,18 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 // carries its updates to a check, and says each; one with edits not
 // committed is the person's, said too (Engine.ResumePrepared).
 func (s *server) resumePrepared(ctx context.Context) {
+	// A preparation is continued where serve.ship_to commits or goes
+	// further, and its check queued where it checks or goes further
+	// (#194, C2).
 	to := ShipStage(s.options.ShipTo)
-	if to != ShipCheck && to != ShipSubmit {
+	if to != ShipCommit && to != ShipCheck && to != ShipSubmit {
 		return
 	}
-	where, err := s.e.Where(ctx, WhereRequest{Unattended: true})
-	if err != nil {
+	where, err := s.e.Where(ctx, WhereRequestFor(noRequest, true))
+	if err != nil && to != ShipCommit {
 		return
 	}
-	resumed, err := s.e.ResumePrepared(ctx, where, "")
+	resumed, err := s.e.ResumePrepared(ctx, where, "", to != ShipCommit)
 	if err != nil {
 		s.say("serve: looking for branches it prepared and didn't check: %v", err)
 		return
@@ -1124,6 +1127,12 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	pass := o.s.problems.pass("look")
 	defer pass.done(ctx)
 	report := func(problem string) { pass.say(ctx, problem) }
+	// serve takes up its own unfinished preparations at each daily look,
+	// before the outdated pass, which would skip such a port as already in
+	// a branch (#194, C2).
+	if !retrying {
+		o.s.resumePrepared(ctx)
+	}
 	if settings.empty() {
 		// The person's own line, as master's ports write their GitHub
 		// login, where it can be found (the flyctl run). The day isn't
@@ -1226,7 +1235,7 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 		prepare.To = ShipCheck
 	}
 	if prepare.To == ShipCheck {
-		if prepare.Where, err = e.Where(ctx, WhereRequest{Unattended: true}); err != nil {
+		if prepare.Where, err = e.Where(ctx, WhereRequestFor(noRequest, true)); err != nil {
 			report(fmt.Sprintf("serve: serve.ship_to = %q: %v", to, err))
 			prepare.To = ShipCommit
 		}

@@ -41,8 +41,8 @@ func (a checkAdmission) Covered(ctx context.Context, branch model.BranchID, tree
 	return a.e.Covered(ctx, branch, tree, want)
 }
 
-func (a checkAdmission) ForgetKept(ctx context.Context, branch model.BranchID) error {
-	return a.e.forgetKept(ctx, branch)
+func (a checkAdmission) ForgetKept(ctx context.Context, branch model.BranchID, plan model.Plan) error {
+	return a.e.forgetKept(ctx, branch, plan)
 }
 
 // checkHooks are what the engine does as a check is driven: say the

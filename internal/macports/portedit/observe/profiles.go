@@ -282,12 +282,32 @@ func profilesForBoundaries(majors map[int]bool, archDependent bool, native model
 			}
 		}
 	}
-	// A boundary's neighbors can be a Darwin that never shipped, 26 among
-	// them, since the numbers are not consecutive; no Mac describes one.
+	// Boundary neighbors can name a Darwin that never shipped, 26 among
+	// them. Sample the nearest modeled release below any such neighbor.
 	var versions []int
+	seenVersions := make(map[int]bool)
 	for major := range majors {
-		if _, err := macos.ProductForDarwin(major); err == nil && major <= current {
-			versions = append(versions, major)
+		if major > current {
+			continue
+		}
+		if _, err := macos.ProductForDarwin(major); err == nil {
+			if !seenVersions[major] {
+				versions = append(versions, major)
+				seenVersions[major] = true
+			}
+			continue
+		}
+		// Darwin majors are not consecutive. If a boundary's neighbor never
+		// shipped, sample the nearest modeled release below that neighbor.
+		for _, release := range slices.Backward(macos.Known()) {
+			if release.Darwin >= major || release.Darwin > current {
+				continue
+			}
+			if !seenVersions[release.Darwin] {
+				versions = append(versions, release.Darwin)
+				seenVersions[release.Darwin] = true
+			}
+			break
 		}
 	}
 	slices.Sort(versions)

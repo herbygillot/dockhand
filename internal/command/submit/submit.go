@@ -29,9 +29,11 @@ func Command(s *settings.Settings, streams term.Streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "submit",
 		Short: "Open or update the pull request",
-		Long: `Pushes the branch's committed head to your fork and opens its pull
-request against macports/macports-ports, or updates the existing one. The
-preview shows the commits, where they will be pushed, the title, the
+		Long: `Commits uncommitted edits first, then pushes the branch's committed
+head to your fork and opens its pull request against
+macports/macports-ports, or updates the existing one. --head
+leaves uncommitted edits out. The preview shows the commits, where they
+will be pushed, the title, the
 checks, the commit rules, and any other open pull requests for the same
 ports.
 
@@ -73,6 +75,13 @@ write, keeping your --note.
 				return err
 			}
 			defer e.Close()
+			// Which of the submission's own flags were given, false
+			// included: one left out is carried from an earlier submission
+			// this one continues (#195, E3).
+			request.Given = map[string]bool{}
+			for _, flag := range []string{"draft", "no-check", "type", "skip-notification"} {
+				request.Given[flag] = cmd.Flags().Changed(flag)
+			}
 			request.TestedBinaries, request.TestedVariants = testedBinaries, testedVariants
 			// =false withdraws a kept statement, which leaving the flag out
 			// keeps (#153).
@@ -89,6 +98,32 @@ write, keeping your --note.
 			}
 			if err := branchflags.MayEvaluate(ctx, e, streams, request.Branch); err != nil {
 				return err
+			}
+			// The submission's flags the branch's request kept are read
+			// where they weren't given, and said; a person's own submit
+			// takes no request (#195).
+			if kept := request.Branch.Request; kept != nil {
+				var took []string
+				publish := kept.Publish
+				if !cmd.Flags().Changed("draft") && !cmd.Flags().Changed("no-check") && publish.Draft.Given {
+					request.Draft = publish.Draft.Value
+					took = append(took, map[bool]string{true: "--draft", false: "--draft=false"}[request.Draft])
+				}
+				if !cmd.Flags().Changed("no-check") && !cmd.Flags().Changed("draft") && publish.NoCheck.Given && !request.Draft {
+					request.NoCheck = publish.NoCheck.Value
+					took = append(took, map[bool]string{true: "--no-check", false: "--no-check=false"}[request.NoCheck])
+				}
+				if !cmd.Flags().Changed("type") && publish.Type.Given {
+					request.Types = publish.Type.Value
+					took = append(took, "--type "+strings.Join(request.Types, ","))
+				}
+				if !cmd.Flags().Changed("skip-notification") && publish.SkipNotification.Given {
+					request.SkipNotification = publish.SkipNotification.Value
+					took = append(took, map[bool]string{true: "--skip-notification", false: "--skip-notification=false"}[request.SkipNotification])
+				}
+				if len(took) > 0 {
+					fmt.Fprintf(streams.Prose(), "Taken from what the branch's request kept: %s\n", strings.Join(took, ", "))
+				}
 			}
 			plan, err := e.PlanSubmit(ctx, request)
 			// Edits not committed are committed as tidy would, shown as tidy
@@ -294,27 +329,56 @@ func Apply(ctx context.Context, e *engine.Engine, streams term.Streams, plan eng
 	// the submission, whose last step it is (#191).
 	// An answer an earlier submission of this commit recorded stands, and
 	// isn't asked again (#191).
-	if logins := plan.Rerequests(); len(logins) > 0 && rerequest != "never" && !plan.Request.Rerequest {
+	if logins := plan.Rerequests(); len(logins) > 0 && !plan.Request.Rerequest {
 		who := "@" + strings.Join(logins, ", @")
-		again := rerequest == "always"
-		if !again {
-			var how model.Answered
-			var err error
-			again, how, err = streams.Decide(false, term.Decision{Question: fmt.Sprintf("? ask %s to review again? [Y/n] ", who), Yes: true, Nobody: term.Answer(false)})
+		if plan.ReviewsUnread {
+			fmt.Fprintf(streams.Prose(), "%s's latest reviews couldn't be read now; dockhand reads them again before it asks\n", who)
+		}
+		// The answer is recorded however it comes: always and never are
+		// the person's standing word, and nobody there leaves the
+		// question for the next run they attend (#191, group E).
+		switch rerequest {
+		case "always":
+			plan.Request.Rerequest, plan.Request.RerequestAnswer = true, model.ReviewYes
+		case "never":
+			plan.Request.RerequestAnswer = model.ReviewNo
+		default:
+			again, how, err := streams.Decide(false, term.Decision{Question: fmt.Sprintf("? ask %s to review again? [Y/n] ", who), Yes: true, Nobody: term.Answer(false)})
 			if err != nil {
 				return engine.Submitted{}, err
 			}
-			if how == model.AnsweredNobody {
-				fmt.Fprintf(streams.Prose(), "%s requested changes; ask them to review again on GitHub, or set submit.rerequest_review = \"always\"\n", who)
+			switch {
+			case how == model.AnsweredNobody:
+				fmt.Fprintf(streams.Prose(), "%s requested changes, and nobody was here to say whether to ask them to review again; the next dockhand submit asks, or set submit.rerequest_review = \"always\"\n", who)
+			case again:
+				plan.Request.Rerequest, plan.Request.RerequestAnswer = true, model.ReviewYes
+			default:
+				plan.Request.RerequestAnswer = model.ReviewNo
 			}
 		}
-		plan.Request.Rerequest = again
 	}
 	submitted, err := e.ApplySubmit(ctx, plan, answered)
 	if err != nil && submitted.PullRequest.Ref.Number == 0 {
+		// Before a pull request is known, --json still says what is owed,
+		// a push that landed and an opening that didn't among them (#191,
+		// group F).
+		if len(submitted.Pending) > 0 {
+			result := view.SubmitView(plan)
+			result.PullRequest = &view.SubmittedJSON{Pushed: submitted.Pushed, Draft: plan.Request.Draft, ChangesRequestedBy: []view.ChangesRequestedJSON{}, Pending: pendingJSON(submitted.Pending)}
+			streams.Emit(result)
+		}
 		return submitted, err
 	}
 	return submitted, errors.Join(err, followUp(ctx, e, streams, plan, submitted, rerequest))
+}
+
+// pendingJSON are the steps a submission still owes, as --json says them.
+func pendingJSON(owed []engine.Pending) []view.PendingJSON {
+	pending := []view.PendingJSON{}
+	for _, step := range owed {
+		pending = append(pending, view.PendingJSON{Step: string(step.Step), Reason: string(step.Reason), Detail: step.Detail})
+	}
+	return pending
 }
 
 // StageWords are a submission as ship's stage line says it: the pull
@@ -339,9 +403,7 @@ func followUp(ctx context.Context, e *engine.Engine, streams term.Streams, plan 
 	result := view.SubmitView(plan)
 	result.PullRequest = &view.SubmittedJSON{Number: pr.Ref.Number, URL: pr.Ref.URL, Created: submitted.Created, Pushed: submitted.Pushed, Draft: plan.Request.Draft,
 		UpdatedTitle: submitted.Edited.Title, UpdatedDescription: submitted.Edited.Body, ChangesRequestedBy: []view.ChangesRequestedJSON{}, Pending: []view.PendingJSON{}}
-	for _, owed := range submitted.Pending {
-		result.PullRequest.Pending = append(result.PullRequest.Pending, view.PendingJSON{Step: string(owed.Step), Reason: string(owed.Reason), Detail: owed.Detail})
-	}
+	result.PullRequest.Pending = pendingJSON(submitted.Pending)
 	defer func() { streams.Emit(result) }()
 	switch {
 	case submitted.Created && plan.Request.Draft:
@@ -409,7 +471,7 @@ func previewTidy(ctx context.Context, e *engine.Engine, streams term.Streams, br
 	}
 	fmt.Fprintf(streams.Prose(), "%s · commits first, %s\n", branch.ShortName(), view.DescribeWork(proposal))
 	streams.Emit(view.TidyView(proposal))
-	view.WriteTidyPlan(streams.Prose(), proposal, false)
+	view.WriteTidyPlan(streams.Prose(), streams.Out, proposal, false)
 	fmt.Fprintln(streams.Prose(), "Nothing was committed or submitted (--plan). dockhand submit makes these commits, then shows what it submits.")
 	return nil
 }

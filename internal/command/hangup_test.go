@@ -6,7 +6,9 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"syscall"
@@ -31,11 +33,17 @@ const hangupDir = "DOCKHAND_TEST_HANGUP_DIR"
 // terminal gone before the hangup, its output a pipe no one reads, doesn't
 // end the unwind either. A dockhand started with hangups ignored, as
 // nohup starts it, keeps them ignored and its check runs on to its end.
+// The test process itself must start with hangups heeded: one started
+// under nohup passes the ignore to its children, which keep it, and the
+// two terminal cases then wait out their bound (#302's stress run).
 func TestAHangupUnwindsACheck(t *testing.T) {
 	t.Parallel()
 	if dir := os.Getenv(hangupDir); dir != "" {
 		hungUpCheck(t, dir)
 		return
+	}
+	if signal.Ignored(syscall.SIGHUP) {
+		t.Fatal("this test sends its child a hangup, and the test process started with SIGHUP ignored (as under nohup), which its children inherit and dockhand honours; run it without nohup")
 	}
 	for _, c := range []struct {
 		name        string
@@ -95,7 +103,7 @@ func TestAHangupUnwindsACheck(t *testing.T) {
 			select {
 			case err = <-ended:
 			case <-time.After(testsupport.Settle):
-				t.Fatal("dockhand didn't end after the hangup")
+				t.Fatalf("dockhand didn't end after the hangup; its goroutines:\n%s\nits output:\n%s", goroutines(child.Process, dir), output.String())
 			}
 			var exit *exec.ExitError
 			if errors.As(err, &exit) {
@@ -121,6 +129,29 @@ func TestAHangupUnwindsACheck(t *testing.T) {
 	}
 }
 
+// goroutines asks the child for its goroutines, which it writes to dir
+// on SIGUSR1 (hungUpCheck), and is what it wrote, or why there's nothing.
+// SIGQUIT's dump would go to standard error, which for a terminal gone is
+// a pipe no one reads.
+func goroutines(child *os.Process, dir string) string {
+	name := filepath.Join(dir, "goroutines.txt")
+	if err := child.Signal(syscall.SIGUSR1); err != nil {
+		return "not asked: " + err.Error()
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if data, err := os.ReadFile(filepath.Join(dir, "goroutines.done")); err == nil && len(data) > 0 {
+			dump, err := os.ReadFile(name)
+			if err != nil {
+				return err.Error()
+			}
+			return string(dump)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return "none written in 10s"
+}
+
 // hungUpCheck is the test binary as dockhand running a check in the
 // foreground, its build waiting until it's stopped or the test releases
 // it, when it passes: its context is the process's, as main's is, and what
@@ -134,6 +165,19 @@ cat > "$(dirname "$1")/result.json" <<JSON
 {"version": 1, "targets": [{"id": "jq", "outcome": "passed"}]}
 JSON
 `)
+	// A goroutine dump on SIGUSR1, for the test that waits on this
+	// process (goroutines): test code, in this re-run test binary alone.
+	asked := make(chan os.Signal, 1)
+	signal.Notify(asked, syscall.SIGUSR1)
+	go func() {
+		for range asked {
+			if f, err := os.Create(filepath.Join(dir, "goroutines.txt")); err == nil {
+				_ = pprof.Lookup("goroutine").WriteTo(f, 2)
+				_ = f.Close()
+				_ = os.WriteFile(filepath.Join(dir, "goroutines.done"), []byte("done"), 0o600)
+			}
+		}
+	}()
 	ctx, stop := term.UntilStopped(context.Background())
 	defer stop()
 	err := cmdtest.RunFor(t, ctx, []string{"check"}, term.Streams{In: strings.NewReader(""), Out: os.Stdout, Err: os.Stderr})

@@ -54,6 +54,77 @@ func TestABranchWhoseChangesLandedIsOnMaster(t *testing.T) {
 	require.Empty(t, status.OnMaster, "master has another change")
 }
 
+func TestHistoricalCheckMarksOnlyThePortChangedSinceIt(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch := twoPortBranch(t, e)
+	checkHead(t, e, branch)
+
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{
+		"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# changed after check\n",
+	})
+	status, err := e.BranchStatus(t.Context(), branch)
+	require.NoError(t, err)
+	require.Equal(t, branchstate.CheckedOlder, status.CheckStanding())
+	require.Equal(t, map[string]HistoricalPortState{
+		"jq":        HistoricalPortChanged,
+		"libharbor": HistoricalPortUnchanged,
+	}, historicalPortStates(status.HistoricalResults))
+}
+
+func TestHistoricalCheckDoesNotMarkPortsForAnOutsideChange(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch := twoPortBranch(t, e)
+	checkHead(t, e, branch)
+
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{
+		"_resources/port1.0/group/github-1.0.tcl": "# group changed after check\n",
+	})
+	status, err := e.BranchStatus(t.Context(), branch)
+	require.NoError(t, err)
+	require.Equal(t, branchstate.CheckedOlder, status.CheckStanding())
+	require.Equal(t, map[string]HistoricalPortState{
+		"jq":        HistoricalPortUnchanged,
+		"libharbor": HistoricalPortUnchanged,
+	}, historicalPortStates(status.HistoricalResults))
+}
+
+func TestHistoricalCheckWithMissingTreeKeepsStatusAvailable(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch := twoPortBranch(t, e)
+	run := checkHead(t, e, branch)
+	revision, err := e.Revision(t.Context(), run.Revision)
+	require.NoError(t, err)
+
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{
+		"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# changed after check\n",
+	})
+	testsupport.Git(t, branch.Worktree, "add", "textproc/jq/Portfile")
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "jq: change after check")
+	tree := string(revision.Source.Tree)
+	object := filepath.Join(e.Repo.CommonDir, "objects", tree[:2], tree[2:])
+	require.FileExists(t, object)
+	require.NoError(t, os.Remove(object))
+
+	status, err := e.BranchStatus(t.Context(), branch)
+	require.NoError(t, err)
+	require.Equal(t, branchstate.CheckedOlder, status.CheckStanding())
+	require.Empty(t, status.HistoricalResults)
+}
+
+func historicalPortStates(results []HistoricalPortResult) map[string]HistoricalPortState {
+	states := make(map[string]HistoricalPortState, len(results))
+	for _, result := range results {
+		states[result.Port] = result.State
+	}
+	return states
+}
+
 // A running run's progress says what it's building, and the step, as the
 // Tart provider words it; logs says so for a target with no log yet (the
 // gnome-voice session's notes, 2026-10-20).

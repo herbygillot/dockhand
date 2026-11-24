@@ -97,7 +97,7 @@ func TestARevisionIsAssessedByItsNetChange(t *testing.T) {
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
 		for i := range 2 {
 			if err := tx.AddEdit(model.Edit{ID: model.EditID(fmt.Sprint("ed_", i)), Branch: branch.ID, Kind: model.EditUpdate, Port: "jq", Directory: "textproc/jq",
-				Subject: "jq: update", Files: []model.EditedFile{{Path: "textproc/jq/Portfile", Before: "a", After: "b"}}, At: at, Upstream: gpl}); err != nil {
+				Subject: "jq: update", Files: []model.EditedFile{{Path: "textproc/jq/Portfile", Before: "a", After: "b"}}, At: at, Written: at, Upstream: gpl}); err != nil {
 				return err
 			}
 		}

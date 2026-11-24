@@ -23,18 +23,24 @@ func (s *Service) resetRevision(ctx context.Context, request Request, input *sou
 	for _, profile := range profiles {
 		mode := macports.ObservationRequest{Platform: profile, Declarations: true}
 		before, err := input.observe.One(ctx, input.data, mode, !request.SharedRelease)
-		// A context its plan leaves, as one whose evaluation ended on a
-		// call the model has no answer for, keeps its revision as the
-		// Portfile has it, and the plan says it (Codex's review of #110
-		// and #125, finding 6).
-		if _, left := observe.Left(ctx, before, input.target.Name, input.data); err != nil && left {
+		decision, decisionErr := observe.DecideFetch(ctx, before, input.target.Name, input.data, input.portdirIn(before.Snapshot.Root), observe.FetchRevisionOnly, false, nil)
+		if decisionErr != nil {
+			return nil, decisionErr
+		}
+		// A context the shared fetch decision leaves keeps its revision as
+		// the Portfile has it, including an unanswered modeled evaluation.
+		if decision.Kind == observe.FetchLeft {
 			continue
 		}
 		if err != nil {
 			return nil, errProbeInconclusive.Because("baseline revision evaluation was inconclusive: %w", err)
 		}
 		after, err := input.observe.One(ctx, contents, mode, !request.SharedRelease)
-		if _, left := observe.Left(ctx, after, input.target.Name, contents); err != nil && left {
+		decision, decisionErr = observe.DecideFetch(ctx, after, input.target.Name, contents, input.portdirIn(after.Snapshot.Root), observe.FetchRevisionOnly, false, nil)
+		if decisionErr != nil {
+			return nil, decisionErr
+		}
+		if decision.Kind == observe.FetchLeft {
 			continue
 		}
 		if err != nil {

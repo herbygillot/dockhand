@@ -62,7 +62,7 @@ evidence.`,
 			// shell opens a check's kept clone, chosen by --on, read from the
 			// one selection; one attempt, or a provider's run, is refused by
 			// name, with its check, and so is a port the check didn't build
-			// (docs/designs/check-lifecycle.md, "Selection").
+			// (docs/designs/check-lifecycle.md at bbb4c0b7, "Selection").
 			selection, err := e.SelectBuild(ctx, engine.SelectRequest{Name: args[0], Release: on, Port: port})
 			if err != nil {
 				if !engine.IsCheckName(args[0]) && !errors.As(err, new(*engine.UnbuiltPortError)) {
@@ -77,7 +77,9 @@ evidence.`,
 			if test {
 				fmt.Fprintln(streams.Err, "Rerunning the test phase using the current port files and the existing build. Changes outside the test phase are not applied. This run does not count as a check result.")
 			}
-			code, err := e.Shell(ctx, engine.ShellRequest{Run: run, Release: selection.Release, Port: selection.Port, Command: command, Test: test, Input: streams.In, Output: streams.Prose(), Terminal: len(command) == 0 && !test,
+			// The command's output, or the shell's, is its own: payload,
+			// written raw (#94, Codex's read).
+			code, err := e.Shell(ctx, engine.ShellRequest{Run: run, Release: selection.Release, Port: selection.Port, Command: command, Test: test, Input: streams.In, Output: streams.Out, Terminal: len(command) == 0 && !test,
 				Notice: func(words string) { fmt.Fprintln(streams.Err, words) }})
 			if err != nil {
 				return err

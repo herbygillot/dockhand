@@ -12,7 +12,41 @@ import (
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
+// AddEdit records an edit whose files are written; one with Written zero
+// is refused, so a writer nobody moved to the preparation record's order
+// fails in its own test rather than leave an edit every reader hides
+// (#194).
 func (t *tx) AddEdit(e model.Edit) error {
+	if e.Written.IsZero() {
+		return fmt.Errorf("%w: edit %s has no written time; an edit recorded before its files goes through AddUnwritten", store.ErrConflict, e.ID)
+	}
+	return t.addEdit(e)
+}
+
+// AddUnwritten records an edit before its files are written (#194, step
+// 3): every reader but the settler's two passes over it until SetWritten.
+func (t *tx) AddUnwritten(e model.Edit) error {
+	if !e.Written.IsZero() {
+		return fmt.Errorf("%w: edit %s is already written", store.ErrConflict, e.ID)
+	}
+	return t.addEdit(e)
+}
+
+// SetWritten records that an unwritten edit's files are written.
+func (t *tx) SetWritten(edit model.EditID, at time.Time) error {
+	if at.IsZero() {
+		return fmt.Errorf("%w: edit %s: a written time is required", store.ErrConflict, edit)
+	}
+	return t.update("unwritten edit "+string(edit), "UPDATE edits SET written=? WHERE repository_id=? AND id=? AND written=0", millis(at), t.repo, edit)
+}
+
+// RemoveUnwritten removes an edit whose files were never written; a
+// written edit is never removed by it.
+func (t *tx) RemoveUnwritten(edit model.EditID) error {
+	return t.update("unwritten edit "+string(edit), "DELETE FROM edits WHERE repository_id=? AND id=? AND written=0", t.repo, edit)
+}
+
+func (t *tx) addEdit(e model.Edit) error {
 	if err := e.Validate(); err != nil {
 		return err
 	}
@@ -20,7 +54,7 @@ func (t *tx) AddEdit(e model.Edit) error {
 	if err != nil {
 		return err
 	}
-	upstream, release, https, held, source := "", "", "", "", ""
+	upstream, release, https, result, source := "", "", "", "", ""
 	if e.Upstream != nil {
 		data, err := json.Marshal(e.Upstream)
 		if err != nil {
@@ -42,12 +76,12 @@ func (t *tx) AddEdit(e model.Edit) error {
 		}
 		https = string(data)
 	}
-	if len(e.Held) > 0 {
-		data, err := json.Marshal(e.Held)
+	if e.Result != nil {
+		data, err := json.Marshal(e.Result)
 		if err != nil {
 			return err
 		}
-		held = string(data)
+		result = string(data)
 	}
 	if e.Source != nil {
 		data, err := json.Marshal(e.Source)
@@ -56,29 +90,43 @@ func (t *tx) AddEdit(e model.Edit) error {
 		}
 		source = string(data)
 	}
-	_, err = t.exec("INSERT INTO edits(repository_id, id, branch_id, kind, port, directory, subject, files, at, upstream, release, excepted, https, held, source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		t.repo, e.ID, e.Branch, e.Kind, e.Port, e.Directory, e.Subject, string(files), millis(e.At), upstream, release, strings.Join(e.Excepted, " "), https, held, source)
-	return err
-}
-
-func (t *tx) SetHeld(edit model.EditID, problems []string) error {
-	held := ""
-	if len(problems) > 0 {
-		data, err := json.Marshal(problems)
-		if err != nil {
-			return err
-		}
-		held = string(data)
+	written := int64(0)
+	if !e.Written.IsZero() {
+		written = millis(e.Written)
 	}
-	return t.update("edit "+string(edit), "UPDATE edits SET held=? WHERE repository_id=? AND id=?", held, t.repo, edit)
+	_, err = t.exec("INSERT INTO edits(repository_id, id, branch_id, kind, port, directory, subject, files, at, upstream, release, excepted, https, source, written, result) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		t.repo, e.ID, e.Branch, e.Kind, e.Port, e.Directory, e.Subject, string(files), millis(e.At), upstream, release, strings.Join(e.Excepted, " "), https, source, written, result)
+	return err
 }
 
 func (t *tx) SetExcepted(edit model.EditID, excepted []string) error {
 	return t.update("edit "+string(edit), "UPDATE edits SET excepted=? WHERE repository_id=? AND id=?", strings.Join(excepted, " "), t.repo, edit)
 }
 
+// Edits lists a branch's written edits, oldest first: an unwritten one is
+// the settler's alone (#194).
 func (t *tx) Edits(branch model.BranchID) ([]model.Edit, error) {
-	rows, err := t.conn.QueryContext(t.ctx, "SELECT id, branch_id, kind, port, directory, subject, files, at, upstream, release, excepted, https, held, source FROM edits WHERE repository_id=? AND branch_id=? ORDER BY at, rowid", t.repo, branch)
+	return t.queryEdits("WHERE repository_id=? AND branch_id=? AND written!=0 ORDER BY at, rowid", t.repo, branch)
+}
+
+// UnwrittenEdits lists a branch's edits recorded before their files and
+// not yet seen written, oldest first.
+func (t *tx) UnwrittenEdits(branch model.BranchID) ([]model.Edit, error) {
+	return t.queryEdits("WHERE repository_id=? AND branch_id=? AND written=0 ORDER BY at, rowid", t.repo, branch)
+}
+
+// Edit is one edit by its ID, written or not, which the record's two
+// witnesses read; false where there is none.
+func (t *tx) Edit(id model.EditID) (model.Edit, bool, error) {
+	edits, err := t.queryEdits("WHERE repository_id=? AND id=?", t.repo, id)
+	if err != nil || len(edits) == 0 {
+		return model.Edit{}, false, err
+	}
+	return edits[0], true, nil
+}
+
+func (t *tx) queryEdits(where string, args ...any) ([]model.Edit, error) {
+	rows, err := t.conn.QueryContext(t.ctx, "SELECT id, branch_id, kind, port, directory, subject, files, at, upstream, release, excepted, https, source, written, result FROM edits "+where, args...)
 	if err != nil {
 		return nil, storageError(err)
 	}
@@ -86,9 +134,9 @@ func (t *tx) Edits(branch model.BranchID) ([]model.Edit, error) {
 	var edits []model.Edit
 	for rows.Next() {
 		var e model.Edit
-		var files, upstream, release, excepted, https, held, source string
-		var at int64
-		if err := rows.Scan(&e.ID, &e.Branch, &e.Kind, &e.Port, &e.Directory, &e.Subject, &files, &at, &upstream, &release, &excepted, &https, &held, &source); err != nil {
+		var files, upstream, release, excepted, https, source, result string
+		var at, written int64
+		if err := rows.Scan(&e.ID, &e.Branch, &e.Kind, &e.Port, &e.Directory, &e.Subject, &files, &at, &upstream, &release, &excepted, &https, &source, &written, &result); err != nil {
 			return nil, storageError(err)
 		}
 		if excepted != "" {
@@ -109,20 +157,23 @@ func (t *tx) Edits(branch model.BranchID) ([]model.Edit, error) {
 				return nil, fmt.Errorf("%w: edit %s's links switched to https: %w", store.ErrUnavailable, e.ID, err)
 			}
 		}
-		if held != "" {
-			if err := json.Unmarshal([]byte(held), &e.Held); err != nil {
-				return nil, fmt.Errorf("%w: edit %s's hold: %w", store.ErrUnavailable, e.ID, err)
-			}
-		}
 		if source != "" {
 			if err := json.Unmarshal([]byte(source), &e.Source); err != nil {
 				return nil, fmt.Errorf("%w: edit %s's source move: %w", store.ErrUnavailable, e.ID, err)
+			}
+		}
+		if result != "" {
+			if err := json.Unmarshal([]byte(result), &e.Result); err != nil {
+				return nil, fmt.Errorf("%w: edit %s's result: %w", store.ErrUnavailable, e.ID, err)
 			}
 		}
 		if err := json.Unmarshal([]byte(files), &e.Files); err != nil {
 			return nil, fmt.Errorf("%w: edit %s: %w", store.ErrUnavailable, e.ID, err)
 		}
 		e.At = fromMillis(at)
+		if written != 0 {
+			e.Written = fromMillis(written)
+		}
 		edits = append(edits, e)
 	}
 	return edits, storageError(rows.Err())

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -94,12 +95,12 @@ commits, and its files are as they were when it was saved.`,
 			// one makes, as a branch of edits alone and no commits yet
 			// has (field testing on v0.7.0, #53); a plan of several asks
 			// for --squash.
-			proposal, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch, Squash: squash || message != "", Message: message, Author: author, Restyle: restyle})
+			proposal, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch, Attended: streams.Terminal(), Squash: squash || message != "", Message: message, Author: author, Restyle: restyle})
 			if err != nil {
 				return err
 			}
 			if message != "" && !squash {
-				plain, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch, Author: author, Restyle: restyle})
+				plain, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch, Attended: streams.Terminal(), Author: author, Restyle: restyle})
 				if err != nil {
 					return err
 				}
@@ -153,7 +154,7 @@ commits, and its files are as they were when it was saved.`,
 				view.WriteFindings(out, proposal)
 				return nil
 			}
-			view.WriteTidyPlan(out, proposal, false)
+			view.WriteTidyPlan(out, streams.Out, proposal, false)
 			if plan {
 				if saveTo == "" {
 					return nil
@@ -206,7 +207,7 @@ func applySaved(ctx context.Context, e *engine.Engine, streams term.Streams, fil
 	}
 	streams.Emit(view.TidyView(proposal))
 	fmt.Fprintf(streams.Prose(), "%s · the plan saved in %s\n", proposal.Branch.ShortName(), file)
-	view.WriteTidyPlan(streams.Prose(), proposal, true)
+	view.WriteTidyPlan(streams.Prose(), streams.Out, proposal, true)
 	if blocking := proposal.Blocking(); len(blocking) > 0 {
 		return fmt.Errorf("the plan can't be applied yet: %s", strings.Join(blocking, "; "))
 	}
@@ -218,6 +219,7 @@ func applySaved(ctx context.Context, e *engine.Engine, streams term.Streams, fil
 // items: git restore restores files, and dockhand's restores history).
 func UndoCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
+	var plan bool
 	cmd := &cobra.Command{
 		Use: "undo [<checkpoint> | <check>]",
 		// v0.3.0's restore points here, not run as an alias.
@@ -252,7 +254,13 @@ checked out here.`,
 					return errors.New("a checkpoint or check identifies its branch; name it or select a branch, not both")
 				}
 				if model.IsRunName(args[0]) {
+					if plan {
+						return showUndoPlan(ctx, e, streams, args[0])
+					}
 					return putBack(ctx, e, streams, args[0])
+				}
+				if plan {
+					return showUndoPlan(ctx, e, streams, args[0])
 				}
 				return restoreCheckpoint(ctx, e, streams, args[0])
 			}
@@ -264,12 +272,57 @@ checked out here.`,
 			if err != nil {
 				return err
 			}
+			if plan {
+				return showUndoPlan(ctx, e, streams, name)
+			}
 			return restoreCheckpoint(ctx, e, streams, name)
 		},
 	}
 	where.Register(cmd, s, "undo in")
+	cmd.Flags().BoolVar(&plan, "plan", false, "show what undo would restore and change nothing")
 	settings.SupportsJSON(cmd)
 	return cmd
+}
+
+// showUndoPlan prints the engine's read-only description of a checkpoint or
+// a check's prefix restoration.
+func showUndoPlan(ctx context.Context, e *engine.Engine, streams term.Streams, name string) error {
+	proposal, err := e.PlanUndo(ctx, name)
+	if err != nil {
+		return err
+	}
+	streams.Emit(proposal)
+	writeUndoPlan(streams.Prose(), proposal)
+	return nil
+}
+
+func writeUndoPlan(out io.Writer, proposal engine.UndoPlan) {
+	if proposal.Checkpoint != nil {
+		checkpoint := proposal.Checkpoint
+		fmt.Fprintf(out, "%s · %s\n", proposal.Branch.ShortName(), checkpoint.Name())
+		if checkpoint.Kind == model.CheckpointRebase {
+			fmt.Fprintf(out, "Restore history and files to %s, on master %s again.\n", checkpoint.Before.Short(), proposal.Branch.Base.Short())
+			fmt.Fprintln(out, "An uncommitted change to a file master changed would stop restoration.")
+		} else {
+			fmt.Fprintf(out, "Restore history to %s. The files are unchanged.\n", checkpoint.Before.Short())
+		}
+		fmt.Fprintln(out, "No Git ref, index, file, or store record was changed.")
+		fmt.Fprintln(out, "Nothing was restored (--plan).")
+		return
+	}
+	fmt.Fprintf(out, "%s · active ports that differ from the snapshot\n", proposal.Run.Name())
+	for _, prefix := range proposal.Prefixes {
+		fmt.Fprintf(out, "  %s · MacPorts snapshot %s\n", prefix.Place, prefix.Snapshot)
+		for _, change := range prefix.Changes {
+			if change.Previous == "" {
+				fmt.Fprintf(out, "    deactivate %s @%s\n", change.Port, change.Current)
+			} else {
+				fmt.Fprintf(out, "    %s @%s → @%s\n", change.Port, change.Current, change.Previous)
+			}
+		}
+	}
+	fmt.Fprintln(out, "No prefix or store record was changed.")
+	fmt.Fprintln(out, "Nothing was restored (--plan).")
 }
 
 // putBack puts back what a check changed of the person's own and left,

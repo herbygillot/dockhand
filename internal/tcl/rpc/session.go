@@ -30,6 +30,18 @@ var ErrHandshake = errors.New("rpc: no handshake")
 
 var ErrBrokenSession = errors.New("rpc: session broken")
 
+// BrokenError is a session that broke, with the worker's last line on
+// standard error where it wrote one, for a person to be told what ended
+// it. It is ErrBrokenSession.
+type BrokenError struct {
+	Cause  error
+	Stderr string
+}
+
+func (e *BrokenError) Error() string        { return ErrBrokenSession.Error() + ": " + e.Cause.Error() }
+func (e *BrokenError) Unwrap() error        { return e.Cause }
+func (e *BrokenError) Is(target error) bool { return target == ErrBrokenSession }
+
 var ErrLineLimit = errors.New("rpc: line limit exceeded")
 
 var ErrFrameLimit = errors.New("rpc: frame limit exceeded")
@@ -195,10 +207,17 @@ func (s *Session) Call(ctx context.Context, op string, args ...string) (string, 
 
 func (s *Session) breakSession(cause error) error {
 	if s.broken == nil {
-		s.broken = fmt.Errorf("%w: %w", ErrBrokenSession, cause)
+		s.broken = &BrokenError{Cause: cause, Stderr: lastLine(s.proc.StderrTail())}
 	}
 	s.proc.Kill()
 	return s.broken
+}
+
+// lastLine is the last line of what a worker wrote, trimmed; empty where
+// it wrote nothing.
+func lastLine(written []byte) string {
+	lines := strings.Split(strings.TrimSpace(string(written)), "\n")
+	return strings.TrimSpace(lines[len(lines)-1])
 }
 
 func (s *Session) roundTrip(op string, args []string) (string, error) {

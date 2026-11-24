@@ -176,14 +176,36 @@ func emit(ctx context.Context, level Level, format string, args ...any) {
 // run for longer than delay: the first outdated after a rebuild printed
 // nothing for 13 minutes, waiting on something it didn't say (field
 // testing at c9ad2112). A step that ends sooner says nothing. stop ends the
-// wait, and is safe to call more than once.
+// wait, and is safe to call more than once: once it returns, the report is
+// made or never will be, so no line follows the step's end, where a timer's
+// own Stop leaves one already begun to print after the command returned
+// (#295's race run).
 func After(ctx context.Context, delay time.Duration, format string, args ...any) (stop func()) {
+	return after(ctx, Info, delay, format, args...)
+}
+
+// VerboseAfter is After at verbose level, as serve's, which nobody waits
+// on, says a slow step.
+func VerboseAfter(ctx context.Context, delay time.Duration, format string, args ...any) (stop func()) {
+	return after(ctx, Verbose, delay, format, args...)
+}
+
+func after(ctx context.Context, level Level, delay time.Duration, format string, args ...any) (stop func()) {
+	var mu sync.Mutex
+	stopped := false
 	timer := time.AfterFunc(delay, func() {
-		if ctx.Err() == nil {
-			emit(ctx, Info, format, args...)
+		mu.Lock()
+		defer mu.Unlock()
+		if !stopped && ctx.Err() == nil {
+			emit(ctx, level, format, args...)
 		}
 	})
-	return func() { timer.Stop() }
+	return func() {
+		timer.Stop()
+		mu.Lock()
+		defer mu.Unlock()
+		stopped = true
+	}
 }
 
 // WithoutReports suppresses reporters and observers while preserving cancellation.

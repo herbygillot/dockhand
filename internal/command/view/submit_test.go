@@ -2,14 +2,51 @@ package view
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 )
+
+func TestThePreviewListsAcceptedUpstreamFindingsAsAccepted(t *testing.T) {
+	t.Parallel()
+	license := model.UpstreamChange{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed", Hold: true, Rule: "license-changed"}
+	plan := engine.SubmitPlan{
+		Branch:   model.Branch{Name: "dockhand/neonmodem-update"},
+		Upstream: []engine.PortComparison{{Port: "neonmodem", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{license}}}},
+		Decided:  map[string]model.Decision{"neonmodem license-changed": {Subject: "neonmodem license-changed", Answer: model.Accepted, Words: "the license remains free"}},
+	}
+	var out bytes.Buffer
+	WriteSubmitPlan(&out, plan, false)
+	words := out.String()
+	require.Contains(t, words, "accepted: LICENSE changed [license-changed]")
+	require.Contains(t, words, "the license remains free")
+	require.NotContains(t, words, "! held: LICENSE changed")
+	require.NotContains(t, words, "Serve and ship --yes wait on these")
+
+	plan.Decided = nil
+	out.Reset()
+	WriteSubmitPlan(&out, plan, false)
+	require.Contains(t, out.String(), "! held: LICENSE changed [license-changed]")
+	require.Contains(t, out.String(), "Serve and ship --yes wait on these")
+}
+
+func TestThePreviewNamesFindingsAllowedByHoldsAllow(t *testing.T) {
+	t.Parallel()
+	lines := previewComparisonLines([]engine.PreviewUpstreamComparison{{
+		Port: "neonmodem",
+		Changes: []engine.PreviewUpstreamFinding{{
+			Change:  model.UpstreamChange{Kind: "dependency", Path: "go.mod", Message: "upstream: go.mod changed", Rule: "local-policy"},
+			Allowed: true,
+		}},
+	}})
+	require.Equal(t, []string{"  allowed by holds.allow: go.mod changed [local-policy]"}, lines)
+}
 
 // The preview says what would hold serve's submission, which a person's
 // own goes ahead of: a major version, a raised floor, and a port its
@@ -67,4 +104,41 @@ func TestNoChecksWordsNameTheReleasesCIBuildsOn(t *testing.T) {
 	require.Equal(t, "none (--no-check); MacPorts CI builds on macOS 15 and 26, and the pull request says nothing covers any other release", CheckWords(plan))
 	plan.CIReleases = nil
 	require.Equal(t, "none (--no-check); the pull request says so", CheckWords(plan))
+}
+
+func TestSubmitJSONCarriesTheUncheckedBuildHoldBlock(t *testing.T) {
+	t.Parallel()
+	block := branchstate.Block{Kind: branchstate.BlockNoCheckBuildHold, Holds: []model.Concern{{Port: "jq", Rule: "patch-rejected", Detail: "patch.diff doesn't apply"}}}
+	plan := engine.SubmitPlan{
+		Request:  engine.SubmitRequest{NoCheck: true},
+		Blocks:   []branchstate.Block{block},
+		Blocking: []string{block.Words(engine.Vocabulary{})},
+	}
+	encoded, err := json.Marshal(SubmitView(plan))
+	require.NoError(t, err)
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(encoded, &result))
+	blocks, ok := result["blocks"].([]any)
+	require.True(t, ok)
+	require.Equal(t, string(branchstate.BlockNoCheckBuildHold), blocks[0].(map[string]any)["kind"])
+	blocking, ok := result["blocking"].([]any)
+	require.True(t, ok)
+	require.Equal(t, block.Words(engine.Vocabulary{}), blocking[0])
+}
+
+func TestSubmitPreviewSaysNoCheckWillBeRefusedForBuildHold(t *testing.T) {
+	t.Parallel()
+	block := branchstate.Block{Kind: branchstate.BlockNoCheckBuildHold, Holds: []model.Concern{{Port: "jq", Rule: "patch-rejected", Detail: "patch.diff doesn't apply"}}}
+	plan := engine.SubmitPlan{
+		Branch:   model.Branch{Name: "dockhand/jq-update"},
+		Request:  engine.SubmitRequest{NoCheck: true},
+		Blocks:   []branchstate.Block{block},
+		Blocking: []string{block.Words(engine.Vocabulary{})},
+	}
+	var out bytes.Buffer
+	WriteSubmitPlan(&out, plan, false)
+	require.Contains(t, out.String(), "can't submit yet")
+	require.Contains(t, out.String(), "--no-check is refused because these holds say the build fails")
+	require.Contains(t, out.String(), "patch-rejected")
+	require.Contains(t, out.String(), "holds.allow")
 }

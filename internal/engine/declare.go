@@ -56,7 +56,7 @@ func (e *Engine) declareTidy(ctx context.Context, plan *TidyPlan) error {
 	var order []string
 	var declared []Declaration
 	for _, finding := range findings {
-		if finding.Port == "" || finding.Unread || finding.Clean || finding.Unlinked {
+		if finding.Port == "" || finding.Unread || finding.Clean || finding.Unlinked || finding.Unowned {
 			continue
 		}
 		target, ok := targets[finding.Target]

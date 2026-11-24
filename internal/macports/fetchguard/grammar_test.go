@@ -468,14 +468,24 @@ func TestTheGuardJudgesWhatDictAndTheMatchCommandsWrite(t *testing.T) {
 		return Assess(plain, "portfetch::fetch_main", "{global {*}[info globals]\n"+hook+"return -code error no\n}", "", nil, defs)
 	}
 	for hook, writes := range map[string]string{
-		"dict for {k v} $d { distfiles-append x }\n": "distfiles",
-		"dict for {distfiles v} $d { ui_msg $v }\n":  "distfiles",
-		"array set distfiles {a b}\n":                "distfiles",
-		"regsub a b c distfiles\n":                   "distfiles",
-		"regsub -all -- a b c distfiles\n":           "distfiles",
-		"regexp {(.*)} $name all distfiles\n":        "distfiles",
-		"regexp -start 2 {(.*)} $name distfiles\n":   "distfiles",
-		"scan $version %d.%d major distfiles\n":      "distfiles",
+		"dict for {k v} $d { distfiles-append x }\n":     "distfiles",
+		"dict for {distfiles v} $d { ui_msg $v }\n":      "distfiles",
+		"array set distfiles {a b}\n":                    "distfiles",
+		"regsub a b c distfiles\n":                       "distfiles",
+		"regsub -all -- a b c distfiles\n":               "distfiles",
+		"regexp {(.*)} $name all distfiles\n":            "distfiles",
+		"regexp -start 2 {(.*)} $name distfiles\n":       "distfiles",
+		"scan $version %d.%d major distfiles\n":          "distfiles",
+		"dict for {::distfiles v} $d { ui_msg $v }\n":    "distfiles",
+		"set ::distfiles x\n":                            "distfiles",
+		"regsub a b c ::distfiles\n":                     "distfiles",
+		"variable ::distfiles changed\n":                 "distfiles",
+		"variable seen 1 distfiles changed\n":            "distfiles",
+		"string is integer -failindex distfiles $v\n":    "distfiles",
+		"string is integer -strict -fail distfiles $v\n": "distfiles",
+		"info default helper arg distfiles\n":            "distfiles",
+		"info d helper arg ::distfiles\n":                "distfiles",
+		"expr {[set distfiles x]}\n":                     "distfiles",
 	} {
 		semantics := assess(hook)
 		require.Equal(t, "custom", semantics.Kind, hook)
@@ -485,6 +495,14 @@ func TestTheGuardJudgesWhatDictAndTheMatchCommandsWrite(t *testing.T) {
 		"regsub -command {string toupper} a b c out\n",
 		"regsub -unknown a b c out\n",
 		"dict for k $d { ui_msg $k }\n",
+		"dict for {{distfiles} v} $d { ui_msg $v }\n",
+		"foreach {{distfiles} v} $pairs { ui_msg $v }\n",
+		"lsort -command compare $names\n",
+		"lsort -c compare $names\n",
+		"lsort $how $names\n",
+		"string is integer $how out $v\n",
+		"string $sub integer -failindex distfiles $v\n",
+		"info $sub helper arg distfiles\n",
 	} {
 		require.Equal(t, "custom", assess(hook).Kind, "%s: not followed by the grammar", hook)
 	}
@@ -496,6 +514,13 @@ func TestTheGuardJudgesWhatDictAndTheMatchCommandsWrite(t *testing.T) {
 		"regexp {^(\\d+)} $version all major\n",
 		"if {[regexp {^1} $version]} { ui_msg one }\n",
 		"scan $version %d.%d major minor\n",
+		"variable seen 1\n",
+		"variable distfiles\n",
+		"string is integer -failindex at $v\n",
+		"info default helper arg value\n",
+		"info exists distfiles\n",
+		"lsort -index 1 -decreasing $pairs\n",
+		"expr {$a + 1}\n",
 	} {
 		semantics := assess(hook)
 		require.Empty(t, semantics.Problem, hook)

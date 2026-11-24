@@ -31,6 +31,9 @@ func TestPatchesAreSaidAgainstTheCandidatesSource(t *testing.T) {
 		"· patch-still.diff, which the base applied, is dropped, though it still applies to 1.52.1's source: its fix may still be needed",
 	}, messages(comparison.Changes))
 	require.Equal(t, []string{PatchRejected, PatchDropped, PatchDropped}, []string{comparison.Changes[0].Rule, comparison.Changes[1].Rule, comparison.Changes[2].Rule})
+	require.True(t, BlocksNoCheck(comparison.Changes[0].Rule), "the patch-rejected rule says this branch cannot build")
+	require.False(t, BlocksNoCheck(comparison.Changes[1].Rule), "dropping a patch is a review judgment")
+	require.False(t, BlocksNoCheck(comparison.Changes[2].Rule), "a dropped patch that still applies is a review judgment")
 	require.Equal(t, []model.Coverage{
 		{Path: "patch-kept.diff", Relevance: "used", Treatment: "inspected", Policy: "patch-applies", Reason: "applies to 1.52.1's source"},
 		{Path: "patch-elsewhere.diff", Relevance: "used", Treatment: "set-apart", Policy: "patch-unchecked", Reason: "patch.dir leaves the source directory"},
@@ -46,5 +49,6 @@ func TestPatchesAreSaidAgainstTheCandidatesSource(t *testing.T) {
 	require.Len(t, fuzzed.Changes, 1)
 	require.Equal(t, PatchFuzz, fuzzed.Changes[0].Rule)
 	require.True(t, fuzzed.Changes[0].Hold)
+	require.False(t, BlocksNoCheck(fuzzed.Changes[0].Rule), "a fuzzed patch may still build")
 	require.Equal(t, "patch-fuzzy.diff applies to 1.52.1's source only with fuzz, hunk 2 with fuzz 1, and a fuzzed hunk can land in the wrong place and still build: look at where it lands", fuzzed.Changes[0].Message)
 }

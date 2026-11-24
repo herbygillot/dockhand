@@ -243,7 +243,7 @@ type SetupResult struct {
 // golden copy that a lost image is restored from. An image that exists is checked in a
 // disposable clone instead, and left as it is. Progress is written to
 // progress as it goes.
-func (p *Provider) Setup(ctx context.Context, options SetupOptions, progress io.Writer) (SetupResult, error) {
+func (p *Provider) Setup(ctx context.Context, options SetupOptions, progress, output io.Writer) (SetupResult, error) {
 	if options.Check && options.Rebuild {
 		return SetupResult{}, errors.New("--check and --rebuild cannot be used together; choose one")
 	}
@@ -294,7 +294,7 @@ func (p *Provider) Setup(ctx context.Context, options SetupOptions, progress io.
 	if err != nil {
 		return SetupResult{}, err
 	}
-	provisioner := provision.Provisioner{Progress: progress, Config: config}
+	provisioner := provision.Provisioner{Progress: progress, Output: output, Config: config}
 	result, err := provisioner.Run(ctx, provision.Options{Check: options.Check, Rebuild: options.Rebuild})
 	if err != nil {
 		return SetupResult{}, err

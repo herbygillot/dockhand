@@ -2,6 +2,7 @@ package view
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -17,6 +18,41 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
 )
+
+func TestStatusListsKeptCloneSizeAgeAndOldAskedRemoval(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC)
+	clone := engine.Leftover{Leftover: buildenv.Leftover{Ref: "dockhand-check-run-7-tahoe-1", Size: 28, KeptAt: now.Add(-8 * 24 * time.Hour)}, Run: &model.Run{ID: "run_7", Number: 7}}
+	viewed := KeptClonesView([]engine.Leftover{clone}, now)
+	require.Equal(t, []KeptCloneJSON{{Check: "check-7", Clone: clone.Ref, SizeGiB: 28, Age: "8 days", Reason: "asked", OldAsked: true, ShellCommand: "dockhand shell check-7", RemovalCommand: "dockhand clean --kept check-7"}}, viewed)
+	words := KeptCloneWords(viewed[0])
+	require.Contains(t, words, "28.0 GiB")
+	require.Contains(t, words, "8 days old")
+	require.Contains(t, words, "dockhand clean --kept check-7")
+	encoded, err := json.Marshal(StatusJSON{Attention: []attentionJSON{}, KeptClones: viewed})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"attention":[],"kept_clones":[{"check":"check-7","clone":"dockhand-check-run-7-tahoe-1","size_gib":28,"age":"8 days","reason":"asked","old_asked":true,"shell_command":"dockhand shell check-7","removal_command":"dockhand clean --kept check-7"}]}`, string(encoded))
+	second := clone
+	second.Ref = "dockhand-check-run-7-tahoe-2"
+	second.Execution = &model.GuestExecution{Environment: model.Environment{Provider: "tart", Platform: model.Platform{Version: "26"}}}
+	first := clone
+	first.Execution = &model.GuestExecution{Environment: model.Environment{Provider: "tart", Platform: model.Platform{Version: "25"}}}
+	several := KeptClonesView([]engine.Leftover{first, second}, now)
+	require.Equal(t, "dockhand shell check-7 --on 25", several[0].ShellCommand)
+	require.Equal(t, "dockhand shell check-7 --on 26", several[1].ShellCommand)
+}
+
+func TestPlanJSONNamesKeptCloneReplacements(t *testing.T) {
+	t.Parallel()
+	plan := model.Plan{ReplacesKept: []model.KeptCloneReplacement{{Check: "check-12", Release: "tart macOS 26 (Tahoe) arm64"}}}
+	viewed := PlanView(plan)
+	require.Equal(t, plan.ReplacesKept, viewed.ReplacesKept)
+	encoded, err := json.Marshal(struct {
+		ReplacesKept []model.KeptCloneReplacement `json:"replaces_kept,omitempty"`
+	}{viewed.ReplacesKept})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"replaces_kept":[{"check":"check-12","release":"tart macOS 26 (Tahoe) arm64"}]}`, string(encoded))
+}
 
 // A plan names the subport a branch changes, its siblings on a line of
 // their own, built as MacPorts' CI builds every subport of a changed
@@ -48,13 +84,13 @@ func TestAPlanNamesTheChangedSubportAndItsSiblings(t *testing.T) {
 			{Environment: tahoe, Exclusions: excluded, Order: []model.TargetID{"terraform-1.16"}},
 		}}
 	var out bytes.Buffer
-	WritePlan(&out, plan, nil, engine.Siblings{Targets: siblings}, nil, listShown)
+	WritePlan(&out, plan, nil, engine.Siblings{Targets: siblings}, nil, listShown, false)
 	require.Contains(t, out.String(), "Changed     terraform-1.16\n")
 	require.Contains(t, out.String(), "Siblings    terraform_select, terraform-1.0, terraform-1.1, terraform-1.2, terraform-1.3 (MacPorts CI builds every subport of a changed Portfile; use --only to narrow the check)\n")
 	require.Contains(t, out.String(), fmt.Sprintf("Excluded    terraform_select, terraform-1.0, terraform-1.1, terraform-1.2, terraform-1.3: %s\n", minmax))
 
 	out.Reset()
-	WritePlan(&out, plan, nil, engine.Siblings{}, nil, listShown)
+	WritePlan(&out, plan, nil, engine.Siblings{}, nil, listShown, false)
 	require.Contains(t, out.String(), "Changed     terraform-1.16, terraform_select, terraform-1.0, terraform-1.1, terraform-1.2, terraform-1.3\n", "with no record, as before")
 	require.NotContains(t, out.String(), "Siblings")
 }
@@ -71,13 +107,13 @@ func TestAPlanOfARevisionBumpNamesItsSiblingsOrWhyNot(t *testing.T) {
 	}
 	plan := model.Plan{Targets: targets, Environments: []model.Environment{{Provider: "command"}}}
 	var out bytes.Buffer
-	WritePlan(&out, plan, nil, engine.Siblings{Targets: map[model.TargetID]bool{"zdemo-devel": true, "zdemo-legacy": true}}, nil, listShown)
+	WritePlan(&out, plan, nil, engine.Siblings{Targets: map[model.TargetID]bool{"zdemo-devel": true, "zdemo-legacy": true}}, nil, listShown, false)
 	require.Contains(t, out.String(), "Changed     zdemo (revision only)\n")
 	require.Contains(t, out.String(), "Siblings    zdemo-devel, zdemo-legacy (MacPorts CI builds every subport of a changed Portfile; use --only to narrow the check)\n")
 	require.NotContains(t, out.String(), "couldn't be narrowed")
 
 	out.Reset()
-	WritePlan(&out, plan, nil, engine.Siblings{Unnarrowed: []engine.Unnarrowed{{Directory: "devel/zdemo", Reason: "the revision couldn't be evaluated: boom"}}}, nil, listShown)
+	WritePlan(&out, plan, nil, engine.Siblings{Unnarrowed: []engine.Unnarrowed{{Directory: "devel/zdemo", Reason: "the revision couldn't be evaluated: boom"}}}, nil, listShown, false)
 	require.Contains(t, out.String(), "Changed     zdemo (revision only), zdemo-devel (revision only), zdemo-legacy (revision only)\n"+
 		"            every subport of zdemo is listed as changed; they couldn't be narrowed to what changed: the revision couldn't be evaluated: boom\n")
 	require.NotContains(t, out.String(), "Siblings")
@@ -100,6 +136,40 @@ func TestWriteLinks(t *testing.T) {
 		"    crystal links libraries from boehmgc and pcre2, all declared in depends_lib\n"+
 		"    pcre2 links zlib's libraries, declared in depends_lib\n"+
 		"    jq links no other port's libraries\n", out.String())
+}
+
+func TestLinkReportNamesLibraryWithNoOwner(t *testing.T) {
+	t.Parallel()
+	findings := []engine.LinkFinding{{Target: "jq", Library: "/opt/local/lib/libxml2.2.dylib", Unowned: true}}
+	var out bytes.Buffer
+	WriteLinks(&out, findings)
+	require.Equal(t, "Links\n    jq links /opt/local/lib/libxml2.2.dylib, which no active port owns in this environment\n", out.String())
+	detail := LinkDetail(findings)
+	require.Len(t, detail, 1)
+	require.Equal(t, linkLineJSON{Mark: Unmarked, Words: "jq links /opt/local/lib/libxml2.2.dylib, which no active port owns in this environment", Unowned: true}, detail[0])
+}
+
+func TestLinkReportAndJSONRetainEveryUndeclaredPort(t *testing.T) {
+	t.Parallel()
+	findings := []engine.LinkFinding{
+		{Target: "jq", Port: "libffi", Library: "/opt/local/lib/libffi.8.dylib"},
+		{Target: "jq", Port: "libxml2", Library: "/opt/local/lib/libxml2.2.dylib"},
+		{Target: "jq", Port: "zlib", Library: "/opt/local/lib/libz.1.dylib"},
+	}
+	var out bytes.Buffer
+	WriteLinks(&out, findings)
+	for _, port := range []string{"libffi", "libxml2", "zlib"} {
+		require.Contains(t, out.String(), "from "+port)
+	}
+	lines := LinkDetail(findings)
+	require.Len(t, lines, 3)
+	for _, line := range lines {
+		require.Contains(t, []string{
+			"jq links libffi.8.dylib from libffi, which it doesn't declare in depends_lib. Declare it with depends_lib-append port:libffi; dockhand tidy can write this line",
+			"jq links libxml2.2.dylib from libxml2, which it doesn't declare in depends_lib. Declare it with depends_lib-append port:libxml2; dockhand tidy can write this line",
+			"jq links libz.1.dylib from zlib, which it doesn't declare in depends_lib. Declare it with depends_lib-append port:zlib; dockhand tidy can write this line",
+		}, line.Words)
+	}
 }
 
 // A declaration nothing links is a notice with where it belongs instead,
@@ -233,12 +303,12 @@ func TestVerboseNamesAWholeList(t *testing.T) {
 	plan := model.Plan{Targets: targets, Environments: []model.Environment{{Provider: "command"}}, Tests: model.TestsDeclared}
 	var out bytes.Buffer
 	streams := term.Begin(term.Streams{Out: &out}, nil)
-	WritePlan(streams.Out, plan, nil, engine.Siblings{}, nil, ListShown(streams))
+	WritePlan(streams.Out, plan, nil, engine.Siblings{}, nil, ListShown(streams), false)
 	require.Contains(t, out.String(), "Changed     20 ports: py300-thing, py301-thing, py302-thing, py303-thing, py304-thing, py305-thing, py306-thing, py307-thing and 12 more\n")
 
 	out.Reset()
 	streams.SetVerbosity(1)
-	WritePlan(&out, plan, nil, engine.Siblings{}, nil, ListShown(streams))
+	WritePlan(&out, plan, nil, engine.Siblings{}, nil, ListShown(streams), false)
 	require.Contains(t, out.String(), "Changed     "+strings.Join(names, ", ")+"\n", "all twenty at -v")
 }
 
@@ -323,7 +393,7 @@ func TestAPlanSaysAMoveAndARemoval(t *testing.T) {
 		Targets: []model.PlanTarget{{ID: "dockhand", Target: model.Target{Name: "dockhand"}, Directory: "macports/dockhand", MovedFrom: "sysutils/dockhand", Kind: model.RevisionOnly, Role: model.Changed}},
 		Removed: []string{"devel/gone"}}
 	var out bytes.Buffer
-	WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8)
+	WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8, false)
 	require.Contains(t, out.String(), "Changed     dockhand (moved from sysutils/dockhand)\n")
 	require.Contains(t, out.String(), "Removed     devel/gone, with no port to build\n")
 	require.Contains(t, out.String(), "github's workflow builds nothing for a moved port")
@@ -332,7 +402,7 @@ func TestAPlanSaysAMoveAndARemoval(t *testing.T) {
 	// Portfile (dockhand rename).
 	plan.Targets = []model.PlanTarget{{ID: "xgo", Target: model.Target{Name: "xgo"}, Directory: "lang/xgo", MovedFrom: "lang/goplus", Kind: model.Substantive, Role: model.Changed}}
 	out.Reset()
-	WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8)
+	WritePlan(&out, plan, nil, engine.Siblings{}, nil, 8, false)
 	require.Contains(t, out.String(), "Changed     xgo (renamed from goplus)\n")
 	require.NotContains(t, out.String(), "github's workflow builds nothing")
 }
@@ -366,13 +436,13 @@ func TestTidysPreviewNamesEveryTrailer(t *testing.T) {
 	t.Parallel()
 	hand := engine.TidyGroup{Directory: "net/curl", Paths: []string{"net/curl/Portfile"}, Message: "curl: fix the build with Secure Transport\n\nThe sectrust variant built without its framework.\n\nCloses: https://trac.macports.org/ticket/74620\nCo-authored-by: Ada <ada@example.com>"}
 	var out bytes.Buffer
-	WriteTidyPlan(&out, engine.TidyPlan{Groups: []engine.TidyGroup{hand}}, false)
+	WriteTidyPlan(&out, &out, engine.TidyPlan{Groups: []engine.TidyGroup{hand}}, false)
 	require.Contains(t, out.String(), "       keeps: Closes: https://trac.macports.org/ticket/74620\n       keeps: Co-authored-by: Ada <ada@example.com>\n")
 	require.NotContains(t, out.String(), "adds:", "a hand edit's commit adds nothing")
 
 	dockhands := engine.TidyGroup{Directory: "textproc/jq", Paths: []string{"textproc/jq/Portfile"}, Message: "jq: update to 1.8.1\n\nGenerated-By: Dockhand devel (https://github.com/herbygillot/dockhand)"}
 	out.Reset()
-	WriteTidyPlan(&out, engine.TidyPlan{Groups: []engine.TidyGroup{dockhands}}, false)
+	WriteTidyPlan(&out, &out, engine.TidyPlan{Groups: []engine.TidyGroup{dockhands}}, false)
 	require.Contains(t, out.String(), "       adds: Generated-By: Dockhand devel (https://github.com/herbygillot/dockhand)\n")
 	require.NotContains(t, out.String(), "keeps: Generated-By")
 }

@@ -73,11 +73,12 @@ type GitHub struct {
 	// ObserveErr fails every Observe, as a credential GitHub rejects does;
 	// Observed counts the reads.
 	ObserveErr error
-	// FindErr, where set, is every Find's answer.
-	FindErr  error
-	Observed int
-	Quiet    int
-	Searches int
+	// FindErr and InspectErr, where set, are every Find's or Inspect's
+	// answer.
+	FindErr, InspectErr error
+	Observed            int
+	Quiet               int
+	Searches            int
 	// Readied are the pull requests marked ready; ReadyRefused is GitHub
 	// refusing to mark one.
 	Readied      []int
@@ -129,9 +130,9 @@ type GitHub struct {
 	// opened, now where nil.
 	Person string
 	Clock  func() time.Time
-	// Observing, where set, runs before each Observe answers, as another
-	// process's push between two reads would.
-	Observing func(forge.PullRequestRef)
+	// Observing and Inspecting, where set, run before each Observe or
+	// Inspect answers, as another process's push between two reads would.
+	Observing, Inspecting func(forge.PullRequestRef)
 }
 
 // refused is a write's refusal where GitHub refuses it (Refuse).
@@ -464,6 +465,12 @@ func (g *GitHub) setDraft(number int, draft bool) {
 func (g *GitHub) Draft(number int) bool { return g.draft[number] }
 
 func (g *GitHub) Inspect(_ context.Context, ref forge.PullRequestRef) (forge.PullRequestStatus, error) {
+	if g.Inspecting != nil {
+		g.Inspecting(ref)
+	}
+	if g.InspectErr != nil {
+		return forge.PullRequestStatus{}, g.InspectErr
+	}
 	status, set := g.Statuses[ref.Number]
 	if !set {
 		status = g.Status
@@ -487,6 +494,10 @@ func (g *GitHub) Inspect(_ context.Context, ref forge.PullRequestRef) (forge.Pul
 		}
 		slices.Sort(status.Requested)
 		status.RequestedRead = !g.RequestsUnread
+	}
+	// The head is the branch's now, as GitHub's own reading gives it.
+	if pr, ok := g.PRs[ref.Number]; ok && status.Head == "" {
+		status.Head = g.head(pr.HeadRepository, pr.HeadBranch)
 	}
 	return status, nil
 }

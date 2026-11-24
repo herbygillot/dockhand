@@ -25,6 +25,20 @@ func started(t *testing.T, w cmdtest.World) *forgetest.GitHub {
 	return g
 }
 
+// startedFor is started as a branch of the name given.
+func startedFor(name string) func(*testing.T, cmdtest.World) *forgetest.GitHub {
+	return func(t *testing.T, w cmdtest.World) *forgetest.GitHub {
+		t.Helper()
+		cmdtest.Versioned(t, w)
+		cmdtest.WithBumper(t)
+		cmdtest.WithScript(t, w, "passed")
+		g := cmdtest.WithGitHub(t, w)
+		g.Others = nil
+		dockhand(t, "start", name)
+		return g
+	}
+}
+
 // edited is started with jq updated in it, not yet tidied.
 func edited(t *testing.T, w cmdtest.World) *forgetest.GitHub {
 	t.Helper()
@@ -84,6 +98,14 @@ func TestSweepResubmitAfterReview(t *testing.T) {
 func TestSweepUpdate(t *testing.T) {
 	t.Parallel()
 	sweep(t, named(t, "update"))
+}
+
+// An update that renames its branch for the version it moves to, by its
+// recorded intent: cut at any step, the next command finishes the rename
+// as the clean run made it (#194, 2b).
+func TestSweepUpdateRenaming(t *testing.T) {
+	t.Parallel()
+	sweep(t, named(t, "update renaming"))
 }
 
 // A tidy of an updated branch: its commit made, its checkpoint and the
@@ -187,11 +209,22 @@ func scenarios() []scenario {
 				"store.update@engine.(*Engine).rewritePublication#2/not-landed-unknown": "#191: the mark's write didn't land and said so, and the ask went anyway",
 			},
 		},
-		{name: "update", arrange: started, steps: [][]string{{"update", "jq", "-b", "jq-update"}},
+		// #194's agreement case: the edit is recorded before its files, so
+		// a record lost at either step leaves what the next command
+		// finishes, as the clean run's.
+		{name: "update", arrange: started, steps: [][]string{{"update", "jq", "-b", "jq-update"}}},
+		// A branch named for the version it moves from is renamed for the
+		// one it moves to, by its recorded intent: cut anywhere, the next
+		// command finishes the rename (#194, 2b).
+		{name: "update renaming", arrange: startedFor("jq-1.7.1"), steps: [][]string{{"update", "jq", "-b", "jq-1.7.1"}},
 			known: map[string]string{
-				// The edit made, its record failed: update again says jq is
-				// already at 1.8.1, and tidy calls the edit foreign.
-				"store.update@engine.(*Engine).update#1/!landed-unknown": "#194's agreement case: the edit is never recorded",
+				// A rename that fails keeps the branch's name this time and
+				// the update goes on, as the design says; the intent, where
+				// it was saved, is the next command's to finish (L4), which
+				// the sweep's one run doesn't make.
+				"store.update@engine.(*Engine).renameWithIntent#1/fail": "#194 2b: the intent didn't save; the branch keeps its name this time",
+				"git branch@engine.(*Engine).renameWithIntent#1/fail":   "#194 2b: Git's rename failed after the intent; the next command renames and saves it",
+				"store.update@engine.(*Engine).saveRenamed#1/fail":      "#194 2b: the save failed after Git's rename; the next command saves it",
 			}},
 		{name: "tidy", arrange: edited, steps: [][]string{{"tidy", "-b", "jq-update", "-y"}}},
 		{name: "undo", arrange: tidied, steps: [][]string{{"undo", "-b", "jq-update"}}},

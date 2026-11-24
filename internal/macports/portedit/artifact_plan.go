@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
@@ -64,20 +63,34 @@ func (s *Service) bindArchives(ctx context.Context, input *sourceInput, contents
 	return s.bindArchivesOn(ctx, input, contents, observed, false)
 }
 
-// bindArchivesOn is bindArchives, where here says the context is this Mac
+// bindArchivesOn asks for a judged plan, as main did: it checked left,
+// policy, and the modeled verdict before binding the archives. It is
+// bindArchives, where here says the context is this Mac
 // as it is: what the evaluation read of the host is the host's, so it
 // stands, where for a context modeled on another Mac it's inconclusive.
 // A checksum refresh reads cpi's this way, whose qmake5 PortGroup reads
 // the host's Qt paths (field testing at 43949b89).
 func (s *Service) bindArchivesOn(ctx context.Context, input *sourceInput, contents []byte, observed macports.Observation, here bool) (distfiles.Binding, error) {
-	if reason, left := observe.Left(ctx, observed, input.target.Name, contents); left {
-		return distfiles.Binding{}, errProbeInconclusive.Because("%s", reason)
+	need := observe.FetchJudgedPlan
+	if observed.Snapshot.Ports[input.target.Name].GitFetched() {
+		need = observe.FetchRevisionOnly
 	}
-	// This Mac's reading is taken as it stands, whatever it read.
-	port, _ := observe.Tolerate(ctx, observed.Ports[input.target.Name], contents, observed.Snapshot.Root)
-	info := observed.Snapshot.Ports[input.target.Name]
-	if err := distfetch.CheckPolicy(info, input.portdirIn(observed.Snapshot.Root)); err != nil {
+	decision, err := observe.DecideFetch(ctx, observed, input.target.Name, contents, input.portdirIn(observed.Snapshot.Root), need, false, nil)
+	if err != nil {
 		return distfiles.Binding{}, err
+	}
+	if decision.Kind == observe.FetchLeft {
+		return distfiles.Binding{}, errProbeInconclusive.Because("%s", decision.Reason)
+	}
+	if decision.Kind == observe.FetchRefused {
+		return distfiles.Binding{}, decision.Err
+	}
+	if decision.Kind == observe.FetchInconclusive && !here {
+		return distfiles.Binding{}, errProbeInconclusive.Because("%s", decision.Reason)
+	}
+	port, info := decision.Metadata, decision.Info
+	if decision.Kind == observe.FetchNoPlan && decision.HadProblems {
+		return distfiles.Binding{}, ErrUnsupported.Because("%v", port.Problems)
 	}
 	var resolve distfiles.Resolver
 	if here {
@@ -98,6 +111,8 @@ func (s *Service) bindArchivesOn(ctx context.Context, input *sourceInput, conten
 // edits its version alone; a checksum refresh has nothing to refresh.
 var errFetchesNothing = ErrUnsupported.Because("no downloadable source archives")
 
+// planObservedArchives uses revision-only decisions for its leave-context
+// preflight, as main did; archive binding below asks for a judged plan.
 func (s *Service) planObservedArchives(ctx context.Context, request Request, input *sourceInput, contents []byte) (*observedArchivePlan, error) {
 	profiles, err := input.observe.Profiles(ctx, contents)
 	if err != nil {
@@ -137,8 +152,11 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 				observed macports.Observation
 				contents []byte
 			}{{before, input.data}, {after, contents}} {
-				reason, left := observe.Left(ctx, read.observed, member.target.Name, read.contents)
-				if !left {
+				decision, err := observe.DecideFetch(ctx, read.observed, member.target.Name, read.contents, member.portdirIn(read.observed.Snapshot.Root), observe.FetchRevisionOnly, false, nil)
+				if err != nil {
+					return err
+				}
+				if decision.Kind != observe.FetchLeft {
 					continue
 				}
 				what := contextWords(profile, variant)
@@ -146,7 +164,7 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 					what = member.target.Name + " on " + what
 				}
 				if !slices.ContainsFunc(plan.left, func(l ChecksumLeft) bool { return l.What == what }) {
-					plan.left = append(plan.left, ChecksumLeft{Kind: LeftContext, What: what, Reason: reason})
+					plan.left = append(plan.left, ChecksumLeft{Kind: LeftContext, What: what, Reason: decision.Reason})
 				}
 				return nil
 			}
@@ -158,7 +176,7 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 			progress.VerboseReport(ctx, "%s is obsolete on %s %s %s; no archive to cover there", member.target.Name, profile.OS, profile.Version, profile.Architecture)
 			return nil
 		}
-		affected := old.Version != next.Version
+		affected := affectedMember(request, input, member, old, next)
 		if next.Fetch != nil && next.Fetch.Rejected {
 			progress.VerboseReport(ctx, "Preserving rejection-only fetch guard for %s %s %s; archive coverage does not establish build support", profile.OS, profile.Version, profile.Architecture)
 		}
@@ -402,4 +420,13 @@ func firstDigest(src []byte, cmd syntax.Command) (textedit.Span, bool) {
 		}
 	}
 	return textedit.Span{}, false
+}
+
+// affectedMember is whether a member's archives may move in a context:
+// where its version moved, or, asked of a port already current
+// (Request.ActOnCurrent), where its source moved at the version it is at
+// (planSourceOnCurrent). Without ActOnCurrent it is the version alone, as
+// before #195.
+func affectedMember(request Request, input, member *sourceInput, old, next macports.PortInfo) bool {
+	return old.Version != next.Version || request.ActOnCurrent && request.Release.NoUpdate && input.sourceMoved != nil && member == input
 }

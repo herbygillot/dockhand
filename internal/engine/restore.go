@@ -94,45 +94,11 @@ func (e *Engine) checkpointNamed(ctx context.Context, name, kind string, number 
 // lock (withHistory), and returns the checkpoint and branch as they are
 // after.
 func (e *Engine) restore(ctx context.Context, checkpoint model.Checkpoint, branch model.Branch) (model.Checkpoint, model.Branch, error) {
+	worktree, err := e.restoreFront(ctx, checkpoint, branch, true)
+	if err != nil {
+		return checkpoint, branch, err
+	}
 	name := checkpoint.Name()
-	switch {
-	case checkpoint.State == model.CheckpointAbandoned:
-		return checkpoint, branch, fmt.Errorf("%s was not applied because dockhand stopped before making changes; there is nothing to restore", name)
-	case checkpoint.State != model.CheckpointApplied:
-		return checkpoint, branch, fmt.Errorf("%s has an unresolved state: %s is not checked out, so dockhand cannot determine whether the operation was applied", name, branch.Name)
-	case checkpoint.RestoredAt != nil:
-		return checkpoint, branch, fmt.Errorf("%s was already restored", name)
-	}
-	if err := checkpoint.Validate(); err != nil {
-		return checkpoint, branch, err
-	}
-	worktree, err := e.worktree(ctx, branch)
-	if err != nil {
-		return checkpoint, branch, err
-	}
-	head, _, err := worktree.Branch(ctx, branch.Name)
-	if err != nil {
-		return checkpoint, branch, err
-	}
-	if model.ObjectID(head) != checkpoint.After {
-		return checkpoint, branch, fmt.Errorf("%s has moved on since %s (it is at %s, not %s); restoring would discard that work, so nothing was changed",
-			branch.Name, name, model.ObjectID(head).Short(), checkpoint.After.Short())
-	}
-	if checkpoint.Index != "" {
-		// The rewrite left the index at its new head's tree; anything
-		// else is staged work that restoring would replace.
-		index, err := worktree.IndexTree(ctx)
-		if err != nil {
-			return checkpoint, branch, err
-		}
-		trees, err := worktree.CommitTrees(ctx, []string{string(checkpoint.After)})
-		if err != nil {
-			return checkpoint, branch, err
-		}
-		if index != trees[string(checkpoint.After)] {
-			return checkpoint, branch, fmt.Errorf("%s has changes staged after %s. Restoring would overwrite them, so nothing was changed. Commit or stash those changes before restoring", branch.Name, name)
-		}
-	}
 	if checkpoint.Kind == model.CheckpointRebase {
 		// A rebase ran with nothing uncommitted and left the files as the
 		// rebased commit has them. They go back with the history, or
@@ -159,4 +125,53 @@ func (e *Engine) restore(ctx context.Context, checkpoint model.Checkpoint, branc
 		return checkpoint, branch, history.Unfinished("the history is restored", err)
 	}
 	return checkpoint, after, nil
+}
+
+// restoreFront is the read-only judgement shared by PlanUndo and Restore.
+// It refuses every checkpoint that cannot safely be restored as it stands.
+func (e *Engine) restoreFront(ctx context.Context, checkpoint model.Checkpoint, branch model.Branch, applying bool) (*git.Repository, error) {
+	name := checkpoint.Name()
+	switch {
+	case checkpoint.State == model.CheckpointAbandoned:
+		return nil, fmt.Errorf("%s was not applied because dockhand stopped before making changes; there is nothing to restore", name)
+	case checkpoint.State != model.CheckpointApplied:
+		return nil, fmt.Errorf("%s has an unresolved state: %s is not checked out, so dockhand cannot determine whether the operation was applied", name, branch.Name)
+	case checkpoint.RestoredAt != nil:
+		return nil, fmt.Errorf("%s was already restored", name)
+	}
+	if err := checkpoint.Validate(); err != nil {
+		return nil, err
+	}
+	var worktree *git.Repository
+	var err error
+	if applying {
+		worktree, err = e.worktree(ctx, branch)
+	} else {
+		worktree, err = e.openWorktree(ctx, branch)
+	}
+	if err != nil {
+		return nil, err
+	}
+	head, _, err := worktree.Branch(ctx, branch.Name)
+	if err != nil {
+		return nil, err
+	}
+	if model.ObjectID(head) != checkpoint.After {
+		return nil, fmt.Errorf("%s has moved on since %s (it is at %s, not %s); restoring would discard that work, so nothing was changed",
+			branch.Name, name, model.ObjectID(head).Short(), checkpoint.After.Short())
+	}
+	if checkpoint.Index != "" {
+		index, err := worktree.IndexTree(ctx)
+		if err != nil {
+			return nil, err
+		}
+		trees, err := worktree.CommitTrees(ctx, []string{string(checkpoint.After)})
+		if err != nil {
+			return nil, err
+		}
+		if index != trees[string(checkpoint.After)] {
+			return nil, fmt.Errorf("%s has changes staged after %s. Restoring would overwrite them, so nothing was changed. Commit or stash those changes before restoring", branch.Name, name)
+		}
+	}
+	return worktree, nil
 }

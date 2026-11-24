@@ -43,7 +43,7 @@ type scenario struct {
 	// unreadable are the faults, by "address/mode" prefix, whose outcome
 	// dockhand can't read back, and the end state the scenario declares
 	// for each: a value in the recovered world, and the clean run's it
-	// stands for, each pair with why (docs/designs/publication-record.md,
+	// stands for, each pair with why (docs/designs/publication-record.md at 0e0ad767,
 	// "Tests": a pull request found rather than opened, a reviewer marked
 	// "may have been sent").
 	unreadable map[string]declaredEnd
@@ -219,8 +219,32 @@ func sweep(t *testing.T, sc scenario) {
 			boundaries[e.address()] = e.Boundary
 		}
 	}
+	// Each declared prefix names an effect the scenario makes, so a renamed
+	// function leaves no dead entry behind: best-effort and unresolved by
+	// address, known and unreadable by address and mode (#295).
 	for prefix := range sc.bestEffort {
 		require.True(t, slices.ContainsFunc(addresses, func(a string) bool { return strings.HasPrefix(a, prefix) }), "best-effort %s names no effect the scenario makes", prefix)
+	}
+	for prefix := range sc.unresolved {
+		require.True(t, slices.ContainsFunc(addresses, func(a string) bool { return strings.HasPrefix(a, prefix) }), "unresolved %s names no effect the scenario makes", prefix)
+	}
+	// By every mode a boundary has, not only those this run sweeps, since
+	// the full sweep (DOCKHAND_SWEEP_FULL) reads them all.
+	var faults []string
+	for _, address := range addresses {
+		for _, how := range modes(boundaries[address]) {
+			faults = append(faults, address+"/"+string(how))
+		}
+	}
+	for key := range sc.known {
+		require.True(t, slices.ContainsFunc(faults, func(f string) bool {
+			address, how, _ := strings.Cut(f, "/")
+			_, found := knownFinding(map[string]string{key: ""}, address, mode(how))
+			return found
+		}), "known %s names no fault the sweep makes", key)
+	}
+	for prefix := range sc.unreadable {
+		require.True(t, slices.ContainsFunc(faults, func(f string) bool { return strings.HasPrefix(f, prefix) }), "unreadable %s names no fault the sweep makes", prefix)
 	}
 	cleanCounts := counts(clean.effects)
 	for _, address := range addresses {

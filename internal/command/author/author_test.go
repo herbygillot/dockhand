@@ -75,6 +75,43 @@ func TestEditRefusesARepeatedBranchSelector(t *testing.T) {
 	require.Empty(t, testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/*"))
 }
 
+func TestEditAcceptsPortSelector(t *testing.T) {
+	t.Parallel()
+	cmdtest.CheckedBranch(t)
+	out, _, err := cmdtest.Dockhand(t, "edit", "jq", "-p", "jq", "--no-open")
+	require.NoError(t, err)
+	require.Contains(t, out, "textproc/jq/Portfile")
+}
+
+func TestEditRefusesNewWithPullRequestSelector(t *testing.T) {
+	t.Parallel()
+	cmdtest.NewWorld(t)
+	_, _, err := cmdtest.Dockhand(t, "edit", "jq", "--new=edit-jq", "--pr", "35174", "--no-open")
+	require.EqualError(t, err, "if any flags in the group [branch port pr new] are set none of the others can be; [new pr] were all set")
+}
+
+func TestEditSelectsTrackedPullRequest(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	g := cmdtest.WithGitHub(t, w)
+	testsupport.Git(t, w.Upstream, "switch", "-q", "-c", "contrib")
+	require.NoError(t, os.WriteFile(filepath.Join(w.Upstream, "textproc/jq/Portfile"), []byte("name jq\n# docs\n"), 0o644))
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-am", "jq: document options")
+	testsupport.Git(t, w.Upstream, "update-ref", "refs/pull/35174/head", "contrib")
+	testsupport.Git(t, w.Upstream, "switch", "-q", "master")
+	g.Theirs = map[int]forge.PullRequest{35174: {
+		Ref:            forge.PullRequestRef{Forge: forge.GitHub, Repository: "macports/macports-ports", Number: 35174},
+		HeadRepository: "ada/macports-ports", HeadBranch: "contrib", BaseBranch: "master", State: forge.PullRequestOpen,
+	}}
+	_, _, err := cmdtest.Dockhand(t, "adopt", "--pr", "35174")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "adopt", "--pr", "35174", "--evaluate")
+	require.NoError(t, err)
+	out, _, err := cmdtest.Dockhand(t, "edit", "jq", "--pr", "35174", "--no-open")
+	require.NoError(t, err)
+	require.Contains(t, out, "Source/macports-branches/pr-35174/textproc/jq/Portfile")
+}
+
 func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 	t.Parallel()
 	w := cmdtest.NewWorld(t)
@@ -165,6 +202,11 @@ func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "update", "jq", "--new", "my-branch", "--plan")
 	require.ErrorIs(t, err, upstream.ErrReleaseMissing)
 	require.ErrorContains(t, err, `"my-branch"; to name the new branch my-branch, write --new=my-branch`)
+	// A word that reads as a version names a release dockhand didn't find,
+	// not a branch: no such hint (#305).
+	_, _, err = cmdtest.Dockhand(t, "update", "jq", "--new", "9.9", "--plan")
+	require.ErrorIs(t, err, upstream.ErrReleaseMissing)
+	require.NotContains(t, err.Error(), "to name the new branch")
 }
 
 // A plan in a branch named with --branch is planned there, though the
@@ -468,6 +510,25 @@ func TestAnUncertainNewestReleaseIsNamedNotChosen(t *testing.T) {
 	out, _, err := cmdtest.Dockhand(t, "update", "jq", "1.9.0", "--new")
 	require.NoError(t, err)
 	require.Contains(t, out, "jq: 1.7.1 → 1.9.0")
+}
+
+func TestHandEditPlanDoesNotPrintEmptyVersions(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return unevaluableBumper{cmdtest.Bumper{Repo: e.Repo}} }
+	out, _, err := cmdtest.Dockhand(t, "update", "jq", "--new", "--hand-edit", "--plan")
+	require.NoError(t, err)
+	require.NotContains(t, out, "jq:  →    (GitHub tag")
+	require.Contains(t, out, "jq: versions couldn't be evaluated")
+}
+
+type unevaluableBumper struct{ cmdtest.Bumper }
+
+func (b unevaluableBumper) Prepare(ctx context.Context, request editprep.Request) (editprep.Result, error) {
+	result, err := b.Bumper.Prepare(ctx, request)
+	result.Fidelity = nil
+	return result, err
 }
 
 // regenerating is a preparer whose update wrote a dependency block again.

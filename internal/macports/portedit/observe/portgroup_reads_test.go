@@ -129,16 +129,14 @@ func TestAClosedReadIsWeighedAsAHostRead(t *testing.T) {
 	library := "/opt/local/libexec/macports/lib"
 	closed := func(command string) macports.Declaration {
 		return macports.Declaration{Command: "dockhand.host-access", Values: []string{problem, "closed", "base", "file exists /usr/include/sys/cdefs.h"},
-			Frames: []macports.SourceFrame{{Line: 1, Command: command}, {File: library + "/port1.0/portconfigure.tcl", Line: 1, Command: "file exists /usr/include/sys/cdefs.h"}}}
+			Frames: []macports.SourceFrame{{File: library + "/port1.0/portconfigure.tcl", Line: 1, Command: command}, {File: library + "/port1.0/portconfigure.tcl", Line: 1, Command: "file exists /usr/include/sys/cdefs.h"}}}
 	}
 	ledger := []macports.LedgerEntry{{Command: "file", Subcommand: "exists", Source: "closed", Count: 1}}
 	observed := func(declaration macports.Declaration) macports.PortObservation {
 		return macports.PortObservation{ModeledHostAccess: true, Declarations: []macports.Declaration{declaration}, Problems: []string{problem}, Ledger: ledger, BaseLibrary: library}
 	}
 	contents := []byte("PortSystem 1.0\nname fixture\nversion 1\nconfigure.args CC=${configure.cc}\n")
-	compiler := closed("portconfigure::configure_get_compiler cc")
-	compiler.Frames = append([]macports.SourceFrame{{File: library + "/port1.0/portconfigure.tcl", Line: 1200, Command: "universal_setup"}}, compiler.Frames...)
-	port, inconclusive := Tolerate(context.Background(), observed(compiler), contents, "")
+	port, inconclusive := Tolerate(context.Background(), observed(closed("portconfigure::configure_get_compiler cc")), contents, "")
 	require.False(t, inconclusive, "Base's compiler probe, with the toolchain read in build positions")
 	require.Equal(t, ledger, port.Ledger)
 	port, inconclusive = Tolerate(context.Background(), observed(closed("portfetch::checkfiles")), contents, "")

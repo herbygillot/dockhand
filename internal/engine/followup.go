@@ -62,7 +62,7 @@ func (e *Engine) StartFrom(ctx context.Context, name string, from model.Branch) 
 		return result, err
 	}
 	if len(past) == 0 {
-		return result, fmt.Errorf("%s has no commits past what #%d merged, so there's nothing to start from; dockhand clean %s removes it", from.ShortName(), from.PullRequest.Number, from.ShortName())
+		return result, fmt.Errorf("%s has no commits past what #%d merged, so there's nothing to start from; dockhand clean -b %s removes it", from.ShortName(), from.PullRequest.Number, from.ShortName())
 	}
 	master, err := e.fetchMaster(ctx)
 	if err != nil {

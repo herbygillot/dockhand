@@ -35,6 +35,7 @@ var Topics = []Topic{
 	{"review", "review.md", "inspect, adopt, check, and review another pull request"},
 	{"agents", "agents.md", "explicit context, JSON, exit codes, scratch state, and automation"},
 	{"configuration", "configuration.md", "profiles, holds, service settings, paths, and retention"},
+	{"flags", "flags.md", "what each flag of the commands that change a port means, and how long it lasts"},
 }
 
 // Command is dockhand usage [topic].

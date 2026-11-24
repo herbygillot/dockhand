@@ -1,12 +1,13 @@
 package model
 
 import (
+	"encoding/json"
 	"reflect"
 	"time"
 )
 
 // Publication is a submission of one commit that dockhand has begun and
-// has not yet seen finished (docs/designs/publication-record.md, #191).
+// has not yet seen finished (docs/designs/publication-record.md at 0e0ad767, #191).
 // It is recorded before the first remote effect, names its whole
 // destination, and owes its steps in order until a read shows each done.
 // A branch has one at a time, beside its PullRequest, which is what
@@ -43,6 +44,15 @@ type Publication struct {
 	// reviewers to ask again, where the push calls for it.
 	Asked  Asked      `json:",omitzero"`
 	Review *ReviewAsk `json:",omitempty"`
+	// RequestID is the ID of the branch's change request this publication
+	// took, a stage's submission planned and judged under it; empty for a
+	// person's own submit, which takes none. Its finishing ends the
+	// request only where the request's ID is still this one (#195).
+	RequestID string `json:",omitempty"`
+	// Drafted is GitHub's answer to returning the pull request to draft,
+	// kept for settling to fold where the branch had no record of the
+	// pull request to take it.
+	Drafted bool `json:",omitempty"`
 	// Owes are the steps still owed, in order.
 	Owes []PublicationStep
 }
@@ -62,8 +72,8 @@ func (p Publication) normal() Publication {
 	if len(p.Owes) == 0 {
 		p.Owes = nil
 	}
-	if len(p.Asked.Types) == 0 {
-		p.Asked.Types = nil
+	if len(p.Asked.Types.Value) == 0 {
+		p.Asked.Types.Value = nil
 	}
 	if p.Review != nil {
 		review := *p.Review
@@ -117,10 +127,36 @@ func (s PublicationStep) Words() string {
 var PublicationSteps = []PublicationStep{StepDraft, StepPush, StepOpen, StepEdit, StepReady, StepRerequest}
 
 // Asked is what a person chose for a submission, kept so that finishing
-// it needs none of it typed again.
+// it needs none of it typed again: each of --draft, --no-check,
+// --skip-notification and the types as taken, with whether it was given,
+// so a false given is told from one left out (#195). A record from before
+// holds plain values, read as not given (UnmarshalJSON).
 type Asked struct {
-	Draft, NoCheck, SkipNotification, Rewrite bool
-	Types                                     []string `json:",omitempty"`
+	Draft, NoCheck, SkipNotification Flag[bool]
+	Rewrite                          bool
+	Types                            Flag[[]string] `json:",omitzero"`
+}
+
+// UnmarshalJSON reads an Asked as recorded now, or as a publication
+// recorded before its asks kept their given-ness had it: plain booleans
+// and a list, each read as its value, not given.
+func (a *Asked) UnmarshalJSON(data []byte) error {
+	type current Asked
+	var now current
+	if err := json.Unmarshal(data, &now); err == nil {
+		*a = Asked(now)
+		return nil
+	}
+	var before struct {
+		Draft, NoCheck, SkipNotification, Rewrite bool
+		Types                                     []string
+	}
+	if err := json.Unmarshal(data, &before); err != nil {
+		return err
+	}
+	*a = Asked{Draft: Flag[bool]{Value: before.Draft}, NoCheck: Flag[bool]{Value: before.NoCheck}, SkipNotification: Flag[bool]{Value: before.SkipNotification},
+		Rewrite: before.Rewrite, Types: Flag[[]string]{Value: before.Types}}
+	return nil
 }
 
 // ReviewAsk is "ask them to review again?", its answer, and what became
@@ -150,6 +186,10 @@ type Reviewer struct {
 	Sent     Sent
 	// Why are GitHub's words, where it refused.
 	Why string `json:",omitempty"`
+	// Lapsed is a request GitHub acknowledged that it no longer shows
+	// pending, at the last reading: they were asked, and it was answered
+	// or withdrawn since.
+	Lapsed bool `json:",omitempty"`
 }
 
 // Sent is how far a request that can't be read back got: a mark recorded

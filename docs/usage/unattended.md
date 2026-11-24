@@ -69,7 +69,10 @@ it too; missing information is not treated as proof that none exists.
 
 Later, a passing build can still leave a submission held. Archive comparisons,
 source or ownership changes, commit-rule errors, an unreadable assessment, or
-another pull request found before publication can need review. A build
+another pull request found before publication can need review. So can an
+environment whose identity couldn't be read, as when Tart doesn't answer: a
+submission resting on its results holds as `identity-unread` until a later read
+succeeds or you submit it yourself, and `holds.allow` can't name it. A build
 establishes what happened on its selected environments; it does not settle those
 concerns. Follow the named branch and the reported next step:
 
@@ -103,6 +106,21 @@ belongs to the branch and the port: later commits and rebases keep it while the
 branch still changes the port, and only a later update of the port replaces
 it, or for a move, `update --follow-moves`. Read the list against the new source, then
 decide on it as on any concern below, or let `holds.allow` name it.
+
+An update also leaves a `cargo-lock-stale` finding when a local package's
+locked version disagrees with its manifest version. The finding holds the
+submission like any other concern. It does not hold the check, which runs and
+fails at its build, where Cargo refuses to update the lock. A patch that
+refreshes `Cargo.lock` clears the hold, and
+`holds.allow` may name `cargo-lock-stale` to let the submission through.
+
+A patch that no longer applies holds an unattended update before its check,
+its edits committed (`patch-rejected`). The hold is read from the update's
+record each time, never stored: a later update of the port on the same macOS
+release and MacPorts that finds the patch applies, or no longer declared, ends
+it, and so do `holds.allow` and your own `ship` or `check`. An update on
+another release ends nothing. Xcode's version is recorded and not compared, so
+an Xcode update doesn't strand it.
 
 A build that links a port's library its Portfile doesn't declare holds as
 `link-undeclared` only where tidy can't write the declaration: a subport's or
@@ -173,6 +191,12 @@ ends this foreground worker, leaving completed results for a later worker.
 not a replacement for a continuing service.
 
 ## Configure daily updates before enabling them
+
+serve reads its settings at each new action: a branch it prepares keeps no
+copy of them, so an `[update] source` or `keep_http` changed counts from
+serve's next start, for the next stage it runs. An outcome judged under one
+setting is judged again under the new one. A check serve queued keeps its
+plan, and a submission it recorded keeps what it set out to do.
 
 Edit the configuration file that `dockhand config` reports. For example, these
 sections ask for checks of your maintained ports each morning, with no automatic

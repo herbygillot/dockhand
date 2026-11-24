@@ -140,6 +140,9 @@ type Reader interface {
 	ServeUpgrade() (at time.Time, firstPassDone, ok bool, err error)
 	// BranchNamed finds the branch with a Git name that is not merged.
 	BranchNamed(name string) (model.Branch, error)
+	// BranchRenamingTo is the branch whose rename under way moves it to
+	// name (model.Branch.RenameTo); ErrNotFound where none is (#194).
+	BranchRenamingTo(name string) (model.Branch, error)
 	// MergedBranchNamed finds the newest merged branch with a Git name,
 	// whose record clean keeps; the name may have been used again since.
 	MergedBranchNamed(name string) (model.Branch, error)
@@ -202,8 +205,15 @@ type Reader interface {
 	// CountEvents counts the events of a kind journaled at or after a time.
 	CountEvents(kind model.EventKind, since time.Time) (int, error)
 
-	// Edits lists a branch's authoring records, oldest first.
+	// Edits lists a branch's written authoring records, oldest first: an
+	// edit recorded before its files and not yet seen written is the
+	// settler's, read through UnwrittenEdits (#194).
 	Edits(branch model.BranchID) ([]model.Edit, error)
+	// UnwrittenEdits lists a branch's edits not yet seen written.
+	UnwrittenEdits(branch model.BranchID) ([]model.Edit, error)
+	// Edit is one edit by its ID, written or not, which the record's two
+	// witnesses read; found is false where there is none.
+	Edit(id model.EditID) (edit model.Edit, found bool, err error)
 	// Assessments lists what was recorded of what upstream's change means
 	// for the ports revisions change, newest first.
 	Assessments(filter AssessmentFilter) ([]model.Assessment, error)
@@ -252,7 +262,7 @@ type Tx interface {
 	// recorded is was, by ID: "" where there is none, so the first is
 	// written only where the branch has none, and another write of it
 	// only by the process holding that one. next nil ends it. UpdateBranch
-	// leaves the publication as it is (docs/designs/publication-record.md,
+	// leaves the publication as it is (docs/designs/publication-record.md at 0e0ad767,
 	// "One submission at a time").
 	SetPublication(branch model.BranchID, was string, next *model.Publication) error
 	// AddServeOpening records a row of serve's count and gives its ID;
@@ -319,10 +329,11 @@ type Tx interface {
 	// result names. Each call is a chunk, so a large backlog commits a
 	// chunk at a time.
 	PruneHistory(before time.Time, after model.BranchID, limit int) (Pruned, model.BranchID, error)
-	// ForgetBranch forgets an ended branch, keeping of its checks only
-	// what reuse may choose or another result names, and its record,
-	// marked forgotten, which no list of branches returns.
-	ForgetBranch(id model.BranchID, at time.Time) (Pruned, error)
+	// ForgetBranch forgets an ended branch, or an open branch only when
+	// the caller proves its changes are already on master, keeping of its
+	// checks only what reuse may choose or another result names, and its
+	// record, marked forgotten, which no list of branches returns.
+	ForgetBranch(id model.BranchID, at time.Time, openChangesOnMaster bool) (Pruned, error)
 	// PruneAssessments removes the assessments and change records of trees
 	// an open branch moved past before a time, and says how many.
 	PruneAssessments(before time.Time) (int, error)
@@ -347,14 +358,22 @@ type Tx interface {
 	// one a lease still names; it says how many of each.
 	PruneJournal(before time.Time) (events, sessions int, err error)
 
+	// AddEdit records an edit whose files are written, Written set; one
+	// with it zero is refused.
 	AddEdit(edit model.Edit) error
+	// AddUnwritten records an edit before its files are written, Written
+	// zero (#194, step 3); SetWritten records that they are, and
+	// RemoveUnwritten removes one never written, and no written edit.
+	AddUnwritten(edit model.Edit) error
+	// SetRequest and SetRenameTo write a branch's request and its rename
+	// intent, which UpdateBranch leaves as they are (#194).
+	SetRequest(branch model.BranchID, request *model.ChangeRequest) error
+	SetRenameTo(branch model.BranchID, to string) error
+	SetWritten(edit model.EditID, at time.Time) error
+	RemoveUnwritten(edit model.EditID) error
 	// SetExcepted records the dependents --except left out of an update's
 	// rebuild on its edit, where no revision bump's edit keeps them.
 	SetExcepted(edit model.EditID, excepted []string) error
-	// SetHeld records the patch problems an unattended ship held an
-	// update's edit before its check for (model.Edit.Held); none clears
-	// it.
-	SetHeld(edit model.EditID, problems []string) error
 	// RecordAssessment records a revision's assessment of a port,
 	// replacing one recorded for the same revision, base, and port.
 	RecordAssessment(assessment model.Assessment) error
@@ -443,7 +462,7 @@ func (e *LiveUnderMigrationError) Error() string {
 // or not it has a session, or where the process list can't be read, as in
 // a sandbox. A submit, an update or a ship opens no session, and one paused
 // before its push would push and write to GitHub after the migration with
-// no record and no lock (docs/designs/publication-record.md, "Existing
+// no record and no lock (docs/designs/publication-record.md at 0e0ad767, "Existing
 // databases and branches"). Nothing overrides it.
 type QuietUnderMigrationError struct {
 	From, To int
@@ -505,6 +524,24 @@ func (e *ReleaseUnderMigrationError) Error() string {
 }
 
 func (e *ReleaseUnderMigrationError) Unwrap() error { return ErrReleaseUnderMigration }
+
+// ErrDevelopmentMigration refuses a migration of the default database by
+// a build that isn't a release, which a person consents to by its own
+// flag (#281).
+var ErrDevelopmentMigration error = refusal.New(refusal.Attention, "a build that isn't a release would migrate the default database")
+
+// DevelopmentMigrationError is that migration refused: the build, and the
+// schemas and copy the migration would go from and keep.
+type DevelopmentMigrationError struct {
+	Build, Copy string
+	From, To    int
+}
+
+func (e *DevelopmentMigrationError) Error() string {
+	return fmt.Sprintf("dockhand %s isn't a release, and opening the default database would migrate it from schema %d to %d, which a release on schema %d can't open after", e.Build, e.From, e.To, e.From)
+}
+
+func (e *DevelopmentMigrationError) Unwrap() error { return ErrDevelopmentMigration }
 
 // Check is a check's records read in one call, where four places read a
 // run's executions and each one's results row by row (the SQL study's

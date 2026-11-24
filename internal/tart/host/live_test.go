@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/tart"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,7 +22,7 @@ func liveMachine(t *testing.T, variable string) (Machine, string) {
 	if image == "" {
 		t.Skipf("set %s for the opt-in Tart contract test", variable)
 	}
-	runtime, err := (tart.Client{}).Resolve()
+	runtime, err := liveClient()
 	require.NoError(t, err)
 	return Machine{Client: runtime}, image
 }
@@ -167,4 +168,11 @@ func TestLiveTartListsWhileAnASIFVMRuns(t *testing.T) {
 
 	require.NoError(t, run.Stop(ctx, 30*time.Second))
 	run = nil
+}
+
+// liveClient is the person's Tart, as the live tests reach it
+// (testsupport.LiveTart).
+func liveClient() (tart.Client, error) {
+	home, env := testsupport.LiveTart()
+	return (tart.Client{Home: home, Env: env}).Resolve()
 }

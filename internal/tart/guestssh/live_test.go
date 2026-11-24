@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/tart/guestssh"
 	"github.com/herbygillot/dockhand/internal/tart/host"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,7 +28,7 @@ func TestLiveChannel(t *testing.T) {
 	if image == "" {
 		t.Skip("set DOCKHAND_TEST_TART_IMAGE for the opt-in channel test")
 	}
-	runtime, err := (tart.Client{}).Resolve()
+	runtime, err := liveClient()
 	require.NoError(t, err)
 	machine := host.Machine{Client: runtime}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
@@ -94,4 +95,11 @@ func TestLiveChannel(t *testing.T) {
 	stranger := &guestssh.Guest{Env: os.Environ(), Address: address, Image: "another-image", Keys: keys}
 	_, err = stranger.Command(ctx, nil, "/usr/bin/true")
 	require.ErrorIs(t, err, guestssh.ErrTransport, "a guest is held to the host keys of the image it is named for")
+}
+
+// liveClient is the person's Tart, as the live tests reach it
+// (testsupport.LiveTart).
+func liveClient() (tart.Client, error) {
+	home, env := testsupport.LiveTart()
+	return (tart.Client{Home: home, Env: env}).Resolve()
 }

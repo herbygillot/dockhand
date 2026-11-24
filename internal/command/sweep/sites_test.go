@@ -65,7 +65,7 @@ func effectSites(t *testing.T) map[string]string {
 				if !ok {
 					return true
 				}
-				if pkg, ok := selector.X.(*ast.Ident); ok && pkg.Name == "remotewrite" && selector.Sel.Name != "Permit" && selector.Sel.Name != "ForAccount" {
+				if pkg, ok := selector.X.(*ast.Ident); ok && pkg.Name == "remotewrite" && selector.Sel.Name != "Permit" && selector.Sel.Name != "ForAccount" && selector.Sel.Name != "ForRemote" {
 					sites["remote@"+site] = "remotewrite." + selector.Sel.Name
 					return true
 				}
@@ -255,7 +255,6 @@ var owed = map[string]string{
 	"store.update@engine.(*Engine).RenamePort":          "#129: the rename scenario",
 	"store.update@engine.(*Engine).Start":               "#129: start's scenario; every scenario's arrangement runs start unswept",
 	"store.update@engine.(*Engine).markTried":           "#191: serve's opening tried, group C",
-	"store.update@engine.(*Engine).renameForVersion":    "#194: an update naming its branch for the version it finds",
 	"remote@engine.(*Engine).PostReview":                "#129: the review scenario",
 	"remote@engine.(*Engine).Ready":                     "#191: draft and ready, group B",
 	"remote@engine.(*Engine).RerunCI":                   "#129: a pull request's failed CI run again, waiting on the person's word on rule 1, which the ownership check follows and remotewrite's RerunChecks doesn't",
@@ -293,8 +292,13 @@ var owed = map[string]string{
 	"store.update@engine.(*Engine).carryRename":         "#129: a branch renamed with Git",
 	"store.update@engine.(*Engine).checkOutAgain":       "#129: a worktree clean removed, checked out again",
 	"store.update@engine.(*Engine).cleanup":             "#193: automatic cleanup of what checks left",
-	"store.update@engine.(*Engine).holdBeforeCheck":     "#193: ship holding before a check",
+	"store.update@engine.(*Engine).recordWritten":       "#194: settling a record lost at step 5, which needs a world the sweep can't arrange; TestASettlementsUncertainRecordIsReadBack",
+	"store.update@engine.(*Engine).settleUnwritten":     "#194: removing an edit never written, which needs a world the sweep can't arrange; TestANamedVersionOverAnUnwrittenEdit",
+	"store.update@engine.(*Engine).applyTidy":           "#194: tidy taking a changed edit as the person's; TestAnEditWhoseFileChangedSinceStopsTheNextCommand",
 	"store.update@engine.(*Engine).keepExcepted":        "#194: the dependents an update leaves out",
+	"store.update@engine.(*Engine).TestedToBind":        "#195: no scenario ships a branch whose statement was kept by an earlier command; TestAPendingStatementIsDroppedWhenTheWorkChanges and TestShipReachesTheResolverAndKeepsItsStage cover the request around it",
+	"store.update@engine.(*Engine).concludeOnRequest":   "#195: no scenario bumps dependents; TestTheDependentsConcludeOnTheRequest covers the outcome",
+	"store.update@engine.(*Engine).concludeSideActions": "#195: no scenario asks a side action; TestEachSideActionHasItsOwnOutcome covers each outcome",
 	"store.update@engine.(*Engine).moveCreated":         "#129: create's scenario, a new port moved",
 	"store.update@engine.(*Engine).placeWorktree":       "#129: the adopt scenario, its worktree",
 	"store.update@engine.(*Engine).rebase":              "#129: the rebase scenario",
@@ -326,7 +330,7 @@ var owed = map[string]string{
 	"git@engine.(*Engine).narrow":                   "#129: a tidy whose change narrows the worktree's sparse cone",
 	"git@engine.(*Engine).placeWorktree":            "#129: the adopt scenario, its worktree",
 	"git@engine.(*Engine).rebase":                   "#129: the rebase scenario",
-	"git@engine.(*Engine).renameForVersion":         "#194: an update naming its branch for the version it finds",
+	"git@engine.(*Engine).finishRename":             "#194: a rename cut short, finished at the lock; TestARenameCutShortIsFinishedAtTheLock",
 	"git@history.(*Transitions).dropCheckpointRefs": "#129: a checkpoint left prepared and abandoned, reached only in recovery after a stop, which the listing's clean runs never make",
 	"git@history.(*Transitions).finishIndex":        "#129: a checkpoint left prepared whose change landed, reached only in recovery after a stop",
 	"git@history.(*Transitions).finishRestoreIndex": "#129: a restore left unrecorded, reached only in recovery after a stop",

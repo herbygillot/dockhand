@@ -76,6 +76,11 @@ type SubmitRequest struct {
 	// asking the reviewers who requested changes to review again
 	// (SubmitPlan.Rerequests). Both are steps of ApplySubmit, ready first.
 	Ready, Rerequest bool
+	// RerequestAnswer is the person's answer to that question where it was
+	// put: yes, no, or not asked where nobody was there to answer. A no is
+	// recorded and not asked again; a question nobody answered stays owed
+	// for the next run a person attends (#191, group E).
+	RerequestAnswer model.ReviewAnswer
 	// TestedBinaries and TestedVariants are the person's statements for
 	// the template's last two items; WithdrawBinaries and WithdrawVariants
 	// are their saying no, --tested-binaries=false, which removes a kept
@@ -88,6 +93,16 @@ type SubmitRequest struct {
 	// writing, is otherwise theirs and stays (#34756 kept September's
 	// Tested on under the v0.3.0 commit). Never someone else's.
 	Rewrite bool
+	// Given are the submission's own flags given on this run, by name:
+	// draft, no-check, type and skip-notification. One left out is carried
+	// from an earlier submission of the commit this one continues; one
+	// given, false included, is this run's (#195, E3).
+	Given map[string]bool
+	// RequestID is the branch's change request this submission was
+	// planned and judged under, a stage's (ship, bump, serve): its
+	// publication takes that request, compared in its first transaction;
+	// empty for a person's own submit, which takes none (#195).
+	RequestID string
 	// Note replaces the branch's note, which the description gives under
 	// Description (model.Branch.Note), and empty clears it; nil keeps the
 	// one recorded. It is recorded once the submission is applied.
@@ -127,6 +142,9 @@ type SubmitPlan struct {
 	// with the plan where it asks reviewers again: the review each one's
 	// answer is for.
 	reviewedBy map[string]time.Time
+	// ReviewsUnread is that reading failing: the answer is then for no
+	// review in particular, and the reviewer step's own reading decides.
+	ReviewsUnread bool
 	// admission is serve's limit and clock, read at the admission: serve's
 	// count's rows that count today must be fewer than the limit.
 	admission ServeAdmission
@@ -423,7 +441,7 @@ func foldDraft(tx store.Tx, id model.BranchID, draft bool) error {
 // textChangedSince reads a pull request's title and description once more,
 // just before the edit, and names which of them is no longer what the plan
 // saw: the read before the push can be long before (docs/designs/
-// publication-record.md, "One read before the pull request is written").
+// publication-record.md at 0e0ad767, "One read before the pull request is written").
 // GitHub has no conditional write for either, so the window left is one
 // request wide.
 func (e *Engine) textChangedSince(ctx context.Context, saw forge.PullRequestObservation) ([]string, error) {
@@ -459,7 +477,7 @@ func (p SubmitPlan) pushBasis() remotewrite.Basis {
 // where the record says it opened that pull request, or an old record
 // that isn't adopted says nothing; otherwise the person naming it by
 // submitting to it. A found pull request is never stated as made
-// (docs/designs/publication-record.md, "The gate").
+// (docs/designs/publication-record.md at 0e0ad767, "The gate").
 func (p SubmitPlan) editBasis() remotewrite.Basis {
 	if p.Theirs {
 		return remotewrite.Invited
@@ -486,8 +504,12 @@ func (f forgeIdentity) Current(ctx context.Context) (github.Identity, error) {
 
 // writeAccount binds remote writes to the preview or command's account.
 func (e *Engine) writeAccount(ctx context.Context, account string) context.Context {
-	return remotewrite.ForAccount(ctx, account, e.RemoteWriteIdentity())
+	ctx = remotewrite.ForAccount(ctx, account, e.RemoteWriteIdentity())
+	return remotewrite.ForRemote(ctx, e.RemoteWriteNamer())
 }
+
+// RemoteWriteNamer names remotes through the engine's configured forge.
+func (e *Engine) RemoteWriteNamer() remotewrite.RemoteNamer { return e.forge() }
 
 // RemoteWriteIdentity reads the account used by a remote write.
 func (e *Engine) RemoteWriteIdentity() remotewrite.IdentityReader {
@@ -578,6 +600,11 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	}
 	request.Branch = branch
 	plan := SubmitPlan{Request: request, Branch: branch, Repository: e.PullRequestRepository()}
+	// An action the branch's request refused blocks the plan as it will
+	// the submission, by the one judgement every gate asks (refusedIn).
+	if err := refusedIn(branch); err != nil {
+		plan.block(branchstate.Block{Kind: branchstate.BlockRefused, Refused: refusal.WordsOf(err)})
+	}
 	if err := e.pullRequestHere(branch); err != nil {
 		return plan, err
 	}
@@ -707,17 +734,29 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	}); err != nil {
 		return plan, err
 	}
-	// The phases, in order: the evidence and what blocks publishing it;
-	// where submit pushes, and the pull request open there (Existing),
+	// The phases, in order: where submit pushes, and the pull request open
+	// there (Existing), with what an earlier submission of the commit
+	// carries, its --draft, --no-check, types and --skip-notification
+	// among them (#195, E3), so the evidence is judged under what this
+	// submission asks; then the evidence and what blocks publishing it,
 	// which the title and the search for others read.
-	if err := e.evidence(ctx, &plan, accepted, standing); err != nil {
-		return plan, err
-	}
-	plan.Moved = append(e.movedSources(ctx, plan.Evidence), identitiesUnread(plan.Evidence)...)
-	moved := plan.Moved
 	if err := e.destination(ctx, worktree, &plan); err != nil {
 		return plan, err
 	}
+	request.Draft, request.NoCheck, request.Types, request.SkipNotification, request.Ready = plan.Request.Draft, plan.Request.NoCheck, plan.Request.Types, plan.Request.SkipNotification, plan.Request.Ready
+	if err := e.evidence(ctx, &plan, accepted, standing); err != nil {
+		return plan, err
+	}
+	plan.Moved = e.movedSources(ctx, plan.Evidence)
+	// A publication of this commit already accepted, which the plan
+	// continues (Carried), goes on by its record (#191) and is not judged
+	// again by an identity read now (docs/designs/check-lifecycle.md at bbb4c0b7,
+	// "Identity"): serve held its owed opening for good where the read
+	// failed after it pushed.
+	if plan.Carried == nil {
+		plan.Moved = append(plan.Moved, identitiesUnread(plan.Evidence)...)
+	}
+	moved := plan.Moved
 	plan.Note = branch.Note
 	if request.Note != nil {
 		plan.Note = strings.TrimSpace(strings.ReplaceAll(*request.Note, "\r\n", "\n"))
@@ -758,7 +797,11 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 			plan.block(branchstate.Block{Kind: branchstate.BlockAwaiting, Port: subject, Awaited: decision.Words})
 		}
 	}
-	facts := bodyFacts{Commits: plan.Commits, Evidence: plan.Evidence, NoCheck: request.NoCheck, Accepted: plan.Accepted, Types: request.Types,
+	earlier := ""
+	if request.NoCheck {
+		earlier = e.earlierPass(ctx, branch.ID, model.ObjectID(plan.Tree))
+	}
+	facts := bodyFacts{Commits: plan.Commits, Evidence: plan.Evidence, NoCheck: request.NoCheck, EarlierPass: earlier, Accepted: plan.Accepted, Types: request.Types,
 		Updated:     len(plan.moved) > 0,
 		RulesPassed: !errorsFound, Squashed: squashed, Searched: plan.SearchProblem == "", Others: plan.Others,
 		TestedBinaries: request.TestedBinaries, TestedVariants: request.TestedVariants, SkipNotification: request.SkipNotification, NewPorts: newPorts,
@@ -766,6 +809,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		Installed: e.installedLines(ctx, plan.Evidence, edits), Reviewed: reviewed}
 	plan.facts = facts
 	plan.allowed = e.allowedFor
+	plan.blockNoCheckBuildHolds()
 	plan.Answer(request.TestedBinaries, request.TestedVariants)
 	// What took the network to find is kept for status, which never reads
 	// it, to say as this plan found it (C2's rest): the moved sources and
@@ -930,6 +974,8 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 	if plan.Carried == nil && plan.Existing != nil && len(plan.Rerequests()) > 0 {
 		if status, err := e.forge().Inspect(ctx, plan.Existing.PullRequest.Ref); err == nil {
 			plan.reviewedBy = status.LatestReview
+		} else {
+			plan.ReviewsUnread = true
 		}
 	}
 	return nil
@@ -969,7 +1015,7 @@ func (e *Engine) findDestination(ctx context.Context, worktree *git.Repository, 
 	// An earlier submission that didn't finish is accounted for first,
 	// under its head's lock, so the plan is of the settled record and
 	// carries what the person asked of it (docs/designs/
-	// publication-record.md, "When settling runs").
+	// publication-record.md at 0e0ad767, "When settling runs").
 	if plan.Branch.Publication != nil {
 		settled, carried, done, err := e.settlePublication(ctx, worktree, plan.Branch, false)
 		if err != nil {
@@ -1025,7 +1071,7 @@ func (e *Engine) findDestination(ctx context.Context, worktree *git.Repository, 
 	plan.Existing = &observed
 	// An old record with no provenance, of a pull request GitHub names
 	// another author of, is found from this read on: the author only ever
-	// withdraws Made (docs/designs/publication-record.md, "Existing
+	// withdraws Made (docs/designs/publication-record.md at 0e0ad767, "Existing
 	// databases and branches").
 	if last := plan.Branch.PullRequest; last != nil && last.Number == pr.Ref.Number && last.Provenance == "" && !last.Adopted && pr.Author != "" && !strings.EqualFold(pr.Author, login) {
 		found := *last
@@ -1465,13 +1511,55 @@ func (m *MasterChanged) Said(checkRan bool) string {
 // fetched now is "on master": the plan compared with the branch's base,
 // and the duplicate pull request of #164 was opened with no fetch between.
 func (e *Engine) masterUnchanged(ctx context.Context, plan SubmitPlan) error {
-	base := plan.Branch.Base
-	if len(plan.testedTrees) == 0 || base == "" {
+	if len(plan.testedTrees) == 0 {
+		return nil
+	}
+	return e.masterChanged(ctx, plan.Branch, plan.Commit, slices.Sorted(maps.Keys(plan.testedTrees)), "nothing was pushed or submitted")
+}
+
+// MasterBeforeCheck fetches master before a resumed ship checks a branch,
+// and stops it where master changed a port directory the branch changes
+// since its base, as a submission is stopped (MasterChanged): a check of
+// changes already on master builds for nothing (#181, the build-saving
+// half of #164). It deletes and rebases nothing, and a change master made
+// elsewhere stops nothing.
+func (e *Engine) MasterBeforeCheck(ctx context.Context, branch model.Branch) error {
+	if branch.Base == "" {
+		return nil
+	}
+	worktree, err := e.worktree(ctx, branch)
+	if err != nil {
+		return err
+	}
+	head, _, err := worktree.Branch(ctx, branch.Name)
+	if err != nil {
+		return err
+	}
+	trees, err := e.Repo.CommitTrees(ctx, []string{head})
+	if err != nil {
+		return err
+	}
+	analysis, err := e.analyze(ctx, branch.Base, model.ObjectID(trees[head]))
+	if err != nil {
+		return err
+	}
+	directories, err := statementTrees(ctx, worktree, trees[head], analysis.Scope.Ports)
+	if err != nil || len(directories) == 0 {
+		return err
+	}
+	return e.masterChanged(ctx, branch, head, slices.Sorted(maps.Keys(directories)), "nothing was checked or submitted")
+}
+
+// masterChanged fetches master and returns MasterChanged where it changed
+// any of directories since the branch's base.
+func (e *Engine) masterChanged(ctx context.Context, branch model.Branch, head string, directories []string, nothing string) error {
+	base := branch.Base
+	if base == "" {
 		return nil
 	}
 	master, err := e.fetchMaster(ctx)
 	if err != nil {
-		return fmt.Errorf("%w; nothing was pushed or submitted", err)
+		return fmt.Errorf("%w; %s", err, nothing)
 	}
 	if master == base {
 		return nil
@@ -1480,7 +1568,6 @@ func (e *Engine) masterUnchanged(ctx context.Context, plan SubmitPlan) error {
 	if err != nil {
 		return err
 	}
-	directories := slices.Sorted(maps.Keys(plan.testedTrees))
 	before, err := e.Repo.DirectoryTrees(ctx, trees[string(base)], directories)
 	if err != nil {
 		return err
@@ -1500,11 +1587,11 @@ func (e *Engine) masterUnchanged(ctx context.Context, plan SubmitPlan) error {
 	if len(changed) == 0 {
 		return nil
 	}
-	onMaster, err := e.changesOn(ctx, plan.Branch, plan.Commit, master)
+	onMaster, err := e.changesOn(ctx, branch, head, master)
 	if err != nil {
 		return err
 	}
-	return &MasterChanged{Branch: plan.Branch.ShortName(), Base: base, Master: master, Directories: changed, OnMaster: onMaster}
+	return &MasterChanged{Branch: branch.ShortName(), Base: base, Master: master, Directories: changed, OnMaster: onMaster}
 }
 
 // ApplySubmit pushes the planned commit to your fork, only while the fork's
@@ -1519,12 +1606,17 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 	// The one gate of a submission, whoever submits it: what blocks it,
 	// the commit it was bound to, and, where nobody looks, what holds it
 	// (branchstate.Publish; R3-10, where ship and serve each held it).
-	publication := branchstate.Publication{Branch: plan.Branch.ShortName(), Blocks: plan.Blocks, Holds: undecided(holding(plan.Concerns(), plan.allowed), plan.Decided),
+	publication := branchstate.Publication{Branch: plan.Branch.ShortName(), Blocks: plan.Blocks, Holds: plan.PublicationHolds(),
 		Commit: model.ObjectID(plan.Commit), Bound: model.ObjectID(plan.Request.Bound)}
 	if refusal := branchstate.Publish(publication, branchstate.Mode{Answered: answered}, Vocabulary{}); refusal != nil {
 		return Submitted{}, refusal
 	}
 	if err := e.pullRequestHere(plan.Branch); err != nil {
+		return Submitted{}, err
+	}
+	// An update not finished isn't submitted where nobody looks; a person
+	// is told and goes on (#194, T3).
+	if err := e.UnfinishedGate(ctx, plan.Branch, answered == model.AnsweredNobody, "the submission publishes"); err != nil {
 		return Submitted{}, err
 	}
 	// GitHub refuses a body past its limit after the push, so no pull
@@ -1553,15 +1645,15 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 	// the operating system's, carried by every git and gh child that
 	// writes for the submission, never taken from a live process, and
 	// held to the end, follow-ups included (docs/designs/
-	// publication-record.md, "One submission at a time").
+	// publication-record.md at 0e0ad767, "One submission at a time").
 	err = worktree.WithHeadLock(ctx, plan.Head(), func(ctx context.Context) error {
 		var err error
 		result, err = e.publish(ctx, plan, worktree)
 		return err
 	})
-	if err != nil {
-		result.Pending = e.pendingAfter(ctx, plan.Branch.ID, err)
-	}
+	// What is still owed is said however it returned: a question nobody
+	// answered is owed after a submission that finished.
+	result.Pending = e.pendingAfter(ctx, plan.Branch.ID, result, err)
 	return result, err
 }
 
@@ -1590,6 +1682,9 @@ func (e *Engine) publish(ctx context.Context, plan SubmitPlan, worktree *git.Rep
 	if err != nil {
 		return result, err
 	}
+	// The publication is recorded, and with it the request a stage's
+	// submission took: its Publish moved, the request's ID kept (#195).
+	failpoint.Hit("submit.recorded")
 	owing := func(step model.PublicationStep, err error) error {
 		return fmt.Errorf("%w; %s is still owed, and dockhand submit %s finishes it", err, step.Words(), plan.Branch.ShortName())
 	}
@@ -1607,6 +1702,7 @@ func (e *Engine) publish(ctx context.Context, plan SubmitPlan, worktree *git.Rep
 		}
 		result.Drafted = true
 		next := without(record, model.StepDraft)
+		next.Drafted = true
 		// The pull request's record takes the draft with the step, so a
 		// push that fails after it doesn't leave it said as ready.
 		if err := e.rewritePublication(ctx, plan.Branch.ID, record.ID, &next, func(tx store.Tx) error {
@@ -1710,6 +1806,42 @@ func (e *Engine) publish(ctx context.Context, plan SubmitPlan, worktree *git.Rep
 	return result, e.endPublication(ctx, plan.Branch.ID, record)
 }
 
+// recordAsked writes what the person gave with the plan into the
+// records that hold it, in a submission's first transaction: the title,
+// the note and the tested statements on the branch, and the decisions.
+// Each stands even where the publication then fails; AddDecision's key
+// keeps a second run from recording one twice (docs/designs/
+// publication-record.md at 0e0ad767, "The record").
+func (e *Engine) recordAsked(tx store.Tx, plan SubmitPlan) error {
+	branch, err := tx.Branch(plan.Branch.ID)
+	if err != nil {
+		return err
+	}
+	if plan.Request.Title != "" {
+		branch.Title = plan.Request.Title
+	}
+	if plan.Request.Note != nil {
+		branch.Note = plan.Note
+	}
+	branch.TestedBinaries = keptStatement(branch.TestedBinaries, plan.Request.TestedBinaries, plan.Request.WithdrawBinaries, plan.testedTrees)
+	branch.TestedVariants = keptStatement(branch.TestedVariants, plan.Request.TestedVariants, plan.Request.WithdrawVariants, plan.testedTrees)
+	if err := tx.UpdateBranch(branch); err != nil {
+		return err
+	}
+	for _, build := range plan.Accept {
+		if err := tx.AddDecision(model.Decision{Branch: branch.ID, Finding: model.FindingFailure, Subject: build, Evidence: plan.Commit, Answer: model.Accepted, At: e.now()}); err != nil {
+			return err
+		}
+	}
+	for _, decision := range plan.Standing {
+		decision.At = e.now()
+		if err := tx.AddDecision(decision); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // recordSubmission writes a submission's pull request into the branch's
 // record, in the transaction that ends its push, open and edit: what
 // dockhand wrote, how it knows the pull request, the person's statements
@@ -1758,27 +1890,8 @@ func (e *Engine) recordSubmission(tx store.Tx, plan SubmitPlan, result *Submitte
 		next.PushedAt = e.now()
 	}
 	branch.PullRequest = &next
-	if plan.Request.Title != "" {
-		branch.Title = plan.Request.Title
-	}
-	if plan.Request.Note != nil {
-		branch.Note = plan.Note
-	}
-	branch.TestedBinaries = keptStatement(branch.TestedBinaries, plan.Request.TestedBinaries, plan.Request.WithdrawBinaries, plan.testedTrees)
-	branch.TestedVariants = keptStatement(branch.TestedVariants, plan.Request.TestedVariants, plan.Request.WithdrawVariants, plan.testedTrees)
 	if err := tx.UpdateBranch(branch); err != nil {
 		return err
-	}
-	for _, build := range plan.Accept {
-		if err := tx.AddDecision(model.Decision{Branch: branch.ID, Finding: model.FindingFailure, Subject: build, Evidence: plan.Commit, Answer: model.Accepted, At: e.now()}); err != nil {
-			return err
-		}
-	}
-	for _, decision := range plan.Standing {
-		decision.At = e.now()
-		if err := tx.AddDecision(decision); err != nil {
-			return err
-		}
 	}
 	// A pull request found open with no record of it, as an earlier
 	// submit whose record failed leaves one, is the submission's
@@ -1823,7 +1936,7 @@ func (e *Engine) recordSubmission(tx store.Tx, plan SubmitPlan, result *Submitte
 // each leaves the publication in the transaction that follows it. Where
 // the head is at another commit, the publication ends and what it still
 // owed is dropped, for the command to say (docs/designs/
-// publication-record.md, "Follow-ups are for the commit").
+// publication-record.md at 0e0ad767, "Follow-ups are for the commit").
 func (e *Engine) followUps(ctx context.Context, plan SubmitPlan, result *Submitted, record *model.Publication) error {
 	ref := result.PullRequest.Ref
 	// atCommit reads the pull request's head once more; false is the head
@@ -1861,7 +1974,8 @@ func (e *Engine) followUps(ctx context.Context, plan SubmitPlan, result *Submitt
 		}
 		*record = next
 	}
-	if !slices.Contains(record.Owes, model.StepRerequest) || record.Review == nil {
+	// Only a yes is acted on; a question nobody answered stays owed.
+	if !slices.Contains(record.Owes, model.StepRerequest) || record.Review == nil || record.Review.Answer != model.ReviewYes {
 		return nil
 	}
 	if at, err := atCommit(); !at {
@@ -1879,7 +1993,7 @@ func (e *Engine) followUps(ctx context.Context, plan SubmitPlan, result *Submitt
 // still owed that the person asked of it: a ready, unless this run asks
 // for a draft, and a yes to asking the reviewers again. Another commit,
 // another account, or another destination, its head, its base or its pull
-// request, carries nothing (docs/designs/publication-record.md, "Who
+// request, carries nothing (docs/designs/publication-record.md at 0e0ad767, "Who
 // continues what").
 func (p *SubmitPlan) carry(earlier *model.Publication) {
 	if earlier == nil || earlier.Commit != model.ObjectID(p.Commit) || earlier.Head != p.Head() || earlier.Base != p.Repository+":"+UpstreamBranch {
@@ -1896,12 +2010,105 @@ func (p *SubmitPlan) carry(earlier *model.Publication) {
 		return
 	}
 	p.Carried = earlier
+	// What the earlier submission asked, each flag this run left out: a
+	// flag given, false included, is this run's own (#195, E3).
+	asked := earlier.Asked
+	// A ready still owed was asked after any draft, and stands over it.
+	readyOwed := slices.Contains(earlier.Owes, model.StepReady)
+	if !p.Request.Given["draft"] && !p.Request.Given["no-check"] && !readyOwed {
+		p.Request.Draft = asked.Draft.Value
+	}
+	if !p.Request.Given["no-check"] && !p.Request.Given["draft"] {
+		p.Request.NoCheck = asked.NoCheck.Value && !p.Request.Draft
+	}
+	if !p.Request.Given["type"] && len(asked.Types.Value) > 0 {
+		p.Request.Types = asked.Types.Value
+	}
+	if !p.Request.Given["skip-notification"] {
+		p.Request.SkipNotification = asked.SkipNotification.Value
+	}
 	if slices.Contains(earlier.Owes, model.StepReady) && !p.Request.Draft {
 		p.Request.Ready = true
 	}
 	if slices.Contains(earlier.Owes, model.StepRerequest) && earlier.Review != nil && earlier.Review.Answer == model.ReviewYes {
 		p.Request.Rerequest = true
 	}
+}
+
+// EarlierSubmit is what a plan says of the earlier submission of its
+// commit it continues: what settling found it did, and what of it this run
+// carries, the flags it was given that this run leaves out among them
+// (docs/designs/publication-record.md at 0e0ad767, "Who continues what";
+// #195, E3). Nil where the plan continues none.
+type EarlierSubmit struct {
+	Did, Carries []string
+}
+
+// Continues is the plan's EarlierSubmit, in words a person reads.
+func (p SubmitPlan) Continues() *EarlierSubmit {
+	c := p.Carried
+	if c == nil {
+		return nil
+	}
+	var said EarlierSubmit
+	for _, step := range p.settledDone {
+		switch step {
+		case model.StepPush:
+			said.Did = append(said.Did, "pushed "+c.Commit.Short())
+		case model.StepOpen:
+			said.Did = append(said.Did, fmt.Sprintf("opened #%d", c.Number))
+		case model.StepEdit:
+			said.Did = append(said.Did, "updated the title and description")
+		case model.StepDraft:
+			said.Did = append(said.Did, "returned the pull request to draft")
+		case model.StepReady:
+			said.Did = append(said.Did, "marked the pull request ready")
+		}
+	}
+	if slices.Contains(c.Owes, model.StepReady) && p.Request.Ready {
+		said.Carries = append(said.Carries, "marking the pull request ready")
+	}
+	if c.Review != nil && slices.Contains(c.Owes, model.StepRerequest) {
+		var pending, maybe, refused []string
+		for _, reviewer := range c.Review.Reviewers {
+			switch reviewer.Sent {
+			case model.MaySent:
+				maybe = append(maybe, "@"+reviewer.Login)
+			case model.RefusedToAsk:
+				refused = append(refused, "@"+reviewer.Login)
+			case model.NotSent:
+				pending = append(pending, "@"+reviewer.Login)
+			}
+		}
+		switch {
+		case c.Review.Answer == model.ReviewYes && len(pending) > 0:
+			said.Carries = append(said.Carries, "your yes to asking "+prose.And(pending)+" to review again")
+		case c.Review.Answer == model.ReviewNotAsked && len(pending) > 0:
+			said.Carries = append(said.Carries, "the question about asking "+prose.And(pending)+", which nobody answered")
+		}
+		if len(maybe) > 0 {
+			said.Carries = append(said.Carries, prose.And(maybe)+" may already have been asked, so won't be again")
+		}
+		if len(refused) > 0 {
+			said.Carries = append(said.Carries, "GitHub refused to ask "+prose.And(refused))
+		}
+	}
+	// The earlier run's flags this one left out and carries (#195, E3).
+	asked := c.Asked
+	given := p.Request.Given
+	if asked.Draft.Value && p.Request.Draft && !given["draft"] && !given["no-check"] {
+		said.Carries = append(said.Carries, "--draft")
+	}
+	if asked.NoCheck.Value && p.Request.NoCheck && !given["no-check"] && !given["draft"] {
+		said.Carries = append(said.Carries, "--no-check")
+	}
+	if asked.SkipNotification.Value && !given["skip-notification"] {
+		said.Carries = append(said.Carries, "--skip-notification")
+	}
+	if len(asked.Types.Value) > 0 && !given["type"] {
+		said.Carries = append(said.Carries, "--type "+strings.Join(asked.Types.Value, ","))
+	}
+	return &said
 }
 
 // Pushes reports whether the plan pushes: the fork's branch isn't at its
@@ -1915,6 +2122,11 @@ func (p SubmitPlan) Pushes() bool {
 // changes, as GitHub last reported them; none where it opens one or
 // pushes nothing. The person is asked before the push.
 func (p SubmitPlan) Rerequests() []string {
+	// A no the person gave for this commit carries, and isn't asked again
+	// (#191, Codex's review of group E).
+	if c := p.Carried; c != nil && c.Review != nil && c.Review.Answer == model.ReviewNo {
+		return nil
+	}
 	// An earlier submission of this commit that still owed the request
 	// carries its reviewers, though this one pushes nothing.
 	if c := p.Carried; c != nil && c.Review != nil && slices.Contains(c.Owes, model.StepRerequest) {

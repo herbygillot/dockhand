@@ -35,24 +35,23 @@ func unansweredWords(call string) string {
 	return fmt.Sprintf("modeled context has no answer for `%s`, which the Portfile needs", macports.HostCallText(call))
 }
 
-// Left says why a context modelled on another Mac is left as the Portfile
-// has it, where it is: its evaluation ended on a call the model has no
-// answer for (Observation.Unanswered), or its reading depends on host
-// state (Tolerate). It is the one rule an update's plan, a checksum
-// refresh, its fallback, an assessment and a revision reset leave a
-// context by (Codex's review of #110 and #125, findings 5 and 6). This
-// Mac's own context is never left: it's read as it stands (#125).
-func Left(ctx context.Context, observed macports.Observation, port string, contents []byte) (string, bool) {
+// left says why a context modelled on another Mac is left as the Portfile
+// has it: its evaluation ended on a call the model has no answer for
+// (Observation.Unanswered), or its reading depends on host state
+// (Tolerate). It retains the tolerated metadata where that check had to
+// run it. This Mac's own context is never left (#125).
+func left(ctx context.Context, observed macports.Observation, port string, contents []byte) (reason string, leaves bool, metadata macports.PortObservation, checked bool) {
 	if !observed.Modeled {
-		return "", false
+		return "", false, macports.PortObservation{}, false
 	}
 	if observed.Unanswered != "" {
-		return unansweredWords(observed.Unanswered), true
+		return unansweredWords(observed.Unanswered), true, macports.PortObservation{}, false
 	}
-	if read, inconclusive := Tolerate(ctx, observed.Ports[port], contents, observed.Snapshot.Root); inconclusive {
-		return "its reading depends on host state" + HostInputs(read), true
+	metadata, inconclusive := Tolerate(ctx, observed.Ports[port], contents, observed.Snapshot.Root)
+	if inconclusive {
+		return "its reading depends on host state" + HostInputs(metadata), true, metadata, true
 	}
-	return "", false
+	return "", false, metadata, true
 }
 
 // Observe observes one set of contents in every profile at once. The

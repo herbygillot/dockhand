@@ -63,6 +63,64 @@ if {${build_arch} eq "arm64"} {distfiles arm.zip} else {distfiles intel.zip}
 	require.NoError(t, err)
 	require.Contains(t, string(original), "version 1.2.3")
 }
+
+func TestPrepareVersionedSourceWithFixedPortGroupChecksums(t *testing.T) {
+	t.Parallel()
+	s, r, _ := archiveFixture(t, `PortGroup bootstrap 1.0
+version 1.2.3
+revision 0
+distname fixture-${version}
+master_sites @SITE@/${version}
+checksums-append ${distname}${extract.suffix} sha256 aaaa size 2
+`)
+	group := filepath.Join(r.Workspace.Root(), "_resources/port1.0/group/bootstrap-1.0.tcl")
+	require.NoError(t, os.MkdirAll(filepath.Dir(group), 0700))
+	require.NoError(t, os.WriteFile(group, []byte("checksums-append bootstrap-stage0.tar.gz sha256 bbbb size 3\n"), 0600))
+
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Contains(t, string(result.Files[0].After), "version 1.2.4")
+}
+
+func TestPrepareVersionedDistfileWithPortGroupChecksumsIsRefused(t *testing.T) {
+	t.Parallel()
+	s, r, _ := archiveFixture(t, `PortGroup bootstrap 1.0
+version 1.2.3
+revision 0
+distname fixture-${version}
+master_sites @SITE@/${version}
+distfiles ${distname}.tar.gz
+`)
+	group := filepath.Join(r.Workspace.Root(), "_resources/port1.0/group/bootstrap-1.0.tcl")
+	require.NoError(t, os.MkdirAll(filepath.Dir(group), 0700))
+	require.NoError(t, os.WriteFile(group, []byte("checksums-append fixture-1.2.3.tar.gz sha256 bbbb size 3\n"), 0600))
+
+	_, err := s.Prepare(t.Context(), r)
+	require.ErrorContains(t, err, "checksums are set by the bootstrap 1.0 PortGroup")
+}
+
+func TestPortGroupRefusalLeavesPortfileChecksumsForHandEdit(t *testing.T) {
+	t.Parallel()
+	s, r, requests := archiveFixture(t, `PortGroup bootstrap 1.0
+version 1.2.3
+revision 1
+distname fixture-${version}
+master_sites @SITE@/${version}
+checksums-append ${distname}${extract.suffix} sha256 aaaa size 2
+`)
+	group := filepath.Join(r.Workspace.Root(), "_resources/port1.0/group/bootstrap-1.0.tcl")
+	require.NoError(t, os.MkdirAll(filepath.Dir(group), 0700))
+	require.NoError(t, os.WriteFile(group, []byte("checksums-append stage0-1.2.3.tar.gz sha256 bbbb size 3\n"), 0600))
+
+	refused, err := s.Prepare(t.Context(), r)
+	require.ErrorContains(t, err, "Portfile's source archive checksums can still be prepared by --hand-edit")
+	attempt, err := s.HandAttempt(t.Context(), r, refused)
+	require.NoError(t, err)
+	require.Contains(t, string(attempt.Files[0].After), "version 1.2.4")
+	require.NotContains(t, string(attempt.Files[0].After), "sha256 aaaa")
+	require.NotEmpty(t, *requests)
+}
+
 func TestPrepareSharedOSBranchesPreservesAuxiliaryPin(t *testing.T) {
 	t.Parallel()
 	s, r, requests := archiveFixture(t, `version 1.2.3

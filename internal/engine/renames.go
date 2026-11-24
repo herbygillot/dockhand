@@ -39,7 +39,9 @@ func (e *Engine) followRenames(ctx context.Context, name string) (map[model.Bran
 		return nil, err
 	}
 	for _, branch := range branches {
-		if branch.Worktree == "" || !exists(branch.Worktree) {
+		// A rename under way is dockhand's own to finish (finishRename),
+		// not one a person made with Git (#194, L3).
+		if branch.Worktree == "" || !exists(branch.Worktree) || branch.RenameTo != "" {
 			continue
 		}
 		if head, ok := heads["refs/heads/"+branch.Name]; ok && head.Exists {

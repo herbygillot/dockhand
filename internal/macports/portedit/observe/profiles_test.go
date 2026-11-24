@@ -26,15 +26,15 @@ if {${build_arch} eq "arm64"} {distfiles a} else {distfiles b}`), native)
 	require.ErrorIs(t, err, ErrInconclusive)
 }
 
-// A boundary at Golden Gate reaches for Darwin 26, which Apple skipped; its
-// neighbors on either side are the releases that exist, each on an
-// architecture it runs on: Golden Gate on Apple silicon alone.
+// A boundary at Golden Gate reaches for Darwin 26, which Apple skipped; the
+// release below it, Darwin 25, stands in for that missing neighbor.
 func TestProfilesSkipTheDarwinThatNeverShipped(t *testing.T) {
 	t.Parallel()
 	native := model.Platform{OS: "darwin", Version: "27", Architecture: "arm64"}
 	profiles, err := observationProfiles([]byte(`if {${os.major} >= 27} {version 1} else {version 0}`), native)
 	require.NoError(t, err)
-	require.Equal(t, []model.Platform{native}, profiles, "Golden Gate itself, on Apple silicon")
+	require.Equal(t, []model.Platform{native, {OS: "darwin", Version: "25", Architecture: "x86_64"}}, profiles,
+		"Darwin 25 stands in below Golden Gate for a port that does not read architecture")
 	for _, profile := range profiles {
 		require.NotEqual(t, "26", profile.Version)
 		require.False(t, profile.Version == "27" && profile.Architecture == "x86_64", "Golden Gate doesn't run on Intel: %v", profiles)
@@ -49,6 +49,12 @@ if {${build_arch} eq "arm64"} {distfiles a} else {distfiles b}`), native)
 	for _, profile := range profiles {
 		require.NotEqual(t, "26", profile.Version)
 	}
+	profiles, err = observationProfiles([]byte(`if {${os.major} >= 27} {version 1} else {version 0}
+if {${build_arch} eq "arm64"} {distfiles a} else {distfiles b}`), native)
+	require.NoError(t, err)
+	require.Contains(t, profiles, model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"})
+	require.Contains(t, profiles, model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"})
+	require.NotContains(t, profiles, model.Platform{OS: "darwin", Version: "27", Architecture: "x86_64"})
 }
 
 func TestProfilesRefuseUnresolvedReadsAlongsideKnownBoundaries(t *testing.T) {

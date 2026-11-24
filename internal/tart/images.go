@@ -16,8 +16,9 @@ import (
 // Dockhand learns what exists and what runs only from `tart list` and `tart
 // get`, never from the files inside a Tart home, which Tart does not
 // document. The JSON fields read are pinned by tests against Tart's output
-// (internal/tart/live_test.go), so an upgrade that changes them fails a test
-// rather than dockhand.
+// (internal/tart/images_test.go, and the opt-in live contract tests in
+// internal/tart/host/live_test.go), so an upgrade that changes them fails a
+// test rather than dockhand.
 
 // ErrListingBlocked reports that Tart cannot describe its VMs because a VM
 // with an ASIF disk is running: `tart list`, and `tart get` of that VM, fail
@@ -95,6 +96,8 @@ type Image struct {
 	Name    string
 	Source  string
 	Running bool
+	// Size is Tart's listed disk use in GiB, where it supplies one.
+	Size float64
 	// Accessed is when Tart last opened it, as its listing says; zero
 	// where the listing doesn't say.
 	Accessed time.Time
@@ -136,6 +139,7 @@ func (c Client) Images(ctx context.Context, options RunOptions) ([]Image, error)
 	var rows []struct {
 		Name, Source, State *string
 		Running             *bool
+		Size                float64
 		Accessed            string
 	}
 	if err := json.Unmarshal(output, &rows); err != nil {
@@ -148,7 +152,7 @@ func (c Client) Images(ctx context.Context, options RunOptions) ([]Image, error)
 		}
 		running := row.Running != nil && *row.Running || row.State != nil && *row.State == "running"
 		accessed, _ := time.Parse(time.RFC3339, row.Accessed)
-		result = append(result, Image{Name: *row.Name, Source: *row.Source, Running: running, Accessed: accessed})
+		result = append(result, Image{Name: *row.Name, Source: *row.Source, Running: running, Size: row.Size, Accessed: accessed})
 	}
 	return result, nil
 }

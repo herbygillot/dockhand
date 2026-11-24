@@ -79,6 +79,27 @@ func TestStatusOfAllRunsAFewGitProcessesWhateverItsBranches(t *testing.T) {
 	require.Equal(t, 8, manyWorktrees)
 }
 
+func TestSparseStatusReadsUntrackedPathsFromStatusAndTheConeOnce(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	counted := gitCounted(t, &f)
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "new-port"})
+	require.NoError(t, err)
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"python/py-pyaml/notes.txt": "draft\n"})
+	counted()
+
+	status, err := e.BranchStatus(t.Context(), branch)
+	require.NoError(t, err)
+	require.Equal(t, []string{"python/py-pyaml/notes.txt"}, status.untracked)
+	require.Equal(t, []string{"python/py-pyaml"}, status.SparseAdds)
+	counts := counted()
+	require.Equal(t, 1, counts["status"], "the existing porcelain status lists untracked files")
+	require.Zero(t, counts["ls-files"], "status does not run a second untracked-file query")
+	require.Equal(t, 1, counts["config"], "one query checks both sparse settings")
+	require.Equal(t, 1, counts["sparse-checkout"], "one sparse-cone read identifies the directory")
+}
+
 // OpenWork's stale check uses one rev-list across branches with distinct
 // bases; ordinary branches still use one batched net-tree comparison. At
 // 6c0a32bb the same 20-to-200 fixture grew from 28 to 208 Git processes.

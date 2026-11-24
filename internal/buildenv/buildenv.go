@@ -515,6 +515,11 @@ type LeftoverProvider interface {
 // came: two checks waiting for a slot may both reclaim it (#239).
 var ErrLeftoverGone = errors.New("already removed")
 
+// ErrLeftoverRunning means a kept clone's guard is held: by dockhand
+// shell, or by another dockhand removing it, which the guard can't tell
+// apart.
+var ErrLeftoverRunning = errors.New("in use by dockhand shell or another dockhand removing it")
+
 // Reclaimer is a Build that can remove, of the environments running that
 // its provider named, those a check left whose owner is gone, as cleanup
 // would remove them: a provider waiting for room it shares, as Tart's
@@ -571,6 +576,25 @@ type PuttingBackProvider interface {
 	PutBack(ctx context.Context, check string, progress func(string)) (place string, found bool, err error)
 }
 
+// PutBackChange is one active port version the put-back would change.
+// Previous is empty when the check would deactivate the port.
+type PutBackChange struct {
+	Port, Current, Previous string
+}
+
+// PutBackPlan describes a check's recorded prefix restoration without
+// applying it.
+type PutBackPlan struct {
+	Place, Snapshot string
+	Changes         []PutBackChange
+}
+
+// PutBackPlanner reads the restoration record and current active ports,
+// without changing the prefix.
+type PutBackPlanner interface {
+	PlanPutBack(ctx context.Context, check string) (plan PutBackPlan, found bool, err error)
+}
+
 // An InstalledProvider says what an environment has installed already, for
 // a check's estimate of what it installs: a local prefix's active ports,
 // and the global variants its variants.conf sets, under which a dependency
@@ -614,6 +638,8 @@ type Leftover struct {
 	Provider string
 	Ref      string
 	What     string
+	// Size is the provider's reported size in GiB, where available.
+	Size float64
 	// Execution names the attempt whose launch note made it, where Ref
 	// names that note rather than a ProviderRef, as GitHub's does (#241).
 	// The engine's leftoverRun reads it to find the check, and

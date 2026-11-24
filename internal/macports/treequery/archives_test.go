@@ -72,3 +72,13 @@ func TestTheOldArchiveComesFromTheMirrorAfterAStealthUpdate(t *testing.T) {
 	_, err = planOf(info(now), macports.PortObservation{}, "")
 	require.ErrorIs(t, err, ErrNoArchives)
 }
+
+func TestPlanOfMapsAnEmptyPlanAndMacPortsProblem(t *testing.T) {
+	t.Parallel()
+	info := macports.PortInfo{Name: "fixture"}
+	_, err := planOf(info, macports.PortObservation{}, "")
+	require.ErrorIs(t, err, ErrNoArchives)
+
+	_, err = planOf(info, macports.PortObservation{Problems: []string{"native fetch plan unavailable: no sites"}}, "")
+	require.EqualError(t, err, "MacPorts' fetch plan names no archives: native fetch plan unavailable: no sites")
+}

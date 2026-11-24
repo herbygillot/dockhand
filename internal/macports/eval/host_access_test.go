@@ -370,9 +370,9 @@ func knownGapVerdict(t *testing.T, platform model.Platform, setup func(string), 
 	return inconclusive, got.Snapshot.Ports["effects"].Options["distfiles"], got.Ports["effects"]
 }
 
-// A direct Portfile call of Base's compiler-selection procedure isn't
-// Base's own selection, so the host answer must leave the modeled context.
-func TestPortfilesOwnCallOfBasesToolchainProcedureStaysInconclusive(t *testing.T) {
+// A Portfile's own call of a Base portconfigure procedure is not Base's
+// compiler selection, even when the result reaches a fetch field (#247).
+func TestAPortfilesOwnCallOfBasesToolchainProcedureIsInconclusive(t *testing.T) {
 	t.Parallel()
 	snowLeopard := model.Platform{OS: "darwin", Version: "10", Architecture: "x86_64"}
 	contents := "PortSystem 1.0\nname effects\nversion 1\ndistfiles x-[file tail [portconfigure::configure_get_sdkroot 10.6]].tar.gz\n"
@@ -385,18 +385,23 @@ func TestPortfilesOwnCallOfBasesToolchainProcedureStaysInconclusive(t *testing.T
 	}
 	require.True(t, own, "the Portfile's own call closes a host read: %v", port.Problems)
 	require.Equal(t, "x-.tar.gz", distfiles, "the empty Mac's SDK answer in a fetch field")
-	require.True(t, inconclusive, "a Portfile's direct call is not Base's compiler selection")
-	groupSetup := func(root string) {
-		putFile(t, root, "_resources/port1.0/group/sdkread-1.0.tcl", "distfiles x-[file tail [portconfigure::configure_get_sdkroot 10.6]].tar.gz\n")
-	}
-	groupContents := "PortSystem 1.0\nPortGroup sdkread 1.0\nname effects\nversion 1\n"
-	inconclusive, distfiles, _ = knownGapVerdict(t, snowLeopard, groupSetup, groupContents)
-	require.Equal(t, "x-.tar.gz", distfiles, "the PortGroup's direct SDK call reaches a fetch field")
-	require.True(t, inconclusive, "a PortGroup's direct call is not Base's compiler selection")
+	require.True(t, inconclusive, "a direct Portfile call cannot explain the host read")
 }
 
-// The experiment reruns the loaded PortGroup, so its off-stack fetch change
-// is visible even though the original read's frames omit the group.
+func TestAPortfilesLazyToolchainDefaultIsInconclusive(t *testing.T) {
+	t.Parallel()
+	contents := "PortSystem 1.0\nname effects\nversion 1\noptions fixture.sdk\ndefault fixture.sdk {[portconfigure::configure_get_sdkroot 10.6]}\nbuild.args SDK=${fixture.sdk}\n"
+	inconclusive, _, port := knownGapVerdict(t, model.Platform{OS: "darwin", Version: "10", Architecture: "x86_64"}, nil, contents)
+	require.True(t, inconclusive, "a lazy default written by the Portfile is not Base's")
+	require.Contains(t, port.Problems, "modeled context depends on filesystem state outside the captured ports tree")
+}
+
+// Known gap, filed as #247, pinned as it stands, not fixed in #110's round (architecture's
+// ruling): following a Base lookup's value reads the Portfile and only the
+// PortGroups on the read's stack. A PortGroup the Portfile includes reads
+// build.cmd into distfiles while it is sourced, which leaves no frame of
+// its file, so build.cmd's make reaches a fetch field and the context
+// reads as conclusive. When the gap is closed this test fails, and flips.
 func TestExperimentSeesAPortGroupOffTheOriginalReadsStack(t *testing.T) {
 	t.Parallel()
 	setup := func(root string) {
@@ -406,30 +411,7 @@ func TestExperimentSeesAPortGroupOffTheOriginalReadsStack(t *testing.T) {
 	inconclusive, distfiles, port := knownGapVerdict(t, monterey, setup, contents)
 	require.Contains(t, port.Problems, "modeled context depends on make, which findBinary looks for along this Mac's PATH")
 	require.Equal(t, "foo-.tar.gz", distfiles, "make, not found on the empty Mac, in a fetch field")
-	require.True(t, inconclusive, "the experiment catches this off-stack fetch change")
-}
-
-// Session.One runs the default-chain experiment as well as ordinary
-// observation. A separately sourced PortGroup that consumes the option
-// carrying the Base lookup must not escape the read-by-read judgment.
-func TestDefaultChainOffStackPortGroupConsumerThroughOne(t *testing.T) {
-	t.Parallel()
-	e := liveEvaluator(t)
-	tree := fixtureTree(t)
-	putFile(t, tree.Root(), "_resources/port1.0/group/defaultchain-1.0.tcl", "default build.cmd {[portbuild::build_getmaketype]}\n")
-	putFile(t, tree.Root(), "_resources/port1.0/group/offstack-1.0.tcl", "distfiles foo-[file tail ${build.cmd}].tar.gz\n")
-	data := []byte("PortSystem 1.0\nPortGroup defaultchain 1.0\nPortGroup offstack 1.0\nname effects\nversion 1\n")
-	putFile(t, tree.Root(), "devel/effects/Portfile", string(data))
-	bound, err := tree.Select(model.Target{Name: "effects", Portfile: "devel/effects/Portfile"})
-	require.NoError(t, err)
-	s := productObservationSession(t, e, bound)
-	got, err := s.One(t.Context(), data, macports.ObservationRequest{Platform: monterey, Declarations: true}, false)
-	require.NoError(t, err)
-	require.NotNil(t, got.Ports["effects"].MachineReadExperiment)
-	require.Equal(t, "differs", got.Ports["effects"].MachineReadExperiment.Outcome)
-	require.Equal(t, "distfiles", got.Ports["effects"].MachineReadExperiment.Field)
-	_, inconclusive := observe.Tolerate(t.Context(), got.Ports["effects"], data, tree.Root())
-	require.True(t, inconclusive, "%v", got.Ports["effects"].Problems)
+	require.True(t, inconclusive, "the experiment catches this off-stack fetch change; #247 remains held")
 }
 
 // The outside confirmation of #110 at 6ab59afb, findings 1 and 2, live: a

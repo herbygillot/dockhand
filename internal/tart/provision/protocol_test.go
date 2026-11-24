@@ -26,8 +26,10 @@ import (
 // a Mac, and the unused-logic step dropped the copy of images a dockhand
 // before v0.3.0 made in the person's Tart home and the guest prefix only
 // /opt/local could take, and #38's floor of Tart 2.41.1 reworded the
-// comment on ASIFReady, none of which changes an image.
-const setupPin = "196fd9a13681bb0d8d2d4ea097af985cec32a860e5721f19e269127e12bcc4a0"
+// comment on ASIFReady, and #94 gave what Tart and the guest's commands
+// print a writer of its own, apart from setup's sentences, none of which
+// changes an image.
+const setupPin = "65d6068f94bf00b9c8631b03934ee164c746caff23357b5e96778c12077a9366"
 
 // What setup puts in an image is identified by tart.SetupProtocol, which
 // evidence's reuse compares (decision 28). A change to the provisioning

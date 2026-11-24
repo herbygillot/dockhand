@@ -121,6 +121,59 @@ func TestServeHoldsAnUpdateWhoseUpstreamChangedItsLicense(t *testing.T) {
 	require.ErrorContains(t, err, "needs review before submission: upstream's LICENSE changed")
 }
 
+func TestServeHoldsStaleCargoLockConcernUntilAllowed(t *testing.T) {
+	t.Parallel()
+	words := "Cargo.lock pins local package demo at 1.0.0, but Cargo.toml says 1.1.0; a Cargo build with --frozen will refuse because it cannot update the lock file; a patch that refreshes Cargo.lock clears this hold"
+	for _, test := range []struct {
+		name  string
+		allow []string
+		held  bool
+	}{
+		{name: "held by default", held: true},
+		{name: "allowed", allow: []string{assess.CargoLockStale}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			f := setup(t)
+			e, p := f.withPreparer(t)
+			fake := f.withFork(t, e)
+			fake.Others = nil
+			p.upstream = [2]map[string]string{
+				{"Cargo.lock": "version = 4\n\n[[package]]\nname = \"demo\"\nversion = \"1.0.0\"\n",
+					"Cargo.toml": "[package]\nname = \"demo\"\nversion = \"1.0.0\"\n"},
+				{"Cargo.lock": "version = 4\n\n[[package]]\nname = \"demo\"\nversion = \"1.0.0\"\n",
+					"Cargo.toml": "[package]\nname = \"demo\"\nversion = \"1.1.0\"\n"},
+			}
+			e.options.AllowHolds = test.allow
+			branch := servePrepared(t, e)
+
+			candidates, _, err := e.serveCandidates(t.Context())
+			require.NoError(t, err)
+			require.Len(t, candidates, 1)
+			if test.held {
+				require.Equal(t, []string{assess.CargoLockStale}, []string{candidates[0].Held[0].Rule})
+			} else {
+				require.Empty(t, candidates[0].Held, "holds.allow lets the unattended submission through")
+			}
+			require.Contains(t, HoldLines(candidates[0].Plan.Concerns()), words)
+			if test.held {
+				_, err = e.SubmitForServe(t.Context(), candidates[0], ServeAdmission{Limit: 1})
+				require.ErrorContains(t, err, "Cargo.lock pins local package demo")
+				require.Empty(t, fake.Created)
+			} else {
+				_, err = e.SubmitForServe(t.Context(), candidates[0], ServeAdmission{Limit: 1})
+				require.NoError(t, err)
+				require.Len(t, fake.Created, 1)
+			}
+			status, err := e.BranchStatus(t.Context(), branch)
+			require.NoError(t, err)
+			if test.held {
+				require.Contains(t, HoldLines(status.Held), words)
+			}
+		})
+	}
+}
+
 // A crate list an update left as the old version had it, the new source
 // shipping no Cargo.lock, holds an unattended submission after its passing
 // check, as a check builds default variants only; holds.allow naming

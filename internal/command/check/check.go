@@ -131,6 +131,23 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 				return runBaseline(ctx, e, streams, request, enqueue, limit, s)
 			}
 			mode := captureMode(head, staged, workingTree)
+			// The place and the tests the branch's request kept are read
+			// where they weren't given, and said; check never changes the
+			// request (#195).
+			if kept := branch.Request; kept != nil {
+				var took []string
+				if !cmd.Flags().Changed("on") && !cmd.Flags().Changed("build") && (kept.Check.On.Given || kept.Check.Build.Given) {
+					on, build = kept.Check.On.Value, kept.Check.Build.Value
+					took = append(took, map[bool]string{true: "--on " + strings.Join(on, ","), false: "--build " + build}[len(on) > 0])
+				}
+				if !cmd.Flags().Changed("tests") && kept.Check.Tests.Given {
+					tests = kept.Check.Tests.Value
+					took = append(took, "--tests "+tests)
+				}
+				if len(took) > 0 {
+					fmt.Fprintf(streams.Prose(), "Taken from what the branch's request kept: %s\n", strings.Join(took, ", "))
+				}
+			}
 			place, err := e.Where(ctx, engine.WhereRequest{On: on, Build: build})
 			if err != nil {
 				return err
@@ -139,8 +156,17 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 			if err != nil {
 				return err
 			}
+			// An update not finished is said before the files are taken;
+			// a plan settles nothing and says it as it stands (#194).
+			if plan {
+				if err := e.SayUnsettled(ctx, branch, engine.SettlerFor(engine.SettlerOther)); err != nil {
+					return err
+				}
+			} else if err := e.UnfinishedGate(ctx, branch, yes, "the check builds"); err != nil {
+				return err
+			}
 			proposal, err := e.ProposeCheck(ctx, engine.CheckRequest{Capture: engine.CaptureRequest{Branch: branch, Mode: mode, Named: where.Explicit(), Include: include, Plan: plan}, Where: place,
-				Tests: model.TestPolicy(tests), Only: only, Also: also, Fresh: fresh, Keep: keep, Variants: chosen, VariantsPort: named, EachVariant: each})
+				Tests: model.TestPolicy(tests), Only: only, Also: also, Fresh: fresh, Keep: keep, Unattended: yes, Variants: chosen, VariantsPort: named, EachVariant: each})
 			if err != nil {
 				return err
 			}
@@ -184,11 +210,19 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 				// one Git doesn't track yet, and the worktree's sparse
 				// checkout keeps git add from taking it: the commands are
 				// said whole (the Vx port's field testing, 2026-10-03).
+				newPorts := make(map[string]bool, len(capture.NewPorts))
 				for _, directory := range capture.NewPorts {
-					fmt.Fprintf(out, "  New port directory %s: run dockhand check --include %s/Portfile to build it. Run git sparse-checkout add %s before staging its files.\n", directory, directory, directory)
+					newPorts[directory] = true
+					fmt.Fprintf(out, "  New port directory %s: run dockhand check --include %s/Portfile to build it.\n", directory, directory)
+				}
+				for _, directory := range capture.SparseAdds {
+					if !newPorts[directory] {
+						fmt.Fprintf(out, "  Files in %s are outside this worktree's sparse checkout.\n", directory)
+					}
+					fmt.Fprintf(out, "  Run git sparse-checkout add %s\n", directory)
 				}
 			}
-			view.WritePlan(out, proposed, e.PlanNotes(ctx, proposed), e.PlanSiblings(ctx, capture.Revision, proposed), e.Remedy, view.ListShown(streams))
+			view.WritePlan(out, proposed, e.PlanNotes(ctx, proposed), e.PlanSiblings(ctx, capture.Revision, proposed), e.Remedy, view.ListShown(streams), plan)
 			// The plan's evaluation, with -v: check --plan -v is the dry
 			// evaluation under a variant set (field testing's curl
 			// +sectrust notes, note 8b).
@@ -219,6 +253,9 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 					fmt.Fprintln(out, "Reuse       when this check runs, it may reuse passing builds with identical inputs; --fresh rebuilds every port")
 				}
 				return nil
+			}
+			if keep && !fresh && proposed.Fresh {
+				fmt.Fprintln(out, "Building fresh so there's a VM to keep.")
 			}
 			if err := confirmVariantBuilds(streams, proposed, yes); err != nil {
 				return err
@@ -325,7 +362,7 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 	cmd.Flags().BoolVar(&fresh, "fresh", false, "build every port, reusing no earlier build's result")
 	cmd.Flags().BoolVar(&keep, "keep", false, "retain stopped Tart VMs for dockhand shell, or leave the branch's versions active in a local prefix")
 	cmd.Flags().StringVar(&variants, "variants", "", "build the one port checked with these variants, +name -name, or each: its defaults, then each variant it declares")
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --variants each, make its builds without asking")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --variants each, make its builds without asking; keep no failure clone")
 	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
 	cmd.MarkFlagsMutuallyExclusive("baseline", "also")
 	cmd.MarkFlagsMutuallyExclusive("baseline", "keep")
@@ -425,7 +462,7 @@ func previewBaseline(ctx context.Context, e *engine.Engine, streams term.Streams
 		return err
 	}
 	writeBaselineHeader(streams.Prose(), branch, baseline)
-	view.WritePlan(streams.Prose(), baseline.Plan, e.PlanNotes(ctx, baseline.Plan), engine.Siblings{}, e.Remedy, view.ListShown(streams))
+	view.WritePlan(streams.Prose(), baseline.Plan, e.PlanNotes(ctx, baseline.Plan), engine.Siblings{}, e.Remedy, view.ListShown(streams), true)
 	planned := view.PlanView(baseline.Plan)
 	streams.Emit(view.CheckJSON{Branch: branch.ShortName(), Plan: &planned, Targets: []view.TargetJSON{}})
 	return nil
@@ -522,7 +559,15 @@ func confirmVariantBuilds(streams term.Streams, plan model.Plan, yes bool) error
 	if !plan.EachVariant || builds <= variantBuildsToAsk || yes {
 		return nil
 	}
-	ok, _, err := streams.Decide(false, term.Decision{Question: fmt.Sprintf("? --variants each will run %d full builds. Continue? [y/N] ", builds),
+	question := fmt.Sprintf("? --variants each will run %d full builds. Continue? [y/N] ", builds)
+	if len(plan.ReplacesKept) > 0 {
+		var replacements []string
+		for _, replacement := range plan.ReplacesKept {
+			replacements = append(replacements, view.KeptReplacementWords(replacement, false))
+		}
+		question = strings.Join(replacements, "\n") + "\n" + question
+	}
+	ok, _, err := streams.Decide(false, term.Decision{Question: question,
 		Undone: fmt.Sprintf("nothing was checked (--variants each makes %d builds here)", builds), ByYes: "--yes builds them"})
 	if err != nil {
 		return err

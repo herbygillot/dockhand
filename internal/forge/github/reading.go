@@ -188,7 +188,7 @@ func readingOf(ref forge.PullRequestRef, pr graphPullRequest, account string) (f
 	if pr.Author != nil {
 		reading.PullRequest.Author = pr.Author.Login
 	}
-	status := forge.PullRequestStatus{Draft: pr.IsDraft, Mergeable: "unknown", Review: "none"}
+	status := forge.PullRequestStatus{Draft: pr.IsDraft, Head: model.ObjectID(pr.HeadRefOID), Mergeable: "unknown", Review: "none"}
 	// The refresh's query reads mergeable as Inspect's REST read does, where
 	// it was set unknown whatever GitHub said (the docs dig's I2).
 	switch pr.Mergeable {

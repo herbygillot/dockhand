@@ -457,9 +457,10 @@ type ChecksumsToWrite struct {
 func (c *ChecksumsToWrite) Error() string { return c.Err.Error() }
 func (c *ChecksumsToWrite) Unwrap() error { return c.Err }
 
-// checksumsToWrite fetches the archives a refresh would have written the
-// checksums of, and returns refusal with them; refusal alone where they
-// couldn't be had.
+// checksumsToWrite asks for a plan, as main did: it left contexts, applied
+// archive policy, and fetched the plan without judging host access.
+// It fetches the archives a refresh would have written the checksums of, and
+// returns refusal with them; refusal alone where they couldn't be had.
 func (s *Service) checksumsToWrite(ctx context.Context, input *sourceInput, refusal error) error {
 	profiles, err := input.observe.Profiles(ctx, input.data)
 	if err != nil {
@@ -479,24 +480,22 @@ func (s *Service) checksumsToWrite(ctx context.Context, input *sourceInput, refu
 	var sums []portfile.Checksum
 	agree := true
 	for _, observed := range observations {
-		// A context the plan left is left here too: nothing of it is
-		// fetched (Codex's review of #110 and #125, finding 5).
-		if _, left := observe.Left(ctx, observed, input.target.Name, input.data); left {
+		decision, decisionErr := observe.DecideFetch(ctx, observed, input.target.Name, input.data, input.portdirIn(observed.Snapshot.Root), observe.FetchPlanNeed, false, nil)
+		if decisionErr != nil {
+			return refusal
+		}
+		if decision.Kind == observe.FetchLeft {
 			continue
 		}
-		info := observed.Snapshot.Ports[input.target.Name]
-		// Fetched only as every other fetch is, after the policy: this
-		// fallback fetched a context's archives that MacPorts' own fetch
-		// would treat differently (#271).
-		if err := distfetch.CheckPolicy(info, input.portdirIn(observed.Snapshot.Root)); err != nil {
+		if decision.Kind == observe.FetchRefused || decision.Kind == observe.FetchInconclusive {
 			return refusal
 		}
+		if decision.Kind == observe.FetchNoPlan && decision.HadProblems {
+			return refusal
+		}
+		info := decision.Info
 		declared, _ := syntax.ListValues(info.Options["checksums"])
-		plan, err := observed.Ports[input.target.Name].FetchPlan()
-		if err != nil {
-			return refusal
-		}
-		for _, file := range plan {
+		for _, file := range decision.Plan {
 			if slices.ContainsFunc(sums, func(sum portfile.Checksum) bool { return sum.Name == file.Name }) {
 				continue
 			}

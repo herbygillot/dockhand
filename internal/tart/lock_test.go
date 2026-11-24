@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -76,4 +77,25 @@ func TestLocksLiveOutsideTheTartHomeKeyedByItsCanonicalPath(t *testing.T) {
 	entries, err := os.ReadDir(home)
 	require.NoError(t, err)
 	require.Empty(t, entries, "nothing is written inside the Tart home")
+}
+
+// A clone's guard let go with ReleaseClone is free for the next taker at
+// once, though a child process forked meanwhile still holds its file: a
+// guard closed alone stayed held by such a child, and the second removal
+// of an already-removed clone read it as running in dockhand shell (the
+// gate's TestLeftoversAreOnlyCheckClones, #291).
+func TestAReleasedCloneGuardIsFreeThoughAChildHoldsItsFile(t *testing.T) {
+	t.Parallel()
+	home := filepath.Join(t.TempDir(), ".dockhand", "tart")
+	require.NoError(t, os.MkdirAll(home, 0o700))
+	guard, err := TryAcquireClone(home, "dockhand-check-run-7-tahoe-1")
+	require.NoError(t, err)
+	child := exec.Command("/bin/sleep", "5")
+	child.ExtraFiles = []*os.File{guard}
+	require.NoError(t, child.Start())
+	t.Cleanup(func() { _ = child.Process.Kill(); _ = child.Wait() })
+	require.NoError(t, ReleaseClone(guard))
+	again, err := TryAcquireClone(home, "dockhand-check-run-7-tahoe-1")
+	require.NoError(t, err, "free though the child holds the file")
+	require.NoError(t, ReleaseClone(again))
 }

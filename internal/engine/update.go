@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/editprep"
@@ -20,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
+	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
@@ -78,6 +80,16 @@ type UpdateRequest struct {
 	Excepted []string
 	// Plan prepares the edit and changes nothing.
 	Plan bool
+	// fromRequest is an edit the request's own preparation makes: a
+	// continuation's, the stub's, the dependents' bump. Any other edit
+	// (a checksum refresh, revbump) drops the tested statements pending
+	// in the request, which were for other files (#195).
+	fromRequest bool
+	// Asking is what update, bump, ship and serve asked, which the update
+	// resolves into the branch's request and keeps before its edit, under
+	// the branch's lock (#195): the release kept is gone on with, and the
+	// source policy is the request's. A primitive asks none.
+	Asking *Asking
 	// FromMaster plans against master as fetched now, with no branch: a
 	// look before starting one. It goes only with Plan.
 	FromMaster bool
@@ -161,6 +173,11 @@ var ErrFidelity = editprep.ErrFidelity
 // as the version (#216).
 var ErrReleaseMissing = upstream.ErrReleaseMissing
 
+// ReadsAsVersion reports whether a word named to update reads as a version,
+// 9.9, rather than a name, my-branch: a version upstream has no release
+// of is a release not found, never a branch named by mistake (#305).
+func ReadsAsVersion(word string) bool { return version.Classify(word) != version.Unknown }
+
 // Unlocated is a checksum declaration dockhand can't find in the Portfile
 // to edit, an unsupported edit that names the archive and why.
 type Unlocated = editprep.Unlocated
@@ -171,6 +188,9 @@ type ChecksumsToWrite = editprep.ChecksumsToWrite
 
 // Update reports an update or checksum refresh.
 type Update struct {
+	// Said is what resolving the request said of what was kept: a release
+	// gone on with, a flag given over a kept one (#195).
+	Said   []string
 	Branch model.Branch
 	// Base is the commit the update was prepared on: the branch's base, or
 	// master as fetched for a plan from master.
@@ -217,6 +237,9 @@ type Update struct {
 	// Differing are the archives whose checksums weren't as the Portfile
 	// declared them, for a checksum refresh.
 	Differing []string
+	// patches are the preparer's checks of the port's patches, whose
+	// rejected ones' details a recorded finding keeps whole.
+	patches []patchcheck.Result
 	// PatchProblems name the port's patches that no longer apply, and
 	// PatchesUnchecked those no check reached before the build;
 	// PatchesApplied counts those checked that apply.
@@ -314,7 +337,54 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 			return Update{Port: request.Port}, err
 		}
 	}
+	// A branch's unwritten edits are settled first: an update of their
+	// port finishes them, any other stops at one cut short (#194). A plan
+	// settles nothing, and says what settling would do (T2). A version the
+	// person named, not one outdated found, replaces an edit none of whose
+	// files is written (T5).
+	named := request.Version != "" && request.Release == nil && request.Action == model.EditUpdate
+	settlerFor := func(edit model.Edit) Settler {
+		switch {
+		case edit.Port == request.Port && named:
+			return SettlerNamed
+		case edit.Port == request.Port:
+			return SettlerOwner
+		}
+		return SettlerOther
+	}
+	switch {
+	case request.Start != nil || request.FromMaster:
+	case request.Plan:
+		if err := e.SayUnsettled(ctx, request.Branch, settlerFor); err != nil {
+			return Update{Port: request.Port}, err
+		}
+	default:
+		settled, err := e.settled(ctx, &request.Branch, settlerFor)
+		if err != nil {
+			return Update{Port: request.Port}, err
+		}
+		// An edit of this port settled finishes what its update didn't:
+		// the record, then step 6, the branch's name for its version, under
+		// the branch's lock as every rename is (P2-3).
+		for _, done := range settled {
+			if (done.Settling.Action == SettleRecord || done.Settling.Action == SettleWrite) && done.Edit.Port == request.Port && done.Edit.Kind == model.EditUpdate && done.Edit.Result != nil {
+				finished := Update{Before: PortVersion{Version: versionOf(done.Edit.Result.Before)}, After: PortVersion{Version: versionOf(done.Edit.Result.After)}}
+				if err := e.lockedBranch(ctx, request.Branch.ID, request.Branch.Name, func(ctx context.Context, current model.Branch, held *heldLock) error {
+					request.Branch = current
+					e.renameUpdated(ctx, held, request, &request.Branch, &finished)
+					return nil
+				}); err != nil {
+					return Update{Port: request.Port}, err
+				}
+			}
+		}
+	}
 	update, err := e.updateWithObsolete(ctx, request)
+	if err == nil && request.Asking != nil && !request.Plan && request.Action == model.EditUpdate {
+		if err = e.concludeSideActions(ctx, request, &update); err != nil {
+			return update, err
+		}
+	}
 	if err == nil && request.Action == model.EditUpdate && !update.Current && update.Port != "" {
 		closed, ok, closedErr := e.ClosedAt(ctx, update.Port, update.After.Version)
 		if closedErr != nil {
@@ -363,7 +433,7 @@ func (e *Engine) updateWithObsolete(ctx context.Context, request UpdateRequest) 
 		return update, nil
 	}
 	follow := UpdateRequest{Branch: update.Branch, Action: model.EditUpdate, Port: update.Obsolete.Port, Version: update.After.Version,
-		Plan: request.Plan, FromMaster: request.FromMaster, subject: update.Subject}
+		Plan: request.Plan, FromMaster: request.FromMaster, subject: update.Subject, fromRequest: true}
 	if request.Plan {
 		// A plan changes nothing, so the stub's edit is planned on the
 		// files as they are, and said beside the port's.
@@ -373,7 +443,7 @@ func (e *Engine) updateWithObsolete(ctx context.Context, request UpdateRequest) 
 	if err != nil {
 		return update, fmt.Errorf("%s moved to %s, but its obsolete %s couldn't: %w", update.Port, update.After.Version, update.Obsolete.Port, err)
 	}
-	update.Obsolete.Moved = true
+	update.Obsolete.Moved, update.Obsolete.Updated = true, true
 	update.Files = append(update.Files, moved.Files...)
 	update.Diff += moved.Diff
 	return update, nil
@@ -385,6 +455,9 @@ func (e *Engine) updateWithObsolete(ctx context.Context, request UpdateRequest) 
 type ObsoleteStub struct {
 	Port, Version string
 	Moved         bool
+	// Updated is the stub's own edit made, --with-obsolete's, where
+	// Moved alone may be its moving with the port's edit.
+	Updated bool
 }
 
 // obsoleteStub is the updated port's obsolete stub, in the family the
@@ -398,6 +471,67 @@ func obsoleteStub(update Update) *ObsoleteStub {
 		}
 	}
 	return nil
+}
+
+// resolveFor resolves an update's request where it asks one: kept under
+// the branch's lock before the edit, where the branch is there and the
+// update isn't a plan; resolved and not kept otherwise, a plan saving
+// nothing and a branch not started yet keeping it once it is (start). The
+// release kept is the one gone on with, where no version was named.
+func (e *Engine) resolveFor(ctx context.Context, request *UpdateRequest, branch *model.Branch) (*Resolved, error) {
+	if request.Asking == nil || request.Action != model.EditUpdate {
+		return nil, nil
+	}
+	asking := *request.Asking
+	var resolved Resolved
+	var err error
+	// A refusal is kept and not tried again: the ask resolved against the
+	// request as it stands, a refusal still standing for the port stops
+	// here, by name, before anything is written; a changed ask removed it
+	// in the resolver, so it is judged again (#195, "Readiness").
+	if branch.ID != "" && !request.Plan {
+		look := asking
+		look.Branch = branch
+		if resolved, err = ResolveRequest(look); err != nil {
+			return nil, err
+		}
+		if refused := refusedFor(resolved.Request, request.Port); refused != "" {
+			return nil, refusal.New(refusal.Attention, "%s; nothing was written: that ask is refused until it changes", refused)
+		}
+	}
+	if branch.ID != "" && !request.Plan && request.Start == nil {
+		if resolved, *branch, err = e.keepRequest(ctx, *branch, asking); err != nil {
+			return nil, err
+		}
+		// Asked again of the request resolved under the lock: a refusal
+		// another process stored since the look above stops it too.
+		if refused := refusedFor(resolved.Request, request.Port); refused != "" {
+			return nil, refusal.New(refusal.Attention, "%s; nothing was written: that ask is refused until it changes", refused)
+		}
+	} else {
+		if branch.ID != "" {
+			asking.Branch = branch
+		}
+		if resolved, err = ResolveRequest(asking); err != nil {
+			return nil, err
+		}
+	}
+	// A release kept is gone on with where no version was named, over one
+	// a lookup found again (#195, "What is kept").
+	if asking.Named == "" && branch.ID != "" {
+		var edits []model.Edit
+		if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+			var err error
+			edits, err = r.Edits(branch.ID)
+			return err
+		}); err != nil {
+			return nil, err
+		}
+		if release := keptTarget(resolved, request.Port, edits); release != nil {
+			request.Release, request.Version = release, release.Version
+		}
+	}
+	return &resolved, nil
 }
 
 func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, error) {
@@ -446,6 +580,12 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		if branch, err = e.Start(ctx, started); err != nil {
 			return err
 		}
+		// The request is kept on the branch it starts, before the edit.
+		if request.Asking != nil && request.Action == model.EditUpdate && !request.Plan {
+			if _, branch, err = e.keepRequest(ctx, branch, *request.Asking); err != nil {
+				return err
+			}
+		}
 		worktree, err = e.worktree(ctx, branch)
 		return err
 	}
@@ -458,6 +598,10 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 			}
 			return Update{Branch: branch, Base: base, Port: request.Port, Started: true}, err
 		}
+		return Update{}, err
+	}
+	resolved, err := e.resolveFor(ctx, &request, &branch)
+	if err != nil {
 		return Update{}, err
 	}
 	preparer, err := e.preparer()
@@ -487,10 +631,18 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		Attended:   !request.Unattended,
 		SourceMode: editprep.SourceMode(e.options.Source),
 	}
+	keepHTTP := e.options.KeepHTTP
+	if resolved != nil {
+		// The request's source policy, the settings' where no flag gave
+		// it; an explicit --source is carried out on a port already
+		// current (#121).
+		input.SourceMode, keepHTTP = editprep.SourceMode(resolved.Policy.Source), resolved.Policy.KeepHTTP
+		input.ActOnCurrent = resolved.Request.Source.Source.Given
+	}
 	// The port's plain-HTTP links that answer over HTTPS are switched as
 	// part of the edit, asked from the run's answers (the person's "Let's
 	// try to get HTTP to HTTPS into 0.7.0", 2026-10-29).
-	if (request.Action == model.EditUpdate || request.Action == model.EditChecksums) && !e.options.KeepHTTP {
+	if (request.Action == model.EditUpdate || request.Action == model.EditChecksums) && !keepHTTP {
 		input.HTTPS = httpsAnswers{e}
 	}
 	if request.Action == model.EditChecksums {
@@ -518,6 +670,20 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 			return byHand(unindexed(err))
 		}
 		input.Release = &release
+		// The release is kept on the branch's target the moment it's
+		// selected, before anything is downloaded, so the same command
+		// again prepares it and not a newer one (#194, H1).
+		if !request.Plan && request.Start == nil && !release.NoUpdate {
+			named := ""
+			if request.Release == nil {
+				named = request.Version
+			}
+			if err := e.keepTarget(ctx, branch, "update", request.Port, func(target *model.RequestTarget) {
+				target.Named, target.Release = named, &release
+			}); err != nil {
+				return Update{}, err
+			}
+		}
 		// A release outdated found already was chosen automatically, and
 		// asks for no version of its own: the editor holds the version it
 		// edits to the release's request, which update --outdated gave as
@@ -550,17 +716,34 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	}
 	result, err := preparer.Prepare(ctx, input)
 	if err != nil {
+		// A --source the port's preparation refused is the source
+		// action's outcome, kept, which lets nothing go on until the ask
+		// changes (#195, "Readiness").
+		if refused := new(editprep.SourceRefused); errors.As(err, &refused) && resolved != nil && resolved.Request.Source.Source.Given && !request.Plan && branch.ID != "" {
+			if keepErr := e.keepTarget(ctx, branch, resolved.Request.Origin, request.Port, func(target *model.RequestTarget) {
+				concluded(target, model.ActionOutcome{Action: "source", Result: model.ActionRefused, Why: refusal.WordsOf(err)})
+			}); keepErr != nil {
+				return Update{}, errors.Join(err, keepErr)
+			}
+		}
 		return byHand(unindexed(err))
 	}
 	failpoint.Hit("update.prepared")
 	update := describe(branch, request.Port, result)
+	if resolved != nil {
+		update.Said = resolved.Said
+	}
 	update.Base = base
 	followOnly, err := e.followMoves(ctx, request, worktree, captured, &update, &result)
 	if err != nil {
 		return Update{}, err
 	}
 	modelined := false
-	if !e.KeepModeline {
+	keepModeline := e.KeepModeline
+	if resolved != nil {
+		keepModeline = keepModeline || resolved.Policy.KeepModeline
+	}
+	if !keepModeline {
 		modelined = withModelines(&result)
 	}
 	fixed, reread, err := withLintFixes(ctx, worktree, captured, &result)
@@ -663,6 +846,25 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	}
 	if len(result.Files) == 0 {
 		update.Current = true
+		// A port found current concludes its version, saved where the
+		// branch exists so a continuation doesn't look again (#194).
+		if !request.Plan && request.Start == nil && request.Action == model.EditUpdate {
+			if err := e.keepTarget(ctx, branch, "update", request.Port, func(target *model.RequestTarget) {
+				// A version an edit concluded already is done, not found.
+				if _, done := target.Outcome("version"); !done {
+					target.Current = update.After.String()
+				}
+				for _, outcome := range concludeWith(resolved, result, false) {
+					// A refusal stands until its ask changes.
+					if kept, ok := target.Outcome(outcome.Action); ok && kept.Result == model.ActionRefused {
+						continue
+					}
+					concluded(target, outcome)
+				}
+			}); err != nil {
+				return update, err
+			}
+		}
 		return update, nil
 	}
 	// An unattended update looked before its edit, and found none.
@@ -685,94 +887,172 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 			return update, err
 		}
 		update.Branch, update.Started = branch, true
+		// A new branch's request carries the release step 1 selected; no
+		// second look is made for it (#194).
+		if request.Action == model.EditUpdate && update.Release != nil {
+			origin := "update"
+			if request.Start.Origin == model.OriginServe {
+				origin = "serve"
+			}
+			if err := e.keepTarget(ctx, branch, origin, request.Port, func(target *model.RequestTarget) {
+				target.Release = update.Release
+				if request.Release == nil {
+					target.Named = request.Version
+				}
+			}); err != nil {
+				return update, err
+			}
+			if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+				var err error
+				branch, err = r.Branch(branch.ID)
+				return err
+			}); err != nil {
+				return update, err
+			}
+			update.Branch = branch
+		}
 	}
 
-	if err := expandFor(ctx, worktree, update.Files); err != nil {
-		return Update{}, err
-	}
-	if err := worktree.ApplyToWorkingFiles(ctx, result.Files); err != nil {
-		if errors.Is(err, git.ErrWorkingFile) {
-			return Update{}, fmt.Errorf("%w; nothing was written, so run it again", err)
+	// Steps 3 to 6 run under the branch's lock, which history's
+	// transitions and settling take too, reading the branch again under
+	// it (#194, "The lock").
+	var locked Update
+	err = e.lockedBranch(ctx, branch.ID, branch.Name, func(ctx context.Context, current model.Branch, held *heldLock) error {
+		// The branch as read under its lock, whatever name it was come by.
+		branch = current
+		if update.Branch.ID == current.ID {
+			update.Branch = current
 		}
-		return Update{}, err
-	}
-	update.Applied = true
-	if request.Start == nil && request.Action == model.EditUpdate {
-		renamed, err := e.renameForVersion(ctx, &branch, request.Port, update.Before.Version, update.After.Version)
-		switch {
-		case err != nil:
-			progress.VerboseReport(ctx, "%s keeps its name: %v", branch.ShortName(), err)
-		case renamed != "":
-			update.RenamedFrom, update.Branch = renamed, branch
+		// What was asked is read again under the lock: a port no longer
+		// its target, or kept at another release than this edit was
+		// prepared at, records nothing, to be prepared again (#194, E5).
+		if changed := askChanged(current.Request, request.Port, update.Release); changed != "" && request.Action == model.EditUpdate {
+			return refusal.New(refusal.Attention, "what was asked of %s changed while %s was prepared (%s); nothing was recorded or written, so run it again", current.ShortName(), request.Port, changed)
 		}
-	}
-	// A hand edit's attempt is the person's from here: no edit of
-	// dockhand's is recorded, and the refusal it answers is, for status,
-	// the hold, and the pull request to say (Then's item 3).
-	if result.Refused != nil {
-		return e.recordHandEdit(ctx, branch, update, result)
-	}
-	edit, err := e.editRecord(ctx, worktree, branch, request, update, result)
-	if err != nil {
-		return update, err
-	}
-	change := "refreshed checksums"
-	switch request.Action {
-	case model.EditUpdate:
-		change = fmt.Sprintf("%s → %s", update.Before, update.After)
-	case model.EditRevbump:
-		change = fmt.Sprintf("revision %d → %d", update.Before.Revision, update.After.Revision)
-	}
-	applied, primed, record, err := e.editFindings(ctx, worktree, branch, base, captured, edit, update, result, compare)
-	if err != nil {
-		return update, err
-	}
-	update.Instructions = instructionLines(worktree.Root, edit.Directory, update.Port)
-	// The files are written; a record that landed though its commit's
-	// outcome is unknown stands, where saying the update failed would
-	// leave the person to edit again what's there (store.Recorded).
-	err = store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
-		if err := tx.AddEdit(edit); err != nil {
-			return err
-		}
-		// The tickets it closes join the branch's, each once.
-		if len(request.Closes) > 0 {
-			current, err := tx.Branch(branch.ID)
-			if err != nil {
-				return err
-			}
-			for _, ticket := range request.Closes {
-				if !slices.Contains(current.Closes, ticket) {
-					current.Closes = append(current.Closes, ticket)
+		var err error
+		locked, err = func() (Update, error) {
+			// A hand edit's attempt is the person's from here: no edit of
+			// dockhand's is recorded, and the refusal it answers is, for status,
+			// the hold, and the pull request to say (Then's item 3). It records no
+			// edit before its files, since none of dockhand's is made (#194).
+			if result.Refused != nil {
+				if err := e.writeEdit(ctx, worktree, update.Files, result.Files); err != nil {
+					return Update{}, err
 				}
+				update.Applied = true
+				e.renameUpdated(ctx, held, request, &branch, &update)
+				return e.recordHandEdit(ctx, branch, update, result)
 			}
-			if err := tx.UpdateBranch(current); err != nil {
+			// Step 3: the edit is recorded before its files are written, with what
+			// preparing it found and the prepared tree's assessment and change
+			// record, so a run cut short after the write leaves a record a later
+			// one finishes with no preparer and no download (#194).
+			edit, err := e.editRecord(ctx, worktree, branch, request, update, result)
+			if err != nil {
+				return update, err
+			}
+			update.Instructions = preparedInstructions(ctx, worktree, string(result.PreparedTree), edit.Directory, update.Port)
+			edit.Result = editResult(update, result)
+			change := editChange(edit)
+			prepared := string(result.PreparedTree)
+			primed, record, err := e.editFindings(ctx, worktree, branch, base, captured, prepared, edit, update, result, compare)
+			if err != nil {
+				return update, err
+			}
+			if err := store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
+				if err := tx.AddUnwritten(edit); err != nil {
+					return err
+				}
+				// The tickets it closes join the branch's, each once.
+				if len(request.Closes) > 0 {
+					current, err := tx.Branch(branch.ID)
+					if err != nil {
+						return err
+					}
+					for _, ticket := range request.Closes {
+						if !slices.Contains(current.Closes, ticket) {
+							current.Closes = append(current.Closes, ticket)
+						}
+					}
+					if err := tx.UpdateBranch(current); err != nil {
+						return err
+					}
+				}
+				if primed != nil {
+					if err := tx.RecordAssessment(*primed); err != nil {
+						return err
+					}
+				}
+				if record != nil {
+					return tx.RecordChange(*record)
+				}
+				return nil
+			}, editRecordedUnwritten(edit.ID)); err != nil {
+				return update, err
+			}
+			failpoint.Hit("update.recorded")
+			// Step 4: the files are written, each checked again first; one changed
+			// while the edit was prepared leaves every file as it was, and the
+			// record just made goes.
+			if err := e.writeEdit(ctx, worktree, update.Files, result.Files); err != nil {
+				if errors.Is(err, git.ErrWorkingFile) || errors.Is(err, errNotExpanded) {
+					if removeErr := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error { return tx.RemoveUnwritten(edit.ID) }); removeErr != nil {
+						return Update{}, errors.Join(err, removeErr)
+					}
+				}
+				return Update{}, err
+			}
+			update.Applied = true
+			failpoint.Hit("update.written")
+			// Step 5: the record says they're written, and the event says the
+			// edit; its witness passes only where Written is set.
+			err = store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
+				if err := tx.SetWritten(edit.ID, e.now()); err != nil {
+					return err
+				}
+				// The version this edit concludes, on the branch's target, in the
+				// transaction that records it written (#194, H2).
+				if request.Action == model.EditUpdate {
+					if err := concludeVersion(tx, branch.ID, request.Port, e.requestSettings(), concludeWith(resolved, result, true)...); err != nil {
+						return err
+					}
+				}
+				if request.Asking == nil && !request.fromRequest {
+					if err := dropPendingIn(tx, branch.ID); err != nil {
+						return err
+					}
+				}
+				_, err := tx.AppendEvent(model.Event{At: edit.At, Branch: branch.ID, Kind: model.EventBranchEdit, Level: model.LevelInfo,
+					Message: fmt.Sprintf("%s: %s (%s)", update.Port, change, listPaths(update.Files))})
 				return err
+			}, editWritten(edit.ID))
+			if err != nil {
+				return update, fmt.Errorf("the files of %s are written and its record isn't complete; the next command run on the branch completes it: %w", edit.Subject, err)
 			}
-		}
-		if primed != nil {
-			if err := tx.RecordAssessment(*primed); err != nil {
-				return err
+			failpoint.Hit("update.settled")
+			// The assessment and the change record are the prepared tree's. Where
+			// the files written make that tree, they're the working tree's too;
+			// where another tracked file differs, they stay the prepared tree's,
+			// and the working tree's are made when they're asked for (#194, E4).
+			_, applied, err := worktree.WorkingTree(ctx)
+			if err != nil {
+				return update, err
 			}
-		}
-		if record != nil {
-			if err := tx.RecordChange(*record); err != nil {
-				return err
+			// Step 6: the branch is renamed for its version, where that applies.
+			e.renameUpdated(ctx, held, request, &branch, &update)
+			if record != nil && applied == prepared {
+				return update, nil
 			}
-		}
-		_, err := tx.AppendEvent(model.Event{At: edit.At, Branch: branch.ID, Kind: model.EventBranchEdit, Level: model.LevelInfo,
-			Message: fmt.Sprintf("%s: %s (%s)", update.Port, change, listPaths(update.Files))})
+			// The record is what the files say, made again whenever it's read
+			// for; one this edit couldn't make is no failure of the edit.
+			if _, err := e.revisionChanges(ctx, branch.ID, base, model.ObjectID(applied), true); err != nil {
+				progress.VerboseReport(ctx, "%s: what this revision changes wasn't recorded: %v", edit.Directory, err)
+			}
+			return update, nil
+		}()
 		return err
-	}, editRecorded(branch.ID, edit.ID))
-	if err != nil || record != nil {
-		return update, err
-	}
-	// The record is what the files say, made again whenever it's read
-	// for; one this edit couldn't make is no failure of the edit.
-	if _, err := e.revisionChanges(ctx, branch.ID, base, model.ObjectID(applied), true); err != nil {
-		progress.VerboseReport(ctx, "%s: what this revision changes wasn't recorded: %v", edit.Directory, err)
-	}
-	return update, nil
+	})
+	return locked, err
 }
 
 // followMoves notes a GitHub repository that answers by another name, and
@@ -848,8 +1128,9 @@ func (e *Engine) followMoves(ctx context.Context, request UpdateRequest, worktre
 // where the branch was as its base before the edit, as a new one is: its
 // comparison their assessment, and its evaluations their change record.
 // Elsewhere both are made from the base when they're read for. applied is
-// the tree of the files the edit leaves.
-func (e *Engine) editFindings(ctx context.Context, worktree *git.Repository, branch model.Branch, base model.ObjectID, captured string, edit model.Edit, update Update, result editprep.Result, compare bool) (applied string, primed *model.Assessment, record *model.ChangeRecord, err error) {
+// the prepared tree, the files the edit leaves, read before they're
+// written (#194, E2).
+func (e *Engine) editFindings(ctx context.Context, worktree *git.Repository, branch model.Branch, base model.ObjectID, captured, applied string, edit model.Edit, update Update, result editprep.Result, compare bool) (primed *model.Assessment, record *model.ChangeRecord, err error) {
 	// Where the branch was as its base before the edit, as a new one is,
 	// the update's own comparison is the assessment of the files it
 	// leaves: its before is the base and its after the revision, and it
@@ -859,13 +1140,9 @@ func (e *Engine) editFindings(ctx context.Context, worktree *git.Repository, bra
 	// when it's collected.
 	trees, err := worktree.CommitTrees(ctx, []string{string(base)})
 	if err != nil {
-		return "", nil, nil, err
+		return nil, nil, err
 	}
 	atBase := trees[string(base)] == captured
-	_, applied, err = worktree.WorkingTree(ctx)
-	if err != nil {
-		return "", nil, nil, err
-	}
 	if after, _ := result.PortAfter(update.Port); compare && update.Upstream != nil && !after.GitFetched() && atBase {
 		primed = &model.Assessment{Branch: branch.ID, Tree: model.ObjectID(applied), Base: base, Port: update.Port, Directory: edit.Directory,
 			Comparison: *update.Upstream, Policy: assess.Policy, At: edit.At}
@@ -896,7 +1173,7 @@ func (e *Engine) editFindings(ctx context.Context, worktree *git.Repository, bra
 			record = &made
 		}
 	}
-	return applied, primed, record, nil
+	return primed, record, nil
 }
 
 // updateSource is what an update is prepared from: the branch's working
@@ -960,7 +1237,10 @@ func (e *Engine) editRecord(ctx context.Context, worktree *git.Repository, branc
 		}
 	}
 	for _, file := range result.Files {
-		recorded := model.EditedFile{Path: file.Path, Before: model.ObjectID(file.Before.Blob)}
+		recorded := model.EditedFile{Path: file.Path, Before: model.ObjectID(file.Before.Blob), BeforeMode: modeWords(file.Before)}
+		if !file.Delete {
+			recorded.AfterMode = strconv.FormatUint(uint64(file.Mode), 8)
+		}
 		if !file.Delete {
 			// Written, not only hashed: tidy reads it back to commit
 			// this edit alone, one of several updates in its directory
@@ -1026,7 +1306,7 @@ func changedSinceBase(ctx context.Context, worktree *git.Repository, captured st
 
 // describe reads what the preparation found.
 func describe(branch model.Branch, selector string, result editprep.Result) Update {
-	update := Update{Branch: branch, Port: result.Target.Name, Release: result.Release, PatchProblems: result.PatchProblems(), PatchesUnchecked: result.UncheckedPatches(), PatchesApplied: result.PatchesApplied(),
+	update := Update{Branch: branch, Port: result.Target.Name, Release: result.Release, PatchProblems: result.PatchProblems(), PatchesUnchecked: result.UncheckedPatches(), PatchesApplied: result.PatchesApplied(), patches: result.Patches,
 		MissingWorksrcdir: result.MissingWorksrcdir(), Distfiles: len(result.Downloads), Regenerated: result.Regenerated, PatchesDropped: result.Dropped}
 	for _, refreshed := range result.Refreshed {
 		update.PatchesRefreshed = append(update.PatchesRefreshed, refreshed.Name+": "+refreshed.Words)
@@ -1384,6 +1664,11 @@ func (e *Engine) recordHandEdit(ctx context.Context, branch model.Branch, update
 		if err := tx.AddDecision(decision); err != nil {
 			return err
 		}
+		// A hand edit's record changes the files a pending tested
+		// statement was given for.
+		if err := dropPendingIn(tx, branch.ID); err != nil {
+			return err
+		}
 		_, err := tx.AppendEvent(model.Event{At: decision.At, Branch: branch.ID, Kind: model.EventBranchEdit, Level: model.LevelInfo,
 			Message: fmt.Sprintf("%s: dockhand's attempt written for a hand edit, %s (%s)", update.Port, update.HandEdit, listPaths(update.Files))})
 		return err
@@ -1415,4 +1700,101 @@ func instructionLines(root, directory, port string) []string {
 		lines = append(lines, fmt.Sprintf("%s/Portfile:%d: %s", directory, found.Line, found.Text))
 	}
 	return lines
+}
+
+// writeEdit writes an edit's files into the worktree, each checked again
+// first (ApplyToWorkingFiles): one changed while the edit was prepared
+// leaves every file as it was.
+func (e *Engine) writeEdit(ctx context.Context, worktree *git.Repository, paths []string, files []git.FileEdit) error {
+	if err := expandFor(ctx, worktree, paths); err != nil {
+		return fmt.Errorf("%w: %w", errNotExpanded, err)
+	}
+	if err := worktree.ApplyToWorkingFiles(ctx, files); err != nil {
+		if errors.Is(err, git.ErrWorkingFile) {
+			return fmt.Errorf("%w; nothing was written, so run it again", err)
+		}
+		return err
+	}
+	return nil
+}
+
+// renameUpdated renames the branch for the version an update moved it to,
+// where the update didn't start it; a branch that keeps its name says why
+// at -v.
+func (e *Engine) renameUpdated(ctx context.Context, held *heldLock, request UpdateRequest, branch *model.Branch, update *Update) {
+	if request.Start != nil || request.Action != model.EditUpdate {
+		return
+	}
+	renamed, err := e.renameForVersion(ctx, held, branch, request.Port, update.Before.Version, update.After.Version)
+	switch {
+	case err != nil:
+		progress.VerboseReport(ctx, "%s keeps its name: %v", branch.ShortName(), err)
+	case renamed != "":
+		update.RenamedFrom, update.Branch = renamed, *branch
+	}
+}
+
+// editResult is what the edit's record keeps of what preparing it found
+// and did (#194): the versions, its findings field by field, and the
+// port's patches as the final evaluation declares them, in the scope that
+// evaluation was read in.
+func editResult(update Update, result editprep.Result) *model.EditResult {
+	port := result.Target.Subport
+	if port == "" {
+		port = result.Target.Name
+	}
+	scope := result.Prepared.Runtime.PatchScope(port, strings.Fields(result.Target.VariantSpec()))
+	return &model.EditResult{Before: update.Before.String(), After: update.After.String(), Patches: result.Declared(scope), Findings: update.findings()}
+}
+
+// preparedInstructions are the Portfile's instructions as the prepared tree
+// has them (instructionLines), read before the files are written.
+func preparedInstructions(ctx context.Context, worktree *git.Repository, tree, directory, port string) []string {
+	file, data, err := worktree.File(ctx, tree, directory+"/Portfile")
+	if err != nil || !file.Exists {
+		return nil
+	}
+	var lines []string
+	for _, found := range portfile.Instructions(data, port) {
+		lines = append(lines, fmt.Sprintf("%s/Portfile:%d: %s", directory, found.Line, found.Text))
+	}
+	return lines
+}
+
+// errNotExpanded is a sparse checkout that couldn't take an edit's files
+// in, before any was written.
+var errNotExpanded = errors.New("the worktree couldn't take the edit's files in; nothing was written")
+
+// editChange is what an edit changed, as its event says it: the versions
+// its result keeps, the revisions, or the checksums. Settling says it as
+// the update did.
+func editChange(edit model.Edit) string {
+	if edit.Result == nil {
+		return edit.Subject
+	}
+	switch edit.Kind {
+	case model.EditUpdate:
+		return fmt.Sprintf("%s → %s", edit.Result.Before, edit.Result.After)
+	case model.EditRevbump:
+		return fmt.Sprintf("revision %s → %s", revisionOf(edit.Result.Before), revisionOf(edit.Result.After))
+	}
+	return "refreshed checksums"
+}
+
+// revisionOf is a version_revision's revision, 0 where it has none.
+func revisionOf(version string) string {
+	if i := strings.LastIndex(version, "_"); i >= 0 {
+		return version[i+1:]
+	}
+	return "0"
+}
+
+// versionOf is a version_revision's version.
+func versionOf(versionRevision string) string {
+	if i := strings.LastIndex(versionRevision, "_"); i >= 0 {
+		if _, err := strconv.Atoi(versionRevision[i+1:]); err == nil {
+			return versionRevision[:i]
+		}
+	}
+	return versionRevision
 }

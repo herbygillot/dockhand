@@ -19,7 +19,7 @@ import (
 // One dockhand at a time submits to a head: a second caller is refused at
 // once, naming the process that holds it, whichever spelling of the head
 // it uses; and a git child started under the lock keeps it after its
-// parent dies, until it exits too (docs/designs/publication-record.md,
+// parent dies, until it exits too (docs/designs/publication-record.md at 0e0ad767,
 // "One submission at a time", #191).
 func TestASubmissionsHeadIsOneProcesssAtATime(t *testing.T) {
 	t.Parallel()

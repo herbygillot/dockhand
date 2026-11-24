@@ -10,6 +10,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/refusal"
@@ -43,6 +45,9 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 	// version the port is at (#165).
 	if release.NoUpdate && request.Version != "" && release.Version != input.info.Version {
 		return archivePlan{}, fmt.Errorf("portedit: explicit selection cannot imply no update")
+	}
+	if release.NoUpdate && request.ActOnCurrent && (request.SourceMode == SourceReleases || request.SourceMode == SourceArchive) {
+		return s.planSourceOnCurrent(ctx, request, input)
 	}
 	if release.NoUpdate {
 		// The family as it stands, so what a current version leaves to do
@@ -124,8 +129,14 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 }
 
 // scopedVersion is the version's fidelity, a source move's where the
-// update moved the target's source (fidelity.ScopedSourceMove).
+// update moved the target's source (fidelity.ScopedSourceMove), and the
+// move alone where the version stayed (fidelity.SourceMove).
 func scopedVersion(request Request, input *sourceInput, before, after macports.Snapshot, selected, checksums string) fidelity.Report {
+	// A source moved at the version the port is at keeps its version
+	// (planSourceOnCurrent).
+	if request.Release.NoUpdate && input.sourceMoved != nil {
+		return fidelity.SourceMove(before, after, selected, checksums)
+	}
 	if input.sourceMoved != nil && selected == input.target.Name {
 		return fidelity.ScopedSourceMove(request.SharedRelease, before, after, selected, *request.Release, checksums)
 	}
@@ -174,7 +185,7 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 
 func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *sourceInput, plan archivePlan, store *distfetch.Store) (Result, error) {
 	result := plan.result
-	if request.Release.NoUpdate {
+	if request.Release.NoUpdate && plan.observed == nil {
 		return result, nil
 	}
 	if plan.viaGit {
@@ -252,21 +263,38 @@ func (r *Result) previousFailed(err error) {
 
 // shippedPlan is MacPorts' own fetch plan for the Portfile as it stands,
 // on this Mac: each archive, with the locations MacPorts would fetch it
-// from, a mirror group such as PyPI's expanded as MacPorts expands it. The
-// new version's archives are fetched from its plan the same way.
+// from, a mirror group such as PyPI's expanded as MacPorts expands it. It
+// asks for a plan, as main did, without judging native host access. The new
+// version's archives are fetched from its plan the same way.
 func shippedPlan(ctx context.Context, input *sourceInput) ([]macports.Distfile, error) {
-	if err := distfetch.CheckPolicy(input.info, input.portdirIn(input.before.Root)); err != nil {
-		return nil, err
+	observed := macports.Observation{
+		Snapshot: macports.Snapshot{Root: input.before.Root, Ports: map[string]macports.PortInfo{input.target.Name: input.info}},
+		Ports:    map[string]macports.PortObservation{input.target.Name: {}},
 	}
-	observations, err := input.observe.Observe(ctx, input.data, []model.Platform{input.before.Platform}, true, true)
+	decision, err := observe.DecideFetch(ctx, observed, input.target.Name, input.data, input.portdirIn(input.before.Root), observe.FetchPlanNeed, false, func(ctx context.Context) (macports.Observation, error) {
+		if input.observe == nil {
+			return macports.Observation{}, errors.New("fetch observation session is unavailable")
+		}
+		observations, err := input.observe.Observe(ctx, input.data, []model.Platform{input.before.Platform}, true, true)
+		if err != nil {
+			return macports.Observation{}, err
+		}
+		return observations[0], nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	plan, err := observations[0].Ports[input.target.Name].FetchPlan()
-	if err != nil {
-		return nil, ErrUnsupported.Because("%w", err)
+	switch decision.Kind {
+	case observe.FetchLeft:
+		return nil, errProbeInconclusive.Because("%s", decision.Reason)
+	case observe.FetchRefused:
+		return nil, decision.Err
+	case observe.FetchInconclusive:
+		return nil, errProbeInconclusive.Because("%s", decision.Reason)
+	case observe.FetchNoPlan:
+		return nil, ErrUnsupported.Because("%w", decision.Err)
 	}
-	return plan, nil
+	return decision.Plan, nil
 }
 
 // downloadsOf are the shipped archives' downloads.
@@ -276,4 +304,56 @@ func downloadsOf(shipped []distfetch.Shipped) []distfetch.Download {
 		downloads[i] = archive.Download
 	}
 	return downloads
+}
+
+// planSourceOnCurrent carries out --source releases or --source archive
+// on a port already at its release, at the version it is at: the source
+// moves, its checksums are made for the new archive, and the version and
+// revision stay; or it is refused with its reason. A Portfile that fetches
+// that way already is satisfied, and changes nothing (#121, #195).
+func (s *Service) planSourceOnCurrent(ctx context.Context, request Request, input *sourceInput) (archivePlan, error) {
+	release := request.Release
+	family, err := input.familySnapshot(ctx, s.Ports)
+	if err != nil {
+		return archivePlan{}, err
+	}
+	satisfied := archivePlan{result: Result{Target: input.target, Release: release, SourceOutcome: model.ActionSatisfied, Fidelity: []Fidelity{{Before: family, After: family}}}}
+	if input.info.GitFetched() && request.SourceMode == SourceArchive {
+		return archivePlan{}, sourceRefused("--source archive: GitHub's archive of the tag leaves out the Git submodules %s clones", input.target.Name)
+	}
+	contents, after := input.data, family
+	var choice chosenSource
+	if request.SourceMode == SourceArchive && input.info.Options["github.tarball_from"] == "tarball" && !input.info.GitFetched() {
+		moved, ok := portfile.ArchiveFromTarball(contents, input.target.Subport)
+		if !ok {
+			return archivePlan{}, sourceRefused("--source archive: github.tarball_from tarball isn't set by one literal command")
+		}
+		evaluated, err := s.evaluateEdit(ctx, input, moved)
+		if err != nil {
+			if ctx.Err() != nil {
+				return archivePlan{}, ctx.Err()
+			}
+			return archivePlan{}, sourceRefused("--source archive: the Portfile couldn't be evaluated fetching GitHub's archive (%v)", err)
+		}
+		if evaluated.after.Ports[input.target.Name].Options["github.tarball_from"] != "archive" {
+			return archivePlan{}, sourceRefused("--source archive: the Portfile didn't evaluate github.tarball_from archive")
+		}
+		choice = chosenSource{contents: moved, after: evaluated.after, moved: &MovedSource{From: "tarball", To: "archive"}}
+	} else {
+		choice, err = s.chooseSource(ctx, request, input, contents, after)
+		if err != nil {
+			return archivePlan{}, err
+		}
+	}
+	if choice.moved == nil {
+		return satisfied, nil
+	}
+	input.sourceMoved = choice.moved
+	observed, err := s.planObservedArchives(ctx, request, input, choice.contents)
+	result := Result{Target: input.target, Release: release, SourceMoved: choice.moved, SourceOutcome: model.ActionDone}
+	result.report(scopedVersion(request, input, family, choice.after, input.target.Name, choice.after.Ports[input.target.Name].Options["checksums"]))
+	if observed != nil {
+		result.Left = observed.left
+	}
+	return archivePlan{result: result, contents: choice.contents, observed: observed, fetched: choice.fetched, subject: choice.moved.Words()}, err
 }

@@ -74,6 +74,12 @@ func TestOutdatedPortsArePreparedOneBranchEach(t *testing.T) {
 	stored, err := e.Branch(t.Context(), done.Branch.ID)
 	require.NoError(t, err)
 	require.Equal(t, model.OriginServe, stored.Origin, "the record says serve started it")
+	// serve reaches the resolver: its request is kept, origin and targets
+	// alone, each action reading the process's settings then (#195).
+	require.NotNil(t, stored.Request)
+	require.Equal(t, "serve", stored.Request.Origin)
+	require.Equal(t, "jq", stored.Request.Targets[0].Port)
+	require.Equal(t, model.SourceAsk{}, stored.Request.Source, "serve keeps no asks")
 
 	again, err := e.PlanOutdated(t.Context(), report)
 	require.NoError(t, err)
@@ -198,14 +204,14 @@ func TestAPatchThatDoesntApplyHoldsAnUnattendedShipBeforeItsCheck(t *testing.T) 
 	release := model.Release{ReleaseSelection: model.ReleaseSelection{Requested: "1.8.1", CurrentVersion: "1.7.1"}, Version: "1.8.1", Forge: "github", Tag: "jq-1.8.1"}
 	target := shipTarget{Port: "jq", Version: "1.8.1", Release: &release, Name: "jq-1.8.1"}
 	done := e.ship(t.Context(), target, shipOptions{Origin: model.OriginServe, To: ShipCheck, Answered: model.AnsweredNobody})
-	require.Equal(t, `held before its check, with its changes committed: patch-stale.diff: 1 out of 1 hunks failed; holds.allow = ["patch-rejected"] lets it build`, done.Problem)
+	require.Equal(t, `held before its check, with its changes committed: jq: patch patch-stale.diff doesn't apply; holds.allow = ["patch-rejected"] lets it build`, done.Problem)
 	require.True(t, done.Tidied, "committed")
 	require.Nil(t, done.Run, "no check queued")
 
 	// serve started over it leaves it held, where its recovery queued the
 	// check ship held back, and status says the hold (Codex's review of
 	// 275125ff, finding 2).
-	resumed, err := e.ResumePrepared(t.Context(), Where{Environments: []model.Environment{{Provider: "command"}}}, "")
+	resumed, err := e.ResumePrepared(t.Context(), Where{Environments: []model.Environment{{Provider: "command"}}}, "", true)
 	require.NoError(t, err)
 	require.Len(t, resumed, 1)
 	require.True(t, resumed[0].Held)
@@ -215,7 +221,7 @@ func TestAPatchThatDoesntApplyHoldsAnUnattendedShipBeforeItsCheck(t *testing.T) 
 	rows := branchstate.Attend(status.Facts())
 	require.Len(t, rows, 1)
 	require.Equal(t, branchstate.HeldBeforeItsCheck, rows[0].Reason)
-	require.Equal(t, `held before its check, with its changes committed: patch-stale.diff: 1 out of 1 hunks failed; holds.allow = ["patch-rejected"] lets it build`, rows[0].Words(Vocabulary{}))
+	require.Equal(t, `held before its check, with its changes committed: jq: patch patch-stale.diff doesn't apply; holds.allow = ["patch-rejected"] lets it build`, rows[0].Words(Vocabulary{}))
 
 }
 

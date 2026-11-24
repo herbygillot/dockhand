@@ -122,13 +122,13 @@ func Sources(info macports.PortInfo, portdir string) ([]Source, error) {
 	}
 	sites, errs := syntax.ListValues(info.Options["master_sites"])
 	if len(errs) > 0 || len(sites) == 0 {
-		return nil, portfile.ErrUnsupported.Because("direct master sites are required")
+		return nil, portfile.ErrUnsupported.Because("master_sites value %q: direct master sites are required", info.Options["master_sites"])
 	}
 	locations := map[string][]string{}
 	for _, raw := range sites {
 		site, err := url.Parse(raw)
 		if err != nil || site.Host == "" || site.User != nil || site.Fragment != "" || !fetch.Scheme(site.Scheme) {
-			return nil, portfile.ErrUnsupported.Because("only direct HTTP(S) or FTP master sites are supported")
+			return nil, portfile.ErrUnsupported.Because("master_sites value %q: only direct HTTP(S) or FTP master sites are supported", raw)
 		}
 		tags := []string{""}
 		authority := strings.Index(raw, "://") + 3
@@ -137,7 +137,7 @@ func Sources(info macports.PortInfo, portdir string) ([]Source, error) {
 			tags = strings.Split(raw[cut+1:], ",")
 			for _, tag := range tags {
 				if tag == "" || !portfile.Literal(tag) {
-					return nil, portfile.ErrUnsupported.Because("invalid master-site tag")
+					return nil, portfile.ErrUnsupported.Because("master_sites value %q: invalid master-site tag", raw)
 				}
 			}
 			raw = raw[:cut]

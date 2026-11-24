@@ -102,3 +102,40 @@ patchfiles good.diff stale.diff moved.diff fuzzy.diff
 	matches, _ := filepath.Glob(filepath.Join(root, "patchcheck-*"))
 	require.Empty(t, matches, "temporary archives and extractions are removed")
 }
+
+// The saved patch list is the declaration as the edit leaves it, from the
+// final evaluation: a refreshed patch applies, one no archive reached is
+// unchecked, none declared is an empty list, and where the declaration
+// wasn't read, or nothing was checked, there is no list (#194, R10).
+func TestTheSavedPatchListIsTheFinalDeclaration(t *testing.T) {
+	t.Parallel()
+	evaluated := func(patchfiles string, set bool) macports.Snapshot {
+		options := map[string]string{}
+		if set {
+			options["patchfiles"] = patchfiles
+		}
+		return macports.Snapshot{Ports: map[string]macports.PortInfo{"foo": {Options: options}}}
+	}
+	for _, test := range []struct {
+		name   string
+		result Result
+		want   *model.PatchCheck
+	}{
+		{"applied, rejected and refreshed", Result{PatchesChecked: true, Prepared: evaluated("a.diff b.diff c.diff", true),
+			Patches: []patchcheck.Result{{Name: "a.diff", Checked: true, Applies: true}, {Name: "b.diff", Checked: true}, {Name: "c.diff", Checked: true, Applies: true, Detail: "applies as refreshed: hunk 1 moved"}}},
+			&model.PatchCheck{Scope: "s", Declared: []model.PatchResult{{Name: "a.diff", State: model.PatchApplied}, {Name: "b.diff", State: model.PatchRejected}, {Name: "c.diff", State: model.PatchApplied}}}},
+		{"a dropped patch is absent", Result{PatchesChecked: true, Prepared: evaluated("a.diff", true),
+			Patches: []patchcheck.Result{{Name: "a.diff", Checked: true, Applies: true}, {Name: "fix.diff", Checked: true, Merged: true}}, Dropped: []string{"fix.diff"}},
+			&model.PatchCheck{Scope: "s", Declared: []model.PatchResult{{Name: "a.diff", State: model.PatchApplied}}}},
+		{"no archive could be checked", Result{PatchesChecked: true, Prepared: evaluated("a.diff", true)},
+			&model.PatchCheck{Scope: "s", Declared: []model.PatchResult{{Name: "a.diff", State: model.PatchUnchecked}}}},
+		{"none declared", Result{PatchesChecked: true, Prepared: evaluated("", false)},
+			&model.PatchCheck{Scope: "s", Declared: []model.PatchResult{}}},
+		{"malformed", Result{PatchesChecked: true, Prepared: evaluated("{a.diff", true)}, nil},
+		{"no port evaluated", Result{PatchesChecked: true}, nil},
+		{"a followed move alone checked nothing", Result{Prepared: evaluated("a.diff", true)}, nil},
+	} {
+		test.result.Target = model.Target{Name: "foo"}
+		require.Equal(t, test.want, test.result.Declared("s"), test.name)
+	}
+}

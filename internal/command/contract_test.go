@@ -7,9 +7,11 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
+	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -39,7 +41,6 @@ var noJSON = map[string]string{
 // (the roadmap's bump and clean fix, 2026-10-22). Every other command
 // takes --plan, so a new one says here why it doesn't.
 var noPlan = map[string]string{
-	"adopt":        "records a branch that exists, which archive sets aside again",
 	"archive":      "sets a branch aside, which archive --undo brings back",
 	"cancel":       "stops a check, keeping what it finished",
 	"config":       "shows or sets one setting, which it names",
@@ -65,7 +66,6 @@ var noPlan = map[string]string{
 	"shell":        "prints a shell's completion script",
 	"start":        "starts a branch, which archive sets aside",
 	"status":       "reads only",
-	"undo":         "restores a checkpoint, keeping the one it replaces",
 	"wait":         "follows a check",
 }
 
@@ -110,6 +110,19 @@ func TestTheSharedFlagsMeanOneThing(t *testing.T) {
 	}
 	for name := range noJSON {
 		require.Contains(t, commands(t), name, "noJSON names a command there isn't")
+	}
+}
+
+// These commands take --yes as the common script answer for an action or
+// plan that can otherwise ask. Rebase currently asks nothing, but accepts
+// the flag so scripts can pass it uniformly.
+func TestCommandsThatAcceptYes(t *testing.T) {
+	t.Parallel()
+	found := commands(t)
+	for _, name := range []string{"check", "clean", "rebase", "setup", "ship", "submit", "tidy", "update"} {
+		cmd, ok := found[name]
+		require.True(t, ok, "%s is a runnable command", name)
+		require.NotNil(t, cmd.Flags().Lookup("yes"), "%s accepts --yes", name)
 	}
 }
 
@@ -187,4 +200,38 @@ func TestAQuestionWithoutATerminalIsRefusedAlike(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check")
 	require.Equal(t, term.ExitFailure, term.ExitCode(err))
 	require.EqualError(t, err, "nothing was submitted: without a terminal, --yes submits exactly what is shown")
+}
+
+// changeCommands are the commands whose flags the flag table answers for
+// (#195).
+var changeCommands = []string{"update", "bump", "ship", "submit", "check", "edit", "revbump", "rebase", "clean"}
+
+// Every flag of the commands that change a port has a row in the flag
+// table, which says what it means and how long it lasts, or names the
+// contract that owns it; and every row's flag is one of theirs.
+func TestEveryChangeFlagHasARowAndEveryRowAFlag(t *testing.T) {
+	t.Parallel()
+	found := commands(t)
+	seen := map[string]bool{}
+	for _, name := range changeCommands {
+		cmd, ok := found[name]
+		require.True(t, ok, "%s is a command", name)
+		visit := func(flag *pflag.Flag) {
+			if flag.Name == "help" {
+				return
+			}
+			seen["--"+flag.Name] = true
+			_, has := engine.FlagRowOf(flag.Name)
+			require.True(t, has, "%s's --%s has no row in engine.FlagTable", name, flag.Name)
+		}
+		cmd.LocalFlags().VisitAll(visit)
+		cmd.InheritedFlags().VisitAll(visit)
+	}
+	for _, row := range engine.FlagTable {
+		for _, flag := range row.Flags {
+			if strings.HasPrefix(flag, "--") {
+				require.True(t, seen[flag], "engine.FlagTable's %s is no flag of %s", flag, strings.Join(changeCommands, ", "))
+			}
+		}
+	}
 }

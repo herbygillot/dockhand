@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/checks"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -22,7 +24,20 @@ type keepingProvider struct {
 	leavingProvider
 	kept map[string]time.Time
 	// failed are the clones kept for a failure, unasked.
-	failed map[string]bool
+	failed    map[string]bool
+	judgments map[string]string
+	// running are clones dockhand shell is in, which it won't remove.
+	running map[string]bool
+}
+
+func (p *keepingProvider) RemoveLeftover(ctx context.Context, ref string) error {
+	p.mu.Lock()
+	running := p.running[ref]
+	p.mu.Unlock()
+	if running {
+		return buildenv.ErrLeftoverRunning
+	}
+	return p.leavingProvider.RemoveLeftover(ctx, ref)
 }
 
 func (p *keepingProvider) Execute(ctx context.Context, job buildenv.Job, build buildenv.Build) error {
@@ -43,14 +58,14 @@ func (p *keepingProvider) Leftovers(ctx context.Context) ([]buildenv.Leftover, e
 	defer p.mu.Unlock()
 	for i := range found {
 		found[i].KeptAt, found[i].Failed = p.kept[found[i].Ref], p.failed[found[i].Ref]
+		found[i].Kept = p.judgments[found[i].Ref]
 	}
 	return found, err
 }
 
-// A clone a check kept for dockhand shell is spared by automatic cleanup
-// for a day, unless space is low; clean removes it, and so does the
-// branch's next check.
-func TestAKeptCloneLastsUntilCleanOrTheNextCheck(t *testing.T) {
+// A clone a person asked to keep survives automatic cleanup, even when
+// space is low and ordinary later checks of its branch; clean can remove it.
+func TestAKeptCloneSurvivesCleanupAndTheBranchsNextCheck(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
@@ -63,9 +78,9 @@ func TestAKeptCloneLastsUntilCleanOrTheNextCheck(t *testing.T) {
 		branch, err = r.Branch(revision.Branch)
 		return err
 	}))
-	check := func() {
+	check := func(keep bool) {
 		t.Helper()
-		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}, Keep: true})
+		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}, Keep: keep, Fresh: keep})
 		require.NoError(t, err)
 		queued, err := e.QueueCheck(t.Context(), checks.QueueRequest{Branch: branch, Revision: revision, Plan: plan, Origin: model.OriginPerson})
 		require.NoError(t, err)
@@ -73,7 +88,7 @@ func TestAKeptCloneLastsUntilCleanOrTheNextCheck(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, model.RunPassed, run.State, run.Detail)
 	}
-	check()
+	check(true)
 	require.Len(t, provider.left, 1)
 	kept := provider.left[0]
 
@@ -82,24 +97,21 @@ func TestAKeptCloneLastsUntilCleanOrTheNextCheck(t *testing.T) {
 	require.Contains(t, provider.left, kept, "automatic cleanup spares it")
 	for _, leftover := range report.Leftovers {
 		if leftover.Ref == kept {
-			require.Contains(t, leftover.Kept, "kept for dockhand shell until ")
+			require.True(t, leftover.Spared)
 		}
 	}
 	_, err = e.cleanup(t.Context(), session(t, e), 7*24*time.Hour, false)
 	require.NoError(t, err)
-	require.NotContains(t, provider.left, kept, "where space is low, it goes")
+	require.Contains(t, provider.left, kept, "low space does not remove a clone asked for")
 
-	check()
-	again := provider.left[len(provider.left)-1]
-	planned, err := e.PlanLeftovers(t.Context(), session(t, e))
+	check(false)
+	require.Contains(t, provider.left, kept, "an ordinary branch check leaves the asked clone alone")
+	check(true)
+	require.NotContains(t, provider.left, kept, "a later --keep check replaces the earlier asked clone")
+	keptNow, err := e.KeptClones(t.Context())
 	require.NoError(t, err)
-	for _, leftover := range planned {
-		if leftover.Ref == again {
-			require.Empty(t, leftover.Kept, "clean removes it")
-		}
-	}
-	check()
-	require.NotContains(t, provider.left, again, "the branch's next check removes it")
+	require.Len(t, keptNow, 1, "the replacement is the branch's one kept clone for this release")
+	require.NotEqual(t, kept, keptNow[0].Ref)
 }
 
 // Shell starts the kept clone of the check, with the first port it
@@ -182,8 +194,8 @@ func TestADrainRunsWhatWasQueuedAsItEnded(t *testing.T) {
 	require.Equal(t, model.RunPassed, finished.State, finished.Detail)
 }
 
-// Automatic cleanup spares a clone kept for its failure seven days, where
-// one kept as asked goes after a day (keep_failed).
+// Automatic cleanup spares a failed clone for seven days, and an asked
+// clone has no age limit.
 func TestAFailedChecksKeptCloneLastsSevenDays(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
@@ -206,7 +218,7 @@ func TestAFailedChecksKeptCloneLastsSevenDays(t *testing.T) {
 		require.NoError(t, err)
 		for _, leftover := range planned {
 			if leftover.Ref == clone {
-				return leftover.Kept != ""
+				return leftover.Spared
 			}
 		}
 		return false
@@ -215,8 +227,83 @@ func TestAFailedChecksKeptCloneLastsSevenDays(t *testing.T) {
 	require.True(t, spared(), "two days into its seven")
 	keptAgo(8*24*time.Hour, true)
 	require.False(t, spared(), "past seven days")
-	keptAgo(48*time.Hour, false)
-	require.False(t, spared(), "one kept as asked goes after a day")
+	keptAgo(8*24*time.Hour, false)
+	require.True(t, spared(), "an asked clone has no age limit")
+}
+
+func TestAnExpiredFailureCloneIsRemovedWhenAnyCheckStarts(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	provider := &keepingProvider{kept: map[string]time.Time{}, failed: map[string]bool{}}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	queued := queuedHarborRun(t, e, tahoeArm)
+	_, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	clone := provider.left[0]
+	provider.mu.Lock()
+	provider.kept[clone] = e.now().Add(-8 * 24 * time.Hour)
+	provider.failed[clone] = true
+	provider.mu.Unlock()
+	require.NoError(t, e.forgetKept(t.Context(), "another-branch", model.Plan{}))
+	require.NotContains(t, provider.left, clone, "a check start applies failure-cache expiry across branches")
+}
+
+func TestBranchCheckDoesNotEraseACloneSafetyJudgment(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	provider := &keepingProvider{kept: map[string]time.Time{}, failed: map[string]bool{}, judgments: map[string]string{}}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	queued := queuedHarborRun(t, e, tahoeArm)
+	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	clone := provider.left[0]
+	provider.mu.Lock()
+	provider.kept[clone] = e.now().Add(-time.Hour)
+	provider.failed[clone] = true
+	provider.judgments[clone] = run.Name() + " can still be resumed"
+	provider.mu.Unlock()
+
+	require.NoError(t, e.forgetKept(t.Context(), run.Branch, model.Plan{}))
+	require.Contains(t, provider.left, clone, "a branch's next check cannot erase a provider safety judgment")
+}
+
+// --keep requests a fresh build so it always has a new clone to keep (#220).
+func TestKeepImpliesFresh(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	branch := harborBranch(t, e)
+	usePorts(e, harborPorts())
+	environment := model.Environment{Provider: buildenv.Tart, Platform: tahoeArm.Platform}
+	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: branch, Environments: []model.Environment{environment}, Keep: true})
+	require.NoError(t, err)
+	require.True(t, plan.Fresh, "--keep must build a clone even when prior results are reusable")
+}
+
+func TestPlanRecordsAnUnattendedCheck(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	branch := harborBranch(t, e)
+	usePorts(e, harborPorts())
+	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: branch, Environments: []model.Environment{tahoeArm}, Unattended: true})
+	require.NoError(t, err)
+	require.True(t, plan.Unattended)
+}
+
+func TestFailureCloneCapKeepsFourNewestPerProvider(t *testing.T) {
+	t.Parallel()
+	at := time.Now()
+	leftovers := make([]Leftover, 5)
+	for i := range leftovers {
+		leftovers[i] = Leftover{Leftover: buildenv.Leftover{Provider: "tart", Failed: true, KeptAt: at.Add(time.Duration(i) * time.Hour)}, Spared: true, SparedUntil: at.Add(24 * time.Hour)}
+	}
+	capped := capFailureClones(leftovers, 4)
+	for i, leftover := range capped {
+		require.Equal(t, i != 0, leftover.Spared, "the oldest clone is released from retention")
+	}
 }
 
 // A shell in a running check enters the guest its live attempt runs in,
@@ -334,4 +421,29 @@ func TestARetryRemovesTheCloneTheEarlierCheckKept(t *testing.T) {
 	require.Equal(t, model.RunPassed, done.State)
 	require.NotContains(t, provider.left, old, "a retry is the branch's next check, which should remove its earlier retained clone")
 	require.Len(t, provider.left, 1)
+}
+
+// A clone a check start would replace, left by its provider since dockhand
+// shell is in it, is said as not removed rather than passed over unsaid
+// (field testing's kept-clone pass, #291).
+func TestACloneACheckStartCouldntRemoveIsSaid(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	provider := &keepingProvider{kept: map[string]time.Time{}, failed: map[string]bool{}, running: map[string]bool{}}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	queued := queuedHarborRun(t, e, tahoeArm)
+	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	clone := provider.left[0]
+	provider.mu.Lock()
+	provider.kept[clone] = e.now().Add(-8 * 24 * time.Hour)
+	provider.failed[clone] = true
+	provider.running[clone] = true
+	provider.mu.Unlock()
+	var said []string
+	ctx := progress.WithReporter(t.Context(), func(update progress.Update) { said = append(said, update.Message) })
+	require.NoError(t, e.forgetKept(ctx, "another-branch", model.Plan{}))
+	require.Contains(t, provider.left, clone)
+	require.Contains(t, strings.Join(said, "\n"), ", kept by "+run.Name()+", was not removed: in use by dockhand shell or another dockhand removing it")
 }

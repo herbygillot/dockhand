@@ -159,8 +159,11 @@ func (c *Service) Retry(ctx context.Context, previous model.Run) (model.Run, err
 	// (Codex's workflow review of 1caa6c3d, finding 6). A baseline's
 	// retry keeps them, as a baseline does, for the guest it's beside.
 	if err == nil && previous.BaselineOf == "" {
-		if err := c.Admission.ForgetKept(ctx, run.Branch); err != nil {
-			progress.Report(ctx, "removing the clones the branch's earlier checks kept, retrying %s: %v", previous.Name(), err)
+		plan, planErr := c.plan(ctx, run.Plan)
+		if planErr == nil {
+			if err := c.Admission.ForgetKept(ctx, run.Branch, plan); err != nil {
+				progress.Report(ctx, "removing the clones the branch's earlier checks kept, retrying %s: %v", previous.Name(), err)
+			}
 		}
 	}
 	return run, err

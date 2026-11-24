@@ -185,6 +185,14 @@ Define your own profile with `dockhand usage configuration`.
 Use `--on local` for a host MacPorts prefix; `local` is no build profile, and
 `--build local` is refused.
 
+Where a ship or bump kept a place or a test policy on the branch, `check`
+reads it where it's given neither `--on` nor `--build`, or no `--tests`, and
+says so: `Taken from what the branch's request kept: --build minmax, --tests
+required`. `check` never changes what's kept. `--on` given to a ship replaces a
+kept `--build`, and the other way round: they are one choice, the place.
+`check --baseline` builds as the check it compares with was built, and reads
+nothing kept.
+
 Where you name where a check builds, with `--on` or `--build`, submission needs
 exactly that: `check --on local` then `submit` passes on the prefix alone, even
 where Tart is set up. Where you name neither, it needs `build.default`'s
@@ -274,7 +282,9 @@ cancel unfinished, however long ago it was, since its run can still start:
 `status` keeps its line, and each `cancel`, and serve as it passes, looks
 again. A push git reported rejected, or one dockhand refused before sending,
 needs no run. A rerun GitHub refused is not yet read as having started
-nothing, since GitHub doesn't say what its refusals mean.
+nothing, since GitHub doesn't say what its refusals mean: dockhand keeps
+GitHub's status and body on the attempt, and the cancel's line names the
+status while it waits for the run.
 
 Each macOS release in the workflow's matrix is its own environment, with its own
 column, and one run builds them all. `--on github` asks for every release;
@@ -321,9 +331,28 @@ build's process group. A cancel, also of a check whose dockhand was killed,
 signals that process, which stops the whole group and kills what remains after
 30 seconds; the cancel finishes once the group is gone, then puts the prefix
 back, or says what is left and that the next check in it, or
-`dockhand undo check-N`, puts it back. A root build isn't stopped this way yet:
-its cancel stays unfinished and names the command to stop it by hand, `sudo
-kill -TERM -<group>`, then `dockhand cancel check-N` again. Restoring active versions leaves
+`dockhand undo check-N`, puts it back.
+
+A root build is stopped the same way only once this Mac's sudo has passed a
+probe. Dockhand runs the probe at your account's first root build on the Mac,
+and again when sudo itself changes, and keeps the result in
+`~/.dockhand/local/root-stop-proof.json`. The probe checks that sudo hands the
+build the check's lock and passes a stop on. The probe, and the part of a stop
+that needs root, run the prefix's port-tclsh under `sudo -n`, which works with
+the sudoers line `<you> ALL=(root) NOPASSWD: <prefix>/bin/port-tclsh` or while
+sudo still remembers a password you typed. That line lets your account run
+anything as root without a password, since port-tclsh runs whatever script it
+is given, so adding it is a choice for each Mac and account, not a requirement.
+Until the probe has passed, a root build's cancel stays unfinished and names
+the command to stop it by hand, `sudo kill -TERM -<group>`, then
+`dockhand cancel check-N` again. The same happens when a root build doesn't end
+on the stop and `sudo -n` asks for a password at that moment, as after the line
+is removed. Dockhand never kills a sudo outright: a root build that ignores the
+stop is sent root's kill to the build itself, never to its sudo, and where even
+that can't be sent the cancel stays unfinished, with the same command. A sudo
+set to log a command's input hands the build a pipe in place of the check's
+lock, so on such a Mac every root build is refused before it starts anything,
+saying why. Restoring active versions leaves
 newly built images inactive and unrequested for MacPorts' `port reclaim`. A
 later check can remove a matching inactive, unrequested image before rebuilding;
 an installed image it cannot safely replace is refused.
@@ -419,14 +448,23 @@ retry, replacement, and cancellation.
 dockhand logs check-12
 dockhand logs check-12 jq
 dockhand logs check-12 jq --phase install
+dockhand logs jq --phase install
 dockhand artifacts
 ```
 
 Use the actual check and port names. Logs identify the build when several
 environments exist; `--full` includes dependency installation, and `--follow`
-follows supported live logs. `artifacts` lists kept archives of the branch's
-latest check, or of a check it names, as `artifacts check-12`, or explains why
-one is missing. A build that links another port's
+follows supported live logs. When a check ends, dockhand compresses its port
+logs, so a process tailing the log files directly loses access then. Use
+`dockhand wait` to follow a check and `dockhand logs` to read its logs.
+`artifacts` lists kept archives of the branch's latest check, or of a check it
+names, as `artifacts check-12`, or explains why one is missing. `logs` takes a
+lone port, `logs jq --phase install`, for the
+branch's latest check, as well as one attempt of a check. `artifacts` and
+`shell` take a check, not one of its attempts: given an attempt, each refuses
+and names the check to run it on, since `artifacts` lists a check's judged
+passes, some of them reused from earlier checks, and `shell` opens a check's
+kept clone, chosen by `--on`. A build that links another port's
 library the Portfile doesn't declare is a notice, holding nothing, that names
 the line to write: `omnidiff links libiconv.2.dylib from libiconv, which it
 doesn't declare in depends_lib. Declare it with depends_lib-append
@@ -506,11 +544,49 @@ blank line or a declared dependency the build already had lints again the
 same way, so `status` shows the Portfile's own lines, not the earlier
 commit's; where lint can't run, the earlier lines stay and say why.
 
-By default, a failed Tart check keeps its clone, stopped, one for each branch
-and release, for `dockhand shell`: the branch's next check or `clean` removes
-it, and serve's daily cleanup removes one older than seven days. `[providers.tart]
-keep_failed = false` turns that off. To retain a passed build too, request
-`--keep` before running it:
+By default, a failed Tart check keeps its clone, stopped, for `dockhand shell`,
+when the check was run by a person. A check started by `serve` or with
+`--yes` leaves no failure clone; `--yes` also runs `--variants each` without
+asking. Failure clones are a cache: the branch's next check removes them, low
+space may remove them, and they expire after seven days. Plain `dockhand clean`
+keeps unexpired failure clones among the four newest in each Tart home, and
+removes expired or excess failure clones. It leaves asked clones alone. Expiry
+and the four-clone cap are also applied when a check starts and in serve's daily
+cleanup; `check --plan` does not mention cleanup. Keeping a fifth removes the
+oldest immediately and reports its name. `dockhand clean --kept` with no
+selector removes only expired failure clones.
+`[providers.tart] keep_failed = false` turns failure clones off.
+
+`--keep` asks to keep a Tart clone for you, whether the check passed or failed.
+It builds fresh if earlier builds could otherwise be reused, and that clone
+has no age limit, is not removed for low space, and survives later checks of
+the branch. A later `--keep` check on the same branch and release replaces its
+asked clone; an ordinary check leaves it in place. Remove one check's clones
+with `dockhand clean --kept check-12`, or all the branch's with
+`dockhand clean --kept -b branch-name`, `--kept -p port`, or
+`--kept --pr number`; these leave the branch and its records alone. Without
+`--kept`, those selectors clean the named branch. Removing a branch with
+`clean` also removes its kept clones. A running clone is skipped until a later
+cleanup opportunity. A clone `dockhand shell` is in is never removed:
+`clean --kept` names each clone it left and why, counts only what it removed,
+and where it removed nothing says so and exits 3; a check's start says a clone
+it would have replaced and couldn't. A same-branch, same-release `--keep` check
+says, as it starts and at any confirmation, that the earlier asked clone is
+removed because the new check keeps its own; `--plan` says it would be removed,
+and leaves it untouched.
+
+The check's final notice names each kept clone, its size and why it was kept,
+then gives `dockhand shell check-12` to enter and `dockhand clean --kept
+check-12` to remove it. A failure clone's notice also says when its seven days
+are up. `check --json` includes the finished run's `kept_clones`; its plan
+records `unattended` for `--yes`. `dockhand status` lists kept clones with
+their size and age; `status --json` includes them in `kept_clones`, with
+`old_asked` and `removal_command`. An asked clone older than seven days is
+called out with its removal command. Age is informational for an asked clone:
+dockhand never expires it automatically.
+
+On providers without a VM, `--keep` says there is no clone to keep. To retain a
+Tart build for `dockhand shell`, request `--keep` before running it:
 
 ```sh
 dockhand check --keep

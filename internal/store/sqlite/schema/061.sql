@@ -1,4 +1,4 @@
--- Schema 61: the publication record (docs/designs/publication-record.md,
+-- Schema 61: the publication record (docs/designs/publication-record.md at 0e0ad767,
 -- #191). A branch's unfinished submission, one JSON value beside its pull
 -- request, as pr_observed is; how dockhand knows that pull request, opened
 -- or found, empty on a record from before; the last reviewer request's

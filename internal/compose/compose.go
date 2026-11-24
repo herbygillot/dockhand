@@ -58,6 +58,9 @@ type Options struct {
 	// MigrateRelease migrates a database a release last opened with a
 	// build that isn't one, as the person answered.
 	MigrateRelease bool
+	// MigrateDevelopment is --migrate-database: the person's consent to a
+	// build that isn't a release migrating the default database (#281).
+	MigrateDevelopment bool
 	// NamesBranch is a command naming a branch, which run outside any
 	// checkout finds the one the database registered (registeredCheckout).
 	NamesBranch bool
@@ -403,15 +406,16 @@ func Settings(ctx context.Context, options Options, dependencies Dependencies) (
 		// Readings are a saving: where the cache can't be placed, none
 		// are kept; port indexes are staged, so their cache is refused
 		// when they're staged.
-		Readings:         readings,
-		Indexes:          indexes,
-		IndexMirror:      options.Getenv("DOCKHAND_INDEX_MIRROR"),
-		Home:             places.Home,
-		MigrateUnderLive: options.MigrateUnderLive,
-		MigrateRelease:   options.MigrateRelease,
-		NamedDatabase:    !standard,
-		KeepHTTP:         options.KeepHTTP || file.Update.KeepHTTP,
-		Source:           cmp.Or(options.Source, file.Update.Source),
+		Readings:           readings,
+		Indexes:            indexes,
+		IndexMirror:        options.Getenv("DOCKHAND_INDEX_MIRROR"),
+		Home:               places.Home,
+		MigrateUnderLive:   options.MigrateUnderLive,
+		MigrateRelease:     options.MigrateRelease,
+		MigrateDevelopment: options.MigrateDevelopment,
+		NamedDatabase:      !standard,
+		KeepHTTP:           options.KeepHTTP || file.Update.KeepHTTP,
+		Source:             cmp.Or(options.Source, file.Update.Source),
 	}, file, configPath, nil
 }
 
@@ -511,8 +515,14 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 	// Mac to have one; a prefix is checked when a check names it.
 	if local.Supported() {
 		settings := file.Providers.Local
-		e.Providers[buildenv.Local] = &local.Local{Repo: e.Repo, Index: e.PortIndex, Prefix: settings.Prefix, Keep: settings.Keep, Clean: settings.Clean,
+		provider := &local.Local{Repo: e.Repo, Index: e.PortIndex, Prefix: settings.Prefix, Keep: settings.Keep, Clean: settings.Clean,
 			TestTimeout: settings.Timeout(), BuildTimeout: settings.BuildBound(), Env: options.Env, Starter: self}
+		// The probe of this Mac's sudo is the person's, kept in their own
+		// dockhand directory.
+		if home := options.Places().Home; home != "" {
+			provider.Proofs = filepath.Join(home, ".dockhand", "local")
+		}
+		e.Providers[buildenv.Local] = provider
 		e.LocalServe = settings.Serve
 	}
 	if dependencies.Leftovers != nil {
@@ -554,6 +564,9 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 		if actions, ok := e.Providers[buildenv.GitHub].(*ghactions.Provider); ok {
 			actions.Identity = e.RemoteWriteIdentity()
 		}
+	}
+	if actions, ok := e.Providers[buildenv.GitHub].(*ghactions.Provider); ok {
+		actions.RemoteNamer = e.RemoteWriteNamer()
 	}
 	e.Ports = dependencies.Ports
 	if dependencies.ArchiveFetcher != nil {

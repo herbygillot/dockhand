@@ -12,12 +12,14 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/failpoint"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -266,6 +268,192 @@ type AdoptRequest struct {
 	Branch string
 }
 
+// AdoptionPlan is the read-only account of what Adopt or AdoptPullRequest
+// would track. PR plans use only the forge's observation; they never fetch
+// the head or master, so their changed-port scope is unknown.
+type AdoptionPlan struct {
+	Branch      string
+	Renamed     string
+	Head        model.ObjectID
+	Base        string
+	Commits     int
+	Ports       []string
+	Directory   string
+	PullRequest *forge.PullRequest
+	ScopeKnown  bool
+	Already     bool
+}
+
+type adoptionFront struct {
+	name      string
+	head      string
+	tracked   model.Branch
+	hasRecord bool
+	renamed   model.Branch
+	hasRename bool
+}
+
+// inspectAdoption is the local, read-only front shared by Adopt and its
+// plan: resolve the branch, its record, and any record carried by a Git rename.
+func (e *Engine) inspectAdoption(ctx context.Context, request AdoptRequest) (adoptionFront, error) {
+	front := adoptionFront{name: request.Branch}
+	if front.name == "" {
+		current, err := e.Repo.CurrentBranch(ctx)
+		if err != nil {
+			return front, fmt.Errorf("this checkout is not on a branch; name one: dockhand adopt <branch>")
+		}
+		front.name = current
+	}
+	if front.name == "master" || front.name == "main" {
+		return front, fmt.Errorf("%s is what branches start from; start a branch with dockhand start <name>", front.name)
+	}
+	head, _, err := e.Repo.Branch(ctx, front.name)
+	front.head = head
+	if errors.Is(err, git.ErrBranchMissing) {
+		return front, fmt.Errorf("there is no local branch %s", front.name)
+	}
+	if err != nil {
+		return front, err
+	}
+	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		branch, err := r.BranchNamed(front.name)
+		if err == nil {
+			front.tracked, front.hasRecord = branch, true
+			return nil
+		}
+		if errors.Is(err, store.ErrNotFound) {
+			return nil
+		}
+		return err
+	})
+	if err != nil {
+		return front, err
+	}
+	if !front.hasRecord {
+		front.renamed, front.hasRename, err = e.renamedFrom(ctx, front.name, front.head)
+		if err != nil {
+			return front, err
+		}
+	}
+	return front, nil
+}
+
+// PlanAdopt reads what adoption would use without fetching, creating a
+// branch/worktree, or writing the store.
+func (e *Engine) PlanAdopt(ctx context.Context, request AdoptRequest, prNumber int) (AdoptionPlan, error) {
+	if prNumber > 0 {
+		front, err := e.inspectPullRequestAdoption(ctx, prNumber)
+		if err != nil {
+			return AdoptionPlan{}, err
+		}
+		pr := front.pr
+		plan := AdoptionPlan{Branch: front.name, Head: pr.RemoteHead, Base: pr.BaseBranch, Commits: pr.Commits, Directory: front.directory, PullRequest: &pr, Already: front.tracked != nil}
+		if front.tracked != nil {
+			plan.Branch, plan.Head = front.tracked.Name, model.ObjectID(front.head)
+			plan.Base = string(front.tracked.Base)
+			if front.head != "" {
+				plan.Commits, _, err = e.changes(ctx, front.tracked.Base, front.head)
+				if err != nil {
+					return AdoptionPlan{}, err
+				}
+			}
+			plan.ScopeKnown = true
+			return plan, nil
+		}
+		return plan, nil
+	}
+	front, err := e.inspectAdoption(ctx, request)
+	if err != nil {
+		return AdoptionPlan{}, err
+	}
+	base := string(front.tracked.Base)
+	already, renamed := front.hasRecord, ""
+	if front.hasRename {
+		base, already, renamed = string(front.renamed.Base), true, front.renamed.ShortName()
+	}
+	if !already {
+		master, _, err := e.Repo.Branch(ctx, "master")
+		if err != nil {
+			return AdoptionPlan{}, err
+		}
+		base, err = e.Repo.MergeBase(ctx, front.head, master)
+		if err != nil {
+			return AdoptionPlan{}, fmt.Errorf("%s shares no history with master: %w", front.name, err)
+		}
+	}
+	commits, scope, err := e.changes(ctx, model.ObjectID(base), front.head)
+	if err != nil {
+		return AdoptionPlan{}, err
+	}
+	plan := AdoptionPlan{Branch: front.name, Renamed: renamed, Head: model.ObjectID(front.head), Base: base, Commits: commits, Ports: scope.PortNames(), ScopeKnown: true, Already: already, Directory: e.worktreeDirectory(front.name)}
+	if front.hasRecord && front.tracked.Worktree != "" {
+		plan.Directory = front.tracked.Worktree
+	} else if front.hasRename && front.renamed.Worktree != "" {
+		plan.Directory = front.renamed.Worktree
+	} else if checkouts, err := e.Repo.Checkouts(ctx, front.name); err == nil && len(checkouts) > 0 {
+		plan.Directory = checkouts[0]
+	}
+	return plan, nil
+}
+
+type pullRequestAdoptionFront struct {
+	name      string
+	directory string
+	pr        forge.PullRequest
+	tracked   *model.Branch
+	head      string
+}
+
+// inspectPullRequestAdoption is the read-only front shared by adoption and
+// its plan. It checks the forge, other records, the local branch name, and
+// the destination directory before either path can fetch or create anything.
+func (e *Engine) inspectPullRequestAdoption(ctx context.Context, number int) (pullRequestAdoptionFront, error) {
+	front := pullRequestAdoptionFront{name: fmt.Sprintf("pr-%d", number)}
+	if err := e.TrackedElsewhere(ctx, number); err != nil {
+		return front, err
+	}
+	observed, err := e.forge().Observe(ctx, pullRequestRef(e.PullRequestRepository(), number))
+	if err != nil {
+		return front, e.readingPullRequest(number, err)
+	}
+	if !observed.Found {
+		return front, fmt.Errorf("couldn't find pull request #%d", number)
+	}
+	front.pr = observed.PullRequest
+	if front.pr.State != forge.PullRequestOpen {
+		return front, fmt.Errorf("#%d is %s; only an open pull request can be worked on", number, front.pr.State)
+	}
+	var tracked []model.Branch
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		tracked, err = r.Branches(store.BranchFilter{})
+		return err
+	}); err != nil {
+		return front, err
+	}
+	for i := range tracked {
+		branch := tracked[i]
+		if branch.PullRequest != nil && branch.PullRequest.Repository == e.PullRequestRepository() && branch.PullRequest.Number == number {
+			front.tracked = &branch
+			if head, _, err := e.Repo.Branch(ctx, branch.Name); err == nil {
+				front.head = head
+			}
+			front.name, front.directory = branch.Name, branch.Worktree
+			return front, nil
+		}
+	}
+	if _, _, err := e.Repo.Branch(ctx, front.name); err == nil {
+		return front, fmt.Errorf("%w: %s; remove it or rename it, then adopt again", git.ErrBranchExists, front.name)
+	} else if !errors.Is(err, git.ErrBranchMissing) {
+		return front, err
+	}
+	front.directory = e.worktreeDirectory(front.name)
+	if exists(front.directory) {
+		return front, fmt.Errorf("%s already exists; remove it, then adopt again", front.directory)
+	}
+	return front, nil
+}
+
 // Adoption reports what adopt found.
 type Adoption struct {
 	Branch model.Branch
@@ -289,40 +477,14 @@ type Adoption struct {
 // Adopt tracks a branch dockhand did not create, as it stands: nothing is
 // moved or rewritten. Its base is where it leaves freshly fetched master.
 func (e *Engine) Adopt(ctx context.Context, request AdoptRequest) (Adoption, error) {
-	name := request.Branch
-	if name == "" {
-		current, err := e.Repo.CurrentBranch(ctx)
-		if err != nil {
-			return Adoption{}, fmt.Errorf("this checkout is not on a branch; name one: dockhand adopt <branch>")
-		}
-		name = current
-	}
-	if name == "master" || name == "main" {
-		return Adoption{}, fmt.Errorf("%s is what branches start from; start a branch with dockhand start <name>", name)
-	}
-	head, _, err := e.Repo.Branch(ctx, name)
-	if errors.Is(err, git.ErrBranchMissing) {
-		return Adoption{}, fmt.Errorf("there is no local branch %s", name)
-	}
+	front, err := e.inspectAdoption(ctx, request)
 	if err != nil {
 		return Adoption{}, err
 	}
+	name, head := front.name, front.head
 	var adoption Adoption
-	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		existing, err := r.BranchNamed(name)
-		if err == nil {
-			adoption.Branch, adoption.Already = existing, true
-			return nil
-		}
-		if errors.Is(err, store.ErrNotFound) {
-			return nil
-		}
-		return err
-	})
-	if err != nil {
-		return adoption, err
-	}
-	if adoption.Already {
+	if front.hasRecord {
+		adoption.Branch, adoption.Already = front.tracked, true
 		if adoption.Commits, adoption.Scope, err = e.changes(ctx, adoption.Branch.Base, head); err != nil {
 			return adoption, err
 		}
@@ -333,15 +495,12 @@ func (e *Engine) Adopt(ctx context.Context, request AdoptRequest) (Adoption, err
 		adoption.Uncommitted = e.uncommittedPorts(ctx, adoption.Branch, adoption.Scope)
 		return adoption, nil
 	}
-	if renamed, ok, err := e.renamedFrom(ctx, name, head); err != nil || ok {
-		if err != nil {
+	if front.hasRename {
+		adoption.Renamed = front.renamed.Name
+		if adoption.Commits, adoption.Scope, err = e.changes(ctx, front.renamed.Base, head); err != nil {
 			return adoption, err
 		}
-		adoption.Renamed = renamed.Name
-		if adoption.Commits, adoption.Scope, err = e.changes(ctx, renamed.Base, head); err != nil {
-			return adoption, err
-		}
-		adoption.Branch, err = e.carryRename(ctx, renamed, name)
+		adoption.Branch, err = e.carryRename(ctx, front.renamed, name)
 		return adoption, err
 	}
 
@@ -617,6 +776,11 @@ func (e *Engine) Resolve(ctx context.Context, selector string) (model.Branch, er
 	if !errors.Is(err, ErrNoBranch) {
 		return branch, err
 	}
+	// The name a rename under way moves a branch to finds it too, before a
+	// rename made by hand is looked for (#194, L3).
+	if renaming, rerr := e.named(ctx, selector, store.Reader.BranchRenamingTo); rerr == nil {
+		return renaming, nil
+	}
 	// A name no record has may be one a branch was renamed to by hand,
 	// which is followed, then found.
 	if followed, ferr := e.followRenames(ctx, selector); ferr == nil && len(followed) > 0 {
@@ -758,10 +922,13 @@ func (e *Engine) StartAtHead(ctx context.Context) (Adoption, error) {
 	if err != nil {
 		return Adoption{}, err
 	}
+	// The port is named by the tree's own rule for a port's directory,
+	// which a dotfile directory, _resources and a category's own files
+	// aren't (#287).
 	port := ""
 	for _, path := range paths {
-		if parts := strings.Split(path, "/"); len(parts) >= 3 && !strings.HasPrefix(parts[0], "_") {
-			port = parts[1]
+		if directory, ok := macports.PortDirectoryOf(path); ok {
+			port = filepath.Base(directory)
 			break
 		}
 	}
@@ -862,7 +1029,7 @@ func (e *Engine) checkOutAgain(ctx context.Context, branch model.Branch) error {
 		if branch.State == model.BranchArchived {
 			return fmt.Errorf("The worktree at %[2]s and Git branch %[1]s are both missing. The branch record is already archived and keeps the name: on a terminal, dockhand start %[3]s offers to rename it aside and start afresh, or start the work under another name", branch.Name, branch.Worktree, branch.ShortName())
 		}
-		return fmt.Errorf("The worktree at %[2]s and Git branch %[1]s are both missing. Run dockhand archive %[3]s to set the branch record aside; the name stays reserved, so start the work again under another name", branch.Name, branch.Worktree, branch.ShortName())
+		return fmt.Errorf("The worktree at %[2]s and Git branch %[1]s are both missing. Run dockhand archive -b %[3]s to set the branch record aside; the name stays reserved, so start the work again under another name", branch.Name, branch.Worktree, branch.ShortName())
 	}
 	if err != nil {
 		return err
@@ -929,45 +1096,21 @@ type PullRequestAdoption struct {
 // already, as Review's fetch left it.
 func (e *Engine) AdoptPullRequest(ctx context.Context, number int, at model.ObjectID) (PullRequestAdoption, error) {
 	var adoption PullRequestAdoption
-	if err := e.TrackedElsewhere(ctx, number); err != nil {
-		return adoption, err
-	}
-	ref := pullRequestRef(e.PullRequestRepository(), number)
-	observed, err := e.forge().Observe(ctx, ref)
+	front, err := e.inspectPullRequestAdoption(ctx, number)
 	if err != nil {
-		return adoption, e.readingPullRequest(number, err)
-	}
-	pr := observed.PullRequest
-	adoption.Title, adoption.Author, adoption.MaintainerCanModify = pr.Title, pr.Author, pr.MaintainerCanModify
-	if pr.State != forge.PullRequestOpen {
-		return adoption, fmt.Errorf("#%d is %s; only an open pull request can be worked on", number, pr.State)
-	}
-	var tracked []model.Branch
-	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		tracked, err = r.Branches(store.BranchFilter{})
-		return err
-	}); err != nil {
 		return adoption, err
 	}
-	for _, branch := range tracked {
-		if branch.PullRequest != nil && branch.PullRequest.Repository == e.PullRequestRepository() && branch.PullRequest.Number == number {
-			adoption.Branch, adoption.Already = branch, true
-			if head, _, err := e.Repo.Branch(ctx, branch.Name); err == nil {
-				adoption.Head = model.ObjectID(head)
-				adoption.Commits, adoption.Scope, err = e.changes(ctx, branch.Base, head)
-				return adoption, err
-			}
-			return adoption, nil
+	pr := front.pr
+	adoption.Title, adoption.Author, adoption.MaintainerCanModify = pr.Title, pr.Author, pr.MaintainerCanModify
+	if front.tracked != nil {
+		adoption.Branch, adoption.Already = *front.tracked, true
+		if front.head != "" {
+			adoption.Head = model.ObjectID(front.head)
+			adoption.Commits, adoption.Scope, err = e.changes(ctx, front.tracked.Base, front.head)
 		}
+		return adoption, err
 	}
-	name := fmt.Sprintf("pr-%d", number)
-	if _, _, err := e.Repo.Branch(ctx, name); err == nil {
-		return adoption, fmt.Errorf("%w: %s; remove it or rename it, then adopt again", git.ErrBranchExists, name)
-	}
-	directory := e.worktreeDirectory(name)
-	if exists(directory) {
-		return adoption, fmt.Errorf("%s already exists; remove it, then adopt again", directory)
-	}
+	name, directory := front.name, front.directory
 	var head string
 	if at != "" {
 		if head, err = e.Repo.Resolve(ctx, string(at)+"^{commit}"); err != nil || head != string(at) {
@@ -1133,6 +1276,71 @@ func (e *Engine) BranchesChanging(ctx context.Context, port string) ([]model.Bra
 		return nil, err
 	}
 	return work.BranchesChanging(ctx, port)
+}
+
+// BranchesChangingAny lists tracked branches in every state whose recorded
+// base-to-head change touches port. Cleanup selectors need ended branches,
+// which OpenWork intentionally excludes.
+func (e *Engine) BranchesChangingAny(ctx context.Context, port string) ([]model.Branch, error) {
+	open, err := e.PortBranches(ctx, port)
+	if err != nil {
+		return nil, err
+	}
+	found := make([]model.Branch, 0, len(open))
+	seen := make(map[model.BranchID]bool, len(open))
+	for _, branch := range open {
+		found = append(found, branch.Branch)
+		seen[branch.Branch.ID] = true
+	}
+	var branches []model.Branch
+	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		branches, err = r.Branches(store.BranchFilter{})
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, branch := range branches {
+		if seen[branch.ID] {
+			continue
+		}
+		head, _, err := e.Repo.Branch(ctx, branch.Name)
+		if errors.Is(err, git.ErrBranchMissing) {
+			if slices.Contains(branch.Ports, port) || branch.Request != nil && slices.ContainsFunc(branch.Request.Targets, func(target model.RequestTarget) bool { return target.Port == port }) {
+				found = append(found, branch)
+				continue
+			}
+			var records []model.ChangeRecord
+			if readErr := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+				var readErr error
+				records, readErr = r.ChangeRecords(store.AssessmentFilter{Branch: branch.ID})
+				return readErr
+			}); readErr != nil {
+				return nil, readErr
+			}
+			if slices.ContainsFunc(records, func(record model.ChangeRecord) bool {
+				return slices.ContainsFunc(record.Ports, func(change model.SubportChange) bool { return change.Port == port })
+			}) {
+				found = append(found, branch)
+			}
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("could not read branch %s while looking for changes to %s: %w", branch.ShortName(), port, err)
+		}
+		if head == "" {
+			continue
+		}
+		paths, err := e.Repo.ChangedPaths(ctx, string(branch.Base), head)
+		if err != nil {
+			return nil, err
+		}
+		if slices.Contains(macports.ScopeOf(paths).PortNames(), port) {
+			found = append(found, branch)
+		}
+	}
+	return found, nil
 }
 
 // PortBranch is an open branch that changes a port, and whether its
@@ -1446,7 +1654,7 @@ func (b *openBranch) files(ctx context.Context) (model.ObjectID, error) {
 // and stays (design v3, §3). The worktree stays where it is, since a
 // person may be in it; its Git branch and record follow. It says the old
 // name, or nothing where the branch keeps its name.
-func (e *Engine) renameForVersion(ctx context.Context, branch *model.Branch, port, from, to string) (string, error) {
+func (e *Engine) renameForVersion(ctx context.Context, held *heldLock, branch *model.Branch, port, from, to string) (string, error) {
 	if branch.PullRequest != nil || from == "" || from == to || branch.ShortName() != refSafe(port+"-"+from) {
 		return "", nil
 	}
@@ -1455,19 +1663,91 @@ func (e *Engine) renameForVersion(ctx context.Context, branch *model.Branch, por
 		return "", err
 	}
 	old := branch.ShortName()
-	if err := e.Repo.RenameBranch(ctx, branch.Name, BranchName(name)); err != nil {
-		return "", err
+	return old, e.renameWithIntent(ctx, held, branch, BranchName(name), fmt.Sprintf("renamed %s to %s, for the version it now moves to", old, name))
+}
+
+// renameWithIntent renames a branch, its old name's lock held, by its
+// recorded intent (#194, "The lock, and a rename"): the new name's lock
+// taken without waiting, or the branch keeps its name this time; RenameTo
+// saved and read back; Git's branch renamed; the name saved and RenameTo
+// emptied, read back. A process cut short between them leaves the intent,
+// which the next command that takes the branch's lock finishes
+// (finishRename).
+func (e *Engine) renameWithIntent(ctx context.Context, held *heldLock, branch *model.Branch, to, words string) error {
+	// The old name's lock is the caller's, handed out by lockedBranch for
+	// this branch and not yet spent; anything else renames nothing (P3).
+	if held == nil || held.released || held.name != branch.Name {
+		return fmt.Errorf("%s can't be renamed without its lock", branch.ShortName())
 	}
-	branch.Name = BranchName(name)
-	err = store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
+	release, err := e.Repo.TryBranchLock(to)
+	if err != nil {
+		return fmt.Errorf("%s is in use by another process, so the branch keeps its name: %w", strings.TrimPrefix(to, model.BranchPrefix), err)
+	}
+	defer func() { _ = release() }()
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error { return nameFree(r, branch.ID, to) }); err != nil {
+		return err
+	}
+	branch.RenameTo = to
+	if err := store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
+		return tx.SetRenameTo(branch.ID, to)
+	}, branchRenaming(branch.ID, to)); err != nil {
+		branch.RenameTo = ""
+		return err
+	}
+	failpoint.Hit("rename.intent")
+	if err := e.Repo.RenameBranch(ctx, branch.Name, to); err != nil {
+		return err
+	}
+	failpoint.Hit("rename.git")
+	return e.saveRenamed(ctx, branch, to, words)
+}
+
+// saveRenamed saves a branch's new name and empties its intent, with the
+// rename's event, read back by the new name.
+func (e *Engine) saveRenamed(ctx context.Context, branch *model.Branch, to, words string) error {
+	branch.Name, branch.RenameTo = to, ""
+	return store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
 		if err := tx.UpdateBranch(*branch); err != nil {
 			return err
 		}
-		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchRename, Level: model.LevelInfo,
-			Message: fmt.Sprintf("renamed %s to %s, for the version it now moves to", old, name)})
+		if err := tx.SetRenameTo(branch.ID, ""); err != nil {
+			return err
+		}
+		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: model.EventBranchRename, Level: model.LevelInfo, Message: words})
 		return err
-	}, branchRecorded(branch.ID))
-	return old, err
+	}, branchRenamed(branch.ID, to))
+}
+
+// nameFree refuses a name another branch has, as its name or as the name
+// a rename is moving it to: a RenameTo names one branch (#194, L2).
+func nameFree(r store.Reader, id model.BranchID, name string) error {
+	for _, lookup := range []func(string) (model.Branch, error){r.BranchNamed, r.BranchRenamingTo} {
+		other, err := lookup(name)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+		case err != nil:
+			return err
+		case other.ID != id:
+			return fmt.Errorf("%s is %s's, or the name its rename is moving it to", strings.TrimPrefix(name, model.BranchPrefix), other.ShortName())
+		}
+	}
+	return nil
+}
+
+// branchRenaming witnesses a rename's intent: the branch's RenameTo.
+func branchRenaming(id model.BranchID, to string) func(store.Reader) bool {
+	return func(r store.Reader) bool {
+		branch, err := r.Branch(id)
+		return err == nil && branch.RenameTo == to
+	}
+}
+
+// branchRenamed witnesses a rename's save: the new name, no intent left.
+func branchRenamed(id model.BranchID, to string) func(store.Reader) bool {
+	return func(r store.Reader) bool {
+		branch, err := r.Branch(id)
+		return err == nil && branch.Name == to && branch.RenameTo == ""
+	}
 }
 
 // ChangesHere reports whether what's checked out where the engine was
@@ -1575,4 +1855,46 @@ func shortID() string {
 		id[i] = alphabet[rand.IntN(len(alphabet))]
 	}
 	return string(id)
+}
+
+// finishRename finishes a rename a process was cut short in, the branch's
+// old name's lock held (#194, L4): it takes the new name's lock without
+// waiting, reads the branch again by its ID and Git's two names, and saves
+// the new name where Git has it alone, renames then saves where Git has
+// the old alone, and stops where it has both or neither. Where the new
+// name's lock is held, it leaves the intent and says a rename is under way.
+func (e *Engine) finishRename(ctx context.Context, branch *model.Branch) error {
+	if branch.RenameTo == "" {
+		return nil
+	}
+	to := branch.RenameTo
+	release, err := e.Repo.TryBranchLock(to)
+	if err != nil {
+		return refusal.New(refusal.Attention, "a rename of %s to %s is under way in another process; run this again once it ends", branch.ShortName(), strings.TrimPrefix(to, model.BranchPrefix))
+	}
+	defer func() { _ = release() }()
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		*branch, err = r.Branch(branch.ID)
+		return err
+	}); err != nil || branch.RenameTo == "" {
+		return err
+	}
+	_, _, oldErr := e.Repo.Branch(ctx, branch.Name)
+	_, _, newErr := e.Repo.Branch(ctx, to)
+	old, renamed := oldErr == nil, newErr == nil
+	if (oldErr != nil && !errors.Is(oldErr, git.ErrBranchMissing)) || (newErr != nil && !errors.Is(newErr, git.ErrBranchMissing)) {
+		return errors.Join(oldErr, newErr)
+	}
+	words := fmt.Sprintf("renamed %s to %s, finishing a rename an earlier run began", branch.ShortName(), strings.TrimPrefix(to, model.BranchPrefix))
+	switch {
+	case renamed && !old:
+		return e.saveRenamed(ctx, branch, to, words)
+	case old && !renamed:
+		if err := e.Repo.RenameBranch(ctx, branch.Name, to); err != nil {
+			return err
+		}
+		return e.saveRenamed(ctx, branch, to, words)
+	}
+	return refusal.New(refusal.Attention, "%s was being renamed to %s, and Git has %s; nothing was guessed. Remove the branch that isn't the work, then run this again", branch.ShortName(), strings.TrimPrefix(to, model.BranchPrefix), map[bool]string{true: "both", false: "neither"}[old])
 }

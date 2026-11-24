@@ -18,7 +18,7 @@ import (
 )
 
 // PublicationReading is what settling read of the fork and GitHub for a
-// publication, under its head's lock (docs/designs/publication-record.md,
+// publication, under its head's lock (docs/designs/publication-record.md at 0e0ad767,
 // "The steps"). A read that failed, or came back cut short, is not read:
 // it settles nothing.
 type PublicationReading struct {
@@ -58,6 +58,9 @@ type Settlement struct {
 	// commit: Why says how, for the person.
 	Ended bool
 	Why   string
+	// Closed is the ending found where its pull request was merged or
+	// closed, which ends the request it took too (#195).
+	Closed bool
 	// Unread are the reads that failed, each named for the person: the
 	// publication stays as it is for what they would have settled.
 	Unread []string
@@ -155,7 +158,7 @@ func Settle(publication model.Publication, recorded *model.PullRequest, reading 
 		}
 	}
 	if terminal {
-		s.Ended, s.Why = true, fmt.Sprintf("#%d was %s", pr.Ref.Number, pr.State)
+		s.Ended, s.Closed, s.Why = true, true, fmt.Sprintf("#%d was %s", pr.Ref.Number, pr.State)
 	}
 	if s.Ended {
 		// Its remaining steps were for Commit; what landed is folded first.
@@ -195,6 +198,9 @@ const (
 	PendingRefused PendingReason = "refused"
 	// PendingUnread couldn't be read, and settles on a later read.
 	PendingUnread PendingReason = "unread"
+	// PendingWaits is a later step the failure of an earlier one stopped
+	// before; it is made once that one is.
+	PendingWaits PendingReason = "waits"
 )
 
 // FailsCommand reports whether a pending step fails the command: a step
@@ -310,7 +316,16 @@ func (e *Engine) settleReading(ctx context.Context, worktree *git.Repository, br
 			next = &kept
 		}
 		return e.rewritePublication(ctx, branch.ID, record.ID, next, func(tx store.Tx) error {
-			return e.foldSettlement(tx, branch.ID, *record, settled, baseRepository)
+			if err := e.foldSettlement(tx, branch.ID, *record, settled, baseRepository); err != nil {
+				return err
+			}
+			// A publication that finished every step, or whose pull
+			// request was merged or closed, ends the request it took,
+			// where that is still the branch's (#195).
+			if next == nil && (settled.Closed || !settled.Ended && len(settled.Owes) == 0) {
+				return endRequest(tx, branch.ID, *record)
+			}
+			return nil
 		})
 	})
 	if err != nil {
@@ -340,7 +355,7 @@ func (e *unsettledError) Error() string { return e.why }
 // each publication of the pull request read, by its number: where status
 // reads a pull request anyway, that reading settles what it can, and
 // status makes no read of its own for a publication (docs/designs/
-// publication-record.md, "When settling runs"). Its head is what GitHub
+// publication-record.md at 0e0ad767, "When settling runs"). Its head is what GitHub
 // says the open pull request is at, and its draft state is what was read
 // with it. A publication whose head another process holds, or which needs
 // a read the refresh didn't make, stays as it is for the process or the
@@ -376,7 +391,7 @@ func (e *Engine) settleRefreshed(ctx context.Context, observed []observedPullReq
 // before the publication goes: each step found done into the pull
 // request, the description's parts that landed, serve's row with the pull
 // request and GitHub's creation time, and every reviewer mark other than
-// not sent as the receipt (docs/designs/publication-record.md, "Ending a
+// not sent as the receipt (docs/designs/publication-record.md at 0e0ad767, "Ending a
 // publication").
 func (e *Engine) foldSettlement(tx store.Tx, id model.BranchID, record model.Publication, settled Settlement, repository string) error {
 	branch, err := tx.Branch(id)
@@ -390,6 +405,13 @@ func (e *Engine) foldSettlement(tx store.Tx, id model.BranchID, record model.Pub
 		found = true
 	}
 	if pr != nil {
+		// A draft change GitHub answered, where there was no record of the
+		// pull request to fold it into then, goes into the record made
+		// now; one that existed took it at the time (#191, group B;
+		// Codex's review).
+		if record.Drafted && found {
+			pr.Draft = true
+		}
 		for _, step := range settled.Done {
 			switch step {
 			case model.StepPush:
@@ -442,7 +464,7 @@ func (e *Engine) foldSettlement(tx store.Tx, id model.BranchID, record model.Pub
 
 // endPublicationFor ends a branch's unfinished submission before the
 // branch is archived or forgotten: what each step left is read and
-// written down, then it goes (docs/designs/publication-record.md, "Ending
+// written down, then it goes (docs/designs/publication-record.md at 0e0ad767, "Ending
 // a publication"). Where a read it needs fails, it stays, and the verb is
 // refused with nothing done.
 func (e *Engine) endPublicationFor(ctx context.Context, branch model.Branch, verb string) error {

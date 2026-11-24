@@ -1944,9 +1944,9 @@ func TestAForgottenBranchKeepsOnlyWhatOthersName(t *testing.T) {
 	open := a
 	open.ID = "br_3"
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
-		_, err := tx.ForgetBranch(other.ID, at)
+		_, err := tx.ForgetBranch(other.ID, at, false)
 		require.ErrorIs(t, err, store.ErrConflict, "an open branch is not forgotten")
-		pruned, err := tx.ForgetBranch(a.ID, at.Add(time.Hour))
+		pruned, err := tx.ForgetBranch(a.ID, at.Add(time.Hour), false)
 		require.Equal(t, 1, pruned.Executions, "ex_lone; ex_built is another's result's origin")
 		require.Equal(t, 1, pruned.Runs)
 		return err
@@ -1975,7 +1975,7 @@ func TestAForgottenBranchKeepsOnlyWhatOthersName(t *testing.T) {
 		return nil
 	}))
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
-		_, err := tx.ForgetBranch(a.ID, at)
+		_, err := tx.ForgetBranch(a.ID, at, false)
 		require.ErrorIs(t, err, store.ErrConflict, "once")
 		return tx.AddBranch(open)
 	}), "its name is free")
@@ -2084,18 +2084,18 @@ func TestAPublicationIsWrittenOnlyOverTheOneItsWriterRead(t *testing.T) {
 	require.Nil(t, read().Publication)
 }
 
-// The publication record's migration waits for quiet: refused, with each
-// process to stop and nothing migrated, while another dockhand runs on
-// this Mac, and where the process list can't be read; it goes ahead with
-// none, and a new database isn't asked (#191).
-func TestThePublicationMigrationWaitsForQuiet(t *testing.T) {
+// A migration to the latest quiet schema waits for quiet: refused, with
+// each process to stop and nothing migrated, while another dockhand runs
+// on this Mac, and where the process list can't be read; it goes ahead
+// with none, and a new database isn't asked (#191; #194's 064 to 065).
+func TestTheQuietMigrationWaitsForQuiet(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {
 		name  string
 		quiet func() ([]int, error)
 		words string
 	}{
-		{"two running", func() ([]int, error) { return []int{101, 202}, nil }, "2 other dockhand processes are running on this Mac, and migrating this database from schema 60 to"},
+		{"two running", func() ([]int, error) { return []int{101, 202}, nil }, "2 other dockhand processes are running on this Mac, and migrating this database from schema 65 to"},
 		{"unreadable", func() ([]int, error) { return nil, errors.New("operation not permitted") }, "this Mac's process list can't be read here (operation not permitted)"},
 	} {
 		path := schemaAt(t, quietSchema-1, schema23Records)
@@ -2142,7 +2142,7 @@ INSERT INTO events(repository_id, at, session_id, branch_id, run_id, target_id, 
  ('repo_1', 1794336000000, '', 'br_1', '', '', 'branch.push', 'verbose', 'pushed abc to #7'),
  ('repo_1', 1794336000000, '', 'br_2', '', '', 'branch.push', 'verbose', 'pushed abc to #7'),
  ('repo_1', 1794336100000, '', 'br_2', '', '', 'branch.rerequest', 'info', 'asked @bob to review #7 again');`
-	path := schemaAt(t, quietSchema-1, setup)
+	path := schemaAt(t, 60, setup)
 	s, err := Open(t.Context(), path, Options{})
 	require.NoError(t, err)
 	defer s.Close()
@@ -2255,4 +2255,45 @@ func TestPruningTheJournalIsRefusedInARead(t *testing.T) {
 		return err
 	})
 	require.ErrorIs(t, err, model.ErrInvalid)
+}
+
+// A build that isn't a release, a candidate included, doesn't migrate the
+// default database unasked, whoever last opened it: a build of main tried
+// once beside a release took its database with it (#281). Consent by the
+// flag migrates it, keeping the copy; a database named explicitly, a
+// release build, a new database, and one at this schema are as before.
+func TestABuildThatIsntAReleaseAsksBeforeMigratingTheDefaultDatabase(t *testing.T) {
+	t.Parallel()
+	ended := "INSERT INTO repositories VALUES('repo_1', '/src/macports-ports/.git', 0);\n" +
+		"INSERT INTO sessions(repository_id, id, kind, pid, process_start, version, started_at, heartbeat_at, ended_at) VALUES('repo_1','ses_1','foreground',101,'p','v0.4.1-0.20261024120000-0123456789ab',1,1,2);"
+	for _, build := range []string{"devel (abcdef123456)", "v0.9.0-rc1 (6246e4b9eb84)"} {
+		path := schemaAt(t, 32, ended)
+		_, err := Open(t.Context(), path, Options{Build: build, Default: true})
+		refused := new(store.DevelopmentMigrationError)
+		require.ErrorAs(t, err, &refused, build)
+		require.Equal(t, store.DevelopmentMigrationError{Build: build, Copy: path + ".schema-32", From: 32, To: schemaVersion}, *refused)
+		require.ErrorIs(t, err, store.ErrDevelopmentMigration)
+		db, err := sql.Open("sqlite", path)
+		require.NoError(t, err)
+		var version int
+		require.NoError(t, db.QueryRow("PRAGMA user_version").Scan(&version))
+		require.NoError(t, db.Close())
+		require.Equal(t, 32, version, "nothing migrated")
+		require.NoFileExists(t, path+".schema-32")
+
+		consented, err := Open(t.Context(), path, Options{Build: build, Default: true, MigrateDevelopment: true})
+		require.NoError(t, err)
+		require.Equal(t, &Migration{From: 32, To: schemaVersion, Copy: path + ".schema-32"}, consented.Migration())
+		require.FileExists(t, path+".schema-32", "the copy is kept")
+		require.NoError(t, consented.Close())
+	}
+	named, err := Open(t.Context(), schemaAt(t, 32, ended), Options{Build: "devel (abcdef123456)"})
+	require.NoError(t, err, "a database named explicitly migrates as before")
+	require.NoError(t, named.Close())
+	released, err := Open(t.Context(), schemaAt(t, 32, ended), Options{Build: "v0.9.0", Default: true})
+	require.NoError(t, err, "a release migrates the default database as before")
+	require.NoError(t, released.Close())
+	fresh, err := Open(t.Context(), filepath.Join(t.TempDir(), "dockhand.db"), Options{Build: "devel (abcdef123456)", Default: true})
+	require.NoError(t, err, "a new database is never asked about")
+	require.NoError(t, fresh.Close())
 }

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -128,6 +129,12 @@ func TestOpenRefusesADirectoryThatIsNotAPortsTree(t *testing.T) {
 
 	_, err = Open(t.Context(), Options{Env: os.Environ(), Tree: t.TempDir(), Database: database})
 	require.ErrorContains(t, err, "not in a Git checkout")
+}
+
+func TestNotCheckoutErrorKeepsGitDiagnosticsOutOfTheRefusal(t *testing.T) {
+	t.Parallel()
+	err := (&notCheckout{dir: "/tmp/outside", err: errors.New("git rev-parse: exit status 128: fatal: not a git repository")}).Error()
+	require.Equal(t, "/tmp/outside is not in a Git checkout (select one with --tree or MACPORTS_TREE)", err)
 }
 
 func TestStartMakesASparseWorktreeFromFreshMaster(t *testing.T) {

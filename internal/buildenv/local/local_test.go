@@ -288,9 +288,20 @@ func TestAGuestKilledFromOutsideIsntTriedAgain(t *testing.T) {
 	build.mu.Unlock()
 	found, err := exec.Command("pgrep", "-f", filepath.Join(dir, "guest.tcl")).Output()
 	require.NoError(t, err)
-	pid, err := strconv.Atoi(strings.Fields(string(found))[0])
-	require.NoError(t, err)
-	require.NoError(t, syscall.Kill(-pid, syscall.SIGKILL), "the guest's whole group, as G9 killed it")
+	// pgrep names the starter too, whose arguments hold the guest's path:
+	// the guest's group is the one led by a process it names, whichever
+	// pid comes first; under load pids wrap, and the first named was the
+	// starter, no group's leader (#302).
+	group := 0
+	for _, field := range strings.Fields(string(found)) {
+		pid, err := strconv.Atoi(field)
+		require.NoError(t, err)
+		if leader, err := syscall.Getpgid(pid); err == nil && leader == pid {
+			group = pid
+		}
+	}
+	require.NotZero(t, group, "the guest leads its own group: %s", found)
+	require.NoError(t, syscall.Kill(-group, syscall.SIGKILL), "the guest's whole group, as G9 killed it")
 	err = <-done
 	require.ErrorIs(t, err, buildenv.ErrNeedsAttention)
 	require.True(t, buildenv.SaysWhyNotTried(err))
@@ -348,6 +359,42 @@ func TestUndoPutsBackAPrefixACheckLeftOrKept(t *testing.T) {
 	require.True(t, found)
 	require.Equal(t, "  zlib @1.3.2_0 (active)\n", readRegistry(t, path))
 	require.NoDirExists(t, kept)
+}
+
+func TestPlanPutBackReadsRecordedAndActivePortsWithoutChangingThem(t *testing.T) {
+	t.Parallel()
+	path, active := registry(t, "  zlib @1.4.0_0 (active)\n  libharbor @9.9_0 (active)\n")
+	prefix, env, _ := fakePrefix(t, active)
+	l := localProvider(t, env)
+	left := leftBehind(t, l.Temp, prefix)
+	refs := readRegistry(t, path)
+	plan, found, err := l.PlanPutBack(t.Context(), "check-9")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, prefix, plan.Place)
+	require.Equal(t, "7", plan.Snapshot)
+	require.Equal(t, []buildenv.PutBackChange{
+		{Port: "libharbor", Current: "9.9_0"},
+		{Port: "zlib", Current: "1.4.0_0", Previous: "1.3.2_0"},
+	}, plan.Changes)
+	require.Equal(t, refs, readRegistry(t, path))
+	require.DirExists(t, left)
+}
+
+func TestPlanPutBackMatchesABuildingCheck(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	dir := filepath.Join(root, localDirectory+"building")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	data, err := json.Marshal(owner{PID: os.Getpid(), Check: "check-7", Prefix: "/fake-prefix"})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "owner.json"), data, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "results.json"), []byte(`{"protocol":2,"state":"running","environment":{"snapshot":"7"}}`), 0o644))
+	l := &Local{Temp: root}
+	_, _, planErr := l.PlanPutBack(t.Context(), "check-7")
+	_, _, putBackErr := l.PutBack(t.Context(), "check-7", func(string) {})
+	require.EqualError(t, planErr, putBackErr.Error())
+	require.ErrorContains(t, planErr, "puts it back when it ends")
 }
 
 // Where dockhand's put-back can't run, port restore is offered as what it
@@ -439,7 +486,7 @@ func TestRootStepsRunThePrefixsPortTclsh(t *testing.T) {
 	<-run.Done()
 	said, err = os.ReadFile(called)
 	require.NoError(t, err)
-	require.Equal(t, "-n "+tclsh+" "+filepath.Join(dir, "guest.tcl")+" "+dir, strings.Split(strings.TrimSpace(string(said)), "\n")[1], "one command, no /usr/bin/env")
+	require.Equal(t, "-n "+tclsh+" "+filepath.Join(dir, "guest.tcl")+" "+dir+" "+lock.Name(), strings.Split(strings.TrimSpace(string(said)), "\n")[1], "one command, no /usr/bin/env, given the lock's path to check it holds it")
 
 	l.terminal = filepath.Join(t.TempDir(), "no-terminal")
 	require.NoError(t, os.WriteFile(answer, []byte("1"), 0o644))
@@ -551,6 +598,9 @@ func TestAnUnreadableRecordRefusesTheNextCheckThere(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(directory, "owner.json"), data, 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(directory, "results.json"), []byte("{corrupt final result"), 0644))
 	build := &fakeBuild{}
+	_, _, planErr := (&Local{Temp: root}).PlanPutBack(t.Context(), "check-7")
+	_, _, putBackErr := (&Local{Temp: root}).PutBack(t.Context(), "check-7", func(string) {})
+	require.EqualError(t, planErr, putBackErr.Error())
 	err = (&Local{Temp: root}).restoreLeft(t.Context(), "/fake-prefix", build)
 	_, retained := os.Stat(before)
 	require.NoError(t, retained)

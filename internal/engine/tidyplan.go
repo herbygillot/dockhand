@@ -168,11 +168,12 @@ const TidyPlanVersion = 2
 // made. Messages and authors may be edited in the file; the paths are
 // checked against the branch when it is applied.
 type savedTidyPlan struct {
-	Version int    `toml:"version"`
-	Branch  string `toml:"branch"`
-	Base    string `toml:"base"`
-	Head    string `toml:"head"`
-	Working string `toml:"working_tree"`
+	Version  int    `toml:"version"`
+	Branch   string `toml:"branch"`
+	Base     string `toml:"base"`
+	Head     string `toml:"head"`
+	Working  string `toml:"working_tree"`
+	Attended bool   `toml:"attended"`
 	// Index is the index's tree when the plan was made.
 	Index   string        `toml:"index"`
 	Commits []savedCommit `toml:"commits"`
@@ -243,7 +244,7 @@ func (p TidyPlan) Save() ([]byte, error) {
 	if p.Keep && len(p.Warnings) == 0 || len(p.Groups) == 0 {
 		return nil, errors.New("the plan changes nothing")
 	}
-	saved := savedTidyPlan{Version: TidyPlanVersion, Branch: p.Branch.Name, Base: p.Base, Head: p.Head, Working: p.Final, Index: p.Index}
+	saved := savedTidyPlan{Version: TidyPlanVersion, Branch: p.Branch.Name, Base: p.Base, Head: p.Head, Working: p.Final, Attended: p.Attended, Index: p.Index}
 	for _, group := range p.Groups {
 		commit := savedCommit{Message: planMessage(group.Message), Author: savedAuthor(group.Author), Paths: group.Paths, Working: group.Working, Notes: group.Notes, Tree: group.From}
 		for _, combined := range group.Combines {
@@ -308,7 +309,7 @@ func (e *Engine) LoadTidyPlan(ctx context.Context, data []byte) (TidyPlan, error
 	if err != nil {
 		return TidyPlan{}, err
 	}
-	files, err := tidyWorkingFiles(ctx, worktree, trees[saved.Base], final)
+	files, err := tidyWorkingFiles(ctx, worktree, trees[saved.Base], final, saved.Attended)
 	if err != nil {
 		return TidyPlan{}, err
 	}
@@ -335,7 +336,7 @@ func (e *Engine) LoadTidyPlan(ctx context.Context, data []byte) (TidyPlan, error
 	if err := e.commitsAreOwn(ctx, worktree, branch, saved.Base, head, len(history), "tidied"); err != nil {
 		return TidyPlan{}, err
 	}
-	plan := TidyPlan{Branch: branch, Base: saved.Base, Head: head, Final: final, BaseTree: trees[saved.Base], History: history, Index: saved.Index,
+	plan := TidyPlan{Branch: branch, Attended: saved.Attended, Base: saved.Base, Head: head, Final: final, BaseTree: trees[saved.Base], History: history, Index: saved.Index,
 		Taken: files.taken, LeftOut: files.leftOut, Ignored: files.ignored, Fixed: files.words}
 	changed, err := worktree.ChangedPaths(ctx, plan.BaseTree, final)
 	if err != nil {

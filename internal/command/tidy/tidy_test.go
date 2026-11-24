@@ -9,10 +9,26 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
+	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
+
+func TestUndoCheckPlanNamesTheActivePortComparison(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	writeUndoPlan(&out, engine.UndoPlan{
+		Run: &model.Run{Number: 12},
+		Prefixes: []buildenv.PutBackPlan{{Place: "/opt/local", Snapshot: "7", Changes: []buildenv.PutBackChange{
+			{Port: "jq", Current: "1.8.1_0", Previous: "1.7.1_0"},
+			{Port: "zlib", Current: "1.4.0_0"},
+		}}},
+	})
+	require.Equal(t, "check-12 · active ports that differ from the snapshot\n  /opt/local · MacPorts snapshot 7\n    jq @1.8.1_0 → @1.7.1_0\n    deactivate zlib @1.4.0_0\nNo prefix or store record was changed.\nNothing was restored (--plan).\n", out.String())
+}
 
 func TestTidyAppliesDockhandsOwnEditsAndUndoPutsThemBack(t *testing.T) {
 	t.Parallel()
@@ -46,6 +62,58 @@ func TestTidyAppliesDockhandsOwnEditsAndUndoPutsThemBack(t *testing.T) {
 	require.Equal(t, "tidy-1", undone.Result["checkpoint"])
 	require.Equal(t, "jq-update", undone.Result["branch"])
 	require.Equal(t, "M textproc/jq/Portfile", testsupport.Git(t, dir, "status", "--porcelain"))
+}
+
+func TestUndoPlanShowsCheckpointWithoutMovingGitRefs(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "tidy")
+	require.NoError(t, err)
+	refs := testsupport.Git(t, dir, "show-ref")
+	out, _, err := cmdtest.Dockhand(t, "undo", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq-update · tidy-1")
+	require.Contains(t, out, "Restore history")
+	require.Contains(t, out, "No Git ref, index, file, or store record was changed.")
+	require.Contains(t, out, "Nothing was restored (--plan).")
+	require.Equal(t, refs, testsupport.Git(t, dir, "show-ref"))
+}
+
+func TestUndoPlanNamesRebaseFilesAndItsConditionalRefusal(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	testsupport.Git(t, dir, "commit", "-q", "-am", "jq: update to 1.8.1")
+	testsupport.WriteFiles(t, w.Upstream, map[string]string{"devel/other/Portfile": "name other\n"})
+	testsupport.Git(t, w.Upstream, "add", "devel/other/Portfile")
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-m", "other: add port")
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
+	_, _, err = cmdtest.Dockhand(t, "start", "master-refresh")
+	require.NoError(t, err)
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "rebase", "--yes")
+	require.NoError(t, err)
+	refs := testsupport.Git(t, dir, "show-ref")
+	out, _, err := cmdtest.Dockhand(t, "undo", "rebase-1", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "Restore history and files to")
+	require.Contains(t, out, "An uncommitted change to a file master changed would stop restoration.")
+	require.Equal(t, refs, testsupport.Git(t, dir, "show-ref"))
 }
 
 func TestTidyAsksAboutAPersonsCommits(t *testing.T) {
@@ -122,6 +190,21 @@ func TestTidyYesAppliesAPersonsPlanAsShown(t *testing.T) {
 	require.Contains(t, out, "Created 1 commit.")
 	require.Equal(t, "jq: note a", testsupport.Git(t, w.Clone, "log", "-1", "--format=%s"))
 	require.Empty(t, testsupport.Git(t, w.Clone, "status", "--porcelain"))
+}
+
+func TestRebaseAcceptsYesWithoutChangingItsBehavior(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	_, _, err := cmdtest.Dockhand(t, "start", "notes")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "notes")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	before := testsupport.Git(t, dir, "rev-parse", "HEAD")
+
+	out, _, err := cmdtest.Dockhand(t, "rebase", "--yes")
+	require.NoError(t, err)
+	require.Contains(t, out, "notes already starts from master ")
+	require.Equal(t, before, testsupport.Git(t, dir, "rev-parse", "HEAD"), "--yes changes nothing when rebase asks nothing")
 }
 
 func TestTidyRegroupsAndAppliesASavedPlan(t *testing.T) {
@@ -232,4 +315,38 @@ func TestTidysReviewDiffIsNotWrapped(t *testing.T) {
 	var out, errs bytes.Buffer
 	_ = cmdtest.RunFor(t, t.Context(), []string{"tidy"}, term.Streams{In: strings.NewReader("d\nq\n"), Out: &out, Err: &errs}.AsTerminal())
 	require.Contains(t, out.String(), "+"+long+"\n")
+}
+
+// A commit's body and trailers are the person's text, payload, whole at
+// any width: a saved plan's body and a proposal's kept trailer came back
+// wrapped, written through Prose (#94, Codex's read).
+func TestAPlansBodyAndTrailersAreWholeAtANarrowWidth(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	testsupport.Git(t, w.Clone, "switch", "-q", "-c", "harbor")
+	trailer := "Co-authored-by: Someone With A Long Name <someone.with.a.long.name@example.org>"
+	require.NoError(t, os.WriteFile(filepath.Join(w.Clone, "textproc/jq/Portfile"), []byte("name jq\n# harbor\n"), 0o644))
+	testsupport.Git(t, w.Clone, "commit", "-q", "-am", "jq: note harbor\n\n"+trailer)
+	require.NoError(t, os.WriteFile(filepath.Join(w.Clone, "textproc/jq/Portfile"), []byte("name jq\n# harbor, again\n"), 0o644))
+	testsupport.Git(t, w.Clone, "commit", "-q", "-am", "oops")
+	_, _, err := cmdtest.Dockhand(t, "adopt")
+	require.NoError(t, err)
+	cmdtest.Setenv(t, "COLUMNS", "20")
+
+	out, _, err := cmdtest.Dockhand(t, "tidy", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "keeps: "+trailer+"\n", "a proposal's trailer, whole")
+
+	file := filepath.Join(t.TempDir(), "plan.toml")
+	_, _, err = cmdtest.Dockhand(t, "tidy", "--plan", "--out", file)
+	require.NoError(t, err)
+	saved, err := os.ReadFile(file)
+	require.NoError(t, err)
+	body := "A body line of the person's own that runs well past twenty columns."
+	edited := strings.Replace(string(saved), "message = '''\njq: note harbor\n", "message = '''\njq: note harbor\n\n"+body+"\n", 1)
+	require.NotEqual(t, string(saved), edited)
+	require.NoError(t, os.WriteFile(file, []byte(edited), 0o644))
+	out, _, err = cmdtest.Dockhand(t, "tidy", "--apply", file)
+	require.NoError(t, err)
+	require.Contains(t, out, "         "+body+"\n", "a saved plan's body, whole")
 }

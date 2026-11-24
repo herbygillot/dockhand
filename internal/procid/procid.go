@@ -7,6 +7,7 @@ package procid
 import (
 	"errors"
 	"os"
+	"strings"
 )
 
 // Process identifies an operating-system process by its PID and the
@@ -48,4 +49,17 @@ func (System) Alive(p Process) (bool, error) {
 		return false, err
 	}
 	return start == p.Start, nil
+}
+
+// Seconds is a start time's whole seconds since the epoch, as a tool that
+// reads no finer, ps(1)'s lstart, compares it: the root stop of a check
+// run as root (the lifecycle design's rule 4). False for a start time this
+// Mac's Start didn't read.
+func Seconds(start string) (string, bool) {
+	rest, ok := strings.CutPrefix(start, "darwin:")
+	if !ok {
+		return "", false
+	}
+	seconds, _, _ := strings.Cut(rest, ".")
+	return seconds, seconds != ""
 }

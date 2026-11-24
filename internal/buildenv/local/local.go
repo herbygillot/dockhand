@@ -80,6 +80,10 @@ type Local struct {
 	// process on the Mac, whatever its user or database: dockhand-locks
 	// in Temp when empty (own).
 	Locks string
+	// Proofs is the person's own directory where the probe of this Mac's
+	// sudo is kept (rootproof.go); no probe is kept or read without one,
+	// and no root build is stopped.
+	Proofs string
 	// Starter is the program the guest program is started through
 	// (starter.Self, as compose gives it).
 	Starter starter.Program
@@ -176,6 +180,10 @@ type owner struct {
 	// Root is a build run as root under sudo, which a stop doesn't signal
 	// on a Mac whose sudo hasn't passed the lifecycle design's test.
 	Root bool `json:"root,omitempty"`
+	// RootStop is a root build its starter was handed the root stop for,
+	// its sudo handed the lock (the lifecycle design's rule 4): one an
+	// older dockhand started, or the put-back, isn't stopped as one.
+	RootStop bool `json:"root_stop,omitempty"`
 }
 
 // Execute builds the job's targets in the environment's prefix. A prefix
@@ -215,6 +223,12 @@ func (l *Local) Execute(ctx context.Context, job buildenv.Job, build buildenv.Bu
 	sudo, err := l.asRoot(ctx, prefix, build)
 	if err != nil {
 		return err
+	}
+	// A root build's first launch on this Mac probes its sudo once, for the
+	// stop (the lifecycle design's rule 4): whatever it finds, the build
+	// starts.
+	if len(sudo) > 0 {
+		l.proveRootOnce(ctx, sudo[:len(sudo)-1], filepath.Join(prefix, "bin", macports.TclShell), build.Progress)
 	}
 	build.Progress("staging the revision for " + prefix)
 	dir, err := os.MkdirTemp(l.temp(), localDirectory)
@@ -436,10 +450,7 @@ func (l *Local) asRoot(ctx context.Context, prefix string, build buildenv.Build)
 	if syscall.Access(filepath.Join(prefix, "var", "macports", "registry"), 2) == nil {
 		return nil, nil
 	}
-	sudo := l.sudo
-	if sudo == nil {
-		sudo = []string{"/usr/bin/sudo"}
-	}
+	sudo := l.sudoCommand()
 	// An empty script: the interpreter as root, asked to do nothing.
 	tclsh := filepath.Join(prefix, "bin", macports.TclShell)
 	if _, err := subprocess.Run(ctx, subprocess.Spec{Tool: "sudo", Path: sudo[0], Args: append(slices.Clone(sudo[1:]), "-n", tclsh, os.DevNull), Env: l.Env}); err == nil {
@@ -520,7 +531,7 @@ func (n launchNote) String() string {
 // launch lock, lock, for as long as it lives.
 func (l *Local) start(dir, prefix, check string, sudo []string, lock *os.File) (*localRun, error) {
 	self, _ := procid.Self()
-	owned, err := json.Marshal(owner{PID: os.Getpid(), Start: self.Start, Check: check, Prefix: prefix, Root: len(sudo) > 0})
+	owned, err := json.Marshal(owner{PID: os.Getpid(), Start: self.Start, Check: check, Prefix: prefix, Root: len(sudo) > 0, RootStop: len(sudo) > 0})
 	if err != nil {
 		return nil, err
 	}
@@ -534,8 +545,19 @@ func (l *Local) start(dir, prefix, check string, sudo []string, lock *os.File) (
 	// One command, the prefix's port-tclsh, which one sudoers line names;
 	// the program sets MacPorts' PORTSRC and PATH from its directory.
 	args := append(slices.Clone(sudo), filepath.Join(prefix, "bin", macports.TclShell), filepath.Join(dir, "guest.tcl"), dir)
-	started, err := starter.Start(starter.Spec{Program: l.Starter, Directory: dir, Signal: syscall.SIGTERM, Grace: stopGrace, Lock: lock,
-		Command: args, Env: l.Env, Stdout: log, Stderr: log})
+	// A root build's guest is handed the attempt's lock through its sudo as
+	// its standard input, and given the lock's path to check that it was
+	// (the lifecycle design's rule 4).
+	if len(sudo) > 0 {
+		args = append(args, lock.Name())
+	}
+	spec := starter.Spec{Program: l.Starter, Directory: dir, Signal: syscall.SIGTERM, Grace: stopGrace, Lock: lock,
+		Command: args, StdinLock: len(sudo) > 0, Env: l.Env, Stdout: log, Stderr: log}
+	if len(sudo) > 0 {
+		// The root stop: the same program, as root, only to stop.
+		spec.RootStop = append(slices.Clone(sudo), filepath.Join(prefix, "bin", macports.TclShell), filepath.Join(dir, "guest.tcl"))
+	}
+	started, err := starter.Start(spec)
 	if err != nil {
 		log.Close()
 		return nil, err
@@ -810,13 +832,6 @@ func (l *Local) restoreLeft(ctx context.Context, prefix string, build buildenv.B
 	return nil
 }
 
-// buildingNow are the checks building in a prefix now, by their dockhand
-// or their program, as Changes says them.
-func (l *Local) buildingNow() []buildenv.Change {
-	changes, _ := l.Changes(context.Background())
-	return slices.DeleteFunc(changes, func(change buildenv.Change) bool { return !change.Building })
-}
-
 // Changes are the prefixes checks are building in now, and those checks
 // left changed when their process ended first, each with how to put it
 // back (buildenv.ChangingProvider). One the person has put back already,
@@ -870,42 +885,132 @@ func (l *Local) Changes(ctx context.Context) ([]buildenv.Change, error) {
 // here to put back (buildenv.PuttingBackProvider).
 func (l *Local) PutBack(ctx context.Context, check string, progress func(string)) (string, bool, error) {
 	build := saying{say: progress}
-	// One building still, by its dockhand or its program, puts the prefix
-	// back itself when it ends.
-	for _, change := range l.buildingNow() {
-		if change.Check == check {
-			return change.Place, true, fmt.Errorf("%s is building in %s now, and puts it back when it ends; dockhand cancel %s stops it, putting it back", check, change.Place, check)
+	selected := l.selectPutBack(check)
+	if selected.building != nil {
+		return selected.place, true, fmt.Errorf("%s is building in %s now, and puts it back when it ends; dockhand cancel %s stops it, putting it back", check, selected.place, check)
+	}
+	if selected.left == nil {
+		return "", false, nil
+	}
+	left, prefix := selected.left, selected.place
+	if left.unreadable != nil {
+		return prefix, true, buildenv.NeedsAttention("%s", unreadableWords(check, prefix, left.dir, left.unreadable))
+	}
+	letGo, err := l.own(ctx, prefix, check, build)
+	if err != nil {
+		return prefix, true, err
+	}
+	defer letGo()
+	sudo, err := l.asRoot(ctx, prefix, build)
+	if err != nil {
+		return prefix, true, err
+	}
+	build.Progress(fmt.Sprintf("putting %s back as it was before %s", prefix, check))
+	if err := l.restore(ctx, left.dir, prefix, check, sudo); err != nil {
+		if ctx.Err() != nil {
+			return prefix, true, ctx.Err()
 		}
+		return prefix, true, buildenv.NeedsAttention("%s couldn't be put back as it was before %s: %v. %s", prefix, check, err, l.byHand(left.dir, check, left.snapshot))
+	}
+	remove(left.dir, build)
+	return prefix, true, nil
+}
+
+type putBackSelection struct {
+	place    string
+	building *buildenv.Change
+	left     *leftDirectory
+}
+
+// selectPutBack is the read-only choice shared by putting a check back and
+// its plan, including an active build and an unreadable restoration record.
+func (l *Local) selectPutBack(check string) putBackSelection {
+	if place, ok := l.buildingCheck(check); ok {
+		change := buildenv.Change{Check: check, Place: place, Building: true}
+		return putBackSelection{place: place, building: &change}
 	}
 	for _, left := range l.left() {
-		if left.owner.Check == check && left.unreadable != nil {
-			return left.owner.Prefix, true, buildenv.NeedsAttention("%s", unreadableWords(check, left.owner.Prefix, left.dir, left.unreadable))
-		}
-		if left.owner.Check != check || left.snapshot == "" || left.restored {
+		if left.owner.Check != check {
 			continue
 		}
-		prefix := left.owner.Prefix
-		letGo, err := l.own(ctx, prefix, check, build)
-		if err != nil {
-			return prefix, true, err
+		if left.unreadable != nil {
+			return putBackSelection{place: left.owner.Prefix, left: &left}
 		}
-		defer letGo()
-		sudo, err := l.asRoot(ctx, prefix, build)
-		if err != nil {
-			return prefix, true, err
+		if left.snapshot != "" && !left.restored {
+			return putBackSelection{place: left.owner.Prefix, left: &left}
 		}
-		build.Progress(fmt.Sprintf("putting %s back as it was before %s", prefix, check))
-		if err := l.restore(ctx, left.dir, prefix, check, sudo); err != nil {
-			if ctx.Err() != nil {
-				return prefix, true, ctx.Err()
-			}
-			return prefix, true, buildenv.NeedsAttention("%s couldn't be put back as it was before %s: %v. %s", prefix, check, err, l.byHand(left.dir, check, left.snapshot))
-		}
-		remove(left.dir, build)
-		return prefix, true, nil
 	}
-	return "", false, nil
+	return putBackSelection{}
 }
+
+// buildingCheck reads whether this check is still running without using
+// Changes, which may remove a leftover the person already restored.
+func (l *Local) buildingCheck(check string) (string, bool) {
+	entries, err := os.ReadDir(l.temp())
+	if err != nil {
+		return "", false
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), localDirectory) {
+			continue
+		}
+		dir := filepath.Join(l.temp(), entry.Name())
+		data, err := os.ReadFile(filepath.Join(dir, "owner.json"))
+		var made owner
+		if err != nil || json.Unmarshal(data, &made) != nil || made.Check != check {
+			continue
+		}
+		if _, ours := l.building.Load(dir); ours {
+			return made.Prefix, true
+		}
+		results, readErr := (&guest.Follower{Root: dir}).Read(context.Background(), hostGuest{})
+		if building(dir, made, results) && (readErr != nil || results.Environment["snapshot"] != "" && results.Environment["restored"] != "yes" && results.Environment["restored"] != "kept") {
+			return made.Prefix, true
+		}
+	}
+	return "", false
+}
+
+// PlanPutBack reads the before snapshot and currently active versions for
+// a check without locking or changing the prefix.
+func (l *Local) PlanPutBack(ctx context.Context, check string) (buildenv.PutBackPlan, bool, error) {
+	selected := l.selectPutBack(check)
+	if selected.building != nil {
+		return buildenv.PutBackPlan{}, true, fmt.Errorf("%s is building in %s now, and puts it back when it ends; dockhand cancel %s stops it, putting it back", check, selected.place, check)
+	}
+	if selected.left == nil {
+		return buildenv.PutBackPlan{}, false, nil
+	}
+	left := selected.left
+	if left.unreadable != nil {
+		return buildenv.PutBackPlan{}, true, buildenv.NeedsAttention("%s", unreadableWords(check, left.owner.Prefix, left.dir, left.unreadable))
+	}
+	before, err := os.ReadFile(filepath.Join(left.dir, "before.txt"))
+	if err != nil {
+		return buildenv.PutBackPlan{}, true, err
+	}
+	active, err := l.command(ctx, nil, filepath.Join(left.owner.Prefix, "bin", "port"), "-q", "installed", "active")
+	if err != nil {
+		return buildenv.PutBackPlan{}, true, err
+	}
+	previous, current := activePorts(string(before)), activePorts(string(active))
+	ports := slices.Sorted(maps.Keys(previous))
+	for port := range current {
+		if !slices.Contains(ports, port) {
+			ports = append(ports, port)
+		}
+	}
+	slices.Sort(ports)
+	plan := buildenv.PutBackPlan{Place: left.owner.Prefix, Snapshot: left.snapshot}
+	for _, port := range ports {
+		if previous[port] != current[port] {
+			plan.Changes = append(plan.Changes, buildenv.PutBackChange{Port: port, Current: strings.TrimPrefix(current[port], "@"), Previous: strings.TrimPrefix(previous[port], "@")})
+		}
+	}
+	return plan, true, nil
+}
+
+var _ buildenv.PutBackPlanner = (*Local)(nil)
 
 // saying is a put-back's progress, as a check's build says it: the prefix
 // waited for and root asked for are all a put-back says, and none of a
@@ -1083,3 +1188,12 @@ func (hostGuest) Close(context.Context) {}
 // Supported says whether the local provider can build here: on a Mac,
 // MacPorts' own.
 func Supported() bool { return runtime.GOOS == "darwin" }
+
+// sudoCommand is the sudo a root build runs under, without -n: the one
+// given, else /usr/bin/sudo.
+func (l *Local) sudoCommand() []string {
+	if l.sudo == nil {
+		return []string{"/usr/bin/sudo"}
+	}
+	return l.sudo
+}

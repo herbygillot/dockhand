@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -38,7 +39,7 @@ func TestServeResumesABranchItPreparedAndDidntQueue(t *testing.T) {
 	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}})
 	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
 
-	resumed, err := e.ResumePrepared(t.Context(), Where{Environments: []model.Environment{{Provider: "command"}}}, "")
+	resumed, err := e.ResumePrepared(t.Context(), Where{Environments: []model.Environment{{Provider: "command"}}}, "", true)
 	require.NoError(t, err)
 	require.Len(t, resumed, 2, "serve's two, not the person's")
 	byName := map[string]Resumed{}
@@ -49,7 +50,53 @@ func TestServeResumesABranchItPreparedAndDidntQueue(t *testing.T) {
 	require.True(t, byName[edited.ShortName()].HandEdits)
 	require.Contains(t, byName[edited.ShortName()].Problem, "dockhand ship -b "+edited.ShortName())
 
-	again, err := e.ResumePrepared(t.Context(), Where{Environments: []model.Environment{{Provider: "command"}}}, "")
+	again, err := e.ResumePrepared(t.Context(), Where{Environments: []model.Environment{{Provider: "command"}}}, "", true)
 	require.NoError(t, err)
 	require.Len(t, again, 1, "one with a run now isn't resumed again")
+}
+
+func TestUnattendedShipCommitsMissingFinalNewlineUnchanged(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\nchecksums sha256 0000"})
+	testsupport.Git(t, f.upstream, "add", "textproc/jq/Portfile")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "jq: remove final newline")
+	e, _ := f.withPreparer(t)
+
+	done := e.ship(t.Context(), shipTarget{Port: "jq", Version: "1.8.1", Name: "jq-update"}, shipOptions{
+		Origin: model.OriginServe, To: ShipCommit, Answered: model.AnsweredNobody,
+	})
+	require.True(t, done.Tidied, done.Problem)
+	require.Empty(t, done.Problem)
+	require.Empty(t, done.Update.Fixed)
+	require.Equal(t, modelineHead+"name jq\nversion 1.8.1\nchecksums sha256 0000", read(t, filepath.Join(done.Branch.Worktree, "textproc/jq/Portfile")))
+}
+
+func TestServeRecoveryQueuesUnattendedCommitWithoutFinalNewline(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\nchecksums sha256 0000"})
+	testsupport.Git(t, f.upstream, "add", "textproc/jq/Portfile")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "jq: remove final newline")
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-serve", Origin: model.OriginServe})
+	require.NoError(t, err)
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq", Unattended: true})
+	require.NoError(t, err)
+	const expected = modelineHead + "name jq\nversion 1.8.1\nchecksums sha256 0000"
+	require.Equal(t, expected, read(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile")), "update leaves the missing final newline alone")
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Empty(t, plan.Fixed)
+	require.True(t, plan.Groups[0].FromEdits)
+	_, err = e.ApplyTidy(t.Context(), plan)
+	require.NoError(t, err)
+
+	usePorts(e, fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}})
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
+	resumed, err := e.ResumePrepared(t.Context(), Where{Environments: []model.Environment{{Provider: "command"}}}, "", true)
+	require.NoError(t, err)
+	require.Len(t, resumed, 1)
+	require.NotNil(t, resumed[0].Run, resumed[0].Problem)
+	require.Equal(t, expected, read(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile")))
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
@@ -29,6 +30,7 @@ func (s *Service) checkPatches(ctx context.Context, input *sourceInput, result *
 	if result.Prepared.Ports == nil {
 		return nil
 	}
+	result.PatchesChecked = true
 	info := result.Prepared.Ports[input.target.Name]
 	names, errs := syntax.ListValues(info.Options["patchfiles"])
 	if len(errs) > 0 || len(names) == 0 {
@@ -68,6 +70,38 @@ func (s *Service) checkPatches(ctx context.Context, input *sourceInput, result *
 		progress.VerboseReport(ctx, "Patches: %s", patchcheck.Summary(results))
 	}
 	return nil
+}
+
+// Declared is the port's patches as the prepared Portfile's final
+// evaluation declares them, each with what the check found, read in
+// scope (#194): a dropped patch is absent, a refreshed one applied, one
+// no archive reached unchecked. Nil where that declaration wasn't read:
+// the edit checked nothing, no port was evaluated, or the list is
+// malformed; empty where the port declares none.
+func (r Result) Declared(scope string) *model.PatchCheck {
+	if !r.PatchesChecked {
+		return nil
+	}
+	info, ok := r.Prepared.Ports[r.Target.Name]
+	if !ok {
+		return nil
+	}
+	names, errs := syntax.ListValues(info.Options["patchfiles"])
+	if len(errs) > 0 {
+		return nil
+	}
+	declared := make([]model.PatchResult, 0, len(names))
+	for _, name := range names {
+		state := model.PatchUnchecked
+		if i := slices.IndexFunc(r.Patches, func(p patchcheck.Result) bool { return p.Name == name }); i >= 0 && r.Patches[i].Checked {
+			state = model.PatchRejected
+			if r.Patches[i].Applies {
+				state = model.PatchApplied
+			}
+		}
+		declared = append(declared, model.PatchResult{Name: name, State: state})
+	}
+	return &model.PatchCheck{Scope: scope, Declared: declared}
 }
 
 // dropMergedPatches takes out of the Portfile the patches the new source

@@ -296,11 +296,11 @@ func TestAMergedBranchIsNotRebased(t *testing.T) {
 	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.1 (#34901)")
 	_, err = e.Rebase(t.Context(), branch)
-	require.ErrorContains(t, err, "already has every change jq-update makes, so there's nothing to rebase; dockhand clean jq-update removes it once its pull request is merged")
+	require.ErrorContains(t, err, "already has every change jq-update makes, so there's nothing to rebase; dockhand clean -b jq-update removes it once its pull request is merged")
 	require.Equal(t, head, strings.TrimSpace(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")), "the branch is as it was")
 
 	require.EqualError(t, ended(model.Branch{Name: "dockhand/jq-update", State: model.BranchMerged, PullRequest: &model.PullRequest{Number: 34901}}),
-		"#34901 merged, so jq-update has nothing to rebase; dockhand clean jq-update removes what it leaves")
+		"#34901 merged, so jq-update has nothing to rebase; dockhand clean -b jq-update removes what it leaves")
 }
 
 // A branch restored to the files an earlier check passed is that check's,

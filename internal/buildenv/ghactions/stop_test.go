@@ -24,10 +24,26 @@ type stopAPI struct {
 	canceled []int64
 	hold     int
 	held     map[int64]int
+	// cancelBlocks keeps each cancel until its context ends, as a cancel
+	// whose reply is lost; listsBeforeBlocking, where set, is how many
+	// lists answer before each later one waits for its context to end.
+	cancelBlocks        bool
+	listsBeforeBlocking int
+	lists               int
+	// cancelErr, where set, is each cancel's answer, the cancel taken
+	// only where cancelLands, as a reply lost after GitHub took it.
+	cancelErr   error
+	cancelLands bool
 }
 
-func (s *stopAPI) Runs(_ context.Context, _, _, _ string) ([]Run, error) {
+func (s *stopAPI) Runs(ctx context.Context, _, _, _ string) ([]Run, error) {
 	s.mu.Lock()
+	s.lists++
+	if s.listsBeforeBlocking > 0 && s.lists > s.listsBeforeBlocking {
+		s.mu.Unlock()
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	defer s.mu.Unlock()
 	for i, run := range s.runs {
 		if run.Status == "cancelling" {
@@ -50,19 +66,25 @@ func (s *stopAPI) Run(ctx context.Context, repository string, id int64) (Run, er
 	return Run{}, fmt.Errorf("no run %d", id)
 }
 
-func (s *stopAPI) Cancel(_ context.Context, _ string, id int64) error {
+func (s *stopAPI) Cancel(ctx context.Context, _ string, id int64) error {
+	if s.cancelBlocks {
+		<-ctx.Done()
+		return ctx.Err()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.held == nil {
 		s.held = map[int64]int{}
 	}
-	s.canceled = append(s.canceled, id)
-	for i, run := range s.runs {
-		if run.ID == id && run.Status != "completed" {
-			s.runs[i].Status = "cancelling"
+	if s.cancelErr == nil || s.cancelLands {
+		s.canceled = append(s.canceled, id)
+		for i, run := range s.runs {
+			if run.ID == id && run.Status != "completed" {
+				s.runs[i].Status = "cancelling"
+			}
 		}
 	}
-	return nil
+	return s.cancelErr
 }
 
 func (s *stopAPI) add(id int64, status string) {
@@ -144,12 +166,11 @@ func TestAGitHubStopAnswersForEveryLaunch(t *testing.T) {
 	require.NoError(t, stop(t, api, attempts(push("p1", 0))))
 	require.Equal(t, []int64{7}, api.canceled)
 
-	// A run that doesn't complete within the bound is not known, named.
+	// A run that doesn't complete within the bound is not known, named
+	// by its Actions URL: never ended with something left.
 	stuck := &stopAPI{hold: -1}
 	stuck.add(9, "queued")
-	left, err := stopper(stuck).Stop(t.Context(), buildenv.StopRequest{Attempts: attempts(push("p1", 0)), Lock: freeLock{}})
-	require.NoError(t, err)
-	require.Contains(t, left, "GitHub was asked to cancel https://github.com/ada/macports-ports/actions/runs/9, and it is still cancelling; cancel it at https://github.com/ada/macports-ports/actions/runs/9")
+	require.ErrorContains(t, stop(t, stuck, attempts(push("p1", 0))), "GitHub was asked to cancel https://github.com/ada/macports-ports/actions/runs/9, and it is still cancelling")
 
 	// Two pushes that noted the same newest run need two runs newer
 	// than it: one completed run answers for one (A7).
@@ -198,22 +219,44 @@ func TestAGitHubStopAnswersForEveryLaunch(t *testing.T) {
 	require.NoError(t, stop(t, reruns, attempts(push("p1", 0), attach("a1"), attach("a2"))))
 }
 
-func TestStopBoundReturnsUnfinishedCancellationAsLeft(t *testing.T) {
-	api := &stopAPI{hold: -1}
-	api.add(42, "in_progress")
-	p := stopper(api)
-	p.Sleep = func(ctx context.Context, _ time.Duration) error {
+// A stop whose time runs out, in its cancels, its wait or a read inside
+// that wait, is not known: a run asked to cancel and not seen to end hasn't
+// ended. Each run not seen to end is named by its Actions URL, in the
+// error, and nothing is returned as left (the lifecycle design's "Not
+// known"; architecture's ruling on 60cbf5bc).
+func TestAStopThatRunsOutOfTimeIsNotKnownNamingItsRuns(t *testing.T) {
+	t.Parallel()
+	const url = "https://github.com/ada/macports-ports/actions/runs/42"
+	blocked := func(ctx context.Context, _ time.Duration) error {
 		<-ctx.Done()
 		return ctx.Err()
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
-	defer cancel()
-	started := time.Now()
-	left, err := p.Stop(ctx, buildenv.StopRequest{Attempts: attempts(push("p1", 0)), Lock: freeLock{}})
-	require.NoError(t, err)
-	require.Less(t, time.Since(started), 150*time.Millisecond)
-	require.Contains(t, left, "GitHub was asked to cancel https://github.com/ada/macports-ports/actions/runs/42, and it is still in progress; cancel it at https://github.com/ada/macports-ports/actions/runs/42")
-	require.Equal(t, []int64{42}, api.canceled)
+	for _, tc := range []struct {
+		name  string
+		api   *stopAPI
+		sleep func(context.Context, time.Duration) error
+		said  string
+	}{
+		{name: "the wait", api: &stopAPI{hold: -1}, sleep: blocked, said: "GitHub was asked to cancel " + url + ", and it is still "},
+		{name: "a cancel", api: &stopAPI{hold: -1, cancelBlocks: true}, said: "GitHub couldn't be asked to cancel " + url + " in time, and it is still in progress"},
+		{name: "a read in the wait", api: &stopAPI{hold: -1, listsBeforeBlocking: 1}, said: "GitHub was asked to cancel " + url + ", and it is still "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.api.add(42, "in_progress")
+			p := stopper(tc.api)
+			if tc.sleep != nil {
+				p.Sleep = tc.sleep
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+			defer cancel()
+			started := time.Now()
+			left, err := p.Stop(ctx, buildenv.StopRequest{Attempts: attempts(push("p1", 0)), Lock: freeLock{}})
+			require.Less(t, time.Since(started), 2*time.Second)
+			require.Empty(t, left, "nothing is ended with something left")
+			require.ErrorContains(t, err, tc.said)
+		})
+	}
 }
 
 // What a stop can't read or mayn't touch is said, never taken as ended:
@@ -278,4 +321,91 @@ func TestALaunchThatCantBeNamedDoesntKeepAKnownRunRunning(t *testing.T) {
 		require.ErrorContains(t, stop(t, alone, []model.GuestExecution{unnamed.attempt}), unnamed.said)
 		require.Empty(t, alone.canceled)
 	}
+}
+
+// rerunOf is a note of a rerun of run from the attempt it had; attachTo
+// one of an attempt that took run, having pushed nothing.
+func rerunOf(id string, run int64, attempt int) launchNote {
+	note := push(id, 0)
+	note.Action, note.Run, note.Attempt = launchRerun, run, attempt
+	return note
+}
+
+func attachTo(id string, run int64) launchNote {
+	note := push(id, 0)
+	note.Action, note.Run = launchAttach, run
+	return note
+}
+
+// Every run on the check's branch is the check's, whichever attempt
+// pushed it, attached to it or ran it again: a run a later attempt
+// attached to, and one it ran again, are each canceled and seen to end. A
+// rerun asked and not yet started isn't answered for until the run shows
+// its attempt, and is canceled then. A launch that never shows a run, a
+// push whose answer was lost and never took effect, or a note saved by a
+// dockhand that died before git push, is not known however often it is
+// asked (the lifecycle design's "GitHub" and "what that costs").
+func TestAGitHubStopFindsWhatEachLaunchStarted(t *testing.T) {
+	t.Parallel()
+
+	attached := &stopAPI{}
+	attached.add(3, "in_progress")
+	require.NoError(t, stop(t, attached, attempts(push("p1", 0), attachTo("a1", 3))))
+	require.Equal(t, []int64{3}, attached.canceled, "the run a later attempt attached to")
+
+	reran := &stopAPI{}
+	reran.add(3, "in_progress")
+	reran.runs[0].Attempt = 2
+	require.NoError(t, stop(t, reran, attempts(push("p1", 0), rerunOf("r1", 3, 1))))
+	require.Equal(t, []int64{3}, reran.canceled, "the run a later attempt ran again")
+
+	// Asked and not yet started: the run is listed, completed, at the
+	// attempt the rerun was asked from.
+	asked := &stopAPI{}
+	asked.add(3, "completed")
+	launches := attempts(push("p1", 0), rerunOf("r1", 3, 1))
+	for range 2 {
+		require.ErrorContains(t, stop(t, asked, launches), "run 3 hasn't shown the 1 attempt asked of it")
+	}
+	require.Empty(t, asked.canceled)
+	asked.mu.Lock()
+	asked.runs[0].Attempt, asked.runs[0].Status = 2, "queued"
+	asked.mu.Unlock()
+	require.NoError(t, stop(t, asked, launches))
+	require.Equal(t, []int64{3}, asked.canceled, "canceled once it shows")
+
+	// Never showing a run: a lost answer that never took effect, or a
+	// note a dockhand saved before it died short of git push, reads the
+	// same, and stays not known.
+	never := &stopAPI{}
+	for range 3 {
+		require.ErrorContains(t, stop(t, never, attempts(push("p1", 0))), "GitHub lists no run yet for 1 push")
+	}
+	require.Empty(t, never.canceled)
+}
+
+// A cancel GitHub's answer to was lost, whether or not it took, and one
+// GitHub accepted and hasn't completed, are each not known, naming the
+// run; the next ask cancels again or reads it again, and ends it once the
+// run has completed (the lifecycle design's "Not known").
+func TestAGitHubStopAsksAgainWhereACancelIsntSeenThrough(t *testing.T) {
+	t.Parallel()
+	const url = "https://github.com/ada/macports-ports/actions/runs/9"
+	for _, lands := range []bool{false, true} {
+		lost := &stopAPI{cancelErr: errors.New("connection reset by peer"), cancelLands: lands}
+		lost.add(9, "in_progress")
+		require.ErrorContains(t, stop(t, lost, attempts(push("p1", 0))), "connection reset by peer", "lands: %v", lands)
+		lost.mu.Lock()
+		lost.cancelErr = nil
+		lost.mu.Unlock()
+		require.NoError(t, stop(t, lost, attempts(push("p1", 0))), "lands: %v", lands)
+	}
+
+	accepted := &stopAPI{hold: -1}
+	accepted.add(9, "in_progress")
+	require.ErrorContains(t, stop(t, accepted, attempts(push("p1", 0))), "GitHub was asked to cancel "+url+", and it is still cancelling")
+	accepted.mu.Lock()
+	accepted.hold = 0
+	accepted.mu.Unlock()
+	require.NoError(t, stop(t, accepted, attempts(push("p1", 0))))
 }

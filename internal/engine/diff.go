@@ -621,10 +621,17 @@ func (e *Engine) RevbumpLinked(ctx context.Context, branch model.Branch, update 
 		}
 	}
 	for _, dependent := range linked.Bump {
-		if _, err := e.Update(ctx, UpdateRequest{Branch: branch, Action: model.EditRevbump, Port: dependent.Name, Subject: result.Subject, Excepted: linked.Excepted}); err != nil {
+		if _, err := e.Update(ctx, UpdateRequest{Branch: branch, Action: model.EditRevbump, Port: dependent.Name, Subject: result.Subject, Excepted: linked.Excepted, fromRequest: true}); err != nil {
 			return result, fmt.Errorf("revision-bumping %s: %w; the ports before it are bumped", dependent.Name, err)
 		}
 		result.Bumped = append(result.Bumped, dependent.Name)
 	}
-	return result, nil
+	// The dependents are an action of the request, concluded: done where
+	// some were bumped, satisfied where none needed it, all excepted or
+	// changed by the branch already (#195).
+	outcome := model.ActionOutcome{Action: "dependents", Result: model.ActionSatisfied}
+	if len(result.Bumped) > 0 {
+		outcome.Result = model.ActionDone
+	}
+	return result, e.concludeOnRequest(ctx, branch, outcome)
 }

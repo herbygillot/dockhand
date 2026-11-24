@@ -101,6 +101,9 @@ type Capture struct {
 	// so a check builds them, but git add declines them until the
 	// checkout is widened (#228: apache-arrow's Portfile).
 	OutsideSparse []string
+	// SparseAdds are port directories containing untracked files outside
+	// the worktree's sparse cone.
+	SparseAdds []string
 	// Fixed are the lint findings the capture fixed in the working files
 	// first, as tidy's plan fixes them (lintFixes), each in words; a
 	// plan's are said, and its capture holds them, but nothing is
@@ -187,6 +190,9 @@ func (e *Engine) Capture(ctx context.Context, request CaptureRequest) (Capture, 
 			return Capture{}, err
 		}
 		if capture.OutsideSparse, err = worktree.OutsideSparse(ctx, changes); err != nil {
+			return Capture{}, err
+		}
+		if capture.SparseAdds, err = sparseAdds(ctx, worktree, capture.Untracked); err != nil {
 			return Capture{}, err
 		}
 		if fixes, capture.Fixed, err = lintFixes(ctx, worktree, bases[string(branch.Base)], files); err != nil {

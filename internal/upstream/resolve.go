@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -127,6 +128,17 @@ func (s *Service) resolve(ctx context.Context, port macports.PortInfo, requested
 	if err != nil && spelled != requested {
 		selection, err = MatchRelease(spelled, &spec.Pattern, evidence)
 	}
+	// A version in the port's form, which a Portfile maps from the tag in
+	// a way no spelling above undoes, as rust-analyzer's 20261123 from
+	// 2026-11-23: each release's version is read for the port, as
+	// discovery reads it, and the one the request names is taken (#305).
+	if missing := err; errors.Is(missing, ErrReleaseMissing) && !explicit {
+		if selection, err = s.byPortVersion(ctx, port, spec, repository, requested, commits); err != nil && !errors.Is(err, ErrReleaseMissing) && !errors.Is(err, ErrReleaseAmbiguous) {
+			// The releases couldn't be read as the port's versions: the
+			// request is missing as far as dockhand could tell, and why.
+			err = fmt.Errorf("%w; reading %s's releases as the port's versions: %w", missing, repository.Name(), err)
+		}
+	}
 	if err != nil {
 		return model.Release{}, err
 	}
@@ -248,4 +260,154 @@ func sourceSpelling(requested, current, source string) string {
 		}
 		return r
 	}, requested)
+}
+
+// byPortVersion selects the release whose version, as the Portfile reads it
+// from the release's tag, is requested: the catalog's releases, each read
+// as discovery reads it (evaluateCandidates), the one reader of which
+// version a release is for the port. Where none is, the refusal names the
+// nearest releases in both forms, upstream's tag and the port's version,
+// where they differ. The selected tag's commit goes in commits.
+func (s *Service) byPortVersion(ctx context.Context, port macports.PortInfo, spec portsource.Spec, repository forge.Repository, requested string, commits map[string]string) (Selection, error) {
+	observations, err := catalogReleases(ctx, spec, repository)
+	if err != nil {
+		return Selection{}, err
+	}
+	var captures, listed []string
+	for _, release := range observations {
+		capture, matches := spec.Pattern.Version(release.Tag)
+		if release.Draft || !matches {
+			continue
+		}
+		captures, listed = append(captures, capture), append(listed, release.Tag)
+	}
+	// Each read is a Portfile's evaluation, some 30ms though the
+	// interpreter is shared, and a catalog may list thousands: only the
+	// releases likeliest to be the word are read, those whose digits are
+	// its digits, then those sharing the longest start of them.
+	order := likeliestFirst(requested, captures)
+	unread := max(0, len(order)-portVersionReads)
+	var candidates []macports.VersionCandidate
+	var tags []string
+	var pending []int
+	for _, index := range order[:len(order)-unread] {
+		candidate := macports.VersionCandidate{CaptureVersion: captures[index]}
+		if captures[index] == spec.SourceVersion {
+			candidate.Version = port.Version
+		} else {
+			pending = append(pending, len(candidates))
+		}
+		candidates = append(candidates, candidate)
+		tags = append(tags, listed[index])
+	}
+	if err := s.evaluateCandidates(ctx, candidates, tags, pending); err != nil {
+		return Selection{}, err
+	}
+	var found []int
+	for index, candidate := range candidates {
+		if candidate.Version == requested {
+			found = append(found, index)
+		}
+	}
+	switch len(found) {
+	case 0:
+		var rest string
+		if unread > 0 {
+			rest = fmt.Sprintf("; %d of %s's %d releases, whose digits are furthest from it, weren't read as the port's versions", unread, repository.Name(), len(order))
+		}
+		return Selection{}, fmt.Errorf("%w: %q%s%s", ErrReleaseMissing, requested, nearestWords(requested, candidates, tags), rest)
+	case 1:
+	default:
+		matched := make([]string, 0, len(found))
+		for _, index := range found {
+			matched = append(matched, tags[index])
+		}
+		slices.Sort(matched)
+		return Selection{}, fmt.Errorf("%w: %q matches %v; specify the exact tag", ErrReleaseAmbiguous, requested, matched)
+	}
+	index := found[0]
+	tag, err := repository.Tag(ctx, tags[index])
+	if err != nil {
+		return Selection{}, err
+	}
+	if tag.Name != tags[index] || !git.ValidObjectID(tag.Commit) {
+		return Selection{}, fmt.Errorf("upstream: invalid tag observation")
+	}
+	commits[tag.Name] = tag.Commit
+	return Selection{Candidate: Candidate{Version: candidates[index].CaptureVersion, Release: forge.Release{Tag: tag.Name}}}, nil
+}
+
+// portVersionReads is how many of a catalog's releases a version in the
+// port's form is read against, at most.
+const portVersionReads = 100
+
+// likeliestFirst orders the captures, by index, likeliest first to be the
+// source of the port version requested: those whose digits, in order, are
+// its digits, then those sharing the longest start of them, then in the
+// catalog's order.
+func likeliestFirst(requested string, captures []string) []int {
+	digits := func(text string) string {
+		return strings.Map(func(r rune) rune {
+			if '0' <= r && r <= '9' {
+				return r
+			}
+			return -1
+		}, text)
+	}
+	want := digits(requested)
+	rank := make([]int, len(captures))
+	for i, capture := range captures {
+		have := digits(capture)
+		if have == want {
+			rank[i] = len(want) + 1
+			continue
+		}
+		for rank[i] < len(have) && rank[i] < len(want) && have[rank[i]] == want[rank[i]] {
+			rank[i]++
+		}
+	}
+	order := make([]int, len(captures))
+	for i := range order {
+		order[i] = i
+	}
+	slices.SortStableFunc(order, func(a, b int) int { return rank[b] - rank[a] })
+	return order
+}
+
+// nearestReleases is how many releases a refusal names.
+const nearestReleases = 3
+
+// nearestWords names the releases whose versions, as the port reads them,
+// share the longest start with requested, the newest-sorting tag first
+// among equals: each by its tag, and its version where that differs.
+func nearestWords(requested string, candidates []macports.VersionCandidate, tags []string) string {
+	order := make([]int, len(candidates))
+	for i := range order {
+		order[i] = i
+	}
+	shared := func(version string) int {
+		n := 0
+		for n < len(version) && n < len(requested) && version[n] == requested[n] {
+			n++
+		}
+		return n
+	}
+	slices.SortStableFunc(order, func(a, b int) int {
+		if d := shared(candidates[b].Version) - shared(candidates[a].Version); d != 0 {
+			return d
+		}
+		return strings.Compare(tags[b], tags[a])
+	})
+	var words []string
+	for _, index := range order[:min(len(order), nearestReleases)] {
+		word := "tag " + tags[index]
+		if candidates[index].Version != tags[index] {
+			word += ", version " + candidates[index].Version
+		}
+		words = append(words, word)
+	}
+	if len(words) == 0 {
+		return ""
+	}
+	return "; the nearest releases are " + strings.Join(words, "; ")
 }

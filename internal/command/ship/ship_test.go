@@ -499,9 +499,10 @@ func TestShipGoesOnWithABranchWhereTheNewestReleaseIsUncertain(t *testing.T) {
 	require.Empty(t, g.PRs)
 
 	cmdtest.Stands(t).Preparer = func(e *engine.Engine) engine.Preparer { return uncertainBumper{cmdtest.Bumper{Repo: e.Repo}} }
-	out, errs, err := cmdtest.Dockhand(t, "ship", "jq", "--yes", "--tested-binaries")
+	// The first ship kept --to check; this one goes further (#195).
+	out, errs, err := cmdtest.Dockhand(t, "ship", "jq", "--yes", "--tested-binaries", "--to", "submit")
 	require.NoError(t, err, errs)
-	require.Contains(t, errs, "jq: jq-1.8.1 goes on as it is")
+	require.Contains(t, out, "jq goes on with 1.8.1, the release kept", "the release kept is gone on with, and no newer one looked for (#195)")
 	require.Contains(t, out, "passed for this commit already")
 	require.Len(t, g.PRs, 1, "submitted")
 }
@@ -526,8 +527,9 @@ func TestShipsPlanSaysItCommitsTheEditsFirst(t *testing.T) {
 
 // A branch whose update master has since taken by another commit isn't
 // pushed or submitted: with no fetch between, ship asked GitHub for a
-// pull request that duplicated master's (#164). A master change to the
-// port another way stops it too, offering the rebase; one elsewhere stops
+// pull request that duplicated master's (#164). A resumed ship stops
+// before it checks, building nothing (#181). A master change to the port
+// another way stops it too, offering the rebase; one elsewhere stops
 // nothing.
 func TestShipStopsWhereMasterChangedTheBranchsPorts(t *testing.T) {
 	t.Parallel()
@@ -557,7 +559,16 @@ func TestShipStopsWhereMasterChangedTheBranchsPorts(t *testing.T) {
 			testsupport.Git(t, w.Upstream, "add", "-A")
 			testsupport.Git(t, w.Upstream, "commit", "-q", "-m", "someone else's commit")
 
-			out, errs, err := cmdtest.Dockhand(t, "ship", "-b", "jq-1.8.1", "--yes")
+			// A resumed ship fetches master before it checks, so it builds
+			// nothing for changes already there, --to check as well (#181).
+			if c.said != "" {
+				_, _, err := cmdtest.Dockhand(t, "ship", "-b", "jq-1.8.1", "--to", "check", "--yes")
+				require.ErrorContains(t, err, c.said)
+				require.ErrorContains(t, err, "This run started no check and submitted nothing.")
+			}
+			// The first ship kept --to commit; this one goes on to submit
+			// (#195).
+			out, errs, err := cmdtest.Dockhand(t, "ship", "-b", "jq-1.8.1", "--yes", "--to", "submit")
 			if c.said == "" {
 				require.NoError(t, err, errs)
 				require.Len(t, g.PRs, 1)
@@ -565,7 +576,8 @@ func TestShipStopsWhereMasterChangedTheBranchsPorts(t *testing.T) {
 			}
 			require.Error(t, err, out)
 			require.Contains(t, err.Error(), c.said)
-			require.Contains(t, err.Error(), "The check ran; nothing was pushed or submitted.")
+			require.Contains(t, err.Error(), "This run started no check and submitted nothing.")
+			require.NotContains(t, out, "· checking", "no check was queued")
 			require.Empty(t, g.PRs, "no pull request was asked for")
 			require.Empty(t, testsupport.Git(t, filepath.Join(filepath.Dir(w.Upstream), "fork.git"), "branch", "--list", "jq-1.8.1"), "nothing was pushed")
 			if c.content != "" {

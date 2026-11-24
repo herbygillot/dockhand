@@ -24,6 +24,16 @@ import (
 // it failed.
 func (p PortInfo) MetadataOnly() (bool, error) { return p.Bool("dockhand.metadata_only") }
 
+// Obsolete reports a metadata-only port replaced by another port, as the
+// obsolete PortGroup marks it; an error where either fact couldn't be read.
+func (p PortInfo) Obsolete() (bool, error) {
+	replacement, err := p.ReplacedBy()
+	if err != nil || replacement == "" || replacement == p.Name {
+		return false, err
+	}
+	return p.MetadataOnly()
+}
+
 // LivecheckStandard reports a port whose livecheck is MacPorts' own,
 // without a procedure of its own replacing it.
 func (p PortInfo) LivecheckStandard() (bool, error) { return p.Bool("dockhand.livecheck_standard") }

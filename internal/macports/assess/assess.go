@@ -94,8 +94,11 @@ import (
 // applies only with fuzz holds (patch-fuzz, v1's D12, the docs dig's I4).
 // 30: test code isn't read for Homebrew paths, and an executable's path is
 // said as one (field testing's atuin 18.24.5); a port MacPorts' checker
-// says the change makes non-distributable holds (not-distributable).
-const Policy = 30
+// says the change makes non-distributable holds (not-distributable). 31:
+// a Cargo.lock that doesn't pin a local package's manifest version holds,
+// unless a patch touches the lock (#256). 32: cargo-lock-stale holds only
+// where the port's build still uses --frozen.
+const Policy = 32
 
 // Input is what one port's assessment reads.
 type Input struct {
@@ -221,6 +224,8 @@ const (
 	// keep no binary archive of: a hold where the change makes it so, a
 	// notice where master's isn't either.
 	NotDistributable = "not-distributable"
+	CargoLockStale   = "cargo-lock-stale"
+	CargoLockPatched = "cargo-lock-patched"
 )
 
 // Rules are every rule an assessment's finding is raised by, for a hold
@@ -229,7 +234,13 @@ func Rules() []string {
 	return []string{LicenseChanged, LicenseYears, LicenseParty, LicenseMoved, BuildFileChanged, BuildFileVersion, BuildFileOptions, DependencyAdded, DependencyDropped,
 		DependencyMoved, DependenciesCounted, NativeLibrary, NativeLibraryLeft, Unread, LayoutAmbiguous, RequirementUnmet, RequirementUnknown,
 		ProviderUnresolved, ProviderRemoved, GoToolchainRule, GoModuleMoved, RequiresPythonRule, PythonPinBehind, PatchRejected, PatchDropped, PatchFuzz, SourceRemoved,
-		SourceUncertain, WorksrcPathGone, SourceChoice, CXXStandardRule, GoLinkTargetRule, ProjectRenamed, NotDistributable}
+		SourceUncertain, WorksrcPathGone, SourceChoice, CXXStandardRule, GoLinkTargetRule, ProjectRenamed, NotDistributable, CargoLockStale, CargoLockPatched}
+}
+
+// BlocksNoCheck reports whether this assessment rule's finding states that
+// the build fails. It does not include findings that only suspect a failure.
+func BlocksNoCheck(rule string) bool {
+	return rule == PatchRejected || rule == CargoLockStale
 }
 
 // floorRules raise a toolchain's floor upstream: a Go toolchain, a Python,
@@ -279,6 +290,9 @@ func Assess(input Input) model.UpstreamComparison {
 			if a.source.Name() == "" {
 				a.source.After = pair.Archive
 			}
+		}
+		for _, found := range a.cargoLockVersions(pair) {
+			a.add(found)
 		}
 		a.pair(pair)
 	}

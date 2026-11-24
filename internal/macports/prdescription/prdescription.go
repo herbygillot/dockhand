@@ -113,9 +113,14 @@ type NewPort struct {
 // each environment (Columns, Rows).
 type TestedOn struct {
 	NoCheck, Pending bool
-	Reports          []Report
-	Columns          []string
-	Rows             []Row
+	// EarlierPass is, with NoCheck, the branch's last check that passed on
+	// an earlier commit and what changed since, in words: "check-799
+	// passed for 1a2b3c4; since then textproc/capnproto/Portfile changed,
+	// which no check here covers" (#246).
+	EarlierPass string
+	Reports     []Report
+	Columns     []string
+	Rows        []Row
 	// Carried are the sentences under the table that say where a check
 	// reused an earlier check's builds over a change that builds nothing
 	// differently, what changed since: "check-767 reused check-766's
@@ -448,6 +453,14 @@ func tickedTypes(section string) []string {
 	return ticked
 }
 
+// earlierPass says a no-check submission's earlier passing check, where
+// there is one, and that the files now submitted were not checked.
+func earlierPass(b *strings.Builder, tested TestedOn) {
+	if tested.EarlierPass != "" {
+		fmt.Fprintf(b, "\nAn earlier commit was checked: %s. The files submitted here were not checked.\n", tested.EarlierPass)
+	}
+}
+
 // Owned is the part of the description dockhand keeps up to date: Tested
 // on through Verification.
 func Owned(facts Facts) string {
@@ -461,8 +474,10 @@ func Owned(facts Facts) string {
 	// (#204, in architecture's words).
 	case tested.NoCheck && tested.CIReleases != "":
 		fmt.Fprintf(&b, "Submitted with `dockhand submit --no-check`; no Dockhand check result is included. MacPorts CI builds on macOS %s; nothing here covers any other release.\n", tested.CIReleases)
+		earlierPass(&b, tested)
 	case tested.NoCheck:
 		fmt.Fprintln(&b, "Submitted with `dockhand submit --no-check`; no Dockhand check result is included.")
+		earlierPass(&b, tested)
 	case tested.Pending && tested.CIReleases != "":
 		fmt.Fprintf(&b, "No Dockhand check has finished for this commit. This draft lets MacPorts CI run, which builds on macOS %s; nothing here covers any other release.\n", tested.CIReleases)
 	case tested.Pending:
@@ -1075,7 +1090,7 @@ func normalize(text string) string {
 // where GitHub's part reads as written's, and is recorded's where it reads
 // otherwise. Merge then keeps a person's edit, made to the old text or the
 // new, as their own: #157's lost record read a part GitHub took as a
-// person's (docs/designs/publication-record.md, "The description").
+// person's (docs/designs/publication-record.md at 0e0ad767, "The description").
 func Landed(observed, sent, written, recorded string) string {
 	// GitHub gives a description back with its line endings, which
 	// aren't a person's edit.
@@ -1084,6 +1099,7 @@ func Landed(observed, sent, written, recorded string) string {
 		return written
 	}
 	landed := recorded
+	took := false
 	take := func(span func(string) (int, int, bool)) {
 		from, to, found := span(observed)
 		wrote, wroteEnd, inWritten := span(written)
@@ -1091,6 +1107,7 @@ func Landed(observed, sent, written, recorded string) string {
 		if !found || !inWritten || observed[from:to] != written[wrote:wroteEnd] {
 			return
 		}
+		took = true
 		if inRecorded {
 			landed = landed[:at] + written[wrote:wroteEnd] + landed[atEnd:]
 		}
@@ -1099,10 +1116,18 @@ func Landed(observed, sent, written, recorded string) string {
 	take(typesSpan)
 	if at, ok := ownedSpan(observed); ok {
 		if wrote, ok := ownedSpan(written); ok && observed[at:] == written[wrote:] {
+			took = true
 			if was, ok := ownedSpan(landed); ok {
 				landed = landed[:was] + written[wrote:]
 			}
 		}
+	}
+	// Nothing recorded before, as for a pull request found with no record:
+	// where any part landed, the record is what dockhand wrote. A part that
+	// landed then reads as dockhand's, and one GitHub holds otherwise as a
+	// person's, which the merge keeps (#157's last case).
+	if recorded == "" && took {
+		return written
 	}
 	return landed
 }

@@ -31,6 +31,12 @@ func newArchiveCoverage() *archiveCoverage {
 // among them the ones a present patch file makes inert.
 func (c *archiveCoverage) declare(info macports.PortInfo, groups []distfiles.Group) {
 	for _, group := range groups {
+		// A PortGroup can append checksums for archives outside this
+		// release's fetch plan. Their source is intentionally uneditable,
+		// but they are unchanged and need no coverage for this version edit.
+		if group.Unlocated != nil {
+			continue
+		}
 		c.declared[group.ID()] = true
 		if group.Name != "" {
 			c.names[group.ID()] = group.Name

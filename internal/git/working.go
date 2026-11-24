@@ -102,6 +102,49 @@ func (r *Repository) workingBlobID(ctx context.Context, data []byte, path string
 	return objectResult(out, err)
 }
 
+// WorkingFile is a tracked file as the working directory has it: there or
+// not, its blob as Git would clean it for its path, and its mode, read
+// without writing anything (#194's settling). A file that isn't a regular
+// file is refused, as ApplyToWorkingFiles refuses it.
+func (r *Repository) WorkingFile(ctx context.Context, name string) (FileState, error) {
+	if !snapshotPath(name) {
+		return FileState{}, fmt.Errorf("git: invalid file path %q", name)
+	}
+	data, mode, present, err := r.readWorking(name)
+	if err != nil || !present {
+		return FileState{}, err
+	}
+	blob, err := r.workingBlobID(ctx, data, name)
+	if err != nil {
+		return FileState{}, err
+	}
+	return FileState{Exists: true, Blob: blob, Mode: mode}, nil
+}
+
+// MissingObjects are those of objects the repository no longer has, as an
+// unreferenced blob Git collected (#194).
+func (r *Repository) MissingObjects(ctx context.Context, objects []string) (map[string]bool, error) {
+	missing := map[string]bool{}
+	if len(objects) == 0 {
+		return missing, nil
+	}
+	for _, object := range objects {
+		if !ValidObjectID(object) {
+			return nil, fmt.Errorf("git: invalid object ID %q", object)
+		}
+	}
+	out, err := r.run(ctx, []byte(strings.Join(objects, "\n")+"\n"), nil, "cat-file", "--batch-check=%(objectname) %(objecttype)")
+	if err != nil {
+		return nil, err
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(string(out), "\n"), "\n") {
+		if name, kind, ok := strings.Cut(line, " "); ok && kind == "missing" {
+			missing[name] = true
+		}
+	}
+	return missing, nil
+}
+
 // ApplyToWorkingFiles writes edits into the checkout's working files, and
 // nothing into its index or refs. Every file must still be as each edit's
 // Before describes it: the same contents and executable bit, or absent.

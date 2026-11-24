@@ -43,7 +43,11 @@ func WritePushes(out io.Writer, plan model.Plan) {
 		fmt.Fprintf(out, "Won't build %s on github: MacPorts' workflow builds only the ports a commit changes; check %s with Tart, local, or a command provider\n", prose.And(unbuilt), map[bool]string{true: "it", false: "them"}[len(unbuilt) == 1])
 	}
 	if plan.Keep {
-		fmt.Fprintln(out, "Keeps       each Tart VM, stopped after the build, for dockhand shell; clean or the branch's next check removes it")
+		if slices.ContainsFunc(plan.Environments, func(environment model.Environment) bool { return environment.Provider == buildenv.Tart }) {
+			fmt.Fprintln(out, "Keeps       each Tart VM, stopped after the build, for dockhand shell; it stays until removed with clean --kept or its branch")
+		} else {
+			fmt.Fprintln(out, "Keeps       nothing; the selected provider has no VM to keep")
+		}
 	}
 }
 
@@ -51,7 +55,7 @@ func WritePushes(out io.Writer, plan model.Plan) {
 // directories no change record narrows (engine.PlanSiblings), remedy
 // saying how to give an environment what a target it can't build needs,
 // and shown how many of a long list a line names (ListShown).
-func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings engine.Siblings, remedy func(model.Unmet) string, shown int) {
+func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings engine.Siblings, remedy func(model.Unmet) string, shown int, planned bool) {
 	var changed, built, extra []string
 	for _, target := range plan.Targets {
 		name := string(target.ID)
@@ -178,6 +182,20 @@ func WritePlan(out io.Writer, plan model.Plan, notes []string, siblings engine.S
 	for _, unresolved := range plan.Unresolved {
 		fmt.Fprintf(out, "✗ %s can't be planned: %s\n", unresolved.Target.Name, unresolved.Reason)
 	}
+	for _, replacement := range plan.ReplacesKept {
+		fmt.Fprintln(out, KeptReplacementWords(replacement, planned))
+	}
+}
+
+// KeptReplacementWords says what a same-branch, same-release --keep check
+// replaces before its new clone exists: in a plan, what it would do, which
+// a plan doesn't (field testing's kept-clone pass, #291).
+func KeptReplacementWords(replacement model.KeptCloneReplacement, planned bool) string {
+	verb := "is"
+	if planned {
+		verb = "would be"
+	}
+	return fmt.Sprintf("%s's kept clone of %s %s removed: this check keeps its own.", replacement.Check, replacement.Release, verb)
 }
 
 // writeGitSources says what each Git-fetched target's build must fetch:
@@ -290,20 +308,51 @@ func writeExclusions(out io.Writer, plan model.Plan, shown int) {
 // in full. Each target built says how long it took, and each release how
 // long the check ran there, under the results (the docs dig's I38).
 func WriteResults(out io.Writer, indent string, evidence engine.Evidence, where bool) {
+	writeResults(out, indent, evidence, where, nil)
+}
+
+// WriteHistoricalResults shows a check's results for earlier files, with
+// the engine's per-port comparisons to the branch's files now.
+func WriteHistoricalResults(out io.Writer, indent string, evidence engine.Evidence, results []engine.HistoricalPortResult) {
+	check := evidence.Run.Name()
+	fmt.Fprintf(out, "%s%s: results for earlier files\n", indent, check)
+	writeResults(out, indent, evidence, true, results)
+}
+
+func writeResults(out io.Writer, indent string, evidence engine.Evidence, where bool, historical []engine.HistoricalPortResult) {
 	defer writeTook(out, indent, evidence)
 	defer writeStanding(out, indent, evidence)
 	environments := evidence.Plan.Environments
+	check := evidence.Run.Name()
+	states := make(map[string]engine.HistoricalPortState, len(historical))
+	for _, result := range historical {
+		states[result.Port] = result.State
+	}
+	seen := map[string]bool{}
+	label := func(target engine.TargetEvidence) string {
+		port := target.Target.Target.Name
+		seen[port] = true
+		name := string(target.Target.ID)
+		if states[port] == engine.HistoricalPortChanged {
+			name += " (files changed since " + check + ")"
+		}
+		return name
+	}
 	// The releases a profile chose not to build on are left out, as the
 	// pull request leaves them out, and so are those build.default
 	// requires that no check planned: a check on 12 and 27 is of those
 	// two, and which releases nothing covered is submit's to say.
 	shown := evidence.Checked()
+	labels := make([]string, len(evidence.Targets))
+	for i, target := range evidence.Targets {
+		labels[i] = label(target)
+	}
 	if len(shown) <= 1 {
 		width := 0
-		for _, target := range evidence.Targets {
-			width = max(width, len(target.Target.ID))
+		for _, name := range labels {
+			width = max(width, len(name))
 		}
-		for _, target := range evidence.Targets {
+		for i, target := range evidence.Targets {
 			var cells []string
 			for _, i := range shown {
 				cell := resultWords(evidence, target, i) + targetTook(evidence, target, i)
@@ -312,8 +361,9 @@ func WriteResults(out io.Writer, indent string, evidence engine.Evidence, where 
 				}
 				cells = append(cells, cell)
 			}
-			fmt.Fprintf(out, "%s%-*s  %s\n", indent, width, target.Target.ID, strings.Join(cells, "   "))
+			fmt.Fprintf(out, "%s%-*s  %s\n", indent, width, labels[i], strings.Join(cells, "   "))
 		}
+		writeNotChecked(out, indent, check, historical, seen)
 		return
 	}
 	grid := tabwriter.NewWriter(out, 0, 0, 3, ' ', 0)
@@ -322,14 +372,24 @@ func WriteResults(out io.Writer, indent string, evidence engine.Evidence, where 
 		fmt.Fprintf(grid, "\t%s", engine.EnvironmentHeading(environments[i], environments))
 	}
 	fmt.Fprintln(grid)
-	for _, target := range evidence.Targets {
-		fmt.Fprintf(grid, "%s%s", indent, target.Target.ID)
+	for i, target := range evidence.Targets {
+		fmt.Fprintf(grid, "%s%s", indent, labels[i])
 		for _, i := range shown {
 			fmt.Fprintf(grid, "\t%s", resultWords(evidence, target, i)+targetTook(evidence, target, i))
 		}
 		fmt.Fprintln(grid)
 	}
 	_ = grid.Flush()
+	writeNotChecked(out, indent, check, historical, seen)
+}
+
+func writeNotChecked(out io.Writer, indent, check string, historical []engine.HistoricalPortResult, seen map[string]bool) {
+	for _, result := range historical {
+		if result.State == engine.HistoricalPortNotInCheck && !seen[result.Port] {
+			fmt.Fprintf(out, "%s%s  not checked by %s\n", indent, result.Port, check)
+			seen[result.Port] = true
+		}
+	}
 }
 
 // saysTook is the least time a report says: a port's build takes
@@ -547,4 +607,36 @@ func testPolicyWords(policy model.TestPolicy) string {
 		return "tests skipped"
 	}
 	return "tests " + string(policy)
+}
+
+// WriteNotices lists what a change's updates found (engine.Notices): what
+// holds it first, then what only informs, a line each, by port, ports in
+// the order their notices came; nothing where there are none (#194, N1).
+func WriteNotices(out io.Writer, notices []engine.Notice) {
+	for _, holds := range []bool{true, false} {
+		heading := "What its updates found that holds it:"
+		if !holds {
+			heading = "What its updates found:"
+		}
+		var ports []string
+		byPort := map[string][]string{}
+		for _, notice := range notices {
+			if notice.Holds != holds {
+				continue
+			}
+			if _, seen := byPort[notice.Port]; !seen {
+				ports = append(ports, notice.Port)
+			}
+			byPort[notice.Port] = append(byPort[notice.Port], notice.Words)
+		}
+		if len(ports) == 0 {
+			continue
+		}
+		fmt.Fprintln(out, heading)
+		for _, port := range ports {
+			for _, words := range byPort[port] {
+				fmt.Fprintf(out, "  %s: %s\n", port, words)
+			}
+		}
+	}
 }

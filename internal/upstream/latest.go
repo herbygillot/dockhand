@@ -148,30 +148,12 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 		return s.discoverOverridden(ctx, port, spec, repository)
 	}
 	followsPrereleases := followsPrereleases(port.Version)
-	var observations []forge.Release
-	if spec.Catalog == portsource.Releases {
-		releases, ok := repository.(forge.ReleaseRepository)
-		if !ok {
-			return result, fmt.Errorf("upstream: %s catalog does not expose releases", spec.Forge)
-		}
-		observations, err = releases.Releases(ctx)
-		if err != nil {
-			return result, err
-		}
-	} else {
-		tags, err := repository.ListTags(ctx)
-		if err != nil {
-			return result, err
-		}
-		for _, tag := range tags {
-			observations = append(observations, forge.Release{Tag: tag.Name})
-		}
+	observations, err := catalogReleases(ctx, spec, repository)
+	if err != nil {
+		return result, err
 	}
 	seen := map[string]bool{}
 	for _, observation := range observations {
-		if seen[observation.Tag] {
-			return result, fmt.Errorf("%w: repeated tag", forge.ErrIncomplete)
-		}
 		seen[observation.Tag] = true
 	}
 	// A versioned subport, terragrunt-0.52 at 0.52.1, takes its
@@ -572,6 +554,39 @@ func (s *Service) newestCaptures(ctx context.Context, expression string, candida
 		group = append(group, remaining[i])
 	}
 	return group, nil
+}
+
+// catalogReleases are the releases the port's catalog lists, its published
+// releases or its tags, each once.
+func catalogReleases(ctx context.Context, spec portsource.Spec, repository forge.Repository) ([]forge.Release, error) {
+	var observations []forge.Release
+	if spec.Catalog == portsource.Releases {
+		releases, ok := repository.(forge.ReleaseRepository)
+		if !ok {
+			return nil, fmt.Errorf("upstream: %s catalog does not expose releases", spec.Forge)
+		}
+		listed, err := releases.Releases(ctx)
+		if err != nil {
+			return nil, err
+		}
+		observations = listed
+	} else {
+		tags, err := repository.ListTags(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, tag := range tags {
+			observations = append(observations, forge.Release{Tag: tag.Name})
+		}
+	}
+	seen := map[string]bool{}
+	for _, observation := range observations {
+		if seen[observation.Tag] {
+			return nil, fmt.Errorf("%w: repeated tag", forge.ErrIncomplete)
+		}
+		seen[observation.Tag] = true
+	}
+	return observations, nil
 }
 
 // unevaluated are the indices among chosen whose version isn't known yet.

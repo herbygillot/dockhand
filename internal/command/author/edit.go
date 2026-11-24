@@ -27,7 +27,8 @@ func EditCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 does not hold it yet, and opens its Portfile in $VISUAL or $EDITOR. Without
 a terminal or an editor, or with --no-open, it prints the Portfile's path.
 
-The branch is --branch, else the one checked out here; --new starts one.`,
+The branch is -b, -p, or --pr, else the one checked out here; --new starts
+one and is exclusive with those selectors.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -66,7 +67,7 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 			return nil
 		},
 	}
-	where.Register(cmd)
+	where.RegisterWithSelectors(cmd)
 	cmd.Flags().BoolVar(&noOpen, "no-open", false, "bring the port's files into the worktree and print the Portfile's path, opening no editor")
 	settings.SupportsJSON(cmd)
 	return cmd

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"path"
-	"regexp"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -78,6 +77,7 @@ created by update --mine, use dockhand ship -b <branch>.
 master's index instead, or beside --mine, as outdated does.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			version.Read(cmd, s, "update")
 			if selectors.Chosen() {
 				if len(args) > 0 || where.Branch != "" || where.IsNew() {
 					return errors.New("a selection starts a branch for each Portfile it chooses; it takes no port, --branch, or --new")
@@ -140,8 +140,9 @@ func updateSeveral(ctx context.Context, s *settings.Settings, streams term.Strea
 			_, _, err = Author(ctx, s, streams, where, engine.WorkUpdate, request, version.Linked)
 			// "update jq --new name" took the name as the version; where
 			// it names no release, the refusal says how to name a branch
-			// (#216).
-			if errors.Is(err, engine.ErrReleaseMissing) && where.IsNew() && where.NewName() == "" {
+			// (#216). A word that reads as a version, 9.9, names a release
+			// that wasn't found, not a branch (#305).
+			if errors.Is(err, engine.ErrReleaseMissing) && where.IsNew() && where.NewName() == "" && !engine.ReadsAsVersion(word) {
 				err = fmt.Errorf("%w; to name the new branch %s, write --new=%s", err, word, word)
 			}
 			return err
@@ -356,6 +357,31 @@ type VersionUpdate struct {
 	Closes []string
 	Linked LinkedOptions
 	NoNote bool
+	// Origin, Asking and Settings are what the command asked, read once
+	// its flags are parsed (Read), for the engine's resolver (#195).
+	Origin   string
+	Asking   model.ChangeRequest
+	Settings engine.RequestSettings
+	// Title and Note are --title and --note (--no-note an empty one) as
+	// given, saved with the request from the start.
+	Title, Note model.Flag[string]
+}
+
+// Read takes what the command asked from its parsed flags: the flags as
+// given (Asked), the settings the resolver falls back on, and the
+// statements withdrawn.
+func (v *VersionUpdate) Read(cmd *cobra.Command, s *settings.Settings, origin string) {
+	v.Origin, v.Asking, v.Settings = origin, v.Asked(cmd, s), RequestSettings(s)
+	v.Withdrawn(cmd)
+	if cmd.Flags().Lookup("title") != nil && cmd.Flags().Changed("title") {
+		v.Title = model.Set(v.Linked.Title)
+	}
+	switch {
+	case cmd.Flags().Lookup("note") != nil && cmd.Flags().Changed("note"):
+		v.Note = model.Set(v.Linked.Note)
+	case v.NoNote:
+		v.Note = model.Set("")
+	}
 }
 
 // flags adds the edit's flags, which update, ship, and bump share, those
@@ -373,6 +399,82 @@ func (v *VersionUpdate) Flags(cmd *cobra.Command, s *settings.Settings) {
 	settings.KeepModelineFlag(cmd, s)
 	settings.KeepHTTPFlag(cmd, s)
 	settings.SourceFlag(cmd, s)
+}
+
+// Asked is the flags as given, each with whether it was, for the engine's
+// resolver (engine.ResolveRequest): a flag left out is told from one given
+// false or empty (#195). The check's and the submission's are read where
+// the command has them.
+func (v VersionUpdate) Asked(cmd *cobra.Command, s *settings.Settings) model.ChangeRequest {
+	changed := cmd.Flags().Changed
+	var asked model.ChangeRequest
+	if changed("shared-release") {
+		asked.Shared = model.Set(v.Shared)
+	}
+	if changed("source") {
+		asked.Source.Source = model.Set(s.Source)
+	}
+	if changed("keep-http") {
+		asked.Source.KeepHTTP = model.Set(s.KeepHTTP)
+	}
+	if changed("keep-old-checksums") {
+		asked.Source.KeepOldChecksums = model.Set(v.KeepOld)
+	}
+	if changed("keep-modeline") {
+		asked.Source.KeepModeline = model.Set(s.KeepModeline)
+	}
+	if changed("follow-moves") {
+		asked.Source.FollowMoves = model.Set(v.FollowMoves)
+	}
+	if changed("with-obsolete") {
+		asked.Actions.WithObsolete = model.Set(v.Obsolete)
+	}
+	if changed("revbump-dependents") {
+		asked.Actions.RevbumpDependents = model.Set(v.Linked.Revbump)
+	}
+	if changed("except") {
+		asked.Actions.Except = model.Set(v.Linked.Except)
+	}
+	if changed("closes") {
+		asked.Actions.Closes = model.Set(v.Closes)
+	}
+	if cmd.Flags().Lookup("to") != nil && changed("to") {
+		asked.To = model.Set(cmd.Flags().Lookup("to").Value.String())
+	}
+	if cmd.Flags().Lookup("on") == nil {
+		return asked
+	}
+	if changed("on") {
+		asked.Check.On = model.Set(v.Linked.On)
+	}
+	if changed("build") {
+		asked.Check.Build = model.Set(v.Linked.Build)
+	}
+	if changed("tests") {
+		asked.Check.Tests = model.Set(v.Linked.Tests)
+	}
+	if changed("draft") {
+		asked.Publish.Draft = model.Set(v.Linked.Draft)
+	}
+	if changed("type") {
+		asked.Publish.Type = model.Set(v.Linked.Types)
+	}
+	if changed("skip-notification") {
+		asked.Publish.SkipNotification = model.Set(v.Linked.SkipNotification)
+	}
+	if changed("tested-binaries") {
+		asked.Publish.TestedBinaries = model.Set(v.Linked.TestedBinaries)
+	}
+	if changed("tested-variants") {
+		asked.Publish.TestedVariants = model.Set(v.Linked.TestedVariants)
+	}
+	return asked
+}
+
+// RequestSettings are the settings the resolver falls back on where no
+// flag gives the source policy: [update]'s, never a flag's.
+func RequestSettings(s *settings.Settings) engine.RequestSettings {
+	return engine.RequestSettings{Source: s.File.Update.Source, KeepHTTP: s.File.Update.KeepHTTP}
 }
 
 // stageFlags adds the flags of the stages after the edit, defined once,
@@ -405,27 +507,21 @@ func (v VersionUpdate) StageReady() error {
 	return nil
 }
 
-// request is the update of the port args name, to the version they name
-// or the newest.
+// Request is the update of the port args name, to the version they name
+// or the one the request resolves: the engine's, from what was asked
+// (engine.AskUpdate).
 func (v VersionUpdate) Request(args []string, plan bool) (engine.UpdateRequest, error) {
-	if len(v.Linked.Except) > 0 && !v.Linked.Revbump {
-		return engine.UpdateRequest{}, errors.New("--except takes a port out of --revbump-dependents; add --revbump-dependents")
-	}
-	for _, ticket := range v.Closes {
-		if !tickets.MatchString(ticket) {
-			return engine.UpdateRequest{}, fmt.Errorf("--closes %s: a Trac ticket is its number, as 71234", ticket)
-		}
-	}
-	request := engine.UpdateRequest{Action: model.EditUpdate, Port: args[0], EditIntent: model.EditIntent{KeepOldChecksums: v.KeepOld, SharedRelease: v.Shared}, WithObsolete: v.Obsolete, FollowMoves: v.FollowMoves, HandEdit: v.HandEdit, Plan: plan, CompareUpstream: true, LookForOthers: true, Closes: v.Closes}
+	asking := engine.Asking{Origin: cmp.Or(v.Origin, "update"), Asked: v.Asking, Settings: v.Settings, Title: v.Title, Note: v.Note}
 	if len(args) == 2 {
-		request.Version = args[1]
+		asking.Named = args[1]
 	}
+	request, err := engine.AskUpdate(asking, args[0])
+	if err != nil {
+		return request, err
+	}
+	request.HandEdit, request.Plan = v.HandEdit, plan
 	return request, nil
 }
-
-// tickets are what --closes takes: a Trac ticket's number, a # before it
-// taken off by the shell's word as given.
-var tickets = regexp.MustCompile(`^[1-9][0-9]*$`)
 
 // linkedOptions are the edit's --revbump-dependents and --except, and what
 // ship and bump pass on to the stages after it: where to check, the tests,
@@ -516,6 +612,9 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 	}
 	request.Branch, request.FromMaster, request.Started = branch, fromMaster, started
 	update, err = e.Update(ctx, request)
+	for _, said := range update.Said {
+		fmt.Fprintln(out, said)
+	}
 	if update.Started {
 		branch, started = update.Branch, true
 		announce(out, s.Places(), branch, started)
@@ -586,7 +685,11 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 		// update read "py314-textual-fastdatatable: 0.19.0 → 0.19.3", the
 		// subport the edit evaluated (field testing at 23c5e2aa).
 		named := cmp.Or(request.Port, update.Port)
-		fmt.Fprintf(out, "%s: %s → %s%s\n", named, update.Before, update.After, source)
+		if update.Before.Version == "" || update.After.Version == "" {
+			fmt.Fprintf(out, "%s: versions couldn't be evaluated%s\n", named, source)
+		} else {
+			fmt.Fprintf(out, "%s: %s → %s%s\n", named, update.Before, update.After, source)
+		}
 		// A plain bump read the same for semgrep's 0.14.0 to 1.179.0
 		// (field testing, 2026-10-02).
 		if update.CrossesMajor {

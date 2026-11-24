@@ -27,6 +27,9 @@ const (
 	BlockCheckOfOtherFiles BlockKind = "check-of-other-files"
 	// BlockNoCheck is no check of the commit's files at all.
 	BlockNoCheck BlockKind = "no-check"
+	// BlockNoCheckBuildHold is an unchecked submission with a hold whose
+	// rule states that the build fails.
+	BlockNoCheckBuildHold BlockKind = "no-check-build-hold"
 	// BlockUnmet is a changed target an environment can't build, as one
 	// that needs Xcode where there's none.
 	BlockUnmet BlockKind = "unmet"
@@ -68,6 +71,9 @@ const (
 	// for want of an SSH key or HTTPS credentials: a preview says it with
 	// the rest of its plan (rc1's full stage, D-N5).
 	BlockForkUnreached BlockKind = "fork-unreached"
+	// BlockRefused is an action the branch's change request refused,
+	// which lets nothing go on until its ask changes (#195).
+	BlockRefused BlockKind = "refused"
 )
 
 // Block is one thing that stops a submission: its kind, and what its
@@ -109,6 +115,11 @@ type Block struct {
 	// NoFork is why no fork was found, and the way on, for BlockNoFork;
 	// Unreached why the fork refused this Mac, for BlockForkUnreached.
 	NoFork, Unreached string
+	// Refused is the refusal's words, for BlockRefused.
+	Refused string
+	// Holds are the unresolved build-failing concerns, for
+	// BlockNoCheckBuildHold.
+	Holds []model.Concern
 }
 
 // Push is a pull request someone else pushed to, or someone's whose head
@@ -139,6 +150,12 @@ func (b Block) Words(v Vocabulary) string {
 		return fmt.Sprintf("no completed check covers this commit’s files. Run dockhand check; it reuses eligible builds from %s and builds only what changed. Alternatively, use --draft or --no-check; --no-check is disclosed in the pull request", b.Run)
 	case BlockNoCheck:
 		return "no check has finished for this commit's files; run dockhand check first, submit a draft with --draft, or submit without a check with --no-check, which the pull request states"
+	case BlockNoCheckBuildHold:
+		var holds []string
+		for _, concern := range b.Holds {
+			holds = append(holds, fmt.Sprintf("%s [%s]: %s", concern.Port, concern.Rule, concern.Detail))
+		}
+		return fmt.Sprintf("--no-check is refused because these holds say the build fails: %s. Decide a hold with dockhand decide <rule> <port> --because \"…\", or add its rule to holds.allow", strings.Join(holds, "; "))
 	case BlockUnmet:
 		return fmt.Sprintf("%s %s. %s does not have it; run a check in an environment with %s, or submit a draft with --draft", b.Port, v.Unmet(b.Unmet), v.Environment(b.Unmet.Environment), b.Unmet.Needs)
 	case BlockRemade:
@@ -198,6 +215,8 @@ func (b Block) Words(v Vocabulary) string {
 		return "the pull request needs a title, since the branch changes several ports: give one with --title"
 	case BlockNoFork:
 		return b.NoFork
+	case BlockRefused:
+		return b.Refused
 	case BlockForkUnreached:
 		return "your fork can't be pushed to from this Mac: " + b.Unreached
 	}

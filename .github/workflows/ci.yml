@@ -78,6 +78,11 @@ jobs:
       - name: Build
         run: make build
 
+      # The acceptance build, failpoints compiled in, is otherwise first
+      # built at release acceptance (#295).
+      - name: Acceptance build
+        run: go build -mod=vendor -tags acceptance -o /dev/null ./cmd/dockhand
+
   # The suite on Linux, where dockhand is built and its tests run though
   # it checks on Macs: what a Linux host runs differently, GNU patch and
   # stat among them, is said there, not first by someone building it
@@ -85,7 +90,7 @@ jobs:
   # the runner isn't root, so the root case is a skip too.
   linux:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     steps:
       - name: Check out repository
@@ -99,6 +104,13 @@ jobs:
 
       - name: Test
         run: go test -mod=vendor ./...
+
+      # The packages that do their own concurrency, under the race
+      # detector (make test-race-set; docs/development.md).
+      - name: Race
+        run: make test-race-set TEST_TIMEOUT=30m
+        env:
+          GOFLAGS: -mod=vendor
 
   # The corpus (tools/corpus): MacPorts' own version bumps replayed
   # through this build's update, against the PortGroups of a pinned slice

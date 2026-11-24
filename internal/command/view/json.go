@@ -150,10 +150,12 @@ type planJSON struct {
 	Tests   string `json:"tests"`
 	// Only, Also, Fresh, and Keep are what the person asked: --only's
 	// changed ports, --also's unchanged ones, --fresh, and --keep.
-	Only  []string `json:"only"`
-	Also  []string `json:"also"`
-	Fresh bool     `json:"fresh"`
-	Keep  bool     `json:"keep"`
+	Only         []string                     `json:"only"`
+	Also         []string                     `json:"also"`
+	Fresh        bool                         `json:"fresh"`
+	Keep         bool                         `json:"keep"`
+	Unattended   bool                         `json:"unattended,omitempty"`
+	ReplacesKept []model.KeptCloneReplacement `json:"replaces_kept,omitempty"`
 	// Variants are --variants', as MacPorts writes them; EachVariant is
 	// --variants each.
 	Variants    string `json:"variants,omitempty"`
@@ -242,7 +244,7 @@ type exclusionJSON struct {
 }
 
 func PlanView(plan model.Plan) planJSON {
-	viewed := planJSON{ID: string(plan.ID), Profile: plan.Profile, Tests: string(plan.Tests), Environments: []environmentJSON{}, Only: append([]string{}, plan.Only...), Also: append([]string{}, plan.Also...), Fresh: plan.Fresh, Keep: plan.Keep,
+	viewed := planJSON{ID: string(plan.ID), Profile: plan.Profile, Tests: string(plan.Tests), Environments: []environmentJSON{}, Only: append([]string{}, plan.Only...), Also: append([]string{}, plan.Also...), Fresh: plan.Fresh, Keep: plan.Keep, Unattended: plan.Unattended, ReplacesKept: append([]model.KeptCloneReplacement{}, plan.ReplacesKept...),
 		Variants: plan.Variants, EachVariant: plan.EachVariant, Targets: []TargetJSON{}, Omitted: []TargetJSON{}, Exclusions: []exclusionJSON{}, Unmet: []unmetJSON{}, Unresolved: []exclusionJSON{}}
 	for _, environment := range plan.Environments {
 		viewed.Environments = append(viewed.Environments, EnvironmentView(environment))
@@ -346,7 +348,8 @@ type CheckJSON struct {
 	Plan     *planJSON     `json:"plan,omitempty"`
 	Run      *runJSON      `json:"run"`
 	// Targets are the finished run's results; empty until it finishes.
-	Targets []TargetJSON `json:"targets"`
+	Targets    []TargetJSON    `json:"targets"`
+	KeptClones []KeptCloneJSON `json:"kept_clones,omitempty"`
 	// Baseline is the baseline check.baseline ran after this check failed.
 	Baseline *CheckJSON `json:"baseline,omitempty"`
 	// Altered are the kept archives found changed since they were kept,
@@ -690,6 +693,8 @@ type linkLineJSON struct {
 	// finding's line (LinkDetail).
 	Unlinked *unlinkedJSON `json:"unlinked,omitempty"`
 	Through  *throughJSON  `json:"through,omitempty"`
+	// Unowned marks a library with no active port owner.
+	Unowned bool `json:"unowned,omitempty"`
 }
 
 type unlinkedJSON struct {
@@ -713,6 +718,9 @@ func LinkDetail(findings []engine.LinkFinding) []linkLineJSON {
 		for _, finding := range findings {
 			if finding.Unread || LinkWords(finding) != line.Words {
 				continue
+			}
+			if finding.Unowned {
+				detail.Unowned = true
 			}
 			if finding.Unlinked {
 				detail.Unlinked = &unlinkedJSON{Port: finding.Port, Option: finding.Option, Line: finding.Line}
@@ -751,8 +759,9 @@ func DetailLines(from []LinkLine) []linkLineJSON {
 }
 
 type StatusJSON struct {
-	Attention []attentionJSON `json:"attention"`
-	Branches  []BranchJSON    `json:"branches,omitempty"`
+	Attention  []attentionJSON `json:"attention"`
+	Branches   []BranchJSON    `json:"branches,omitempty"`
+	KeptClones []KeptCloneJSON `json:"kept_clones,omitempty"`
 	// Serve is serve's state as a line, and ServeState as fields.
 	Serve      string     `json:"serve,omitempty"`
 	ServeState *serveJSON `json:"serve_state,omitempty"`
@@ -764,6 +773,61 @@ type StatusJSON struct {
 	// Changed are what checks are building in of the person's own, and
 	// what checks left changed (engine.Changes).
 	Changed []changeJSON `json:"changed,omitempty"`
+}
+
+// KeptCloneJSON is one provider clone kept for shell, as status lists it.
+type KeptCloneJSON struct {
+	Check          string  `json:"check"`
+	Clone          string  `json:"clone"`
+	SizeGiB        float64 `json:"size_gib"`
+	Age            string  `json:"age"`
+	Reason         string  `json:"reason"`
+	ExpiresAt      string  `json:"expires_at,omitempty"`
+	OldAsked       bool    `json:"old_asked,omitempty"`
+	ShellCommand   string  `json:"shell_command"`
+	RemovalCommand string  `json:"removal_command"`
+}
+
+// KeptClonesView lists retained clones with their age and the commands
+// that enter and remove them.
+func KeptClonesView(clones []engine.Leftover, now time.Time) []KeptCloneJSON {
+	var viewed []KeptCloneJSON
+	perCheck := map[model.RunID]int{}
+	for _, clone := range clones {
+		if clone.Run != nil {
+			perCheck[clone.Run.ID]++
+		}
+	}
+	for _, clone := range clones {
+		if clone.Run == nil {
+			continue
+		}
+		asked := !clone.Failed
+		shell := "dockhand shell " + clone.Run.Name()
+		if perCheck[clone.Run.ID] > 1 && clone.Execution != nil {
+			shell += " --on " + clone.Execution.Environment.Platform.Version
+		}
+		item := KeptCloneJSON{Check: clone.Run.Name(), Clone: clone.Ref, SizeGiB: clone.Size,
+			Age: prose.Age(now.Sub(clone.KeptAt)), Reason: "failure",
+			ShellCommand: shell, RemovalCommand: "dockhand clean --kept " + clone.Run.Name()}
+		if asked {
+			item.Reason = "asked"
+			item.OldAsked = now.Sub(clone.KeptAt) > engine.KeptFor
+		} else {
+			item.ExpiresAt = clone.KeptAt.Add(engine.KeptFor).Local().Format(time.RFC3339)
+		}
+		viewed = append(viewed, item)
+	}
+	return viewed
+}
+
+// KeptCloneWords is the status line for a kept Tart clone.
+func KeptCloneWords(clone KeptCloneJSON) string {
+	words := fmt.Sprintf("%s · %s · %.1f GiB · %s old · %s", clone.Check, clone.Clone, clone.SizeGiB, clone.Age, clone.Reason)
+	if clone.Reason == "failure" {
+		words += " · expires " + clone.ExpiresAt
+	}
+	return words + " · " + clone.ShellCommand + " · remove with " + clone.RemovalCommand
 }
 
 // changeJSON is something of the person's a check changed: a MacPorts

@@ -63,19 +63,46 @@ const (
 // says it; one not read is offline. depblock's one rule for both its
 // readers.
 func resolvesOnline(options map[string]string) bool {
-	offline := func(args string) bool {
-		for _, arg := range strings.Fields(args) {
-			if arg == "--offline" || arg == "--frozen" {
-				return true
-			}
-		}
-		return false
-	}
+	args, read := cargoBuildArguments(options)
+	return read && !hasCargoFlag(args, "--offline") && !hasCargoFlag(args, "--frozen")
+}
+
+// cargoBuildArguments returns the evaluated arguments for the Cargo build
+// and whether the owner read them. An evaluated custom Cargo build uses
+// build.pre_args; otherwise the cargo PortGroup's cargo.offline_cmd applies.
+// Both readers of a Cargo port's build arguments use this selection.
+func cargoBuildArguments(options map[string]string) (string, bool) {
 	if args, read := options["build.pre_args"]; read && strings.HasSuffix(strings.TrimSpace(options["build.cmd"]), "cargo build") {
-		return !offline(args)
+		return args, true
 	}
 	args, read := options["cargo.offline_cmd"]
-	return read && !offline(args)
+	return args, read
+}
+
+// CargoLockRefusalFlag reports which argument makes Cargo refuse to update
+// a stale Cargo.lock, and whether its arguments were read. Unread arguments
+// are unknown, so it conservatively assumes the PortGroup's --frozen default.
+func CargoLockRefusalFlag(options map[string]string) (string, bool) {
+	args, read := cargoBuildArguments(options)
+	if !read {
+		return "--frozen", false
+	}
+	if hasCargoFlag(args, "--frozen") {
+		return "--frozen", true
+	}
+	if hasCargoFlag(args, "--locked") {
+		return "--locked", true
+	}
+	return "", true
+}
+
+func hasCargoFlag(args, flag string) bool {
+	for _, arg := range strings.Fields(args) {
+		if strings.Trim(arg, "{}\"'") == flag {
+			return true
+		}
+	}
+	return false
 }
 
 // gitPolicy derives the port's policy from whether its build resolves

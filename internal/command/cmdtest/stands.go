@@ -198,8 +198,10 @@ func RunFor(t testing.TB, ctx context.Context, args []string, streams term.Strea
 	if !saidOnceChecked(args, streams) || streams.Prose() == nil {
 		return runner(ctx, line, streams, found.Deps, hostFor(found, line.Env))
 	}
-	out := &saidOnceOut{to: streams.Prose()}
-	streams.Out = out
+	// "Said once" reads dockhand's own words, what Prose writes, and not
+	// a payload Out is given as it came (#94).
+	out := &saidOnceOut{}
+	streams = streams.WithProseTap(out)
 	err := runner(ctx, line, streams, found.Deps, hostFor(found, line.Env))
 	checkSaidOnce(t, args, out)
 	return err

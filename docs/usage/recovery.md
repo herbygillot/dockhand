@@ -284,6 +284,56 @@ selections. The provider-specific setup commands, local-prefix behavior, and
 timeout settings are in `dockhand usage checks` and
 `dockhand usage configuration`.
 
+## An update that didn't finish
+
+An update records its edit before it writes the files, so one that stops
+partway is finished, not repeated. The next command on the branch looks at the
+edit's files first. Where they were all written and only the record was lost,
+it finishes the record. Where none was written, `update` or `ship` of that port
+writes them and goes on, and other commands say so and work with the files as
+they are. Where the write was cut short, other commands stop and name the
+command that finishes it:
+
+```text
+jq: update to 1.8.1 was cut short: textproc/jq/files/fix.diff aren't written yet; dockhand update jq finishes it
+```
+
+Where you changed one of its files since, nothing is written and the command
+names the file. Look at the files; `dockhand tidy` at a terminal then commits
+them as yours and drops the edit's record. A version you name with `update`
+replaces an edit none of whose files was written. A `--plan` says what any of
+this would do and does none of it.
+
+`dockhand status` says a branch whose preparation didn't finish, and
+`dockhand ship -b <branch>` finishes it: each port it was asked to update that
+has no edit yet is prepared again at the release chosen for it, not a newer
+one. serve takes up its own unfinished preparations at each day's look, before
+it looks for new releases, and never a person's. With nobody there, nothing
+commits, checks or submits past an unfinished one; your own `check` or
+`submit` says what isn't in the files and goes on. serve queues the check of a
+branch it committed only where its commits are exactly what it committed of
+its edits; a commit on top, a rebase or a change of yours between two of its
+edits leaves the branch for you, named.
+
+## A flag that was refused
+
+What a command asked is kept on the branch, and each thing it asked has its
+own outcome. One that can't be carried out is refused by name, and the refusal
+stops the branch, a person's `check` and `submit` included, until the flag is
+given another way. `--source releases` where the release carries no usable
+source, and `--follow-moves` where GitHub answers another name the update
+didn't follow, are refused at the port's turn. A flag that shapes how a
+version's edit is made, `--keep-http`, `--keep-old-checksums`,
+`--keep-modeline` or `--shared-release`, is refused where it changes after that
+edit was written:
+
+```text
+jq-1.8.1: --keep-http changed after jq's edit to 1.8.1, which no edit applies to a version already written; give it as it was, or apply it by hand; nothing goes on until the ask changes
+```
+
+Give the flag as it was, and the work goes on; or edit the Portfile yourself.
+`dockhand status` names what was refused.
+
 ## A submission that didn't finish
 
 When submit stops partway, as when the push lands and opening the pull request
@@ -293,6 +343,13 @@ finishes it:
 ```text
 pushed 1a2b3c4 to ada/macports-ports:dockhand/jq-update, but could not create or update the pull request: …; opening the pull request is still owed, and dockhand submit jq-update finishes it
 ```
+
+Where a ship or serve was submitting and another command changed what the
+branch asks meanwhile, as `update jq 2.0` or a ship that asks another check,
+nothing is recorded or pushed: the submission is judged again under what the
+branch asks now, up to three times, and then stops, saying the request keeps
+changing. A submission finishing ends only what it was judged under, so newer
+work asked meanwhile stays.
 
 Run that submit; don't open a pull request by hand or start another branch. It
 reads the fork and GitHub first and records what landed, so a pull request

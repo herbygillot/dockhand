@@ -37,14 +37,21 @@ func (s sessions) Observing(ctx context.Context) (context.Context, *coord.Sessio
 // providers, checkout, or hooks until a test gives them.
 func service(t *testing.T) *Service {
 	t.Helper()
-	s, err := sqlite.Open(t.Context(), sqlitetest.Fresh(t, filepath.Join(t.TempDir(), "dockhand.db")), sqlite.Options{})
+	return serviceOn(t, sqlitetest.Fresh(t, filepath.Join(t.TempDir(), "dockhand.db")), t.TempDir())
+}
+
+// serviceOn is a check-execution service on the store at path, with its
+// launch locks in launches: another process's, sharing a test's store.
+func serviceOn(t *testing.T, path, launches string) *Service {
+	t.Helper()
+	s, err := sqlite.Open(t.Context(), path, sqlite.Options{})
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	repository, err := s.Register(t.Context(), "/src/macports-ports/.git")
 	require.NoError(t, err)
 	now := func() time.Time { return at }
 	return &Service{Store: s, Repository: repository, Sessions: sessions{&coord.Coordinator{Store: s, Repository: repository}},
-		Logs: t.TempDir(), Launches: t.TempDir(), Archives: &Archives{Directory: t.TempDir(), Store: s, Repository: repository, Now: now},
+		Logs: t.TempDir(), Launches: launches, Archives: &Archives{Directory: t.TempDir(), Store: s, Repository: repository, Now: now},
 		Now: now, Poll: 10 * time.Millisecond}
 }
 
@@ -61,7 +68,12 @@ func (c *Service) session(t *testing.T) *coord.Session {
 // queues its check of jq in environments.
 func (c *Service) queued(t *testing.T, name string, environments ...model.Environment) model.Run {
 	t.Helper()
-	commit := model.ObjectID("1111111111111111111111111111111111111111")
+	return c.queuedAt(t, name, "1111111111111111111111111111111111111111", environments...)
+}
+
+// queuedAt is queued, of a revision that is commit.
+func (c *Service) queuedAt(t *testing.T, name string, commit model.ObjectID, environments ...model.Environment) model.Run {
+	t.Helper()
 	branch := model.Branch{ID: model.BranchID(store.NewID("br")), Repository: c.Repository, Name: model.BranchPrefix + name, Base: commit, State: model.BranchOpen, CreatedAt: at}
 	revision := model.Revision{ID: model.RevisionID(store.NewID("rev")), Branch: branch.ID, Kind: model.RevisionCommit, Head: commit, CreatedAt: at,
 		Source: model.Source{Commit: commit, Tree: "2222222222222222222222222222222222222222", Base: commit}}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"syscall"
 	"time"
@@ -28,10 +29,13 @@ const stopBound = stopGrace + 15*time.Second
 // lock free (starter.Stop), and then the prefix is put back by the
 // restore a check already runs, under the prefix's lock. Where another
 // check holds that lock, or the put-back fails, it is ended with the
-// prefix left, said with what puts it back. A build run as root isn't
-// signalled: whether this Mac's sudo passes a stop on, and hands the lock
-// on, is the design's test still to run, so it isn't known, with the one
-// command to stop it by hand.
+// prefix left, said with what puts it back. A build run as root is
+// stopped the same way, its starter stopping the sudo and, through the
+// root stop, its guest (the design's rule 4), only where this Mac's sudo
+// has passed the probe of a root build's stop (rootStopProved), and the
+// guest's group is seen gone too; elsewhere it isn't signalled, and its
+// stop isn't known, with what the probe found and the one command to stop
+// it by hand.
 func (l *Local) Stop(ctx context.Context, request buildenv.StopRequest) ([]string, error) {
 	dir := request.Execution.ProviderRef
 	legacy := request.Execution.Launch == "" || request.Execution.Launch == model.LaunchUnrecorded
@@ -61,7 +65,26 @@ func (l *Local) Stop(ctx context.Context, request buildenv.StopRequest) ([]strin
 		return nil, fmt.Errorf("%s's record can't be read: %w", dir, err)
 	}
 	if made.Root || syscall.Access(filepath.Join(made.Prefix, "var", "macports", "registry"), 2) != nil {
-		return nil, l.rootStopWords(dir, made)
+		proved, why := l.rootStopProved(l.sudoCommand())
+		switch {
+		case !made.Root:
+			why = "its prefix's registry isn't this user's to write"
+		case legacy || !made.RootStop:
+			why = "it was started before dockhand handed a root build its stop"
+		case proved:
+			// A proved sudo may since have stopped answering sudo -n, its
+			// rule taken away: the starter's root stop is refused, it stays
+			// with the lock, and the stop isn't known, with the command to
+			// stop the build by hand, as on a Mac never proved.
+			if err := starter.Stop(ctx, dir, request.Lock, stopBound); err != nil {
+				return nil, l.rootStopUnseen(dir, made, err)
+			}
+			if err := guestGroupGone(ctx, dir); err != nil {
+				return nil, l.rootStopUnseen(dir, made, err)
+			}
+			return l.putBackStopped(ctx, dir, made), nil
+		}
+		return nil, l.rootStopWords(dir, made, why)
 	}
 	if legacy {
 		// Started before the starter: its guest program's PID, where its
@@ -76,18 +99,61 @@ func (l *Local) Stop(ctx context.Context, request buildenv.StopRequest) ([]strin
 	return l.putBackStopped(ctx, dir, made), nil
 }
 
-// rootStopWords say why a root build's stop isn't known, with the one
-// command to stop it by hand and the one to run after.
-func (l *Local) rootStopWords(dir string, made owner) error {
-	// The starter's group, where it recorded itself, else the guest
-	// program's PID, as its results carry it.
+// guestGroupGone sees a root build's guest's group gone once its starter
+// has ended and the lock is free: what the guest started, where it leads a
+// group of its own, that let go of its standard input. Its PID is the one
+// its first save recorded; a group that still answers, or answers that it
+// may not be signalled, isn't known to be gone.
+func guestGroupGone(ctx context.Context, dir string) error {
+	results, _ := (&guest.Follower{Root: dir}).Read(ctx, hostGuest{})
+	pid, err := strconv.Atoi(results.Environment["pid"])
+	if err != nil || pid <= 1 {
+		return nil
+	}
+	err = syscall.Kill(-pid, 0)
+	for deadline := time.Now().Add(groupWait); err == nil || errors.Is(err, syscall.EPERM); {
+		if time.Now().After(deadline) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(20 * time.Millisecond):
+		}
+		err = syscall.Kill(-pid, 0)
+	}
+	if err == nil || errors.Is(err, syscall.EPERM) {
+		return fmt.Errorf("the root build's guest, PID %d, leaves process group %d with members after its stop; dockhand doesn't signal them, since they can't be told from another group that took the number", pid, pid)
+	}
+	return nil
+}
+
+// groupWait is how long a stop asks again of a group that still answers.
+const groupWait = 2 * time.Second
+
+// rootStopWords say why a root build's stop isn't known, why, with the
+// one command to stop it by hand and the one to run after.
+func (l *Local) rootStopWords(dir string, made owner, why string) error {
+	return fmt.Errorf("%s builds in %s as root, and dockhand doesn't stop this root build: %s; %s", made.Check, made.Prefix, why, byHandWords(dir, made))
+}
+
+// rootStopUnseen says a root build dockhand asked to stop wasn't seen to
+// end, why, and the one command to stop it by hand.
+func (l *Local) rootStopUnseen(dir string, made owner, err error) error {
+	return fmt.Errorf("%s builds in %s as root, and it was asked to stop but wasn't seen to end: %w; %s", made.Check, made.Prefix, err, byHandWords(dir, made))
+}
+
+// byHandWords are the one command that stops a root build by hand, and the
+// one to run after: the starter's group, where it recorded itself, else
+// the guest program's PID, as its results carry it.
+func byHandWords(dir string, made owner) string {
 	group := "<the guest program's PID>"
 	if record, ok, _ := starter.ReadRecord(dir); ok {
 		group = "-" + strconv.Itoa(record.PID)
 	} else if results, err := (&guest.Follower{Root: dir}).Read(context.Background(), hostGuest{}); err == nil && results.Environment["pid"] != "" {
 		group = results.Environment["pid"]
 	}
-	return fmt.Errorf("%s builds in %s as root, and dockhand doesn't stop a root build until this Mac's sudo has passed its test of a stop; stop it by hand, sudo kill -TERM %s, then dockhand cancel %s asks again", made.Check, made.Prefix, group, made.Check)
+	return fmt.Sprintf("stop it by hand, sudo kill -TERM %s, then dockhand cancel %s asks again", group, made.Check)
 }
 
 // putBackStopped puts back the prefix a stopped check left changed, as a
@@ -122,7 +188,14 @@ func (l *Local) putBackStopped(ctx context.Context, dir string, made owner) []st
 	defer file.Close()
 	restoring, cancelRestore := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancelRestore()
-	if err := l.restore(restoring, dir, made.Prefix, made.Check, nil); err != nil {
+	// A prefix changed as root is put back as root, under sudo -n, never a
+	// prompt: where sudo would ask, the put-back fails and says how to do
+	// it by hand (the lifecycle design's "Local and Script").
+	var sudo []string
+	if made.Root {
+		sudo = append(slices.Clone(l.sudoCommand()), "-n")
+	}
+	if err := l.restore(restoring, dir, made.Prefix, made.Check, sudo); err != nil {
 		return []string{fmt.Sprintf("%s, which %s changed and couldn't put back: %v; dockhand undo %s, or the next check in it, tries again. %s", made.Prefix, made.Check, err, made.Check, l.byHand(dir, made.Check, snapshot))}
 	}
 	_ = os.RemoveAll(dir)

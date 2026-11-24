@@ -1,6 +1,7 @@
 package branchstate
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/model"
@@ -30,11 +31,33 @@ func Publish(p Publication, mode Mode, v Vocabulary) *refusal.Refusal {
 	switch {
 	case len(p.Blocks) > 0:
 		var words []string
+		var nexts []Next
+		decisions, allowed := map[string]bool{}, map[string]bool{}
+		ordinary := false
 		for _, block := range p.Blocks {
 			words = append(words, block.Words(v))
+			if block.Kind != BlockNoCheckBuildHold {
+				ordinary = true
+				continue
+			}
+			for _, concern := range block.Holds {
+				subject := model.ConcernSubject(concern)
+				if !decisions[subject] {
+					decisions[subject] = true
+					nexts = append(nexts, Next{Verb: VerbDecide, Branch: p.Branch,
+						Args: []string{concern.Rule, concern.Port, "--because", `"…"`}})
+				}
+				if !allowed[concern.Rule] {
+					allowed[concern.Rule] = true
+					nexts = append(nexts, Next{External: fmt.Sprintf("add %q to holds.allow", concern.Rule)})
+				}
+			}
 		}
-		next.After = AfterEdit
-		return refusal.New(refusal.Failed, "can't submit yet: %s", strings.Join(words, "; ")).Then(next)
+		if ordinary {
+			next.After = AfterEdit
+			nexts = append(nexts, next)
+		}
+		return refusal.New(refusal.Failed, "can't submit yet: %s", strings.Join(words, "; ")).Then(nexts...)
 	case p.Bound != "" && p.Commit != p.Bound:
 		// The commit it moved to is the one to check: no check of it runs,
 		// so submit asked again would meet this again.

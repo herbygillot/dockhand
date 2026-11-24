@@ -355,7 +355,10 @@ func cell(column string, value any) string {
 	case []byte:
 		return strconv.Quote(string(v))
 	case int64:
-		if strings.HasSuffix(column, "_at") || column == "heartbeat" || column == "at" {
+		// An edit's written time is a time where it's set; zero, an edit
+		// recorded and not written, stays zero, which the comparison sees
+		// (#194).
+		if strings.HasSuffix(column, "_at") || column == "heartbeat" || column == "at" || column == "written" && v != 0 {
 			return fmt.Sprintf("«t:%d»", v)
 		}
 		return strconv.FormatInt(v, 10)
@@ -448,6 +451,7 @@ func normalize(w world, root string) world {
 		}
 	}
 	named := map[string]string{}
+	requests := 0
 	for round := 0; round < 6; round++ {
 		next := map[string]string{}
 		for _, r := range records {
@@ -487,6 +491,14 @@ func normalize(w world, root string) world {
 				}
 				prefix, _, _ := strings.Cut(id, "_")
 				name := fmt.Sprintf("%s#%d", prefix, len(named)+1)
+				// A request's ID is new each time what was asked changes,
+				// and is held in a branch's JSON alone: it's named by its
+				// place among the requests, so a run that made other ids
+				// before it names it the same (#194).
+				if prefix == "rq" {
+					requests++
+					name = fmt.Sprintf("rq#%d", requests)
+				}
 				named[id] = name
 				return name
 			})

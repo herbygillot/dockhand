@@ -2,6 +2,7 @@ package engine
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -35,7 +36,7 @@ func TestAGoneBranchSaysHowToSetItAside(t *testing.T) {
 	testsupport.Git(t, f.clone, "worktree", "prune")
 	testsupport.Git(t, f.clone, "branch", "-D", branch.Name)
 	_, err = e.Path(t.Context(), "poppler-25.09")
-	require.ErrorContains(t, err, "are both missing. Run dockhand archive poppler-25.09 to set the branch record aside; the name stays reserved, so start the work again under another name")
+	require.ErrorContains(t, err, "are both missing. Run dockhand archive -b poppler-25.09 to set the branch record aside; the name stays reserved, so start the work again under another name")
 	_, err = e.ArchiveBranch(t.Context(), ArchiveRequest{Branch: branch})
 	require.NoError(t, err, "as the refusal says")
 
@@ -66,4 +67,19 @@ func TestARecordSetAsideTakesTheFirstFreeName(t *testing.T) {
 	found, err := e.Resolve(t.Context(), "notes-archived-2")
 	require.NoError(t, err)
 	require.Equal(t, archived.ID, found.ID)
+}
+
+func TestBranchesChangingAnyNamesABranchItCouldntRead(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch := committedUpdate(t, e)
+	_, err := e.ArchiveBranch(t.Context(), ArchiveRequest{Branch: branch, KeepWorktree: true})
+	require.NoError(t, err)
+	wrapper := filepath.Join(t.TempDir(), "git")
+	testsupport.WriteExecutable(t, wrapper, "#!/bin/sh\nfor arg do\n if [ \"$arg\" = refs/heads/dockhand/jq-update ]; then echo blocked >&2; exit 42; fi\ndone\nexec git \"$@\"\n")
+	e.Repo.Executable = wrapper
+	_, err = e.BranchesChangingAny(t.Context(), "jq")
+	require.ErrorContains(t, err, "could not read branch jq-update while looking for changes to jq")
+	require.NotContains(t, err.Error(), "no branch changes jq")
 }

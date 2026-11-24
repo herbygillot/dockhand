@@ -16,19 +16,19 @@ import (
 // Times are stored in milliseconds, so a record read back carries its times
 // truncated to the millisecond.
 
-const branchColumns = "id, name, base, worktree, managed, title, state, pr_repository, pr_number, pr_head, pr_pushed, pr_body, pr_draft, pr_observed, pr_adopted, created_at, origin, note, ended_at, ports, clean_kept, forgotten_at, closes, pr_author, tested, pr_author_head, pr_provenance, pr_rerequested, publication, pr_pushed_at"
+const branchColumns = "id, name, base, worktree, managed, title, state, pr_repository, pr_number, pr_head, pr_pushed, pr_body, pr_draft, pr_observed, pr_adopted, created_at, origin, note, ended_at, ports, clean_kept, forgotten_at, closes, pr_author, tested, pr_author_head, pr_provenance, pr_rerequested, publication, pr_pushed_at, request, rename_to"
 
 func (t *tx) scanBranch(row interface{ Scan(...any) error }) (model.Branch, error) {
 	var b model.Branch
 	var managed int
 	var prRepository, prHead sql.NullString
 	var prNumber sql.NullInt64
-	var prPushed, prBody, prObserved, prAuthor, prAuthorHead, prProvenance, prRerequested, publication string
+	var prPushed, prBody, prObserved, prAuthor, prAuthorHead, prProvenance, prRerequested, publication, request string
 	var prDraft, prAdopted int
 	var created int64
 	var ended, forgotten, prPushedAt sql.NullInt64
 	var ports, closes, tested string
-	if err := row.Scan(&b.ID, &b.Name, &b.Base, &b.Worktree, &managed, &b.Title, &b.State, &prRepository, &prNumber, &prHead, &prPushed, &prBody, &prDraft, &prObserved, &prAdopted, &created, &b.Origin, &b.Note, &ended, &ports, &b.CleanKept, &forgotten, &closes, &prAuthor, &tested, &prAuthorHead, &prProvenance, &prRerequested, &publication, &prPushedAt); err != nil {
+	if err := row.Scan(&b.ID, &b.Name, &b.Base, &b.Worktree, &managed, &b.Title, &b.State, &prRepository, &prNumber, &prHead, &prPushed, &prBody, &prDraft, &prObserved, &prAdopted, &created, &b.Origin, &b.Note, &ended, &ports, &b.CleanKept, &forgotten, &closes, &prAuthor, &tested, &prAuthorHead, &prProvenance, &prRerequested, &publication, &prPushedAt, &request, &b.RenameTo); err != nil {
 		return model.Branch{}, storageError(err)
 	}
 	b.TestedBinaries, b.TestedVariants = testedStatements(tested)
@@ -63,6 +63,12 @@ func (t *tx) scanBranch(row interface{ Scan(...any) error }) (model.Branch, erro
 			}
 		}
 	}
+	if request != "" {
+		b.Request = &model.ChangeRequest{}
+		if err := json.Unmarshal([]byte(request), b.Request); err != nil {
+			return model.Branch{}, fmt.Errorf("%w: branch %s's request: %w", store.ErrUnavailable, b.ID, err)
+		}
+	}
 	if publication != "" {
 		b.Publication = &model.Publication{}
 		if err := json.Unmarshal([]byte(publication), b.Publication); err != nil {
@@ -78,6 +84,10 @@ func (t *tx) Branch(id model.BranchID) (model.Branch, error) {
 
 func (t *tx) BranchNamed(name string) (model.Branch, error) {
 	return t.scanBranch(t.conn.QueryRowContext(t.ctx, "SELECT "+branchColumns+" FROM branches WHERE repository_id=? AND name=? AND state<>'merged' AND forgotten_at IS NULL", t.repo, name))
+}
+
+func (t *tx) BranchRenamingTo(name string) (model.Branch, error) {
+	return t.scanBranch(t.conn.QueryRowContext(t.ctx, "SELECT "+branchColumns+" FROM branches WHERE repository_id=? AND rename_to=? AND rename_to<>'' AND forgotten_at IS NULL", t.repo, name))
 }
 
 func (t *tx) MergedBranchNamed(name string) (model.Branch, error) {
@@ -168,8 +178,8 @@ func (t *tx) AddBranch(b model.Branch) error {
 		}
 		ended = millis(b.EndedAt)
 	}
-	_, err := t.exec("INSERT INTO branches(repository_id, "+branchColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		t.repo, b.ID, b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, pr.repository, pr.number, pr.head, pr.pushed, pr.body, pr.draft, pr.observed, pr.adopted, millis(b.CreatedAt), b.Origin, b.Note, ended, strings.Join(b.Ports, " "), b.CleanKept, nil, strings.Join(b.Closes, " "), pr.author, testedWords(b), pr.authorHead, pr.provenance, pr.rerequested, publication, pr.pushedAt)
+	_, err := t.exec("INSERT INTO branches(repository_id, "+branchColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		t.repo, b.ID, b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, pr.repository, pr.number, pr.head, pr.pushed, pr.body, pr.draft, pr.observed, pr.adopted, millis(b.CreatedAt), b.Origin, b.Note, ended, strings.Join(b.Ports, " "), b.CleanKept, nil, strings.Join(b.Closes, " "), pr.author, testedWords(b), pr.authorHead, pr.provenance, pr.rerequested, publication, pr.pushedAt, requestColumn(b.Request), b.RenameTo)
 	return err
 }
 
@@ -1094,4 +1104,28 @@ func testedStatements(words string) (binaries, variants *model.TestedStatement) 
 		variants = &model.TestedStatement{}
 	}
 	return binaries, variants
+}
+
+// requestColumn is a branch's request as its column holds it, empty for
+// none.
+func requestColumn(request *model.ChangeRequest) string {
+	if request == nil {
+		return ""
+	}
+	data, _ := json.Marshal(request)
+	return string(data)
+}
+
+// SetRequest replaces what was asked of a branch's work. UpdateBranch
+// leaves it, so a writer holding a branch read earlier never puts back an
+// older request (#194).
+func (t *tx) SetRequest(branch model.BranchID, request *model.ChangeRequest) error {
+	return t.update("branch "+string(branch), "UPDATE branches SET request=? WHERE repository_id=? AND id=? AND forgotten_at IS NULL", requestColumn(request), t.repo, branch)
+}
+
+// SetRenameTo records or empties the name a rename is moving a branch to.
+// UpdateBranch leaves it, so a writer holding a branch read earlier never
+// drops an intent another process recorded (#194).
+func (t *tx) SetRenameTo(branch model.BranchID, to string) error {
+	return t.update("branch "+string(branch), "UPDATE branches SET rename_to=? WHERE repository_id=? AND id=? AND forgotten_at IS NULL", to, t.repo, branch)
 }

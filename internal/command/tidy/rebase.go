@@ -16,7 +16,7 @@ import (
 
 func RebaseCommand(s *settings.Settings, streams term.Streams) *cobra.Command {
 	var where branchflags.BranchFlags
-	var plan bool
+	var plan, yes bool
 	cmd := &cobra.Command{
 		Use:   "rebase",
 		Short: "Rebase the branch onto the latest master",
@@ -87,6 +87,8 @@ rebase that conflicts is abandoned with the branch as it was.`,
 		},
 	}
 	cmd.Flags().BoolVar(&plan, "plan", false, "show what the rebase would replay, and onto what, and change nothing")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "accepted for consistency; rebase asks nothing")
+	cmd.MarkFlagsMutuallyExclusive("plan", "yes")
 	where.Register(cmd, s, "rebase")
 	settings.SupportsJSON(cmd)
 	return cmd
@@ -138,7 +140,7 @@ func writeRebasePlan(streams term.Streams, branch model.Branch, rebased engine.R
 		fmt.Fprintf(streams.Prose(), "dockhand rebase would stop here, with %s as it is; resolve it by hand with git rebase %s, or ask for help on the PR.\n", name, rebased.To.Short())
 		return
 	case rebased.Refused != "":
-		fmt.Fprintf(streams.Prose(), "%s; dockhand clean %s removes it once its pull request is merged.\nNothing moved.\n", rebased.Refused, name)
+		fmt.Fprintf(streams.Prose(), "%s; dockhand clean -b %s removes it once its pull request is merged.\nNothing moved.\n", rebased.Refused, name)
 		return
 	}
 	if len(rebased.OlderBuilds) > 0 {

@@ -39,6 +39,11 @@ type EditedFile struct {
 	Path   string
 	Before ObjectID
 	After  ObjectID
+	// BeforeMode and AfterMode are Git's mode for the file on each side,
+	// such as 100644; empty where it is absent there, or on an edit from
+	// before modes were kept (#194).
+	BeforeMode string `json:",omitempty"`
+	AfterMode  string `json:",omitempty"`
 }
 
 // Edit is what an authoring command wrote in a branch's working files. It
@@ -73,10 +78,12 @@ type Edit struct {
 	// move, which tidy's commit and the pull request say; nil for every
 	// other edit.
 	Source *SourceMove `json:",omitempty"`
-	// Held are, for an update an unattended ship held before its check,
-	// the patch problems it held it for: serve's recovery leaves it held,
-	// where it queued its check (Codex's review of 275125ff, finding 2).
-	Held []string `json:",omitempty"`
+	// Written is when the edit's files were seen written; zero until
+	// then, where the edit is recorded before its files are (#194).
+	Written time.Time `json:",omitzero"`
+	// Result is what preparing the edit found and did; nil on an edit
+	// from before it was kept, or one no preparation made.
+	Result *EditResult `json:",omitempty"`
 }
 
 // SourceMove is an update's move of a GitHub port's source: from
@@ -183,7 +190,7 @@ func (c *UpstreamComparison) Concerns(port string) []Concern {
 	var concerns []Concern
 	for _, change := range c.Changes {
 		if change.Hold {
-			concerns = append(concerns, Concern{Origin: FromUpstream, Port: port, Rule: change.Rule, Source: change.Source, Path: change.Path, Subject: change.Subject, Class: change.Class, Detail: change.Message})
+			concerns = append(concerns, change.Concern(port))
 		}
 	}
 	if c.Problem != "" {
@@ -216,6 +223,11 @@ type UpstreamChange struct {
 	// fetches more than one: two archives' LICENSE changes are two
 	// findings. Empty for a port of one archive.
 	Source string `json:"source,omitempty"`
+}
+
+// Concern is the upstream hold raised by this finding for port.
+func (c UpstreamChange) Concern(port string) Concern {
+	return Concern{Origin: FromUpstream, Port: port, Rule: c.Rule, Source: c.Source, Path: c.Path, Subject: c.Subject, Class: c.Class, Detail: c.Message}
 }
 
 // Key identifies a finding: its rule, source, path, and subject, or where

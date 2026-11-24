@@ -136,10 +136,10 @@ func TestABranchNamedForAVersionFollowsIt(t *testing.T) {
 
 	withPR := found
 	withPR.PullRequest = &model.PullRequest{Repository: UpstreamRepository, Number: 34901, Head: "ada/macports-ports:" + found.Name}
-	renamed, err := e.renameForVersion(t.Context(), &withPR, "jq", "1.8.1", "1.8.2")
+	renamed, err := e.renameForVersion(t.Context(), nil, &withPR, "jq", "1.8.1", "1.8.2")
 	require.NoError(t, err)
 	require.Empty(t, renamed, "its pull request's head keeps its name")
-	renamed, err = e.renameForVersion(t.Context(), &found, "jq", "1.8.0", "1.8.2")
+	renamed, err = e.renameForVersion(t.Context(), nil, &found, "jq", "1.8.0", "1.8.2")
 	require.NoError(t, err)
 	require.Empty(t, renamed, "named for another version than it moves from")
 }

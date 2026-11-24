@@ -20,6 +20,20 @@ func TestRuntimeInspectionAndVersionEvidence(t *testing.T) {
 	decoded, err := decodeRuntime("platform {darwin 25 arm64} tcl_version 8.6.16 base_version 2.12.6")
 	require.NoError(t, err)
 	require.Equal(t, "2.12.6", decoded.BaseVersion)
+	require.Empty(t, decoded.DarwinVersion, "a Base that read no full version leaves the part unknown")
+	require.NotEmpty(t, runtime.DarwinVersion, "the kernel's full version comes from Base")
+	full, err := decodeRuntime("platform {darwin 25 arm64} tcl_version 8.6.16 base_version 2.12.6 os_version {read 25.1.0} xcode {read 26.1} xcodeclt {read 26.1.0.0.1}")
+	require.NoError(t, err)
+	require.Equal(t, macports.Runtime{Platform: full.Platform, BaseVersion: "2.12.6", TclVersion: "8.6.16", DarwinVersion: "25.1.0", Xcode: "26.1", Tools: "26.1.0.0.1"}, full)
+	// The tools Base hasn't read, read and found empty, and can't be told.
+	states, err := decodeRuntime("platform {darwin 25 arm64} tcl_version 8.6.16 base_version 2.12.6 os_version {read 25.1.0} xcode {pending {}} xcodeclt {read {}}")
+	require.NoError(t, err)
+	require.Equal(t, macports.ToolsNotRead, states.Xcode)
+	require.Equal(t, macports.ToolsNone, states.Tools)
+	unknown, err := decodeRuntime("platform {darwin 25 arm64} tcl_version 8.6.16 base_version 2.12.6 xcode {absent {}}")
+	require.NoError(t, err)
+	require.Empty(t, unknown.Xcode)
+	require.Equal(t, macports.ToolsNotRead, runtime.Xcode, "nothing reads the tools before the first evaluation, which leaves each to ask them itself")
 	_, err = decodeRuntime("platform {darwin 25 arm64}")
 	require.ErrorIs(t, err, macports.ErrStartup)
 }
@@ -213,4 +227,34 @@ func TestWorkerShipsTheDefinitionsAHookCalls(t *testing.T) {
 	require.NotNil(t, info.Fetch)
 	require.Equal(t, "guarded", info.Fetch.Kind)
 	require.Equal(t, []string{"pre-fetch hook 1 only rejects unsupported configurations"}, info.Fetch.Guards)
+}
+
+// An evaluation's runtime says whether Base had read the developer tools
+// when it ended, not at the session's start, when nothing has: Base's own
+// port setup reads xcodeversion for every port (its compiler defaults),
+// so a Portfile that never names it still leaves them read, with what
+// Base found, the same each time on this Mac (#194).
+func TestAnEvaluationSaysWhetherTheToolsWereRead(t *testing.T) {
+	t.Parallel()
+	evaluator := liveEvaluator(t)
+	started, err := evaluator.Inspect(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, macports.ToolsNotRead, started.Xcode, "nothing has read them at the start")
+	tree := fixtureTree(t)
+	putFile(t, tree.Root(), "devel/quiet/Portfile", "PortSystem 1.0\nname quiet\nversion 1\ncategories devel\n")
+	putFile(t, tree.Root(), "devel/asks/Portfile", "PortSystem 1.0\nname asks\nversion 1\ncategories devel\nnotes ${xcodeversion}\n")
+	evaluate := func(name string) macports.Runtime {
+		targets, err := evaluator.Resolve(t.Context(), tree, macports.Selection{Selector: name})
+		require.NoError(t, err)
+		bound, err := tree.Select(targets[0])
+		require.NoError(t, err)
+		snapshot, err := evaluator.Evaluate(t.Context(), bound)
+		require.NoError(t, err)
+		return snapshot.Runtime
+	}
+	quiet, asks := evaluate("quiet"), evaluate("asks")
+	require.NotEqual(t, macports.ToolsNotRead, quiet.Xcode, "Base's port setup read them")
+	require.NotEmpty(t, quiet.Xcode, "read, with what Base found, never unknown")
+	require.Equal(t, quiet.Xcode, asks.Xcode, "the same reading for each port on this Mac")
+	require.Equal(t, quiet.Tools, asks.Tools)
 }

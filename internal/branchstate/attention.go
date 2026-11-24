@@ -42,14 +42,22 @@ const (
 	OpenedByServe      Reason = "opened-by-serve"
 	OnMaster           Reason = "on-master"
 	HeldBeforeItsCheck Reason = "held-before-check"
-	FilesChangedSince  Reason = "files-changed-since"
-	DependencyFailed   Reason = "dependency-failed"
-	TargetFailed       Reason = "target-failed"
-	RunFailed          Reason = "check-failed"
-	RunAttention       Reason = "check-attention"
-	BuildAgain         Reason = "build-again"
-	Unbuilt            Reason = "unbuilt"
-	ExtraFailed        Reason = "extra-failed"
+	// PreparationUnfinished is a branch whose preparation stopped part-way:
+	// an update not written whole, a target not prepared, an action not
+	// concluded or refused (#194). The command that finishes it is named.
+	PreparationUnfinished Reason = "preparation-unfinished"
+	// RenameUnderWay is a branch a process was cut short renaming: its
+	// record names the new name, which the next command that changes the
+	// branch finishes the move to; status finishes none (#194, L6).
+	RenameUnderWay    Reason = "rename-under-way"
+	FilesChangedSince Reason = "files-changed-since"
+	DependencyFailed  Reason = "dependency-failed"
+	TargetFailed      Reason = "target-failed"
+	RunFailed         Reason = "check-failed"
+	RunAttention      Reason = "check-attention"
+	BuildAgain        Reason = "build-again"
+	Unbuilt           Reason = "unbuilt"
+	ExtraFailed       Reason = "extra-failed"
 	// LintWarned is a new port lint warned of, which submit asks to fix
 	// or accept (the docs dig's I13).
 	LintWarned      Reason = "lint-warned"
@@ -73,7 +81,7 @@ const (
 	NotPushed        Reason = "not-pushed"
 	// Unfinished is a submission dockhand began and hasn't seen finished,
 	// whose record says what it still owes; submit settles and finishes it
-	// (docs/designs/publication-record.md).
+	// (docs/designs/publication-record.md at 0e0ad767).
 	Unfinished Reason = "unfinished-submission"
 )
 
@@ -113,9 +121,9 @@ type Branch struct {
 	// Edited its files edited and not committed.
 	Commits int
 	Edited  []string
-	// Edits are the branch's recorded edits, oldest first, which say a
-	// hold before its check (Preparation).
-	Edits []model.Edit
+	// Prepared is the branch's preparation verdict (PreparationOf), which
+	// says a hold before its check.
+	Prepared Readied
 	// Held are what holds its submission, from its recorded assessments;
 	// Moved the Git sources whose tag moved before its check.
 	Held, Moved []model.Concern
@@ -226,6 +234,11 @@ func Attend(facts Facts) []Attention {
 	if b.Cleaned {
 		return nil
 	}
+	if to := b.Record.RenameTo; to != "" {
+		return row(NeedsYou, RenameUnderWay, Next{Verb: VerbTidy}, func(a *Attention) {
+			a.Detail = fmt.Sprintf("a rename of %s to %s is under way; the next command that changes the branch finishes it", name, strings.TrimPrefix(to, model.BranchPrefix))
+		})
+	}
 	if b.Missing && b.Record.PullRequest != nil {
 		// Status never reads the network, so it can't know the pull
 		// request merged: a branch cleaned by hand after its merge read as
@@ -268,15 +281,21 @@ func Attend(facts Facts) []Attention {
 		return nil
 	}
 	// Work that landed on master by another route asks nothing more of
-	// checks, only to be set aside (cleaning up duckdb-cxx14, finding 1).
+	// checks. Archive sets it aside; clean --delete forgets it for good
+	// (cleaning up duckdb-cxx14, finding 1; #185).
 	if b.OnMaster != "" && b.Record.PullRequest == nil {
-		return row(Ready, OnMaster, Next{Verb: VerbArchive}, func(a *Attention) { a.Detail = string(b.OnMaster.Short()) })
+		return row(Ready, OnMaster, Next{External: "permanently remove: dockhand clean --delete -b " + b.Record.ShortName()}, func(a *Attention) { a.Detail = string(b.OnMaster.Short()) })
 	}
 	standing := check.Standing()
 	// A branch an unattended ship held at its committed edit, a patch not
 	// applying, has no check to say; it says the hold (finding 2).
-	if prepared := Preparation(b); standing == NotChecked && prepared.Disposition == HeldBeforeCheck {
-		return row(NeedsYou, HeldBeforeItsCheck, Next{Verb: VerbCheck}, func(a *Attention) { a.Detail = prepared.Why })
+	if prepared := b.Prepared; standing == NotChecked && prepared.Disposition == UnfinishedPreparation && prepared.Pending {
+		return row(NeedsYou, PreparationUnfinished, Next{External: "dockhand ship -b " + b.Record.ShortName()}, func(a *Attention) {
+			a.Detail = strings.Join(prepared.Reasons, "; ") + "; dockhand ship -b " + b.Record.ShortName() + " finishes it"
+		})
+	}
+	if prepared := b.Prepared; standing == NotChecked && prepared.Disposition == HeldBeforeCheck {
+		return row(NeedsYou, HeldBeforeItsCheck, Next{Verb: VerbCheck}, func(a *Attention) { a.Detail = HeldWords(prepared.Reasons, prepared.Committed) })
 	}
 	if standing == Checking || standing == NotChecked {
 		return nil
@@ -556,9 +575,9 @@ func (a Attention) Words(v Vocabulary) string {
 	case OpenedByServe:
 		return fmt.Sprintf("#%d was opened by serve without human review", pr.Number)
 	case OnMaster:
-		return "its changes are on master already, as of " + a.Detail
-	case HeldBeforeItsCheck:
-		return HeldWords(a.Detail)
+		return "its changes are on master already, as of " + a.Detail + "; dockhand archive -b " + a.Branch + " sets it aside"
+	case HeldBeforeItsCheck, PreparationUnfinished, RenameUnderWay:
+		return a.Detail
 	case FilesChangedSince:
 		ended := string(a.Run.State)
 		if a.Run.State == model.RunAttention {

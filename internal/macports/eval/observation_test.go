@@ -42,7 +42,12 @@ if {${build_arch} eq "arm64"} { distfiles a.zip:release } else { distfiles b.zip
 	got, err := observeForVerdict(t, e, bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
 	require.NoError(t, err)
 	require.True(t, got.Modeled)
-	require.Equal(t, native.Runtime, got.Snapshot.Runtime)
+	// The session's runtime, but the developer tools, which a native
+	// evaluation says as Base read them and a modelled one leaves to its
+	// model (#194).
+	want := native.Runtime
+	want.Xcode, want.Tools = got.Snapshot.Runtime.Xcode, got.Snapshot.Runtime.Tools
+	require.Equal(t, want, got.Snapshot.Runtime)
 	require.Equal(t, "16", got.Snapshot.Platform.Version)
 	o := got.Ports["observed-child"]
 	require.False(t, hostState(t, o, contents), "%v", o.Problems)

@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/command/cmdtest"
+	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -72,6 +74,84 @@ func TestSetupStartPathAndAdopt(t *testing.T) {
 	require.Regexp(t, `^Adopted edits-only: 0 commits above master [0-9a-f]{7}, with edits not yet committed to jq and _resources\.\n`, cmdtest.Flat(out))
 }
 
+func TestAdoptPlanReadsLocalBranchWithoutChangingIt(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	testsupport.Git(t, w.Clone, "switch", "-q", "-c", "plan-jq")
+	require.NoError(t, os.WriteFile(filepath.Join(w.Clone, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n"), 0o644))
+	testsupport.Git(t, w.Clone, "commit", "-q", "-am", "Update jq")
+	before := testsupport.Git(t, w.Clone, "show-ref")
+	out, _, err := cmdtest.Dockhand(t, "adopt", "plan-jq", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "plan-jq")
+	require.Contains(t, out, "No Git ref, worktree, or store record was created or written.")
+	require.Contains(t, out, "Nothing was adopted (--plan).")
+	require.Equal(t, before, testsupport.Git(t, w.Clone, "show-ref"), "plan leaves Git refs unchanged")
+	require.NotContains(t, out, "already tracks")
+	_, _, err = cmdtest.Dockhand(t, "adopt", "plan-jq")
+	require.NoError(t, err)
+	out, _, err = cmdtest.Dockhand(t, "adopt", "plan-jq", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "Already tracks plan-jq:")
+}
+
+func TestAdoptPullRequestPlanUsesForgeReadAndFetchesNothing(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	g := cmdtest.WithGitHub(t, w)
+	g.Theirs = map[int]forge.PullRequest{35174: {
+		Ref:            forge.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 35174},
+		HeadRepository: "ada/macports-ports", HeadBranch: "review", BaseBranch: "master", RemoteHead: model.ObjectID("1234567890123456789012345678901234567890"),
+		Commits: 2, Title: "Fix jq", Author: "ada", State: forge.PullRequestOpen,
+	}}
+	refs := testsupport.Git(t, w.Clone, "show-ref")
+	out, _, err := cmdtest.Dockhand(t, "adopt", "--pr", "35174", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "#35174 · \"Fix jq\" by @ada")
+	require.Contains(t, out, "Would fetch ada/macports-ports:review and master; track as pr-35174.")
+	require.Contains(t, out, "Head 1234567 · 2 commits · base master.")
+	require.Contains(t, out, "Changed ports are unknown without fetching the pull request head.")
+	require.Contains(t, out, "No head was fetched, and no Git ref, worktree, or store record was created or written.")
+	require.Contains(t, out, "Nothing was adopted (--plan).")
+	require.Equal(t, refs, testsupport.Git(t, w.Clone, "show-ref"), "plan does not fetch refs or create a branch")
+	require.Equal(t, 1, g.Observed, "plan reads the forge once")
+
+	testsupport.Git(t, w.Upstream, "update-ref", "refs/pull/35174/head", "master")
+	_, _, err = cmdtest.Dockhand(t, "adopt", "--pr", "35174")
+	require.NoError(t, err)
+	out, _, err = cmdtest.Dockhand(t, "adopt", "--pr", "35174", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "Already tracks pr-35174.")
+	tracked, err := cmdtest.JSONOf(t, "adopt", "--pr", "35174", "--plan")
+	require.NoError(t, err)
+	require.Equal(t, "pr-35174", cmdtest.Dig(t, tracked.Result, "Branch"))
+	require.Equal(t, true, cmdtest.Dig(t, tracked.Result, "Already"))
+}
+
+func TestAdoptPullRequestPlanSharesLocalRefusalWithApply(t *testing.T) {
+	t.Parallel()
+	for _, blocker := range []string{"branch", "directory"} {
+		t.Run(blocker, func(t *testing.T) {
+			t.Parallel()
+			w := cmdtest.NewWorld(t)
+			g := cmdtest.WithGitHub(t, w)
+			g.Theirs = map[int]forge.PullRequest{35175: {
+				Ref:            forge.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 35175},
+				HeadRepository: "ada/macports-ports", HeadBranch: "review", BaseBranch: "master", RemoteHead: model.ObjectID(strings.Repeat("a", 40)),
+				Commits: 1, State: forge.PullRequestOpen,
+			}}
+			if blocker == "branch" {
+				testsupport.Git(t, w.Clone, "branch", "pr-35175")
+			} else {
+				require.NoError(t, os.MkdirAll(filepath.Join(w.Home, "Source", "macports-branches", "pr-35175"), 0o755))
+			}
+			_, _, planErr := cmdtest.Dockhand(t, "adopt", "--pr", "35175", "--plan")
+			_, _, applyErr := cmdtest.Dockhand(t, "adopt", "--pr", "35175")
+			require.EqualError(t, planErr, applyErr.Error())
+		})
+	}
+}
+
 func TestSetupRemembersAChosenWorktreesDirectory(t *testing.T) {
 	t.Parallel()
 	w := cmdtest.NewWorld(t)
@@ -94,6 +174,21 @@ func TestCommandsRefuseADirectoryThatIsNotAPortsTree(t *testing.T) {
 	cmdtest.NewWorld(t)
 	_, _, err := cmdtest.Dockhand(t, "--tree", t.TempDir(), "start", "x")
 	require.ErrorContains(t, err, "not in a Git checkout")
+}
+
+func TestCheckoutDiagnosticsAreVerboseOnly(t *testing.T) {
+	t.Parallel()
+	cmdtest.NewWorld(t)
+	outside := t.TempDir()
+	plain, plainVerbose, err := cmdtest.Dockhand(t, "--tree", outside, "path")
+	require.ErrorContains(t, err, "is not in a Git checkout (select one with --tree or MACPORTS_TREE)")
+	require.NotContains(t, err.Error(), "fatal: not a git repository")
+	require.NotContains(t, plain, "fatal: not a git repository")
+	require.NotContains(t, plainVerbose, "fatal: not a git repository")
+
+	_, verbose, err := cmdtest.Dockhand(t, "--tree", outside, "path", "-v")
+	require.ErrorContains(t, err, "is not in a Git checkout")
+	require.Contains(t, verbose, "fatal: not a git repository")
 }
 
 // setup refuses a Git older than dockhand works with, before recording

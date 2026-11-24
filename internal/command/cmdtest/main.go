@@ -9,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/command/host"
 	"github.com/herbygillot/dockhand/internal/command/settings"
 	"github.com/herbygillot/dockhand/internal/compose"
+	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -36,8 +37,14 @@ func Main(m *testing.M, run Runner) {
 	// script build is started through.
 	starter.RunIfAsked()
 	runner = run
-	for _, name := range []string{"MACPORTS_TREE", "DOCKHAND_DB", "DOCKHAND_CONFIG", "DOCKHAND_UPSTREAM", "DOCKHAND_PULL_REQUESTS", "DOCKHAND_GITHUB_CLIENT_ID", "GH_TOKEN", "GITHUB_TOKEN",
-		"DOCKHAND_INDEX_MIRROR", "DOCKHAND_INDEX_CACHE", "DOCKHAND_READING_CACHE", "DOCKHAND_GITHUB_CACHE", "DOCKHAND_ARCHIVE_CACHE", "DOCKHAND_BUILD_HISTORY_CACHE", "DOCKHAND_TART_HOME", "TART_HOME", "DOCKHAND_SSH_DIR", "GIT_SSH_COMMAND", "HTTPS_PROXY", "HTTP_PROXY"} {
+	// Every variable dockhand reads, by its one list, and what git and
+	// the network read beside them: a hand-written list missed
+	// DOCKHAND_GITHUB_LOG, so a test run could write to the person's own
+	// log (#294).
+	for _, variable := range config.Environment {
+		os.Unsetenv(variable.Name)
+	}
+	for _, name := range []string{"GIT_SSH_COMMAND", "HTTPS_PROXY", "HTTP_PROXY"} {
 		os.Unsetenv(name)
 	}
 	cleanup := testsupport.IsolateHome()

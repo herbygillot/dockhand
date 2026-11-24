@@ -2,15 +2,31 @@ package checkrun
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/term"
 )
+
+func TestKeptCloneNoticesGiveTheCompleteShellAndRemovalDetails(t *testing.T) {
+	t.Parallel()
+	run := model.Run{ID: "run_1", Number: 12}
+	asked := engine.Leftover{Leftover: buildenv.Leftover{Ref: "dockhand-check-run-1-tahoe-1", Size: 27.5}}
+	require.Equal(t, "Kept clone dockhand-check-run-1-tahoe-1 (27.5 GiB) because you asked to keep it; enter with dockhand shell check-12; remove with dockhand clean --kept check-12.", keptCloneNotice(asked, run, "dockhand shell check-12"))
+	failed := asked
+	failed.Failed = true
+	failed.KeptAt = time.Date(2026, 11, 1, 8, 0, 0, 0, time.Local)
+	words := keptCloneNotice(failed, run, "dockhand shell check-12")
+	for _, want := range []string{"27.5 GiB", "because its check failed", "dockhand shell check-12", "dockhand clean --kept check-12", "expires after seven days"} {
+		require.True(t, strings.Contains(words, want), words)
+	}
+}
 
 // A failure whose cause a reading of its log found says that cause in one
 // line under the results, with its environment where the plan has
@@ -30,7 +46,7 @@ func TestAFailureSaysTheCauseItsLogGave(t *testing.T) {
 		{Target: model.PlanTarget{ID: "iperf3"}, Outcomes: []engine.Cell{failed(model.PhaseInstall, "Failed to build iperf3")}},
 	}}
 	var out bytes.Buffer
-	writeFailureLines(&out, evidence)
+	writeFailureLines(&out, &out, evidence)
 	require.Equal(t, "sslscan failed at install: ./sslscan.h:282:23: error: field has incomplete type 'ASN1_OCTET_STRING'\n\n"+
 		"socat: a dependency failed on tart macOS 26 (Tahoe) arm64: openssl4 failed to build\n\n", out.String(), "iperf3 has no log, so no last lines")
 
@@ -39,7 +55,7 @@ func TestAFailureSaysTheCauseItsLogGave(t *testing.T) {
 	evidence.Plan.Environments = []model.Environment{sequoia, tahoe}
 	evidence.Targets = []engine.TargetEvidence{{Target: model.PlanTarget{ID: "sslscan"}, Outcomes: []engine.Cell{{Kind: engine.CellRecorded, TargetResult: model.TargetResult{Outcome: model.OutcomePassed}}, failed(model.PhaseInstall, cause)}}}
 	out.Reset()
-	writeFailureLines(&out, evidence)
+	writeFailureLines(&out, &out, evidence)
 	require.Equal(t, "sslscan failed at install on tart macOS 26 (Tahoe) arm64: ./sslscan.h:282:23: error: field has incomplete type 'ASN1_OCTET_STRING'\n\n", out.String())
 }
 

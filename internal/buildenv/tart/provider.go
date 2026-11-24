@@ -423,18 +423,18 @@ func (p *Provider) Leftovers(ctx context.Context) ([]buildenv.Leftover, error) {
 	if err != nil {
 		return nil, err
 	}
-	images, err := m.Images(ctx)
+	images, err := m.Details(ctx)
 	if err != nil {
 		return nil, err
 	}
 	home, _ := p.home()
 	var clones []buildenv.Leftover
-	for _, name := range images {
-		if strings.HasPrefix(name, clonePrefixAll) {
-			leftover := buildenv.Leftover{Ref: name, What: "Tart clone " + name}
-			if at, kept := tartvm.KeptAt(home, name); kept && home != "" {
-				leftover.KeptAt, leftover.What = at, "kept Tart clone "+name
-				leftover.Failed = tartvm.KeptFor(home, name) == tartvm.KeptFailed
+	for _, image := range images {
+		if strings.HasPrefix(image.Name, clonePrefixAll) {
+			leftover := buildenv.Leftover{Ref: image.Name, What: "Tart clone " + image.Name, Size: image.Size}
+			if at, kept := tartvm.KeptAt(home, image.Name); kept && home != "" {
+				leftover.KeptAt, leftover.What = at, "kept Tart clone "+image.Name
+				leftover.Failed = tartvm.KeptFor(home, image.Name) == tartvm.KeptFailed
 			}
 			clones = append(clones, leftover)
 		}
@@ -558,13 +558,26 @@ func (p *Provider) Shell(ctx context.Context, job buildenv.ShellJob) (int, error
 	if err != nil {
 		return -1, err
 	}
-	image, kept := tartvm.KeptFrom(home, job.Ref)
+	// Read again under the clone's guard below, where the image is taken.
+	_, kept := tartvm.KeptFrom(home, job.Ref)
 	if !kept || !strings.HasPrefix(job.Ref, clonePrefixAll) {
 		return -1, fmt.Errorf("%s isn't a clone a check kept; check --keep keeps one", job.Ref)
 	}
 	m, err := p.vms()
 	if err != nil {
 		return -1, err
+	}
+	guard, err := tartvm.AcquireClone(ctx, home, job.Ref)
+	if err != nil {
+		return -1, err
+	}
+	// Let go for every holder once the clone is stopped (the deferred
+	// Stop below runs first): a forked child keeping the file kept the
+	// clone "running in dockhand shell" after its shell ended (#291).
+	defer func() { _ = tartvm.ReleaseClone(guard) }()
+	image, kept := tartvm.KeptFrom(home, job.Ref)
+	if !kept {
+		return -1, fmt.Errorf("%s isn't a clone a check kept; check --keep keeps one", job.Ref)
 	}
 	started, err := m.Start(job.Ref)
 	if err != nil {
@@ -637,6 +650,18 @@ func (p *Provider) RemoveLeftover(ctx context.Context, ref string) error {
 	if err != nil {
 		return err
 	}
+	home, err := p.home()
+	if err != nil {
+		return err
+	}
+	guard, err := tartvm.TryAcquireClone(home, ref)
+	if err != nil {
+		if errors.Is(err, tartvm.ErrCloneBusy) {
+			return buildenv.ErrLeftoverRunning
+		}
+		return err
+	}
+	defer func() { _ = tartvm.ReleaseClone(guard) }()
 	// One already gone was removed by another process, as the second of
 	// two checks waiting for a slot finds it (#239).
 	images, err := m.Images(ctx)
@@ -652,10 +677,7 @@ func (p *Provider) RemoveLeftover(ctx context.Context, ref string) error {
 	if err := m.Delete(ctx, ref); err != nil {
 		return err
 	}
-	if home, err := p.home(); err == nil {
-		return tartvm.ForgetClone(home, ref)
-	}
-	return nil
+	return tartvm.ForgetClone(home, ref)
 }
 
 // Execute builds the job's targets in a fresh clone of the release's image.
@@ -729,9 +751,20 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 			if !job.Plan.Keep {
 				reason = tartvm.KeptFailed
 			}
-			if err == nil && (job.Plan.Keep || p.KeepFailed && watched.failed) {
+			if err == nil && (job.Plan.Keep || p.KeepFailed && watched.failed && job.Run.Origin == model.OriginPerson && !job.Plan.Unattended) {
 				keepErr := p.keepClone(vm, image, reason)
 				if keepErr == nil {
+					if !job.Plan.Keep && watched.failed && job.Run.Origin == model.OriginPerson && !job.Plan.Unattended {
+						removed, skipped, capErr := p.capFailureClones(cleanup)
+						if capErr != nil {
+							build.Progress("could not cap failed Tart clones: " + capErr.Error())
+						} else if len(removed) > 0 {
+							build.Progress("removed oldest failure clone(s) " + strings.Join(removed, ", ") + "; only the four newest failure clones are kept")
+						}
+						if len(skipped) > 0 {
+							build.Progress("skipped failure clone(s) " + strings.Join(skipped, ", ") + " because they are in use by dockhand shell or another dockhand removing them; cleanup will retry")
+						}
+					}
 					return
 				}
 				build.Progress("keeping " + vm + ": " + keepErr.Error())
@@ -799,6 +832,34 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		return p.trouble(ctx, "starting the build in "+vm, err)
 	}
 	return p.follower().Follow(ctx, g, started, job, build, release)
+}
+
+func (p *Provider) capFailureClones(ctx context.Context) (removed, skipped []string, err error) {
+	leftovers, err := p.Leftovers(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	var failures []buildenv.Leftover
+	for _, leftover := range leftovers {
+		if leftover.Failed && !leftover.KeptAt.IsZero() {
+			failures = append(failures, leftover)
+		}
+	}
+	if len(failures) <= 4 {
+		return nil, nil, nil
+	}
+	slices.SortFunc(failures, func(a, b buildenv.Leftover) int { return a.KeptAt.Compare(b.KeptAt) })
+	for _, oldest := range failures[:len(failures)-4] {
+		if err := p.RemoveLeftover(ctx, oldest.Ref); err != nil && !errors.Is(err, buildenv.ErrLeftoverGone) {
+			if errors.Is(err, buildenv.ErrLeftoverRunning) {
+				skipped = append(skipped, oldest.Ref)
+				continue
+			}
+			return removed, skipped, err
+		}
+		removed = append(removed, oldest.Ref)
+	}
+	return removed, skipped, nil
 }
 
 func (p *Provider) testTimeout() time.Duration {

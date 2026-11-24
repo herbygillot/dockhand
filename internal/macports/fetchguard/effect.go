@@ -62,6 +62,13 @@ const maxProcedureDepth = 5
 // and write only the plain variables their arguments name, which are
 // checked. Control commands and the writers of variables are handled by
 // name below, and everything else is refused.
+//
+// Every entry was checked on 2026-11-22 against Tcl 8.6's manual pages,
+// and Base's and the PortGroups' own procedures, for writing a variable
+// its arguments name or running a script they hold: variable, string is
+// -failindex and info default write one, lsort -command runs one, and
+// expr evaluates its braced expression; builtinReason judges those
+// (#293). lassign, lmap, gets and binary scan stay off the list.
 var harmlessBuiltins = withWorkerAliasReads(map[string]bool{
 	"ui_error": true, "ui_warn": true, "ui_msg": true, "ui_info": true, "ui_notice": true, "ui_debug": true,
 	"global": true, "variable": true, "expr": true, "string": true, "format": true, "join": true, "split": true, "concat": true,
@@ -196,7 +203,7 @@ func effectReason(src []byte, command syntax.Command, defs Definitions, depth in
 		return argumentsReason(src, words[2:], defs, depth)
 	}
 	if harmlessBuiltins[name] {
-		return argumentsReason(src, words[1:], defs, depth)
+		return builtinReason(src, command, name, defs, depth)
 	}
 	if definition, ok := defs[name]; ok {
 		switch definition.kind {
@@ -364,19 +371,46 @@ func loopReason(src []byte, command syntax.Command, defs Definitions, depth int)
 }
 
 // loopVariables are the names a loop's variable word binds: a literal
-// name, or a braced list of them, which is literal text too.
+// name, or a braced list of them, which is literal text too. A name that
+// isn't a plain word, as {distfiles} in a list, is one Tcl reads as a list
+// element the grammar would misname, so the list is one it cannot read
+// (#293; Codex's review).
 func loopVariables(src []byte, variable syntax.Word) ([]string, bool) {
-	if names, ok := variable.Literal(src); ok {
-		return strings.Fields(names), true
+	text, ok := variable.Literal(src)
+	if !ok {
+		if variable.Expand || len(variable.Segments) != 1 {
+			return nil, false
+		}
+		braced, isBraced := variable.Segments[0].(syntax.Braced)
+		if !isBraced {
+			return nil, false
+		}
+		text = braced.Body.Text(src)
 	}
-	if variable.Expand || len(variable.Segments) != 1 {
-		return nil, false
+	names := strings.Fields(text)
+	for i, name := range names {
+		if strings.ContainsAny(name, "{}\"$[]\\") {
+			return nil, false
+		}
+		variable, ok := variableName(name)
+		if !ok {
+			return nil, false
+		}
+		names[i] = variable
 	}
-	braced, isBraced := variable.Segments[0].(syntax.Braced)
-	if !isBraced {
-		return nil, false
+	return names, true
+}
+
+// variableName is the variable a name written in a Portfile names: a
+// leading :: is the global one, ::distfiles being distfiles. A name with
+// :: anywhere else names a namespace's variable, which the grammar cannot
+// read (#293; Codex's review of 78b4e353).
+func variableName(name string) (string, bool) {
+	name = strings.TrimPrefix(name, "::")
+	if name == "" || strings.Contains(name, "::") {
+		return "", false
 	}
-	return strings.Fields(braced.Body.Text(src)), true
+	return name, true
 }
 
 // dictForReason judges dict for as the loop it is: its two variables are
@@ -524,14 +558,112 @@ func conditionEffectReason(src []byte, body textedit.Span, defs Definitions, dep
 // variableReason refuses a write to a variable the fetch reads, or to a
 // variable whose name is computed.
 func variableReason(src []byte, command syntax.Command, variable syntax.Word) refusal {
-	name, ok := variable.Literal(src)
+	written, ok := variable.Literal(src)
 	if !ok {
 		return refuse(command.Span.Start, "writes a computed variable")
+	}
+	name, ok := variableName(written)
+	if !ok {
+		return refuse(command.Span.Start, "writes `%s`, a variable the grammar cannot read", written)
 	}
 	if AffectsFetch(name) {
 		return refuse(command.Span.Start, "writes `%s`", name)
 	}
 	return accepted
+}
+
+// builtinReason judges a harmless builtin's arguments, and the variables
+// and scripts the few that write or run one name (harmlessBuiltins): what
+// the grammar can't read of those is refused, as a computed subcommand or
+// option is, since it could be the one that writes.
+func builtinReason(src []byte, command syntax.Command, name string, defs Definitions, depth int) refusal {
+	words := command.Words
+	unread := refuse(command.Span.Start, "is not followed by the grammar")
+	switch name {
+	case "variable":
+		// variable ?name value ...? ?name?: each name given a value is
+		// written; a last one alone is only declared.
+		for i := 1; i+1 < len(words); i += 2 {
+			if refused := variableReason(src, command, words[i]); refused.text != "" {
+				return refused
+			}
+		}
+	case "string":
+		// string is class ?-strict? ?-failindex varname? string.
+		sub, ok := literal(src, words, 1)
+		if !ok {
+			return unread
+		}
+		if sub == "is" {
+			for i := 3; i < len(words)-1; i++ {
+				option, ok := words[i].Literal(src)
+				switch {
+				case !ok:
+					return unread
+				case abbreviates(option, "-failindex"):
+					if i+1 >= len(words)-1 {
+						return unread
+					}
+					i++
+					if refused := variableReason(src, command, words[i]); refused.text != "" {
+						return refused
+					}
+				case !abbreviates(option, "-strict"):
+					return unread
+				}
+			}
+		}
+	case "info":
+		// info default procname arg varname; d is default's shortest
+		// abbreviation, which Tcl takes.
+		sub, ok := literal(src, words, 1)
+		if !ok {
+			return unread
+		}
+		if abbreviates(sub, "default") {
+			if len(words) != 5 {
+				return unread
+			}
+			if refused := variableReason(src, command, words[4]); refused.text != "" {
+				return refused
+			}
+		}
+	case "lsort":
+		// lsort ?options? list: -command runs a script the grammar
+		// doesn't follow, and an option it can't read could be it.
+		for i := 1; i < len(words)-1; i++ {
+			option, ok := words[i].Literal(src)
+			if !ok || abbreviates(option, "-command") {
+				return unread
+			}
+			if option == "-index" || option == "-stride" {
+				i++
+			}
+		}
+	case "expr":
+		// A braced expression is evaluated, its commands with it.
+		if len(words) == 2 && len(words[1].Segments) == 1 {
+			if braced, ok := words[1].Segments[0].(syntax.Braced); ok {
+				return conditionEffectReason(src, braced.Body, defs, depth)
+			}
+		}
+	}
+	return argumentsReason(src, words[1:], defs, depth)
+}
+
+// literal is words[i]'s literal text, where there is one.
+func literal(src []byte, words []syntax.Word, i int) (string, bool) {
+	if i >= len(words) {
+		return "", false
+	}
+	return words[i].Literal(src)
+}
+
+// abbreviates reports whether word names option as Tcl's option and
+// subcommand tables take it: the option itself or a prefix of it, beyond
+// a lone dash. The callers' options have no other with that prefix.
+func abbreviates(word, option string) bool {
+	return word != "" && word != "-" && strings.HasPrefix(option, word)
 }
 
 // argumentsReason judges the arguments of a harmless command: text and

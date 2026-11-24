@@ -75,10 +75,10 @@ func TestBumpChangesNothingWhenItHasNothingToDo(t *testing.T) {
 
 	out, _, err := cmdtest.BumpOn(t, "jq")
 	require.NoError(t, err)
-	require.Regexp(t, `^  jq  a version update from master, to submit\njq is already at 1\.8\.1 on master [0-9a-f]{7,}; nothing to change, so no branch was started\.\n$`, out)
+	require.Regexp(t, `^  jq  a version update from master, to submit\n      not resolved now: jq's release \(selected when the port is prepared\); where the check builds\n        \(decided when the check is queued\); the check's tests \(decided when the check is queued\);\n        the destination \(decided at submit\)\njq is already at 1\.8\.1 on master [0-9a-f]{7,}; nothing to change, so no branch was started\.\n$`, out)
 	out, _, err = cmdtest.BumpOn(t, "jq", "1.8.1")
 	require.NoError(t, err)
-	require.Regexp(t, `^  jq  a version update from master, to submit\njq is already at 1\.8\.1 on master [0-9a-f]{7,}; nothing to change, so no branch was started\.\n$`, out)
+	require.Regexp(t, `^  jq  a version update from master, to submit\n      not resolved now: where the check builds \(decided when the check is queued\); the check's tests\n        \(decided when the check is queued\); the destination \(decided at submit\)\njq is already at 1\.8\.1 on master [0-9a-f]{7,}; nothing to change, so no branch was started\.\n$`, out, "a version named is resolved now")
 
 	_, _, err = cmdtest.BumpOn(t, "jq", "1.9", "--on", "nowhere")
 	require.EqualError(t, err, `--on nowhere: no provider "nowhere" is set up; nothing was changed`)
@@ -188,7 +188,7 @@ func TestBumpPlanChangesNothing(t *testing.T) {
 	g := cmdtest.WithGitHub(t, w)
 	out, _, err := cmdtest.Dockhand(t, "bump", "jq", "--plan")
 	require.NoError(t, err)
-	require.Equal(t, "  jq  a version update from master, to submit\nNothing was shipped (--plan).\n", out)
+	require.Equal(t, "  jq  a version update from master, to submit\n      not resolved now: jq's release (selected when the port is prepared); where the check builds\n        (decided when the check is queued); the check's tests (decided when the check is queued);\n        the destination (decided at submit)\nNothing was shipped (--plan).\n", out)
 	require.Empty(t, testsupport.Git(t, w.Clone, "branch", "--list", "dockhand/*"))
 	require.Empty(t, g.PRs)
 }

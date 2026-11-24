@@ -132,7 +132,9 @@ func MachineHost(look func(name string) string) *Host {
 // TartImages is what setup and setup tart ask of dockhand's Tart images.
 type TartImages interface {
 	Status(ctx context.Context) (tart.Status, error)
-	Setup(ctx context.Context, options tart.SetupOptions, progress io.Writer) (tart.SetupResult, error)
+	// Setup says its own progress to progress, and what Tart and the
+	// guest's commands print to output, as they print it (#94).
+	Setup(ctx context.Context, options tart.SetupOptions, progress, output io.Writer) (tart.SetupResult, error)
 	Xcodes() (string, bool)
 	DownloadXcode(ctx context.Context, missing *tart.MissingXcode, in io.Reader, out, errs io.Writer) (string, error)
 }

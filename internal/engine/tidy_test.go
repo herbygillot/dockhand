@@ -77,6 +77,8 @@ func TestTidyCommitsAnUpdateUnambiguouslyAndRestoreUndoesIt(t *testing.T) {
 	require.Equal(t, "M textproc/jq/Portfile", testsupport.Git(t, branch.Worktree, "status", "--porcelain"), "the edit reads as uncommitted again")
 	_, _, err = e.Restore(t.Context(), "tidy-1")
 	require.ErrorContains(t, err, "already restored")
+	_, planErr := e.PlanUndo(t.Context(), "tidy-1")
+	require.EqualError(t, planErr, err.Error())
 }
 
 func TestTidySquashesCorrectionsAndKeepsTheirTrailers(t *testing.T) {
@@ -179,6 +181,8 @@ func TestTidyAsksWhatItCannotKnow(t *testing.T) {
 	commitAs(t, dir, "Ada ada@example.org", "jq: another note")
 	_, _, err = e.Restore(t.Context(), "tidy-1")
 	require.ErrorContains(t, err, "has moved on since tidy-1")
+	_, planErr := e.PlanUndo(t.Context(), "tidy-1")
+	require.EqualError(t, planErr, err.Error())
 	_, _, err = e.Restore(t.Context(), "tidy-9")
 	require.ErrorContains(t, err, "no checkpoint tidy-9")
 
@@ -234,6 +238,8 @@ func TestRestorePutsTheStagedVersionBack(t *testing.T) {
 	testsupport.Git(t, branch.Worktree, "add", "textproc/jq/Portfile")
 	_, _, err = e.Restore(t.Context(), tidied.Checkpoint.Name())
 	require.ErrorContains(t, err, "dockhand/jq-update has changes staged after "+tidied.Checkpoint.Name())
+	_, planErr := e.PlanUndo(t.Context(), tidied.Checkpoint.Name())
+	require.EqualError(t, planErr, err.Error())
 	testsupport.Git(t, branch.Worktree, "reset", "-q")
 	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# working version\n"})
 
@@ -569,6 +575,85 @@ func TestTidyFixesTheLintFindingsOnTheLinesABranchTouches(t *testing.T) {
 	require.Empty(t, testsupport.Git(t, branch.Worktree, "status", "--porcelain"))
 }
 
+func TestTidyAddsAndReportsAMissingPortfileFinalNewline(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/yq/Portfile": "name yq\nversion 4.54.1\n"})
+	testsupport.Git(t, f.upstream, "add", "-A")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "yq: new port")
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "yq-hand"})
+	require.NoError(t, err)
+	const edited = "name yq\nversion 4.54.2"
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/yq/Portfile": edited})
+
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch, Attended: true})
+	require.NoError(t, err)
+	require.Equal(t, []string{"textproc/yq/Portfile: added the final newline"}, plan.Fixed)
+	working, err := os.ReadFile(filepath.Join(branch.Worktree, "textproc/yq/Portfile"))
+	require.NoError(t, err)
+	require.Equal(t, edited, string(working), "planning reports the rewrite without writing it")
+
+	saved, err := plan.Save()
+	require.NoError(t, err)
+	loaded, err := e.LoadTidyPlan(t.Context(), saved)
+	require.NoError(t, err)
+	require.Equal(t, plan.Fixed, loaded.Fixed)
+	_, err = e.ApplyTidy(t.Context(), loaded)
+	require.NoError(t, err)
+	working, err = os.ReadFile(filepath.Join(branch.Worktree, "textproc/yq/Portfile"))
+	require.NoError(t, err)
+	require.Equal(t, edited+"\n", string(working))
+}
+
+func TestUpdateLeavesMissingPortfileFinalNewlineForTidy(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Here: true})
+	require.NoError(t, err)
+	const portfile = "textproc/jq/Portfile"
+	const before = "name jq\nversion 1.7.1"
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{portfile: before})
+
+	update, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
+	require.NoError(t, err)
+	require.Empty(t, update.Fixed)
+	const updated = modelineHead + "name jq\nversion 1.8.1"
+	require.Equal(t, updated, read(t, filepath.Join(branch.Worktree, portfile)))
+
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch, Attended: true})
+	require.NoError(t, err)
+	require.Equal(t, []string{portfile + ": added the final newline"}, plan.Fixed)
+	_, err = e.ApplyTidy(t.Context(), plan)
+	require.NoError(t, err)
+	require.Equal(t, updated+"\n", read(t, filepath.Join(branch.Worktree, portfile)))
+}
+
+func TestTidyLeavesExistingAndMultipleFinalNewlinesAlone(t *testing.T) {
+	t.Parallel()
+	for _, after := range []string{
+		"name jq\nversion 1.8.1\n",
+		"name jq\nversion 1.8.1\n\n\n",
+	} {
+		t.Run(fmt.Sprintf("%d trailing newlines", strings.Count(after[strings.LastIndex(after, "version"):], "\n")), func(t *testing.T) {
+			t.Parallel()
+			f := setup(t)
+			e, _ := f.withPreparer(t)
+			branch, err := e.Start(t.Context(), StartRequest{Name: "jq-hand", Here: true})
+			require.NoError(t, err)
+			testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": after})
+
+			plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch, Attended: true})
+			require.NoError(t, err)
+			require.Empty(t, plan.Fixed)
+			_, err = e.ApplyTidy(t.Context(), plan)
+			require.NoError(t, err)
+			require.Equal(t, after, read(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile")))
+		})
+	}
+}
+
 // The survey's other lint-shaped findings are said among tidy's findings,
 // as notices holding nothing: a file the change adds under files/ that the
 // Portfile doesn't name among them.
@@ -614,6 +699,62 @@ func TestASavedPlanWithLintFixesApplies(t *testing.T) {
 	require.NoError(t, err)
 	_, err = e.ApplyTidy(t.Context(), loaded)
 	require.NoError(t, err)
+	// What was applied is the saved plan: its subject, and the lint fix
+	// that takes the trailing spaces (#294).
+	require.Equal(t, "yq: update to 4.54.2", testsupport.Git(t, branch.Worktree, "log", "-1", "--format=%s"))
+	require.Equal(t, "name yq\nversion 4.54.2", testsupport.Git(t, branch.Worktree, "show", "HEAD:textproc/yq/Portfile"))
+}
+
+func savedPlanWithFinalNewline(t *testing.T, attended bool) (*Engine, model.Branch, []byte) {
+	t.Helper()
+	f := setup(t)
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/yq/Portfile": "name yq\nversion 4.54.1\n"})
+	testsupport.Git(t, f.upstream, "add", "-A")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "yq: new port")
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "yq-hand"})
+	require.NoError(t, err)
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/yq/Portfile": "name yq\nversion 4.54.2"})
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch, Attended: attended})
+	require.NoError(t, err)
+	data, err := plan.Save()
+	require.NoError(t, err)
+	return e, branch, data
+}
+
+func TestASavedAttendedPlanWithFinalNewlineApplies(t *testing.T) {
+	t.Parallel()
+	e, branch, data := savedPlanWithFinalNewline(t, true)
+	require.Contains(t, string(data), "attended = true")
+	loaded, err := e.LoadTidyPlan(t.Context(), data)
+	require.NoError(t, err)
+	require.Equal(t, []string{"textproc/yq/Portfile: added the final newline"}, loaded.Fixed)
+	_, err = e.ApplyTidy(t.Context(), loaded)
+	require.NoError(t, err)
+	require.Equal(t, "name yq\nversion 4.54.2\n", read(t, filepath.Join(branch.Worktree, "textproc/yq/Portfile")))
+}
+
+func TestASavedTidyPlanWithChangedAttendanceIsStale(t *testing.T) {
+	t.Parallel()
+	e, _, data := savedPlanWithFinalNewline(t, true)
+	changed := strings.Replace(string(data), "attended = true", "attended = false", 1)
+	require.NotEqual(t, string(data), changed, "the saved form records the attendance mode")
+	_, err := e.LoadTidyPlan(t.Context(), []byte(changed))
+	require.ErrorIs(t, err, ErrStalePlan)
+	require.ErrorContains(t, err, "its files were edited")
+}
+
+func TestASavedPlanWithoutAttendanceIsUnattended(t *testing.T) {
+	t.Parallel()
+	e, branch, data := savedPlanWithFinalNewline(t, false)
+	legacy := strings.Replace(string(data), "attended = false\n", "", 1)
+	require.NotEqual(t, string(data), legacy, "the saved form records false for new plans")
+	loaded, err := e.LoadTidyPlan(t.Context(), []byte(legacy))
+	require.NoError(t, err)
+	require.Empty(t, loaded.Fixed)
+	_, err = e.ApplyTidy(t.Context(), loaded)
+	require.NoError(t, err)
+	require.Equal(t, "name yq\nversion 4.54.2", read(t, filepath.Join(branch.Worktree, "textproc/yq/Portfile")))
 }
 
 // tidy --restyle restyles a misaligned Portfile whole, in one commit of
@@ -753,7 +894,7 @@ func TestTidyCommitsEachSubportsUpdate(t *testing.T) {
 			{Port: "kubectl-1.34", Subject: "kubectl-1.34: update to 1.34.13", Files: []model.EditedFile{{Path: "sysutils/kubectl/Portfile", Before: blob(base), After: blob(first)}}},
 			{Port: "kubectl-1.35", Subject: "kubectl-1.35: update to 1.35.9", Files: []model.EditedFile{{Path: "sysutils/kubectl/Portfile", Before: blob(first), After: blob(second)}}},
 		} {
-			edit.ID, edit.Branch, edit.Kind, edit.Directory, edit.At = model.EditID(fmt.Sprint("ed_", i)), branch.ID, model.EditUpdate, "sysutils/kubectl", at
+			edit.ID, edit.Branch, edit.Kind, edit.Directory, edit.At, edit.Written = model.EditID(fmt.Sprint("ed_", i)), branch.ID, model.EditUpdate, "sysutils/kubectl", at, at
 			if err := tx.AddEdit(edit); err != nil {
 				return err
 			}

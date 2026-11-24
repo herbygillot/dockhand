@@ -34,6 +34,21 @@ func (r *Repository) WithBranchLock(ctx context.Context, branch string, fn func(
 	return withLock(ctx, filepath.Join(r.CommonDir, "dockhand", "branch-locks"), strings.ToLower(branch), fn)
 }
 
+// TryBranchLock takes a branch name's lock without waiting, as a rename
+// takes the name it moves to while it holds the old one's: filelock.ErrBusy
+// where another process holds it. release lets it go (#194, "The lock, and
+// a rename").
+func (r *Repository) TryBranchLock(branch string) (release func() error, err error) {
+	if !ValidBranchName(branch) || !filepath.IsAbs(r.CommonDir) {
+		return nil, fmt.Errorf("git: branch lock requires a repository and literal branch")
+	}
+	file, err := filelock.TryAcquire(filelock.Path(filepath.Join(r.CommonDir, "dockhand", "branch-locks"), strings.ToLower(branch)))
+	if err != nil {
+		return nil, err
+	}
+	return func() error { return filelock.Release(file) }, nil
+}
+
 // withLock carries the lock file in the context so git children inherit the
 // descriptor and keep the lock if this process exits mid-operation.
 func withLock(ctx context.Context, directory, key string, fn func(context.Context) error) error {

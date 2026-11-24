@@ -13,7 +13,8 @@ import (
 // links couldn't be read, so nothing is said of them: never that it links
 // nothing; or, where Clean, a target whose links were read and each
 // declared, so the scan is seen to have run (field testing's crystal
-// 1.22.1, after rc3). A notice; it holds nothing.
+// 1.22.1, after rc3). A notice; it holds nothing. Unowned names a library
+// with no active port owner.
 type LinkFinding struct {
 	Target model.TargetID
 	// Port is the port the target links and doesn't declare; Library and
@@ -47,6 +48,8 @@ type LinkFinding struct {
 	// pkg-config modules name its library: gnome-voice links cairo through
 	// gtk4's Libs, gtk4 requiring cairo (gnome-voice's note 9).
 	Through *LinkThrough
+	// Unowned means the linked library has no active port owner.
+	Unowned bool
 }
 
 // LinkThrough is the declared port whose pkg-config brought a library in,
@@ -100,9 +103,11 @@ func UndeclaredLinks(builds []LinkedBuild) []LinkFinding {
 	}
 	found := map[key]*LinkFinding{}
 	libraries := map[key]map[string]bool{}
+	unowned := map[string]LinkFinding{}
 	read, passed := map[model.TargetID]bool{}, map[model.TargetID]bool{}
 	reasons := map[model.TargetID]string{}
 	linked := map[model.TargetID]map[string]bool{}
+	unownedTargets := map[model.TargetID]bool{}
 	for _, build := range builds {
 		result := build.Result
 		if result.Outcome != model.OutcomePassed {
@@ -125,8 +130,19 @@ func UndeclaredLinks(builds []LinkedBuild) []LinkFinding {
 			}
 			// A port a path: dependency reaches through its links is
 			// declared by it, as curl's path:lib/libssl.dylib:openssl
-			// declares openssl3.
-			if link.Port == "" || link.Declared != "" || slices.ContainsFunc(build.Declared, func(name string) bool { return strings.EqualFold(name, link.Port) }) {
+			// declares openssl3, whatever owner came back for it, none
+			// included.
+			if link.Declared != "" {
+				continue
+			}
+			if link.Port == "" {
+				k := string(result.Target) + "\x00" + strings.ToLower(link.Library)
+				unowned[k] = LinkFinding{Target: result.Target, Library: link.Library, Binary: link.Binary, Unowned: true}
+				unownedTargets[result.Target] = true
+				continue
+			}
+			declared := slices.ContainsFunc(build.Declared, func(name string) bool { return strings.EqualFold(name, link.Port) })
+			if declared {
 				continue
 			}
 			k := key{result.Target, strings.ToLower(link.Port)}
@@ -147,6 +163,12 @@ func UndeclaredLinks(builds []LinkedBuild) []LinkFinding {
 		finding.Through = through(builds, finding.Target, finding.Library, finding.Environments)
 		findings = append(findings, *finding)
 		undeclared[k.target] = true
+	}
+	for _, finding := range unowned {
+		findings = append(findings, finding)
+	}
+	for target := range unownedTargets {
+		undeclared[target] = true
 	}
 	findings = append(findings, unlinked(builds)...)
 	for target := range passed {
@@ -169,7 +191,13 @@ func UndeclaredLinks(builds []LinkedBuild) []LinkFinding {
 			}
 			return -1
 		}
-		return strings.Compare(strings.ToLower(a.Port), strings.ToLower(b.Port))
+		if c := strings.Compare(strings.ToLower(a.Port), strings.ToLower(b.Port)); c != 0 {
+			return c
+		}
+		if c := strings.Compare(strings.ToLower(a.Library), strings.ToLower(b.Library)); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Binary, b.Binary)
 	})
 	return findings
 }

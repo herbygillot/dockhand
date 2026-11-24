@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/prdescription"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/store"
 )
 
 // The pull request's description is prdescription's (the architecture
@@ -36,6 +38,9 @@ type bodyFacts struct {
 	Commits  []git.HistoryCommit
 	Evidence *Evidence
 	NoCheck  bool
+	// EarlierPass is, with NoCheck, the branch's last passing check of an
+	// earlier commit, in words (earlierPass).
+	EarlierPass string
 	// Accepted are the failed ports accepted, each with why
 	// (SubmitPlan.Accepted).
 	Accepted map[string]AcceptedFailure
@@ -162,6 +167,7 @@ func (facts bodyFacts) description() prdescription.Facts {
 	case facts.NoCheck:
 		described.TestedOn.NoCheck = true
 		described.TestedOn.CIReleases = prose.And(facts.CIReleases)
+		described.TestedOn.EarlierPass = facts.EarlierPass
 	case evidence == nil:
 		described.TestedOn.Pending = true
 		described.TestedOn.CIReleases = prose.And(facts.CIReleases)
@@ -375,4 +381,35 @@ func VariantsWords(builds []VariantBuild, each bool) string {
 		words += ", in " + prose.And(checks)
 	}
 	return words
+}
+
+// earlierPass is a no-check submission's word on the branch's last check
+// that passed on an earlier commit: its name and commit, and the files
+// changed since, so a reviewer sees how near the submitted files are to
+// ones that passed (#246). Empty where no such check stands, or it was of
+// these same files.
+func (e *Engine) earlierPass(ctx context.Context, branch model.BranchID, tree model.ObjectID) string {
+	var run model.Run
+	var revision model.Revision
+	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		runs, err := r.Runs(store.RunFilter{Branch: branch, States: []model.RunState{model.RunPassed}, NoBaselines: true, Limit: 1})
+		if err != nil || len(runs) == 0 {
+			return err
+		}
+		run = runs[0]
+		revision, err = r.Revision(run.Revision)
+		return err
+	})
+	if err != nil || run.ID == "" || revision.Source.Tree == "" || revision.Source.Tree == tree {
+		return ""
+	}
+	changed, err := e.Repo.ChangedPaths(ctx, string(revision.Source.Tree), string(tree))
+	if err != nil || len(changed) == 0 {
+		return ""
+	}
+	files := changed
+	if len(files) > 5 {
+		files = append(slices.Clone(changed[:4]), fmt.Sprintf("%d more files", len(changed)-4))
+	}
+	return fmt.Sprintf("%s passed for %s; since then %s changed, which no check here covers", run.Name(), revision.Source.Commit.Short(), prose.And(files))
 }

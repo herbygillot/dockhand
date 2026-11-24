@@ -134,10 +134,12 @@ type portUpstreamJSON struct {
 }
 
 type upstreamChangeJSON struct {
-	Kind    string `json:"kind"`
-	Path    string `json:"path"`
-	Message string `json:"message"`
-	Hold    bool   `json:"hold"`
+	Kind     string `json:"kind"`
+	Path     string `json:"path"`
+	Message  string `json:"message"`
+	Hold     bool   `json:"hold"`
+	Accepted string `json:"accepted,omitempty"`
+	Allowed  bool   `json:"allowed,omitempty"`
 	// Rule, with the source, path, and subject, is what identifies it;
 	// class is how the candidate stands against its base on it. Source is
 	// the archive it was found in, where the port fetches more than one.
@@ -425,7 +427,7 @@ type SubmittedJSON struct {
 	// (submit.rerequest_review).
 	ChangesRequestedBy []ChangesRequestedJSON `json:"changes_requested_by"`
 	// Pending are the steps the submission still owes when it returns,
-	// each with why (docs/designs/publication-record.md).
+	// each with why (docs/designs/publication-record.md at 0e0ad767).
 	Pending []PendingJSON `json:"pending"`
 }
 
@@ -451,8 +453,21 @@ func SubmitView(plan engine.SubmitPlan) submitJSON {
 		Account: plan.Login.Account, LoginSource: plan.Login.Source, ForkOwner: owner,
 		Push: PushWords(plan), Checks: CheckWords(plan), ChecksProblem: checksProblem(plan), Findings: findingsView(plan.Findings), Blocking: NonNil(plan.Blocking), LeftOut: NonNil(plan.LeftOut), ChangedPatches: NonNil(plan.ChangedPatches), Body: plan.Body,
 		Upstream: []portUpstreamJSON{}, ModifiedBuilds: NonNil(plan.ModifiedBuilds), UnfoundBuilds: []unfoundBuildJSON{}, BuildsProblem: plan.BuildsProblem}
-	for _, found := range plan.Upstream {
-		viewed.Upstream = append(viewed.Upstream, portUpstreamJSON{Port: found.Port, upstreamJSON: UpstreamView(found.Comparison)})
+	for _, preview := range plan.PreviewUpstream() {
+		comparison := model.UpstreamComparison{Problem: preview.Problem, Coverage: preview.Coverage}
+		var accepted []string
+		var allowed []bool
+		for _, finding := range preview.Changes {
+			comparison.Changes = append(comparison.Changes, finding.Change)
+			accepted = append(accepted, finding.Accepted)
+			allowed = append(allowed, finding.Allowed)
+		}
+		upstream := UpstreamView(comparison)
+		for i := range upstream.Changes {
+			upstream.Changes[i].Accepted = accepted[i]
+			upstream.Changes[i].Allowed = allowed[i]
+		}
+		viewed.Upstream = append(viewed.Upstream, portUpstreamJSON{Port: preview.Port, upstreamJSON: upstream})
 	}
 	for _, build := range plan.UnfoundBuilds {
 		viewed.UnfoundBuilds = append(viewed.UnfoundBuilds, unfoundBuildJSON{Build: build.Build, Commits: build.Commits, Commit: build.Source.Commit, Release: build.Source.Release})
@@ -525,6 +540,9 @@ func LeftoversView(leftovers []engine.Leftover) []leftoverJSON {
 	views := []leftoverJSON{}
 	for _, leftover := range leftovers {
 		viewed := leftoverJSON{Provider: leftover.Provider, Ref: leftover.Ref, What: leftover.What, Kept: leftover.Kept, Removed: leftover.Done}
+		if viewed.Kept == "" && leftover.Spared {
+			viewed.Kept = leftover.SparedReason()
+		}
 		if leftover.Run != nil {
 			viewed.Check = leftover.Run.Name()
 		}
@@ -832,6 +850,25 @@ func OutdatedView(report engine.OutdatedReport) map[string]any {
 
 // SkippedJSON is a port a batch left alone, and why: an update already in
 // a branch, one it couldn't check, or one held for a look.
+// ShipPlanJSON is one target of ship's plan: what it is, how far it goes
+// and whether that stage was kept, the release it goes on with where one
+// is kept or named, and each fact not resolved now with when it is.
+type ShipPlanJSON struct {
+	Target     string           `json:"target"`
+	From       string           `json:"from"`
+	Stage      string           `json:"stage"`
+	StageKept  bool             `json:"stage_kept"`
+	Release    string           `json:"release,omitempty"`
+	Unresolved []UnresolvedJSON `json:"unresolved"`
+}
+
+// UnresolvedJSON is a fact a request carries as asked, and when it is
+// resolved.
+type UnresolvedJSON struct {
+	What string `json:"what"`
+	When string `json:"when"`
+}
+
 type SkippedJSON struct {
 	Port   string `json:"port"`
 	Reason string `json:"reason"`
@@ -844,6 +881,9 @@ type SkippedJSON struct {
 type BatchJSON struct {
 	Changes []updateJSON  `json:"changes"`
 	Skipped []SkippedJSON `json:"skipped"`
+	// Plan is ship's and bump's plan, a row each target, as the prose
+	// plan says it (#195, "ship --plan").
+	Plan []ShipPlanJSON `json:"plan,omitempty"`
 	// at is the change being gathered, whose steps follow it.
 	at *updateJSON
 }
@@ -866,6 +906,10 @@ func (b *BatchJSON) Gather(step any) {
 		b.Skipped = append(b.Skipped, skipped...)
 		return
 	}
+	if plan, ok := step.([]ShipPlanJSON); ok {
+		b.Plan = plan
+		return
+	}
 	if b.at == nil {
 		b.Next()
 	}
@@ -874,7 +918,7 @@ func (b *BatchJSON) Gather(step any) {
 
 func (b *BatchJSON) Result() any {
 	changes := slices.DeleteFunc(slices.Clone(b.Changes), func(change updateJSON) bool { return reflect.ValueOf(change).IsZero() })
-	return BatchJSON{Changes: append([]updateJSON{}, changes...), Skipped: append([]SkippedJSON{}, b.Skipped...)}
+	return BatchJSON{Changes: append([]updateJSON{}, changes...), Skipped: append([]SkippedJSON{}, b.Skipped...), Plan: b.Plan}
 }
 
 // plainHTTPJSON is a URL a port names over plain HTTP, its https form, and

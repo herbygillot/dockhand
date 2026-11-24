@@ -28,6 +28,9 @@ import (
 // TidyRequest asks what a branch's commits should be (Design v3 §8).
 type TidyRequest struct {
 	Branch model.Branch
+	// Attended is a tidy plan made while a person is present, as the
+	// command's terminal stream says.
+	Attended bool
 	// Squash makes one commit of the whole branch, with Message.
 	Squash  bool
 	Message string
@@ -112,6 +115,10 @@ func (g *TidyGroup) needsSubject(why string) {
 // branch head and working files it was made from.
 type TidyPlan struct {
 	Branch model.Branch
+	// Attended is a tidy a person runs at a terminal, who takes as their
+	// own the files of an edit recorded before them that changed since
+	// (#194, "Settling").
+	Attended bool
 	// Base and Head are commits; Final is the tree the series ends at,
 	// the working files as they were captured, and BaseTree the base's.
 	Base, Head, Final, BaseTree string
@@ -138,9 +145,9 @@ type TidyPlan struct {
 	// them (tidyWorkingFiles).
 	Taken, LeftOut, Ignored []string
 	// Fixed are the lint findings the plan fixes on the lines the branch
-	// adds or alters, as dockhand's own edits, each with its Portfile
-	// (tidyWorkingFiles); applying commits them and writes them into the
-	// working files.
+	// adds or alters, and the final newline an attended tidy adds, each
+	// with its Portfile (tidyWorkingFiles); applying commits them and
+	// writes them into the working files.
 	Fixed []string
 	// Declare is the commit after the groups that declares what the
 	// branch's passed check found its builds link and not declare
@@ -295,12 +302,12 @@ func (e *Engine) planTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 	if err != nil {
 		return TidyPlan{}, err
 	}
-	files, err := tidyWorkingFiles(ctx, worktree, trees[base], final)
+	files, err := tidyWorkingFiles(ctx, worktree, trees[base], final, request.Attended)
 	if err != nil {
 		return TidyPlan{}, err
 	}
 	final = files.final
-	plan := TidyPlan{Branch: branch, Base: base, Head: head, Final: final, BaseTree: trees[base], History: history, Index: index,
+	plan := TidyPlan{Branch: branch, Attended: request.Attended, Base: base, Head: head, Final: final, BaseTree: trees[base], History: history, Index: index,
 		Taken: files.taken, LeftOut: files.leftOut, Ignored: files.ignored, Fixed: files.words}
 	changed, err := worktree.ChangedPaths(ctx, trees[base], final)
 	if err != nil {
@@ -762,7 +769,7 @@ type tidyFiles struct {
 // said; a named file Git ignores is left out as git add leaves it. The
 // plan and its application each make it, so a file added or removed
 // between them makes the plan stale.
-func tidyWorkingFiles(ctx context.Context, worktree *git.Repository, baseTree, final string) (tidyFiles, error) {
+func tidyWorkingFiles(ctx context.Context, worktree *git.Repository, baseTree, final string, attended bool) (tidyFiles, error) {
 	files := tidyFiles{final: final}
 	changed, err := worktree.ChangedPaths(ctx, baseTree, final)
 	if err != nil {
@@ -806,7 +813,7 @@ func tidyWorkingFiles(ctx context.Context, worktree *git.Repository, baseTree, f
 			return tidyFiles{}, err
 		}
 	}
-	return files, tidyLintFixes(ctx, worktree, baseTree, &files)
+	return files, tidyLintFixes(ctx, worktree, baseTree, &files, attended)
 }
 
 // tidyLintFixes fixes, in each Portfile the branch changes, the lint
@@ -814,13 +821,56 @@ func tidyWorkingFiles(ctx context.Context, worktree *git.Repository, baseTree, f
 // since its base, as dockhand's own edits (lintFixes): a hand edit's
 // trailing spaces and swallowing \ are committed fixed, their untouched
 // neighbours as they were.
-func tidyLintFixes(ctx context.Context, worktree *git.Repository, baseTree string, files *tidyFiles) error {
+func tidyLintFixes(ctx context.Context, worktree *git.Repository, baseTree string, files *tidyFiles, attended bool) error {
 	var err error
-	if files.fixed, files.words, err = lintFixes(ctx, worktree, baseTree, files.final); err != nil || len(files.fixed) == 0 {
+	if files.fixed, files.words, err = lintFixes(ctx, worktree, baseTree, files.final); err != nil {
 		return err
 	}
-	files.final, err = worktree.EditTree(ctx, files.final, files.fixed)
-	return err
+	if len(files.fixed) > 0 {
+		files.final, err = worktree.EditTree(ctx, files.final, files.fixed)
+		if err != nil {
+			return err
+		}
+	}
+	if attended {
+		newlines, words, err := tidyFinalNewlineFixes(ctx, worktree, baseTree, files.final)
+		if err != nil {
+			return err
+		}
+		files.fixed = append(files.fixed, newlines...)
+		files.words = append(files.words, words...)
+		if len(newlines) > 0 {
+			files.final, err = worktree.EditTree(ctx, files.final, newlines)
+		}
+		return err
+	}
+	return nil
+}
+
+// tidyFinalNewlineFixes adds a missing final newline to each changed
+// Portfile tidy will commit, as tidy's own rewrite and report.
+func tidyFinalNewlineFixes(ctx context.Context, worktree *git.Repository, baseTree, tree string) ([]git.FileEdit, []string, error) {
+	changed, err := worktree.ChangedPaths(ctx, baseTree, tree)
+	if err != nil {
+		return nil, nil, err
+	}
+	var edits []git.FileEdit
+	var words []string
+	for _, name := range changed {
+		if path.Base(name) != "Portfile" {
+			continue
+		}
+		state, data, err := worktree.File(ctx, tree, name)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !state.Exists || len(data) == 0 || data[len(data)-1] == '\n' {
+			continue
+		}
+		edits = append(edits, git.FileEdit{Path: name, Before: state, After: append(data, '\n'), Mode: state.Mode})
+		words = append(words, name+": added the final newline")
+	}
+	return edits, words, nil
 }
 
 // lintFixes are the fixes, as edits of tree's files, of the lint findings
@@ -1063,6 +1113,30 @@ func standingSubject(ctx context.Context, repo *git.Repository, final, directory
 	return chainSubject(mine), nil
 }
 
+// treeFile is a file's blob and mode in a tree.
+type treeFile struct {
+	blob model.ObjectID
+	mode string
+}
+
+// plainFileMode is Git's mode for a plain file.
+const plainFileMode = "100644"
+
+// filesWithModes are paths' blobs and modes in tree; a path it lacks is absent.
+func filesWithModes(ctx context.Context, repo *git.Repository, tree string, paths []string) (map[string]treeFile, error) {
+	files := map[string]treeFile{}
+	for _, path := range paths {
+		file, _, err := repo.File(ctx, tree, path)
+		if err != nil {
+			return nil, err
+		}
+		if file.Exists {
+			files[path] = treeFile{blob: model.ObjectID(file.Blob), mode: fmt.Sprintf("%o", file.Mode)}
+		}
+	}
+	return files, nil
+}
+
 // createdPort is the subject of a port this branch's create wrote, where
 // its directory is one create recorded writing and its Portfile isn't in
 // the base: a new port, whoever has edited it since.
@@ -1101,30 +1175,40 @@ func fromEdits(ctx context.Context, repo *git.Repository, baseTree, final, direc
 			return false, "", nil
 		}
 	}
-	state, err := repo.FileBlobs(ctx, baseTree, touched)
+	// The chain carries each file's mode with its blob, so a person's
+	// change of a mode breaks it as a change of content does (#194). A
+	// file an edit from before modes were kept wrote keeps the mode it
+	// had, or a plain file's where it had none.
+	state, err := filesWithModes(ctx, repo, baseTree, touched)
 	if err != nil {
 		return false, "", err
 	}
 	for _, edit := range mine {
 		for _, file := range edit.Files {
-			if model.ObjectID(state[file.Path]) != file.Before {
+			if was := state[file.Path]; was.blob != file.Before || file.BeforeMode != "" && was.mode != file.BeforeMode {
 				return false, "", nil
 			}
 		}
 		for _, file := range edit.Files {
 			if file.After == "" {
 				delete(state, file.Path)
-			} else {
-				state[file.Path] = string(file.After)
+				continue
 			}
+			mode := file.AfterMode
+			if mode == "" {
+				if mode = state[file.Path].mode; mode == "" {
+					mode = plainFileMode
+				}
+			}
+			state[file.Path] = treeFile{blob: file.After, mode: mode}
 		}
 	}
-	finalBlobs, err := repo.FileBlobs(ctx, final, touched)
+	head, err := filesWithModes(ctx, repo, final, touched)
 	if err != nil {
 		return false, "", err
 	}
 	for _, path := range touched {
-		if state[path] != finalBlobs[path] {
+		if state[path] != head[path] {
 			return false, "", nil
 		}
 	}
@@ -1463,6 +1547,12 @@ func (e *Engine) ApplyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 	if blocking := plan.Blocking(); len(blocking) > 0 {
 		return TidyResult{}, fmt.Errorf("the plan can't be applied yet: %s", strings.Join(blocking, "; "))
 	}
+	// Nothing commits past an action the branch's request refused, whoever
+	// is there: the commit is where every path to a check goes through
+	// (#195, "Readiness").
+	if err := e.refusedGate(ctx, plan.Branch); err != nil {
+		return TidyResult{}, err
+	}
 	var result TidyResult
 	err := e.history().With(ctx, plan.Branch, func(ctx context.Context) error {
 		var err error
@@ -1475,6 +1565,33 @@ func (e *Engine) ApplyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 // applyTidy makes a tidy's commits and moves the branch to them, holding
 // the branch's history lock (withHistory).
 func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, error) {
+	// The branch's unwritten edits are settled first, under the lock this
+	// holds: one whose files changed since stops the tidy, but a person's
+	// at a terminal, which commits them as theirs and removes the edit.
+	settler := SettlerOther
+	if plan.Attended {
+		settler = SettlerTidyAttended
+	}
+	settled, err := e.settleUnwritten(ctx, plan.Branch, SettlerFor(settler))
+	if err != nil {
+		return TidyResult{}, err
+	}
+	result, err := e.commitTidy(ctx, plan)
+	if err != nil {
+		return result, err
+	}
+	for _, done := range settled {
+		if done.Settling.Action == SettleTheirs {
+			if err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error { return tx.RemoveUnwritten(done.Edit.ID) }); err != nil {
+				return result, err
+			}
+		}
+	}
+	return result, nil
+}
+
+// commitTidy makes the plan's commits, its branch's edits settled.
+func (e *Engine) commitTidy(ctx context.Context, plan TidyPlan) (TidyResult, error) {
 	worktree, err := e.worktree(ctx, plan.Branch)
 	if err != nil {
 		return TidyResult{}, err
@@ -1487,7 +1604,7 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 	if err != nil {
 		return TidyResult{}, err
 	}
-	files, err := tidyWorkingFiles(ctx, worktree, trees[plan.Base], final)
+	files, err := tidyWorkingFiles(ctx, worktree, trees[plan.Base], final, plan.Attended)
 	if err != nil {
 		return TidyResult{}, err
 	}

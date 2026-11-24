@@ -3,6 +3,7 @@ package progress_test
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -144,4 +145,39 @@ func TestAfterSaysASlowStepOnce(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	require.Equal(t, []string{"Waiting for the cache"}, said)
+}
+
+// A delayed report whose time came is finished before stop returns, and
+// none is made after: a command whose step ended printed its slow-step
+// line after it returned, as the race run caught fetchMaster's (#295).
+func TestADelayedReportIsDoneWhenStopReturns(t *testing.T) {
+	t.Parallel()
+	entered, release := make(chan struct{}), make(chan struct{})
+	var reports atomic.Int32
+	ctx := progress.WithReporter(t.Context(), func(progress.Update) {
+		if reports.Add(1) == 1 {
+			close(entered)
+			<-release
+		}
+	})
+	stop := progress.After(ctx, time.Millisecond, "waiting")
+	<-entered
+	stopped := make(chan struct{})
+	go func() {
+		stop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+		t.Fatal("stop returned while the report was being made")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	<-stopped
+	stop()
+	require.Equal(t, int32(1), reports.Load())
+
+	quiet := progress.VerboseAfter(progress.WithReporter(t.Context(), func(progress.Update) { reports.Add(1) }), time.Hour, "never")
+	quiet()
+	require.Equal(t, int32(1), reports.Load(), "a report stopped before its time is never made")
 }

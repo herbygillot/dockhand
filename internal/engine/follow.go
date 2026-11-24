@@ -178,7 +178,7 @@ func (e *Engine) RefreshPullRequests(ctx context.Context) (RefreshResult, error)
 // provenance, is of a pull request GitHub names another author of than the
 // account dockhand acts as: each becomes found at this read. The author is
 // only ever used to withdraw Made, never to state it (docs/designs/
-// publication-record.md, "Existing databases and branches"). The login is
+// publication-record.md at 0e0ad767, "Existing databases and branches"). The login is
 // asked for only where such a record was read.
 func (e *Engine) othersPullRequests(ctx context.Context, observed []observedPullRequest) map[model.BranchID]bool {
 	others := map[model.BranchID]bool{}
