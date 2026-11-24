@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"syscall"
 	"time"
@@ -187,7 +188,14 @@ func (l *Local) putBackStopped(ctx context.Context, dir string, made owner) []st
 	defer file.Close()
 	restoring, cancelRestore := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancelRestore()
-	if err := l.restore(restoring, dir, made.Prefix, made.Check, nil); err != nil {
+	// A prefix changed as root is put back as root, under sudo -n, never a
+	// prompt: where sudo would ask, the put-back fails and says how to do
+	// it by hand (the lifecycle design's "Local and Script").
+	var sudo []string
+	if made.Root {
+		sudo = append(slices.Clone(l.sudoCommand()), "-n")
+	}
+	if err := l.restore(restoring, dir, made.Prefix, made.Check, sudo); err != nil {
 		return []string{fmt.Sprintf("%s, which %s changed and couldn't put back: %v; dockhand undo %s, or the next check in it, tries again. %s", made.Prefix, made.Check, err, made.Check, l.byHand(dir, made.Check, snapshot))}
 	}
 	_ = os.RemoveAll(dir)

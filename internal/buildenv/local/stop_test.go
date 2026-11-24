@@ -152,3 +152,67 @@ func TestARootStopNotSeenSaysHowToStopItByHand(t *testing.T) {
 	err := (&Local{}).rootStopUnseen(dir, made, errors.New("its starter, PID 4321, was asked to stop, and its launch lock is still held"))
 	require.EqualError(t, err, "check-12 builds in /opt/local as root, and it was asked to stop but wasn't seen to end: its starter, PID 4321, was asked to stop, and its launch lock is still held; stop it by hand, sudo kill -TERM -4321, then dockhand cancel check-12 asks again")
 }
+
+// A root build stopped under a proved sudo is put back as root, under
+// sudo -n; where sudo would ask, it's ended with the prefix left, its
+// snapshot kept, and the words say how to put it back by hand (the
+// lifecycle design's "Local and Script": a put-back as root needs sudo).
+func TestARootPutBackWhereSudoWouldAskSaysHowByHand(t *testing.T) {
+	t.Parallel()
+	sudo := filepath.Join(t.TempDir(), "sudo")
+	asked := filepath.Join(t.TempDir(), "asked")
+	input := filepath.Join(t.TempDir(), "input")
+	testsupport.WriteExecutable(t, sudo, "#!/bin/sh\necho \"$*\" >> "+asked+"\necho \"$(/usr/bin/stat -f %r) $(/usr/bin/stat -f %r /dev/null)\" > "+input+"\necho 'sudo: a password is required' >&2\nexit 1\n")
+	prefix := t.TempDir()
+	l := &Local{Temp: t.TempDir(), Locks: filepath.Join(t.TempDir(), "locks"), Proofs: t.TempDir(), sudo: []string{sudo}}
+	keepRootProof(t, l, sudo, true)
+	dir := t.TempDir()
+	owned, err := json.Marshal(owner{PID: 1, Check: "check-12", Prefix: prefix, Root: true, RootStop: true})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "owner.json"), owned, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "input.json"), []byte(`{"local":{"note":"dockhand check-12 attempt 1"}}`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "results.json"), []byte(`{"state":"running","environment":{"snapshot":"snap-1"}}`), 0o644))
+	request := buildenv.StopRequest{Execution: model.GuestExecution{Attempt: 1, Launch: `{"directory":"` + dir + `"}`}, Lock: pathLock(filepath.Join(t.TempDir(), "attempt.lock"))}
+	left, err := l.Stop(t.Context(), request)
+	require.NoError(t, err, "the build ended")
+	require.Len(t, left, 1)
+	require.Contains(t, left[0], "sudo port restore --snapshot-id snap-1")
+	said, err := os.ReadFile(asked)
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(string(said), "-n "), "root was asked under sudo -n, never a prompt: %s", said)
+	devices, err := os.ReadFile(input)
+	require.NoError(t, err)
+	both := strings.Fields(string(devices))
+	require.Len(t, both, 2)
+	require.Equal(t, both[1], both[0], "the put-back's guest is given /dev/null, and makes no check of it")
+	_, err = os.Stat(dir)
+	require.NoError(t, err, "the directory, its snapshot named, stays for undo")
+}
+
+// A stopped check whose prefix another check holds is ended with the
+// prefix left: the put-back isn't run beside that check, nor assumed of
+// it, and the words say the next check there, or undo, puts it back.
+func TestAStopWhosePrefixAnotherCheckHoldsLeavesIt(t *testing.T) {
+	t.Parallel()
+	prefix := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(prefix, "var", "macports", "registry"), 0o755))
+	l := &Local{Temp: t.TempDir(), Locks: filepath.Join(t.TempDir(), "locks")}
+	canonical, err := filepath.EvalSymlinks(prefix)
+	require.NoError(t, err)
+	held, err := filelock.AcquireAcrossUsers(t.Context(), filelock.Path(l.Locks, "prefix:"+canonical))
+	require.NoError(t, err)
+	defer held.Close()
+	dir := t.TempDir()
+	owned, err := json.Marshal(owner{PID: 1, Check: "check-12", Prefix: prefix})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "owner.json"), owned, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "results.json"), []byte(`{"state":"running","environment":{"snapshot":"snap-1"}}`), 0o644))
+	request := buildenv.StopRequest{Execution: model.GuestExecution{Attempt: 1, Launch: `{"directory":"` + dir + `"}`}, Lock: pathLock(filepath.Join(t.TempDir(), "attempt.lock"))}
+	left, err := l.Stop(t.Context(), request)
+	require.NoError(t, err, "the build ended")
+	require.Len(t, left, 1)
+	require.Contains(t, left[0], "which check-12 changed, held now by")
+	require.Contains(t, left[0], "the next check in it puts it back before it builds, or dockhand undo check-12")
+	_, err = os.Stat(dir)
+	require.NoError(t, err, "its directory stays for the next check")
+}
