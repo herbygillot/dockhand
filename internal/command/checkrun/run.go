@@ -607,6 +607,9 @@ func writeFailureLines(out, raw io.Writer, evidence engine.Evidence) {
 			// A cause a reading of its log found is said in one line,
 			// where the row said only the phase (the openssl4 session's
 			// note 6: sslscan's compiler error, found and unsaid).
+			// The cause is quoted in dockhand's own sentence, so it wraps
+			// with it, as a path named in one does; payload is what comes
+			// as lines of its own, the last output below, written raw (#94).
 			if cell := target.Outcomes[i]; cell.Kind == engine.CellRecorded && cell.Outcome == model.OutcomeFailed {
 				if _, cause, found := strings.Cut(cell.Detail, checks.FromItsLog); found && cause != "" {
 					fmt.Fprintf(out, "%s failed%s: %s\n\n", target.Target.ID, where, cause)
