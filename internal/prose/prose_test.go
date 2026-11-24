@@ -17,6 +17,12 @@ func TestPlural(t *testing.T) {
 	}
 }
 
+func TestCutCountsCharactersAndKeepsUTF8(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "aé...", Cut("aé界bc", 2))
+	require.Equal(t, "short", Cut("short", 5))
+}
+
 // Sizes are SI, as Finder and df -H count them (the library survey's
 // finding, the person's choice of 2026-10-02).
 func TestBytes(t *testing.T) {

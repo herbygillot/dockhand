@@ -139,6 +139,16 @@ func FirstLine(text string) string {
 	return line
 }
 
+// Cut returns text up to characters Unicode code points, adding an
+// ellipsis where it was shortened.
+func Cut(text string, characters int) string {
+	runes := []rune(text)
+	if characters < 0 || len(runes) <= characters {
+		return text
+	}
+	return string(runes[:characters]) + "..."
+}
+
 // Wrap breaks text into lines of at most width runes, between words.
 func Wrap(text string, width int) string {
 	var lines []string

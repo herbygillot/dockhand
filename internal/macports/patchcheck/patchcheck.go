@@ -17,9 +17,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/herbygillot/dockhand/internal/archive"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/subprocess"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
@@ -726,8 +728,8 @@ func describe(output []byte) string {
 		return "does not apply"
 	}
 	detail := strings.Join(lines, "; ")
-	if len(detail) > 300 {
-		detail = detail[:297] + "..."
+	if utf8.RuneCountInString(detail) > 300 {
+		return prose.Cut(detail, 297)
 	}
 	return detail
 }
