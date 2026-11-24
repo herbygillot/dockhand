@@ -154,7 +154,7 @@ commits, and its files are as they were when it was saved.`,
 				view.WriteFindings(out, proposal)
 				return nil
 			}
-			view.WriteTidyPlan(out, proposal, false)
+			view.WriteTidyPlan(out, streams.Out, proposal, false)
 			if plan {
 				if saveTo == "" {
 					return nil
@@ -207,7 +207,7 @@ func applySaved(ctx context.Context, e *engine.Engine, streams term.Streams, fil
 	}
 	streams.Emit(view.TidyView(proposal))
 	fmt.Fprintf(streams.Prose(), "%s · the plan saved in %s\n", proposal.Branch.ShortName(), file)
-	view.WriteTidyPlan(streams.Prose(), proposal, true)
+	view.WriteTidyPlan(streams.Prose(), streams.Out, proposal, true)
 	if blocking := proposal.Blocking(); len(blocking) > 0 {
 		return fmt.Errorf("the plan can't be applied yet: %s", strings.Join(blocking, "; "))
 	}

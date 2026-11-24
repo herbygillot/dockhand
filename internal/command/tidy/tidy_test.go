@@ -316,3 +316,37 @@ func TestTidysReviewDiffIsNotWrapped(t *testing.T) {
 	_ = cmdtest.RunFor(t, t.Context(), []string{"tidy"}, term.Streams{In: strings.NewReader("d\nq\n"), Out: &out, Err: &errs}.AsTerminal())
 	require.Contains(t, out.String(), "+"+long+"\n")
 }
+
+// A commit's body and trailers are the person's text, payload, whole at
+// any width: a saved plan's body and a proposal's kept trailer came back
+// wrapped, written through Prose (#94, Codex's read).
+func TestAPlansBodyAndTrailersAreWholeAtANarrowWidth(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	testsupport.Git(t, w.Clone, "switch", "-q", "-c", "harbor")
+	trailer := "Co-authored-by: Someone With A Long Name <someone.with.a.long.name@example.org>"
+	require.NoError(t, os.WriteFile(filepath.Join(w.Clone, "textproc/jq/Portfile"), []byte("name jq\n# harbor\n"), 0o644))
+	testsupport.Git(t, w.Clone, "commit", "-q", "-am", "jq: note harbor\n\n"+trailer)
+	require.NoError(t, os.WriteFile(filepath.Join(w.Clone, "textproc/jq/Portfile"), []byte("name jq\n# harbor, again\n"), 0o644))
+	testsupport.Git(t, w.Clone, "commit", "-q", "-am", "oops")
+	_, _, err := cmdtest.Dockhand(t, "adopt")
+	require.NoError(t, err)
+	cmdtest.Setenv(t, "COLUMNS", "20")
+
+	out, _, err := cmdtest.Dockhand(t, "tidy", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "keeps: "+trailer+"\n", "a proposal's trailer, whole")
+
+	file := filepath.Join(t.TempDir(), "plan.toml")
+	_, _, err = cmdtest.Dockhand(t, "tidy", "--plan", "--out", file)
+	require.NoError(t, err)
+	saved, err := os.ReadFile(file)
+	require.NoError(t, err)
+	body := "A body line of the person's own that runs well past twenty columns."
+	edited := strings.Replace(string(saved), "message = '''\njq: note harbor\n", "message = '''\njq: note harbor\n\n"+body+"\n", 1)
+	require.NotEqual(t, string(saved), edited)
+	require.NoError(t, os.WriteFile(file, []byte(edited), 0o644))
+	out, _, err = cmdtest.Dockhand(t, "tidy", "--apply", file)
+	require.NoError(t, err)
+	require.Contains(t, out, "         "+body+"\n", "a saved plan's body, whole")
+}

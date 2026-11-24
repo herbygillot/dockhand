@@ -58,12 +58,12 @@ func Decide(ctx context.Context, e *engine.Engine, streams term.Streams, proposa
 				continue
 			}
 			proposal = regrouped
-			view.WriteTidyPlan(out, proposal, false)
+			view.WriteTidyPlan(out, streams.Out, proposal, false)
 		case "e":
 			if err := editSubjects(streams, &proposal); err != nil {
 				return false, err
 			}
-			view.WriteTidyPlan(out, proposal, false)
+			view.WriteTidyPlan(out, streams.Out, proposal, false)
 		case "a":
 			if blocking := proposal.Blocking(); len(blocking) > 0 {
 				fmt.Fprintf(streams.Err, "Can't apply this plan: %s\n", strings.Join(blocking, "; "))
@@ -157,7 +157,7 @@ func Stage(ctx context.Context, e *engine.Engine, streams term.Streams, branch m
 	if !proposal.Keep {
 		fmt.Fprintf(out, "\n%s · tidying %s\n", branch.ShortName(), view.DescribeWork(proposal))
 		streams.Emit(view.TidyView(proposal))
-		view.WriteTidyPlan(out, proposal, false)
+		view.WriteTidyPlan(out, streams.Out, proposal, false)
 		// A plan of dockhand's own edits is applied unasked; one with the
 		// person's is reviewed on a terminal, and held where nobody looks,
 		// --yes or no terminal: --yes skips ship's question, and approves no

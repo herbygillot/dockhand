@@ -152,3 +152,25 @@ func TestAProseTapReadsOnlyProse(t *testing.T) {
 	require.Equal(t, "a sentence of\n  dockhand's own\n  words\n", tapped.String())
 	require.Equal(t, "a sentence of\n  dockhand's own\n  words\na payload line that runs past twenty columns\n", out.String())
 }
+
+// A prose tap is held with a stage: a stage dropped leaves nothing in it,
+// one said gives it the stage's prose, and a stage's own line reaches it
+// as it is written.
+func TestAProseTapIsHeldWithAStage(t *testing.T) {
+	t.Parallel()
+	var out, tapped bytes.Buffer
+	streams := Begin(Streams{Out: &out}.WithProseTap(&tapped), nil)
+	staged, stage := streams.Staged("editing")
+	_, _ = staged.Prose().Write([]byte("dropped words\n"))
+	stage.Drop()
+	require.Empty(t, tapped.String(), "nothing of a dropped stage")
+	staged, stage = streams.Staged("committing")
+	_, _ = staged.Prose().Write([]byte("said words\n"))
+	_, _ = staged.Out.Write([]byte("a raw line\n"))
+	stage.Say()
+	require.Equal(t, "said words\n", tapped.String())
+	tapped.Reset()
+	_, stage = streams.Staged("checking")
+	stage.Done("✓ checked")
+	require.Equal(t, "✓ checked\n", tapped.String())
+}

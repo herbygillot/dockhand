@@ -29,7 +29,9 @@ func DescribeWork(plan engine.TidyPlan) string {
 // writeTidyPlan lists a tidy plan's commits: as proposed, with what each
 // combines, keeps, and notes; or, saved, what applying it writes, each
 // commit's whole message as it may have been edited, with its author.
-func WriteTidyPlan(out io.Writer, plan engine.TidyPlan, saved bool) {
+// What the commits themselves say, a body's lines and a trailer, goes to
+// raw, standard output as it is; the plan's own words to out (#94).
+func WriteTidyPlan(out, raw io.Writer, plan engine.TidyPlan, saved bool) {
 	// --restyle's commits come last, after the series they restyle.
 	groups := plan.Series()
 	title := map[bool]string{false: "Proposed commit", true: "Commit to write"}[saved]
@@ -68,11 +70,13 @@ func WriteTidyPlan(out io.Writer, plan engine.TidyPlan, saved bool) {
 		// from the curl fix, note 12).
 		if !saved {
 			keeps, adds := group.Trailers()
+			// The trailer lines are the commit's own text, payload, written
+			// raw (#94, Codex's read).
 			for _, line := range keeps {
-				fmt.Fprintf(out, "       keeps: %s\n", line)
+				fmt.Fprintf(raw, "       keeps: %s\n", line)
 			}
 			for _, line := range adds {
-				fmt.Fprintf(out, "       adds: %s\n", line)
+				fmt.Fprintf(raw, "       adds: %s\n", line)
 			}
 		}
 		if group.Author.Name != "" && (saved || len(group.Combines) > 0) {
@@ -82,10 +86,11 @@ func WriteTidyPlan(out io.Writer, plan engine.TidyPlan, saved bool) {
 			fmt.Fprintln(out, "       body:")
 			for _, line := range strings.Split(body, "\n") {
 				if strings.TrimSpace(line) == "" {
-					fmt.Fprintln(out)
+					fmt.Fprintln(raw)
 					continue
 				}
-				fmt.Fprintf(out, "         %s\n", line)
+				// The person's own body, payload, written raw (#94).
+				fmt.Fprintf(raw, "         %s\n", line)
 			}
 		}
 		if !saved {

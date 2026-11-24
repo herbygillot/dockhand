@@ -471,7 +471,7 @@ func previewTidy(ctx context.Context, e *engine.Engine, streams term.Streams, br
 	}
 	fmt.Fprintf(streams.Prose(), "%s · commits first, %s\n", branch.ShortName(), view.DescribeWork(proposal))
 	streams.Emit(view.TidyView(proposal))
-	view.WriteTidyPlan(streams.Prose(), proposal, false)
+	view.WriteTidyPlan(streams.Prose(), streams.Out, proposal, false)
 	fmt.Fprintln(streams.Prose(), "Nothing was committed or submitted (--plan). dockhand submit makes these commits, then shows what it submits.")
 	return nil
 }

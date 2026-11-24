@@ -49,6 +49,12 @@ func (s Streams) Staged(under string) (Streams, *Stage) {
 		_, colour = wrap.w.(*markWriter)
 	}
 	s.Out = held
+	// A prose tap is held with the stage, said and dropped with it, so it
+	// reads only the words that reach standard output (WithProseTap).
+	if s.proseTap != nil {
+		held.twin = &stageWriter{to: s.proseTap}
+		s.proseTap = held.twin
+	}
 	s.prose = s.proseOver(held, colour)
 	return s, stage
 }
@@ -87,7 +93,7 @@ func (st *Stage) Done(format string, args ...any) {
 		return
 	}
 	st.status.Clear()
-	st.held.buf.Reset()
+	st.held.reset()
 	fmt.Fprintf(st.prose, format+"\n", args...)
 }
 
@@ -98,7 +104,7 @@ func (st *Stage) Drop() {
 		return
 	}
 	st.status.Clear()
-	st.held.buf.Reset()
+	st.held.reset()
 }
 
 // stageWriter holds what a stage writes until it's said; once said, as a
@@ -107,6 +113,17 @@ type stageWriter struct {
 	buf  bytes.Buffer
 	to   io.Writer
 	said bool
+	// twin is a prose tap's holding writer, said and dropped with this
+	// one (Staged).
+	twin *stageWriter
+}
+
+// reset drops what's held, the twin's too.
+func (w *stageWriter) reset() {
+	w.buf.Reset()
+	if w.twin != nil {
+		w.twin.reset()
+	}
 }
 
 func (w *stageWriter) Write(p []byte) (int, error) {
@@ -118,6 +135,9 @@ func (w *stageWriter) Write(p []byte) (int, error) {
 
 // Flush writes what's held, and what follows as it comes.
 func (w *stageWriter) Flush() {
+	if w.twin != nil {
+		w.twin.Flush()
+	}
 	w.said = true
 	if w.buf.Len() > 0 {
 		_, _ = w.to.Write(w.buf.Bytes())
