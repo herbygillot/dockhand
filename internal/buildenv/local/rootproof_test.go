@@ -113,7 +113,11 @@ func TestAFailedProbeStillStartsTheBuild(t *testing.T) {
 	require.NoError(t, os.Chmod(registryDir, 0o555))
 	t.Cleanup(func() { _ = os.Chmod(registryDir, 0o755) })
 	sudo := filepath.Join(t.TempDir(), "sudo")
-	testsupport.WriteExecutable(t, sudo, "#!/bin/sh\n[ \"$1\" = -n ] && shift\nif [ -n \"$4\" ]; then exec \"$@\" < \"$4\"; fi\nexec \"$@\"\n")
+	// It opens the lock's file again only where the fourth word is a file,
+	// the build's and the probe's lock path, so the root stop it runs, its
+	// fourth word --stop, runs as it is (a gate's run hung where the
+	// build's guest outlived Follow and the stop couldn't reach it).
+	testsupport.WriteExecutable(t, sudo, "#!/bin/sh\n[ \"$1\" = -n ] && shift\nif [ -f \"$4\" ]; then exec \"$@\" < \"$4\"; fi\nexec \"$@\"\n")
 	l := localProvider(t, env)
 	l.sudo, l.Proofs = []string{sudo}, filepath.Join(t.TempDir(), "local")
 	build := &fakeBuild{}

@@ -454,7 +454,12 @@ func TestARootStopSudoRefusesIsNotKnown(t *testing.T) {
 	// The starter asks root after its grace, which a loaded Mac may reach
 	// after the stop's bound: the ask is waited for, not assumed done.
 	var said []byte
-	require.Eventually(t, func() bool { said, err = os.ReadFile(asked); return err == nil }, 20*time.Second, 20*time.Millisecond, "root's SIGKILL to the guest was asked")
+	// The ask's line is whole once it ends in a newline: the stand-in's
+	// file is there a moment before its line is.
+	require.Eventually(t, func() bool {
+		said, err = os.ReadFile(asked)
+		return err == nil && strings.HasSuffix(string(said), "\n")
+	}, 20*time.Second, 20*time.Millisecond, "root's SIGKILL to the guest was asked")
 	require.Regexp(t, `^--stop KILL process [0-9]+ [0-9]+\n$`, string(said), "root's SIGKILL to the guest was asked once, refused, and nothing after")
 	time.Sleep(500 * time.Millisecond)
 	again, err := os.ReadFile(asked)
