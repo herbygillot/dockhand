@@ -451,12 +451,22 @@ func TestARootStopSudoRefusesIsNotKnown(t *testing.T) {
 	require.ErrorContains(t, err, "was asked to stop", "not known: %s", out)
 	require.Less(t, time.Since(begun), 10*time.Second, "within its bound, with no prompt waited on")
 	require.NoError(t, started.Process.Signal(syscall.Signal(0)), "the starter stays")
-	said, err := os.ReadFile(asked)
-	require.NoError(t, err)
+	// The starter asks root after its grace, which a loaded Mac may reach
+	// after the stop's bound: the ask is waited for, not assumed done.
+	var said []byte
+	require.Eventually(t, func() bool { said, err = os.ReadFile(asked); return err == nil }, 20*time.Second, 20*time.Millisecond, "root's SIGKILL to the guest was asked")
 	require.Regexp(t, `^--stop KILL process [0-9]+ [0-9]+\n$`, string(said), "root's SIGKILL to the guest was asked once, refused, and nothing after")
-	devices, err := os.ReadFile(input)
+	time.Sleep(500 * time.Millisecond)
+	again, err := os.ReadFile(asked)
 	require.NoError(t, err)
-	both := strings.Fields(string(devices))
+	require.Equal(t, string(said), string(again), "nothing asked after the refusal")
+	require.NoError(t, started.Process.Signal(syscall.Signal(0)), "the starter still stays")
+	var both []string
+	require.Eventually(t, func() bool {
+		devices, _ := os.ReadFile(input)
+		both = strings.Fields(string(devices))
+		return len(both) == 2
+	}, 10*time.Second, 20*time.Millisecond, "the root stop said what its input was")
 	require.Len(t, both, 2)
 	require.Equal(t, both[1], both[0], "the stop-only guest is given /dev/null")
 }
