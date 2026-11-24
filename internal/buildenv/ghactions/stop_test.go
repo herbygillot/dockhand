@@ -24,10 +24,24 @@ type stopAPI struct {
 	canceled []int64
 	hold     int
 	held     map[int64]int
+	// cancelBlocks keeps each cancel until its context ends, as a cancel
+	// whose reply is lost; listsBeforeBlocking, where set, is how many
+	// lists answer before each later one waits for its context to end.
+	cancelBlocks        bool
+	listsBeforeBlocking int
+	lists               int
+	// cancelErr, where set, is each cancel's answer, the cancel not taken.
+	cancelErr error
 }
 
-func (s *stopAPI) Runs(_ context.Context, _, _, _ string) ([]Run, error) {
+func (s *stopAPI) Runs(ctx context.Context, _, _, _ string) ([]Run, error) {
 	s.mu.Lock()
+	s.lists++
+	if s.listsBeforeBlocking > 0 && s.lists > s.listsBeforeBlocking {
+		s.mu.Unlock()
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	defer s.mu.Unlock()
 	for i, run := range s.runs {
 		if run.Status == "cancelling" {
@@ -50,9 +64,16 @@ func (s *stopAPI) Run(ctx context.Context, repository string, id int64) (Run, er
 	return Run{}, fmt.Errorf("no run %d", id)
 }
 
-func (s *stopAPI) Cancel(_ context.Context, _ string, id int64) error {
+func (s *stopAPI) Cancel(ctx context.Context, _ string, id int64) error {
+	if s.cancelBlocks {
+		<-ctx.Done()
+		return ctx.Err()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.cancelErr != nil {
+		return s.cancelErr
+	}
 	if s.held == nil {
 		s.held = map[int64]int{}
 	}
@@ -144,12 +165,11 @@ func TestAGitHubStopAnswersForEveryLaunch(t *testing.T) {
 	require.NoError(t, stop(t, api, attempts(push("p1", 0))))
 	require.Equal(t, []int64{7}, api.canceled)
 
-	// A run that doesn't complete within the bound is not known, named.
+	// A run that doesn't complete within the bound is not known, named
+	// by its Actions URL: never ended with something left.
 	stuck := &stopAPI{hold: -1}
 	stuck.add(9, "queued")
-	left, err := stopper(stuck).Stop(t.Context(), buildenv.StopRequest{Attempts: attempts(push("p1", 0)), Lock: freeLock{}})
-	require.NoError(t, err)
-	require.Contains(t, left, "GitHub was asked to cancel https://github.com/ada/macports-ports/actions/runs/9, and it is still cancelling; cancel it at https://github.com/ada/macports-ports/actions/runs/9")
+	require.ErrorContains(t, stop(t, stuck, attempts(push("p1", 0))), "GitHub was asked to cancel https://github.com/ada/macports-ports/actions/runs/9, and it is still cancelling")
 
 	// Two pushes that noted the same newest run need two runs newer
 	// than it: one completed run answers for one (A7).
@@ -198,22 +218,44 @@ func TestAGitHubStopAnswersForEveryLaunch(t *testing.T) {
 	require.NoError(t, stop(t, reruns, attempts(push("p1", 0), attach("a1"), attach("a2"))))
 }
 
-func TestStopBoundReturnsUnfinishedCancellationAsLeft(t *testing.T) {
-	api := &stopAPI{hold: -1}
-	api.add(42, "in_progress")
-	p := stopper(api)
-	p.Sleep = func(ctx context.Context, _ time.Duration) error {
+// A stop whose time runs out, in its cancels, its wait or a read inside
+// that wait, is not known: a run asked to cancel and not seen to end hasn't
+// ended. Each run not seen to end is named by its Actions URL, in the
+// error, and nothing is returned as left (the lifecycle design's "Not
+// known"; architecture's ruling on 60cbf5bc).
+func TestAStopThatRunsOutOfTimeIsNotKnownNamingItsRuns(t *testing.T) {
+	t.Parallel()
+	const url = "https://github.com/ada/macports-ports/actions/runs/42"
+	blocked := func(ctx context.Context, _ time.Duration) error {
 		<-ctx.Done()
 		return ctx.Err()
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
-	defer cancel()
-	started := time.Now()
-	left, err := p.Stop(ctx, buildenv.StopRequest{Attempts: attempts(push("p1", 0)), Lock: freeLock{}})
-	require.NoError(t, err)
-	require.Less(t, time.Since(started), 150*time.Millisecond)
-	require.Contains(t, left, "GitHub was asked to cancel https://github.com/ada/macports-ports/actions/runs/42, and it is still in progress; cancel it at https://github.com/ada/macports-ports/actions/runs/42")
-	require.Equal(t, []int64{42}, api.canceled)
+	for _, tc := range []struct {
+		name  string
+		api   *stopAPI
+		sleep func(context.Context, time.Duration) error
+		said  string
+	}{
+		{name: "the wait", api: &stopAPI{hold: -1}, sleep: blocked, said: "GitHub was asked to cancel " + url + ", and it is still "},
+		{name: "a cancel", api: &stopAPI{hold: -1, cancelBlocks: true}, said: "GitHub couldn't be asked to cancel " + url + " in time, and it is still in progress"},
+		{name: "a read in the wait", api: &stopAPI{hold: -1, listsBeforeBlocking: 1}, said: "GitHub was asked to cancel " + url + ", and it is still "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.api.add(42, "in_progress")
+			p := stopper(tc.api)
+			if tc.sleep != nil {
+				p.Sleep = tc.sleep
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+			defer cancel()
+			started := time.Now()
+			left, err := p.Stop(ctx, buildenv.StopRequest{Attempts: attempts(push("p1", 0)), Lock: freeLock{}})
+			require.Less(t, time.Since(started), 2*time.Second)
+			require.Empty(t, left, "nothing is ended with something left")
+			require.ErrorContains(t, err, tc.said)
+		})
+	}
 }
 
 // What a stop can't read or mayn't touch is said, never taken as ended:

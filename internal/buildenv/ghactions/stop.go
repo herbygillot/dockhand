@@ -78,8 +78,10 @@ const (
 // its own: each that isn't completed is canceled, and they are read until
 // they complete, for stopWait. It is ended only when every run listed has
 // completed and every launch of the check is answered for (answered); else
-// not known, naming what is still running or what has no run yet, however
-// long ago it was pushed. An attempt recorded before launches were noted,
+// not known, naming what is still running, by its Actions URL, or what has
+// no run yet, however long ago it was pushed. Where its time runs out, for
+// the account read and the cancels or for the wait, it is not known too:
+// "ended, something left" is only for work seen to end. An attempt recorded before launches were noted,
 // a run's URL and no note, has that run canceled and read the same way.
 // A launch whose runs can't be named, one from before notes with no run
 // or a note that can't be read, is not known, and said with the rest once
@@ -184,80 +186,87 @@ func (p *Provider) Stop(ctx context.Context, request buildenv.StopRequest) ([]st
 	if err != nil {
 		return nil, err
 	}
-	cancelRequested := make(map[int64]bool)
+	asked := map[int64]bool{}
+	// notKnown is Stop's answer where a run it asked to cancel isn't seen
+	// to complete, its bound ran out, or a launch has no run of its own
+	// listed: an error, naming each run not seen to end by its Actions URL,
+	// so the cancel stays unfinished and is asked again. Nothing is ever
+	// returned as left for such a run: a run asked to cancel and not seen
+	// to end hasn't ended (the lifecycle design's "Not known").
+	notKnown := func() error {
+		words := append(append(unseen(runs, asked), answered(notes, runs)...), unnamed...)
+		if len(words) == 0 {
+			return nil
+		}
+		return fmt.Errorf("%s", prose.And(words))
+	}
 	for _, run := range runs {
 		if run.Status != "completed" {
 			if err := remotewrite.Cancel(ctx, p.API, remotewrite.Made, fork.Repository, run.ID); err != nil {
 				if errors.Is(err, context.DeadlineExceeded) {
-					return leftRuns(runs, cancelRequested), nil
+					return nil, notKnown()
 				}
 				return nil, err
 			}
-			cancelRequested[run.ID] = true
+			asked[run.ID] = true
 		}
 	}
 	cancelPrep()
 	waitCtx, cancelWait := context.WithTimeout(workCtx, stopWait)
 	defer cancelWait()
 	for waited := time.Duration(0); ; waited += stopPoll {
-		if !slices.ContainsFunc(runs, func(r Run) bool { return r.Status != "completed" }) {
+		if !slices.ContainsFunc(runs, func(r Run) bool { return r.Status != "completed" }) || waited >= stopWait {
 			break
-		}
-		if waited >= stopWait {
-			return append(append(leftRuns(runs, cancelRequested), answered(notes, runs)...), unnamed...), nil
 		}
 		if err := p.sleep(waitCtx, stopPoll); err != nil {
 			if errors.Is(err, context.DeadlineExceeded) {
-				return leftRuns(runs, cancelRequested), nil
+				break
 			}
 			return nil, err
 		}
-		if runs, err = list(waitCtx); err != nil {
+		// What was last listed stays, where a read runs out of time, so
+		// the runs it named are still said.
+		listed, err := list(waitCtx)
+		if err != nil {
 			if errors.Is(err, context.DeadlineExceeded) {
-				return leftRuns(runs, cancelRequested), nil
+				break
 			}
 			return nil, err
 		}
+		runs = listed
 		// A run listed since is canceled as it's seen.
 		for _, run := range runs {
 			if run.Status == "queued" || run.Status == "in_progress" || run.Status == "waiting" || run.Status == "pending" || run.Status == "requested" {
 				if err := remotewrite.Cancel(waitCtx, p.API, remotewrite.Made, fork.Repository, run.ID); err != nil {
 					if errors.Is(err, context.DeadlineExceeded) {
-						return leftRuns(runs, cancelRequested), nil
+						return nil, notKnown()
 					}
 					return nil, err
 				}
-				cancelRequested[run.ID] = true
+				asked[run.ID] = true
 			}
 		}
 	}
-	var words []string
-	for _, run := range runs {
-		if run.Status != "completed" {
-			words = append(words, fmt.Sprintf("GitHub was asked to cancel %s, and it is still %s", run.URL, strings.ReplaceAll(cmp.Or(run.Status, "not completed"), "_", " ")))
-		}
-	}
-	words = append(append(words, answered(notes, runs)...), unnamed...)
-	if len(words) > 0 {
-		return nil, fmt.Errorf("%s", prose.And(words))
-	}
-	return nil, nil
+	return nil, notKnown()
 }
 
-func leftRuns(runs []Run, cancelRequested map[int64]bool) []string {
-	var left []string
+// unseen says each run listed that isn't completed, by its Actions URL:
+// one GitHub was asked to cancel, and one it couldn't be asked of before
+// Stop's time ran out.
+func unseen(runs []Run, asked map[int64]bool) []string {
+	var words []string
 	for _, run := range runs {
-		if run.Status != "completed" {
-			url := run.URL
-			status := strings.ReplaceAll(cmp.Or(run.Status, "not completed"), "_", " ")
-			if cancelRequested[run.ID] {
-				left = append(left, fmt.Sprintf("GitHub was asked to cancel %s, and it is still %s; cancel it at %s", url, status, url))
-			} else {
-				left = append(left, fmt.Sprintf("Stop couldn't confirm a cancellation for %s, and it is still %s; cancel it at %s", url, status, url))
-			}
+		if run.Status == "completed" {
+			continue
+		}
+		status := strings.ReplaceAll(cmp.Or(run.Status, "not completed"), "_", " ")
+		if asked[run.ID] {
+			words = append(words, fmt.Sprintf("GitHub was asked to cancel %s, and it is still %s", run.URL, status))
+		} else {
+			words = append(words, fmt.Sprintf("GitHub couldn't be asked to cancel %s in time, and it is still %s", run.URL, status))
 		}
 	}
-	return left
+	return words
 }
 
 // legacyRun is the run an attempt recorded before launches were noted, by
