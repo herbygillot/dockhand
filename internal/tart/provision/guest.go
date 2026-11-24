@@ -27,7 +27,7 @@ func (n *native) guestStream(ctx context.Context, name string, input io.Reader, 
 		return nil, err
 	}
 	streaming := *guest
-	streaming.Output = n.progress
+	streaming.Output = n.output
 	return streaming.Command(ctx, input, args...)
 }
 

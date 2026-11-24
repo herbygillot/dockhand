@@ -103,10 +103,10 @@ the new one passes.`,
 			if !options.Check {
 				fmt.Fprintf(streams.Prose(), "Where the release has no image yet, making one downloads Cirrus Labs' vanilla macOS image the first time and uses up to %s of disk.\n", tart.SetupDisk)
 			}
-			result, err := images.Setup(cmd.Context(), options, streams.Prose())
+			result, err := images.Setup(cmd.Context(), options, streams.Prose(), streams.Out)
 			if missing := (*tart.MissingXcode)(nil); errors.As(err, &missing) {
 				if err = offerXcode(cmd.Context(), images, streams, missing); err == nil {
-					result, err = images.Setup(cmd.Context(), options, streams.Prose())
+					result, err = images.Setup(cmd.Context(), options, streams.Prose(), streams.Out)
 				}
 			}
 			if err != nil {
@@ -399,7 +399,8 @@ func offerXcode(ctx context.Context, images host.TartImages, streams term.Stream
 		if !download {
 			return missing
 		}
-		path, err = images.DownloadXcode(ctx, missing, streams.In, streams.Prose(), streams.Err)
+		// What xcodes prints is its own: payload, raw (#94).
+		path, err = images.DownloadXcode(ctx, missing, streams.In, streams.Out, streams.Err)
 		if err != nil {
 			return err
 		}
