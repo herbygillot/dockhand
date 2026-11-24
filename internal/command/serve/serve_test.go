@@ -616,6 +616,38 @@ func TestServesLogLinesSayTheirTime(t *testing.T) {
 	require.Contains(t, terminal.String(), "serve: the queue is empty")
 }
 
+// serve run off a terminal and stopped stamps a sentence of its own,
+// "serve: stopped" once its loop has ended, as it stamps a check's log
+// line and every other line it writes, through serve itself rather than
+// the stamp writer alone (#94; term's TestAStampReachesBothWriters holds
+// Prose beneath the stamp).
+func TestServesSentenceAndLogLineBothCarryTheStamp(t *testing.T) {
+	t.Parallel()
+	cmdtest.CheckedBranch(t)
+	ctx, stop := context.WithCancel(t.Context())
+	var served cmdtest.SyncBuffer
+	done := make(chan error)
+	go func() {
+		done <- cmdtest.RunFor(t, ctx, []string{"serve"}, term.Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+	}()
+	require.Eventually(t, func() bool { return strings.Contains(served.String(), "serve: leading") }, cmdtest.Settle, 10*time.Millisecond)
+	_, errs, err := cmdtest.Dockhand(t, "check")
+	require.NoError(t, err, errs)
+	require.Eventually(t, func() bool { return strings.Contains(served.String(), "check-1 jq-update: passed\n") }, cmdtest.Settle, 10*time.Millisecond)
+	stop()
+	require.NoError(t, <-done)
+
+	out := served.String()
+	stamped := func(line string) *regexp.Regexp {
+		return regexp.MustCompile(`(?m)` + stamps.String()[len(`(?m)`):] + regexp.QuoteMeta(line) + `$`)
+	}
+	require.Regexp(t, stamped("check-1 jq-update: passed"), out, "a log line")
+	require.Regexp(t, stamped("serve: stopped"), out, "a sentence of serve's own")
+	for _, line := range strings.Split(strings.TrimSuffix(out, "\n"), "\n") {
+		require.Regexp(t, stamps, line)
+	}
+}
+
 // A line written in parts is stamped once, at its start, and a write of
 // several lines stamps each.
 func TestAStampedLineIsStampedOnce(t *testing.T) {
