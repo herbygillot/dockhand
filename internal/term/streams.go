@@ -16,7 +16,7 @@ import (
 // sentences, tables and views write to Prose, which wraps at the width
 // and colours the marks. The name typed by habit is the safe one: a
 // payload written to Out by mistake for Prose costs a long line, where a
-// wrapped Portfile was a broken one (#94, docs/designs/prose-stream.md).
+// wrapped Portfile was a broken one (#94, docs/designs/prose-stream.md at 59da6ea2).
 type Streams struct {
 	In  io.Reader
 	Out io.Writer
