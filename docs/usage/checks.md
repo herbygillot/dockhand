@@ -454,9 +454,12 @@ dockhand artifacts
 
 Use the actual check and port names. Logs identify the build when several
 environments exist; `--full` includes dependency installation, and `--follow`
-follows supported live logs. `artifacts` lists kept archives of the branch's
-latest check, or of a check it names, as `artifacts check-12`, or explains why
-one is missing. `logs` takes a lone port, `logs jq --phase install`, for the
+follows supported live logs. When a check ends, dockhand compresses its port
+logs, so a process tailing the log files directly loses access then. Use
+`dockhand wait` to follow a check and `dockhand logs` to read its logs.
+`artifacts` lists kept archives of the branch's latest check, or of a check it
+names, as `artifacts check-12`, or explains why one is missing. `logs` takes a
+lone port, `logs jq --phase install`, for the
 branch's latest check, as well as one attempt of a check. `artifacts` and
 `shell` take a check, not one of its attempts: given an attempt, each refuses
 and names the check to run it on, since `artifacts` lists a check's judged
