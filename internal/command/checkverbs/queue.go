@@ -197,7 +197,7 @@ provider supports it, then prints any remaining output when the build ends.`,
 			// What's named is resolved once, in the engine: the check, the
 			// attempts it stands for, a provider run's several where it built
 			// several environments, and the port, refused by name where the
-			// check doesn't build it (docs/designs/check-lifecycle.md,
+			// check doesn't build it (docs/designs/check-lifecycle.md at bbb4c0b7,
 			// "Selection"; Codex's review of #193, findings 1 and 4).
 			// The one argument beside -p, a port the branch may not change, is
 			// judged as that, with the command that names it, below.
@@ -242,7 +242,7 @@ provider supports it, then prints any remaining output when the build ends.`,
 			// The name is resolved before the flags are judged, so the lone
 			// argument read as a port serves --phase and --full: logs jq
 			// --phase fetch was refused though logs jq worked
-			// (docs/designs/check-lifecycle.md, "Selection").
+			// (docs/designs/check-lifecycle.md at bbb4c0b7, "Selection").
 			if full && port == "" {
 				return errors.New("--full requires a port name, for example: dockhand logs check-42 jq --full")
 			}

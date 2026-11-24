@@ -37,7 +37,7 @@ func (p unreadAfterBuild) Execute(ctx context.Context, job buildenv.Job, build b
 // ship --yes submits as nobody attends it, so an environment whose
 // identity can't be read once its check passed holds the submission, by
 // identity-unread, naming the environment and the cause
-// (docs/designs/check-lifecycle.md, "Identity").
+// (docs/designs/check-lifecycle.md at bbb4c0b7, "Identity").
 func TestShipWithYesIsHeldByAnUnreadIdentity(t *testing.T) {
 	t.Parallel()
 	g := twoPortWorld(t)

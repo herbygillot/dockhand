@@ -1006,7 +1006,7 @@ var checkName = regexp.MustCompile(`^(check-)?[0-9]+$`)
 func IsCheckName(name string) bool { return checkName.MatchString(name) }
 
 // SelectionKind is the kind of name a build selection was made from
-// (docs/designs/check-lifecycle.md, "Selection").
+// (docs/designs/check-lifecycle.md at bbb4c0b7, "Selection").
 type SelectionKind string
 
 const (
@@ -1072,7 +1072,7 @@ const (
 )
 
 // SelectBuild resolves what a command names once, in one place
-// (docs/designs/check-lifecycle.md, "Selection"; Codex's review of #193,
+// (docs/designs/check-lifecycle.md at bbb4c0b7, "Selection"; Codex's review of #193,
 // findings 1 and 4): the check and the attempts, and a port the check
 // doesn't build refused by name, a running check's too, where it was said
 // to have recorded no log yet. With nothing named and no branch checked

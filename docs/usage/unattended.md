@@ -69,7 +69,10 @@ it too; missing information is not treated as proof that none exists.
 
 Later, a passing build can still leave a submission held. Archive comparisons,
 source or ownership changes, commit-rule errors, an unreadable assessment, or
-another pull request found before publication can need review. A build
+another pull request found before publication can need review. So can an
+environment whose identity couldn't be read, as when Tart doesn't answer: a
+submission resting on its results holds as `identity-unread` until a later read
+succeeds or you submit it yourself, and `holds.allow` can't name it. A build
 establishes what happened on its selected environments; it does not settle those
 concerns. Follow the named branch and the reported next step:
 

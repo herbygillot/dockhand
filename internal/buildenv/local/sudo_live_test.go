@@ -16,7 +16,7 @@ import (
 
 // This Mac's sudo, with real processes, as the lifecycle design asks
 // before Local's Stop of a root build is written (docs/designs/
-// check-lifecycle.md, "Local and Script", rule 4, and "What remains
+// check-lifecycle.md at bbb4c0b7, "Local and Script", rule 4, and "What remains
 // unproved"; #193, step 5e). DOCKHAND_TEST_SUDO_PREFIX names a prefix
 // whose port-tclsh this user may run as root without a password:
 //

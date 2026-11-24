@@ -42,7 +42,7 @@ func identityHolds(concerns []model.Concern) []model.Concern {
 // by an environment its evidence rests on whose identity can't be read
 // now: the hold names the environment and the cause, the results stand as
 // they were, and holds.allow can't let it go, even were it to name it,
-// since what couldn't be checked holds (docs/designs/check-lifecycle.md,
+// since what couldn't be checked holds (docs/designs/check-lifecycle.md at bbb4c0b7,
 // "Identity"; #190). It lifts by itself once the identity reads again.
 func TestPlanSubmitHoldsWhereAnIdentityCouldntBeRead(t *testing.T) {
 	t.Parallel()

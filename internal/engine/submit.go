@@ -746,7 +746,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	plan.Moved = e.movedSources(ctx, plan.Evidence)
 	// A publication of this commit already accepted, which the plan
 	// continues (Carried), goes on by its record (#191) and is not judged
-	// again by an identity read now (docs/designs/check-lifecycle.md,
+	// again by an identity read now (docs/designs/check-lifecycle.md at bbb4c0b7,
 	// "Identity"): serve held its owed opening for good where the read
 	// failed after it pushed.
 	if plan.Carried == nil {

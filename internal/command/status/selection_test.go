@@ -221,7 +221,7 @@ func TestAPortTheCheckDoesntBuildIsRefusedByName(t *testing.T) {
 
 // A port named alone takes the flags a port takes: logs jq --phase was
 // refused as naming no port, though logs jq worked, since the flags were
-// judged before the lone argument was read (docs/designs/check-lifecycle.md,
+// judged before the lone argument was read (docs/designs/check-lifecycle.md at bbb4c0b7,
 // "Selection"). A bare number is a check, as check-N is, to each command
 // that takes one.
 func TestALonePortAndABareNumberAreResolvedOnce(t *testing.T) {

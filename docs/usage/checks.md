@@ -331,9 +331,28 @@ build's process group. A cancel, also of a check whose dockhand was killed,
 signals that process, which stops the whole group and kills what remains after
 30 seconds; the cancel finishes once the group is gone, then puts the prefix
 back, or says what is left and that the next check in it, or
-`dockhand undo check-N`, puts it back. A root build isn't stopped this way yet:
-its cancel stays unfinished and names the command to stop it by hand, `sudo
-kill -TERM -<group>`, then `dockhand cancel check-N` again. Restoring active versions leaves
+`dockhand undo check-N`, puts it back.
+
+A root build is stopped the same way only once this Mac's sudo has passed a
+probe. Dockhand runs the probe at your account's first root build on the Mac,
+and again when sudo itself changes, and keeps the result in
+`~/.dockhand/local/root-stop-proof.json`. The probe checks that sudo hands the
+build the check's lock and passes a stop on. The probe, and the part of a stop
+that needs root, run the prefix's port-tclsh under `sudo -n`, which works with
+the sudoers line `<you> ALL=(root) NOPASSWD: <prefix>/bin/port-tclsh` or while
+sudo still remembers a password you typed. That line lets your account run
+anything as root without a password, since port-tclsh runs whatever script it
+is given, so adding it is a choice for each Mac and account, not a requirement.
+Until the probe has passed, a root build's cancel stays unfinished and names
+the command to stop it by hand, `sudo kill -TERM -<group>`, then
+`dockhand cancel check-N` again. The same happens when a root build doesn't end
+on the stop and `sudo -n` asks for a password at that moment, as after the line
+is removed. Dockhand never kills a sudo outright: a root build that ignores the
+stop is sent root's kill to the build itself, never to its sudo, and where even
+that can't be sent the cancel stays unfinished, with the same command. A sudo
+set to log a command's input hands the build a pipe in place of the check's
+lock, so on such a Mac every root build is refused before it starts anything,
+saying why. Restoring active versions leaves
 newly built images inactive and unrequested for MacPorts' `port reclaim`. A
 later check can remove a matching inactive, unrequested image before rebuilding;
 an installed image it cannot safely replace is refused.
@@ -429,6 +448,7 @@ retry, replacement, and cancellation.
 dockhand logs check-12
 dockhand logs check-12 jq
 dockhand logs check-12 jq --phase install
+dockhand logs jq --phase install
 dockhand artifacts
 ```
 
@@ -436,7 +456,12 @@ Use the actual check and port names. Logs identify the build when several
 environments exist; `--full` includes dependency installation, and `--follow`
 follows supported live logs. `artifacts` lists kept archives of the branch's
 latest check, or of a check it names, as `artifacts check-12`, or explains why
-one is missing. A build that links another port's
+one is missing. `logs` takes a lone port, `logs jq --phase install`, for the
+branch's latest check, as well as one attempt of a check. `artifacts` and
+`shell` take a check, not one of its attempts: given an attempt, each refuses
+and names the check to run it on, since `artifacts` lists a check's judged
+passes, some of them reused from earlier checks, and `shell` opens a check's
+kept clone, chosen by `--on`. A build that links another port's
 library the Portfile doesn't declare is a notice, holding nothing, that names
 the line to write: `omnidiff links libiconv.2.dylib from libiconv, which it
 doesn't declare in depends_lib. Declare it with depends_lib-append

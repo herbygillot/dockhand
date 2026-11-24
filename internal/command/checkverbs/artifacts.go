@@ -41,7 +41,7 @@ branch's worktree, lists that branch's latest check.`,
 			}
 			defer e.Close()
 			// What's named is resolved once, the check or a branch's latest
-			// (docs/designs/check-lifecycle.md, "Selection"): one attempt,
+			// (docs/designs/check-lifecycle.md at bbb4c0b7, "Selection"): one attempt,
 			// or a provider's run, is refused by name, since artifacts lists
 			// a check's judged passes, some reused or filled from earlier
 			// checks, never what one attempt built.

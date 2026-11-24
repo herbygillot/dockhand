@@ -83,7 +83,7 @@ func interrupted(t *testing.T, want string, ready func() bool, args ...string) (
 	}
 }
 
-// Ctrl-C through See (docs/designs/check-lifecycle.md, "Staying", and
+// Ctrl-C through See (docs/designs/check-lifecycle.md at bbb4c0b7, "Staying", and
 // "Stopping": the three stay three). A check driven here because nobody
 // leads it is stopped, its build with it, keeping what finished. One
 // another drives, followed to its end or for a bound, is only no longer

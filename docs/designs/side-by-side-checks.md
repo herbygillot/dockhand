@@ -14,7 +14,7 @@ From field testing: while a GitHub-provider check of a commit ran, a Tart check 
   - Tart enforces the Mac's 2-VM limit inside each environment attempt (`tart.Provider.slot`), counting running VMs machine-wide and naming holders by check via `build.Holding`.
   - `evidence` already combines target results across every check of the same tree, and `evidence.Judge` receives the required environments from its caller.
   - `BranchStatus.Active`, `branchstate.Check.Active`, and `BranchJSON.Active` are already slices.
-  - [#193](check-lifecycle.md) names GitHub check branches per check (`dockhand-check/<commit>-<check>`), so two concurrent GitHub checks on one commit do not collide on the fork branch or cancel each other's runs.
+  - [#193](https://github.com/herbygillot/dockhand/issues/193) names GitHub check branches per check (`dockhand-check/<commit>-<check>`), so two concurrent GitHub checks on one commit do not collide on the fork branch or cancel each other's runs.
 - **Single-active-check assumptions that remain:**
   1. `ForgetKept` removes every kept clone of the branch whenever any new check or retry is queued, even for the same files.
   2. `branchstate.Check.Stopped` and `Canceling` are single pointers overwritten in a loop by `JudgeStopped`.
@@ -37,7 +37,7 @@ Two or more checks of the same branch may be queued or running at once when they
 ### 1. Separate immutable runs, never mutating a running plan
 A side-by-side request is admitted as a **new `model.Run` with its own immutable `model.Plan`**, not merged into an already-running check's plan.
 
-Why: `model.Plan` is immutable from admission, each run already has its own lease and `Stay` policy ([#193](check-lifecycle.md)), `evidence` already merges across runs of the same tree, and separate runs let the person cancel, wait on, or inspect logs for the Tart run without disturbing the GitHub run.
+Why: `model.Plan` is immutable from admission, each run already has its own lease and `Stay` policy ([#193](https://github.com/herbygillot/dockhand/issues/193)), `evidence` already merges across runs of the same tree, and separate runs let the person cancel, wait on, or inspect logs for the Tart run without disturbing the GitHub run.
 
 ### 2. Admission: same files and disjoint environments (amending the one-check rule)
 Inside `checks.Service.queue` (under the store write transaction, so concurrent `dockhand check` processes cannot race) and `checks.Service.ActiveCheck`:
@@ -73,7 +73,7 @@ The rule on keeping clones is [#291](https://github.com/herbygillot/dockhand/iss
 - **Visibility when several clones are kept:**
   - A branch can hold several clones at once (35–65 GB each).
   - `status <branch>` detail lists every kept clone of the branch individually (its check name, release, whether it was asked for with `--keep` or kept on failure, its size and age, and for a failure clone when it goes), with the `dockhand shell` and removal commands.
-  - `clean` and `clean --plan` list each kept clone of the branch on its own line (check name, release, reason) rather than collapsing to one, and remove all of them when the branch is cleaned. `dockhand shell` already requires a check name ([#193](check-lifecycle.md)) and `--on` when one check kept several releases.
+  - `clean` and `clean --plan` list each kept clone of the branch on its own line (check name, release, reason) rather than collapsing to one, and remove all of them when the branch is cleaned. `dockhand shell` already requires a check name ([#193](https://github.com/herbygillot/dockhand/issues/193)) and `--on` when one check kept several releases.
 
 ### 5. Sibling cohort and D17's governing ask (amending D17)
 Under literal D17 ("newest ask"), starting GitHub then Tart vs. Tart then GitHub gives different answers if the older sibling ends in `attention` (no results): whichever started second becomes the sole ask and silently drops the older sibling's environments from what submission requires.
@@ -113,7 +113,7 @@ No new capacity mechanism is needed; existing guards compose cleanly:
   - **2+ active `BranchCheck()` runs on the branch:**
     - Bare `dockhand cancel` and `dockhand wait`: **refuse as ambiguous**, listing each active check with its state and environments and the exact `dockhand cancel check-N` / `dockhand wait check-N` commands.
     - Bare `dockhand logs` and `dockhand artifacts`: if `--on <release>` is given on `logs` and matches exactly one active check, select it; otherwise **refuse as ambiguous**, naming each active check and its environments.
-    - `dockhand shell`: already requires a check name ([#193](check-lifecycle.md)).
+    - `dockhand shell`: already requires a check name ([#193](https://github.com/herbygillot/dockhand/issues/193)).
     - `dockhand console` (`l` key): with 2+ active checks on the selected branch, show `2 checks active: run dockhand logs check-42 or check-43` in the status line rather than guessing; `Enter` lists all active checks in the detail pane.
 
 ## Not taken
@@ -122,7 +122,7 @@ No new capacity mechanism is needed; existing guards compose cleanly:
 - **Admitting two checks on the same environment when variants differ:** Both build changed dependencies with default variants and would duplicate that work; `--variants each` handles multiple variant sets in one check, and sequential variant checks reuse shared builds while keeping earlier clones (§4).
 - **Running checks of two different commits of one branch side by side:** Confuses `status`, `evidence`, and kept clones.
 - **`dockhand cancel --all`:** Naming `dockhand cancel check-N` is explicit and safe; can be added later if needed.
-- **`dockhand wait` following multiple checks at once:** Kept single-run to match [#193](check-lifecycle.md)'s `checkrun.See`; `status` and `console` follow multiple runs.
+- **`dockhand wait` following multiple checks at once:** Kept single-run to match [#193](https://github.com/herbygillot/dockhand/issues/193)'s `checkrun.See`; `status` and `console` follow multiple runs.
 
 ## Tests
 

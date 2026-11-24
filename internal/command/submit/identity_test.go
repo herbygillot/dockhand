@@ -24,7 +24,7 @@ func (unreadIdentity) Identity(context.Context, model.Environment) (string, erro
 
 // A person's own submit, resting on an environment whose identity can't
 // be read now, says so and goes on: identity-unread holds only a
-// submission nobody attends (docs/designs/check-lifecycle.md, "Identity").
+// submission nobody attends (docs/designs/check-lifecycle.md at bbb4c0b7, "Identity").
 func TestAnAttendedSubmitSaysAnUnreadIdentityAndGoesOn(t *testing.T) {
 	t.Parallel()
 	w := cmdtest.NewWorld(t)

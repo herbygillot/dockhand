@@ -337,7 +337,7 @@ func TestAnAdoptedBranchsPortfilesNeedTheAnswer(t *testing.T) {
 
 // review --check's row of the Staying matrix: a check running that covers
 // the one it asks for is joined and seen to its end through See, as wait
-// sees one (docs/designs/check-lifecycle.md, "Staying"): nobody leads it,
+// sees one (docs/designs/check-lifecycle.md at bbb4c0b7, "Staying"): nobody leads it,
 // so it is driven here, said as it starts, and reported.
 func TestReviewCheckJoinsACoveringCheckAndSeesItThrough(t *testing.T) {
 	t.Parallel()

@@ -30,7 +30,7 @@ func serving(t *testing.T) *cmdtest.SyncBuffer {
 	return served
 }
 
-// ship's rows of the Staying matrix (docs/designs/check-lifecycle.md): a
+// ship's rows of the Staying matrix (docs/designs/check-lifecycle.md at bbb4c0b7): a
 // single change's new check, seen to its end through See, is handed to
 // the serve that leads and followed, never driven here. Nobody leading,
 // ship drives it here (TestShipCarriesAPortToItsPullRequest).

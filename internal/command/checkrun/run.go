@@ -24,7 +24,7 @@ import (
 )
 
 // Stay is how long a command stays with a check it asked for
-// (docs/designs/check-lifecycle.md, "Staying"): to its end, the zero
+// (docs/designs/check-lifecycle.md at bbb4c0b7, "Staying"): to its end, the zero
 // value; Detach, -d, queued and returned; For, --for, followed this long.
 type Stay struct {
 	Detach bool
