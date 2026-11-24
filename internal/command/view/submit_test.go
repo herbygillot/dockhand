@@ -107,6 +107,7 @@ func TestNoChecksWordsNameTheReleasesCIBuildsOn(t *testing.T) {
 }
 
 func TestSubmitJSONCarriesTheUncheckedBuildHoldBlock(t *testing.T) {
+	t.Parallel()
 	block := branchstate.Block{Kind: branchstate.BlockNoCheckBuildHold, Holds: []model.Concern{{Port: "jq", Rule: "patch-rejected", Detail: "patch.diff doesn't apply"}}}
 	plan := engine.SubmitPlan{
 		Request:  engine.SubmitRequest{NoCheck: true},
@@ -126,6 +127,7 @@ func TestSubmitJSONCarriesTheUncheckedBuildHoldBlock(t *testing.T) {
 }
 
 func TestSubmitPreviewSaysNoCheckWillBeRefusedForBuildHold(t *testing.T) {
+	t.Parallel()
 	block := branchstate.Block{Kind: branchstate.BlockNoCheckBuildHold, Holds: []model.Concern{{Port: "jq", Rule: "patch-rejected", Detail: "patch.diff doesn't apply"}}}
 	plan := engine.SubmitPlan{
 		Branch:   model.Branch{Name: "dockhand/jq-update"},
