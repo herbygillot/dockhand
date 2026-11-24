@@ -76,12 +76,7 @@ func (c *Client) JobLog(ctx context.Context, repository string, job int64) ([]by
 		}
 		return nil, githubapi.RateLimitError(err)
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, link.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	request.Header.Set("User-Agent", fetch.UserAgent)
-	served, err := fetch.Open(c.HTTP, request, logLimit)
+	served, err := githubapi.JobLog(ctx, c.HTTP, link, logLimit)
 	if err != nil {
 		var status *fetch.StatusError
 		if errors.As(err, &status) && (status.Status == http.StatusNotFound || status.Status == http.StatusGone) {

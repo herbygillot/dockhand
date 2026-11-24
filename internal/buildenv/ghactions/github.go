@@ -11,7 +11,6 @@ import (
 
 	gh "github.com/google/go-github/v93/github"
 
-	"github.com/herbygillot/dockhand/internal/fetch"
 	githubapi "github.com/herbygillot/dockhand/internal/github"
 )
 
@@ -225,16 +224,8 @@ func (g GitHub) JobLog(ctx context.Context, repository string, job int64) ([]byt
 	if err != nil {
 		return nil, githubapi.RateLimitError(err)
 	}
-	if location == nil || location.Scheme != "https" || location.Host == "" || location.User != nil {
-		return nil, fmt.Errorf("github: invalid job log download URL")
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, location.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	request.Header.Set("User-Agent", fetch.UserAgent)
 	// A log past the bound is kept to it, not refused.
-	response, err := fetch.Open(g.Client.HTTP, request, math.MaxInt64)
+	response, err := githubapi.JobLog(ctx, g.Client.HTTP, location, math.MaxInt64)
 	if err != nil {
 		return nil, fmt.Errorf("github: job log: %w", err)
 	}

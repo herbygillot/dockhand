@@ -21,6 +21,11 @@ func TestAHeadsFailedCIJobsTheirLogsAndARerun(t *testing.T) {
 	t.Parallel()
 	var server *httptest.Server
 	var rerun []string
+	logs := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/blob/11", r.URL.Path)
+		fmt.Fprint(w, "2026-10-03T14:00:17.7588890Z Error: Failed to fetch jni-sys-macros-0.4.1.crate: The requested URL returned error: 403\n2026-10-03T14:00:20.0727630Z Error: Failed to fetch garage: Failed to fetch distfiles\n")
+	}))
+	defer logs.Close()
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/repos/macports/macports-ports/actions/runs" && r.URL.Query().Get("head_sha") == "abc":
@@ -28,9 +33,7 @@ func TestAHeadsFailedCIJobsTheirLogsAndARerun(t *testing.T) {
 		case r.URL.Path == "/api/repos/macports/macports-ports/actions/runs/7/jobs":
 			fmt.Fprint(w, `{"total_count": 2, "jobs": [{"id": 11, "run_id": 7, "run_attempt": 1, "name": "macos-15", "conclusion": "failure"}, {"id": 12, "run_id": 7, "run_attempt": 1, "name": "macos-14", "conclusion": "success"}]}`)
 		case r.URL.Path == "/api/repos/macports/macports-ports/actions/jobs/11/logs":
-			http.Redirect(w, r, server.URL+"/blob/11", http.StatusFound)
-		case r.URL.Path == "/blob/11":
-			fmt.Fprint(w, "2026-10-03T14:00:17.7588890Z Error: Failed to fetch jni-sys-macros-0.4.1.crate: The requested URL returned error: 403\n2026-10-03T14:00:20.0727630Z Error: Failed to fetch garage: Failed to fetch distfiles\n")
+			http.Redirect(w, r, logs.URL+"/blob/11", http.StatusFound)
 		case r.URL.Path == "/api/repos/macports/macports-ports/actions/runs/7/rerun-failed-jobs" && r.Method == http.MethodPost:
 			rerun = append(rerun, "7")
 			w.WriteHeader(http.StatusCreated)
@@ -43,7 +46,7 @@ func TestAHeadsFailedCIJobsTheirLogsAndARerun(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL + "/api", Token: "token"}}}
+	client := &github.Client{Client: &githubapi.Client{HTTP: logs.Client(), Config: githubapi.Config{BaseURL: server.URL + "/api", Token: "token"}}}
 
 	jobs, err := client.FailedJobs(t.Context(), "macports/macports-ports", "abc")
 	require.NoError(t, err)
