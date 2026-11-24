@@ -24,6 +24,10 @@ type said struct {
 	lines []string
 }
 
+type testRemoteNamer map[string]string
+
+func (n testRemoteNamer) NameFromRemote(remote string) (string, error) { return n[remote], nil }
+
 func (s *said) Progress(message string) { s.lines = append(s.lines, message) }
 func (s *said) Waiting(message string)  { s.Progress(message) }
 func (s *said) Holding(string) string   { return "" }
@@ -45,7 +49,7 @@ func TestTheChecksBranchGoesOnlyWhileItHoldsTheCommit(t *testing.T) {
 	testsupport.Git(t, root, "init", "-q", "--bare", fork)
 	repo, err := git.Open(t.Context(), clone, git.Program{Env: os.Environ()})
 	require.NoError(t, err)
-	p := &Provider{Repo: repo, Identity: accountIdentity("ada")}
+	p := &Provider{Repo: repo, Identity: accountIdentity("ada"), RemoteNamer: testRemoteNamer{fork: "ada/macports-ports"}}
 	target := buildenv.Fork{Repository: "ada/macports-ports", PushURL: fork}
 	branch := BranchPrefix + checked[:12]
 
@@ -115,7 +119,7 @@ func TestTheChecksOwnBranchAndAPushThatStartedNothing(t *testing.T) {
 	fork := filepath.Join(root, "fork.git")
 	testsupport.Git(t, root, "init", "-q", "--bare", fork)
 	testsupport.Git(t, clone, "push", "-q", fork, commit+":refs/heads/"+branch)
-	p := &Provider{Repo: repo, API: pushingAPI{}, Identity: accountIdentity("ada"), Fork: func(context.Context) (buildenv.Fork, error) {
+	p := &Provider{Repo: repo, API: pushingAPI{}, Identity: accountIdentity("ada"), RemoteNamer: testRemoteNamer{fork: "ada/macports-ports"}, Fork: func(context.Context) (buildenv.Fork, error) {
 		return buildenv.Fork{Repository: "ada/macports-ports", PushURL: fork}, nil
 	}}
 	err = p.Execute(t.Context(), job, &noting{})
@@ -129,6 +133,7 @@ func TestTheChecksOwnBranchAndAPushThatStartedNothing(t *testing.T) {
 	p.Fork = func(context.Context) (buildenv.Fork, error) {
 		return buildenv.Fork{Repository: "ada/macports-ports", PushURL: refusing}, nil
 	}
+	p.RemoteNamer = testRemoteNamer{refusing: "ada/macports-ports"}
 	build := &noting{}
 	require.Error(t, p.Execute(t.Context(), job, build))
 	require.Len(t, build.notes, 2)
@@ -182,7 +187,7 @@ func TestAPushThatSendsNothingIsWrittenDownAsThat(t *testing.T) {
 		clone, fork, commit := forked(t)
 		repo, err := git.Open(t.Context(), clone, git.Program{Env: testsupport.GitEnv(t)})
 		require.NoError(t, err)
-		p := &Provider{Repo: repo, API: api, Identity: accountIdentity("ada"), Sleep: func(context.Context, time.Duration) error { return nil },
+		p := &Provider{Repo: repo, API: api, Identity: accountIdentity("ada"), RemoteNamer: testRemoteNamer{fork: repository}, Sleep: func(context.Context, time.Duration) error { return nil },
 			Fork: func(context.Context) (buildenv.Fork, error) {
 				return buildenv.Fork{Repository: repository, PushURL: fork}, nil
 			}}
@@ -281,7 +286,7 @@ func TestAPushWhoseRunIsntSeenIsNotKnownUntilItIs(t *testing.T) {
 			}
 			repo, err := git.Open(t.Context(), clone, program)
 			require.NoError(t, err)
-			p := &Provider{Repo: repo, API: pushingAPI{}, Identity: accountIdentity("ada"), Sleep: func(context.Context, time.Duration) error { return nil },
+			p := &Provider{Repo: repo, API: pushingAPI{}, Identity: accountIdentity("ada"), RemoteNamer: testRemoteNamer{fork: "ada/macports-ports"}, Sleep: func(context.Context, time.Duration) error { return nil },
 				Fork: func(context.Context) (buildenv.Fork, error) {
 					return buildenv.Fork{Repository: "ada/macports-ports", PushURL: fork}, nil
 				}}
@@ -342,7 +347,7 @@ func TestAnotherCheckOfTheSameCommitIsOnItsOwnBranch(t *testing.T) {
 	repo, err := git.Open(t.Context(), clone, git.Program{Env: testsupport.GitEnv(t)})
 	require.NoError(t, err)
 	api := &branchAPI{runs: map[string][]Run{}}
-	p := &Provider{Repo: repo, API: api, Identity: accountIdentity("ada"), Sleep: func(context.Context, time.Duration) error { return nil },
+	p := &Provider{Repo: repo, API: api, Identity: accountIdentity("ada"), RemoteNamer: testRemoteNamer{fork: "ada/macports-ports"}, Sleep: func(context.Context, time.Duration) error { return nil },
 		Fork: func(context.Context) (buildenv.Fork, error) {
 			return buildenv.Fork{Repository: "ada/macports-ports", PushURL: fork}, nil
 		}}

@@ -65,7 +65,7 @@ func effectSites(t *testing.T) map[string]string {
 				if !ok {
 					return true
 				}
-				if pkg, ok := selector.X.(*ast.Ident); ok && pkg.Name == "remotewrite" && selector.Sel.Name != "Permit" && selector.Sel.Name != "ForAccount" {
+				if pkg, ok := selector.X.(*ast.Ident); ok && pkg.Name == "remotewrite" && selector.Sel.Name != "Permit" && selector.Sel.Name != "ForAccount" && selector.Sel.Name != "ForRemote" {
 					sites["remote@"+site] = "remotewrite." + selector.Sel.Name
 					return true
 				}

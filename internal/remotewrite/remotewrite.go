@@ -29,15 +29,27 @@ import (
 type IdentityReader interface {
 	Current(context.Context) (github.Identity, error)
 }
+
+// RemoteNamer names a remote through the forge that owns its address format.
+type RemoteNamer interface {
+	NameFromRemote(string) (string, error)
+}
+
 type accountBinding struct {
 	account  string
 	identity IdentityReader
 }
 type accountBindingKey struct{}
+type remoteNamerKey struct{}
 
 // ForAccount binds subsequent writes to the account named in a preview (#250).
 func ForAccount(ctx context.Context, account string, identity IdentityReader) context.Context {
 	return context.WithValue(ctx, accountBindingKey{}, accountBinding{account: account, identity: identity})
+}
+
+// ForRemote binds remote naming to the forge responsible for the remote URL.
+func ForRemote(ctx context.Context, namer RemoteNamer) context.Context {
+	return context.WithValue(ctx, remoteNamerKey{}, namer)
 }
 
 func write(ctx context.Context, run func(context.Context) error) error {
@@ -159,27 +171,51 @@ func Permit(effect Effect, repository string, basis Basis) error {
 	return nil
 }
 
+func permitRemote(ctx context.Context, effect Effect, repository, remote string, basis Basis) error {
+	namer, ok := ctx.Value(remoteNamerKey{}).(RemoteNamer)
+	if !ok || namer == nil {
+		return refusal.New(refusal.Unsupported, "dockhand doesn't %s to an unnamed remote: no forge remote namer is bound", effect)
+	}
+	remoteRepository, err := namer.NameFromRemote(remote)
+	if err != nil || strings.TrimSpace(remoteRepository) == "" {
+		if err == nil {
+			err = errors.New("forge returned an empty repository name")
+		}
+		return refusal.New(refusal.Unsupported, "dockhand doesn't %s to an unnamed remote: %s", effect, err)
+	}
+	if !strings.EqualFold(repository, remoteRepository) {
+		return refusal.New(refusal.Unsupported, "remote write to %s does not match permitted repository %s", remoteRepository, repository)
+	}
+	return Permit(effect, repository, basis)
+}
+
 // words say a basis as a refusal names it.
 var words = map[Basis]string{OwnFork: "your fork", Made: "a record that it made it", Invited: "an invitation to push", Named: "your naming it"}
 
 // Push pushes a branch to a repository (git.Repository.Push), and says
 // what it did: a push refused here sends nothing.
 func Push(ctx context.Context, repo *git.Repository, basis Basis, repository string, push git.Push) (git.PushReport, error) {
-	if err := Permit(PushBranch, repository, basis); err != nil {
+	if err := permitRemote(ctx, PushBranch, repository, push.Remote, basis); err != nil {
 		return git.PushReport{}, err
 	}
 	var report git.PushReport
-	err := write(ctx, func(ctx context.Context) error { var err error; report, err = repo.Push(ctx, push); return err })
+	err := write(ctx, func(ctx context.Context) error {
+		var err error
+		report, err = repo.Push(ctx, push)
+		return err
+	})
 	return report, err
 }
 
 // Delete deletes a repository's branch where it still holds expected
 // (git.Repository.DeleteRemoteBranch).
 func Delete(ctx context.Context, repo *git.Repository, basis Basis, repository, remote, branch string, expected git.RefValue) error {
-	if err := Permit(DeleteBranch, repository, basis); err != nil {
+	if err := permitRemote(ctx, DeleteBranch, repository, remote, basis); err != nil {
 		return err
 	}
-	return write(ctx, func(ctx context.Context) error { return repo.DeleteRemoteBranch(ctx, remote, branch, expected) })
+	return write(ctx, func(ctx context.Context) error {
+		return repo.DeleteRemoteBranch(ctx, remote, branch, expected)
+	})
 }
 
 // PullRequests are a forge's writes to pull requests and their checks.

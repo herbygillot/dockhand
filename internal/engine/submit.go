@@ -504,8 +504,12 @@ func (f forgeIdentity) Current(ctx context.Context) (github.Identity, error) {
 
 // writeAccount binds remote writes to the preview or command's account.
 func (e *Engine) writeAccount(ctx context.Context, account string) context.Context {
-	return remotewrite.ForAccount(ctx, account, e.RemoteWriteIdentity())
+	ctx = remotewrite.ForAccount(ctx, account, e.RemoteWriteIdentity())
+	return remotewrite.ForRemote(ctx, e.RemoteWriteNamer())
 }
+
+// RemoteWriteNamer names remotes through the engine's configured forge.
+func (e *Engine) RemoteWriteNamer() remotewrite.RemoteNamer { return e.forge() }
 
 // RemoteWriteIdentity reads the account used by a remote write.
 func (e *Engine) RemoteWriteIdentity() remotewrite.IdentityReader {

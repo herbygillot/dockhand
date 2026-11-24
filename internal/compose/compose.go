@@ -565,6 +565,9 @@ func Open(ctx context.Context, options Options, dependencies Dependencies) (Asse
 			actions.Identity = e.RemoteWriteIdentity()
 		}
 	}
+	if actions, ok := e.Providers[buildenv.GitHub].(*ghactions.Provider); ok {
+		actions.RemoteNamer = e.RemoteWriteNamer()
+	}
 	e.Ports = dependencies.Ports
 	if dependencies.ArchiveFetcher != nil {
 		e.Ports.Fetcher = dependencies.ArchiveFetcher(e)

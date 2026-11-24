@@ -22,12 +22,23 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
 type identitySequence struct {
 	accounts []string
 	reads    int
+}
+
+type remoteNames map[string]string
+
+func (r remoteNames) NameFromRemote(remote string) (string, error) {
+	name, ok := r[remote]
+	if !ok {
+		return "", fmt.Errorf("unknown remote %q", remote)
+	}
+	return name, nil
 }
 
 func (s *identitySequence) Current(context.Context) (github.Identity, error) {
@@ -68,7 +79,8 @@ func (f *writeForge) RerunFailed(context.Context, string, int64) error { return 
 
 func TestPreviewAccountGuardsEditReadyAndDraft(t *testing.T) {
 	watcher := &identitySequence{accounts: []string{"bea"}}
-	_, pushErr := Push(ForAccount(t.Context(), "ada", watcher), nil, OwnFork, "ada/macports-ports", git.Push{})
+	ctx := ForRemote(ForAccount(t.Context(), "ada", watcher), remoteNames{"local://fork": "ada/macports-ports"})
+	_, pushErr := Push(ctx, nil, OwnFork, "ada/macports-ports", git.Push{Remote: "local://fork"})
 	require.EqualError(t, pushErr, "the account changed; run it again")
 	for _, effect := range []string{"edit", "ready", "draft"} {
 		t.Run(effect, func(t *testing.T) {
@@ -124,6 +136,38 @@ func TestRemotewriteMarksItsWriteContext(t *testing.T) {
 	require.True(t, f.markedWrite)
 }
 
+func TestPushRefusesRemoteThatDoesNotNamePermittedRepository(t *testing.T) {
+	t.Parallel()
+	marker := filepath.Join(t.TempDir(), "git-started")
+	executable := filepath.Join(t.TempDir(), "git")
+	testsupport.WriteExecutable(t, executable, "#!/bin/sh\ntouch "+marker+"\nexit 1\n")
+	repo := &git.Repository{Root: t.TempDir(), Program: git.Program{Executable: executable, Env: testsupport.GitEnv(t)}}
+	ctx := ForAccount(t.Context(), "ada", &identitySequence{accounts: []string{"ada"}})
+	ctx = ForRemote(ctx, remoteNames{
+		"local://fork":     "ada/macports-ports",
+		"local://upstream": "macports-ports/macports-ports",
+	})
+	_, err := Push(ctx, repo, OwnFork, "ada/macports-ports", git.Push{
+		Remote: "local://upstream", Branch: "main",
+		Commit: strings.Repeat("a", 40),
+	})
+	require.EqualError(t, err, "remote write to macports-ports/macports-ports does not match permitted repository ada/macports-ports")
+	require.NoFileExists(t, marker, "a mismatched remote must be refused before Git starts")
+}
+
+func TestPushRefusesRemoteForgeCannotName(t *testing.T) {
+	t.Parallel()
+	marker := filepath.Join(t.TempDir(), "git-started")
+	executable := filepath.Join(t.TempDir(), "git")
+	testsupport.WriteExecutable(t, executable, "#!/bin/sh\ntouch "+marker+"\nexit 1\n")
+	repo := &git.Repository{Root: t.TempDir(), Program: git.Program{Executable: executable, Env: testsupport.GitEnv(t)}}
+	ctx := ForAccount(t.Context(), "ada", &identitySequence{accounts: []string{"ada"}})
+	ctx = ForRemote(ctx, remoteNames{})
+	_, err := Push(ctx, repo, OwnFork, "ada/macports-ports", git.Push{Remote: "local://unrecognized", Branch: "main", Commit: strings.Repeat("a", 40)})
+	require.EqualError(t, err, "dockhand doesn't push a branch to an unnamed remote: unknown remote \"local://unrecognized\"")
+	require.NoFileExists(t, marker, "a remote the forge cannot name must be refused before Git starts")
+}
+
 // Every effect against every basis, in your fork, another person's, and
 // MacPorts' repository: what's pushed, deleted, canceled, or run again
 // never lands in MacPorts', a deletion needs a record that dockhand made
@@ -173,12 +217,19 @@ func TestEachEffectTakesOnlyItsBases(t *testing.T) {
 func TestNothingElseCallsARemoteWrite(t *testing.T) {
 	t.Parallel()
 	const module = "github.com/herbygillot/dockhand/"
-	implementations := []string{"internal/git", "internal/forge", "internal/github", "internal/remotewrite"}
+	// The SDK client cannot be kept out of packages outside forge: github.Runtime
+	// exposes Client and engine.GitHubClient exposes forge/github.Client. The
+	// SDK-backed writes owned here are PullRequests.Create, PullRequests.Edit,
+	// PullRequests.CreateReview, PullRequests.RequestReviewers, and
+	// Actions.RerunFailedJobsByID. Ready/draft use GitHub's GraphQL endpoint;
+	// workflow cancellation uses its REST endpoint directly. Their wrappers
+	// live in internal/forge/github and internal/buildenv/ghactions.
+	implementations := []string{"internal/remotewrite"}
 	files := token.NewFileSet()
 	// Each package's export data, from one go list of the build cache,
 	// rather than type-checking every import from source, which took a
 	// minute.
-	listed, err := exec.Command("go", "list", "-export", "-deps", "-f", "{{.ImportPath}}\t{{.Export}}", "../...").Output()
+	listed, err := exec.Command("go", "list", "-export", "-deps", "-f", "{{.ImportPath}}\t{{.Export}}", "../../cmd/...", "../../internal/...").Output()
 	require.NoError(t, err)
 	exports := map[string]string{}
 	for line := range strings.Lines(string(listed)) {
@@ -209,6 +260,8 @@ func TestNothingElseCallsARemoteWrite(t *testing.T) {
 		{"internal/remotewrite", "PullRequests", []string{"Create", "Update", "MarkReady", "MarkDraft", "PostReview", "RequestReviewers", "RerunFailed"}},
 		{"internal/engine", "GitHubCLI", []string{"MarkReady", "MarkDraft"}},
 		{"internal/buildenv/ghactions", "API", []string{"Rerun", "Cancel"}},
+		{"internal/remotewrite", "CLI", []string{"MarkReady", "MarkDraft"}},
+		{"internal/remotewrite", "Runs", []string{"Cancel", "Rerun"}},
 	}
 	interfaces := make([]*types.Interface, len(remotes))
 	for i, r := range remotes {
@@ -237,25 +290,33 @@ func TestNothingElseCallsARemoteWrite(t *testing.T) {
 	}
 	root := filepath.Join("..", "..")
 	packages := map[string][]*ast.File{}
-	err = filepath.WalkDir(filepath.Join(root, "internal"), func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return err
-		}
-		relative, _ := filepath.Rel(root, path)
-		if slices.ContainsFunc(implementations, func(dir string) bool { return strings.HasPrefix(relative, dir+"/") }) {
+	var buildTaggedFiles []*ast.File
+	for _, sourceRoot := range []string{filepath.Join(root, "cmd"), filepath.Join(root, "internal")} {
+		err = filepath.WalkDir(sourceRoot, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return err
+			}
+			relative, _ := filepath.Rel(root, path)
+			if slices.ContainsFunc(implementations, func(dir string) bool { return strings.HasPrefix(relative, dir+"/") }) {
+				return nil
+			}
+			parsed, err := parser.ParseFile(files, path, nil, parser.SkipObjectResolution)
+			if err != nil {
+				return err
+			}
+			if match, err := build.Default.MatchFile(filepath.Dir(path), filepath.Base(path)); err != nil {
+				return err
+			} else if !match {
+				buildTaggedFiles = append(buildTaggedFiles, parsed)
+				return nil
+			}
+			packages[filepath.Dir(relative)] = append(packages[filepath.Dir(relative)], parsed)
 			return nil
-		}
-		// Only the files this build takes, as a platform's own.
-		if match, err := build.Default.MatchFile(filepath.Dir(path), filepath.Base(path)); err != nil || !match {
-			return err
-		}
-		parsed, err := parser.ParseFile(files, path, nil, parser.SkipObjectResolution)
+		})
 		if err != nil {
-			return err
+			break
 		}
-		packages[filepath.Dir(relative)] = append(packages[filepath.Dir(relative)], parsed)
-		return nil
-	})
+	}
 	require.NoError(t, err)
 	var found []string
 	for _, directory := range slices.Sorted(maps.Keys(packages)) {
@@ -265,20 +326,48 @@ func TestNothingElseCallsARemoteWrite(t *testing.T) {
 		require.NoError(t, err, directory)
 		for _, file := range packages[directory] {
 			ast.Inspect(file, func(n ast.Node) bool {
-				call, ok := n.(*ast.CallExpr)
+				selector, ok := n.(*ast.SelectorExpr)
 				if !ok {
 					return true
 				}
-				selector, ok := call.Fun.(*ast.SelectorExpr)
-				if !ok {
-					return true
-				}
-				if selection, ok := info.Selections[selector]; ok && selection.Kind() == types.MethodVal && writes(selection) {
-					found = append(found, files.Position(call.Pos()).String()+": "+selection.Obj().Name())
+				if selection, ok := info.Selections[selector]; ok && writes(selection) {
+					found = append(found, files.Position(selector.Pos()).String()+": "+selection.Obj().Name())
 				}
 				return true
 			})
 		}
+	}
+	// Build-tagged files for another host are not type-checked here. Limit
+	// the selector-name fallback to receiver identifiers declared as one of
+	// the known write interfaces, avoiding unrelated calls such as os.Create.
+	interfaceNames := map[string]bool{"PullRequests": true, "CLI": true, "Runs": true, "API": true, "GitHubCLI": true}
+	for _, file := range buildTaggedFiles {
+		writeReceivers := map[string]bool{}
+		ast.Inspect(file, func(n ast.Node) bool {
+			fn, ok := n.(*ast.FuncDecl)
+			if !ok || fn.Type.Params == nil {
+				return true
+			}
+			for _, field := range fn.Type.Params.List {
+				typeName, ok := field.Type.(*ast.Ident)
+				if ok && interfaceNames[typeName.Name] {
+					for _, name := range field.Names {
+						writeReceivers[name.Name] = true
+					}
+				}
+			}
+			return true
+		})
+		ast.Inspect(file, func(n ast.Node) bool {
+			selector, ok := n.(*ast.SelectorExpr)
+			if !ok || !slices.ContainsFunc(remotes, func(remote remote) bool { return slices.Contains(remote.methods, selector.Sel.Name) }) {
+				return true
+			}
+			if receiver, ok := selector.X.(*ast.Ident); ok && writeReceivers[receiver.Name] {
+				found = append(found, files.Position(selector.Pos()).String()+": "+selector.Sel.Name+" (build-tagged)")
+			}
+			return true
+		})
 	}
 	require.Empty(t, found, "a remote write outside remotewrite")
 }
