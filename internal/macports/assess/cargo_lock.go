@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/macports/depblock"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/project"
@@ -39,6 +40,10 @@ func (a *assessment) cargoLockVersions(pair Pair) []model.UpstreamChange {
 				found = append(found, model.UpstreamChange{Kind: "dependency", Path: name, Rule: CargoLockPatched, Subject: "Cargo.lock", Class: model.Present,
 					Message: fmt.Sprintf("Cargo.lock is patched by %s, so dockhand leaves its package versions to the patch", patchName)})
 			}
+			continue
+		}
+		refusalFlag, _ := depblock.CargoLockRefusalFlag(a.input.Port.Options)
+		if refusalFlag == "" {
 			continue
 		}
 		top := path.Dir(name)
@@ -130,7 +135,7 @@ func (a *assessment) cargoLockVersions(pair Pair) []model.UpstreamChange {
 			})
 			manifest := nameManifests[0]
 			found = append(found, model.UpstreamChange{Kind: "dependency", Path: name, Rule: CargoLockStale, Subject: packageName,
-				Class: model.Introduced, Hold: true, Message: fmt.Sprintf("Cargo.lock pins local package %s at %s, but %s says %s; a Cargo build with --frozen will refuse because it cannot update the lock file; a patch that refreshes Cargo.lock clears this hold", packageName, locked, cargoManifestName(manifest.dir), manifest.version)})
+				Class: model.Introduced, Hold: true, Message: fmt.Sprintf("Cargo.lock pins local package %s at %s, but %s says %s; a Cargo build with %s will refuse because it cannot update the lock file; a patch that refreshes Cargo.lock clears this hold", packageName, locked, cargoManifestName(manifest.dir), manifest.version, refusalFlag)})
 		}
 	}
 	return found

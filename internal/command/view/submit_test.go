@@ -2,11 +2,13 @@ package view
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/branchstate"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 )
@@ -102,4 +104,39 @@ func TestNoChecksWordsNameTheReleasesCIBuildsOn(t *testing.T) {
 	require.Equal(t, "none (--no-check); MacPorts CI builds on macOS 15 and 26, and the pull request says nothing covers any other release", CheckWords(plan))
 	plan.CIReleases = nil
 	require.Equal(t, "none (--no-check); the pull request says so", CheckWords(plan))
+}
+
+func TestSubmitJSONCarriesTheUncheckedBuildHoldBlock(t *testing.T) {
+	block := branchstate.Block{Kind: branchstate.BlockNoCheckBuildHold, Holds: []model.Concern{{Port: "jq", Rule: "patch-rejected", Detail: "patch.diff doesn't apply"}}}
+	plan := engine.SubmitPlan{
+		Request:  engine.SubmitRequest{NoCheck: true},
+		Blocks:   []branchstate.Block{block},
+		Blocking: []string{block.Words(engine.Vocabulary{})},
+	}
+	encoded, err := json.Marshal(SubmitView(plan))
+	require.NoError(t, err)
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(encoded, &result))
+	blocks, ok := result["blocks"].([]any)
+	require.True(t, ok)
+	require.Equal(t, string(branchstate.BlockNoCheckBuildHold), blocks[0].(map[string]any)["kind"])
+	blocking, ok := result["blocking"].([]any)
+	require.True(t, ok)
+	require.Equal(t, block.Words(engine.Vocabulary{}), blocking[0])
+}
+
+func TestSubmitPreviewSaysNoCheckWillBeRefusedForBuildHold(t *testing.T) {
+	block := branchstate.Block{Kind: branchstate.BlockNoCheckBuildHold, Holds: []model.Concern{{Port: "jq", Rule: "patch-rejected", Detail: "patch.diff doesn't apply"}}}
+	plan := engine.SubmitPlan{
+		Branch:   model.Branch{Name: "dockhand/jq-update"},
+		Request:  engine.SubmitRequest{NoCheck: true},
+		Blocks:   []branchstate.Block{block},
+		Blocking: []string{block.Words(engine.Vocabulary{})},
+	}
+	var out bytes.Buffer
+	WriteSubmitPlan(&out, plan, false)
+	require.Contains(t, out.String(), "can't submit yet")
+	require.Contains(t, out.String(), "--no-check is refused because these holds say the build fails")
+	require.Contains(t, out.String(), "patch-rejected")
+	require.Contains(t, out.String(), "holds.allow")
 }

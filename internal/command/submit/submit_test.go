@@ -22,8 +22,11 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
+	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/scratch"
+	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/store/sqlite"
 	"github.com/herbygillot/dockhand/internal/term"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -123,6 +126,66 @@ func TestSubmitHelpSaysItCommitsEditsBeforePushing(t *testing.T) {
 	require.Contains(t, paragraph, "Commits uncommitted edits first")
 	require.Contains(t, paragraph, "--head")
 	require.Contains(t, paragraph, "leaves uncommitted edits out")
+}
+
+func TestSubmitNoCheckPlanJSONCarriesTheBuildHoldBlock(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithGitHub(t, w)
+	started, err := cmdtest.JSONOf(t, "start", "jq-update")
+	require.NoError(t, err)
+	branch := cmdtest.Dig(t, started.Result, "branch").(map[string]any)
+	dir := branch["worktree"].(string)
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = cmdtest.Dockhand(t, "tidy")
+	require.NoError(t, err)
+
+	tree := testsupport.Git(t, dir, "rev-parse", "HEAD^{tree}")
+	database := filepath.Join(w.Home, ".dockhand", "dockhand.db")
+	s, err := sqlite.Open(t.Context(), database, sqlite.Options{})
+	require.NoError(t, err)
+	repo, err := s.Register(t.Context(), filepath.Join(w.Clone, ".git"))
+	require.NoError(t, err)
+	var storedBranch model.Branch
+	err = s.View(t.Context(), repo, func(reader store.Reader) error {
+		branches, err := reader.Branches(store.BranchFilter{})
+		if err != nil {
+			return err
+		}
+		for _, candidate := range branches {
+			if candidate.Name == "dockhand/jq-update" {
+				storedBranch = candidate
+				break
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, storedBranch.ID)
+	err = s.Update(t.Context(), repo, func(tx store.Tx) error {
+		return tx.RecordAssessment(model.Assessment{
+			Branch: storedBranch.ID,
+			Tree:   model.ObjectID(tree),
+			Base:   storedBranch.Base,
+			Port:   "jq", Directory: "textproc/jq", Policy: assess.Policy, At: time.Now(),
+			Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{{
+				Kind: "patch", Path: "patch.diff", Message: "patch.diff doesn't apply", Hold: true, Rule: "patch-rejected",
+			}}},
+		})
+	})
+	require.NoError(t, err)
+	require.NoError(t, s.Close())
+
+	preview, err := cmdtest.JSONOf(t, "submit", "--no-check", "--plan")
+	require.Error(t, err, "the preview is refused by its publication block")
+	blocks := cmdtest.Dig(t, preview.Result, "blocks").([]any)
+	require.Len(t, blocks, 1)
+	require.Equal(t, "no-check-build-hold", cmdtest.Dig(t, preview.Result, "blocks", 0, "kind"))
+	require.Contains(t, cmdtest.Dig(t, preview.Result, "blocking", 0), "patch-rejected")
 }
 
 // The preview says what comparing the upstream archives found, as update

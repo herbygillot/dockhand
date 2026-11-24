@@ -21,8 +21,13 @@ func cargoLock(version string, members ...string) string {
 
 func cargoLockChanges(t *testing.T, files map[string]string) []model.UpstreamChange {
 	t.Helper()
+	return cargoLockChangesWithOptions(t, files, map[string]string{"cargo.offline_cmd": "--frozen"})
+}
+
+func cargoLockChangesWithOptions(t *testing.T, files map[string]string, options map[string]string) []model.UpstreamChange {
+	t.Helper()
 	reading := read(t, "src", files, project.Spec{})
-	comparison := Assess(Input{Pairs: []Pair{{After: reading}}})
+	comparison := Assess(Input{Port: macports.PortInfo{Options: options}, Pairs: []Pair{{After: reading}}})
 	return comparison.Changes
 }
 
@@ -50,6 +55,47 @@ func TestCargoLockStalePackageVersionHolds(t *testing.T) {
 	require.Contains(t, changes[0].Message, "1.1.0")
 	require.Contains(t, changes[0].Message, "--frozen")
 	require.Contains(t, changes[0].Message, "a patch that refreshes Cargo.lock")
+}
+
+func TestCargoLockStaleOnlyHoldsWhenBuildKeepsFrozen(t *testing.T) {
+	files := map[string]string{
+		"Cargo.lock": cargoLock("1.0.0"),
+		"Cargo.toml": "[package]\nname = \"demo\"\nversion = \"1.1.0\"\n",
+	}
+	frozen := cargoLockChangesWithOptions(t, files, map[string]string{"cargo.offline_cmd": "--frozen"})
+	frozenFindings := cargoLockFindings(frozen)
+	require.Len(t, frozenFindings, 1)
+	require.Equal(t, CargoLockStale, frozenFindings[0].Rule)
+
+	withoutFrozen := cargoLockChangesWithOptions(t, files, map[string]string{
+		"build.cmd": "/opt/local/bin/cargo build", "build.pre_args": "--release",
+	})
+	require.Empty(t, cargoLockFindings(withoutFrozen), "a Portfile that drops --frozen can update its lock")
+
+	withFrozen := cargoLockChangesWithOptions(t, files, map[string]string{
+		"build.cmd": "/opt/local/bin/cargo build", "build.pre_args": "--release --frozen",
+	})
+	frozenFindings = cargoLockFindings(withFrozen)
+	require.Len(t, frozenFindings, 1)
+	require.Equal(t, CargoLockStale, frozenFindings[0].Rule)
+
+	unknown := cargoLockChangesWithOptions(t, files, map[string]string{})
+	require.Len(t, cargoLockFindings(unknown), 1, "unread Cargo arguments leave the lock check unknown")
+
+	locked := cargoLockChangesWithOptions(t, files, map[string]string{"cargo.offline_cmd": "--locked"})
+	require.Len(t, cargoLockFindings(locked), 1, "--locked also refuses to update Cargo.lock")
+
+	offline := cargoLockChangesWithOptions(t, files, map[string]string{"cargo.offline_cmd": "--offline"})
+	require.Empty(t, cargoLockFindings(offline), "--offline alone permits lock updates")
+
+	emptyOffline := cargoLockChangesWithOptions(t, files, map[string]string{"cargo.offline_cmd": ""})
+	require.Empty(t, cargoLockFindings(emptyOffline), "an explicit empty PortGroup command drops the lock check")
+}
+
+func TestBuildBlockingAssessmentRules(t *testing.T) {
+	require.True(t, BlocksNoCheck(PatchRejected))
+	require.True(t, BlocksNoCheck(CargoLockStale))
+	require.False(t, BlocksNoCheck(WorksrcPathGone))
 }
 
 func TestCargoLockCurrentPackageDoesNotHold(t *testing.T) {

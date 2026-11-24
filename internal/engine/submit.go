@@ -805,6 +805,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		Installed: e.installedLines(ctx, plan.Evidence, edits), Reviewed: reviewed}
 	plan.facts = facts
 	plan.allowed = e.allowedFor
+	plan.blockNoCheckBuildHolds()
 	plan.Answer(request.TestedBinaries, request.TestedVariants)
 	// What took the network to find is kept for status, which never reads
 	// it, to say as this plan found it (C2's rest): the moved sources and

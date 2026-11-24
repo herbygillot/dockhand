@@ -307,16 +307,17 @@ type PreviewUpstreamComparison struct {
 }
 
 type concernJudgment struct {
-	held     bool
-	accepted string
-	allowed  bool
+	held          bool
+	accepted      string
+	allowed       bool
+	blocksNoCheck bool
 }
 
 func (p SubmitPlan) publicationJudgment() ([]model.Concern, map[string]concernJudgment) {
 	var held []model.Concern
 	judgments := map[string]concernJudgment{}
 	for _, concern := range p.Concerns() {
-		judgment := concernJudgment{held: true}
+		judgment := concernJudgment{held: true, blocksNoCheck: concern.Origin == model.FromUpstream && assess.BlocksNoCheck(concern.Rule)}
 		switch {
 		case allowedConcern(concern, p.allowed):
 			judgment.held, judgment.allowed = false, true
@@ -331,6 +332,29 @@ func (p SubmitPlan) publicationJudgment() ([]model.Concern, map[string]concernJu
 		judgments[concern.Key()] = judgment
 	}
 	return held, judgments
+}
+
+// NoCheckHolds are unresolved publication holds whose rules establish that
+// the branch cannot build. A person's unchecked submission cannot waive them.
+func (p SubmitPlan) NoCheckHolds() []model.Concern {
+	if !p.Request.NoCheck {
+		return nil
+	}
+	_, judgments := p.publicationJudgment()
+	var held []model.Concern
+	for _, concern := range p.Concerns() {
+		judgment := judgments[concern.Key()]
+		if judgment.held && judgment.blocksNoCheck {
+			held = append(held, concern)
+		}
+	}
+	return held
+}
+
+func (p *SubmitPlan) blockNoCheckBuildHolds() {
+	if held := p.NoCheckHolds(); len(held) > 0 {
+		p.block(branchstate.Block{Kind: branchstate.BlockNoCheckBuildHold, Holds: held})
+	}
 }
 
 // PublicationHolds are the concerns the publication gate leaves held after

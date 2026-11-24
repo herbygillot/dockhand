@@ -96,8 +96,9 @@ import (
 // said as one (field testing's atuin 18.24.5); a port MacPorts' checker
 // says the change makes non-distributable holds (not-distributable). 31:
 // a Cargo.lock that doesn't pin a local package's manifest version holds,
-// unless a patch touches the lock (#256).
-const Policy = 31
+// unless a patch touches the lock (#256). 32: cargo-lock-stale holds only
+// where the port's build still uses --frozen.
+const Policy = 32
 
 // Input is what one port's assessment reads.
 type Input struct {
@@ -234,6 +235,12 @@ func Rules() []string {
 		DependencyMoved, DependenciesCounted, NativeLibrary, NativeLibraryLeft, Unread, LayoutAmbiguous, RequirementUnmet, RequirementUnknown,
 		ProviderUnresolved, ProviderRemoved, GoToolchainRule, GoModuleMoved, RequiresPythonRule, PythonPinBehind, PatchRejected, PatchDropped, PatchFuzz, SourceRemoved,
 		SourceUncertain, WorksrcPathGone, SourceChoice, CXXStandardRule, GoLinkTargetRule, ProjectRenamed, NotDistributable, CargoLockStale, CargoLockPatched}
+}
+
+// BlocksNoCheck reports whether this assessment rule's finding states that
+// the build fails. It does not include findings that only suspect a failure.
+func BlocksNoCheck(rule string) bool {
+	return rule == PatchRejected || rule == CargoLockStale
 }
 
 // floorRules raise a toolchain's floor upstream: a Go toolchain, a Python,

@@ -60,6 +60,34 @@ func TestSubmitPlanPreviewUpstreamAgreesWithPublicationHolds(t *testing.T) {
 	require.False(t, preview[0].Changes[2].Change.Hold, "today the preview shows a holds.allow finding as held even though the gate lets it through")
 }
 
+func TestNoCheckStopsOnlyUnresolvedBuildHolds(t *testing.T) {
+	t.Parallel()
+	patch := model.UpstreamChange{Kind: "patch", Path: "patch.diff", Message: "patch.diff doesn't apply", Hold: true, Rule: "patch-rejected"}
+	judgment := model.UpstreamChange{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed", Hold: true, Rule: "license-changed"}
+	plan := SubmitPlan{Request: SubmitRequest{NoCheck: true}, Upstream: []PortComparison{{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{patch, judgment}}}}}
+	require.Equal(t, []string{"patch.diff doesn't apply [patch-rejected]"}, HoldRuleLines(plan.NoCheckHolds()))
+	plan.blockNoCheckBuildHolds()
+	require.Len(t, plan.Blocks, 1)
+	require.Equal(t, branchstate.BlockNoCheckBuildHold, plan.Blocks[0].Kind)
+
+	plan.Decided = map[string]model.Decision{"jq patch-rejected": {Subject: "jq patch-rejected", Answer: model.Accepted, Words: "reviewed"}}
+	require.Empty(t, plan.NoCheckHolds(), "a decision resolves the build hold")
+	plan.Blocks, plan.Blocking = nil, nil
+	plan.blockNoCheckBuildHolds()
+	require.Empty(t, plan.Blocks, "PlanSubmit doesn't add a block after decide")
+
+	plan.Decided = nil
+	plan.allowed = func(string) []string { return []string{"patch-rejected"} }
+	require.Empty(t, plan.NoCheckHolds(), "holds.allow resolves the build hold")
+	plan.Blocks, plan.Blocking = nil, nil
+	plan.blockNoCheckBuildHolds()
+	require.Empty(t, plan.Blocks, "PlanSubmit doesn't add a block when holds.allow permits the rule")
+
+	plan.allowed = nil
+	plan.Request.NoCheck = false
+	require.Empty(t, plan.NoCheckHolds(), "a submission resting on a check isn't stopped here")
+}
+
 func TestAdoptedPullRequestBasisAndPushUseTheSameFreshAuthorization(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -203,6 +231,45 @@ func TestSubmitWithoutACheckSaysSoAndOpensThePullRequest(t *testing.T) {
 		require.Equal(t, plan.Body, recorded.PullRequest.Body)
 		return nil
 	}))
+}
+
+func TestNoCheckBuildHoldRefusesBeforeAnyPush(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	plan.Upstream = append(plan.Upstream, PortComparison{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{{
+		Kind: "patch", Path: "patch.diff", Message: "patch.diff doesn't apply", Hold: true, Rule: "patch-rejected",
+	}}}})
+	plan.blockNoCheckBuildHolds()
+	_, err = e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.ErrorContains(t, err, "--no-check is refused")
+	require.Empty(t, fake.Created)
+	require.Empty(t, testsupport.Git(t, fake.Fork, "branch", "--list", "dockhand/jq-update"), "the branch was not pushed to the fork")
+	plan.Decided = map[string]model.Decision{"jq patch-rejected": {Subject: "jq patch-rejected", Answer: model.Accepted, Words: "reviewed"}}
+	plan.Blocks, plan.Blocking = nil, nil
+	plan.blockNoCheckBuildHolds()
+	submitted, err := e.ApplySubmit(t.Context(), plan, model.AnsweredAsked)
+	require.NoError(t, err, "deciding the hold lets the unchecked submission proceed")
+	require.True(t, submitted.Created)
+
+	g := setup(t)
+	e2, _ := g.withPreparer(t)
+	fake2 := g.withFork(t, e2)
+	branch2 := committedUpdate(t, e2)
+	allowedPlan, err := e2.PlanSubmit(t.Context(), SubmitRequest{Branch: branch2, NoCheck: true})
+	require.NoError(t, err)
+	allowedPlan.Upstream = append(allowedPlan.Upstream, PortComparison{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{{
+		Kind: "patch", Path: "patch.diff", Message: "patch.diff doesn't apply", Hold: true, Rule: "patch-rejected",
+	}}}})
+	e2.options.AllowHolds = []string{"patch-rejected"}
+	allowedPlan.blockNoCheckBuildHolds()
+	_, err = e2.ApplySubmit(t.Context(), allowedPlan, model.AnsweredAsked)
+	require.NoError(t, err, "allowing the rule lets the unchecked submission proceed")
+	require.Len(t, fake2.Created, 1)
 }
 
 // A branch whose change record moves a port's version is an enhancement,

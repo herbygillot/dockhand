@@ -199,8 +199,19 @@ dockhand submit -b jq-update
 At a terminal, submit offers a description preview or edit and asks for the
 final submission. Without a terminal, `--yes` is required. A direct submission
 shows concerns for you to weigh; the automatic path used by bump and serve holds
-on those concerns. Structural blocks, such as missing required evidence, someone
-else's intervening push, or an explicit waiting decision, still need resolving.
+on those concerns. One exception applies to `submit --no-check`: a hold whose
+rule states that the build fails, `patch-rejected` or `cargo-lock-stale`, refuses
+the submission until you decide the hold or allow its rule with `holds.allow`.
+`cargo-lock-stale` applies while Cargo's build keeps `--frozen` or `--locked`;
+unknown build arguments retain the cargo PortGroup's `--frozen` assumption.
+When the Portfile explicitly drops both flags, the finding is quiet; `--offline`
+alone still allows Cargo to update the lock. A missing `worksrcpath` directory
+remains a review concern because the Portfile may use it conditionally.
+The `--plan` preview names the hold and both ways to let it go. A hold that asks
+for judgment, such as a changed license or a patch that applies only with fuzz,
+still lets your own submit proceed. Structural blocks, such as missing required
+evidence, someone else's intervening push, or an explicit waiting decision, still
+need resolving.
 
 The command pushes your committed branch to the selected fork and opens a pull
 request against `macports/macports-ports`, or updates the pull request already
