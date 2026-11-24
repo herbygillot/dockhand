@@ -86,6 +86,32 @@ func TestTheEvaluatorsFactsAreReadAsTheirTypes(t *testing.T) {
 	require.False(t, IsLivecheckOption("dockhand.metadata_only"))
 }
 
+func TestObsoleteRequiresAReplacementAndAMetadataOnlyPort(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name    string
+		port    PortInfo
+		want    bool
+		wantErr string
+	}{
+		{"obsolete", PortInfo{Name: "old", Options: map[string]string{"replaced_by": "new", "dockhand.metadata_only": "1"}}, true, ""},
+		{"still builds", PortInfo{Name: "old", Options: map[string]string{"replaced_by": "new", "dockhand.metadata_only": "0"}}, false, ""},
+		{"no replacement", PortInfo{Name: "old", Options: map[string]string{"dockhand.metadata_only": "1"}}, false, ""},
+		{"self replacement", PortInfo{Name: "old", Options: map[string]string{"replaced_by": "old", "dockhand.metadata_only": "1"}}, false, ""},
+		{"unknown metadata", PortInfo{Name: "old", Options: map[string]string{"replaced_by": "new"}, OptionErrors: map[string]string{"dockhand.metadata_only": "couldn't evaluate"}}, false, "couldn't evaluate"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := test.port.Obsolete()
+			require.Equal(t, test.want, got)
+			if test.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.wantErr)
+			}
+		})
+	}
+}
+
 // A stub whose probe failed is said, not taken for an ordinary port that
 // builds, which fidelity then refused with a misleading reason.
 func TestAStubWhoseProbeFailedIsSaid(t *testing.T) {

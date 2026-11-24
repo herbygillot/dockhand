@@ -471,3 +471,69 @@ func TestAFetchlessSiblingsFetchFieldsMoveWithTheRelease(t *testing.T) {
 	fetching := ScopedVersion(false, family("2.0", "dashboard.tar.gz"), family("2.1", "dashboard.tar.gz"), "netdata", model.Release{Version: "2.1"}, "sha256 2.1")
 	require.NotEmpty(t, fetching.UnexpectedChanges, "one that still fetches keeps its refusal")
 }
+
+func TestAnObsoleteSubportWithItsOwnVersionInheritsVersionFields(t *testing.T) {
+	t.Parallel()
+	port := func(name, version, githubVersion string, obsolete bool) macports.PortInfo {
+		options := map[string]string{
+			"github.version": githubVersion, "livecheck.version": githubVersion,
+			"distname":     "netdata-v" + githubVersion,
+			"master_sites": "https://github.com/netdata/netdata/releases/download/v" + githubVersion,
+			"distfiles":    "netdata-v" + githubVersion + ".tar.gz",
+			"checksums":    "sha256 " + githubVersion,
+			"git.branch":   "v" + githubVersion,
+		}
+		if obsolete {
+			options["replaced_by"] = "netdata"
+			options["dockhand.metadata_only"] = "1"
+			options["distfiles"] = ""
+		}
+		return macports.PortInfo{Name: name, Version: version, Revision: 0, Options: options}
+	}
+	family := func(mainVersion, githubVersion, stubVersion string) macports.Snapshot {
+		return snapshot(map[string]macports.PortInfo{
+			"netdata":           port("netdata", mainVersion, githubVersion, false),
+			"netdata-dashboard": port("netdata-dashboard", stubVersion, githubVersion, true),
+		})
+	}
+	before, after := family("2.13.0", "2.13.0", "3.0.4"), family("2.13.1", "2.13.1", "3.0.4")
+	report := ScopedVersion(false, before, after, "netdata", model.Release{Version: "2.13.1", Tag: "v2.13.1"}, "sha256 2.13.1")
+	require.Empty(t, report.UnexpectedChanges)
+
+	for _, test := range []struct {
+		name           string
+		afterStub      string
+		wantUnexpected string
+	}{
+		{name: "fixed stub version stays", afterStub: "3.0.4"},
+		{name: "stub own version moves", afterStub: "3.0.5", wantUnexpected: "netdata-dashboard.version changed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			before := family("2.13.0", "2.13.0", "3.0.4")
+			after := family("2.13.1", "2.13.1", test.afterStub)
+			prediction := Predict(before)
+			prediction.Expect("netdata", ComparablePort(after.Ports["netdata"], after.Root))
+			prediction.predictObsoleteMetadata(before, after, "netdata")
+			observed := prediction.Observe(before, after)
+			if test.wantUnexpected == "" {
+				require.Empty(t, observed.UnexpectedChanges)
+				return
+			}
+			require.Contains(t, observed.UnexpectedChanges, test.wantUnexpected)
+		})
+	}
+
+	nonObsolete := family("2.13.0", "2.13.0", "3.0.4")
+	other := nonObsolete.Ports["netdata-dashboard"]
+	delete(other.Options, "replaced_by")
+	delete(other.Options, "dockhand.metadata_only")
+	nonObsolete.Ports["netdata-dashboard"] = other
+	changed := family("2.13.1", "2.13.1", "3.0.4")
+	other = changed.Ports["netdata-dashboard"]
+	delete(other.Options, "replaced_by")
+	delete(other.Options, "dockhand.metadata_only")
+	changed.Ports["netdata-dashboard"] = other
+	refused := ScopedVersion(false, nonObsolete, changed, "netdata", model.Release{Version: "2.13.1", Tag: "v2.13.1"}, "sha256 2.13.1")
+	require.Contains(t, refused.UnexpectedChanges, "netdata-dashboard.github.version changed")
+	require.Contains(t, refused.UnexpectedChanges, "netdata-dashboard.livecheck.version changed")
+}

@@ -523,8 +523,9 @@ func fetchesNothing(old, next macports.PortInfo) bool {
 // nothing. Such a sibling moves with the selected port without shared-release
 // authorization, since it has no source of its own to get wrong.
 func followsObsolete(name, selected string, old, next, oldRoot, nextRoot macports.PortInfo) bool {
-	only, err := next.MetadataOnly()
-	return name != selected && next.Options["replaced_by"] == selected && err == nil && only &&
+	obsolete, err := next.Obsolete()
+	replacement, replacementErr := next.ReplacedBy()
+	return name != selected && err == nil && replacementErr == nil && obsolete && replacement == selected &&
 		old.Version == oldRoot.Version && next.Version == nextRoot.Version
 }
 
@@ -597,6 +598,7 @@ func scopedVersion(shared bool, before, after macports.Snapshot, selected string
 		prediction.Ports[name] = next
 	}
 	prediction.leaveFetchless(before, after, selected)
+	prediction.predictObsoleteMetadata(before, after, selected)
 	report := prediction.Observe(before, after)
 	report.UnexpectedChanges = append(report.UnexpectedChanges, problems...)
 	slices.Sort(report.UnexpectedChanges)

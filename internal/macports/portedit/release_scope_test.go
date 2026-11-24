@@ -1,10 +1,13 @@
 package portedit
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/stretchr/testify/require"
 )
 
@@ -54,6 +57,47 @@ if {${subport} eq "fixture"} {distfiles; fetch {}; use_configure no; build {}}
 			require.Contains(t, string(result.Files[0].After), "checksums sha256 bbbb size 3")
 		})
 	}
+}
+
+// An obsolete subport inherits github.setup's version fields. Moving those
+// fields with the live main port must not make the update refuse its edit.
+func TestUpdatePlansWhenAnObsoleteSubportInheritsGitHubSetup(t *testing.T) {
+	t.Parallel()
+	s, r, _ := archiveFixture(t, `PortGroup github 1.0
+github.setup owner fixture 1.2.3 v
+revision 0
+distname fixture-${github.version}
+master_sites @SITE@/${github.version}
+checksums sha256 aaaa size 2
+livecheck.version ${github.version}
+subport fixture-old {
+	PortGroup obsolete 1.0
+	name fixture-old
+	version 3.0.4
+	revision 0
+ replaced_by fixture
+}
+`)
+	group := filepath.Join(r.Workspace.Root(), "_resources/port1.0/group/github-1.0.tcl")
+	require.NoError(t, os.MkdirAll(filepath.Dir(group), 0700))
+	require.NoError(t, os.WriteFile(group, []byte(githubGroup), 0600))
+	obsoleteGroup := filepath.Join(r.Workspace.Root(), "_resources/port1.0/group/obsolete-1.0.tcl")
+	require.NoError(t, os.WriteFile(obsoleteGroup, []byte("distfiles\nfetch {}\nuse_configure no\nbuild {}\n"), 0600))
+	r.Release = &model.Release{
+		ReleaseSelection: model.ReleaseSelection{Requested: "1.2.4", CurrentVersion: "1.2.3"},
+		Archive:          true,
+		Version:          "1.2.4",
+		Forge:            "github",
+		Instance:         "https://github.com",
+		Repository:       "owner/fixture",
+		Tag:              "v1.2.4",
+		Commit:           strings.Repeat("c", 40),
+	}
+
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.NotEmpty(t, result.Files, "the main port's version update is planned")
+	require.Contains(t, string(result.Files[0].After), "github.setup owner fixture 1.2.4 v")
 }
 
 func TestASharedReleaseWritesEachMembersOwnChecksumsBlock(t *testing.T) {

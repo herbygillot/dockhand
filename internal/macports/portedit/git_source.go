@@ -23,9 +23,10 @@ import (
 var commitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 // obsoleteIn reports a port that evaluates as an obsolete follower in the
-// observed context: replaced_by names its successor and it fetches nothing.
+// observed context: it is metadata-only and replaced by another port.
 func obsoleteIn(info macports.PortInfo) bool {
-	return info.Options["replaced_by"] != "" && info.OptionErrors["replaced_by"] == ""
+	obsolete, err := info.Obsolete()
+	return err == nil && obsolete
 }
 
 // checkGitSource refuses the shapes the git path does not handle: an archive
