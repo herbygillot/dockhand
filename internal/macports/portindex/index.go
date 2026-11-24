@@ -572,7 +572,7 @@ func copyIndexFile(source, destination string) (err error) {
 		copyErr = os.Chtimes(temp, info.ModTime(), info.ModTime())
 	}
 	if copyErr == nil {
-		copyErr = os.Rename(temp, destination)
+		copyErr = atomicfile.Place(temp, destination)
 	}
 	return copyErr
 }

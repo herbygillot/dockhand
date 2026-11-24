@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
@@ -84,7 +85,11 @@ func (g *Guest) Download(ctx context.Context, path, local string, sudo bool) err
 			return fmt.Errorf("channel: reading %s: %w", path, err)
 		}
 		if counted.n == size && hex.EncodeToString(hash.Sum(nil)) == digest {
-			return os.Rename(temporary.Name(), local)
+			err := atomicfile.Place(temporary.Name(), local)
+			if err != nil {
+				os.Remove(temporary.Name())
+			}
+			return err
 		}
 		os.Remove(temporary.Name())
 		if attempt == attempts {
