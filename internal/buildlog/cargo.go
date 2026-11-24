@@ -23,12 +23,7 @@ func Compiled(log io.Reader, from, to int) []string {
 	lines := bufio.NewReaderSize(log, maxLine)
 	var crates []string
 	for number := 1; to == 0 || number < to; number++ {
-		line, err := lines.ReadSlice('\n')
-		long := false
-		for errors.Is(err, bufio.ErrBufferFull) {
-			long = true
-			_, err = lines.ReadSlice('\n')
-		}
+		line, long, err := readLine(lines)
 		if err != nil && !errors.Is(err, io.EOF) || len(line) == 0 && !long {
 			break
 		}
