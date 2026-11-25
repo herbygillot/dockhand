@@ -646,3 +646,37 @@ func TestShipIncludesASubportWithThePortItMovesWith(t *testing.T) {
 	require.Contains(t, out, "  jq-cli  included with jq on jq-1.8.1.\n")
 	require.NotContains(t, out, "Needs attention")
 }
+
+// ship -b finishes a preparation with two targets owed as one change: each
+// port prepared in turn on the branch, then one commit's stages, where
+// each owed target was its own ship target, the first committed alone,
+// stopped at the gate naming the command running, and held the second's
+// tidy (#336).
+func TestShipBranchFinishesTwoOwedTargetsAsOneChange(t *testing.T) {
+	t.Parallel()
+	twoPortWorld(t)
+	_, errs, err := cmdtest.Dockhand(t, "start", "two")
+	require.NoError(t, err, errs)
+	e, err := cmdtest.TestSettings(t).Open(t.Context())
+	require.NoError(t, err)
+	branch, err := e.ResolveRecord(t.Context(), "two")
+	require.NoError(t, err)
+	_, _, err = e.KeepAsked(t.Context(), branch, engine.Asking{Origin: "ship", Ports: []string{"jq", "yq"}})
+	require.NoError(t, err)
+	require.NoError(t, e.Close())
+
+	plan, errs, err := cmdtest.Dockhand(t, "ship", "-b", "two", "--to", "check", "--plan")
+	require.NoError(t, err, errs)
+	require.Equal(t, 1, strings.Count(plan, "  two  "), "the branch is one row:\n%s", plan)
+
+	out, errs, err := cmdtest.Dockhand(t, "ship", "-b", "two", "--to", "check", "--yes")
+	require.NoError(t, err, out+errs)
+	require.NotContains(t, out+errs, "preparation isn't finished")
+	request := cmdtest.KeptRequest(t, "two")
+	require.NotNil(t, request)
+	for _, target := range request.Targets {
+		outcome, ok := target.Outcome("version")
+		require.True(t, ok, target.Port)
+		require.Equal(t, model.ActionDone, outcome.Result, target.Port)
+	}
+}
