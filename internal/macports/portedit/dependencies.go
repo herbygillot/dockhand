@@ -821,20 +821,29 @@ func (s *Service) portGroupChecksums(ctx context.Context, input *sourceInput) er
 }
 
 // checksumDeclarationMovesVersion reports whether a PortGroup's checksum
-// declaration names a distfile containing the port's current version. Such a
-// declaration covers an archive the update moves; fixed bootstrap archives
-// remain at their declared version and can be left alone.
+// declaration covers an archive the update moves: a group it declares
+// names a distfile containing the port's current version, or names none,
+// a single distfile's group being the port's own archive. Fixed bootstrap
+// archives remain at their declared version and can be left alone. Only a
+// group's name is read: the word before a kind after the first is the
+// previous kind's digest, which read as a name refused an update of a
+// port at version 9 for a digest containing 9 (#337).
 func checksumDeclarationMovesVersion(values []string, version string) bool {
 	if version == "" {
 		return true
 	}
 	fields := strings.Fields(strings.Join(values, " "))
-	for i, field := range fields {
-		switch field {
-		case "sha256", "rmd160", "sha1", "md5":
-			if i > 0 && strings.Contains(fields[i-1], version) {
-				return true
-			}
+	for i := 0; i < len(fields); {
+		name := ""
+		if !portfile.IsChecksumKind(fields[i]) {
+			name = fields[i]
+			i++
+		}
+		if name == "" || strings.Contains(name, version) {
+			return true
+		}
+		for i < len(fields) && portfile.IsChecksumKind(fields[i]) {
+			i += 2
 		}
 	}
 	return false
