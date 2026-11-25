@@ -4,7 +4,7 @@
 # pushed over it.
 #
 # The row lands it itself, on a master of its own: a bare repository at
-# MacPorts' master, borrowing the ports clone's objects as C4's does,
+# MacPorts' master, borrowing the ports clone's objects as the plan rows do,
 # named by DOCKHAND_UPSTREAM for the row alone. Once the branch is made
 # and tidied, that master moves to the branch's commit, standing in for
 # the other PR, and a plan fetches it, as status reads the master last

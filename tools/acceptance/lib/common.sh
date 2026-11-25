@@ -162,19 +162,12 @@ matches() { grep "$@" >/dev/null; }
 # [file...] is grep -E with those flags, reading its standard input where
 # no file is named: -p prints the lines that match, as grep alone does, and
 # -n with their numbers. With none of -c, -o, -p, or -n it is quiet,
-# exiting 0 on a match and 1 on none; like matches, it reads all its input. Every row's pattern is one the
-# gate holds to dockhand's source (tools/acceptance/said): it must hold a
-# fixed run of at least 12 literal characters, and match a message some
-# string literal of internal/ or cmd/ can be, or be in said-allow.txt with
-# the Go test that pins the message dockhand assembles. A commit that
-# rewords a message a row says then fails the gate, not the test host
-# (rc3 and rc4's B2, D-T1, and the ^serve: rows).
-#
-# The gap: a literal can match while the message dockhand renders
-# differs, as where a prefix or a wrap comes between, or a verb is filled
-# with what the row didn't expect. A row that reads a --json field (jq) is
-# the only kind that can't go stale on wording, so a row reads one where
-# the envelope carries the fact it checks.
+# exiting 0 on a match and 1 on none; like matches, it reads all its input.
+# Nothing holds a row's pattern to dockhand's source: a commit that
+# rewords a message a row says fails that row on the test host, not the
+# gate (rc3 and rc4's B2, D-T1, and the ^serve: rows). A row that reads a
+# --json field (jq) is the only kind that can't go stale on wording, so a
+# row reads one where the envelope carries the fact it checks.
 said() {
 	local fold="" whole="" mode=-q names=""
 	while :; do

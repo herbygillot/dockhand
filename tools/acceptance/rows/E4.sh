@@ -1,6 +1,6 @@
 # stages: quick full
 # E4: a non-GitHub forge, reposurgeon on GitLab: a correct plan or a clean
-# refusal. --plan only. (pomo's Codeberg move is C4's.)
+# refusal. --plan only. (pomo's Codeberg move is the depblock tests'.)
 . "${ROW_LIB:?}/plan.sh"
 act() { E4_PLAN=$(plan_update reposurgeon); }
 assert() {
