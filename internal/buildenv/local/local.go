@@ -688,21 +688,13 @@ type orphan struct {
 // orphans are the prefix's check directories whose dockhand ended and
 // whose guest program runs still.
 func (l *Local) orphans(prefix string) []orphan {
-	entries, err := os.ReadDir(l.temp())
-	if err != nil {
-		return nil
-	}
 	var found []orphan
-	for _, entry := range entries {
-		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), localDirectory) {
-			continue
-		}
-		dir := filepath.Join(l.temp(), entry.Name())
+	for _, dir := range l.checkDirectories() {
 		if _, ours := l.building.Load(dir); ours {
 			continue
 		}
 		var made owner
-		data, err := os.ReadFile(filepath.Join(dir, "owner.json"))
+		data, err := readYours(filepath.Join(dir, "owner.json"))
 		if err != nil || json.Unmarshal(data, &made) != nil || made.Prefix != prefix || running(made.PID, made.Start) {
 			continue
 		}
@@ -724,22 +716,14 @@ func (l *Local) orphans(prefix string) []orphan {
 }
 
 func (l *Local) left() []leftDirectory {
-	entries, err := os.ReadDir(l.temp())
-	if err != nil {
-		return nil
-	}
 	var found []leftDirectory
-	for _, entry := range entries {
-		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), localDirectory) {
-			continue
-		}
-		dir := filepath.Join(l.temp(), entry.Name())
+	for _, dir := range l.checkDirectories() {
 		if _, ours := l.building.Load(dir); ours {
 			continue
 		}
 		var left leftDirectory
 		left.dir = dir
-		data, err := os.ReadFile(filepath.Join(dir, "owner.json"))
+		data, err := readYours(filepath.Join(dir, "owner.json"))
 		if err != nil || json.Unmarshal(data, &left.owner) != nil {
 			continue
 		}
@@ -835,17 +819,9 @@ func (l *Local) restoreLeft(ctx context.Context, prefix string, build buildenv.B
 // its active ports as they were before the check, is forgotten.
 func (l *Local) Changes(ctx context.Context) ([]buildenv.Change, error) {
 	var changes []buildenv.Change
-	entries, err := os.ReadDir(l.temp())
-	if err != nil {
-		return nil, nil
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), localDirectory) {
-			continue
-		}
-		dir := filepath.Join(l.temp(), entry.Name())
+	for _, dir := range l.checkDirectories() {
 		var made owner
-		data, err := os.ReadFile(filepath.Join(dir, "owner.json"))
+		data, err := readYours(filepath.Join(dir, "owner.json"))
 		if err != nil || json.Unmarshal(data, &made) != nil {
 			continue
 		}
@@ -943,16 +919,8 @@ func (l *Local) selectPutBack(check string) putBackSelection {
 // buildingCheck reads whether this check is still running without using
 // Changes, which may remove a leftover the person already restored.
 func (l *Local) buildingCheck(check string) (string, bool) {
-	entries, err := os.ReadDir(l.temp())
-	if err != nil {
-		return "", false
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), localDirectory) {
-			continue
-		}
-		dir := filepath.Join(l.temp(), entry.Name())
-		data, err := os.ReadFile(filepath.Join(dir, "owner.json"))
+	for _, dir := range l.checkDirectories() {
+		data, err := readYours(filepath.Join(dir, "owner.json"))
 		var made owner
 		if err != nil || json.Unmarshal(data, &made) != nil || made.Check != check {
 			continue

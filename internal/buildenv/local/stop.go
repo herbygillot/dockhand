@@ -47,7 +47,12 @@ func (l *Local) Stop(ctx context.Context, request buildenv.StopRequest) ([]strin
 		dir = note.Directory
 	}
 	var made owner
-	data, err := os.ReadFile(filepath.Join(dir, "owner.json"))
+	// The directory and its record are this account's alone, or nothing
+	// in them is read or signalled.
+	if _, statErr := os.Lstat(dir); dir != "" && statErr == nil && !yourDirectory(dir) {
+		return nil, fmt.Errorf("%s isn't this account's alone, so nothing it names was stopped", dir)
+	}
+	data, err := readYours(filepath.Join(dir, "owner.json"))
 	switch {
 	case dir == "" || errors.Is(err, os.ErrNotExist):
 		// Nothing was started there, or its directory is gone with what

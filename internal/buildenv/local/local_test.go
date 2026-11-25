@@ -613,3 +613,61 @@ func TestAnUnreadableRecordRefusesTheNextCheckThere(t *testing.T) {
 	require.NoError(t, (&Local{Temp: root}).restoreLeft(t.Context(), "/other-prefix", build))
 	require.FileExists(t, before)
 }
+
+// A check's directory left in temp counts only where it is this account's
+// alone, a real directory writable by no one else, its files too: one with
+// another mode, or a link in its place, is passed over, and nothing in it
+// is read or run.
+func TestALeftDirectoryCountsOnlyWhereItIsYours(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name  string
+		plant func(t *testing.T, temp, left string)
+	}{
+		{"writable by others", func(t *testing.T, _, left string) { require.NoError(t, os.Chmod(left, 0o777)) }},
+		{"writable by its group", func(t *testing.T, _, left string) { require.NoError(t, os.Chmod(left, 0o775)) }},
+		{"its owner record writable by others", func(t *testing.T, _, left string) {
+			require.NoError(t, os.Chmod(filepath.Join(left, "owner.json"), 0o666))
+		}},
+		{"its results writable by others", func(t *testing.T, _, left string) {
+			require.NoError(t, os.Chmod(filepath.Join(left, "results.json"), 0o666))
+		}},
+		{"a link in its place", func(t *testing.T, temp, left string) {
+			elsewhere := filepath.Join(t.TempDir(), "elsewhere")
+			require.NoError(t, os.Rename(left, elsewhere))
+			require.NoError(t, os.Symlink(elsewhere, left))
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			temp, prefix := t.TempDir(), t.TempDir()
+			left := leftBehind(t, temp, prefix)
+			c.plant(t, temp, left)
+			l := &Local{Temp: temp}
+			require.Empty(t, l.left(), "nothing left is taken from it")
+			changes, err := l.Changes(t.Context())
+			require.NoError(t, err)
+			require.Empty(t, changes)
+			_, found := l.buildingCheck("check-9")
+			require.False(t, found)
+			_, found, err = l.PlanPutBack(t.Context(), "check-9")
+			require.NoError(t, err)
+			require.False(t, found)
+		})
+	}
+	// Yours, it counts.
+	temp, prefix := t.TempDir(), t.TempDir()
+	leftBehind(t, temp, prefix)
+	require.Len(t, (&Local{Temp: temp}).left(), 1)
+}
+
+// A stop reads and signals nothing from a check's directory that isn't
+// this account's alone.
+func TestAStopTakesNothingFromADirectoryNotYours(t *testing.T) {
+	t.Parallel()
+	temp, prefix := t.TempDir(), t.TempDir()
+	left := leftBehind(t, temp, prefix)
+	require.NoError(t, os.Chmod(left, 0o777))
+	_, err := (&Local{Temp: temp}).Stop(t.Context(), buildenv.StopRequest{Execution: model.GuestExecution{ProviderRef: left}})
+	require.ErrorContains(t, err, "isn't this account's alone")
+}
