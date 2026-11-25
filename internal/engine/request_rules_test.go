@@ -159,3 +159,36 @@ func TestTheHandBackGoesOnlyToTheRequestItTook(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, current.Request.Publish.Draft.Given)
 }
+
+// A hand edit in the worktree hides neither a kept refusal nor, from a
+// caller nobody attends, a target still owed: the verdict answers hand
+// edits first, and the gate asked about the refusal only of an
+// unfinished preparation, so editing any tracked file let check build
+// (#335).
+func TestAHandEditHidesNoRefusalOrOwedTargetFromTheGate(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, p := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
+	require.NoError(t, err)
+	p.refused = &editprep.SourceRefused{Err: editprep.ErrUnsupported.Because("--source releases: release jq-1.8.1 carries no source archive")}
+	request, err := AskUpdate(Asking{Origin: "update", Asked: model.ChangeRequest{Source: model.SourceAsk{Source: model.Set("releases")}}}, "jq")
+	require.NoError(t, err)
+	request.Branch = branch
+	_, err = e.Update(t.Context(), request)
+	require.ErrorIs(t, err, editprep.ErrUnsupported)
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"_resources/port1.0/group/github-1.0.tcl": "# group, edited by hand\n"})
+	current, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	for _, unattended := range []bool{false, true} {
+		require.ErrorContains(t, e.UnfinishedGate(t.Context(), current, unattended, "the check builds"), "nothing goes on until the ask changes", "unattended %v", unattended)
+	}
+
+	owed, err := e.Start(t.Context(), StartRequest{Name: "jq-owed"})
+	require.NoError(t, err)
+	require.NoError(t, e.keepTarget(t.Context(), owed, "ship", "jq", func(target *model.RequestTarget) {}))
+	testsupport.WriteFiles(t, owed.Worktree, map[string]string{"_resources/port1.0/group/github-1.0.tcl": "# group, edited by hand\n"})
+	owed = reread(t, e, owed.ID)
+	require.ErrorContains(t, e.UnfinishedGate(t.Context(), owed, true, "the check builds"), "jq has no update yet")
+	require.NoError(t, e.UnfinishedGate(t.Context(), owed, false, "the check builds"), "a person goes on with the files as they are")
+}

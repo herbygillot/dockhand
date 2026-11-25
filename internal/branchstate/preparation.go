@@ -73,6 +73,10 @@ type Readied struct {
 	// table); edits not committed alone are a person's to check as they
 	// are, and ship's to commit.
 	Pending bool
+	// Owed, beside hand edits, are the updates not finished and the targets
+	// with no update yet, which the hand edits' answer hides and a caller
+	// nobody attends still stops on (#335).
+	Owed []string
 }
 
 // PreparationOf answers the first that applies, in order: hand-edits,
@@ -89,7 +93,7 @@ func PreparationOf(in Readying) Readied {
 		}
 	}
 	if len(reasons) > 0 {
-		return Readied{Disposition: HandEditsToCarry, Reasons: reasons, Committed: committed}
+		return Readied{Disposition: HandEditsToCarry, Reasons: reasons, Committed: committed, Owed: owedReasons(in)}
 	}
 	if reasons = unfinishedReasons(in); len(reasons) > 0 {
 		pending := len(in.Unwritten) > 0 || len(reasons) > 1 || len(in.Explained) == 0
@@ -130,7 +134,7 @@ func unfinishedReasons(in Readying) []string {
 				}
 			}
 			if !target.Finished(in.Edits) {
-				reasons = append(reasons, fmt.Sprintf("%s has no update yet", target.Port))
+				reasons = append(reasons, owedWords(target.Port))
 			}
 		}
 	}
@@ -139,6 +143,26 @@ func unfinishedReasons(in Readying) []string {
 	}
 	return reasons
 }
+
+// owedReasons are the updates not finished and the targets with no update
+// yet: what the files are short of, whatever else the worktree holds.
+func owedReasons(in Readying) []string {
+	var reasons []string
+	for _, unwritten := range in.Unwritten {
+		reasons = append(reasons, fmt.Sprintf("an update of %s wasn't finished", unwritten.Edit.Port))
+	}
+	if in.Request != nil {
+		for _, target := range in.Request.Targets {
+			if !target.Finished(in.Edits) {
+				reasons = append(reasons, owedWords(target.Port))
+			}
+		}
+	}
+	return reasons
+}
+
+// owedWords say a target has no update yet.
+func owedWords(port string) string { return fmt.Sprintf("%s has no update yet", port) }
 
 // portsOf are the ports edits change, in the order first edited.
 func portsOf(edits []model.Edit) []string {

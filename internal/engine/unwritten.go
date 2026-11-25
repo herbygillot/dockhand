@@ -313,14 +313,26 @@ func (e *Engine) UnfinishedGate(ctx context.Context, branch model.Branch, unatte
 		}
 		progress.Report(ctx, "%s; %s the files as they are", refusal.WordsOf(err), doing)
 	}
-	prepared, err := e.preparation(ctx, branch, !unattended)
-	if err != nil || prepared.Disposition != branchstate.UnfinishedPreparation {
-		return err
-	}
+	// A refusal kept stops before the verdict, which answers hand edits
+	// first: a file edited by hand let check past it (#335).
 	if err := refusedIn(branch); err != nil {
 		return err
 	}
-	words := fmt.Sprintf("%s's preparation isn't finished: %s", branch.ShortName(), strings.Join(prepared.Reasons, "; "))
+	prepared, err := e.preparation(ctx, branch, !unattended)
+	if err != nil {
+		return err
+	}
+	reasons := prepared.Reasons
+	switch {
+	case prepared.Disposition == branchstate.UnfinishedPreparation:
+	case unattended && len(prepared.Owed) > 0:
+		// Nobody there is stopped by what's owed whatever else the
+		// worktree holds (#335).
+		reasons = prepared.Owed
+	default:
+		return nil
+	}
+	words := fmt.Sprintf("%s's preparation isn't finished: %s", branch.ShortName(), strings.Join(reasons, "; "))
 	if unattended {
 		return refusal.New(refusal.Attention, "%s; dockhand ship -b %s finishes it", words, branch.ShortName())
 	}
