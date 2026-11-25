@@ -191,8 +191,9 @@ func MayEvaluate(ctx context.Context, e *engine.Engine, streams term.Streams, br
 			if err != nil {
 				return err
 			}
-			// The diff is written raw, as tidy's is (#94).
-			fmt.Fprint(streams.Out, string(diff))
+			// The diff is written unwrapped, as tidy's is (#94), and
+			// with the author's control characters shown (#330).
+			fmt.Fprint(streams.Out, term.Visible(string(diff)))
 		default:
 			// A No stops the command here, as the door would (Codex's
 			// confirmation of #162's fixes).

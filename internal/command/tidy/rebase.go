@@ -125,14 +125,14 @@ func writeRebasePlan(streams term.Streams, branch model.Branch, rebased engine.R
 		short := model.ObjectID(made.Commit.ID).Short()
 		switch made.Outcome {
 		case engine.ReplayDropped:
-			fmt.Fprintf(streams.Prose(), "  drop     %s %s (master %s has this change)\n", short, made.Commit.Subject(), rebased.To.Short())
+			fmt.Fprintf(streams.Prose(), "  drop     %s %s (master %s has this change)\n", short, term.Visible(made.Commit.Subject()), rebased.To.Short())
 		case engine.ReplayConflict:
 			conflict = true
-			fmt.Fprintf(streams.Prose(), "  conflict %s %s, in %s\n", short, made.Commit.Subject(), strings.Join(made.Paths, ", "))
+			fmt.Fprintf(streams.Prose(), "  conflict %s %s, in %s\n", short, term.Visible(made.Commit.Subject()), strings.Join(made.Paths, ", "))
 		case engine.ReplayUntried:
-			fmt.Fprintf(streams.Prose(), "  untried  %s %s\n", short, made.Commit.Subject())
+			fmt.Fprintf(streams.Prose(), "  untried  %s %s\n", short, term.Visible(made.Commit.Subject()))
 		default:
-			fmt.Fprintf(streams.Prose(), "  replay   %s %s\n", short, made.Commit.Subject())
+			fmt.Fprintf(streams.Prose(), "  replay   %s %s\n", short, term.Visible(made.Commit.Subject()))
 		}
 	}
 	switch {

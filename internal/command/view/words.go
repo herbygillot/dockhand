@@ -151,7 +151,7 @@ func CheckWords(plan engine.SubmitPlan) string {
 // submit shows them again, and bump and serve hold on one.
 func WriteOthers(out io.Writer, port string, others []engine.OtherPullRequest) {
 	for _, pr := range others {
-		fmt.Fprintf(out, "Also open for %s: #%d %s\n", port, pr.Number, pr.Title)
+		fmt.Fprintf(out, "Also open for %s: #%d %s\n", port, pr.Number, term.Visible(pr.Title))
 	}
 }
 

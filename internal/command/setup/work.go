@@ -323,7 +323,7 @@ func startFrom(ctx context.Context, s *settings.Settings, streams term.Streams, 
 	streams.Emit(map[string]any{"branch": view.BranchRef(done.Branch), "from": view.BranchRef(done.From), "picked": len(done.Picked)})
 	fmt.Fprintf(streams.Prose(), "Created %s from master %s (fetched just now), with %s past #%d's merge from %s:\n", done.Branch.Name, done.Branch.Base.Short(), prose.Plural(len(done.Picked), "commit"), done.From.PullRequest.Number, done.From.ShortName())
 	for _, commit := range done.Picked {
-		fmt.Fprintf(streams.Prose(), "  %s %s\n", model.ObjectID(commit.ID).Short(), prose.FirstLine(commit.Message))
+		fmt.Fprintf(streams.Prose(), "  %s %s\n", model.ObjectID(commit.ID).Short(), term.Visible(prose.FirstLine(commit.Message)))
 	}
 	fmt.Fprintf(streams.Prose(), "Directory: %s\nNext: dockhand check --branch %s\n", s.Places().Tilde(done.Branch.Worktree), done.Branch.ShortName())
 	return nil

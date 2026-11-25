@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/prose"
+	"github.com/herbygillot/dockhand/internal/term"
 )
 
 // WriteSubmitPlan is a submission's plan: where it goes, what it pushes,
@@ -220,7 +221,7 @@ func otherWords(plan engine.SubmitPlan) string {
 	}
 	var found []string
 	for _, pr := range plan.Others {
-		found = append(found, fmt.Sprintf("#%d %s", pr.Number, pr.Title))
+		found = append(found, fmt.Sprintf("#%d %s", pr.Number, term.Visible(pr.Title)))
 	}
 	return strings.Join(found, " · ")
 }
