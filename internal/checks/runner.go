@@ -344,15 +344,31 @@ func (d *driver) drive(ctx context.Context, id model.RunID) (model.Run, error) {
 		ctx = owned
 	}
 	if d.run.State == model.RunQueued {
+		// The run is written as it stands, not as it was read: a person's
+		// cancel recorded since is kept, where it ended the drive on a
+		// store conflict (#331).
 		if err := d.fenced(ctx, func(tx store.Tx) error {
+			current, err := tx.Run(id)
+			if err != nil {
+				return err
+			}
+			if d.run = current; current.State != model.RunQueued || current.CancelRequested != nil {
+				return nil
+			}
 			d.run.State = model.RunRunning
 			if err := tx.UpdateRun(d.run); err != nil {
 				return err
 			}
-			_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: model.EventRunState, Level: model.LevelInfo, Message: d.run.Name() + " running"})
+			_, err = d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: model.EventRunState, Level: model.LevelInfo, Message: d.run.Name() + " running"})
 			return err
 		}); err != nil {
 			return d.run, err
+		}
+		if d.run.State.Terminal() {
+			return d.run, nil
+		}
+		if d.run.CancelRequested != nil {
+			return c.settleCancel(ctx, d.session, d.lease, id)
 		}
 	}
 
@@ -1050,12 +1066,21 @@ func (d *driver) finish(ctx context.Context) (model.Run, error) {
 		detail = strings.Join(d.problems, "; ")
 	}
 	err = d.fenced(ctx, func(tx store.Tx) error {
+		// Written over the run as it stands: a cancel recorded since the
+		// driver read it is kept beside the result of work that had
+		// already ended, where it ended the drive on a store conflict
+		// (#331).
+		current, err := tx.Run(d.run.ID)
+		if err != nil {
+			return err
+		}
 		now := d.c.Now()
+		d.run = current
 		d.run.State, d.run.FinishedAt, d.run.Detail = state, &now, detail
 		if err := tx.UpdateRun(d.run); err != nil {
 			return err
 		}
-		_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: model.EventRunState, Level: model.LevelInfo, Message: fmt.Sprintf("%s %s: %s", d.run.Name(), state, detail)})
+		_, err = d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: model.EventRunState, Level: model.LevelInfo, Message: fmt.Sprintf("%s %s: %s", d.run.Name(), state, detail)})
 		return err
 	})
 	if err == nil {
