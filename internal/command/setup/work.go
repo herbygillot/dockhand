@@ -529,7 +529,9 @@ any, the branch checked out here.`,
 				}
 			}
 			streams.Emit(map[string]string{"path": path})
-			fmt.Fprintln(streams.Prose(), path)
+			// A shell reads it, $(dockhand path): payload, never wrapped
+			// (#339).
+			fmt.Fprintln(streams.Out, path)
 			return nil
 		},
 	}

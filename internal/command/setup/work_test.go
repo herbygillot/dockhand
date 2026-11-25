@@ -318,3 +318,23 @@ func TestABranchIsFoundFromOutsideTheTree(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "path")
 	require.ErrorContains(t, err, "is not in a Git checkout", "path alone means here")
 }
+
+// path and edit --no-open print a path a shell reads, $(dockhand path),
+// so it is payload: one under a directory with a space, longer than the
+// width, comes out whole, where the prose writer broke it at the space
+// (#339).
+func TestPathAndEditPrintAPathWithASpaceWhole(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	spaced := filepath.Join(w.Home, "Volumes", "External Disk", "macports-branches")
+	config := filepath.Join(w.Home, "dockhand.toml")
+	require.NoError(t, os.WriteFile(config, []byte("worktrees = \""+spaced+"\"\n"), 0o600))
+	cmdtest.Setenv(t, "DOCKHAND_CONFIG", config)
+	_, errs, err := cmdtest.Dockhand(t, "start", "jq-update")
+	require.NoError(t, err, errs)
+	cmdtest.SameAtAnyWidth(t, "path", "jq-update")
+	out, _, err := cmdtest.Dockhand(t, "path", "jq-update")
+	require.NoError(t, err)
+	require.Contains(t, out, "External Disk")
+	cmdtest.SameAtAnyWidth(t, "edit", "jq", "-b", "jq-update", "--no-open")
+}
