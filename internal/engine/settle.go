@@ -143,7 +143,7 @@ func Settle(publication model.Publication, recorded *model.PullRequest, reading 
 				owe(step)
 			}
 		default:
-			// A reviewer request is settled login by login (settleReviewer).
+			// A reviewer request is settled login by login (rerequest).
 			owe(step)
 		}
 	}

@@ -1334,7 +1334,7 @@ func sameSet(a, b []string) bool {
 
 // passingSubmitter opens pull requests for the branches serve prepared
 // whose checks passed, within Design v3 §11's guardrails, at most the
-// daily limit, counted from the journal so it holds across restarts.
+// daily limit, counted from serve's recorded openings so it holds across restarts.
 type passingSubmitter struct {
 	s    *server
 	last time.Time

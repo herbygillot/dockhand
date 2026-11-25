@@ -97,7 +97,8 @@ import (
 // says the change makes non-distributable holds (not-distributable). 31:
 // a Cargo.lock that doesn't pin a local package's manifest version holds,
 // unless a patch touches the lock (#256). 32: cargo-lock-stale holds only
-// where the port's build still uses --frozen.
+// where the port's build still uses --frozen or --locked, or its arguments
+// couldn't be read.
 const Policy = 32
 
 // Input is what one port's assessment reads.
