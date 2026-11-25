@@ -24,9 +24,11 @@ import (
 // it settles nothing.
 type PublicationReading struct {
 	// HeadRead says the fork's head branch was read: HeadExists, at
-	// HeadAt.
-	HeadRead, HeadExists bool
-	HeadAt               model.ObjectID
+	// HeadAt. HeadGone is the read's answer where the head's repository
+	// is gone from GitHub, as a fork deleted: nothing was pushed there
+	// (#344).
+	HeadRead, HeadExists, HeadGone bool
+	HeadAt                         model.ObjectID
 	// FoundRead says the pull request was looked for by Head and Base, in
 	// every state, an open one first and else the newest: Found it was,
 	// as PullRequest.
@@ -102,6 +104,10 @@ func Settle(publication model.Publication, recorded *model.PullRequest, reading 
 		switch step {
 		case model.StepPush:
 			switch {
+			case reading.HeadGone:
+				// A repository gone is an answer: the publication ends,
+				// and archive and forget can go on (#344).
+				s.Ended, s.Why = true, "the fork it pushes to is gone from GitHub, so nothing this submission pushed is there"
 			case !reading.HeadRead:
 				unread("the fork's branch")
 				owe(step)
@@ -236,6 +242,13 @@ func (e *Engine) readPublication(ctx context.Context, worktree *git.Repository, 
 	// The head is read where the push is owed, the one step it settles.
 	if slices.Contains(record.Owes, model.StepPush) {
 		reading.HeadRead, reading.HeadExists, reading.HeadAt = e.readHead(ctx, worktree, headRepository, headBranch)
+		// A head that can't be read may be a repository that's gone,
+		// which GitHub answers (#344).
+		if !reading.HeadRead {
+			if _, err := e.forge().RepositoryInfo(ctx, headRepository); errors.Is(err, forge.ErrNotFound) {
+				reading.HeadRead, reading.HeadGone = true, true
+			}
+		}
 	}
 	found, err := e.forge().Find(ctx, forge.PullRequestQuery{Repository: baseRepository, HeadRepository: headRepository, HeadBranch: headBranch, BaseBranch: baseBranch})
 	if err == nil {

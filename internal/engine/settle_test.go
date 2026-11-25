@@ -50,6 +50,10 @@ func TestSettlingReadsWhatEachStepLeft(t *testing.T) {
 			return r
 		},
 			Settlement{Done: []model.PublicationStep{model.StepPush, model.StepOpen}, Number: 41, Provenance: model.Found, Body: body, Ended: true, Closed: true, Why: "#41 was merged"}},
+		{"the fork is gone from GitHub: nothing was pushed there, and it ends (#344)", func(r PublicationReading) PublicationReading {
+			r.HeadRead, r.HeadExists, r.HeadGone, r.HeadAt, r.Found = true, false, true, "", false
+			return r
+		}, Settlement{Ended: true, Why: "the fork it pushes to is gone from GitHub, so nothing this submission pushed is there"}},
 		{"U. GitHub can't be read: nothing is settled, and each read is named", func(r PublicationReading) PublicationReading {
 			r.FoundRead, r.StatusRead = false, false
 			return r

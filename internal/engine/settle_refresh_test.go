@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -91,12 +92,12 @@ func TestServesTriedRowsWaitForTheirHead(t *testing.T) {
 	}
 
 	require.NoError(t, e.Repo.WithHeadLock(t.Context(), head, func(context.Context) error {
-		_, err := e.settleServe(t.Context())
+		_, _, err := e.settleServe(t.Context())
 		return err
 	}))
 	require.True(t, row().Gone.IsZero(), "a held head's row is left as it is")
 
-	_, err = e.settleServe(t.Context())
+	_, _, err = e.settleServe(t.Context())
 	require.NoError(t, err)
 	require.False(t, row().Gone.IsZero(), "the head gone from the fork is looked at once it's free")
 }
@@ -142,4 +143,26 @@ func TestServesRetryTakesThePlaceItsRowHolds(t *testing.T) {
 		return err
 	}))
 	require.Len(t, rows, 2, "no new place was written")
+}
+
+// A served branch whose publication can't be settled is skipped, said,
+// and serve's pass goes on with the rest: its pass returned on the first
+// settle error and opened nothing, for every candidate, every pass (#344).
+func TestServeSkipsABranchItCantSettle(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	recorded := plan.publication("pub_stuck", "", false)
+	recorded.Served, recorded.Owes = true, []model.PublicationStep{model.StepOpen}
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.SetPublication(branch.ID, "", &recorded) }))
+	fake.FindErr = errors.New("GitHub answered 502")
+
+	_, skipped, err := e.settleServe(t.Context())
+	require.NoError(t, err, "one branch's settle error isn't the pass's")
+	require.Contains(t, skipped, branch.ID)
+	require.ErrorContains(t, skipped[branch.ID], "couldn't be accounted for")
 }
