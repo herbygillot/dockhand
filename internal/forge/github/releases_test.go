@@ -166,3 +166,20 @@ func TestAssetsAreCompleteOrRefused(t *testing.T) {
 		})
 	}
 }
+
+// A release GitHub answers for another tag than the one asked, as a tag
+// with # or an escape in it reaches v1.0's, is refused: its assets choose
+// a source (#346).
+func TestAssetsOfAnotherTagAreRefused(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"tag_name":"v1.0","assets":[{"name":"project-1.0.tar.gz","browser_download_url":"https://github.com/owner/project/releases/download/v1.0/project-1.0.tar.gz","size":120}]}`)
+	}))
+	defer server.Close()
+	for _, tag := range []string{"v1.0#rc", "v1%2e0"} {
+		assets, err := testRepository(t, &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}).(forge.AssetRepository).Assets(t.Context(), tag)
+		require.ErrorIs(t, err, forge.ErrIncomplete, tag)
+		require.ErrorContains(t, err, "v1.0", tag)
+		require.Nil(t, assets, tag)
+	}
+}

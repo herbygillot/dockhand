@@ -300,8 +300,24 @@ func (s *Service) byPortVersion(ctx context.Context, port macports.PortInfo, spe
 		candidates = append(candidates, candidate)
 		tags = append(tags, listed[index])
 	}
+	// A tag the Portfile's version can't evaluate, as a rolling
+	// nightly, isn't a candidate: one refused a lookup of a release that
+	// exists, where discovery leaves such tags out (#346).
+	// Where none can be evaluated, the evaluation itself failed, and says
+	// so.
 	if err := s.evaluateCandidates(ctx, candidates, tags, pending); err != nil {
-		return Selection{}, err
+		evaluated := false
+		for _, index := range pending {
+			version, oneErr := s.EvaluateVersion(ctx, candidates[index].CaptureVersion)
+			if oneErr != nil {
+				version = ""
+			}
+			evaluated = evaluated || oneErr == nil
+			candidates[index].Version = version
+		}
+		if !evaluated {
+			return Selection{}, err
+		}
 	}
 	var found []int
 	for index, candidate := range candidates {

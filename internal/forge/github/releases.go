@@ -62,6 +62,12 @@ func (r *repository) Assets(ctx context.Context, tag string) ([]model.ReleaseAss
 		}
 		return nil, githubapi.RateLimitError(err)
 	}
+	// The release answered is the tag's, or nothing of it is: a tag with
+	// # or an escape in it reached another release's, whose assets then
+	// chose a source (#346).
+	if release.GetTagName() != tag {
+		return nil, fmt.Errorf("%w: GitHub answered release %s for tag %s", forge.ErrIncomplete, release.GetTagName(), tag)
+	}
 	seen := map[string]bool{}
 	var assets []model.ReleaseAsset
 	for _, row := range release.Assets {
