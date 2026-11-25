@@ -117,6 +117,9 @@ type Store struct {
 	path    string
 	// migration is the migration Open made, if it made one.
 	migration *Migration
+	// keptNow is the copy keepBeforeMigrating made in this open, which a
+	// migration refused takes away with it (#342).
+	keptNow string
 	// release is the release that last opened the database, which this
 	// build, not one, migrates as MigrateRelease lets it.
 	release string
@@ -295,6 +298,16 @@ func (s *Store) initialize(ctx context.Context) error {
 		return err
 	}
 	if err := s.prepareSchema(ctx); err != nil {
+		// A migration refused for the processes on the older schema
+		// migrated nothing, so the copy made for it goes: an upgrade
+		// refused while an older serve runs, which records on, kept a copy
+		// the next attempt found and kept, lacking what was recorded in
+		// between (#342). One found there is left as it was, and so is one
+		// another process's migration in between may go back to.
+		if s.keptNow != "" && (errors.As(err, new(*store.LiveUnderMigrationError)) || errors.As(err, new(*store.QuietUnderMigrationError))) {
+			_ = os.Remove(s.keptNow)
+			s.migration = nil
+		}
 		return err
 	}
 	// The planner chooses among indexes by statistics kept in the database;
@@ -565,6 +578,7 @@ func (s *Store) keepBeforeMigrating(ctx context.Context) error {
 		if err := s.keepCopy(ctx, copy); err != nil {
 			return fmt.Errorf("%w: keeping a copy of %s before migrating it from schema %d to %d: %w; nothing was migrated", store.ErrUnavailable, s.path, version, schemaVersion, err)
 		}
+		s.keptNow = copy
 	}
 	// Whatever holds the copy's name, made now or found there, is the copy
 	// the migration goes back to, so it has to be one: an empty file, a
