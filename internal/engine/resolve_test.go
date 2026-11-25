@@ -414,6 +414,16 @@ func TestAShapingFlagGivenAsTheSettingMadeItIsNoChange(t *testing.T) {
 		outcome, ok := resolved.Request.Targets[0].Outcome("version")
 		require.True(t, ok, s.flag)
 		require.Equal(t, model.ActionDone, outcome.Result, "--%s as the setting made it: %s", s.flag, outcome.Why)
+		require.Empty(t, outcome.JudgedBy, "the flag gives it now, not the setting")
+		// The setting changed later leaves it done: the request holds
+		// the value itself.
+		later := *kept
+		later.Request = &resolved.Request
+		again, err := ResolveRequest(Asking{Origin: "ship", Branch: &later})
+		require.NoError(t, err)
+		outcome, ok = again.Request.Targets[0].Outcome("version")
+		require.True(t, ok, "--%s, the setting changed later", s.flag)
+		require.Equal(t, model.ActionDone, outcome.Result)
 
 		switch s.ask {
 		case "Source.KeepHTTP":

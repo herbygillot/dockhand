@@ -3,6 +3,7 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -300,6 +301,7 @@ func shapedAfterEdit(request *model.ChangeRequest, was map[string]string, change
 		case model.ActionDone:
 			var flags []string
 			applied := map[string]string{}
+			var nowFlagged []string
 			for _, s := range shaping {
 				// What the edit was made with is what a setting supplied
 				// where it judged it, not the flag left out read as false:
@@ -316,9 +318,24 @@ func shapedAfterEdit(request *model.ChangeRequest, was map[string]string, change
 				if changed[s.ask] && made == now[s.ask] {
 					// Given as it was made: the version stays done.
 					decided[target.Port] = true
+					nowFlagged = append(nowFlagged, s.ask)
 				}
 			}
 			if len(flags) == 0 {
+				// The request holds the value itself now, which a setting
+				// no longer supplies: a later change to the setting
+				// mustn't make the version owed again.
+				if len(nowFlagged) > 0 && len(outcome.JudgedBy) > 0 {
+					judged := maps.Clone(outcome.JudgedBy)
+					for _, ask := range nowFlagged {
+						delete(judged, ask)
+					}
+					if len(judged) == 0 {
+						judged = nil
+					}
+					outcome.JudgedBy = judged
+					concluded(target, outcome)
+				}
 				continue
 			}
 			version := "its release"
