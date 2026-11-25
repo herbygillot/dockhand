@@ -335,8 +335,10 @@ back, or says what is left and that the next check in it, or
 
 A root build is stopped the same way only once this Mac's sudo has passed a
 probe. Dockhand runs the probe at your account's first root build on the Mac,
-and again when sudo itself changes, and keeps the result in
-`~/.dockhand/local/root-stop-proof.json`. The probe checks that sudo hands the
+again when sudo itself changes, and at each root build until it passes, as
+after you add the sudoers line below, and keeps the result in
+`~/.dockhand/local/root-stop-proof.json`. A probe that couldn't be made, as one
+interrupted or refused by `sudo -n`, keeps nothing. The probe checks that sudo hands the
 build the check's lock and passes a stop on. The probe, and the part of a stop
 that needs root, run the prefix's port-tclsh under `sudo -n`, which works with
 the sudoers line `<you> ALL=(root) NOPASSWD: <prefix>/bin/port-tclsh` or while

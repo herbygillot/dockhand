@@ -267,8 +267,8 @@ func lockBusy(path string) bool {
 }
 
 // proveRoot runs the probe in both cases and makes the proof of it.
-func proveRoot(ctx context.Context, sudo, env []string, tclsh, dir string, identity SudoIdentity, now time.Time) RootProof {
-	proof := RootProof{Sudo: identity, Proved: true, At: now}
+func proveRoot(ctx context.Context, sudo, env []string, tclsh, dir string, identity SudoIdentity, now time.Time) (proof RootProof, made bool) {
+	proof, made = RootProof{Sudo: identity, Proved: true, At: now}, true
 	for _, terminal := range []bool{false, true} {
 		name := "plain"
 		if terminal {
@@ -276,14 +276,14 @@ func proveRoot(ctx context.Context, sudo, env []string, tclsh, dir string, ident
 		}
 		found, err := ProbeRootStop(ctx, sudo, env, tclsh, filepath.Join(dir, name), terminal)
 		if err != nil {
-			proof.Proved = false
+			proof.Proved, made = false, false
 			proof.Found = append(proof.Found, fmt.Sprintf("%s: the probe couldn't be made: %v", found.Words(), err))
 			continue
 		}
 		proof.Proved = proof.Proved && found.Held()
 		proof.Found = append(proof.Found, found.Words())
 	}
-	return proof
+	return proof, made && ctx.Err() == nil
 }
 
 // rootProofName is the person's proof of this Mac's sudo, in Proofs.
@@ -339,16 +339,19 @@ func (l *Local) rootStopProved(sudo []string) (bool, string) {
 	return true, ""
 }
 
-// proveRootOnce probes this Mac's sudo where no proof is kept for the sudo
-// binary, at a root build's launch, so a stop is never delayed by it and
-// never the first to learn it fails. A probe that fails or can't be made
-// is kept as that; the build starts all the same.
+// proveRootOnce probes this Mac's sudo where no proof that passed is kept
+// for the sudo binary, at a root build's launch, so a stop is never
+// delayed by it and never the first to learn it fails. Only a probe that
+// was made is kept: one canceled, or refused by sudo -n before the
+// sudoers line was there, was kept as failed for good, and a failed one
+// is made again at the next root build (#341). The build starts all the
+// same.
 func (l *Local) proveRootOnce(ctx context.Context, sudo []string, tclsh string, say func(string)) {
 	identity, err := sudoIdentity(sudo[0])
 	if err != nil || l.Proofs == "" {
 		return
 	}
-	if _, found := l.readRootProof(identity); found {
+	if kept, found := l.readRootProof(identity); found && kept.Proved {
 		return
 	}
 	dir, err := os.MkdirTemp(l.temp(), "dockhand-root-probe-")
@@ -357,7 +360,10 @@ func (l *Local) proveRootOnce(ctx context.Context, sudo []string, tclsh string, 
 	}
 	say("probing this Mac's sudo once, for how a root build is stopped")
 	defer os.RemoveAll(dir)
-	proof := proveRoot(ctx, sudo, l.Env, tclsh, dir, identity, time.Now().UTC())
+	proof, made := proveRoot(ctx, sudo, l.Env, tclsh, dir, identity, time.Now().UTC())
+	if !made {
+		return
+	}
 	data, err := json.Marshal(proof)
 	if err != nil {
 		return

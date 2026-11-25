@@ -3,6 +3,7 @@
 package local
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -56,15 +57,46 @@ func TestARootProbeProvesOnlyASudoThatHandsTheLockOn(t *testing.T) {
 			require.Contains(t, why, "the opening locked: false")
 		}
 
+		// A proof that passed is kept; one that failed is made again at
+		// the next root build, as after a sudoers line is added (#341).
 		said = nil
 		l.proveRootOnce(t.Context(), []string{sudo}, tclsh, func(line string) { said = append(said, line) })
-		require.Empty(t, said, "%s: kept, not probed again", c.name)
+		if c.proved {
+			require.Empty(t, said, "%s: kept, not probed again", c.name)
+		} else {
+			require.Len(t, said, 1, "%s: a failed probe is made again", c.name)
+		}
 		later := time.Now().Add(time.Hour)
 		require.NoError(t, os.Chtimes(sudo, later, later))
 		proved, why = l.rootStopProved([]string{sudo})
 		require.False(t, proved, "%s: another binary is probed again", c.name)
 		require.Contains(t, why, "hasn't been probed yet")
 	}
+}
+
+// A probe that couldn't be made, as one canceled by Ctrl-C or refused by
+// sudo -n before the sudoers line is there, keeps nothing: the next root
+// build probes again, where it was kept as failed for good (#341).
+func TestAProbeThatCouldntBeMadeKeepsNothing(t *testing.T) {
+	t.Parallel()
+	tclsh := testsupport.MacPortsTclsh(t)
+	sudo := filepath.Join(t.TempDir(), "sudo")
+	testsupport.WriteExecutable(t, sudo, "#!/bin/sh\necho 'sudo: a password is required' >&2\nexit 1\n")
+	l := &Local{Temp: t.TempDir(), Proofs: filepath.Join(t.TempDir(), "local")}
+	l.proveRootOnce(t.Context(), []string{sudo}, tclsh, func(string) {})
+	_, why := l.rootStopProved([]string{sudo})
+	require.Contains(t, why, "hasn't been probed yet", "refused: nothing kept")
+
+	testsupport.WriteExecutable(t, sudo, "#!/bin/sh\n[ \"$1\" = -n ] && shift\nexec \"$@\"\n")
+	canceled, cancel := context.WithCancel(t.Context())
+	cancel()
+	l.proveRootOnce(canceled, []string{sudo}, tclsh, func(string) {})
+	_, why = l.rootStopProved([]string{sudo})
+	require.Contains(t, why, "hasn't been probed yet", "canceled: nothing kept")
+
+	l.proveRootOnce(t.Context(), []string{sudo}, tclsh, func(string) {})
+	proved, why := l.rootStopProved([]string{sudo})
+	require.True(t, proved, why)
 }
 
 // A proof counts only where it is this account's alone and of this sudo
