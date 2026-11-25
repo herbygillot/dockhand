@@ -27,9 +27,10 @@ import (
 // before v0.3.0 made in the person's Tart home and the guest prefix only
 // /opt/local could take, and #38's floor of Tart 2.41.1 reworded the
 // comment on ASIFReady, and #94 gave what Tart and the guest's commands
-// print a writer of its own, apart from setup's sentences, none of which
-// changes an image.
-const setupPin = "35cba114caae94b8291d0ba758aab7528078f78ffdb02b3ea0dbf4ef2216a764"
+// print a writer of its own, apart from setup's sentences, and #150's
+// groups took its private copies of others' rules, the active-port
+// reading and the file digest among them, none of which changes an image.
+const setupPin = "7f405465fd97ff8a1978fa237b53b87a2eee54bfe4fabeb1bde11cc300d160af"
 
 // What setup puts in an image is identified by tart.SetupProtocol, which
 // evidence's reuse compares (decision 28). A change to the provisioning
