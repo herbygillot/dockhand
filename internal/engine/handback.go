@@ -1,6 +1,9 @@
 package engine
 
 import (
+	"maps"
+	"strings"
+
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -65,4 +68,45 @@ func takenAsks(request model.ChangeRequest, branch model.Branch) model.PublishAs
 		return request.Publish
 	}
 	return askedBack(request.Publish, taken.Asked)
+}
+
+// TakeKept takes into a person's submission the flags the branch's request
+// kept, as the request's own submission takes them (takenAsks), each this
+// run left out, and marks it given: a continued submission's carry fills
+// only the flags not given, and replaced what the command said it took,
+// so maintainers were notified after it said they wouldn't be (#334). It
+// returns the flags taken, as a person would give them.
+func (r *SubmitRequest) TakeKept(branch model.Branch) []string {
+	if branch.Request == nil {
+		return nil
+	}
+	if r.Given == nil {
+		r.Given = map[string]bool{}
+	}
+	given := maps.Clone(r.Given)
+	publish := takenAsks(*branch.Request, branch)
+	flag := func(name string, value bool) string {
+		if value {
+			return "--" + name
+		}
+		return "--" + name + "=false"
+	}
+	var took []string
+	if !given["draft"] && !given["no-check"] && publish.Draft.Given {
+		r.Draft, r.Given["draft"] = publish.Draft.Value, true
+		took = append(took, flag("draft", r.Draft))
+	}
+	if !given["no-check"] && !given["draft"] && publish.NoCheck.Given && !r.Draft {
+		r.NoCheck, r.Given["no-check"] = publish.NoCheck.Value, true
+		took = append(took, flag("no-check", r.NoCheck))
+	}
+	if !given["type"] && publish.Type.Given {
+		r.Types, r.Given["type"] = publish.Type.Value, true
+		took = append(took, "--type "+strings.Join(r.Types, ","))
+	}
+	if !given["skip-notification"] && publish.SkipNotification.Given {
+		r.SkipNotification, r.Given["skip-notification"] = publish.SkipNotification.Value, true
+		took = append(took, flag("skip-notification", r.SkipNotification))
+	}
+	return took
 }
