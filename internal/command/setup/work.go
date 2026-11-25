@@ -355,6 +355,10 @@ scripts, and a new head from the author asks again.`,
 				return err
 			}
 			defer e.Close()
+			if evaluate && pr == 0 {
+				// Taken and ignored, it read as an answer given (#338).
+				return errors.New("--evaluate goes with --pr: it allows a pull request's Portfiles evaluated at the head adopted")
+			}
 			if plan {
 				if pr > 0 && len(args) > 0 {
 					return errors.New("--pr names the pull request; adopt takes a branch or --pr, not both")

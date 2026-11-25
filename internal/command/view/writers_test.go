@@ -453,5 +453,9 @@ func TestTidysPreviewNamesEveryTrailer(t *testing.T) {
 func TestANextNamingAVariantBuildQuotesIt(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, "dockhand submit --branch curl-fix --accept 'curl +sectrust +ssl'", RenderNext(branchstate.Next{Verb: branchstate.VerbSubmit, Branch: "curl-fix", Args: []string{"--accept", "curl +sectrust +ssl"}}, ""))
+	// The evaluation refusal's adopt names the pull request, where every
+	// adopt said the renamed branch's line (#338).
+	require.Equal(t, "dockhand adopt --pr 34905 --evaluate", RenderNext(branchstate.Next{Verb: branchstate.VerbAdopt, Args: []string{"--pr", "34905", "--evaluate"}}, ""))
+	require.Equal(t, "dockhand adopt <new name> (if you renamed the branch)", RenderNext(branchstate.Next{Verb: branchstate.VerbAdopt, Args: []string{"<new name>"}}, ""))
 	require.Equal(t, `dockhand decide --branch jq-fix license-changed jq --because "…"`, RenderNext(branchstate.Next{Verb: branchstate.VerbDecide, Branch: "jq-fix", Args: []string{"license-changed", "jq", "--because", `"…"`}}, ""), "an argument quoted already stays as it is")
 }

@@ -45,7 +45,13 @@ func RenderNext(next branchstate.Next, reason branchstate.Reason) string {
 	case branchstate.VerbRefresh:
 		return "dockhand status --refresh (refreshes the branch status); dockhand adopt <new name> (if you renamed the branch)"
 	case branchstate.VerbAdopt:
-		return "dockhand adopt <new name> (if you renamed the branch)"
+		// The evaluation refusal's adopt names the pull request; every
+		// adopt said the renamed branch's line, which a script followed
+		// (#338).
+		if len(next.Args) == 1 && next.Args[0] == "<new name>" {
+			return "dockhand adopt <new name> (if you renamed the branch)"
+		}
+		return "dockhand adopt" + args
 	case branchstate.VerbStatus:
 		line = "dockhand " + string(next.Verb) + " " + next.Branch
 	case branchstate.VerbArchive:
