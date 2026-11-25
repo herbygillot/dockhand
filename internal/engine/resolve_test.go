@@ -389,3 +389,42 @@ func TestAShapingFlagChangedAfterItsEditIsRefusedUntilGivenAsItWas(t *testing.T)
 	_, has := fresh.Request.Targets[0].Outcome("version")
 	require.False(t, has, "before any edit, the new ask is owed")
 }
+
+// A shaping flag given with the value the setting supplied when the edit
+// was made changes nothing about the edit's shape, so it isn't refused
+// as changed: the edit's own record, what the setting judged it by, is
+// what it was made with, where the flag left out was read as false
+// (#343). Given the other way, it's refused, naming what it was made with.
+func TestAShapingFlagGivenAsTheSettingMadeItIsNoChange(t *testing.T) {
+	t.Parallel()
+	for _, s := range []struct{ ask, flag string }{{"Source.KeepHTTP", "keep-http"}, {"Source.KeepModeline", "keep-modeline"}} {
+		edited := model.RequestTarget{Port: "jq", Action: "update", Release: &model.Release{Version: "1.8.1"},
+			Outcomes: []model.ActionOutcome{{Action: "version", Result: model.ActionDone, JudgedBy: map[string]string{s.ask: "true"}}}}
+		kept := &model.Branch{Request: &model.ChangeRequest{ID: "rq_1", Origin: "ship", Targets: []model.RequestTarget{edited}}}
+		var asked model.ChangeRequest
+		settings := RequestSettings{}
+		switch s.ask {
+		case "Source.KeepHTTP":
+			asked.Source.KeepHTTP, settings.KeepHTTP = model.Set(true), true
+		default:
+			asked.Source.KeepModeline, settings.KeepModeline = model.Set(true), true
+		}
+		resolved, err := ResolveRequest(Asking{Origin: "ship", Branch: kept, Asked: asked, Settings: settings})
+		require.NoError(t, err)
+		outcome, ok := resolved.Request.Targets[0].Outcome("version")
+		require.True(t, ok, s.flag)
+		require.Equal(t, model.ActionDone, outcome.Result, "--%s as the setting made it: %s", s.flag, outcome.Why)
+
+		switch s.ask {
+		case "Source.KeepHTTP":
+			asked.Source.KeepHTTP = model.Set(false)
+		default:
+			asked.Source.KeepModeline = model.Set(false)
+		}
+		resolved, err = ResolveRequest(Asking{Origin: "ship", Branch: kept, Asked: asked, Settings: settings})
+		require.NoError(t, err)
+		outcome, _ = resolved.Request.Targets[0].Outcome("version")
+		require.Equal(t, model.ActionRefused, outcome.Result, "--%s=false", s.flag)
+		require.Equal(t, map[string]string{s.ask: "true"}, outcome.AppliedWith)
+	}
+}

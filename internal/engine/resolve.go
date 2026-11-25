@@ -301,9 +301,21 @@ func shapedAfterEdit(request *model.ChangeRequest, was map[string]string, change
 			var flags []string
 			applied := map[string]string{}
 			for _, s := range shaping {
-				if changed[s.ask] && was[s.ask] != now[s.ask] {
+				// What the edit was made with is what a setting supplied
+				// where it judged it, not the flag left out read as false:
+				// --keep-http given under update.keep_http = true changes
+				// nothing, and was refused (#343).
+				made := was[s.ask]
+				if value, ok := outcome.JudgedBy[s.ask]; ok {
+					made = value
+				}
+				if changed[s.ask] && made != now[s.ask] {
 					flags = append(flags, s.flag)
-					applied[s.ask] = was[s.ask]
+					applied[s.ask] = made
+				}
+				if changed[s.ask] && made == now[s.ask] {
+					// Given as it was made: the version stays done.
+					decided[target.Port] = true
 				}
 			}
 			if len(flags) == 0 {
