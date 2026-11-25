@@ -253,7 +253,8 @@ func (e *Engine) answeredCreate(ctx context.Context, opening *model.ServeOpening
 	if opening == nil || errors.Is(err, forge.ErrPullRequestExists) {
 		return
 	}
-	if errors.Is(err, forge.ErrRejected) {
+	// Nothing sent is an answer too: refused before it went (#345).
+	if errors.Is(err, forge.ErrRejected) || errors.Is(err, remotewrite.ErrNotSent) {
 		if opening.Refused() {
 			_ = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error { return tx.ReleaseServeOpening(opening.ID) })
 		}
@@ -504,7 +505,7 @@ func (e *Engine) endRefused(ctx context.Context, branch model.BranchID, record m
 // a login refused, or dockhand's own gate refusing it before it was sent.
 // Any other error, no answer among them, may have been done.
 func writeRefused(err error) bool {
-	return errors.Is(err, forge.ErrRejected) || errors.Is(err, forge.ErrAppRestricted) || errors.Is(err, forge.ErrAuthentication) || refusal.KindOf(err) == refusal.Unsupported
+	return errors.Is(err, forge.ErrRejected) || errors.Is(err, forge.ErrAppRestricted) || errors.Is(err, forge.ErrAuthentication) || errors.Is(err, remotewrite.ErrNotSent) || refusal.KindOf(err) == refusal.Unsupported
 }
 
 // pendingAfter are the steps a submission still owes when it returns,

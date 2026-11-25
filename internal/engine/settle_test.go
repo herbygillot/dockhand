@@ -190,3 +190,23 @@ func TestAFailedReadKeepsAPublicationWhoseBranchMoved(t *testing.T) {
 	require.NotNil(t, kept.Publication)
 	require.True(t, kept.Publication.Same(*recorded))
 }
+
+// A pull request a publication set out to update, the plan having found
+// it, is folded as found where the branch kept no record of it: the
+// record made then had no provenance, which reads as dockhand having
+// opened it, though a pull request found isn't dockhand's own (#345).
+func TestAFoundPullRequestIsFoldedAsFound(t *testing.T) {
+	t.Parallel()
+	e := setup(t).open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-found"})
+	require.NoError(t, err)
+	record := model.Publication{ID: "pub_1", Commit: "abc", Head: "ada/macports-ports:jq-found", Base: "macports/macports-ports:master", Number: 41}
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		return e.foldSettlement(tx, branch.ID, record, Settlement{Number: record.Number}, "macports/macports-ports")
+	}))
+	current, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.NotNil(t, current.PullRequest)
+	require.Equal(t, model.Found, current.PullRequest.Provenance)
+	require.False(t, openedByDockhand(current.PullRequest))
+}

@@ -371,3 +371,14 @@ func TestNothingElseCallsARemoteWrite(t *testing.T) {
 	}
 	require.Empty(t, found, "a remote write outside remotewrite")
 }
+
+// A write refused before anything was sent says so to errors.Is, in the
+// check's own words (#345).
+func TestAWriteRefusedBeforeSendingSaysNothingWasSent(t *testing.T) {
+	t.Parallel()
+	ran := false
+	err := write(context.Background(), func(context.Context) error { ran = true; return nil })
+	require.ErrorIs(t, err, ErrNotSent)
+	require.EqualError(t, err, "remote write requires an account binding")
+	require.False(t, ran)
+}

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -401,7 +402,11 @@ func (e *Engine) foldSettlement(tx store.Tx, id model.BranchID, record model.Pub
 	pr := branch.PullRequest
 	found := false
 	if settled.Number != 0 && (pr == nil || pr.Number != settled.Number) {
-		pr = &model.PullRequest{Repository: repository, Number: settled.Number, Head: record.Head, Provenance: settled.Provenance}
+		// A record made now is of a pull request found: a publication
+		// sets out with a number only for one its plan found, and one
+		// opened is recorded as opened with GitHub's answer. With no
+		// provenance it read as dockhand's own (#345).
+		pr = &model.PullRequest{Repository: repository, Number: settled.Number, Head: record.Head, Provenance: cmp.Or(settled.Provenance, model.Found)}
 		found = true
 	}
 	if pr != nil {
