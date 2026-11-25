@@ -201,7 +201,10 @@ func ShipTargets(ctx context.Context, e *engine.Engine, streams term.Streams, po
 		}
 		// A preparation that stopped part-way is continued: each target
 		// with no edit is prepared again, at the release kept for it, in
-		// this branch (#194, H3).
+		// this branch (#194, H3), as one change, the other ports beside
+		// the first as mineTargets puts a Portfile's, so they're prepared
+		// in turn and the stages after run once: each was its own target,
+		// committed alone and stopped at the gate (#336).
 		open, err := e.UnfinishedTargets(ctx, branch)
 		if err != nil {
 			return nil, err
@@ -209,15 +212,17 @@ func ShipTargets(ctx context.Context, e *engine.Engine, streams term.Streams, po
 		if len(open) == 0 {
 			return []shipTarget{{Branch: &branch}}, nil
 		}
-		var targets []shipTarget
+		var continued []shipTarget
 		for _, target := range open {
-			continued := shipTarget{Port: target.Port, Branch: &branch, Version: target.Named, Release: target.Release}
+			port := shipTarget{Port: target.Port, Version: target.Named, Release: target.Release}
 			if target.Release != nil {
-				continued.Version = target.Release.Version
+				port.Version = target.Release.Version
 			}
-			targets = append(targets, continued)
+			continued = append(continued, port)
 		}
-		return targets, nil
+		first := continued[0]
+		first.Branch, first.Also = &branch, continued[1:]
+		return []shipTarget{first}, nil
 	}
 	var targets []shipTarget
 	for _, port := range ports {
@@ -342,12 +347,14 @@ func WriteShipPlan(ctx context.Context, e *engine.Engine, out io.Writer, targets
 	}
 	for _, target := range targets {
 		from := "a version update from master"
+		ports := []string{target.Port}
+		for _, also := range target.Also {
+			ports = append(ports, also.Port)
+		}
 		switch {
+		case len(target.Also) > 0 && target.Branch != nil:
+			from = "existing branch; finishes the updates of " + prose.And(ports)
 		case len(target.Also) > 0:
-			ports := []string{target.Port}
-			for _, also := range target.Also {
-				ports = append(ports, also.Port)
-			}
 			from = "version updates of " + prose.And(ports) + " from master, in one branch"
 		case target.Branch != nil && target.Port != "":
 			// A resumed branch is brought to the release asked for, the
@@ -749,7 +756,7 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 			if port.Version != "" && port.Release == nil {
 				args = append(args, port.Version)
 			}
-			request, err := version.Request(args, false)
+			request, err := version.RequestOn(args, false, target.Branch)
 			if err != nil {
 				return nil, err
 			}

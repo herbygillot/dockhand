@@ -212,10 +212,7 @@ func namedList(items []string) string {
 			items[i] = fmt.Sprintf("%s (%d)", item, counts[item])
 		}
 	}
-	if len(items) <= coverageNamed {
-		return strings.Join(items, ", ")
-	}
-	return fmt.Sprintf("%s, and %d more", strings.Join(items[:coverageNamed], ", "), len(items)-coverageNamed)
+	return prose.Truncate(items, coverageNamed, ", ", ", and ")
 }
 
 // PatchesApply says how many patches apply, "6 patches apply", or of how

@@ -23,13 +23,18 @@ func TestTheReleaseKeptIsGoneOnWith(t *testing.T) {
 		return Resolved{Request: model.ChangeRequest{Origin: origin, Targets: []model.RequestTarget{target}}}
 	}
 	written := []model.Edit{{Port: "jq", Kind: model.EditUpdate, Release: release}}
-	require.Equal(t, release, keptTarget(resolvedFor("ship", model.RequestTarget{Port: "jq", Release: release}), "jq", written))
-	require.Equal(t, release, keptTarget(resolvedFor("bump", model.RequestTarget{Port: "jq", Release: release}), "jq", written))
-	require.Equal(t, release, keptTarget(resolvedFor("update", model.RequestTarget{Port: "jq", Release: release}), "jq", nil), "update finishes what is unfinished")
-	require.Nil(t, keptTarget(resolvedFor("update", model.RequestTarget{Port: "jq", Release: release}), "jq", written), "finished, update looks for the newest")
-	require.Nil(t, keptTarget(resolvedFor("ship", model.RequestTarget{Port: "jq", Named: "1.9", Release: release}), "jq", nil), "a version named")
-	require.Nil(t, keptTarget(resolvedFor("ship", model.RequestTarget{Port: "jq"}), "jq", nil), "nothing kept")
-	require.Nil(t, keptTarget(resolvedFor("serve", model.RequestTarget{Port: "jq", Release: release}), "jq", nil), "serve reads its own")
+	kept := func(origin string, target model.RequestTarget, edits []model.Edit) [2]any {
+		version, found := keptTarget(resolvedFor(origin, target), "jq", edits)
+		return [2]any{version, found}
+	}
+	require.Equal(t, [2]any{"1.8", release}, kept("ship", model.RequestTarget{Port: "jq", Release: release}, written))
+	require.Equal(t, [2]any{"1.8", release}, kept("bump", model.RequestTarget{Port: "jq", Release: release}, written))
+	require.Equal(t, [2]any{"1.8", release}, kept("update", model.RequestTarget{Port: "jq", Release: release}, nil), "update finishes what is unfinished")
+	require.Equal(t, [2]any{"", (*model.Release)(nil)}, kept("update", model.RequestTarget{Port: "jq", Release: release}, written), "finished, update looks for the newest")
+	require.Equal(t, [2]any{"1.8", release}, kept("ship", model.RequestTarget{Port: "jq", Named: "1.8", Release: release}, nil), "a version named and kept, with its release (#333)")
+	require.Equal(t, [2]any{"1.9", (*model.Release)(nil)}, kept("ship", model.RequestTarget{Port: "jq", Named: "1.9", Release: release}, nil), "a version named and kept, not another's release")
+	require.Equal(t, [2]any{"", (*model.Release)(nil)}, kept("ship", model.RequestTarget{Port: "jq"}, nil), "nothing kept")
+	require.Equal(t, [2]any{"", (*model.Release)(nil)}, kept("serve", model.RequestTarget{Port: "jq", Release: release}, nil), "serve reads its own")
 }
 
 // A --source the port's preparation refuses is the source action's
@@ -153,4 +158,37 @@ func TestTheHandBackGoesOnlyToTheRequestItTook(t *testing.T) {
 	current, err = e.Branch(t.Context(), branch.ID)
 	require.NoError(t, err)
 	require.False(t, current.Request.Publish.Draft.Given)
+}
+
+// A hand edit in the worktree hides neither a kept refusal nor, from a
+// caller nobody attends, a target still owed: the verdict answers hand
+// edits first, and the gate asked about the refusal only of an
+// unfinished preparation, so editing any tracked file let check build
+// (#335).
+func TestAHandEditHidesNoRefusalOrOwedTargetFromTheGate(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, p := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
+	require.NoError(t, err)
+	p.refused = &editprep.SourceRefused{Err: editprep.ErrUnsupported.Because("--source releases: release jq-1.8.1 carries no source archive")}
+	request, err := AskUpdate(Asking{Origin: "update", Asked: model.ChangeRequest{Source: model.SourceAsk{Source: model.Set("releases")}}}, "jq")
+	require.NoError(t, err)
+	request.Branch = branch
+	_, err = e.Update(t.Context(), request)
+	require.ErrorIs(t, err, editprep.ErrUnsupported)
+	testsupport.WriteFiles(t, branch.Worktree, map[string]string{"_resources/port1.0/group/github-1.0.tcl": "# group, edited by hand\n"})
+	current, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	for _, unattended := range []bool{false, true} {
+		require.ErrorContains(t, e.UnfinishedGate(t.Context(), current, unattended, "the check builds"), "nothing goes on until the ask changes", "unattended %v", unattended)
+	}
+
+	owed, err := e.Start(t.Context(), StartRequest{Name: "jq-owed"})
+	require.NoError(t, err)
+	require.NoError(t, e.keepTarget(t.Context(), owed, "ship", "jq", func(target *model.RequestTarget) {}))
+	testsupport.WriteFiles(t, owed.Worktree, map[string]string{"_resources/port1.0/group/github-1.0.tcl": "# group, edited by hand\n"})
+	owed = reread(t, e, owed.ID)
+	require.ErrorContains(t, e.UnfinishedGate(t.Context(), owed, true, "the check builds"), "jq has no update yet")
+	require.NoError(t, e.UnfinishedGate(t.Context(), owed, false, "the check builds"), "a person goes on with the files as they are")
 }

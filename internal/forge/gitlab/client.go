@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"unicode"
 
 	sdk "gitlab.com/gitlab-org/api/client-go/v3"
 
@@ -43,10 +42,10 @@ func (r *repository) api() (*sdk.Client, error) {
 
 func endpoint(instance, name string) (string, string, error) {
 	parsed, err := url.Parse(instance)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+	if err != nil || !forge.ValidGitLabInstance(parsed) {
 		return "", "", fmt.Errorf("gitlab: invalid instance %q", instance)
 	}
-	if !validProjectPath(name) {
+	if !forge.ValidGitLabProjectPath(name) {
 		return "", "", fmt.Errorf("gitlab: invalid repository %q", name)
 	}
 	prefix := strings.Trim(parsed.Path, "/")
@@ -56,19 +55,4 @@ func endpoint(instance, name string) (string, string, error) {
 	}
 	origin := &url.URL{Scheme: parsed.Scheme, Host: parsed.Host}
 	return origin.String(), project, nil
-}
-
-func validProjectPath(value string) bool {
-	parts := strings.Split(value, "/")
-	if len(parts) < 2 {
-		return false
-	}
-	for _, part := range parts {
-		if part == "" || part == "." || part == ".." || strings.IndexFunc(part, func(r rune) bool {
-			return unicode.IsSpace(r) || unicode.IsControl(r) || strings.ContainsRune("?#%\\", r)
-		}) >= 0 {
-			return false
-		}
-	}
-	return true
 }

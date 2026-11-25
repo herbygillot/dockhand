@@ -225,8 +225,9 @@ func decideEvaluation(ctx context.Context, e *engine.Engine, streams term.Stream
 			if err != nil {
 				return false, err
 			}
-			// The diff is written raw, as tidy's is (#94).
-			fmt.Fprint(streams.Out, string(diff))
+			// The diff is written unwrapped, as tidy's is (#94), and
+			// with the author's control characters shown (#330).
+			fmt.Fprint(streams.Out, term.Visible(string(diff)))
 		default:
 			if asked.check {
 				return refuseCheck()
@@ -245,16 +246,18 @@ func writeQuestion(w io.Writer, target engine.ReviewTarget) {
 	} else {
 		fmt.Fprintf(w, "#%d is %s. A full review evaluates its Portfiles with MacPorts on this Mac, as you. A Portfile is code: it runs with your files and your GitHub login in reach.\n", target.Number, target.Whose())
 	}
+	// The paths are the pull request's, shown with their control
+	// characters (#330).
 	width := 0
 	for _, file := range target.Portfiles {
-		width = max(width, len(file.Path))
+		width = max(width, len(term.Visible(file.Path)))
 	}
 	for _, file := range target.Portfiles {
 		since := ""
 		if target.Since != nil {
 			since = "   (since " + target.Since.Head.Short() + ")"
 		}
-		fmt.Fprintf(w, "  %-*s  +%d -%d%s\n", width, file.Path, file.Added, file.Removed, since)
+		fmt.Fprintf(w, "  %-*s  +%d -%d%s\n", width, term.Visible(file.Path), file.Added, file.Removed, since)
 	}
 }
 

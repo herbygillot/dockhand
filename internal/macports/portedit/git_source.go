@@ -2,9 +2,9 @@ package portedit
 
 import (
 	"context"
-	"regexp"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
@@ -19,8 +19,6 @@ import (
 // evaluated git.branch lands on the resolved tag, or on the resolved commit
 // when the Portfile pins a literal one. Modeled contexts are not observed;
 // there is no archive plan for them to cover.
-
-var commitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 // obsoleteIn reports a port that evaluates as an obsolete follower in the
 // observed context: it is metadata-only and replaced by another port.
@@ -65,11 +63,11 @@ func (s *Service) planGitVersion(ctx context.Context, request Request, input *so
 	branch := release.Tag
 	old := input.info.Options["git.branch"]
 	switch {
-	case commitPattern.MatchString(old) && release.Commit != "" && next.Options["git.branch"] == release.Commit:
+	case forge.FullCommit(old) && release.Commit != "" && next.Options["git.branch"] == release.Commit:
 		// The version edit moved it already, as a commit pin's github.setup
 		// carries git.branch (the roadmap's v0.5.0 part 3, step 2).
 		branch = release.Commit
-	case commitPattern.MatchString(old):
+	case forge.FullCommit(old):
 		if release.Commit == "" {
 			return archivePlan{}, ErrUnsupported.Because("git.branch pins a commit and the resolved release names none")
 		}

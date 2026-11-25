@@ -83,7 +83,7 @@ func DeclareSubportChecksums(src []byte, subport string, names []string) ([]byte
 		if len(names) > 1 {
 			lines = append(lines, name)
 		}
-		lines = append(lines, "rmd160  0", "sha256  0", "size    0")
+		lines = append(lines, placeholderChecksums()...)
 	}
 	declaration := "\n" + indent + "checksums           " + strings.Join(lines, " \\\n"+indent+strings.Repeat(" ", 20))
 	out, err := textedit.Apply(src, []textedit.Edit{{Span: textedit.Span{Start: end, End: end}, New: []byte(declaration)}})
@@ -188,7 +188,7 @@ func DeclareChecksums(src []byte, names []string) ([]byte, bool) {
 		if len(names) > 1 {
 			lines = append(lines, name)
 		}
-		lines = append(lines, "rmd160  0", "sha256  0", "size    0")
+		lines = append(lines, placeholderChecksums()...)
 	}
 	declaration := "\n\nchecksums" + strings.Repeat(" ", column-len("checksums")) + strings.Join(lines, " \\\n"+indent)
 	if next := end + 1; next < len(src) && src[next] != '\n' {
@@ -240,7 +240,7 @@ func NameChecksums(src []byte, names []string) ([]byte, bool) {
 	column := max(valueColumn(src, *found), len("checksums")+1)
 	var lines []string
 	for _, name := range names {
-		lines = append(lines, name, "rmd160  0", "sha256  0", "size    0")
+		lines = append(append(lines, name), placeholderChecksums()...)
 	}
 	declaration := "checksums" + strings.Repeat(" ", column-len("checksums")) + strings.Join(lines, " \\\n"+strings.Repeat(" ", column))
 	out, err := textedit.Apply(src, []textedit.Edit{{Span: textedit.Span{Start: start, End: end}, New: []byte(declaration)}})

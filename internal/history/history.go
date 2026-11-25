@@ -212,7 +212,9 @@ func checkpointRecorded(number *int, recorded func(model.Checkpoint) bool) func(
 	}
 }
 
-// Read reads a checkpoint back, as it is recorded now.
+// Read reads a checkpoint back, as it is recorded now: a test's reader,
+// which history's and the engine's tests use, production reading
+// checkpoints through the store (#150's dead-code audit).
 func (h *Transitions) Read(ctx context.Context, number int) (model.Checkpoint, bool) {
 	var checkpoint model.Checkpoint
 	err := h.Store.View(ctx, h.Repository, func(r store.Reader) error {

@@ -2,17 +2,15 @@ package checks
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/atomicfile"
+	"github.com/herbygillot/dockhand/internal/filedigest"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -164,12 +162,11 @@ func sha256File(path string) (int64, string, error) {
 		return 0, "", err
 	}
 	defer file.Close()
-	hash := sha256.New()
-	size, err := io.Copy(hash, file)
+	digest, err := filedigest.Sum(context.Background(), file)
 	if err != nil {
 		return 0, "", err
 	}
-	return size, "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
+	return digest.Size, "sha256:" + digest.SHA256, nil
 }
 
 // Keep keeps a target's archive, by the digest its passed result reported

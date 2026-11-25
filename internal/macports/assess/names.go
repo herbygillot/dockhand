@@ -2,8 +2,6 @@ package assess
 
 import (
 	"fmt"
-	"path"
-	"regexp"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/model"
@@ -57,11 +55,8 @@ func goModuleName(data []byte) (string, bool) {
 	if err != nil || module.Path == "" {
 		return "", false
 	}
-	return path.Base(majorSuffix.ReplaceAllString(module.Path, "")), true
+	return module.Binary()
 }
-
-// majorSuffix is a Go module path's major version element, /v2 and on.
-var majorSuffix = regexp.MustCompile(`/v[0-9]+$`)
 
 func cargoPackageName(data []byte) (string, bool) {
 	manifest, err := project.ReadCargoManifest(data)

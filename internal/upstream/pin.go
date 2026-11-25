@@ -3,7 +3,6 @@ package upstream
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -14,9 +13,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
-// fullCommit is a commit as GitHub names it whole.
-var fullCommit = regexp.MustCompile(`^[0-9a-f]{40}$`)
-
 // pinned reports a port that pins its source to a commit and tracks a
 // branch for newer ones (livecheck.type git), as wezterm pins
 // github.setup: the commit its source names, and the spec it's edited by.
@@ -26,7 +22,7 @@ func pinned(port macports.PortInfo) (portsource.Spec, bool) {
 		return portsource.Spec{}, false
 	}
 	spec, err := portsource.Interpret(port, portsource.Edit)
-	if err != nil || spec.Forge == "" || !fullCommit.MatchString(spec.SourceVersion) {
+	if err != nil || spec.Forge == "" || !forge.FullCommit(spec.SourceVersion) {
 		return portsource.Spec{}, false
 	}
 	spec.Livecheck = discovery.Livecheck
@@ -46,7 +42,7 @@ func (s *Service) resolvePin(ctx context.Context, port macports.PortInfo, spec p
 	}
 	commit, named := "", ""
 	switch {
-	case fullCommit.MatchString(requested):
+	case forge.FullCommit(requested):
 		commit = requested
 		if commits, ok := repository.(forge.CommitRepository); ok {
 			found, err := commits.HasCommit(ctx, commit)
@@ -57,7 +53,7 @@ func (s *Service) resolvePin(ctx context.Context, port macports.PortInfo, spec p
 				return model.Release{}, fmt.Errorf("upstream: %s has no commit %s", repository.Name(), commit)
 			}
 		}
-	case regexp.MustCompile(`^[0-9a-f]{7,39}$`).MatchString(requested):
+	case forge.AbbreviatedCommit(requested):
 		return model.Release{}, fmt.Errorf("upstream: %s requires a full 40-character commit hash; %s is abbreviated", port.Name, requested)
 	default:
 		named = requested
@@ -102,7 +98,7 @@ func (s *Service) checkPin(ctx context.Context, port macports.PortInfo, release 
 	if err != nil {
 		return err
 	}
-	if !ok || string(spec.Forge) != release.Forge || spec.Instance != release.Instance || repository.Name() != release.Repository || !fullCommit.MatchString(release.Commit) || release.Tag != release.Commit || release.SourceVersion != release.Commit {
+	if !ok || string(spec.Forge) != release.Forge || spec.Instance != release.Instance || repository.Name() != release.Repository || !forge.FullCommit(release.Commit) || release.Tag != release.Commit || release.SourceVersion != release.Commit {
 		return fmt.Errorf("upstream: pinned release does not match the Portfile's commit pin")
 	}
 	if commits, ok := repository.(forge.CommitRepository); ok {

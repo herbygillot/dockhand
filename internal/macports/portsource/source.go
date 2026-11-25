@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
-	"unicode"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -226,11 +225,7 @@ func interpret(port macports.PortInfo, forge Forge, prefix, instance string) (Sp
 		return Spec{}, err
 	}
 	repository := port.Options[prefix+".author"] + "/" + port.Options[prefix+".project"]
-	segments := 2
-	if forge == GitLab {
-		segments = 0
-	}
-	if !validPath(repository, segments) {
+	if valid := validRepository[forge]; valid == nil || !valid(repository) {
 		return Spec{}, fmt.Errorf("macports source: invalid %s repository %q", prefix, repository)
 	}
 	return Spec{Forge: forge, Instance: instance, Repository: repository, CurrentVersion: port.Version, SourceVersion: raw, Pattern: pattern, Catalog: Tags}, nil
@@ -264,29 +259,23 @@ func present(port macports.PortInfo, key string) bool {
 	return value || failure
 }
 
+// validRepository is each forge's own rule for a repository's name, as
+// the forge package holds it: the forge is the gate (#150).
+var validRepository = map[Forge]func(string) bool{
+	GitHub: forge.ValidGitHubRepositoryName,
+	GitLab: forge.ValidGitLabProjectPath,
+}
+
+// normalizeInstance is a forge instance's address without a trailing
+// slash, where the forge package would take it as GitLab's.
 func normalizeInstance(value string) (string, error) {
 	parsed, err := url.Parse(value)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+	if err != nil || !forge.ValidGitLabInstance(parsed) {
 		return "", fmt.Errorf("macports source: invalid forge instance %q", value)
 	}
 	parsed.Path = strings.TrimRight(parsed.Path, "/")
 	parsed.RawPath = ""
 	return strings.TrimRight(parsed.String(), "/"), nil
-}
-
-func validPath(value string, exact int) bool {
-	parts := strings.Split(value, "/")
-	if len(parts) < 2 || exact > 0 && len(parts) != exact {
-		return false
-	}
-	for _, part := range parts {
-		if part == "" || part == "." || part == ".." || strings.IndexFunc(part, func(r rune) bool {
-			return unicode.IsSpace(r) || unicode.IsControl(r) || strings.ContainsRune("?#%\\", r)
-		}) >= 0 {
-			return false
-		}
-	}
-	return true
 }
 
 func (s Spec) webURL() (string, error) {

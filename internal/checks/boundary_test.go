@@ -32,6 +32,7 @@ var checksImports = map[string]string{
 	"internal/macports/portfile": "which subports' blocks hold a Portfile's change, and which inert options, for reuse",
 	"internal/macports/fidelity": "whether two revisions' change records find an inert change alone, for reuse",
 	"internal/atomicfile":        "kept archives, whole or not at all",
+	"internal/filedigest":        "the size and SHA-256 identity of files checked for reuse",
 	"internal/failpoint":         "the acceptance harness's kill steps, which a normal build hasn't",
 	"internal/filelock":          "an attempt's launch lock, which a launch and a stop each take",
 	"internal/procid":            "who took a launch lock, which a stop that can't have it names",

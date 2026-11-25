@@ -64,7 +64,7 @@ regardless of age.`,
 				// A read GitHub refused, as with a revoked login, is the
 				// command's error: status is still shown, from what's
 				// recorded, but for --json, whose one envelope says it.
-				if err := readAndSay(cmd.Context(), e, streams.Err); err != nil {
+				if err := view.ReadAndSay(cmd.Context(), e, streams.Err); err != nil {
 					if streams.JSON() {
 						return err
 					}
@@ -674,14 +674,4 @@ func portWords(status engine.BranchStatus) string {
 		words = append(words, port)
 	}
 	return strings.Join(words, ", ")
-}
-
-// readAndSay reads the pull requests and says what it found
-// (view.WriteRefreshed), as clean does.
-func readAndSay(ctx context.Context, e *engine.Engine, out io.Writer) error {
-	refreshed, err := e.RefreshPullRequests(ctx)
-	if err != nil {
-		return err
-	}
-	return view.WriteRefreshed(out, refreshed)
 }

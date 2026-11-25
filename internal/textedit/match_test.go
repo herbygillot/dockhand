@@ -34,3 +34,20 @@ func TestMatchPairsWithinItsBudget(t *testing.T) {
 		t.Fatalf("past the budget: within %v, from[0] %d", within, from[0])
 	}
 }
+
+// Changed are the elements of each side a Match leaves unpaired: those
+// gone from a and those come in b, by index, as the line comparisons of
+// Portfiles and CMake files both read them (#150).
+func TestChangedSaysWhatEachSideLeavesUnpaired(t *testing.T) {
+	t.Parallel()
+	a := []string{"one", "two", "three", "four"}
+	b := []string{"one", "2", "three", "four", "five"}
+	gone, come := Changed(len(a), len(b), func(i, j int) bool { return a[i] == b[j] })
+	if !slices.Equal(gone, []int{1}) || !slices.Equal(come, []int{1, 4}) {
+		t.Fatalf("Changed = %v, %v; want [1], [1 4]", gone, come)
+	}
+	gone, come = Changed(len(a), len(a), func(i, j int) bool { return a[i] == a[j] })
+	if len(gone) != 0 || len(come) != 0 {
+		t.Fatalf("Changed of a side with itself = %v, %v; want none", gone, come)
+	}
+}

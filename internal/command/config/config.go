@@ -105,15 +105,19 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			}
 			flag("update.keep_http", file.Update.KeepHTTP)
 			set("update.source", file.Update.Source)
-			// Each program dockhand runs, as named: --tool, then its
-			// variable, then [tools], else found as the default says.
+			// Compose has already resolved each named program and its
+			// source, with precedence --tool, variable, then [tools].
+			namedTools := map[string]string{}
+			for _, named := range options.Named {
+				namedTools[named.Name] = named.Source
+			}
 			for _, program := range config.Programs {
 				key := "tools." + program.Key
-				switch {
-				case s.Tools[program.Name] != "":
-					all = append(all, configSetting{Key: key, Value: s.Tools[program.Name], Source: "--tool " + program.Name})
-				case s.Getenv(program.Variable) != "":
-					all = append(all, configSetting{Key: key, Value: s.Getenv(program.Variable), Source: program.Variable})
+				switch source := namedTools[program.Name]; source {
+				case "--tool " + program.Name:
+					all = append(all, configSetting{Key: key, Value: s.Tools[program.Name], Source: source})
+				case program.Variable:
+					all = append(all, configSetting{Key: key, Value: s.Getenv(program.Variable), Source: source})
 				default:
 					set(key, s.Places().Tilde(file.Tools.Get(program.Key)))
 				}

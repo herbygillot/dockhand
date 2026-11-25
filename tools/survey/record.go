@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	_ "embed"
@@ -235,7 +236,7 @@ func (r *Record) treeFiles(tx *sql.Tx) error {
 	}
 	defer insert.Close()
 	for _, listing := range [][]string{{"-r", r.commit, "--", "_resources"}, {"-r", "-d", r.commit}} {
-		command := exec.Command(firstOf(r.git, "git"), append([]string{"-C", r.repo, "ls-tree"}, listing...)...)
+		command := exec.Command(cmp.Or(r.git, "git"), append([]string{"-C", r.repo, "ls-tree"}, listing...)...)
 		out, err := command.Output()
 		if err != nil {
 			return fmt.Errorf("survey: listing the tree at %s: %w", r.commit, err)

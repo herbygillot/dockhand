@@ -133,6 +133,11 @@ dockhand check --on tart
 
 The plan asks before it evaluates the author's Portfiles, on a terminal; a
 script adopts with `dockhand adopt --pr 35174 --evaluate` instead.
+`dockhand diff -b pr-35174` shows the changes without asking, since it runs no
+Portfile; `diff --source` evaluates them, so it asks. Control characters in the
+author's files, paths, and titles are shown as visible marks, such as `␍` for
+a carriage return and `<U+202E>` for a bidirectional override, so they can't
+redraw what is on the screen.
 
 Use the branch name adoption actually prints if the pull request was already
 tracked under another name. You can inspect or edit the adopted files with the

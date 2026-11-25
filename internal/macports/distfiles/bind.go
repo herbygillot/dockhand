@@ -226,9 +226,12 @@ func BindResolving(src []byte, path string, info macports.PortInfo, observed mac
 			if _, ok := group.Values[kind.Value]; ok {
 				return result, portfile.ErrUnsupported.Because("duplicate checksum algorithm")
 			}
+			// An unlocated token has no owner: its group refuses as
+			// unlocated below, where this sliced the empty owner and
+			// panicked (#337).
 			if group.Owner == "" {
 				group.Owner, group.Command = kind.Owner, kind.Command
-			} else if declarationOf(kind.Owner) != declarationOf(group.Owner) && portfile.LegacyChecksums(append(group.Kinds, kind.Value)) {
+			} else if kind.Owner != "" && declarationOf(kind.Owner) != declarationOf(group.Owner) && portfile.LegacyChecksums(append(group.Kinds, kind.Value)) {
 				return result, portfile.ErrUnsupported.Because("legacy checksum group spans declarations")
 			}
 			group.Values[kind.Value] = value
@@ -302,4 +305,9 @@ func digestLike(value string) bool {
 	return decimal || hex && len(value) >= 32
 }
 
-func declarationOf(owner string) string { return owner[:strings.IndexByte(owner, '/')] }
+// declarationOf is the declaration part of a located token's owner, the
+// whole owner where it has none.
+func declarationOf(owner string) string {
+	declaration, _, _ := strings.Cut(owner, "/")
+	return declaration
+}

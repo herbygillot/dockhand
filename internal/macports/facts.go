@@ -480,11 +480,26 @@ func (s Snapshot) AsPlainHTTP(urls []string) Snapshot {
 	return plain
 }
 
+// distfileTag is a distfile's :tag as Base reads it: after the last
+// colon, letters, digits, '_' and '-', with something before it.
+var distfileTag = regexp.MustCompile(`^(.+):([0-9A-Za-z_-]+)$`)
+
+// DistfileTag is a distfile's name and the tag naming its site, empty
+// for none, as Base's getdistname and getdisttag cut them
+// (port1.0/portutil.tcl).
+func DistfileTag(file string) (name, tag string) {
+	if match := distfileTag.FindStringSubmatch(file); match != nil {
+		return match[1], match[2]
+	}
+	return file, ""
+}
+
 // servedFrom is the first distfile a site of these tags serves: one of
 // its tags, or, for a site with none, one with none, as Base matches them.
 func servedFrom(distfiles, tags []string) string {
 	for _, distfile := range distfiles {
-		name, tag, tagged := strings.Cut(distfile, ":")
+		name, tag := DistfileTag(distfile)
+		tagged := tag != ""
 		if tagged == (len(tags) > 0) && (!tagged || slices.Contains(tags, tag)) && name != "" {
 			return name
 		}

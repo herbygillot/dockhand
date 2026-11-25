@@ -154,7 +154,9 @@ dockhand cancel check-42 asks again`. `status` shows such a check as
 `dockhand cancel check-42` as the next step; its JSON gives the run's
 `cancel_requested` time and the same words as its `detail`. Each later
 `cancel`, and a serve as it passes, looks again; serve does so no more often
-than every 30 seconds. A submission of the same files doesn't wait on such a
+than every 30 seconds, whether or not a provider has a free slot, and keeps
+running: its log says `check-42: a cancel was asked, and …; serve asks again
+as it passes` each time those words change. A submission of the same files doesn't wait on such a
 check. A cancel that finishes says what the ended work left, if anything, and
 what removes it, in the canceled check's detail.
 

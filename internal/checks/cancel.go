@@ -2,6 +2,7 @@ package checks
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -13,6 +14,13 @@ import (
 	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
 )
+
+// ErrCancelUnfinished is a cancel that was applied and can't be finished
+// yet: a provider couldn't see the work it launched end. It is the run's
+// state, which status shows, and not its applier's failure: serve says it
+// and asks again as it passes (#331). errors.Is reaches it through the
+// refusal settleCancel returns.
+var ErrCancelUnfinished = errors.New("a cancel isn't finished")
 
 // RequestCancel records that a run should stop. A queued run is canceled
 // at once; a running one is stopped by whoever holds it, or by this
@@ -101,7 +109,7 @@ func (c *Service) settleCancel(ctx context.Context, session *coord.Session, leas
 	if run.State.Terminal() {
 		return run, nil
 	}
-	return run, refusal.New(refusal.Infrastructure, "%s: %s; dockhand cancel %s asks again", name, words, name)
+	return run, refusal.Wrap(refusal.Infrastructure, ErrCancelUnfinished, "%s: %s; dockhand cancel %s asks again", name, words, name)
 }
 
 // stopUnfinished asks the provider of each attempt of a run to end the

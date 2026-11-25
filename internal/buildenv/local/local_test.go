@@ -24,6 +24,11 @@ import (
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
+func TestLocalInstalledPortReadingUsesInstallationOwnerRule(t *testing.T) {
+	t.Parallel()
+	require.Empty(t, activePortVersions([]byte(" odd @1_0 extra (active)\n")), "an odd active line has no version safe to pass to port activate")
+}
+
 // asIs is two targets checked in a prefix of the person's: among
 // whatever is active, put back after.
 func asIs(local guest.Local) guest.Input {

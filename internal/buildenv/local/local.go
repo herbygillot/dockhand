@@ -295,11 +295,7 @@ func (l *Local) Execute(ctx context.Context, job buildenv.Job, build buildenv.Bu
 
 // hostRelease is the macOS release a local environment's platform is.
 func hostRelease(platform model.Platform) (macos.Release, error) {
-	darwin, err := strconv.Atoi(platform.Version)
-	if err != nil {
-		return macos.Release{}, err
-	}
-	return macos.ReleaseForDarwin(darwin)
+	return macos.ReleaseForDarwinText(platform.Version)
 }
 
 // settle says how the check left the prefix, from what the guest program
@@ -360,8 +356,9 @@ func (l *Local) byHand(dir, check, snapshot string) string {
 		return words
 	}
 	var activate []string
-	for _, name := range slices.Sorted(maps.Keys(activePorts(string(before)))) {
-		activate = append(activate, name+" "+activePorts(string(before))[name])
+	previous := activePortVersions(before)
+	for _, name := range slices.Sorted(maps.Keys(previous)) {
+		activate = append(activate, name+" "+previous[name])
 	}
 	if len(activate) == 0 {
 		return words
@@ -993,7 +990,7 @@ func (l *Local) PlanPutBack(ctx context.Context, check string) (buildenv.PutBack
 	if err != nil {
 		return buildenv.PutBackPlan{}, true, err
 	}
-	previous, current := activePorts(string(before)), activePorts(string(active))
+	previous, current := activePortVersions(before), activePortVersions(active)
 	ports := slices.Sorted(maps.Keys(previous))
 	for port := range current {
 		if !slices.Contains(ports, port) {
@@ -1031,7 +1028,7 @@ func (l *Local) putBackAlready(ctx context.Context, dir, prefix string) bool {
 		return false
 	}
 	now, err := l.command(ctx, nil, filepath.Join(prefix, "bin", "port"), "-q", "installed", "active")
-	return err == nil && maps.Equal(activePorts(string(before)), activePorts(string(now)))
+	return err == nil && maps.Equal(activePortVersions(before), activePortVersions(now))
 }
 
 // Installed are a prefix's active ports, as port -q installed active says
@@ -1043,7 +1040,7 @@ func (l *Local) Installed(ctx context.Context, environment model.Environment) (a
 	if err != nil {
 		return nil, nil, err
 	}
-	active = slices.Sorted(maps.Keys(activePorts(string(listing))))
+	active = slices.Sorted(maps.Keys(activePortVersions(listing)))
 	// A variants.conf that can't be read sets none.
 	if conf, err := os.ReadFile(filepath.Join(prefix, "etc", "macports", "variants.conf")); err == nil {
 		for _, line := range strings.Split(string(conf), "\n") {
@@ -1062,12 +1059,13 @@ func (l *Local) Installed(ctx context.Context, environment model.Environment) (a
 
 var _ buildenv.InstalledProvider = (*Local)(nil)
 
-// activePorts are the ports a listing of port -q installed active says
-// are active, each with its version, revision, and variants.
-func activePorts(listing string) map[string]string {
+// activePortVersions reads a version only from a three-field active line:
+// malformed lines have no version safe to pass to port activate.
+func activePortVersions(listing []byte) map[string]string {
 	active := map[string]string{}
-	for _, line := range strings.Split(listing, "\n") {
-		if fields := strings.Fields(line); len(fields) == 3 && fields[2] == "(active)" {
+	for _, line := range installation.ActivePorts(listing) {
+		fields := strings.Fields(line)
+		if len(fields) == 3 {
 			active[fields[0]] = fields[1]
 		}
 	}

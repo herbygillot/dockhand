@@ -19,6 +19,12 @@ import (
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
+func TestSamePathCleansNamesWhenPathDoesNotExist(t *testing.T) {
+	t.Parallel()
+	name := filepath.Join(t.TempDir(), "missing")
+	require.True(t, samePath(name, filepath.Join(filepath.Dir(name), "nested", "..", "missing")))
+}
+
 // mergedBranch submits an update and has GitHub merge it.
 func mergedBranch(t *testing.T) (fixture, *Engine, *forgetest.GitHub, model.Branch) {
 	t.Helper()

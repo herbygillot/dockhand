@@ -189,3 +189,35 @@ eval checksums-append doc.zip sha256 bbbb size 3
 	require.ErrorIs(t, err, portfile.ErrUnsupported)
 	require.EqualError(t, err, "the checksums for doc.zip can't be found in the Portfile to edit: no command written in the Portfile makes it, as an eval'd one isn't")
 }
+
+// A checksum group split between a declaration in the Portfile and one
+// that can't be found there refuses as the latter, where it sliced the
+// unlocated token's empty owner and panicked (#337, a regression from the
+// PortGroup-checksums change).
+func TestAChecksumGroupSplitAcrossAnUnlocatedDeclarationRefuses(t *testing.T) {
+	executable := testsupport.MacPortsTclsh(t)
+	root := t.TempDir()
+	path := filepath.Join(root, "devel/fixture/Portfile")
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0700))
+	src := []byte(`PortSystem 1.0
+name fixture
+version 1
+master_sites https://example.invalid/$version
+checksums rmd160 aaaa sha256 bbbb
+eval checksums-append size 3
+`)
+	require.NoError(t, os.WriteFile(path, src, 0600))
+	tree, err := macports.NewTree(model.Source{Tree: model.ObjectID(strings.Repeat("a", 40))}, root, model.Platform{})
+	require.NoError(t, err)
+	e := &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
+	targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: "fixture"})
+	require.NoError(t, err)
+	bound, err := tree.Select(targets[0])
+	require.NoError(t, err)
+	observed, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Declarations: true})
+	require.NoError(t, err)
+	_, err = distfiles.Bind(src, path, observed.Snapshot.Ports["fixture"], observed.Ports["fixture"])
+	var unlocated *distfiles.Unlocated
+	require.ErrorAs(t, err, &unlocated)
+	require.ErrorIs(t, err, portfile.ErrUnsupported)
+}

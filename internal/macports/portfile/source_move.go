@@ -187,7 +187,7 @@ func blockText(src []byte, setup syntax.Command, move SourceMove) string {
 	}
 	if move.FromGit {
 		indent := strings.Repeat(" ", max(column, len("checksums")+1))
-		parts = append(parts, line("checksums", "rmd160  0 \\\n"+indent+"sha256  0 \\\n"+indent+"size    0"))
+		parts = append(parts, line("checksums", strings.Join(placeholderChecksums(), " \\\n"+indent)))
 	}
 	return strings.Join(parts, "\n\n")
 }

@@ -141,21 +141,6 @@ func (p *Reader) withoutVendored(ctx context.Context, files *workspace.Workspace
 	return &observation, stripped, nil
 }
 
-// planOf is the archives a port's fetch plan names, which dockhand fetches
-// as MacPorts would: ErrNoArchives where it names none, MacPorts' reason
-// where it couldn't make one, and the refusal of a fetch the policy leaves
-// to a dedicated preparer.
-func planOf(info macports.PortInfo, port macports.PortObservation, portdir string) ([]macports.Distfile, error) {
-	name := info.Name
-	observed := macports.Observation{
-		Snapshot: macports.Snapshot{Ports: map[string]macports.PortInfo{name: info}},
-		Ports:    map[string]macports.PortObservation{name: port},
-	}
-	// This legacy helper keeps the package test's original call shape; it has
-	// no caller context to pass. ArchivePlan uses planOfObserved with its ctx.
-	return planOfObserved(context.Background(), observed, name, nil, portdir)
-}
-
 // planOfObserved asks for a plan, as main did, without judging native host
 // access: ArchivePlan returns this Mac's own evaluation and plan.
 func planOfObserved(ctx context.Context, observed macports.Observation, name string, contents []byte, portdir string) ([]macports.Distfile, error) {

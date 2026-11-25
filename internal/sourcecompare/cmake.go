@@ -236,7 +236,8 @@ func cmakeWhere(was, rest []project.CMakeStatement) []cmakePlace {
 		}
 		return keyed
 	}
-	gone, come := changedLines(keys(was), keys(rest))
+	before, after := keys(was), keys(rest)
+	gone, come := textedit.Changed(len(before), len(after), func(i, j int) bool { return before[i] == after[j] })
 	var where []cmakePlace
 	for _, changed := range []struct {
 		statements []project.CMakeStatement
@@ -282,20 +283,6 @@ func cmakePlaces(places []cmakePlace) string {
 		return fmt.Sprintf("%s, and in %d more places", strings.Join(where[:cmakeNamed], ", "), len(where)-cmakeNamed)
 	}
 	return strings.Join(where, ", ")
-}
-
-// changedLines are the lines of each side a longest common subsequence
-// leaves out: those gone from the old, and those come in the new. Past
-// what's cheap to compare line by line, the lines between the common
-// start and end are all said.
-func changedLines(old, now []string) (gone, come []int) {
-	from, _ := textedit.Match(len(old), len(now), func(i, j int) bool { return old[i] == now[j] })
-	for j, i := range from {
-		if i < 0 {
-			come = append(come, j)
-		}
-	}
-	return textedit.Unmatched(len(old), from), come
 }
 
 // cmakeOptionsOnly says a CMakeLists.txt's change where all it does that

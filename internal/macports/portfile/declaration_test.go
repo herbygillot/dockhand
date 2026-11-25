@@ -190,3 +190,21 @@ go.vendors rsc.io/qr \
 	require.True(t, portfile.WritesChecksums(src, []string{"size", "18816"}))
 	require.False(t, portfile.WritesChecksums(src, []string{"sha256", "3333333333333333333333333333333333333333333333333333333333333333"}), "a sum it doesn't write")
 }
+
+// A PortGroup's file is named as macports.PortGroupAt names it: the
+// version after the name's last hyphen, starting with a digit, so a dot
+// in the name and a letter in the version are a PortGroup's too, where
+// portfile's own pattern once refused both (#150).
+func TestAPortGroupFrameIsNamedAsTheTreeNamesIt(t *testing.T) {
+	t.Parallel()
+	src := []byte("PortSystem 1.0\nPortGroup a.b 1.0a\n")
+	path := "/tree/devel/x/Portfile"
+	declaration := macports.Declaration{Command: "checksums", Values: []string{"x.tar.gz", "sha256", "aaaa"}, Frames: []macports.SourceFrame{
+		{File: path, Line: 2, Command: "a.b.setup"},
+		{File: "/tree/_resources/port1.0/group/a.b-1.0a.tcl", Line: 7, Command: "checksums x.tar.gz sha256 aaaa"},
+	}}
+	_, err := portfile.LocateDeclaration(src, path, declaration)
+	inGroup := new(portfile.InPortGroup)
+	require.ErrorAs(t, err, &inGroup)
+	require.Equal(t, &portfile.InPortGroup{Group: "a.b 1.0a", File: "_resources/port1.0/group/a.b-1.0a.tcl", Line: 7}, inGroup)
+}

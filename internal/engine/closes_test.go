@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -41,11 +42,18 @@ func TestAnUpdateClosesTheTicketItNames(t *testing.T) {
 }
 
 // A Portfile's comment that reads as a maintainer's instruction is quoted
-// with its place, as update, status, and serve say it (the docs dig's I7).
+// with its place, as update, status, and serve say it (the docs dig's I7),
+// read from the prepared tree before the files are written.
 func TestAPortfilesInstructionIsQuotedWithItsPlace(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
+	testsupport.Git(t, root, "init", "-q")
 	testsupport.WriteFiles(t, root, map[string]string{"sysutils/osxfuse/Portfile": "name osxfuse\n# Do not update past 3.8.3.\nversion 3.8.3\n"})
-	require.Equal(t, []string{"sysutils/osxfuse/Portfile:2: Do not update past 3.8.3."}, instructionLines(root, "sysutils/osxfuse", "osxfuse"))
-	require.Empty(t, instructionLines(root, "sysutils/gone", "gone"))
+	testsupport.Git(t, root, "add", "-A")
+	testsupport.Git(t, root, "commit", "-q", "-m", "osxfuse")
+	tree := testsupport.Git(t, root, "rev-parse", "HEAD^{tree}")
+	repo, err := git.Open(t.Context(), root, git.Program{Env: testsupport.GitEnv(t)})
+	require.NoError(t, err)
+	require.Equal(t, []string{"sysutils/osxfuse/Portfile:2: Do not update past 3.8.3."}, preparedInstructions(t.Context(), repo, tree, "sysutils/osxfuse", "osxfuse"))
+	require.Empty(t, preparedInstructions(t.Context(), repo, tree, "sysutils/gone", "gone"))
 }

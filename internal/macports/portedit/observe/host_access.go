@@ -8,9 +8,11 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
@@ -332,8 +334,8 @@ func Tolerate(ctx context.Context, port macports.PortObservation, contents []byt
 // sourceLine is a frame command's first line, enough to recognize it.
 func sourceLine(command string) string {
 	line, _, _ := strings.Cut(command, "\n")
-	if len(line) > 80 {
-		line = line[:80] + "..."
+	if utf8.RuneCountInString(line) > 80 {
+		return prose.Cut(line, 80)
 	}
 	return line
 }

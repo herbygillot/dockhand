@@ -1,11 +1,21 @@
 package view
 
 import (
+	"context"
 	"fmt"
 	"io"
 
 	"github.com/herbygillot/dockhand/internal/engine"
 )
+
+// ReadAndSay refreshes the pull requests and writes the refresh results.
+func ReadAndSay(ctx context.Context, e *engine.Engine, out io.Writer) error {
+	refreshed, err := e.RefreshPullRequests(ctx)
+	if err != nil {
+		return err
+	}
+	return WriteRefreshed(out, refreshed)
+}
 
 // WriteRefreshed says what a refresh of the pull requests found, what
 // changed of each and what couldn't be read. GitHub refusing the read

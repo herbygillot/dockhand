@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -12,6 +13,26 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
 	"github.com/herbygillot/dockhand/internal/model"
 )
+
+// livecheck reads and extracts a listing for either kind of livecheck.
+// Both compare its versions with the source spelling before their caller
+// applies the selected version to the port or checks its tag.
+func (s *Service) livecheck(ctx context.Context, port macports.PortInfo, spec portsource.Spec) ([]byte, http.Header, []macports.VersionCandidate, map[string]string, string, error) {
+	current := spec.SourceVersion
+	if !automatic(current) {
+		return nil, nil, nil, nil, "", fmt.Errorf("%w: require a stable or prerelease numeric version", ErrAutomaticUnsupported)
+	}
+	page, validators, err := s.listing(ctx, port, spec)
+	if err != nil {
+		return nil, nil, nil, nil, "", err
+	}
+	versions, err := s.Versions.ExtractVersions(ctx, spec.Livecheck.Regex, string(page), spec.Livecheck.Multiline)
+	if err != nil {
+		return nil, nil, nil, nil, "", err
+	}
+	candidates, from, passed := listed(current, string(page), versions)
+	return page, validators, candidates, from, passed, nil
+}
 
 // discoverOverridden runs the maintainer's own livecheck the way Base would
 // and proves its answer against the catalog. The livecheck is the
@@ -28,21 +49,11 @@ func (s *Service) discoverOverridden(ctx context.Context, port macports.PortInfo
 			result.Detail, result.RetryAt = err.Error(), retryAt(err)
 		}
 	}()
-	// The livecheck names versions in the source's spelling, as Base
-	// compares them against livecheck.version.
+	_, _, candidates, from, passed, err := s.livecheck(ctx, port, spec)
+	if err != nil {
+		return result, err
+	}
 	current := spec.SourceVersion
-	if !automatic(current) {
-		return result, fmt.Errorf("%w: require a stable or prerelease numeric version", ErrAutomaticUnsupported)
-	}
-	page, _, err := s.listing(ctx, port, spec)
-	if err != nil {
-		return result, err
-	}
-	versions, err := s.Versions.ExtractVersions(ctx, spec.Livecheck.Regex, string(page), spec.Livecheck.Multiline)
-	if err != nil {
-		return result, err
-	}
-	candidates, from, passed := listed(current, string(page), versions)
 	if len(candidates) == 0 && passed != "" {
 		result.onlyPrerelease(model.Release{Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name()}, port.Version, passed)
 		return result, nil

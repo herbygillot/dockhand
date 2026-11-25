@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"cmp"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +18,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/atomicfile"
+	"github.com/herbygillot/dockhand/internal/filedigest"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -120,24 +119,11 @@ func ResolveTool(ctx context.Context, c Config) (Config, error) {
 	if !info.Mode().IsRegular() || info.Mode()&0111 == 0 {
 		return c, fmt.Errorf("portindex: executable is not an executable regular file")
 	}
-	hash := sha256.New()
-	buffer := make([]byte, 1<<20)
-	for {
-		if err = ctx.Err(); err != nil {
-			return c, err
-		}
-		count, readErr := file.Read(buffer)
-		if count > 0 {
-			_, _ = hash.Write(buffer[:count])
-		}
-		if readErr == io.EOF {
-			break
-		}
-		if readErr != nil {
-			return c, readErr
-		}
+	digest, err := filedigest.Sum(ctx, file)
+	if err != nil {
+		return c, err
 	}
-	identity := "sha256:" + hex.EncodeToString(hash.Sum(nil))
+	identity := "sha256:" + digest.SHA256
 	if c.Digest != "" && c.Digest != identity {
 		return c, fmt.Errorf("portindex: executable changed after the build was accepted")
 	}
@@ -572,7 +558,7 @@ func copyIndexFile(source, destination string) (err error) {
 		copyErr = os.Chtimes(temp, info.ModTime(), info.ModTime())
 	}
 	if copyErr == nil {
-		copyErr = os.Rename(temp, destination)
+		copyErr = atomicfile.Place(temp, destination)
 	}
 	return copyErr
 }

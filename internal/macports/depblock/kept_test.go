@@ -68,5 +68,10 @@ func TestAGoModuleWithoutItsMajorSuffixIsTheSameRow(t *testing.T) {
 	differences, err = Differences(Go, declared, generated)
 	require.NoError(t, err)
 	require.Empty(t, differences)
-	require.Equal(t, "example.com/m/v1", goMajor.ReplaceAllString("example.com/m/v1", ""), "/v1 is no major suffix")
+	// /v1 is no major suffix: a module declared without it stays apart.
+	declared = []string{"example.com/m", "lock", "v1.0.0", "sha256", sha, "size", "10"}
+	generated = []string{"example.com/m/v1", "lock", "v1.0.0", "sha256", sha, "size", "10"}
+	differences, err = Differences(Go, declared, generated)
+	require.NoError(t, err)
+	require.NotEmpty(t, differences, "/v1 is no major suffix")
 }

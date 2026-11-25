@@ -483,6 +483,10 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	// testing saw "check-100 lego-7ny0: passed" twice, from a cause not
 	// found (the ninth report).
 	ended := map[model.RunID]bool{}
+	// stopping are the words said of each run whose cancel serve applied
+	// and couldn't finish, said again only when they change: serve asks
+	// again every time a provider's poll passes (#331).
+	stopping := map[model.RunID]string{}
 	var failure error
 	// worked is work since the queue last emptied, a check or a look,
 	// which serve settles once it's all ended.
@@ -503,9 +507,34 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 			done <- finished{run: result, branch: branch, err: err}
 		}()
 	}
+	// applyCancel applies a check's recorded cancel, which needs none of
+	// what starting it does, a slot on each provider, a login that can
+	// write, the author's commit allowed: a person's cancel isn't held to
+	// them, and serve's asking again isn't either (#331).
+	applyCancel := func(run model.Run, branch model.Branch) {
+		worked = true
+		inFlight[run.ID] = run
+		go func() {
+			result, err := service.RequestCancel(running, session, run.ID)
+			if result.ID == "" {
+				result = run
+			}
+			done <- finished{run: result, branch: branch, err: err}
+		}()
+	}
 	settle := func(f finished) {
 		delete(inFlight, f.run.ID)
 		if held := new(coord.HeldError); errors.As(f.err, &held) {
+			return
+		}
+		// A cancel that can't be finished yet is the check's state, which
+		// status shows; serve says it and goes on, where it took it as its
+		// own failure and exited, at every restart (#331).
+		if errors.Is(f.err, checks.ErrCancelUnfinished) && !f.run.State.Terminal() {
+			if stopping[f.run.ID] != f.run.Detail {
+				stopping[f.run.ID] = f.run.Detail
+				s.say("%s: %s; serve asks again as it passes", f.run.Name(), f.run.Detail)
+			}
 			return
 		}
 		if f.err != nil {
@@ -615,6 +644,15 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 		waiting := false
 		for _, run := range candidates {
 			if _, in := inFlight[run.ID]; in {
+				continue
+			}
+			if run.CancelRequested != nil {
+				branch, err := e.Branch(running, run.Branch)
+				if err != nil {
+					failure = err
+					break
+				}
+				applyCancel(run, branch)
 				continue
 			}
 			needs, err := service.RunProviders(running, run)

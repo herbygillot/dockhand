@@ -25,6 +25,8 @@ func TestPortNamesAreOrderedAsAPersonReadsThem(t *testing.T) {
 	names := []string{"terraform-1.10", "terraform", "terraform-1.2", "terraform-1.16", "terraform-1.9", "terraform_select", "py310-a", "py39-a", "x01", "x1"}
 	slices.SortFunc(names, macports.ComparePortNames)
 	require.Equal(t, []string{"py39-a", "py310-a", "terraform", "terraform-1.2", "terraform-1.9", "terraform-1.10", "terraform-1.16", "terraform_select", "x01", "x1"}, names)
+	require.Less(t, macports.ComparePortNames("a01", "a1"), 0, "equal numbers with leading zeros use byte order")
+	require.Less(t, macports.ComparePortNames("a18446744073709551616", "a18446744073709551617"), 0, "long digit runs compare numerically")
 }
 
 // A port is named after a project where its name, case and its group's

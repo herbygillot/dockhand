@@ -9,9 +9,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/textedit"
 )
@@ -410,8 +412,8 @@ func goToolchainReason(src []byte, commands []syntax.Command) refusal {
 // at sixty characters.
 func snippet(src []byte, span textedit.Span) string {
 	line := strings.Join(strings.Fields(span.Text(src)), " ")
-	if len(line) > 60 {
-		line = line[:57] + "..."
+	if utf8.RuneCountInString(line) > 60 {
+		return prose.Cut(line, 57)
 	}
 	return line
 }

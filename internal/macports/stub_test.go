@@ -26,10 +26,3 @@ func TestStubMembersFindTheNewestVersionedSubport(t *testing.T) {
 	newest, _, _ = stubMembers(Snapshot{Ports: map[string]PortInfo{"terraform": {Version: "1.16.0", Options: map[string]string{"dockhand.metadata_only": "1", "replaced_by": "terraform-1.16"}}, "terraform-1.16": {Version: "1.16.3", Options: map[string]string{}}}}, "terraform")
 	require.Empty(t, newest, "an obsolete port whose subports are at other versions is not a stub")
 }
-
-func TestNaturalCompareOrdersEmbeddedNumbers(t *testing.T) {
-	require.Negative(t, naturalCompare("py39-x", "py310-x"))
-	require.Positive(t, naturalCompare("php84-x", "php83-x"))
-	require.Zero(t, naturalCompare("a1", "a1"))
-	require.Negative(t, naturalCompare("p5.34-x", "p5.36-x"))
-}

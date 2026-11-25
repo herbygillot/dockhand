@@ -68,7 +68,7 @@ func CounterpartIn(ports []PortInfo, name string) string {
 	}
 	counterpart := name
 	for _, port := range ports {
-		if other, ok := PythonPackage(port.Name); ok && other == pkg && (counterpart == name || naturalCompare(port.Name, counterpart) > 0) {
+		if other, ok := PythonPackage(port.Name); ok && other == pkg && (counterpart == name || ComparePortNames(port.Name, counterpart) > 0) {
 			counterpart = port.Name
 		}
 	}

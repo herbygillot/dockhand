@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"path"
-	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
@@ -66,11 +65,7 @@ func (j distributableJudge) Distributable(ctx context.Context, at model.Source, 
 				continue
 			}
 			info := distributable.Info{License: entry.Fields["license"], InstallsLibs: entry.Fields["installs_libs"] != "no", NoConflict: exempt[entry.Portdir]}
-			for _, field := range []string{"depends_build", "depends_lib"} {
-				for _, spec := range strings.Fields(entry.Fields[field]) {
-					info.Dependencies = append(info.Dependencies, spec[strings.LastIndexByte(spec, ':')+1:])
-				}
-			}
+			info.Dependencies = entry.Dependencies(portindex.DependsBuild, portindex.DependsLib)
 			infos[name] = info
 			queue = append(queue, info.Dependencies...)
 		}

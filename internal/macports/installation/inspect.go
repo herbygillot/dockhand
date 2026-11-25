@@ -60,7 +60,7 @@ func Inspect(ctx context.Context, command macos.Command, prefix string) (Facts, 
 	if err != nil {
 		return result, err
 	}
-	result.ActivePorts = activePorts(active)
+	result.ActivePorts = ActivePorts(active)
 	// Pass the program through stdin rather than interpolating the prefix into
 	// Tcl. Its answer is the line it marks: mportinit warns, on stderr, once
 	// the port definitions are more than two weeks old, and a guest's
@@ -121,10 +121,10 @@ func markedFields(out []byte, mark string) []string {
 	return nil
 }
 
-// activePorts are the active ports port -q installed active lists, a
+// ActivePorts are the active ports port -q installed active lists, a
 // line each ending "(active)", anything else MacPorts says beside them,
 // as its stale-definitions warning, left out.
-func activePorts(out []byte) []string {
+func ActivePorts(out []byte) []string {
 	var ports []string
 	for line := range strings.Lines(string(out)) {
 		if line = strings.TrimSpace(line); strings.HasSuffix(line, "(active)") {

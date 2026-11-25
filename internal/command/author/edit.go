@@ -56,7 +56,9 @@ one and is exclusive with those selectors.`,
 			// the person's own, where EDITOR=true stood in for it (field
 			// testing's batch 13).
 			if noOpen || !streams.Terminal() || editor == "" {
-				fmt.Fprintln(streams.Prose(), portfile)
+				// A shell or an editor reads it: payload, never wrapped
+				// (#339).
+				fmt.Fprintln(streams.Out, portfile)
 				return nil
 			}
 			fmt.Fprintf(streams.Err, "%s · %s\n", branch.ShortName(), s.Places().Tilde(portfile))

@@ -51,10 +51,14 @@ MacPorts' distfiles mirror.`,
 			if err != nil {
 				return err
 			}
-			if err := branchflags.MayEvaluate(ctx, e, streams, branch); err != nil {
-				return err
-			}
+			// The plain diff reads trees and text and runs no Portfile,
+			// so only --source, which evaluates them, asks first: the
+			// diff of someone's pull request was there only after
+			// agreeing to run its code (#338).
 			if archives {
+				if err := branchflags.MayEvaluate(ctx, e, streams, branch); err != nil {
+					return err
+				}
 				return diffArchives(ctx, e, streams, branch, args, stat)
 			}
 			diff, err := e.Diff(ctx, branch, engine.TreePaths(branch, s.Dir, args))

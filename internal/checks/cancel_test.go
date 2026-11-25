@@ -253,3 +253,56 @@ func TestAProviderThisDockhandHasntIsNotKnownToHaveStopped(t *testing.T) {
 	require.ErrorContains(t, err, "command isn't set up in this dockhand, so what attempt 1 launched there isn't known to have stopped")
 	require.Equal(t, model.RunRunning, canceled.State)
 }
+
+// cancelOn are hooks that record a person's cancel of the run where a
+// driver has read it and not yet written it: as it's taken (Evaluating),
+// or once it's built (AfterBuild).
+type cancelOn struct {
+	recordHooks
+	at     string
+	cancel func(context.Context)
+}
+
+func (h *cancelOn) Evaluating(ctx context.Context, _ model.Run) (context.Context, error) {
+	if h.at == "taken" {
+		h.cancel(ctx)
+	}
+	return ctx, nil
+}
+
+func (h *cancelOn) AfterBuild(ctx context.Context, _ model.Run, _ model.Revision) error {
+	if h.at == "built" {
+		h.cancel(ctx)
+	}
+	return nil
+}
+
+// A cancel recorded while a driver holds the check, between its read and
+// its write, is the run's to keep: the driver writes over the run as it
+// stands, where it wrote the copy it read at its start and ended on a
+// store conflict, a driver error serve took as its own failure (#331).
+func TestACancelRecordedWhileTheDriverHoldsTheCheckIsKept(t *testing.T) {
+	t.Parallel()
+	for _, at := range []string{"taken", "built"} {
+		c := service(t)
+		c.Providers = map[string]buildenv.Provider{"quiet": quiet{}}
+		run := c.queued(t, "jq-"+at, model.Environment{Provider: "quiet", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}})
+		other := c.session(t)
+		c.Hooks = &cancelOn{at: at, cancel: func(ctx context.Context) {
+			_, err := c.RequestCancel(ctx, other, run.ID)
+			require.NoError(t, err)
+		}}
+		driven, err := c.Drive(t.Context(), c.session(t), run.ID)
+		require.NoError(t, err, at)
+		require.NotNil(t, driven.CancelRequested, at)
+		recorded, err := c.run(t.Context(), run.ID)
+		require.NoError(t, err)
+		require.NotNil(t, recorded.CancelRequested, at)
+		require.True(t, recorded.State.Terminal(), at)
+		if at == "taken" {
+			require.Equal(t, model.RunCanceled, recorded.State, "nothing was built")
+		} else {
+			require.NotEqual(t, model.RunCanceled, recorded.State, "the work had ended: its result stands")
+		}
+	}
+}

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strconv"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/checks"
@@ -62,11 +61,10 @@ func (e *Engine) macPortsNotes(ctx context.Context, plan model.Plan) []string {
 // remakeWords is the setup that makes a Tart environment's image again
 // (RemakeWords); empty for another provider.
 func remakeWords(environment model.Environment) string {
-	darwin, err := strconv.Atoi(environment.Platform.Version)
-	if err != nil || environment.Provider != buildenv.Tart {
+	if environment.Provider != buildenv.Tart {
 		return ""
 	}
-	release, err := macos.ReleaseForDarwin(darwin)
+	release, err := macos.ReleaseForDarwinText(environment.Platform.Version)
 	if err != nil {
 		return ""
 	}

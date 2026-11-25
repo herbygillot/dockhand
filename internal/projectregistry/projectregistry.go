@@ -215,14 +215,10 @@ func (c Client) module(ctx context.Context, path string) (string, string, error)
 // root; empty at the root. A major version's suffix, /v2 and on, is the
 // module's, not a directory, as Go's modules reference has it.
 func below(path, root string) string {
-	under := strings.TrimPrefix(strings.TrimPrefix(path, root), "/")
-	if majorSuffix.MatchString(under) {
-		return ""
+	if prefix, major, ok := module.SplitPathVersion(path); ok && strings.HasPrefix(major, "/") && len(prefix) >= len(root) {
+		path = prefix
 	}
-	if i := strings.LastIndex(under, "/"); i >= 0 && majorSuffix.MatchString(under[i+1:]) {
-		under = under[:i]
-	}
-	return under
+	return strings.TrimPrefix(strings.TrimPrefix(path, root), "/")
 }
 
 // latestModule is a module's latest version, without its v, as Go's
@@ -251,9 +247,8 @@ func (c Client) latestModule(ctx context.Context, path string) (string, error) {
 }
 
 var (
-	majorSuffix = regexp.MustCompile(`^v[2-9][0-9]*$|^v[1-9][0-9]+$`)
-	plainName   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
-	modulePath  = regexp.MustCompile(`^[a-z0-9.-]+\.[a-z]{2,}(/[A-Za-z0-9._~-]+)*$`)
+	plainName  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+	modulePath = regexp.MustCompile(`^[a-z0-9.-]+\.[a-z]{2,}(/[A-Za-z0-9._~-]+)*$`)
 )
 
 // forge reports an address on a forge whose repositories create reads or

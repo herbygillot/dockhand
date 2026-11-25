@@ -59,12 +59,7 @@ func FirstFrom(log io.Reader, from int) (Cause, bool) {
 	lines := bufio.NewReaderSize(log, maxLine)
 	var pending Cause
 	for number := 1; ; number++ {
-		line, err := lines.ReadSlice('\n')
-		long := false
-		for errors.Is(err, bufio.ErrBufferFull) {
-			long = true
-			_, err = lines.ReadSlice('\n')
-		}
+		line, long, err := readLine(lines)
 		if err != nil && !errors.Is(err, io.EOF) || len(line) == 0 && !long {
 			return Cause{}, false
 		}
@@ -150,12 +145,7 @@ func Last(log io.Reader, from, to, n int) []string {
 	lines := bufio.NewReaderSize(log, maxLine)
 	var last []string
 	for number := 1; to == 0 || number < to; number++ {
-		line, err := lines.ReadSlice('\n')
-		long := false
-		for errors.Is(err, bufio.ErrBufferFull) {
-			long = true
-			_, err = lines.ReadSlice('\n')
-		}
+		line, long, err := readLine(lines)
 		if err != nil && !errors.Is(err, io.EOF) || len(line) == 0 && !long {
 			break
 		}
@@ -203,12 +193,7 @@ func FailedTests(log io.Reader, from int) []string {
 	}
 	listing := false
 	for number := 1; ; number++ {
-		line, err := lines.ReadSlice('\n')
-		long := false
-		for errors.Is(err, bufio.ErrBufferFull) {
-			long = true
-			_, err = lines.ReadSlice('\n')
-		}
+		line, long, err := readLine(lines)
 		if err != nil && !errors.Is(err, io.EOF) || len(line) == 0 && !long {
 			break
 		}

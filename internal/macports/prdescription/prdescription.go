@@ -10,6 +10,7 @@
 package prdescription
 
 import (
+	"cmp"
 	"fmt"
 	"regexp"
 	"slices"
@@ -601,7 +602,7 @@ func (r Report) lines() string {
 	}
 	switch {
 	case observed.MacOS != "":
-		fmt.Fprintln(&b, strings.Join(nonEmpty("macOS", observed.MacOS, observed.Build, cmpOr(observed.Architecture, r.Architecture)), " "))
+		fmt.Fprintln(&b, strings.Join(nonEmpty("macOS", observed.MacOS, observed.Build, cmp.Or(observed.Architecture, r.Architecture)), " "))
 	case len(releases) > 0:
 		fmt.Fprintln(&b, "macOS "+strings.Join(releases, ", "))
 	case r.Release != "":
@@ -631,7 +632,7 @@ func (r Report) lines() string {
 // "macOS 15.8.2 arm64 · Xcode 16.4 · MacPorts 2.12.7 (macos-15)".
 func builderLine(builder model.BuilderObserved) string {
 	var words []string
-	if release := cmpOr(builder.Version, builder.MacOS); release != "" {
+	if release := cmp.Or(builder.Version, builder.MacOS); release != "" {
 		words = append(words, strings.Join(nonEmpty("macOS", release, builder.Architecture), " "))
 	}
 	switch {
@@ -650,16 +651,6 @@ func builderLine(builder model.BuilderObserved) string {
 
 func nonEmpty(values ...string) []string {
 	return slices.DeleteFunc(values, func(value string) bool { return value == "" })
-}
-
-// cmpOr is the first of its values that isn't empty.
-func cmpOr(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 // submittedBy is the description's first line, naming dockhand in bold,

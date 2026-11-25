@@ -17,6 +17,12 @@ func TestPlural(t *testing.T) {
 	}
 }
 
+func TestCutCountsCharactersAndKeepsUTF8(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "aé...", Cut("aé界bc", 2))
+	require.Equal(t, "short", Cut("short", 5))
+}
+
 // Sizes are SI, as Finder and df -H count them (the library survey's
 // finding, the person's choice of 2026-10-02).
 func TestBytes(t *testing.T) {
@@ -42,6 +48,17 @@ func TestAndListsWordsAsASentenceDoes(t *testing.T) {
 	require.Equal(t, "14 and 15", And([]string{"14", "15"}))
 	require.Equal(t, "13, 14, and 15", And([]string{"13", "14", "15"}))
 	require.Empty(t, And(nil))
+}
+
+func TestOrAndTruncate(t *testing.T) {
+	t.Parallel()
+	require.Empty(t, Or(nil))
+	require.Equal(t, "one", Or([]string{"one"}))
+	require.Equal(t, "one or two", Or([]string{"one", "two"}))
+	require.Equal(t, "one, two, or three", Or([]string{"one", "two", "three"}))
+	require.Equal(t, "a, b and 2 more", Truncate([]string{"a", "b", "c", "d"}, 2, ", ", " and "))
+	require.Equal(t, "a, b, and 2 more", Truncate([]string{"a", "b", "c", "d"}, 2, ", ", ", and "))
+	require.Equal(t, "a, b", Truncate([]string{"a", "b"}, 2, ", ", " and "))
 }
 
 func TestCountSetsThousandsApart(t *testing.T) {

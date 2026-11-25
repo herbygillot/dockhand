@@ -736,18 +736,23 @@ func Here(ctx context.Context, tree, dir string, program git.Program) string {
 		return tree
 	}
 	here, err := git.Open(ctx, dir, program)
-	if err != nil || !sameDirectory(here.CommonDir, named.CommonDir) {
+	if err != nil || !samePath(here.CommonDir, named.CommonDir) {
 		return tree
 	}
 	return here.Root
 }
 
-// sameDirectory reports whether two paths name one directory, however
-// either is spelled.
-func sameDirectory(a, b string) bool {
-	a, errA := filepath.EvalSymlinks(a)
-	b, errB := filepath.EvalSymlinks(b)
-	return errA == nil && errB == nil && a == b
+// samePath reports whether two paths name the same directory, through any
+// links, as Git reports a worktree's. If a path cannot be resolved, its
+// cleaned spelling still identifies it.
+func samePath(a, b string) bool {
+	resolved := func(path string) string {
+		if real, err := filepath.EvalSymlinks(path); err == nil {
+			return real
+		}
+		return filepath.Clean(path)
+	}
+	return resolved(a) == resolved(b)
 }
 
 // OpenPortsTree opens the checkout containing dir and refuses anything that

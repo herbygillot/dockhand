@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -16,6 +15,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/subprocess"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/textedit"
+
+	"golang.org/x/mod/module"
 )
 
 const Go = "go.vendors"
@@ -619,12 +620,6 @@ func Mismatched(kind string, declared, wanted []string) (Mismatch, error) {
 	return mismatch, nil
 }
 
-// goMajor is a Go module path's major version suffix, as /v2 or /v13:
-// /v2 to /v9, or two digits or more. [2-9][0-9]* missed /v13, and tfvar's
-// go-textseg, an older go2port's spelling without it, read as an override
-// (field testing at 23c5e2aa).
-var goMajor = regexp.MustCompile(`/v([2-9]|[1-9][0-9]+)$`)
-
 // sameMajor drops, from Go rows by module, a module declared without the
 // major version suffix the generator writes, as an older go2port wrote
 // go-md2man for go-md2man/v2, where the rows are otherwise the same, at the
@@ -632,8 +627,13 @@ var goMajor = regexp.MustCompile(`/v([2-9]|[1-9][0-9]+)$`)
 // certstrap's go-md2man/v2 and blackfriday/v2).
 func sameMajor(declared, generated map[string][]string) {
 	for name, rows := range generated {
-		bare := goMajor.ReplaceAllString(name, "")
-		if bare == name {
+		// A module path's major version suffix, /v2 and on, as Go's own
+		// module.SplitPathVersion reads it: /v13 too, which a pattern of
+		// [2-9][0-9]* once missed, reading tfvar's go-textseg as an
+		// override (field testing at 23c5e2aa). gopkg.in's .vN is the
+		// path's own, not a suffix a generator adds.
+		bare, major, ok := module.SplitPathVersion(name)
+		if !ok || !strings.HasPrefix(major, "/") {
 			continue
 		}
 		if _, both := declared[name]; both {

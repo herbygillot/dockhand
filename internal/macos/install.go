@@ -100,7 +100,7 @@ func CommandLineToolsLabel(labels []string, release Release) (string, error) {
 		if !ok || version[0] != release.Tools {
 			continue
 		}
-		if chosen == "" || compareVersions(version, newest) > 0 {
+		if chosen == "" || compareNumericParts(version, newest) > 0 {
 			chosen, newest = label, version
 		}
 	}
@@ -139,7 +139,7 @@ func parseVersion(text string) ([]int, bool) {
 	return version, len(version) > 0
 }
 
-func compareVersions(a, b []int) int {
+func compareNumericParts(a, b []int) int {
 	for i := range max(len(a), len(b)) {
 		var x, y int
 		if i < len(a) {

@@ -323,7 +323,7 @@ func startFrom(ctx context.Context, s *settings.Settings, streams term.Streams, 
 	streams.Emit(map[string]any{"branch": view.BranchRef(done.Branch), "from": view.BranchRef(done.From), "picked": len(done.Picked)})
 	fmt.Fprintf(streams.Prose(), "Created %s from master %s (fetched just now), with %s past #%d's merge from %s:\n", done.Branch.Name, done.Branch.Base.Short(), prose.Plural(len(done.Picked), "commit"), done.From.PullRequest.Number, done.From.ShortName())
 	for _, commit := range done.Picked {
-		fmt.Fprintf(streams.Prose(), "  %s %s\n", model.ObjectID(commit.ID).Short(), prose.FirstLine(commit.Message))
+		fmt.Fprintf(streams.Prose(), "  %s %s\n", model.ObjectID(commit.ID).Short(), term.Visible(prose.FirstLine(commit.Message)))
 	}
 	fmt.Fprintf(streams.Prose(), "Directory: %s\nNext: dockhand check --branch %s\n", s.Places().Tilde(done.Branch.Worktree), done.Branch.ShortName())
 	return nil
@@ -355,6 +355,10 @@ scripts, and a new head from the author asks again.`,
 				return err
 			}
 			defer e.Close()
+			if evaluate && pr == 0 {
+				// Taken and ignored, it read as an answer given (#338).
+				return errors.New("--evaluate goes with --pr: it allows a pull request's Portfiles evaluated at the head adopted")
+			}
 			if plan {
 				if pr > 0 && len(args) > 0 {
 					return errors.New("--pr names the pull request; adopt takes a branch or --pr, not both")
@@ -529,7 +533,9 @@ any, the branch checked out here.`,
 				}
 			}
 			streams.Emit(map[string]string{"path": path})
-			fmt.Fprintln(streams.Prose(), path)
+			// A shell reads it, $(dockhand path): payload, never wrapped
+			// (#339).
+			fmt.Fprintln(streams.Out, path)
 			return nil
 		},
 	}

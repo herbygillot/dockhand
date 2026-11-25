@@ -79,3 +79,17 @@ func Unmatched(n int, from []int) []int {
 	}
 	return gone
 }
+
+// Changed are what a Match of a's n and b's m elements leaves unpaired:
+// gone, the indices of a that b keeps none of, and come, the indices of
+// b that keep none of a. The one reading of a line comparison's two
+// sides, where Portfiles' and CMake files' comparisons each derived it.
+func Changed(n, m int, same func(i, j int) bool) (gone, come []int) {
+	from, _ := Match(n, m, same)
+	for j, i := range from {
+		if i < 0 {
+			come = append(come, j)
+		}
+	}
+	return Unmatched(n, from), come
+}

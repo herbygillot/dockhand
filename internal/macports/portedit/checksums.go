@@ -355,9 +355,7 @@ func (s *Service) underPortsDeclaration(ctx context.Context, input *sourceInput,
 			names, _ := syntax.ListValues(baseline.after.Ports[port].Options["distfiles"])
 			for _, name := range names {
 				// A distfile's :tag names its site, not the file.
-				if cut := strings.LastIndexByte(name, ':'); cut > 0 {
-					name = name[:cut]
-				}
+				name, _ = macports.DistfileTag(name)
 				ports = append(ports, name)
 			}
 			read = true

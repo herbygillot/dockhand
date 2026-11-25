@@ -21,6 +21,17 @@ func TestTheResolverRefusesWhatCantBeAsked(t *testing.T) {
 		_, err := ResolveRequest(asking)
 		require.EqualError(t, err, name)
 	}
+	// --except on a branch whose request keeps --revbump-dependents takes
+	// a port out of it, where it was refused as though nothing was kept
+	// (#333); one given false now still refuses.
+	kept := &model.Branch{Request: &model.ChangeRequest{Origin: "ship", Actions: model.ActionsAsk{RevbumpDependents: model.Set(true)}, Targets: []model.RequestTarget{{Port: "jq", Action: "update"}}}}
+	except := model.ActionsAsk{Except: model.Set([]string{"gojq"})}
+	resolved, err := ResolveRequest(Asking{Origin: "ship", Branch: kept, Asked: model.ChangeRequest{Actions: except}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"gojq"}, resolved.Request.Actions.Except.Value)
+	except.RevbumpDependents = model.Set(false)
+	_, err = ResolveRequest(Asking{Origin: "ship", Branch: kept, Asked: model.ChangeRequest{Actions: except}})
+	require.EqualError(t, err, "--except takes a port out of --revbump-dependents; add --revbump-dependents")
 }
 
 // A new request holds its targets as found, the source policy from the

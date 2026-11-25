@@ -365,7 +365,7 @@ func (p SubmitPlan) PublicationHolds() []model.Concern {
 }
 
 func allowedConcern(concern model.Concern, allowed func(port string) []string) bool {
-	return concern.Origin != model.FromSubmission && concern.Rule != "not-compared" && allowed != nil && slices.Contains(allowed(concern.Port), concern.Rule)
+	return concern.Origin != model.FromSubmission && concern.Rule != model.ConcernNotCompared && allowed != nil && slices.Contains(allowed(concern.Port), concern.Rule)
 }
 
 func acceptedDecision(concern model.Concern, decided map[string]model.Decision) (model.Decision, bool) {

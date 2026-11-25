@@ -231,3 +231,23 @@ func TestAGitLivecheckTracksABranch(t *testing.T) {
 	require.Equal(t, portsource.GitHead, spec.Catalog)
 	require.Equal(t, "main", spec.Livecheck.Branch)
 }
+
+// A source's repository is judged by its forge's own rule: GitHub's names
+// are letters, digits, '-', '_' and '.', two segments, so owner/a:b is
+// refused where portsource's looser copy once took it; GitLab's paths
+// take any depth and characters its client accepts (#150).
+func TestASourcesRepositoryIsJudgedByItsForge(t *testing.T) {
+	t.Parallel()
+	port := githubPort()
+	port.Options["github.project"] = "a:b"
+	_, err := portsource.Interpret(port, portsource.Edit)
+	require.ErrorContains(t, err, `invalid github repository "owner/a:b"`)
+	gitlab := gitlabPort()
+	gitlab.Options["gitlab.project"] = "a:b"
+	spec, err := portsource.Interpret(gitlab, portsource.Edit)
+	require.NoError(t, err)
+	require.Equal(t, "group/subgroup/a:b", spec.Repository)
+	gitlab.Options["gitlab.instance"] = "https://user@gitlab.example.com"
+	_, err = portsource.Interpret(gitlab, portsource.Edit)
+	require.Error(t, err, "an instance with a user in it isn't a forge address")
+}
