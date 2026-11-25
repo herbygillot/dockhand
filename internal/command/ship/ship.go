@@ -749,7 +749,7 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 			if port.Version != "" && port.Release == nil {
 				args = append(args, port.Version)
 			}
-			request, err := version.Request(args, false)
+			request, err := version.RequestOn(args, false, target.Branch)
 			if err != nil {
 				return nil, err
 			}

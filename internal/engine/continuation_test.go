@@ -238,3 +238,62 @@ func TestAnEditAtAnotherReleaseDoesntFinishATarget(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, prepared.Reasons, "jq has no update yet")
 }
+
+// A continuation applies what the branch's request keeps: a ship again
+// with no flags edits with the edit flags kept and at the version named
+// (#333), where it resolved this run's flags alone and took only the
+// release from what was kept.
+func TestAContinuationAppliesTheKeptEditFlagsAndNamedVersion(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, p := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-work"})
+	require.NoError(t, err)
+	kept := model.ChangeRequest{Shared: model.Set(true), Source: model.SourceAsk{KeepOldChecksums: model.Set(true)},
+		Actions: model.ActionsAsk{RevbumpDependents: model.Set(true), Except: model.Set([]string{"gojq"})}}
+	_, branch, err = e.keepRequest(t.Context(), branch, Asking{Origin: "ship", Ports: []string{"jq"}, Named: "1.8.1", Asked: kept})
+	require.NoError(t, err)
+	p.version = "1.8.2"
+
+	request, err := AskUpdate(Asking{Origin: "ship"}, "jq")
+	require.NoError(t, err)
+	request.Branch = branch
+	update, err := e.Update(t.Context(), request)
+	require.NoError(t, err)
+	require.Equal(t, &DependentsAsked{Revbump: true, Except: []string{"gojq"}}, update.Dependents, "the dependents kept, for the command to bump")
+	require.NotEmpty(t, p.requests)
+	asked := p.requests[len(p.requests)-1]
+	require.True(t, asked.SharedRelease, "--shared-release kept")
+	require.True(t, asked.KeepOldChecksums, "--keep-old-checksums kept")
+	require.Equal(t, "1.8.1", asked.Version, "the version named is kept, over the newest")
+	target := requestOf(t, e, branch.ID).Targets[0]
+	require.Equal(t, "1.8.1", target.Named, "the pin stays")
+}
+
+// --with-obsolete kept on the branch's request moves the stub on a ship
+// again that leaves it out, and its outcome is the stub's edit, where the
+// stub was left and its outcome recorded satisfied (#333).
+func TestAKeptWithObsoleteMovesTheStubOnAContinuation(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	testsupport.WriteFiles(t, f.upstream, map[string]string{"textproc/jq-old/Portfile": "name jq-old\nversion 1.7.1\n"})
+	testsupport.Git(t, f.upstream, "add", "-A")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "jq-old: obsolete")
+	e, p := f.withPreparer(t)
+	p.family = map[string]macports.PortInfo{"jq-old": {Name: "jq-old", Version: "1.7.1", Options: map[string]string{"replaced_by": "jq", "distfiles": ""}}}
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
+	require.NoError(t, err)
+	_, branch, err = e.keepRequest(t.Context(), branch, Asking{Origin: "ship", Ports: []string{"jq"}, Asked: model.ChangeRequest{Actions: model.ActionsAsk{WithObsolete: model.Set(true)}}})
+	require.NoError(t, err)
+
+	request, err := AskUpdate(Asking{Origin: "ship"}, "jq")
+	require.NoError(t, err)
+	request.Branch = branch
+	moved, err := e.Update(t.Context(), request)
+	require.NoError(t, err)
+	require.NotNil(t, moved.Obsolete)
+	require.True(t, moved.Obsolete.Updated, "the stub's edit, as kept")
+	outcome, ok := requestOf(t, e, branch.ID).Targets[0].Outcome("stub")
+	require.True(t, ok)
+	require.Equal(t, model.ActionDone, outcome.Result)
+}

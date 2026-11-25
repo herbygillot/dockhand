@@ -239,6 +239,14 @@ type Update struct {
 	// patches are the preparer's checks of the port's patches, whose
 	// rejected ones' details a recorded finding keeps whole.
 	patches []patchcheck.Result
+	// Dependents are --revbump-dependents and --except as the request
+	// resolved them, kept and given together, where the update resolved
+	// one: the command's own flags left out the kept ones (#333).
+	Dependents *DependentsAsked
+	// withObsolete is --with-obsolete as the request resolved it, kept
+	// and given together, which the stub's edit after the port's reads:
+	// the update was asked from this run's flags alone (#333).
+	withObsolete bool
 	// PatchProblems name the port's patches that no longer apply, and
 	// PatchesUnchecked those no check reached before the build;
 	// PatchesApplied counts those checked that apply.
@@ -396,10 +404,18 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	return update, refusedUpdate(err, request, update)
 }
 
+// DependentsAsked are the dependents a request asks bumped with its
+// update, but those it excepts.
+type DependentsAsked struct {
+	Revbump bool
+	Except  []string
+}
+
 // updateWithObsolete is the update, and its obsolete stub's, where it
 // moves that too.
 func (e *Engine) updateWithObsolete(ctx context.Context, request UpdateRequest) (Update, error) {
 	update, err := e.update(ctx, request)
+	request.WithObsolete = request.WithObsolete || update.withObsolete
 	// GitHub's rate limit is said as itself, with when it lifts and that
 	// nothing changed, not as the request it stopped, "Get …/git/commits/…:
 	// GitHub's rate limit …" (the rc6 full stage, D-R4). An update writes
@@ -515,6 +531,16 @@ func (e *Engine) resolveFor(ctx context.Context, request *UpdateRequest, branch 
 			return nil, err
 		}
 	}
+	// The edit's flags are the request's as resolved, kept and given
+	// together: the update was asked from this run's flags alone
+	// (AskUpdate), and a ship again with none edited without the ones
+	// kept (#333). A standing follow of serve's stays.
+	if i := slices.IndexFunc(resolved.Request.Targets, func(t model.RequestTarget) bool { return t.Port == request.Port }); i >= 0 {
+		kept := UpdateRequestFor(resolved.Request, resolved.Request.Targets[i])
+		request.SharedRelease, request.KeepOldChecksums = kept.SharedRelease, kept.KeepOldChecksums
+		request.WithObsolete, request.Closes = kept.WithObsolete, kept.Closes
+		request.FollowMoves = kept.FollowMoves || request.standingFollow
+	}
 	// A release kept is gone on with where no version was named, over one
 	// a lookup found again (#195, "What is kept").
 	if asking.Named == "" && branch.ID != "" {
@@ -526,8 +552,8 @@ func (e *Engine) resolveFor(ctx context.Context, request *UpdateRequest, branch 
 		}); err != nil {
 			return nil, err
 		}
-		if release := keptTarget(resolved, request.Port, edits); release != nil {
-			request.Release, request.Version = release, release.Version
+		if version, release := keptTarget(resolved, request.Port, edits); version != "" {
+			request.Release, request.Version = release, version
 		}
 	}
 	return &resolved, nil
@@ -729,8 +755,11 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	}
 	failpoint.Hit("update.prepared")
 	update := describe(branch, request.Port, result)
+	update.withObsolete = request.WithObsolete
 	if resolved != nil {
 		update.Said = resolved.Said
+		actions := resolved.Request.Actions
+		update.Dependents = &DependentsAsked{Revbump: actions.RevbumpDependents.Value, Except: actions.Except.Value}
 	}
 	update.Base = base
 	followOnly, err := e.followMoves(ctx, request, worktree, captured, &update, &result)

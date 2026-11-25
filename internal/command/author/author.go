@@ -511,7 +511,14 @@ func (v VersionUpdate) StageReady() error {
 // or the one the request resolves: the engine's, from what was asked
 // (engine.AskUpdate).
 func (v VersionUpdate) Request(args []string, plan bool) (engine.UpdateRequest, error) {
-	asking := engine.Asking{Origin: cmp.Or(v.Origin, "update"), Asked: v.Asking, Settings: v.Settings, Title: v.Title, Note: v.Note}
+	return v.RequestOn(args, plan, nil)
+}
+
+// RequestOn is Request on a branch known before the edit, ship -b's,
+// whose kept request the flags are judged against: --except where the
+// branch keeps --revbump-dependents (#333).
+func (v VersionUpdate) RequestOn(args []string, plan bool, branch *model.Branch) (engine.UpdateRequest, error) {
+	asking := engine.Asking{Origin: cmp.Or(v.Origin, "update"), Asked: v.Asking, Settings: v.Settings, Title: v.Title, Note: v.Note, Branch: branch}
 	if len(args) == 2 {
 		asking.Named = args[1]
 	}
@@ -612,6 +619,11 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 	}
 	request.Branch, request.FromMaster, request.Started = branch, fromMaster, started
 	update, err = e.Update(ctx, request)
+	// The dependents bumped are the request's, kept and given together
+	// (#333).
+	if update.Dependents != nil {
+		linked.Revbump, linked.Except = update.Dependents.Revbump, update.Dependents.Except
+	}
 	for _, said := range update.Said {
 		fmt.Fprintln(out, said)
 	}

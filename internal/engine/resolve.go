@@ -178,7 +178,14 @@ func ResolveRequest(asking Asking) (Resolved, error) {
 // in the words the commands refuse it today.
 func refuseAsked(asking Asking) error {
 	asked := asking.Asked
-	if len(asked.Actions.Except.Value) > 0 && !asked.Actions.RevbumpDependents.Value {
+	// A --revbump-dependents left out is the kept one's, where the branch
+	// keeps a request: ship -b --except was refused though the branch kept
+	// it (#333).
+	revbump := asked.Actions.RevbumpDependents
+	if !revbump.Given && asking.Branch != nil && asking.Branch.Request != nil {
+		revbump = asking.Branch.Request.Actions.RevbumpDependents
+	}
+	if len(asked.Actions.Except.Value) > 0 && !revbump.Value {
 		return errors.New("--except takes a port out of --revbump-dependents; add --revbump-dependents")
 	}
 	for _, ticket := range asked.Actions.Closes.Value {
@@ -593,8 +600,10 @@ func SubmitRequestFor(request model.ChangeRequest, branch model.Branch, unattend
 
 // AskUpdate is the update stage's request for one port, from what a
 // command asked: the resolver refuses what it can before anything is
-// opened, and the update resolves the request again under the branch's
-// lock, from the request kept there then (Engine.update, keepRequest).
+// opened, against the request the branch keeps where asking names one
+// (ship -b), and the update resolves the request again under the branch's
+// lock, from the request kept there then (Engine.update, keepRequest), so
+// the asking it carries names no branch.
 func AskUpdate(asking Asking, port string) (UpdateRequest, error) {
 	asking.Ports = []string{port}
 	resolved, err := ResolveRequest(asking)
@@ -603,6 +612,7 @@ func AskUpdate(asking Asking, port string) (UpdateRequest, error) {
 	}
 	i := slices.IndexFunc(resolved.Request.Targets, func(t model.RequestTarget) bool { return t.Port == port })
 	update := UpdateRequestFor(resolved.Request, resolved.Request.Targets[i])
+	asking.Branch = nil
 	update.Asking = &asking
 	return update, nil
 }

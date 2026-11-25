@@ -23,13 +23,18 @@ func TestTheReleaseKeptIsGoneOnWith(t *testing.T) {
 		return Resolved{Request: model.ChangeRequest{Origin: origin, Targets: []model.RequestTarget{target}}}
 	}
 	written := []model.Edit{{Port: "jq", Kind: model.EditUpdate, Release: release}}
-	require.Equal(t, release, keptTarget(resolvedFor("ship", model.RequestTarget{Port: "jq", Release: release}), "jq", written))
-	require.Equal(t, release, keptTarget(resolvedFor("bump", model.RequestTarget{Port: "jq", Release: release}), "jq", written))
-	require.Equal(t, release, keptTarget(resolvedFor("update", model.RequestTarget{Port: "jq", Release: release}), "jq", nil), "update finishes what is unfinished")
-	require.Nil(t, keptTarget(resolvedFor("update", model.RequestTarget{Port: "jq", Release: release}), "jq", written), "finished, update looks for the newest")
-	require.Nil(t, keptTarget(resolvedFor("ship", model.RequestTarget{Port: "jq", Named: "1.9", Release: release}), "jq", nil), "a version named")
-	require.Nil(t, keptTarget(resolvedFor("ship", model.RequestTarget{Port: "jq"}), "jq", nil), "nothing kept")
-	require.Nil(t, keptTarget(resolvedFor("serve", model.RequestTarget{Port: "jq", Release: release}), "jq", nil), "serve reads its own")
+	kept := func(origin string, target model.RequestTarget, edits []model.Edit) [2]any {
+		version, found := keptTarget(resolvedFor(origin, target), "jq", edits)
+		return [2]any{version, found}
+	}
+	require.Equal(t, [2]any{"1.8", release}, kept("ship", model.RequestTarget{Port: "jq", Release: release}, written))
+	require.Equal(t, [2]any{"1.8", release}, kept("bump", model.RequestTarget{Port: "jq", Release: release}, written))
+	require.Equal(t, [2]any{"1.8", release}, kept("update", model.RequestTarget{Port: "jq", Release: release}, nil), "update finishes what is unfinished")
+	require.Equal(t, [2]any{"", (*model.Release)(nil)}, kept("update", model.RequestTarget{Port: "jq", Release: release}, written), "finished, update looks for the newest")
+	require.Equal(t, [2]any{"1.8", release}, kept("ship", model.RequestTarget{Port: "jq", Named: "1.8", Release: release}, nil), "a version named and kept, with its release (#333)")
+	require.Equal(t, [2]any{"1.9", (*model.Release)(nil)}, kept("ship", model.RequestTarget{Port: "jq", Named: "1.9", Release: release}, nil), "a version named and kept, not another's release")
+	require.Equal(t, [2]any{"", (*model.Release)(nil)}, kept("ship", model.RequestTarget{Port: "jq"}, nil), "nothing kept")
+	require.Equal(t, [2]any{"", (*model.Release)(nil)}, kept("serve", model.RequestTarget{Port: "jq", Release: release}, nil), "serve reads its own")
 }
 
 // A --source the port's preparation refuses is the source action's

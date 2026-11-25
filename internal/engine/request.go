@@ -197,27 +197,37 @@ func (e *Engine) keepRequest(ctx context.Context, branch model.Branch, asking As
 	return resolved, kept, err
 }
 
-// keptTarget is the release a command goes on with for a port, from the
-// request resolved: the release kept for it, where a ship or a bump goes
-// on, or an update finishes what is unfinished; none where a version was
-// named, nothing is kept, or an update finds the target finished and looks
-// for the newest (#195, "What is kept").
-func keptTarget(resolved Resolved, port string, edits []model.Edit) *model.Release {
+// keptTarget is the version and release a command goes on with for a
+// port, from the request resolved: the release kept for it, where a ship
+// or a bump goes on, or an update finishes what is unfinished, and the
+// version named and kept, with its release where one was selected for it,
+// which a ship again with no version went past to the newest and unpinned
+// (#333); none where nothing is kept, or an update finds the target
+// finished and looks for the newest (#195, "What is kept"). The caller
+// asks only where this run named no version.
+func keptTarget(resolved Resolved, port string, edits []model.Edit) (string, *model.Release) {
 	if resolved.Request.Origin == "serve" {
-		return nil
+		return "", nil
 	}
 	i := slices.IndexFunc(resolved.Request.Targets, func(t model.RequestTarget) bool { return t.Port == port })
 	if i < 0 {
-		return nil
+		return "", nil
 	}
 	target := resolved.Request.Targets[i]
-	if target.Named != "" || target.Release == nil {
-		return nil
+	if target.Named == "" && target.Release == nil {
+		return "", nil
 	}
 	if resolved.Request.Origin == "update" && target.Finished(edits) {
-		return nil
+		return "", nil
 	}
-	return target.Release
+	release := target.Release
+	if target.Named == "" {
+		return release.Version, release
+	}
+	if release != nil && release.Version != target.Named {
+		release = nil
+	}
+	return target.Named, release
 }
 
 // dropPendingIn takes the tested statements pending in a branch's request
