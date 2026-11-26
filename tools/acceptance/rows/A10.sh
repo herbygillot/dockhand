@@ -75,6 +75,14 @@ act() {
 	: >"$ROW_DIR/a10.notrun"
 	: >"$ROW_DIR/a10.failed"
 	: >"$ROW_DIR/a10.refused"
+	# The usage pages name jq-update, with an update in it, from their
+	# first page on, as the README's first example made it; the README
+	# opens with bump --plan now, so the row makes it first, as the text
+	# assumes, and branches.md's update --new=jq-update is said started
+	# (the v0.9.0-rc1 quick stage, 00c17cf5).
+	if ! (cd "$MACPORTS_TREE" && dh update "$port" --new="$(a10_name jq-update)" </dev/null); then
+		printf 'dockhand update %s --new=%s (the jq-update the usage pages assume)\n' "$port" "$(a10_name jq-update)" >>"$ROW_DIR/a10.failed"
+	fi
 	while IFS= read -r line; do
 		case "$line" in
 		# A cd not made stops the lines after it on its page alone; the
@@ -189,9 +197,12 @@ act() {
 		done
 		# ship <port> with no branch named takes the row's newest branch for
 		# the port: the earlier update --new example started a second
-		# go-reflex branch, and ship found two (the rc4 batch).
+		# go-reflex branch, and ship found two (the rc4 batch). A ship of
+		# several ports, as branches.md's ship jq curl, names no branch,
+		# and -b with a port beside it is refused (the v0.9.0-rc1 quick
+		# stage).
 		case " $words " in " ship $port "*)
-			case " $words " in *" -b "* | *" -p "* | *" --pr "* | *" --branch "*) ;;
+			case " $words " in *" -b "* | *" -p "* | *" --pr "* | *" --branch "* | " ship $port "[a-z0-9]*) ;;
 			*)
 				branch=$(a10_branch "$port")
 				[ -z "$branch" ] || words=$(printf '%s' " $words " | sed "s| ship $port | ship -b ${branch#dockhand/} |; s/^ //; s/ \$//")
@@ -286,9 +297,11 @@ act() {
 				printf '%s: needs a finished check, and A10 runs check only as its plan\n' "$line" >>"$ROW_DIR/a10.notrun"
 			elif tail -c +"$((before + 1))" "$ROW_DIR/out.log" | matches 'has no finished check to compare with'; then
 				printf '%s: needs a finished check, and A10 runs check only as its plan\n' "$line" >>"$ROW_DIR/a10.notrun"
-			elif [ "$verb" = path ] && tail -c +"$((before + 1))" "$ROW_DIR/out.log" | matches 'is changed in more than one open branch'; then
-				# Earlier examples left several of the port's branches open,
-				# and path -p asks which, as it should.
+			elif { [ "$verb" = path ] || [ "$verb" = bump ] || [ "$verb" = ship ]; } && tail -c +"$((before + 1))" "$ROW_DIR/out.log" | matches 'is changed in more than one open branch'; then
+				# Earlier examples, and the rows before this one, left
+				# several of the port's branches open, and path -p, bump and
+				# ship ask which, as they should (the v0.9.0-rc1 quick stage's
+				# bump jq --plan).
 				printf '%s: asks which of the branches earlier examples left open\n' "$line" >>"$ROW_DIR/a10.notrun"
 			elif { [ "$verb" = logs ] || [ "$verb" = artifacts ]; } && tail -c +"$((before + 1))" "$ROW_DIR/out.log" | matches 'has no check yet'; then
 				# logs in a worktree whose branch has no check says so, as it
