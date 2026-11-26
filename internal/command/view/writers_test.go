@@ -461,3 +461,24 @@ func TestANextNamingAVariantBuildQuotesIt(t *testing.T) {
 	require.Equal(t, "dockhand adopt <new name> (if you renamed the branch)", RenderNext(branchstate.Next{Verb: branchstate.VerbAdopt, Args: []string{"<new name>"}}, ""))
 	require.Equal(t, `dockhand decide --branch jq-fix license-changed jq --because "…"`, RenderNext(branchstate.Next{Verb: branchstate.VerbDecide, Branch: "jq-fix", Args: []string{"license-changed", "jq", "--because", `"…"`}}, ""), "an argument quoted already stays as it is")
 }
+
+// Cells several earlier checks gave, with nothing carried over a change,
+// are those checks' own results, said once under the grid in the plural
+// (#351; Codex's review of the rc2 fixes).
+func TestTheGridSaysSeveralEarlierChecksCellsStand(t *testing.T) {
+	t.Parallel()
+	twelve := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}}
+	sequoia := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	plan := model.Plan{Environments: []model.Environment{twelve, sequoia, tahoe}, Builds: []model.EnvironmentPlan{{Environment: twelve}, {Environment: sequoia}, {Environment: tahoe}}}
+	cell := func(environment model.Environment, execution model.ExecutionID) engine.Cell {
+		return engine.Cell{Kind: engine.CellRecorded, Environment: environment, TargetResult: model.TargetResult{Target: "exiv2", Outcome: model.OutcomePassed, Execution: execution}}
+	}
+	evidence := engine.Evidence{Run: model.Run{ID: "r3", Number: 492}, Earlier: []model.Run{{ID: "r1", Number: 490}, {ID: "r2", Number: 491}}, Plan: plan,
+		Executions: map[model.ExecutionID]model.GuestExecution{"x1": {ID: "x1", Run: "r1"}, "x2": {ID: "x2", Run: "r2"}, "x3": {ID: "x3", Run: "r3"}},
+		Targets:    []engine.TargetEvidence{{Target: model.PlanTarget{ID: "exiv2", Target: model.Target{Name: "exiv2"}}, Passed: true, Outcomes: []engine.Cell{cell(twelve, "x1"), cell(sequoia, "x2"), cell(tahoe, "x3")}}}}
+	var out bytes.Buffer
+	WriteResults(&out, "  ", evidence, false)
+	require.Contains(t, out.String(), "\n  (check-490, check-491): these results are those checks', and still stand: their build inputs have not changed\n")
+	require.NotContains(t, out.String(), "reused")
+}

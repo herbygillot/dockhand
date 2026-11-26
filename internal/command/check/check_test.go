@@ -783,3 +783,28 @@ func TestACheckClearsItsRedrawnLineWhenItEnds(t *testing.T) {
 	require.GreaterOrEqual(t, drawn, 0, "the progress was drawn: %q", said)
 	require.True(t, strings.HasSuffix(said[drawn:], "\r\033[K") || strings.Contains(said[drawn+len("\r\033[K⋯"):], "\r\033[K"), "cleared after its last draw: %q", said[drawn:])
 }
+
+// Off a terminal, a foreground check's line naming it is the plain one,
+// naming -d; --json keeps standard output the envelope alone, and -v
+// keeps its own line (Codex's review of the rc2 fixes, #351).
+func TestACheckNamesItselfOffATerminalAndKeepsItsModes(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithScript(t, w, "passed")
+	_, _, err := cmdtest.Dockhand(t, "update", "jq", "--new=jq-update")
+	require.NoError(t, err)
+	out, errs, err := cmdtest.Dockhand(t, "check", "-b", "jq-update", "--on", "command")
+	require.NoError(t, err, errs)
+	require.Contains(t, errs, "check-1 is running here. Use check -d to run in the background.\n")
+	require.NotContains(t, out+errs, "\033[K", "no redrawn line off a terminal")
+
+	result, err := cmdtest.JSONOf(t, "check", "-b", "jq-update", "--on", "command", "--replace")
+	require.NoError(t, err, "standard output is the envelope alone")
+	require.NotNil(t, result.Result)
+
+	_, errs, err = cmdtest.Dockhand(t, "check", "-b", "jq-update", "--on", "command", "--replace", "-v")
+	require.NoError(t, err, errs)
+	require.Contains(t, errs, "is running here because dockhand serve is not running", "-v keeps its own line")
+}
