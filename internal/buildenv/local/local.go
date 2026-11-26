@@ -184,6 +184,10 @@ type owner struct {
 	// its sudo handed the lock (the lifecycle design's rule 4): one an
 	// older dockhand started, or the put-back, isn't stopped as one.
 	RootStop bool `json:"root_stop,omitempty"`
+	// InSession is a root build started in a group of its own in its
+	// terminal's session, its sudo satisfied by a password typed there
+	// (asRoot): its stop is proved by the probe of that launch (#332).
+	InSession bool `json:"in_session,omitempty"`
 }
 
 // Execute builds the job's targets in the environment's prefix. A prefix
@@ -220,15 +224,15 @@ func (l *Local) Execute(ctx context.Context, job buildenv.Job, build buildenv.Bu
 	if !slices.ContainsFunc(input.Targets, func(t guest.Target) bool { return !t.Blocked }) {
 		return nil
 	}
-	sudo, err := l.asRoot(ctx, prefix, build)
+	sudo, inSession, err := l.asRoot(ctx, prefix, build)
 	if err != nil {
 		return err
 	}
 	// A root build's first launch on this Mac probes its sudo once, for the
-	// stop (the lifecycle design's rule 4): whatever it finds, the build
-	// starts.
+	// stop (the lifecycle design's rule 4), started as the build is:
+	// whatever it finds, the build starts.
 	if len(sudo) > 0 {
-		l.proveRootOnce(ctx, sudo[:len(sudo)-1], filepath.Join(prefix, "bin", macports.TclShell), build.Progress)
+		l.proveRootOnce(ctx, sudo[:len(sudo)-1], filepath.Join(prefix, "bin", macports.TclShell), build.Progress, inSession)
 	}
 	build.Progress("staging the revision for " + prefix)
 	dir, err := os.MkdirTemp(l.temp(), localDirectory)
@@ -271,7 +275,7 @@ func (l *Local) Execute(ctx context.Context, job buildenv.Job, build buildenv.Bu
 			return note, buildenv.ErrDockhandFault.Because("the guest's launch held no lock")
 		}
 		var err error
-		if started, err = l.start(dir, prefix, job.Run.Name(), sudo, locks[0]); err != nil {
+		if started, err = l.start(dir, prefix, job.Run.Name(), sudo, inSession, locks[0]); err != nil {
 			return note, buildenv.Infrastructure("starting the guest program: %w", err)
 		}
 		return note, nil
@@ -330,7 +334,7 @@ func (l *Local) settle(ctx context.Context, follower *guest.Follower, dir, prefi
 		// minutes by default: root is asked again, on the terminal where
 		// there is one, as at the start.
 		if len(sudo) > 0 {
-			if again, err := l.asRoot(restoring, prefix, build); err == nil {
+			if again, _, err := l.asRoot(restoring, prefix, build); err == nil {
 				sudo = again
 			}
 		}
@@ -443,19 +447,28 @@ func sourcesConf(prefix string) string {
 // serve, it's refused unless sudo runs the prefix's port-tclsh asking no
 // password, which it's asked of that command, the one every root step
 // runs (start), saying the one sudoers line that lets it.
-func (l *Local) asRoot(ctx context.Context, prefix string, build buildenv.Build) ([]string, error) {
+//
+// inSession says sudo was satisfied by a password, typed on this terminal
+// now or remembered from earlier in it, where no sudoers line spares one:
+// a sudo that keeps the password for the terminal's session refuses sudo
+// -n from any other, so the build is started in this session (start,
+// starter.Spec.Group), where a session of its own was refused (#332). The
+// first probe asks with -k, which leaves a remembered password unused for
+// that one command without forgetting it, so it passes only where the
+// sudoers line asks none.
+func (l *Local) asRoot(ctx context.Context, prefix string, build buildenv.Build) (sudo []string, inSession bool, err error) {
 	if syscall.Access(filepath.Join(prefix, "var", "macports", "registry"), 2) == nil {
-		return nil, nil
+		return nil, false, nil
 	}
-	sudo := l.sudoCommand()
+	sudo = l.sudoCommand()
 	// An empty script: the interpreter as root, asked to do nothing.
 	tclsh := filepath.Join(prefix, "bin", macports.TclShell)
-	if _, err := subprocess.Run(ctx, subprocess.Spec{Tool: "sudo", Path: sudo[0], Args: append(slices.Clone(sudo[1:]), "-n", tclsh, os.DevNull), Env: l.Env}); err == nil {
-		return append(slices.Clone(sudo), "-n"), nil
+	if _, err := subprocess.Run(ctx, subprocess.Spec{Tool: "sudo", Path: sudo[0], Args: append(slices.Clone(sudo[1:]), "-n", "-k", tclsh, os.DevNull), Env: l.Env}); err == nil {
+		return append(slices.Clone(sudo), "-n"), false, nil
 	}
 	tty, err := os.OpenFile(cmp.Or(l.terminal, "/dev/tty"), os.O_RDWR, 0)
 	if err != nil {
-		return nil, buildenv.NeedsAttention("%s's registry is root's, and sudo asks for a password, which this process has no terminal to ask on. This sudoers line, added with visudo, lets it: %s. It's root for anything a Portfile does, as a rule for port is, and no narrower: port-tclsh runs whatever script it's given, from a directory you can write. A prefix MacPorts installed without root needs no sudo, at the cost of MacPorts' binary archives", prefix, l.sudoersRule(tclsh, false))
+		return nil, false, buildenv.NeedsAttention("%s's registry is root's, and sudo asks for a password, which this process has no terminal to ask on. This sudoers line, added with visudo, lets it: %s. It's root for anything a Portfile does, as a rule for port is, and no narrower: port-tclsh runs whatever script it's given, from a directory you can write. A prefix MacPorts installed without root needs no sudo, at the cost of MacPorts' binary archives", prefix, l.sudoersRule(tclsh, false))
 	}
 	defer tty.Close()
 	build.Progress(fmt.Sprintf("%s's registry is root's: MacPorts builds there as root, so sudo asks for your password", prefix))
@@ -464,12 +477,12 @@ func (l *Local) asRoot(ctx context.Context, prefix string, build buildenv.Build)
 	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "sudo", Path: sudo[0], Args: append(slices.Clone(sudo[1:]), "-v"), Env: l.Env,
 		Stdin: tty, Stdout: tty, StdoutOnly: true, Stderr: tty})
 	if err != nil && sudoRefused(result.Stderr) {
-		return nil, buildenv.NeedsAttention("%s may not use sudo on this Mac, and %s's registry is root's, so MacPorts builds there as root. A sudoers rule for the prefix's port-tclsh is enough, added with visudo, one asking a password included, since a check run here has a terminal to ask on: %s. serve, which has none, needs the rule to ask no password: %s", l.username(), prefix, l.sudoersRule(tclsh, true), l.sudoersRule(tclsh, false))
+		return nil, false, buildenv.NeedsAttention("%s may not use sudo on this Mac, and %s's registry is root's, so MacPorts builds there as root. A sudoers rule for the prefix's port-tclsh is enough, added with visudo, one asking a password included, since a check run here has a terminal to ask on: %s. serve, which has none, needs the rule to ask no password: %s", l.username(), prefix, l.sudoersRule(tclsh, true), l.sudoersRule(tclsh, false))
 	}
 	if err != nil {
-		return nil, buildenv.NeedsAttention("sudo didn't let the build run as root in %s: %v", prefix, err)
+		return nil, false, buildenv.NeedsAttention("sudo didn't let the build run as root in %s: %v", prefix, err)
 	}
-	return append(slices.Clone(sudo), "-n"), nil
+	return append(slices.Clone(sudo), "-n"), true, nil
 }
 
 // sudoRefused says whether sudo refused the person outright, whatever
@@ -523,12 +536,14 @@ func (n launchNote) String() string {
 // start runs the guest program in the check's directory under the
 // prefix's port-tclsh, with MacPorts reading the check's macports.conf,
 // as root where sudo is given, its output in runner.log, through the
-// starter (starter.Start): it leads a session of its own, so a terminal's
-// interrupt reaches dockhand, which stops it, and it holds the attempt's
-// launch lock, lock, for as long as it lives.
-func (l *Local) start(dir, prefix, check string, sudo []string, lock *os.File) (*localRun, error) {
+// starter (starter.Start): it leads a session of its own, or, where
+// inSession, a group of its own in this terminal's session, which its
+// sudo's password is kept for (asRoot), so a terminal's interrupt reaches
+// dockhand, which stops it, and it holds the attempt's launch lock, lock,
+// for as long as it lives.
+func (l *Local) start(dir, prefix, check string, sudo []string, inSession bool, lock *os.File) (*localRun, error) {
 	self, _ := procid.Self()
-	owned, err := json.Marshal(owner{PID: os.Getpid(), Start: self.Start, Check: check, Prefix: prefix, Root: len(sudo) > 0, RootStop: len(sudo) > 0})
+	owned, err := json.Marshal(owner{PID: os.Getpid(), Start: self.Start, Check: check, Prefix: prefix, Root: len(sudo) > 0, RootStop: len(sudo) > 0, InSession: inSession})
 	if err != nil {
 		return nil, err
 	}
@@ -549,7 +564,7 @@ func (l *Local) start(dir, prefix, check string, sudo []string, lock *os.File) (
 		args = append(args, lock.Name())
 	}
 	spec := starter.Spec{Program: l.Starter, Directory: dir, Signal: syscall.SIGTERM, Grace: stopGrace, Lock: lock,
-		Command: args, StdinLock: len(sudo) > 0, Env: l.Env, Stdout: log, Stderr: log}
+		Command: args, StdinLock: len(sudo) > 0, Group: inSession, Env: l.Env, Stdout: log, Stderr: log}
 	if len(sudo) > 0 {
 		// The root stop: the same program, as root, only to stop.
 		spec.RootStop = append(slices.Clone(sudo), filepath.Join(prefix, "bin", macports.TclShell), filepath.Join(dir, "guest.tcl"))
@@ -797,7 +812,7 @@ func (l *Local) restoreLeft(ctx context.Context, prefix string, build buildenv.B
 		if left.owner.Prefix != prefix {
 			continue
 		}
-		sudo, err := l.asRoot(ctx, prefix, build)
+		sudo, _, err := l.asRoot(ctx, prefix, build)
 		if err != nil {
 			return err
 		}
@@ -874,7 +889,7 @@ func (l *Local) PutBack(ctx context.Context, check string, progress func(string)
 		return prefix, true, err
 	}
 	defer letGo()
-	sudo, err := l.asRoot(ctx, prefix, build)
+	sudo, _, err := l.asRoot(ctx, prefix, build)
 	if err != nil {
 		return prefix, true, err
 	}

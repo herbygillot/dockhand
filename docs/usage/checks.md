@@ -338,7 +338,12 @@ probe. Dockhand runs the probe at your account's first root build on the Mac,
 again when sudo itself changes, and at each root build until it passes, as
 after you add the sudoers line below, and keeps the result in
 `~/.dockhand/local/root-stop-proof.json`. A probe that couldn't be made, as one
-interrupted or refused by `sudo -n`, keeps nothing. The probe checks that sudo hands the
+interrupted or refused by `sudo -n`, keeps nothing. Where sudo asks your
+password, the build runs in your terminal's session, since sudo keeps a typed
+password for that session only and refuses `sudo -n` from any other; a
+terminal's Ctrl-C still reaches dockhand alone, which stops the build. The
+probe is made the way the build is started, and a result for one way doesn't
+stand for the other. The probe checks that sudo hands the
 build the check's lock and passes a stop on. The probe, and the part of a stop
 that needs root, run the prefix's port-tclsh under `sudo -n`, which works with
 the sudoers line `<you> ALL=(root) NOPASSWD: <prefix>/bin/port-tclsh` or while

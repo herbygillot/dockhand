@@ -31,23 +31,23 @@ func TestARootProbeProvesOnlyASudoThatHandsTheLockOn(t *testing.T) {
 		name, script string
 		proved       bool
 	}{
-		{"hands it on", "#!/bin/sh\n[ \"$1\" = -n ] && shift\nexec \"$@\"\n", true},
-		{"logs its input", "#!/bin/sh\n[ \"$1\" = -n ] && shift\ncat | \"$@\"\n", false},
+		{"hands it on", "#!/bin/sh\nwhile [ \"$1\" = -n ] || [ \"$1\" = -k ]; do shift; done\nexec \"$@\"\n", true},
+		{"logs its input", "#!/bin/sh\nwhile [ \"$1\" = -n ] || [ \"$1\" = -k ]; do shift; done\ncat | \"$@\"\n", false},
 		// The same file opened again: the command's own check passes,
 		// and only what it hands its input on to shows it holds no lock.
-		{"opens the lock again", "#!/bin/sh\n[ \"$1\" = -n ] && shift\nexec \"$@\" < \"$4\"\n", false},
+		{"opens the lock again", "#!/bin/sh\nwhile [ \"$1\" = -n ] || [ \"$1\" = -k ]; do shift; done\nexec \"$@\" < \"$4\"\n", false},
 	} {
 		sudo := filepath.Join(t.TempDir(), "sudo")
 		testsupport.WriteExecutable(t, sudo, c.script)
 		l := &Local{Temp: t.TempDir(), Proofs: filepath.Join(t.TempDir(), "local")}
-		proved, why := l.rootStopProved([]string{sudo})
+		proved, why := l.rootStopProved([]string{sudo}, false)
 		require.False(t, proved, c.name)
 		require.Contains(t, why, "hasn't been probed yet", c.name)
 
 		var said []string
-		l.proveRootOnce(t.Context(), []string{sudo}, tclsh, func(line string) { said = append(said, line) })
+		l.proveRootOnce(t.Context(), []string{sudo}, tclsh, func(line string) { said = append(said, line) }, false)
 		require.Len(t, said, 1, "%s: the probe is said once", c.name)
-		proved, why = l.rootStopProved([]string{sudo})
+		proved, why = l.rootStopProved([]string{sudo}, false)
 		require.Equal(t, c.proved, proved, "%s: %s", c.name, why)
 		switch c.name {
 		case "logs its input":
@@ -60,7 +60,7 @@ func TestARootProbeProvesOnlyASudoThatHandsTheLockOn(t *testing.T) {
 		// A proof that passed is kept; one that failed is made again at
 		// the next root build, as after a sudoers line is added (#341).
 		said = nil
-		l.proveRootOnce(t.Context(), []string{sudo}, tclsh, func(line string) { said = append(said, line) })
+		l.proveRootOnce(t.Context(), []string{sudo}, tclsh, func(line string) { said = append(said, line) }, false)
 		if c.proved {
 			require.Empty(t, said, "%s: kept, not probed again", c.name)
 		} else {
@@ -68,7 +68,7 @@ func TestARootProbeProvesOnlyASudoThatHandsTheLockOn(t *testing.T) {
 		}
 		later := time.Now().Add(time.Hour)
 		require.NoError(t, os.Chtimes(sudo, later, later))
-		proved, why = l.rootStopProved([]string{sudo})
+		proved, why = l.rootStopProved([]string{sudo}, false)
 		require.False(t, proved, "%s: another binary is probed again", c.name)
 		require.Contains(t, why, "hasn't been probed yet")
 	}
@@ -83,19 +83,19 @@ func TestAProbeThatCouldntBeMadeKeepsNothing(t *testing.T) {
 	sudo := filepath.Join(t.TempDir(), "sudo")
 	testsupport.WriteExecutable(t, sudo, "#!/bin/sh\necho 'sudo: a password is required' >&2\nexit 1\n")
 	l := &Local{Temp: t.TempDir(), Proofs: filepath.Join(t.TempDir(), "local")}
-	l.proveRootOnce(t.Context(), []string{sudo}, tclsh, func(string) {})
-	_, why := l.rootStopProved([]string{sudo})
+	l.proveRootOnce(t.Context(), []string{sudo}, tclsh, func(string) {}, false)
+	_, why := l.rootStopProved([]string{sudo}, false)
 	require.Contains(t, why, "hasn't been probed yet", "refused: nothing kept")
 
-	testsupport.WriteExecutable(t, sudo, "#!/bin/sh\n[ \"$1\" = -n ] && shift\nexec \"$@\"\n")
+	testsupport.WriteExecutable(t, sudo, "#!/bin/sh\nwhile [ \"$1\" = -n ] || [ \"$1\" = -k ]; do shift; done\nexec \"$@\"\n")
 	canceled, cancel := context.WithCancel(t.Context())
 	cancel()
-	l.proveRootOnce(canceled, []string{sudo}, tclsh, func(string) {})
-	_, why = l.rootStopProved([]string{sudo})
+	l.proveRootOnce(canceled, []string{sudo}, tclsh, func(string) {}, false)
+	_, why = l.rootStopProved([]string{sudo}, false)
 	require.Contains(t, why, "hasn't been probed yet", "canceled: nothing kept")
 
-	l.proveRootOnce(t.Context(), []string{sudo}, tclsh, func(string) {})
-	proved, why := l.rootStopProved([]string{sudo})
+	l.proveRootOnce(t.Context(), []string{sudo}, tclsh, func(string) {}, false)
+	proved, why := l.rootStopProved([]string{sudo}, false)
 	require.True(t, proved, why)
 }
 
@@ -124,10 +124,10 @@ func TestARootProofIsTrustedOnlyWhereItIsThePersonsOwn(t *testing.T) {
 		path := filepath.Join(l.Proofs, rootProofName)
 		require.NoError(t, os.WriteFile(path, c.data, 0o600))
 		require.NoError(t, os.Chmod(path, c.mode))
-		ok, why := l.rootStopProved([]string{sudo})
+		ok, why := l.rootStopProved([]string{sudo}, false)
 		require.Equal(t, c.name == "its own, proved", ok, "%s: %s", c.name, why)
 	}
-	ok, why := (&Local{}).rootStopProved([]string{sudo})
+	ok, why := (&Local{}).rootStopProved([]string{sudo}, false)
 	require.False(t, ok)
 	require.Contains(t, why, "no directory of yours")
 }
@@ -149,7 +149,7 @@ func TestAFailedProbeStillStartsTheBuild(t *testing.T) {
 	// the build's and the probe's lock path, so the root stop it runs, its
 	// fourth word --stop, runs as it is (a gate's run hung where the
 	// build's guest outlived Follow and the stop couldn't reach it).
-	testsupport.WriteExecutable(t, sudo, "#!/bin/sh\n[ \"$1\" = -n ] && shift\nif [ -f \"$4\" ]; then exec \"$@\" < \"$4\"; fi\nexec \"$@\"\n")
+	testsupport.WriteExecutable(t, sudo, "#!/bin/sh\nwhile [ \"$1\" = -n ] || [ \"$1\" = -k ]; do shift; done\nif [ -f \"$4\" ]; then exec \"$@\" < \"$4\"; fi\nexec \"$@\"\n")
 	l := localProvider(t, env)
 	l.sudo, l.Proofs = []string{sudo}, filepath.Join(t.TempDir(), "local")
 	build := &fakeBuild{}
@@ -157,8 +157,41 @@ func TestAFailedProbeStillStartsTheBuild(t *testing.T) {
 	require.Len(t, build.results, 2, "the build ran")
 	require.Equal(t, model.OutcomePassed, build.results[0].Outcome)
 	require.Contains(t, strings.Join(build.progress, "\n"), "probing this Mac's sudo once")
-	proved, why := l.rootStopProved([]string{sudo})
+	proved, why := l.rootStopProved([]string{sudo}, false)
 	require.False(t, proved)
 	require.Contains(t, why, "the opening locked: false")
 	require.Equal(t, "  zlib @1.3.2_0 (active)\n", readRegistry(t, path), "and the prefix put back")
+}
+
+// A root build started in this terminal's session, after a typed password,
+// is probed as it is started, a group of its own in this session, and the
+// proof stands for that launch alone: the other launch, in a session of
+// its own, is probed again before its stop counts (#332).
+func TestAProbeStandsForTheLaunchItProbed(t *testing.T) {
+	t.Parallel()
+	tclsh := testsupport.MacPortsTclsh(t)
+	sudo := filepath.Join(t.TempDir(), "sudo")
+	testsupport.WriteExecutable(t, sudo, "#!/bin/sh\nwhile [ \"$1\" = -n ] || [ \"$1\" = -k ]; do shift; done\nexec \"$@\"\n")
+	l := &Local{Temp: t.TempDir(), Proofs: filepath.Join(t.TempDir(), "local")}
+	var said []string
+	l.proveRootOnce(t.Context(), []string{sudo}, tclsh, func(line string) { said = append(said, line) }, true)
+	require.Len(t, said, 1)
+	proved, why := l.rootStopProved([]string{sudo}, true)
+	require.True(t, proved, why)
+	data, err := os.ReadFile(filepath.Join(l.Proofs, rootProofName))
+	require.NoError(t, err)
+	var proof RootProof
+	require.NoError(t, json.Unmarshal(data, &proof))
+	require.True(t, proof.InSession)
+	require.Len(t, proof.Found, 1)
+	require.True(t, strings.HasPrefix(proof.Found[0], "in this terminal's session: "), proof.Found[0])
+
+	proved, why = l.rootStopProved([]string{sudo}, false)
+	require.False(t, proved)
+	require.Contains(t, why, "hasn't been probed yet for a root build that asks no password")
+	said = nil
+	l.proveRootOnce(t.Context(), []string{sudo}, tclsh, func(line string) { said = append(said, line) }, false)
+	require.Len(t, said, 1, "the other launch is probed")
+	proved, why = l.rootStopProved([]string{sudo}, false)
+	require.True(t, proved, why)
 }

@@ -70,7 +70,7 @@ func (l *Local) Stop(ctx context.Context, request buildenv.StopRequest) ([]strin
 		return nil, fmt.Errorf("%s's record can't be read: %w", dir, err)
 	}
 	if made.Root || syscall.Access(filepath.Join(made.Prefix, "var", "macports", "registry"), 2) != nil {
-		proved, why := l.rootStopProved(l.sudoCommand())
+		proved, why := l.rootStopProved(l.sudoCommand(), made.InSession)
 		switch {
 		case !made.Root:
 			why = "its prefix's registry isn't this user's to write"
