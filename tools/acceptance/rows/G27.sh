@@ -2,7 +2,7 @@
 # G27: refusals and last lines that name the command meant (v0.8.0):
 #  - throwing a branch away is said where it's asked (e45dcd92, the
 #    outdated-ports session's note 24): clean of an open branch is
-#    refused, exit 1, ending "dockhand clean --delete <branch> then forgets
+#    refused, exit 1, ending "dockhand clean --delete -b <branch> then forgets
 #    it for good"; archive's last line says the same; and a clean that
 #    removes nothing while the archived branch keeps its Git branch says
 #    so, naming clean --delete, where it said "Nothing to remove" alone.
@@ -27,7 +27,9 @@ act() {
 assert() {
 	local open=$ROW_DIR/json/1.json logs=$ROW_DIR/json/2.json words
 	[ -f "$logs" ] || { row_fail "a step didn't run"; return; }
-	words="dockhand clean --delete $G27_BRANCH then forgets it for good"
+	# The -b form, as every branch-naming next step is now (d52d6680);
+	# the row expected the bare name (the v0.9.0-rc1 quick stage).
+	words="dockhand clean --delete -b $G27_BRANCH then forgets it for good"
 	if [ "$(cat "$open.exit")" != 1 ]; then
 		row_fail "clean of the open branch exited $(cat "$open.exit"), not 1"
 		return
