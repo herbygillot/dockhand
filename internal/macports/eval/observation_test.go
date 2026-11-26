@@ -149,7 +149,11 @@ listed_rows`+rows.String()+"\n")
 	require.NoError(t, err)
 	bound, err := tree.Select(targets[0])
 	require.NoError(t, err)
-	got, err := observeForVerdict(t, e, bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, Declarations: true})
+	// This Mac's own platform: framing isn't about a modelled context,
+	// and "25" named the M5's macOS as if it were every Mac's.
+	native, err := e.NativePlatform(t.Context())
+	require.NoError(t, err)
+	got, err := observeForVerdict(t, e, bound, macports.ObservationRequest{Platform: native, Declarations: true})
 	require.NoError(t, err)
 	declarations := got.Ports["listed"].Declarations
 	require.Len(t, declarations, 600)
