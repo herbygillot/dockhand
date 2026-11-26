@@ -75,10 +75,13 @@ func takenAsks(request model.ChangeRequest, branch model.Branch) model.PublishAs
 // run left out, and marks it given: a continued submission's carry fills
 // only the flags not given, and replaced what the command said it took,
 // so maintainers were notified after it said they wouldn't be (#334). It
-// returns the flags taken, as a person would give them.
-func (r *SubmitRequest) TakeKept(branch model.Branch) []string {
+// returns the flags taken, as a person would give them, and each kept one
+// a flag given replaced: --draft and --no-check are one choice, so either
+// given leaves the other kept, which was dropped unsaid (field testing's
+// #195 batch).
+func (r *SubmitRequest) TakeKept(branch model.Branch) (took, replaced []string) {
 	if branch.Request == nil {
-		return nil
+		return nil, nil
 	}
 	if r.Given == nil {
 		r.Given = map[string]bool{}
@@ -91,7 +94,12 @@ func (r *SubmitRequest) TakeKept(branch model.Branch) []string {
 		}
 		return "--" + name + "=false"
 	}
-	var took []string
+	switch {
+	case given["no-check"] && publish.Draft.Given && publish.Draft.Value:
+		replaced = append(replaced, "--no-check replaces the kept --draft")
+	case given["draft"] && publish.NoCheck.Given && publish.NoCheck.Value:
+		replaced = append(replaced, "--draft replaces the kept --no-check")
+	}
 	if !given["draft"] && !given["no-check"] && publish.Draft.Given {
 		r.Draft, r.Given["draft"] = publish.Draft.Value, true
 		took = append(took, flag("draft", r.Draft))
@@ -108,5 +116,5 @@ func (r *SubmitRequest) TakeKept(branch model.Branch) []string {
 		r.SkipNotification, r.Given["skip-notification"] = publish.SkipNotification.Value, true
 		took = append(took, flag("skip-notification", r.SkipNotification))
 	}
-	return took
+	return took, replaced
 }

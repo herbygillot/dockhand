@@ -316,7 +316,9 @@ carry too, each this one leaves out, and the plan says which: a flag given,
 false included, is this run's own, so `--draft=false` makes it ready. Those a
 ship or bump kept on the branch are read where this submit isn't given them,
 and said: `Taken from what the branch's request kept: --draft, --type bugfix`;
-an earlier submit's stand over them. Where GitHub refused a ship's or serve's
+an earlier submit's stand over them. `--draft` and `--no-check` are one choice,
+so either given replaces the other kept, and the plan says so: `Given over
+what the branch's request kept: --no-check replaces the kept --draft`. Where GitHub refused a ship's or serve's
 submission, what it asked stays with the branch for the next attempt. Do
 not create a replacement branch merely because the final confirmation did not
 print. Another submission of the same fork branch, from another terminal, is

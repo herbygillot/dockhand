@@ -17,7 +17,8 @@ func TestASubmitTakesTheKeptFlagsOverAContinuedSubmission(t *testing.T) {
 	t.Parallel()
 	branch := model.Branch{Request: &model.ChangeRequest{ID: "rq_1", Publish: model.PublishAsk{SkipNotification: model.Set(true), Draft: model.Set(true), Type: model.Set([]string{"bugfix"})}}}
 	request := SubmitRequest{Given: map[string]bool{"type": true}, Types: []string{"security fix"}}
-	took := request.TakeKept(branch)
+	took, replaced := request.TakeKept(branch)
+	require.Empty(t, replaced)
 	require.Equal(t, []string{"--draft", "--skip-notification"}, took)
 	require.True(t, request.SkipNotification)
 	require.True(t, request.Draft)

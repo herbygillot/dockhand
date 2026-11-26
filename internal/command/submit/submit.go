@@ -103,8 +103,12 @@ write, keeping your --note.
 			// where they weren't given, and said; a person's own submit
 			// takes no request (#195). They're taken as given, so a
 			// continued submission doesn't replace them (#334).
-			if took := request.TakeKept(request.Branch); len(took) > 0 {
+			took, replaced := request.TakeKept(request.Branch)
+			if len(took) > 0 {
 				fmt.Fprintf(streams.Prose(), "Taken from what the branch's request kept: %s\n", strings.Join(took, ", "))
+			}
+			if len(replaced) > 0 {
+				fmt.Fprintf(streams.Prose(), "Given over what the branch's request kept: %s\n", strings.Join(replaced, ", "))
 			}
 			plan, err := e.PlanSubmit(ctx, request)
 			// Edits not committed are committed as tidy would, shown as tidy
