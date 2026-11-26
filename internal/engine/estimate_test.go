@@ -87,11 +87,14 @@ func TestAnInstallEstimate(t *testing.T) {
 	estimates := e.InstallEstimates(t.Context(), plan, model.Source{}, true)
 	require.Equal(t, "about 3 dependencies to install, 2 with no archive on packages.macports.org for this release, by the port index; the clone decides", estimates[0].Words(),
 		"glib2's archive for 25 counts whatever its variants; libffi's is for 24, and cairo has none")
-	require.Equal(t, "about 2 dependencies to install, 1 with no archive on packages.macports.org for this release, by the port index; the clone decides", estimates[1].Words(), "cairo is active in the prefix")
+	// A local prefix has no clone: what's active there is built against,
+	// and the line says so (#351).
+	require.Equal(t, "about 2 dependencies to install, 1 with no archive on packages.macports.org for this release, by the port index; the build uses the ports active in /opt/local beside them", estimates[1].Words(), "cairo is active in the prefix")
 	require.Equal(t, 1, asked["glib2"], "each port asked once, kept after")
 
 	prefix.variants = []string{"+universal"}
 	estimates = e.InstallEstimates(t.Context(), plan, model.Source{}, true)
-	require.Equal(t, "about 2 dependencies to install (archives not estimated: variants.conf sets +universal), by the port index; the clone decides", estimates[1].Words())
+	require.Equal(t, "about 2 dependencies to install (archives not estimated: variants.conf sets +universal), by the port index; the build uses the ports active in /opt/local beside them", estimates[1].Words())
 	require.Equal(t, "no dependencies to install, by the port index; the clone decides", InstallEstimate{}.Words())
+	require.Equal(t, "no dependencies to install, by the port index; the build uses the ports active in /opt/local", InstallEstimate{Environment: local, InPrefix: true}.Words())
 }

@@ -39,14 +39,25 @@ type InstallEstimate struct {
 	// prefix's variants.conf sets global variants: the builders' archives
 	// aren't what it installs.
 	Unestimated string
+	// InPrefix is an environment that is a person's MacPorts prefix,
+	// whose active ports the build uses, with no clone: the words say so,
+	// where they said the clone decides (#351).
+	InPrefix bool
 }
 
 // Words are the estimate as a person reads it: "about 14 dependencies to
 // install, 3 with no archive on packages.macports.org for this release, by
 // the port index; the clone decides".
 func (est InstallEstimate) Words() string {
+	decides := "; the clone decides"
+	if est.InPrefix {
+		decides = "; the build uses the ports active in " + est.Environment.Prefix
+	}
 	if est.Dependencies == 0 {
-		return "no dependencies to install, by the port index; the clone decides"
+		return "no dependencies to install, by the port index" + decides
+	}
+	if est.InPrefix {
+		decides += " beside them"
 	}
 	words := "about 1 dependency to install"
 	if est.Dependencies != 1 {
@@ -58,7 +69,7 @@ func (est InstallEstimate) Words() string {
 	case est.Unknown == 0:
 		words += fmt.Sprintf(", %d with no archive on packages.macports.org for this release", est.Unarchived)
 	}
-	return words + ", by the port index; the clone decides"
+	return words + ", by the port index" + decides
 }
 
 // ArchiveVersionReader reads every indexed port's version and revision as
@@ -114,8 +125,10 @@ func (e *Engine) InstallEstimates(ctx context.Context, plan model.Plan, source m
 			except[name] = true
 		}
 		var variants []string
+		inPrefix := false
 		switch provider := e.Providers[environment.Provider].(type) {
 		case buildenv.InstalledProvider:
+			inPrefix = true
 			active, set, err := provider.Installed(ctx, environment)
 			if err != nil {
 				continue
@@ -130,7 +143,7 @@ func (e *Engine) InstallEstimates(ctx context.Context, plan model.Plan, source m
 			}
 		}
 		closure := checkplan.Closure(graph, roots, except)
-		estimate := InstallEstimate{Environment: environment, Dependencies: len(closure)}
+		estimate := InstallEstimate{Environment: environment, Dependencies: len(closure), InPrefix: inPrefix}
 		darwin, err := strconv.Atoi(environment.Platform.Version)
 		switch {
 		case len(variants) > 0:
