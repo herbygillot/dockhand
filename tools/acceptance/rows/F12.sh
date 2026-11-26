@@ -16,7 +16,12 @@ act() {
 		dh archive "$F12_BRANCH" </dev/null || :
 		wait_for_line "$DH_BG_LOG" "$F12_BRANCH archived" 60 || :
 	fi
-	kill -INT "$DH_BG_PID" 2>/dev/null
+	# TERM, not INT: a background job of a shell without job control is
+	# started with SIGINT ignored, and dockhand keeps a stop signal that
+	# was ignored at its start ignored (internal/term/signals.go), so an
+	# INT was never heeded and the row hung (the v0.9.0-rc1 quick stage on
+	# the M1). A person's Ctrl-C at a terminal reaches it as ever.
+	kill -TERM "$DH_BG_PID" 2>/dev/null
 	F12_EXIT=0
 	dh_bg_wait || F12_EXIT=$?
 }
@@ -38,8 +43,8 @@ assert() {
 		return
 	fi
 	if [ "${F12_EXIT:-1}" != 0 ]; then
-		row_fail "console --plain, interrupted, exited $F12_EXIT, not 0"
+		row_fail "console --plain, stopped, exited $F12_EXIT, not 0"
 		return
 	fi
-	row_pass "status --watch refused naming console; console --plain printed status, then $(grep -F "$F12_BRANCH archived" "$DH_BG_LOG" | head -1), and ended at Ctrl-C, exit 0"
+	row_pass "status --watch refused naming console; console --plain printed status, then $(grep -F "$F12_BRANCH archived" "$DH_BG_LOG" | head -1), and ended at its stop, SIGTERM, exit 0"
 }
