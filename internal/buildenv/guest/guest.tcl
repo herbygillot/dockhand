@@ -998,9 +998,14 @@ proc putback {} {
     # passes over a port whose newest installed version is as new as the
     # tree's, so they are said (#350).
     set newer {}
+    # added are the ports the check activated that had nothing active
+    # before, which deactivating leaves installed: said too, in a clause
+    # of their own, since they stall no upgrade (#351).
+    set added {}
     dict for {name spec} $now {
         if {![dict exists $before $name]} {
             lappend off $name
+            lappend added $name $spec
         } elseif {[dict get $before $name] ne $spec} {
             lappend on $name [dict get $before $name]
             lappend newer $name $spec
@@ -1017,18 +1022,20 @@ proc putback {} {
         if {[set message [run $log [list $port -N activate $name $spec]]] ne ""} { return "activating $name $spec: $message" }
     }
     # Only a version still installed after the put-back is said.
-    set left {}
-    foreach {name spec} $newer {
-        if {[catch {known $port -q installed $name} listing]} { continue }
-        foreach line [split $listing \n] {
-            if {[regexp {^\s*(\S+) (@\S+)} $line -> installed version] && $installed eq $name && $version eq $spec} {
-                lappend left "$name $spec"
-                break
+    foreach {key pairs} [list left_inactive $newer left_added $added] {
+        set left {}
+        foreach {name spec} $pairs {
+            if {[catch {known $port -q installed $name} listing]} { continue }
+            foreach line [split $listing \n] {
+                if {[regexp {^\s*(\S+) (@\S+)} $line -> installed version] && $installed eq $name && $version eq $spec} {
+                    lappend left "$name $spec"
+                    break
+                }
             }
         }
-    }
-    if {[llength $left]} {
-        dict set environment left_inactive [join [lsort $left] ", "]
+        if {[llength $left]} {
+            dict set environment $key [join [lsort $left] ", "]
+        }
     }
     return ""
 }

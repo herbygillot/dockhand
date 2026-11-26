@@ -683,13 +683,26 @@ func TestAPutBackNamesTheNewerVersionsItLeftInactive(t *testing.T) {
 	t.Parallel()
 	path, active := registry(t, "  zlib @1.3.2_0 (active)\n  libharbor @1_0 (active)\n  harbor-cli @1_0 (active)\n")
 	prefix, env, _ := fakePrefix(t, active, "DEPS=libharbor=zlib harbor-cli=libharbor", "BRINGS=harbor-cli=zstd",
-		"INSTALLED=  libharbor @1_0\\n  libharbor @9.9_0\\n  harbor-cli @1_0\\n  harbor-cli @9.9_0\\n")
+		"INSTALLED=  libharbor @1_0\\n  libharbor @9.9_0\\n  harbor-cli @1_0\\n  harbor-cli @9.9_0\\n  zstd @1_0\\n")
 	l := localProvider(t, env)
 	build := &fakeBuild{}
 	require.NoError(t, l.Execute(t.Context(), localJob(t, prefix), build))
 	require.Equal(t, "  zlib @1.3.2_0 (active)\n  libharbor @1_0 (active)\n  harbor-cli @1_0 (active)\n", readRegistry(t, path), "put back")
 	require.Contains(t, build.progress, "Left installed but inactive in "+prefix+", newer than what is active: harbor-cli @9.9_0, libharbor @9.9_0. "+
-		"port upgrade outdated passes these over until each is activated (port activate harbor-cli @9.9_0) or removed (port reclaim)")
+		"port upgrade outdated passes these over until each is activated (port activate harbor-cli @9.9_0) or removed (port reclaim). "+
+		"Also left installed, with no version active before: zstd @1_0 (port uninstall zstd @1_0 removes it, as does port reclaim)", "zstd, which the check brought and had nothing active before, in its own clause (#351)")
+}
+
+// A put-back that left only ports with no version active before installed
+// says them in that clause alone (#351).
+func TestAPutBackNamesANewPortItLeftInstalled(t *testing.T) {
+	t.Parallel()
+	_, active := registry(t, "  zlib @1.3.2_0 (active)\n")
+	prefix, env, _ := fakePrefix(t, active, "DEPS=libharbor=zlib harbor-cli=libharbor", "INSTALLED=  harbor-cli @9.9_0\\n")
+	l := localProvider(t, env)
+	build := &fakeBuild{}
+	require.NoError(t, l.Execute(t.Context(), localJob(t, prefix), build))
+	require.Contains(t, build.progress, "Left installed in "+prefix+", with no version active before: harbor-cli @9.9_0 (port uninstall harbor-cli @9.9_0 removes it, as does port reclaim)")
 }
 
 // Where the check changed no active version, the put-back names nothing

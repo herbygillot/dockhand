@@ -369,7 +369,11 @@ inactive in /opt/local, newer than what is active: curl @8.19.0_0`. This matters
 for your own upgrades: `port outdated` still lists such a port, but `port
 upgrade outdated` passes it over, since its newest installed version is as new
 as the ports tree's, until you activate the newer version (`sudo port activate
-curl @8.19.0_0`) or remove it (`sudo port reclaim`). A
+curl @8.19.0_0`) or remove it (`sudo port reclaim`). A port the check installed
+that had no version active before stays installed too, which stalls no upgrade;
+the same line names it in a clause of its own, `Also left installed, with no
+version active before: oasdiff @1.41.0_0`, with `sudo port uninstall` to remove
+it. A
 later check can remove a matching inactive, unrequested image before rebuilding;
 an installed image it cannot safely replace is refused.
 

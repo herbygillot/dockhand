@@ -304,21 +304,40 @@ func (l *Local) Execute(ctx context.Context, job buildenv.Job, build buildenv.Bu
 
 // sayLeftInactive says, in one line, each port whose newer version the
 // check left installed but inactive in the prefix once its put-back made
-// the older active again, as the guest program found them (left, its
-// "name @version" items): port upgrade outdated passes over a port whose
-// newest installed version is as new as the tree's, though an older one is
-// active, so the person's own upgrades stalled unsaid (#350). Nothing
-// where none was left.
-func (l *Local) sayLeftInactive(prefix, left string, sudo []string, build buildenv.Build) {
-	if strings.TrimSpace(left) == "" {
+// the older active again (left), and, in a clause of its own, each it left
+// installed that had no version active before (added), as the guest
+// program found them, "name @version" items: port upgrade outdated passes
+// over a port whose newest installed version is as new as the tree's,
+// though an older one is active, so the person's own upgrades stalled
+// unsaid (#350); a port new to the prefix stalls none, but stays there
+// (#351). Nothing where none was left.
+func (l *Local) sayLeftInactive(prefix, left, added string, sudo []string, build buildenv.Build) {
+	left, added = strings.TrimSpace(left), strings.TrimSpace(added)
+	if left == "" && added == "" {
 		return
 	}
-	first, _, _ := strings.Cut(left, ", ")
 	asRoot := ""
 	if len(sudo) > 0 {
 		asRoot = "sudo "
 	}
-	build.Progress(fmt.Sprintf("Left installed but inactive in %s, newer than what is active: %s. port upgrade outdated passes these over until each is activated (%sport activate %s) or removed (%sport reclaim)", prefix, left, asRoot, first, asRoot))
+	var said string
+	if left != "" {
+		first, _, _ := strings.Cut(left, ", ")
+		said = fmt.Sprintf("Left installed but inactive in %s, newer than what is active: %s. port upgrade outdated passes these over until each is activated (%sport activate %s) or removed (%sport reclaim)", prefix, left, asRoot, first, asRoot)
+	}
+	if added != "" {
+		first, _, more := strings.Cut(added, ", ")
+		removes := fmt.Sprintf("%sport uninstall %s removes it, as does %sport reclaim", asRoot, first, asRoot)
+		if more {
+			removes = fmt.Sprintf("%sport uninstall %s removes one, and %sport reclaim all of them", asRoot, first, asRoot)
+		}
+		if said == "" {
+			said = fmt.Sprintf("Left installed in %s, with no version active before: %s (%s)", prefix, added, removes)
+		} else {
+			said += fmt.Sprintf(". Also left installed, with no version active before: %s (%s)", added, removes)
+		}
+	}
+	build.Progress(said)
 }
 
 // hostRelease is the macOS release a local environment's platform is.
@@ -347,7 +366,7 @@ func (l *Local) settle(ctx context.Context, follower *guest.Follower, dir, prefi
 		remove(dir, build)
 	case restored == "yes":
 		remove(dir, build)
-		l.sayLeftInactive(prefix, results.Environment["left_inactive"], sudo, build)
+		l.sayLeftInactive(prefix, results.Environment["left_inactive"], results.Environment["left_added"], sudo, build)
 	case restored == "kept":
 		// Its directory stays, marked kept, for dockhand undo's put-back,
 		// which the next check leaves to it.
@@ -370,7 +389,7 @@ func (l *Local) settle(ctx context.Context, follower *guest.Follower, dir, prefi
 		remove(dir, build)
 		build.Progress("put " + prefix + " back as it was")
 		if again, err := follower.Read(ctx, hostGuest{}); err == nil {
-			l.sayLeftInactive(prefix, again.Environment["left_inactive"], sudo, build)
+			l.sayLeftInactive(prefix, again.Environment["left_inactive"], again.Environment["left_added"], sudo, build)
 		}
 	default:
 		build.Progress(fmt.Sprintf("could not restore %s: %s. Run dockhand undo %s to retry; the next check in this prefix also retries restoration. %s", prefix, strings.TrimPrefix(restored, "no: "), check, l.byHand(dir, check, snapshot)))
