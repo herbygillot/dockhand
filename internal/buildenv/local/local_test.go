@@ -718,3 +718,27 @@ func TestAPutBackThatChangedNoActiveVersionNamesNothing(t *testing.T) {
 		require.NotContains(t, said, "Left installed but inactive")
 	}
 }
+
+// A check stopped mid-build is put back as it ends, by the restore after
+// it, and that put-back's line names what it left installed too (#351;
+// Codex's review of the rc2 fixes: the deferred path wasn't pinned).
+func TestAStoppedChecksPutBackNamesWhatItLeft(t *testing.T) {
+	t.Parallel()
+	path, active := registry(t, "  zlib @1.3.2_0 (active)\n")
+	prefix, env, _ := fakePrefix(t, active, "HANG=fetch:harbor-cli", "INSTALLED=  libharbor @1_0\\n  libharbor @9.9_0\\n")
+	l := localProvider(t, env)
+	ctx, cancel := context.WithCancel(t.Context())
+	build := &fakeBuild{}
+	done := make(chan error, 1)
+	go func() { done <- l.Execute(ctx, localJob(t, prefix), build) }()
+	require.Eventually(t, func() bool { return strings.Contains(readRegistry(t, path), "libharbor") }, testsupport.Settle, 10*time.Millisecond)
+	cancel()
+	require.ErrorIs(t, <-done, context.Canceled)
+	require.Equal(t, "  zlib @1.3.2_0 (active)\n", readRegistry(t, path))
+	require.Contains(t, build.progress, "put "+prefix+" back as it was", "the restore after the stop")
+	found := false
+	for _, said := range build.progress {
+		found = found || strings.HasPrefix(said, "Left installed in "+prefix+", with no version active before: libharbor @")
+	}
+	require.True(t, found, "%q", build.progress)
+}

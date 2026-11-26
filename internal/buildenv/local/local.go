@@ -386,9 +386,13 @@ func (l *Local) settle(ctx context.Context, follower *guest.Follower, dir, prefi
 			build.Progress(fmt.Sprintf("could not restore %s: %v. Run dockhand undo %s to retry; the next check in this prefix also retries restoration. %s", prefix, err, check, l.byHand(dir, check, snapshot)))
 			return
 		}
+		// What the put-back left is read before its directory goes: read
+		// after, it was never said (Codex's review of the rc2 fixes found
+		// this path untested).
+		again, readErr := follower.Read(ctx, hostGuest{})
 		remove(dir, build)
 		build.Progress("put " + prefix + " back as it was")
-		if again, err := follower.Read(ctx, hostGuest{}); err == nil {
+		if readErr == nil {
 			l.sayLeftInactive(prefix, again.Environment["left_inactive"], again.Environment["left_added"], sudo, build)
 		}
 	default:
