@@ -208,7 +208,9 @@ func TestTheGridSaysAnEarlierChecksCellStands(t *testing.T) {
 	var out bytes.Buffer
 	WriteResults(&out, "  ", evidence, false)
 	require.Contains(t, out.String(), "(check-490)")
-	require.Contains(t, out.String(), "\n  (check-490): result reused from an earlier check; its build inputs have not changed\n")
+	// Nothing carried over a change: the cell is check-490's own result,
+	// which stands; "reused" was wrong of it (#351).
+	require.Contains(t, out.String(), "\n  (check-490): this result is check-490's, and still stands: its build inputs have not changed\n")
 
 	evidence.Targets[0].Outcomes[0] = cell(twelve, "x2")
 	out.Reset()

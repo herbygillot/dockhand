@@ -449,10 +449,13 @@ func writeStanding(out io.Writer, indent string, evidence engine.Evidence) {
 		fmt.Fprintf(out, "%s(%s): result reused from an earlier check\n", indent, checks[0])
 	case len(carried) > 0:
 		fmt.Fprintf(out, "%s(%s): results reused from earlier checks\n", indent, strings.Join(checks, ", "))
+	// With nothing carried over a change, a cell an earlier check gave is
+	// that check's own result, which stands: nothing was reused, as the
+	// words said of the original run (#351).
 	case len(checks) == 1:
-		fmt.Fprintf(out, "%s(%s): result reused from an earlier check; its build inputs have not changed\n", indent, checks[0])
+		fmt.Fprintf(out, "%s(%s): this result is %s's, and still stands: its build inputs have not changed\n", indent, checks[0], checks[0])
 	default:
-		fmt.Fprintf(out, "%s(%s): results reused from earlier checks; their build inputs have not changed\n", indent, strings.Join(checks, ", "))
+		fmt.Fprintf(out, "%s(%s): these results are those checks', and still stand: their build inputs have not changed\n", indent, strings.Join(checks, ", "))
 	}
 	for _, line := range carried {
 		fmt.Fprintf(out, "%s%s.\n", indent, line)
