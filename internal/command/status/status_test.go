@@ -56,7 +56,7 @@ func TestStatusCreditsACheckOfTheCommittedFilesToTheCommit(t *testing.T) {
 
 	out, _, err := cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
-	require.Contains(t, out, "  Checks   passed for this commit\n")
+	require.Contains(t, out, "  Checks   passed for this commit (check-1)\n", "the latest check named (#351)")
 	require.Contains(t, cmdtest.Flat(out), "Next: fork macports/macports-ports on GitHub and add it as a Git remote, then dockhand submit --branch jq-update\n",
 		"no remote pushes to a fork yet (the M1's rerun, D-S6)")
 	testsupport.Git(t, w.Clone, "remote", "add", "github-fork", "https://github.com/ada/macports-ports.git")
@@ -72,7 +72,7 @@ func TestStatusCreditsACheckOfTheCommittedFilesToTheCommit(t *testing.T) {
 	require.NoError(t, err)
 	out, _, err = cmdtest.Dockhand(t, "status")
 	require.NoError(t, err)
-	require.Contains(t, out, "  Checks   passed for snapshot 2\n")
+	require.Contains(t, out, "  Checks   passed for snapshot 2 (check-2)\n")
 }
 
 func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
@@ -120,7 +120,7 @@ func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
 	out, _, err = cmdtest.Dockhand(t, "status")
 	require.NoError(t, err, "inside a worktree, status is the branch's")
 	require.Contains(t, out, "jq-update in ~/Source/macports-branches/jq-update\n  Ports    jq (not yet evaluated)\n  Work     1 commit above master ")
-	require.Contains(t, out, "\n  Checks   passed for this commit\n           jq  command ✓\n  PR       —\nNext: fork macports/macports-ports on GitHub and add it as a Git remote, then dockhand submit\n  --branch jq-update\n")
+	require.Contains(t, out, "\n  Checks   passed for this commit (check-2)\n           jq  command ✓\n  PR       —\nNext: fork macports/macports-ports on GitHub and add it as a Git remote, then dockhand submit\n  --branch jq-update\n")
 
 	out, _, err = cmdtest.Dockhand(t, "status", "--port", "fd")
 	require.NoError(t, err)

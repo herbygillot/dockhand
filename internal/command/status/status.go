@@ -508,7 +508,13 @@ func showBranch(out io.Writer, places config.Places, status engine.BranchStatus,
 		for _, directory := range status.SparseAdds {
 			fmt.Fprintf(out, "  Sparse   files in %s are outside this worktree's sparse checkout\n           Run git sparse-checkout add %s\n", directory, directory)
 		}
-		fmt.Fprintf(out, "  Checks   %s\n", view.CheckState(status))
+		// The latest check is named, since its own cells carry no mark:
+		// only an earlier check's do (#351).
+		checked := view.CheckState(status)
+		if status.Latest != nil && !strings.Contains(checked, status.Latest.Name()) {
+			checked += " (" + status.Latest.Name() + ")"
+		}
+		fmt.Fprintf(out, "  Checks   %s\n", checked)
 		if status.Evidence != nil {
 			if status.CheckStanding() == branchstate.CheckedOlder {
 				view.WriteHistoricalResults(out, "           ", *status.Evidence, status.HistoricalResults)

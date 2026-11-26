@@ -778,6 +778,7 @@ func TestACheckClearsItsRedrawnLineWhenItEnds(t *testing.T) {
 	err = cmdtest.RunFor(t, t.Context(), []string{"check", "-b", "jq-update", "--on", "command"}, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs}.AsTerminal())
 	require.NoError(t, err, errs.String())
 	said := errs.String()
+	require.Contains(t, said, "check-1 is running here; press Ctrl-C to stop it and keep completed results\n", "a line of its own that names the check, which stays (#351)")
 	drawn := strings.LastIndex(said, "\r\033[K⋯")
 	require.GreaterOrEqual(t, drawn, 0, "the progress was drawn: %q", said)
 	require.True(t, strings.HasSuffix(said[drawn:], "\r\033[K") || strings.Contains(said[drawn+len("\r\033[K⋯"):], "\r\033[K"), "cleared after its last draw: %q", said[drawn:])

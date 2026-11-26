@@ -103,7 +103,11 @@ func runQueued(ctx context.Context, e *engine.Engine, run model.Run, streams ter
 			// (the bazel and exiv2 sessions' notes, 2026-10-24).
 			switch {
 			case streams.ErrTerminal() && lead.Here():
-				streams.Status().Show(fmt.Sprintf("⋯ %s is running here; press Ctrl-C to stop it and keep completed results", run.Name()))
+				// A line of its own, which stays: on the redrawn line the
+				// check's name went with its first step, and a local check,
+				// whose steps start at once, never left it on the screen
+				// (field testing's oasdiff check, #351).
+				streams.Status().Say(fmt.Sprintf("%s is running here; press Ctrl-C to stop it and keep completed results", run.Name()))
 			case lead.Here() && !streams.Held():
 				fmt.Fprintf(streams.Err, "%s is running here. Use check -d to run in the background.\n", run.Name())
 			}
