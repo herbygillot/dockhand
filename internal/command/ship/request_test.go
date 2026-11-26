@@ -193,7 +193,13 @@ func TestNoCheckGivenSaysItReplacesTheKeptDraft(t *testing.T) {
 	g.Others = nil
 	_, errs, err := cmdtest.Dockhand(t, "ship", "jq", "--to", "commit", "--draft", "--type", "bugfix", "--yes")
 	require.NoError(t, err, errs)
-	out, _, _ := cmdtest.Dockhand(t, "submit", "-b", "jq-1.8.1", "--no-check", "--plan")
+	out, errs, err := cmdtest.Dockhand(t, "submit", "-b", "jq-1.8.1", "--no-check", "--plan")
+	require.NoError(t, err, errs)
 	require.Contains(t, out, "Taken from what the branch's request kept: --type bugfix\n")
 	require.Contains(t, out, "Given over what the branch's request kept: --no-check replaces the kept --draft\n")
+	// Said by the submission itself too, not only its plan.
+	out, errs, err = cmdtest.Dockhand(t, "submit", "-b", "jq-1.8.1", "--no-check", "--yes")
+	require.NoError(t, err, errs)
+	require.Contains(t, out, "Given over what the branch's request kept: --no-check replaces the kept --draft\n")
+	require.Len(t, g.PRs, 1)
 }
