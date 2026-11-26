@@ -985,18 +985,25 @@ proc snapshot {note} {
 # unrequested, for port reclaim. It's faster than port restore, which
 # installs each port of the snapshot again. Returns "" or why it failed.
 proc putback {} {
-    global port root
+    global port root environment
     set fd [open $root/before.txt r]
     set before [actives [read $fd]]
     close $fd
     if {[catch {actives [known $port -q installed active]} now]} { return $now }
     set off {}
     set on {}
+    # newer are the versions active as the put-back begins of each port
+    # whose active version the check changed, which stay installed and
+    # inactive once the older is active again: port upgrade outdated
+    # passes over a port whose newest installed version is as new as the
+    # tree's, so they are said (#350).
+    set newer {}
     dict for {name spec} $now {
         if {![dict exists $before $name]} {
             lappend off $name
         } elseif {[dict get $before $name] ne $spec} {
             lappend on $name [dict get $before $name]
+            lappend newer $name $spec
         }
     }
     dict for {name spec} $before {
@@ -1008,6 +1015,20 @@ proc putback {} {
     }
     foreach {name spec} $on {
         if {[set message [run $log [list $port -N activate $name $spec]]] ne ""} { return "activating $name $spec: $message" }
+    }
+    # Only a version still installed after the put-back is said.
+    set left {}
+    foreach {name spec} $newer {
+        if {[catch {known $port -q installed $name} listing]} { continue }
+        foreach line [split $listing \n] {
+            if {[regexp {^\s*(\S+) (@\S+)} $line -> installed version] && $installed eq $name && $version eq $spec} {
+                lappend left "$name $spec"
+                break
+            }
+        }
+    }
+    if {[llength $left]} {
+        dict set environment left_inactive [join [lsort $left] ", "]
     }
     return ""
 }

@@ -302,6 +302,25 @@ func (l *Local) Execute(ctx context.Context, job buildenv.Job, build buildenv.Bu
 	return err
 }
 
+// sayLeftInactive says, in one line, each port whose newer version the
+// check left installed but inactive in the prefix once its put-back made
+// the older active again, as the guest program found them (left, its
+// "name @version" items): port upgrade outdated passes over a port whose
+// newest installed version is as new as the tree's, though an older one is
+// active, so the person's own upgrades stalled unsaid (#350). Nothing
+// where none was left.
+func (l *Local) sayLeftInactive(prefix, left string, sudo []string, build buildenv.Build) {
+	if strings.TrimSpace(left) == "" {
+		return
+	}
+	first, _, _ := strings.Cut(left, ", ")
+	asRoot := ""
+	if len(sudo) > 0 {
+		asRoot = "sudo "
+	}
+	build.Progress(fmt.Sprintf("Left installed but inactive in %s, newer than what is active: %s. port upgrade outdated passes these over until each is activated (%sport activate %s) or removed (%sport reclaim)", prefix, left, asRoot, first, asRoot))
+}
+
 // hostRelease is the macOS release a local environment's platform is.
 func hostRelease(platform model.Platform) (macos.Release, error) {
 	return macos.ReleaseForDarwinText(platform.Version)
@@ -328,6 +347,7 @@ func (l *Local) settle(ctx context.Context, follower *guest.Follower, dir, prefi
 		remove(dir, build)
 	case restored == "yes":
 		remove(dir, build)
+		l.sayLeftInactive(prefix, results.Environment["left_inactive"], sudo, build)
 	case restored == "kept":
 		// Its directory stays, marked kept, for dockhand undo's put-back,
 		// which the next check leaves to it.
@@ -349,6 +369,9 @@ func (l *Local) settle(ctx context.Context, follower *guest.Follower, dir, prefi
 		}
 		remove(dir, build)
 		build.Progress("put " + prefix + " back as it was")
+		if again, err := follower.Read(ctx, hostGuest{}); err == nil {
+			l.sayLeftInactive(prefix, again.Environment["left_inactive"], sudo, build)
+		}
 	default:
 		build.Progress(fmt.Sprintf("could not restore %s: %s. Run dockhand undo %s to retry; the next check in this prefix also retries restoration. %s", prefix, strings.TrimPrefix(restored, "no: "), check, l.byHand(dir, check, snapshot)))
 	}

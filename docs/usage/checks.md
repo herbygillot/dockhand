@@ -360,7 +360,14 @@ that can't be sent the cancel stays unfinished, with the same command. A sudo
 set to log a command's input hands the build a pipe in place of the check's
 lock, so on such a Mac every root build is refused before it starts anything,
 saying why. Restoring active versions leaves
-newly built images inactive and unrequested for MacPorts' `port reclaim`. A
+newly built images inactive and unrequested for MacPorts' `port reclaim`. Where
+the check changed a port's active version, the newer one stays installed but
+inactive, and the check's last line names each such port: `Left installed but
+inactive in /opt/local, newer than what is active: curl @8.19.0_0`. This matters
+for your own upgrades: `port outdated` still lists such a port, but `port
+upgrade outdated` passes it over, since its newest installed version is as new
+as the ports tree's, until you activate the newer version (`sudo port activate
+curl @8.19.0_0`) or remove it (`sudo port reclaim`). A
 later check can remove a matching inactive, unrequested image before rebuilding;
 an installed image it cannot safely replace is refused.
 

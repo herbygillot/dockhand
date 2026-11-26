@@ -672,3 +672,36 @@ func TestAStopTakesNothingFromADirectoryNotYours(t *testing.T) {
 	_, err := (&Local{Temp: temp}).Stop(t.Context(), buildenv.StopRequest{Execution: model.GuestExecution{ProviderRef: left}})
 	require.ErrorContains(t, err, "isn't this account's alone")
 }
+
+// A put-back names each port whose newer version the check left installed
+// but inactive, those whose active version it changed, with how to have
+// MacPorts take them up again: port upgrade outdated passes over a port
+// whose newest installed version is as new as the tree's, though an older
+// one is active (#350). A port the check activated that had nothing active
+// before isn't named.
+func TestAPutBackNamesTheNewerVersionsItLeftInactive(t *testing.T) {
+	t.Parallel()
+	path, active := registry(t, "  zlib @1.3.2_0 (active)\n  libharbor @1_0 (active)\n  harbor-cli @1_0 (active)\n")
+	prefix, env, _ := fakePrefix(t, active, "DEPS=libharbor=zlib harbor-cli=libharbor", "BRINGS=harbor-cli=zstd",
+		"INSTALLED=  libharbor @1_0\\n  libharbor @9.9_0\\n  harbor-cli @1_0\\n  harbor-cli @9.9_0\\n")
+	l := localProvider(t, env)
+	build := &fakeBuild{}
+	require.NoError(t, l.Execute(t.Context(), localJob(t, prefix), build))
+	require.Equal(t, "  zlib @1.3.2_0 (active)\n  libharbor @1_0 (active)\n  harbor-cli @1_0 (active)\n", readRegistry(t, path), "put back")
+	require.Contains(t, build.progress, "Left installed but inactive in "+prefix+", newer than what is active: harbor-cli @9.9_0, libharbor @9.9_0. "+
+		"port upgrade outdated passes these over until each is activated (port activate harbor-cli @9.9_0) or removed (port reclaim)")
+}
+
+// Where the check changed no active version, the put-back names nothing
+// left behind.
+func TestAPutBackThatChangedNoActiveVersionNamesNothing(t *testing.T) {
+	t.Parallel()
+	_, active := registry(t, "  zlib @1.3.2_0 (active)\n")
+	prefix, env, _ := fakePrefix(t, active, "DEPS=libharbor=zlib harbor-cli=libharbor")
+	l := localProvider(t, env)
+	build := &fakeBuild{}
+	require.NoError(t, l.Execute(t.Context(), localJob(t, prefix), build))
+	for _, said := range build.progress {
+		require.NotContains(t, said, "Left installed but inactive")
+	}
+}
