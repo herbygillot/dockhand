@@ -291,7 +291,12 @@ func (l *Local) Execute(ctx context.Context, job buildenv.Job, build buildenv.Bu
 	select {
 	case <-started.Done():
 	default:
-		_ = started.Stop(cleanup, 30*time.Second)
+		// A run whose stop isn't seen through is left with its record
+		// and its lock, and nothing is put back under it: the attempt
+		// isn't known to have ended, and the cancel says so.
+		if stopErr := started.Stop(cleanup, runStopBound); stopErr != nil {
+			return errors.Join(err, buildenv.NeedsAttention("%v; nothing was put back in %s while it may still run", stopErr, prefix))
+		}
 	}
 	l.settle(cleanup, follower, dir, prefix, job.Run.Name(), sudo, build)
 	return err
@@ -574,7 +579,7 @@ func (l *Local) start(dir, prefix, check string, sudo []string, inSession bool, 
 		log.Close()
 		return nil, err
 	}
-	run := &localRun{done: make(chan struct{}), starter: started}
+	run := &localRun{done: make(chan struct{}), starter: started, lock: lock.Name()}
 	go func() {
 		defer log.Close()
 		defer close(run.done)
@@ -1060,6 +1065,9 @@ type localRun struct {
 	done    chan struct{}
 	err     error
 	starter *exec.Cmd
+	// lock is the attempt's launch lock's path, which the starter holds
+	// for as long as it lives.
+	lock string
 	// stopped is dockhand's own Stop, whose signal is its own.
 	stopped atomic.Bool
 }
@@ -1087,16 +1095,34 @@ func (r *localRun) Err() error            { return r.err }
 // Stop asks the starter to stop the program, which sends its whole group
 // SIGTERM, port's builds among it, and kills what still runs after its
 // grace; under sudo, sudo passes the signal to the program. Stop waits for
-// the starter to end, or for ctx.
-func (r *localRun) Stop(ctx context.Context, _ time.Duration) error {
+// the starter to end, for ctx, or for within: a starter that hasn't ended
+// by then isn't known to have, and is said with its PID and the lock it
+// holds, the stop's "not known", where it waited for ever unsaid (the M1's
+// gate, 2026-11-26). The starter is left as it is: its record is what a
+// later stop reads.
+func (r *localRun) Stop(ctx context.Context, within time.Duration) error {
 	r.stopped.Store(true)
 	_ = r.starter.Process.Signal(syscall.SIGTERM)
+	var bound <-chan time.Time
+	if within > 0 {
+		timer := time.NewTimer(within)
+		defer timer.Stop()
+		bound = timer.C
+	}
 	select {
 	case <-r.done:
+		return nil
 	case <-ctx.Done():
+		return ctx.Err()
+	case <-bound:
+		return fmt.Errorf("the guest program's starter, PID %d, didn't end within %s of its stop, and still holds the attempt's launch lock %s, so its stop isn't known", r.starter.Process.Pid, within, r.lock)
 	}
-	return nil
 }
+
+// runStopBound is how long Execute waits for a run it stops to end: past
+// the starter's own grace, twice over for a root build's, whose sudo and
+// then guest each have it.
+const runStopBound = 2*stopGrace + 30*time.Second
 
 // hostGuest is the guest program's directory on this Mac, as follow reads
 // a clone's: its files are read as they are, since root writes them

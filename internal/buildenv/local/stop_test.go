@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -235,4 +236,22 @@ func TestAStopWhosePrefixAnotherCheckHoldsLeavesIt(t *testing.T) {
 	require.Contains(t, left[0], "the next check in it puts it back before it builds, or dockhand undo check-12")
 	_, err = os.Stat(dir)
 	require.NoError(t, err, "its directory stays for the next check")
+}
+
+// A run whose starter never ends, as one stuck with its lock, is answered
+// within the stop's bound as not known, naming the starter and the lock it
+// holds: the stop waited for ever, unsaid (the M1's gate, 2026-11-26). The
+// starter is left running, its record what a later stop reads.
+func TestAStopOfAStarterThatNeverEndsIsNotKnownWithinItsBound(t *testing.T) {
+	t.Parallel()
+	stuck := exec.Command("/bin/sh", "-c", "trap '' TERM; sleep 30")
+	require.NoError(t, stuck.Start())
+	t.Cleanup(func() { _ = stuck.Process.Kill(); _ = stuck.Wait() })
+	run := &localRun{done: make(chan struct{}), starter: stuck, lock: "/tmp/launches/check-1.lock"}
+	start := time.Now()
+	err := run.Stop(t.Context(), 300*time.Millisecond)
+	require.Less(t, time.Since(start), 5*time.Second, "within its bound")
+	require.ErrorContains(t, err, fmt.Sprintf("the guest program's starter, PID %d, didn't end within 300ms of its stop", stuck.Process.Pid))
+	require.ErrorContains(t, err, "/tmp/launches/check-1.lock, so its stop isn't known")
+	require.NoError(t, stuck.Process.Signal(syscall.Signal(0)), "left running")
 }
