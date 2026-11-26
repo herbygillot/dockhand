@@ -5,6 +5,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/remotewrite"
 )
 
 // ReviewerAction is what a publication's reviewer step does for one login
@@ -79,7 +80,7 @@ func ReviewerAnswered(err error) (model.Sent, string) {
 	switch {
 	case err == nil:
 		return model.SentRequest, ""
-	case errors.As(err, &limited), errors.Is(err, forge.ErrAuthentication):
+	case errors.As(err, &limited), errors.Is(err, forge.ErrAuthentication), errors.Is(err, remotewrite.ErrNotSent):
 		return model.NotSent, ""
 	case errors.Is(err, forge.ErrRejected):
 		return model.RefusedToAsk, err.Error()

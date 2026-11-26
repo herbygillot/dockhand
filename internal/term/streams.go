@@ -63,9 +63,18 @@ func Begin(streams Streams, args []string) Streams {
 	streams.Out = &switchWriter{w: streams.Out}
 	streams.prose = streams.proseOver(streams.Out, colour)
 	if streams.status == nil {
-		streams.status = &StatusLine{w: streams.Err}
+		streams.status = &StatusLine{w: streams.Err, columns: streams.errColumns}
 	}
 	return streams
+}
+
+// errColumns is standard error's terminal width, which the redrawn line
+// is cut short of; 0 off a terminal.
+func (s Streams) errColumns() int {
+	if file, ok := underlying(s.Err).(*os.File); ok {
+		return terminalWidth(file.Fd())
+	}
+	return 0
 }
 
 // Prose is the writer for dockhand's own sentences, tables and views: it

@@ -155,3 +155,20 @@ func TestARejectedPushSaysSoOnItsBranchsLine(t *testing.T) {
 	require.True(t, report.Rejected(), "the line: %q", report.Line)
 	require.Contains(t, report.Line, "[remote rejected]")
 }
+
+// A push the remote refuses says the remote's own reason in its error,
+// not only git's "failed to push some refs": GitHub's "Permission to …
+// denied to …" was dropped, and the person couldn't tell why (field
+// testing's #195 batch). A repository with the branch checked out refuses
+// with its own remote: lines, as GitHub's are.
+func TestARefusedPushSaysTheRemotesReason(t *testing.T) {
+	t.Parallel()
+	repo := snapshotRepo(t)
+	remote := filepath.Join(t.TempDir(), "remote")
+	testsupport.Git(t, filepath.Dir(remote), "init", "-q", "-b", "candidate", remote)
+	a := snapshotCommit(t, repo, snapshotTree(t, repo, snapshotBlob(t, repo, "file", "one", 0100644)))
+	_, err := repo.Push(t.Context(), git.Push{Remote: remote, Branch: "candidate", Commit: a})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "remote: error: refusing to update checked out branch")
+	require.ErrorContains(t, err, "[remote rejected] (branch is currently checked out)", "the branch's own line from git's report too")
+}

@@ -50,15 +50,35 @@ func sudoIdentity(path string) (SudoIdentity, error) {
 type RootProof struct {
 	Sudo   SudoIdentity `json:"sudo"`
 	Proved bool         `json:"proved"`
+	// InSession is the launch probed: a root build started in a group of
+	// its own in its terminal's session, its sudo satisfied by a password
+	// typed there; else in a session of its own, with a terminal and
+	// without. A proof stands only for the launch it probed (#332).
+	InSession bool `json:"in_session,omitempty"`
 	// Found is what the probe found, in words, each case's line.
 	Found []string  `json:"found"`
 	At    time.Time `json:"at"`
 }
 
-// ProbeCase is one case of the probe, with a terminal or without, and what
-// it saw.
+// ProbeShape is how the probe starts its sudo, as a root build's is
+// started.
+type ProbeShape int
+
+const (
+	// ProbeSession is a session of its own, with no terminal.
+	ProbeSession ProbeShape = iota
+	// ProbeTerminal is a session of its own, with a terminal of its own.
+	ProbeTerminal
+	// ProbeInSession is a group of its own in this process's session, as a
+	// root build whose sudo a password typed on this terminal satisfied is
+	// started: such a sudo refuses sudo -n in any other session (#332).
+	ProbeInSession
+)
+
+// ProbeCase is one case of the probe, with a terminal or without, or in
+// this terminal's session, and what it saw.
 type ProbeCase struct {
-	Terminal bool
+	Terminal, InSession bool
 	// StdinIsLock, LockHeld, SignalReached, SameOpening and LockFreed are
 	// the parts that must hold. SameOpening is the lock still held, after
 	// the sudo and its command have ended, by what the command handed its
@@ -83,7 +103,10 @@ func (c ProbeCase) Held() bool {
 // Words is the case as a line of the proof.
 func (c ProbeCase) Words() string {
 	terminal := "without a terminal"
-	if c.Terminal {
+	switch {
+	case c.InSession:
+		terminal = "in this terminal's session"
+	case c.Terminal:
 		terminal = "with a terminal"
 	}
 	parts := []string{fmt.Sprintf("standard input the lock: %v", c.StdinIsLock), fmt.Sprintf("lock held: %v", c.LockHeld),
@@ -111,8 +134,8 @@ const probeBound = 30 * time.Second
 // path out, and within a bound where nothing lets it go. The live test and
 // the first root launch on a Mac run this one implementation. An error is
 // a probe that couldn't be made, not a part that failed.
-func ProbeRootStop(ctx context.Context, sudo, env []string, tclsh, dir string, terminal bool) (ProbeCase, error) {
-	found := ProbeCase{Terminal: terminal}
+func ProbeRootStop(ctx context.Context, sudo, env []string, tclsh, dir string, shape ProbeShape) (ProbeCase, error) {
+	found := ProbeCase{Terminal: shape == ProbeTerminal, InSession: shape == ProbeInSession}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return found, err
 	}
@@ -160,7 +183,12 @@ while {![file exists $release] && [clock seconds] < $deadline} { after 50 }
 	command := exec.CommandContext(ctx, sudo[0], args...)
 	command.Stdin, command.Env = lock, env
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if terminal {
+	switch shape {
+	case ProbeInSession:
+		// A group of its own in this session, which keeps this terminal
+		// as its controlling one: what the sudo's kept password is for.
+		command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	case ProbeTerminal:
 		ptm, tty, err := openTerminal()
 		if err != nil {
 			_ = lock.Close()
@@ -220,7 +248,11 @@ while {![file exists $release] && [clock seconds] < $deadline} { after 50 }
 	found.LockHeld = lockBusy(lockPath)
 	group, _ := unix.Getpgid(pid)
 	session, _ := unix.Getsid(pid)
-	found.KeepsGroup, found.KeepsSession = group == command.Process.Pid, session == command.Process.Pid
+	started := command.Process.Pid
+	if shape == ProbeInSession {
+		started, _ = unix.Getsid(0)
+	}
+	found.KeepsGroup, found.KeepsSession = group == command.Process.Pid, session == started
 	if err := syscall.Kill(command.Process.Pid, syscall.SIGTERM); err == nil {
 		found.SelfSignals = true
 	} else {
@@ -266,24 +298,27 @@ func lockBusy(path string) bool {
 	return errors.Is(err, filelock.ErrBusy)
 }
 
-// proveRoot runs the probe in both cases and makes the proof of it.
-func proveRoot(ctx context.Context, sudo, env []string, tclsh, dir string, identity SudoIdentity, now time.Time) RootProof {
-	proof := RootProof{Sudo: identity, Proved: true, At: now}
-	for _, terminal := range []bool{false, true} {
-		name := "plain"
-		if terminal {
-			name = "terminal"
-		}
-		found, err := ProbeRootStop(ctx, sudo, env, tclsh, filepath.Join(dir, name), terminal)
+// proveRoot runs the probe in each case of the launch, in a session of its
+// own with a terminal and without, or in this terminal's session where
+// inSession, and makes the proof of it.
+func proveRoot(ctx context.Context, sudo, env []string, tclsh, dir string, identity SudoIdentity, now time.Time, inSession bool) (proof RootProof, made bool) {
+	proof, made = RootProof{Sudo: identity, Proved: true, At: now, InSession: inSession}, true
+	shapes := map[string]ProbeShape{"plain": ProbeSession, "terminal": ProbeTerminal}
+	names := []string{"plain", "terminal"}
+	if inSession {
+		shapes, names = map[string]ProbeShape{"session": ProbeInSession}, []string{"session"}
+	}
+	for _, name := range names {
+		found, err := ProbeRootStop(ctx, sudo, env, tclsh, filepath.Join(dir, name), shapes[name])
 		if err != nil {
-			proof.Proved = false
+			proof.Proved, made = false, false
 			proof.Found = append(proof.Found, fmt.Sprintf("%s: the probe couldn't be made: %v", found.Words(), err))
 			continue
 		}
 		proof.Proved = proof.Proved && found.Held()
 		proof.Found = append(proof.Found, found.Words())
 	}
-	return proof
+	return proof, made && ctx.Err() == nil
 }
 
 // rootProofName is the person's proof of this Mac's sudo, in Proofs.
@@ -321,7 +356,11 @@ func (l *Local) readRootProof(identity SudoIdentity) (RootProof, bool) {
 // none was made: the one place the answer is decided, so another way of
 // knowing (a setting, or taking every Mac's sudo for the acceptance Mac's)
 // would change it alone.
-func (l *Local) rootStopProved(sudo []string) (bool, string) {
+//
+// inSession is the build's launch, a group in its terminal's session where
+// its sudo took a password typed there (asRoot): a proof stands only for
+// the launch it probed (#332).
+func (l *Local) rootStopProved(sudo []string, inSession bool) (bool, string) {
 	identity, err := sudoIdentity(sudo[0])
 	if err != nil {
 		return false, fmt.Sprintf("%s couldn't be read: %v", sudo[0], err)
@@ -332,6 +371,10 @@ func (l *Local) rootStopProved(sudo []string) (bool, string) {
 		return false, "dockhand has no directory of yours to keep a probe of this Mac's sudo in"
 	case !found:
 		return false, "this Mac's sudo hasn't been probed yet; the first root build probes it"
+	case proof.InSession != inSession && inSession:
+		return false, "this Mac's sudo hasn't been probed yet for a root build started after you typed your password; the next such build probes it"
+	case proof.InSession != inSession:
+		return false, "this Mac's sudo hasn't been probed yet for a root build that asks no password; the next such build probes it"
 	}
 	if !proof.Proved {
 		return false, "this Mac's sudo failed the probe of a root build's stop: " + strings.Join(proof.Found, "; ")
@@ -339,16 +382,22 @@ func (l *Local) rootStopProved(sudo []string) (bool, string) {
 	return true, ""
 }
 
-// proveRootOnce probes this Mac's sudo where no proof is kept for the sudo
-// binary, at a root build's launch, so a stop is never delayed by it and
-// never the first to learn it fails. A probe that fails or can't be made
-// is kept as that; the build starts all the same.
-func (l *Local) proveRootOnce(ctx context.Context, sudo []string, tclsh string, say func(string)) {
+// proveRootOnce probes this Mac's sudo where no proof that passed is kept
+// for the sudo binary, at a root build's launch, so a stop is never
+// delayed by it and never the first to learn it fails. Only a probe that
+// was made is kept: one canceled, or refused by sudo -n before the
+// sudoers line was there, was kept as failed for good, and a failed one
+// is made again at the next root build (#341). The build starts all the
+// same.
+//
+// inSession is the build's launch (asRoot), which the probe starts its
+// sudo as: a proof of the other launch is made again for this one (#332).
+func (l *Local) proveRootOnce(ctx context.Context, sudo []string, tclsh string, say func(string), inSession bool) {
 	identity, err := sudoIdentity(sudo[0])
 	if err != nil || l.Proofs == "" {
 		return
 	}
-	if _, found := l.readRootProof(identity); found {
+	if kept, found := l.readRootProof(identity); found && kept.Proved && kept.InSession == inSession {
 		return
 	}
 	dir, err := os.MkdirTemp(l.temp(), "dockhand-root-probe-")
@@ -357,7 +406,10 @@ func (l *Local) proveRootOnce(ctx context.Context, sudo []string, tclsh string, 
 	}
 	say("probing this Mac's sudo once, for how a root build is stopped")
 	defer os.RemoveAll(dir)
-	proof := proveRoot(ctx, sudo, l.Env, tclsh, dir, identity, time.Now().UTC())
+	proof, made := proveRoot(ctx, sudo, l.Env, tclsh, dir, identity, time.Now().UTC(), inSession)
+	if !made {
+		return
+	}
 	data, err := json.Marshal(proof)
 	if err != nil {
 		return

@@ -416,3 +416,45 @@ func TestResolveReadsALargeCatalogOnlyAsFarAsItMust(t *testing.T) {
 	require.ErrorContains(t, err, "tag 2026-11-23, version 20261123")
 	require.ErrorContains(t, err, "203 of owner/project's 303 releases, whose digits are furthest from it, weren't read")
 }
+
+// A rolling tag the Portfile's version can't evaluate, as nightly, isn't a
+// candidate for a version in the port's form: one such tag refused a
+// lookup of a release that exists (#346), whether the versions are
+// evaluated one at a time or together.
+func TestAnUnevaluableTagIsNoCandidateForThePortsForm(t *testing.T) {
+	t.Parallel()
+	unevaluable := func(source string) error {
+		if source == "nightly" {
+			return errors.New("can't read nightly as a version")
+		}
+		return nil
+	}
+	for _, together := range []bool{false, true} {
+		c := &catalog{}
+		service := datedService(c)
+		c.tags = append(c.tags, forge.Tag{Name: "nightly"})
+		single := service.EvaluateVersion
+		service.EvaluateVersion = func(ctx context.Context, source string) (string, error) {
+			if err := unevaluable(source); err != nil {
+				return "", err
+			}
+			return single(ctx, source)
+		}
+		if together {
+			service.EvaluateVersions = func(ctx context.Context, sources []string) ([]string, error) {
+				var versions []string
+				for _, source := range sources {
+					if err := unevaluable(source); err != nil {
+						return nil, err
+					}
+					version, _ := single(ctx, source)
+					versions = append(versions, version)
+				}
+				return versions, nil
+			}
+		}
+		release, err := service.Resolve(t.Context(), datedPort(), "20261123")
+		require.NoError(t, err, "together %v", together)
+		require.Equal(t, "2026-11-23", release.Tag)
+	}
+}

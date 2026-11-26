@@ -57,13 +57,10 @@ func TestLiveSudoHandsTheLockToItsCommand(t *testing.T) {
 		t.Fatalf("sudo -n %s: %v %s; the test needs the sudoers line: %s ALL=(root) NOPASSWD: %s", tclsh, err, out, os.Getenv("USER"), tclsh)
 	}
 	dir := t.TempDir()
-	for _, terminal := range []bool{false, true} {
-		name := "without a terminal"
-		if terminal {
-			name = "with a terminal"
-		}
+	for _, shape := range []ProbeShape{ProbeSession, ProbeTerminal, ProbeInSession} {
+		name := map[ProbeShape]string{ProbeSession: "without a terminal", ProbeTerminal: "with a terminal", ProbeInSession: "in this session"}[shape]
 		t.Run(name, func(t *testing.T) {
-			found, err := ProbeRootStop(t.Context(), sudo, os.Environ(), tclsh, filepath.Join(dir, strings.ReplaceAll(name, " ", "-")), terminal)
+			found, err := ProbeRootStop(t.Context(), sudo, os.Environ(), tclsh, filepath.Join(dir, strings.ReplaceAll(name, " ", "-")), shape)
 			require.NoError(t, err, "the probe")
 			t.Log(found.Words())
 			require.True(t, found.StdinIsLock, "the command's standard input is the lock's file, not a %s sudo put there", found.Input)

@@ -2297,3 +2297,39 @@ func TestABuildThatIsntAReleaseAsksBeforeMigratingTheDefaultDatabase(t *testing.
 	require.NoError(t, err, "a new database is never asked about")
 	require.NoError(t, fresh.Close())
 }
+
+// The copy kept before a migration is of the database as the migration
+// found it: one a refused attempt made is removed with the refusal, so the
+// next attempt keeps a fresh one, where it found the name taken and kept
+// the older copy, which lacked what serve recorded in between (#342).
+func TestARefusedMigrationLeavesNoCopyBehind(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UnixMilli()
+	sessions := fmt.Sprintf(`
+INSERT INTO sessions(repository_id, id, kind, pid, process_start, version, started_at, heartbeat_at, ended_at) VALUES('repo_1','ses_serve','serve',102,'p','v0.3.1',%[1]d,%[1]d,NULL);
+INSERT INTO leases(repository_id, resource, holder, generation, acquired_at) VALUES('repo_1','leader','ses_serve',1,%[1]d);
+`, now)
+	path := schemaAt(t, schemaVersion-1, schema23Records+sessions)
+	_, err := Open(t.Context(), path, Options{LiveWithin: 2 * time.Minute})
+	require.ErrorAs(t, err, new(*store.LiveUnderMigrationError))
+	copy := fmt.Sprintf("%s.schema-%d", path, schemaVersion-1)
+	require.NoFileExists(t, copy, "the refused attempt's copy goes with it")
+
+	// serve goes on recording until it's stopped.
+	db, err := sql.Open("sqlite", "file:"+path)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO branches(repository_id, id, name, base, worktree, managed, title, state, created_at) VALUES('repo_1','br_2','dockhand/yq-9x1q','base','/w2',1,'','open',2)`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	s, err := Open(t.Context(), path, Options{MigrateUnderLive: true})
+	require.NoError(t, err)
+	require.Equal(t, copy, s.Migration().Copy)
+	require.NoError(t, s.Close())
+	kept, err := sql.Open("sqlite", "file:"+copy)
+	require.NoError(t, err)
+	defer kept.Close()
+	var n int
+	require.NoError(t, kept.QueryRow(`SELECT count(*) FROM branches WHERE id = 'br_2'`).Scan(&n))
+	require.Equal(t, 1, n, "what was recorded between the attempts is in the copy")
+}

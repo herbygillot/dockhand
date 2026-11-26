@@ -474,19 +474,20 @@ func TestRootStepsRunThePrefixsPortTclsh(t *testing.T) {
 	tclsh := filepath.Join(prefix, "bin", "port-tclsh")
 
 	require.NoError(t, os.WriteFile(answer, []byte("0"), 0o644))
-	as, err := l.asRoot(t.Context(), prefix, &fakeBuild{})
+	as, inSession, err := l.asRoot(t.Context(), prefix, &fakeBuild{})
 	require.NoError(t, err)
 	require.Equal(t, []string{sudo, "-n"}, as)
+	require.False(t, inSession, "a sudoers line that asks no password: a session of its own")
 	said, err := os.ReadFile(called)
 	require.NoError(t, err)
-	require.Equal(t, "-n "+tclsh+" /dev/null\n", string(said), "the probe asks of the command every root step runs")
+	require.Equal(t, "-n -k "+tclsh+" /dev/null\n", string(said), "the probe asks of the command every root step runs, with no remembered password")
 
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "owner.json"), nil, 0o644))
 	lock, err := os.Create(filepath.Join(t.TempDir(), "attempt.lock"))
 	require.NoError(t, err)
 	defer lock.Close()
-	run, err := l.start(dir, prefix, "check-1", as, lock)
+	run, err := l.start(dir, prefix, "check-1", as, false, lock)
 	require.NoError(t, err)
 	<-run.Done()
 	said, err = os.ReadFile(called)
@@ -495,7 +496,7 @@ func TestRootStepsRunThePrefixsPortTclsh(t *testing.T) {
 
 	l.terminal = filepath.Join(t.TempDir(), "no-terminal")
 	require.NoError(t, os.WriteFile(answer, []byte("1"), 0o644))
-	_, err = l.asRoot(t.Context(), prefix, &fakeBuild{})
+	_, _, err = l.asRoot(t.Context(), prefix, &fakeBuild{})
 	require.ErrorIs(t, err, buildenv.ErrNeedsAttention)
 	require.ErrorContains(t, err, "This sudoers line, added with visudo, lets it: dhtest ALL=(root) NOPASSWD: "+tclsh+".")
 	require.ErrorContains(t, err, "A prefix MacPorts installed without root needs no sudo")
@@ -525,7 +526,7 @@ func TestSudoRefusingThePersonSaysWhatRuleIsEnough(t *testing.T) {
 	tclsh := filepath.Join(prefix, "bin", "port-tclsh")
 
 	require.NoError(t, os.WriteFile(says, []byte("Sorry, user dhtest may not run sudo on m1.\n"), 0o644))
-	_, err := l.asRoot(t.Context(), prefix, &fakeBuild{})
+	_, _, err := l.asRoot(t.Context(), prefix, &fakeBuild{})
 	require.ErrorIs(t, err, buildenv.ErrNeedsAttention)
 	require.True(t, strings.HasPrefix(err.Error(), "dhtest may not use sudo on this Mac, and "+prefix+"'s registry is root's"), "its own words alone, said once: %v", err)
 	require.ErrorContains(t, err, "one asking a password included, since a check run here has a terminal to ask on: dhtest ALL=(root) "+tclsh+".")
@@ -535,7 +536,7 @@ func TestSudoRefusingThePersonSaysWhatRuleIsEnough(t *testing.T) {
 	require.Equal(t, "Sorry, user dhtest may not run sudo on m1.\n", string(seen), "sudo's own words reach the terminal")
 
 	require.NoError(t, os.WriteFile(says, []byte("Sorry, try again.\nsudo: 3 incorrect password attempts\n"), 0o644))
-	_, err = l.asRoot(t.Context(), prefix, &fakeBuild{})
+	_, _, err = l.asRoot(t.Context(), prefix, &fakeBuild{})
 	require.ErrorIs(t, err, buildenv.ErrNeedsAttention)
 	require.True(t, strings.HasPrefix(err.Error(), "sudo didn't let the build run as root in "+prefix+": sudo -v: exit status 1: Sorry, try again."), err.Error())
 	require.NotContains(t, err.Error(), "may not use sudo")
@@ -612,4 +613,95 @@ func TestAnUnreadableRecordRefusesTheNextCheckThere(t *testing.T) {
 	require.ErrorContains(t, err, "could not read check-7's restoration record for /fake-prefix")
 	require.NoError(t, (&Local{Temp: root}).restoreLeft(t.Context(), "/other-prefix", build))
 	require.FileExists(t, before)
+}
+
+// A check's directory left in temp counts only where it is this account's
+// alone, a real directory writable by no one else, its files too: one with
+// another mode, or a link in its place, is passed over, and nothing in it
+// is read or run.
+func TestALeftDirectoryCountsOnlyWhereItIsYours(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name  string
+		plant func(t *testing.T, temp, left string)
+	}{
+		{"writable by others", func(t *testing.T, _, left string) { require.NoError(t, os.Chmod(left, 0o777)) }},
+		{"writable by its group", func(t *testing.T, _, left string) { require.NoError(t, os.Chmod(left, 0o775)) }},
+		{"its owner record writable by others", func(t *testing.T, _, left string) {
+			require.NoError(t, os.Chmod(filepath.Join(left, "owner.json"), 0o666))
+		}},
+		{"its results writable by others", func(t *testing.T, _, left string) {
+			require.NoError(t, os.Chmod(filepath.Join(left, "results.json"), 0o666))
+		}},
+		{"a link in its place", func(t *testing.T, temp, left string) {
+			elsewhere := filepath.Join(t.TempDir(), "elsewhere")
+			require.NoError(t, os.Rename(left, elsewhere))
+			require.NoError(t, os.Symlink(elsewhere, left))
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			temp, prefix := t.TempDir(), t.TempDir()
+			left := leftBehind(t, temp, prefix)
+			c.plant(t, temp, left)
+			l := &Local{Temp: temp}
+			require.Empty(t, l.left(), "nothing left is taken from it")
+			changes, err := l.Changes(t.Context())
+			require.NoError(t, err)
+			require.Empty(t, changes)
+			_, found := l.buildingCheck("check-9")
+			require.False(t, found)
+			_, found, err = l.PlanPutBack(t.Context(), "check-9")
+			require.NoError(t, err)
+			require.False(t, found)
+		})
+	}
+	// Yours, it counts.
+	temp, prefix := t.TempDir(), t.TempDir()
+	leftBehind(t, temp, prefix)
+	require.Len(t, (&Local{Temp: temp}).left(), 1)
+}
+
+// A stop reads and signals nothing from a check's directory that isn't
+// this account's alone.
+func TestAStopTakesNothingFromADirectoryNotYours(t *testing.T) {
+	t.Parallel()
+	temp, prefix := t.TempDir(), t.TempDir()
+	left := leftBehind(t, temp, prefix)
+	require.NoError(t, os.Chmod(left, 0o777))
+	_, err := (&Local{Temp: temp}).Stop(t.Context(), buildenv.StopRequest{Execution: model.GuestExecution{ProviderRef: left}})
+	require.ErrorContains(t, err, "isn't this account's alone")
+}
+
+// A put-back names each port whose newer version the check left installed
+// but inactive, those whose active version it changed, with how to have
+// MacPorts take them up again: port upgrade outdated passes over a port
+// whose newest installed version is as new as the tree's, though an older
+// one is active (#350). A port the check activated that had nothing active
+// before isn't named.
+func TestAPutBackNamesTheNewerVersionsItLeftInactive(t *testing.T) {
+	t.Parallel()
+	path, active := registry(t, "  zlib @1.3.2_0 (active)\n  libharbor @1_0 (active)\n  harbor-cli @1_0 (active)\n")
+	prefix, env, _ := fakePrefix(t, active, "DEPS=libharbor=zlib harbor-cli=libharbor", "BRINGS=harbor-cli=zstd",
+		"INSTALLED=  libharbor @1_0\\n  libharbor @9.9_0\\n  harbor-cli @1_0\\n  harbor-cli @9.9_0\\n")
+	l := localProvider(t, env)
+	build := &fakeBuild{}
+	require.NoError(t, l.Execute(t.Context(), localJob(t, prefix), build))
+	require.Equal(t, "  zlib @1.3.2_0 (active)\n  libharbor @1_0 (active)\n  harbor-cli @1_0 (active)\n", readRegistry(t, path), "put back")
+	require.Contains(t, build.progress, "Left installed but inactive in "+prefix+", newer than what is active: harbor-cli @9.9_0, libharbor @9.9_0. "+
+		"port upgrade outdated passes these over until each is activated (port activate harbor-cli @9.9_0) or removed (port reclaim)")
+}
+
+// Where the check changed no active version, the put-back names nothing
+// left behind.
+func TestAPutBackThatChangedNoActiveVersionNamesNothing(t *testing.T) {
+	t.Parallel()
+	_, active := registry(t, "  zlib @1.3.2_0 (active)\n")
+	prefix, env, _ := fakePrefix(t, active, "DEPS=libharbor=zlib harbor-cli=libharbor")
+	l := localProvider(t, env)
+	build := &fakeBuild{}
+	require.NoError(t, l.Execute(t.Context(), localJob(t, prefix), build))
+	for _, said := range build.progress {
+		require.NotContains(t, said, "Left installed but inactive")
+	}
 }

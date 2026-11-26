@@ -22,15 +22,24 @@ import (
 // recorded, settled; and every row of a create that may have landed whose
 // publication has ended, read for its pull request and its head. Where
 // the first pass couldn't read everything, serve opens nothing this pass.
-func (e *Engine) settleServe(ctx context.Context) (opens bool, err error) {
+// A served branch whose publication can't be settled is skipped, with why:
+// serve submits nothing of it this pass, and the rest go on, where one
+// lasting error, as a fork deleted, stopped every pass (#344).
+func (e *Engine) settleServe(ctx context.Context) (opens bool, skipped map[model.BranchID]error, err error) {
 	branches, err := e.OpenBranches(ctx)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	fork, forkErr := e.Fork(ctx, "")
 	done, err := e.serveFirstPass(ctx, branches, fork, forkErr)
 	if err != nil {
-		return false, err
+		return false, nil, err
+	}
+	skip := func(branch model.Branch, err error) {
+		if skipped == nil {
+			skipped = map[model.BranchID]error{}
+		}
+		skipped[branch.ID] = err
 	}
 	for _, branch := range branches {
 		if branch.Publication == nil || !branch.Publication.Served {
@@ -39,17 +48,21 @@ func (e *Engine) settleServe(ctx context.Context) (opens bool, err error) {
 		worktree := e.Repo
 		if branch.Worktree != "" && exists(branch.Worktree) {
 			if worktree, err = e.worktree(ctx, branch); err != nil {
-				return false, err
+				skip(branch, err)
+				continue
 			}
 		}
 		if _, _, _, err := e.settlePublication(ctx, worktree, branch, false); err != nil {
-			return false, err
+			if ctx.Err() != nil {
+				return false, skipped, err
+			}
+			skip(branch, err)
 		}
 	}
 	if err := e.settleTriedRows(ctx, branches, fork); err != nil {
-		return false, err
+		return false, skipped, err
 	}
-	return done, nil
+	return done, skipped, nil
 }
 
 // serveFirstPass accounts once for what an older dockhand's create may

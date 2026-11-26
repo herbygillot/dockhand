@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 
 	"github.com/herbygillot/dockhand/internal/filelock"
 	"github.com/herbygillot/dockhand/internal/procid"
@@ -587,4 +588,70 @@ func TestARootBuildsGuestLeadingAGroupIsKilledAsTheGroup(t *testing.T) {
 	said, err := os.ReadFile(asked)
 	require.NoError(t, err)
 	require.Regexp(t, `^KILL group [0-9]+\n`, string(said), "the guest's own group")
+}
+
+// Asked to (Spec.Group), the starter leads a process group of its own in
+// its launcher's session, where it leads a session of its own otherwise:
+// a root build whose sudo keeps a typed password for the terminal's
+// session is refused sudo -n in any other (#332). Its group's number is
+// its PID either way, which its record and a stop rely on.
+func TestAStarterLeadsAGroupInItsLaunchersSessionWhereAsked(t *testing.T) {
+	t.Parallel()
+	program, err := Self()
+	require.NoError(t, err)
+	mine, err := unix.Getsid(0)
+	require.NoError(t, err)
+	for _, group := range []bool{false, true} {
+		dir := t.TempDir()
+		lock, err := filelock.Acquire(t.Context(), filepath.Join(dir, "attempt.lock"), filelock.Exclusive)
+		require.NoError(t, err)
+		started, err := Start(Spec{Program: program, Directory: dir, Signal: syscall.SIGTERM, Grace: 2 * time.Second, Lock: lock, Command: []string{"/bin/sleep", "30"}, Group: group})
+		require.NoError(t, err)
+		_ = lock.Close()
+		var record Record
+		require.Eventually(t, func() bool {
+			record, _, err = ReadRecord(dir)
+			return err == nil && record.PID != 0
+		}, 10*time.Second, 20*time.Millisecond)
+		pgid, err := unix.Getpgid(record.PID)
+		require.NoError(t, err)
+		require.Equal(t, record.PID, pgid, "group %v: it leads its group", group)
+		session, err := unix.Getsid(record.PID)
+		require.NoError(t, err)
+		if group {
+			require.Equal(t, mine, session, "in its launcher's session")
+		} else {
+			require.Equal(t, record.PID, session, "a session of its own")
+		}
+		_ = syscall.Kill(-record.PID, syscall.SIGKILL)
+		_ = started.Wait()
+	}
+}
+
+// A root build's sudo that ends just as the stop comes is seen ended by
+// every look of the stop's: the one value its end was sent as was taken by
+// the stop's first look, and its last waited for it for ever, the starter
+// keeping the lock with nothing left to end (the M1's gate, 2026-11-26).
+// The command stops its own starter and ends at once, so the two meet.
+func TestAStopMeetingTheSudosEndStillEnds(t *testing.T) {
+	t.Parallel()
+	program, err := Self()
+	require.NoError(t, err)
+	for i := range 30 {
+		dir := t.TempDir()
+		lock, err := filelock.Acquire(t.Context(), filepath.Join(dir, "attempt.lock"), filelock.Exclusive)
+		require.NoError(t, err)
+		started, err := Start(Spec{Program: program, Directory: dir, Signal: syscall.SIGTERM, Grace: 100 * time.Millisecond, Lock: lock,
+			StdinLock: true, Command: []string{"/bin/sh", "-c", "kill -TERM $PPID; exit 0"}})
+		require.NoError(t, err)
+		_ = lock.Close()
+		done := make(chan struct{})
+		go func() { _ = started.Wait(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			_ = started.Process.Kill()
+			t.Fatalf("run %d: the starter stayed after its sudo ended", i)
+		}
+	}
 }

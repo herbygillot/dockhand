@@ -306,3 +306,63 @@ func TestACancelRecordedWhileTheDriverHoldsTheCheckIsKept(t *testing.T) {
 		}
 	}
 }
+
+// watchedStop is stopping whose Stop reads the run as the store has it
+// when the provider is asked.
+type watchedStop struct {
+	*stopping
+	c     *Service
+	id    model.RunID
+	asked chan model.Run
+}
+
+func (w *watchedStop) Stop(ctx context.Context, request buildenv.StopRequest) ([]string, error) {
+	run, err := w.c.run(context.WithoutCancel(ctx), w.id)
+	if err == nil {
+		w.asked <- run
+	}
+	return w.stopping.Stop(ctx, request)
+}
+
+// An interrupted foreground check records its cancel before its attempt
+// is ended and before a provider is asked: a process killed while a stop
+// took its time left the run running, no cancel requested and its attempt
+// canceled, which serve took as a driver gone and never stopped (#340).
+func TestAnInterruptedCheckRecordsItsCancelFirst(t *testing.T) {
+	t.Parallel()
+	c := service(t)
+	environment := model.Environment{Provider: "alpha", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	run := c.queued(t, "jq-interrupted", environment)
+	alpha := &watchedStop{stopping: &stopping{name: "alpha", refer: "run-9", started: make(chan struct{})}, c: c, id: run.ID, asked: make(chan model.Run, 4)}
+	c.Providers = map[string]buildenv.Provider{"alpha": alpha}
+	interrupt, stop := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := c.Drive(interrupt, c.session(t), run.ID)
+		done <- err
+	}()
+	select {
+	case <-alpha.started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the provider was never given the job")
+	}
+	stop()
+	select {
+	case asked := <-alpha.asked:
+		require.NotNil(t, asked.CancelRequested, "recorded before the provider is asked")
+	case <-time.After(10 * time.Second):
+		t.Fatal("the provider was never asked to stop")
+	}
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the driver never ended")
+	}
+	var events []model.Event
+	require.NoError(t, c.Store.View(t.Context(), c.Repository, func(r store.Reader) error {
+		var err error
+		events, err = r.RunEvents(run.ID, 0, 100)
+		return err
+	}))
+	require.True(t, slices.ContainsFunc(events, func(e model.Event) bool { return e.Kind == model.EventRunCancel }), "the cancel is journaled")
+}

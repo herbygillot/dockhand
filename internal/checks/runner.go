@@ -272,7 +272,9 @@ type driver struct {
 	// is asked once the check's verdict is recorded, so a death before
 	// Settle leaves a settled check for clean to find (#241).
 	settling []model.GuestExecution
-	mu       sync.Mutex
+	// cancelOnce records, once, the cancel an interrupt asks (recordCancel).
+	cancelOnce sync.Once
+	mu         sync.Mutex
 }
 
 // problem notes why the run needs a person's attention.
@@ -437,6 +439,7 @@ func (d *driver) drive(ctx context.Context, id model.RunID) (model.Run, error) {
 		}
 		// An interrupt cancels ctx too; the run is still settled, by the
 		// one rule every cancel keeps.
+		d.recordCancel(ctx)
 		return c.settleCancel(context.WithoutCancel(ctx), d.session, d.lease, id)
 	}
 	// Beside the build, what upstream's change means for each port it
@@ -449,6 +452,30 @@ func (d *driver) drive(ctx context.Context, id model.RunID) (model.Run, error) {
 		}
 	}
 	return d.finish(context.WithoutCancel(ctx))
+}
+
+// recordCancel records on the run, once, the cancel an interrupt asks,
+// before an attempt is ended canceled and before a provider is asked to
+// stop: a process killed while a stop took its time left the run running
+// with no cancel requested and its attempt canceled, which serve took as
+// a driver gone, and never stopped what it launched (#340). A cancel
+// already recorded, as dockhand cancel records one first, stands.
+func (d *driver) recordCancel(ctx context.Context) {
+	d.cancelOnce.Do(func() {
+		_ = d.fenced(ctx, func(tx store.Tx) error {
+			run, err := tx.Run(d.run.ID)
+			if err != nil || run.State.Terminal() || run.CancelRequested != nil {
+				return err
+			}
+			now := d.c.Now()
+			run.CancelRequested = &now
+			if err := tx.UpdateRun(run); err != nil {
+				return err
+			}
+			_, err = d.session.Emit(tx, model.Event{Branch: run.Branch, Run: run.ID, Kind: model.EventRunCancel, Level: model.LevelInfo, Message: run.Name() + ": cancel requested, as the command driving it was interrupted"})
+			return err
+		})
+	})
 }
 
 // stopped reports that the driver itself is stopping, with no cancel
@@ -690,6 +717,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		case ctx.Err() != nil && d.stopped():
 			return d.endExecution(ctx, execution, model.ExecutionInfrastructure, "interrupted: the process driving it stopped")
 		case ctx.Err() != nil:
+			d.recordCancel(ctx)
 			return d.endExecution(ctx, execution, model.ExecutionCanceled, "canceled")
 		case errors.Is(err, buildenv.ErrNeedsAttention):
 			// Another attempt won't fix it, as a guest refusing dockhand's
@@ -906,6 +934,7 @@ func (d *driver) matrix(ctx context.Context, provider buildenv.Provider, environ
 			case ctx.Err() != nil && d.stopped():
 				endErr = d.endExecution(ctx, execution, model.ExecutionInfrastructure, "interrupted: the process driving it stopped")
 			case ctx.Err() != nil:
+				d.recordCancel(ctx)
 				endErr = d.endExecution(ctx, execution, model.ExecutionCanceled, "canceled")
 			case errors.As(err, &unrun):
 				// A build that never ran is left unrecorded, with why, and

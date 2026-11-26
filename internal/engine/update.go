@@ -790,7 +790,9 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	// port with nothing to change is said to be current without waiting on
 	// its hosts. They're read before finalize, which may drop the
 	// evaluation they're read from; what it changes is no URL's scheme.
-	if (request.Action == model.EditUpdate || request.Action == model.EditChecksums) && len(result.Files) > 0 && !e.options.KeepHTTP {
+	// keepHTTP is the request's policy, the edit's own, not the process's
+	// option, so what's said of the links is what was done (#343).
+	if (request.Action == model.EditUpdate || request.Action == model.EditChecksums) && len(result.Files) > 0 && !keepHTTP {
 		if info, ok := result.PortAfter(update.Port); ok {
 			update.PlainHTTP = e.plainHTTP(ctx, info)
 		}

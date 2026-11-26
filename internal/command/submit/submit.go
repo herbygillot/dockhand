@@ -101,29 +101,14 @@ write, keeping your --note.
 			}
 			// The submission's flags the branch's request kept are read
 			// where they weren't given, and said; a person's own submit
-			// takes no request (#195).
-			if kept := request.Branch.Request; kept != nil {
-				var took []string
-				publish := kept.Publish
-				if !cmd.Flags().Changed("draft") && !cmd.Flags().Changed("no-check") && publish.Draft.Given {
-					request.Draft = publish.Draft.Value
-					took = append(took, map[bool]string{true: "--draft", false: "--draft=false"}[request.Draft])
-				}
-				if !cmd.Flags().Changed("no-check") && !cmd.Flags().Changed("draft") && publish.NoCheck.Given && !request.Draft {
-					request.NoCheck = publish.NoCheck.Value
-					took = append(took, map[bool]string{true: "--no-check", false: "--no-check=false"}[request.NoCheck])
-				}
-				if !cmd.Flags().Changed("type") && publish.Type.Given {
-					request.Types = publish.Type.Value
-					took = append(took, "--type "+strings.Join(request.Types, ","))
-				}
-				if !cmd.Flags().Changed("skip-notification") && publish.SkipNotification.Given {
-					request.SkipNotification = publish.SkipNotification.Value
-					took = append(took, map[bool]string{true: "--skip-notification", false: "--skip-notification=false"}[request.SkipNotification])
-				}
-				if len(took) > 0 {
-					fmt.Fprintf(streams.Prose(), "Taken from what the branch's request kept: %s\n", strings.Join(took, ", "))
-				}
+			// takes no request (#195). They're taken as given, so a
+			// continued submission doesn't replace them (#334).
+			took, replaced := request.TakeKept(request.Branch)
+			if len(took) > 0 {
+				fmt.Fprintf(streams.Prose(), "Taken from what the branch's request kept: %s\n", strings.Join(took, ", "))
+			}
+			if len(replaced) > 0 {
+				fmt.Fprintf(streams.Prose(), "Given over what the branch's request kept: %s\n", strings.Join(replaced, ", "))
 			}
 			plan, err := e.PlanSubmit(ctx, request)
 			// Edits not committed are committed as tidy would, shown as tidy

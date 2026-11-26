@@ -50,6 +50,10 @@ func TestSettlingReadsWhatEachStepLeft(t *testing.T) {
 			return r
 		},
 			Settlement{Done: []model.PublicationStep{model.StepPush, model.StepOpen}, Number: 41, Provenance: model.Found, Body: body, Ended: true, Closed: true, Why: "#41 was merged"}},
+		{"the fork is gone from GitHub: nothing was pushed there, and it ends (#344)", func(r PublicationReading) PublicationReading {
+			r.HeadRead, r.HeadExists, r.HeadGone, r.HeadAt, r.Found = true, false, true, "", false
+			return r
+		}, Settlement{Ended: true, Why: "the fork it pushes to is gone from GitHub, so nothing this submission pushed is there"}},
 		{"U. GitHub can't be read: nothing is settled, and each read is named", func(r PublicationReading) PublicationReading {
 			r.FoundRead, r.StatusRead = false, false
 			return r
@@ -189,4 +193,24 @@ func TestAFailedReadKeepsAPublicationWhoseBranchMoved(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, kept.Publication)
 	require.True(t, kept.Publication.Same(*recorded))
+}
+
+// A pull request a publication set out to update, the plan having found
+// it, is folded as found where the branch kept no record of it: the
+// record made then had no provenance, which reads as dockhand having
+// opened it, though a pull request found isn't dockhand's own (#345).
+func TestAFoundPullRequestIsFoldedAsFound(t *testing.T) {
+	t.Parallel()
+	e := setup(t).open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-found"})
+	require.NoError(t, err)
+	record := model.Publication{ID: "pub_1", Commit: "abc", Head: "ada/macports-ports:jq-found", Base: "macports/macports-ports:master", Number: 41}
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		return e.foldSettlement(tx, branch.ID, record, Settlement{Number: record.Number}, "macports/macports-ports")
+	}))
+	current, err := e.Branch(t.Context(), branch.ID)
+	require.NoError(t, err)
+	require.NotNil(t, current.PullRequest)
+	require.Equal(t, model.Found, current.PullRequest.Provenance)
+	require.False(t, openedByDockhand(current.PullRequest))
 }

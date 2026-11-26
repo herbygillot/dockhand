@@ -27,8 +27,13 @@ func (c *Client) RepositoryInfo(ctx context.Context, name string) (forge.Reposit
 		return forge.RepositoryInfo{}, githubapi.RateLimitError(err)
 	}
 	owner, repo, _ := strings.Cut(name, "/")
-	row, _, err := client.Repositories.Get(ctx, owner, repo)
+	row, response, err := client.Repositories.Get(ctx, owner, repo)
 	if err != nil {
+		// A repository GitHub doesn't have, as a fork deleted, is an
+		// answer: nothing is there (#344).
+		if response != nil && response.StatusCode == http.StatusNotFound {
+			return forge.RepositoryInfo{}, fmt.Errorf("%w: %s: %w", forge.ErrNotFound, name, err)
+		}
 		return forge.RepositoryInfo{}, githubapi.RateLimitError(err)
 	}
 	// Each refusal says which it is: one message for all four read a

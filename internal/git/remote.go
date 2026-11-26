@@ -146,9 +146,33 @@ func (r *Repository) Push(ctx context.Context, request Push) (PushReport, error)
 	})
 	report := PushReport{Sent: true, Line: porcelainLine(result.Output, ref)}
 	if err != nil {
-		return report, httpsUnauthenticated("push", sshRefused("push", err))
+		err = httpsUnauthenticated("push", sshRefused("push", err))
+		// What --porcelain sends to standard output, the branch's line and
+		// the remote's own words there, is said beside git's "failed to
+		// push some refs", which alone named no cause: GitHub's refusal
+		// was dropped (field testing's #195 batch).
+		if why := refusedWords(result.Output, report.Line); why != "" {
+			err = fmt.Errorf("%w; %s", err, why)
+		}
+		return report, err
 	}
 	return report, nil
+}
+
+// refusedWords are what a failed push's standard output says of why: the
+// remote's own lines, and the branch's porcelain line's summary, as
+// "[remote rejected] (permission denied)".
+func refusedWords(output []byte, line string) string {
+	var said []string
+	for _, l := range strings.Split(string(output), "\n") {
+		if l = strings.TrimSpace(l); strings.HasPrefix(l, "remote:") && strings.TrimSpace(strings.TrimPrefix(l, "remote:")) != "" {
+			said = append(said, l)
+		}
+	}
+	if fields := strings.Split(line, "\t"); len(fields) >= 3 && strings.TrimSpace(fields[2]) != "" {
+		said = append(said, strings.TrimSpace(fields[2]))
+	}
+	return strings.Join(said, "; ")
 }
 
 // porcelainLine is git push --porcelain's line for the ref pushed to:

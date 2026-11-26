@@ -564,7 +564,7 @@ func TestSubmitNoteIsKeptWithTheBranch(t *testing.T) {
 	require.Contains(t, out, "#34901 has nothing new: the fork has its commit, and its title and description are current\n", "the note is kept")
 	// and says so, since it outlives the commits it was written beside
 	// (field testing, grafana 13.2.4).
-	require.Contains(t, out, "  Note     The tests failed on a permission error, …\n           kept from an earlier submit, across rewritten commits; --no-note clears it\n")
+	require.Contains(t, out, "  Note     The tests failed on a permission error, …\n           kept on the branch since it was given, across rewritten commits; --no-note clears it\n")
 	require.Contains(t, g.PRs[34901].Body, "#### Description\n\nThe tests failed")
 
 	out, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes", "--note", "Fixed upstream.")

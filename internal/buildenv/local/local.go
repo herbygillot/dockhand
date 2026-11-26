@@ -184,6 +184,10 @@ type owner struct {
 	// its sudo handed the lock (the lifecycle design's rule 4): one an
 	// older dockhand started, or the put-back, isn't stopped as one.
 	RootStop bool `json:"root_stop,omitempty"`
+	// InSession is a root build started in a group of its own in its
+	// terminal's session, its sudo satisfied by a password typed there
+	// (asRoot): its stop is proved by the probe of that launch (#332).
+	InSession bool `json:"in_session,omitempty"`
 }
 
 // Execute builds the job's targets in the environment's prefix. A prefix
@@ -220,15 +224,15 @@ func (l *Local) Execute(ctx context.Context, job buildenv.Job, build buildenv.Bu
 	if !slices.ContainsFunc(input.Targets, func(t guest.Target) bool { return !t.Blocked }) {
 		return nil
 	}
-	sudo, err := l.asRoot(ctx, prefix, build)
+	sudo, inSession, err := l.asRoot(ctx, prefix, build)
 	if err != nil {
 		return err
 	}
 	// A root build's first launch on this Mac probes its sudo once, for the
-	// stop (the lifecycle design's rule 4): whatever it finds, the build
-	// starts.
+	// stop (the lifecycle design's rule 4), started as the build is:
+	// whatever it finds, the build starts.
 	if len(sudo) > 0 {
-		l.proveRootOnce(ctx, sudo[:len(sudo)-1], filepath.Join(prefix, "bin", macports.TclShell), build.Progress)
+		l.proveRootOnce(ctx, sudo[:len(sudo)-1], filepath.Join(prefix, "bin", macports.TclShell), build.Progress, inSession)
 	}
 	build.Progress("staging the revision for " + prefix)
 	dir, err := os.MkdirTemp(l.temp(), localDirectory)
@@ -271,7 +275,7 @@ func (l *Local) Execute(ctx context.Context, job buildenv.Job, build buildenv.Bu
 			return note, buildenv.ErrDockhandFault.Because("the guest's launch held no lock")
 		}
 		var err error
-		if started, err = l.start(dir, prefix, job.Run.Name(), sudo, locks[0]); err != nil {
+		if started, err = l.start(dir, prefix, job.Run.Name(), sudo, inSession, locks[0]); err != nil {
 			return note, buildenv.Infrastructure("starting the guest program: %w", err)
 		}
 		return note, nil
@@ -287,10 +291,34 @@ func (l *Local) Execute(ctx context.Context, job buildenv.Job, build buildenv.Bu
 	select {
 	case <-started.Done():
 	default:
-		_ = started.Stop(cleanup, 30*time.Second)
+		// A run whose stop isn't seen through is left with its record
+		// and its lock, and nothing is put back under it: the attempt
+		// isn't known to have ended, and the cancel says so.
+		if stopErr := started.Stop(cleanup, runStopBound); stopErr != nil {
+			return errors.Join(err, buildenv.NeedsAttention("%v; nothing was put back in %s while it may still run", stopErr, prefix))
+		}
 	}
 	l.settle(cleanup, follower, dir, prefix, job.Run.Name(), sudo, build)
 	return err
+}
+
+// sayLeftInactive says, in one line, each port whose newer version the
+// check left installed but inactive in the prefix once its put-back made
+// the older active again, as the guest program found them (left, its
+// "name @version" items): port upgrade outdated passes over a port whose
+// newest installed version is as new as the tree's, though an older one is
+// active, so the person's own upgrades stalled unsaid (#350). Nothing
+// where none was left.
+func (l *Local) sayLeftInactive(prefix, left string, sudo []string, build buildenv.Build) {
+	if strings.TrimSpace(left) == "" {
+		return
+	}
+	first, _, _ := strings.Cut(left, ", ")
+	asRoot := ""
+	if len(sudo) > 0 {
+		asRoot = "sudo "
+	}
+	build.Progress(fmt.Sprintf("Left installed but inactive in %s, newer than what is active: %s. port upgrade outdated passes these over until each is activated (%sport activate %s) or removed (%sport reclaim)", prefix, left, asRoot, first, asRoot))
 }
 
 // hostRelease is the macOS release a local environment's platform is.
@@ -319,6 +347,7 @@ func (l *Local) settle(ctx context.Context, follower *guest.Follower, dir, prefi
 		remove(dir, build)
 	case restored == "yes":
 		remove(dir, build)
+		l.sayLeftInactive(prefix, results.Environment["left_inactive"], sudo, build)
 	case restored == "kept":
 		// Its directory stays, marked kept, for dockhand undo's put-back,
 		// which the next check leaves to it.
@@ -330,7 +359,7 @@ func (l *Local) settle(ctx context.Context, follower *guest.Follower, dir, prefi
 		// minutes by default: root is asked again, on the terminal where
 		// there is one, as at the start.
 		if len(sudo) > 0 {
-			if again, err := l.asRoot(restoring, prefix, build); err == nil {
+			if again, _, err := l.asRoot(restoring, prefix, build); err == nil {
 				sudo = again
 			}
 		}
@@ -340,6 +369,9 @@ func (l *Local) settle(ctx context.Context, follower *guest.Follower, dir, prefi
 		}
 		remove(dir, build)
 		build.Progress("put " + prefix + " back as it was")
+		if again, err := follower.Read(ctx, hostGuest{}); err == nil {
+			l.sayLeftInactive(prefix, again.Environment["left_inactive"], sudo, build)
+		}
 	default:
 		build.Progress(fmt.Sprintf("could not restore %s: %s. Run dockhand undo %s to retry; the next check in this prefix also retries restoration. %s", prefix, strings.TrimPrefix(restored, "no: "), check, l.byHand(dir, check, snapshot)))
 	}
@@ -443,19 +475,28 @@ func sourcesConf(prefix string) string {
 // serve, it's refused unless sudo runs the prefix's port-tclsh asking no
 // password, which it's asked of that command, the one every root step
 // runs (start), saying the one sudoers line that lets it.
-func (l *Local) asRoot(ctx context.Context, prefix string, build buildenv.Build) ([]string, error) {
+//
+// inSession says sudo was satisfied by a password, typed on this terminal
+// now or remembered from earlier in it, where no sudoers line spares one:
+// a sudo that keeps the password for the terminal's session refuses sudo
+// -n from any other, so the build is started in this session (start,
+// starter.Spec.Group), where a session of its own was refused (#332). The
+// first probe asks with -k, which leaves a remembered password unused for
+// that one command without forgetting it, so it passes only where the
+// sudoers line asks none.
+func (l *Local) asRoot(ctx context.Context, prefix string, build buildenv.Build) (sudo []string, inSession bool, err error) {
 	if syscall.Access(filepath.Join(prefix, "var", "macports", "registry"), 2) == nil {
-		return nil, nil
+		return nil, false, nil
 	}
-	sudo := l.sudoCommand()
+	sudo = l.sudoCommand()
 	// An empty script: the interpreter as root, asked to do nothing.
 	tclsh := filepath.Join(prefix, "bin", macports.TclShell)
-	if _, err := subprocess.Run(ctx, subprocess.Spec{Tool: "sudo", Path: sudo[0], Args: append(slices.Clone(sudo[1:]), "-n", tclsh, os.DevNull), Env: l.Env}); err == nil {
-		return append(slices.Clone(sudo), "-n"), nil
+	if _, err := subprocess.Run(ctx, subprocess.Spec{Tool: "sudo", Path: sudo[0], Args: append(slices.Clone(sudo[1:]), "-n", "-k", tclsh, os.DevNull), Env: l.Env}); err == nil {
+		return append(slices.Clone(sudo), "-n"), false, nil
 	}
 	tty, err := os.OpenFile(cmp.Or(l.terminal, "/dev/tty"), os.O_RDWR, 0)
 	if err != nil {
-		return nil, buildenv.NeedsAttention("%s's registry is root's, and sudo asks for a password, which this process has no terminal to ask on. This sudoers line, added with visudo, lets it: %s. It's root for anything a Portfile does, as a rule for port is, and no narrower: port-tclsh runs whatever script it's given, from a directory you can write. A prefix MacPorts installed without root needs no sudo, at the cost of MacPorts' binary archives", prefix, l.sudoersRule(tclsh, false))
+		return nil, false, buildenv.NeedsAttention("%s's registry is root's, and sudo asks for a password, which this process has no terminal to ask on. This sudoers line, added with visudo, lets it: %s. It's root for anything a Portfile does, as a rule for port is, and no narrower: port-tclsh runs whatever script it's given, from a directory you can write. A prefix MacPorts installed without root needs no sudo, at the cost of MacPorts' binary archives", prefix, l.sudoersRule(tclsh, false))
 	}
 	defer tty.Close()
 	build.Progress(fmt.Sprintf("%s's registry is root's: MacPorts builds there as root, so sudo asks for your password", prefix))
@@ -464,12 +505,12 @@ func (l *Local) asRoot(ctx context.Context, prefix string, build buildenv.Build)
 	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "sudo", Path: sudo[0], Args: append(slices.Clone(sudo[1:]), "-v"), Env: l.Env,
 		Stdin: tty, Stdout: tty, StdoutOnly: true, Stderr: tty})
 	if err != nil && sudoRefused(result.Stderr) {
-		return nil, buildenv.NeedsAttention("%s may not use sudo on this Mac, and %s's registry is root's, so MacPorts builds there as root. A sudoers rule for the prefix's port-tclsh is enough, added with visudo, one asking a password included, since a check run here has a terminal to ask on: %s. serve, which has none, needs the rule to ask no password: %s", l.username(), prefix, l.sudoersRule(tclsh, true), l.sudoersRule(tclsh, false))
+		return nil, false, buildenv.NeedsAttention("%s may not use sudo on this Mac, and %s's registry is root's, so MacPorts builds there as root. A sudoers rule for the prefix's port-tclsh is enough, added with visudo, one asking a password included, since a check run here has a terminal to ask on: %s. serve, which has none, needs the rule to ask no password: %s", l.username(), prefix, l.sudoersRule(tclsh, true), l.sudoersRule(tclsh, false))
 	}
 	if err != nil {
-		return nil, buildenv.NeedsAttention("sudo didn't let the build run as root in %s: %v", prefix, err)
+		return nil, false, buildenv.NeedsAttention("sudo didn't let the build run as root in %s: %v", prefix, err)
 	}
-	return append(slices.Clone(sudo), "-n"), nil
+	return append(slices.Clone(sudo), "-n"), true, nil
 }
 
 // sudoRefused says whether sudo refused the person outright, whatever
@@ -523,12 +564,14 @@ func (n launchNote) String() string {
 // start runs the guest program in the check's directory under the
 // prefix's port-tclsh, with MacPorts reading the check's macports.conf,
 // as root where sudo is given, its output in runner.log, through the
-// starter (starter.Start): it leads a session of its own, so a terminal's
-// interrupt reaches dockhand, which stops it, and it holds the attempt's
-// launch lock, lock, for as long as it lives.
-func (l *Local) start(dir, prefix, check string, sudo []string, lock *os.File) (*localRun, error) {
+// starter (starter.Start): it leads a session of its own, or, where
+// inSession, a group of its own in this terminal's session, which its
+// sudo's password is kept for (asRoot), so a terminal's interrupt reaches
+// dockhand, which stops it, and it holds the attempt's launch lock, lock,
+// for as long as it lives.
+func (l *Local) start(dir, prefix, check string, sudo []string, inSession bool, lock *os.File) (*localRun, error) {
 	self, _ := procid.Self()
-	owned, err := json.Marshal(owner{PID: os.Getpid(), Start: self.Start, Check: check, Prefix: prefix, Root: len(sudo) > 0, RootStop: len(sudo) > 0})
+	owned, err := json.Marshal(owner{PID: os.Getpid(), Start: self.Start, Check: check, Prefix: prefix, Root: len(sudo) > 0, RootStop: len(sudo) > 0, InSession: inSession})
 	if err != nil {
 		return nil, err
 	}
@@ -549,7 +592,7 @@ func (l *Local) start(dir, prefix, check string, sudo []string, lock *os.File) (
 		args = append(args, lock.Name())
 	}
 	spec := starter.Spec{Program: l.Starter, Directory: dir, Signal: syscall.SIGTERM, Grace: stopGrace, Lock: lock,
-		Command: args, StdinLock: len(sudo) > 0, Env: l.Env, Stdout: log, Stderr: log}
+		Command: args, StdinLock: len(sudo) > 0, Group: inSession, Env: l.Env, Stdout: log, Stderr: log}
 	if len(sudo) > 0 {
 		// The root stop: the same program, as root, only to stop.
 		spec.RootStop = append(slices.Clone(sudo), filepath.Join(prefix, "bin", macports.TclShell), filepath.Join(dir, "guest.tcl"))
@@ -559,7 +602,7 @@ func (l *Local) start(dir, prefix, check string, sudo []string, lock *os.File) (
 		log.Close()
 		return nil, err
 	}
-	run := &localRun{done: make(chan struct{}), starter: started}
+	run := &localRun{done: make(chan struct{}), starter: started, lock: lock.Name()}
 	go func() {
 		defer log.Close()
 		defer close(run.done)
@@ -688,21 +731,13 @@ type orphan struct {
 // orphans are the prefix's check directories whose dockhand ended and
 // whose guest program runs still.
 func (l *Local) orphans(prefix string) []orphan {
-	entries, err := os.ReadDir(l.temp())
-	if err != nil {
-		return nil
-	}
 	var found []orphan
-	for _, entry := range entries {
-		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), localDirectory) {
-			continue
-		}
-		dir := filepath.Join(l.temp(), entry.Name())
+	for _, dir := range l.checkDirectories() {
 		if _, ours := l.building.Load(dir); ours {
 			continue
 		}
 		var made owner
-		data, err := os.ReadFile(filepath.Join(dir, "owner.json"))
+		data, err := readYours(filepath.Join(dir, "owner.json"))
 		if err != nil || json.Unmarshal(data, &made) != nil || made.Prefix != prefix || running(made.PID, made.Start) {
 			continue
 		}
@@ -724,22 +759,14 @@ func (l *Local) orphans(prefix string) []orphan {
 }
 
 func (l *Local) left() []leftDirectory {
-	entries, err := os.ReadDir(l.temp())
-	if err != nil {
-		return nil
-	}
 	var found []leftDirectory
-	for _, entry := range entries {
-		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), localDirectory) {
-			continue
-		}
-		dir := filepath.Join(l.temp(), entry.Name())
+	for _, dir := range l.checkDirectories() {
 		if _, ours := l.building.Load(dir); ours {
 			continue
 		}
 		var left leftDirectory
 		left.dir = dir
-		data, err := os.ReadFile(filepath.Join(dir, "owner.json"))
+		data, err := readYours(filepath.Join(dir, "owner.json"))
 		if err != nil || json.Unmarshal(data, &left.owner) != nil {
 			continue
 		}
@@ -813,7 +840,7 @@ func (l *Local) restoreLeft(ctx context.Context, prefix string, build buildenv.B
 		if left.owner.Prefix != prefix {
 			continue
 		}
-		sudo, err := l.asRoot(ctx, prefix, build)
+		sudo, _, err := l.asRoot(ctx, prefix, build)
 		if err != nil {
 			return err
 		}
@@ -835,17 +862,9 @@ func (l *Local) restoreLeft(ctx context.Context, prefix string, build buildenv.B
 // its active ports as they were before the check, is forgotten.
 func (l *Local) Changes(ctx context.Context) ([]buildenv.Change, error) {
 	var changes []buildenv.Change
-	entries, err := os.ReadDir(l.temp())
-	if err != nil {
-		return nil, nil
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), localDirectory) {
-			continue
-		}
-		dir := filepath.Join(l.temp(), entry.Name())
+	for _, dir := range l.checkDirectories() {
 		var made owner
-		data, err := os.ReadFile(filepath.Join(dir, "owner.json"))
+		data, err := readYours(filepath.Join(dir, "owner.json"))
 		if err != nil || json.Unmarshal(data, &made) != nil {
 			continue
 		}
@@ -898,7 +917,7 @@ func (l *Local) PutBack(ctx context.Context, check string, progress func(string)
 		return prefix, true, err
 	}
 	defer letGo()
-	sudo, err := l.asRoot(ctx, prefix, build)
+	sudo, _, err := l.asRoot(ctx, prefix, build)
 	if err != nil {
 		return prefix, true, err
 	}
@@ -943,16 +962,8 @@ func (l *Local) selectPutBack(check string) putBackSelection {
 // buildingCheck reads whether this check is still running without using
 // Changes, which may remove a leftover the person already restored.
 func (l *Local) buildingCheck(check string) (string, bool) {
-	entries, err := os.ReadDir(l.temp())
-	if err != nil {
-		return "", false
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), localDirectory) {
-			continue
-		}
-		dir := filepath.Join(l.temp(), entry.Name())
-		data, err := os.ReadFile(filepath.Join(dir, "owner.json"))
+	for _, dir := range l.checkDirectories() {
+		data, err := readYours(filepath.Join(dir, "owner.json"))
 		var made owner
 		if err != nil || json.Unmarshal(data, &made) != nil || made.Check != check {
 			continue
@@ -1077,6 +1088,9 @@ type localRun struct {
 	done    chan struct{}
 	err     error
 	starter *exec.Cmd
+	// lock is the attempt's launch lock's path, which the starter holds
+	// for as long as it lives.
+	lock string
 	// stopped is dockhand's own Stop, whose signal is its own.
 	stopped atomic.Bool
 }
@@ -1104,16 +1118,34 @@ func (r *localRun) Err() error            { return r.err }
 // Stop asks the starter to stop the program, which sends its whole group
 // SIGTERM, port's builds among it, and kills what still runs after its
 // grace; under sudo, sudo passes the signal to the program. Stop waits for
-// the starter to end, or for ctx.
-func (r *localRun) Stop(ctx context.Context, _ time.Duration) error {
+// the starter to end, for ctx, or for within: a starter that hasn't ended
+// by then isn't known to have, and is said with its PID and the lock it
+// holds, the stop's "not known", where it waited for ever unsaid (the M1's
+// gate, 2026-11-26). The starter is left as it is: its record is what a
+// later stop reads.
+func (r *localRun) Stop(ctx context.Context, within time.Duration) error {
 	r.stopped.Store(true)
 	_ = r.starter.Process.Signal(syscall.SIGTERM)
+	var bound <-chan time.Time
+	if within > 0 {
+		timer := time.NewTimer(within)
+		defer timer.Stop()
+		bound = timer.C
+	}
 	select {
 	case <-r.done:
+		return nil
 	case <-ctx.Done():
+		return ctx.Err()
+	case <-bound:
+		return fmt.Errorf("the guest program's starter, PID %d, didn't end within %s of its stop, and still holds the attempt's launch lock %s, so its stop isn't known", r.starter.Process.Pid, within, r.lock)
 	}
-	return nil
 }
+
+// runStopBound is how long Execute waits for a run it stops to end: past
+// the starter's own grace, twice over for a root build's, whose sudo and
+// then guest each have it.
+const runStopBound = 2*stopGrace + 30*time.Second
 
 // hostGuest is the guest program's directory on this Mac, as follow reads
 // a clone's: its files are read as they are, since root writes them

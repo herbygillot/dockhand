@@ -86,10 +86,17 @@ type Spec struct {
 	// sudo, its arguments, port-tclsh and the program, to which the
 	// targets are added (the lifecycle design's rule 4).
 	RootStop []string
-	Dir      string
-	Env      []string
-	Stdout   io.Writer
-	Stderr   io.Writer
+	// Group has the starter lead a process group of its own inside its
+	// launcher's session, where it leads a session of its own otherwise:
+	// for a root build whose sudo a password typed on this terminal
+	// satisfied, since a sudo that keeps that password for the terminal's
+	// session refuses sudo -n in any other (#332). Its group's number is
+	// its PID either way.
+	Group  bool
+	Dir    string
+	Env    []string
+	Stdout io.Writer
+	Stderr io.Writer
 }
 
 // Start forks the starter, which holds the lock from that moment, and
@@ -106,6 +113,9 @@ func Start(spec Spec) (*exec.Cmd, error) {
 	args = append(args, Command, "-record", spec.Directory, "-signal", strconv.Itoa(int(spec.Signal)), "-grace", spec.Grace.String(), "-lock", spec.Lock.Name())
 	if spec.StdinLock {
 		args = append(args, "-stdin-lock")
+	}
+	if spec.Group {
+		args = append(args, "-group")
 	}
 	for _, word := range spec.RootStop {
 		args = append(args, "-root-stop", word)
@@ -186,15 +196,25 @@ func Main(args []string) int {
 	grace := flags.Duration("grace", 30*time.Second, "")
 	lockPath := flags.String("lock", "", "")
 	stdinLock := flags.Bool("stdin-lock", false, "")
+	group := flags.Bool("group", false, "")
 	var rootStop words
 	flags.Var(&rootStop, "root-stop", "")
 	if err := flags.Parse(args); err != nil || *directory == "" || flags.NArg() == 0 {
 		fmt.Fprintln(os.Stderr, "dockhand: the starter needs -record, the lock, and a command")
 		return 2
 	}
-	// A session of its own, which it leads: its group's number is its PID,
-	// on record before anything is started.
-	if _, err := syscall.Setsid(); err != nil {
+	// A session of its own, which it leads, or, asked to, a group of its
+	// own in its launcher's session (Spec.Group): its group's number is
+	// its PID either way, on record before anything is started. In the
+	// terminal's session it isn't the terminal's foreground group, so a
+	// terminal's interrupt reaches dockhand alone, which stops it, as from
+	// a session of its own.
+	if *group {
+		if err := syscall.Setpgid(0, 0); err != nil {
+			fmt.Fprintf(os.Stderr, "dockhand: the starter couldn't lead a group: %v\n", err)
+			return noRecord
+		}
+	} else if _, err := syscall.Setsid(); err != nil {
 		fmt.Fprintf(os.Stderr, "dockhand: the starter couldn't lead a session: %v\n", err)
 		return noRecord
 	}
@@ -235,11 +255,16 @@ func Main(args []string) int {
 		fmt.Fprintf(os.Stderr, "dockhand: the starter couldn't start the build: %v\n", err)
 		return 127
 	}
-	ended := make(chan error, 1)
-	go func() { ended <- child.Wait() }()
+	// ended is closed once the child has been collected, so every look at
+	// it sees it, however many: a value sent once was taken by stopSudo's
+	// first look where the sudo had just ended as the stop came, and its
+	// last waited for it for ever (the M1's gate, 2026-11-26).
+	ended := make(chan struct{})
+	var waited error
+	go func() { waited = child.Wait(); close(ended) }()
 	select {
-	case err := <-ended:
-		return exitOf(err)
+	case <-ended:
+		return exitOf(waited)
 	case <-asked:
 	}
 	if *stdinLock {
@@ -423,7 +448,7 @@ func (w *words) Set(s string) error { *w = append(*w, s); return nil }
 //     stays, keeping the lock, and the stop answers not known;
 //   - with the sudo ended, the last SIGKILL to the starter's group is
 //     root's, sent by the root stop, which the starter dies by.
-func stopSudo(child *exec.Cmd, ended <-chan error, directory string, self procid.Process, stop syscall.Signal, grace time.Duration, rootStop []string) int {
+func stopSudo(child *exec.Cmd, ended <-chan struct{}, directory string, self procid.Process, stop syscall.Signal, grace time.Duration, rootStop []string) int {
 	sudo := child.Process.Pid
 	sudoStart, _ := procid.Start(sudo)
 	guestPID, guestStart := guestReading(directory)

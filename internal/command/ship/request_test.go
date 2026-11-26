@@ -160,3 +160,46 @@ func TestCheckAndSubmitReadWhatShipKept(t *testing.T) {
 	require.Equal(t, kept.Check, after.Check)
 	require.Equal(t, kept.Publish, after.Publish)
 }
+
+// A note given to ship and kept on the branch is said as kept on the
+// branch: it read "kept from an earlier submit", though no submit had run
+// (field testing's #195 batch).
+func TestANoteShipKeptIsSaidAsKeptOnTheBranch(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithScript(t, w, "passed")
+	g := cmdtest.WithGitHub(t, w)
+	g.Others = nil
+	_, errs, err := cmdtest.Dockhand(t, "ship", "jq", "--to", "commit", "--note", "Tested on a fresh prefix.", "--yes")
+	require.NoError(t, err, errs)
+	out, _, _ := cmdtest.Dockhand(t, "submit", "-b", "jq-1.8.1", "--plan")
+	require.Contains(t, out, "Tested on a fresh prefix.")
+	require.Contains(t, out, "kept on the branch since it was given, across rewritten commits; --no-note clears it")
+	require.NotContains(t, out, "earlier submit")
+}
+
+// --no-check given to submit replaces the --draft ship kept, the two being
+// one choice, and says so: the kept --draft was dropped unsaid, and the
+// pull request opened ready (field testing's #195 batch).
+func TestNoCheckGivenSaysItReplacesTheKeptDraft(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithScript(t, w, "passed")
+	g := cmdtest.WithGitHub(t, w)
+	g.Others = nil
+	_, errs, err := cmdtest.Dockhand(t, "ship", "jq", "--to", "commit", "--draft", "--type", "bugfix", "--yes")
+	require.NoError(t, err, errs)
+	out, errs, err := cmdtest.Dockhand(t, "submit", "-b", "jq-1.8.1", "--no-check", "--plan")
+	require.NoError(t, err, errs)
+	require.Contains(t, out, "Taken from what the branch's request kept: --type bugfix\n")
+	require.Contains(t, out, "Given over what the branch's request kept: --no-check replaces the kept --draft\n")
+	// Said by the submission itself too, not only its plan.
+	out, errs, err = cmdtest.Dockhand(t, "submit", "-b", "jq-1.8.1", "--no-check", "--yes")
+	require.NoError(t, err, errs)
+	require.Contains(t, out, "Given over what the branch's request kept: --no-check replaces the kept --draft\n")
+	require.Len(t, g.PRs, 1)
+}

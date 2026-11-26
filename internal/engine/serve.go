@@ -1351,7 +1351,7 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 	// The pass settles first: serve's own earlier submissions, and the
 	// creates that may have landed; until the first pass after the upgrade
 	// has read every branch, serve opens nothing (serve's count, #191).
-	opens, settleErr := e.settleServe(ctx)
+	opens, unsettled, settleErr := e.settleServe(ctx)
 	candidates, yours, err := e.serveCandidates(ctx)
 	// What serve's own stop cancelled is unsaid (D-I5 on rc5).
 	if ctx.Err() != nil {
@@ -1372,6 +1372,14 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 		pass.say(ctx, "serve: accounting for submissions an older dockhand may have left isn't finished; it opens nothing until it is")
 		return
 	}
+	// A branch whose earlier submission can't be accounted for is
+	// skipped, said, and the rest go on (#344).
+	for _, branch := range candidates {
+		if err, ok := unsettled[branch.Branch.ID]; ok {
+			pass.say(ctx, fmt.Sprintf("serve: %s is skipped: %v", branch.Branch.ShortName(), err))
+		}
+	}
+	candidates = slices.DeleteFunc(candidates, func(c ServeCandidate) bool { _, ok := unsettled[c.Branch.ID]; return ok })
 	// The passing branches a person started are theirs to submit, and
 	// said once for each set of them.
 	var names []string

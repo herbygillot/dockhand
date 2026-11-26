@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/remotewrite"
 )
 
 // The reviewer request, one table over the design's two: each reading and
@@ -54,6 +55,8 @@ func TestAReviewerRequestIsSentOnceAtMost(t *testing.T) {
 		{"the login is wanting", fmt.Errorf("asking: %w", forge.ErrAuthentication), model.NotSent},
 		{"refused otherwise", fmt.Errorf("%w: reviewers must be collaborators", forge.ErrRejected), model.RefusedToAsk},
 		{"no answer, or a server error", errors.New("connection reset"), model.MaySent},
+		// The account check refused it before it went (#345).
+		{"nothing sent", fmt.Errorf("asking: %w", remotewrite.ErrNotSent), model.NotSent},
 	} {
 		sent, why := ReviewerAnswered(c.err)
 		require.Equal(t, c.want, sent, c.name)

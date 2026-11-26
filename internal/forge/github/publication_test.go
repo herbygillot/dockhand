@@ -486,3 +486,16 @@ func TestRepositoryInfoSaysWhyItRefuses(t *testing.T) {
 		})
 	}
 }
+
+// A repository GitHub answers 404 for is not found, which a publication
+// whose fork was deleted reads as its answer (#344).
+func TestRepositoryInfoOfAGoneRepositoryIsNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]any{"message": "Not Found"})
+	}))
+	defer server.Close()
+	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}
+	_, err := client.RepositoryInfo(t.Context(), "author/ports")
+	require.ErrorIs(t, err, forge.ErrNotFound)
+}

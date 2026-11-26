@@ -94,7 +94,11 @@ checksums md5 aaaa \
 	require.NoError(t, err)
 	bound, err := tree.Select(targets[0])
 	require.NoError(t, err)
-	observed, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, Declarations: true})
+	// This Mac's own platform: binding isn't about a modelled context,
+	// and "25" named the M5's macOS as if it were every Mac's.
+	native, err := e.NativePlatform(t.Context())
+	require.NoError(t, err)
+	observed, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: native, Declarations: true})
 	require.NoError(t, err)
 	binding, err := distfiles.Bind(src, path, observed.Snapshot.Ports["fixture"], observed.Ports["fixture"])
 	require.NoError(t, err)
@@ -132,7 +136,11 @@ func TestBindingTracesTableAndArrayValuesToTheirOneLiteral(t *testing.T) {
 			require.NoError(t, err)
 			bound, err := tree.Select(targets[0])
 			require.NoError(t, err)
-			observed, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, Declarations: true})
+			// This Mac's own platform: binding isn't about a modelled context,
+			// and "25" named the M5's macOS as if it were every Mac's.
+			native, err := e.NativePlatform(t.Context())
+			require.NoError(t, err)
+			observed, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: native, Declarations: true})
 			require.NoError(t, err)
 			binding, err := distfiles.Bind(src, path, observed.Snapshot.Ports["fixture"], observed.Ports["fixture"])
 			require.NoError(t, err)

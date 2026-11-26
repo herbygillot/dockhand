@@ -52,10 +52,23 @@ func ForRemote(ctx context.Context, namer RemoteNamer) context.Context {
 	return context.WithValue(ctx, remoteNamerKey{}, namer)
 }
 
+// ErrNotSent is a write refused before anything was sent: the account
+// couldn't be read, or isn't the one the preview named. errors.Is reaches
+// it through the error write returns, whose words are the check's own
+// (#345): a reviewer request so refused was marked "may have been sent"
+// and never asked again, and serve's create counted as unanswered.
+var ErrNotSent = errors.New("nothing was sent")
+
+// notSent is a check's error that sent nothing, in its own words.
+type notSent struct{ err error }
+
+func (n notSent) Error() string   { return n.err.Error() }
+func (n notSent) Unwrap() []error { return []error{n.err, ErrNotSent} }
+
 func write(ctx context.Context, run func(context.Context) error) error {
 	binding, ok := ctx.Value(accountBindingKey{}).(accountBinding)
 	if !ok || binding.identity == nil || strings.TrimSpace(binding.account) == "" {
-		return errors.New("remote write requires an account binding")
+		return notSent{errors.New("remote write requires an account binding")}
 	}
 	check := func() error {
 		current, err := binding.identity.Current(ctx)
@@ -68,7 +81,7 @@ func write(ctx context.Context, run func(context.Context) error) error {
 		return nil
 	}
 	if err := check(); err != nil {
-		return err
+		return notSent{err}
 	}
 	writeCtx := github.AsWrite(ctx)
 	err := run(writeCtx)
@@ -76,7 +89,7 @@ func write(ctx context.Context, run func(context.Context) error) error {
 		return err
 	}
 	if err := check(); err != nil {
-		return err
+		return notSent{err}
 	}
 	return run(writeCtx)
 }

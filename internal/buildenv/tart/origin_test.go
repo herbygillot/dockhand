@@ -180,8 +180,10 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // ahead of the program for a root build's lock check (#193) and called by
 // nothing yet, builds and judges nothing: it stays 3. A root build's
 // guest checking its lock and recording its PID first, and the stop-only
-// mode (stop.tcl, #193), build and judge nothing either: it stays 3.
-const guestPin = "d74c05edcffabaaf36457222c5e62e20f18e6b7b38ddcb6505c2b293323843a7"
+// mode (stop.tcl, #193), build and judge nothing either: it stays 3. A
+// local put-back that says the newer versions it left inactive (#350)
+// builds and judges nothing: it stays 3.
+const guestPin = "b45ffa249b176df8efffad0df7aa4d5c392b755cd10b3438a1597ae48699d56c"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

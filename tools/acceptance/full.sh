@@ -35,7 +35,10 @@
 #                      made, <owner>/dockhand-source-fixture, whose port
 #                      its Portfile in the host's fixtures directory is,
 #                      for G35's full-stage case and the Tart check of a
-#                      moved port; not run unset
+#                      moved port; the test account's
+#                      <login>/dockhand-source-fixture where its Portfile
+#                      is in the host's fixtures directory, and not run
+#                      where neither is (#130)
 #   ACCEPT_DN2_FIXTURE optional: the project host/make-gone-fixture.sh
 #                      made, <owner>/dockhand-gone-fixture, whose v1.0.0
 #                      release asset is gone, its port's Portfile in the
@@ -127,6 +130,13 @@ if [ -z "${ACCEPT_DN2_PORT:-}" ] && [ -n "${ACCEPT_DN2_FIXTURE:-}" ] &&
 	ACCEPT_DN2_PORT=${ACCEPT_DN2_FIXTURE#*/}
 fi
 export ACCEPT_DN2_PORT ACCEPT_DN2_FIXTURE
+# G36's fixture is the test account's where its Portfile is there and none
+# is named: made once on the host, it was left unset at every full stage
+# (#130).
+if [ -z "${ACCEPT_SOURCE_FIXTURE:-}" ] &&
+	[ -f "${ACCEPT_HOST_ROOT:-/Users/Shared/dockhand-acceptance}/fixtures/dockhand-source-fixture/Portfile" ]; then
+	ACCEPT_SOURCE_FIXTURE=$ACCEPT_GH_LOGIN/dockhand-source-fixture
+fi
 export ACCEPT_STATE ACCEPT_GH_LOGIN ACCEPT_GO_PORT ACCEPT_RUST_PORT ACCEPT_SLEEP_PORT ACCEPT_G9_PORT ACCEPT_LOCAL_SLEEP_PORT MACPORTS_TREE ACCEPT_SOURCE_FIXTURE
 export ACCEPT_REPO=$(cd "$here/../.." && pwd)
 export DH_BIN=${DH_BIN:-/opt/local/bin/dockhand}
