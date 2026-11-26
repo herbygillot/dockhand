@@ -166,7 +166,7 @@ func Follow(ctx context.Context, e *engine.Engine, session *coord.Session, run m
 			Then(refusal.Next{Verb: refusal.VerbWait, Args: []string{run.Name()}})
 	}
 	stop()
-	journal.show(context.WithoutCancel(ctx))
+	journal.end(context.WithoutCancel(ctx))
 	if err != nil {
 		return err
 	}
@@ -205,6 +205,16 @@ func startJournal(ctx context.Context, e *engine.Engine, run model.Run, streams 
 	return journal, func() {
 		cancel()
 		<-done
+	}
+}
+
+// end shows what the run journaled last and clears the redrawn line it
+// was shown in: its last step, "⋯ … passed", stayed on the screen above
+// the check's report (field testing's oasdiff check on 23c1417a).
+func (j *journal) end(ctx context.Context) {
+	j.show(ctx)
+	if j.live {
+		j.status.Clear()
 	}
 }
 
@@ -304,7 +314,7 @@ func FollowFor(ctx context.Context, e *engine.Engine, run model.Run, streams ter
 	ended, err := e.Observe(bounded, run.ID)
 	cancel()
 	stop()
-	journal.show(context.WithoutCancel(ctx))
+	journal.end(context.WithoutCancel(ctx))
 	switch {
 	case ctx.Err() != nil:
 		return refusal.New(refusal.Interrupted, "stopped following %s; it continues", run.Name()).

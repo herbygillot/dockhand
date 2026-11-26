@@ -762,3 +762,23 @@ func TestABaselineForFollowsForItsBound(t *testing.T) {
 	require.True(t, drained, "a background worker drives it, not this process")
 	require.Equal(t, 4, term.ExitCode(err), "still queued at the bound")
 }
+
+// On a terminal, the redrawn line a check's progress was shown in is
+// cleared once the check ends: its last step, "⋯ … passed", stayed above
+// the check's report (field testing's oasdiff check on 23c1417a).
+func TestACheckClearsItsRedrawnLineWhenItEnds(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithScript(t, w, "passed")
+	_, _, err := cmdtest.Dockhand(t, "update", "jq", "--new=jq-update")
+	require.NoError(t, err)
+	var out, errs bytes.Buffer
+	err = cmdtest.RunFor(t, t.Context(), []string{"check", "-b", "jq-update", "--on", "command"}, term.Streams{In: strings.NewReader(""), Out: &out, Err: &errs}.AsTerminal())
+	require.NoError(t, err, errs.String())
+	said := errs.String()
+	drawn := strings.LastIndex(said, "\r\033[K⋯")
+	require.GreaterOrEqual(t, drawn, 0, "the progress was drawn: %q", said)
+	require.True(t, strings.HasSuffix(said[drawn:], "\r\033[K") || strings.Contains(said[drawn+len("\r\033[K⋯"):], "\r\033[K"), "cleared after its last draw: %q", said[drawn:])
+}
