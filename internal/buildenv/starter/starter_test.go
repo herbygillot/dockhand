@@ -627,3 +627,31 @@ func TestAStarterLeadsAGroupInItsLaunchersSessionWhereAsked(t *testing.T) {
 		_ = started.Wait()
 	}
 }
+
+// A root build's sudo that ends just as the stop comes is seen ended by
+// every look of the stop's: the one value its end was sent as was taken by
+// the stop's first look, and its last waited for it for ever, the starter
+// keeping the lock with nothing left to end (the M1's gate, 2026-11-26).
+// The command stops its own starter and ends at once, so the two meet.
+func TestAStopMeetingTheSudosEndStillEnds(t *testing.T) {
+	t.Parallel()
+	program, err := Self()
+	require.NoError(t, err)
+	for i := range 30 {
+		dir := t.TempDir()
+		lock, err := filelock.Acquire(t.Context(), filepath.Join(dir, "attempt.lock"), filelock.Exclusive)
+		require.NoError(t, err)
+		started, err := Start(Spec{Program: program, Directory: dir, Signal: syscall.SIGTERM, Grace: 100 * time.Millisecond, Lock: lock,
+			StdinLock: true, Command: []string{"/bin/sh", "-c", "kill -TERM $PPID; exit 0"}})
+		require.NoError(t, err)
+		_ = lock.Close()
+		done := make(chan struct{})
+		go func() { _ = started.Wait(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			_ = started.Process.Kill()
+			t.Fatalf("run %d: the starter stayed after its sudo ended", i)
+		}
+	}
+}

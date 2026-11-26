@@ -255,11 +255,16 @@ func Main(args []string) int {
 		fmt.Fprintf(os.Stderr, "dockhand: the starter couldn't start the build: %v\n", err)
 		return 127
 	}
-	ended := make(chan error, 1)
-	go func() { ended <- child.Wait() }()
+	// ended is closed once the child has been collected, so every look at
+	// it sees it, however many: a value sent once was taken by stopSudo's
+	// first look where the sudo had just ended as the stop came, and its
+	// last waited for it for ever (the M1's gate, 2026-11-26).
+	ended := make(chan struct{})
+	var waited error
+	go func() { waited = child.Wait(); close(ended) }()
 	select {
-	case err := <-ended:
-		return exitOf(err)
+	case <-ended:
+		return exitOf(waited)
 	case <-asked:
 	}
 	if *stdinLock {
@@ -443,7 +448,7 @@ func (w *words) Set(s string) error { *w = append(*w, s); return nil }
 //     stays, keeping the lock, and the stop answers not known;
 //   - with the sudo ended, the last SIGKILL to the starter's group is
 //     root's, sent by the root stop, which the starter dies by.
-func stopSudo(child *exec.Cmd, ended <-chan error, directory string, self procid.Process, stop syscall.Signal, grace time.Duration, rootStop []string) int {
+func stopSudo(child *exec.Cmd, ended <-chan struct{}, directory string, self procid.Process, stop syscall.Signal, grace time.Duration, rootStop []string) int {
 	sudo := child.Process.Pid
 	sudoStart, _ := procid.Start(sudo)
 	guestPID, guestStart := guestReading(directory)
