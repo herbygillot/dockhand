@@ -24,6 +24,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/selection"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/scratch"
 )
@@ -68,7 +69,7 @@ func main() {
 }
 
 func survey() (err error) {
-	var ports, maintainers, notMaintainers, categories list
+	var ports, maintainers, notMaintainers, categories, releases list
 	tree := flag.String("tree", cmp.Or(os.Getenv("MACPORTS_TREE"), "."), "ports tree to survey, at its committed HEAD")
 	journalPath := flag.String("journal", "", "journal to write, one JSON line per port; a rerun with the same file continues it")
 	prefix := flag.String("prefix", "", "MacPorts prefix whose port-tclsh and portindex evaluate; the ones on PATH when empty")
@@ -90,6 +91,7 @@ func survey() (err error) {
 	unchecked := flag.Bool("unchecked", false, "with -compare, compare runs whose settings differ or weren't recorded, saying so")
 	pair := flag.Bool("pair", false, "run a before/after pair: the before and after survey binaries, given as arguments, with this command's other flags and a record each in -out, then compare them")
 	out := flag.String("out", "", "with -pair, the directory the pair's records go in")
+	flag.Var(&releases, "release", "with -db, a modelled release to evaluate every port for as a check planned for it does, as darwin:<major>:<arch> (repeatable)")
 	flag.Var(&ports, "port", "a port to assess (repeatable); every port when no selection is given")
 	flag.Var(&maintainers, "maintainer", "an exact maintainer to select (repeatable)")
 	flag.Var(&notMaintainers, "not-maintainer", "a maintainer to leave out (repeatable)")
@@ -210,6 +212,16 @@ func survey() (err error) {
 		Observe:         *dbPath != "",
 		ObserveOnly:     *mode != "current",
 	}
+	for _, release := range releases {
+		platform, err := parseRelease(release)
+		if err != nil {
+			return err
+		}
+		if *dbPath == "" {
+			return errors.New("-release evaluates each port for the record, and needs -db")
+		}
+		service.Releases = append(service.Releases, platform)
+	}
 	Concurrency = max(*parallel, 1)
 	var journal *Journal
 	if *journalPath != "" {
@@ -291,7 +303,7 @@ func survey() (err error) {
 		fmt.Fprintf(os.Stderr, "Final Tolerate verdicts: %+v\n", *made.Tolerance)
 	}
 	made.Settings = &settings{Mode: *mode, Record: *dbPath != "", Experiment: *experiment, Recording: *dbPath != "" && *recording,
-		Selection: selectionOf(request.Selection), Commit: made.Commit, Prefix: filepath.Dir(filepath.Dir(tclsh))}
+		Selection: selectionOf(request.Selection), Commit: made.Commit, Prefix: filepath.Dir(filepath.Dir(tclsh)), Releases: strings.Join(releases, " ")}
 	if record != nil {
 		if err := record.Finish(made.WallSeconds, made.UserSeconds, made.SystemSeconds); err != nil {
 			return err
@@ -385,4 +397,13 @@ func shortID(id string) string {
 		return id[:12]
 	}
 	return id
+}
+
+// parseRelease reads a -release value, darwin:<major>:<arch>.
+func parseRelease(value string) (model.Platform, error) {
+	parts := strings.Split(value, ":")
+	if len(parts) != 3 || parts[0] != "darwin" || parts[1] == "" || parts[2] == "" {
+		return model.Platform{}, fmt.Errorf("-release %q: say it as darwin:<major>:<arch>, as darwin:21:arm64", value)
+	}
+	return model.Platform{OS: parts[0], Version: parts[1], Architecture: parts[2]}, nil
 }

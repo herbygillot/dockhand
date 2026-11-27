@@ -37,6 +37,9 @@ type settings struct {
 	// Commit is the tree's, and Prefix the MacPorts that evaluated.
 	Commit string `json:"commit"`
 	Prefix string `json:"prefix"`
+	// Releases are the modelled releases every port was also evaluated
+	// for, -release.
+	Releases string `json:"releases,omitempty"`
 }
 
 // selectionOf says a request's selection as settings record it.
@@ -79,6 +82,7 @@ func (s settings) differences(other settings) []string {
 	differ("selection", s.Selection, other.Selection)
 	differ("tree commit", s.Commit, other.Commit)
 	differ("prefix", s.Prefix, other.Prefix)
+	differ("releases (-release)", s.Releases, other.Releases)
 	return found
 }
 

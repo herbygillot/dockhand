@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	portsurvey "github.com/herbygillot/dockhand/internal/macports/survey"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // A comparison reads the journals by selector, whatever their order, and
@@ -107,6 +108,11 @@ func TestCompareRefusesRunsMadeDifferently(t *testing.T) {
 	require.ErrorContains(t, err, "selection: every port against 826 ports")
 	require.NotContains(t, err.Error(), "prefix")
 
+	modelled := gating
+	modelled.Releases = "darwin:21:arm64"
+	require.ErrorContains(t, compareJournals(&out, base, journal("modelled.jsonl", &modelled), 5, false), "releases (-release):  against darwin:21:arm64",
+		"a run that evaluated every port for a release compares only with another that did")
+
 	require.ErrorContains(t, compareJournals(&out, base, old, 5, false), "made before surveys recorded their settings")
 	require.ErrorContains(t, compareJournals(&out, base, filepath.Join(dir, "none.jsonl"), 5, false), "no run.json beside it")
 
@@ -168,4 +174,16 @@ func TestCompareSeparatesAWorkerThatDidNotEvaluate(t *testing.T) {
 	require.NotContains(t, out.String(), "input-found → unknown")
 	require.Contains(t, out.String(), "fetch guards lost 0")
 	require.Contains(t, out.String(), "Portfiles fully covered: 1 → 1")
+}
+
+// A modelled release is named as darwin, its major, and its architecture,
+// and anything else is refused saying so.
+func TestAReleaseIsNamedByDarwinMajorAndArchitecture(t *testing.T) {
+	platform, err := parseRelease("darwin:21:arm64")
+	require.NoError(t, err)
+	require.Equal(t, model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}, platform)
+	for _, bad := range []string{"21", "darwin:21", "linux:6:x86_64", "darwin::arm64", "darwin:21:"} {
+		_, err := parseRelease(bad)
+		require.ErrorContains(t, err, "darwin:<major>:<arch>", bad)
+	}
 }

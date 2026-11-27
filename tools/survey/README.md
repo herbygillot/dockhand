@@ -23,7 +23,8 @@ Two surveys compare only like for like. Each run records the settings
 that decide what it measures in its `run.json`: the mode, whether it
 wrote a record (`-db`), recording, the selection (every port, or how
 many were named with a digest of their names, and any maintainers or
-categories), the tree's commit, and the prefix. `-compare` refuses two
+categories), the tree's commit, the prefix, and the releases
+(`-release`). `-compare` refuses two
 runs that differ in any of them and names each difference. It also
 refuses a run that records none, one made before they were recorded.
 `-unchecked` compares anyway and says what it couldn't check. A run
@@ -64,6 +65,24 @@ argument that isn't one, so `-compare -top 30 before.jsonl after.jsonl`.
 `-ledger <file>` writes the dispatcher's ledger for each port and
 evaluation context: every call the oracle's dispatcher passed, counted
 by command, `file` subcommand, and where the answer came from.
+
+## Modelled releases
+
+A `-db` run evaluates each port in the contexts its assessment observes
+it in, which for a port with no platform-dependent fetch value is the
+Mac's own release alone. `-release darwin:<major>:<arch>`, repeatable,
+also evaluates every port for that modelled release, as a check planned
+for it does, recorded as its other contexts are. A run without it never
+evaluated a Go port with go.vendors in a modelled release, so the 189
+that v0.9.0-rc1 and rc2 couldn't evaluate there ("the modelled context
+has no answer for `findBinary gzip`") went unseen. A survey that judges
+the evaluator names at least one:
+
+```sh
+/tmp/survey -db … -release darwin:21:arm64 -release darwin:16:x86_64 …
+```
+
+Each release costs one more evaluation of every port.
 
 ## The record
 

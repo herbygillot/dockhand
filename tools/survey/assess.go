@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -62,6 +63,14 @@ type Service struct {
 	// alone, without assessing it.
 	Observe, ObserveOnly bool
 	ExperimentReport     bool
+	// Releases are modelled releases each port is also evaluated for, as
+	// a check planned for that release evaluates it, whether or not its
+	// assessment observes it there, recorded as its other contexts are:
+	// an assessment observes a port with no platform-dependent fetch value
+	// only in the Mac's own release, so a whole-tree survey never saw the
+	// 181 Go ports with go.vendors that a modelled release couldn't
+	// evaluate (the v0.9.0-rc2 full stage's B8). With Observe only.
+	Releases []model.Platform
 }
 
 func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err error) {
@@ -224,6 +233,19 @@ func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files
 			}
 			item.observed = append(item.observed, observed{Platform: platform, Err: err})
 		}
+		for _, release := range s.Releases {
+			if release == platform || slices.ContainsFunc(item.observed, func(o observed) bool { return o.Platform == release }) {
+				continue
+			}
+			observation, err := s.observeIn(ctx, projection, selected.Selection, platform, release)
+			if ctx.Err() != nil {
+				return Port{}, ctx.Err()
+			}
+			name := observation.Snapshot.Target.Name
+			verdict := measureTolerance(ctx, observation, name, contents, err)
+			item.observed = append(item.observed, observed{Platform: release, Modeled: true, Root: observation.Snapshot.Root,
+				Info: observation.Snapshot.Ports[name], Observation: observation.Ports[name], Err: err, Tolerance: &verdict})
+		}
 	}
 	if problem != nil {
 		item.Findings = []portedit.Finding{portedit.Problem("evaluation", problem)}
@@ -241,4 +263,26 @@ func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files
 		return Port{}, err
 	}
 	return item, nil
+}
+
+// observeIn evaluates the selected port for a modelled release, as a check
+// planned for it does, with its declarations: the tree is the Mac's own,
+// whose Base models the release the request names.
+func (s *Service) observeIn(ctx context.Context, projection *workspace.Workspace, selection macports.Selection, native, release model.Platform) (macports.Observation, error) {
+	tree, err := projection.Tree(native)
+	if err != nil {
+		return macports.Observation{}, err
+	}
+	targets, err := s.Ports.Resolve(ctx, tree, selection)
+	if err != nil {
+		return macports.Observation{}, err
+	}
+	if len(targets) != 1 {
+		return macports.Observation{}, fmt.Errorf("%s names %d ports for darwin %s", selection.Selector, len(targets), release.Version)
+	}
+	bound, err := tree.Select(targets[0])
+	if err != nil {
+		return macports.Observation{}, err
+	}
+	return s.Ports.Observe(ctx, bound, macports.ObservationRequest{Platform: release, Declarations: true})
 }
