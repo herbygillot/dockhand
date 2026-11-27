@@ -80,6 +80,21 @@ func TestAHandFinishedUpdateIsConcludedByHandEdit(t *testing.T) {
 		require.ElementsMatch(t, []string{"jq", "other"}, portsOf(open), "update jq 1.9.0 is a new ask, and jq is owed again")
 	})
 
+	t.Run("a version asked that the Portfile doesn't name", func(t *testing.T) {
+		t.Parallel()
+		branch, err := e.Start(t.Context(), StartRequest{Name: "jq-patch"})
+		require.NoError(t, err)
+		testsupport.Git(t, branch.Worktree, "sparse-checkout", "add", "textproc/jq")
+		testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/files/patch-fix.diff": "--- a\n+++ b\n"})
+		update, err := e.Update(t.Context(), UpdateRequest{Branch: reread(t, e, branch.ID), Action: model.EditUpdate, Port: "jq", Version: "1.8.1", Release: &release, HandEdit: true})
+		require.NoError(t, err)
+		require.True(t, update.Applied, "the person hasn't finished 1.8.1: dockhand's attempt is written for it")
+		require.NotContains(t, update.HandEdit, "finished by hand")
+		data, err := os.ReadFile(filepath.Join(branch.Worktree, "textproc/jq/Portfile"))
+		require.NoError(t, err)
+		require.Contains(t, string(data), "1.8.1")
+	})
+
 	t.Run("before the person finished it", func(t *testing.T) {
 		t.Parallel()
 		update, err := e.Update(t.Context(), UpdateRequest{Start: &StartRequest{Name: "jq-before"}, Action: model.EditUpdate, Port: "jq", Version: "1.8.1", Release: &release, HandEdit: true})

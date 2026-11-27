@@ -592,7 +592,15 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 			return Update{}, err
 		}
 		if changed {
-			return e.concludeByHand(ctx, request, branch, worktree, captured, directory)
+			version, finished, err := e.handFinishedVersion(ctx, worktree, captured, directory, request)
+			if err != nil {
+				return Update{}, err
+			}
+			// A version asked that the Portfile doesn't name isn't the
+			// one the person finished: the attempt is written for it.
+			if finished {
+				return e.concludeByHand(ctx, request, branch, directory, version)
+			}
 		}
 	}
 	// start starts the branch a Start request asks for, from the master
@@ -1763,26 +1771,40 @@ func (e *Engine) handFinished(ctx context.Context, worktree *git.Repository, cap
 	return directory, slices.ContainsFunc(paths, func(p string) bool { return strings.HasPrefix(p, directory+"/") }), nil
 }
 
+// handFinishedVersion is the version the person finished a port at by
+// hand, as its Portfile declares it, or as they gave it where the Portfile
+// declares none dockhand can read; finished is false where they gave a
+// version the Portfile doesn't declare, which they haven't finished
+// (architecture's read of c482de4c: a patch changed by hand, and update jq
+// 1.8.1 --hand-edit, concluded jq at 1.8.0).
+func (e *Engine) handFinishedVersion(ctx context.Context, worktree *git.Repository, captured, directory string, request UpdateRequest) (version string, finished bool, err error) {
+	_, text, err := worktree.File(ctx, captured, directory+"/Portfile")
+	if err != nil {
+		return "", false, err
+	}
+	declared, known := portfile.DeclaredVersion(text, "")
+	if known && request.Version != "" && declared != request.Version {
+		return "", false, nil
+	}
+	version = request.Version
+	if known {
+		version = declared
+	}
+	if version == "" {
+		return "", false, fmt.Errorf("%s/Portfile names no version dockhand can read; dockhand update %s <version> --hand-edit says which you finished", directory, request.Port)
+	}
+	return version, true, nil
+}
+
 // concludeByHand concludes a port the person finished by hand: the hand
 // edit is recorded as theirs, at the version their Portfile names, and
 // the target's version concluded with it, under the branch's lock. No
 // file is written, and nothing is prepared (#355).
-func (e *Engine) concludeByHand(ctx context.Context, request UpdateRequest, branch model.Branch, worktree *git.Repository, captured, directory string) (Update, error) {
-	_, text, err := worktree.File(ctx, captured, directory+"/Portfile")
-	if err != nil {
-		return Update{}, err
-	}
-	version, known := portfile.DeclaredVersion(text, "")
-	if !known {
-		version = request.Version
-	}
-	if version == "" {
-		return Update{}, fmt.Errorf("%s/Portfile names no version dockhand can read; dockhand update %s <version> --hand-edit says which you finished", directory, request.Port)
-	}
+func (e *Engine) concludeByHand(ctx context.Context, request UpdateRequest, branch model.Branch, directory, version string) (Update, error) {
 	update := Update{Port: request.Port, Branch: branch, Applied: false}
 	update.After.Version = version
 	update.HandEdit = fmt.Sprintf("%s to %s: finished by hand", request.Port, version)
-	err = e.lockedBranch(ctx, branch.ID, branch.Name, func(ctx context.Context, current model.Branch, _ *heldLock) error {
+	err := e.lockedBranch(ctx, branch.ID, branch.Name, func(ctx context.Context, current model.Branch, _ *heldLock) error {
 		update.Branch = current
 		// No attempt was written, so its digest is of none, which the
 		// files never match: status says the directory was done by hand.
