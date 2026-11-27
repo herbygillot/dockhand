@@ -13,7 +13,13 @@
 # set), holding when it passed, on which Mac, and the Go it ran.
 set -eu
 records=${DOCKHAND_GATE_RECORDS:-$HOME/.dockhand-gates}
-clean() { git diff --quiet HEAD -- 2>/dev/null; }
+# clean is files that are the commit's: no tracked file changed, and no
+# untracked Go file, which fmt-check and go test ./... take in (Codex's
+# read of 8808d060). Other untracked files, notes beside the tree, are
+# nothing the gate builds.
+clean() {
+	git diff --quiet HEAD -- 2>/dev/null && [ -z "$(git ls-files --others --exclude-standard -- '*.go')" ]
+}
 case ${1:-} in
 start)
 	if clean; then git rev-parse HEAD; fi
