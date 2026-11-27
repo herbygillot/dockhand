@@ -19,10 +19,16 @@ type HandEdit struct {
 	Directory string
 	Words     string
 	Adjusted  bool
+	// ByHand is a port the person finished themselves, which update
+	// --hand-edit concluded with no attempt written (#355).
+	ByHand bool
 }
 
 // State says the attempt as the revision has it.
 func (h HandEdit) State() string {
+	if h.ByHand {
+		return "yours, by hand"
+	}
 	if h.Adjusted {
 		return "dockhand's attempt, adjusted by hand"
 	}
@@ -66,8 +72,9 @@ func (e *Engine) handEditsIn(ctx context.Context, branch model.BranchID, base st
 			delete(found, decision.Subject)
 			continue
 		}
-		found[decision.Subject] = HandEdit{Directory: decision.Subject, Words: decision.Words,
-			Adjusted: attemptDigest([]git.FileEdit{{Path: portfile, After: text}}) != decision.Evidence}
+		byHand := decision.Evidence == attemptDigest(nil)
+		found[decision.Subject] = HandEdit{Directory: decision.Subject, Words: decision.Words, ByHand: byHand,
+			Adjusted: !byHand && attemptDigest([]git.FileEdit{{Path: portfile, After: text}}) != decision.Evidence}
 	}
 	return found, nil
 }

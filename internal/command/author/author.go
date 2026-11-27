@@ -785,6 +785,12 @@ func Author(ctx context.Context, s *settings.Settings, streams term.Streams, whe
 	}
 	// A hand edit's attempt is the person's to finish, and said so, with
 	// the refusal it answers and what it couldn't write (Then's item 3).
+	// A port the person finished by hand is concluded as theirs, nothing
+	// written (#355).
+	if update.HandEdit != "" && !update.Applied {
+		fmt.Fprintf(out, "Concluded %s as yours: %s. Nothing was written; the check builds what you wrote.\n", update.Port, update.HandEdit)
+		return branch, update, nil
+	}
 	if update.HandEdit != "" {
 		// What was written, where, what it left, and the next command
 		// (#166).

@@ -844,3 +844,26 @@ func TestAnUpdatePlansDiffIsNotWrapped(t *testing.T) {
 	require.NoError(t, cmdtest.RunFor(t, t.Context(), []string{"update", "jq", "--plan"}, term.Streams{Out: &out, Err: &errs}.AsTerminal()))
 	require.Contains(t, out.String(), " "+long+"\n", "the long line whole, as context")
 }
+
+// Given after the person finished a refused update by hand, update
+// --hand-edit concludes the port as theirs and says so, nothing written:
+// it said it wrote a version change and printed an empty Changed line
+// (Codex's read of #355).
+func TestAHandFinishedPortIsSaidAsConcluded(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.Stands(t).Preparer = func(*engine.Engine) engine.Preparer { return cmdtest.Refuser{} }
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-hand")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-hand")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.ErrorContains(t, err, "Could not update jq automatically")
+	testsupport.Git(t, dir, "sparse-checkout", "add", "textproc/jq")
+	testsupport.WriteFiles(t, dir, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# finished by hand\n"})
+	out, _, err := cmdtest.Dockhand(t, "update", "jq", "--hand-edit")
+	require.NoError(t, err)
+	require.Contains(t, out, "Concluded jq as yours: jq to 1.8.1: finished by hand. Nothing was written;")
+	require.NotContains(t, out, "Changed:")
+}

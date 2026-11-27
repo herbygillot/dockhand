@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/refusal"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -338,6 +340,33 @@ func (e *Engine) UnfinishedGate(ctx context.Context, branch model.Branch, unatte
 	}
 	words := fmt.Sprintf("%s's preparation isn't finished: %s", branch.ShortName(), strings.Join(reasons, "; "))
 	if unattended {
+		// A port the person is finishing by hand, after an update dockhand
+		// refused, is concluded by update --hand-edit: ship would ask the
+		// update that refused again (#355).
+		if prepared.Disposition == branchstate.HandEditsToCarry {
+			open, err := e.UnfinishedTargets(ctx, branch)
+			if err != nil {
+				return false, err
+			}
+			// Only an owed port whose own files the person changed is one
+			// they're finishing by hand; the others ship -b prepares.
+			var commands, rest []string
+			for _, target := range open {
+				directory, _ := e.PortDirectory(ctx, target.Port)
+				if directory != "" && slices.ContainsFunc(prepared.Reasons, func(path string) bool { return strings.HasPrefix(path, directory+"/") }) {
+					commands = append(commands, "dockhand update "+target.Port+" --hand-edit")
+				} else {
+					rest = append(rest, target.Port)
+				}
+			}
+			if len(commands) > 0 {
+				next := fmt.Sprintf("where you finished it by hand, %s concludes it", prose.And(commands))
+				if len(rest) > 0 {
+					next += fmt.Sprintf(", and dockhand ship -b %s prepares %s", branch.ShortName(), prose.And(rest))
+				}
+				return false, refusal.New(refusal.Attention, "%s; %s", words, next)
+			}
+		}
 		return false, refusal.New(refusal.Attention, "%s; dockhand ship -b %s finishes it", words, branch.ShortName())
 	}
 	progress.Report(ctx, "%s", words)

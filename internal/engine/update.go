@@ -583,6 +583,18 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	if err != nil {
 		return Update{}, err
 	}
+	// A port the person finished by hand after a refusal is concluded as
+	// theirs, its files left as they wrote them: the update that refused
+	// isn't asked again, since its refusal is why they finished it (#355).
+	if request.HandEdit && request.Start == nil && branch.ID != "" {
+		directory, changed, err := e.handFinished(ctx, worktree, captured, base, branch.ID, request.Port)
+		if err != nil {
+			return Update{}, err
+		}
+		if changed {
+			return e.concludeByHand(ctx, request, branch, worktree, captured, directory)
+		}
+	}
 	// start starts the branch a Start request asks for, from the master
 	// the update was prepared on; startFor is the version that names it.
 	startFor := ""
@@ -1694,6 +1706,12 @@ func (e *Engine) recordHandEdit(ctx context.Context, branch model.Branch, update
 		if err := tx.AddDecision(decision); err != nil {
 			return err
 		}
+		// The target's version is concluded as the person's: they finish
+		// the attempt by hand, and nothing dockhand does finishes it for
+		// them (#355).
+		if err := concludeVersion(tx, branch.ID, update.Port, e.requestSettings(), byHandOutcome(update.After.Version)); err != nil {
+			return err
+		}
 		// A hand edit's record changes the files a pending tested
 		// statement was given for.
 		if err := dropPendingIn(tx, branch.ID); err != nil {
@@ -1702,6 +1720,87 @@ func (e *Engine) recordHandEdit(ctx context.Context, branch model.Branch, update
 		_, err := tx.AppendEvent(model.Event{At: decision.At, Branch: branch.ID, Kind: model.EventBranchEdit, Level: model.LevelInfo,
 			Message: fmt.Sprintf("%s: dockhand's attempt written for a hand edit, %s (%s)", update.Port, update.HandEdit, listPaths(update.Files))})
 		return err
+	})
+	return update, err
+}
+
+// byHandOutcome is a version a person concluded by hand with update
+// --hand-edit, at the version their Portfile names (#355).
+func byHandOutcome(version string) model.ActionOutcome {
+	return model.ActionOutcome{Action: "version", Result: model.ActionDone, Why: "concluded by hand at " + version + " (update --hand-edit)"}
+}
+
+// handFinished reports whether the person changed a port's files since
+// the branch's base, committed or not, which update --hand-edit then takes
+// as their finished work, with the port's directory. A port dockhand
+// edited on the branch, written or not, isn't: its changes are dockhand's.
+func (e *Engine) handFinished(ctx context.Context, worktree *git.Repository, captured string, base model.ObjectID, branch model.BranchID, port string) (directory string, changed bool, err error) {
+	directory, err = e.findDirectory(ctx, captured, port)
+	if err != nil {
+		return "", false, err
+	}
+	var edits, unwritten []model.Edit
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		if edits, err = r.Edits(branch); err != nil {
+			return err
+		}
+		unwritten, err = r.UnwrittenEdits(branch)
+		return err
+	}); err != nil {
+		return "", false, err
+	}
+	if slices.ContainsFunc(slices.Concat(edits, unwritten), func(edit model.Edit) bool { return edit.Port == port || edit.Directory == directory }) {
+		return directory, false, nil
+	}
+	trees, err := worktree.CommitTrees(ctx, []string{string(base)})
+	if err != nil {
+		return "", false, err
+	}
+	paths, err := worktree.ChangedPaths(ctx, trees[string(base)], captured)
+	if err != nil {
+		return "", false, err
+	}
+	return directory, slices.ContainsFunc(paths, func(p string) bool { return strings.HasPrefix(p, directory+"/") }), nil
+}
+
+// concludeByHand concludes a port the person finished by hand: the hand
+// edit is recorded as theirs, at the version their Portfile names, and
+// the target's version concluded with it, under the branch's lock. No
+// file is written, and nothing is prepared (#355).
+func (e *Engine) concludeByHand(ctx context.Context, request UpdateRequest, branch model.Branch, worktree *git.Repository, captured, directory string) (Update, error) {
+	_, text, err := worktree.File(ctx, captured, directory+"/Portfile")
+	if err != nil {
+		return Update{}, err
+	}
+	version, known := portfile.DeclaredVersion(text, "")
+	if !known {
+		version = request.Version
+	}
+	if version == "" {
+		return Update{}, fmt.Errorf("%s/Portfile names no version dockhand can read; dockhand update %s <version> --hand-edit says which you finished", directory, request.Port)
+	}
+	update := Update{Port: request.Port, Branch: branch, Applied: false}
+	update.After.Version = version
+	update.HandEdit = fmt.Sprintf("%s to %s: finished by hand", request.Port, version)
+	err = e.lockedBranch(ctx, branch.ID, branch.Name, func(ctx context.Context, current model.Branch, _ *heldLock) error {
+		update.Branch = current
+		// No attempt was written, so its digest is of none, which the
+		// files never match: status says the directory was done by hand.
+		decision := model.Decision{Branch: current.ID, Finding: model.FindingHandEdit, Subject: directory, Evidence: attemptDigest(nil), Answer: model.ByHand, Words: update.HandEdit, At: e.now()}
+		return e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+			if err := tx.AddDecision(decision); err != nil {
+				return err
+			}
+			if err := concludeVersion(tx, current.ID, request.Port, e.requestSettings(), byHandOutcome(version)); err != nil {
+				return err
+			}
+			if err := dropPendingIn(tx, current.ID); err != nil {
+				return err
+			}
+			_, err := tx.AppendEvent(model.Event{At: decision.At, Branch: current.ID, Kind: model.EventBranchEdit, Level: model.LevelInfo,
+				Message: fmt.Sprintf("%s: concluded as finished by hand at %s", request.Port, version)})
+			return err
+		})
 	})
 	return update, err
 }

@@ -273,6 +273,16 @@ status, the tidy plan, and the pull request description; unattended publication
 holds on it. `ship`, `bump`, and `serve` do not take this path. Stop if you
 cannot explain the collateral changes rather than repeatedly adding overrides.
 
+`--hand-edit` also concludes the update as yours. Given after you finished the
+port yourself, it writes nothing and asks the refused update nothing again: it
+records the hand edit at the version your Portfile names, `jq to 1.8.1:
+finished by hand`. Either way the branch's ask for that port is done, so
+`check --yes` goes on, a later `ship -b` leaves the port as you wrote it and
+prepares only the branch's other ports, and the check still builds what you
+wrote. A check nobody attends that finds a port you are finishing by hand says
+`dockhand update jq --hand-edit concludes it` rather than naming `ship -b`. A
+later `dockhand update jq <newer>` is a new ask, which reopens it.
+
 ## Review, commit, and check the finished edit
 
 For this example's manual fix, supply a commit message that describes the actual

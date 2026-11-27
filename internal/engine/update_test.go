@@ -1196,7 +1196,7 @@ func TestAHandEditWritesTheAttemptAsThePersons(t *testing.T) {
 	_, err := e.Update(t.Context(), UpdateRequest{Start: &StartRequest{Name: "jq-refused"}, Action: model.EditUpdate, Port: "jq", Version: "1.8.1", Release: &release})
 	require.NotNil(t, refusal.Of(err))
 	steps := refusal.Of(err).Next
-	require.Equal(t, "or dockhand update jq 1.8.1 --hand-edit, which writes dockhand's attempt for you to finish by hand", steps[len(steps)-1].External)
+	require.Equal(t, "or dockhand update jq 1.8.1 --hand-edit, which writes dockhand's attempt for you to finish by hand, or concludes the port you finished by hand already", steps[len(steps)-1].External)
 	_, err = e.Update(t.Context(), UpdateRequest{Start: &StartRequest{Name: "jq-bump"}, Action: model.EditUpdate, Port: "jq", Version: "1.8.1", Release: &release, HandEdit: true, Unattended: true})
 	require.ErrorContains(t, err, "never bump's or serve's")
 

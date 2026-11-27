@@ -118,7 +118,7 @@ func TestWhatDockhandCantEditItSaysHowToDoByHand(t *testing.T) {
 	require.Error(t, err)
 	require.Regexp(t, `^Could not update jq automatically: its pre-fetch hook runs exec\nKept: dockhand/jq-[a-z0-9]{4}, with nothing changed\.\n`+
 		`Next: edit the version, run port checksum jq, then copy the reported checksums into the Portfile\nNext: dockhand edit jq\n`+
-		`Next: or dockhand update jq --hand-edit, which writes dockhand's attempt for you to finish by hand$`, err.Error())
+		`Next: or dockhand update jq --hand-edit, which writes dockhand's attempt for you to finish by hand, or concludes the port you finished by hand already$`, err.Error())
 
 	_, _, err = cmdtest.Dockhand(t, "checksums", "jq", "--new")
 	require.ErrorContains(t, err, "Could not update the checksums for jq automatically: its pre-fetch hook runs exec\n")
