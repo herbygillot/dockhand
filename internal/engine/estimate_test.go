@@ -13,6 +13,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/macports/binaryarchive"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -79,12 +80,12 @@ func TestAnInstallEstimate(t *testing.T) {
 	plan := model.Plan{Targets: []model.PlanTarget{{ID: "gnome-voice", Target: model.Target{Name: "gnome-voice"}}},
 		Environments: []model.Environment{tahoe, local, {Provider: buildenv.Command}}}
 
-	kept := e.InstallEstimates(t.Context(), plan, model.Source{}, false)
+	kept := e.InstallEstimates(t.Context(), plan, model.Revision{}, false)
 	require.Len(t, kept, 2, "no estimate for a command provider")
 	require.Equal(t, "about 3 dependencies to install, by the port index; the clone decides", kept[0].Words(), "nothing kept yet: the archives are unsaid")
 	require.Empty(t, asked, "only what's kept is read")
 
-	estimates := e.InstallEstimates(t.Context(), plan, model.Source{}, true)
+	estimates := e.InstallEstimates(t.Context(), plan, model.Revision{}, true)
 	require.Equal(t, "about 3 dependencies to install, 2 with no archive on packages.macports.org for this release, by the port index; the clone decides", estimates[0].Words(),
 		"glib2's archive for 25 counts whatever its variants; libffi's is for 24, and cairo has none")
 	// A local prefix has no clone: what's active there is built against,
@@ -93,8 +94,47 @@ func TestAnInstallEstimate(t *testing.T) {
 	require.Equal(t, 1, asked["glib2"], "each port asked once, kept after")
 
 	prefix.variants = []string{"+universal"}
-	estimates = e.InstallEstimates(t.Context(), plan, model.Source{}, true)
+	estimates = e.InstallEstimates(t.Context(), plan, model.Revision{}, true)
 	require.Equal(t, "about 2 dependencies to install (archives not estimated: variants.conf sets +universal), by the port index; the build uses the ports active in /opt/local beside them", estimates[1].Words())
 	require.Equal(t, "no dependencies to install, by the port index; the clone decides", InstallEstimate{}.Words())
 	require.Equal(t, "no dependencies to install, by the port index; the build uses the ports active in /opt/local", InstallEstimate{Environment: local, InPrefix: true}.Words())
+}
+
+// doorPorts is a port index that, as the real one does, refuses work that
+// names no owner (#162).
+type doorPorts struct{ indexedPorts }
+
+func (p doorPorts) DependencyGraph(ctx context.Context, source model.Source) (map[string][]string, error) {
+	if _, ok := workspace.OwnerOf(ctx); !ok {
+		return nil, workspace.ErrUnowned
+	}
+	return p.indexedPorts.DependencyGraph(ctx, source)
+}
+
+// A plan's revision isn't recorded, so marking its estimate by looking the
+// revision up found nothing, the index refused the unowned read, and
+// check --plan printed no Installs line, where the check after it did (the
+// v0.9.0-rc2 full stage's G16). The estimate is marked with the revision
+// itself; and where the index can't be read, the line says why.
+func TestAPlansEstimateReadsTheIndexAsItsOwner(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch := committedUpdate(t, e)
+	planned, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead, Plan: true})
+	require.NoError(t, err)
+	_, err = e.Revision(t.Context(), planned.Revision.ID)
+	require.Error(t, err, "a plan's revision isn't recorded")
+
+	e.Ports.Graphs = doorPorts{indexedPorts{graph: map[string][]string{"jq": {"oniguruma"}}, versions: map[string]string{"oniguruma": "6.9.10_0"}}}
+	tahoe := model.Environment{Provider: buildenv.Tart, Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	e.Providers = map[string]buildenv.Provider{buildenv.Tart: &scriptedProvider{}}
+	plan := model.Plan{Revision: planned.Revision.ID, Targets: []model.PlanTarget{{ID: "jq", Target: model.Target{Name: "jq"}}}, Environments: []model.Environment{tahoe}}
+	estimates := e.InstallEstimates(t.Context(), plan, planned.Revision, false)
+	require.Len(t, estimates, 1)
+	require.Equal(t, "about 1 dependency to install, by the port index; the clone decides", estimates[0].Words())
+
+	estimates = e.InstallEstimates(t.Context(), plan, model.Revision{}, false)
+	require.Len(t, estimates, 1, "an estimate that can't be made is said, not left out")
+	require.Equal(t, "not estimated: the port index's dependencies couldn't be read: "+workspace.ErrUnowned.Error(), estimates[0].Words())
 }

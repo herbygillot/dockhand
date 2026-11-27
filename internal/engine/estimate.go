@@ -43,12 +43,19 @@ type InstallEstimate struct {
 	// whose active ports the build uses, with no clone: the words say so,
 	// where they said the clone decides (#351).
 	InPrefix bool
+	// NotEstimated says why nothing could be estimated, where the port
+	// index or the archive listings couldn't be read: the line says so,
+	// where it was left out (the v0.9.0-rc2 full stage's G16).
+	NotEstimated string
 }
 
 // Words are the estimate as a person reads it: "about 14 dependencies to
 // install, 3 with no archive on packages.macports.org for this release, by
 // the port index; the clone decides".
 func (est InstallEstimate) Words() string {
+	if est.NotEstimated != "" {
+		return "not estimated: " + est.NotEstimated
+	}
 	decides := "; the clone decides"
 	if est.InPrefix {
 		decides = "; the build uses the ports active in " + est.Environment.Prefix
@@ -87,13 +94,25 @@ type ArchiveVersionReader interface {
 // up, as check --plan does; otherwise only what's kept is read, and the
 // archives are said where all of them are. Nothing where the index can't
 // be read.
-func (e *Engine) InstallEstimates(ctx context.Context, plan model.Plan, source model.Source, wait bool) []InstallEstimate {
-	// The plan's revision is read as its owner's (#162); a plan with no
-	// revision keeps its caller's mark, and with none the door refuses.
-	if plan.Revision != "" {
-		if revision, err := e.Revision(ctx, plan.Revision); err == nil {
-			ctx, _ = e.evaluatingRevision(ctx, revision)
+func (e *Engine) InstallEstimates(ctx context.Context, plan model.Plan, revision model.Revision, wait bool) []InstallEstimate {
+	// The plan's revision is read as its owner's (#162), the revision
+	// itself: a plan's isn't recorded, so looking it up by its ID found
+	// nothing, the index was refused at the door, and check --plan said
+	// no estimate (the v0.9.0-rc2 full stage's G16).
+	source := revision.Source
+	if revision.Branch != "" {
+		ctx, _ = e.evaluatingRevision(ctx, revision)
+	}
+	// Where nothing can be estimated, each environment that would have an
+	// estimate says why.
+	unread := func(why string) []InstallEstimate {
+		var estimates []InstallEstimate
+		for _, environment := range plan.Environments {
+			if _, installed := e.Providers[environment.Provider].(buildenv.InstalledProvider); installed || environment.Provider == buildenv.Tart || environment.Provider == buildenv.GitHub {
+				estimates = append(estimates, InstallEstimate{Environment: environment, NotEstimated: why})
+			}
 		}
+		return estimates
 	}
 	capabilities, err := e.capabilities()
 	if err != nil || capabilities.Graphs == nil {
@@ -105,11 +124,11 @@ func (e *Engine) InstallEstimates(ctx context.Context, plan model.Plan, source m
 	}
 	graph, err := capabilities.Graphs.DependencyGraph(ctx, source)
 	if err != nil {
-		return nil
+		return unread("the port index's dependencies couldn't be read: " + err.Error())
 	}
 	versions, err := versionReader.ArchiveVersions(ctx, source)
 	if err != nil {
-		return nil
+		return unread("the port index's versions couldn't be read: " + err.Error())
 	}
 	var roots []string
 	built := map[string]bool{}

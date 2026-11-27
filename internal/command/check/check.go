@@ -243,7 +243,7 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 			// What it will install, by the port index: --plan waits for
 			// packages.macports.org's listings; a check says what's kept,
 			// and its run says the rest as it starts.
-			view.WriteEstimates(out, e.InstallEstimates(ctx, proposed, capture.Revision.Source, plan), proposed.Environments)
+			view.WriteEstimates(out, e.InstallEstimates(ctx, proposed, capture.Revision, plan), proposed.Environments)
 			view.WritePushes(out, proposed)
 			revision, planned := view.RevisionView(capture.Revision), view.PlanView(proposed)
 			streams.Emit(view.CheckJSON{Branch: branch.ShortName(), Revision: &revision, Plan: &planned, Targets: []view.TargetJSON{}}.WithPortfileFindings(findings))

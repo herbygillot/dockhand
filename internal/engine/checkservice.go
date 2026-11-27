@@ -66,7 +66,12 @@ func (h checkHooks) Evaluating(ctx context.Context, run model.Run) (context.Cont
 func (h checkHooks) BeforeEnvironment(ctx context.Context, _ model.Run, plan model.Plan, environment model.Environment, source model.Source) []string {
 	plan.Environments = []model.Environment{environment}
 	var lines []string
-	for _, estimate := range h.e.InstallEstimates(ctx, plan, source, true) {
+	revision, err := h.e.Revision(ctx, plan.Revision)
+	if err != nil {
+		revision = model.Revision{}
+	}
+	revision.Source = source
+	for _, estimate := range h.e.InstallEstimates(ctx, plan, revision, true) {
 		lines = append(lines, estimate.Words())
 	}
 	return lines

@@ -257,7 +257,9 @@ Those with no archive build from source, which can take a while; it's a hint
 for choosing `-d`, and the clone decides. A `local` check has no clone: it builds
 against the ports active in its prefix, and its line says so, `the build uses the
 ports active in /opt/local`. `check --plan` looks the archives up;
-a check says them as it starts. The archives a guest is given are said once,
+a check says them as it starts. Where the port index can't be read, the line
+says so and why, `Installs    not estimated: the port index's dependencies
+couldn't be read: …`, rather than being left out. The archives a guest is given are said once,
 `giving the guest 25 archives earlier guests installed and 2 kept of their
 targets' builds`, each by name under `-v`. Kept archives whose files are
 missing, as from a database copy without its archives directory, are said once
