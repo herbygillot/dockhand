@@ -355,7 +355,18 @@ work asked meanwhile stays.
 
 Run that submit; don't open a pull request by hand or start another branch. It
 reads the fork and GitHub first and records what landed, so a pull request
-GitHub opened is found, not opened twice. A submit that seems to hang holds the
+GitHub opened is found, not opened twice. Where that read fails, submit does
+nothing and says which read failed and why, in Git's or GitHub's words. A cause
+you have to put right first, a key the SSH server refused, no HTTPS
+credentials, a host key ssh doesn't know, ends `put that right, then dockhand
+submit accounts for it`; any other, a timeout or GitHub's error, ends `dockhand
+submit reads it again`, which says what the next submit does:
+
+```text
+an earlier submission of jq-update couldn't be accounted for: the fork's branch couldn't be read (git: the SSH server refused this Mac's keys (git ls-remote); is your key loaded? …); nothing was done; put that right, then dockhand submit accounts for it
+```
+
+A submit that seems to hang holds the
 fork branch's lock: another submit of it is refused and names the process to
 stop.
 

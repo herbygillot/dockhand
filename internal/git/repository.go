@@ -234,8 +234,15 @@ func httpsUnauthenticated(command string, err error) error {
 	return fmt.Errorf("%w (git %s); set up a credential helper, as git config --global credential.helper osxkeychain, or point the fork's remote at SSH: %w", ErrNoHTTPSCredentials, command, err)
 }
 
+// ErrSSHHostKey is ssh not knowing, or not matching, the remote's host
+// key, which BatchMode won't ask about.
+var ErrSSHHostKey = errors.New("git: ssh doesn't know this remote's host key")
+
 func sshRefused(command string, err error) error {
 	failed := new(subprocess.Error)
+	if errors.As(err, &failed) && strings.Contains(failed.Stderr, "Host key verification failed") {
+		return fmt.Errorf("%w (git %s); ssh -T git@github.com shows the key and asks to add it to known_hosts: %w", ErrSSHHostKey, command, err)
+	}
 	if !errors.As(err, &failed) || !strings.Contains(failed.Stderr, "Permission denied (publickey") {
 		return err
 	}

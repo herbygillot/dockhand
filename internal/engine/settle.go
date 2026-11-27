@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/term"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports/prdescription"
@@ -38,6 +38,9 @@ type PublicationReading struct {
 	// ready.
 	StatusRead bool
 	Status     forge.PullRequestStatus
+	// HeadErr, FoundErr, and StatusErr are why a read above failed, in
+	// Git's or GitHub's words, where one did: the refusal says it (#365).
+	HeadErr, FoundErr, StatusErr error
 }
 
 // Settlement is what settling found: the steps found done, folded into
@@ -64,9 +67,13 @@ type Settlement struct {
 	// Closed is the ending found where its pull request was merged or
 	// closed, which ends the request it took too (#195).
 	Closed bool
-	// Unread are the reads that failed, each named for the person: the
-	// publication stays as it is for what they would have settled.
+	// Unread are the reads that failed, each named for the person, with
+	// why where the reading says: the publication stays as it is for what
+	// they would have settled.
 	Unread []string
+	// UnreadWhy are the failed reads' errors, by what Unread names, where
+	// the reading gave one (#365).
+	UnreadWhy map[string]error
 }
 
 // Settle reads a publication against what was read of the fork and
@@ -80,9 +87,15 @@ func Settle(publication model.Publication, recorded *model.PullRequest, reading 
 	s := Settlement{Number: publication.Number}
 	owe := func(step model.PublicationStep) { s.Owes = append(s.Owes, step) }
 	done := func(step model.PublicationStep) { s.Done = append(s.Done, step) }
-	unread := func(what string) {
+	unread := func(what string, why error) {
 		if !slices.Contains(s.Unread, what) {
 			s.Unread = append(s.Unread, what)
+			if why != nil {
+				if s.UnreadWhy == nil {
+					s.UnreadWhy = map[string]error{}
+				}
+				s.UnreadWhy[what] = why
+			}
 		}
 	}
 	// The pull request: the one recorded, else one found above Earlier.
@@ -109,7 +122,7 @@ func Settle(publication model.Publication, recorded *model.PullRequest, reading 
 				// and archive and forget can go on (#344).
 				s.Ended, s.Why = true, "the fork it pushes to is gone from GitHub, so nothing this submission pushed is there"
 			case !reading.HeadRead:
-				unread("the fork's branch")
+				unread("the fork's branch", reading.HeadErr)
 				owe(step)
 			case reading.HeadExists && reading.HeadAt == publication.Commit:
 				done(step)
@@ -121,7 +134,7 @@ func Settle(publication model.Publication, recorded *model.PullRequest, reading 
 		case model.StepOpen:
 			switch {
 			case !reading.FoundRead:
-				unread("the pull request")
+				unread("the pull request", reading.FoundErr)
 				owe(step)
 			case pr != nil:
 				done(step)
@@ -131,7 +144,7 @@ func Settle(publication model.Publication, recorded *model.PullRequest, reading 
 		case model.StepEdit:
 			switch {
 			case pr == nil && !reading.FoundRead:
-				unread("the pull request")
+				unread("the pull request", reading.FoundErr)
 				owe(step)
 			case pr != nil && pr.Title == publication.Title && sameText(pr.Body, publication.Body):
 				done(step)
@@ -142,7 +155,7 @@ func Settle(publication model.Publication, recorded *model.PullRequest, reading 
 			draft := step == model.StepDraft
 			switch {
 			case !reading.StatusRead:
-				unread("the pull request's draft state")
+				unread("the pull request's draft state", reading.StatusErr)
 				owe(step)
 			case reading.Status.Draft == draft:
 				done(step)
@@ -241,18 +254,20 @@ func (e *Engine) readPublication(ctx context.Context, worktree *git.Repository, 
 	var reading PublicationReading
 	// The head is read where the push is owed, the one step it settles.
 	if slices.Contains(record.Owes, model.StepPush) {
-		reading.HeadRead, reading.HeadExists, reading.HeadAt = e.readHead(ctx, worktree, headRepository, headBranch)
+		reading.HeadRead, reading.HeadExists, reading.HeadAt, reading.HeadErr = e.readHead(ctx, worktree, headRepository, headBranch)
 		// A head that can't be read may be a repository that's gone,
 		// which GitHub answers (#344).
 		if !reading.HeadRead {
 			if _, err := e.forge().RepositoryInfo(ctx, headRepository); errors.Is(err, forge.ErrNotFound) {
-				reading.HeadRead, reading.HeadGone = true, true
+				reading.HeadRead, reading.HeadGone, reading.HeadErr = true, true, nil
 			}
 		}
 	}
 	found, err := e.forge().Find(ctx, forge.PullRequestQuery{Repository: baseRepository, HeadRepository: headRepository, HeadBranch: headBranch, BaseBranch: baseBranch})
 	if err == nil {
 		reading.FoundRead, reading.Found, reading.PullRequest = true, found.Found, found.PullRequest
+	} else {
+		reading.FoundErr = err
 	}
 	number := record.Number
 	if reading.Found && number == 0 && found.PullRequest.Ref.Number > record.Earlier {
@@ -261,6 +276,8 @@ func (e *Engine) readPublication(ctx context.Context, worktree *git.Repository, 
 	if number != 0 {
 		if status, err := e.forge().Inspect(ctx, pullRequestRef(baseRepository, number)); err == nil {
 			reading.StatusRead, reading.Status = true, status
+		} else {
+			reading.StatusErr = err
 		}
 	}
 	return reading
@@ -268,21 +285,21 @@ func (e *Engine) readPublication(ctx context.Context, worktree *git.Repository, 
 
 // readHead reads a branch in its own repository, through a remote that
 // already pushes there, else its GitHub address: read is false where it
-// couldn't be read.
-func (e *Engine) readHead(ctx context.Context, worktree *git.Repository, repository, branch string) (read, exists bool, at model.ObjectID) {
+// couldn't be read, and err says why, in Git's words (#365).
+func (e *Engine) readHead(ctx context.Context, worktree *git.Repository, repository, branch string) (read, exists bool, at model.ObjectID, err error) {
 	remotes, err := worktree.Remotes(ctx)
 	if err != nil {
-		return false, false, ""
+		return false, false, "", err
 	}
 	_, address, err := e.theirRemote(ctx, remotes, repository)
 	if err != nil {
-		return false, false, ""
+		return false, false, "", err
 	}
 	head, err := worktree.RemoteHead(ctx, address, branch)
 	if err != nil {
-		return false, false, ""
+		return false, false, "", err
 	}
-	return true, head.Exists, model.ObjectID(head.Object)
+	return true, head.Exists, model.ObjectID(head.Object), nil
 }
 
 // settleReading settles a branch's publication, under its head's lock,
@@ -315,7 +332,7 @@ func (e *Engine) settleReading(ctx context.Context, worktree *git.Repository, br
 		// the branch moved or the pull request closed: what it would have
 		// shown isn't folded yet (#191, group B).
 		if len(settled.Unread) > 0 {
-			unread = &unsettledError{fmt.Sprintf("an earlier submission of %s couldn't be accounted for: %s couldn't be read; nothing was done, and dockhand submit tries again", branch.ShortName(), prose.And(settled.Unread))}
+			unread = &unsettledError{unsettledWords(branch.ShortName(), settled)}
 			return nil
 		}
 		// A publication that still owes steps stays, with what it owes and
@@ -362,6 +379,37 @@ func (e *Engine) settleReading(ctx context.Context, worktree *git.Repository, br
 
 // unsettledError is a publication a read it needed left as it was.
 type unsettledError struct{ why string }
+
+// unsettledWords say why an earlier submission couldn't be accounted for:
+// each read that failed, with Git's or GitHub's reason where it gave one,
+// and what comes next. A cause the person has to put right, a refused key
+// or login, a host key Git doesn't know, a remote that isn't there, is said
+// as that, with no retry named as the fix; any other, a timeout, a rate
+// limit, a server's error, or one dockhand can't tell, says what the next
+// submit does, not that it will work (#365).
+func unsettledWords(branch string, settled Settlement) string {
+	parts := make([]string, len(settled.Unread))
+	incurable := false
+	for i, what := range settled.Unread {
+		parts[i] = what + " couldn't be read"
+		if why := settled.UnreadWhy[what]; why != nil {
+			parts[i] += " (" + term.Visible(why.Error()) + ")"
+			incurable = incurable || incurableRead(why)
+		}
+	}
+	words := fmt.Sprintf("an earlier submission of %s couldn't be accounted for: %s; nothing was done", branch, strings.Join(parts, "; "))
+	if incurable {
+		return words + "; put that right, then dockhand submit accounts for it"
+	}
+	return words + "; dockhand submit reads it again"
+}
+
+// incurableRead is a read's failure another try won't cure: Git refused by
+// the remote's SSH server or holding no HTTPS credentials, an SSH host key
+// it doesn't know, or GitHub saying the thing isn't there.
+func incurableRead(err error) bool {
+	return errors.Is(err, git.ErrSSHRefused) || errors.Is(err, git.ErrNoHTTPSCredentials) || errors.Is(err, git.ErrSSHHostKey) || errors.Is(err, forge.ErrNotFound)
+}
 
 func (e *unsettledError) Error() string { return e.why }
 
