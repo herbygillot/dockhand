@@ -131,8 +131,17 @@ func CheckState(s engine.BranchStatus) string {
 	return "needs attention" + suffix
 }
 
-// WriteNext says what moves a branch on, as its attention row does.
+// WriteNext says what moves a branch on, as its attention row does. An
+// earlier submit that didn't finish is said before it, as status's
+// attention row says it: the branch's view gave the submit its Next and
+// dropped why (the v0.9.0-rc2 full stage's D-I4); its other lines say
+// the rest of a branch's reasons.
 func WriteNext(out io.Writer, status engine.BranchStatus) {
+	for _, a := range branchstate.Attend(status.Facts()) {
+		if a.Reason == branchstate.Unfinished {
+			fmt.Fprintf(out, "  Submit   ! %s\n", a.Words(engine.Vocabulary{}))
+		}
+	}
 	for _, row := range AttentionFor(status) {
 		fmt.Fprintf(out, "Next: %s\n", row.Next)
 	}

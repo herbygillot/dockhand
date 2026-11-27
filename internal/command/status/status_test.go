@@ -779,3 +779,33 @@ func TestAMergeLineNamesItsMaintainersBasis(t *testing.T) {
 	require.Contains(t, string(data), `{"port":"jq","maintainers":["@former"],"openmaintainer":false,"nomaintainer":false,"opened_by_maintainer":false,"waits":true,"maintainers_basis":"base","maintainers_as_of":"2026-10-28T12:00:00Z"}`)
 	require.Contains(t, string(data), `"maintainers_basis":"new port"}`)
 }
+
+// A submit cut short, pushed and its pull request not opened, leaves what it owes
+// for the next submit to account for, and status -b says so beside the
+// Next it gives: the branch's view printed the Next and dropped why (the
+// v0.9.0-rc2 full stage's D-I4).
+func TestABranchsViewSaysAnEarlierSubmitDidntFinish(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	g := cmdtest.WithGitHub(t, w)
+	_, _, err := cmdtest.Dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	cmdtest.Setenv(t, "MACPORTS_TREE", dir)
+	_, _, err = cmdtest.Dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	testsupport.Git(t, dir, "commit", "-q", "-am", "jq: update to 1.8.1")
+	_, _, err = cmdtest.Dockhand(t, "tidy", "--yes")
+	require.NoError(t, err)
+	g.CreateFails = true
+	_, _, err = cmdtest.Dockhand(t, "submit", "--no-check", "--yes")
+	require.ErrorContains(t, err, "opening the pull request is still owed")
+	cmdtest.Setenv(t, "MACPORTS_TREE", w.Clone)
+
+	out, _, err := cmdtest.Dockhand(t, "status", "-b", "jq-update")
+	require.NoError(t, err)
+	require.Contains(t, out, "an earlier submit didn't finish")
+	require.Regexp(t, `(?s)Submit   ! an earlier submit didn.t finish.*\nNext: .*dockhand submit`, out, "said above the Next it explains")
+}
