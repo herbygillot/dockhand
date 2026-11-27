@@ -11,7 +11,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/store"
-	"github.com/herbygillot/dockhand/internal/term"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports/prdescription"
@@ -382,6 +381,8 @@ type unsettledError struct{ why string }
 
 // unsettledWords say why an earlier submission couldn't be accounted for:
 // each read that failed, with Git's or GitHub's reason where it gave one,
+// as the refused push carries the remote's (the error's printer makes
+// what it holds safe to show),
 // and what comes next. A cause the person has to put right, a refused key
 // or login, a host key Git doesn't know, a remote that isn't there, is said
 // as that, with no retry named as the fix; any other, a timeout, a rate
@@ -393,7 +394,7 @@ func unsettledWords(branch string, settled Settlement) string {
 	for i, what := range settled.Unread {
 		parts[i] = what + " couldn't be read"
 		if why := settled.UnreadWhy[what]; why != nil {
-			parts[i] += " (" + term.Visible(why.Error()) + ")"
+			parts[i] += " (" + why.Error() + ")"
 			incurable = incurable || incurableRead(why)
 		}
 	}

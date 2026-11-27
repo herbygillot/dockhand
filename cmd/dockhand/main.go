@@ -37,9 +37,7 @@ func main() {
 		if ctx.Err() != nil && code == 1 {
 			code = 130
 		}
-		if err.Error() != "" {
-			fmt.Fprintln(os.Stderr, err)
-		}
+		term.WriteError(os.Stderr, err)
 		os.Exit(code)
 	}
 }

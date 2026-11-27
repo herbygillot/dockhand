@@ -3,6 +3,7 @@ package term
 import (
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/herbygillot/dockhand/internal/refusal"
 )
@@ -41,4 +42,15 @@ func ExitCode(err error) int {
 // Exitf is an ExitError with code, its message formatted.
 func Exitf(code int, format string, args ...any) error {
 	return &ExitError{Code: code, Message: fmt.Sprintf(format, args...)}
+}
+
+// WriteError writes a command's final error, as the process ends on it,
+// made safe to show (Visible): it may carry another's words, Git's,
+// GitHub's, or a remote's, which mustn't draw over the terminal (#330,
+// #365). An error with no words writes nothing.
+func WriteError(w io.Writer, err error) {
+	if err == nil || err.Error() == "" {
+		return
+	}
+	fmt.Fprintln(w, Visible(err.Error()))
 }
