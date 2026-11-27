@@ -554,3 +554,49 @@ func fullReview(ctx context.Context, e *Engine, number int) (ReviewReport, error
 	}
 	return e.Review(ctx, target, true)
 }
+
+// A pull request of the login's own adopted before its yes was recorded,
+// as rc1 and rc2 adopted one, the acceptance Mac's pr-145 among them, is
+// the person's at the head it is tracked at, whether adopted again or
+// moved to the head it's at: the door found no yes and refused its check
+// (Codex's read of #369's fix).
+func TestYourOwnPullRequestAdoptedBeforeItsYesIsYours(t *testing.T) {
+	t.Parallel()
+	// seeded is an engine with pr-34905, the login's own, adopted with no
+	// yes recorded: adopted as another login, the state an adoption before
+	// the fix left.
+	seeded := func(t *testing.T) (*Engine, model.Branch) {
+		f := setup(t)
+		e, _ := f.withPreparer(t)
+		fake := f.withFork(t, e)
+		contribution(t, f, fake)
+		fake.PRs[34905].Author = "ada"
+		fake.Person = "someone-else"
+		adopted, err := e.AdoptPullRequest(t.Context(), 34905, "")
+		require.NoError(t, err)
+		fake.Person = ""
+		allowed, err := e.EvaluationAllowed(t.Context(), adopted.Branch)
+		require.NoError(t, err)
+		require.False(t, allowed, "seeded: an own pull request adopted with no yes")
+		return e, adopted.Branch
+	}
+	t.Run("adopted again", func(t *testing.T) {
+		t.Parallel()
+		e, _ := seeded(t)
+		again, err := e.AdoptPullRequest(t.Context(), 34905, "")
+		require.NoError(t, err)
+		require.True(t, again.Already)
+		allowed, err := e.EvaluationAllowed(t.Context(), again.Branch)
+		require.NoError(t, err)
+		require.True(t, allowed, "adopted again, the tracked head is yours")
+	})
+	t.Run("refreshed to the head it's at", func(t *testing.T) {
+		t.Parallel()
+		e, branch := seeded(t)
+		moved, err := e.RefreshAdopted(t.Context(), branch, branch.PullRequest.Pushed)
+		require.NoError(t, err)
+		allowed, err := e.EvaluationAllowed(t.Context(), moved)
+		require.NoError(t, err)
+		require.True(t, allowed, "a refresh that doesn't move it records it too")
+	})
+}
