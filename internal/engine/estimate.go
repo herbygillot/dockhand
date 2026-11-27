@@ -115,7 +115,10 @@ func (e *Engine) InstallEstimates(ctx context.Context, plan model.Plan, revision
 		return estimates
 	}
 	capabilities, err := e.capabilities()
-	if err != nil || capabilities.Graphs == nil {
+	if err != nil {
+		return unread("the port index couldn't be opened: " + err.Error())
+	}
+	if capabilities.Graphs == nil {
 		return nil
 	}
 	versionReader, ok := capabilities.Graphs.(ArchiveVersionReader)
@@ -150,6 +153,7 @@ func (e *Engine) InstallEstimates(ctx context.Context, plan model.Plan, revision
 			inPrefix = true
 			active, set, err := provider.Installed(ctx, environment)
 			if err != nil {
+				estimates = append(estimates, InstallEstimate{Environment: environment, InPrefix: true, NotEstimated: "the prefix's active ports couldn't be read: " + err.Error()})
 				continue
 			}
 			for _, name := range active {
