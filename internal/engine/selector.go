@@ -111,8 +111,9 @@ const (
 	// branch, and else the branch checked out here; a command that reads
 	// or acts on a whole branch.
 	SelectExisting SelectPolicy = iota
-	// SelectAnyExisting finds a branch by port regardless of its state,
-	// for cleanup operations that must select ended branches too.
+	// SelectAnyExisting finds a branch by name, port, or pull request
+	// regardless of its state, merged included, for cleanup operations
+	// that must select ended branches too.
 	SelectAnyExisting
 	// SelectOrStart works where the command runs, else in the port's open
 	// branch, and starts one for the port where none changes it: an
@@ -195,6 +196,12 @@ type Selection struct {
 // port, and a refusal says.
 func (e *Engine) Select(ctx context.Context, selector Selector, work Work) (Selection, error) {
 	switch {
+	case selector.Branch != "" && selector.Policy == SelectAnyExisting:
+		// A command that acts on a record whatever its state finds a
+		// merged branch by its name, as clean's own branch words do: -b
+		// on clean refused the merged branch clean exists for (#364).
+		branch, err := e.ResolveRecord(ctx, selector.Branch)
+		return Selection{Branch: branch}, err
 	case selector.Branch != "":
 		branch, err := e.Resolve(ctx, selector.Branch)
 		if err == nil && selector.Policy == SelectOrStart {

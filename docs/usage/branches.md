@@ -345,7 +345,9 @@ operation is never allowed in the upstream repository, regardless of ownership`.
 preserving local work master lacks. A named `clean jq-update` considers only
 that ended branch; an open branch must first be finished or archived. Select
 one branch with `-b`, `-p`, or `--pr`, or name several as words; do not mix
-selectors and words. The port selector considers ended branches too. Use
+selectors and words. Each of them finds a merged, closed, or archived branch
+as the words do, and lists and removes that branch alone, never another
+finished one. Use
 `status --all` to inspect the records left behind. `clean --delete` is the
 explicit step that forgets an ended branch; its preview matters because unmerged
 commits can go with it. A worktree with uncommitted edits or untracked files is
