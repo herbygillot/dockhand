@@ -64,7 +64,10 @@ for the pull request and the author's commit it was given for: a new push from
 the author asks again, showing what changed since the commit you allowed, the
 files changed between that commit and the new one, so a PortGroup it added and
 the new push removed is listed too. Your
-own pull requests, and your own commits above an adopted one, ask nothing.
+own pull requests, those whose author is the login dockhand acts as, and your
+own commits above an adopted one, ask nothing: review, adopt, and the check
+`review --check` queues each take your own pull request's head as yours, at
+every push.
 
 A text-only review runs the commit rules, the Portfile rules that compare text,
 and the dependents from the base's index, and reports what it didn't run on its

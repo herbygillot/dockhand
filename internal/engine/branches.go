@@ -1106,6 +1106,11 @@ func (e *Engine) AdoptPullRequest(ctx context.Context, number int, at model.Obje
 			adoption.Head = model.ObjectID(front.head)
 			adoption.Commits, adoption.Scope, err = e.changes(ctx, front.tracked.Base, front.head)
 		}
+		// One adopted before its own was recorded is yours at the head it's
+		// tracked at too (#369).
+		if err == nil && front.tracked.PullRequest != nil {
+			err = e.allowOwn(ctx, number, pr.Author, authorHead(front.tracked.PullRequest))
+		}
 		return adoption, err
 	}
 	name, directory := front.name, front.directory
@@ -1157,7 +1162,7 @@ func (e *Engine) AdoptPullRequest(ctx context.Context, number int, at model.Obje
 		err = errors.Join(err, e.Repo.RemoveWorktree(context.WithoutCancel(ctx), directory), e.Repo.DeleteBranch(context.WithoutCancel(ctx), name, head))
 		return adoption, err
 	}
-	return adoption, nil
+	return adoption, e.allowOwn(ctx, number, pr.Author, model.ObjectID(head))
 }
 
 // RefreshAdopted moves an adopted pull request's branch to to, a head of
@@ -1182,7 +1187,7 @@ func (e *Engine) RefreshAdopted(ctx context.Context, branch model.Branch, to mod
 	}
 	local := model.ObjectID(head)
 	if local == to {
-		return branch, nil
+		return branch, e.allowOwn(ctx, pr.Number, pr.Author, to)
 	}
 	diverged := func(what string) error {
 		return fmt.Errorf("%s has %s beyond #%d's head %s, which it was adopted at, and #%d's head is %s now; dockhand check -b %s checks the branch as it is", branch.ShortName(), what, pr.Number, pr.Pushed.Short(), pr.Number, to.Short(), branch.ShortName())
@@ -1223,7 +1228,10 @@ func (e *Engine) RefreshAdopted(ctx context.Context, branch model.Branch, to mod
 			Message: fmt.Sprintf("moved %s to #%d's head %s, from %s", branch.ShortName(), pr.Number, to.Short(), local.Short())})
 		return err
 	})
-	return branch, err
+	if err != nil {
+		return branch, err
+	}
+	return branch, e.allowOwn(ctx, pr.Number, pr.Author, to)
 }
 
 // worktree opens the branch's checkout, which must have the branch checked

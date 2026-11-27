@@ -129,6 +129,27 @@ func (e *Engine) EvaluationAllowed(ctx context.Context, branch model.Branch) (bo
 	return e.Allowed(ctx, pr.Number, authorHead(pr))
 }
 
+// ownPullRequest is the one answer to whether a pull request is the
+// person's own: its author is the login dockhand acts as. Review's
+// question, adoption, and the door read it (#369): review took a pull
+// request of the login's as the person's own and asked nothing, adoption
+// took it as another's, and the door, finding no yes, refused its check.
+func ownPullRequest(author, login string) bool {
+	return author != "" && author == login
+}
+
+// allowOwn records the person's yes at an author's commit of a pull
+// request of their own, which is theirs to evaluate, so the door reads it
+// as it reads anyone's yes; another's asks nothing here. With no login to
+// compare, nothing is recorded, and it asks as another's would.
+func (e *Engine) allowOwn(ctx context.Context, number int, author string, head model.ObjectID) error {
+	login, err := e.forge().AuthenticatedUser(ctx)
+	if err != nil || !ownPullRequest(author, login) || head == "" {
+		return nil
+	}
+	return e.AllowEvaluation(ctx, number, head)
+}
+
 // AllowAdopted records the person's yes for an adopted branch's author's
 // commit.
 func (e *Engine) AllowAdopted(ctx context.Context, branch model.Branch) error {

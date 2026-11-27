@@ -445,3 +445,43 @@ func TestThePlainDiffOfAPullRequestAsksNothing(t *testing.T) {
 	_, _, err = cmdtest.Dockhand(t, "adopt", "--evaluate")
 	require.ErrorContains(t, err, "--evaluate goes with --pr")
 }
+
+// A pull request whose author is the login is the person's own: review
+// --check --evaluate adopted it and then refused its check, "you haven't
+// allowed dockhand to evaluate them … dockhand adopt --pr N --evaluate",
+// as review took it as the person's own and asked nothing, and the door
+// took the adopted branch as another's with no yes recorded (the
+// v0.9.0-rc2 full stage's G22, #369). After the author pushes, the new
+// head is checked the same way.
+func TestReviewCheckOfYourOwnPullRequestChecksIt(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.WithScript(t, w, "passed")
+	g := cmdtest.WithGitHub(t, w)
+	testsupport.Git(t, w.Upstream, "switch", "-q", "-c", "contrib")
+	path := filepath.Join(w.Upstream, "textproc/jq/Portfile")
+	require.NoError(t, os.WriteFile(path, []byte("name jq\n# version A\n"), 0o644))
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-am", "jq: document version A")
+	testsupport.Git(t, w.Upstream, "update-ref", "refs/pull/34905/head", "HEAD")
+	testsupport.Git(t, w.Upstream, "switch", "-q", "master")
+	pr := forge.PullRequest{Ref: forge.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 34905}, HeadRepository: "ada/macports-ports", HeadBranch: "contrib", Title: "jq: docs", State: forge.PullRequestOpen, Author: "ada", MaintainerCanModify: true}
+	g.Theirs = map[int]forge.PullRequest{34905: pr}
+
+	out, said, err := cmdtest.Dockhand(t, "review", "34905", "--check", "--on", "command", "--evaluate")
+	require.NoError(t, err, said)
+	require.Contains(t, out, "Passed")
+	require.NotContains(t, out+said, "adopt --pr 34905 --evaluate")
+
+	testsupport.Git(t, w.Upstream, "switch", "-q", "contrib")
+	require.NoError(t, os.WriteFile(path, []byte("name jq\n# version B\n"), 0o644))
+	testsupport.Git(t, w.Upstream, "commit", "-q", "-am", "jq: document version B")
+	b := testsupport.Git(t, w.Upstream, "rev-parse", "HEAD")
+	testsupport.Git(t, w.Upstream, "update-ref", "refs/pull/34905/head", "HEAD")
+	testsupport.Git(t, w.Upstream, "switch", "-q", "master")
+	pr.RemoteHead = model.ObjectID(b)
+	g.Theirs[34905] = pr
+	out, said, err = cmdtest.Dockhand(t, "review", "34905", "--check", "--on", "command", "--evaluate")
+	require.NoError(t, err, said)
+	require.Contains(t, out, "moved it from")
+	require.Contains(t, out, "Passed")
+}

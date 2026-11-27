@@ -211,7 +211,7 @@ func (e *Engine) OpenReview(ctx context.Context, number int) (ReviewTarget, erro
 	if target.Login, err = f.AuthenticatedUser(ctx); err != nil {
 		return target, loginError("review", err)
 	}
-	target.Own = target.Author != "" && target.Author == target.Login
+	target.Own = ownPullRequest(target.Author, target.Login)
 	// A role the forge won't say, as GitHub won't to a fine-grained
 	// token, is unknown: the review goes on, and only requesting changes,
 	// which needs one, waits (the M1's rerun, E9).
@@ -222,6 +222,13 @@ func (e *Engine) OpenReview(ctx context.Context, number int) (ReviewTarget, erro
 	}
 	if target.Head, err = e.Repo.FetchPullRequest(ctx, e.pullRequestRemote(), e.PullRequestRepository(), number); err != nil {
 		return target, fmt.Errorf("fetching #%d: %w", number, err)
+	}
+	// The person's own pull request is theirs to evaluate at its head, and
+	// recorded so, as any yes is, for the check of it the door admits.
+	if target.Own {
+		if err := e.AllowEvaluation(ctx, number, model.ObjectID(target.Head)); err != nil {
+			return target, err
+		}
 	}
 	master, err := e.fetchMaster(ctx)
 	if err != nil {
