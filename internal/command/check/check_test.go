@@ -61,7 +61,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, errs, "check-1 is running here because dockhand serve is not running.")
 	require.Contains(t, errs, "command: jq passed")
-	require.Contains(t, out, "jq-update · captured working files as snapshot 1\n", "the plan recorded nothing for the check to reuse")
+	require.Contains(t, out, "jq-update · builds the files as they are, captured working files as snapshot 1\n", "the plan recorded nothing for the check to reuse; dockhand's edits aren't committed, so the check says what it builds")
 	require.Contains(t, out, "  jq  ✓\n\nPassed.\nNext: dockhand tidy --branch jq-update\n", "what moves the branch on, as status says it")
 	out, _, err = cmdtest.Dockhand(t, "check", "--plan")
 	require.NoError(t, err)
@@ -807,4 +807,37 @@ func TestACheckNamesItselfOffATerminalAndKeepsItsModes(t *testing.T) {
 	_, errs, err = cmdtest.Dockhand(t, "check", "-b", "jq-update", "--on", "command", "--replace", "-v")
 	require.NoError(t, err, errs)
 	require.Contains(t, errs, "is running here because dockhand serve is not running", "-v keeps its own line")
+}
+
+// Past a preparation that isn't finished, the gate says what isn't and
+// claims nothing of what is built: where the branch has a commit beside
+// dockhand's uncommitted edits, which to build is the person's to choose,
+// and the check refuses naming --head and --working-tree, where the gate
+// had said it "builds the files as they are" (the v0.9.0-rc2 full stage's
+// D-T1, #367). Where the working files are all there is, the step that
+// takes them says so, once.
+func TestAnUnfinishedPreparationClaimsNothingOfWhatIsBuilt(t *testing.T) {
+	t.Parallel()
+	w := cmdtest.NewWorld(t)
+	cmdtest.Versioned(t, w)
+	cmdtest.WithBumper(t)
+	cmdtest.WithScript(t, w, "passed")
+	_, _, err := cmdtest.Dockhand(t, "update", "jq", "--new=jq-update")
+	require.NoError(t, err)
+
+	out, errs, err := cmdtest.Dockhand(t, "check", "-b", "jq-update", "--on", "command")
+	require.NoError(t, err, errs)
+	said := out + errs
+	require.Contains(t, said, "jq-update's preparation isn't finished")
+	require.Equal(t, 1, strings.Count(said, "the files as they are"), "said once, where the working files are taken: %s", said)
+	require.Contains(t, out, "jq-update · builds the files as they are, captured working files as ")
+
+	worktree := filepath.Join(w.Home, "Source", "macports-branches", "jq-update")
+	testsupport.WriteFiles(t, worktree, map[string]string{"_resources/port1.0/group/github-1.0.tcl": "# group, changed and committed by hand\n"})
+	testsupport.Git(t, worktree, "add", "--sparse", "_resources/port1.0/group/github-1.0.tcl")
+	testsupport.Git(t, worktree, "commit", "-q", "-m", "github: a hand change")
+	out, errs, err = cmdtest.Dockhand(t, "check", "-b", "jq-update", "--on", "command")
+	require.ErrorContains(t, err, "choose --head for the committed tip or --working-tree for the files")
+	require.Contains(t, out+errs, "jq-update's preparation isn't finished")
+	require.NotContains(t, out+errs, "the files as they are", "nothing claims what is built while the choice is open")
 }

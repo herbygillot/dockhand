@@ -57,7 +57,7 @@ func TestASourceRefusedIsKept(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, model.ActionRefused, outcome.Result)
 	require.Contains(t, outcome.Why, "carries no source archive")
-	require.Error(t, e.UnfinishedGate(t.Context(), current, false, "the check builds"), "a person's check stops too")
+	require.Error(t, gateErr(e.UnfinishedGate(t.Context(), current, false)), "a person's check stops too")
 }
 
 // A tested statement carried in the request from an earlier command is
@@ -181,7 +181,7 @@ func TestAHandEditHidesNoRefusalOrOwedTargetFromTheGate(t *testing.T) {
 	current, err := e.Branch(t.Context(), branch.ID)
 	require.NoError(t, err)
 	for _, unattended := range []bool{false, true} {
-		require.ErrorContains(t, e.UnfinishedGate(t.Context(), current, unattended, "the check builds"), "nothing goes on until the ask changes", "unattended %v", unattended)
+		require.ErrorContains(t, gateErr(e.UnfinishedGate(t.Context(), current, unattended)), "nothing goes on until the ask changes", "unattended %v", unattended)
 	}
 
 	owed, err := e.Start(t.Context(), StartRequest{Name: "jq-owed"})
@@ -189,6 +189,6 @@ func TestAHandEditHidesNoRefusalOrOwedTargetFromTheGate(t *testing.T) {
 	require.NoError(t, e.keepTarget(t.Context(), owed, "ship", "jq", func(target *model.RequestTarget) {}))
 	testsupport.WriteFiles(t, owed.Worktree, map[string]string{"_resources/port1.0/group/github-1.0.tcl": "# group, edited by hand\n"})
 	owed = reread(t, e, owed.ID)
-	require.ErrorContains(t, e.UnfinishedGate(t.Context(), owed, true, "the check builds"), "jq has no update yet")
-	require.NoError(t, e.UnfinishedGate(t.Context(), owed, false, "the check builds"), "a person goes on with the files as they are")
+	require.ErrorContains(t, gateErr(e.UnfinishedGate(t.Context(), owed, true)), "jq has no update yet")
+	require.NoError(t, gateErr(e.UnfinishedGate(t.Context(), owed, false)), "a person goes on with the files as they are")
 }

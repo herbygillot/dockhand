@@ -158,11 +158,12 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 			}
 			// An update not finished is said before the files are taken;
 			// a plan settles nothing and says it as it stands (#194).
+			unfinished := false
 			if plan {
 				if err := e.SayUnsettled(ctx, branch, engine.SettlerFor(engine.SettlerOther)); err != nil {
 					return err
 				}
-			} else if err := e.UnfinishedGate(ctx, branch, yes, "the check builds"); err != nil {
+			} else if unfinished, err = e.UnfinishedGate(ctx, branch, yes); err != nil {
 				return err
 			}
 			proposal, err := e.ProposeCheck(ctx, engine.CheckRequest{Capture: engine.CaptureRequest{Branch: branch, Mode: mode, Named: where.Explicit(), Include: include, Plan: plan}, Where: place,
@@ -178,6 +179,12 @@ this process. dockhand wait check-42 --for 9m follows it further.`,
 				if plan {
 					what = "would capture the working files as " + checks.Describe(capture.Revision)
 				}
+			}
+			// Past a preparation that isn't finished, what the check builds
+			// is said here, once the head or the working files are chosen,
+			// and nowhere before it (#367).
+			if unfinished && capture.Revision.Kind == model.RevisionSnapshot {
+				what = "builds the files as they are, " + what
 			}
 			fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), what)
 			// The lint fixes tidy would commit are made first, so this

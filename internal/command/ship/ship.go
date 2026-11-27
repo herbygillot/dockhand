@@ -884,7 +884,7 @@ func shipOne(ctx context.Context, s *settings.Settings, streams term.Streams, ta
 	branch = tidied.Branch
 	// Nothing is checked past a preparation that isn't finished, or an
 	// action refused, which stops whoever is there (#194, #195).
-	if err := e.UnfinishedGate(ctx, branch, linked.Unattended, "the check builds"); err != nil {
+	if _, err := e.UnfinishedGate(ctx, branch, linked.Unattended); err != nil {
 		return nil, err
 	}
 	place := engine.WhereRequestFor(request, linked.Unattended)

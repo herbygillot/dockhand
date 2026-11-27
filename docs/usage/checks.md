@@ -63,6 +63,12 @@ dockhand check -b BRANCH --working-tree --plan
 dockhand check -b BRANCH --working-tree
 ```
 
+Where the branch's preparation isn't finished, as when dockhand's own edits
+aren't committed yet, check says what isn't finished and goes on. What it then
+builds is said once the files are chosen: `jq-update · builds the files as they
+are, captured working files as snapshot 1` where the working files are all there
+is, and nothing before you choose where the branch has commits beside them.
+
 ## Understand targets and test policy
 
 A changed Portfile or a change under its `files/` directory selects that

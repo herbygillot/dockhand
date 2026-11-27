@@ -302,25 +302,29 @@ func SettlerFor(settler Settler) func(model.Edit) Settler {
 // other command settles them, then the verdict. With nobody there, an
 // unfinished preparation stops, naming the command that finishes it: the
 // files as they are aren't the update that was asked. A person is told
-// what isn't in the files, and goes on.
-func (e *Engine) UnfinishedGate(ctx context.Context, branch model.Branch, unattended bool, doing string) error {
+// what isn't finished, and goes on: told says so. The gate says nothing
+// of what is then built or published, which the step that decides it says
+// once it has, where the person may yet have a choice to make between the
+// committed tip and the working files (#367).
+func (e *Engine) UnfinishedGate(ctx context.Context, branch model.Branch, unattended bool) (told bool, err error) {
 	if branch.ID == "" {
-		return nil
+		return false, nil
 	}
 	if _, err := e.settled(ctx, &branch, SettlerFor(SettlerOther)); err != nil {
 		if unattended || refusal.Of(err) == nil {
-			return err
+			return false, err
 		}
-		progress.Report(ctx, "%s; %s the files as they are", refusal.WordsOf(err), doing)
+		progress.Report(ctx, "%s", refusal.WordsOf(err))
+		told = true
 	}
 	// A refusal kept stops before the verdict, which answers hand edits
 	// first: a file edited by hand let check past it (#335).
 	if err := refusedIn(branch); err != nil {
-		return err
+		return false, err
 	}
 	prepared, err := e.preparation(ctx, branch, !unattended)
 	if err != nil {
-		return err
+		return false, err
 	}
 	reasons := prepared.Reasons
 	switch {
@@ -330,14 +334,14 @@ func (e *Engine) UnfinishedGate(ctx context.Context, branch model.Branch, unatte
 		// worktree holds (#335).
 		reasons = prepared.Owed
 	default:
-		return nil
+		return told, nil
 	}
 	words := fmt.Sprintf("%s's preparation isn't finished: %s", branch.ShortName(), strings.Join(reasons, "; "))
 	if unattended {
-		return refusal.New(refusal.Attention, "%s; dockhand ship -b %s finishes it", words, branch.ShortName())
+		return false, refusal.New(refusal.Attention, "%s; dockhand ship -b %s finishes it", words, branch.ShortName())
 	}
-	progress.Report(ctx, "%s; %s the files as they are", words, doing)
-	return nil
+	progress.Report(ctx, "%s", words)
+	return true, nil
 }
 
 // SayUnsettled says, for a plan, what settling would do with the branch's

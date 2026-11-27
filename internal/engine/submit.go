@@ -1616,7 +1616,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan, answered mode
 	}
 	// An update not finished isn't submitted where nobody looks; a person
 	// is told and goes on (#194, T3).
-	if err := e.UnfinishedGate(ctx, plan.Branch, answered == model.AnsweredNobody, "the submission publishes"); err != nil {
+	if _, err := e.UnfinishedGate(ctx, plan.Branch, answered == model.AnsweredNobody); err != nil {
 		return Submitted{}, err
 	}
 	// GitHub refuses a body past its limit after the push, so no pull

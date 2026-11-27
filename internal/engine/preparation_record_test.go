@@ -115,12 +115,12 @@ func TestAnUnfinishedUpdateIsNeverCheckedOrSubmittedUnattended(t *testing.T) {
 	edit := model.Edit{ID: "ed_pending", Branch: branch.ID, Kind: model.EditUpdate, Port: "jq", Directory: "textproc/jq", Subject: "jq: update to 1.8.1", At: e.now(),
 		Files: []model.EditedFile{{Path: "textproc/jq/Portfile", Before: model.ObjectID(before.Blob), After: model.ObjectID(after), BeforeMode: "100644", AfterMode: "100644"}}}
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.AddUnwritten(edit) }))
-	err = e.UnfinishedGate(t.Context(), branch, true, "the check builds")
+	err = gateErr(e.UnfinishedGate(t.Context(), branch, true))
 	require.Error(t, err)
 	require.Contains(t, refusal.WordsOf(err), "dockhand ship -b jq-update finishes it")
 	var said []string
 	ctx := progress.WithReporter(t.Context(), func(u progress.Update) { said = append(said, u.Message) })
-	require.NoError(t, e.UnfinishedGate(ctx, branch, false, "the check builds"))
+	require.NoError(t, gateErr(e.UnfinishedGate(ctx, branch, false)))
 	require.NotEmpty(t, said, "a person is told")
 }
 
@@ -174,3 +174,6 @@ func TestASettlementsUncertainRecordIsReadBack(t *testing.T) {
 		require.Len(t, unwritten, 1, "it waits to be settled again")
 	}
 }
+
+// gateErr is UnfinishedGate's error alone.
+func gateErr(_ bool, err error) error { return err }

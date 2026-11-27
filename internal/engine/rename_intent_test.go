@@ -108,7 +108,7 @@ func TestARenameCutShortIsFinishedAtTheLock(t *testing.T) {
 		require.NoError(t, err)
 		branch = intentTo(t, e, branch, "dockhand/jq-1.8.1")
 		test.arrange(t, e, branch)
-		err = e.UnfinishedGate(t.Context(), branch, true, "the check builds")
+		err = gateErr(e.UnfinishedGate(t.Context(), branch, true))
 		saved := reread(t, e, branch.ID)
 		if test.want == "" {
 			require.Error(t, err, test.name)
@@ -136,7 +136,7 @@ func TestARenameUnderWayElsewhereIsLeft(t *testing.T) {
 	release, err := e.Repo.TryBranchLock("dockhand/jq-1.8.1")
 	require.NoError(t, err)
 	defer func() { _ = release() }()
-	err = e.UnfinishedGate(t.Context(), branch, true, "the check builds")
+	err = gateErr(e.UnfinishedGate(t.Context(), branch, true))
 	require.Error(t, err)
 	require.Contains(t, refusal.WordsOf(err), "is under way in another process")
 	require.Equal(t, "dockhand/jq-1.8.1", reread(t, e, branch.ID).RenameTo)
