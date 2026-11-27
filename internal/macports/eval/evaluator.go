@@ -126,6 +126,7 @@ func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session
 	tables := "namespace eval ::dockhand {}\nset ::dockhand::read_options [list " + strings.Join(macports.ReadOptions, " ") + "]\n" +
 		"set ::dockhand::host_programs [list " + macports.TclHostPrograms(macports.HostPrograms) + "]\n" +
 		"set ::dockhand::worker_alias_answers [dict create " + macports.TclWorkerAliases(macports.WorkerAliases) + "]\n" +
+		"set ::dockhand::system_programs [dict create " + macports.TclSystemPrograms(macports.SystemPrograms) + "]\n" +
 		"set ::dockhand::portgroup_assumptions [list " + macports.TclPortGroupAssumptions(macports.PortGroupAssumptions) + "]\n" +
 		"set ::dockhand::recording_paths " + strconv.FormatBool(e.Recording) + "\n" +
 		"set ::dockhand::installation " + string(installation) + "\n"

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -363,5 +364,58 @@ func TestBaseLookupsFindNothingOfTheHostInAModelledContext(t *testing.T) {
 		"modeled context depends on hosts, which _mportsearchpath looks for in this Mac's /etc",
 	} {
 		require.Contains(t, port.Problems, problem)
+	}
+}
+
+// A program at a fixed path in macOS's sealed system is a fact of the
+// release, not of this Mac, so a modelled release answers it: Base's
+// extract.cmd default looks up gzip at autoconf's /usr/bin/gzip, and the
+// golang PortGroup reads extract.cmd while a port with go.vendors is
+// evaluated, so a new Go port ended unanswered in every modelled release
+// (the v0.9.0-rc2 full stage's B8). Looked up by its hint, by its bare
+// name, or along PATH, each finds the same program, and none is closed.
+func TestASealedSystemProgramIsTheModelledReleases(t *testing.T) {
+	t.Parallel()
+	e := liveEvaluator(t)
+	tree := fixtureTree(t)
+	putFile(t, tree.Root(), "devel/effects/Portfile", "PortSystem 1.0\nname effects\nversion 1\nset g [findBinary gzip ${portutil::autoconf::gzip_path}]\ndistfiles x-[file tail $g].tgz\n")
+	bound, err := tree.Select(model.Target{Name: "effects", Portfile: "devel/effects/Portfile"})
+	require.NoError(t, err)
+	observed, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Declarations: true, Platform: monterey})
+	require.NoError(t, err, "the release's gzip answers Base's lookup")
+	require.Equal(t, "x-gzip.tgz", observed.Snapshot.Ports["effects"].Options["distfiles"])
+
+	got, port := observedIn(t, monterey, nil, `lappend results [findBinary gzip ${portutil::autoconf::gzip_path}] [findBinary gzip] [binaryInPath gzip] [findBinary tar ${portutil::autoconf::tar_command}] [catch {findBinary lipo ${portutil::autoconf::lipo_path}} m]`)
+	require.Equal(t, []string{"/usr/bin/gzip", "/usr/bin/gzip", "/usr/bin/gzip", "/usr/bin/tar", "1"}, got, "the sealed system's programs are the release's; lipo is the developer tools'")
+	for _, entry := range port.Ledger {
+		require.False(t, entry.Source == "closed" && slices.Contains([]string{"gzip", "tar", "/usr/bin/gzip", "/usr/bin/tar"}, entry.Subject), "%+v", entry)
+	}
+}
+
+// The sealed system's programs a modelled release answers, and the
+// developer tools' it leaves to the facts table, are the paths the
+// autoconf of the Base this runs against names under /bin, /usr/bin,
+// /sbin, and /usr/sbin, each on one side: one a later Base adds, moves,
+// or drops shows here, as WorkerAliases are held.
+func TestTheSystemProgramsAreBasesAutoconfs(t *testing.T) {
+	t.Parallel()
+	got := observeEffects(t, liveEvaluator(t), `set results {}
+foreach variable [info vars ::portutil::autoconf::*] {
+    if {![regexp {_(path|command)$} $variable]} { continue }
+    set path [lindex [set $variable] 0]
+    if {[regexp {^/(usr/)?s?bin/[^/]+$} $path]} { lappend results $path }
+}
+long_description {*}$results`)
+	named, errs := syntax.ListValues(got.Snapshot.Ports["effects"].Options["long_description"])
+	require.Empty(t, errs)
+	var held []string
+	for _, program := range macports.SystemPrograms {
+		held = append(held, program.Path)
+	}
+	held = append(held, macports.DeveloperToolPaths...)
+	slices.Sort(named)
+	require.ElementsMatch(t, slices.Compact(named), held, "each path Base's autoconf names in the system is the system's or the developer tools'")
+	for _, path := range macports.DeveloperToolPaths {
+		require.False(t, slices.ContainsFunc(macports.SystemPrograms, func(p macports.SystemProgram) bool { return p.Path == path }), path)
 	}
 }

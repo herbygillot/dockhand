@@ -773,6 +773,7 @@ namespace eval ::dockhand {
             trace add execution ::PortSystem leave ::dockhand_dispatcher::loaded
         }
         $worker eval [list set ::dockhand_dispatcher::programs $::dockhand::host_programs]
+        $worker eval [list set ::dockhand_dispatcher::system_programs $::dockhand::system_programs]
         $worker eval [list set ::dockhand_dispatcher::source_root $::dockhand::source_root]
         $worker eval [list set ::dockhand_dispatcher::base_root $::dockhand::base_root]
         $worker eval [list set ::dockhand_dispatcher::base_library [base_library]]

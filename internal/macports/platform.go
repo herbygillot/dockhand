@@ -223,6 +223,55 @@ func modelled(darwin int, facts macos.Facts, derived bool) ModelledToolchain {
 var shims = []string{"clang", "clang++", "cc", "c++", "gcc", "g++", "cpp"}
 var gone = []string{"llvm-gcc-4.2", "llvm-g++-4.2", "gcc-4.2", "g++-4.2"}
 
+// SystemProgram is a program at a fixed path in macOS's own system, which
+// a modelled release answers as there and executable from Since, a Darwin
+// major, on: a fact of the release, not of this Mac.
+type SystemProgram struct {
+	Path  string
+	Since int
+}
+
+// SystemPrograms are the programs Base's autoconf names at a path in the
+// sealed system (port_autoconf.tcl's _path and _command values under
+// /bin, /usr/bin, and /usr/sbin), which Base and PortGroups look up by
+// findBinary and binaryInPath while a port is evaluated: the golang
+// PortGroup reads extract.cmd, whose default looks up gzip, for every
+// port with go.vendors, and a modelled release had no gzip (the
+// v0.9.0-rc2 full stage's B8). The developer tools' programs the same
+// autoconf names are DeveloperToolPaths, left to the facts table's tools.
+// A test holds the two lists to the autoconf of the Base it runs against.
+var SystemPrograms = []SystemProgram{
+	{"/bin/cp", 0}, {"/bin/launchctl", 0}, {"/bin/pax", 0}, {"/bin/rmdir", 0},
+	{"/usr/bin/bzip2", 0}, {"/usr/bin/cpio", 0}, {"/usr/bin/diff", 0}, {"/usr/bin/dscl", 0},
+	{"/usr/bin/file", 0}, {"/usr/bin/find", 0}, {"/usr/bin/gzip", 0}, {"/usr/bin/hdiutil", 0},
+	{"/usr/bin/install", 0}, {"/usr/bin/lsbom", 0}, {"/usr/bin/mkbom", 0}, {"/usr/bin/openssl", 0},
+	{"/usr/bin/patch", 0}, {"/usr/bin/rsync", 0}, {"/usr/bin/sed", 0}, {"/usr/bin/tar", 0},
+	{"/usr/bin/unzip", 0}, {"/usr/bin/zip", 0}, {"/usr/sbin/mtree", 0},
+	// xar and Base's sandbox came with Mac OS X 10.5, Apple Archive's aa
+	// with macOS 11.
+	{"/usr/bin/xar", 9}, {"/usr/bin/sandbox-exec", 9}, {"/usr/bin/aa", 20},
+}
+
+// DeveloperToolPaths are the paths in /usr/bin Base's autoconf names that
+// are the developer tools', there only with the Command Line Tools or
+// Xcode (or, before OS X 10.9, Xcode's own xcode-select): a modelled
+// release answers them from the facts table's tools, never as the
+// system's.
+var DeveloperToolPaths = []string{
+	"/usr/bin/git", "/usr/bin/gnumake", "/usr/bin/lipo", "/usr/bin/make",
+	"/usr/bin/xcode-select", "/usr/bin/xcodebuild", "/usr/bin/xcrun",
+}
+
+// TclSystemPrograms renders programs as the Tcl dictionary the evaluator's
+// dispatcher reads: each path and the Darwin major it is there from.
+func TclSystemPrograms(programs []SystemProgram) string {
+	var entries []string
+	for _, program := range programs {
+		entries = append(entries, program.Path, strconv.Itoa(program.Since))
+	}
+	return tclList(entries...)
+}
+
 // ModelVariables is PlatformVariables for a modelled context: the platform,
 // and its developer tools from the facts table (Toolchain). They are Xcode's
 // version or none, the tools', the developer directory, and the SDK Base

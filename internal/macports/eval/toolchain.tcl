@@ -19,6 +19,7 @@ namespace eval ::dockhand {
                 # shims are the programs /usr/bin holds for the developer
                 # tools from OS X 10.9 on.
                 variable shims {clang clang++ cc c++ gcc g++ cpp}
+                variable system_programs {}
                 # kind is what a path of the developer tools is in the
                 # modelled context, a file, a directory, or absent, or
                 # nothing where the table doesn't say.
@@ -208,10 +209,22 @@ namespace eval ::dockhand {
                         if {$answer eq "" && [dict size $toolchain]} { set answer [show_sdk_path $arguments] }
                         return $answer
                     }
+                    # A program at a fixed path in macOS's sealed system
+                    # is the modelled release's, from the release it came
+                    # with (macports.SystemPrograms), whatever the table
+                    # says of the tools: Base's extract.cmd looks up gzip.
+                    variable closed
+                    variable system_programs
+                    if {$closed && $name eq "file" && [dict exists $system_programs [lindex $arguments 1]]
+                        && ${::os.major} >= [dict get $system_programs [lindex $arguments 1]]} {
+                        switch -- [lindex $arguments 0] {
+                            exists - isfile - executable - readable { return [list "" 0 1 {-code 0}] }
+                            isdirectory { return [list "" 0 0 {-code 0}] }
+                        }
+                    }
                     if {![dict size $toolchain]} {
                         # libxcselect arrived with OS X 10.9 (Darwin 13).
                         # This release fact needs no invented toolchain row.
-                        variable closed
                         if {$closed && ${::os.major} in {8 9} && $name eq "file"
                             && [lindex $arguments 0] in {exists isfile isdirectory executable readable}
                             && [lindex $arguments 1] eq "/usr/lib/libxcselect.dylib"} {
