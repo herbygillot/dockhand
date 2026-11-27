@@ -145,7 +145,20 @@ export DH_BIN=${DH_BIN:-/opt/local/bin/dockhand}
 # went on without a branch (the M1's rc5 full stage). Asked of the dockhand
 # installed, where one is, before any row runs.
 if [ -x "$DH_BIN" ]; then
-	if ! outdated=$(cd "$MACPORTS_TREE" && "$DH_BIN" --json outdated "$ACCEPT_GO_PORT" "$ACCEPT_RUST_PORT" 2>&1); then
+	outdated=$(cd "$MACPORTS_TREE" && "$DH_BIN" --json outdated "$ACCEPT_GO_PORT" "$ACCEPT_RUST_PORT" 2>&1) && fixture_ok=1 || fixture_ok=""
+	# A candidate doesn't migrate the default database unless asked
+	# (0b51da12), so one with a newer schema stopped here (the v0.9.0-rc2
+	# full stage, 59 to 66). The stage runs the candidate on dhtest's own
+	# database, so it migrates it, once, saying so; dockhand keeps the
+	# earlier form beside it, as A7's upgrade from an older release needs.
+	case "$fixture_ok:$outdated" in
+		:*"run this again with --migrate-database"*)
+			echo "full.sh: the candidate's schema is newer than dhtest's database; migrating it with --migrate-database, which keeps the earlier form beside it" >&2
+			"$DH_BIN" status --migrate-database >/dev/null 2>&1 || :
+			outdated=$(cd "$MACPORTS_TREE" && "$DH_BIN" --json outdated "$ACCEPT_GO_PORT" "$ACCEPT_RUST_PORT" 2>&1) && fixture_ok=1
+			;;
+	esac
+	if [ -z "$fixture_ok" ]; then
 		echo "full.sh: dockhand couldn't check whether the fixture ports are due:" >&2
 		printf '%s\n' "$outdated" >&2
 		case "$outdated" in
