@@ -83,7 +83,13 @@ a5_status_yes() {
 
 # a5_refused_live is whether a status was refused for processes working
 # on the database, which the candidate does rather than migrate under them.
-a5_refused_live() { jq -r '.error // ""' "$1" 2>/dev/null | matches -E 'would leave them unable to record what they do|would prevent them from recording further work'; }
+a5_refused_live() { jq -r '.error // ""' "$1" 2>/dev/null | matches -E 'would leave them unable to record what they do|would prevent them from recording further work|another dockhand process is running on this Mac'; }
+
+# a5_background is dockhand's own background work the row's commands
+# started, still running: the automatic cleanup a status starts, and a
+# drain. A migration rightly waits for every dockhand on the Mac, and
+# rc2's A5 failed on its own cleanup's (#371).
+a5_background() { pgrep -u "$(id -u)" -f 'dockhand.* (clean --automatic|serve --drain)' 2>/dev/null; }
 
 act() {
 	# The candidate first, on its own copy as a home's default database,
@@ -99,7 +105,16 @@ act() {
 	# background, and the candidate rightly won't migrate while that runs
 	# (the rc1 full stage): it's waited for, up to two minutes, as a person
 	# would, rather than read as nothing to migrate.
+	# What the row's own commands started in the background is let end
+	# first, as a person would wait, with the product as shipped: no
+	# cleanup turned off (#371). The migration is judged once none runs.
 	local tries=0
+	while [ -n "$(a5_background)" ] && [ "$tries" -lt 24 ]; do
+		sleep 5
+		tries=$((tries + 1))
+	done
+	printf '# background dockhand before the migration: %s\n' "$(a5_background | tr '\n' ' ')" >>"$ROW_DIR/out.log"
+	tries=0
 	a5_status "$DH_BIN" "$ROW_DIR/after.json" || :
 	while a5_refused_live "$ROW_DIR/after.json" && [ "$tries" -lt 12 ]; do
 		sleep 10
