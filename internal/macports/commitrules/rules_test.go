@@ -103,6 +103,38 @@ func TestASubjectMayNameTheSubportItChanges(t *testing.T) {
 	require.Equal(t, []string{"subject-port"}, codes(CheckCommits(commit("terraform-2.0: update to 2.0.1\n"))))
 }
 
+// A subject may name several subports by the bracket form MacPorts'
+// commit-message page allows, "kubectl-1.3[5-7]: …", where each port the
+// pattern names is one the commit's directories define; a pattern naming
+// one they don't is refused, saying which (field testing's item 42, #356).
+func TestASubjectMayNameSubportsByTheBracketForm(t *testing.T) {
+	commit := func(message string) []Commit {
+		return []Commit{{ID: "a1", Message: message, Ports: []string{"kubectl"}, Defined: []string{"kubectl", "kubectl-1.34", "kubectl-1.35", "kubectl-1.36", "kubectl-1.37"}}}
+	}
+	require.Empty(t, CheckCommits(commit("kubectl-1.3[5-7]: update to 1.35.11, 1.36.7, 1.37.3\n")))
+	require.Empty(t, CheckCommits(commit("kubectl-1.3[57]: update to 1.35.11, 1.37.3\n")))
+	require.Empty(t, CheckCommits(commit("kubectl-1.3[4-5], kubectl-1.37: update to 1.3x.y\n")))
+	findings := CheckCommits(commit("kubectl-1.3[5-9]: update to 1.35.11\n"))
+	require.Equal(t, []string{"subject-port"}, codes(findings))
+	require.Contains(t, findings[0].Message, "kubectl-1.38, kubectl-1.39", "says which ports the pattern names that the commit doesn't change")
+	require.Equal(t, []string{"subject-port"}, codes(CheckCommits(commit("kubectl-1.4[0-2]: update to 1.40.1\n"))))
+	require.Equal(t, []string{"subject-port"}, codes(CheckCommits(commit("kubectl-1.3[: update to 1.35.11\n"))), "an unclosed bracket is no pattern")
+}
+
+// A bracket pattern expands each class, a list of characters and ranges,
+// one after another; a reversed range, an empty class, or one that would
+// expand past maxExpansion names is no pattern, and the name is itself.
+func TestABracketPatternExpandsWithinItsBounds(t *testing.T) {
+	require.Equal(t, []string{"a-1x", "a-1y", "a-2x", "a-2y"}, expandBrackets("a-[12][xy]"))
+	require.Equal(t, []string{"a5", "a-"}, expandBrackets("a[5-]"), "a dash closing a class is itself")
+	require.Equal(t, []string{"a-", "a5"}, expandBrackets("a[-5]"), "and opening one")
+	require.Equal(t, []string{"a[7-5]"}, expandBrackets("a[7-5]"))
+	require.Equal(t, []string{"a[]"}, expandBrackets("a[]"))
+	require.Equal(t, []string{"[0-9][0-9]"}, expandBrackets("[0-9][0-9]"), "100 names is past the bound")
+	require.Len(t, expandBrackets("[0-7][0-7]"), 64)
+	require.Equal(t, []string{strings.Repeat("[ab]", 40)}, expandBrackets(strings.Repeat("[ab]", 40)), "nor does a long run of classes grow before it stops")
+}
+
 // A line that is only a URL, or a trailer whose value is one, may run past
 // 72 characters; a sentence holding a URL may not (the exiv2 session's
 // notes, 2026-10-21).

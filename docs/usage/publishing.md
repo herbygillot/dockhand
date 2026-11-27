@@ -77,7 +77,11 @@ and apply or cancel. For one commit with a message you supply:
 dockhand tidy -b jq-update --squash --message "jq: update to 1.8.1"
 ```
 
-Use a subject that describes your actual change. `--group "2 1+3"` means
+Use a subject that describes your actual change, starting with the port it
+changes, the ports separated by commas, or several subports in the bracket
+form MacPorts' commit-message page allows, `kubectl-1.3[5-7]: update to
+1.35.11, 1.36.7, 1.37.3`; submit refuses a pattern that names a port the commit
+doesn't change, saying which. `--group "2 1+3"` means
 proposed commit 2 first, then one commit combining 1 and 3. Numbers refer to the
 current proposal, not Git commit IDs. If you combine work by different authors,
 `--author "Name <email>"` supplies the attribution for the combined commit.

@@ -52,7 +52,7 @@ func quoted(source Source, quote string) Source {
 const minimize = "Be sure to rebase your changes so as to minimize the number of commits. Ideally, you should have just one."
 
 var explanations = []Explanation{
-	{Code: "subject-port", Severity: Error, Rule: "A commit's subject starts with the port it changes and a colon, \"jq: …\", or with the ports, \"jq, jq-devel: …\", for a change to several.",
+	{Code: "subject-port", Severity: Error, Rule: "A commit's subject starts with the port it changes and a colon, \"jq: …\", or with the ports, \"jq, jq-devel: …\", for a change to several, which subports may give in MacPorts' bracket form, \"kubectl-1.3[5-7]: …\", where each port the pattern names is one the commit changes.",
 		Sources: []Source{guidelines, quoted(template, "followed our Commit Message Guidelines?")}},
 	{Code: "subject-vague", Severity: Warning, Rule: "A subject says what changed, such as \"update to 1.8.1\", rather than only \"update\" or \"fix\".",
 		Sources: []Source{guidelines, quoted(template, "followed our Commit Message Guidelines?")}},

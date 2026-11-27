@@ -135,8 +135,14 @@ func CheckCommits(commits []Commit) []Finding {
 		subject, body, _ := strings.Cut(strings.TrimRight(commit.Message, "\n"), "\n")
 		subject = strings.TrimSpace(subject)
 		named, rest, ok := strings.Cut(subject, ":")
-		if len(commit.Ports) > 0 && !commit.Unread && (!ok || !namesPort(named, slices.Concat(commit.Ports, commit.Defined))) {
-			add("subject-port", Error, "subject %q should start with the port it changes: %q", subject, commit.Ports[0]+": …")
+		if len(commit.Ports) > 0 && !commit.Unread {
+			names, outside := namesPort(named, slices.Concat(commit.Ports, commit.Defined))
+			switch {
+			case ok && len(outside) > 0:
+				add("subject-port", Error, "subject %q names %s, which this commit doesn't change", subject, strings.Join(outside, ", "))
+			case !ok || !names:
+				add("subject-port", Error, "subject %q should start with the port it changes: %q", subject, commit.Ports[0]+": …")
+			}
 		}
 		if ok && slices.Contains(vague, strings.ToLower(strings.TrimSpace(rest))) {
 			add("subject-vague", Warning, "subject %q should say what changed, such as \"update to 1.8.1\"", subject)
@@ -203,13 +209,81 @@ func untrailedTicket(subject, body string) string {
 
 // namesPort reports whether a subject's prefix, "jq" or "jq, jq-devel",
 // names one of the ports.
-func namesPort(prefix string, ports []string) bool {
+// namesPort reports whether a subject's prefix, a port or several
+// separated by commas, names one of ports. A name may be a bracket
+// pattern, as MacPorts' commit-message page allows for subports,
+// "kubectl-1.3[5-7]", which names each port it expands to; outside are
+// those not among ports, which the subject may not name (#356).
+func namesPort(prefix string, ports []string) (names bool, outside []string) {
 	for name := range strings.SplitSeq(prefix, ",") {
-		if slices.Contains(ports, strings.TrimSpace(name)) {
-			return true
+		expanded := expandBrackets(strings.TrimSpace(name))
+		for _, port := range expanded {
+			if slices.Contains(ports, port) {
+				names = true
+			} else if len(expanded) > 1 || port != strings.TrimSpace(name) {
+				outside = append(outside, port)
+			}
 		}
 	}
-	return false
+	return names, outside
+}
+
+// maxExpansion is the most names a subject's bracket pattern may expand
+// to: a commit message is input, and each class multiplies the names.
+const maxExpansion = 64
+
+// expandBrackets expands a name's bracket classes, each a list of
+// characters and ranges, "1.3[5-7]" to 1.35, 1.36, and 1.37; a name with
+// none, with a bracket left open or empty or a range reversed, or one that
+// would expand to more than maxExpansion names, is itself alone.
+func expandBrackets(name string) []string {
+	if expanded, ok := expandWithin(name, maxExpansion); ok {
+		return expanded
+	}
+	return []string{name}
+}
+
+// expandWithin is expandBrackets of a name that may expand to at most
+// limit names; false where it isn't a pattern or would expand to more.
+func expandWithin(name string, limit int) ([]string, bool) {
+	open := strings.IndexByte(name, '[')
+	if open < 0 {
+		return []string{name}, true
+	}
+	end := strings.IndexByte(name[open:], ']')
+	if end < 0 {
+		return nil, false
+	}
+	end += open
+	var choices []byte
+	class := name[open+1 : end]
+	for i := 0; i < len(class); i++ {
+		if i+2 < len(class) && class[i+1] == '-' {
+			if class[i] > class[i+2] {
+				return nil, false
+			}
+			for c := class[i]; c <= class[i+2]; c++ {
+				choices = append(choices, c)
+			}
+			i += 2
+			continue
+		}
+		choices = append(choices, class[i])
+	}
+	if len(choices) == 0 || len(choices) > limit {
+		return nil, false
+	}
+	rests, ok := expandWithin(name[end+1:], limit/len(choices))
+	if !ok {
+		return nil, false
+	}
+	var expanded []string
+	for _, c := range choices {
+		for _, rest := range rests {
+			expanded = append(expanded, name[:open]+string(c)+rest)
+		}
+	}
+	return expanded, true
 }
 
 // Portfile is one Portfile as a branch changes it.
