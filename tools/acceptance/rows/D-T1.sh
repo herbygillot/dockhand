@@ -110,7 +110,11 @@ act() {
 	# #232).
 	local since
 	since=$(stage_db "SELECT coalesce(max(sequence), 0) FROM events" 2>>"$ROW_DIR/out.log" || echo 0)
-	dh_json check -b "$(run_name dt1-tamper)" || :
+	# --working-tree: the run stamp is committed beside the revbump's
+	# uncommitted edit, so a plain check -b refuses for want of --head or
+	# --working-tree, which is the person's choice (the rc2 full stage,
+	# #367); the edit and the stamp together are what this check builds.
+	dh_json check -b "$(run_name dt1-tamper)" --working-tree || :
 	DT1_CHECK=$DH_LAST_JSON
 	# The check's events, as its record keeps them, read from a copy of the
 	# stage's own database.
