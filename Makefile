@@ -160,12 +160,16 @@ test-corpus:
 # as CI does, where DOCKHAND_TEST_MACPORTS_TCLSH doesn't name another, and
 # take CI's bound and its failpoint build, so the gate can't pass where CI
 # fails; the harness's self-test runs beside them. golangci-lint's govet
-# runs go vet's analyzers, so vet isn't run twice.
+# runs go vet's analyzers, so vet isn't run twice. A gate that passes on a
+# commit's files leaves its record (tools/gate-record.sh), which field
+# testing reads before it builds a commit.
 gate:
-	@tools/heavy sh -c '$(MAKE) fmt-check && $(MAKE) lint && $(MAKE) vendor-check && $(MAKE) deadcode && $(MAKE) path-check && tools/heavy_test.sh && \
+	@tools/heavy sh -c 'gated=$$(tools/gate-record.sh start); \
+	$(MAKE) fmt-check && $(MAKE) lint && $(MAKE) vendor-check && $(MAKE) deadcode && $(MAKE) path-check && tools/heavy_test.sh && \
 	{ $(MAKE) acceptance-selftest & selftest=$$!; \
 	DOCKHAND_TEST_MACPORTS_TCLSH=$${DOCKHAND_TEST_MACPORTS_TCLSH:-/opt/local/bin/port-tclsh} $(GO) test -timeout $(TEST_TIMEOUT) ./... && \
-	$(GO) test -tags acceptance ./internal/failpoint/; tests=$$?; wait $$selftest; selftest=$$?; [ $$tests = 0 ] && [ $$selftest = 0 ]; }'
+	$(GO) test -tags acceptance ./internal/failpoint/; tests=$$?; wait $$selftest; selftest=$$?; [ $$tests = 0 ] && [ $$selftest = 0 ]; } && \
+	tools/gate-record.sh pass "$$gated"'
 
 clean:
 	rm -f -- "$(BINARY)"
