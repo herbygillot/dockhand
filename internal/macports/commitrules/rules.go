@@ -207,8 +207,6 @@ func untrailedTicket(subject, body string) string {
 	return ""
 }
 
-// namesPort reports whether a subject's prefix, "jq" or "jq, jq-devel",
-// names one of the ports.
 // namesPort reports whether a subject's prefix, a port or several
 // separated by commas, names one of ports. A name may be a bracket
 // pattern, as MacPorts' commit-message page allows for subports,
@@ -226,6 +224,12 @@ func namesPort(prefix string, ports []string) (names bool, outside []string) {
 		}
 	}
 	return names, outside
+}
+
+// portNameByte is a character a MacPorts port name can hold: a letter, a
+// digit, or the punctuation port names use.
+func portNameByte(c byte) bool {
+	return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || strings.IndexByte("-_.+", c) >= 0
 }
 
 // maxExpansion is the most names a subject's bracket pattern may expand
@@ -257,20 +261,36 @@ func expandWithin(name string, limit int) ([]string, bool) {
 	end += open
 	var choices []byte
 	class := name[open+1 : end]
+	// choose takes a character into the class, where a port name can hold
+	// it and the class stays within limit: a range up to the last byte
+	// never ended, and a class could grow past any bound before it was
+	// counted (architecture's read of 41c01d04).
+	choose := func(c byte) bool {
+		if !portNameByte(c) || len(choices) >= limit {
+			return false
+		}
+		choices = append(choices, c)
+		return true
+	}
 	for i := 0; i < len(class); i++ {
 		if i+2 < len(class) && class[i+1] == '-' {
-			if class[i] > class[i+2] {
+			low, high := int(class[i]), int(class[i+2])
+			if low > high {
 				return nil, false
 			}
-			for c := class[i]; c <= class[i+2]; c++ {
-				choices = append(choices, c)
+			for c := low; c <= high; c++ {
+				if !choose(byte(c)) {
+					return nil, false
+				}
 			}
 			i += 2
 			continue
 		}
-		choices = append(choices, class[i])
+		if !choose(class[i]) {
+			return nil, false
+		}
 	}
-	if len(choices) == 0 || len(choices) > limit {
+	if len(choices) == 0 {
 		return nil, false
 	}
 	rests, ok := expandWithin(name[end+1:], limit/len(choices))

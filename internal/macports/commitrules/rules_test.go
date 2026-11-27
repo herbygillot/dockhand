@@ -3,6 +3,7 @@ package commitrules
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -133,6 +134,25 @@ func TestABracketPatternExpandsWithinItsBounds(t *testing.T) {
 	require.Equal(t, []string{"[0-9][0-9]"}, expandBrackets("[0-9][0-9]"), "100 names is past the bound")
 	require.Len(t, expandBrackets("[0-7][0-7]"), 64)
 	require.Equal(t, []string{strings.Repeat("[ab]", 40)}, expandBrackets(strings.Repeat("[ab]", 40)), "nor does a long run of classes grow before it stops")
+}
+
+// A range whose upper bound is the last byte ends, and a class of
+// characters no port name holds is no pattern: "x[\x01-\xff]" hung, growing,
+// on any commit subject, another person's pull request's included
+// (architecture's read of 41c01d04).
+func TestABracketClassHoldsOnlyWhatAPortNameCan(t *testing.T) {
+	done := make(chan []string, 1)
+	go func() { done <- expandBrackets("x[\x01-\xff]") }()
+	select {
+	case got := <-done:
+		require.Equal(t, []string{"x[\x01-\xff]"}, got, "a range past what a port name holds is no pattern")
+	case <-time.After(5 * time.Second):
+		t.Fatal("a range up to the last byte never ended")
+	}
+	require.Equal(t, []string{"a[ !]"}, expandBrackets("a[ !]"), "a space or a ! is no port name's")
+	require.Equal(t, []string{"a[\x1b]"}, expandBrackets("a[\x1b]"))
+	require.Equal(t, []string{"py3-x", "py3_x", "py3.x", "py3+x"}, expandBrackets("py3[-_.+]x"), "the punctuation port names use")
+	require.Equal(t, []string{"kubectl-1.35", "kubectl-1.36", "kubectl-1.37"}, expandBrackets("kubectl-1.3[5-7]"))
 }
 
 // A line that is only a URL, or a trailer whose value is one, may run past
