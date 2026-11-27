@@ -290,6 +290,7 @@ var owed = map[string]string{
 	"store.update@engine.(*Engine).RemoveLeftovers":     "#193: what checks left, removed by clean, by cleanup, and by a check waiting for a Tart slot (#239), which owes killed between judging and removing, and killed after removing before counting again",
 	"store.update@engine.(*Engine).answeredCreate":      "#191: serve's opening charged or released, group C",
 	"store.update@engine.(*Engine).carryRename":         "#129: a branch renamed with Git",
+	"store.update@engine.(*Engine).concludeByHand":      "#129: the update scenario, a refused update finished by hand and concluded with --hand-edit (#355)",
 	"store.update@engine.(*Engine).checkOutAgain":       "#129: a worktree clean removed, checked out again",
 	"store.update@engine.(*Engine).cleanup":             "#193: automatic cleanup of what checks left",
 	"store.update@engine.(*Engine).recordWritten":       "#194: settling a record lost at step 5, which needs a world the sweep can't arrange; TestASettlementsUncertainRecordIsReadBack",
