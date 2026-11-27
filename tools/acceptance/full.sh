@@ -145,28 +145,41 @@ export DH_BIN=${DH_BIN:-/opt/local/bin/dockhand}
 # went on without a branch (the M1's rc5 full stage). Asked of the dockhand
 # installed, where one is, before any row runs.
 if [ -x "$DH_BIN" ]; then
-	outdated=$(cd "$MACPORTS_TREE" && "$DH_BIN" --json outdated "$ACCEPT_GO_PORT" "$ACCEPT_RUST_PORT" 2>&1) && fixture_ok=1 || fixture_ok=""
+	# Standard output alone is the --json envelope jq reads; standard error
+	# goes beside it. Read together, a progress line on standard error, as
+	# "Waiting for the PortIndex cache" while another dockhand cleared it,
+	# made the text no JSON, jq exited 5, and under set -e and pipefail
+	# full.sh died silently at its start (twice in the v0.9.0-rc2 full
+	# stage, each start a minute later going through).
+	fixture_err="$ACCEPT_STATE/fixture-check.err"
+	fixture_check() { (cd "$MACPORTS_TREE" && "$DH_BIN" --json outdated "$ACCEPT_GO_PORT" "$ACCEPT_RUST_PORT" 2>"$fixture_err"); }
+	outdated=$(fixture_check) && fixture_ok=1 || fixture_ok=""
 	# A candidate doesn't migrate the default database unless asked
 	# (0b51da12), so one with a newer schema stopped here (the v0.9.0-rc2
 	# full stage, 59 to 66). The stage runs the candidate on dhtest's own
 	# database, so it migrates it, once, saying so; dockhand keeps the
 	# earlier form beside it, as A7's upgrade from an older release needs.
-	case "$fixture_ok:$outdated" in
+	case "$fixture_ok:$outdated$(cat "$fixture_err" 2>/dev/null)" in
 		:*"run this again with --migrate-database"*)
 			echo "full.sh: the candidate's schema is newer than dhtest's database; migrating it with --migrate-database, which keeps the earlier form beside it" >&2
 			"$DH_BIN" status --migrate-database >/dev/null 2>&1 || :
-			outdated=$(cd "$MACPORTS_TREE" && "$DH_BIN" --json outdated "$ACCEPT_GO_PORT" "$ACCEPT_RUST_PORT" 2>&1) && fixture_ok=1
+			outdated=$(fixture_check) && fixture_ok=1
 			;;
 	esac
 	if [ -z "$fixture_ok" ]; then
 		echo "full.sh: dockhand couldn't check whether the fixture ports are due:" >&2
 		printf '%s\n' "$outdated" >&2
-		case "$outdated" in
+		cat "$fixture_err" >&2 2>/dev/null || :
+		case "$outdated$(cat "$fixture_err" 2>/dev/null)" in
 			*"Keychain is locked"* | *"keychain is locked"*) echo "full.sh: the SSH login keychain is locked; unlock it before running the full stage" >&2 ;;
 		esac
 		exit 1
 	fi
-	current=$(printf '%s\n' "$outdated" | jq -r '.result.ports[]? | select(.class == "current") | .port' 2>/dev/null | tr '\n' ' ')
+	if ! current=$(printf '%s\n' "$outdated" | jq -r '.result.ports[]? | select(.class == "current") | .port' | tr '\n' ' '); then
+		echo "full.sh: the fixture check's output wasn't the --json envelope jq reads:" >&2
+		printf '%s\n' "$outdated" >&2
+		exit 1
+	fi
 	if [ -n "$current" ]; then
 		echo "full.sh: these fixture ports are current at master, so the rows that update them can't run: ${current}name ports that are due as ACCEPT_GO_PORT and ACCEPT_RUST_PORT" >&2
 		exit 1
