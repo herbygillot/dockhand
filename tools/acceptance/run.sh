@@ -527,6 +527,26 @@ EOT
 	"blocked: "*) blocked=$((blocked + 1)); echo "$row" >>"$rerun" ;;
 	*) failed=$((failed + 1)) ;;
 	esac
+	# A ref outside the run's namespace the row allowed itself to move
+	# (allow_push), as protocol.sh's reset of the sandbox's master before a
+	# test submission, starts the fence again where the row left it: the
+	# fence paused rc2's full stage before B5 on that deliberate reset,
+	# which H2 had allowed.
+	if [ "$fenced" = 1 ] && [ -s "$ROW_DIR/allow.push" ]; then
+		fence_refs | fence_outside >"$ACCEPT_STATE/fence.now"
+		(
+			# shellcheck source=lib/harm.sh
+			. "$here/lib/harm.sh"
+			allowed() { harm_allowed "$ROW_DIR/allow.push" "$1 $3"; }
+			while read -r remote object ref; do
+				allowed "$remote" "$object" "$ref" || printf '%s %s %s\n' "$remote" "$object" "$ref"
+			done <"$ACCEPT_STATE/fence.refs"
+			while read -r remote object ref; do
+				! allowed "$remote" "$object" "$ref" || printf '%s %s %s\n' "$remote" "$object" "$ref"
+			done <"$ACCEPT_STATE/fence.now"
+		) | sort -u >"$ACCEPT_STATE/fence.refs.new" && mv "$ACCEPT_STATE/fence.refs.new" "$ACCEPT_STATE/fence.refs"
+		rm -f "$ACCEPT_STATE/fence.now"
+	fi
 done
 [ "$unexercised" -eq 0 ] || echo "$unexercised not exercised: each passed without its deciding step running, as its row's # exercises: line names"
 [ "$blocked" -eq 0 ] || echo "$blocked blocked by the host or the test account, not dockhand: once it's put right, rerun them with --rows-file $rerun"
