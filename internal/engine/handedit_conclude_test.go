@@ -95,6 +95,47 @@ func TestAHandFinishedUpdateIsConcludedByHandEdit(t *testing.T) {
 		require.Contains(t, string(data), "1.8.1")
 	})
 
+	// attempted is an update --hand-edit with no version typed, on a branch
+	// kept for jq 1.8.1 whose Portfile was edited, that wrote the attempt
+	// and concluded nothing by hand.
+	attempted := func(t *testing.T, name string, edit func(portfile string) string) {
+		branch, err := e.Start(t.Context(), StartRequest{Name: name, Ports: []string{"jq"}})
+		require.NoError(t, err)
+		require.NoError(t, e.keepTarget(t.Context(), branch, "update", "jq", func(target *model.RequestTarget) { target.Release = &release }))
+		testsupport.Git(t, branch.Worktree, "sparse-checkout", "add", "textproc/jq")
+		path := filepath.Join(branch.Worktree, "textproc/jq/Portfile")
+		was, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(path, []byte(edit(string(was))), 0o644))
+		update, err := e.Update(t.Context(), UpdateRequest{Branch: reread(t, e, branch.ID), Action: model.EditUpdate, Port: "jq", HandEdit: true})
+		require.NoError(t, err)
+		require.True(t, update.Applied, "dockhand's attempt is written")
+		require.NotContains(t, update.HandEdit, "finished by hand")
+		data, err := os.ReadFile(filepath.Join(branch.Worktree, "textproc/jq/Portfile"))
+		require.NoError(t, err)
+		require.Contains(t, string(data), "1.8.1", "at the version the branch asks")
+	}
+	t.Run("a Portfile changed, its version the base's", func(t *testing.T) {
+		t.Parallel()
+		// rc3's C14: a changed file and no version typed concluded the port
+		// finished at the version it already had.
+		attempted(t, "jq-c14", func(portfile string) string { return portfile + "# a line changed, the version as it was\n" })
+	})
+	t.Run("a version that can't be read", func(t *testing.T) {
+		t.Parallel()
+		attempted(t, "jq-unread", func(string) string { return "name jq\nset v 1.8.1\nversion ${v}\n" })
+	})
+	t.Run("moved from the base's version with none asked", func(t *testing.T) {
+		t.Parallel()
+		branch, err := e.Start(t.Context(), StartRequest{Name: "jq-moved"})
+		require.NoError(t, err)
+		testsupport.Git(t, branch.Worktree, "sparse-checkout", "add", "textproc/jq")
+		testsupport.WriteFiles(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.9.0\n"})
+		update, err := e.Update(t.Context(), UpdateRequest{Branch: reread(t, e, branch.ID), Action: model.EditUpdate, Port: "jq", HandEdit: true})
+		require.NoError(t, err)
+		require.Equal(t, "jq to 1.9.0: finished by hand", update.HandEdit, "the person moved it, and asked nothing else")
+	})
+
 	t.Run("before the person finished it", func(t *testing.T) {
 		t.Parallel()
 		update, err := e.Update(t.Context(), UpdateRequest{Start: &StartRequest{Name: "jq-before"}, Action: model.EditUpdate, Port: "jq", Version: "1.8.1", Release: &release, HandEdit: true})

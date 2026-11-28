@@ -592,12 +592,13 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 			return Update{}, err
 		}
 		if changed {
-			version, finished, err := e.handFinishedVersion(ctx, worktree, captured, directory, request)
+			version, finished, err := e.handFinishedVersion(ctx, worktree, captured, base, branch, directory, request)
 			if err != nil {
 				return Update{}, err
 			}
-			// A version asked that the Portfile doesn't name isn't the
-			// one the person finished: the attempt is written for it.
+			// A port not at the version asked, or not moved from the
+			// base's with none asked, isn't one the person finished: the
+			// attempt is written for it.
 			if finished {
 				return e.concludeByHand(ctx, request, branch, directory, version)
 			}
@@ -1772,28 +1773,61 @@ func (e *Engine) handFinished(ctx context.Context, worktree *git.Repository, cap
 }
 
 // handFinishedVersion is the version the person finished a port at by
-// hand, as its Portfile declares it, or as they gave it where the Portfile
-// declares none dockhand can read; finished is false where they gave a
-// version the Portfile doesn't declare, which they haven't finished
-// (architecture's read of c482de4c: a patch changed by hand, and update jq
-// 1.8.1 --hand-edit, concluded jq at 1.8.0).
-func (e *Engine) handFinishedVersion(ctx context.Context, worktree *git.Repository, captured, directory string, request UpdateRequest) (version string, finished bool, err error) {
+// hand, where they did: its Portfile declares the version asked, the one
+// typed, else the branch's open target's for the port; or, with none asked
+// anywhere, declares another version than the branch's base does, which
+// the person moved it to. A changed file alone never concludes it, nor
+// does a version either side can't read: those go on to the attempt, as
+// v0.8.1 did (architecture's rule on rc3's C14, where an untouched branch
+// was concluded at its old version).
+func (e *Engine) handFinishedVersion(ctx context.Context, worktree *git.Repository, captured string, base model.ObjectID, branch model.Branch, directory string, request UpdateRequest) (version string, finished bool, err error) {
 	_, text, err := worktree.File(ctx, captured, directory+"/Portfile")
 	if err != nil {
 		return "", false, err
 	}
 	declared, known := portfile.DeclaredVersion(text, "")
-	if known && request.Version != "" && declared != request.Version {
+	if !known {
 		return "", false, nil
 	}
-	version = request.Version
-	if known {
-		version = declared
+	if asked := askedVersion(branch, request); asked != "" {
+		return declared, declared == asked, nil
 	}
-	if version == "" {
-		return "", false, fmt.Errorf("%s/Portfile names no version dockhand can read; dockhand update %s <version> --hand-edit says which you finished", directory, request.Port)
+	trees, err := worktree.CommitTrees(ctx, []string{string(base)})
+	if err != nil {
+		return "", false, err
 	}
-	return version, true, nil
+	was, baseText, err := worktree.File(ctx, trees[string(base)], directory+"/Portfile")
+	if err != nil || !was.Exists {
+		return "", false, err
+	}
+	before, known := portfile.DeclaredVersion(baseText, "")
+	return declared, known && declared != before, nil
+}
+
+// askedVersion is the version an update asks of a port: the one typed,
+// else the branch's open request target's, its release kept or the one
+// named; empty where none is. A target whose version is concluded asks
+// nothing more (Codex's read of the C14 fix).
+func askedVersion(branch model.Branch, request UpdateRequest) string {
+	if request.Version != "" {
+		return request.Version
+	}
+	if branch.Request == nil {
+		return ""
+	}
+	for _, target := range branch.Request.Targets {
+		if target.Port != request.Port {
+			continue
+		}
+		if _, done := target.Outcome("version"); done || target.Current != "" {
+			return ""
+		}
+		if target.Release != nil {
+			return target.Release.Version
+		}
+		return target.Named
+	}
+	return ""
 }
 
 // concludeByHand concludes a port the person finished by hand: the hand
